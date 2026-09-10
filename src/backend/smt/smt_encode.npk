@@ -167,6 +167,11 @@ struct:Bind = {
     int32:type_id;
     int32:rule;      // the `Rules` declaration limiting the name (1.5.2, D-251); 0 for none
     int32:entry;     // the binding's FIRST version (1.5.3 step 2, D-243): what `old(...)` reads
+    // A `simd` BINDING'S LANES (D-282, 1.5.4b step 4): one symbol per lane of
+    // the element type, a new set at every write -- defined equal to the
+    // written value's lanes where those are known -- and a fresh opaque set
+    // at every invalidation, restore and merge; empty for any other type.
+    List<int32>:lanes;
 };
 
 // A term: encodable or not; when encodable, its text, sort and symbols.
@@ -193,6 +198,10 @@ pub struct:FpDef = {
     int32:ty;
 };
 
+// A `simd` EXPRESSION'S LANES (D-282, 1.5.4b step 4): N scalar terms by
+// expression index, filled by the walk and read by the consumers below.
+pub struct:LaneEntry = { int32:id; List<Term>:lanes; };
+
 pub struct:Encoder = {
     Ast->:ast;
     ExprTypes->:et;
@@ -217,6 +226,7 @@ pub struct:Encoder = {
     bool:uses_bv;              // a bit-vector crossing appeared (D-280): the logic is `ALL`
     bool:uses_fp;              // a float term appeared (D-281): the logic is `ALL`
     List<FpDef>:fpdefs;        // the float definitions, in order (tier 2 reads them)
+    List<LaneEntry>:lane_tab;  // a `simd` expression's lanes, by expression (D-282)
     List<int32>:region_parent; // branch regions: each one's parent (the root's is -1)
     int32:cur_region;          // the region the walk is in
     // A REGION'S CONDITION AND ITS FIRST HYPOTHESIS (1.5.4 step 2, L-7):
@@ -355,7 +365,7 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   ver_name: raw list_init::<int32>(16i64),
                   ver_next: raw list_init::<int32>(16i64),
                   escaped: raw list_init::<int32>(4i64),
-                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false, uses_bv: false, uses_fp: false, fpdefs: raw list_init::<FpDef>(4i64),
+                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false, uses_bv: false, uses_fp: false, fpdefs: raw list_init::<FpDef>(4i64), lane_tab: raw list_init::<LaneEntry>(4i64),
                   region_parent: move(rp), cur_region: 0i32,
                   region_cond: move(rc), region_hyp0: move(rh), last_give: raw term_none(),
                   dollars: raw list_init::<Term>(4i64),
@@ -740,7 +750,9 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
             drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
         }
     }
-    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule, entry: sym };
+    List<int32>:lanes = raw list_init::<int32>(1i64);
+    if ((raw is_simd(e, ty)) && (substitution || (!(raw is_escaped(e, name))))) { lanes = raw lane_syms_new(e, name, ty); }
+    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule, entry: sym, lanes: move(lanes) };
     drop list_push(@e.binds, move(b));
     pass NIL;
 };
@@ -774,6 +786,10 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         int64:i = raw bind_find(e, names.items[k]);
         if (i < 0i64) { continue; }
         int32:ty = e.binds.items[i].type_id;
+        if (e.binds.items[i].lanes.count > 0i64) {
+            e.binds.items[i].lanes = raw lane_syms_new(e, names.items[k], ty);
+            continue;
+        }
         if (!(raw is_termed(e, ty))) { continue; }
         if (raw is_escaped(e, names.items[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
@@ -805,6 +821,9 @@ func:restore = NIL(Encoder->:e, List<int32>:snap) never fails {
     int64:n = snap.count;
     if (e.binds.count < n) { n = e.binds.count; }
     for (int64:i in 0i64...n) { e.binds.items[i].sym = snap.items[i]; }
+    // The lanes of every `simd` binding are fresh past a restore (D-282):
+    // the snapshot carries scalar versions only, and opaque is sound.
+    drop lanes_refresh_all(e);
     pass NIL;
 };
 
@@ -1938,7 +1957,7 @@ func:cross_bin = Term(Encoder->:e, string:bvop, int32:ty, Term:a, Term:b) never 
 // unencodable (a call's value): an opaque operand still crosses -- an opaque
 // symbol has a range axiom, which is what a crossing needs.
 func:enc_bitwise = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, Term:b,
-                        ExprId:lhs, ExprId:rhs, int32:site, Span:at) never fails {
+                        ExprId:lhs, ExprId:rhs, int32:site, Span:at, bool:rows) never fails {
     Term:ta = raw term_copy(a);
     Term:tb = raw term_copy(b);
     if (!ta.ok) { ta = raw term_opaque(e, ty); }
@@ -1946,7 +1965,7 @@ func:enc_bitwise = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, Term:b,
     if (!(ta.ok && tb.ok)) { pass (raw term_opaque(e, ty)); }
     if (ta.is_bool || tb.is_bool) { pass (raw term_opaque(e, ty)); }
     if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
-        drop record_shift(e, ty, tb, rhs, site, at);
+        if (rows) { drop record_shift(e, ty, tb, rhs, site, at); }
         NumVal:k = raw numeral_of(e, tb, rhs);
         if (k.ok && (k.v >= 0i64) && (k.v < ((raw word_bits(e, ty)) => int64))) {
             Term:f = raw int_form_shift(e, op, ty, ta, k.v);
@@ -1999,12 +2018,327 @@ func:flag_word_cast = Term(Encoder->:e, Term:t, int32:from, int32:to) never fail
     pass (raw term_none());
 };
 
-// A `simd` shift's any-lane guard: its row, `unencoded` until step 4 (P-12).
-func:record_unencoded_shift = NIL(Encoder->:e, int32:site, Span:at) never fails {
-    List<int32>:none = raw list_init::<int32>(1i64);
-    drop record(e, raw OK_SHIFT_RANGE(), "", none, raw SITE_EXPR(), site, at, false);
-    if (e.in_prop > 0i32) { drop prop_opaque(e); }
+// --- `simd` lanes (D-282, 1.5.4b step 4) --------------------------------------------------
+//
+// A `simd<T, N>` EXPRESSION'S VALUE IS N SCALAR TERMS, kept in a side table
+// by expression (`lane_tab`) and built by the walk: the constructor's
+// arguments (a splat's one term N times), an elementwise operation
+// lane-wise under the scalar rule of the element's kind (a word's
+// arithmetic, bitwise and compares; a float's IEEE operations; a `bool`
+// lane's `==`/`!=`/`&`/`|`/`^`), `[i]` with a numeral index the lane's
+// term, `.len` the count, `.any()`/`.all()` the disjunction/conjunction, the
+// ordered reductions folded in the emitter's order (`sum` left to right;
+// `min`/`max` as its `select` over the strict compare -- `fcmp olt`/`ogt`
+// for floats, false on NaN, so a NaN lane is passed over as the machine
+// does), an elementwise cast the scalar cast per lane; anything else -- a
+// local's read, a call's value, a computed index -- N opaque lanes of the
+// element type (D-282 as ratified: lanes ride expressions, not bindings).
+// The vector itself has no scalar term. THE ROWS: a `simd` division's
+// any-lane guard is ONE `div-zero` row over the conjunction of the lanes'
+// conditions and, for a signed element, one `div-min` row likewise; a
+// `simd` shift's any-lane guard one `shift-range` row over its conjunction
+// -- the emitter's one trap per site, one group -- and its fact a hypothesis
+// as a scalar shift's is. The `unencoded` producers of 1.5.0 and step 0
+// (`record_unencoded_division`, `record_unencoded_shift`) retire here.
+
+func:lanes_find = int64(Encoder->:e, int32:id) never fails {
+    for (int64:i in 0i64...e.lane_tab.count) {
+        if (e.lane_tab.items[i].id == id) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// The lanes of a `simd`-typed expression: the recorded ones, else N opaque
+// lanes of the element type.
+func:lanes_of = List<Term>(Encoder->:e, ExprId:x, int32:vt) never fails {
+    int32:n = (raw tt_get(e.types, vt)).b;
+    int32:elem = raw type_elem(e.types, vt);
+    List<Term>:out = raw list_init::<Term>((n => int64) + 1i64);
+    int64:li = raw lanes_find(e, x.index);
+    for (int32:i in 0i32...n) {
+        if (li >= 0i64) {
+            if ((i => int64) < e.lane_tab.items[li].lanes.count) {
+                drop list_push(@out, raw term_copy(e.lane_tab.items[li].lanes.items[i => int64]));
+                continue;
+            }
+        }
+        Term:o = raw term_opaque(e, elem);
+        drop list_push(@out, move(o));
+    }
+    pass out;
+};
+
+func:lanes_put = NIL(Encoder->:e, int32:id, move List<Term>:lanes) never fails {
+    drop list_push(@e.lane_tab, LaneEntry{ id: id, lanes: move(lanes) });
     pass NIL;
+};
+
+func:is_simd = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    pass ((raw type_kind(e.types, ty)) == (raw TY_SIMD()));
+};
+
+// LANES THROUGH BINDINGS: a `simd` binding's lanes are N symbols of the
+// element type (`|v#i.k|`, one version `k` per write), so a local's lanes
+// flow from its initialiser through its reads -- defined at a declaration
+// and an assignment from the written value's lanes, fresh and opaque at an
+// invalidation, at a restore to an earlier state and at a merge (the
+// conservative answer wherever the versions could differ by path).
+func:lane_syms_new = List<int32>(Encoder->:e, int32:name, int32:ty) never fails {
+    int32:n = (raw tt_get(e.types, ty)).b;
+    int32:elem = raw type_elem(e.types, ty);
+    int64:ver = raw version_next(e, name);
+    List<int32>:out = raw list_init::<int32>((n => int64) + 1i64);
+    for (int32:i in 0i32...n) {
+        string:stem = string_concat(raw intern_get(e.interns, name), "#");
+        stem = string_concat(stem, int_to_string(i => int64));
+        drop list_push(@out, raw sym_new(e, raw smt_sym(stem, ver), elem));
+    }
+    pass out;
+};
+
+// The binding's lanes defined equal to a value's lanes, where known.
+func:bind_lanes_from = NIL(Encoder->:e, int64:bi, ExprId:src) never fails {
+    if (e.binds.items[bi].lanes.count == 0i64) { pass NIL; }
+    if (raw expr_is_none(src)) { pass NIL; }
+    List<Term>:sl = raw lanes_of(e, src, e.binds.items[bi].type_id);
+    for (int64:i in 0i64...e.binds.items[bi].lanes.count) {
+        if (i >= sl.count) { break; }
+        if (!sl.items[i].ok) { continue; }
+        int32:ls = e.binds.items[bi].lanes.items[i];
+        if (sl.items[i].is_bool != e.syms.items[ls => int64].is_bool) { continue; }
+        List<int32>:one = raw list_init::<int32>(1i64);
+        drop list_push(@one, ls);
+        drop hyp_push(e, raw smt_app2("=", raw sym_text(e, ls), sl.items[i].text), raw syms_union(one, sl.items[i].syms));
+    }
+    pass NIL;
+};
+
+// A write to a `simd` binding: a new version of every lane.
+func:bind_lanes_assign = NIL(Encoder->:e, int32:name, ExprId:src) never fails {
+    int64:bi = raw bind_find(e, name);
+    if (bi < 0i64) { pass NIL; }
+    if (e.binds.items[bi].lanes.count == 0i64) { pass NIL; }
+    e.binds.items[bi].lanes = raw lane_syms_new(e, name, e.binds.items[bi].type_id);
+    drop bind_lanes_from(e, bi, src);
+    pass NIL;
+};
+
+// Every `simd` binding's lanes fresh and opaque.
+func:lanes_refresh_all = NIL(Encoder->:e) never fails {
+    for (int64:i in 0i64...e.binds.count) {
+        if (e.binds.items[i].lanes.count == 0i64) { continue; }
+        e.binds.items[i].lanes = raw lane_syms_new(e, e.binds.items[i].name, e.binds.items[i].type_id);
+    }
+    pass NIL;
+};
+
+// A binding's lanes as terms, recorded for the read.
+func:lanes_of_binding = NIL(Encoder->:e, int64:bi, int32:id) never fails {
+    List<Term>:out = raw list_init::<Term>(e.binds.items[bi].lanes.count + 1i64);
+    for (int64:i in 0i64...e.binds.items[bi].lanes.count) {
+        int32:ls = e.binds.items[bi].lanes.items[i];
+        List<int32>:one = raw list_init::<int32>(1i64);
+        drop list_push(@one, ls);
+        drop list_push(@out, Term{ ok: true, is_bool: e.syms.items[ls => int64].is_bool, text: raw sym_text(e, ls), syms: move(one) });
+    }
+    drop lanes_put(e, id, move(out));
+    pass NIL;
+};
+
+// One lane of an elementwise operation: the scalar rule, terms only (the
+// any-lane guards' rows are recorded once, over every lane, by the caller).
+func:lane_binop = Term(Encoder->:e, TokenKind:op, int32:elem, Term:a, Term:b, Span:at) never fails {
+    if (!(a.ok && b.ok)) { pass (raw term_none()); }
+    bool:cmp = raw tw_is_cmp(op);
+    int32:rty = elem;
+    if (cmp) { rty = e.types.t_bool; }
+    if (raw is_float(e, elem)) { pass (raw enc_float_binary(e, op, elem, rty, a, b)); }
+    if (raw is_bool(e, elem)) {
+        if (!(a.is_bool && b.is_bool)) { pass (raw term_none()); }
+        if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+        if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+        if (op == TokenKind.OpAmp)   { pass (raw term_app2("and", a, b, true)); }
+        if (op == TokenKind.OpPipe)  { pass (raw term_app2("or", a, b, true)); }
+        if (op == TokenKind.OpCaret) { pass (raw term_app2("xor", a, b, true)); }
+        pass (raw term_none());
+    }
+    if (!(raw is_int(e, elem))) { pass (raw term_none()); }
+    if (a.is_bool || b.is_bool) { pass (raw term_none()); }
+    bool:bitop = ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe) || (op == TokenKind.OpCaret));
+    if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) { bitop = true; }
+    if (bitop) {
+        pass (raw enc_bitwise(e, op, elem, a, b, ExprId{ index: 0i32 }, ExprId{ index: 0i32 }, 0i32, at, false));
+    }
+    if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
+        if (!(raw term_is_numeral(b))) { e.nonlinear = true; }
+        if (raw type_is_signed(e.types, elem)) {
+            e.uses_sdiv = true;
+            e.nonlinear = true;
+            if (op == TokenKind.OpSlash) { pass (raw term_app2("npk_sdiv", a, b, false)); }
+            pass (raw term_app2("npk_srem", a, b, false));
+        }
+        if (op == TokenKind.OpSlash) { pass (raw term_app2("div", a, b, false)); }
+        pass (raw term_app2("mod", a, b, false));
+    }
+    if (op == TokenKind.OpPlus)  { pass (raw term_app2("+", a, b, false)); }
+    if (op == TokenKind.OpMinus) { pass (raw term_app2("-", a, b, false)); }
+    if (op == TokenKind.OpStar) {
+        if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
+        pass (raw term_app2("*", a, b, false));
+    }
+    if (op == TokenKind.OpLt)    { pass (raw term_app2("<", a, b, true)); }
+    if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", a, b, true)); }
+    if (op == TokenKind.OpGt)    { pass (raw term_app2(">", a, b, true)); }
+    if (op == TokenKind.OpGtEq)  { pass (raw term_app2(">=", a, b, true)); }
+    if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+    if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+    pass (raw term_none());
+};
+
+// The any-lane D-007 pair, ONE row each over every lane (the emitter's one
+// trap per code at the site).
+func:record_division_lanes = NIL(Encoder->:e, int32:elem, List<Term>:la, List<Term>:lb,
+                                 int32:site, Span:at) never fails {
+    string:zero = "";
+    string:both = "";
+    List<int32>:zs = raw list_init::<int32>(4i64);
+    List<int32>:bs = raw list_init::<int32>(4i64);
+    string:mn = raw smt_int_min(raw type_int_bits(e.types, elem));
+    for (int64:i in 0i64...lb.count) {
+        Term:tb = raw term_copy(lb.items[i]);
+        Term:ta = raw term_copy(la.items[i]);
+        if (!tb.ok) { tb = raw term_opaque(e, elem); }
+        if (!ta.ok) { ta = raw term_opaque(e, elem); }
+        string:z = raw smt_app1("not", raw smt_app2("=", tb.text, "0"));
+        if (zero.len == 0i64) { zero = move(z); } else { zero = raw smt_app2("and", zero, z); }
+        zs = raw syms_union(zs, tb.syms);
+        string:pair = raw smt_app1("not", raw smt_app2("and", raw smt_app2("=", ta.text, mn), raw smt_app2("=", tb.text, "(- 1)")));
+        if (both.len == 0i64) { both = move(pair); } else { both = raw smt_app2("and", both, pair); }
+        bs = raw syms_union(bs, raw syms_union(ta.syms, tb.syms));
+    }
+    drop record(e, raw OK_DIV_ZERO(), zero, zs, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, zero, zs); }
+    if (raw type_is_signed(e.types, elem)) {
+        drop record(e, raw OK_DIV_MIN(), both, bs, raw SITE_EXPR(), site, at, true);
+        if (e.in_prop > 0i32) { drop prop_fact(e, both, bs); }
+    }
+    pass NIL;
+};
+
+// The any-lane shift guard: one `shift-range` row over every lane's amount,
+// and its fact a hypothesis as a scalar shift's (D-277).
+func:record_shift_lanes = NIL(Encoder->:e, int32:elem, List<Term>:lb, int32:site, Span:at) never fails {
+    string:w = int_to_string((raw type_int_bits(e.types, elem)) => int64);
+    string:goal = "";
+    List<int32>:gs = raw list_init::<int32>(4i64);
+    for (int64:i in 0i64...lb.count) {
+        Term:tb = raw term_copy(lb.items[i]);
+        if (!tb.ok) { tb = raw term_opaque(e, elem); }
+        string:one = raw smt_app2("and", raw smt_app2(">=", tb.text, "0"), raw smt_app2("<", tb.text, w));
+        if (goal.len == 0i64) { goal = move(one); } else { goal = raw smt_app2("and", goal, one); }
+        gs = raw syms_union(gs, tb.syms);
+    }
+    drop record(e, raw OK_SHIFT_RANGE(), goal, gs, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, gs); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, gs);
+    pass NIL;
+};
+
+// An elementwise operation on two vectors: the rows first, then the lanes.
+func:enc_simd_binary = NIL(Encoder->:e, TokenKind:op, int32:vt, ExprId:id, ExprId:lhs, ExprId:rhs, Span:at) never fails {
+    int32:elem = raw type_elem(e.types, vt);
+    int32:n = (raw tt_get(e.types, vt)).b;
+    int32:rvt = raw ty_of(e, rhs);
+    if (!(raw is_simd(e, rvt))) { rvt = vt; }
+    List<Term>:la = raw lanes_of(e, lhs, vt);
+    List<Term>:lb = raw lanes_of(e, rhs, rvt);
+    if (((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) && (raw is_int(e, elem))) {
+        drop record_division_lanes(e, elem, la, lb, id.index, at);
+    }
+    if (((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) && (raw is_word(e, elem))) {
+        drop record_shift_lanes(e, elem, lb, id.index, at);
+    }
+    List<Term>:out = raw list_init::<Term>((n => int64) + 1i64);
+    for (int32:i in 0i32...n) {
+        if (((i => int64) < la.count) && ((i => int64) < lb.count)) {
+            drop list_push(@out, raw lane_binop(e, op, elem, la.items[i => int64], lb.items[i => int64], at));
+        } else {
+            drop list_push(@out, raw term_none());
+        }
+    }
+    drop lanes_put(e, id.index, move(out));
+    pass NIL;
+};
+
+// An elementwise cast: the scalar cast per lane -- `=>` between integers the
+// identity (value-preserving by the checker's rule), a float's the float
+// cast; anything else opaque lanes.
+func:enc_simd_cast = NIL(Encoder->:e, ExprId:operand, int32:st, int32:vt, int32:id, bool:unchecked) never fails {
+    int32:se = raw type_elem(e.types, st);
+    int32:de = raw type_elem(e.types, vt);
+    int32:n = (raw tt_get(e.types, vt)).b;
+    List<Term>:src = raw lanes_of(e, operand, st);
+    List<Term>:out = raw list_init::<Term>((n => int64) + 1i64);
+    for (int32:i in 0i32...n) {
+        Term:t = raw term_none();
+        if ((i => int64) < src.count) {
+            if ((!unchecked) && (raw is_int(e, se)) && (raw is_int(e, de)) && src.items[i => int64].ok && (!src.items[i => int64].is_bool)) {
+                t = raw term_copy(src.items[i => int64]);
+            } else {
+                t = raw float_cast(e, src.items[i => int64], se, de);
+            }
+        }
+        if (!t.ok) { t = raw term_opaque(e, de); }
+        drop list_push(@out, move(t));
+    }
+    drop lanes_put(e, id, move(out));
+    pass NIL;
+};
+
+// The reductions and the verdict collapses, in the emitter's order.
+func:enc_simd_method = Term(Encoder->:e, string:m, ExprId:recv, int32:rt, int32:ty) never fails {
+    int32:elem = raw type_elem(e.types, rt);
+    List<Term>:l = raw lanes_of(e, recv, rt);
+    if (l.count == 0i64) { pass (raw term_opaque(e, ty)); }
+    for (int64:c in 0i64...l.count) { if (!l.items[c].ok) { pass (raw term_opaque(e, ty)); } }
+    if ((raw string_eq(m, "any")) || (raw string_eq(m, "all"))) {
+        string:hd = "or";
+        if (raw string_eq(m, "all")) { hd = "and"; }
+        Term:acc = raw term_copy(l.items[0i64]);
+        if (!acc.is_bool) { pass (raw term_opaque(e, ty)); }
+        for (int64:i in 1i64...l.count) {
+            if (!l.items[i].is_bool) { pass (raw term_opaque(e, ty)); }
+            acc = raw term_app2(hd, acc, l.items[i], true);
+        }
+        pass acc;
+    }
+    Term:acc2 = raw term_copy(l.items[0i64]);
+    if (acc2.is_bool) { pass (raw term_opaque(e, ty)); }
+    for (int64:i2 in 1i64...l.count) {
+        if (l.items[i2].is_bool) { pass (raw term_opaque(e, ty)); }
+        if (raw string_eq(m, "sum")) {
+            if (raw is_float(e, elem)) {
+                acc2 = raw fp_make(e, "add", elem, acc2.text, l.items[i2].text, raw smt_app3("fp.add", "RNE", acc2.text, l.items[i2].text),
+                                   raw syms_union(acc2.syms, l.items[i2].syms));
+                if (!acc2.ok) { pass (raw term_opaque(e, ty)); }
+            } else {
+                acc2 = raw term_app2("+", acc2, l.items[i2], false);
+            }
+            continue;
+        }
+        string:pred = "<";
+        if (raw string_eq(m, "max")) { pred = ">"; }
+        if (raw is_float(e, elem)) {
+            pred = "fp.lt";
+            if (raw string_eq(m, "max")) { pred = "fp.gt"; }
+        }
+        Term:c2 = raw term_app2(pred, acc2, l.items[i2], true);
+        acc2 = Term{ ok: true, is_bool: false, text: raw smt_app3("ite", c2.text, acc2.text, l.items[i2].text),
+                     syms: raw syms_union(c2.syms, raw list_init::<int32>(1i64)) };
+    }
+    pass acc2;
 };
 
 // A `limit` write point whose subject has no term (1.5.2 step 2; P-12; L-6):
@@ -3038,6 +3372,17 @@ func:bitwise_base = TokenKind(TokenKind:op) never fails {
 
 func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
                         int32:name, Term:rhs) never fails {
+    // A `simd` BINDING (D-282): a plain assignment carries the value's lanes;
+    // a compound one is a fresh opaque set (the elementwise operation's
+    // lanes were recorded at the expression, the binding's not yet).
+    int64:sb = raw bind_find(e, name);
+    if (sb >= 0i64) {
+        if (raw is_simd(e, e.binds.items[sb].type_id)) {
+            if (op == TokenKind.OpAssign) { drop bind_lanes_assign(e, name, raw stmt_assigned(s)); }
+            else { drop bind_lanes_assign(e, name, ExprId{ index: 0i32 }); }
+            pass NIL;
+        }
+    }
     if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
     // Compound: the current value op the right-hand side.
     Term:prior = raw enc_expr(e, target);
@@ -3059,7 +3404,7 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     if ((bop == TokenKind.OpShl) || (bop == TokenKind.OpShr)) { isbit = true; }
     if (isbit) {
         drop bind_assign(e, name, raw enc_bitwise(e, bop, lt, prior, rhs, target,
-                                                  raw stmt_assigned(s), target.index, s.span));
+                                                  raw stmt_assigned(s), target.index, s.span, true));
         pass NIL;
     }
     if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
@@ -3093,19 +3438,6 @@ func:term_copy = Term(Term:t) never fails {
     List<int32>:s = raw list_init::<int32>(t.syms.count + 1i64);
     for (int64:i in 0i64...t.syms.count) { drop list_push(@s, t.syms.items[i]); }
     pass Term{ ok: t.ok, is_bool: t.is_bool, text: string_concat(t.text, ""), syms: move(s) };
-};
-
-// A simd division: the any-lane guard's site, `unencoded` (P-12).
-func:record_unencoded_division = NIL(Encoder->:e, int32:elem, int32:site, Span:at) never fails {
-    List<int32>:none = raw list_init::<int32>(1i64);
-    drop record(e, raw OK_DIV_ZERO(), "", none, raw SITE_EXPR(), site, at, false);
-    if (raw is_int(e, elem)) {
-        if (raw type_is_signed(e.types, elem)) {
-            drop record(e, raw OK_DIV_MIN(), "", none, raw SITE_EXPR(), site, at, false);
-        }
-    }
-    if (e.in_prop > 0i32) { drop prop_opaque(e); }
-    pass NIL;
 };
 
 // --- the expression walk -------------------------------------------------------------------
@@ -3231,6 +3563,11 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         int64:bi = raw bind_find(e, n.payload =>! int32);
         if (bi >= 0i64) {
+            // A `simd` binding's read: its lane symbols (D-282), no scalar term.
+            if (e.binds.items[bi].lanes.count > 0i64) {
+                drop lanes_of_binding(e, bi, id.index);
+                pass (raw term_none());
+            }
             // UNDER `old(...)` (D-243): the binding's entry version.
             int32:want = e.binds.items[bi].sym;
             if (e.at_entry) { want = e.binds.items[bi].entry; }
@@ -3287,7 +3624,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             bool:bitop = ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe) || (op == TokenKind.OpCaret));
             if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) { bitop = true; }
             if (bitop) {
-                pass (raw enc_bitwise(e, op, lt, a, b, raw expr_lhs(n), raw expr_rhs(n), id.index, n.span));
+                pass (raw enc_bitwise(e, op, lt, a, b, raw expr_lhs(n), raw expr_rhs(n), id.index, n.span, true));
             }
             if ((raw type_kind(e.types, lt)) == (raw TY_FLAGS())) {
                 if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
@@ -3347,13 +3684,9 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         }
         if (lt != 0i32) {
             int32:lk = raw type_kind(e.types, lt);
+            // A `simd` OPERATION (D-282): the lanes, and the any-lane rows.
             if (lk == (raw TY_SIMD())) {
-                if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
-                    drop record_unencoded_division(e, raw type_elem(e.types, lt), id.index, n.span);
-                }
-                if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
-                    drop record_unencoded_shift(e, id.index, n.span);
-                }
+                drop enc_simd_binary(e, op, lt, id, raw expr_lhs(n), raw expr_rhs(n), n.span);
             }
             // A `frac` or a tfp-element `complex` comparison traps on ERR too
             // (D-198, D-199), over an aggregate the walk has no term for: its
@@ -3440,6 +3773,11 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (tw.ok) { pass tw; }
         Term:fc = raw float_cast(e, ct, st, ty);
         if (fc.ok) { pass fc; }
+        // An elementwise `simd` cast (D-282): the scalar cast per lane.
+        if ((raw is_simd(e, st)) && (raw is_simd(e, ty))) {
+            drop enc_simd_cast(e, raw expr_operand(n), st, ty, id.index, false);
+            pass (raw term_none());
+        }
         pass (raw term_opaque(e, ty));
     }
     // `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
@@ -3454,6 +3792,10 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (tw2.ok) { pass tw2; }
         Term:fc2 = raw float_cast(e, ut, ust, ty);
         if (fc2.ok) { pass fc2; }
+        if ((raw is_simd(e, ust)) && (raw is_simd(e, ty))) {
+            drop enc_simd_cast(e, raw expr_operand(n), ust, ty, id.index, true);
+            pass (raw term_none());
+        }
         pass (raw term_opaque(e, ty));
     }
     // `is_err(x)` (D-008 section 5) on a twisted value is `(= x MIN)`; on a
@@ -3491,6 +3833,18 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     // terms; the value -- a `Result`, or a bare value nothing unwrapped -- is
     // opaque. The unwrap arms below are where a known callee's value becomes
     // an uninterpreted function and its `ensures` becomes knowledge.
+    // `v.sum()`/`.min()`/`.max()`/`.all()`/`.any()` on a `simd` (D-282): the
+    // receiver walked, the lanes folded in the emitter's order.
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        int32:mrt = raw ty_of(e, ExprId{ index: n.a });
+        if ((raw is_simd(e, mrt)) && (n.c == 0i32)) {
+            string:mname = raw intern_get(e.interns, n.payload =>! int32);
+            if (raw simd_own_method(mname)) {
+                Term:mrecv = raw enc_expr(e, ExprId{ index: n.a });
+                pass (raw enc_simd_method(e, mname, ExprId{ index: n.a }, mrt, ty));
+            }
+        }
+    }
     if ((n.kind == ExprKind.ExprCallExpr) || (n.kind == ExprKind.ExprMethodCallExpr)) {
         CallEnc:ce = raw enc_call(e, id, n);
         drop record_call_rows(e, id, n, ce);
@@ -3558,6 +3912,55 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
         if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && (raw is_termed(e, ty))) { pass pval; }
         pass (raw term_opaque(e, ty));
+    }
+    // `simd(a, ...)` (D-282): the lanes are the arguments' terms, a splat's
+    // one term N times; `complex(re, im)` shares the node and stays opaque.
+    if (n.kind == ExprKind.ExprVectorCtorExpr) {
+        if ((((n.payload =>! int32) =>! TokenKind) != TokenKind.KwComplex) && (raw is_simd(e, ty))) {
+            int32:velem = raw type_elem(e.types, ty);
+            int32:vlanes = (raw tt_get(e.types, ty)).b;
+            int32:vcnt = raw expr_list_count(n);
+            int32:vstart = raw expr_list_start(n);
+            List<Term>:vout = raw list_init::<Term>((vlanes => int64) + 1i64);
+            if (vcnt == 1i32) {
+                Term:one = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, vstart, 0i32) });
+                if (!one.ok) { one = raw term_opaque(e, velem); }
+                for (int32:vi in 0i32...vlanes) { drop list_push(@vout, raw term_copy(one)); }
+            } else {
+                for (int32:vj in 0i32...vlanes) {
+                    Term:lt2 = raw term_none();
+                    if (vj < vcnt) { lt2 = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, vstart, vj) }); }
+                    if (!lt2.ok) { lt2 = raw term_opaque(e, velem); }
+                    drop list_push(@vout, move(lt2));
+                }
+            }
+            drop lanes_put(e, id.index, move(vout));
+            pass (raw term_none());
+        }
+    }
+    // `v[i]` on a `simd` with a numeral index is the lane's term (D-282); a
+    // computed index is opaque (its bounds row is 1.5.8's).
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:ibt = raw ty_of(e, raw expr_lhs(n));
+        if (raw is_simd(e, ibt)) {
+            Term:ibase = raw enc_expr(e, raw expr_lhs(n));
+            Term:iix = raw enc_expr(e, raw expr_rhs(n));
+            int32:ielem = raw type_elem(e.types, ibt);
+            NumVal:ik = raw numeral_of(e, iix, raw expr_rhs(n));
+            if (ik.ok && (ik.v >= 0i64) && (ik.v < (((raw tt_get(e.types, ibt)).b) => int64))) {
+                List<Term>:il = raw lanes_of(e, raw expr_lhs(n), ibt);
+                if (ik.v < il.count) { pass (raw term_copy(il.items[ik.v])); }
+            }
+            pass (raw term_opaque(e, ielem));
+        }
+    }
+    // `v.len` on a `simd` is its lane count (D-282).
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:mbt = raw ty_of(e, raw expr_operand(n));
+        if ((raw is_simd(e, mbt)) && (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "len"))) {
+            Term:mbase = raw enc_expr(e, raw expr_operand(n));
+            pass (raw term_lit(int_to_string(((raw tt_get(e.types, mbt)).b) => int64), false));
+        }
     }
     // `#sqrt(x)` (D-200) is the instruction, `fp.sqrt RNE` (D-281); every
     // other builtin's value is opaque, its arguments sites.
@@ -3746,14 +4149,14 @@ func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
 func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
     if (p.kind == PatKind.PatStructDestructure) {
         for (int32:i in 0i32...(raw pat_bind_count(p))) {
-            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32 };
+            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64) };
             drop list_push(@e.binds, move(b));
         }
         pass NIL;
     }
     if (p.kind == PatKind.PatEnumDestructure) {
         for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
-            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32 };
+            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64) };
             drop list_push(@e.binds, move(b2));
         }
         pass NIL;
@@ -3981,6 +4384,9 @@ func:merge_arms = NIL(Encoder->:e, List<Term>:conds, List<List<int32>>:snaps, Li
         if (fts.items[i]) { completing = completing + 1i64; only = i; }
     }
     if (completing == 0i64) { pass NIL; }
+    // A `simd` binding's lanes are fresh past a merge (D-282): the arms'
+    // lane versions are not merged, and opaque is sound.
+    drop lanes_refresh_all(e);
     if (completing == 1i64) {
         drop adopt_versions(e, snaps.items[only]);
         if (mergeable && conds.items[only].ok) { drop hyp_push(e, conds.items[only].text, conds.items[only].syms); }
@@ -4251,6 +4657,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
         int32:vrule = raw limit_rule_of(e, raw stmt_decl_limit(e.ast, s));
         drop bind_define(e, name, dty, t, vrule, false);
+        if (raw is_simd(e, dty)) { drop bind_lanes_from(e, raw bind_find(e, name), init); }
         // THE FIRST WRITE POINT (1.5.2 step 3, D-251, L-7): after the new
         // version and its definition, the site's obligation -- the rule over
         // the version -- and THEN the rule as a hypothesis, so the goal is

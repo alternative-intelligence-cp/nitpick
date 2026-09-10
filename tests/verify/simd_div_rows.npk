@@ -1,0 +1,47 @@
+// expect-exit: 5
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 2
+// expect-obligation: limit open 1
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// A `simd` DIVISION'S ROWS OVER KNOWN LANES (D-282, 1.5.4b step 4): the
+// divisor's lanes are the constructor's arguments, so `a / simd(k)` under
+// `limit<r_pos>` on `k` discharges both rows -- the rule is a fact about
+// every lane -- while `a / simd(k, k, n, k)` with one unconstrained lane
+// leaves `div-zero` open: one row per any-lane guard, over the conjunction
+// of the lanes' conditions, and one lane unproven is the row unproven. Its
+// `div-min` row discharges anyway: the dividend's lanes are the
+// constructor's literals, none of them `INT_MIN`.
+mod:simd_div_rows;
+
+Rules<int32>:r_pos = { $ > 0i32 };
+
+func:split = int32(limit<r_pos> int32:k, int32:n) never fails {
+    simd<int32, 4>:a = simd(8i32, 6i32, 4i32, 2i32);
+    simd<int32, 4>:q = a / simd(k);                 // discharged: every lane is `k`, `k > 0`
+    simd<int32, 4>:q2 = a / simd(k, k, n, k);       // open: lane 2 is `n`
+    pass q[0i64] + q2[3i64];                        // 4 + 1
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw split(2i32, argv.len =>! int32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (LimitViolated) { exit 25i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

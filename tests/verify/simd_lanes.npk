@@ -1,0 +1,54 @@
+// expect-exit: 68
+// expect-obligation: div-zero discharged 3
+// expect-obligation: div-min discharged 3
+// expect-obligation: shift-range discharged 1
+// expect-obligation: shift-range open 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// LANES THROUGH THE EXPRESSIONS AND THE BINDINGS (D-282, 1.5.4b step 4): a
+// local's lanes are symbols defined at its writes, so the sum of a
+// constructed local and a splat has known lanes -- `.sum()` folded in the
+// emitter's order, a lane read by a numeral index (`[2]`) and `.len` are
+// numerals to the solver, and the three divisions by them discharge; a
+// shift by a constructed amount is one `shift-range` row over every lane,
+// discharged for the literal splat and `open` for the amount `main`
+// computes. Past a branch a local's lanes are opaque again
+// (`simd_div_open.npk` reads a local no branch touched -- its lanes are
+// the constructor's, and its rows still say `open`: a splat of `2` divides
+// nothing by zero, but the rows there are over the divisor `b`, a local
+// declared from `simd(2i32)`... see that file).
+mod:simd_lanes;
+
+func:lanes = int32(int32:n) never fails {
+    simd<int32, 4>:a = simd(1i32, 2i32, 3i32, 4i32);
+    simd<int32, 4>:b = simd(8i32, 6i32, 4i32, 2i32);
+    simd<int32, 4>:s = a + simd(1i32);
+    int32:x = 100i32 / s.sum();                          // 100 / 14 = 7
+    simd<int32, 4>:d = b - simd(1i32);
+    int32:y = 100i32 / d[2i64];                          // 100 / 3 = 33
+    int64:z = 100i64 / a.len;                            // 25
+    simd<uint8, 8>:sh = simd(3u8) << simd(1u8);          // discharged: the amount is 1 in every lane
+    simd<uint8, 8>:sh2 = simd(3u8) << simd(n =>! uint8); // open: the amount is `n`
+    pass x + y + (z =>! int32) + (sh[0i64] => int32) + (sh2[1i64] => int32) - 6i32;   // 7 + 33 + 25 + 6 + 6 - 6
+};
+
+func:main = int32(cstring[]:argv) {
+    exit ((raw lanes(argv.len =>! int32)) - 3i32);   // 71 - 3
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (ShiftRange) { exit 26i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

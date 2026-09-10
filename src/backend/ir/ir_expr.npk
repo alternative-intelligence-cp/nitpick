@@ -2875,7 +2875,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:svlt0 = raw exprtypes_get(x.et, raw expr_lhs(n));
     if (svlt0 != 0i32) {
         if ((raw type_kind(x.fe.ctx.types, svlt0)) == (raw TY_SIMD())) {
-            pass (raw emit_simd_binop(x, n, op, svlt0, lhs, rhs));
+            pass (raw emit_simd_binop(x, n, op, svlt0, lhs, rhs, id.index));
         }
     }
 
@@ -4941,7 +4941,7 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
 // own negation) elementwise, so the guard is total at every element width
 // with no constant table.
 func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
-                             int32:vt, IrVal:lhs, IrVal:rhs) never fails {
+                             int32:vt, IrVal:lhs, IrVal:rhs, int32:site) never fails {
     int32:elem = raw type_elem(x.fe.ctx.types, vt);
     int32:ek = raw type_kind(x.fe.ctx.types, elem);
     int32:lanes = (raw tt_get(x.fe.ctx.types, vt)).b;
@@ -5018,8 +5018,11 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
     // A SHIFT'S AMOUNT, ANY-LANE (D-277, 1.5.4b step 0): a lane's amount at
     // or past the element width is poison in LLVM; one unsigned compare per
     // lane, folded to "any", traps `ShiftRange`. A vector amount is never a
-    // literal, so every `simd` shift is guarded; its row is `unencoded`
-    // until the lanes have terms (step 4), so the guard is never elided.
+    // literal, so every `simd` shift is guarded. Since step 4 (D-282) its
+    // row is ONE `shift-range` over the lanes, and a discharged row elides
+    // the guard into one `llvm.assume` of the negated any-lane test -- the
+    // scalar `emit_shift_guard`'s shape; the step's first harness found the
+    // trap kept where the manifest said `elided`.
     if (!isflt) {
         if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
             LlType:sel = raw ll_type(x.fe.ctx, elem);
@@ -5040,20 +5043,31 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
             string:sany = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(sany, " = icmp ne i", lanestr, " ",
                               string_concat(sb, ", 0")));
-            string:st_l = raw irw_new_label(x.fe.w, "vsh.range");
-            string:sok_l = raw irw_new_label(x.fe.w, "vsh.ok");
-            drop irw_line(x.fe.w, raw cat5("br i1 ", sany, ", label %", st_l,
-                              string_concat(", label %", sok_l)));
-            drop irw_label(x.fe.w, st_l);
-            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                              int_to_string((raw x_site(x, n.span)) => int64), ")"));
-            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4115)");
-            drop irw_line(x.fe.w, "unreachable");
-            drop irw_label(x.fe.w, sok_l);
+            if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_SHIFT_RANGE())) {
+                // DISCHARGED: no lane's amount reaches the width is a proven
+                // fact of every continuing path.
+                string:nsany = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(nsany, " = xor i1 ", string_concat(sany, ", true")));
+                drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", nsany, ")"));
+            } else {
+                string:st_l = raw irw_new_label(x.fe.w, "vsh.range");
+                string:sok_l = raw irw_new_label(x.fe.w, "vsh.ok");
+                drop irw_line(x.fe.w, raw cat5("br i1 ", sany, ", label %", st_l,
+                                  string_concat(", label %", sok_l)));
+                drop irw_label(x.fe.w, st_l);
+                drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                                  int_to_string((raw x_site(x, n.span)) => int64), ")"));
+                drop irw_line(x.fe.w, "call void @npk_trap(i32 -4115)");
+                drop irw_line(x.fe.w, "unreachable");
+                drop irw_label(x.fe.w, sok_l);
+            }
         }
     }
 
-    // The D-007 guards, any-lane (integer division only).
+    // The D-007 guards, any-lane (integer division only) -- each elided into
+    // one `llvm.assume` of the negated any-lane test where the manifest
+    // discharged the site's row (D-282, 1.5.4b step 4), the scalar guard's
+    // shape above.
     bool:divlike = false;
     if (!isflt) {
         if (op == TokenKind.OpSlash)   { divlike = true; }
@@ -5069,17 +5083,28 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
         string:zany = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(zany, " = icmp ne i", lanestr, " ",
                           string_concat(zb, ", 0")));
-        string:trap_l = raw irw_new_label(x.fe.w, "vdiv.zero");
+        bool:el_zero = raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_DIV_ZERO());
+        bool:el_min = raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_DIV_MIN());
         string:ok_l = raw irw_new_label(x.fe.w, "vdiv.ok");
         string:next_l = string_concat(ok_l, "");
         if (signed) { next_l = raw irw_new_label(x.fe.w, "vdiv.chk"); }
-        drop irw_line(x.fe.w, raw cat5("br i1 ", zany, ", label %", trap_l,
-                          string_concat(", label %", next_l)));
-        drop irw_label(x.fe.w, trap_l);
-        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          int_to_string((raw x_site(x, n.span)) => int64), ")"));
-        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
-        drop irw_line(x.fe.w, "unreachable");
+        if (el_zero) {
+            // DISCHARGED: no lane's divisor is zero is a proven fact of
+            // every continuing path.
+            string:nzany = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(nzany, " = xor i1 ", string_concat(zany, ", true")));
+            drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", nzany, ")"));
+            drop irw_line(x.fe.w, raw cat3("br label %", next_l, ""));
+        } else {
+            string:trap_l = raw irw_new_label(x.fe.w, "vdiv.zero");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", zany, ", label %", trap_l,
+                              string_concat(", label %", next_l)));
+            drop irw_label(x.fe.w, trap_l);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              int_to_string((raw x_site(x, n.span)) => int64), ")"));
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
+            drop irw_line(x.fe.w, "unreachable");
+        }
         if (signed) {
             drop irw_label(x.fe.w, next_l);
             LlType:gel = raw ll_type(x.fe.ctx, elem);
@@ -5115,14 +5140,22 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
             string:bany = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(bany, " = icmp ne i", lanestr, " ",
                               string_concat(bb, ", 0")));
-            string:min_l = raw irw_new_label(x.fe.w, "vdiv.min");
-            drop irw_line(x.fe.w, raw cat5("br i1 ", bany, ", label %", min_l,
-                              string_concat(", label %", ok_l)));
-            drop irw_label(x.fe.w, min_l);
-            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                              int_to_string((raw x_site(x, n.span)) => int64), ")"));
-            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
-            drop irw_line(x.fe.w, "unreachable");
+            if (el_min) {
+                // DISCHARGED: no lane is `MIN / -1` is a proven fact.
+                string:nbany = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(nbany, " = xor i1 ", string_concat(bany, ", true")));
+                drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", nbany, ")"));
+                drop irw_line(x.fe.w, raw cat3("br label %", ok_l, ""));
+            } else {
+                string:min_l = raw irw_new_label(x.fe.w, "vdiv.min");
+                drop irw_line(x.fe.w, raw cat5("br i1 ", bany, ", label %", min_l,
+                                  string_concat(", label %", ok_l)));
+                drop irw_label(x.fe.w, min_l);
+                drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                                  int_to_string((raw x_site(x, n.span)) => int64), ")"));
+                drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
+                drop irw_line(x.fe.w, "unreachable");
+            }
         }
         drop irw_label(x.fe.w, ok_l);
     }

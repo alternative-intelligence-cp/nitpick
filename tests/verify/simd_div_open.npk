@@ -1,0 +1,39 @@
+// expect-exit: 5
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+//
+// A `simd` DIVISION'S ROWS OVER OPAQUE LANES (D-282, 1.5.4b step 4): the
+// any-lane guard is one `div-zero` row over the conjunction of the lanes'
+// conditions and one `div-min` row likewise -- the emitter's one trap per
+// code at the site. The divisor's lanes are a value the program computes
+// (`argv.len`), so the `div-zero` row is `open` and the guard stays; the
+// `div-min` row discharges even so -- the dividend's lanes are literals,
+// none of them `INT_MIN`, and the pair needs both. Until this
+// step the rows were `unencoded` (1.5.0's inventory entry, P-12); no
+// producer of that verdict is left but a `limit` over a subject no theory
+// covers and the `TbbErr` guards over a `frac` or a tfp-`complex`.
+mod:simd_div_open;
+
+func:main = int32(cstring[]:argv) {
+    simd<int32, 4>:a = simd(8i32, 6i32, 4i32, 2i32);
+    simd<int32, 4>:b = simd((argv.len =>! int32) + 1i32);   // 2 at run time
+    simd<int32, 4>:c = a / b;
+    exit c[0i64] + c[3i64];          // 4 + 1
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

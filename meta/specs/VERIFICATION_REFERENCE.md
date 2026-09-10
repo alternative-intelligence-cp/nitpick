@@ -680,6 +680,30 @@ elide (D-219); the subcycle column says where its rows are produced.
 > was written for: `#sqrt(a*a + b*b) >= 0.0` under bounded `a`, `b` —
 > `unknown` in QF_FP at the rlimit, `unsat` in the twin in milliseconds.
 
+> **[D-282, 1.5.4b step 4 (2026-09-10).]** A `simd<T, N>` value is N scalar
+> terms, and its any-lane guards are one row each. The lanes ride EXPRESSIONS
+> (a side table by expression, built by the walk: the constructor's arguments,
+> a splat's one term N times, an elementwise operation lane-wise under the
+> scalar rule of the element's kind — a word's arithmetic, bitwise and
+> compares, a float's IEEE operations, a `bool` lane's `==`/`!=`/`&`/`|`/
+> `^` — `[i]` with a numeral index the lane's term, `.len` the count,
+> `.any()`/`.all()` the disjunction/conjunction, `sum`/`min`/`max` folded in
+> the emitter's order with its `select` over the strict compare, an
+> elementwise cast the scalar cast per lane) AND BINDINGS: a `simd` local's
+> lanes are N symbols of the element type, a new set at every write, defined
+> equal to the written value's lanes where those are known, and fresh and
+> opaque at every invalidation, restore and merge — the conservative answer
+> wherever a path could differ. Anything else (a call's value, a computed
+> index) is N opaque lanes. The vector itself has no scalar term. THE ROWS: a
+> `simd` division's any-lane guard is ONE `div-zero` row over the conjunction
+> of the lanes' conditions and, for a signed element, one `div-min` row
+> likewise; a `simd` shift's any-lane guard one `shift-range` row over its
+> conjunction — the emitter's one trap per site, one group — its fact a
+> hypothesis as a scalar shift's is. The `unencoded` producers of 1.5.0 and
+> step 0 (a `simd` division, a `simd` shift) retire; the verdict's remaining
+> producers are a `limit` over a subject no theory covers (a string, a struct,
+> an array) and the `TbbErr` guards over a `frac` or a tfp-`complex`.
+
 The verdict column is `discharged` (unsat), `open` (sat — a counterexample
 exists under the encoding's hypotheses; not a refutation of the program, a
 guard that stays), `budget` (unknown under the pinned `rlimit`), `unencoded`
