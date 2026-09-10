@@ -946,8 +946,10 @@ EMPTY scope, so `name.f()` reports "no member" rather than reaching the file
 error constant declared inside an inline module hashes under the FILE's name,
 so its `failsafe` arm is `(file.Name)` and `(hidden.Name)` matches nothing —
 recommended: the file qualifies, and an arm's first segment is checked
-against the module names the program knows). `nitpick.obligations` never
-moved. **Next: 1.5.4b (the remaining theories).**
+against the module names the program knows). **Both ratified 2026-09-10 as
+D-274 and D-275, landing at 1.5.4d** (small; the successor plans it ahead of
+1.5.4b). `nitpick.obligations` never moved. **Next: 1.5.4d, then 1.5.4b (the
+remaining theories).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1258,8 +1260,9 @@ that carried them retired at the cycle close):
   either spelling (RESOLVE-003). An inline module's TYPES are named from
   outside only through `use m.{T};`/`use m.*;` — there is no qualified type
   path, for files either. A member-less `mod:name;` import binds `name` with
-  an EMPTY scope (S-49, the user's); an error constant declared inside an
-  inline module is `(file.Name)` in a `failsafe` arm (S-50).
+  an EMPTY scope until 1.5.4d lands D-274 (it will carry the file's scope);
+  an error constant declared inside an inline module is `(file.Name)` in a
+  `failsafe` arm (D-275; an unknown qualifier will refuse at the arm).
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open

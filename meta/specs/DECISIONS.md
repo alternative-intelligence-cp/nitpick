@@ -17615,3 +17615,45 @@ namespace's sake; the library workbench has none in 170 `mod` uses.
 > S-49 (a member-less `mod:name;` import binds a module symbol with an empty
 > scope) and S-50 (an error constant declared inside an inline module hashes
 > under the file's name). `nitpick.obligations` never moved.
+
+## D-274 — a member-less `mod:name;` import carries the loaded file's scope, as an alias does — **SETTLED (user decision, 2026-09-10: "yes ratify"; OPEN_DECISIONS S-49; lands at 1.5.4d)**
+
+Found landing D-273 (1.5.4c step 0). A member-less `mod:name;` written after a
+file's header loads `name.npk` (MODULE_REFERENCE §1.1's external-file module),
+and collection binds `name` as a MODULE SYMBOL whose scope is EMPTY —
+`collect_module` opens one over its zero members — so under D-273 `name.f()`
+reports "module `name` has no member `f`" where it reported "`name` is a
+module, not a value" before, and neither reaches the loaded file. D-273 §4
+gives an ALIAS the scope of the file it names; the import form names a file
+the same way and carried nothing. **The decision.** The file-module import's
+symbol carries the loaded file's scope too — set where the alias's is, from
+the module the loader found for it — so `mod:util;` then `util.f()` means
+what `use "./util.npk" as util;` means: one field, one lookup, no third kind
+of module symbol. Measured on `f071d43`: no program in the tree calls through
+the form (`entry_in_module.npk` uses it to load a sibling; `whole_grammar.npk`
+parses it).
+
+> Lands at **1.5.4d** (`meta/roadmap/1.5/1.5.4d.md`, planned by the
+> successor session ahead of 1.5.4b, as 1.5.4c was): a program calling
+> `util.f()` through `mod:util;` exits through the call.
+
+## D-275 — an error constant declared inside an inline module is the FILE's, and a `failsafe` arm's qualifier must name a module the program knows — **SETTLED (user decision, 2026-09-10: "ratify"; OPEN_DECISIONS S-50; lands at 1.5.4d)**
+
+Found writing `mod_qualified.npk` (1.5.4c step 0). An error constant declared
+INSIDE an inline module hashes its identity under the FILE's name —
+`error_code_of` takes the resolver's `module_name`, the file's basename
+(D-179) — so `hidden`'s `Boom` in `mod_qualified.npk` is `mod_qualified.Boom`,
+its `failsafe` arm is spelled `(mod_qualified.Boom)` and the reach analysis
+reports it so; a `(hidden.Boom)` arm would hash a name no constant has and
+match nothing, silently. **The decision.** An inline module does NOT qualify
+the identities it declares — the file does, one namespace per D-179's
+"module.Name" — and a qualified arm's first segment is checked against the
+module names the program knows: a segment naming no module is
+`NITPICK-RESOLVE-002` at the arm, never a silent non-match, so the mistake is
+refused rather than matched against nothing. Measured: no error constant is
+declared inside an inline module anywhere in the tree or the library
+workbench.
+
+> Lands at **1.5.4d** with D-274: `(hidden.Boom)` refuses at the arm, and a
+> `use hidden.{Boom};` or the file-qualified spelling is the way to name it.
+
