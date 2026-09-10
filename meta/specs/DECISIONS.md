@@ -16195,6 +16195,13 @@ object-safety walk's by-name assoc match now agrees with resolution by
 construction, since no assoc can carry an owned name. `TRAITS_REFERENCE`'s
 sentence carries the extension. Landed at 1.4.8c.
 
+> **Note (2026-09-09, D-273 §2, 1.5.4c step 1):** `std` joins the protected set
+> for a MODULE declaration — an inline `mod:std = { … };`, an import `mod:std;`,
+> a file whose header says so — refused with the same code by `owned_name_error`
+> (`tests/modules/rejection/std_declared.npk`): a `use std.…` path resolves to
+> the standard library before any module symbol is looked up, so a program's
+> module of that name could never be reached by the path that spells it.
+
 ## D-240 — where a sharper refusal fires, the generic one it was written to replace stays silent — **SETTLED (user decision, 2026-09-02)**
 
 Closes OPEN_DECISIONS S-12, found at 1.4.8b step 1: D-237's exact matching
@@ -17579,3 +17586,32 @@ namespace's sake; the library workbench has none in 170 `mod` uses.
 
 > Lands at **1.5.4c** (`meta/roadmap/1.5/1.5.4c.md`); `inline_mod.npk` exits
 > through the call.
+
+> **Landed 2026-09-09 (1.5.4c, three steps under D-228).** (1) and (3): the
+> checker's `namespace_path` is the one walk (an identifier naming a module
+> symbol that opened a scope, or a member access whose operand is such a path
+> and whose member is another module), `type_method_call` asks it first and a
+> namespace receiver makes the call `type_namespace_call` — the member
+> recorded as the callee and as the node's `ns_decl` slot, typed by
+> `type_direct_call`, the one implementation of the direct-call rule for
+> `f(x)` and `m.f(x)` alike — and `namespace_member` reads a value through the
+> same walk; the emitter's `emit_direct_call` (out of `emit_call`) and
+> `emit_decl_value` (out of `emit_ident`) lower both; every reader of a method
+> call's receiver skips it when `ns_decl` is set. (2) and (4): a logical `use`
+> path whose first segment is not `std` resolves against the module symbols in
+> scope (`apply_logical_import`), every form of the file imports over the
+> last module's scope; a module symbol carries its scope wherever it is bound
+> (`bind_or_report`, `bind_wildcard`); `std` joins D-239's owned names. **The
+> private code is `NITPICK-RESOLVE-003`** (`RESOLVE_PRIVATE`), not the -004 this
+> text names — -004 is the two-files ambiguity. Two readings the plan recorded
+> stand (R-1: an unknown first segment refuses; R-2: order never matters — by
+> the fixed-point import loop, with no second pass). Found and fixed on the
+> way: `Trait.method(recv, s)` never demanded `move(s)` for a `move` parameter
+> (the call passed no callee to the argument check); an async METHOD spawn
+> armed no `DeadlineExceeded`; a struct or trait read through a module was
+> typed invalid with no diagnostic; the emitter wrote no type header for a
+> struct or enum declared inside an inline module, and the checker resolved a
+> body's type names inside one in the FILE's scope. Recorded for the user:
+> S-49 (a member-less `mod:name;` import binds a module symbol with an empty
+> scope) and S-50 (an error constant declared inside an inline module hashes
+> under the file's name). `nitpick.obligations` never moved.

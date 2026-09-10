@@ -911,8 +911,43 @@ the docs. `nitpick.obligations` at 184 rows (six `exhaustive checker`), 15 of
 DEF-31 — an inline module's members cannot be reached from the module that
 declares it (`use hidden.*;` is RESOLVE-002, `hidden.fetch(...)` is
 TYPE-007), found when the rung file became a positive program; which
-spelling should reach them is a language question. **Next: 1.5.4b (the
-remaining theories).**
+spelling should reach them is a language question — ratified as D-273 and
+landed as 1.5.4c. **1.5.4c (a module symbol means one thing, D-273) IS
+COMPLETE (2026-09-09; `meta/roadmap/1.5/1.5.4c.md`; three landings, each a
+cumulative prefix under a full harness, D-228).** The qualified call `m.f(x)`
+is a DIRECT call of the member — an inline module's, an alias's, a nested
+path's — through ONE walk (`namespace_path`, with the visibility rule at every
+hop taken from outside), ONE direct-call typer (`type_direct_call`, factored
+out of `type_call`) and ONE direct-call emitter (`emit_direct_call`, out of
+`emit_call`); the node's `ns_decl` slot records what a path resolved to, and
+every reader of a method call's receiver skips it when set (the 36 sites are
+classified in the record). `hidden.MAX` reads a binding, `?! hidden.Boom` an
+error constant (the reach analysis reads the record). `use hidden.*;`, `use
+hidden.{f, Point};`, `use hidden.f;`, `use core.math as cm;` bind a module
+symbol's public names through the file forms' own binders — the only way an
+inline module's TYPES are named from outside — a first segment naming no
+module is RESOLVE-002 (R-1), a later one the module lacks RESOLVE-007, a
+private one RESOLVE-003 from either spelling, `std` owned (RESOLVE-001); a
+module symbol carries its scope wherever it is bound, so `helpers.f()` works
+across files after `use "./h.npk".*;`, and order never matters by the
+fixed-point import loop (R-2 without a second pass; the `tests/accept/` pair).
+**Found on the way, fixed**: `Trait.method(recv, s)` passed no callee to the
+argument check, so a `move` parameter never demanded `move(s)` through the
+qualified spelling — the callee freed the string and the caller freed it
+again; an async METHOD spawn (`drop j.run()`) armed no `DeadlineExceeded`
+where the direct form did; a struct read through a module was typed invalid
+with NO diagnostic and died as EMIT-002; the emitter wrote no type header for
+a struct or enum declared inside an inline module; and the checker resolved a
+body's type names inside an inline module in the FILE's scope, so a module's
+own function could not name the module's own struct. **Recorded for the
+user**: S-49 (a member-less `mod:name;` import binds a module symbol with an
+EMPTY scope, so `name.f()` reports "no member" rather than reaching the file
+— recommended: carry the loaded file's scope, as the alias does) and S-50 (an
+error constant declared inside an inline module hashes under the FILE's name,
+so its `failsafe` arm is `(file.Name)` and `(hidden.Name)` matches nothing —
+recommended: the file qualifies, and an arm's first segment is checked
+against the module names the program knows). `nitpick.obligations` never
+moved. **Next: 1.5.4b (the remaining theories).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1215,6 +1250,16 @@ that carried them retired at the cycle close):
   its construct must be refused identically by the snapshot and the compiler
   under test: a rule added this cycle cannot be it (1.5.4 step 4's first
   npkg self-check said `RUNG-001` where the new compiler said `TYPE-069`).
+- **A module member is called `m.f(x)`, read `m.MAX`, imported `use m.*;`**
+  (D-273, 1.5.4c): the call is a DIRECT call (no receiver — `raw m.f(x)` for
+  a `never fails` member, `await m.run()` for an `async` one, `drop m.idle()`
+  to spawn it), an alias (`use "./m.npk" as m;`) and a `pub mod` bound by a
+  wildcard import carry their file's scope, and a private member refuses from
+  either spelling (RESOLVE-003). An inline module's TYPES are named from
+  outside only through `use m.{T};`/`use m.*;` — there is no qualified type
+  path, for files either. A member-less `mod:name;` import binds `name` with
+  an EMPTY scope (S-49, the user's); an error constant declared inside an
+  inline module is `(file.Name)` in a `failsafe` arm (S-50).
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open

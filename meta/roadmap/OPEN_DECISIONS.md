@@ -892,7 +892,7 @@ at the emitter as EMIT-002 with no span. Fix (1.5.4 step 0): `loop` takes
 three, `till` two, TYPE-068 on the statement otherwise (DEF-28's code, its
 second way to fail).
 
-**DEF-31 (found at 1.5.4 step 4, 2026-09-06, by the rung suite's retirement;
+**DEF-31 — FIXED at 1.5.4c (2026-09-09; D-273 landed in three steps: the qualified call is a direct call, `use` over a module path binds through the file forms' binders, an alias and a `pub mod` carry their scope, `std` is owned; `inline_mod.npk` exits 7 through `hidden.fetch(3i32)`; the record is `1.5/1.5.4c.md`). (found at 1.5.4 step 4, 2026-09-06, by the rung suite's retirement;
 owner: the user — a language question; **SETTLED as D-273, 2026-09-07 — "I agree with your recommendation so ratify that" — lands at 1.5.4c**) — an inline module's members cannot be
 reached from the module that declares it.** MODULE_REFERENCE §1 says modules
 "can be defined inline" and nested (`mod:core = { mod:math = { … }; };`) with

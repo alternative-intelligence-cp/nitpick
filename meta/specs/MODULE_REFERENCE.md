@@ -44,6 +44,19 @@ Modules can be defined inline or exist in external files.
 
 *   **Nested Modules**: Modules can be arbitrarily nested (e.g., `mod:core = { mod:math = { … }; };`).
 *   **Visibility**: Modules are private by default. Use `pub mod` to expose them to outer scopes.
+*   **A module symbol means one thing wherever it stands (D-273, 1.5.4c).**
+    An inline module's members are reached QUALIFIED — `network.connect()`
+    is a direct call of the member (no receiver; the contract, purity, async
+    and argument rules of any named call), `network.MAX` reads its binding,
+    `network.E` names its error constant — through any depth of nesting
+    (`core.math.sq(3i32)`), and IMPORTED with `use network.*;`, `use
+    network.{connect, Point};`, `use network.connect;` or `use core.math as
+    cm;` (§2.2), which is the only way an inline module's TYPES are named from
+    outside. An alias (`use "./m.npk" as m;`) and a `pub mod` bound by a file
+    import carry their module's scope the same way, so `m.f()` and
+    `helpers.f()` work across files. A module in value position is refused
+    ("`m` is a module, not a value"), as is a type reached through one; a
+    member the module lacks is "module `m` has no member `x`".
 
 ## 2. Imports (`use`)
 
@@ -61,7 +74,27 @@ The canonical syntax imports directly from an `.npk` file path:
 ```nitpick
 use std.math.*;
 use std.collections.{HashMap, HashSet};
+use hidden.*;                 // an inline module of this file
+use core.math.{sq};           // a nested path
+use core.math as cm;          // an alias over one
+use helpers.f;                // a `pub mod` a file import bound
 ```
+
+A logical path is resolved in exactly one way, decided by its FIRST segment
+(D-273, 1.5.4c). `std` is the standard library's, resolved by the driver. Any
+other first segment must name a MODULE SYMBOL the importing file's scope
+holds — an inline `mod`, a `use "…" as name;` alias, or a `pub mod` an earlier
+import bound — and every later segment a module the one before exports; the
+last module's public names are then bound through the same binders the file
+forms use, in every form the file forms have. A first segment naming no module
+symbol in scope is refused by name (`NITPICK-RESOLVE-002`: a typo is never
+silent); one naming a function or a binding "is not a module"; a later segment
+the module lacks is `NITPICK-RESOLVE-007` and a private one
+`NITPICK-RESOLVE-003`, exactly as for a named file import. Order never matters
+(§2.4): the loader applies imports to a fixed point, so `use lib.*;` may stand
+above or below the `use "./lib.npk" as lib;` that binds `lib`. `std` is a name
+no program declares as a module (`NITPICK-RESOLVE-001`, D-239's table): a
+module of that name could never be reached by the path that spells it.
 
 ### 2.3 Search Paths & Transitivity
 *   **Transitivity**: `use` imports are strictly **not transitive**. Symbols imported into a module are not automatically re-exported. You must explicitly wrap or use `pub use` to expose them. A `pub use` of a path the module has already imported plain re-exports it all the same — the two lines mean the same in either order (1.5.1b step 3c; until then the later `pub use` was silently downgraded to the earlier plain `use`).
@@ -127,6 +160,12 @@ than inventing a file to satisfy a rule.
 Nitpick uses a strict binary visibility model: **Public** or **Private**.
 
 *   **Private (Default)**: Symbols are accessible only within the same module/file. Intra-module access to private symbols is always permitted.
+*   **From either spelling (D-273, 1.5.4c)**: a private member reached by a
+    qualified path from outside its module (`hidden.internal()`,
+    `hidden.SECRET`, a hop through a private nested module), or named by a
+    `use` over its module (`use hidden.internal;`), is `NITPICK-RESOLVE-003`,
+    "`internal` is private to `hidden`", with a note at the declaration — one
+    mistake, one code, whichever spelling reaches it.
 *   **Public (`pub`)**: Prefix declarations with `pub` to export them.
     ```nitpick
     pub func:compute = int32() { ... };
