@@ -1,0 +1,32 @@
+// expect-exit: 5
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// A MASKED DIVISOR IS PROVABLE (D-279, D-280; 1.5.4b step 1): `(k & 6) | 2`
+// crosses into bit-vectors at the word's 32 bits -- `bv2nat (bvor (bvand
+// (int2bv k) 6) 2)` -- and z3 sees the set bit, so the D-007 pair discharges
+// where the term was opaque and the rows `open`. The skeleton's first
+// bitwise-shaped discharge.
+mod:divz_masked;
+
+func:main = int32(cstring[]:argv) {
+    int32:k = argv.len =>! int32;
+    int32:d = (k & 6i32) | 2i32;
+    exit ((8i32 / d) + 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

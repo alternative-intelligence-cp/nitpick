@@ -1,0 +1,31 @@
+// expect-exit: 5
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// A BIT TEST IN A PATH CONDITION (D-279 with 1.5.4's path sensitivity): the
+// single-bit mask `f & 4` is `(* (mod (div f 4) 2) 4)`, the branch's
+// condition says it is not zero, and the division under it discharges.
+mod:bit_test;
+
+func:main = int32(cstring[]:argv) {
+    int32:f = (argv.len =>! int32) + 3i32;     // 4
+    int32:q = 1i32;
+    if ((f & 4i32) != 0i32) { q = 20i32 / (f & 4i32); }
+    exit q;                                    // 5
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

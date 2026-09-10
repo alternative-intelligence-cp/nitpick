@@ -1,0 +1,32 @@
+// expect-exit: 3
+// expect-obligation: div-zero discharged 1
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// A LOW-BITS MASK AT 2048 BITS NEEDS NO CROSSING (D-279): `x & 255` is
+// `(mod x 256)`, so `(x & 255) + 1` is provably nonzero at any width -- the
+// crossing at 2048 bits would exhaust the budget (D-280's measurement), and
+// this shape is the one the wide Dragon4 and `tfp_render` bodies write.
+// Unsigned: no `div-min` row.
+mod:divz_wide_mask;
+
+func:main = int32(cstring[]:argv) {
+    uint2048:x = (argv.len =>! uint64) => uint2048;
+    uint2048:d = (x & 255u2048) + 1u2048;
+    uint2048:q = 6u2048 / d;
+    exit (q =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

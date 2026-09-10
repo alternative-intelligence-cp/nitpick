@@ -1,0 +1,33 @@
+// expect-exit: 3
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// THE Int FORMS (D-279): a shift by a LITERAL is arithmetic -- `1 << 3` is
+// `(mod (* 1 8) 2^32)` re-signed, `m >> 2` is `(div m 4)` -- so no crossing
+// is taken and both divisors discharge at a few hundred rlimit; `| 1` on the
+// second is the crossing at 32 bits. Both literal amounts are the checker's
+// (no `shift-range` row).
+mod:divz_shift_lit;
+
+func:main = int32(cstring[]:argv) {
+    int32:m = argv.len =>! int32;
+    int32:a = 16i32 / (1i32 << 3i32);          // 2
+    int32:b = 7i32 / ((m >> 2i32) | 1i32);     // 7
+    exit (a + b - 6i32);                       // 3
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

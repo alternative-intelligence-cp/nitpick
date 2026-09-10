@@ -191,6 +191,7 @@ pub struct:Encoder = {
     List<int32>:ordinals;      // per-kind ordinal counters, OK_COUNT + 1 slots
     bool:nonlinear;            // a non-literal `*` or a non-literal divisor appeared
     bool:uses_sdiv;            // a signed division term appeared (the define-funs are needed)
+    bool:uses_bv;              // a bit-vector crossing appeared (D-280): the logic is `ALL`
     List<int32>:region_parent; // branch regions: each one's parent (the root's is -1)
     int32:cur_region;          // the region the walk is in
     // A REGION'S CONDITION AND ITS FIRST HYPOTHESIS (1.5.4 step 2, L-7):
@@ -317,7 +318,7 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   ver_name: raw list_init::<int32>(16i64),
                   ver_next: raw list_init::<int32>(16i64),
                   escaped: raw list_init::<int32>(4i64),
-                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false,
+                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false, uses_bv: false,
                   region_parent: move(rp), cur_region: 0i32,
                   region_cond: move(rc), region_hyp0: move(rh), last_give: raw term_none(),
                   dollars: raw list_init::<Term>(4i64),
@@ -351,6 +352,33 @@ func:is_bool = bool(Encoder->:e, int32:ty) never fails {
     pass ((raw type_kind(e.types, ty)) == (raw TY_BOOL()));
 };
 
+// A WORD (1.5.4b step 1, D-279): an integer, or a flag family (D-230) -- one
+// `i32` carrier read as an UNSIGNED 32-bit word, which is what its `|`/`&`
+// compute on. Width and signedness through these, never `type_int_bits`
+// alone (a flag family's `a` slot is its family index, not a width).
+func:is_word = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    if ((raw type_kind(e.types, ty)) == (raw TY_INT())) { pass true; }
+    pass ((raw type_kind(e.types, ty)) == (raw TY_FLAGS()));
+};
+
+func:word_bits = int32(Encoder->:e, int32:ty) never fails {
+    if ((raw type_kind(e.types, ty)) == (raw TY_FLAGS())) { pass 32i32; }
+    pass (raw type_int_bits(e.types, ty));
+};
+
+func:word_signed = bool(Encoder->:e, int32:ty) never fails {
+    if ((raw type_kind(e.types, ty)) == (raw TY_FLAGS())) { pass false; }
+    pass (raw type_is_signed(e.types, ty));
+};
+
+// THE CROSSING'S WIDTH (D-280): measured under the profile, the
+// Int-to-bit-vector crossing costs 191 rlimit at 32 and 64 bits, 884K at
+// 128, 3.6M at 256 and the whole budget at 2048; a general operation wider
+// than this stays opaque (safe, unproven), and the Int forms of D-279 cover
+// the wide widths' real shapes. Moving it is a measurement, not a decision.
+func:BV_CROSS_MAX_BITS = int32() never fails { pass 64i32; };
+
 // --- symbols and hypotheses --------------------------------------------------------------
 
 func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
@@ -374,11 +402,11 @@ func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
     SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: b, sorts: "" };
     drop list_push(@e.syms, move(s));
     int32:idx = (e.syms.count - 1i64) =>! int32;
-    if (raw is_int(e, ty)) {
+    if (raw is_word(e, ty)) {
         List<int32>:one = raw list_init::<int32>(1i64);
         drop list_push(@one, idx);
-        drop hyp_push(e, raw smt_range_axiom(text, raw type_int_bits(e.types, ty),
-                                              raw type_is_signed(e.types, ty)), one);
+        drop hyp_push(e, raw smt_range_axiom(text, raw word_bits(e, ty),
+                                              raw word_signed(e, ty)), one);
     }
     pass idx;
 };
@@ -410,7 +438,7 @@ func:sym_new_fun = int32(Encoder->:e, string:text, string:sorts, bool:ret_bool) 
 
 // A fresh anonymous opaque symbol of an int or bool type, as a term.
 func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
-    if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
     e.anon = e.anon + 1i32;
     string:nm = raw smt_sym("_", e.anon => int64);
     int32:idx = raw sym_new(e, nm, ty);
@@ -496,7 +524,7 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
                        bool:substitution) never fails {
     int32:sym = 0i32 - 1i32;
-    bool:named = (raw is_int(e, ty)) || (raw is_bool(e, ty));
+    bool:named = (raw is_word(e, ty)) || (raw is_bool(e, ty));   // a flag word is named too (D-279)
     if ((!substitution) && (raw is_escaped(e, name))) { named = false; }
     if (named) {
         string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
@@ -522,7 +550,7 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     int64:i = raw bind_find(e, name);
     if (i < 0i64) { pass NIL; }
     int32:ty = e.binds.items[i].type_id;
-    if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
+    if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
     if (raw is_escaped(e, name)) { pass NIL; }
     string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
     int32:sym = raw sym_new(e, nm, ty);
@@ -545,7 +573,7 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         int64:i = raw bind_find(e, names.items[k]);
         if (i < 0i64) { continue; }
         int32:ty = e.binds.items[i].type_id;
-        if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { continue; }
+        if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { continue; }
         if (raw is_escaped(e, names.items[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
                                 raw version_next(e, names.items[k]));
@@ -679,6 +707,196 @@ func:record_shift = NIL(Encoder->:e, int32:lt, Term:b, ExprId:amount, int32:site
     drop record(e, raw OK_SHIFT_RANGE(), goal, tb.syms, raw SITE_EXPR(), site, at, true);
     drop hyp_push(e, goal, tb.syms);
     pass NIL;
+};
+
+// --- bitwise operations: the Int forms and the bounded crossing (D-279, D-280) ------------
+
+// A NUMERAL A TERM OR AN EXPRESSION KNOWS: the term's digits when it is a
+// plain numeral that fits, else the folder's value for the expression (a
+// `fixed` constant, a folded literal). `ok` false when neither knows.
+struct:NumVal = { bool:ok; int64:v; };
+
+func:numeral_of = NumVal(Encoder->:e, Term:t, ExprId:x) never fails {
+    if (t.ok && (raw term_is_numeral(t)) && (t.text.len <= 18i64)) {
+        int64:v = 0i64;
+        for (int64:i in 0i64...t.text.len) { v = v * 10i64 + ((t.text.ptr[i] - 48u8) => int64); }
+        pass NumVal{ ok: true, v: v };
+    }
+    if (!(raw expr_is_none(x))) {
+        ConstVal:cv = raw fold_const(e.tr, x, e.scope);
+        if (cv.kind == (raw CV_INT())) { pass NumVal{ ok: true, v: cv.num }; }
+    }
+    pass NumVal{ ok: false, v: 0i64 };
+};
+
+// Is `v` exactly 2^j for some 0 <= j < bits? The exponent, or -1.
+func:pow2_exp = int32(int64:v, int32:bits) never fails {
+    if (v <= 0i64) { pass (0i32 - 1i32); }
+    int64:p = 1i64;
+    for (int32:j in 0i32...bits) {
+        if (p == v) { pass j; }
+        if (j >= 62i32) { pass (0i32 - 1i32); }
+        p = p * 2i64;
+    }
+    pass (0i32 - 1i32);
+};
+
+// A SHIFT BY A NUMERAL, IN Int (D-279): `x << k` is the product taken modulo
+// 2^W -- and, for a signed word, re-signed: the wrap the machine's `shl`
+// performs (measured 1,287 rlimit at 64 bits); `x >> k` is `(div x 2^k)`,
+// which SMT-LIB defines as floor division by a positive numeral -- `ashr`
+// on a signed value, `lshr` on an unsigned one. Any width: the numerals are
+// text, and z3 decides these at a few hundred rlimit at 2048 bits.
+func:int_form_shift = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, int64:k) never fails {
+    int32:wb = raw word_bits(e, ty);
+    string:p = raw pow2_decimal(k);
+    if (op == TokenKind.OpShr) { pass (raw term_app2("div", a, raw term_lit(move(p), false), false)); }
+    Term:prod = raw term_app2("*", a, raw term_lit(move(p), false), false);
+    Term:wrapped = raw term_app2("mod", prod, raw term_lit(raw pow2_decimal(wb => int64), false), false);
+    if (!(raw word_signed(e, ty))) { pass wrapped; }
+    Term:s = raw term_capture(e, ty, wrapped);
+    if (!s.ok) { pass (raw term_none()); }
+    string:half = raw pow2_decimal((wb => int64) - 1i64);
+    string:full = raw pow2_decimal(wb => int64);
+    string:txt = raw smt_app3("ite", raw smt_app2(">=", s.text, half),
+                              raw smt_app2("-", s.text, full), s.text);
+    pass Term{ ok: true, is_bool: false, text: move(txt), syms: raw syms_union(s.syms, raw list_init::<int32>(1i64)) };
+};
+
+// `x & m` WITH A NUMERAL MASK, IN Int (D-279) -- the three shapes the tree
+// writes: the low bits (`2^j - 1` is `(mod x 2^j)`: two's-complement low bits
+// ARE the non-negative residue), one bit (`2^j` is `(* (mod (div x 2^j) 2)
+// 2^j)`), the low bits cleared (a signed `-(2^j)` or an unsigned `2^W - 2^j`
+// is `(- x (mod x 2^j))`). Any other mask is the crossing's (`term_none`).
+func:int_form_and = Term(Encoder->:e, int32:ty, Term:a, int64:m) never fails {
+    int32:wb = raw word_bits(e, ty);
+    if (m == 0i64) { pass (raw term_lit("0", false)); }
+    if (m > 0i64) {
+        int32:j = raw pow2_exp(m + 1i64, wb + 1i32);
+        if (j >= 0i32) {   // 2^j - 1
+            pass (raw term_app2("mod", a, raw term_lit(raw pow2_decimal(j => int64), false), false));
+        }
+        int32:jb = raw pow2_exp(m, wb);
+        if (jb >= 0i32) {  // 2^jb
+            string:pj = raw pow2_decimal(jb => int64);
+            Term:q = raw term_app2("div", a, raw term_lit(string_concat(pj, ""), false), false);
+            Term:bit = raw term_app2("mod", q, raw term_lit("2", false), false);
+            pass (raw term_app2("*", bit, raw term_lit(move(pj), false), false));
+        }
+        if (!(raw word_signed(e, ty))) {
+            if (wb <= 62i32) {   // 2^W - 2^j, only where the value fits the folder's int64
+                int64:full = 1i64;
+                for (int32:i in 0i32...wb) { full = full * 2i64; }
+                int32:jc = raw pow2_exp(full - m, wb);
+                if (jc >= 0i32) {
+                    Term:low = raw term_app2("mod", a, raw term_lit(raw pow2_decimal(jc => int64), false), false);
+                    pass (raw term_app2("-", a, low, false));
+                }
+            }
+        }
+        pass (raw term_none());
+    }
+    if (raw word_signed(e, ty)) {
+        int32:jn = raw pow2_exp(0i64 - m, wb);   // -(2^jn): the low jn bits cleared
+        if (jn >= 0i32) {
+            Term:low2 = raw term_app2("mod", a, raw term_lit(raw pow2_decimal(jn => int64), false), false);
+            pass (raw term_app2("-", a, low2, false));
+        }
+    }
+    pass (raw term_none());
+};
+
+// THE CROSSING (D-218 (4), D-280): both operands into bit-vectors of the
+// word's width, the operation there, the result back as a natural and
+// re-signed for a signed word -- `int2bv` of a negative Int is its
+// two's-complement pattern by SMT-LIB's definition, so the crossing is
+// exact. `term_none` above `BV_CROSS_MAX_BITS`. The result is captured in a
+// fresh symbol so the re-sign names it once.
+func:cross_bin = Term(Encoder->:e, string:bvop, int32:ty, Term:a, Term:b) never fails {
+    int32:wb = raw word_bits(e, ty);
+    if (wb > (raw BV_CROSS_MAX_BITS())) { pass (raw term_none()); }
+    string:wtxt = int_to_string(wb => int64);
+    string:tobv = string_concat(string_concat("(_ int2bv ", wtxt), ")");
+    string:inner = raw smt_app2(bvop, raw smt_app1(string_concat(tobv, ""), a.text),
+                                raw smt_app1(string_concat(tobv, ""), b.text));
+    Term:nat = Term{ ok: true, is_bool: false, text: raw smt_app1("bv2nat", inner),
+                     syms: raw syms_union(a.syms, b.syms) };
+    e.uses_bv = true;
+    Term:r = raw term_capture(e, ty, nat);
+    if (!r.ok) { pass (raw term_none()); }
+    if (!(raw word_signed(e, ty))) { pass r; }
+    string:half = raw pow2_decimal((wb => int64) - 1i64);
+    string:full = raw pow2_decimal(wb => int64);
+    string:txt = raw smt_app3("ite", raw smt_app2(">=", r.text, half),
+                              raw smt_app2("-", r.text, full), r.text);
+    pass Term{ ok: true, is_bool: false, text: move(txt), syms: raw syms_union(r.syms, raw list_init::<int32>(1i64)) };
+};
+
+// EVERY BITWISE OPERATION IS ENCODED (D-279): a shift records its row first
+// (D-277); then a numeral amount or a numeral mask takes the Int form, and
+// the rest the crossing, opaque only above its width. `a`/`b` may be
+// unencodable (a call's value): an opaque operand still crosses -- an opaque
+// symbol has a range axiom, which is what a crossing needs.
+func:enc_bitwise = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, Term:b,
+                        ExprId:lhs, ExprId:rhs, int32:site, Span:at) never fails {
+    Term:ta = raw term_copy(a);
+    Term:tb = raw term_copy(b);
+    if (!ta.ok) { ta = raw term_opaque(e, ty); }
+    if (!tb.ok) { tb = raw term_opaque(e, ty); }
+    if (!(ta.ok && tb.ok)) { pass (raw term_opaque(e, ty)); }
+    if (ta.is_bool || tb.is_bool) { pass (raw term_opaque(e, ty)); }
+    if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+        drop record_shift(e, ty, tb, rhs, site, at);
+        NumVal:k = raw numeral_of(e, tb, rhs);
+        if (k.ok && (k.v >= 0i64) && (k.v < ((raw word_bits(e, ty)) => int64))) {
+            Term:f = raw int_form_shift(e, op, ty, ta, k.v);
+            if (f.ok) { pass f; }
+        }
+        string:bvs = "bvshl";
+        if (op == TokenKind.OpShr) { bvs = "bvlshr"; if (raw word_signed(e, ty)) { bvs = "bvashr"; } }
+        Term:c = raw cross_bin(e, bvs, ty, ta, tb);
+        if (c.ok) { pass c; }
+        pass (raw term_opaque(e, ty));
+    }
+    if (op == TokenKind.OpAmp) {
+        NumVal:mb = raw numeral_of(e, tb, rhs);
+        if (mb.ok) { Term:f1 = raw int_form_and(e, ty, ta, mb.v); if (f1.ok) { pass f1; } }
+        NumVal:ma = raw numeral_of(e, ta, lhs);
+        if (ma.ok) { Term:f2 = raw int_form_and(e, ty, tb, ma.v); if (f2.ok) { pass f2; } }
+        Term:c1 = raw cross_bin(e, "bvand", ty, ta, tb);
+        if (c1.ok) { pass c1; }
+        pass (raw term_opaque(e, ty));
+    }
+    string:bvo = "bvor";
+    if (op == TokenKind.OpCaret) { bvo = "bvxor"; }
+    Term:c2 = raw cross_bin(e, bvo, ty, ta, tb);
+    if (c2.ok) { pass c2; }
+    pass (raw term_opaque(e, ty));
+};
+
+// A FLAG WORD AND ITS `int32` CARRIER (D-230, 1.5.4b step 1): one 32-bit
+// pattern. Into the word: a negative int reads as `i + 2^32`; out of it: a
+// word at or past 2^31 reads as `f - 2^32`. Anything else is not this cast.
+func:flag_word_cast = Term(Encoder->:e, Term:t, int32:from, int32:to) never fails {
+    if (!(t.ok && (!t.is_bool))) { pass (raw term_none()); }
+    if ((from == 0i32) || (to == 0i32)) { pass (raw term_none()); }
+    bool:from_flags = ((raw type_kind(e.types, from)) == (raw TY_FLAGS()));
+    bool:to_flags = ((raw type_kind(e.types, to)) == (raw TY_FLAGS()));
+    bool:from_i32 = (raw is_int(e, from)) && ((raw type_int_bits(e.types, from)) == 32i32);
+    bool:to_i32 = (raw is_int(e, to)) && ((raw type_int_bits(e.types, to)) == 32i32);
+    if (from_i32 && to_flags) {
+        if (!(raw type_is_signed(e.types, from))) { pass (raw term_copy(t)); }
+        string:up = raw smt_app3("ite", raw smt_app2("<", t.text, "0"),
+                                 raw smt_app2("+", t.text, "4294967296"), t.text);
+        pass Term{ ok: true, is_bool: false, text: move(up), syms: raw syms_union(t.syms, raw list_init::<int32>(1i64)) };
+    }
+    if (from_flags && to_i32) {
+        if (!(raw type_is_signed(e.types, to))) { pass (raw term_copy(t)); }
+        string:down = raw smt_app3("ite", raw smt_app2(">=", t.text, "2147483648"),
+                                   raw smt_app2("-", t.text, "4294967296"), t.text);
+        pass Term{ ok: true, is_bool: false, text: move(down), syms: raw syms_union(t.syms, raw list_init::<int32>(1i64)) };
+    }
+    pass (raw term_none());
 };
 
 // A `simd` shift's any-lane guard: its row, `unencoded` until step 4 (P-12).
@@ -1031,7 +1249,7 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     if (ce.coroutine) { pass (raw term_none()); }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if (!(raw fn_is_pure_never_fails(e, cdn))) { pass (raw term_none()); }
-    if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
     string:sorts = "(";
     string:app = "";
     List<int32>:syms = raw list_init::<int32>(4i64);
@@ -1055,9 +1273,9 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     syms = raw syms_union(syms, one);
     string:text = raw smt_app1(fsym, app);
     if (ce.terms.count == 0i64) { text = string_concat(fsym, ""); }
-    if (raw is_int(e, ty)) {
-        drop hyp_push(e, raw smt_range_axiom(text, raw type_int_bits(e.types, ty),
-                                              raw type_is_signed(e.types, ty)), syms);
+    if (raw is_word(e, ty)) {
+        drop hyp_push(e, raw smt_range_axiom(text, raw word_bits(e, ty),
+                                              raw word_signed(e, ty)), syms);
     }
     pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(text), syms: move(syms) };
 };
@@ -1684,6 +1902,16 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
 // where the operands are encodable (the compound spellings through the
 // truncating definitions, P-17; a `/=` or `%=` records its division first).
 // The caller records the write point AFTER this (L-7's order).
+// The plain operator behind a bitwise compound assignment, or the operator itself.
+func:bitwise_base = TokenKind(TokenKind:op) never fails {
+    if (op == TokenKind.OpAmpAssign)   { pass TokenKind.OpAmp; }
+    if (op == TokenKind.OpPipeAssign)  { pass TokenKind.OpPipe; }
+    if (op == TokenKind.OpCaretAssign) { pass TokenKind.OpCaret; }
+    if (op == TokenKind.OpShlAssign)   { pass TokenKind.OpShl; }
+    if (op == TokenKind.OpShrAssign)   { pass TokenKind.OpShr; }
+    pass op;
+};
+
 func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
                         int32:name, Term:rhs) never fails {
     if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
@@ -1692,11 +1920,16 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     int64:bi = raw bind_find(e, name);
     int32:lt = 0i32;
     if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
-    if (!(raw is_int(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
-    // `x <<= n` records its amount's row (D-277); the value is opaque here.
-    if ((op == TokenKind.OpShlAssign) || (op == TokenKind.OpShrAssign)) {
-        drop record_shift(e, lt, rhs, raw stmt_assigned(s), target.index, s.span);
-        drop bind_assign(e, name, raw term_none());
+    if (!(raw is_word(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+    // THE BITWISE COMPOUNDS (D-279, D-277): `x op= v` IS `x = x op v`, through
+    // the one bitwise encoder -- the shift's row recorded there, the Int forms
+    // and the crossing its.
+    TokenKind:bop = raw bitwise_base(op);
+    bool:isbit = ((bop == TokenKind.OpAmp) || (bop == TokenKind.OpPipe) || (bop == TokenKind.OpCaret));
+    if ((bop == TokenKind.OpShl) || (bop == TokenKind.OpShr)) { isbit = true; }
+    if (isbit) {
+        drop bind_assign(e, name, raw enc_bitwise(e, bop, lt, prior, rhs, target,
+                                                  raw stmt_assigned(s), target.index, s.span));
         pass NIL;
     }
     if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
@@ -1860,6 +2093,14 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                            text: raw sym_text(e, si), syms: move(one) };
             }
         }
+        // A `fixed` GLOBAL IS ITS CONSTANT (1.5.4b step 1): the folder's value
+        // as a numeral wherever it is read, so a flag member or a named mask
+        // takes the Int forms of D-279. A local the folder cannot fold (every
+        // local) answers nothing here, and the read stays opaque.
+        if ((raw is_word(e, ty)) && (bi < 0i64)) {
+            ConstVal:gcv = raw fold_const(e.tr, id, e.scope);
+            if (gcv.kind == (raw CV_INT())) { pass (raw term_lit(raw smt_int(gcv.num), false)); }
+        }
         pass (raw term_opaque(e, ty));
     }
     if (n.kind == ExprKind.ExprBinaryExpr) {
@@ -1891,11 +2132,23 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             }
             pass (raw term_opaque(e, ty));
         }
-        if (raw is_int(e, lt)) {
-            if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
-                drop record_shift(e, lt, b, raw expr_rhs(n), id.index, n.span);
+        // A WORD'S BITWISE OPERATORS (D-279, D-280; a flag family's `|`/`&`
+        // too): the Int forms, the bounded crossing, the shift's row.
+        if (raw is_word(e, lt)) {
+            bool:bitop = ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe) || (op == TokenKind.OpCaret));
+            if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) { bitop = true; }
+            if (bitop) {
+                pass (raw enc_bitwise(e, op, lt, a, b, raw expr_lhs(n), raw expr_rhs(n), id.index, n.span));
+            }
+            if ((raw type_kind(e.types, lt)) == (raw TY_FLAGS())) {
+                if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
+                    if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+                    if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+                }
                 pass (raw term_opaque(e, ty));
             }
+        }
+        if (raw is_int(e, lt)) {
             bool:divlike = ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent));
             if (divlike) {
                 drop record_division(e, lt, a, b, id.index, n.span);
@@ -1956,6 +2209,18 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", o.text),
                        syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
         }
+        // `~x` IN Int (D-279): `-x - 1` on a signed word, `2^W - 1 - x` on an
+        // unsigned one -- the complement is arithmetic, no crossing needed.
+        if ((uop == TokenKind.OpTilde) && (raw is_word(e, ty)) && (!o.is_bool)) {
+            if (raw word_signed(e, ty)) {
+                string:neg = raw smt_app1("-", o.text);
+                pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", neg, "1"),
+                           syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+            }
+            string:top = raw pow2_minus_one_decimal((raw word_bits(e, ty)) => int64);
+            pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", top, o.text),
+                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+        }
         pass (raw term_opaque(e, ty));
     }
     if (n.kind == ExprKind.ExprTernaryExpr) {
@@ -1987,6 +2252,18 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         Term:ct = raw enc_expr(e, raw expr_operand(n));
         int32:st = raw ty_of(e, raw expr_operand(n));
         if (ct.ok && (raw is_int(e, st)) && (raw is_int(e, ty)) && (!ct.is_bool)) { pass ct; }
+        Term:fw = raw flag_word_cast(e, ct, st, ty);
+        if (fw.ok) { pass fw; }
+        pass (raw term_opaque(e, ty));
+    }
+    // `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
+    // pattern -- the word re-signed one way, the int re-signed the other;
+    // every other unchecked cast stays opaque until 1.5.8's `cast-range`.
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) {
+        Term:ut = raw enc_expr(e, raw expr_operand(n));
+        int32:ust = raw ty_of(e, raw expr_operand(n));
+        Term:fw2 = raw flag_word_cast(e, ut, ust, ty);
+        if (fw2.ok) { pass fw2; }
         pass (raw term_opaque(e, ty));
     }
     if (n.kind == ExprKind.ExprMoveExpr) {
@@ -2078,7 +2355,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
         Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
-        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
+        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
         pass (raw term_opaque(e, ty));
     }
     // Everything else: the value is opaque, the children are still sites.
@@ -3331,11 +3608,13 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
     bool:has_uf = false;
     for (int64:ui in 0i64...e.syms.count) { if (e.syms.items[ui].sorts.len > 0i64) { has_uf = true; } }
     if (e.nonlinear) {
-        if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFNIA)"); }
-        else { drop smtbuf_line(@b, "(set-logic QF_NIA)"); }
+        if (e.uses_bv) { drop smtbuf_line(@b, "(set-logic ALL)"); }
+        else { if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFNIA)"); }
+        else { drop smtbuf_line(@b, "(set-logic QF_NIA)"); } }
     } else {
-        if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFLIA)"); }
-        else { drop smtbuf_line(@b, "(set-logic QF_LIA)"); }
+        if (e.uses_bv) { drop smtbuf_line(@b, "(set-logic ALL)"); }
+        else { if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFLIA)"); }
+        else { drop smtbuf_line(@b, "(set-logic QF_LIA)"); } }
     }
     if (e.uses_sdiv) {
         drop smtbuf_line(@b, "(define-fun npk_sdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (>= b 0) (div a b) (- (div a (- b)))) (ite (>= b 0) (- (div (- a) b)) (div (- a) (- b)))))");

@@ -1,0 +1,31 @@
+// expect-exit: 65
+// expect-obligation: prove discharged 1
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// A FLAG FAMILY IS A 32-BIT WORD (D-230 under D-279): its members are
+// `fixed` constants the encoder reads as numerals, `|` crosses at the
+// family's carrier width, `=>! int32` re-signs the word, and the single-bit
+// mask `w & 64` is `(* (mod (div w 64) 2) 64)` -- the `prove` discharges.
+mod:flags_word;
+
+func:main = int32(cstring[]:argv) {
+    oflags:f = O_WRONLY | O_CREAT;
+    int32:w = f =>! int32;
+    prove((w & 64i32) != 0i32);
+    exit (w + (argv.len =>! int32) - 1i32);    // 65
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
