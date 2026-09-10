@@ -1,0 +1,48 @@
+// expect-exit: 3
+// expect-obligation: err-exit discharged 5
+// expect-obligation: err-exit open 3
+// expect-obligation: failsafe-post discharged 8
+// expect-obligation: exhaustive checker 1
+//
+// THE `err-exit` ROW AT A CAST (D-144 as amended, D-278): leaving the family
+// traps ERR under BOTH spellings -- `out_checked` (`=>`) and `out_bang`
+// (`=>!`) discharge under `is_err`, `out_loose` is `open`; entering from an
+// integer that can exceed the target's range traps under `=>` -- `in_ranged`
+// discharges by the branch's bounds, `in_loose` is `open`; a narrowing within
+// the family traps a valid value outside the target's range under `=>` --
+// `narrow` discharges (its two rows: the compare that pins the value, and
+// the crossing). The value maps ride the terms: ERR is the sentinel across
+// widths, a leaving value is the integer the target word reads. `main`'s
+// compare on a call's value is `open`: a callee's result is opaque.
+mod:twisted_cast;
+
+func:out_checked = int64(tbb32:a) never fails { if (!(is_err(a))) { pass (a => int64); } pass 0i64; };
+func:out_bang = int32(tbb32:a) never fails { if (!(is_err(a))) { pass (a =>! int32); } pass 0i32; };
+func:out_loose = int64(tbb32:a) never fails { pass (a => int64); };
+func:in_ranged = tbb32(int64:v) never fails { if ((v > -100i64) && (v < 100i64)) { pass (v => tbb32); } pass 0tbb32; };
+func:in_loose = tbb32(int64:v) never fails { pass (v => tbb32); };
+func:narrow = tbb32(tbb64:v) never fails { if (!(is_err(v))) { if (v == 5tbb64) { pass (v => tbb32); } } pass 0tbb32; };
+
+func:main = int32(cstring[]:argv) {
+    int64:n = argv.len;                              // 1 at run time
+    tbb32:one = raw in_ranged(n);                     // 1
+    tbb32:two = raw in_loose(n + 1i64);               // 2
+    tbb32:five = raw narrow(5tbb64);                  // 5
+    if (five != 5tbb32) { exit 50i32; }
+    int64:a = raw out_checked(one);                   // 1
+    int32:b = raw out_bang(two);                      // 2
+    exit ((a =>! int32) + b + ((raw out_loose(0tbb32)) =>! int32));   // 1 + 2 + 0
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

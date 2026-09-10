@@ -100,6 +100,7 @@ use "../../frontend/parse_decl.npk".*;
 use "../../frontend/parse_decorate.npk".*;   // limit_target (1.5.2 step 2, D-251)
 use "../../frontend/parse_pick.npk".*;
 use "../../frontend/types.npk".*;
+use "../../frontend/numeric.npk".*;   // tfp_q_decimal: a `tfp` literal's exact Q value (D-195; 1.5.4b step 2)
 use "../../frontend/expr_types.npk".*;
 use "../../frontend/symbols.npk".*;   // a free call's callee, by its symbol (1.5.2 step 3)
 use "../../frontend/type_resolve.npk".*;
@@ -223,6 +224,18 @@ pub struct:Encoder = {
     // instantiating function's: the guard is the predicate function's own,
     // and the row is recorded there, once (L-1).
     int32:quiet;
+    // INSIDE A PROPOSITION (DEF-33, 1.5.4b step 2): a contract clause, an
+    // invariant conjunct, a rule's clause, a `prove`. A PROPOSITION HOLDS
+    // ONLY WHERE ITS EVALUATION DOES NOT TRAP: every guard inside one -- a
+    // shift's amount, a division's divisor, a twisted compare's operands --
+    // has its condition conjoined into the proposition's term (`pfacts`,
+    // gathered while `in_prop` is set), never pushed as a fact. The row over
+    // the proposition then proves the guards pass, so eliding its check
+    // removes no live guard, and the proposition as a hypothesis carries
+    // them. A guard outside a proposition -- a body site -- pushes its fact
+    // after its row, as before.
+    int32:in_prop;
+    List<Term>:pfacts;
     // THE CONTRACTS' STATE (1.5.3 step 2): `result` while an `ensures` is
     // encoded (`term_none` outside one); `at_entry` while an `old(...)`
     // operand is encoded, so a name reads its entry version; the function's
@@ -327,7 +340,8 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   loop_cstep: raw list_init::<Term>(4i64),
                   loop_casc: raw list_init::<Term>(4i64),
                   loop_cdollar: raw list_init::<int64>(4i64),
-                  subject: raw term_none(), quiet: 0i32,
+                  subject: raw term_none(), quiet: 0i32, in_prop: 0i32,
+                  pfacts: raw list_init::<Term>(4i64),
                   result: raw term_none(), at_entry: false, fn_decl: 0i32, impl_decl: 0i32,
                   trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32,
                   loop_sids: raw list_init::<int32>(4i64),
@@ -372,6 +386,67 @@ func:word_signed = bool(Encoder->:e, int32:ty) never fails {
     pass (raw type_is_signed(e.types, ty));
 };
 
+// A TWISTED KIND (D-278, 1.5.4b step 2): `tbb`, `tfp`, `dim256` (a `tfp256`
+// with a unit, D-196) and the ternary family (D-197) -- an Int term in the
+// carrier's range with ERR the carrier's most negative value, a VALUE the
+// terms carry (D-008). `is_scalar` is what gets a symbol: a word or a
+// twisted value, each with its own range axiom.
+func:is_twisted = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    int32:k = raw type_kind(e.types, ty);
+    if (k == (raw TY_TBB())) { pass true; }
+    if (k == (raw TY_TFP())) { pass true; }
+    if (k == (raw TY_DIM())) { pass true; }
+    pass (k == (raw TY_TERN()));
+};
+
+func:is_scalar = bool(Encoder->:e, int32:ty) never fails {
+    if (raw is_word(e, ty)) { pass true; }
+    pass (raw is_twisted(e, ty));
+};
+
+// THE SENTINEL AND THE VALID BOUNDS of a twisted type: ERR is the carrier's
+// `MIN` (`tbb_min_decimal`'s value, D-008); the valid range is `MIN+1 ..= MAX`
+// for `tbb`/`tfp`/`dim256` and the balanced `-B ..= B`, B = (base^digits -
+// 1)/2, for the ternary kinds (D-197) -- strictly inside the carrier's, which
+// is what leaves the most negative value spare for ERR.
+func:tw_min = string(Encoder->:e, int32:ty) never fails {
+    pass (raw smt_int_min(raw type_int_bits(e.types, ty)));
+};
+
+func:tw_bound = int64(Encoder->:e, int32:ty) never fails {
+    pass (raw tern_bound(raw type_tern_base(e.types, ty), raw type_tern_digits(e.types, ty)));
+};
+
+func:tw_lo = string(Encoder->:e, int32:ty) never fails {
+    if ((raw type_kind(e.types, ty)) == (raw TY_TERN())) { pass (raw smt_int(0i64 - (raw tw_bound(e, ty)))); }
+    pass (raw smt_app1("-", raw pow2_minus_one_decimal(((raw type_int_bits(e.types, ty)) => int64) - 1i64)));
+};
+
+func:tw_hi = string(Encoder->:e, int32:ty) never fails {
+    if ((raw type_kind(e.types, ty)) == (raw TY_TERN())) { pass (raw smt_int(raw tw_bound(e, ty))); }
+    pass (raw pow2_minus_one_decimal(((raw type_int_bits(e.types, ty)) => int64) - 1i64));
+};
+
+// The range axiom of a twisted symbol: ERR, or a valid value.
+func:twisted_axiom = string(Encoder->:e, string:sym, int32:ty) never fails {
+    string:valid = raw smt_app2("and", raw smt_app2("<=", raw tw_lo(e, ty), sym),
+                                raw smt_app2("<=", sym, raw tw_hi(e, ty)));
+    pass (raw smt_app2("or", raw smt_app2("=", sym, raw tw_min(e, ty)), valid));
+};
+
+// 2^F as a term, F = width/2: a `tfp`'s scale (D-195).
+func:tw_pow2f = Term(Encoder->:e, int32:ty) never fails {
+    pass (raw term_lit(raw pow2_decimal(((raw type_int_bits(e.types, ty)) / 2i32) => int64), false));
+};
+
+// 2^n as an int64, n < 63 -- by doubling, so no shift amount is computed.
+func:pow2_int64 = int64(int32:n) never fails {
+    int64:p = 1i64;
+    for (int32:i in 0i32...n) { p = p * 2i64; }
+    pass p;
+};
+
 // THE CROSSING'S WIDTH (D-280): measured under the profile, the
 // Int-to-bit-vector crossing costs 191 rlimit at 32 and 64 bits, 884K at
 // 128, 3.6M at 256 and the whole budget at 2048; a general operation wider
@@ -384,6 +459,41 @@ func:BV_CROSS_MAX_BITS = int32() never fails { pass 64i32; };
 func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
     drop hyp_push_in(e, text, syms, e.cur_region);
     pass NIL;
+};
+
+// A GUARD'S CONDITION INSIDE A PROPOSITION (DEF-33): gathered for the
+// proposition's own term; `prop_opaque` stands in for a guard the walk has no
+// term for, so the proposition is unprovable rather than trap-blind.
+func:prop_fact = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
+    List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
+    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
+    drop list_push(@e.pfacts, Term{ ok: true, is_bool: true, text: string_concat(text, ""), syms: move(copy) });
+    pass NIL;
+};
+
+func:prop_opaque = NIL(Encoder->:e) never fails {
+    Term:o = raw term_opaque(e, e.types.t_bool);
+    if (o.ok) { drop list_push(@e.pfacts, move(o)); }
+    pass NIL;
+};
+
+// A proposition's encoding: `prop_begin` marks the gathered conditions,
+// `prop_end` conjoins those gathered since onto the term and drops them.
+func:prop_begin = int64(Encoder->:e) never fails {
+    e.in_prop = e.in_prop + 1i32;
+    pass e.pfacts.count;
+};
+
+func:prop_end = Term(Encoder->:e, int64:mark, Term:c) never fails {
+    e.in_prop = e.in_prop - 1i32;
+    Term:acc = raw term_copy(c);
+    if (acc.ok && acc.is_bool) {
+        for (int64:i in mark...e.pfacts.count) {
+            acc = raw term_app2("and", e.pfacts.items[i], acc, true);
+        }
+    }
+    e.pfacts.count = mark;
+    pass acc;
 };
 
 // A hypothesis in a NAMED region (1.5.4 step 2): the guarded re-push writes
@@ -407,6 +517,11 @@ func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
         drop list_push(@one, idx);
         drop hyp_push(e, raw smt_range_axiom(text, raw word_bits(e, ty),
                                               raw word_signed(e, ty)), one);
+    }
+    if (raw is_twisted(e, ty)) {
+        List<int32>:one2 = raw list_init::<int32>(1i64);
+        drop list_push(@one2, idx);
+        drop hyp_push(e, raw twisted_axiom(e, text, ty), one2);
     }
     pass idx;
 };
@@ -438,7 +553,7 @@ func:sym_new_fun = int32(Encoder->:e, string:text, string:sorts, bool:ret_bool) 
 
 // A fresh anonymous opaque symbol of an int or bool type, as a term.
 func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
-    if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
     e.anon = e.anon + 1i32;
     string:nm = raw smt_sym("_", e.anon => int64);
     int32:idx = raw sym_new(e, nm, ty);
@@ -449,6 +564,24 @@ func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
 
 func:term_none = Term() never fails {
     pass Term{ ok: false, is_bool: false, text: "", syms: raw list_init::<int32>(1i64) };
+};
+
+// A FRESH SYMBOL WITH NO AXIOM, defined equal to a term (1.5.4b step 2): the
+// twisted operations name a raw result before the saturation test reads it
+// three times, and the raw result may lie OUTSIDE the type's range -- that
+// is what the test decides -- so a typed symbol's axiom would be a false
+// hypothesis. Int-sorted; never a Bool.
+func:term_name = Term(Encoder->:e, Term:t) never fails {
+    if (!(t.ok && (!t.is_bool))) { pass (raw term_none()); }
+    e.anon = e.anon + 1i32;
+    string:nm = raw smt_sym("_", e.anon => int64);
+    SmtSym:s = SmtSym{ text: string_concat(nm, ""), is_bool: false, sorts: "" };
+    drop list_push(@e.syms, move(s));
+    int32:idx = (e.syms.count - 1i64) =>! int32;
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, idx);
+    drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
+    pass Term{ ok: true, is_bool: false, text: move(nm), syms: move(one) };
 };
 
 func:term_lit = Term(string:text, bool:is_bool) never fails {
@@ -524,7 +657,7 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
                        bool:substitution) never fails {
     int32:sym = 0i32 - 1i32;
-    bool:named = (raw is_word(e, ty)) || (raw is_bool(e, ty));   // a flag word is named too (D-279)
+    bool:named = (raw is_scalar(e, ty)) || (raw is_bool(e, ty));   // a flag word (D-279) and a twisted value (D-278) are named too
     if ((!substitution) && (raw is_escaped(e, name))) { named = false; }
     if (named) {
         string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
@@ -550,7 +683,7 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     int64:i = raw bind_find(e, name);
     if (i < 0i64) { pass NIL; }
     int32:ty = e.binds.items[i].type_id;
-    if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
+    if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
     if (raw is_escaped(e, name)) { pass NIL; }
     string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
     int32:sym = raw sym_new(e, nm, ty);
@@ -573,7 +706,7 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         int64:i = raw bind_find(e, names.items[k]);
         if (i < 0i64) { continue; }
         int32:ty = e.binds.items[i].type_id;
-        if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { continue; }
+        if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { continue; }
         if (raw is_escaped(e, names.items[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
                                 raw version_next(e, names.items[k]));
@@ -673,12 +806,15 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
     if (!tb.ok) { tb = raw term_opaque(e, lt); }
     string:zero = raw smt_app1("not", raw smt_app2("=", tb.text, "0"));
     drop record(e, raw OK_DIV_ZERO(), zero, tb.syms, raw SITE_EXPR(), site, at, true);
+    // Inside a proposition the pair's conditions are the proposition's (DEF-33).
+    if (e.in_prop > 0i32) { drop prop_fact(e, zero, tb.syms); }
     if (raw type_is_signed(e.types, lt)) {
         string:mn = raw smt_int_min(raw type_int_bits(e.types, lt));
         string:both = raw smt_app2("and", raw smt_app2("=", ta.text, mn),
                                    raw smt_app2("=", tb.text, "(- 1)"));
         drop record(e, raw OK_DIV_MIN(), raw smt_app1("not", both),
                     raw syms_union(ta.syms, tb.syms), raw SITE_EXPR(), site, at, true);
+        if (e.in_prop > 0i32) { drop prop_fact(e, raw smt_app1("not", both), raw syms_union(ta.syms, tb.syms)); }
     }
     pass NIL;
 };
@@ -693,6 +829,15 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
 // need saying because a division's value is defined by its own guard.
 func:record_shift = NIL(Encoder->:e, int32:lt, Term:b, ExprId:amount, int32:site,
                         Span:at) never fails {
+    // INSIDE A PROPOSITION THE CONDITION IS THE PROPOSITION'S (DEF-33,
+    // 1.5.4b step 2), gathered by `prop_fact`, never pushed: this function
+    // pushed its goal wherever it ran from step 0 until here, so a `requires
+    // n < 32` beside a `(x << n)` in the same contract had its bound
+    // ASSUMED -- in the caller's context at a call-site row, and in the
+    // entry row's own cone at the callee, where the check that runs the
+    // guard is what the row's discharge removes. The row is still recorded
+    // where the encoding is loud (an entry, a seam, a head: the guard is
+    // lowered in the check), and suppressed under quiet (L-1).
     ExprNode:an = raw ast_expr(e.ast, amount);
     if (an.kind == ExprKind.ExprIntLiteral) { pass NIL; }
     Term:tb = raw term_copy(b);
@@ -705,8 +850,341 @@ func:record_shift = NIL(Encoder->:e, int32:lt, Term:b, ExprId:amount, int32:site
     string:goal = raw smt_app2("and", raw smt_app2(">=", tb.text, "0"),
                                raw smt_app2("<", tb.text, w));
     drop record(e, raw OK_SHIFT_RANGE(), goal, tb.syms, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, tb.syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
     drop hyp_push(e, goal, tb.syms);
     pass NIL;
+};
+
+// THE `err-exit` ROW (D-278, 1.5.4b step 2): the `TbbErr` guard's own
+// condition -- neither operand ERR at a comparison, the operand not ERR at a
+// cast out of its family, the value inside the target's range at a checked
+// crossing into or within one -- and the fact a hypothesis after the site,
+// as `shift-range`'s is (every continuing path passed the trap); inside a
+// proposition the condition is the proposition's (DEF-33, above).
+func:record_err_exit = NIL(Encoder->:e, string:goal, List<int32>:syms, int32:site, Span:at) never fails {
+    drop record(e, raw OK_ERR_EXIT(), goal, syms, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, syms);
+    pass NIL;
+};
+
+// A `TbbErr` guard over a value the walk has no term for -- a `frac`, a
+// tfp-element `complex`, a float crossing into a twisted family: the row
+// exists (P-12), `unencoded` (L-6); step 3 gives the float crossing its goal.
+func:record_unencoded_err_exit = NIL(Encoder->:e, int32:site, Span:at) never fails {
+    List<int32>:none = raw list_init::<int32>(1i64);
+    drop record(e, raw OK_ERR_EXIT(), "", none, raw SITE_EXPR(), site, at, false);
+    if (e.in_prop > 0i32) { drop prop_opaque(e); }
+    pass NIL;
+};
+
+// --- the twisted kinds (D-278, 1.5.4b step 2) ----------------------------------------------
+//
+// EVERY OPERATION IS THE EMITTER'S SHAPE (1.3.2, 1.3.4; `emit_arith_value`):
+// any ERR operand makes ERR (`taint`); `+`, `-` and `tbb`'s `*` saturate to
+// ERR outside the valid range (a result landing ON the sentinel is ERR by
+// the same test -- `LO` is `MIN + 1`); `tfp`'s `*` is the floor of the
+// product scaled down by 2^F (`div` by a positive numeral IS the `ashr`),
+// its `/` the truncating quotient of the dividend scaled up (`npk_sdiv`),
+// each narrowed by the same range test; `/` and `%` at the same scale make
+// ERR of a zero divisor and are in range by construction (`tbb_divlike`);
+// the ternary kinds compute the same way against their balanced bounds, and
+// their single-digit `&`/`|` are min/max (D-197). Each raw result is NAMED
+// once (`term_name`) before the test reads it. A comparison records the
+// `err-exit` row first (the trap precedes the compare) and is then the plain
+// Int predicate. A twisted division records no row: it never traps.
+
+// `(or (= a MIN) (= b MIN))`.
+func:tw_taint = Term(Encoder->:e, int32:ty, Term:a, Term:b) never fails {
+    string:mn = raw tw_min(e, ty);
+    pass Term{ ok: true, is_bool: true,
+               text: raw smt_app2("or", raw smt_app2("=", a.text, mn), raw smt_app2("=", b.text, mn)),
+               syms: raw syms_union(a.syms, b.syms) };
+};
+
+// `(ite bad MIN v)` with `v` named once.
+func:tw_pick = Term(Encoder->:e, int32:ty, Term:bad, Term:v) never fails {
+    Term:nv = raw term_name(e, v);
+    if (!nv.ok) { pass (raw term_none()); }
+    pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", bad.text, raw tw_min(e, ty), nv.text),
+               syms: raw syms_union(bad.syms, nv.syms) };
+};
+
+// The saturation: ERR when tainted or when the named raw value leaves the
+// type's valid range.
+func:tw_sat = Term(Encoder->:e, int32:ty, Term:taint, Term:v) never fails {
+    Term:nv = raw term_name(e, v);
+    if (!nv.ok) { pass (raw term_none()); }
+    Term:lo = raw term_lit(raw tw_lo(e, ty), false);
+    Term:hi = raw term_lit(raw tw_hi(e, ty), false);
+    Term:oor = raw term_app2("or", raw term_app2("<", nv, lo, true), raw term_app2(">", nv, hi, true), true);
+    Term:bad = raw term_app2("or", taint, oor, true);
+    pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", bad.text, raw tw_min(e, ty), nv.text),
+               syms: raw syms_union(bad.syms, nv.syms) };
+};
+
+// "Out of the range whose magnitude is `hi`": both sides for a signed
+// source, the top alone for an unsigned one -- the cast matrix's entry test.
+func:tw_oor = Term(Encoder->:e, Term:a, string:hi, bool:signed) never fails {
+    Term:above = raw term_app2(">", a, raw term_lit(string_concat(hi, ""), false), true);
+    if (!signed) { pass above; }
+    Term:below = raw term_app2("<", a, raw term_lit(raw smt_app1("-", hi), false), true);
+    pass (raw term_app2("or", above, below, true));
+};
+
+func:tw_is_cmp = bool(TokenKind:op) never fails {
+    if ((op == TokenKind.OpEqEq) || (op == TokenKind.OpNotEq)) { pass true; }
+    if ((op == TokenKind.OpLt) || (op == TokenKind.OpLtEq)) { pass true; }
+    pass ((op == TokenKind.OpGt) || (op == TokenKind.OpGtEq));
+};
+
+func:enc_twisted_binary = Term(Encoder->:e, TokenKind:op, int32:lt, int32:ty, Term:a, Term:b,
+                               int32:site, Span:at) never fails {
+    Term:ta = raw term_copy(a);
+    Term:tb = raw term_copy(b);
+    if (!ta.ok) { ta = raw term_opaque(e, lt); }
+    if (!tb.ok) { tb = raw term_opaque(e, lt); }
+    if (!(ta.ok && tb.ok)) { pass (raw term_opaque(e, ty)); }
+    if (ta.is_bool || tb.is_bool) { pass (raw term_opaque(e, ty)); }
+    if (raw tw_is_cmp(op)) {
+        string:mn = raw tw_min(e, lt);
+        string:goal = raw smt_app2("and", raw smt_app1("not", raw smt_app2("=", ta.text, mn)),
+                                   raw smt_app1("not", raw smt_app2("=", tb.text, mn)));
+        drop record_err_exit(e, goal, raw syms_union(ta.syms, tb.syms), site, at);
+        if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", ta, tb, true)); }
+        if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", ta, tb, true)); }
+        if (op == TokenKind.OpLt)    { pass (raw term_app2("<", ta, tb, true)); }
+        if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", ta, tb, true)); }
+        if (op == TokenKind.OpGt)    { pass (raw term_app2(">", ta, tb, true)); }
+        pass (raw term_app2(">=", ta, tb, true));
+    }
+    Term:taint = raw tw_taint(e, lt, ta, tb);
+    int32:k = raw type_kind(e.types, lt);
+    bool:q = ((k == (raw TY_TFP())) || (k == (raw TY_DIM())));
+    if ((k == (raw TY_TERN())) && ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe))) {
+        string:kord = "<";
+        if (op == TokenKind.OpPipe) { kord = ">"; }
+        Term:kv = Term{ ok: true, is_bool: false,
+                        text: raw smt_app3("ite", raw smt_app2(kord, ta.text, tb.text), ta.text, tb.text),
+                        syms: raw syms_union(ta.syms, tb.syms) };
+        pass (raw tw_pick(e, lt, taint, kv));
+    }
+    if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
+        Term:zero = raw term_app2("=", tb, raw term_lit("0", false), true);
+        Term:bad = raw term_app2("or", taint, zero, true);
+        e.uses_sdiv = true;
+        e.nonlinear = true;
+        if (op == TokenKind.OpPercent) { pass (raw tw_pick(e, lt, bad, raw term_app2("npk_srem", ta, tb, false))); }
+        if (!q) { pass (raw tw_pick(e, lt, bad, raw term_app2("npk_sdiv", ta, tb, false))); }
+        Term:up = raw term_app2("*", ta, raw tw_pow2f(e, lt), false);
+        pass (raw tw_sat(e, lt, bad, raw term_app2("npk_sdiv", up, tb, false)));
+    }
+    if (op == TokenKind.OpPlus)  { pass (raw tw_sat(e, lt, taint, raw term_app2("+", ta, tb, false))); }
+    if (op == TokenKind.OpMinus) { pass (raw tw_sat(e, lt, taint, raw term_app2("-", ta, tb, false))); }
+    if (op == TokenKind.OpStar) {
+        if (!((raw term_is_numeral(ta)) || (raw term_is_numeral(tb)))) { e.nonlinear = true; }
+        Term:prod = raw term_app2("*", ta, tb, false);
+        if (!q) { pass (raw tw_sat(e, lt, taint, prod)); }
+        pass (raw tw_sat(e, lt, taint, raw term_app2("div", prod, raw tw_pow2f(e, lt), false)));
+    }
+    pass (raw term_opaque(e, ty));
+};
+
+// A TWISTED LITERAL: a `tbb` or ternary literal is its value (the checker
+// held it in range); a `tfp`/`dim256` literal is its exact Q value through
+// the one conversion the checker range-tested and the emitter spells
+// (`tfp_q_decimal`, D-195), from the integer payload or the kept text.
+func:twisted_int_literal = Term(Encoder->:e, int64:v, int32:ty) never fails {
+    int32:k = raw type_kind(e.types, ty);
+    if ((k == (raw TY_TFP())) || (k == (raw TY_DIM()))) {
+        pass (raw twisted_text_literal(e, int_to_string(v), ty));
+    }
+    pass (raw term_lit(raw smt_int(v), false));
+};
+
+func:twisted_text_literal = Term(Encoder->:e, string:text, int32:ty) never fails {
+    string:q = raw tfp_q_decimal(text, raw type_int_bits(e.types, ty));
+    if (q.len == 0i64) { pass (raw term_none()); }
+    pass (raw term_lit(move(q), false));
+};
+
+// A VALUE READ AS THE TARGET WORD -- the `trunc`/`sext` a leaving cast ends
+// with: the identity where the target is signed and at least `need` bits
+// wide (the value fits by construction), else the two's-complement pattern
+// at the target's width, re-signed as the target reads it.
+func:wrap_word = Term(Encoder->:e, int32:to, Term:v, int32:need) never fails {
+    int32:wb = raw word_bits(e, to);
+    if ((raw word_signed(e, to)) && (wb >= need)) { pass (raw term_copy(v)); }
+    Term:nv = raw term_name(e, v);
+    if (!nv.ok) { pass (raw term_none()); }
+    string:full = raw pow2_decimal(wb => int64);
+    Term:m = raw term_app2("mod", nv, raw term_lit(string_concat(full, ""), false), false);
+    if (!(raw word_signed(e, to))) { pass m; }
+    Term:nm = raw term_name(e, m);
+    if (!nm.ok) { pass (raw term_none()); }
+    string:half = raw pow2_decimal((wb => int64) - 1i64);
+    pass Term{ ok: true, is_bool: false,
+               text: raw smt_app3("ite", raw smt_app2(">=", nm.text, half), raw smt_app2("-", nm.text, full), nm.text),
+               syms: raw syms_union(nm.syms, raw list_init::<int32>(1i64)) };
+};
+
+// A CAST WITHIN A FAMILY (D-144 as amended, D-195, D-197): the sentinel
+// maps across widths (`(ite (= a MIN_s) MIN_d v)`); a narrowing `=>` traps a
+// valid value outside the target's range (the row: ERR, or in range) and
+// `=>!` absorbs it as ERR; a `tfp` widens by 2^dF and narrows by the floor
+// of the scale-down, out-of-range ERR under both spellings.
+func:twisted_within = Term(Encoder->:e, Term:a, int32:from, int32:to, bool:unchecked,
+                           int32:site, Span:at) never fails {
+    int32:sk = raw type_kind(e.types, from);
+    string:mnd = raw tw_min(e, to);
+    Term:iserr = Term{ ok: true, is_bool: true, text: raw smt_app2("=", a.text, raw tw_min(e, from)),
+                       syms: raw syms_union(a.syms, raw list_init::<int32>(1i64)) };
+    if ((sk == (raw TY_TFP())) || (sk == (raw TY_DIM()))) {
+        int32:sb = raw type_int_bits(e.types, from);
+        int32:db = raw type_int_bits(e.types, to);
+        if (db > sb) {
+            Term:up = raw term_app2("*", a, raw term_lit(raw pow2_decimal(((db - sb) / 2i32) => int64), false), false);
+            pass (raw tw_pick(e, to, iserr, up));
+        }
+        if (db < sb) {
+            Term:down = raw term_app2("div", a, raw term_lit(raw pow2_decimal(((sb - db) / 2i32) => int64), false), false);
+            pass (raw tw_sat(e, to, iserr, down));
+        }
+        pass (raw term_copy(a));
+    }
+    bool:narrow = false;
+    if (sk == (raw TY_TBB())) { narrow = ((raw type_int_bits(e.types, to)) < (raw type_int_bits(e.types, from))); }
+    else { narrow = ((raw tw_bound(e, to)) < (raw tw_bound(e, from))); }
+    if (!narrow) { pass (raw tw_pick(e, to, iserr, a)); }
+    Term:lo = raw term_lit(raw tw_lo(e, to), false);
+    Term:hi = raw term_lit(raw tw_hi(e, to), false);
+    Term:oor = raw term_app2("or", raw term_app2("<", a, lo, true), raw term_app2(">", a, hi, true), true);
+    if (!unchecked) {
+        string:goal = raw smt_app2("or", iserr.text, raw smt_app1("not", oor.text));
+        drop record_err_exit(e, goal, raw syms_union(iserr.syms, oor.syms), site, at);
+        pass (raw tw_pick(e, to, iserr, a));
+    }
+    pass (raw tw_pick(e, to, raw term_app2("or", iserr, oor, true), a));
+};
+
+// A CAST TOUCHING A TWISTED FAMILY: the matrix's value maps as terms and its
+// `TbbErr` guards as `err-exit` rows (`emit_tbb_cast`/`emit_tfp_cast`/
+// `emit_tern_cast`, mirrored). LEAVING: the row `(not (= a MIN))` under both
+// spellings; the value the operand's integer (a `tfp`'s truncated toward
+// zero) as the target word reads it; a float target has no term (step 3).
+// ENTERING from an integer: a source that can exceed the target's range
+// traps under `=>` (the row: in range) and absorbs under `=>!`; a `tfp`
+// scales up and absorbs under both. From a float: the guard's row
+// `unencoded` (the float has no term until step 3), the value opaque.
+// `dim256` and `tfp256` are one term (a relabel, D-196). `term_none` for a
+// cast that is not this family's.
+func:twisted_cast = Term(Encoder->:e, Term:t, int32:from, int32:to, bool:unchecked,
+                         int32:site, Span:at) never fails {
+    if ((from == 0i32) || (to == 0i32)) { pass (raw term_none()); }
+    // THE `frac` MATRIX'S GUARDS (D-198): leaving the family traps ERR under
+    // both spellings over an aggregate the walk has no term for -- the row
+    // `unencoded`; a checked entry from an integer that can exceed the
+    // component's balanced bound traps out of range -- the row over the
+    // integer's term, as `tbb`'s entry below. A frac-to-frac cast absorbs.
+    if ((raw type_kind(e.types, from)) == (raw TY_FRAC())) {
+        if ((raw type_kind(e.types, to)) != (raw TY_FRAC())) { drop record_unencoded_err_exit(e, site, at); }
+        pass (raw term_none());
+    }
+    if ((raw type_kind(e.types, to)) == (raw TY_FRAC())) {
+        if ((!unchecked) && (raw is_int(e, from))) {
+            Term:fa = raw term_copy(t);
+            if (!(fa.ok && (!fa.is_bool))) { fa = raw term_opaque(e, from); }
+            bool:fsig = raw type_is_signed(e.types, from);
+            int32:fsw = raw type_int_bits(e.types, from);
+            int32:fdb = raw type_int_bits(e.types, to);
+            bool:ffits = false;
+            if (fsw < 63i32) {
+                int64:fsmax = raw pow2_int64(fsw - 1i32);
+                if (!fsig) { fsmax = (raw pow2_int64(fsw)) - 1i64; }
+                if (fdb >= 63i32) { ffits = true; }
+                else { if (fsmax <= ((raw pow2_int64(fdb - 1i32)) - 1i64)) { ffits = true; } }
+            }
+            if (fa.ok && (!ffits)) {
+                Term:foor = raw tw_oor(e, fa, raw pow2_minus_one_decimal((fdb => int64) - 1i64), fsig);
+                drop record_err_exit(e, raw smt_app1("not", foor.text), foor.syms, site, at);
+            }
+        }
+        pass (raw term_none());
+    }
+    bool:tf = raw is_twisted(e, from);
+    bool:tt = raw is_twisted(e, to);
+    if (!(tf || tt)) { pass (raw term_none()); }
+    int32:sk = raw type_kind(e.types, from);
+    int32:dk = raw type_kind(e.types, to);
+    Term:a = raw term_copy(t);
+    if (!(a.ok && (!a.is_bool))) {
+        a = raw term_none();
+        if (raw is_scalar(e, from)) { a = raw term_opaque(e, from); }
+    }
+    bool:relabel = ((sk == (raw TY_DIM())) && (dk == (raw TY_TFP())));
+    if ((sk == (raw TY_TFP())) && (dk == (raw TY_DIM()))) { relabel = true; }
+    if (relabel) {
+        if (a.ok) { pass a; }
+        pass (raw term_opaque(e, to));
+    }
+    if (tf && tt) {
+        if (!a.ok) { pass (raw term_opaque(e, to)); }
+        pass (raw twisted_within(e, a, from, to, unchecked, site, at));
+    }
+    if (tf) {
+        if (!a.ok) { pass (raw term_opaque(e, to)); }
+        drop record_err_exit(e, raw smt_app1("not", raw smt_app2("=", a.text, raw tw_min(e, from))), a.syms, site, at);
+        if (!(raw is_word(e, to))) { pass (raw term_none()); }
+        Term:v = raw term_copy(a);
+        int32:need = raw type_int_bits(e.types, from);
+        if ((sk == (raw TY_TFP())) || (sk == (raw TY_DIM()))) {
+            Term:p2 = raw tw_pow2f(e, from);
+            Term:pos = raw term_app2("div", a, p2, false);
+            Term:neg = raw term_app2("div", raw term_app2("-", raw term_lit("0", false), a, false), p2, false);
+            v = Term{ ok: true, is_bool: false,
+                      text: raw smt_app3("ite", raw smt_app2(">=", a.text, "0"), pos.text, raw smt_app2("-", "0", neg.text)),
+                      syms: raw syms_union(a.syms, raw list_init::<int32>(1i64)) };
+            need = need / 2i32;
+        }
+        pass (raw wrap_word(e, to, v, need));
+    }
+    if (sk == (raw TY_FLOAT())) {
+        bool:absorbs = ((dk == (raw TY_TFP())) || (dk == (raw TY_DIM())));
+        if ((!unchecked) && (!absorbs)) { drop record_unencoded_err_exit(e, site, at); }
+        pass (raw term_opaque(e, to));
+    }
+    if (!(raw is_int(e, from))) { pass (raw term_none()); }
+    if (!a.ok) { pass (raw term_opaque(e, to)); }
+    string:mnd = raw tw_min(e, to);
+    bool:ssig = raw type_is_signed(e.types, from);
+    int32:sw = raw type_int_bits(e.types, from);
+    if ((dk == (raw TY_TFP())) || (dk == (raw TY_DIM()))) {
+        int32:fb = (raw type_int_bits(e.types, to)) / 2i32;
+        Term:scaled = raw term_app2("*", a, raw tw_pow2f(e, to), false);
+        if (sw < fb) { pass scaled; }
+        Term:oor = raw tw_oor(e, a, raw pow2_minus_one_decimal((fb => int64) - 1i64), ssig);
+        pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", oor.text, mnd, scaled.text),
+                   syms: raw syms_union(oor.syms, scaled.syms) };
+    }
+    bool:fits = false;
+    if (dk == (raw TY_TBB())) { fits = (sw < (raw type_int_bits(e.types, to))); }
+    else {
+        if (sw < 63i32) {
+            int64:smax = raw pow2_int64(sw - 1i32);
+            if (!ssig) { smax = (raw pow2_int64(sw)) - 1i64; }
+            if (smax <= (raw tw_bound(e, to))) { fits = true; }
+        }
+    }
+    if (fits) { pass a; }
+    Term:oor2 = raw tw_oor(e, a, raw tw_hi(e, to), ssig);
+    if (!unchecked) {
+        drop record_err_exit(e, raw smt_app1("not", oor2.text), oor2.syms, site, at);
+        pass a;
+    }
+    pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", oor2.text, mnd, a.text),
+               syms: raw syms_union(oor2.syms, a.syms) };
 };
 
 // --- bitwise operations: the Int forms and the bounded crossing (D-279, D-280) ------------
@@ -903,12 +1381,15 @@ func:flag_word_cast = Term(Encoder->:e, Term:t, int32:from, int32:to) never fail
 func:record_unencoded_shift = NIL(Encoder->:e, int32:site, Span:at) never fails {
     List<int32>:none = raw list_init::<int32>(1i64);
     drop record(e, raw OK_SHIFT_RANGE(), "", none, raw SITE_EXPR(), site, at, false);
+    if (e.in_prop > 0i32) { drop prop_opaque(e); }
     pass NIL;
 };
 
-// A `limit` write point whose rule the encoder does not yet express (1.5.2
-// step 2; P-12): the row exists from the first commit that emits the guard,
-// so the manifest stays an inventory of guards; step 3 give_terms it a goal.
+// A `limit` write point whose subject has no term (1.5.2 step 2; P-12; L-6):
+// the row exists from the first commit that emits the guard, so the manifest
+// stays an inventory of guards. A twisted subject has a term since 1.5.4b
+// step 2 (D-278); a float subject takes its term at step 3; a string, a
+// struct or an array subject stays here.
 func:record_limit_unencoded = NIL(Encoder->:e, int32:space, int32:site, Span:at) never fails {
     List<int32>:none = raw list_init::<int32>(1i64);
     drop record(e, raw OK_LIMIT(), "", none, space, site, at, false);
@@ -991,7 +1472,8 @@ func:clause_opaque = Term(Encoder->:e, DeclNode:d, int32:j) never fails {
 // to the subject. `term_none` only when the SUBJECT has no term (a type
 // outside the fragment); an inexpressible clause is an opaque conjunct. The
 // clauses are encoded QUIET: a guard inside one is the predicate function's
-// own site and is recorded there (L-1), never here.
+// own site and is recorded there (L-1), never here -- and its CONDITION is
+// the clause's (DEF-33): `$ != 0tbb32` holds only where `$` is not ERR.
 func:enc_rule = Term(Encoder->:e, int32:rule, Term:subject, int32:fuel) never fails {
     if (fuel <= 0i32) { pass (raw term_none()); }
     if (!subject.ok) { pass (raw term_none()); }
@@ -1012,7 +1494,8 @@ func:enc_rule = Term(Encoder->:e, int32:rule, Term:subject, int32:fuel) never fa
         Term:saved = raw term_copy(e.subject);
         e.subject = raw term_copy(subject);
         e.quiet = e.quiet + 1i32;
-        Term:c = raw enc_expr(e, raw rule_clause(e.ast, d, j));
+        int64:pm = raw prop_begin(e);
+        Term:c = raw prop_end(e, pm, raw enc_expr(e, raw rule_clause(e.ast, d, j)));
         e.quiet = e.quiet - 1i32;
         e.subject = move(saved);
         if (!(c.ok && c.is_bool)) { c = raw clause_opaque(e, d, j); }
@@ -1197,10 +1680,14 @@ func:record_subsume_ce = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce, int
         List<int32>:none = raw list_init::<int32>(1i64);
         drop record_at(e, raw OK_LIMIT_SUBSUME(), "", none, raw SITE_EXPR(), id.index, n.span, false,
                        role, id.index, 0i32);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
         pass NIL;
     }
     drop record_at(e, raw OK_LIMIT_SUBSUME(), acc.text, acc.syms, raw SITE_EXPR(), id.index, n.span, true,
                    role, id.index, 0i32);
+    // A call inside a proposition: the callee's entry check is a guard of
+    // the proposition's evaluation (DEF-33).
+    if (e.in_prop > 0i32) { drop prop_fact(e, acc.text, acc.syms); }
     pass NIL;
 };
 
@@ -1218,10 +1705,12 @@ func:record_requires = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce, int32
         List<int32>:none = raw list_init::<int32>(1i64);
         drop record_at(e, raw OK_REQUIRES(), "", none, raw SITE_EXPR(), id.index, n.span, false,
                        role, id.index, 0i32);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
         pass NIL;
     }
     drop record_at(e, raw OK_REQUIRES(), g.text, g.syms, raw SITE_EXPR(), id.index, n.span, true,
                    role, id.index, 0i32);
+    if (e.in_prop > 0i32) { drop prop_fact(e, g.text, g.syms); }
     pass NIL;
 };
 
@@ -1249,14 +1738,14 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     if (ce.coroutine) { pass (raw term_none()); }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if (!(raw fn_is_pure_never_fails(e, cdn))) { pass (raw term_none()); }
-    if (!((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
     string:sorts = "(";
     string:app = "";
     List<int32>:syms = raw list_init::<int32>(4i64);
     for (int64:i in 0i64...ce.terms.count) {
         if (!ce.terms.items[i].ok) { pass (raw term_none()); }
         int32:pt = ce.types.items[i];
-        if (!((raw is_int(e, pt)) || (raw is_bool(e, pt)))) { pass (raw term_none()); }
+        if (!((raw is_scalar(e, pt)) || (raw is_bool(e, pt)))) { pass (raw term_none()); }
         if (ce.terms.items[i].is_bool != (raw is_bool(e, pt))) { pass (raw term_none()); }
         if (i > 0i64) { sorts = string_concat(sorts, " "); app = string_concat(app, " "); }
         if (raw is_bool(e, pt)) { sorts = string_concat(sorts, "Bool"); }
@@ -1277,6 +1766,7 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
         drop hyp_push(e, raw smt_range_axiom(text, raw word_bits(e, ty),
                                               raw word_signed(e, ty)), syms);
     }
+    if (raw is_twisted(e, ty)) { drop hyp_push(e, raw twisted_axiom(e, text, ty), syms); }
     pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(text), syms: move(syms) };
 };
 
@@ -1321,7 +1811,8 @@ func:contract_conj = Term(Encoder->:e, DeclNode:d, int32:kind, bool:partial) nev
         if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
         if ((raw contract_kind(cv)) != kind) { continue; }
         saw_any = true;
-        Term:c = raw enc_expr(e, raw contract_cond(cv));
+        int64:pm = raw prop_begin(e);
+        Term:c = raw prop_end(e, pm, raw enc_expr(e, raw contract_cond(cv)));
         if (!(c.ok && c.is_bool)) {
             if (partial) { continue; }
             pass (raw term_none());
@@ -1341,7 +1832,8 @@ func:invariant_conj = Term(Encoder->:e, VerifyId:inv, bool:partial) never fails 
     Term:acc = raw term_none();
     bool:first = true;
     for (int32:i in 0i32...(raw invariant_count(v))) {
-        Term:c = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, v.b, i) });
+        int64:pm = raw prop_begin(e);
+        Term:c = raw prop_end(e, pm, raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, v.b, i) }));
         if (!(c.ok && c.is_bool)) {
             if (partial) { continue; }
             pass (raw term_none());
@@ -1903,6 +2395,15 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
 // truncating definitions, P-17; a `/=` or `%=` records its division first).
 // The caller records the write point AFTER this (L-7's order).
 // The plain operator behind a bitwise compound assignment, or the operator itself.
+func:arith_base = TokenKind(TokenKind:op) never fails {
+    if (op == TokenKind.OpPlusAssign)    { pass TokenKind.OpPlus; }
+    if (op == TokenKind.OpMinusAssign)   { pass TokenKind.OpMinus; }
+    if (op == TokenKind.OpStarAssign)    { pass TokenKind.OpStar; }
+    if (op == TokenKind.OpSlashAssign)   { pass TokenKind.OpSlash; }
+    if (op == TokenKind.OpPercentAssign) { pass TokenKind.OpPercent; }
+    pass (raw bitwise_base(op));
+};
+
 func:bitwise_base = TokenKind(TokenKind:op) never fails {
     if (op == TokenKind.OpAmpAssign)   { pass TokenKind.OpAmp; }
     if (op == TokenKind.OpPipeAssign)  { pass TokenKind.OpPipe; }
@@ -1920,6 +2421,12 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     int64:bi = raw bind_find(e, name);
     int32:lt = 0i32;
     if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
+    // A TWISTED COMPOUND (D-278): the one twisted encoder, as `x = x op v`.
+    if (raw is_twisted(e, lt)) {
+        TokenKind:tbop = raw arith_base(op);
+        drop bind_assign(e, name, raw enc_twisted_binary(e, tbop, lt, lt, prior, rhs, target.index, s.span));
+        pass NIL;
+    }
     if (!(raw is_word(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
     // THE BITWISE COMPOUNDS (D-279, D-277): `x op= v` IS `x = x op v`, through
     // the one bitwise encoder -- the shift's row recorded there, the Int forms
@@ -1974,6 +2481,7 @@ func:record_unencoded_division = NIL(Encoder->:e, int32:elem, int32:site, Span:a
             drop record(e, raw OK_DIV_MIN(), "", none, raw SITE_EXPR(), site, at, false);
         }
     }
+    if (e.in_prop > 0i32) { drop prop_opaque(e); }
     pass NIL;
 };
 
@@ -2071,6 +2579,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     int32:ty = raw ty_of(e, id);
 
     if (n.kind == ExprKind.ExprIntLiteral) {
+        if (raw is_twisted(e, ty)) { pass (raw twisted_int_literal(e, n.payload, ty)); }
         if (!(raw is_int(e, ty))) { pass (raw term_none()); }
         if (raw type_is_signed(e.types, ty)) { pass (raw term_lit(raw smt_int(n.payload), false)); }
         pass (raw term_lit(raw u64_decimal(n.payload =>! uint64), false));
@@ -2078,6 +2587,20 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprBoolLiteral) {
         if (n.payload != 0i64) { pass (raw term_lit("true", true)); }
         pass (raw term_lit("false", true));
+    }
+    // A `tfp`/`dim256` literal in the fractional form (D-278); a float's
+    // literal has no term until step 3.
+    if (n.kind == ExprKind.ExprFloatLiteral) {
+        if (raw is_twisted(e, ty)) {
+            pass (raw twisted_text_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
+        }
+        pass (raw term_none());
+    }
+    // `ERR` (D-008) at a twisted type is the sentinel; `NIL`, `NULL` and an
+    // aggregate family's ERR (a `complex`, a `frac`) have no term.
+    if (n.kind == ExprKind.ExprSentinelLiteral) {
+        if ((n.payload >= 2i64) && (raw is_twisted(e, ty))) { pass (raw term_lit(raw tw_min(e, ty), false)); }
+        pass (raw term_none());
     }
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         int64:bi = raw bind_find(e, n.payload =>! int32);
@@ -2148,6 +2671,11 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                 pass (raw term_opaque(e, ty));
             }
         }
+        // A TWISTED OPERAND (D-278): the operations as the emitter's `ite`
+        // shapes, a comparison the `err-exit` row.
+        if (raw is_twisted(e, lt)) {
+            pass (raw enc_twisted_binary(e, op, lt, ty, a, b, id.index, n.span));
+        }
         if (raw is_int(e, lt)) {
             bool:divlike = ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent));
             if (divlike) {
@@ -2187,13 +2715,24 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             pass (raw term_opaque(e, ty));
         }
         if (lt != 0i32) {
-            if ((raw type_kind(e.types, lt)) == (raw TY_SIMD())) {
+            int32:lk = raw type_kind(e.types, lt);
+            if (lk == (raw TY_SIMD())) {
                 if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
                     drop record_unencoded_division(e, raw type_elem(e.types, lt), id.index, n.span);
                 }
                 if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
                     drop record_unencoded_shift(e, id.index, n.span);
                 }
+            }
+            // A `frac` or a tfp-element `complex` comparison traps on ERR too
+            // (D-198, D-199), over an aggregate the walk has no term for: its
+            // `err-exit` row is `unencoded` (L-6).
+            if (((lk == (raw TY_FRAC())) || (lk == (raw TY_COMPLEX()))) && (raw tw_is_cmp(op))) {
+                bool:taints = true;
+                if (lk == (raw TY_COMPLEX())) {
+                    taints = ((raw type_kind(e.types, raw type_elem(e.types, lt))) == (raw TY_TFP()));
+                }
+                if (taints) { drop record_unencoded_err_exit(e, id.index, n.span); }
             }
         }
         pass (raw term_none());
@@ -2204,6 +2743,14 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (!o.ok) { pass (raw term_opaque(e, ty)); }
         if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty)) && (!o.is_bool)) {
             pass (raw term_app2("-", raw term_lit("0", false), o, false));
+        }
+        // A twisted negation (D-008): ERR in, ERR out; `0 - x` is in range
+        // for every valid `x`, the valid range being symmetric.
+        if ((uop == TokenKind.OpMinus) && (raw is_twisted(e, ty)) && (!o.is_bool)) {
+            string:tmn = raw tw_min(e, ty);
+            pass Term{ ok: true, is_bool: false,
+                       text: raw smt_app3("ite", raw smt_app2("=", o.text, tmn), tmn, raw smt_app2("-", "0", o.text)),
+                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
         }
         if ((uop == TokenKind.OpBang) && o.is_bool) {
             pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", o.text),
@@ -2254,6 +2801,8 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (ct.ok && (raw is_int(e, st)) && (raw is_int(e, ty)) && (!ct.is_bool)) { pass ct; }
         Term:fw = raw flag_word_cast(e, ct, st, ty);
         if (fw.ok) { pass fw; }
+        Term:tw = raw twisted_cast(e, ct, st, ty, false, id.index, n.span);
+        if (tw.ok) { pass tw; }
         pass (raw term_opaque(e, ty));
     }
     // `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
@@ -2264,6 +2813,19 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         int32:ust = raw ty_of(e, raw expr_operand(n));
         Term:fw2 = raw flag_word_cast(e, ut, ust, ty);
         if (fw2.ok) { pass fw2; }
+        Term:tw2 = raw twisted_cast(e, ut, ust, ty, true, id.index, n.span);
+        if (tw2.ok) { pass tw2; }
+        pass (raw term_opaque(e, ty));
+    }
+    // `is_err(x)` (D-008 section 5) on a twisted value is `(= x MIN)`; on a
+    // `frac` or a `complex` the look is opaque (their ERR is a pair, L-6).
+    if (n.kind == ExprKind.ExprIsErrExpr) {
+        Term:iet = raw enc_expr(e, raw expr_operand(n));
+        int32:iety = raw ty_of(e, raw expr_operand(n));
+        if (iet.ok && (!iet.is_bool) && (raw is_twisted(e, iety))) {
+            pass Term{ ok: true, is_bool: true, text: raw smt_app2("=", iet.text, raw tw_min(e, iety)),
+                       syms: raw syms_union(iet.syms, raw list_init::<int32>(1i64)) };
+        }
         pass (raw term_opaque(e, ty));
     }
     if (n.kind == ExprKind.ExprMoveExpr) {
@@ -2355,7 +2917,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
         Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
-        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_word(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
+        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
         pass (raw term_opaque(e, ty));
     }
     // Everything else: the value is opaque, the children are still sites.
@@ -2846,6 +3408,13 @@ func:pattern_cond = Term(Encoder->:e, PatNode:p, Term:sel, int32:sel_ty, List<Te
         if (raw pat_range_inclusive(p)) { lt = raw term_app2("<=", sel, hi, true); }
         pass (raw term_app2("and", ge, lt, true));
     }
+    // `ERR:` (D-008 section 5.1): the selector is the sentinel.
+    if (p.kind == PatKind.PatErrPattern) {
+        if (sel.is_bool) { pass (raw term_none()); }
+        if (!(raw is_twisted(e, sel_ty))) { pass (raw term_none()); }
+        pass Term{ ok: true, is_bool: true, text: raw smt_app2("=", sel.text, raw tw_min(e, sel_ty)),
+                   syms: raw syms_union(sel.syms, raw list_init::<int32>(1i64)) };
+    }
     if (p.kind == PatKind.PatWildcard) {
         if (!prior_ok) { pass (raw term_none()); }
         if (prior.count == 0i64) { pass (raw term_lit("true", true)); }
@@ -2871,9 +3440,16 @@ func:enc_pattern_value = Term(Encoder->:e, ExprId:id, int32:sel_ty) never fails 
     if (raw expr_is_none(id)) { pass (raw term_none()); }
     ExprNode:n = raw ast_expr(e.ast, id);
     if (n.kind == ExprKind.ExprIntLiteral) {
+        if (raw is_twisted(e, sel_ty)) { pass (raw twisted_int_literal(e, n.payload, sel_ty)); }
         if (!(raw is_int(e, sel_ty))) { pass (raw term_none()); }
         if (raw type_is_signed(e.types, sel_ty)) { pass (raw term_lit(raw smt_int(n.payload), false)); }
         pass (raw term_lit(raw u64_decimal(n.payload =>! uint64), false));
+    }
+    if (n.kind == ExprKind.ExprFloatLiteral) {
+        if (raw is_twisted(e, sel_ty)) {
+            pass (raw twisted_text_literal(e, raw intern_get(e.interns, n.payload =>! int32), sel_ty));
+        }
+        pass (raw term_none());
     }
     if (n.kind == ExprKind.ExprBoolLiteral) {
         if (!(raw is_bool(e, sel_ty))) { pass (raw term_none()); }
@@ -2885,6 +3461,17 @@ func:enc_pattern_value = Term(Encoder->:e, ExprId:id, int32:sel_ty) never fails 
             ExprNode:o = raw ast_expr(e.ast, raw expr_operand(n));
             if ((o.kind == ExprKind.ExprIntLiteral) && (raw is_int(e, sel_ty)) && (o.payload >= 0i64)) {
                 pass (raw term_lit(raw smt_int(0i64 - o.payload), false));
+            }
+            // A negated twisted literal (D-278): `0 - v`, in range as the
+            // literal was.
+            bool:tlit = ((o.kind == ExprKind.ExprIntLiteral) || (o.kind == ExprKind.ExprFloatLiteral));
+            if (tlit && (raw is_twisted(e, sel_ty))) {
+                Term:pv = raw enc_pattern_value(e, raw expr_operand(n), sel_ty);
+                if (pv.ok && (!pv.is_bool)) {
+                    pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", "0", pv.text),
+                               syms: raw syms_union(pv.syms, raw list_init::<int32>(1i64)) };
+                }
+                pass (raw term_none());
             }
         }
     }
@@ -3288,15 +3875,17 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 
     // `prove(e)` (1.5.4 step 4, L-15; S-48): a guard-less row over the
     // proposition, walked QUIET -- nothing executes, so a division inside is
-    // not a site and SMT's total `div` keeps the proof sound whatever value it
-    // takes; `unencoded` when the proposition is outside the fragment. THEN
+    // not a site; its conditions are the proposition's (DEF-33: a claim over
+    // an expression that would trap is not proven); `unencoded` when the
+    // proposition is outside the fragment. THEN
     // the proposition is a hypothesis (L-7's order: never in its own cone):
     // a proven claim is knowledge for every site after it -- sound because
     // the verified build refuses an undischarged `prove` and the plain build
     // elides nothing.
     if (s.kind == StmtKind.StmtProveStmt) {
         e.quiet = e.quiet + 1i32;
-        Term:pv = raw enc_expr(e, raw stmt_expr(s));
+        int64:pm = raw prop_begin(e);
+        Term:pv = raw prop_end(e, pm, raw enc_expr(e, raw stmt_expr(s)));
         e.quiet = e.quiet - 1i32;
         if (pv.ok && pv.is_bool) {
             drop record_at(e, raw OK_PROVE(), pv.text, pv.syms, raw SITE_STMT(), sid.index, s.span, true,
@@ -3433,9 +4022,24 @@ pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty, int32:rule,
 };
 
 // A `Rules` body's clause, walked for its own sites (1.5.2 step 2): the
-// predicate function is an instance like any other (P-3).
+// predicate function is an instance like any other (P-3). THE CLAUSE IS A
+// FACT FOR THE CLAUSES AFTER IT (1.5.4b step 2): the predicate traps on the
+// first false clause (`emit_rule_fn`), so a later clause runs only where the
+// earlier ones held -- `$ != 0tbb32` after `!is_err($)` compares no ERR.
 pub func:enc_clause = NIL(Encoder->:e, ExprId:clause) never fails {
     Term:t = raw enc_expr(e, clause);
+    if (t.ok && t.is_bool) { drop hyp_push(e, t.text, t.syms); }
+    pass NIL;
+};
+
+// THE SUBJECT OF A `Rules` BODY'S OWN WALK (1.5.4b step 2): `$` reads the
+// subject parameter's symbol, bound by `enc_param` before the clauses --
+// until here every `$` in the predicate's walk was a fresh opaque, so the
+// clauses said nothing about one value.
+pub func:enc_subject = NIL(Encoder->:e, int32:name) never fails {
+    int64:bi = raw bind_find(e, name);
+    if (bi < 0i64) { pass NIL; }
+    e.subject = raw bind_term(e, bi);
     pass NIL;
 };
 

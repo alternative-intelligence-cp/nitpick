@@ -143,7 +143,8 @@ at runtime, and a violation **traps to `failsafe`**.
 > every write point is a `limit` row whose goal is the rule over the new
 > value, with the rule asserted as a HYPOTHESIS on every later version of
 > the binding — so a division by a limited divisor discharges, after a loop
-> included; a subject outside the encoder's fragment (§7b's tiers) is an
+> included; a subject outside the encoder's fragment (§7b's tiers; since
+> 1.5.4b step 2 the twisted kinds are inside it, D-278) is an
 > `unencoded` row whose guard stays. Every direct call of a sync callee with
 > limited parameters is a `limit-subsume` row: the caller's knowledge of
 > every argument against the callee's rules — the spec's "one `Rules`
@@ -573,7 +574,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `limit-subsume` | one `Rules` implies another at a boundary (D-220): the caller's knowledge of every argument against the callee's rules, at a direct call of a sync callee | yes | 1.5.2 |
 | `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8 |
 | `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8 |
-| `err-exit` | a twisted-family value leaving its family is not ERR (D-144) | yes | 1.5.8 |
+| `err-exit` | the `TbbErr` guard's condition (D-144 as amended, D-278): neither operand is ERR at a comparison on a twisted value, the operand is not ERR at a cast out of its family (both spellings), a checked crossing into or within a family lands in the target's range; a twisted division has no row (a zero divisor is ERR) | yes | 1.5.4b |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
 | `loop-step` | a counted loop's computed step is positive (D-022): the compare at the loop's entry, `BadStep`; a literal step is the checker's (TYPE-068) and has no row | yes | 1.5.4 |
 | `shift-range` | a shift's COMPUTED amount is inside `0..width-1` (D-277): the compare before the shift, `ShiftRange`; a known amount is the checker's (TYPE-070) and has no row | yes | 1.5.4b |
@@ -610,6 +611,35 @@ elide (D-219); the subcycle column says where its rows are produced.
 > and is the ONE kind whose non-discharge refuses the verified build (S-45, D-269),
 > since it has no guard to retain. `loop-step` joined the table at step 3
 > (S-46, D-270): a computed step's compare, a literal step being the checker's.
+
+> **[D-278, 1.5.4b step 2 (2026-09-10).]** `err-exit` produces rows, and the
+> twisted kinds are terms. A `tbb`/`tfp`/`dim256`/`trit`/`tryte`/`nit`/`nyte`
+> value is an Int in the carrier's range whose ERR is the carrier's most
+> negative value — a VALUE the terms carry (D-008): `ERR` and `is_err(x)` are
+> `MIN` and `(= x MIN)`, a symbol's axiom is "ERR, or inside the valid range"
+> (`MIN+1 ..= MAX`; the balanced `-B ..= B` for the ternary kinds), a literal
+> its carrier value (a `tfp`'s exact Q value), and every operation the
+> emitter's own `ite`: saturate-to-ERR on `+ - *` and negation, the `tfp`
+> floor multiply `(div (* a b) 2^F)` and truncating divide `(npk_sdiv (* a
+> 2^F) b)` narrowed by the range test, a zero divisor ERR, the ternary
+> digits' `&`/`|` as min/max; `dim256` is `tfp256`. The row is the `TbbErr`
+> guard's condition, one per `-4100` site: neither operand ERR at a
+> comparison, the operand not ERR at a cast out of its family (both
+> spellings), the value in the target's range at a checked crossing into or
+> within a family; its fact is a hypothesis after the site (every continuing
+> path passed the trap), and a discharged row's guard is one `llvm.assume`.
+> A `frac` or a tfp-element `complex` guard is a row over an aggregate the
+> walk has no term for — `unencoded`, its trap kept — and so is a checked
+> crossing from a float until the floats' step gives the float a term. A
+> twisted division has no row: it never traps. A `limit` over a twisted
+> subject encodes (its `$` the Int term), and a `Rules` body's own walk reads
+> `$` as the subject and each clause as a fact for the next (the predicate
+> traps on the first false clause). A guard's fact is never pushed under a
+> QUIET encoding — a contract clause at a call site, a rule instantiation —
+> where its row is not recorded either, nor from inside a contract clause
+> encoded for its own row (a `requires` at an entry, an `ensures` at a seam,
+> an `invariant` at a head): the check that runs the guard is what that
+> row's discharge removes (DEF-33).
 
 The verdict column is `discharged` (unsat), `open` (sat — a counterexample
 exists under the encoding's hypotheses; not a refutation of the program, a

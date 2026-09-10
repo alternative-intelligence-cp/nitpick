@@ -1,0 +1,51 @@
+// expect-exit: 3
+// expect-obligation: err-exit discharged 2
+// expect-obligation: err-exit open 1
+// expect-obligation: failsafe-post discharged 8
+// expect-obligation: exhaustive checker 1
+//
+// THE `err-exit` ROW AT A COMPARISON (D-278, 1.5.4b step 2): a comparison on
+// twisted operands traps `TbbErr` when either is ERR (D-008 section 5), and
+// the row is that guard's own condition -- neither operand is ERR. Under
+// `!is_err(a) && !is_err(b)` the branch's facts discharge it (`guarded`); a
+// sum tested by `is_err` before the compare discharges too (`summed`: the
+// sum is the emitter's saturating `ite`, a term now); a bare compare is
+// `open` (`loose`) and keeps its trap. A discharged row's guard is one
+// `llvm.assume`.
+mod:twisted_cmp;
+
+func:guarded = int32(tbb32:a, tbb32:b) never fails {
+    if ((!(is_err(a))) && (!(is_err(b)))) {
+        if (a == b) { pass 1i32; }
+    }
+    pass 0i32;
+};
+
+func:summed = int32(tbb32:a) never fails {
+    tbb32:s = a + 1tbb32;
+    if (!(is_err(s))) { if (s == 2tbb32) { pass 1i32; } }
+    pass 0i32;
+};
+
+func:loose = int32(tbb32:a, tbb32:b) never fails {
+    if (a != b) { pass 1i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    tbb32:one = (argv.len =>! int32) =>! tbb32;   // 1 at run time
+    exit ((raw guarded(one, one)) + (raw summed(one)) + (raw loose(one, 2tbb32)));   // 1 + 1 + 1
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

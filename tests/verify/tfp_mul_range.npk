@@ -1,0 +1,42 @@
+// expect-exit: 6
+// expect-obligation: err-exit discharged 3
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// A `tfp` PRODUCT UNDER `limit` (D-278, D-251): the rule's clauses are facts
+// about each parameter -- not ERR, inside `0.0 ..= 4.0` -- and the product's
+// term is the emitter's shape exactly (the floor of the product scaled down
+// by 2^F, saturating to ERR outside the range), so the `=>!` out of the
+// family after it discharges: the product of two values at most 4.0 is at
+// most 16.0, far inside `tfp64`, and never ERR. The two entry write points
+// are `open` (an opaque first version); the call in `main` passes literals,
+// so its `limit-subsume` row discharges and the elided build names the body.
+// The rule predicate's own two compares discharge under its first clause.
+mod:tfp_mul_range;
+
+Rules<tfp64>:r_unit = { !is_err($), $ >= 0.0tfp64, $ <= 4.0tfp64 };
+
+func:area = int64(limit<r_unit> tfp64:w, limit<r_unit> tfp64:h) never fails {
+    tfp64:p = w * h;
+    pass (p =>! int64);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit ((raw area(2.0tfp64, 3.0tfp64)) =>! int32);   // 6
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (LimitViolated)  { exit 25i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

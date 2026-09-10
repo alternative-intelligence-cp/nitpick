@@ -1900,6 +1900,17 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         if (vn.kind == ExprKind.ExprIntLiteral) {
             pass (raw iv("", int_to_string(vn.payload), 0i32));
         }
+        // A NEGATED LITERAL (DEF-35, 1.5.4b step 2): `(-1i32)` is a value
+        // pattern the checker admits and the encoder folds (1.5.4 step 1);
+        // this arm was missing, so the arm died as EMIT-002.
+        if (vn.kind == ExprKind.ExprUnaryExpr) {
+            if ((raw expr_op(vn)) == TokenKind.OpMinus) {
+                ExprNode:vo = raw ast_expr(x.ast, raw expr_operand(vn));
+                if (vo.kind == ExprKind.ExprIntLiteral) {
+                    pass (raw iv("", int_to_string(0i64 - vo.payload), 0i32));
+                }
+            }
+        }
         if (vn.kind == ExprKind.ExprBoolLiteral) {
             if (vn.payload == 1i64) { pass (raw iv("", "1", 0i32)); }
             pass (raw iv("", "0", 0i32));

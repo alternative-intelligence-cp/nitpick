@@ -2897,7 +2897,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 string:qb = raw frac_err_test(x, rhs, qcll, qmn);
                 string:qt = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(qt, " = or i1 ", qa, ", ", qb));
-                drop tbb_trap_if(x, qt, n.span);
+                drop tbb_trap_if(x, qt, id.index, n.span);
                 string:qaa = raw frac_args256(x, lhs);
                 string:qbb = raw frac_args256(x, rhs);
                 string:qr = raw irw_temp(x.fe.w);
@@ -2944,7 +2944,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                     string:ce2 = raw cplx_err_test(x, rhs, cqll.text, cmn);
                     string:cet = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(cet, " = or i1 ", ce1, ", ", ce2));
-                    drop tbb_trap_if(x, cet, n.span);
+                    drop tbb_trap_if(x, cet, id.index, n.span);
                 }
                 string:lre = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(lre, " = extractvalue ", lhs.ll, " ",
@@ -3080,16 +3080,9 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                               raw cat3(rhs.ref, ", ", tmn)));
             string:ea = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(ea, " = or i1 ", e1, ", ", e2));
-            string:tl = raw irw_new_label(x.fe.w, "tbb.err");
-            string:ol = raw irw_new_label(x.fe.w, "tbb.ok");
-            drop irw_line(x.fe.w, raw cat5("br i1 ", ea, ", label %", tl,
-                              string_concat(", label %", ol)));
-            drop irw_label(x.fe.w, tl);
-            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                              int_to_string((raw x_site(x, n.span)) => int64), ")"));
-            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4100)");
-            drop irw_line(x.fe.w, "unreachable");
-            drop irw_label(x.fe.w, ol);
+            // ONE GUARD SHAPE (D-278, 1.5.4b step 2): the `err-exit` row's
+            // site is this node, elided through the matrices' guard.
+            drop tbb_trap_if(x, ea, id.index, n.span);
         }
         string:c = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(c, " = icmp ", cmp, " ",
@@ -3169,9 +3162,18 @@ func:tbb_pow_hex = string(int32:bits, bool:neg) never fails {
     pass "";
 };
 
-// A -4100 trap block on a condition — the shared shape of every checked-cast
-// guard in the tbb matrix.
-func:tbb_trap_if = NIL(ExprEmitter->:x, string:cond, Span:at) never fails {
+// A -4100 trap block on a condition — the shared shape of every `TbbErr`
+// guard: the cast matrices' and, since 1.5.4b step 2, the comparison's.
+// THE `err-exit` ROW'S GUARD (D-278): `site` is the expression the row is
+// recorded at; discharged, the trap is ONE `llvm.assume` of the condition's
+// negation, the shape `emit_shift_guard` uses.
+func:tbb_trap_if = NIL(ExprEmitter->:x, string:cond, int32:site, Span:at) never fails {
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_ERR_EXIT())) {
+        string:okc = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(okc, " = xor i1 ", string_concat(cond, ", true")));
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", okc, ")"));
+        pass NIL;
+    }
     string:tl = raw irw_new_label(x.fe.w, "tbbc.err");
     string:ol = raw irw_new_label(x.fe.w, "tbbc.ok");
     drop irw_line(x.fe.w, raw cat5("br i1 ", cond, ", label %", tl,
@@ -3278,7 +3280,7 @@ func:pow2_double_signed = string(int32:k, bool:neg) never fails {
 // be a plausible mid-range number, the worst possible laundering. Entering
 // the family, an out-of-range or non-finite source ABSORBS as ERR — taint
 // is the correct name for a value the type cannot hold.
-func:emit_tfp_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+func:emit_tfp_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                            move LlType:want, int32:wid) never fails {
     int32:sk = raw type_kind(x.fe.ctx.types, v.type_id);
     int32:dk = raw type_kind(x.fe.ctx.types, wid);
@@ -3340,7 +3342,7 @@ func:emit_tfp_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
         }
 
         // LEAVING the family: the taint has no image — trap, both spellings.
-        drop tbb_trap_if(x, err, n.span);
+        drop tbb_trap_if(x, err, id.index, n.span);
         if (dk == (raw TY_FLOAT())) {
             string:fv = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fv, " = sitofp ", v.ll, " ",
@@ -3496,7 +3498,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                                       string_concat(err, ", true")));
                     string:tv = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(tv, " = and i1 ", oor, ", ", ne));
-                    drop tbb_trap_if(x, tv, n.span);
+                    drop tbb_trap_if(x, tv, id.index, n.span);
                     string:rz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
                     string:res = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", err, ", ",
@@ -3527,7 +3529,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
         // to license crossed the taint as INT_MIN, a laundering path. The
         // value conversion below is loss-free under `=>` (the checker now
         // range-classifies the pair) and accepted-loss under `=>!`.
-        drop tbb_trap_if(x, err, n.span);
+        drop tbb_trap_if(x, err, id.index, n.span);
         if (dk == (raw TY_FLOAT())) {
             string:fr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fr, " = sitofp ", v.ll, " ",
@@ -3572,7 +3574,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             string:bad2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(bad2, " = xor i1 ",
                               string_concat(inr, ", true")));
-            drop tbb_trap_if(x, bad2, n.span);
+            drop tbb_trap_if(x, bad2, id.index, n.span);
             string:q = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(q, " = fptosi ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
@@ -3613,7 +3615,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             oor2 = move(o4);
         }
         if (!unchecked) {
-            drop tbb_trap_if(x, oor2, n.span);
+            drop tbb_trap_if(x, oor2, id.index, n.span);
             string:rz4 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
             pass (raw iv(move(want.text), move(rz4), wid));
         }
@@ -3769,7 +3771,7 @@ func:frac_pack = IrVal(ExprEmitter->:x, string:partsref, string:taint,
 // as ERR under `=>!` — the family's own discipline; the sentinel-forge case
 // needs no separate check here, because the sentinel lies OUTSIDE the
 // balanced range and the range guard already catches it.
-func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                             move LlType:want, int32:wid) never fails {
     bool:unchecked = false;
     if (n.kind == ExprKind.ExprUncheckedCastExpr) { unchecked = true; }
@@ -3808,7 +3810,7 @@ func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
                                       string_concat(err, ", true")));
                     string:tv = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(tv, " = and i1 ", oor, ", ", ne));
-                    drop tbb_trap_if(x, tv, n.span);
+                    drop tbb_trap_if(x, tv, id.index, n.span);
                     string:rz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
                     string:res = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", err, ", ",
@@ -3835,7 +3837,7 @@ func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
 
         // Leaving the family: the taint has no image — trap, both spellings
         // (D-144 as amended at 1.3.2).
-        drop tbb_trap_if(x, err, n.span);
+        drop tbb_trap_if(x, err, id.index, n.span);
         if (dk == (raw TY_FLOAT())) {
             string:fr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fr, " = sitofp ", v.ll, " ",
@@ -3881,7 +3883,7 @@ func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
             string:bad = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(bad, " = xor i1 ",
                               string_concat(inr, ", true")));
-            drop tbb_trap_if(x, bad, n.span);
+            drop tbb_trap_if(x, bad, id.index, n.span);
             pass (raw iv(move(want.text), move(q), wid));
         }
         string:res4 = raw irw_temp(x.fe.w);
@@ -3927,7 +3929,7 @@ func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
         oor2 = move(o4);
     }
     if (!unchecked) {
-        drop tbb_trap_if(x, oor2, n.span);
+        drop tbb_trap_if(x, oor2, id.index, n.span);
         string:rz4 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
         pass (raw iv(move(want.text), move(rz4), wid));
     }
@@ -4011,7 +4013,7 @@ func:frac_build = string(ExprEmitter->:x, string:structll, string:cll,
 // Entering from an integer builds {v, 0, 1} with the balanced-bound guard
 // (trap under `=>`, absorb under `=>!`); the most-negative forge-edge lies
 // inside the guard.
-func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                             move LlType:want, int32:wid) never fails {
     bool:unchecked = false;
     if (n.kind == ExprKind.ExprUncheckedCastExpr) { unchecked = true; }
@@ -4122,7 +4124,7 @@ func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
         }
 
         // Leaving the family: the taint has no image — trap, both spellings.
-        drop tbb_trap_if(x, serr, n.span);
+        drop tbb_trap_if(x, serr, id.index, n.span);
         if (dk == (raw TY_FLOAT())) {
             string:fw = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fw, " = sitofp ", scll, " ",
@@ -4202,7 +4204,7 @@ func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
         oor2 = move(o6);
     }
     if (!unchecked) {
-        drop tbb_trap_if(x, oor2, n.span);
+        drop tbb_trap_if(x, oor2, id.index, n.span);
         string:rz4 = raw tbb_resize(x, v.ll, v.ref, dcll2, ssig);
         string:b4 = raw frac_build(x, want.text, dcll2, rz4, "0", "1");
         pass (raw iv(move(want.text), move(b4), wid));
@@ -4257,10 +4259,10 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (v.type_id == wid) {
             pass (raw iv(move(want.text), move(v.ref), wid));
         }
-        pass (raw emit_tfp_cast(x, n, v, move(want), wid));
+        pass (raw emit_tfp_cast(x, id, n, v, move(want), wid));
     }
     if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TFP())) {
-        pass (raw emit_tfp_cast(x, n, v, move(want), wid));
+        pass (raw emit_tfp_cast(x, id, n, v, move(want), wid));
     }
 
     // A tbb ON EITHER SIDE takes the matrix (0.9.5) — and it takes it BEFORE
@@ -4290,10 +4292,10 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (v.type_id == wid) {
             pass (raw iv(move(want.text), move(v.ref), wid));
         }
-        pass (raw emit_tern_cast(x, n, v, move(want), wid));
+        pass (raw emit_tern_cast(x, id, n, v, move(want), wid));
     }
     if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TERN())) {
-        pass (raw emit_tern_cast(x, n, v, move(want), wid));
+        pass (raw emit_tern_cast(x, id, n, v, move(want), wid));
     }
 
     // The exact rationals (D-198, 1.3.5): an aggregate family with its own
@@ -4303,10 +4305,10 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (v.type_id == wid) {
             pass (raw iv(move(want.text), move(v.ref), wid));
         }
-        pass (raw emit_frac_cast(x, n, v, move(want), wid));
+        pass (raw emit_frac_cast(x, id, n, v, move(want), wid));
     }
     if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_FRAC())) {
-        pass (raw emit_frac_cast(x, n, v, move(want), wid));
+        pass (raw emit_frac_cast(x, id, n, v, move(want), wid));
     }
 
     if (raw string_eq(v.ll, want.text)) {

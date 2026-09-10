@@ -100,8 +100,14 @@ pub func:smt_app3 = string(string:op, string:a, string:b, string:c) never fails 
 // SMT-LIB has no negative numerals.
 pub func:smt_int = string(int64:v) never fails {
     if (v >= 0i64) { pass (int_to_string(v)); }
-    // −v cannot overflow for INT64_MIN through the unsigned route.
-    uint64:mag = (0u64 - (v =>! uint64));
+    // |v| WITHOUT AN OVERFLOW (DEF-34, 1.5.4b step 2): the unsigned route
+    // this took until here -- `0u64 - (v =>! uint64)` -- is an unsigned
+    // underflow, which D-210 traps, so the walk died on its first negative
+    // numeral (a negated pattern literal, a negative `fixed` constant read
+    // in a body -- reachable since 1.5.4 step 1 and 1.5.4b step 1, in no
+    // test until now). INT64_MIN's magnitude is 2^63, one past the signed
+    // range: negate `v + 1`, which is in range, and add the one back wide.
+    uint64:mag = ((0i64 - (v + 1i64)) =>! uint64) + 1u64;
     pass (raw smt_app1("-", raw u64_decimal(mag)));
 };
 

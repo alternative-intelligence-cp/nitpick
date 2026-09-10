@@ -1,0 +1,55 @@
+// expect-exit: 42
+// expect-obligation: requires open 4
+// expect-obligation: shift-range open 2
+// expect-obligation: shift-range discharged 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// A GUARD'S FACT IS NOT A HYPOTHESIS FROM INSIDE A CONTRACT CLAUSE (DEF-33,
+// 1.5.4b step 2). The shift in `(x << n) != 0i32` has a guard -- `0 <= n <
+// 32`, `ShiftRange` -- and until this step the walk pushed that guard's fact
+// wherever it encoded the clause: QUIET, for the call-site row in `main`,
+// where nothing had checked `n` and the row proved `n < 32` from the
+// shift's own assumption; and LOUD, for `f`'s and `g`'s entry rows, where
+// the fact sat in the row's own cone although the check that runs the guard
+// (`.req`) is exactly what the row's discharge removes -- `g`'s single
+// clause was discharged of itself, `.req` elided, and `g(41)` ran a body its
+// contract forbids. Now A PROPOSITION HOLDS ONLY WHERE ITS EVALUATION DOES
+// NOT TRAP: the guard's condition is conjoined into the clause's own term,
+// so the two calls in `main` (the caller knows nothing about `n`), both
+// entries and the two clause guards' own rows are `open`, and `f`'s body
+// shift discharges legitimately -- its precondition, as a hypothesis, now
+// says the amount is in range. The program traps `RequiresViolated` at `f`
+// (exit 42); `g`'s call sits behind a branch never taken.
+mod:req_shift;
+error:E9;
+
+func:f = int32(int32:x, int32:n) requires n < 32i32 requires (x << n) != 0i32 {
+    pass (x << n);
+};
+
+func:g = int32(int32:n) requires (1i32 << n) != 0i32 {
+    pass 1i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:n = (argv.len =>! int32) + 40i32;   // 41 at run time
+    if (n > 100i32) { exit ((g(n)) ?! E9); }
+    exit ((f(1i32, n)) ?! E9);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 8i32; },
+        (RequiresViolated) { exit 42i32; },
+        (ShiftRange)       { exit 43i32; },
+        (DivByZero)        { exit 36i32; },
+        (IntOverflow)      { exit 93i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

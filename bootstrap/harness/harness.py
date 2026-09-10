@@ -3098,10 +3098,11 @@ ROW_ROLES = ("guard", "bypass", "held", "conform")
 # The trap each guarded kind keeps when retained (the runtime's identities).
 TRAP_OF_KIND = {"div-zero": "-4097", "div-min": "-4098", "limit": "-4111",
                 "requires": "-4112", "ensures": "-4113", "failsafe-post": "-4113",
-                "invariant": "-4114", "loop-step": "-4101", "shift-range": "-4115"}
+                "invariant": "-4114", "loop-step": "-4101", "shift-range": "-4115",
+                "err-exit": "-4100"}
 BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
-ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range"))
+ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-exit"))
 
 
 def z3_verdicts(obl_dir, name):

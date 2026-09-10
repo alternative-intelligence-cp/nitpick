@@ -72,6 +72,7 @@ pub func:obl_rule = NIL(ExprEmitter->:x, string:symbol, int32:subject_name,
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
     drop enc_param(@en, subject_name, subject_type, 0i32, 0i32);
+    drop enc_subject(@en, subject_name);
     DeclNode:d = raw ast_decl(x.ast, rd);
     int32:cn = raw rule_clause_count(x.ast, d);
     for (int32:j in 0i32...cn) { drop enc_clause(@en, raw rule_clause(x.ast, d, j)); }

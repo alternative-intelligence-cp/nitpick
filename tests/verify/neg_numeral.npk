@@ -1,0 +1,50 @@
+// expect-exit: 25
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 2
+//
+// A NEGATIVE NUMERAL IN A ROW (DEF-34, 1.5.4b step 2): `smt_int` spelled a
+// negative value's magnitude through an unsigned subtraction from zero,
+// which D-210 traps, so the walk died on its first negative numeral -- a
+// negative `fixed` constant read in a body (`offset`, reachable since 1.5.4b
+// step 1's fold) or a negated pattern literal (`sign`, since 1.5.4 step 1's
+// pattern conditions), in no test until this one. The divisions discharge
+// through the negative numeral each row carries: `x + NEG` with `x > 5`,
+// and `x + 2` under the `(-1i32)` arm. The negated pattern also lowers now
+// (DEF-35): the emitter folded a literal but not a `-` over one.
+mod:neg_numeral;
+
+fixed int32:NEG = -4i32;
+
+func:offset = int32(int32:x) never fails {
+    if (x > 5i32) { pass (100i32 / (x + NEG)); }
+    pass 0i32;
+};
+
+func:sign = int32(int32:x) never fails {
+    pick (x) {
+        (-1i32) { pass (200i32 / (x + 2i32)); },
+        (*)     { pass 0i32; }
+    }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;                              // 1
+    exit ((raw offset(n + 5i32)) + (raw sign(n - 2i32)) - 225i32);   // 50 + 200 - 225
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,55 @@
+// expect-exit: 4
+// expect-obligation: limit discharged 2
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: err-exit discharged 3
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+//
+// `limit` OVER A TWISTED SUBJECT ENCODES (D-278, D-251): the rule's `$` is
+// the Int term and `is_err($)` is `(= $ MIN)`, so a `limit<r_ok> tbb32`
+// write point is a row with a goal where it was `unencoded` until 1.5.4b
+// step 2. The local's literal and its increment discharge (`local`: 5, then
+// 6); the parameter's entry and its increment are `open` (`bump`: an opaque
+// first version, and `x + 1` of a value the rule only says is not ERR and
+// not zero can saturate); the call in `main` passes a literal, so its
+// `limit-subsume` row discharges. The rule predicate's own compare has an
+// `err-exit` row (walked as a function of the module, L-1): discharged,
+// because the clause before it, `!is_err($)`, is a fact where the compare
+// runs -- the predicate traps on the first false clause; `local`'s compare
+// and `main`'s cast out of the family discharge under their `is_err` tests.
+mod:limit_tbb;
+
+Rules<tbb32>:r_ok = { !is_err($), $ != 0tbb32 };
+
+func:bump = tbb32(limit<r_ok> tbb32:x) never fails {
+    x = x + 1tbb32;
+    pass x;
+};
+
+func:local = int32() never fails {
+    limit<r_ok> tbb32:y = 5tbb32;
+    y = y + 1tbb32;
+    if (!(is_err(y))) { if (y == 6tbb32) { pass 1i32; } }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    tbb32:four = raw bump(3tbb32);                 // 4
+    if (is_err(four)) { exit 20i32; }
+    exit (((four => int32)) + (raw local()) - 1i32);   // 4 + 1 - 1
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (LimitViolated)  { exit 25i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

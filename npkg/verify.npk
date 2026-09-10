@@ -357,6 +357,7 @@ func:trap_of_kind = string(string:k) never fails {
     if (raw text_eq(k, "invariant"))     { pass "-4114"; }
     if (raw text_eq(k, "loop-step"))     { pass "-4101"; }
     if (raw text_eq(k, "shift-range"))   { pass "-4115"; }
+    if (raw text_eq(k, "err-exit"))      { pass "-4100"; }
     pass "";
 };
 
@@ -369,6 +370,7 @@ func:kinds_of_trap = string(string:code) never fails {
     if (raw text_eq(code, "-4114")) { pass "invariant"; }
     if (raw text_eq(code, "-4101")) { pass "loop-step"; }
     if (raw text_eq(code, "-4115")) { pass "shift-range"; }
+    if (raw text_eq(code, "-4100")) { pass "err-exit"; }
     pass "?";
 };
 
@@ -418,7 +420,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         // a guard-less kind's discharge emits nothing, and a contract's
         // discharge is the guard's removal alone (1.5.3 L-11).
         if (d) {
-            bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit")) || (raw text_eq(k, "shift-range"));
+            bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit")) || (raw text_eq(k, "shift-range")) || (raw text_eq(k, "err-exit"));
             if (assume_kind) { disch = disch + 1i64; }
         }
         if (raw text_eq(role, "bypass")) {
@@ -473,6 +475,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     drop strlist_push(@codes, "-4114");
     drop strlist_push(@codes, "-4101");
     drop strlist_push(@codes, "-4115");
+    drop strlist_push(@codes, "-4100");
     for (int64:ci in 0i64...codes.count) {
         string:code2 = raw strlist_view(codes, ci);
         int64:left = 0i64;

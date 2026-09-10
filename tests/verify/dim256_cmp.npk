@@ -1,0 +1,39 @@
+// expect-exit: 1
+// expect-obligation: err-exit discharged 1
+// expect-obligation: err-exit open 1
+// expect-obligation: failsafe-post discharged 8
+// expect-obligation: exhaustive checker 1
+//
+// `dim256<Unit>` IS `tfp256` TO THE SOLVER (D-196, D-278): the unit is the
+// checker's, the value one Int term at 256 bits with the same sentinel, so a
+// comparison on two lengths carries the same `err-exit` row as a `tfp`
+// compare -- discharged under `is_err` (`longer`), `open` bare (`loose`).
+mod:dim256_cmp;
+
+func:longer = bool(dim256<Meters>:a, dim256<Meters>:b) never fails {
+    if ((!(is_err(a))) && (!(is_err(b)))) { pass (a > b); }
+    pass false;
+};
+
+func:loose = bool(dim256<Meters>:a, dim256<Meters>:b) never fails { pass (a > b); };
+
+func:main = int32(cstring[]:_~argv) {
+    dim256<Meters>:x = 2.5dim256<Meters>;
+    dim256<Meters>:y = 1.0dim256<Meters>;
+    if (!(raw longer(x, y))) { exit 10i32; }
+    if (raw loose(y, x)) { exit 11i32; }
+    exit 1i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

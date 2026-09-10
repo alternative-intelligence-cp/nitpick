@@ -978,6 +978,77 @@ it assigns each code (`symtab_add_error`), and the reach analysis reads the
 qualifier from it (`symtab_error_qual`); `cur_module` and `reach_module`'s
 name parameter are gone. `mod_file_import.npk` holds both shapes.
 
+**DEF-33 — FIXED at 1.5.4b step 2 (2026-09-10; the record is
+`1.5/1.5.4b.md`). (found 2026-09-10 by writing step 2's `err-exit` recorder
+against `record_shift`'s shape, on `44992e4`; latent since 1.5.4b step 0,
+`11e423f`) — a guard's fact was pushed as a hypothesis wherever a contract
+clause was encoded, so a `requires` row could discharge from its own
+clause.** `record_shift` recorded the `shift-range` row and pushed its goal
+— the amount inside `0..width-1` — as a fact after the site: right for the
+body's own walk (every continuing path passed the compare), wrong in TWO
+places. Under `quiet` — the mode a contract clause is encoded in for a
+call-site row and a rule's clauses for an instantiation — the row is
+suppressed (L-1) but the push was not, so `requires n < 32i32 requires (x <<
+n) != 0i32` at a call had `0 <= n < 32` asserted in the CALLER's context,
+where nothing had checked it: the call-site row proved `n < 32` from itself,
+the verified build named the callee's `.body` past its checked entry
+(D-252), and a call with `n = 41` ran the body its contract forbids. And
+LOUD — a `requires` at the function's own entry, an `ensures` at a seam, an
+`invariant` at a loop head are encoded for their own rows with their guards
+as the function's sites (L-5) — the fact sat in the contract row's own cone,
+and the check that runs the guard (`.req`, the seam's check, the head's) is
+exactly what that row's discharge removes: `requires (1i32 << n) != 0i32`
+alone was discharged of itself, `.req` elided, and `g(41)` ran unchecked.
+Measured (`tests/verify/req_shift.npk`): step 1's compiler reads `requires
+discharged` at both calls and at `g`'s entry; step 2's reads `open` at all
+four `requires` rows and at the three shift rows. No row of the compiler's
+own manifest moved (no contract clause in `src/` shifts). Fixed by one
+rule, which the `err-exit` recorder was then written under: under a quiet
+encoding a guard records nothing and pushes nothing; inside a loud clause
+(`in_clause`, set by `contract_conj` and `invariant_conj`) it records its
+row and pushes nothing (`record_shift`, `record_err_exit`).
+
+**DEF-34 — FIXED at 1.5.4b step 2 (2026-09-10). (found 2026-09-10 by step
+2's first probe — a `tryte` parameter's balanced bound `-29524` as a
+numeral; latent since `smt_int` was written at 1.5.0, reachable since 1.5.4b
+step 1 folded a `fixed` global into its numeral) — `smt_int` spelled a
+negative numeral's magnitude as `0u64 - (v =>! uint64)`, an unsigned
+underflow D-210 traps, so the compiler DIED under `--obligations` and
+`--elide` on the first negative numeral any row carried.** A body reading
+`fixed int32:NEG = -4i32` — `100i32 / (x + NEG)` — exits 3 (a trap inside
+the compiler, `smt_int` at the top of the backtrace) with step 1's compiler;
+no test had one, and the compiler's own sources fold no negative constant
+into a row. Fixed: `|v|` is `(0 - (v + 1)) + 1` computed wide, exact at
+`INT64_MIN`. `tests/verify/neg_numeral.npk` holds the constant and the
+pattern (DEF-35).
+
+**DEF-35 — FIXED at 1.5.4b step 2 (2026-09-10). (found 2026-09-10 while
+reproducing DEF-34; latent since the `pick` lowering at 0.9.7) — a negated
+literal pattern `(-1i32)` was admitted by the checker and the exhaustiveness
+analysis, encoded by the walk (1.5.4 step 1's `enc_pattern_value` has the
+arm), and refused by the EMITTER as `NITPICK-EMIT-002`: `pattern_const`
+folded a literal, a bool, a char, an error constant and a variant tag, and
+not a `-` over a literal.** Fixed with the arm (`ir_stmt.npk`);
+`neg_numeral.npk`'s `sign` runs it and discharges a division under it.
+
+**DEF-36 — OPEN (owner: the `src/` writer; found 2026-09-10 by 1.5.4b step
+2's first full harness, `tests/verify/req_shift.npk`) — the runners' trap
+belts count a guard's trap by its TEXT, `@npk_trap(i32 -4097)`, and a
+program's own `r ?! DivByZero` lowers to the same text.** The `?!` operator
+traps with the CALLER's code (0.9.7): `?! E9` with a user constant's hash,
+`?! DivByZero` with `-4097` — exactly the spelling the belts count as a
+`div-zero` guard, so a verified build of a program that unwraps with a
+system error whose code a guarded kind uses (`-4097`, `-4098`, `-4100`,
+`-4101`, `-4111`…`-4115`) fails the belt as "N traps for 0 retained" in
+both runners. Conservative (a false red, never a false green) and rare,
+but a legal program shape the belts cannot tell from a guard. The test
+unwraps with `E9` for now, as every other verify test does. **Recommended
+fix:** the `?!` lowering calls a distinct floor entry (`npk_raise`, one
+line in `npkrt.ll` tail-calling `npk_trap`, added to the exports allowlist
+and the §2d emitter-only rows) so a raise and a guard differ in the text
+the belts read — a D-203 floor addition, hence the user's; the belts then
+count `@npk_trap(` alone and nothing a program spells reaches it.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |
