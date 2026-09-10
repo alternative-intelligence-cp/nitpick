@@ -1,0 +1,28 @@
+// expect-error: NITPICK-RESOLVE-003
+//
+// A PRIVATE MEMBER IS PRIVATE THROUGH A FILE-MODULE IMPORT TOO (D-274 with
+// D-273 §3, 1.5.4d): `mod:fmi_priv;` carries the loaded file's scope, so
+// `fmi_priv.secret()` from here is the refusal an alias's `u.secret()` is --
+// "`secret` is private to `fmi_priv`", with the loader's note at the
+// declaration (RESOLVE-003: one code from either spelling). The public
+// member beside it resolves.
+mod:mod_file_private;
+mod:fmi_priv;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = raw fmi_priv.open_fn();
+    int32:b = raw fmi_priv.secret();
+    exit (a + b);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

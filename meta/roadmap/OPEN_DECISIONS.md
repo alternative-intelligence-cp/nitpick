@@ -950,6 +950,28 @@ through the call.
 > struck `Type:Name = { }`; nothing in the tree would miss it today, which
 > is the only argument for it. Owner: the user.
 
+**DEF-32 — FIXED at 1.5.4d step 0 (2026-09-10; the record is
+`1.5/1.5.4d.md`). (found 2026-09-10 by planning 1.5.4d's first test, on
+`1ef034a`; latent since the reach analysis was written at 1.1.6, D-179) —
+the reach analysis recorded a constant's qualifier from the FIRST SITE that
+reached it, not from the file that declares it.** `reach_operand` registered
+an error constant with `cur_module`, the module being walked, and
+`reach_add_decl` kept the first registration; the root is walked first, so a
+root that unwrapped an imported constant — `?! pe.E` through an alias, or
+`?! E` after `use "./perr.npk".{E};` — recorded `root.E`, `failsafe` was
+told "does not name `root.E`" and the CORRECT `(perr.E)` arm (D-179: the
+FILE that declares a constant qualifies it) was refused, while the demanded
+`(root.E)` would have hashed to a code no constant has and matched nothing
+— the exhaustive-`failsafe` guarantee was hollow for any cross-file constant
+named in the qualified spelling (measured: three probes; the bare `(E)` arm
+was unaffected because it matches by symbol origin, which is how every
+program in the tree stayed green). Every qualified arm in the tree names a
+constant whose first site is inside its own file. Fixed by the one table:
+the resolver records (declaration, qualifier, code) on the `SymbolTable` as
+it assigns each code (`symtab_add_error`), and the reach analysis reads the
+qualifier from it (`symtab_error_qual`); `cur_module` and `reach_module`'s
+name parameter are gone. `mod_file_import.npk` holds both shapes.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |

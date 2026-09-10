@@ -47,17 +47,20 @@ pub struct:Reach = {
     DiagList->:diags;
 
     // The set: declaration indices of reachable error constants, each with
-    // the intern of its owning module's name (for the QUALIFIED spelling the
-    // refusal prints and an arm may use).
+    // the QUALIFIER its code hashed under -- the declaring FILE's basename,
+    // read from the table the resolver filled (`symtab_error_qual`; 0 for the
+    // system family), for the qualified spelling the refusal prints and an
+    // arm may use. UNTIL 1.5.4d THE QUALIFIER WAS THE MODULE BEING WALKED
+    // when the constant was first met (DEF-32): a root that unwrapped an
+    // imported constant -- `?! pe.E`, or a bare `?! E` after `use
+    // "./perr.npk".{E};` -- was walked first and recorded `root.E`, so the
+    // correct `(perr.E)` arm was REFUSED and the demanded `(root.E)` would
+    // have hashed to a code no constant has and matched nothing.
     // SoA KEPT, two Lists (1.4.7 step 2). Both counts move together -- every
     // record pushes both -- which is this pair's invariant now that the shared
     // `rcount` is gone.
     List<int32>:rdecls;
     List<int32>:rquals;
-
-    // The module currently being walked (its basename intern; the pipeline
-    // hands it in beside the root).
-    int32:cur_module;
 
     // The conditional system machinery, observed during the walk.
     bool:saw_div;
@@ -93,7 +96,6 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      ets: ets, diags: diags,
                      rdecls: raw list_init::<int32>(32i64),
                      rquals: raw list_init::<int32>(32i64),
-                     cur_module: 0i32,
                      saw_div: false, saw_ovf: false, saw_index: false,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
@@ -104,15 +106,15 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
     pass x;
 };
 
-func:reach_add_decl = NIL(Reach->:x, int32:decl_index, int32:qual) never fails {
+func:reach_add_decl = NIL(Reach->:x, int32:decl_index) never fails {
     int32:i = 0i32;
     while ((i => int64) < x.rdecls.count) {
         if (x.rdecls.items[i => int64] == decl_index) { pass NIL; }
         i = i + 1i32;
     }
-    // BOTH, ALWAYS.
+    // BOTH, ALWAYS -- the qualifier from the one table (D-179, 1.5.4d).
     drop list_push(@x.rdecls, decl_index);
-    drop list_push(@x.rquals, qual);
+    drop list_push(@x.rquals, raw symtab_error_qual(x.tab, decl_index));
     pass NIL;
 };
 
@@ -128,7 +130,7 @@ func:reach_operand = NIL(Reach->:x, ExprId:id) never fails {
         if (nsd == 0i32) { pass NIL; }
         DeclNode:nd = raw ast_decl(x.ast, DeclId{ index: nsd });
         if (nd.kind != DeclKind.DeclErrorDecl) { pass NIL; }
-        drop reach_add_decl(x, nsd, x.cur_module);
+        drop reach_add_decl(x, nsd);
         pass NIL;
     }
     if (n.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
@@ -137,7 +139,7 @@ func:reach_operand = NIL(Reach->:x, ExprId:id) never fails {
     if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
     DeclNode:d = raw ast_decl(x.ast, DeclId{ index: s.origin });
     if (d.kind != DeclKind.DeclErrorDecl) { pass NIL; }
-    drop reach_add_decl(x, s.origin, x.cur_module);
+    drop reach_add_decl(x, s.origin);
     pass NIL;
 };
 
@@ -150,14 +152,13 @@ func:reach_add_system = NIL(Reach->:x, move string:sname) never fails {
     if (sym == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym);
     if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
-    drop reach_add_decl(x, s.origin, 0i32);
+    drop reach_add_decl(x, s.origin);
     pass NIL;
 };
 
 // --- the walk (statements and expressions, everything observed) --------------------
 
-pub func:reach_module = NIL(Reach->:x, DeclId:mod_id, int32:mod_name) never fails {
-    x.cur_module = mod_name;
+pub func:reach_module = NIL(Reach->:x, DeclId:mod_id) never fails {
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     for (int32:i in 0i32...n) {
@@ -215,7 +216,7 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
         pass NIL;
     }
     if (d.kind == DeclKind.DeclModuleDecl) {
-        drop reach_module(x, id, x.cur_module);
+        drop reach_module(x, id);
         pass NIL;
     }
     if (d.kind == DeclKind.DeclImplDecl) {

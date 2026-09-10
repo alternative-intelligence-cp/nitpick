@@ -1,0 +1,22 @@
+// THE `name/mod.npk` FORM of the external-file module import (MODULE_REFERENCE
+// §1.1), linked to its scope like the flat form (D-274, 1.5.4d): `mod:leaf;`
+// loads `leaf/mod.npk`, and `raw leaf.f()` reaches it. Silent, as the accept
+// suite requires; `leaf/mod.npk` is a library and is silent alone too.
+mod:root;
+mod:leaf;
+
+func:main = int32(cstring[]:_~argv) {
+    exit ((raw leaf.f()) - 3i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

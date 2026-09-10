@@ -1,0 +1,53 @@
+// expect-exit: 44
+//
+// THE FILE-MODULE IMPORT CARRIES THE LOADED FILE'S SCOPE (D-274, 1.5.4d): a
+// member-less `mod:fmi_util;` after the header loads `fmi_util.npk`, and its
+// symbol means what `use "./fmi_util.npk" as u;` means -- one `inner` field,
+// one lookup (D-273 §4) -- so `raw fmi_util.f()` calls into the file,
+// `fmi_util.K` reads its binding, `use fmi_util.{g, E};` binds through the
+// symbol as through any module symbol in scope (D-273 §2), and `raw u.f()`
+// is the same call through the alias. `use "./mod_file_import_lib.npk".*;`
+// binds that file's `pub mod:fmi_other;` WITH its scope (the link is made at
+// the end of collection, before any import round can copy an empty one), so
+// `raw fmi_other.h()` works across files and `use fmi_other.*;` binds `h`
+// bare. Until this subcycle `fmi_util.f()` was TYPE-019 "module `fmi_util`
+// has no member `f`" (S-49).
+//
+// AND THE QUALIFIER IS THE DECLARING FILE'S (DEF-32, found by this test):
+// `fmi_util.boom(1i32) ?! fmi_util.E` and `?! E` (imported bare) both name
+// the constant from THIS file, which the reach analysis walks first -- and
+// until 1.5.4d it recorded the qualifier of the first SITE that reached a
+// constant, demanded `(mod_file_import.E)`, a pair no code hashes under, and
+// refused the correct `(fmi_util.E)` below. The qualifier comes from the
+// resolver's table now (D-179: the FILE that declares the constant).
+mod:mod_file_import;
+mod:fmi_util;
+use "./fmi_util.npk" as u;
+use "./mod_file_import_lib.npk".*;
+use fmi_util.{g, E};
+use fmi_other.*;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = raw fmi_util.f();                    // 5
+    int32:b = fmi_util.K;                          // 7
+    int32:c = raw g(1i32);                         // 2, bound through the import's scope
+    int32:d = raw fmi_other.h();                   // 11, a `pub mod` file import re-exported with its scope
+    int32:e = raw h();                             // 11, bare after `use fmi_other.*;`
+    int32:f = raw u.f();                           // 5, the alias of the same file
+    int32:g2 = fmi_util.boom(1i32) ?! fmi_util.E;  // 1, the constant through the path
+    int32:h2 = fmi_util.boom(2i32) ?! E;           // 2, the constant imported bare
+    exit (a + b + c + d + e + f + g2 + h2);        // 44
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (fmi_util.E)     { exit 2i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

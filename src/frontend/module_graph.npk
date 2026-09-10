@@ -53,6 +53,17 @@ pub struct:ModuleEntry = {
     int32:scope;     // its module scope in the symbol table
 };
 
+// WHICH ENTRY A FILE-MODULE IMPORT LOADED (D-274, 1.5.4d): one row per
+// successful `mod:name;` load -- the import's declaration and the graph
+// index of the module the loader found for it (`name.npk` or `name/mod.npk`,
+// or an entry already in the graph, since `graph_load` deduplicates).
+// `graph_link_file_modules` reads it at the end of collection, when every
+// module's scope exists, and hands the import's symbol that scope.
+pub struct:FileModuleLink = {
+    int32:decl;
+    int32:loaded;
+};
+
 // WHERE A DERIVED LINE CAME FROM (D-259, 1.5.2b step 4): one row per line of
 // every `<derived-N>` synthetic file -- the subject declaration the derive sits
 // on, the trait it derives, and the member (a field or a variant, or 0 for a
@@ -93,6 +104,9 @@ pub struct:ModuleGraph = {
 
     // The derived-line registry (D-259) -- see `DerivedOrigin`.
     List<DerivedOrigin>:origins;
+
+    // The file-module import records (D-274) -- see `FileModuleLink`.
+    List<FileModuleLink>:links;
 };
 
 pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
@@ -108,7 +122,8 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
         prelude: 0i32 - 1i32,
         root_index: 0i32 - 1i32,
         v: raw list_init::<ModuleEntry>(16i64),
-        origins: raw list_init::<DerivedOrigin>(16i64)
+        origins: raw list_init::<DerivedOrigin>(16i64),
+        links: raw list_init::<FileModuleLink>(16i64)
     };
     pass g;
 };
@@ -299,6 +314,89 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
         g.v.items[i => int64] = e;
         i = i + 1i32;
     }
+    // THE FILE-MODULE IMPORTS ARE LINKED LAST (D-274): every scope exists now,
+    // and no import round has copied anything yet.
+    drop graph_link_file_modules(g);
+    pass NIL;
+};
+
+// THE FILE-MODULE IMPORT CARRIES THE LOADED FILE'S SCOPE (D-274, 1.5.4d).
+//
+// `mod:util;` after a file's header loads `util.npk`, and collection declares
+// `util` as a module symbol whose scope is EMPTY -- `collect_decl` opens one
+// over the declaration's zero members -- so until this pass `util.f()`
+// reported "module `util` has no member `f`" (S-49) and never reached the
+// file. The symbol's `inner` becomes the loaded entry's scope: the alias's
+// field, read by the alias's lookup (D-273 §4), so `mod:util;` then `util.f()`
+// means what `use "./util.npk" as util;` then `util.f()` means -- no third
+// kind of module symbol.
+//
+// AT THE END OF COLLECTION, NOT IN THE IMPORT PASS. A module symbol's scope is
+// COPIED when a binding of it is created (`bind_or_report`, `bind_wildcard`)
+// and never again, so a `pub mod:util;` bound by an earlier module's wildcard
+// import in round 1 would carry the empty scope forever if the link came
+// later. Here every module's scope exists and no round has run.
+//
+// A declaration with no record -- a load the loader refused (RESOLVE-004,
+// RESOLVE-005, already reported) -- is left as collection made it; no stage
+// past resolution runs over a program with a diagnostic, so the empty scope
+// is never consulted.
+func:graph_link_file_modules = NIL(ModuleGraph->:g) never fails {
+    int32:i = 0i32;
+    while ((i => int64) < g.v.count) {
+        if (i != g.prelude) {
+            ModuleEntry:e = g.v.items[i => int64];
+            DeclId:rootId = DeclId{ index: e.root };
+            DeclNode:m = raw ast_decl(@g.ast, rootId);
+            int32:n = raw item_member_count(@g.ast, m);
+            int32:first = raw header_slot(@g.ast, rootId);
+            for (int32:k in first...n) {
+                DeclId:item = raw item_member(@g.ast, m, k);
+                DeclNode:d = raw ast_decl(@g.ast, item);
+                if (d.kind == DeclKind.DeclModuleDecl) {
+                    if ((raw item_member_count(@g.ast, d)) == 0i32) {
+                        drop link_one_file_module(g, e.scope, item, d);
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:link_one_file_module = NIL(ModuleGraph->:g, int32:scope, DeclId:item,
+                                DeclNode:d) never fails {
+    int32:loaded = raw file_module_loaded(g, item);
+    if (loaded < 0i32) { pass NIL; }
+    int32:sym = raw scope_lookup_local(@g.tab, scope, raw decl_name(d));
+    if (sym == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(@g.tab, sym);
+    // THIS declaration's symbol, not a namesake's: a second `mod:util;` in one
+    // file never declares (RESOLVE-001 reported it), so a symbol over another
+    // declaration is that declaration's, linked on its own turn.
+    if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
+    if (s.origin != item.index) { pass NIL; }
+    drop symtab_set_inner(@g.tab, sym, g.v.items[loaded => int64].scope);
+    pass NIL;
+};
+
+// The entry a file-module import's declaration loaded, or -1.
+func:file_module_loaded = int32(ModuleGraph->:g, DeclId:item) never fails {
+    int32:i = 0i32;
+    while ((i => int64) < g.links.count) {
+        if (g.links.items[i => int64].decl == item.index) {
+            pass g.links.items[i => int64].loaded;
+        }
+        i = i + 1i32;
+    }
+    pass (0i32 - 1i32);
+};
+
+// Recorded on a load that answered an entry; a refused load records nothing.
+func:note_file_module_load = NIL(ModuleGraph->:g, DeclId:item, int32:index) never fails {
+    if (index < 0i32) { pass NIL; }
+    drop list_push(@g.links, FileModuleLink{ decl: item.index, loaded: index });
     pass NIL;
 };
 
@@ -641,7 +739,7 @@ func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
                 // load the sibling it named. A member-less `mod:name;` anywhere
                 // after it is the import it always was.
                 if (i == 0i32) { continue; }
-                drop graph_load_file_module(g, from, d);
+                drop graph_load_file_module(g, from, d, item);
             }
         }
     }
@@ -670,7 +768,8 @@ func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) never fai
 // declaring file. FINDING BOTH IS AN ERROR by the same rule as 0.3.2: two files
 // can supply one module, and picking one silently makes the answer depend on
 // something the reader cannot see.
-func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d) never fails {
+func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
+                                  DeclId:item) never fails {
     string:name = raw intern_get(g.interns, raw decl_name(d));
     string:dir = raw path_dirname(from);
 
@@ -701,11 +800,11 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d) neve
                 raw diag_error(raw RESOLVE_AMBIGUOUS(), move(m5), d.span));
             pass NIL;
         }
-        discard(raw graph_load(g, flat, d.span));
+        drop note_file_module_load(g, item, raw graph_load(g, flat, d.span));
         pass NIL;
     }
     if (has_nested) {
-        discard(raw graph_load(g, nested, d.span));
+        drop note_file_module_load(g, item, raw graph_load(g, nested, d.span));
         pass NIL;
     }
 

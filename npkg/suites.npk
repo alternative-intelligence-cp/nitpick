@@ -106,7 +106,13 @@ pub func:walk_files = List<string>(string:dir, string:suffix) {
 // --- the import grouping -----------------------------------------------------------
 
 // Every `use "<path>"` in a file, as the LEXER reads it: the keyword, then
-// a string literal, its decoded text.
+// a string literal, its decoded text -- and, PAST THE HEADER, every
+// member-less `mod:name;` (the external-file module import, MODULE_REFERENCE
+// §1.1; since D-274, 1.5.4d, its symbol carries the file's scope) as
+// `name.npk` and `name/mod.npk`, since a file named that way by another
+// test is a fixture exactly as a `use "…"` target is (`visit` keeps the one
+// that exists). The first `mod:name;` is the file's header (D-248) and names
+// the file itself. The harness's `import_targets` is the same rule.
 func:use_targets = List<string>(string:text) never fails {
     List<string>:out = raw list_init::<string>(4i64);
     InternTable:it = raw intern_init();
@@ -114,12 +120,28 @@ func:use_targets = List<string>(string:text) never fails {
     TokenList:toks = raw lex_all(0i32, text, @it, @diags);
     int64:n = raw tokenlist_count(@toks);
     int64:i = 0i64;
+    bool:header_seen = false;
     while ((i + 1i64) < n) {
         Token:t = raw tokenlist_at(@toks, i);
         if (t.kind == TokenKind.KwUse) {
             Token:s = raw tokenlist_at(@toks, i + 1i64);
             if (s.kind == TokenKind.StringLit) {
                 drop strlist_push(@out, raw intern_get(@it, s.payload =>! int32));
+            }
+        }
+        if (t.kind == TokenKind.KwMod) {
+            if ((i + 3i64) < n) {
+                Token:colon = raw tokenlist_at(@toks, i + 1i64);
+                Token:nm = raw tokenlist_at(@toks, i + 2i64);
+                Token:semi = raw tokenlist_at(@toks, i + 3i64);
+                if ((colon.kind == TokenKind.PColon) && (nm.kind == TokenKind.Ident) && (semi.kind == TokenKind.PSemi)) {
+                    if (header_seen) {
+                        string:name = raw intern_get(@it, nm.payload =>! int32);
+                        drop strlist_push(@out, string_concat(name, ".npk"));
+                        drop strlist_push(@out, string_concat(name, "/mod.npk"));
+                    }
+                    header_seen = true;
+                }
             }
         }
         i = i + 1i64;

@@ -68,11 +68,9 @@ pub struct:Resolver = {
     // the stage-1/stage-2 fixpoint honest (D-078).
     bool:in_prelude;
     int32:module_name;
-    // SoA KEPT, two Lists (1.4.7 step 2). Both counts move together -- every
-    // record pushes both -- which is this pair's invariant now that the shared
-    // `ecount` is gone.
-    List<int32>:ecodes;
-    List<int32>:edecls;
+    // The registry of assigned codes is the SymbolTable's error table since
+    // 1.5.4d (`symtab_add_error`): the reach analysis and the checker read
+    // the same rows -- the qualifier a code hashed under is recorded ONCE.
 
     // THE NEXT SLOT ORDINAL in the function being resolved (1.5.2d, D-262
     // §2): reset at a function's entry, handed to each parameter and then to
@@ -87,8 +85,6 @@ pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                            module_scope: 0i32,
                            caller_scope: 0i32,
                            in_prelude: false, module_name: 0i32,
-                           ecodes: raw list_init::<int32>(16i64),
-                           edecls: raw list_init::<int32>(16i64),
                            local_next: 0i32 };
     pass r;
 };
@@ -656,21 +652,19 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
             pass NIL;
         }
         int32:code = raw error_code_of(r, r.module_name, raw decl_name(d));
-        int32:ei = 0i32;
-        while ((ei => int64) < r.ecodes.count) {
-            if (r.ecodes.items[ei => int64] == code) {
-                if (r.edecls.items[ei => int64] != id.index) {
-                    drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),
-                        "two error constants derive the same code (D-179, an FNV collision): rename one — identity must be unambiguous",
-                        d.span));
-                    pass NIL;
-                }
-            }
-            ei = ei + 1i32;
+        int32:prior = raw symtab_error_by_code(r.tab, code);
+        if ((prior != 0i32) && (prior != id.index)) {
+            drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),
+                "two error constants derive the same code (D-179, an FNV collision): rename one — identity must be unambiguous",
+                d.span));
+            pass NIL;
         }
-        // BOTH, ALWAYS.
-        drop list_push(@r.ecodes, code);
-        drop list_push(@r.edecls, id.index);
+        // INTO THE PROGRAM'S TABLE (1.5.4d): the declaration, the qualifier it
+        // hashed under -- the FILE's name, whether or not the constant sits in
+        // an inline module (D-275) -- and the code.
+        if (prior == 0i32) {
+            drop symtab_add_error(r.tab, id.index, r.module_name, code);
+        }
         drop ast_set_error_code(r.ast, id, code);
         pass NIL;
     }

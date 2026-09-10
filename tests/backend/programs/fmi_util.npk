@@ -1,0 +1,16 @@
+// A FIXTURE for mod_file_import.npk, which loads it with `mod:fmi_util;` (the
+// external-file module import, MODULE_REFERENCE §1.1) and, a second time, as
+// `use "./fmi_util.npk" as u;`: the import's symbol carries THIS file's scope
+// (D-274, 1.5.4d) exactly as the alias does, so `fmi_util.f()` and `u.f()`
+// are one meaning. `E` is this FILE's identity (D-179): its arm is
+// `(fmi_util.E)` wherever it is named. Not a test of its own.
+mod:fmi_util;
+pub func:f = int32() never fails { pass 5i32; };
+pub fixed int32:K = 7i32;
+pub func:g = int32(int32:v) never fails { pass (v + 1i32); };
+error:E;
+pub func:boom = int32(int32:v) {
+    if (v > 100i32) { fail E; }
+    pass v;
+};
+func:secret = int32() never fails { pass 0i32; };

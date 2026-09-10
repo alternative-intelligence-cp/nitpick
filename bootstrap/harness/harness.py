@@ -148,6 +148,25 @@ Z3_OPTIONS = list(_VF.get("z3-options", []))
 # Files that are imported by another test rather than run on their own.
 # `use "x.npk".*` names the dependency, so this is derived, not configured.
 USE_RE = re.compile(r'use\s+"([^"]+)"')
+# A MEMBER-LESS `mod:name;` PAST THE HEADER is the external-file module import
+# (MODULE_REFERENCE §1.1; since D-274, 1.5.4d, its symbol carries the file's
+# scope): it names `name.npk` or `name/mod.npk` beside the declaring file, and
+# a file named that way by another test is a fixture exactly as a `use "…"`
+# target is -- the first run of 1.5.4d step 0 linked `fmi_other.npk`, loaded
+# only through `mod:fmi_other;`, as a program and found no `main`. The FIRST
+# match in a file is its header (D-248), which names the file itself.
+MOD_RE = re.compile(r'^\s*(?:pub\s+)?mod\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*;', re.M)
+
+
+def import_targets(text):
+    """The relative paths a file imports: every `use "…"`, and past the
+    header every member-less `mod:name;` as `name.npk` and `name/mod.npk`
+    (whichever exists is the import; `group_for` checks)."""
+    out = [m.group(1) for m in USE_RE.finditer(text)]
+    for name in MOD_RE.findall(text)[1:]:
+        out.append(name + ".npk")
+        out.append(os.path.join(name, "mod.npk"))
+    return out
 
 # `pub func:TYPE_MISMATCH = string() { pass "NITPICK-TYPE-007"; };`
 CODE_DECL_RE = re.compile(r'pub func:(\w+) = string\(\)(?: never fails)?\s*\{\s*pass "([A-Z0-9\-]+)"')
@@ -325,8 +344,8 @@ def group_for(path, all_paths=None):
                 text = fh.read()
         except OSError:
             return
-        for m in USE_RE.finditer(text):
-            cand = os.path.normpath(os.path.join(os.path.dirname(p), m.group(1)))
+        for rel in import_targets(text):
+            cand = os.path.normpath(os.path.join(os.path.dirname(p), rel))
             if os.path.exists(cand):
                 visit(cand)
         order.append(p)
