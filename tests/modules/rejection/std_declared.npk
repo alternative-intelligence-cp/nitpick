@@ -1,0 +1,13 @@
+// expect-error: NITPICK-RESOLVE-001
+//
+// `std` IS THE STANDARD LIBRARY'S ROOT (D-273 §2, D-239's table, 1.5.4c): a
+// `use std.…` path resolves to the library before any module symbol is looked
+// up, so a program's module of that name could never be reached by the path
+// that spells it -- refused where it is declared, the owned-name rule's code.
+// The `use std.math.*;` beside it parses and binds nothing, as it always did.
+mod:std_declared;
+use std.math.*;
+
+mod:std = {
+    pub func:f = int32() never fails { pass 1i32; };
+};

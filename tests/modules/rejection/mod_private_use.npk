@@ -1,0 +1,14 @@
+// expect-error: NITPICK-RESOLVE-003
+//
+// A PRIVATE MEMBER IS PRIVATE FROM EITHER SPELLING (D-273 §3, 1.5.4c): `use
+// hidden.internal;` over an inline module is the named import's own refusal,
+// "`internal` is private to `hidden`" with the note at the declaration -- the
+// code and the sentence `hidden.internal()` gets from the checker
+// (`tests/types/rejection/mod_private_qualified.npk`).
+mod:mod_private_use;
+use hidden.internal;
+
+mod:hidden = {
+    func:internal = int32() never fails { pass 1i32; };
+    pub func:visible = int32() never fails { pass 2i32; };
+};

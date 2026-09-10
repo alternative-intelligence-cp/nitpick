@@ -1,0 +1,9 @@
+// A FIXTURE for mod_qualified.npk: `use "./mod_helpers.npk".*;` binds the
+// `pub mod` `helpers` WITH its scope (D-273 §3/§4, 1.5.4c step 1), so
+// `helpers.f()` works across files exactly as it does within one. Not a test
+// of its own.
+mod:mod_helpers;
+pub mod:helpers = {
+    pub func:f = int32() never fails { pass 6i32; };
+    func:kept_here = int32() never fails { pass 0i32; };
+};

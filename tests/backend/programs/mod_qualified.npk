@@ -1,4 +1,4 @@
-// expect-exit: 42
+// expect-exit: 79
 //
 // THE QUALIFIED CALL IS A DIRECT CALL (D-273, 1.5.4c): a module symbol means
 // one thing wherever it stands. `hidden.fetch(3i32)` calls an inline module's
@@ -12,13 +12,25 @@
 // function does; and `?! hidden.Boom` names an error constant through the
 // path -- the reach analysis reads the recorded declaration, and the arm is
 // the file-qualified spelling D-179 gives every constant declared in this
-// file, inline module or not.
+// file, inline module or not. AND `use` OVER A MODULE PATH (D-273 §2, step
+// 1): `use hidden.*;` binds the inline module's public names -- `fetch` bare,
+// `MAX`, the TYPE `Pair` (the only way an inline module's types are named
+// from outside); `use core.math.{sq};` the selective form and `use core.math
+// as cm;` the alias form over a nested path; `use "./mod_helpers.npk".*;`
+// binds the `pub mod` `helpers` WITH its scope, so `helpers.f()` works across
+// files.
 mod:mod_qualified;
 use "./mod_qualified_lib.npk" as lib;
+use "./mod_helpers.npk".*;
+use hidden.*;
+use core.math.{sq};
+use core.math as cm;
 
 mod:hidden = {
     error:Boom;
     pub fixed int32:MAX = 11i32;
+    pub struct:Pair = { int32:a; int32:b; };
+    pub func:mk = Pair(int32:v) never fails { Pair:p = Pair{ a: v, b: v + 1i32 }; pass p; };
     pub func:fetch = int32(int32:v) never fails { pass (v + 4i32); };
     pub func:pos = bool(int32:v) pure never fails { pass (v > 0i32); };
     pub async func:tick = int32(int32:v) { pass (v * 2i32); };
@@ -46,7 +58,14 @@ async func:main = int32(cstring[]:_~argv) {
     drop hidden.idle();
     int32:f = half(8i32) ?| 0i32;                  // 4
     int32:g = hidden.boom(1i32) ?! hidden.Boom;    // 1
-    exit (a + b + c + d + e + f + g);              // 42
+    int32:h = raw helpers.f();                     // 6, a `pub mod` bound by a file import
+    int32:i = raw fetch(1i32);                     // 5, bare after `use hidden.*;`
+    Pair:pr = Pair{ a: 1i32, b: 2i32 };
+    int32:j = pr.a + pr.b + MAX;                   // 14, a type and a binding out of an inline module
+    int32:k = raw sq(2i32) + raw cm.sq(1i32);      // 5, the selective form and the alias over a path
+    Pair:q = raw hidden.mk(3i32);
+    int32:l = q.a + q.b;                           // 7, a struct built INSIDE its inline module
+    exit (a + b + c + d + e + f + g + h + i + j + k + l);   // 79
 };
 
 func:failsafe = int32(Error:e) {

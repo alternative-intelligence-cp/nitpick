@@ -1,0 +1,10 @@
+// `use lib.*;` ABOVE the alias that binds `lib` (D-273 R-2, MODULE_REFERENCE
+// §2.4: resolution is never order-dependent): the fixed-point import loop
+// binds the alias on the first round and the wildcard over it on the second,
+// and the one reporting round runs after the point -- so this file and its
+// twin below mean the same program.
+mod:order_alias_above;
+use lib.*;
+use "./order_alias_lib.npk" as lib;
+
+func:go = int32() never fails { pass ((raw lib_value()) + (raw lib.lib_value())); };

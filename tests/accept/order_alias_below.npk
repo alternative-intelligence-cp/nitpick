@@ -1,0 +1,7 @@
+// `use lib.*;` BELOW the alias that binds `lib` -- the twin of
+// `order_alias_above.npk` (D-273 R-2): the same program in the other order.
+mod:order_alias_below;
+use "./order_alias_lib.npk" as lib;
+use lib.*;
+
+func:go = int32() never fails { pass ((raw lib_value()) + (raw lib.lib_value())); };

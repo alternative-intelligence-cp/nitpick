@@ -1554,10 +1554,21 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             // about a program that is already being refused.
             pass NIL;
         }
+        // AND THE TYPER'S OWN SCOPE FOLLOWS (1.5.4c step 1, found by the
+        // first program to use a struct declared inside an inline module):
+        // a body's type annotations, struct literals and UFCS lookups read
+        // `e.scope`, which `etyper_init` set to the FILE's scope once and this
+        // walk never moved -- so `S:s = S{ … }` inside `mod:m = { pub
+        // struct:S … }` reported "there is no type named `S`" from the
+        // module's own function, while the signature, resolved through the
+        // `scope` parameter, saw it. Saved and restored around the members.
+        int32:saved_scope = e.scope;
+        e.scope = inner;
         int32:mn2 = raw item_member_count(e.ast, d);
         for (int32:q in 0i32...mn2) {
             drop check_decl(e, raw item_member(e.ast, d, q), inner);
         }
+        e.scope = saved_scope;
         pass NIL;
     }
 

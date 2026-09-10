@@ -1,0 +1,24 @@
+// expect-error: NITPICK-RESOLVE-002
+// expect-error: NITPICK-RESOLVE-002
+// expect-error: NITPICK-RESOLVE-007
+// expect-error: NITPICK-RESOLVE-002
+//
+// A `use` PATH THAT IS NOT THE STANDARD LIBRARY'S STARTS AT A MODULE SYMBOL IN
+// SCOPE (D-273 §2, R-1, 1.5.4c): a first segment naming nothing is refused by
+// name -- a typo is never silent, where before every logical path was left to
+// the driver and bound nothing -- one naming a function is "not a module", a
+// later segment the module lacks is the named import's "has no", and a later
+// segment naming a function is not a module either. `use std.…` is the
+// library's and binds nothing, as it always did.
+mod:mod_use_unknown;
+use nosuch.*;
+use f.*;
+use core.nosuch.*;
+use core.g.*;
+use std.collections.*;
+
+mod:core = {
+    pub mod:math = { pub func:sq = int32(int32:v) never fails { pass (v * v); }; };
+    pub func:g = int32() never fails { pass 1i32; };
+};
+func:f = int32() never fails { pass 0i32; };

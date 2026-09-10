@@ -33,8 +33,11 @@ exists to demonstrate.
 | `header_missing.npk` | `NITPICK-RESOLVE-012` — a file with no header: its first declaration is not `mod:<basename>;` (D-248, 1.5.1b) |
 | `header_mismatch.npk` (+ `header_sibling.npk`) | `NITPICK-RESOLVE-012` — a header naming a SIBLING that exists: refused at the header, and the sibling is NOT loaded (the workbench's DEF-2; D-248) |
 | `entry_in_module.npk` (+ `entry_lib.npk`) | `NITPICK-RESOLVE-013` — `main`/`failsafe` declared in an imported module, and in an inline module of the root: entry points are the root's top level alone (D-248) |
+| `mod_private_use.npk` | `NITPICK-RESOLVE-003` — `use hidden.internal;` over an inline module: a private member is private from either spelling (D-273 §3, 1.5.4c; the qualified call's refusal is the checker's, in `tests/types/rejection/mod_private_qualified.npk`) |
+| `mod_use_unknown.npk` | `NITPICK-RESOLVE-002` and `NITPICK-RESOLVE-007` — a `use` path whose first segment names no module symbol in scope, or a function; a later segment the module lacks, or one naming a function (D-273 §2, R-1); `use std.…` beside them binds nothing and says nothing |
+| `std_declared.npk` | `NITPICK-RESOLVE-001` — `mod:std = { … };`: `std` is the standard library's root and joins D-239's owned names (D-273 §2) |
 
-Ten codes, fourteen files (RESOLVE-001 has two: the plain duplicate, and the
+Ten codes, seventeen files (RESOLVE-001 has two: the plain duplicate, and the
 owned name — one code, because each is "this name already means something
 here"; two of the fourteen are fixtures another file imports). A code with no
 test is a diagnostic nobody has ever seen produced.

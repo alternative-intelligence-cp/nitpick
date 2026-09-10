@@ -1,0 +1,32 @@
+// expect-exit: 3
+//
+// A STRUCT DECLARED AND USED INSIDE AN INLINE MODULE (1.5.4c step 1, three
+// holes found on the way to D-273, none reachable before a program could call
+// into an inline module): the checker resolved a body's type names in the
+// FILE's scope (`e.scope`, set once at the typer's birth), so `S:s = S{ … }`
+// in `m`'s own function reported "there is no type named `S`"; the emitter
+// wrote no `%"…m.S" = type { … }` header for a struct or enum declared inside
+// one (`llc`: "cannot allocate unsized type"); and the emitter's own resolver
+// read the file's scope the same way, so the header alone left the body
+// unlowerable (EMIT-002). Nothing here imports `S` into the file scope: the
+// module's own scope is the only one that can answer, and the program exits
+// through the struct it builds.
+mod:inline_struct;
+mod:m = {
+    pub struct:S = { int32:x; int32:y; };
+    pub func:f = int32() never fails { S:s = S{ x: 1i32, y: 2i32 }; pass (s.x + s.y); };
+};
+func:main = int32(cstring[]:_~argv) {
+    exit (raw m.f());
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

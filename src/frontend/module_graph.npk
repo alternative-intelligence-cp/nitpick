@@ -485,6 +485,18 @@ func:owned_name_error = NIL(ModuleGraph->:g, int32:pscope, int32:name, string:wh
             at));
         pass NIL;
     }
+    // `std` IS THE STANDARD LIBRARY'S ROOT (D-273 §2, 1.5.4c): a `use std.…`
+    // path is the library's before any module symbol is looked up, so a
+    // program's module of that name -- inline, imported, or a file whose
+    // header says so -- could never be reached by the path that spells it.
+    if (raw string_eq(nm, "std")) {
+        if (raw string_eq(what, "a module")) {
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_DUPLICATE(),
+                "`std` is the standard library's root (D-273), so a program cannot declare it as a module: `use std.…` resolves to the library before any module symbol is looked up, and a module of that name could never be reached (D-239)",
+                at));
+        }
+        pass NIL;
+    }
     if (against_prelude) {
         if (raw prelude_owns(g, pscope, name)) {
             string:p1 = string_concat("`", nm);
@@ -1018,11 +1030,130 @@ func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) never
     pass NIL;
 };
 
+// THE SCOPE A MODULE SYMBOL OPENED, or 0 for any other symbol (the checker's
+// `module_symbol_scope`, on the loader's side of the table).
+func:module_symbol_inner = int32(ModuleGraph->:g, int32:sym) never fails {
+    if (sym == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(@g.tab, sym);
+    if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    DeclNode:d = raw ast_decl(@g.ast, DeclId{ index: s.origin });
+    if (d.kind != DeclKind.DeclModuleDecl) { pass 0i32; }
+    pass s.inner;
+};
+
+// A LOGICAL `use` PATH RESOLVES AGAINST THE MODULE SYMBOLS IN SCOPE (D-273
+// §2, 1.5.4c): `use hidden.*;`, `use hidden.{f, Point};`, `use hidden.f;`,
+// `use core.math.*;`, `use core.math as cm;` -- the first segment a module
+// symbol the importing file's scope holds (an inline module, an alias, a
+// `pub mod` an earlier import bound), every later segment a module exported
+// by the one before, and the last module's scope bound through the SAME
+// binders the file forms use. This is the only way an inline module's TYPES
+// are named from outside. `std` first is the standard library's, as it
+// always was, and binds nothing here; any other first segment naming no
+// module symbol is refused (R-1: a typo is never silent), a later segment
+// the module lacks, or one private to it, as a named file import's is.
+// ORDER NEVER MATTERS (R-2, MODULE_REFERENCE §2.4): the fixed-point loop
+// re-applies every import until no binding is new, so `use lib.*;` written
+// above `use "./lib.npk" as lib;` binds on the second round, and the one
+// reporting round runs after the point -- no second pass is needed.
+func:apply_logical_import = NIL(ModuleGraph->:g, int32:scope, DeclNode:d,
+                                bool:report) never fails {
+    int32:segs = raw import_segment_count(@g.ast, d);
+    if (segs <= 0i32) { pass NIL; }
+    int32:first = raw import_segment(@g.ast, d, 0i32);
+    if (raw string_eq(raw intern_get(g.interns, first), "std")) { pass NIL; }
+    string:target = raw intern_get(g.interns, first);
+    int32:cur = raw scope_lookup_local(@g.tab, scope, first);
+    if (cur == 0i32) {
+        if (!report) { pass NIL; }
+        string:u1 = string_concat("cannot find module `", target);
+        drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_UNKNOWN(),
+            string_concat(u1, "` in this scope: a `use` path that is not the standard library's (`std.…`) starts at a module symbol this file declares or imports -- an inline `mod`, a `use … as name;` alias, or a `pub mod` a file import bound (D-273)"),
+            d.span));
+        pass NIL;
+    }
+    if ((raw module_symbol_inner(g, cur)) == 0i32) {
+        if (!report) { pass NIL; }
+        Symbol:cs = raw symtab_get(@g.tab, cur);
+        string:k1 = string_concat("`", target);
+        string:k2 = string_concat(k1, "` is ");
+        string:k3 = "a declaration of another kind";
+        if (cs.origin_kind == (raw SYM_DECL())) {
+            k3 = raw decl_kind_article(raw ast_decl(@g.ast, DeclId{ index: cs.origin }));
+        }
+        string:k4 = string_concat(k2, k3);
+        drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_UNKNOWN(),
+            string_concat(k4, ", not a module: a `use` path walks module symbols (D-273)"),
+            d.span));
+        pass NIL;
+    }
+    for (int32:i in 1i32...segs) {
+        int32:seg = raw import_segment(@g.ast, d, i);
+        string:segtext = raw intern_get(g.interns, seg);
+        int32:m = raw scope_lookup_local(@g.tab, raw module_symbol_inner(g, cur), seg);
+        if (m == 0i32) {
+            if (!report) { pass NIL; }
+            string:n1 = string_concat("`", target);
+            string:n2 = string_concat(n1, "` has no `");
+            string:n3 = string_concat(n2, segtext);
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_NO_SUCH_NAME(),
+                string_concat(n3, "`"), d.span));
+            pass NIL;
+        }
+        Symbol:ms = raw symtab_get(@g.tab, m);
+        if (!(raw symbol_is_exported(ms))) {
+            if (!report) { pass NIL; }
+            string:p1 = string_concat("`", segtext);
+            string:p2 = string_concat(p1, "` is private to `");
+            string:p3 = string_concat(p2, target);
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_PRIVATE(),
+                string_concat(p3, "`"), d.span));
+            drop diaglist_push(g.diags, raw diag_note(raw RESOLVE_PRIVATE(), "declared here",
+                                                      raw symbol_span(@g.ast, @g.tab, m)));
+            pass NIL;
+        }
+        if ((raw module_symbol_inner(g, m)) == 0i32) {
+            if (!report) { pass NIL; }
+            string:q1 = string_concat("`", target);
+            string:q2 = string_concat(q1, ".");
+            string:q3 = string_concat(q2, segtext);
+            string:q4 = string_concat(q3, "` is ");
+            string:q5 = string_concat(q4, raw decl_kind_article(raw ast_decl(@g.ast, DeclId{ index: ms.origin })));
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_UNKNOWN(),
+                string_concat(q5, ", not a module: a `use` path walks module symbols and names members only after its last `.` (D-273)"),
+                d.span));
+            pass NIL;
+        }
+        target = string_concat(target, string_concat(".", segtext));
+        cur = m;
+    }
+    int32:src_scope = raw module_symbol_inner(g, cur);
+    int32:extra = 0i32;
+    if (raw import_is_reexport(@g.ast, d)) { extra = raw SYM_PUB(); }
+    int32:kind = raw import_kind(d);
+    if (kind == (raw IMPORT_NAMESPACE())) {
+        Symbol:ms2 = raw symtab_get(@g.tab, cur);
+        drop bind_or_report(g, scope, raw import_alias(@g.ast, d), raw SYM_DECL(), ms2.origin,
+                            extra, d.span, target, report, src_scope);
+        pass NIL;
+    }
+    if (kind == (raw IMPORT_WILDCARD())) {
+        drop bind_wildcard(g, scope, src_scope, extra, d.span, target, report);
+        pass NIL;
+    }
+    int32:count = raw import_name_count(@g.ast, d);
+    for (int32:k in 0i32...count) {
+        drop bind_named(g, scope, src_scope, raw import_name(@g.ast, d, k), extra, d.span, target, report);
+    }
+    pass NIL;
+};
+
 func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
                             DeclNode:d, bool:report) never fails {
     int32:path_idx = raw import_path(d);
     if (raw intern_is_none(path_idx)) {
-        pass NIL;          // a logical path; the driver resolves those
+        drop apply_logical_import(g, scope, d, report);
+        pass NIL;
     }
     string:target = raw intern_get(g.interns, path_idx);
     Resolution:r = raw resolve_use(from, target, g.roots, g.stdlib);
@@ -1049,22 +1180,11 @@ func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
     if (kind == (raw IMPORT_NAMESPACE())) {
         int32:alias = raw import_alias(@g.ast, d);
         DeclId:srcRoot = DeclId{ index: src.root };
-        drop bind_or_report(g, scope, alias, raw SYM_DECL(), srcRoot.index,
-                            extra, d.span, target, report);
         // THE ALIAS CARRIES THE FILE'S SCOPE (D-273 §4, 1.5.4c): the one
         // `inner` field, read by the one lookup -- `lib.f(x)` and `lib.MAX`
         // resolve through it exactly as an inline module's members do.
-        // Idempotent under the fixed-point loop: the same symbol, the same
-        // scope, every round.
-        int32:asym = raw scope_lookup_local(@g.tab, scope, alias);
-        if (asym != 0i32) {
-            Symbol:asy = raw symtab_get(@g.tab, asym);
-            if (asy.origin_kind == (raw SYM_DECL())) {
-                if (asy.origin == srcRoot.index) {
-                    drop symtab_set_inner(@g.tab, asym, src.scope);
-                }
-            }
-        }
+        drop bind_or_report(g, scope, alias, raw SYM_DECL(), srcRoot.index,
+                            extra, d.span, target, report, src.scope);
         pass NIL;
     }
 
@@ -1122,7 +1242,7 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
     }
 
     drop bind_or_report(g, scope, name, s.origin_kind, s.origin, extra, at,
-                        target, report);
+                        target, report, s.inner);
     pass NIL;
 };
 
@@ -1143,6 +1263,10 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
             if (raw symbol_is_exported(s)) {
                 int32:bound = raw symtab_bind_import(@g.tab, scope, s.name,
                                                      s.origin_kind, s.origin, extra);
+                // a `pub mod` travels with its scope (D-273 §4)
+                if ((bound != 0i32) && (s.inner != 0i32)) {
+                    drop symtab_set_inner(@g.tab, bound, s.inner);
+                }
                 if (bound == 0i32) {
                     if (report) {
                     string:nm = raw intern_get(g.interns, s.name);
@@ -1217,9 +1341,17 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
 // something they asked for explicitly.
 func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
                           int32:origin_kind, int32:origin, int32:extra,
-                          Span:at, string:target, bool:report) never fails {
+                          Span:at, string:target, bool:report,
+                          int32:inner) never fails {
     int32:bound = raw symtab_bind_import(@g.tab, scope, name,
                                          origin_kind, origin, extra);
+    // A MODULE SYMBOL CARRIES ITS SCOPE WHEREVER IT IS BOUND (D-273 §4,
+    // 1.5.4c): an alias the file's, a `pub mod` its own -- one field, read by
+    // one lookup, so `lib.f()` and `helpers.f()` resolve through the import.
+    // Idempotent under the fixed-point loop.
+    if ((bound != 0i32) && (inner != 0i32)) {
+        drop symtab_set_inner(@g.tab, bound, inner);
+    }
     if (bound == 0i32) {
         if (!report) { pass NIL; }
         string:nm = raw intern_get(g.interns, name);

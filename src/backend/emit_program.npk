@@ -100,18 +100,7 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
-        int32:i = 0i32;
-        while (i < (raw item_member_count(@g.ast, mn))) {
-            DeclId:item = raw item_member(@g.ast, mn, i);
-            DeclNode:d = raw ast_decl(@g.ast, item);
-            if (d.kind == DeclKind.DeclStructDecl) {
-                drop emit_one_header(w, tr, c, diags, me.scope, item, true);
-            }
-            if (d.kind == DeclKind.DeclEnumDecl) {
-                drop emit_one_header(w, tr, c, diags, me.scope, item, false);
-            }
-            i = i + 1i32;
-        }
+        drop emit_headers_in(w, tr, c, diags, g, mn, me.scope);
         m = m + 1i32;
     }
 
@@ -638,6 +627,37 @@ func:impl_own_member = int32(Ast->:ast, DeclNode:d, int32:name) never fails {
     pass 0i32;
 };
 
+// The headers of one module's members, INLINE MODULES INCLUDED (1.5.4c step
+// 1, found the day `use hidden.*;` first named a struct declared inside one):
+// the walk above visited a file's top level only, so a struct or enum declared
+// in an inline `mod` was used by its D-156 name and never defined -- `llc`
+// refused the program with "cannot allocate unsized type". A nested module's
+// members resolve in ITS scope, the one its name opened (D-115's rule, the
+// same descent the function and global walks make).
+func:emit_headers_in = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
+                           DiagList->:diags, ModuleGraph->:g, DeclNode:mn,
+                           int32:scope) never fails {
+    int32:i = 0i32;
+    while (i < (raw item_member_count(@g.ast, mn))) {
+        DeclId:item = raw item_member(@g.ast, mn, i);
+        DeclNode:d = raw ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclStructDecl) {
+            drop emit_one_header(w, tr, c, diags, scope, item, true);
+        }
+        if (d.kind == DeclKind.DeclEnumDecl) {
+            drop emit_one_header(w, tr, c, diags, scope, item, false);
+        }
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            int32:inner = raw nested_module_scope(@g.tab, d, scope);
+            if (inner != 0i32) {
+                drop emit_headers_in(w, tr, c, diags, g, d, inner);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
 // One instantiation's `%"npk.mod.Container<int32>" = type { … }`.
 func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                                 DiagList->:diags, ModuleGraph->:g, int32:t) never fails {
@@ -1070,6 +1090,17 @@ func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
 };
 
 func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) never fails {
+    // THE EMITTER'S SCOPE FOLLOWS THE DESCENT (1.5.4c step 1, found with the
+    // checker's twin in `check_decl`): a body's local annotations, struct
+    // fields and constant folds resolve in `x.scope`, which the walk left at
+    // the FILE's -- so a function inside an inline module could not lower a
+    // local of the module's own struct (TYPE-001 from the emitter's resolver,
+    // then EMIT-002), and a program passed only when some `use` had bound the
+    // type into the file scope as well. The members resolve in the scope the
+    // module's name opened; saved and restored around them.
+    int32:saved_scope = x.scope;
+    int32:inner = raw nested_module_scope(x.tab, m, x.scope);
+    if (inner != 0i32) { x.scope = inner; }
     int32:i = 0i32;
     while (i < (raw item_member_count(x.ast, m))) {
         DeclId:item = raw item_member(x.ast, m, i);
@@ -1101,6 +1132,7 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) nev
         }
         i = i + 1i32;
     }
+    x.scope = saved_scope;
     pass NIL;
 };
 
