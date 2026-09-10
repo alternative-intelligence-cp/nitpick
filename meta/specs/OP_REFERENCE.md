@@ -116,6 +116,16 @@ result at all.
 > **`tbb` is how you ask for overflow to be an error**, and that choice is made at
 > the declaration, visible at every use.
 
+> **Corrected again (D-210, 1.4.2b; the note written 2026-09-10 at 1.5.4b's
+> close).** The plain-integer row above is superseded: `+ - *` on `intN`/
+> `uintN` TRAP `IntOverflow` on overflow since 1.4.2b — the coverage audit's
+> evidence, that silent wraparound under the type nobody opts into is the
+> Therac 255→0 shape — and deliberate modular arithmetic is spelled
+> widen–compute–truncate with `=>!` at the narrowing (TYPE_REFERENCE §1.2).
+> The `tbb` row and the float row stand. A `simd` integer lane wraps today
+> where its scalar traps — measured at 1.5.4b and recorded as DEF-38 / S-59
+> for the user.
+
 ERR is **absorbing and overrides identities**: `ERR * 0` is `ERR`, not `0`; so is
 `ERR - ERR`. Once a value is ERR, no arithmetic yields a non-ERR result from it.
 Only an explicit check (`is_err`) or a fallback (`?`) leaves the state.
@@ -174,6 +184,22 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `^` | Bitwise XOR | Bitwise XOR operation. | `a ^ b` |
 | `<<` | Left Shift | Shifts bits left. | `a << 2` |
 | `>>` | Right Shift | Shifts bits right (arithmetic/logical based on sign). | `a >> 2` |
+
+> **A shift's amount is defined for `0 ≤ n < width` and nothing else
+> (D-277, 1.5.4b).** A known amount outside the range — a literal, a negated
+> literal, a `fixed` constant the folder knows — is `NITPICK-TYPE-070` at the
+> shift, both operators and the compound spellings `<<=`/`>>=`; a computed
+> amount is checked at run time by one unsigned compare on its carrier (a
+> negative amount reads as huge) and traps `ShiftRange` (−4115), which the
+> reach analysis arms wherever a computed shift exists and every `failsafe`
+> must therefore name; the check is the `shift-range` obligation
+> (VERIFICATION_REFERENCE §7b, §7c), elided into one `llvm.assume` where z3
+> discharges it. Masking (`n mod width`) and saturating (`0`, or `−1` for a
+> signed right shift) were rejected: each silently performs a different
+> shift than the author wrote. The value of an in-range shift is unchanged —
+> a bit operation, no overflow trap (D-210). A `simd` shift's amount is a
+> vector and is checked any-lane. Before D-277 an amount at or past the
+> width reached LLVM as `shl` POISON and the program ran on.
 
 ---
 

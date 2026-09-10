@@ -975,7 +975,72 @@ the one construct that could reach an import from inside one was a no-op;
 the loader, the import pass and the file-module link are one walk shape now
 and descend into inline modules under the same rounds and refusals as at
 file level (`inline_imports.npk`). `nitpick.obligations` never moved.
-**Next: 1.5.4b (the remaining theories).**
+**1.5.4b (the remaining theories, D-218 items 4 and 5) IS COMPLETE
+(2026-09-10; `meta/roadmap/1.5/1.5.4b.md`; S-52…S-57 ratified the day they
+were raised as D-277…D-282; seven landings — steps 0–4, 4b, 5 — each a
+cumulative prefix under a full harness, D-228).** Step 0 (D-277): a shift's
+amount is DEFINED for `0 ≤ n < width` and nothing else — a known amount
+outside it is TYPE-070 at the shift, a computed one is one unsigned compare
+trapping `ShiftRange` (−4115) and the `shift-range` row (the planning probe
+had shown `shl` poison reaching LLVM unguarded; the folder had bounded every
+width by 64); the snapshot refreshed by the seed README's bridging variant
+because forty roots' `failsafe`s had to name the new constant. Step 1
+(D-279, D-280): every bitwise operation is encoded — the Int forms wherever
+an operand is a numeral (a shift by `k` as `mod`/`div` by `2^k`, the
+low-bits, one-bit and cleared-low-bits masks, `~`), at any width for a few
+hundred rlimit, and the bit-vector crossing (`int2bv`/`bv2nat`, exact by
+construction) at words of at most `BV_CROSS_MAX_BITS = 64` — measured free
+at 64 bits, 4% of the budget per row at 128, 18% at 256, the budget at 2048
+— with THE GATE that no discharged row regresses held at every step; a flag
+family is an unsigned 32-bit word to the encoder. Step 2 (D-278): the
+twisted kinds are unbounded `Int` in the carrier's range with ERR = `MIN` a
+VALUE the terms carry, every operation the emitter's own saturate-to-ERR
+`ite`, and `err-exit` rows live at every `TbbErr` guard (a compare's
+operands, a cast out under both spellings, a checked crossing into or
+within a family) — the compiler's own manifest 147 → 368 rows (+213
+`err-exit`, the prelude's generated impls), a twisted division rowless;
+three defects found and fixed: **DEF-33, a soundness hole with two faces —
+a guard's fact pushed under a QUIET encoding (a call-site contract row
+proved `n < 32` from itself) and inside a LOUD clause (`requires (1i32 <<
+n) != 0i32` was discharged of itself and its check elided)** — closed by
+one rule that is the meaning of a proposition from here on: A PROPOSITION
+HOLDS ONLY WHERE ITS EVALUATION DOES NOT TRAP (every guard met inside a
+clause is conjoined into the proposition's term and pushed as a hypothesis
+nowhere); DEF-34 (`smt_int` trapped on a negative numeral — the compiler
+died under `--obligations` at the first negative numeral in any row,
+reachable since step 1's `fixed` fold); DEF-35 (a negated literal pattern
+refused by the emitter). Step 3 (D-281): floats in two tiers —
+`flt32`/`flt64` as IEEE-sort terms with every operation the emitter's
+instruction (`fp.add`… under RNE, `fp.sqrt` for `#sqrt`, the ORDERED `fcmp`
+predicates, a literal `to_fp` of its exact decimal), the manifest's tier
+column fed by the encoder (`int`/`bv`/`fp`/`-`; `real` for a tier-2
+discharge — the constant `int` until now), and the Real-interval twin
+(`NNNN.t2.smt2`, every float a Real within `ε·|v| + η` of the exact
+operation) written only under three soundness conditions (every float
+symbol bounded both ways by comparison hypotheses; every intermediate's
+magnitude within the normal range CONJOINED to the goal; the goal a
+comparison), asked by both runners only after a tier-1 `budget`:
+`flt_tier2.npk`'s `#sqrt(a*a + b*b) >= 0.0` is `unknown` in QF_FP at the
+rlimit and `unsat` in the twin — D-218 (5)'s shape, end to end. Step 4
+(D-282): a `simd<T, N>` value is N scalar terms — through expressions AND
+bindings (S-58, the reading recorded for the user) — and a `simd`
+division's any-lane guard is ONE `div-zero` row (one `div-min` for a signed
+element) over the lane conjunction, a shift's one `shift-range` row; the
+`unencoded` producers of 1.5.0 retire — and the step's first harness caught
+the vector emitter's guards ignoring the manifest (rows discharged, traps
+kept; fixed: each elides into one `llvm.assume`, the belts being the
+instrument that saw it where a check of rows alone was green). Step 4b (DEF-37): the reach analysis
+demanded `DivByZero`/`DivOverflow` arms of every program whose only
+division was a float one — IEEE-total, a bare `fdiv`/`frem`, an arm nothing
+can enter; both sites read the float kind now, a `simd` division its
+ELEMENT's. **Recorded for the user: S-59/DEF-38 — a `simd` integer lane's
+`+ - *` lowers to a bare vector `add` and WRAPS where its scalar traps
+(D-210), measured (a lane at `INT_MAX` plus one read back negative)**, and
+DEF-36 (a program's `?! DivByZero` and a guard's trap share one text, so
+the runners' belts count it — an `npk_raise` floor entry is the recommended
+fix, D-203's). The compiler's own set: 368 rows in 197 function files,
+decided in 3.9 s under the profile. **Next: 1.5.5 (the aliasing/disjointness
+analysis).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1301,6 +1366,54 @@ that carried them retired at the cycle close):
   events on this machine; `valgrind --tool=callgrind` on the checker over a
   floor-only probe answers in 30 s, `callgrind_annotate --inclusive=yes` reads
   it.
+- **A shift's amount is checked** (D-277, 1.5.4b): `x << n` is defined for
+  `0 ≤ n < width(x)` only — a literal, a negated literal or a `fixed`
+  constant outside it is TYPE-070 at the shift (both spellings), a computed
+  amount traps `ShiftRange` (−4115), so a `failsafe` in a program with a
+  computed shift must name `(ShiftRange)` — forty roots learned that at
+  step 0, the compiler's own `types.npk` unit packing among them. The
+  `shift-range` row's goal is a hypothesis after the site.
+- **The bit-vector crossing stops at 64 bits** (D-280): `& | ^` and a
+  non-numeral shift on a wider word are opaque to z3 — safe, unproven — and
+  the Int forms (D-279) are what a wide-width row can use: a shift by a
+  literal, a low-bits mask `& (2^j − 1)`, a one-bit mask, `~`. Write a wide
+  mask as a numeral and the row decides at 2048 bits; write it as a
+  computed word and the row is `open` by design. Two unknowns under `&`
+  read by an inequality exhaust the budget even at 32 bits.
+- **Every twisted compare and cast out is an `err-exit` row** (D-278,
+  1.5.4b): the compiler's manifest grew 213 rows at step 2, most of them
+  the prelude's generated impls, so new twisted-typed code in `src/` or the
+  prelude moves the manifest (`--record` in the same commit, D-040). A row
+  under an `is_err` test or a branch's bounds discharges; a bare compare of
+  two opaque values is `open` and keeps its trap. A twisted division has no
+  row — its zero divisor is ERR.
+- **A proposition holds only where its evaluation does not trap** (DEF-33,
+  1.5.4b step 2): a guard met inside a `requires`, an `ensures`, an
+  `invariant`, a `Rules` clause or a `prove` — a shift's amount, a
+  division's pair, a twisted operand — is part of the proposition, never a
+  free hypothesis. So `requires (1i32 << n) != 0i32` proves `0 ≤ n < 32` at
+  every call and in the body, and `$ != 0tbb32` as a rule holds only where
+  `$` is not ERR. An encoder that pushes a guard's fact from inside a clause
+  proves the clause from itself (measured, twice).
+- **A float row needs bounds for tier 2** (D-281, 1.5.4b): floats never trap
+  and carry no row of their own, but a `limit`, a contract or a `prove` over
+  floats is decided — in QF_FP first, and where that exhausts the budget, by
+  the Real-interval twin ONLY IF every float symbol in the cone is bounded
+  below and above by comparisons against literals (a rule, a `requires`, a
+  path condition) and the goal is a comparison. `prove(a + b > a)` is `open`
+  (NaN, or `b ≤ 0`); `prove(a == a)` over a parameter is `open` (`fp.eq`'s
+  NaN reading, tier 1 only); an unbounded `#sqrt` claim is `budget` and the
+  verified build refuses the `prove`. A float `/` or `%` arms no
+  `DivByZero` (DEF-37, step 4b) — a `failsafe` names the two only where an
+  integer division exists.
+- **`simd` lanes are terms, and a `simd` local's lanes are its versions**
+  (D-282, 1.5.4b): a constructed or splat local, a lane read `v[2]`, `.len`,
+  `.sum()` are known to the solver; a `simd` division is ONE `div-zero` row
+  over all lanes, so one unconstrained lane keeps the whole guard. A
+  `simd(...)` constructor needs an annotated context (`simd<int32, 4>:v =
+  simd(k);`). **A `simd` integer lane's `+ - *` WRAPS today** where its
+  scalar traps (DEF-38/S-59, the user's): do not rely on a lane overflow
+  reaching `failsafe` until it lands.
 
 ### Reserved words that read like ordinary names
 

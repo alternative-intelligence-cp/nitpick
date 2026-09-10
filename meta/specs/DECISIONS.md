@@ -15075,6 +15075,21 @@ in `meta/specs/TCB.md` (r8 Lesson 2).
 > `exhaustive checker`), with 15 of its 24 open rows discharged through their
 > paths and none moved the other way.
 
+> **[1.5.4b (2026-09-10).]** Items (4) and (5) landed (D-277…D-282;
+> VERIFICATION_REFERENCE §7c is the model as landed). Two measured
+> departures from the skeleton's words: (4)'s "QF_BV for bitwise with
+> explicit crossing casts" is taken at widths up to 64 bits and no wider
+> (`BV_CROSS_MAX_BITS`, D-280 — the crossing costs 4% of the budget per row
+> at 128 bits, 18% at 256, the budget at 2048), with the Int forms of D-279
+> carrying every numeral-operand shape at any width; and (4)'s "`tbb`/`tfp`
+> as scaled Int with ERR-sentinel rows" landed with no new row kind — ERR is
+> a VALUE the terms carry and the sentinel's rows are `err-exit`'s, one per
+> `TbbErr` guard (D-278). (5) landed as written, with tier 2's soundness
+> conditions stated (D-281). A shift's amount joined the catalogue on the
+> way (`shift-range`, D-277 — poison had reached LLVM), and `simd` values
+> are per-lane terms (D-282). The compiler's own set is 368 rows (329 `int`,
+> 11 `bv`, 28 `-`), decided in 3.9 s under the profile.
+
 ## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
 
 Elision is a property of the VERIFIED BUILD recorded in the manifest —
@@ -17774,6 +17789,21 @@ performs a different shift than the author wrote.
 
 > Lands at **1.5.4b step 0** (`meta/roadmap/1.5/1.5.4b.md` §2).
 
+> **Landed (2026-09-10, 1.5.4b step 0).** `type_shift` → `check_shift_amount`
+> refuses a known amount outside the range (TYPE-070, both operators, both
+> spellings, the folder's bound the type's width — `fold_binary` had bounded
+> every width by 64); `emit_shift_guard` writes the one `icmp ult` and the
+> `ShiftRange` trap, or the `llvm.assume` a discharged `shift-range` row
+> licenses; the reach analysis arms `ShiftRange` at a computed shift; the
+> encoder records the row and pushes its goal as a hypothesis after the
+> site. The compiler's own manifest grew 31 rows (24 open, 7 discharged) in
+> thirteen functions — every one a shift the planning grep did not see,
+> spelled through a cast or a parenthesised amount — and the snapshot was
+> refreshed by the seed README's bridging variant, since forty roots'
+> `failsafe`s had to name the new constant. `shift_literal.npk`,
+> `shift_range.npk`, `shift_trap.npk`, `shift_trap_neg.npk`,
+> `simd_shift.npk`, `simd_shift_trap.npk`.
+
 ## D-278 — the twisted kinds' ERR is a value the obligations carry; `err-exit` is the row at every `TbbErr` guard; a twisted division has no row — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-53; lands at 1.5.4b step 2)**
 
 The skeleton asked whether the ERR sentinel needs an obligation kind per
@@ -17796,6 +17826,22 @@ records no row; both runners' trap table stays a function of the kind.
 
 > Lands at **1.5.4b step 2**.
 
+> **Landed (2026-09-10, 1.5.4b step 2).** As written: the twisted kinds as
+> `Int` with ERR = `MIN`, every operation the emitter's `ite`, each raw
+> result named once without an axiom before the range test; `err-exit` rows
+> at every `TbbErr` guard (both spellings of a cast out; a checked crossing
+> into or within a family), elided into one `llvm.assume` through the one
+> guard shape `tbb_trap_if`; no row for a twisted division. The compiler's
+> own manifest 147 → 368 rows (+213 `err-exit`: 84 discharged, 107 open, 22
+> `unencoded` — the prelude's generated impls over every twisted, `frac` and
+> tfp-`complex` type), no verdict moved on a kept hash. Three defects fixed
+> in the step: DEF-33 (a guard's fact pushed under a quiet encoding and
+> inside a loud clause — a proposition holds only where its evaluation does
+> not trap, from here on; VERIFICATION_REFERENCE §7c), DEF-34 (`smt_int`'s
+> negative numeral), DEF-35 (a negated literal pattern). `twisted_cmp`,
+> `twisted_cast`, `tfp_mul_range`, `tfp_div_err`, `dim256_cmp`, `tern_cmp`,
+> `limit_tbb`, `neg_numeral`, `req_shift` in `tests/verify/`.
+
 ## D-279 — every bitwise operation is encoded: pure-Int forms wherever an operand is a numeral, the bit-vector crossing otherwise — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-54; lands at 1.5.4b step 1)**
 
 D-218 (4) said bitwise operations cross into QF_BV with explicit crossing
@@ -17814,6 +17860,15 @@ the crossing of D-280. A crossing the encoder does not take is an `open` row
 an author cannot close; an Int form is not a crossing at all.
 
 > Lands at **1.5.4b step 1**.
+
+> **Landed (2026-09-10, 1.5.4b step 1).** `enc_bitwise` (both spellings):
+> the Int forms wherever `numeral_of` knows an operand — a plain numeral, a
+> folded expression, a `fixed` global's constant, so a flag member or a
+> named mask takes them — and the crossing of D-280 for the rest. A flag
+> family is an unsigned 32-bit word to the encoder (D-230), and `int32 =>!
+> oflags` / `oflags =>! int32` re-sign the one bit pattern (`flag_word_cast`,
+> the first arm the unchecked cast has). `divz_shift_lit`, `divz_wide_mask`
+> (the low-bits form at 2048 bits), `bit_test`, `flags_word`.
 
 ## D-280 — the Int-to-bit-vector crossing is taken at widths up to 64 bits and no wider; no discharged row may regress — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-55; lands at 1.5.4b step 1)**
 
@@ -17837,6 +17892,20 @@ hard shape is a recorded limit (`bv_budget.npk` pins one). Moving the
 constant later is a measurement, not a decision.
 
 > Lands at **1.5.4b step 1**.
+
+> **Landed (2026-09-10, 1.5.4b step 1).** `BV_CROSS_MAX_BITS = 64` in
+> `smt_encode.npk` with the measurements beside it; `(bv2nat (bvop (int2bv
+> a) (int2bv b)))` captured in a fresh symbol and re-signed; `bvshl`/
+> `bvlshr`/`bvashr` under the `shift-range` hypothesis; `(set-logic ALL)`
+> only in a function with a crossing, so no untouched row's hash moved. The
+> gate held at every step of the subcycle, measured over (symbol, kind,
+> verdict) counts of the re-recorded manifest: one verdict moved at step 1,
+> `open` → `discharged` (`flt_bits_shortest`'s `shift-range`, its amount now
+> known through a term in its cone), none the other way through step 4b.
+> `divz_masked.npk` is the first bitwise-shaped discharge; the planned
+> `bv_budget.npk` is not a test — its query overruns the runners' wall-clock
+> net (P-13, a build failure) before it exhausts the rlimit, so the limit is
+> recorded from the planning probe.
 
 ## D-281 — floats: tier 1 as QF_FP terms, the manifest's tier column fed by the encoder, tier 2 as the Real-interval abstraction under three soundness conditions — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-56; lands at 1.5.4b step 3)**
 
@@ -17873,6 +17942,22 @@ two passes; parity diffs the verdicts.
 
 > Lands at **1.5.4b step 3**.
 
+> **Landed (2026-09-10, 1.5.4b step 3).** Tier 1, the tier column and tier
+> 2 as written (VERIFICATION_REFERENCE §7c states the whole model; §7b's
+> note the row-level facts): every float value named with its definition
+> recorded by shape, the twin written by an s-expression reader over the
+> encoder's own texts under the three conditions, `NNNN.t2.smt2` +
+> `index.t2.txt`, both runners' second pass line for line, `real` in the
+> manifest for a tier-2 discharge, `--explain` naming the tier. Measured
+> under the profile: the bounded quotient's `prove` discharged in QF_FP in
+> 3.9 s; the square-root claim `unknown` at the rlimit and its twin `unsat`
+> (`flt_tier2.npk`). The compiler's manifest kept its 368 rows and gained the
+> encoder's tier words (329 `int`, 11 `bv`, 28 `-`; no `fp` row — nothing
+> the compiler emits computes in floats). Step 2's handoff landed in it: the
+> `err-exit` row of a float entering `tbb` or a ternary kind is encoded.
+> `flt_tier1`, `flt_tier2`, `flt_unbounded`, `flt_open`, `flt_limit`,
+> `flt_nan_cmp`, `flt_entry`.
+
 ## D-282 — `simd` values are per-lane terms, and a `simd` division is one row over its lanes — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-57; lands at 1.5.4b step 4)**
 
 A `simd<T, N>` expression (N ≤ 16 by D-194) is N scalar terms — the
@@ -17887,3 +17972,23 @@ producer is a `limit` over a subject no theory covers (a struct), named as
 P-12's residue.
 
 > Lands at **1.5.4b step 4**.
+
+> **Landed (2026-09-10, 1.5.4b step 4) — with one reading recorded for the
+> user (S-58).** The lanes ride expressions as written AND bindings: a
+> `simd` local's lanes are N symbols of the element type, a new set at
+> every write, defined equal to the written value's lanes where those are
+> known, fresh and opaque at every invalidation, restore and merge — because
+> every real `simd` value lives in a local and the decision's own tests (`a
+> / simd(k)`, a lane read into a division) are unprovable otherwise. One
+> `div-zero` row (and one `div-min` for a signed element) over the lane
+> conjunction per division, one `shift-range` row per shift;
+> `record_unencoded_division` and `record_unencoded_shift` retired. The
+> `unencoded` verdict's producers now: a `limit` over a string, a struct or
+> an array, and the `TbbErr` guards over a `frac` or a tfp-`complex`. The
+> compiler's manifest did not move. `simd_div_rows`, `simd_lanes`,
+> `simd_div_open` (the renamed `divz_unencoded`). Step 4b (DEF-37) then made
+> the reach analysis read a `simd` division's ELEMENT kind for the arm it
+> demands, as the encoder reads it for the row. The step's first harness
+> found the vector emitter's any-lane guards ignorant of the manifest (no
+> site threaded, the trap written whatever the verdict); each elides into
+> one `llvm.assume` of the negated any-lane test now, the scalar shape.

@@ -143,9 +143,10 @@ at runtime, and a violation **traps to `failsafe`**.
 > every write point is a `limit` row whose goal is the rule over the new
 > value, with the rule asserted as a HYPOTHESIS on every later version of
 > the binding — so a division by a limited divisor discharges, after a loop
-> included; a subject outside the encoder's fragment (§7b's tiers; since
-> 1.5.4b step 2 the twisted kinds are inside it, D-278) is an
-> `unencoded` row whose guard stays. Every direct call of a sync callee with
+> included; a subject outside the encoder's fragment (§7c: since 1.5.4b every
+> scalar family is inside it -- the twisted kinds by D-278, the floats by
+> D-281, a `simd` per lane by D-282 -- and a string, a struct or an array is
+> not) is an `unencoded` row whose guard stays. Every direct call of a sync callee with
 > limited parameters is a `limit-subsume` row: the caller's knowledge of
 > every argument against the callee's rules — the spec's "one `Rules`
 > implies another at a boundary". ELISION: a discharged write point emits
@@ -561,8 +562,8 @@ elide (D-219); the subcycle column says where its rows are produced.
 <!-- BEGIN obligation-catalogue -->
 | kind | what the obligation states | guard | rows from |
 |---|---|---|---|
-| `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142) | yes | 1.5.0 |
-| `div-min` | a signed division is not `INT_MIN / -1` (D-142) | yes | 1.5.0 |
+| `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142); a `simd` division's any-lane guard is ONE row over the lanes' conjunction (D-282) | yes | 1.5.0 |
+| `div-min` | a signed division is not `INT_MIN / -1` (D-142); one row over the lanes for a signed-element `simd` (D-282) | yes | 1.5.0 |
 | `overflow` | a plain-integer `+ - *` stays in range (D-210) | yes | 1.5.8 |
 | `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8 |
 | `cast-range` | a checked cast's value fits its target (D-148) | yes | 1.5.8 |
@@ -577,7 +578,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `err-exit` | the `TbbErr` guard's condition (D-144 as amended, D-278): neither operand is ERR at a comparison on a twisted value, the operand is not ERR at a cast out of its family (both spellings), a checked crossing into or within a family lands in the target's range; a twisted division has no row (a zero divisor is ERR) | yes | 1.5.4b |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
 | `loop-step` | a counted loop's computed step is positive (D-022): the compare at the loop's entry, `BadStep`; a literal step is the checker's (TYPE-068) and has no row | yes | 1.5.4 |
-| `shift-range` | a shift's COMPUTED amount is inside `0..width-1` (D-277): the compare before the shift, `ShiftRange`; a known amount is the checker's (TYPE-070) and has no row | yes | 1.5.4b |
+| `shift-range` | a shift's COMPUTED amount is inside `0..width-1` (D-277): the compare before the shift, `ShiftRange`; a known amount is the checker's (TYPE-070) and has no row; a `simd` shift's any-lane guard is one row over the lanes (D-282) | yes | 1.5.4b |
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
 <!-- END obligation-catalogue -->
@@ -711,6 +712,197 @@ guard that stays), `budget` (unknown under the pinned `rlimit`), `unencoded`
 INVENTORY of guards), or `checker` (discharged by the frontend). The elision
 column is `elided`, `retained`, or `none` for a kind with no guard.
 
+## 7c. The theories (D-218 (4) and (5); landed 1.5.4b, 2026-09-10)
+
+What a value IS to the solver, family by family — the partition D-218 (4)
+and (5) ratified, as landed (D-277…D-282). One rule stands above every
+family: **a proposition holds only where its evaluation does not trap**
+(DEF-33, 1.5.4b step 2). Every guard met inside a contract clause, an
+invariant conjunct, a rule's clause or a `prove` — a shift's amount, a
+division's pair, a twisted compare's or cast's operands, a called callee's
+own entry conditions, an opaque stand-in for a guard the walk has no term
+for — is CONJOINED into the proposition's term and pushed as a hypothesis
+nowhere, so the row over the proposition proves its guards pass, eliding its
+check removes no live guard, and the proposition as a hypothesis (the
+callee's precondition in its body, a rule after a write, a proven claim)
+carries them. An encoder that pushes a guard's fact from inside a clause
+proves the clause from itself; measured twice before the rule was written.
+
+**Plain integers: unbounded `Int` with range axioms (1.5.0).** Every
+`intN`/`uintN` symbol is an `Int` with the axiom of its range; `+ - *` are
+the Int operations (D-210's overflow rows are 1.5.8's), `/` and `%` the
+truncating `npk_sdiv`/`npk_srem` as the machine's, with the D-007 pair as
+rows. A `bool` is `Bool`, a pattern's literal is read under the selector's
+type, a path condition is a hypothesis in its arm (§7b's 1.5.4 note).
+
+**A shift's amount (D-277; step 0).** `x << n` and `x >> n` are defined for
+`0 ≤ n < width(x)` and nothing else, in every evaluator the language has: a
+known amount outside the range is `NITPICK-TYPE-070` at the shift (both
+operators, both spellings, the folder's bound the type's width); a computed
+amount is one unsigned compare on its carrier (`n <u W`, a negative amount
+reading as huge) trapping `ShiftRange` (−4115), the `shift-range` row's goal
+`(and (>= n 0) (< n W))` and, discharged, one `llvm.assume`. The goal is a
+hypothesis after the site either way — what lets a shift by a bounded
+amount cross exactly below. Masking and saturating were rejected: each
+silently performs a different shift than the author wrote.
+
+**Bitwise operations: the Int forms first, the bit-vector crossing bounded
+(D-279, D-280; step 1).** Wherever an operand is a numeral the encoder knows
+— a literal, a folded expression, a `fixed` global's constant (so a flag
+member or a named mask) — the operation is Int arithmetic and no theory is
+crossed: `x << k` is `(mod (* x 2^k) 2^W)` re-signed by the machine's wrap
+for a signed word, `x >> k` is `(div x 2^k)` (SMT-LIB's floor division by a
+positive numeral IS `ashr` on a signed value and `lshr` on an unsigned one),
+`x & (2^j − 1)` is `(mod x 2^j)`, `x & 2^j` is `(* (mod (div x 2^j) 2)
+2^j)`, `x & ~(2^j − 1)` is `(- x (mod x 2^j))`, `~x` is `(- (- x) 1)`
+signed and `(- (2^W − 1) x)` unsigned — any width, 4096 bits included,
+at 504–1,287 rlimit per row. Every other shape crosses at a word of at
+most `BV_CROSS_MAX_BITS = 64` bits (`smt_encode.npk`, the measurements
+beside the constant): `(bv2nat (bvop ((_ int2bv W) a) ((_ int2bv W) b)))`
+captured in a fresh symbol and re-signed for a signed word — `int2bv` of a
+negative Int is its two's-complement pattern by definition, so the crossing
+is exact — and `bvshl`/`bvlshr`/`bvashr` for a shift by a non-numeral
+amount under the `shift-range` hypothesis `0 ≤ n < W`. Above 64 bits a
+general operation stays opaque, safe and unproven, because the crossing
+measured 191 rlimit at 32 and 64 bits, 883,930 at 128 (4% of the budget),
+3,591,364 at 256 (18%) and the budget exhausted at 2048, while the Int
+forms cover the wide widths' real shapes (the `ToString` tables' masked
+divisors, the hash rotations); a bit test with an OPAQUE mask read by an
+Int inequality exhausts the budget even at 32 bits. Moving the constant is
+a measurement, not a decision. A function with a crossing emits `(set-logic
+ALL)`; one without emits the file it emitted before, so no untouched row's
+hash moves. A flag family (D-230) is an unsigned 32-bit word to the
+encoder: its symbols carry `[0, 2^32)`, `|`/`&` cross at 32 bits, `==`/`!=`
+compare, and `int32 =>! oflags` / `oflags =>! int32` re-sign the one bit
+pattern each way — the first arm the unchecked cast has; every other `=>!`
+is opaque until 1.5.8's `cast-range` rows. THE GATE (D-280): every row
+discharged before a crossing is discharged after it — a term newly in a
+cone can only add facts, so a `budget` where a `discharged` was is a
+regression the step reverts; measured by (symbol, kind, verdict) counts over
+the re-recorded manifest, it held at every step of 1.5.4b.
+
+**The twisted kinds: scaled `Int` with ERR a value (D-278; step 2).** A
+`tbb`/`tfp`/`dim256`/`trit`/`tryte`/`nit`/`nyte` value is an `Int` in the
+carrier's range whose ERR is the carrier's most negative value — a VALUE
+the terms carry (D-008), never a side condition: `ERR` is `MIN`, `is_err(x)`
+is `(= x MIN)`, a symbol's axiom is "ERR, or inside the valid range"
+(`MIN+1 ..= MAX`; the balanced `−B ..= B` for the ternary kinds), a literal
+its carrier value (a `tfp`'s exact Q value through the checker's and the
+emitter's one conversion), and every operation the emitter's own `ite` in
+the emitter's own shape: `+ - *` and negation saturate to ERR outside the
+valid range (a result landing ON the sentinel is ERR by the same test),
+`tfp`'s `*` is `(div (* a b) 2^F)` and its `/` `(npk_sdiv (* a 2^F) b)`,
+each narrowed by the range test, a zero divisor is ERR, `/` and `%` at the
+same scale are the `ite` over the taint and a zero divisor to `MIN` else
+the truncating quotient or remainder, the ternary digits' `&`/`|` are the
+Kleene min/max, `dim256` is `tfp256`. Each raw result is named once
+WITHOUT an axiom before the test reads it — the raw sum may lie outside the
+type's range, which is what the test decides, so a typed symbol's axiom
+would be a false hypothesis. The rows are `err-exit`'s (§7b): one per
+`TbbErr` guard, elided through the one guard shape. A twisted division has
+no row: it never traps. A `limit` over a twisted subject encodes, and a
+`Rules` body's own walk reads `$` as the subject with each clause a fact
+for the next (the predicate traps on the first false clause). A `frac` or a
+tfp-element `complex` is an aggregate the walk has no term for: its guards
+are `unencoded`, their traps kept.
+
+**Floats: two tiers (D-281; step 3).** TIER 1: a `flt32`/`flt64` value is
+a term of the IEEE sort (`(_ FloatingPoint 8 24)` / `(_ FloatingPoint 11
+53)`) with NO range axiom — NaN and the infinities are values of it, and a
+goal's own conditions say otherwise where they do — and every operation is
+the emitter's instruction under SMT-LIB's IEEE semantics: `fp.add`/`sub`/
+`mul`/`div` under RNE, `fp.neg`, `#sqrt` as `fp.sqrt RNE`, the ORDERED
+predicates the emitter's `fcmp` writes (`==` is `fp.eq`, `!=` its negation,
+so NaN compares as the machine does), a literal `to_fp RNE` of the exact
+rational its decimal text denotes (what LLVM's own parser rounds from, so
+the two agree by correct rounding; a `flt32` literal rounded twice, as the
+emitter's double-then-`fptrunc` road does), an integer entering `to_fp RNE
+(to_real x)`, a widening exact, a narrowing `=>!` rounded; `%` (`frem`, a
+truncated fmod, not IEEE's `fp.rem`) and a float LEAVING to an integer stay
+opaque (1.5.8's `cast-range`); `flt128` is storage (D-143) and has no term.
+Every float value is NAMED — a fresh symbol defined equal to the operation,
+its definition recorded by shape — so the twin below reads a flat list.
+Floats never trap (D-007): no row is theirs; what tier 1 buys is that a
+`limit`, a contract clause, an `invariant`, a `prove` and the `err-exit` row
+of a float entering `tbb` or a ternary kind are encoded rows. Measured: a
+bounded quotient's `prove` discharges in QF_FP in 3.9 s under the profile.
+TIER 2, the Real-interval abstraction: for every row whose cone holds a
+float the encoder ALSO writes a twin query — `NNNN.t2.smt2` beside the
+tier-1 file, `index.t2.txt` naming its rows — in which every float is a
+Real: an input symbol a free Real, a named operation a fresh Real `r` with
+the axiom `|r − v| ≤ ε·|v| + η`, `v` the exact Real of the operation over
+its operands' Reals (ε = 2^−53 / 2^−24, η = 2^−1074 / 2^−149 — the standard
+model of a correctly rounded operation, the subnormals under η; a literal an
+operation over its rational, so its own rounding is in the model), a square
+root `r ≥ 0` with `r²` inside `v·(1 ∓ ε)²`, negation and widening exact, a
+comparison the Real comparison, the Int fragment passed through verbatim.
+The twin is written at all only under THREE CONDITIONS, else the row stays
+`budget`: (i) every float symbol in the cone that no hypothesis defines is
+bounded below AND above by hypotheses that are float comparisons against
+literals among a hypothesis's top-level conjuncts — a `limit` rule, a
+`requires` clause, a path condition; a negated comparison is not a bound,
+since it holds of NaN, and both bounds together exclude the infinities, so
+"the inputs are finite reals" is the hypotheses' own premise; (ii) every
+operation's magnitude within the normal range (`|v| ≤ MAX_NORMAL` per
+definition), a divisor nonzero and a root's argument non-negative, CONJOINED
+to the goal — so an `unsat` proves no overflow, no infinity and no NaN arise
+along with the property; (iii) the goal a comparison or a Boolean
+combination of comparisons over symbols and the Int fragment — an `fp.eq`,
+with its NaN reading, stays tier 1 only, and an uninterpreted function in
+the cone excludes the row. The runners ask tier 1 first; for a `budget` row
+with a twin, the twin once under the same profile and wall-clock net —
+`unsat` discharges it and the tier reads `real`, a tier-1 `sat` is a
+countermodel in the real semantics and is never retried, `--explain` names
+the tier that decided. Measured: `#sqrt(a*a + b*b) >= 0.0` under bounded
+`a`, `b` is `unknown` in QF_FP at the rlimit and `unsat` in the twin
+(`flt_tier2.npk`, the shape D-218 (5) was written for).
+
+**`simd` lanes (D-282; step 4).** A `simd<T, N>` value is N scalar terms
+under the element's theory above and no term of its own — a side table by
+expression: the constructor's arguments, a splat's one term N times, an
+elementwise operation lane-wise (a word's arithmetic, bitwise and compares;
+a float's IEEE operations; a `bool` lane's `==`/`!=`/`&`/`|`/`^`), `[i]`
+with a numeral index the lane's term (a computed index opaque; its `bounds`
+row is 1.5.8's), `.len` the count, `.any()`/`.all()` the disjunction and
+conjunction, `sum`/`min`/`max` folded in the emitter's order (`sum` left to
+right; `min`/`max` as its `select` over the strict compare, `fcmp olt`/`ogt`
+on floats — false on NaN, so a NaN lane is passed over as the machine does;
+a float sum named lane by lane for the twin), an elementwise cast the
+scalar cast per lane — AND through bindings: a `simd` local's lanes are N
+symbols of the element type, a new set at every write, defined equal to the
+written value's lanes where those are known, and fresh and opaque at every
+invalidation, restore and merge (the reading recorded as S-58, since D-282's
+text named expressions). Anything else — a call's value, an escaped binding
+— is N opaque lanes. A `simd` division's any-lane guard is ONE `div-zero`
+row over the conjunction of the lanes' conditions and, for a signed element,
+one `div-min` row; a `simd` shift's any-lane guard one `shift-range` row —
+the emitter's one trap per site, one group — each fact a hypothesis after
+the site as a scalar's is — and a discharged any-lane row elides its guard
+into one `llvm.assume` of the negated any-lane test, the scalar guards'
+shape. (Step 4's first harness found the vector guards ignorant of the
+manifest — rows discharged, traps kept, six `assume`s for seven discharged
+sites — and the elision belts are the instrument that caught it: a check of
+rows and verdicts alone had been green.)
+
+**The tier column (D-281).** `rows.txt`'s eleventh field, read off the
+row's canonical text by the encoder and carried into the manifest's third
+column by both runners: `int` for a cone in Int/Bool alone, `bv` where a
+bit-vector crossing (`int2bv`) is in it, `fp` where a float sort or
+operation is, `-` for an `unencoded` or `checker` row; `real` is written by
+the runner for a row tier 2 discharged. Until 1.5.4b the column was the
+constant `int`.
+
+**What is still outside the fragment.** A `limit` over a string, a struct
+or an array (P-12's residue) and the `TbbErr` guards over a `frac` or a
+tfp-element `complex` are `unencoded`, their guards kept; `frem`, a float
+leaving to an integer and every other `=>!` are opaque until 1.5.8's
+`cast-range` rows; D-210's overflow rows are 1.5.8's, and a `simd` integer
+lane's overflow is S-59's (it wraps today — DEF-38). The compiler's own
+manifest at the close: 368 rows in 197 function files, decided in 3.9 s
+under the profile — 329 `int`, 11 `bv` (step 1's crossings), 28 `-`, no
+`fp` row, since neither the compiler nor the prelude functions its emission
+holds compute in floats or vectors.
+
 ## 8. The SMT elimination manifest
 
 > **The schema is D-218's since 1.5.0 (P-10 in `meta/roadmap/1.5/1.5.0.md`):**
@@ -744,6 +936,13 @@ column is `elided`, `retained`, or `none` for a kind with no guard.
 > verified build refuses an undischarged `prove` (`NITPICK-VERIFY-001`): the
 > one row whose retention is a refusal, since a `prove` has no guard; a
 > verify test names that refusal with `expect-error:` and ends there.
+
+> **[1.5.4b (2026-09-10).]** The tier column is the encoder's word (§7c):
+> `int`, `bv`, `fp`, `-`, and `real` written by the runner for a tier-2
+> discharge — where a constant `int` stood since 1.5.0. `index.t2.txt`
+> beside `index.txt` names the rows that have a Real-interval twin; a row's
+> twin is asked only after a `budget` at tier 1, and only its `unsat` moves
+> a verdict.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

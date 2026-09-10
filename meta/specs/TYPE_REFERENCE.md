@@ -66,7 +66,12 @@ br i1 %cond, label %then, label %else
   - **`x += y` traps identically**: both spellings route through one arithmetic
     core (1.3.3), so the guard is inherited rather than written twice.
   - **Bit operations are unchanged** — `&`, `|`, `^`, `~`, `<<`, `>>` are bit
-    operations, not arithmetic, and have nothing to overflow.
+    operations, not arithmetic, and have nothing to overflow. **A shift's
+    AMOUNT is checked** (D-277, 1.5.4b): `x << n` and `x >> n` are defined
+    for `0 ≤ n < width(x)` only — a known amount outside it is TYPE-070 at
+    the shift (both spellings), a computed one is guarded by one unsigned
+    compare and traps `ShiftRange` (−4115), the `shift-range` obligation
+    (VERIFICATION_REFERENCE §7b, §7c) eliding the guard where proven.
   - **`/` and `%` by zero still trap** (D-007), and signed `/` adds the
     `INT_MIN / -1` case. On `tbb` both yield ERR.
   - **There are no sub-byte widths.** `int1`/`int2`/`int4` and their unsigned
@@ -97,7 +102,7 @@ br i1 %cond, label %then, label %else
 > Therac 255→0 shape, correct code does not overflow, and wrapping is still
 > expressible — explicitly, at the width where it is meant.
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
-- Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr`
+- Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr` (a computed shift amount behind `icmp ult n, W` → `ShiftRange`; D-277)
 - Casting: explicit only (`x => int64`, `y =>! int32`)
 - Literal suffixes: `42i32`, `-1i8`, `0FFhexi64`
 
@@ -168,6 +173,18 @@ them; the `f256`/`f512` literal suffixes are gone.
   implementation-defined.
 - Math functions (sin, cos, sqrt, …) arrive with the library tier, wrapping
   LLVM intrinsics
+
+> **To the verifier (D-281, 1.5.4b step 3).** A `flt32`/`flt64` value is a
+> term of the IEEE sort and every operation the emitter's instruction under
+> SMT-LIB's IEEE semantics (tier 1), with a Real-interval twin asked when
+> tier 1 exhausts its budget (tier 2, under three soundness conditions) —
+> VERIFICATION_REFERENCE §7c. Floats never trap, so no obligation row is a
+> float's; what the terms buy is that a `limit`, a contract, an `invariant`
+> or a `prove` over floats is decided. **A float `/` or `%` arms no
+> `DivByZero`/`DivOverflow`** in the reach analysis (DEF-37, 1.5.4b step 4b;
+> the emitter writes a bare `fdiv`/`frem`) — a `failsafe` names the two only
+> where an integer division exists. `#sqrt` is `fp.sqrt`; `%` (`frem`) and a
+> cast out of a float stay opaque until 1.5.8's `cast-range` rows.
 
 ---
 
@@ -677,6 +694,15 @@ asymmetry bugs is eliminated structurally.
   stickiness governs computation, not storage.
 - Used for function error codes, the `failsafe` signature, and any arithmetic
   that must degrade rather than trap.
+
+> **To the verifier (D-278, 1.5.4b step 2; one model for `tbb`, `tfp`,
+> `dim256` and the ternary kinds).** A twisted value is an unbounded `Int`
+> in the carrier's range whose ERR is the carrier's most negative value — a
+> VALUE the terms carry, never a side condition: `is_err(x)` is `(= x MIN)`,
+> every operation is the emitter's own saturate-to-ERR `ite`, and the one
+> trap the family has (`TbbErr` at a comparison or a cast out) is the
+> `err-exit` obligation, one row per guard, elided where proven. A twisted
+> division has no row: a zero divisor is ERR. VERIFICATION_REFERENCE §7c.
 
 
 ---
@@ -1296,6 +1322,16 @@ extern:"storage_driver" = {
 > rules and never change N. Shuffles are OUT by decision (D-194): no
 > consumer in evidence.
 
+> **To the verifier (D-282, 1.5.4b step 4).** A `simd<T, N>` value is N
+> scalar terms under its element's theory and no term of its own; a
+> division's any-lane guard is ONE `div-zero` row (and one `div-min` for a
+> signed element) over the lanes' conjunction, a shift's one `shift-range`
+> row — VERIFICATION_REFERENCE §7c. A `simd` division arms `DivByZero` by
+> its ELEMENT's kind (DEF-37, 1.5.4b step 4b): integer lanes do, float lanes
+> do not. **Open (DEF-38, S-59):** an integer lane's `+ - *` lowers to a
+> bare vector `add`/`sub`/`mul` and WRAPS where the scalar traps (D-210) —
+> measured at 1.5.4b, the user's decision.
+
 ---
 
 ## 15. Vector / Matrix / Tensor Types (Tier 1 — **library**, not keywords)
@@ -1845,8 +1881,8 @@ level, because `q.x` does.
 | `\|` | bitwise OR | `or` | |
 | `^` | bitwise XOR | `xor` | |
 | `~` | bitwise NOT | `xor %v, -1` | |
-| `<<` | left shift | `shl` | |
-| `>>` | right shift | `ashr` / `lshr` | Arithmetic on a SIGNED operand, logical on an UNSIGNED one — the operand's signedness decides (`ir_expr.npk`'s one shift arm), so there is no separate logical-shift spelling. This table listed a `>>>` row until 1.5.1b (the workbench's O-N12): it never lexed, and a reader who saw `>>` called "signed" reached for the spelling that did not exist. |
+| `<<` | left shift | `shl` | The amount is defined for `0 ≤ n < width` only (D-277, 1.5.4b): TYPE-070 for a known amount outside it, one `icmp ult` and `ShiftRange` for a computed one — the `shift-range` obligation |
+| `>>` | right shift | `ashr` / `lshr` | Arithmetic on a SIGNED operand, logical on an UNSIGNED one — the operand's signedness decides (`ir_expr.npk`'s one shift arm), so there is no separate logical-shift spelling. This table listed a `>>>` row until 1.5.1b (the workbench's O-N12): it never lexed, and a reader who saw `>>` called "signed" reached for the spelling that did not exist. Its amount is checked as `<<`'s (D-277). |
 
 ### Comparison
 | Operator | Meaning | IR | Notes |
