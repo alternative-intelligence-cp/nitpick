@@ -12381,6 +12381,21 @@ constants — a large mechanical sweep with proven tooling, and a readability
 gain: the compiler's own trap conventions (`?! 9tbb32`, `?! 25tbb32`…)
 finally get names.
 
+> **Note (2026-09-10, 1.5.4d):** the identity is ONE function — `error_identity`
+> (intern.npk) — that the resolver assigns with, the emitter matches a
+> `(module.Name)` arm with, and the checker asks with; the resolver records
+> every (declaration, qualifier, code) on the `SymbolTable` as it assigns.
+> Two things followed. **DEF-32**: the reach analysis had recorded a
+> constant's qualifier from the module of the FIRST SITE that reached it —
+> the root, walked first — so a root that unwrapped an imported constant was
+> told to name `(root.E)`, a pair no code hashes under, and the correct
+> `(file.E)` was refused; it reads the qualifier from the table now. And
+> **D-275**: every arm over an `Error` selector is checked at the arm — an
+> identity no declared constant hashes to is RESOLVE-002, any other shape
+> TYPE-007 — where a mis-qualified arm matched nothing, silently. The
+> qualifier is the declaring FILE's basename; an inline module qualifies
+> nothing.
+
 ## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED; the sanctioned-crossing list grew a fifth member at 1.4.4 (user-ratified)**
 
 C-8, settled at 1.1.8's close, on evidence that did not exist when the
@@ -17637,6 +17652,20 @@ parses it).
 > successor session ahead of 1.5.4b, as 1.5.4c was): a program calling
 > `util.f()` through `mod:util;` exits through the call.
 
+> **Landed (2026-09-10, 1.5.4d step 0).** `graph_load_file_module` records
+> which entry it loaded for which declaration, and `graph_collect_all` ends
+> by handing each import's symbol the loaded entry's scope — at the END of
+> collection, not in the import pass, because a module symbol's scope is
+> copied when a binding of it is created and never again, so a `pub
+> mod:util;` re-exported by an earlier module's wildcard import would
+> otherwise have carried the empty scope forever. `mod_file_import.npk`
+> exits 44 through every form (the call, the binding, `use util.{g, E};`,
+> the alias of the same file, the re-exported `pub mod` across files, the
+> error constant through the path); `tests/accept/file_module/` holds the
+> `name/mod.npk` form. Writing the test found **DEF-32** (OPEN_DECISIONS
+> §2f): the reach analysis's qualifier came from the first SITE's module,
+> not the declaring file's — fixed by the identity table the same step.
+
 ## D-275 — an error constant declared inside an inline module is the FILE's, and a `failsafe` arm's qualifier must name a module the program knows — **SETTLED (user decision, 2026-09-10: "ratify"; OPEN_DECISIONS S-50; lands at 1.5.4d)**
 
 Found writing `mod_qualified.npk` (1.5.4c step 0). An error constant declared
@@ -17656,6 +17685,26 @@ workbench.
 
 > Lands at **1.5.4d** with D-274: `(hidden.Boom)` refuses at the arm, and a
 > `use hidden.{Boom};` or the file-qualified spelling is the way to name it.
+
+> **Landed (2026-09-10, 1.5.4d step 1), under two readings the plan
+> recorded for veto.** **R-3:** the arm is checked as a PAIR against the
+> constants the program declares — `error_identity(qual, name)` must be a
+> code the resolver assigned — which implies this decision's first-segment
+> check and is the only reading that refuses `(hidden.Boom)` itself (an
+> inline module IS a module the program knows), `(file.Nosuch)` and
+> `(x.DivByZero)` besides. The refusal is RESOLVE-002 at the arm and names
+> the fix: the file that declares a constant of that name (with a note at
+> its declaration), "no loaded file declares `Nosuch`", or "`use
+> hidden.{Boom};` and `(Boom)`" when the first segment is a module in scope
+> holding the constant. **R-4:** over an `Error` selector any arm that is
+> not `(*)`, a name bound to an error constant, or the two-segment bind-free
+> identity is TYPE-007 at the arm (a literal, a global, a range, a bound or
+> mis-segmented destructure, `ERR:`), where each reached the emitter and
+> died as EMIT-002. The check lives in the checker's `type_pick_rules`, so
+> it holds for every `pick` over an `Error`, both spellings, and the reach
+> analysis is unchanged (it demands, it never forbids). `error_arms.npk`
+> holds ten refusals; `error_arm_forms.npk` runs the qualified identity in an
+> ordinary `pick` and the bare imported arm in `failsafe`.
 
 ## D-276 — an import means the same thing inside an inline module: a `use` and a `mod:name;` written inside one bind and load as at file level — **SETTLED (user decision, 2026-09-10: "all of those things sound fine to me. please proceed."; OPEN_DECISIONS S-51; lands at 1.5.4d step 2)**
 
@@ -17685,4 +17734,15 @@ wrong state.
 > Lands at **1.5.4d** as step 2 (`inline_imports.npk` exits through an inline
 > module's four import forms; `inline_import_unknown.npk` holds the three
 > refusals inside one).
+
+> **Landed (2026-09-10, 1.5.4d step 2).** The loader's, the import pass's and
+> the file-module link's walks are one shape (`load_imports_in`,
+> `apply_imports_in`, `link_file_modules_in`), descending with the scope the
+> module's name opened and the FILE's path. The three refusals live in TWO
+> files — `inline_import_unknown.npk` (RESOLVE-005 ×2) and
+> `inline_use_unknown.npk` (RESOLVE-002) — because the pipeline's stage-0 gate
+> stops after the loader's errors before the import pass runs, so a loader
+> refusal and an import-pass refusal cannot share a unit. `inline_imports.npk`
+> exits 32 through the three file forms, a `mod:ii_other;` and a `pub use`
+> re-export inside one inline module.
 

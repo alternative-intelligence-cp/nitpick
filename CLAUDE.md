@@ -947,9 +947,35 @@ error constant declared inside an inline module hashes under the FILE's name,
 so its `failsafe` arm is `(file.Name)` and `(hidden.Name)` matches nothing —
 recommended: the file qualifies, and an arm's first segment is checked
 against the module names the program knows). **Both ratified 2026-09-10 as
-D-274 and D-275, landing at 1.5.4d** (small; the successor plans it ahead of
-1.5.4b). `nitpick.obligations` never moved. **Next: 1.5.4d, then 1.5.4b (the
-remaining theories).**
+D-274 and D-275 and LANDED the same day as 1.5.4d** (`meta/roadmap/1.5/
+1.5.4d.md`; four landings, each a cumulative prefix under a full harness,
+D-228): a member-less `mod:name;` import carries the loaded file's scope —
+`graph_load_file_module` records the entry it loaded and `graph_collect_all`
+links the symbol to it LAST, before any import round can copy an empty scope
+into a re-export — so `name.f()`, `use name.{g};` and a `pub mod:name;`
+across files are one meaning with the alias; and every `pick` arm over an
+`Error` is checked at the arm by the checker (`type_pick_rules`, both
+spellings, `failsafe`'s and any other): an identity no declared constant
+hashes to is RESOLVE-002 with the fix named (R-3, the PAIR check —
+`(hidden.Boom)`, `(file.Nosuch)`, `(nosuch.Boom)`, `(x.DivByZero)` all
+matched nothing silently before), any other shape TYPE-007 (R-4, where each
+died as EMIT-002 in the emitter); ONE `error_identity` (intern.npk) for the
+resolver, the emitter and the checker, and the resolver's (declaration,
+qualifier, code) rows on the `SymbolTable`. **Found by the first test, fixed:
+DEF-32** — the reach analysis recorded a constant's qualifier from the module
+of the first SITE that reached it (the root, walked first), so a root that
+unwrapped an imported constant was told to name `(root.E)`, a pair no code
+hashes under, and the correct `(file.E)` was refused — the exhaustive-
+`failsafe` guarantee hollow for cross-file constants named qualified since
+1.1.6 (the bare `(E)` matches by symbol origin and hid it). **Found by
+planning and ratified the same day as D-276 (S-51)**: a `use` or a
+`mod:name;` written INSIDE an inline module bound and loaded nothing,
+silently, while an inline module is sealed from its own file's imports — so
+the one construct that could reach an import from inside one was a no-op;
+the loader, the import pass and the file-module link are one walk shape now
+and descend into inline modules under the same rounds and refusals as at
+file level (`inline_imports.npk`). `nitpick.obligations` never moved.
+**Next: 1.5.4b (the remaining theories).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1259,10 +1285,16 @@ that carried them retired at the cycle close):
   wildcard import carry their file's scope, and a private member refuses from
   either spelling (RESOLVE-003). An inline module's TYPES are named from
   outside only through `use m.{T};`/`use m.*;` — there is no qualified type
-  path, for files either. A member-less `mod:name;` import binds `name` with
-  an EMPTY scope until 1.5.4d lands D-274 (it will carry the file's scope);
-  an error constant declared inside an inline module is `(file.Name)` in a
-  `failsafe` arm (D-275; an unknown qualifier will refuse at the arm).
+  path, for files either. A member-less `mod:name;` import carries the
+  loaded file's scope (D-274, 1.5.4d) — one meaning with the alias. An
+  error constant declared inside an inline module is the FILE's identity:
+  its arm is `(file.Name)`, or `use m.{Name};` and `(Name)` (D-275); an
+  arm over an `Error` whose identity no loaded file declares is RESOLVE-002
+  naming the fix, and a literal, a global, a range, a bound destructure or
+  `ERR:` over an `Error` is TYPE-007 — in `failsafe` and in any `pick (r.err)`.
+  A `use`, a `pub use` or a `mod:name;` INSIDE an inline module binds and
+  loads as at file level (D-276) — an inline module is sealed from its
+  FILE's imports, so a name reaches one by being imported INTO it.
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open

@@ -22,6 +22,21 @@ Modules can be defined inline or exist in external files.
     mod:network;
     ```
     The compiler searches for `network.npk` or `network/mod.npk` relative to the declaring file.
+    **The import's symbol carries the loaded file's scope (D-274, 1.5.4d):**
+    `network.connect()` calls into the file, `network.MAX` reads its binding,
+    `use network.*;` / `use network.{connect};` bind through the symbol as
+    through any module symbol in scope (§2.2), and a `pub mod:network;` is
+    re-exported WITH its scope by a wildcard import of the declaring file —
+    one meaning with `use "./network.npk" as network;`, one `inner` field,
+    one lookup (D-273 §4). The link is made when every module has been
+    collected, before any import binds, so an earlier module's re-export
+    never copies an empty scope. **An import means the same thing inside an
+    inline module (D-276, 1.5.4d):** a `use` in any of its forms, a `pub use`
+    and a `mod:name;` written inside `mod:m = { … }` bind into `m`'s scope
+    and load relative to the FILE, under the same rounds and refusals as at
+    file level, and `use m.*;` binds what `m` re-exports. An inline module is
+    sealed from its file's imports (a module is a closed namespace), so a
+    name reaches one by being imported INTO it.
 
 *   **The header (D-248, 1.5.1b).** Every source file's FIRST declaration is its
     header, `mod:<basename>;` — `mod:<dir>;` for a `dir/mod.npk`, since the
@@ -57,6 +72,22 @@ Modules can be defined inline or exist in external files.
     `helpers.f()` work across files. A module in value position is refused
     ("`m` is a module, not a value"), as is a type reached through one; a
     member the module lacks is "module `m` has no member `x`".
+*   **An error constant declared inside an inline module is the FILE's
+    identity (D-179, D-275, 1.5.4d).** A constant's code is the hash of
+    `file.Name` — the basename of the declaring file, however deep the
+    inline module it sits in — so its qualified arm is `(file.Name)`, and
+    `use m.{Name};` then `(Name)` is the bare spelling. EVERY ARM OVER AN
+    `Error` SELECTOR IS CHECKED, in `failsafe` and in any other `pick`: an
+    arm is `(*)`, an identifier bound to an error constant, or a two-segment
+    bind-free identity; an identity no loaded file's constant hashes to —
+    `(m.Name)` with an inline module `m`, `(file.Nosuch)`, `(nosuch.Name)`,
+    `(x.DivByZero)` (a system constant's code is explicit, never a hash) —
+    is refused at the arm (`NITPICK-RESOLVE-002`, naming the file that
+    declares the constant, or the `use` spelling), and any other shape — a
+    literal, a global, a range, a destructure with a binding or with one or
+    three-plus segments, `ERR:` — is `NITPICK-TYPE-007` at the arm. Before
+    this rule a mis-qualified arm hashed to a code no constant has and
+    matched nothing, silently.
 
 ## 2. Imports (`use`)
 
