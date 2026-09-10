@@ -549,23 +549,6 @@ func:resolve_contract = NIL(Resolver->:r, VerifyId:id, int32:scope) never fails 
 
 // --- declarations ------------------------------------------------------------------------------
 
-// D-179: a user error constant's code, derived from the DECLARATION — the
-// FNV-1a of `module.Name`, truncated to a positive int32 (never 0, never
-// negative: the system domain owns the negatives). Derived, not counted, so
-// any compiler that can hash bytes numbers identically.
-// THE CODE IS THE HASH (D-179): a user error constant's identity is FNV-1a
-// over `module.Name`, so nothing has to be assigned, coordinated or looked up
-// across a module graph. The step itself lives in `intern.npk` — one copy for
-// the whole compiler since 1.4.2b, because the emitter derives the same value
-// when it matches a qualified pattern and the two used to be separate.
-func:error_code_of = int32(Resolver->:r, int32:mod_name, int32:decl_nm) never fails {
-    uint64:h = raw fnv1a_bytes(raw intern_get(r.interns, mod_name),
-                               raw fnv1a_seed());
-    h = raw fnv1a_step(h, 46u64);
-    h = raw fnv1a_bytes(raw intern_get(r.interns, decl_nm), h);
-    pass (((h & 1073741822u64) =>! int32) + 1i32);
-};
-
 pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
     DeclNode:d = raw ast_decl(r.ast, id);
 
@@ -651,7 +634,12 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
             drop ast_set_error_code(r.ast, id, 0i32 - (cn.payload =>! int32));
             pass NIL;
         }
-        int32:code = raw error_code_of(r, r.module_name, raw decl_name(d));
+        // THE CODE IS THE HASH (D-179): `file.Name` through the one identity
+        // function the emitter and the checker read (`error_identity`,
+        // intern.npk), so nothing is assigned, coordinated or looked up
+        // across a module graph, and a spelling can be checked against an
+        // assignment.
+        int32:code = raw error_identity(r.interns, r.module_name, raw decl_name(d));
         int32:prior = raw symtab_error_by_code(r.tab, code);
         if ((prior != 0i32) && (prior != id.index)) {
             drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),

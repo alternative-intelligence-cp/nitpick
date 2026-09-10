@@ -36,6 +36,7 @@ use "./expr_types.npk".*;
 use "./type_expr.npk".*;
 use "./type_members.npk".*;
 use "./type_trait.npk".*;   // assoc_binding_of (D-166)
+use "./resolve_codes.npk".*;   // RESOLVE_UNKNOWN: a `(module.Name)` arm naming nothing is the identifier's own code (D-275, D-240)
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
 //
@@ -531,9 +532,151 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
             }
         }
     }
+    // AN `Error` SELECTOR'S ARMS ARE READ HERE (D-275, 1.5.4d): it binds
+    // nothing and enumerates nothing, so the two walks below have no work
+    // on it, and until this step no rule read an arm over one at all.
+    if (selt != 0i32) {
+        if ((raw type_kind(e.types, selt)) == (raw TY_ERROR())) {
+            drop check_error_arms(e, start, count);
+        }
+    }
     drop type_pick_bindings(e, selt, start, count);
     drop check_pick_view_binds(e, selt, consuming, start, count);
     pass (PickRules{ ok: true, consuming: consuming });
+};
+
+// EVERY ARM OVER AN `Error` SELECTOR (D-275, 1.5.4d step 1) -- `failsafe`'s
+// pick and any other, both spellings. An arm is `(*)`, a name bound to an
+// error constant (`(Boom)`, `(DeadlineExceeded)`), or the two-segment
+// bind-free IDENTITY `(file.Name)`: the FILE that declares a constant
+// qualifies it, an inline module qualifies nothing (D-179). The identity is
+// checked as a PAIR against the constants the program declares (R-3): its
+// hash must be a code the resolver assigned, else RESOLVE-002 at the arm
+// with the fix named -- `(hidden.Boom)`, `(file.Nosuch)` and `(nosuch.Boom)`
+// all hashed to a code no constant has and matched nothing, silently, until
+// this step. Any other shape -- a literal, a global, a range, a struct
+// destructure, a destructure with bindings or with one or three-plus
+// segments, an `ERR:` arm -- is TYPE-007 here (R-4), where it reached the
+// emitter and died as EMIT-002, a compiler-defect report for a program
+// mistake. One mistake, one report (D-240): a refused shape is not also
+// asked its identity, and an identity that names nothing is one sentence.
+func:check_error_arms = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
+        PatId:apid = raw arm_pattern(arm);
+        if (!(raw pat_is_none(apid))) {
+            PatNode:pn = raw ast_pat(e.ast, apid);
+            bool:ok = false;
+            if (pn.kind == PatKind.PatWildcard) { ok = true; }
+            if (pn.kind == PatKind.PatValue) { ok = raw error_value_pattern(e, pn); }
+            if (pn.kind == PatKind.PatEnumDestructure) {
+                ok = true;
+                drop check_error_identity_arm(e, pn);
+            }
+            if (!ok) { drop error_arm_shape(e, pn.span); }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// `(Name)`: an identifier the resolver bound to an error constant's
+// declaration -- a user constant imported or declared here, or a system
+// constant the prelude binds into every scope.
+func:error_value_pattern = bool(ExprTyper->:e, PatNode:pn) never fails {
+    ExprId:v = raw pat_value(pn);
+    if (raw expr_is_none(v)) { pass false; }
+    ExprNode:vn = raw ast_expr(e.ast, v);
+    if (vn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (vn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(e.tab, vn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: s.origin });
+    pass (d.kind == DeclKind.DeclErrorDecl);
+};
+
+func:error_arm_shape = NIL(ExprTyper->:e, Span:at) never fails {
+    discard(raw te_error(e, raw TYPE_MISMATCH(),
+        "an `Error` arm names an error constant -- `(Name)`, or `(file.Name)` qualified by the file that declares it (D-179, D-275): an error carries no payload to bind, no range and no `ERR`, and a literal, a binding or a global is not an identity",
+        at));
+    pass NIL;
+};
+
+// `(file.Name)`: two segments, no binding, and a pair some loaded file's
+// constant hashes to -- else the refusal says which file declares `Name`
+// (a note at each such declaration) and, when the first segment is a module
+// symbol in scope whose scope holds the constant, the `use` spelling.
+func:check_error_identity_arm = NIL(ExprTyper->:e, PatNode:pn) never fails {
+    if ((raw pat_enum_segment_count(e.ast, pn)) != 2i32) {
+        drop error_arm_shape(e, pn.span);
+        pass NIL;
+    }
+    if ((raw pat_enum_bind_count(e.ast, pn)) != 0i32) {
+        drop error_arm_shape(e, pn.span);
+        pass NIL;
+    }
+    int32:qual = raw pat_enum_segment(e.ast, pn, 0i32);
+    int32:name = raw pat_enum_segment(e.ast, pn, 1i32);
+    if ((raw symtab_error_by_code(e.tab, raw error_identity(e.interns, qual, name))) != 0i32) {
+        pass NIL;
+    }
+    string:m1 = string_concat("`", raw intern_get(e.interns, qual));
+    string:m2 = string_concat(m1, ".");
+    string:m3 = string_concat(m2, raw intern_get(e.interns, name));
+    string:msg = string_concat(m3, "` names no error constant of this program (D-275): an identity is `file.Name`, qualified by the FILE that declares it -- an inline module qualifies nothing (D-179)");
+    int32:n = raw symtab_error_count(e.tab);
+    bool:any_named = false;
+    for (int32:i in 0i32...n) {
+        DeclNode:ed = raw ast_decl(e.ast, DeclId{ index: raw symtab_error_decl_at(e.tab, i) });
+        if ((raw decl_name(ed)) == name) {
+            any_named = true;
+            string:q = raw intern_get(e.interns, raw symtab_error_qual_at(e.tab, i));
+            msg = string_concat(msg, "; `");
+            msg = string_concat(msg, raw intern_get(e.interns, name));
+            msg = string_concat(msg, "` is declared in `");
+            msg = string_concat(msg, q);
+            msg = string_concat(msg, "` -- write `(");
+            msg = string_concat(msg, q);
+            msg = string_concat(msg, ".");
+            msg = string_concat(msg, raw intern_get(e.interns, name));
+            msg = string_concat(msg, ")`");
+        }
+    }
+    if (!any_named) {
+        msg = string_concat(msg, "; no loaded file declares `");
+        msg = string_concat(msg, raw intern_get(e.interns, name));
+        msg = string_concat(msg, "`");
+    }
+    int32:msym = raw scope_lookup(e.tab, e.scope, qual);
+    if (msym != 0i32) {
+        int32:mscope = raw module_symbol_scope(e, msym);
+        if (mscope != 0i32) {
+            int32:csym = raw scope_lookup_local(e.tab, mscope, name);
+            if (csym != 0i32) {
+                Symbol:cs = raw symtab_get(e.tab, csym);
+                if (cs.origin_kind == (raw SYM_DECL())) {
+                    if ((raw ast_decl(e.ast, DeclId{ index: cs.origin })).kind == DeclKind.DeclErrorDecl) {
+                        msg = string_concat(msg, "; or `use ");
+                        msg = string_concat(msg, raw intern_get(e.interns, qual));
+                        msg = string_concat(msg, ".{");
+                        msg = string_concat(msg, raw intern_get(e.interns, name));
+                        msg = string_concat(msg, "};` and `(");
+                        msg = string_concat(msg, raw intern_get(e.interns, name));
+                        msg = string_concat(msg, ")`");
+                    }
+                }
+            }
+        }
+    }
+    discard(raw te_error(e, raw RESOLVE_UNKNOWN(), move(msg), pn.span));
+    for (int32:j in 0i32...n) {
+        DeclNode:nd = raw ast_decl(e.ast, DeclId{ index: raw symtab_error_decl_at(e.tab, j) });
+        if ((raw decl_name(nd)) == name) {
+            drop diaglist_push(e.diags, raw diag_note(raw RESOLVE_UNKNOWN(), "declared here", nd.span));
+        }
+    }
+    pass NIL;
 };
 
 // A WINDOW OF BINDING TYPES, one per binding in binding order, its start on the

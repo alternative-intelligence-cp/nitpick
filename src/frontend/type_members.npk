@@ -205,7 +205,7 @@ func:nsp_yes = NsPath(int32:sym) never fails { NsPath:r = NsPath{ is_ns: true, s
 
 // The scope a MODULE symbol's name opened, or 0 for any other symbol -- and
 // for a module symbol with none, which is not a namespace here.
-func:module_symbol_scope = int32(ExprTyper->:e, int32:sym) never fails {
+pub func:module_symbol_scope = int32(ExprTyper->:e, int32:sym) never fails {
     if (sym == 0i32) { pass 0i32; }
     Symbol:s = raw symtab_get(e.tab, sym);
     if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }

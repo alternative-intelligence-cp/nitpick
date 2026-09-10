@@ -1,0 +1,69 @@
+// expect-error: NITPICK-RESOLVE-002
+// expect-error: NITPICK-RESOLVE-002
+// expect-error: NITPICK-RESOLVE-002
+// expect-error: NITPICK-RESOLVE-002
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+//
+// EVERY ARM OVER AN `Error` SELECTOR IS READ BY THE CHECKER (D-275, 1.5.4d):
+// in `failsafe`, a `(file.Name)` arm is an IDENTITY checked as a pair
+// against the constants the program declares -- `(hidden.Boom)` names an
+// INLINE module, which qualifies nothing (the FILE does: `(error_arms.Boom)`
+// beside it is the arm that matches), `(error_arms.Nosuch)` a constant no
+// file declares, `(nosuch.Boom)` a file nothing loaded, and `(x.DivByZero)` a
+// system constant, whose code is explicit and never a hash -- each
+// RESOLVE-002 at the arm, where each was silent and matched nothing before.
+// And in a `pick` over a `Result`'s `.err` in an ordinary function, the
+// shapes that are not an error arm at all -- a literal, a global, a
+// destructure with a binding, a three-segment path, a range, `ERR:` -- are
+// TYPE-007 at the arm, where each reached the emitter as EMIT-002 before.
+mod:error_arms;
+
+fixed int32:K = 3i32;
+
+mod:hidden = {
+    error:Boom;
+    pub func:b = int32(int32:v) { if (v > 1i32) { fail Boom; } pass v; };
+};
+
+func:classify = int32(int32:v) never fails {
+    Result<int32>:r = hidden.b(v);
+    if (r.is_error) {
+        pick (r.err) {
+            (7i32)          { pass 1i32; },
+            (K)             { pass 2i32; },
+            (hidden.Boom(w)) { pass 3i32; },
+            (a.b.C)         { pass 4i32; },
+            (1i32..9i32)    { pass 5i32; },
+            ERR:            { pass 6i32; },
+            (*)             { pass 7i32; }
+        }
+    }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:g = hidden.b(1i32) ?! hidden.Boom;
+    exit (g + (raw classify(5i32)));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (error_arms.Boom)   { exit 2i32; },
+        (hidden.Boom)       { exit 3i32; },
+        (error_arms.Nosuch) { exit 4i32; },
+        (nosuch.Boom)       { exit 5i32; },
+        (x.DivByZero)       { exit 6i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

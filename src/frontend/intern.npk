@@ -224,3 +224,20 @@ pub func:fnv1a_bytes = uint64(string:sv, uint64:h0) never fails {
     }
     pass h;
 };
+
+// AN ERROR CONSTANT'S IDENTITY (D-179): the FNV-1a of `qualifier.Name` --
+// the qualifier is the basename of the FILE that declares the constant, an
+// inline module qualifying nothing (D-275) -- truncated to a positive int32
+// (never 0, never negative: the system domain owns the negatives). Derived,
+// not counted, so any compiler that can hash bytes numbers identically
+// (D-078). THE ONE FUNCTION (1.5.4d): the resolver assigns a constant's code
+// with it, the emitter matches a `(module.Name)` arm with it, and the
+// checker asks with it whether an arm names anything the program declares
+// -- three readers, one hash. Until 1.5.4d the emitter carried a second
+// copy of these four lines under a no-drift comment.
+pub func:error_identity = int32(InternTable->:it, int32:qual, int32:name) never fails {
+    uint64:h = raw fnv1a_bytes(raw intern_get(it, qual), raw fnv1a_seed());
+    h = raw fnv1a_step(h, 46u64);
+    h = raw fnv1a_bytes(raw intern_get(it, name), h);
+    pass (((h & 1073741822u64) =>! int32) + 1i32);
+};

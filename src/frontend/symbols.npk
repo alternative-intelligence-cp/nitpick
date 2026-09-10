@@ -291,6 +291,20 @@ pub func:symtab_error_qual = int32(SymbolTable->:t, int32:decl) never fails {
     pass 0i32;
 };
 
+// The rows, for a reader that searches by NAME (the checker's refusal of a
+// `(module.Name)` arm that names nothing says which file declares `Name`).
+pub func:symtab_error_count = int32(SymbolTable->:t) never fails {
+    pass (raw symtab_id(t.error_decls.count));
+};
+
+pub func:symtab_error_decl_at = int32(SymbolTable->:t, int32:i) never fails {
+    pass t.error_decls.items[i => int64];
+};
+
+pub func:symtab_error_qual_at = int32(SymbolTable->:t, int32:i) never fails {
+    pass t.error_quals.items[i => int64];
+};
+
 func:symtab_set_home = NIL(SymbolTable->:t, int32:decl, int32:scope) never fails {
     if (decl < 0i32) { pass NIL; }
     // GROW TO COVER THE INDEX, as a bulk append: reserve the whole span first

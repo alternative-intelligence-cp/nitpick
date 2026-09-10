@@ -742,7 +742,9 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
             // `(module.Name)` — the QUALIFIED spelling. The parser reads a
             // two-segment parenthesised path as an ENUM-DESTRUCTURE pattern,
             // so the match is by NAME PAIR against the set's recorded
-            // qualifier — no resolution needed, and no import either.
+            // qualifier — no resolution needed, and no import either. The
+            // checker has already refused a pair no declared constant hashes
+            // to (D-275, 1.5.4d), so an arm read here names a real identity.
             if (pat.kind == PatKind.PatEnumDestructure) {
                 if ((raw pat_enum_segment_count(x.ast, pat)) == 2i32) {
                     if ((raw pat_enum_bind_count(x.ast, pat)) == 0i32) {

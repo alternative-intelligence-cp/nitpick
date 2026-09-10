@@ -1871,17 +1871,15 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
             if ((raw pat_enum_segment_count(x.ast, pn)) == 2i32) {
                 if ((raw pat_enum_bind_count(x.ast, pn)) == 0i32) {
                     // THE CODE IS THE HASH (D-179): a user constant's value
-                    // is derived from `module.Name`, so the qualified pattern
-                    // needs no lookup and no import. Through the SAME function
-                    // the resolver assigns with (`intern.fnv1a_*`) — this was
-                    // a second copy under a no-drift comment until 1.4.2b.
-                    uint64:h = raw fnv1a_bytes(raw intern_get(x.interns,
-                                   raw pat_enum_segment(x.ast, pn, 0i32)),
-                                   raw fnv1a_seed());
-                    h = raw fnv1a_step(h, 46u64);
-                    h = raw fnv1a_bytes(raw intern_get(x.interns,
-                            raw pat_enum_segment(x.ast, pn, 1i32)), h);
-                    int32:pcode = ((h & 1073741822u64) =>! int32) + 1i32;
+                    // is derived from `file.Name`, so the qualified pattern
+                    // needs no lookup and no import -- through THE function
+                    // the resolver assigns with (`error_identity`, one copy
+                    // since 1.5.4d), and the checker has already refused an
+                    // arm whose pair names no declared constant (D-275), so
+                    // the code compared here is a real one.
+                    int32:pcode = raw error_identity(x.interns,
+                                      raw pat_enum_segment(x.ast, pn, 0i32),
+                                      raw pat_enum_segment(x.ast, pn, 1i32));
                     pass (raw iv("", int_to_string(pcode => int64), 0i32));
                 }
             }
