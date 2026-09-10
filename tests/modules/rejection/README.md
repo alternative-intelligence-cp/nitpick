@@ -36,8 +36,10 @@ exists to demonstrate.
 | `mod_private_use.npk` | `NITPICK-RESOLVE-003` — `use hidden.internal;` over an inline module: a private member is private from either spelling (D-273 §3, 1.5.4c; the qualified call's refusal is the checker's, in `tests/types/rejection/mod_private_qualified.npk`) |
 | `mod_use_unknown.npk` | `NITPICK-RESOLVE-002` and `NITPICK-RESOLVE-007` — a `use` path whose first segment names no module symbol in scope, or a function; a later segment the module lacks, or one naming a function (D-273 §2, R-1); `use std.…` beside them binds nothing and says nothing |
 | `std_declared.npk` | `NITPICK-RESOLVE-001` — `mod:std = { … };`: `std` is the standard library's root and joins D-239's owned names (D-273 §2) |
+| `inline_import_unknown.npk` | `NITPICK-RESOLVE-005` — a `use "./nosuch.npk".*;` and a `mod:nosuch2;` written INSIDE an inline module: an import means the same thing there (D-276, 1.5.4d), so each is the loader's refusal — where before this decision both were silent no-ops |
+| `inline_use_unknown.npk` | `NITPICK-RESOLVE-002` — a `use nosuch3.*;` inside an inline module names no module symbol in the module's own scope (D-276 with D-273 §2's R-1); in its own file because the loader's errors stop the pipeline before the import pass |
 
-Ten codes, seventeen files (RESOLVE-001 has two: the plain duplicate, and the
+Ten codes, nineteen files (RESOLVE-001 has two: the plain duplicate, and the
 owned name — one code, because each is "this name already means something
 here"; two of the fourteen are fixtures another file imports). A code with no
 test is a diagnostic nobody has ever seen produced.

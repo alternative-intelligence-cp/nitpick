@@ -1,0 +1,32 @@
+// expect-error: NITPICK-RESOLVE-005
+// expect-error: NITPICK-RESOLVE-005
+//
+// AN IMPORT INSIDE AN INLINE MODULE REFUSES AS AT FILE LEVEL (D-276, 1.5.4d):
+// `use "./nosuch.npk".*;` names a file nothing supplies, and `mod:nosuch2;`
+// loads neither `nosuch2.npk` nor `nosuch2/mod.npk` -- the loader's
+// RESOLVE-005 for each, where before this decision both were silent no-ops.
+// (A `use` over an unknown MODULE SYMBOL inside one is the import pass's
+// refusal and is `inline_use_unknown.npk`: the loader's errors stop the
+// pipeline before the import pass runs, so the two do not share a file.)
+mod:inline_import_unknown;
+
+mod:m = {
+    use "./nosuch.npk".*;
+    mod:nosuch2;
+    pub func:f = int32() never fails { pass 1i32; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit (raw m.f());
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

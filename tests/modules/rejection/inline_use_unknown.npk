@@ -1,0 +1,29 @@
+// expect-error: NITPICK-RESOLVE-002
+//
+// A LOGICAL `use` INSIDE AN INLINE MODULE RESOLVES AGAINST THE MODULE'S OWN
+// SCOPE (D-276 with D-273 §2's R-1, 1.5.4d): `use nosuch3.*;` written inside
+// `m` names no module symbol there and is RESOLVE-002 by name on the
+// reporting round -- as at file level, where before this decision it was a
+// silent no-op. (An inline module is a closed namespace: a sibling inline
+// module of the FILE is not in `m`'s scope either, by the same lookup.)
+mod:inline_use_unknown;
+
+mod:m = {
+    use nosuch3.*;
+    pub func:f = int32() never fails { pass 1i32; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit (raw m.f());
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

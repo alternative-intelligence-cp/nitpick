@@ -1,0 +1,40 @@
+// expect-exit: 32
+//
+// AN IMPORT MEANS THE SAME THING INSIDE AN INLINE MODULE (D-276, 1.5.4d):
+// `m` imports a file in the three file forms -- the wildcard (`f` bare), the
+// alias (`lib.f()`), the named form (`g`) -- loads a file-module import of
+// its own (`mod:ii_other;`, then `ii_other.h()`: the file's scope carried by
+// the symbol, D-274, linked inside the module's scope) and RE-EXPORTS a name
+// with `pub use`, which `use m.*;` at file level binds (`twice`) on the
+// fixed point's next round. Until this decision every one of these bound
+// or loaded nothing, silently, and an inline module could reach nothing but
+// the prelude and its own members.
+mod:inline_imports;
+use m.*;
+
+mod:m = {
+    use "./ii_lib.npk".*;
+    use "./ii_lib.npk" as lib;
+    use "./ii_lib.npk".{g};
+    pub use "./ii_lib.npk".{twice};
+    mod:ii_other;
+    pub func:total = int32() never fails {
+        pass ((raw f()) + (raw lib.f()) + (raw g()) + (raw ii_other.h()));   // 5 + 5 + 7 + 11
+    };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit ((raw m.total()) + (raw twice(2i32)));   // 28 + 4
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

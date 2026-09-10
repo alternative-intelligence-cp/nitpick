@@ -347,20 +347,32 @@ func:graph_link_file_modules = NIL(ModuleGraph->:g) never fails {
         if (i != g.prelude) {
             ModuleEntry:e = g.v.items[i => int64];
             DeclId:rootId = DeclId{ index: e.root };
-            DeclNode:m = raw ast_decl(@g.ast, rootId);
-            int32:n = raw item_member_count(@g.ast, m);
-            int32:first = raw header_slot(@g.ast, rootId);
-            for (int32:k in first...n) {
-                DeclId:item = raw item_member(@g.ast, m, k);
-                DeclNode:d = raw ast_decl(@g.ast, item);
-                if (d.kind == DeclKind.DeclModuleDecl) {
-                    if ((raw item_member_count(@g.ast, d)) == 0i32) {
-                        drop link_one_file_module(g, e.scope, item, d);
-                    }
+            drop link_file_modules_in(g, e.scope, rootId, raw header_slot(@g.ast, rootId));
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// The link's walk mirrors the loader's (D-276): a file's items past the
+// header, an inline module's items in the scope its name opened.
+func:link_file_modules_in = NIL(ModuleGraph->:g, int32:scope, DeclId:mod_id,
+                                int32:first) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
+    int32:n = raw item_member_count(@g.ast, m);
+    for (int32:k in first...n) {
+        DeclId:item = raw item_member(@g.ast, m, k);
+        DeclNode:d = raw ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            if ((raw item_member_count(@g.ast, d)) == 0i32) {
+                drop link_one_file_module(g, scope, item, d);
+            } else {
+                int32:inner = raw nested_module_scope(@g.tab, d, scope);
+                if (inner != 0i32) {
+                    drop link_file_modules_in(g, inner, item, 0i32);
                 }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -718,10 +730,29 @@ func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
     ModuleEntry:e = raw graph_at(g, index);
     string:from = raw srcmgr_resolved_proven(@g.sm, e.file);   // resolution walks the OPENED path (D-236)
     DeclId:rootId = DeclId{ index: e.root };
-    DeclNode:m = raw ast_decl(@g.ast, rootId);
+    // THE FIRST ITEM IS THE HEADER SLOT (D-248, 1.5.1b step 1):
+    // `check_file_header` judged it when the file was parsed, and whatever it
+    // says it loads NOTHING -- a wrong header used to load the sibling it
+    // named. A member-less `mod:name;` anywhere after it is the import it
+    // always was.
+    drop load_imports_in(g, from, rootId, raw header_slot(@g.ast, rootId));
+    pass NIL;
+};
 
+// THE WALK OVER A MODULE'S ITEMS -- a file's root past its header slot, an
+// inline module's from its first item. AN IMPORT MEANS THE SAME THING
+// WHEREVER IT STANDS (D-276, 1.5.4d): until this walk descended, a `use` or a
+// `mod:name;` written inside `mod:m = { … }` loaded nothing and bound nothing,
+// silently, while an inline module is sealed from its own file's imports
+// (`scope_lookup` stops at the first module scope) -- so the one construct
+// that could reach an import from inside one was a no-op. A file-module
+// import inside an inline module loads relative to the FILE, which is the
+// only path an inline module has.
+func:load_imports_in = NIL(ModuleGraph->:g, string:from, DeclId:mod_id,
+                           int32:first) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
     int32:n = raw item_member_count(@g.ast, m);
-    for (int32:i in 0i32...n) {
+    for (int32:i in first...n) {
         DeclId:item = raw item_member(@g.ast, m, i);
         DeclNode:d = raw ast_decl(@g.ast, item);
 
@@ -730,16 +761,13 @@ func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
         }
         // `mod:name;` with an empty member list is an EXTERNAL FILE MODULE
         // (MODULE_REFERENCE 1.1) -- the body lives in name.npk. An inline
-        // `mod:name = { … };` has its members already and loads nothing.
+        // `mod:name = { … };` has its members already and loads nothing of
+        // its own; its ITEMS are walked.
         if (d.kind == DeclKind.DeclModuleDecl) {
             if ((raw item_member_count(@g.ast, d)) == 0i32) {
-                // THE FIRST ITEM IS THE HEADER SLOT (D-248, 1.5.1b step 1):
-                // `check_file_header` judged it when the file was parsed, and
-                // whatever it says it loads NOTHING -- a wrong header used to
-                // load the sibling it named. A member-less `mod:name;` anywhere
-                // after it is the import it always was.
-                if (i == 0i32) { continue; }
                 drop graph_load_file_module(g, from, d, item);
+            } else {
+                drop load_imports_in(g, from, item, 0i32);
             }
         }
     }
@@ -1116,14 +1144,34 @@ func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) never
     ModuleEntry:e = raw graph_at(g, index);
     string:from = raw srcmgr_resolved_proven(@g.sm, e.file);   // resolution walks the OPENED path (D-236)
     DeclId:rootId = DeclId{ index: e.root };
-    DeclNode:m = raw ast_decl(@g.ast, rootId);
+    drop apply_imports_in(g, from, e.scope, rootId, raw header_slot(@g.ast, rootId), report);
+    pass NIL;
+};
 
+// The import pass's walk mirrors the loader's (D-276, 1.5.4d): a `use` inside
+// an inline module binds into the scope the module's name opened, under the
+// same rounds and the same refusals as at file level -- `bind_wildcard`,
+// `bind_named` and `bind_or_report` over that scope, R-1's RESOLVE-002 for an
+// unknown first segment on the reporting round -- and a `pub use` inside one
+// re-exports through the module, so `use m.*;` at file level binds it on the
+// next round of the fixed point.
+func:apply_imports_in = NIL(ModuleGraph->:g, string:from, int32:scope, DeclId:mod_id,
+                            int32:first, bool:report) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
     int32:n = raw item_member_count(@g.ast, m);
-    for (int32:i in 0i32...n) {
+    for (int32:i in first...n) {
         DeclId:item = raw item_member(@g.ast, m, i);
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclImportDecl) {
-            drop apply_one_import(g, from, e.scope, d, report);
+            drop apply_one_import(g, from, scope, d, report);
+        }
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            if ((raw item_member_count(@g.ast, d)) != 0i32) {
+                int32:inner = raw nested_module_scope(@g.tab, d, scope);
+                if (inner != 0i32) {
+                    drop apply_imports_in(g, from, inner, item, 0i32, report);
+                }
+            }
         }
     }
     pass NIL;

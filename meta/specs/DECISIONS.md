@@ -17657,3 +17657,32 @@ workbench.
 > Lands at **1.5.4d** with D-274: `(hidden.Boom)` refuses at the arm, and a
 > `use hidden.{Boom};` or the file-qualified spelling is the way to name it.
 
+## D-276 — an import means the same thing inside an inline module: a `use` and a `mod:name;` written inside one bind and load as at file level — **SETTLED (user decision, 2026-09-10: "all of those things sound fine to me. please proceed."; OPEN_DECISIONS S-51; lands at 1.5.4d step 2)**
+
+Found planning 1.5.4d (2026-09-10, on `1ef034a`). A `use "./plib.npk".*;`
+written inside `mod:m = { … }` bound nothing, and a `mod:plib;` inside one
+loaded nothing — silently, until a later name failed (`RESOLVE-002` "cannot
+find `f`" at the use; `TYPE-019` "no member" at the call): the loader
+(`graph_load_imports`) and the import pass (`module_apply_imports`) walked a
+FILE's top-level items only. It mattered because an inline module is sealed
+from its own file's imports — `scope_lookup` stops at the first module scope
+and the file's `use` bindings live in the file scope (measured: a file-level
+`use "./plib.npk".*;` does not reach `m`'s functions) — so an inline module
+could reach nothing but the prelude and its own members, and the one
+construct that could change that was a no-op. **The decision.** An import
+means the same thing wherever it stands (the blueprint rule): the loader, the
+import pass and the file-module link (D-274) descend into inline modules,
+binding into the scope the module's name opened under the same rounds and
+the same refusals as at file level — R-1's `RESOLVE-002` for an unknown first
+segment, `RESOLVE-005` for a file nothing supplies, `RESOLVE-003`/`-007` for
+a named import — a file-module import inside one loading relative to the
+FILE (the only path an inline module has), and a `pub use` inside one
+re-exporting through the module, so `use m.*;` at file level binds it. The
+alternative — refusing an import inside an inline module by name — was
+smaller and would have kept the box sealed; the silent no-op was the only
+wrong state.
+
+> Lands at **1.5.4d** as step 2 (`inline_imports.npk` exits through an inline
+> module's four import forms; `inline_import_unknown.npk` holds the three
+> refusals inside one).
+
