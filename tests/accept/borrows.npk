@@ -205,6 +205,30 @@ func:per_case_fixed = int32(int32:n) never fails {
     pass k;
 };
 
+// --- rule 3 for a local holder: the same block, or an inner one (DEF-42) --------
+//
+// A holder assigned in the SAME block as the borrowed local, or in a block
+// nested inside it, is provably no longer-lived than the storage. Both are
+// accepted; only a holder declared OUTSIDE the root's block is refused
+// (`rejection/borrows.npk`, `outer_holder` and `outer_copy`).
+func:same_block_holder = int32() never fails {
+    int32:x = 5i32;
+    int32->:p = NULL;
+    p = @x;
+    pass (<-p);
+};
+
+func:inner_holder = int32() never fails {
+    int32:x = 5i32;
+    int32:sum = 0i32;
+    if (true) {
+        int32->:p = NULL;
+        p = $$m x;
+        sum = <-p;
+    }
+    pass sum;
+};
+
 // THE HANDLER A ROOT OWES (D-013; REACH-003 at 1.5.1b step 1b): this file
 // had a `main` and no `failsafe` from the day it was written, and the reach
 // analysis never asked until the workbench's DEF-5 -- every identity the

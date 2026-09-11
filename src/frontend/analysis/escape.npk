@@ -1171,6 +1171,21 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
                 // logic, applied at the write instead of the read).
                 if (!(raw borrows_only_param_rooted(x, val,
                                                       raw ESCAPE_DEPTH()))) {
+                    // RULE 3 FOR A LOCAL HOLDER (DEF-42, 1.5.5 step 0). This
+                    // branch marked the holder and compared no scopes, so
+                    // `int32->:p = NULL; if (c) { int32:x = 41i32; p = $$m x; }
+                    // … <-p` was accepted: `p` outlives the block that
+                    // declares `x`, which is rule 3's "not provably
+                    // shorter-lived" in its own words. Benign at run time by
+                    // construction (every local is a function-lifetime alloca,
+                    // D-173; an address-taken local is frame-resident to the
+                    // function's end in a coroutine) and unstated as a rule --
+                    // and the aliasing lifetimes of 1.5.5 assume a holder never
+                    // outlives its root. A DECLARATION-initialised holder needs
+                    // no check: its roots are in scope at the declaration, so
+                    // their blocks enclose its own; only an ASSIGNMENT to a
+                    // holder declared earlier can reach outward.
+                    drop check_holder_scope(x, sym.scope, val, s.span);
                     drop escape_mark(x, sym.origin);
                 }
                 pass NIL;
@@ -1181,6 +1196,185 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     drop escape_err(x, raw BORROW_STORED(),
         "a borrow cannot be stored here: only a local binding in the borrowing frame is provably no longer-lived than the borrow (D-004 rule 3)",
         tn.span);
+    pass NIL;
+};
+
+// --- rule 3 for a local holder (DEF-42, 1.5.5 step 0) --------------------------
+//
+// THE HOLDER'S BLOCK MUST NOT ENCLOSE THE ROOT'S. A borrow's root is a local
+// (`SYM_STMT`) or a `pick` binding (`SYM_PAT`), each declared in one block
+// scope (`Symbol.scope`; a local is in scope from its declaration to its
+// block's end, resolve.npk); a holder declared in an ANCESTOR of that scope is
+// alive after the root's storage has ended. A parameter or a global root
+// (`SYM_DECL`) outlives every block of the function and is never the subject.
+// The value is walked for every root it carries: the operands of `@`/`$$`, a
+// binding that already holds a borrow (a COPY of a holder carries the
+// holder's roots -- conservatively, the holder ITSELF is compared, since its
+// own scope bounds every borrow it may hold), a view-maker's viewed place
+// (D-249), through the shapes `borrows_only_param_rooted` admits and the
+// generic children of everything else. One report per assignment.
+func:scope_strictly_inside = bool(SymbolTable->:tab, int32:inner, int32:outer) never fails {
+    if (inner == outer) { pass false; }
+    if (inner <= 0i32) { pass false; }
+    int32:p = inner;
+    for (int32:hop in 0i32...256i32) {
+        p = raw scope_parent(tab, p);
+        if (p == outer) { pass true; }
+        if (p <= 0i32) { pass false; }
+    }
+    // FUEL OUT: cannot tell, and "cannot tell" refuses (the closed side).
+    pass true;
+};
+
+func:check_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, Span:at) never fails {
+    List<int32>:roots = raw list_init::<int32>(4i64);
+    drop collect_local_roots(x, val, raw ESCAPE_DEPTH(), @roots);
+    for (int64:i in 0i64...roots.count) {
+        Symbol:rs = raw symtab_get(x.tab, roots.items[i]);
+        if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) { continue; }
+        if (raw scope_strictly_inside(x.tab, rs.scope, holder_scope)) {
+            drop escape_err(x, raw BORROW_STORED(),
+                "a borrow cannot be stored here: this binding is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42) -- declare the holder inside that block, or pass the borrow down",
+                at);
+            pass NIL;
+        }
+    }
+    pass NIL;
+};
+
+// A place's root symbol pushed when it is a frame binding; 0 and parameters
+// are left out (a parameter's target outlives the frame).
+func:push_frame_root = NIL(Escape->:x, ExprId:place, List<int32>->:out) never fails {
+    int32:r = raw root_symbol(x, place);
+    if (r == 0i32) { pass NIL; }
+    Symbol:rs = raw symtab_get(x.tab, r);
+    if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) { pass NIL; }
+    drop list_push(out, r);
+    pass NIL;
+};
+
+func:collect_local_roots = NIL(Escape->:x, ExprId:id, int32:depth, List<int32>->:out) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    // Exhaustion here is silent: `escape_expr` has already refused the same
+    // value at the same depth (BORROW-007), so nothing is promised past it.
+    if (depth <= 0i32) { pass NIL; }
+    int32:d = depth - 1i32;
+    ExprNode:n = raw ast_expr(x.ast, id);
+
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        drop push_frame_root(x, raw expr_operand(n), out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop push_frame_root(x, raw expr_operand(n), out);
+        pass NIL;
+    }
+    // A NAME THAT HOLDS A BORROW: the holder itself is the bound (its scope
+    // encloses no borrow it did not receive inside it).
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass NIL; }
+        if (raw escape_binding(x, n)) { drop list_push(out, n.a); }
+        pass NIL;
+    }
+    // A VIEW-MAKER (D-249): the viewed place's frame root, then the arguments.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        if ((raw bare_builtin_name(x, n)).len > 0i64) {
+            ExprId:vpb = raw view_place(x, n);
+            if (!(raw expr_is_none(vpb))) {
+                if (raw view_is_frame_borrow(x, vpb)) {
+                    drop push_frame_root(x, raw view_root_ident(x, vpb), out);
+                } else {
+                    drop collect_local_roots(x, vpb, d, out);
+                }
+            }
+        }
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        ExprId:vp = raw view_place(x, n);
+        if (!(raw expr_is_none(vp))) {
+            if (raw view_is_frame_borrow(x, vp)) {
+                drop push_frame_root(x, raw view_root_ident(x, vp), out);
+            } else {
+                drop collect_local_roots(x, vp, d, out);
+            }
+        }
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        ExprId:vp2 = raw view_place(x, n);
+        if (!(raw expr_is_none(vp2))) {
+            if (raw view_is_frame_borrow(x, vp2)) {
+                drop push_frame_root(x, raw view_root_ident(x, vp2), out);
+            } else {
+                drop collect_local_roots(x, vp2, d, out);
+            }
+        }
+    }
+    // A PICK EXPRESSION'S VALUE IS ITS ARMS' `give` VALUES (the shape
+    // `gives_borrowy` walks for the escape verdict).
+    if (n.kind == ExprKind.ExprPickExpr) {
+        for (int32:pi in 0i32...(raw pickx_arm_count(n))) {
+            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, raw pickx_arm_start(n), pi));
+            drop collect_gives_roots(x, raw arm_body(parm), d, out);
+        }
+        pass NIL;
+    }
+    // EVERYTHING ELSE BY SHAPE, the generic children (a literal's values, a
+    // call's arguments, an operator's operands); a kind with no shape was
+    // refused by the escape walk already (BORROW-008).
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop collect_roots_window(x, raw expr_list_start(n), raw expr_list_count(n), d, out);
+        pass NIL;
+    }
+    drop collect_local_roots(x, raw expr_lhs(n), d, out);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop collect_roots_window(x, raw expr_list_start(n), raw expr_list_count(n), d, out);
+        pass NIL;
+    }
+    drop collect_local_roots(x, raw expr_rhs(n), d, out);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop collect_local_roots(x, raw expr_third(n), d, out);
+    pass NIL;
+};
+
+// The `give` values under an arm body, the statement shapes `stmt_gives_borrowy` walks.
+func:collect_gives_roots = NIL(Escape->:x, StmtId:sid, int32:depth, List<int32>->:out) never fails {
+    if (depth <= 0i32) { pass NIL; }
+    if (sid.index == 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, sid);
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        drop collect_local_roots(x, raw stmt_operand(s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop collect_gives_roots(x, StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) }, depth - 1i32, out);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop collect_gives_roots(x, raw stmt_body(x.ast, s), depth - 1i32, out);
+        drop collect_gives_roots(x, raw stmt_else(s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:i in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, raw pick_arm_start(s), i));
+            drop collect_gives_roots(x, raw arm_body(parm), depth - 1i32, out);
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:collect_roots_window = NIL(Escape->:x, int32:start, int32:count, int32:depth, List<int32>->:out) never fails {
+    for (int32:i in 0i32...count) {
+        drop collect_local_roots(x, ExprId{ index: raw ast_id_at(x.ast, start, i) }, depth, out);
+    }
     pass NIL;
 };
 

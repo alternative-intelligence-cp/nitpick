@@ -1111,7 +1111,7 @@ a `simd` place, the any-lane row are recorded there now;
 shift shows the shift's fact at work (its `div-min` discharges: after the
 guard, `n` is in `0..31`).
 
-**DEF-42 — OPEN, fixes at 1.5.5 step 0 under D-004 rule 3's own text (found
+**DEF-42 — FIXED at 1.5.5 step 0 (2026-09-11) under D-004 rule 3's own text (found
 by 1.5.5's planning, 2026-09-11, on `cb8cbb0`) — a borrow assigned to a
 holder declared OUTSIDE the referent's block is accepted.** `int32->:p =
 NULL; if (true) { int32:x = 41i32; p = $$m x; } … <-p` passes the checker
@@ -1121,10 +1121,14 @@ so rule 3's "not provably shorter-lived" is unchecked for a local holder.
 Benign at run time BY CONSTRUCTION — every local is a function-lifetime
 alloca (D-173) and an address-taken local is frame-resident to the
 function's end in a coroutine — and unstated as a rule; the aliasing
-lifetimes of S-60 assume a holder never outlives its root. The fix: the
+lifetimes of S-60 assume a holder never outlives its root. The fix, landed: the
 holder's declaring scope may not be an ancestor of the root's (or of a
-copied holder's); BORROW-002 with its own sentence; `borrows.npk` gains
-the two shapes (the plan's step 0).
+copied holder's) — `check_holder_scope` in `escape_assign`'s bare-local
+branch, over every root the value carries (`collect_local_roots`: the
+`@`/`$$` operands, a holding binding, a view-maker's place, a pick
+expression's `give` values, the generic children); BORROW-002 with its own
+sentence; `rejection/borrows.npk` gains `outer_holder` and `outer_copy`,
+`accept/borrows.npk` `same_block_holder` and `inner_holder`.
 
 **DEF-43 — OPEN, the rule is S-62's (found by 1.5.5's planning, 2026-09-11,
 on `cb8cbb0`) — a write through a pointer to a `fixed` binding is accepted,

@@ -31,7 +31,7 @@ Silence has no stage.
 | Code | Rule | Case |
 |---|---|---|
 | `BORROW-001` | D-004 rule 2 — a borrow may not travel up | `borrows.npk`, five forms |
-| `BORROW-002` | D-004 rule 3 — nor be stored in something longer-lived | `borrows.npk` |
+| `BORROW-002` | D-004 rule 3 — nor be stored in something longer-lived: a field, a local aggregate, or (DEF-42, 1.5.5 step 0) a local holder declared outside the block that declares the borrowed local, directly or through a copy of a holder | `borrows.npk` |
 | `BORROW-003` | D-004 rule 4 — nor cross an `extern` call | `borrows.npk`, `path_shapes.npk` |
 | `BORROW-007` | the derivation walk ran out of fuel | `too_deep.npk` |
 | `BORROW-009` | a borrow reaches a binding the analysis cannot follow — a `for` binding, when the iterated element type can carry a pointer (a range's integers or a `uint8[]`'s bytes cannot, whatever the bound's operands hold; 1.5.1b step 2) | `borrows.npk` |

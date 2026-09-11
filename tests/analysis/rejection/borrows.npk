@@ -118,6 +118,36 @@ func:store_local_aggregate = NIL() never fails {
     pass NIL;
 };
 
+// INTO A LOCAL DECLARED OUTSIDE THE BLOCK THAT DECLARES THE BORROWED LOCAL
+// (DEF-42, 1.5.5 step 0). The bare-local branch marked the holder and compared
+// no scopes, so a borrow of `x` sat in `p` after `x`'s block had ended --
+// benign at run time by construction (every local is a function-lifetime
+// alloca, and an address-taken local is frame-resident to the function's end)
+// and unchecked as a rule. "Provably shorter-lived" is rule 3's own text.
+// expect-error: NITPICK-BORROW-002
+func:outer_holder = int32() never fails {
+    int32->:p = NULL;
+    if (true) {
+        int32:x = 41i32;
+        p = $$m x;
+    }
+    pass (<-p);
+};
+
+// THROUGH A COPY OF A HOLDER. `p` holds a borrow of the inner `x`; copying `p`
+// into the outer `q` carries the borrow past `x`'s block. The holder copied is
+// the bound: its own scope encloses no borrow it did not receive inside it.
+// expect-error: NITPICK-BORROW-002
+func:outer_copy = int32() never fails {
+    int32->:q = NULL;
+    if (true) {
+        int32:x = 7i32;
+        int32->:p = @x;
+        q = p;
+    }
+    pass (<-q);
+};
+
 // --- a call's result carries what its arguments did ----------------------------
 //
 // D-004 says passing a borrow down needs no annotation "because the callee's frame
