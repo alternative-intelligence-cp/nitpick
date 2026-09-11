@@ -1,0 +1,46 @@
+// expect-exit: 42
+// stress: 40
+//
+// A WOUND-UP THREAD ROOT RUNS ITS `defer` (DEF-44, 1.5.6 step 0). The wind-up
+// word of a frame is stored by the JOINER's thread (`npk_windup_all`) and read
+// at every resume on the frame's OWN executor -- for a thread's root, another
+// thread's -- and the two accesses were plain: a racing read of the word
+// D-063's cooperative unwind turns on. They are a release store and an
+// acquire load now. The root sleeps far past its `joins` deadline; main's
+// exit winds it up, its next resume takes the unwind branch and runs the
+// `defer`, whose division by the zero main computed from `argv` traps
+// `DivByZero` on the CHILD thread -- `failsafe` runs there and answers 42. A
+// wind-up the root never saw would end in the join's `DeadlineExceeded`
+// instead, and 43. Module state is `const`/`fixed` only (D-211), so the trap
+// route is the one channel a thread's `defer` has to `failsafe`.
+mod:windup_thread;
+fixed Duration:JOIN_300MS = Duration{ ns: 300000000i64 };
+
+thread async func:sleeper = NIL(int32:zero) joins JOIN_300MS {
+    defer { discard(10i32 / zero); }                  // runs at the wind-up: DivByZero
+    await sleep(raw duration_ms(20i64)) ?| NIL;
+    await sleep(raw duration_ms(10000i64)) ?| NIL;   // wound up during this
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    int32:zero = (argv.len =>! int32) - 1i32;         // 0, and the folder cannot know it
+    drop sleeper(zero);
+    exit 0i32;                                        // the exit's join winds it up
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)        { exit 42i32; },
+        (DeadlineExceeded) { exit 43i32; },
+        (DivOverflow)      { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

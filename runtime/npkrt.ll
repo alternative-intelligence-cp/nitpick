@@ -711,9 +711,9 @@ revive:
   %rnp = getelementptr %npk.chan, ptr %rch, i32 0, i32 5
   store i64 0, ptr %rnp
   %rgp = getelementptr %npk.chan, ptr %rch, i32 0, i32 6
-  %rg = load i32, ptr %rgp
+  %rg = load atomic i32, ptr %rgp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %rg2 = add i32 %rg, 1
-  store i32 %rg2, ptr %rgp
+  store atomic i32 %rg2, ptr %rgp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %rclp = getelementptr %npk.chan, ptr %rch, i32 0, i32 7
   store i32 0, ptr %rclp
   call void @npk_ch_unlock(ptr %rch)
@@ -748,8 +748,8 @@ fresh:
   ; means, and 2 is the first even a handle can carry — the arena's virgin
   ; promotion, applied here.
   %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
-  store i32 2, ptr %gp
-  %gen = load i32, ptr %gp
+  store atomic i32 2, ptr %gp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
+  %gen = load atomic i32, ptr %gp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   ; PUBLISH THE POINTER, THEN THE COUNT. A reader acquires the count and so
   ; cannot see an index whose pointer is not yet stored.
   %tab = load ptr, ptr @npk_ch_tab
@@ -778,7 +778,7 @@ live:
   %i32i = trunc i64 %ix64 to i32
   %ch = call ptr @npk_ch_at(i32 %i32i)
   %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
-  %g = load i32, ptr %gp
+  %g = load atomic i32, ptr %gp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %want0 = lshr i64 %h, 32
   %want = trunc i64 %want0 to i32
   %same = icmp eq i32 %g, %want
@@ -812,7 +812,7 @@ ok:
   ; lock was taken, and a reclaim may have moved the slot's generation while
   ; we blocked on it. The slot's struct is immortal, so the load is safe; the
   ; BUFFER is not ours unless the generation still matches.
-  %gnow = load i32, ptr %gckp
+  %gnow = load atomic i32, ptr %gckp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %gwant0 = lshr i64 %h, 32
   %gwant = trunc i64 %gwant0 to i32
   %gsame = icmp eq i32 %gnow, %gwant
@@ -850,7 +850,7 @@ look:
   ; lock was taken, and a reclaim may have moved the slot's generation while
   ; we blocked on it. The slot's struct is immortal, so the load is safe; the
   ; BUFFER is not ours unless the generation still matches.
-  %gnow = load i32, ptr %gckp
+  %gnow = load atomic i32, ptr %gckp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %gwant0 = lshr i64 %h, 32
   %gwant = trunc i64 %gwant0 to i32
   %gsame = icmp eq i32 %gnow, %gwant
@@ -886,7 +886,7 @@ entry:
 live:
   call void @npk_ch_lock(ptr %ch)
   %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
-  %g = load i32, ptr %gp
+  %g = load atomic i32, ptr %gp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %want0 = lshr i64 %h, 32
   %want = trunc i64 %want0 to i32
   %same = icmp eq i32 %g, %want
@@ -898,7 +898,7 @@ take:
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   store i32 1, ptr %clp
   %g2 = add i32 %g, 1
-  store i32 %g2, ptr %gp
+  store atomic i32 %g2, ptr %gp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
   %buf = load ptr, ptr %bp
   %nobuf = icmp eq ptr %buf, null
@@ -1264,7 +1264,7 @@ live:
   ; lock was taken, and a reclaim may have moved the slot's generation while
   ; we blocked on it. The slot's struct is immortal, so the load is safe; the
   ; BUFFER is not ours unless the generation still matches.
-  %gnow = load i32, ptr %gckp
+  %gnow = load atomic i32, ptr %gckp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %gwant0 = lshr i64 %h, 32
   %gwant = trunc i64 %gwant0 to i32
   %gsame = icmp eq i32 %gnow, %gwant
@@ -1353,7 +1353,7 @@ live:
   ; lock was taken, and a reclaim may have moved the slot's generation while
   ; we blocked on it. The slot's struct is immortal, so the load is safe; the
   ; BUFFER is not ours unless the generation still matches.
-  %gnow = load i32, ptr %gckp
+  %gnow = load atomic i32, ptr %gckp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %gwant0 = lshr i64 %h, 32
   %gwant = trunc i64 %gwant0 to i32
   %gsame = icmp eq i32 %gnow, %gwant
@@ -1449,7 +1449,7 @@ live:
   ; lock was taken, and a reclaim may have moved the slot's generation while
   ; we blocked on it. The slot's struct is immortal, so the load is safe; the
   ; BUFFER is not ours unless the generation still matches.
-  %gnow = load i32, ptr %gckp
+  %gnow = load atomic i32, ptr %gckp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %gwant0 = lshr i64 %h, 32
   %gwant = trunc i64 %gwant0 to i32
   %gsame = icmp eq i32 %gnow, %gwant
@@ -1517,7 +1517,7 @@ live:
   ; lock was taken, and a reclaim may have moved the slot's generation while
   ; we blocked on it. The slot's struct is immortal, so the load is safe; the
   ; BUFFER is not ours unless the generation still matches.
-  %gnow = load i32, ptr %gckp
+  %gnow = load atomic i32, ptr %gckp monotonic, align 4   ; DEF-45 (D-290): the generation is an atomic word
   %gwant0 = lshr i64 %h, 32
   %gwant = trunc i64 %gwant0 to i32
   %gsame = icmp eq i32 %gnow, %gwant
@@ -1629,6 +1629,17 @@ guarded:
   %mg = call i64 @npk_windup_grace()
   store i64 %mg, ptr %gr
 
+  ; THE ROOT'S OWNER IS THIS EXECUTOR (DEF-49, 1.5.6 step 0). The frame was
+  ; born on the spawning thread and stamped with THAT thread's executor
+  ; (ir_func.npk's birth stamp, right for a task, which never migrates); a
+  ; thread's root runs on the executor built here, so a waker reading the
+  ; birth stamp roused the PARENT's executor and the root slept to its
+  ; deadline for every value, lock, signal and barrier that arrived early --
+  ; the right answer late, the 1.4.4 join's class. Stamped before the clone,
+  ; which publishes it (D-290: born-before-publish).
+  %rown = getelementptr %npk.hdr, ptr %root, i32 0, i32 11
+  store ptr %ex, ptr %rown
+
   %tls = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.tls, ptr null, i32 1) to i64))
   %t_self = getelementptr %npk.tls, ptr %tls, i32 0, i32 0
   store ptr %tls, ptr %t_self
@@ -1717,7 +1728,7 @@ entry:
   %tp = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
   br label %loop
 loop:
-  %t = load i32, ptr %tp
+  %t = load atomic i32, ptr %tp monotonic, align 4   ; DEF-48 (D-290): the kernel writes this futex word
   %gone = icmp eq i32 %t, 0
   br i1 %gone, label %done, label %check
 check:
@@ -2217,7 +2228,7 @@ done:
 ; the thread while work remains.
 define ptr @npk_step(i64 %dl) {
 entry:
-  %fz = load i32, ptr @npk_frozen
+  %fz = load atomic i32, ptr @npk_frozen seq_cst, align 4   ; DEF-46 (D-290)
   %stop = icmp ne i32 %fz, 0
   br i1 %stop, label %frozen, label %go
 frozen:
@@ -2256,7 +2267,7 @@ run:
   ; word (slot 2) is stored before the due stamp and read after the
   ; sweep's seq_cst load of it, so a wound resume always sees it set.
   %wup = getelementptr %npk.hdr, ptr %t, i32 0, i32 2
-  %wu = load i32, ptr %wup
+  %wu = load atomic i32, ptr %wup acquire, align 4   ; DEF-44 (D-290): the joiner's release store, on another thread
   %wound = icmp ne i32 %wu, 0
   br i1 %wound, label %resume, label %spend
 spend:
@@ -2384,7 +2395,7 @@ loop:
   br i1 %at_end, label %done, label %mark
 mark:
   %wp = getelementptr %npk.hdr, ptr %cur, i32 0, i32 2
-  store i32 1, ptr %wp
+  store atomic i32 1, ptr %wp release, align 4   ; DEF-44 (D-290): read acquire at the owner's next resume
   ; AND WOKEN. A wind-up a sleeping task cannot see is not a grace period,
   ; it is dead time: the flag is read at the next RESUME, so the resume has
   ; to happen. Due-ing the sleeper (wake_at 0, which every `now` is past)
@@ -2505,7 +2516,7 @@ entry:
 
 define i32 @npk_frozen_get() {
 entry:
-  %f = load i32, ptr @npk_frozen
+  %f = load atomic i32, ptr @npk_frozen seq_cst, align 4   ; DEF-46 (D-290)
   ret i32 %f
 }
 
@@ -2527,7 +2538,7 @@ entry:
   ; recheck protocol is untouched: a waker between the caller's re-check and
   ; this wait leaves the eventfd readable, and the wait returns immediately.
   %evp0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
-  %evfd0 = load i32, ptr %evp0
+  %evfd0 = load atomic i32, ptr %evp0 monotonic, align 4   ; the owner's own read of an atomic word (D-290)
   %armed = icmp ne i32 %evfd0, 0
   br i1 %armed, label %epoll, label %futex
 futex:
@@ -2915,10 +2926,10 @@ define void @npk_trap(i32 %code) noreturn {
   ; on any thread — the run loop checks this before every resume, so a trap
   ; inside a task cannot be followed by a sibling running against unknown
   ; state. Frames freeze exactly as they are; nothing is destroyed.
-  store i32 1, ptr @npk_frozen
+  store atomic i32 1, ptr @npk_frozen seq_cst, align 4   ; DEF-46 (D-290): read by every executor
   ; CHAIN-NEUTRAL (D-179): `?!` pushes its site and hands over an error whose
   ; chain must survive; guards and the runtime's own callers reset first.
-  %in = load i32, ptr @npk_in_failsafe
+  %in = load atomic i32, ptr @npk_in_failsafe seq_cst, align 4   ; an atomic word (D-290)
   %re = icmp ne i32 %in, 0
   br i1 %re, label %hard, label %run
 hard:
@@ -2928,7 +2939,7 @@ hard:
   %x = call i64 @npk_sys6(i64 231, i64 70, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
 run:
-  store i32 1, ptr @npk_in_failsafe
+  store atomic i32 1, ptr @npk_in_failsafe seq_cst, align 4   ; an atomic word (D-290); the arbitration is DEF-47's, step 1
   ; DRIVERS DIE BEFORE FAILSAFE RUNS (1.1.13a; D-149 over D-055): the
   ; registry walk is the runtime's own act, not the program's — safing is
   ; mechanism, not policy (D-013), and an uncontrolled driver DURING
@@ -3064,7 +3075,7 @@ define void @npk_exit(i32 %code) noreturn {
   ; destroy the error it was raising, and error paths carry no cleanup
   ; obligation (the same reasoning as defer-does-not-run-on-trap, D-014).
   ; The count walks preallocated state only.
-  %in = load i32, ptr @npk_in_failsafe
+  %in = load atomic i32, ptr @npk_in_failsafe seq_cst, align 4   ; an atomic word (D-290)
   %skip = icmp ne i32 %in, 0
   %fail = icmp ne i32 %code, 0
   %pass = or i1 %skip, %fail
@@ -5104,13 +5115,10 @@ sm:
 
 define ptr @npk_aalloc(i64 %n, i64 %align) {
 entry:
-  %sec = load i64, ptr @npk_hsec
-  %uninit = icmp eq i64 %sec, 0
-  br i1 %uninit, label %init, label %checks
-init:
-  call void @npk_heap_init()
-  br label %checks
-checks:
+  ; THE INIT IS UNDER THE MUTEX (1.5.6 step 0, D-290): this path checked the
+  ; secret and called npk_heap_init before taking the lock; the ordinary
+  ; path's npk_alloc initialises under the mutex itself, and the over-aligned
+  ; path below needs the large table, so it initialises there, locked.
   %negn = icmp slt i64 %n, 0
   br i1 %negn, label %badreq, label %alignck
 alignck:
@@ -5140,6 +5148,13 @@ wide:
   ; not. Two threads asking for an over-aligned block could race the table.
   ; Found while placing the accounting, which needs the lock too.
   call void @npk_mx_lock(ptr @npk_heap_mx)
+  %sec = load i64, ptr @npk_hsec
+  %uninit = icmp eq i64 %sec, 0
+  br i1 %uninit, label %init, label %grow
+init:
+  call void @npk_heap_init()
+  br label %grow
+grow:
   %q = call ptr @npk_large_new(i64 %n1, i64 %align, i64 1)
   call void @npk_hs_note_alloc(i64 %n1)
   call void @npk_mx_unlock(ptr @npk_heap_mx)
@@ -5253,7 +5268,7 @@ lnext:
 out:
   ; wildx pages are wild-role too (0.10.5): a live executable page at exit is
   ; a leak the K-semantics rule names, same as any other wild allocation
-  %wxp = load i64, ptr @npk_wildx_live
+  %wxp = load atomic i64, ptr @npk_wildx_live seq_cst, align 8   ; DEF-50 (D-290)
   %total = add i64 %lacc, %wxp
   ret i64 %total
 }
@@ -5599,11 +5614,20 @@ define internal i64 @npk_m_wildx(i64 %a) {
 
 define ptr @npk_wildx_alloc(i64 %size) {
 entry:
+  ; THE INIT IS UNDER THE MUTEX (1.5.6 step 0, D-290): the secret's check and
+  ; npk_heap_init ran unlocked here, which was safe only by the argument that
+  ; no second thread exists before the first heap allocation; the mutex makes
+  ; it true by construction, at the cost of one uncontended exchange per
+  ; executable page beside its mmap.
+  call void @npk_mx_lock(ptr @npk_heap_mx)
   %sec = load i64, ptr @npk_hsec
   %uninit = icmp eq i64 %sec, 0
-  br i1 %uninit, label %init, label %sized
+  br i1 %uninit, label %init, label %inited
 init:
   call void @npk_heap_init()
+  br label %inited
+inited:
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   br label %sized
 sized:
   %neg = icmp slt i64 %size, 0
@@ -5640,9 +5664,9 @@ stamp:
   %mp = inttoptr i64 %ma to ptr
   %magic = call i64 @npk_m_wildx(i64 %code)
   store i64 %magic, ptr %mp
-  %live = load i64, ptr @npk_wildx_live
-  %live2 = add i64 %live, 1
-  store i64 %live2, ptr @npk_wildx_live
+  ; DEF-50 (D-290): two threads allocating executable pages raced this
+  ; counter with plain read-modify-writes; the exit-time count is D-151's
+  %live = atomicrmw add ptr @npk_wildx_live, i64 1 seq_cst
   %u = add i64 %code, 16
   %up = inttoptr i64 %u to ptr
   ret ptr %up
@@ -5704,9 +5728,7 @@ entry:
   %map = load i64, ptr %szp
   %base = sub i64 %code, 4096
   call void @npk_hunmap(i64 %base, i64 %map)
-  %live = load i64, ptr @npk_wildx_live
-  %live2 = sub i64 %live, 1
-  store i64 %live2, ptr @npk_wildx_live
+  %live = atomicrmw sub ptr @npk_wildx_live, i64 1 seq_cst   ; DEF-50 (D-290)
   ret void
 }
 

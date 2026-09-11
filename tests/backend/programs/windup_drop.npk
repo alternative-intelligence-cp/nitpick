@@ -10,6 +10,17 @@
 // drop that frees a still-shared body, or one that runs twice, exits
 // through a Heap arm instead of 42, and `// stress: 40` makes a
 // schedule-shaped miss loud rather than lucky.
+//
+// THE SECOND SLEEP PROPAGATES ITS WIND-UP (1.5.6 step 0, DEF-49). Until
+// then this program's 42 came from the JOIN's grace expiring: the wind-up's
+// rouse went to the parent's executor, the thread never saw its wind-up in
+// time, and the join trapped `DeadlineExceeded` itself. With the rouse
+// reaching the thread it unwinds inside the grace -- and a `?| NIL` on the
+// wait would SWALLOW the wind-up (the documented price of `?|` meaning one
+// thing everywhere, executor_windup_trap.npk) and let the task complete
+// cleanly, exit 0. `relay` makes the task fail `DeadlineExceeded` as the
+// paragraph above says, and the join hands that to `failsafe`: 42 by the
+// cooperative path now, not by the expiry.
 mod:windup_drop;
 fixed Duration:JOIN_300MS = Duration{ ns: 300000000i64 };
 
@@ -17,7 +28,7 @@ thread async func:sleepy = NIL(int32:_~v) joins JOIN_300MS {
     string:early = string_concat("abcdef", "");
     await sleep(raw duration_ms(20i64)) ?| NIL;      // `early` crosses here
     string:late = string_concat("xyz", "");
-    await sleep(raw duration_ms(10000i64)) ?| NIL;   // wound up during this
+    discard(relay await sleep(raw duration_ms(10000i64)));   // wound up during this: the task FAILS DeadlineExceeded
     discard((early.len + late.len) =>! int32);       // never reached
     pass NIL;
 };

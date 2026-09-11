@@ -42,6 +42,7 @@ use "./irscan.npk".*;
 use "./elf.npk".*;
 use "./verify.npk".*;                          // elided_ir_checks, VRow (the bypass cases)
 use "../src/backend/smt/smt_kinds.npk".*;      // OV_OPEN / OV_DISCHARGED
+use "./floor_shared.npk".*;                    // the shared-state belt's cases
 
 func:FAILSAFE = string() never fails {
     pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 1i32; },\n        (HeapOom) { exit 1i32; },\n        (Unreachable) { exit 1i32; },\n        (WildLeak) { exit 1i32; },\n        (*) { exit 1i32; }\n    }\n    exit 1i32;\n};\n";
@@ -206,6 +207,36 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!okc) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("derived-path-control", okc, "the same finding at a real path must not be flagged"));
     if (!okc) { drop strlist_push(@report, "      the parser flagged a real path; it should not have"); }
+
+    // THE SHARED-STATE BELT REPORTS AN UNCLASSIFIED WORD AND A PLAIN ACCESS OF
+    // AN ATOMIC ONE (1.5.6 step 0, D-290), and passes a classified word: one
+    // synthetic floor text, three spec texts -- the harness's, byte for byte.
+    string:sh_floor = "@npk_flag = internal global i32 0\ndefine void @f(ptr %fr) {\nentry:\n  %w = getelementptr %npk.hdr, ptr %fr, i32 0, i32 2\n  %v = load i32, ptr %w\n  %g = load i32, ptr @npk_flag\n  ret void\n}\n";
+    for (int64:si in 0i64...3i64) {
+        string:sname = "shared-unclassified";
+        string:sspec = "(shared (word @npk_flag owner-only))\n";
+        bool:smust_fail = true;
+        string:swhy = "an access of a word the (shared ...) section does not classify must fail";
+        if (si == 1i64) {
+            sname = "shared-plain-atomic";
+            sspec = "(shared (word %npk.hdr 2 atomic) (word @npk_flag owner-only))\n";
+            swhy = "a plain load of a word classified atomic must fail";
+        }
+        if (si == 2i64) {
+            sname = "shared-classified-control";
+            sspec = "(shared (word %npk.hdr 2 owner-only) (word @npk_flag owner-only))\n";
+            smust_fail = false;
+            swhy = "the same access under a stated classification must pass";
+        }
+        List<string>:sfl = raw floor_shared_check(sh_floor, sspec, sname);
+        bool:sok = ((sfl.count > 0i64) == smust_fail);
+        if (!sok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(sname, sok, swhy));
+        if (!sok) {
+            if (smust_fail) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(sfl, 0i64))); }
+        }
+    }
 
     // THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     // value is its failure path, and a check that has only ever been seen

@@ -1,0 +1,45 @@
+// expect-exit: 0
+// stress: 40
+//
+// TWO THREADS ALLOCATE AND FREE EXECUTABLE PAGES AT ONCE (DEF-50, 1.5.6
+// step 0). The live count of `wildx` pages feeds the exit-time leak check
+// (D-151), and it was a plain load-add-store across threads: a lost update
+// left the count off by one in either direction, so a program that freed
+// every page could still exit through `WildLeak`, and one that leaked a page
+// could exit 0. The count is an atomic read-modify-write now. Each worker
+// takes and returns a page 300 times; exit 0 is the leak check agreeing that
+// nothing is live, which a lost increment or decrement defeats.
+mod:wildx_threads;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+thread async func:churn = NIL(int32:_~v) joins JOIN_5S {
+    int32:i = 0i32;
+    while (i < 300i32) {
+        wildx uint8->:p = wildx_alloc(64i64) =>! wildx uint8->;
+        p[0i64] = 195u8;                              // `ret`: a real code page
+        wildx_seal(p);
+        wildx_free(p);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    drop churn(1i32);
+    drop churn(2i32);
+    exit 0i32;                                        // the joins, then D-151's count
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 91i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

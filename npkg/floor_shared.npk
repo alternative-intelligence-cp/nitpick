@@ -1,0 +1,771 @@
+// floor_shared -- the shared-state belt (1.5.6 step 0; D-290): every word of
+// the floor that two threads can reach is atomic or ordered by a named
+// happens-before edge, and `runtime/npkrt.spec`'s `(shared ...)` section
+// says which, per word. This module is `bootstrap/harness/floor.py`'s
+// twin, finding for finding: the accesses of the four shared struct types'
+// fields and of every `global`, each function's dominators, the lock and
+// unlock calls, and the rules --
+//
+//   shared-unclassified      an access whose word the section does not classify
+//   shared-plain-atomic      a plain access of an `atomic` word
+//   shared-atomic-by-pointer an `atomic` word's address handed to a call
+//   shared-mutex-accessed    a `mutex` word loaded or stored (only the lock
+//                            functions may take its address)
+//   shared-outside-lock      a `lock L` (or a plain `publish L`) access where
+//                            no lock(L) dominates it and an unlock(L)
+//                            post-dominates it, in a function neither
+//                            (under-lock @fn L) nor (exempt @fn L "why")
+//   shared-publish-weak      a `publish L` word read or written atomically
+//                            below acquire/release
+//   shared-call-outside-lock an (under-lock @fn L) function called without
+//                            L held, from a function neither under-lock nor
+//                            exempt for L
+//   shared-stale             a classified word no function accesses, or a
+//                            named function the floor lacks
+//
+// `owner-only`, `born-before-publish`, `once-before-threads` and `stated`
+// are the reviewer's statements (TCB.md SS5); the belt records them and
+// checks nothing further. The runner self-check carries
+// `shared-unclassified`, `shared-plain-atomic` and a control.
+
+mod:floor_shared;
+
+use "./text.npk".*;
+use "./floor_ir.npk".*;
+use "./floor_spec.npk".*;
+
+// One access: the block and line, the word's key (`%npk.hdr#2` or
+// `@name`), its kind (`load`, `store`, `atomicrmw`, `cmpxchg`, `call-arg`,
+// `lock-arg`) and its ordering (`plain`, an ordering word, or `atomic`).
+pub struct:FAccess = {
+    int64:block;
+    int64:line;
+    string:wkey;
+    string:kind;
+    string:ordr;
+};
+
+pub struct:FLockCall = {
+    int64:block;
+    int64:line;
+    string:lock;
+    bool:is_lock;
+};
+
+pub struct:FCall = {
+    int64:block;
+    int64:line;
+    string:callee;
+};
+
+// A classified word.
+pub struct:SWord = {
+    string:wkey;
+    string:cls;
+    string:arg;        // the lock, for `lock` and `publish`
+    string:reason;     // the sentence, for `stated` (and any class that carries one)
+};
+
+pub struct:Shared = {
+    bool:ok;
+    string:problem;
+    List<SWord>:words;
+    List<string>:under_fn;
+    List<string>:under_lock;
+    List<string>:exempt_fn;
+    List<string>:exempt_lock;
+    List<string>:exempt_reason;
+};
+
+// --- the word keys and their names ----------------------------------------------------------
+
+func:field_name = string(string:ty, int64:slot) never fails {
+    if (raw text_eq(ty, "%npk.hdr")) {
+        if (slot == 0i64) { pass "resume_fn"; }   if (slot == 1i64) { pass "state"; }
+        if (slot == 2i64) { pass "windup"; }      if (slot == 3i64) { pass "result"; }
+        if (slot == 4i64) { pass "join_head"; }   if (slot == 5i64) { pass "sibling"; }
+        if (slot == 6i64) { pass "awaitee"; }     if (slot == 7i64) { pass "qnext"; }
+        if (slot == 8i64) { pass "wake_at"; }     if (slot == 9i64) { pass "thread_tls"; }
+        if (slot == 10i64) { pass "chan_next"; }  if (slot == 11i64) { pass "owner"; }
+    }
+    if (raw text_eq(ty, "%npk.exec")) {
+        if (slot == 0i64) { pass "rq_head"; }     if (slot == 1i64) { pass "rq_tail"; }
+        if (slot == 2i64) { pass "sl_head"; }     if (slot == 3i64) { pass "park_at"; }
+        if (slot == 4i64) { pass "park_pending"; } if (slot == 5i64) { pass "park_word"; }
+        if (slot == 6i64) { pass "join_ns"; }     if (slot == 7i64) { pass "grace_ns"; }
+        if (slot == 8i64) { pass "chain"; }       if (slot == 9i64) { pass "chain_n"; }
+        if (slot == 10i64) { pass "windup_seen"; } if (slot == 11i64) { pass "epfd"; }
+        if (slot == 12i64) { pass "evfd"; }       if (slot == 13i64) { pass "cur_task"; }
+    }
+    if (raw text_eq(ty, "%npk.chan")) {
+        if (slot == 0i64) { pass "buf"; }         if (slot == 1i64) { pass "cap"; }
+        if (slot == 2i64) { pass "elem_size"; }   if (slot == 3i64) { pass "head"; }
+        if (slot == 4i64) { pass "tail"; }        if (slot == 5i64) { pass "count"; }
+        if (slot == 6i64) { pass "gen"; }         if (slot == 7i64) { pass "closed"; }
+        if (slot == 8i64) { pass "lock"; }        if (slot == 9i64) { pass "recv_waiters"; }
+        if (slot == 10i64) { pass "send_waiters"; }
+    }
+    if (raw text_eq(ty, "%npk.tls")) {
+        if (slot == 0i64) { pass "self"; }        if (slot == 1i64) { pass "exec"; }
+        if (slot == 2i64) { pass "root"; }        if (slot == 3i64) { pass "resume"; }
+        if (slot == 4i64) { pass "tid"; }
+    }
+    pass (int_to_string(slot));
+};
+
+// `%npk.hdr#2` for a struct field, `@name` for a global.
+func:wkey_of = string(string:ty, int64:slot, string:global) never fails {
+    if (global.len > 0i64) { pass (raw text_copy(global)); }
+    string:k = string_concat(ty, "#");
+    pass (string_concat(k, int_to_string(slot)));
+};
+
+// The key as a message names it: `%npk.hdr slot 2 (windup)` or `@name`.
+pub func:wkey_text = string(string:wkey) never fails {
+    if (wkey.len > 0i64) { if (wkey.ptr[0i64] == 64u8) { pass (raw text_copy(wkey)); } }
+    int64:h = raw text_find_byte(wkey, 35u8, 0i64);
+    if (h < 0i64) { pass (raw text_copy(wkey)); }
+    string:ty = raw text_slice(wkey, 0i64, h);
+    Result<int64>:n = text_int(raw text_slice(wkey, h + 1i64, wkey.len));
+    int64:slot = 0i64;
+    if (!n.is_error) { slot = n.value; }
+    string:s = string_concat(ty, " slot ");
+    s = string_concat(s, int_to_string(slot));
+    s = string_concat(s, " (");
+    s = string_concat(s, raw field_name(ty, slot));
+    pass (string_concat(s, ")"));
+};
+
+// --- reading a function's accesses, calls and lock calls -------------------------------------
+
+// The key of the address `ptr` names in `f`: a mutable global by name, a
+// GEP into a shared struct, or a GEP off a mutable global; "" otherwise.
+func:key_of_ptr = string(FloorText->:ft, FFn->:f, string:ptr) never fails {
+    if (ptr.len == 0i64) { pass ""; }
+    if (ptr.ptr[0i64] == 64u8) {
+        if (raw floor_is_mutable(ft, ptr)) { pass (raw text_copy(ptr)); }
+        pass "";
+    }
+    int64:gi = raw floor_gep_index(f, ptr);
+    if (gi < 0i64) { pass ""; }
+    if (f.geps.items[gi].global.len > 0i64) {
+        if (raw floor_is_mutable(ft, raw strlist_view_of(f.geps.items[gi].global))) {
+            pass (raw text_copy(raw strlist_view_of(f.geps.items[gi].global)));
+        }
+        pass "";
+    }
+    pass (raw wkey_of(raw strlist_view_of(f.geps.items[gi].ty), f.geps.items[gi].slot, ""));
+};
+
+// The ordering word in an atomic access's tail, or "plain".
+func:ordering_of = string(string:tail) never fails {
+    if (raw text_contains(tail, "seq_cst")) { pass "seq_cst"; }
+    if (raw text_contains(tail, "acq_rel")) { pass "acq_rel"; }
+    if (raw text_contains(tail, "acquire")) { pass "acquire"; }
+    if (raw text_contains(tail, "release")) { pass "release"; }
+    if (raw text_contains(tail, "monotonic")) { pass "monotonic"; }
+    if (raw text_contains(tail, "unordered")) { pass "unordered"; }
+    pass "plain";
+};
+
+// The pointer operand after the LAST `, ptr ` of a load/store line and the
+// tail after it; the pointer "" when there is none.
+func:last_ptr = string(string:line, string->:tail) never fails {
+    int64:at = 0i64 - 1i64;
+    int64:from = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(line, ", ptr ", from);
+        if (p < 0i64) { break; }
+        at = p;
+        from = p + 1i64;
+    }
+    if (at < 0i64) { pass ""; }
+    int64:s = at + 6i64;
+    int64:e = s;
+    while (e < line.len) {
+        uint8:c = line.ptr[e];
+        if ((c == 44u8) || (c == 32u8)) { break; }
+        e = e + 1i64;
+    }
+    <-tail = raw text_slice(line, e, line.len);
+    pass (raw text_slice(line, s, e));
+};
+
+// The callee of a `call` line and its argument text; "" when not a call.
+func:call_of = string(string:line, string->:args) never fails {
+    int64:c = raw text_index_of(line, "call ");
+    if (c < 0i64) { pass ""; }
+    int64:at = raw text_find_byte(line, 64u8, c);
+    if (at < 0i64) { pass ""; }
+    int64:e = at + 1i64;
+    while (e < line.len) {
+        uint8:ch = line.ptr[e];
+        if (ch == 40u8) { break; }
+        if (raw text_is_ws(ch)) { pass ""; }
+        e = e + 1i64;
+    }
+    if (e >= line.len) { pass ""; }
+    int64:close = raw text_rfind_byte(line, 41u8);
+    if (close < e) { pass ""; }
+    <-args = raw text_slice(line, e + 1i64, close);
+    pass (raw text_slice(line, at, e));
+};
+
+func:is_lock_fn = bool(string:callee) never fails {
+    if (raw text_eq(callee, "@npk_mx_lock")) { pass true; }
+    if (raw text_eq(callee, "@npk_mx_unlock")) { pass true; }
+    if (raw text_eq(callee, "@npk_ch_lock")) { pass true; }
+    if (raw text_eq(callee, "@npk_ch_unlock")) { pass true; }
+    pass false;
+};
+
+pub func:floor_accesses = List<FAccess>(FloorText->:ft, int64:fi) never fails {
+    List<FAccess>:out = raw list_init::<FAccess>(16i64);
+    FFn->:f = @ft.fns.items[fi];
+    for (int64:b in 0i64...f.blocks.count) {
+        for (int64:i in 0i64...f.blocks.items[b].lines.count) {
+            string:line = raw strlist_view(f.blocks.items[b].lines, i);
+            bool:is_load = false;
+            bool:is_store = raw text_starts_with(line, "store ");
+            int64:eq = raw text_index_of(line, " = load ");
+            if (eq >= 0i64) { if (line.ptr[0i64] == 37u8) { is_load = true; } }
+            if (is_load || is_store) {
+                string:tail = "";
+                string:p = raw last_ptr(line, @tail);
+                string:key = raw key_of_ptr(ft, f, p);
+                if (key.len == 0i64) { continue; }
+                bool:is_at = false;
+                if (is_load) { is_at = raw text_contains(line, " = load atomic "); }
+                else { is_at = raw text_starts_with(line, "store atomic "); }
+                string:ordr = "plain";
+                if (is_at) { ordr = raw ordering_of(tail); }
+                string:kind = "load";
+                if (is_store) { kind = "store"; }
+                FAccess:a = FAccess{ block: b, line: i, wkey: move(key), kind: raw text_copy(kind), ordr: raw text_copy(ordr) };
+                drop list_push(@out, move(a));
+                continue;
+            }
+            int64:rmw = raw text_index_of(line, "atomicrmw ");
+            int64:cx = raw text_index_of(line, "cmpxchg ptr ");
+            if ((rmw >= 0i64) || (cx >= 0i64)) {
+                int64:pp = raw text_index_of(line, " ptr ");
+                if (pp < 0i64) { continue; }
+                int64:s = pp + 5i64;
+                int64:e = s;
+                while (e < line.len) {
+                    uint8:c = line.ptr[e];
+                    if ((c == 44u8) || (c == 32u8)) { break; }
+                    e = e + 1i64;
+                }
+                string:key2 = raw key_of_ptr(ft, f, raw text_slice(line, s, e));
+                if (key2.len == 0i64) { continue; }
+                string:kind2 = "cmpxchg";
+                if (rmw >= 0i64) {
+                    int64:ke = rmw + 10i64;
+                    while ((ke < line.len) && (line.ptr[ke] != 32u8)) { ke = ke + 1i64; }
+                    kind2 = raw text_slice(line, rmw, ke);
+                }
+                FAccess:a2 = FAccess{ block: b, line: i, wkey: move(key2), kind: move(kind2), ordr: "atomic" };
+                drop list_push(@out, move(a2));
+                continue;
+            }
+            string:args = "";
+            string:callee = raw call_of(line, @args);
+            if (callee.len == 0i64) { continue; }
+            bool:lockfn = raw is_lock_fn(callee);
+            int64:from = 0i64;
+            while (true) {
+                int64:p2 = raw text_index_from(args, "ptr %", from);
+                if (p2 < 0i64) { break; }
+                int64:s2 = p2 + 4i64;
+                int64:e2 = s2;
+                while (e2 < args.len) {
+                    uint8:c2 = args.ptr[e2];
+                    if ((c2 == 44u8) || (c2 == 32u8) || (c2 == 41u8)) { break; }
+                    e2 = e2 + 1i64;
+                }
+                string:reg = raw text_slice(args, s2, e2);
+                int64:gi = raw floor_gep_index(f, reg);
+                if (gi >= 0i64) {
+                    string:key3 = raw key_of_ptr(ft, f, reg);
+                    if (key3.len > 0i64) {
+                        string:kind3 = "call-arg";
+                        if (lockfn) { kind3 = "lock-arg"; }
+                        FAccess:a3 = FAccess{ block: b, line: i, wkey: move(key3), kind: raw text_copy(kind3), ordr: "plain" };
+                        drop list_push(@out, move(a3));
+                    }
+                }
+                from = e2;
+            }
+        }
+    }
+    pass out;
+};
+
+pub func:floor_calls = List<FCall>(FFn->:f) never fails {
+    List<FCall>:out = raw list_init::<FCall>(8i64);
+    for (int64:b in 0i64...f.blocks.count) {
+        for (int64:i in 0i64...f.blocks.items[b].lines.count) {
+            string:args = "";
+            string:callee = raw call_of(raw strlist_view(f.blocks.items[b].lines, i), @args);
+            if (callee.len == 0i64) { continue; }
+            FCall:c = FCall{ block: b, line: i, callee: move(callee) };
+            drop list_push(@out, move(c));
+        }
+    }
+    pass out;
+};
+
+// The lock a lock-function call names: a channel's own word, a global mutex
+// by name, a primitive's cell by pointer.
+pub func:floor_lock_calls = List<FLockCall>(FFn->:f) never fails {
+    List<FLockCall>:out = raw list_init::<FLockCall>(4i64);
+    for (int64:b in 0i64...f.blocks.count) {
+        for (int64:i in 0i64...f.blocks.items[b].lines.count) {
+            string:args = "";
+            string:callee = raw call_of(raw strlist_view(f.blocks.items[b].lines, i), @args);
+            if (callee.len == 0i64) { continue; }
+            if (!(raw is_lock_fn(callee))) { continue; }
+            bool:is_lock = ((raw text_eq(callee, "@npk_mx_lock")) || (raw text_eq(callee, "@npk_ch_lock")));
+            string:name = "chan.lock";
+            string:arg = "";
+            if (raw text_starts_with(callee, "@npk_mx_")) {
+                int64:p = raw text_index_of(args, "ptr ");
+                if (p >= 0i64) {
+                    int64:s = p + 4i64;
+                    int64:e = s;
+                    while (e < args.len) {
+                        uint8:c = args.ptr[e];
+                        if ((c == 44u8) || (c == 32u8)) { break; }
+                        e = e + 1i64;
+                    }
+                    arg = raw text_slice(args, s, e);
+                }
+                if (raw text_eq(arg, "@npk_ch_open_lock")) { name = "ch-open-lock"; }
+                else { if (raw text_eq(arg, "@npk_heap_mx")) { name = "heap-mx"; }
+                else { if (raw text_starts_with(arg, "%")) { name = "cell"; } else { name = raw text_copy(arg); } } }
+            }
+            FLockCall:lc = FLockCall{ block: b, line: i, lock: raw text_copy(name), is_lock: is_lock };
+            drop list_push(@out, move(lc));
+        }
+    }
+    pass out;
+};
+
+// --- dominators ------------------------------------------------------------------------------
+
+// dom[b*n + d] == 1 iff block d dominates block b (b included); the entry is
+// block 0. The iterative dataflow over a graph with at most a few dozen blocks.
+pub func:floor_dominators = List<int32>(FFn->:f) never fails {
+    int64:n = f.blocks.count;
+    List<int32>:dom = raw list_init::<int32>(n * n + 1i64);
+    for (int64:i in 0i64...(n * n)) { drop list_push(@dom, 1i32); }
+    // preds
+    List<int64>:pred_of = raw list_init::<int64>(n * n + 1i64);   // pred_of[b*n + p] == 1 iff p -> b
+    for (int64:i2 in 0i64...(n * n)) { drop list_push(@pred_of, 0i64); }
+    for (int64:b in 0i64...n) {
+        for (int64:s in 0i64...f.blocks.items[b].succs.count) {
+            int64:t = f.blocks.items[b].succs.items[s];
+            pred_of.items[t * n + b] = 1i64;
+        }
+    }
+    // the entry dominates only itself
+    for (int64:d in 0i64...n) { if (d != 0i64) { dom.items[d] = 0i32; } }
+    bool:changed = true;
+    while (changed) {
+        changed = false;
+        for (int64:b2 in 1i64...n) {
+            bool:any_pred = false;
+            for (int64:p in 0i64...n) { if (pred_of.items[b2 * n + p] == 1i64) { any_pred = true; } }
+            for (int64:d2 in 0i64...n) {
+                int32:v = 0i32;
+                if (d2 == b2) { v = 1i32; }
+                else {
+                    if (any_pred) {
+                        v = 1i32;
+                        for (int64:p2 in 0i64...n) {
+                            if (pred_of.items[b2 * n + p2] == 1i64) {
+                                if (dom.items[p2 * n + d2] == 0i32) { v = 0i32; }
+                            }
+                        }
+                    }
+                }
+                if (dom.items[b2 * n + d2] != v) {
+                    dom.items[b2 * n + d2] = v;
+                    changed = true;
+                }
+            }
+        }
+    }
+    pass dom;
+};
+
+func:lock_matches = bool(string:want, string:have) never fails {
+    if (raw text_eq(want, "waiter-list")) {
+        if (raw text_eq(have, "chan.lock")) { pass true; }
+        if (raw text_eq(have, "cell")) { pass true; }
+        pass false;
+    }
+    pass (raw text_eq(want, have));
+};
+
+// Is `lock` held at (bi, li): a lock call dominates the point and an unlock
+// post-dominates it (every path to a `ret` passes one; a path ending in
+// `unreachable` ends the process holding it, on purpose).
+pub func:floor_held_at = bool(FFn->:f, List<int32>->:dom, List<FLockCall>->:locks, int64:bi, int64:li, string:lock) never fails {
+    int64:n = f.blocks.count;
+    bool:dominated = false;
+    for (int64:k in 0i64...locks.count) {
+        if (!locks.items[k].is_lock) { continue; }
+        if (!(raw lock_matches(lock, raw strlist_view_of(locks.items[k].lock)))) { continue; }
+        int64:lb = locks.items[k].block;
+        if ((lb == bi) && (locks.items[k].line < li)) { dominated = true; }
+        if ((lb != bi) && (dom.items[bi * n + lb] == 1i32)) { dominated = true; }
+    }
+    if (!dominated) { pass false; }
+    List<int32>:has_unlock = raw list_init::<int32>(n + 1i64);
+    for (int64:i in 0i64...n) { drop list_push(@has_unlock, 0i32); }
+    bool:own_after = false;
+    for (int64:k2 in 0i64...locks.count) {
+        if (locks.items[k2].is_lock) { continue; }
+        if (!(raw lock_matches(lock, raw strlist_view_of(locks.items[k2].lock)))) { continue; }
+        has_unlock.items[locks.items[k2].block] = 1i32;
+        if ((locks.items[k2].block == bi) && (locks.items[k2].line > li)) { own_after = true; }
+    }
+    List<int32>:covered = raw list_init::<int32>(n + 1i64);
+    for (int64:i2 in 0i64...n) { drop list_push(@covered, 1i32); }
+    bool:changed = true;
+    while (changed) {
+        changed = false;
+        for (int64:b in 0i64...n) {
+            int32:v = 0i32;
+            int64:ln = f.blocks.items[b].lines.count;
+            string:last = "";
+            if (ln > 0i64) { last = raw strlist_view(f.blocks.items[b].lines, ln - 1i64); }
+            if ((has_unlock.items[b] == 1i32) || (raw text_starts_with(last, "unreachable"))) { v = 1i32; }
+            else {
+                if (f.blocks.items[b].succs.count == 0i64) { v = 0i32; }
+                else {
+                    v = 1i32;
+                    for (int64:s in 0i64...f.blocks.items[b].succs.count) {
+                        if (covered.items[f.blocks.items[b].succs.items[s]] == 0i32) { v = 0i32; }
+                    }
+                }
+            }
+            if (covered.items[b] != v) { covered.items[b] = v; changed = true; }
+        }
+    }
+    if (own_after) { pass true; }
+    int64:oln = f.blocks.items[bi].lines.count;
+    string:olast = "";
+    if (oln > 0i64) { olast = raw strlist_view(f.blocks.items[bi].lines, oln - 1i64); }
+    if (raw text_eq(olast, "unreachable")) { pass true; }
+    if (f.blocks.items[bi].succs.count == 0i64) { pass false; }
+    for (int64:s2 in 0i64...f.blocks.items[bi].succs.count) {
+        if (covered.items[f.blocks.items[bi].succs.items[s2]] == 0i32) { pass false; }
+    }
+    pass true;
+};
+
+// --- the spec's (shared ...) section --------------------------------------------------------
+
+func:shared_refuse = Shared(string:why) never fails {
+    pass Shared{ ok: false, problem: raw text_copy(why), words: raw list_init::<SWord>(1i64),
+                 under_fn: raw list_init::<string>(1i64), under_lock: raw list_init::<string>(1i64),
+                 exempt_fn: raw list_init::<string>(1i64), exempt_lock: raw list_init::<string>(1i64),
+                 exempt_reason: raw list_init::<string>(1i64) };
+};
+
+pub func:floor_read_shared = Shared(string:spec_text) never fails {
+    Sxs:sx = raw sx_parse(spec_text);
+    if (!sx.ok) { pass (raw shared_refuse(string_concat("runtime/npkrt.spec: ", sx.problem))); }
+    int64:root = raw sx_find_root(@sx, "shared");
+    if (root < 0i64) { pass (raw shared_refuse("runtime/npkrt.spec: no `(shared ...)` section")); }
+    Shared:sh = Shared{ ok: true, problem: "", words: raw list_init::<SWord>(64i64),
+                        under_fn: raw list_init::<string>(24i64), under_lock: raw list_init::<string>(24i64),
+                        exempt_fn: raw list_init::<string>(8i64), exempt_lock: raw list_init::<string>(8i64),
+                        exempt_reason: raw list_init::<string>(8i64) };
+    int64:e = raw sx_nth(@sx, root, 1i64);
+    while (e >= 0i64) {
+        if (!(raw sx_is_list(@sx, e))) { pass (raw shared_refuse("runtime/npkrt.spec: a (shared ...) entry is not a list")); }
+        string:head = raw sx_head(@sx, e);
+        if (raw text_eq(head, "lock")) {
+            // declared for the reader; the belt's lock names are the floor's fixed vocabulary
+        } else { if (raw text_eq(head, "word")) {
+            string:target = raw sx_atom(@sx, raw sx_nth(@sx, e, 1i64));
+            string:wkey = "";
+            int64:rest = 2i64;
+            if (raw text_starts_with(target, "%")) {
+                Result<int64>:slot = text_int(raw sx_atom(@sx, raw sx_nth(@sx, e, 2i64)));
+                if (slot.is_error) { pass (raw shared_refuse("runtime/npkrt.spec: a struct word needs its slot number")); }
+                wkey = raw wkey_of(target, slot.value, "");
+                rest = 3i64;
+            } else {
+                wkey = raw text_copy(target);
+            }
+            string:cls = raw sx_atom(@sx, raw sx_nth(@sx, e, rest));
+            string:arg = "";
+            string:reason = "";
+            int64:k = rest + 1i64;
+            while (true) {
+                int64:it = raw sx_nth(@sx, e, k);
+                if (it < 0i64) { break; }
+                if (raw sx_is_string(@sx, it)) { reason = raw sx_string(@sx, it); }
+                else { if (arg.len == 0i64) { arg = raw sx_atom(@sx, it); } }
+                k = k + 1i64;
+            }
+            if ((raw text_eq(cls, "stated")) && (reason.len == 0i64)) {
+                pass (raw shared_refuse(string_concat("runtime/npkrt.spec: a `stated` word needs its reason string: ", wkey)));
+            }
+            if (((raw text_eq(cls, "lock")) || (raw text_eq(cls, "publish"))) && (arg.len == 0i64)) {
+                pass (raw shared_refuse(string_concat("runtime/npkrt.spec: a lock/publish word names its lock: ", wkey)));
+            }
+            SWord:w = SWord{ wkey: move(wkey), cls: move(cls), arg: move(arg), reason: move(reason) };
+            drop list_push(@sh.words, move(w));
+        } else { if (raw text_eq(head, "under-lock")) {
+            drop strlist_push(@sh.under_fn, raw sx_atom(@sx, raw sx_nth(@sx, e, 1i64)));
+            drop strlist_push(@sh.under_lock, raw sx_atom(@sx, raw sx_nth(@sx, e, 2i64)));
+        } else { if (raw text_eq(head, "exempt")) {
+            string:why = raw sx_string(@sx, raw sx_nth(@sx, e, 3i64));
+            if (why.len == 0i64) { pass (raw shared_refuse("runtime/npkrt.spec: an `exempt` entry needs its reason string")); }
+            drop strlist_push(@sh.exempt_fn, raw sx_atom(@sx, raw sx_nth(@sx, e, 1i64)));
+            drop strlist_push(@sh.exempt_lock, raw sx_atom(@sx, raw sx_nth(@sx, e, 2i64)));
+            drop strlist_push(@sh.exempt_reason, why);
+        } else {
+            pass (raw shared_refuse(string_concat("runtime/npkrt.spec: unknown (shared ...) entry `", string_concat(head, "`"))));
+        } } } }
+        e = sx.nodes.items[e].next;
+    }
+    pass sh;
+};
+
+func:word_index = int64(Shared->:sh, string:wkey) never fails {
+    for (int64:i in 0i64...sh.words.count) {
+        if (raw text_eq(raw strlist_view_of(sh.words.items[i].wkey), wkey)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+func:is_under = bool(Shared->:sh, string:fn, string:lock) never fails {
+    for (int64:i in 0i64...sh.under_fn.count) {
+        if ((raw text_eq(raw strlist_view(sh.under_fn, i), fn)) && (raw text_eq(raw strlist_view(sh.under_lock, i), lock))) { pass true; }
+    }
+    pass false;
+};
+
+func:is_exempt = bool(Shared->:sh, string:fn, string:lock) never fails {
+    for (int64:i in 0i64...sh.exempt_fn.count) {
+        if ((raw text_eq(raw strlist_view(sh.exempt_fn, i), fn)) && (raw text_eq(raw strlist_view(sh.exempt_lock, i), lock))) { pass true; }
+    }
+    pass false;
+};
+
+func:site_text = string(FFn->:f, int64:bi, int64:li) never fails {
+    string:s = string_concat("block `", raw strlist_view_of(f.blocks.items[bi].label));
+    s = string_concat(s, "` line ");
+    pass (string_concat(s, int_to_string(li + 1i64)));
+};
+
+// --- the belt ----------------------------------------------------------------------------------
+
+pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(4i64);
+    FloorText:ft = raw floor_parse(floor_text);
+    Shared:sh = raw floor_read_shared(spec_text);
+    if (!sh.ok) {
+        drop strlist_push(@fl, string_concat(name, string_concat(": ", sh.problem)));
+        pass fl;
+    }
+    List<string>:reported = raw list_init::<string>(8i64);
+    List<string>:seen = raw list_init::<string>(64i64);
+    for (int64:fi in 0i64...ft.fns.count) {
+        FFn->:f = @ft.fns.items[fi];
+        string:fname = raw strlist_view_of(f.name);
+        List<FAccess>:acc = raw floor_accesses(@ft, fi);
+        List<int32>:dom = raw floor_dominators(f);
+        List<FLockCall>:lk = raw floor_lock_calls(f);
+        for (int64:a in 0i64...acc.count) {
+            string:wkey = raw strlist_view_of(acc.items[a].wkey);
+            string:kind = raw strlist_view_of(acc.items[a].kind);
+            string:ordr = raw strlist_view_of(acc.items[a].ordr);
+            if (!(raw strlist_contains(seen, wkey))) { drop strlist_push(@seen, wkey); }
+            int64:wi = raw word_index(@sh, wkey);
+            if (wi < 0i64) {
+                if (!(raw strlist_contains(reported, wkey))) {
+                    drop strlist_push(@reported, wkey);
+                    string:m = string_concat(name, ": shared-unclassified: `");
+                    m = string_concat(m, raw wkey_text(wkey));
+                    m = string_concat(m, "` is accessed (");
+                    m = string_concat(m, kind);
+                    m = string_concat(m, " in ");
+                    m = string_concat(m, fname);
+                    m = string_concat(m, ") and runtime/npkrt.spec's (shared ...) section does not classify it (D-290)");
+                    drop list_push(@fl, move(m));
+                }
+                continue;
+            }
+            string:cls = raw strlist_view_of(sh.words.items[wi].cls);
+            string:arg = raw strlist_view_of(sh.words.items[wi].arg);
+            if (raw text_eq(cls, "atomic")) {
+                if (raw text_eq(kind, "call-arg")) {
+                    string:m1 = string_concat(name, ": shared-atomic-by-pointer: `");
+                    m1 = string_concat(m1, raw wkey_text(wkey));
+                    m1 = string_concat(m1, "` is classified atomic and `");
+                    m1 = string_concat(m1, fname);
+                    m1 = string_concat(m1, "` hands its address to a call -- the callee's accesses are not this belt's to see");
+                    drop list_push(@fl, move(m1));
+                    continue;
+                }
+                if (raw text_eq(ordr, "plain")) {
+                    string:m2 = string_concat(name, ": shared-plain-atomic: `");
+                    m2 = string_concat(m2, raw wkey_text(wkey));
+                    m2 = string_concat(m2, "` is classified atomic and `");
+                    m2 = string_concat(m2, fname);
+                    m2 = string_concat(m2, "` accesses it with a plain ");
+                    m2 = string_concat(m2, kind);
+                    m2 = string_concat(m2, " (D-290)");
+                    drop list_push(@fl, move(m2));
+                }
+                continue;
+            }
+            if (raw text_eq(cls, "mutex")) {
+                if (raw text_eq(kind, "lock-arg")) { continue; }
+                string:m3 = string_concat(name, ": shared-mutex-accessed: `");
+                m3 = string_concat(m3, raw wkey_text(wkey));
+                m3 = string_concat(m3, "` is a futex mutex word and `");
+                m3 = string_concat(m3, fname);
+                m3 = string_concat(m3, "` ");
+                m3 = string_concat(m3, kind);
+                m3 = string_concat(m3, "s it directly -- only npk_mx_lock/npk_mx_unlock may touch it");
+                drop list_push(@fl, move(m3));
+                continue;
+            }
+            if ((raw text_eq(cls, "lock")) || (raw text_eq(cls, "publish"))) {
+                if ((raw text_eq(cls, "publish")) && (!(raw text_eq(ordr, "plain")))) {
+                    bool:strong = false;
+                    if (raw text_eq(ordr, "acquire")) { strong = true; }
+                    if (raw text_eq(ordr, "release")) { strong = true; }
+                    if (raw text_eq(ordr, "seq_cst")) { strong = true; }
+                    if (raw text_eq(ordr, "acq_rel")) { strong = true; }
+                    if (raw text_eq(ordr, "atomic")) { strong = true; }
+                    if (!strong) {
+                        string:m4 = string_concat(name, ": shared-publish-weak: `");
+                        m4 = string_concat(m4, raw wkey_text(wkey));
+                        m4 = string_concat(m4, "` is published under ");
+                        m4 = string_concat(m4, arg);
+                        m4 = string_concat(m4, " and `");
+                        m4 = string_concat(m4, fname);
+                        m4 = string_concat(m4, "` reads it `");
+                        m4 = string_concat(m4, ordr);
+                        m4 = string_concat(m4, "` -- acquire/release or stronger");
+                        drop list_push(@fl, move(m4));
+                    }
+                    continue;
+                }
+                if (raw is_under(@sh, fname, arg)) { continue; }
+                if (raw is_exempt(@sh, fname, arg)) { continue; }
+                if (!(raw floor_held_at(f, @dom, @lk, acc.items[a].block, acc.items[a].line, arg))) {
+                    string:m5 = string_concat(name, ": shared-outside-lock: `");
+                    m5 = string_concat(m5, raw wkey_text(wkey));
+                    m5 = string_concat(m5, "` is classified under ");
+                    m5 = string_concat(m5, arg);
+                    m5 = string_concat(m5, " and `");
+                    m5 = string_concat(m5, fname);
+                    m5 = string_concat(m5, "` ");
+                    m5 = string_concat(m5, kind);
+                    m5 = string_concat(m5, "s it at ");
+                    m5 = string_concat(m5, raw site_text(f, acc.items[a].block, acc.items[a].line));
+                    m5 = string_concat(m5, " where no lock(");
+                    m5 = string_concat(m5, arg);
+                    m5 = string_concat(m5, ") dominates the access and an unlock(");
+                    m5 = string_concat(m5, arg);
+                    m5 = string_concat(m5, ") post-dominates it -- name the function (under-lock ...) if its callers hold the lock, or (exempt ...) with the reason");
+                    drop list_push(@fl, move(m5));
+                }
+                continue;
+            }
+            bool:known = false;
+            if (raw text_eq(cls, "owner-only")) { known = true; }
+            if (raw text_eq(cls, "born-before-publish")) { known = true; }
+            if (raw text_eq(cls, "once-before-threads")) { known = true; }
+            if (raw text_eq(cls, "stated")) { known = true; }
+            if (!known) {
+                string:m6 = string_concat(name, ": shared-unknown-class: `");
+                m6 = string_concat(m6, raw wkey_text(wkey));
+                m6 = string_concat(m6, "` is classified `");
+                m6 = string_concat(m6, cls);
+                m6 = string_concat(m6, "`, which the belt does not know");
+                drop list_push(@fl, move(m6));
+            }
+        }
+        // every call of an under-lock function is made with its lock held
+        List<FCall>:calls = raw floor_calls(f);
+        for (int64:c in 0i64...calls.count) {
+            string:callee = raw strlist_view_of(calls.items[c].callee);
+            for (int64:u in 0i64...sh.under_fn.count) {
+                if (!(raw text_eq(raw strlist_view(sh.under_fn, u), callee))) { continue; }
+                string:lock = raw strlist_view(sh.under_lock, u);
+                if (raw is_under(@sh, fname, lock)) { continue; }
+                if (raw is_exempt(@sh, fname, lock)) { continue; }
+                if (!(raw floor_held_at(f, @dom, @lk, calls.items[c].block, calls.items[c].line, lock))) {
+                    string:m7 = string_concat(name, ": shared-call-outside-lock: `");
+                    m7 = string_concat(m7, callee);
+                    m7 = string_concat(m7, "` is (under-lock ");
+                    m7 = string_concat(m7, lock);
+                    m7 = string_concat(m7, ") and `");
+                    m7 = string_concat(m7, fname);
+                    m7 = string_concat(m7, "` calls it at ");
+                    m7 = string_concat(m7, raw site_text(f, calls.items[c].block, calls.items[c].line));
+                    m7 = string_concat(m7, " without holding ");
+                    m7 = string_concat(m7, lock);
+                    drop list_push(@fl, move(m7));
+                }
+            }
+        }
+    }
+    // a classified word nobody accesses, or a named function the floor lacks, is stale
+    for (int64:w in 0i64...sh.words.count) {
+        string:wk = raw strlist_view_of(sh.words.items[w].wkey);
+        if (raw text_eq(raw strlist_view_of(sh.words.items[w].cls), "mutex")) { continue; }
+        if (!(raw strlist_contains(seen, wk))) {
+            string:m8 = string_concat(name, ": shared-stale: `");
+            m8 = string_concat(m8, raw wkey_text(wk));
+            m8 = string_concat(m8, "` is classified `");
+            m8 = string_concat(m8, raw strlist_view_of(sh.words.items[w].cls));
+            m8 = string_concat(m8, "` and no function accesses it -- remove the entry or the belt is describing a word the floor no longer has");
+            drop list_push(@fl, move(m8));
+        }
+    }
+    for (int64:u2 in 0i64...sh.under_fn.count) {
+        if ((raw floor_fn_index(@ft, raw strlist_view(sh.under_fn, u2))) < 0i64) {
+            string:m9 = string_concat(name, ": shared-stale: `");
+            m9 = string_concat(m9, raw strlist_view(sh.under_fn, u2));
+            m9 = string_concat(m9, "` is named (under-lock/exempt) and the floor does not define it");
+            drop list_push(@fl, move(m9));
+        }
+    }
+    for (int64:x2 in 0i64...sh.exempt_fn.count) {
+        if ((raw floor_fn_index(@ft, raw strlist_view(sh.exempt_fn, x2))) < 0i64) {
+            string:m10 = string_concat(name, ": shared-stale: `");
+            m10 = string_concat(m10, raw strlist_view(sh.exempt_fn, x2));
+            m10 = string_concat(m10, "` is named (under-lock/exempt) and the floor does not define it");
+            drop list_push(@fl, move(m10));
+        }
+    }
+    pass fl;
+};
+
+// The belt over the committed files under `root`; a file that cannot be
+// read is a failure by name, never a silent pass.
+pub func:floor_shared_current = List<string>(string:root) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    Result<cstring>:fc = to_cstring(string_concat(root, "/runtime/npkrt.ll"));
+    if (fc.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.ll: not a path"); pass fl; }
+    Result<string>:ft = read_file(fc.value);
+    if (ft.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.ll cannot be read"); pass fl; }
+    Result<cstring>:sc = to_cstring(string_concat(root, "/runtime/npkrt.spec"));
+    if (sc.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.spec: not a path"); pass fl; }
+    Result<string>:st = read_file(sc.value);
+    if (st.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.spec cannot be read -- the floor's specification is part of the tree (D-288)"); pass fl; }
+    pass (raw floor_shared_check(ft.value, st.value, "floor"));
+};

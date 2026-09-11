@@ -3607,6 +3607,22 @@ def _floor_classes():
     return out
 
 
+def check_floor_shared_current():
+    """THE SHARED-STATE BELT (1.5.6 step 0, D-290): every word of the floor
+    two threads can reach is atomic or ordered by a named edge, and
+    `runtime/npkrt.spec`'s (shared ...) section classifies it. The rules and
+    their findings are `floor.py`'s; `npkg/floor_shared.npk` is the twin."""
+    import floor
+    spec = os.path.join(ROOT, "runtime", "npkrt.spec")
+    if not os.path.exists(spec):
+        return ["floor: runtime/npkrt.spec is missing -- the floor's specification is part of the tree (D-288)"]
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        ft = fh.read()
+    with open(spec, encoding="utf-8") as fh:
+        st = fh.read()
+    return floor.check_shared(ft, st, "floor")
+
+
 def check_tcb_floor_current():
     """TCB.md's enumeration of the floor is GENERATED, never hand-maintained
     (P-26, 1.5.0): the table's symbol and class columns must equal what the
@@ -4148,6 +4164,7 @@ def main(argv):
         failures += check_builtin_sig_texts()
         failures += check_obligation_kinds_agree()
         failures += check_tcb_floor_current()
+        failures += check_floor_shared_current()
 
         # The two standalone instruments that were wired to NOTHING until
         # 1.4.1 (found by the 1.4.0 survey): the harness's own self-check

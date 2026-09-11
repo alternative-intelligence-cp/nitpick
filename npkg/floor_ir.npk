@@ -1,0 +1,250 @@
+// floor_ir -- the floor's text as functions, blocks and instruction lines
+// (1.5.6 step 0; D-288's reader begins here, D-290's belt reads it).
+//
+// `runtime/npkrt.ll` is hand-written LLVM IR in a fixed vocabulary, and the
+// belts that hold `runtime/npkrt.spec` to it need three things from the
+// text: every `define` with its blocks in order and each block's successors
+// (the control-flow graph, for dominance), every instruction line with its
+// comment cut and its string constants blanked (the `undef` ban's rule, so a
+// `;` inside `c"..."` is data), and the addresses each function computes into
+// the four shared struct types and off the module's globals (the map an
+// access is attributed through). Nothing here interprets an instruction:
+// step 3's translator (`floor_smt.npk`) reads the same lines with a typed
+// grammar; this module is the shape both share. The Python twin is
+// `bootstrap/harness/floor.py`, form for form.
+
+mod:floor_ir;
+
+use "./text.npk".*;
+use "./irscan.npk".*;
+
+// One basic block: its label, its instruction lines (code parts, non-empty),
+// and the indexes of its successor blocks in the function.
+pub struct:FBlock = {
+    string:label;
+    List<string>:lines;
+    List<int64>:succs;
+};
+
+// An address a function computed: `reg` names the register, `ty` the struct
+// type (`%npk.hdr` ...) and `slot` its field for a typed struct GEP; for a
+// GEP off a global, `ty` is "" and `global` names it.
+pub struct:FGep = {
+    string:reg;
+    string:ty;
+    int64:slot;
+    string:global;
+};
+
+pub struct:FFn = {
+    string:name;
+    bool:internal;
+    List<FBlock>:blocks;
+    List<FGep>:geps;
+};
+
+pub struct:FloorText = {
+    List<FFn>:fns;
+    List<string>:mutable;     // the module's `global` (not `constant`) names
+};
+
+// The line's code part: the comment cut, string contents blanked (the
+// `irscan` rule, repeated here because that module keeps its copy private).
+pub func:floor_code_part = string(string:line) never fails {
+    wild int8->:buf = alloc(line.len + 1i64);
+    int64:n = 0i64;
+    bool:in_str = false;
+    for (int64:i in 0i64...line.len) {
+        uint8:c = line.ptr[i];
+        if (c == 34u8) {
+            in_str = !in_str;
+            buf[n] = c =>! int8;
+            n = n + 1i64;
+            continue;
+        }
+        if (in_str) { buf[n] = 32i8; n = n + 1i64; continue; }
+        if (c == 59u8) { break; }
+        buf[n] = c =>! int8;
+        n = n + 1i64;
+    }
+    string:out = raw text_trim(string_from_bytes(buf, n));
+    dalloc(buf);
+    pass out;
+};
+
+// `@name = internal global ...` / `... constant ...`: the global's name and
+// whether it is mutable; "" when the line declares no global.
+func:global_decl = string(string:line, bool->:is_mutable) never fails {
+    if (line.len == 0i64) { pass ""; }
+    if (line.ptr[0i64] != 64u8) { pass ""; }
+    int64:eq = raw text_index_of(line, " = ");
+    if (eq < 0i64) { pass ""; }
+    string:rest = raw text_slice(line, eq + 3i64, line.len);
+    // the floor pads some names before the `=` (`@npk_hs_live      = ...`)
+    string:name = raw text_trim(raw text_slice(line, 0i64, eq));
+    if (raw text_starts_with(rest, "internal ")) { rest = raw text_slice(rest, 9i64, rest.len); }
+    if (raw text_starts_with(rest, "private ")) { rest = raw text_slice(rest, 8i64, rest.len); }
+    if (raw text_starts_with(rest, "global ")) { <-is_mutable = true; pass name; }
+    if (raw text_starts_with(rest, "constant ")) { <-is_mutable = false; pass name; }
+    pass "";
+};
+
+// A label line: `name:` with no space; "" otherwise.
+func:label_of = string(string:line) never fails {
+    if (line.len < 2i64) { pass ""; }
+    if (!(raw text_ends_with(line, ":"))) { pass ""; }
+    if ((raw text_find_byte(line, 32u8, 0i64)) >= 0i64) { pass ""; }
+    pass (raw text_slice(line, 0i64, line.len - 1i64));
+};
+
+// `%r = getelementptr [inbounds] TYPE, ptr BASE, ...`: the GEP, or a reg "".
+func:gep_of = FGep(string:line) never fails {
+    FGep:none = FGep{ reg: "", ty: "", slot: 0i64 - 1i64, global: "" };
+    if (line.len == 0i64) { pass none; }
+    if (line.ptr[0i64] != 37u8) { pass none; }
+    int64:at = raw text_index_of(line, " = getelementptr ");
+    if (at < 0i64) { pass none; }
+    string:reg = raw text_slice(line, 0i64, at);
+    string:rest = raw text_slice(line, at + 17i64, line.len);
+    if (raw text_starts_with(rest, "inbounds ")) { rest = raw text_slice(rest, 9i64, rest.len); }
+    int64:comma = raw text_find_byte(rest, 44u8, 0i64);
+    if (comma < 0i64) { pass none; }
+    string:ty = raw text_slice(rest, 0i64, comma);
+    // an aggregate type carries commas of its own: `[14 x i64]` has none, a
+    // struct literal type is never a GEP source in the floor
+    int64:pp = raw text_index_from(rest, ", ptr ", 0i64);
+    if (pp < 0i64) { pass none; }
+    int64:bs = pp + 6i64;
+    int64:be = bs;
+    while (be < rest.len) {
+        uint8:c = rest.ptr[be];
+        if ((c == 44u8) || (c == 32u8)) { break; }
+        be = be + 1i64;
+    }
+    string:base = raw text_slice(rest, bs, be);
+    bool:is_struct = raw text_starts_with(ty, "%npk.");
+    if (is_struct) {
+        // `, i32 0, i32 N` at the end
+        int64:z = raw text_index_from(rest, ", i32 0, i32 ", be);
+        if (z < 0i64) { pass none; }
+        Result<int64>:n = text_int(raw text_slice(rest, z + 13i64, rest.len));
+        if (n.is_error) { pass none; }
+        pass FGep{ reg: move(reg), ty: move(ty), slot: n.value, global: "" };
+    }
+    if (base.len > 0i64) {
+        if (base.ptr[0i64] == 64u8) {
+            pass FGep{ reg: move(reg), ty: "", slot: 0i64 - 1i64, global: move(base) };
+        }
+    }
+    pass none;
+};
+
+pub func:floor_parse = FloorText(string:text) never fails {
+    FloorText:ft = FloorText{ fns: raw list_init::<FFn>(180i64), mutable: raw list_init::<string>(48i64) };
+    List<string>:raw_lines = raw text_lines(text);
+    bool:in_fn = false;
+    FFn:cur = FFn{ name: "", internal: false, blocks: raw list_init::<FBlock>(1i64), geps: raw list_init::<FGep>(1i64) };
+    for (int64:i in 0i64...raw_lines.count) {
+        string:line = raw floor_code_part(raw strlist_view(raw_lines, i));
+        if (!in_fn) {
+            bool:mut = false;
+            string:g = raw global_decl(line, @mut);
+            if (g.len > 0i64) {
+                if (mut) { drop strlist_push(@ft.mutable, g); }
+                continue;
+            }
+            string:sym = raw ir_define_sym(line);
+            if (sym.len == 0i64) { continue; }
+            in_fn = true;
+            cur = FFn{ name: move(sym), internal: raw text_contains(line, "define internal "),
+                       blocks: raw list_init::<FBlock>(8i64), geps: raw list_init::<FGep>(8i64) };
+            FBlock:entry = FBlock{ label: "entry", lines: raw list_init::<string>(16i64), succs: raw list_init::<int64>(2i64) };
+            drop list_push(@cur.blocks, move(entry));
+            continue;
+        }
+        if (raw text_eq(line, "}")) {
+            drop floor_finish(@cur);
+            drop list_push(@ft.fns, move(cur));
+            cur = FFn{ name: "", internal: false, blocks: raw list_init::<FBlock>(1i64), geps: raw list_init::<FGep>(1i64) };
+            in_fn = false;
+            continue;
+        }
+        if (line.len == 0i64) { continue; }
+        string:lab = raw label_of(line);
+        if (lab.len > 0i64) {
+            int64:last = cur.blocks.count - 1i64;
+            // the implicit first block is renamed by the first label when it
+            // has no lines yet (the floor names it `entry:` almost everywhere)
+            if ((last == 0i64) && (cur.blocks.items[0i64].lines.count == 0i64)) {
+                cur.blocks.items[0i64].label = move(lab);
+                continue;
+            }
+            FBlock:b = FBlock{ label: move(lab), lines: raw list_init::<string>(16i64), succs: raw list_init::<int64>(2i64) };
+            drop list_push(@cur.blocks, move(b));
+            continue;
+        }
+        int64:bi = cur.blocks.count - 1i64;
+        drop strlist_push(@cur.blocks.items[bi].lines, line);
+        FGep:g2 = raw gep_of(line);
+        if (g2.reg.len > 0i64) { drop list_push(@cur.geps, move(g2)); }
+    }
+    pass ft;
+};
+
+// The successors of every block from its last line's `br` (or `switch`).
+func:floor_finish = NIL(FFn->:f) never fails {
+    for (int64:b in 0i64...f.blocks.count) {
+        int64:n = f.blocks.items[b].lines.count;
+        if (n == 0i64) { continue; }
+        string:last = raw strlist_view(f.blocks.items[b].lines, n - 1i64);
+        if (!((raw text_starts_with(last, "br ")) || (raw text_starts_with(last, "switch ")))) { continue; }
+        int64:from = 0i64;
+        while (true) {
+            int64:p = raw text_index_from(last, "label %", from);
+            if (p < 0i64) { break; }
+            int64:s = p + 7i64;
+            int64:e = s;
+            while (e < last.len) {
+                uint8:c = last.ptr[e];
+                if ((c == 44u8) || (c == 32u8)) { break; }
+                e = e + 1i64;
+            }
+            string:lab = raw text_slice(last, s, e);
+            int64:ti = raw floor_block_index(f, lab);
+            if (ti >= 0i64) { drop list_push(@f.blocks.items[b].succs, ti); }
+            from = e;
+        }
+    }
+    pass NIL;
+};
+
+pub func:floor_block_index = int64(FFn->:f, string:label) never fails {
+    for (int64:i in 0i64...f.blocks.count) {
+        if (raw text_eq(raw strlist_view_of(f.blocks.items[i].label), label)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// A view of an owned string (a name of a field), for comparisons.
+pub func:strlist_view_of = string(string:s) never fails {
+    pass (string_from_bytes(s.ptr, s.len));
+};
+
+pub func:floor_fn_index = int64(FloorText->:ft, string:name) never fails {
+    for (int64:i in 0i64...ft.fns.count) {
+        if (raw text_eq(raw strlist_view_of(ft.fns.items[i].name), name)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// The GEP a register names in `f`, or -1.
+pub func:floor_gep_index = int64(FFn->:f, string:reg) never fails {
+    for (int64:i in 0i64...f.geps.count) {
+        if (raw text_eq(raw strlist_view_of(f.geps.items[i].reg), reg)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+pub func:floor_is_mutable = bool(FloorText->:ft, string:global) never fails {
+    pass (raw strlist_contains(ft.mutable, global));
+};

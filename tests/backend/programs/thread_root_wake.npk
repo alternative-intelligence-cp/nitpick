@@ -1,0 +1,60 @@
+// expect-exit: 42
+// stress: 40
+//
+// A THREAD ROOT THAT WAITS ON A CHANNEL IS ROUSED WHEN A VALUE ARRIVES
+// (DEF-49, 1.5.6 step 0). A frame's `owner` word is stamped where the frame
+// is born, with the CREATING thread's executor -- right for a task, which
+// D-032 never migrates, and wrong for a thread's root, which runs on the
+// executor `npk_thread_start` builds: every wake of a root blocked on a
+// channel, lock, condvar or barrier roused the PARENT's executor, and the
+// root slept to its own deadline for a value that had already arrived -- the
+// right answer late, the class the 1.4.4 join fix closed. `npk_thread_start`
+// re-stamps the root before the clone. Main sends five values with 10 ms
+// gaps; a prompt rouse finishes in well under a second, a deadline-bound
+// wake takes five recv deadlines (this program exited 43 on the old floor).
+mod:thread_root_wake;
+error:Sent;
+fixed Duration:JOIN_30S = Duration{ ns: 30000000000i64 };
+thread async func:worker = NIL(Channel<int32, 3i32, 4i64>:ch, Channel<int64, 3i32, 4i64>:back) joins JOIN_30S {
+    int32:i = 0i32;
+    while (i < 5i32) {
+        int32:v = await ch.recv(raw duration_ms(3000i64)) ?! Sent;
+        i = i + 1i32;
+    }
+    int64:t = mono_now();
+    await back.send(t, raw duration_ms(3000i64)) ?! Sent;
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 4i64>:ch = channel() ?! Unreachable;
+    Channel<int64, 3i32, 4i64>:back = channel() ?! Unreachable;
+    int64:t0 = mono_now();
+    drop worker(ch, back);
+    int32:i = 0i32;
+    while (i < 5i32) {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        await ch.send(i, raw duration_ms(3000i64)) ?! Sent;
+        i = i + 1i32;
+    }
+    int64:done = await back.recv(raw duration_ms(20000i64)) ?! Sent;
+    int64:elapsed_ms = (done - t0) / 1000000i64;
+    if (elapsed_ms > 1000i64) { exit 43i32; }   // woken only by its deadline
+    exit 42i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (IntOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (DivByZero)        { exit 98i32; },
+        (DivOverflow)      { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

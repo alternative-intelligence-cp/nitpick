@@ -1,0 +1,55 @@
+// floorspec -- the floor's belts and, from 1.5.6 step 3, its obligation
+// writer, as one program the harness builds with the snapshot (D-288). At
+// step 0 it runs the shared-state belt (D-290) over `runtime/npkrt.ll` and
+// `runtime/npkrt.spec` under the manifest root given as its one argument
+// and exits 0 when the classification holds, 1 with every finding on
+// stdout otherwise, 2 for a bad invocation. `npkg verify` runs the same
+// belt through the same module (`npkg/floor_shared.npk`); the harness's
+// Python twin is `bootstrap/harness/floor.py`.
+mod:floorspec;
+
+use "../lib/nio.npk".*;
+use "../npkg/text.npk".*;
+use "../npkg/floor_shared.npk".*;
+
+func:say = NIL(string:s) never fails {
+    string:ln = string_concat(s, "\n");
+    Result<NIL>:r = nio_write_all(raw nio_stdout_fd(), ln.ptr =>! wild int8->, ln.len);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        drop say("usage: floorspec <manifest root>");
+        exit 2i32;
+    }
+    string:root = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    List<string>:fl = raw floor_shared_current(root);
+    for (int64:i in 0i64...fl.count) { drop say(raw strlist_view(fl, i)); }
+    if (fl.count > 0i64) {
+        drop say(string_concat(int_to_string(fl.count), " finding(s)"));
+        exit 1i32;
+    }
+    drop say("floor: the shared-state classification holds (D-290)");
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)        { exit 3i32; },
+        (DivOverflow)      { exit 3i32; },
+        (HeapBadRequest)   { exit 3i32; },
+        (HeapOom)          { exit 3i32; },
+        (IntOverflow)      { exit 3i32; },
+        (OutOfBounds)      { exit 3i32; },
+        (ShiftRange)       { exit 3i32; },
+        (Unreachable)      { exit 3i32; },
+        (WildLeak)         { exit 3i32; },
+        (ETextInt)         { exit 3i32; },
+        (intern.BoundsId)  { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (*)                { exit 3i32; }
+    }
+    exit 3i32;
+};

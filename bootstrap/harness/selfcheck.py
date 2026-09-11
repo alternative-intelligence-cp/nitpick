@@ -220,6 +220,35 @@ def main():
     print("  %-26s %-4s  %s" % ("derived-path-control", "ok" if okc else "BAD",
                                 "the same finding at a real path must not be flagged"))
 
+    # THE SHARED-STATE BELT REPORTS AN UNCLASSIFIED WORD AND A PLAIN ACCESS OF
+    # AN ATOMIC ONE (1.5.6 step 0, D-290), and passes a classified word: one
+    # synthetic floor text, three spec texts. `npkg/selfcheck.npk` carries the
+    # same three cases by name, over the same texts.
+    import floor
+    sh_floor = ("@npk_flag = internal global i32 0\n"
+                "define void @f(ptr %fr) {\nentry:\n  %w = getelementptr %npk.hdr, ptr %fr, i32 0, i32 2\n"
+                "  %v = load i32, ptr %w\n  %g = load i32, ptr @npk_flag\n  ret void\n}\n")
+    sh_none = "(shared (word @npk_flag owner-only))\n"
+    sh_atomic = "(shared (word %npk.hdr 2 atomic) (word @npk_flag owner-only))\n"
+    sh_ok = "(shared (word %npk.hdr 2 owner-only) (word @npk_flag owner-only))\n"
+    for name, spec_text, must_fail, why in (
+            ("shared-unclassified", sh_none, True,
+             "an access of a word the (shared ...) section does not classify must fail"),
+            ("shared-plain-atomic", sh_atomic, True,
+             "a plain load of a word classified atomic must fail"),
+            ("shared-classified-control", sh_ok, False,
+             "the same access under a stated classification must pass")):
+        fails = floor.check_shared(sh_floor, spec_text, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      the belt accepted it; it should not have")
+            else:
+                print("      the belt rejected it: %s" % fails[0])
+
     # THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     # value is its failure path, and a check that has only ever been seen to
     # PASS is a check nobody has tested -- the same reasoning that put every

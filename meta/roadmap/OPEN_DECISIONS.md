@@ -1151,8 +1151,7 @@ type carries no mutability. Measured: 89 `fixed` bindings in the tree,
 none address-taken. The fix is the rule S-62 recommends (TYPE-071: a
 `fixed` binding has no address), at 1.5.5 step 1.
 
-**DEF-44 — OPEN (found by 1.5.6's planning, 2026-09-11, on `149dbf6`; fixed
-at 1.5.6 step 0 under S-67) — a frame's `windup` word is stored plain across
+**DEF-44 — FIXED at 1.5.6 step 0 (2026-09-11) under D-290 (found by 1.5.6's planning, 2026-09-11, on `149dbf6`) — a frame's `windup` word is stored plain across
 threads and loaded plain at every resume.** `npk_windup_all` stores `1` into
 slot 2 of every task on the join list from the JOINER's thread (its own
 comment rouses "another thread's executor"), and `npk_step` loads the word
@@ -1164,8 +1163,7 @@ minted by the floor at run time. The fix is a `release` store and an
 `acquire` load (one instruction each on x86; the model changes, the
 behaviour does not).
 
-**DEF-45 — OPEN (found by 1.5.6's planning; fixed at 1.5.6 step 0 under
-S-67) — a channel's generation is read plain outside the lock that writes
+**DEF-45 — FIXED at 1.5.6 step 0 (2026-09-11) under D-290 (found by 1.5.6's planning) — a channel's generation is read plain outside the lock that writes
 it.** `npk_ch_get` loads slot 6 with a plain load before taking the channel
 lock (the early stale check) while `npk_ch_reclaim` and `npk_ch_open` store
 it plain under the lock; a handle resolved on one thread against a reclaim
@@ -1173,8 +1171,7 @@ on another is a racing read whose `undef` feeds a compare both of whose
 outcomes are safe today (the lock's re-check follows), which is why nothing
 ever failed. `monotonic` on the three accesses.
 
-**DEF-46 — OPEN (found by 1.5.6's planning; fixed at 1.5.6 step 0 under
-S-67) — `@npk_frozen` is stored plain by the trapping thread and loaded
+**DEF-46 — FIXED at 1.5.6 step 0 (2026-09-11) under D-290 (found by 1.5.6's planning) — `@npk_frozen` is stored plain by the trapping thread and loaded
 plain by every executor.** The word D-063 rests on ("after a trap nothing
 is resumed, anywhere") is read racily by exactly the threads it is meant to
 stop (`npk_step`, `npk_frozen_get`). `seq_cst` on the store and the loads.
@@ -1192,13 +1189,42 @@ task that is running when the trap happens. The measurement the model
 records: the `trap-route` model's bad predicates are `sat` on today's
 floor.
 
-**DEF-48 — OPEN (found by 1.5.6's planning; fixed at 1.5.6 step 0 under
-S-67) — `npk_thread_join` reads the child's `CHILD_CLEARTID` word with a
+**DEF-48 — FIXED at 1.5.6 step 0 (2026-09-11) under D-290 (found by 1.5.6's planning) — `npk_thread_join` reads the child's `CHILD_CLEARTID` word with a
 plain load in its wait loop.** The kernel writes it; a futex word is read
 atomically everywhere else in the floor (glibc's `lll_wait_tid` reads it
 atomically for the same reason). No optimiser runs over `npkrt.ll` and the
 trampoline's asm clobbers memory, so nothing hoists the load today; the
 finding is the model's and the fix one word (`monotonic`).
+
+**DEF-49 — FIXED at 1.5.6 step 0 (2026-09-11) under D-290 (found by step 0's
+classification of the `owner` word, 2026-09-11, on `0e742ce`) — a thread's
+root task was never roused: its `owner` word named the SPAWNING thread's
+executor.** The emitter stamps a frame's `owner` (slot 11) where the frame
+is born, with the creating thread's executor — right for a task, which D-032
+never migrates — and nothing re-stamped a thread's root, which runs on the
+executor `npk_thread_start` builds. Every wake of a root blocked on a
+channel, lock, condvar or barrier (`npk_ch_wake_one`'s rouse) set the
+PARENT's park word and woke the parent's futex; the child's executor slept
+to the root's own deadline and found the value then — the right answer late,
+the class the 1.4.4 join fix closed, invisible to every test because the
+suite's thread roots send with room or wait with deadlines shorter than the
+test's patience. Measured: a root receiving five values sent 10 ms apart
+with a 3 s recv deadline took over 15 s (`thread_root_wake.npk` exited 43).
+`npk_thread_start` stamps the root's `owner` with the executor it built,
+before the clone that publishes it; the program exits 42 in under a second.
+
+**DEF-50 — FIXED at 1.5.6 step 0 (2026-09-11) under D-290 (found by step 0's
+classification of the globals, 2026-09-11, on `0e742ce`) — the executable-page
+count was a plain read-modify-write across threads.** `npk_wildx_alloc` and
+`npk_wildx_free` incremented and decremented `@npk_wildx_live` with a plain
+load, add and store, under no lock: two threads allocating or freeing JIT
+pages at once lost updates, and the count feeds the exit-time leak check
+(D-151) — a program that freed every page could exit through `WildLeak`, and
+one that leaked a page could exit 0. Both are `atomicrmw` now and the exit
+read is atomic; the same step moved the heap initialiser's unlocked call in
+`npk_wildx_alloc` and `npk_aalloc` under the heap mutex, where
+`npk_alloc_impl` had always taken it. `wildx_threads.npk` churns 600 pages
+across two threads and exits 0 only when the count agrees.
 
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 

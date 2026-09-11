@@ -39,6 +39,7 @@ use "./build.npk".*;
 use "./irscan.npk".*;
 use "./strset.npk".*;
 use "./elf.npk".*;
+use "./floor_shared.npk".*;
 
 // One row of rows.txt, with its verdict once decided.
 pub struct:VRow = {
@@ -662,6 +663,13 @@ func:verdict_counts = string(List<VRow>:rows) never fails {
 };
 
 pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
+    // THE FLOOR'S BELTS FIRST (1.5.6 step 0, D-290): the shared-state
+    // classification of `runtime/npkrt.spec` against `runtime/npkrt.ll`, before
+    // a solver is spawned -- a floor whose words are misclassified has no
+    // evidence worth deciding.
+    List<string>:fb = raw floor_shared_current(string_from_bytes(c.m.root.ptr, c.m.root.len));
+    if (fb.count > 0i64) { pass (raw step_bad(raw strlist_view(fb, 0i64))); }
+    drop say(raw stage_text("floor", "the shared-state classification holds (D-290)"));
     if (!c.m.z3) { pass (raw step_bad("nitpick.toml: [verify] z3 is not true -- this project declares no z3 verification, and a verify that pretended otherwise would be a green light nobody earned (D-068)")); }
     Result<string>:z3r = which("z3");
     if (z3r.is_error) { pass (raw step_bad("npkg verify: PATH cannot be read")); }

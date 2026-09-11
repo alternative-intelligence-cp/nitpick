@@ -1,0 +1,68 @@
+// expect-exit: 42
+// stress: 40
+//
+// A HANDLE RESOLVED ON ONE THREAD AGAINST A RECLAIM ON ANOTHER (DEF-45,
+// 1.5.6 step 0). `npk_ch_get` reads a slot's generation OUTSIDE the channel
+// lock -- the early stale check -- while the reclaim moves it UNDER the lock;
+// the read was plain, a racing read in LLVM's model, and is `monotonic` now.
+// The worker receives the inner channel's handle through the control channel
+// and sends on it in a loop; `maker` created the inner channel and returns
+// after handing the handle over, which reclaims the slot under the worker's
+// feet. Every answer the worker sees is legal: a success or a deadline before
+// the reclaim, StaleHandle after it, never a trap; it stops at the first
+// StaleHandle and reports how it got there.
+mod:chan_reclaim_race;
+error:ECtl;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+thread async func:worker = NIL(Channel<Channel<int32, 2i32, 1i64>, 3i32, 1i64>:ctl,
+                               Channel<int32, 4i32, 1i64>:out) joins JOIN_5S {
+    Channel<int32, 2i32, 1i64>:inner = await ctl.recv(raw duration_ms(2000i64)) ?! ECtl;
+    int32:tries = 0i32;
+    int32:verdict = 43i32;                            // never saw the reclaim
+    while (tries < 200000i32) {
+        Result<NIL>:r = await inner.send(1i32, raw duration_ms(1i64));
+        if (r.is_error) {
+            if (r.err == StaleHandle) { verdict = 42i32; break; }
+            if (r.err != DeadlineExceeded) { verdict = 44i32; break; }
+        }
+        tries = tries + 1i32;
+    }
+    await out.send(verdict, raw duration_ms(2000i64)) ?! ECtl;
+    pass NIL;
+};
+
+// Creates the inner channel, hands its handle over, and returns -- which
+// reclaims it (D-183: a creating function's exit hands the slot back).
+async func:maker = NIL(Channel<Channel<int32, 2i32, 1i64>, 3i32, 1i64>:ctl) {
+    Channel<int32, 2i32, 1i64>:inner = channel() ?! Unreachable;
+    await ctl.send(inner, raw duration_ms(2000i64)) ?! ECtl;
+    await sleep(raw duration_ms(5i64)) ?| NIL;        // let the worker start resolving
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<Channel<int32, 2i32, 1i64>, 3i32, 1i64>:ctl = channel() ?! Unreachable;
+    Channel<int32, 4i32, 1i64>:out = channel() ?! Unreachable;
+    drop worker(ctl, out);
+    await maker(ctl) ?! ECtl;
+    int32:v = await out.recv(raw duration_ms(4000i64)) ?! ECtl;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ECtl)             { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (IntOverflow)      { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};
