@@ -17992,3 +17992,94 @@ P-12's residue.
 > found the vector emitter's any-lane guards ignorant of the manifest (no
 > site threaded, the trap written whatever the verdict); each elides into
 > one `llvm.assume` of the negated any-lane test now, the scalar shape.
+
+## D-283 — a `simd` binding's lanes are its versions: D-282 read through bindings — **SETTLED (user decision, 2026-09-10: "I am fine with the three recommendatins you made for the decisions"; OPEN_DECISIONS S-58; landed with 1.5.4b step 4 and confirmed here)**
+
+D-282's text gave a `simd` EXPRESSION its lanes — the constructor, a splat,
+the elementwise forms, a numeral-index lane, the reductions — and said
+"anything else N opaque lanes". As landed (1.5.4b step 4), a `simd` BINDING
+has lanes too: N symbols of the element type, a new set at every write,
+defined equal to the written value's lanes where those are known (a
+declaration's initialiser, a plain assignment), and fresh and opaque at every
+invalidation, restore and merge and after a compound assignment (whose
+elementwise lanes were recorded at the expression, the binding's not yet) —
+because every real `simd` value lives in a local, and the decision's own
+tests (`a / simd(k)` under a `limit` on `k`; a lane read by `[2]` as a
+divisor) are unprovable when the read of the local is opaque. Sound by
+construction: a lane is defined only from a value the walk saw written, and
+opaque wherever a path could differ. **The decision.** The reading stands: a
+`simd` local is a binding like any scalar, its lanes its versions. No code
+lands under this number; `meta/roadmap/1.5/1.5.4b.md` step 4's record is the
+landing, and 1.5.4e step 2 notes it on D-282.
+
+## D-284 — a `simd` integer lane's `+ - *` and an integer `.sum()` trap `IntOverflow` as their scalars do; the compound spelling lowers through the vector path — **SETTLED (user decision, 2026-09-10: "I am fine with the three recommendatins you made for the decisions"; OPEN_DECISIONS S-59 / DEF-38; lands at 1.5.4e step 0)**
+
+Found by 1.5.4b step 4b (DEF-38): `emit_simd_binop` wrote a bare vector
+`add`/`sub`/`mul`, so a `simd<int32, 4>` lane holding `INT_MAX` plus a lane
+holding one read back negative (exit 5) where a scalar `int32` traps
+`IntOverflow` (D-210); the reach analysis armed nothing (its `IntOverflow`
+gate is `TY_INT` alone, its comment's "`simd` rides its element's rule"
+describing nothing the emitter did); the ordered `.sum()` fold's steps are
+bare `add`s too. Found planning 1.5.4e (DEF-39): a compound assignment on a
+`simd` target — `v += w`, and every `op=` — is admitted by the checker and
+refused by the emitter as EMIT-002, because 1.3.3's one arithmetic core
+(`emit_arith_value`) dispatches no vector and the expression form's vector
+arm sits in `emit_binary` alone. D-194 wrote the division guard any-lane and
+said nothing of overflow; D-210 named plain integers; TYPE_REFERENCE §14
+says "elementwise on identical types" — so the same `+` trapped on an
+`int32` and wrapped on an `int32` lane, the blueprint rule broken by a
+family and D-210's Therac shape open in it. **The decision.** D-210 holds
+per lane. An integer-lane `+`, `-` or `*` (expression and compound) computes
+through `llvm.{s,u}{add,sub,mul}.with.overflow.<N x iW>` — legal at every
+lane count and width the language has, measured through `llc -O0` and `opt
+-O2` + `llc -O2` at seven shapes from `v2i64` to `v64i8` with no libcall —
+its overflow lanes folded to ONE any-lane test (the D-007 guard's shape,
+`bitcast <N x i1>` to `iN`, `icmp ne 0`) trapping `IntOverflow` (−4110)
+after the chain reset; the ordered `sum` reduction over integer lanes traps
+at each fold step through the scalar intrinsic, since the fold's `+` IS the
+scalar `+` (one core, `emit_arith_value`, called per step); `min`/`max`, the
+bitwise operations, the shifts and every float lane are unchanged (bit
+operations have nothing to overflow, floats are IEEE-total). The reach
+analysis arms `IntOverflow` where an integer-lane `+ - *` or `sum` exists,
+reading the element's kind as it reads it for a division since DEF-37. The
+vector intrinsics are declared ON DEMAND per module (the scalar block
+declares every width unconditionally; the vector shapes number 116 × 6 and
+a module uses a handful). No obligation row now: the `overflow` rows are
+1.5.8's, over the lane conjunction (D-282's shape), as a scalar's are. And
+the compound spelling lowers through the vector path with its guards — an
+identifier, a field or an element target alike — with the division and
+shift any-lane rows recorded for it at the target's site, so a discharged
+row elides as the expression form's does. A `tbb`-lane vector does not
+exist (D-194's elements), so no saturating variant is needed.
+
+## D-285 — a program's raise enters the floor through `npk_raise`, a guard's trap through `npk_trap`: one behaviour, two names — **SETTLED (user decision, 2026-09-10: "I am fine with the three recommendatins you made for the decisions"; OPEN_DECISIONS DEF-36; a D-203 floor addition; lands at 1.5.4e step 1)**
+
+Found by 1.5.4b step 2's first harness (DEF-36): the runners' elision belts
+count a guard's trap by its text, `@npk_trap(i32 -4097)`, and a program's
+`r ?! DivByZero` lowers to the same text — so a VERIFIED build of a program
+that unwraps with a system error code a guarded kind uses (`-4097`, `-4098`,
+`-4100`, `-4101`, `-4111`…`-4115`) fails the belt as "N traps for 0
+retained" in both runners: a false red, never a false green, and a legal
+shape the belts cannot tell from a guard. Found planning 1.5.4e (DEF-40):
+the `!!!` statement never enters `npk_trap` at all — it calls `npk_failsafe`
+and then `npk_exit` directly — so it sets neither the frozen flag (D-063: a
+trap is a whole-program event) nor the re-entry guard (a `failsafe` that
+traps after a `!!!` runs `failsafe` a second time where the trap route ends
+the process at 70), and it kills no driver (D-188's registry walk runs on
+the trap path before user `failsafe`). **The decision.** `runtime/npkrt.ll`
+gains `define void @npk_raise(i32 %code) noreturn` — one call of
+`@npk_trap` and `unreachable`, class `syscall` in TCB.md's table since it
+reaches the trampoline through the trap — and `?!` and `!!!` lower to it,
+`?!` after its chain push and `!!!` after its chain reset exactly as today,
+while every guard keeps `npk_trap`; the emitter's declare block names it
+beside `npk_trap`; the belts count `@npk_trap(` alone, unchanged, and each
+runner's self-check gains the pair of cases — a raise spelled `@npk_raise`
+beside a retained group's one trap passes, the same spelled `@npk_trap`
+fails; the runtime's exports gain the symbol by construction (D-206's
+allowlist is read from the floor's non-`internal` defines, DEF-21). What a
+program sees is unchanged where it was right — `?!` traps to `failsafe` with
+its code — and corrected where it was not: `!!!` freezes, kills drivers and
+observes the re-entry rule. `npkrt.o`'s digest moves, the first floor change
+since DEF-25's, and the close's notice says so beside the previous digest.
+
+> Lands at **1.5.4e** (`meta/roadmap/1.5/1.5.4e.md`).
