@@ -1,0 +1,37 @@
+// expect-exit: 90
+//
+// THE ALIASING GUARD (D-286, 1.5.5 step 2): a `$$m arr[i]` is held, and an
+// access `arr[k]` whose index the program computes is compared against it as
+// a byte range at run time -- `k` equals `i` here (both from `argv.len`), so
+// the write traps `BorrowOverlap` and `failsafe` answers 90. The plain build
+// carries the compare; the verified build keeps it, since nothing proves the
+// two apart.
+mod:alias_guard;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32:i = argv.len =>! int32;
+    int32:k = argv.len =>! int32;
+    int32->:p = $$m arr[i => int64];
+    arr[k => int64] = 9i32;
+    exit (<-p);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

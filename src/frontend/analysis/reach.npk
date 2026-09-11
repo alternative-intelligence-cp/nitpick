@@ -708,6 +708,11 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_tbb)      { drop reach_add_system(x, "TbbErr"); }
     if (x.saw_counted)  { drop reach_add_system(x, "BadStep"); }
     if (x.saw_shift)    { drop reach_add_system(x, "ShiftRange"); }
+    // A GUARD SITE OF THE ALIASING ANALYSIS (D-286, 1.5.5 step 2): the
+    // byte-range compare at an access whose path is computed against a live
+    // claim traps `BorrowOverlap`; the table the analysis filled says whether
+    // any exists.
+    if (raw exprtypes_alias_any(x.ets)) { drop reach_add_system(x, "BorrowOverlap"); }
     if (x.saw_arena)    { drop reach_add_system(x, "StaleHandle"); }
     if (x.saw_deadline) { drop reach_add_system(x, "DeadlineExceeded"); }
     if (x.saw_limit)    { drop reach_add_system(x, "LimitViolated"); }

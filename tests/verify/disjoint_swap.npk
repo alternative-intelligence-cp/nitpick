@@ -1,0 +1,55 @@
+// expect-exit: 0
+// expect-obligation: disjoint discharged 1
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume open 1
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// TWO CALL-DURATION CLAIMS (D-286, 1.5.5 step 2): `swap($$m arr[i], $$m
+// arr[j])` under the two rules -- the guard site is the second argument, its
+// party the first argument's address the same statement computed; the row
+// discharges as the held form's does.
+mod:disjoint_swap;
+error:E9;
+Rules<int32>:EvenIdx = { $ % 2i32 == 0i32 };
+Rules<int32>:OddIdx  = { $ % 2i32 == 1i32 };
+
+func:swap = NIL(int32->:a, int32->:b) never fails {
+    int32:t = <-a;
+    <-a = <-b;
+    <-b = t;
+    pass NIL;
+};
+
+func:swap_at = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[8]:arr) never fails {
+    drop swap($$m arr[i => int64], $$m arr[j => int64]);
+    pass (arr[i => int64] + arr[j => int64]);
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[8]:arr = [0i32, 1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32];
+    int32:i = (argv.len =>! int32) + 1i32;
+    int32:s = raw swap_at(i, i + 1i32, arr);
+    if (s != 5i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

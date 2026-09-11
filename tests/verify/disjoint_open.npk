@@ -1,0 +1,43 @@
+// expect-exit: 16
+// expect-obligation: disjoint open 1
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// NOTHING PROVES THE INDICES APART (D-286, 1.5.5 step 2): two plain `int32`
+// parameters, so the `disjoint` row is `open` and the verified build KEEPS
+// the byte-range compare (`retained`, one `-4116` trap for the belts); the
+// run's indices differ and the program exits as the plain build does.
+mod:disjoint_open;
+error:E9;
+
+func:update = int32(int32:i, int32:j, int32[8]:arr) never fails {
+    int32->:a = $$m arr[i => int64];
+    int32->:b = $$m arr[j => int64];
+    <-a = 7i32;
+    <-b = 9i32;
+    pass ((<-a) + (<-b));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[8]:arr = [0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32];
+    int32:i = argv.len =>! int32;
+    exit (raw update(i, i + 1i32, arr));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

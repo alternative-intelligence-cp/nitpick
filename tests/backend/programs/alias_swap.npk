@@ -1,0 +1,46 @@
+// expect-exit: 90
+//
+// TWO CLAIMS IN ONE CALL (D-286, 1.5.5 step 2): `swap($$m arr[i], $$m arr[j])`
+// is guarded at the second argument against the first, both call-duration
+// parties whose addresses this statement computed. The first call's indices
+// differ and the elements swap; the second call's collide and trap
+// `BorrowOverlap` -- exit 90 through the arm.
+mod:alias_swap;
+error:E9;
+
+func:swap = NIL(int32->:a, int32->:b) never fails {
+    int32:t = <-a;
+    <-a = <-b;
+    <-b = t;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32:i = argv.len =>! int32;
+    int32:j = i + 2i32;
+    drop swap($$m arr[i => int64], $$m arr[j => int64]);
+    if (arr[1i64] != 4i32) { exit 1i32; }
+    if (arr[3i64] != 2i32) { exit 2i32; }
+    int32:k = argv.len =>! int32;
+    drop swap($$m arr[i => int64], $$m arr[k => int64]);
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

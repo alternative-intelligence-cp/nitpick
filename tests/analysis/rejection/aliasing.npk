@@ -110,14 +110,8 @@ func:excl_whole = int32() never fails {
     pass ((<-a) + copy[0i64]);
 };
 
-// A COMPUTED PAIR: refused at this step; the solver's relaxation is step 2's.
-// expect-error: NITPICK-BORROW-013
-func:excl_computed = int32(int32:i, int32:k) never fails {
-    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
-    int32->:a = $$m arr[i => int64];
-    arr[k => int64] = 9i32;
-    pass (<-a);
-};
+// A COMPUTED PAIR IS NOT REFUSED: it is a guard site -- the byte-range compare
+// at the access (1.5.5 step 2; `programs/alias_guard.npk`, `verify/disjoint_*`).
 
 // --- a shared claim admits readers and refuses writers ------------------------------
 

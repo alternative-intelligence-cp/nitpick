@@ -130,6 +130,16 @@ pub struct:ExprTypes = {
     // a local's life to its scope's exit: the drop is a use the source text
     // does not show. Same shape as `cross` for the same reason.
     List<int32>:odecl;
+    // THE ALIASING ANALYSIS'S GUARD SITES (D-286, 1.5.5 step 2): an access
+    // whose path is computed against a live party -- one entry per (site,
+    // party): the access expression, the party's claim/address expression,
+    // and the party's holder symbol (0 for a call-duration party, whose
+    // address is the value the same statement computed). Read by the emitter
+    // (the byte-range compare at the site), the encoder (the `disjoint` row)
+    // and the reach analysis (the identity armed). Sparse, like `cross`.
+    List<int32>:alias_site;
+    List<int32>:alias_party;
+    List<int32>:alias_holder;
 };
 
 pub func:exprtypes_init = ExprTypes(int32:n) never fails {
@@ -152,7 +162,10 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              ns_decl: nsd =>! wild int32->,
                              count: size =>! int32,
                              cross: raw list_init::<int32>(16i64),
-                             odecl: raw list_init::<int32>(16i64) };
+                             odecl: raw list_init::<int32>(16i64),
+                             alias_site: raw list_init::<int32>(8i64),
+                             alias_party: raw list_init::<int32>(8i64),
+                             alias_holder: raw list_init::<int32>(8i64) };
     for (int64:i in 0i64...size) {
         t.items[i] = 0i32;
         t.known[i] = false;
@@ -436,6 +449,60 @@ pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails 
     while (i < t.cross.count) {
         if (t.cross.items[i] == stmt_index) { pass true; }
         i = i + 1i64;
+    }
+    pass false;
+};
+
+// --- the aliasing guard sites (D-286, 1.5.5 step 2) ------------------------------
+
+pub func:exprtypes_mark_alias = NIL(ExprTypes->:t, int32:site, int32:party, int32:holder) never fails {
+    for (int64:i in 0i64...t.alias_site.count) {
+        if ((t.alias_site.items[i] == site) && (t.alias_party.items[i] == party)) { pass NIL; }
+    }
+    drop list_push(@t.alias_site, site);
+    drop list_push(@t.alias_party, party);
+    drop list_push(@t.alias_holder, holder);
+    pass NIL;
+};
+
+pub func:exprtypes_alias_any = bool(ExprTypes->:t) never fails { pass (t.alias_site.count > 0i64); };
+
+// The parties recorded at a site: the count, then each by ordinal.
+pub func:exprtypes_alias_count_at = int32(ExprTypes->:t, int32:site) never fails {
+    int32:n = 0i32;
+    for (int64:i in 0i64...t.alias_site.count) {
+        if (t.alias_site.items[i] == site) { n = n + 1i32; }
+    }
+    pass n;
+};
+
+pub func:exprtypes_alias_party_at = int32(ExprTypes->:t, int32:site, int32:k) never fails {
+    int32:n = 0i32;
+    for (int64:i in 0i64...t.alias_site.count) {
+        if (t.alias_site.items[i] == site) {
+            if (n == k) { pass t.alias_party.items[i]; }
+            n = n + 1i32;
+        }
+    }
+    pass 0i32;
+};
+
+pub func:exprtypes_alias_holder_at = int32(ExprTypes->:t, int32:site, int32:k) never fails {
+    int32:n = 0i32;
+    for (int64:i in 0i64...t.alias_site.count) {
+        if (t.alias_site.items[i] == site) {
+            if (n == k) { pass t.alias_holder.items[i]; }
+            n = n + 1i32;
+        }
+    }
+    pass 0i32;
+};
+
+// Is this expression a PARTY of some guard site (a call-duration claim whose
+// address the emitter must keep)?
+pub func:exprtypes_alias_is_party = bool(ExprTypes->:t, int32:site) never fails {
+    for (int64:i in 0i64...t.alias_party.count) {
+        if (t.alias_party.items[i] == site) { pass true; }
     }
     pass false;
 };

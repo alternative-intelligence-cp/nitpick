@@ -288,6 +288,15 @@ pub struct:Encoder = {
     List<int32>:loop_sids;
     List<int32>:loop_labels;
     List<int32>:loop_invs;
+    // AN INDEX EXPRESSION'S TERM, BY EXPRESSION (D-286, 1.5.5 step 2): the
+    // `disjoint` row compares the index pairs of two paths, and a party's
+    // index was encoded when its claim was walked -- earlier, under the
+    // versions of that moment, which is exactly what the held address denotes
+    // (a version is never reused, so the memo is exact under later writes).
+    // Filled by the index arm of `enc_expr` and the assignment target's walk;
+    // a walk never encodes an expression twice (its rows would double).
+    List<int32>:memo_ids;
+    List<Term>:memo_terms;
 };
 
 // Branch regions (the dominance rule): a then-arm, an else-arm, a loop body,
@@ -380,7 +389,9 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32,
                   loop_sids: raw list_init::<int32>(4i64),
                   loop_labels: raw list_init::<int32>(4i64),
-                  loop_invs: raw list_init::<int32>(4i64) };
+                  loop_invs: raw list_init::<int32>(4i64),
+                  memo_ids: raw list_init::<int32>(8i64),
+                  memo_terms: raw list_init::<Term>(8i64) };
 };
 
 // --- types -----------------------------------------------------------------------------
@@ -940,6 +951,132 @@ func:record_shift = NIL(Encoder->:e, int32:lt, Term:b, ExprId:amount, int32:site
     if (e.in_prop > 0i32) { drop prop_fact(e, goal, tb.syms); pass NIL; }
     if (e.quiet > 0i32) { pass NIL; }
     drop hyp_push(e, goal, tb.syms);
+    pass NIL;
+};
+
+// --- the `disjoint` row (D-286, 1.5.5 step 2) ----------------------------------
+//
+// AT A GUARD SITE -- an access the aliasing analysis paired with live
+// parties through computed indices -- the goal is that the access's storage
+// and every party's are disjoint: for each party, the `or` over the index
+// pairs along the paths' common prefix of `(not (= tP tQ))` (a numeral pair
+// that is equal says nothing; one that differs makes the party disjoint
+// outright, as does a field step that differs); the row's goal the `and`
+// over the parties. `tP` is the party's index term as memoised when its
+// claim was walked, `tQ` the access's; a missing term is opaque and the row
+// `open`, the guard kept. The fact is a hypothesis after the site (every
+// continuing path passed the compare), as `shift-range`'s is; inside a
+// proposition it is the proposition's (DEF-33). One row per site: the
+// emitter elides the site's one compare on it.
+pub struct:PStep = { bool:is_index; bool:is_range; int32:name; int32:ix; };
+
+func:memo_put = NIL(Encoder->:e, int32:id, Term:t) never fails {
+    if (!t.ok) { pass NIL; }
+    for (int64:i in 0i64...e.memo_ids.count) {
+        if (e.memo_ids.items[i] == id) { e.memo_terms.items[i] = raw term_copy(t); pass NIL; }
+    }
+    drop list_push(@e.memo_ids, id);
+    drop list_push(@e.memo_terms, raw term_copy(t));
+    pass NIL;
+};
+
+func:memo_get = Term(Encoder->:e, int32:id) never fails {
+    for (int64:i in 0i64...e.memo_ids.count) {
+        if (e.memo_ids.items[i] == id) { pass (raw term_copy(e.memo_terms.items[i])); }
+    }
+    pass (raw term_none());
+};
+
+// The steps of a place, root-outward: a field name or an index expression.
+func:enc_path = bool(Encoder->:e, ExprId:place, List<PStep>->:out) never fails {
+    List<PStep>:rev = raw list_init::<PStep>(8i64);
+    ExprId:cur = place;
+    for (int32:hop in 0i32...64i32) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(e.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+            drop list_push(@rev, PStep{ is_index: false, is_range: false, name: (raw expr_name(n)) =>! int32, ix: 0i32 });
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprNode:ixn = raw ast_expr(e.ast, raw expr_rhs(n));
+            bool:rg = (ixn.kind == ExprKind.ExprRangeExpr);
+            drop list_push(@rev, PStep{ is_index: true, is_range: rg, name: 0i32, ix: (raw expr_rhs(n)).index });
+            cur = raw expr_lhs(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            int64:k = rev.count;
+            while (k > 0i64) { k = k - 1i64; drop list_push(out, rev.items[k]); }
+            pass true;
+        }
+        pass false;
+    }
+    pass false;
+};
+
+func:index_term = Term(Encoder->:e, int32:ix) never fails {
+    Term:t = raw memo_get(e, ix);
+    if (t.ok) { pass t; }
+    pass (raw term_opaque(e, raw ty_of(e, ExprId{ index: ix })));
+};
+
+func:enc_alias_site = NIL(Encoder->:e, ExprId:id) never fails {
+    int32:np = raw exprtypes_alias_count_at(e.et, id.index);
+    if (np == 0i32) { pass NIL; }
+    ExprNode:an = raw ast_expr(e.ast, id);
+    List<PStep>:ap = raw list_init::<PStep>(8i64);
+    if (!(raw enc_path(e, id, @ap))) { pass NIL; }
+    string:goal = "";
+    List<int32>:syms = raw list_init::<int32>(4i64);
+    bool:have_party = false;
+    for (int32:k in 0i32...np) {
+        int32:psite = raw exprtypes_alias_party_at(e.et, id.index, k);
+        ExprNode:pn = raw ast_expr(e.ast, ExprId{ index: psite });
+        List<PStep>:pp = raw list_init::<PStep>(8i64);
+        if (!(raw enc_path(e, raw expr_operand(pn), @pp))) { continue; }
+        int64:m = ap.count;
+        if (pp.count < m) { m = pp.count; }
+        string:pg = "";
+        bool:pdisjoint = false;
+        for (int64:i in 0i64...m) {
+            PStep:sa = ap.items[i];
+            PStep:sp = pp.items[i];
+            if ((!sa.is_index) && (!sp.is_index)) {
+                if (sa.name != sp.name) { pdisjoint = true; }
+                continue;
+            }
+            if (sa.is_index && sp.is_index) {
+                if (sa.is_range || sp.is_range) { continue; }
+                Term:tq = raw index_term(e, sa.ix);
+                Term:tp = raw index_term(e, sp.ix);
+                NumVal:nq = raw numeral_of(e, tq, ExprId{ index: sa.ix });
+                NumVal:npv = raw numeral_of(e, tp, ExprId{ index: sp.ix });
+                if (nq.ok && npv.ok) {
+                    if (nq.v != npv.v) { pdisjoint = true; }
+                    continue;
+                }
+                if (!tq.ok) { tq = raw term_opaque(e, raw ty_of(e, ExprId{ index: sa.ix })); }
+                if (!tp.ok) { tp = raw term_opaque(e, raw ty_of(e, ExprId{ index: sp.ix })); }
+                if (!(tq.ok && tp.ok)) { continue; }
+                string:d = raw smt_app1("not", raw smt_app2("=", tp.text, tq.text));
+                if (pg.len == 0i64) { pg = string_concat(d, ""); } else { pg = raw smt_app2("or", pg, d); }
+                syms = raw syms_union(syms, raw syms_union(tp.syms, tq.syms));
+                continue;
+            }
+            // a field against an index (typing admits no such pair): the extent overlaps
+        }
+        if (pdisjoint) { continue; }
+        if (pg.len == 0i64) { pg = "false"; }
+        if (goal.len == 0i64) { goal = string_concat(pg, ""); } else { goal = raw smt_app2("and", goal, pg); }
+        have_party = true;
+    }
+    if (!have_party) { pass NIL; }
+    drop record(e, raw OK_DISJOINT(), goal, syms, raw SITE_EXPR(), id.index, an.span, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, syms);
     pass NIL;
 };
 
@@ -3981,6 +4118,23 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             pass (raw term_lit(int_to_string(((raw tt_get(e.types, mbt)).b) => int64), false));
         }
     }
+    // AN ELEMENT READ (D-286, 1.5.5 step 2): the base and the index are
+    // sites, the index's term is memoised for the `disjoint` rows, and the
+    // access is a guard site when the aliasing analysis marked it. The value
+    // is opaque (an element's bounds row is 1.5.8's).
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        Term:ibase = raw enc_expr(e, raw expr_lhs(n));
+        Term:iidx = raw enc_expr(e, raw expr_rhs(n));
+        drop memo_put(e, (raw expr_rhs(n)).index, iidx);
+        drop enc_alias_site(e, id);
+        pass (raw term_opaque(e, ty));
+    }
+    // A FIELD READ: the base a site, the access a guard site when marked.
+    if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+        Term:mbase2 = raw enc_expr(e, raw expr_operand(n));
+        drop enc_alias_site(e, id);
+        pass (raw term_opaque(e, ty));
+    }
     // `#sqrt(x)` (D-200) is the instruction, `fp.sqrt RNE` (D-281); every
     // other builtin's value is opaque, its arguments sites.
     if (n.kind == ExprKind.ExprBuiltinExpr) {
@@ -4698,7 +4852,17 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
             // A field, element or pointee write: its own subexpressions are
             // sites; no local symbol changes (an address-taken local is never
             // defined, so a write through a pointer invalidates nothing here).
-            drop walk_children(e, tn);
+            // THE TARGET'S OWN INDEX IS MEMOISED AND THE TARGET IS A GUARD
+            // SITE WHEN MARKED (D-286, 1.5.5 step 2): the children are walked
+            // once, the top node's index kept for the `disjoint` row.
+            if (tn.kind == ExprKind.ExprIndexExpr) {
+                Term:tbase = raw enc_expr(e, raw expr_lhs(tn));
+                Term:tidx = raw enc_expr(e, raw expr_rhs(tn));
+                drop memo_put(e, (raw expr_rhs(tn)).index, tidx);
+            } else {
+                drop walk_children(e, tn);
+            }
+            drop enc_alias_site(e, target);
             if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
                 int32:pt = raw ty_of(e, target);
                 if (raw is_int(e, pt)) {

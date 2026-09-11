@@ -9066,7 +9066,83 @@ func:builtin_field_index = int32(ExprEmitter->:x, int32:kind, int32:name) never 
 };
 
 // The address of a place expression: a name, a field, an element, or a pointee.
+//
+// THE ALIASING GUARD (D-286, 1.5.5 step 2) wraps the one place-address
+// function: at an access the aliasing analysis paired with live parties
+// through computed indices, the storage this address names and every party's
+// are compared as BYTE RANGES -- `p < q+size_q && q < p+size_p` on `ptr`
+// operands, exact for an element against an element, a row against an
+// element of the row, a field of an element against the element, with no
+// captured index, no frozen name and no frame slot: a held party's address is
+// the value in its HOLDER's slot (found by the declaring statement, since a
+// nested block may shadow the name), a call-duration party's the SSA value
+// this statement computed. The trap is `BorrowOverlap` (-4116) after the
+// chain reset; when the manifest discharged the site's `disjoint` row the
+// compare is not emitted (the `loop-step` shape: no `llvm.assume` over
+// pointers). A zero-sized place intersects nothing.
 pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
+    PlaceVal:p = raw addr_of_place(x, id);
+    if (p.state != (raw LL_OK())) { pass p; }
+    int32:np = raw exprtypes_alias_count_at(x.et, id.index);
+    if (np == 0i32) { pass p; }
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), id.index, raw OK_DISJOINT())) { pass p; }
+    int64:sq = raw type_size(x.fe.ctx.types, p.type_id);
+    string:qe = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(qe, " = getelementptr i8, ptr ", p.addr, ", i64 ", int_to_string(sq)));
+    string:ovl = "";
+    for (int32:k in 0i32...np) {
+        int32:psite = raw exprtypes_alias_party_at(x.et, id.index, k);
+        int32:holder = raw exprtypes_alias_holder_at(x.et, id.index, k);
+        // The party's address: the holder's slot, or the recorded SSA value.
+        string:pa = "";
+        int32:ptid = 0i32;
+        if (holder != 0i32) {
+            Symbol:hs = raw symtab_get(x.tab, holder);
+            int64:hi = raw fnem_lookup_decl(x.fe, hs.origin);
+            if (hi < 0i64) { hi = raw fnem_lookup_idx(x.fe, hs.name); }
+            if (hi < 0i64) { continue; }
+            pa = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(pa, " = load ptr, ptr ", raw fnem_local_slot_at(x.fe, hi)));
+        } else {
+            pa = raw fnem_claim_get(x.fe, psite);
+            if (pa.len == 0i64) { continue; }
+        }
+        // The party's place type: the claim's operand's recorded type.
+        ExprNode:pn = raw ast_expr(x.ast, ExprId{ index: psite });
+        ptid = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, raw expr_operand(pn)));
+        int64:sp = 0i64;
+        if (ptid > 0i32) { sp = raw type_size(x.fe.ctx.types, ptid); }
+        string:pe = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(pe, " = getelementptr i8, ptr ", pa, ", i64 ", int_to_string(sp)));
+        string:c1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(c1, " = icmp ult ptr ", pa, ", ", string_concat(qe, "")));
+        string:c2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(c2, " = icmp ult ptr ", p.addr, ", ", string_concat(pe, "")));
+        string:ck = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ck, " = and i1 ", c1, ", ", string_concat(c2, "")));
+        if (ovl.len == 0i64) {
+            ovl = string_concat(ck, "");
+        } else {
+            string:o2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(o2, " = or i1 ", ovl, ", ", string_concat(ck, "")));
+            ovl = string_concat(o2, "");
+        }
+    }
+    if (ovl.len == 0i64) { pass p; }
+    string:tl = raw irw_new_label(x.fe.w, "alias.trap");
+    string:ol = raw irw_new_label(x.fe.w, "alias.ok");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", ovl, ", label %", tl, string_concat(", label %", ol)));
+    drop irw_label(x.fe.w, tl);
+    ExprNode:an = raw ast_expr(x.ast, id);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, an.span)) => int64), ")"));
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4116)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, ol);
+    pass p;
+};
+
+func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(x.ast, id);
 
     // THE SUBJECT'S PLACE (1.5.2 step 2, D-251): inside a generated `Rules`
@@ -9977,6 +10053,9 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 func:emit_addr_op = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     PlaceVal:p = raw addr_of(x, raw expr_operand(n));
     if (p.state != (raw LL_OK())) { pass (raw iv_from_place(move(p))); }
+    // A PARTY THE ANALYSIS PAIRED WITH A LATER GUARD SITE (D-286): a
+    // call-duration claim's address is kept for the compare in this statement.
+    if (raw exprtypes_alias_is_party(x.et, id.index)) { drop fnem_claim_put(x.fe, id.index, p.addr); }
     pass (raw iv("ptr", move(p.addr), raw exprtypes_get(x.et, id)));
 };
 

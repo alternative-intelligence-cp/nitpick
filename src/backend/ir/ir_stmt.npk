@@ -737,6 +737,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         }
     }
     drop fnem_bind(x.fe, raw stmt_name(s), string_concat(slot, ""), dty);
+    drop fnem_decl_last(x.fe, sid.index);   // a guard site finds a holder by this (D-286)
     // THE DROP FLAG (D-183, 1.2.3; frame-resident half at 1.2.4b): one bit
     // beside every OWNING local, live when the binding holds a value, cleared
     // by `move` and by `pass`, tested at the scope-exit drop. An

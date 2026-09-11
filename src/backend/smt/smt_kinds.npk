@@ -49,7 +49,13 @@ pub func:OK_LOOP_STEP = int32() never fails     { pass 18i32; };
 // had no guard and no kind while LLVM's poison sat under it. A known amount
 // is the checker's (TYPE-070) and carries neither guard nor row.
 pub func:OK_SHIFT_RANGE = int32() never fails   { pass 19i32; };
-pub func:OK_COUNT = int32() never fails         { pass 19i32; };
+// `disjoint` (D-286, 1.5.5 step 2): two accesses of one root through computed
+// indices name disjoint storage while a `$$i`/`$$m` claim is live -- the
+// byte-range compare at the second access (`BorrowOverlap`, -4116). A static
+// overlap is the aliasing analysis's (BORROW-013) and carries neither guard
+// nor row.
+pub func:OK_DISJOINT = int32() never fails      { pass 20i32; };
+pub func:OK_COUNT = int32() never fails         { pass 20i32; };
 
 // The manifest spelling of a kind (P-10's `kind` column).
 pub func:ok_name = string(int32:k) never fails {
@@ -72,6 +78,7 @@ pub func:ok_name = string(int32:k) never fails {
     if (k == 17i32) { pass "assert-static"; }
     if (k == 18i32) { pass "loop-step"; }
     if (k == 19i32) { pass "shift-range"; }
+    if (k == 20i32) { pass "disjoint"; }
     pass "?";
 };
 
@@ -96,6 +103,8 @@ pub func:ok_has_guard = bool(int32:k) never fails {
     if (k == 18i32) { pass true; }
     // `shift-range` (D-277, 1.5.4b step 0): the compare before the shift.
     if (k == 19i32) { pass true; }
+    // `disjoint` (D-286, 1.5.5 step 2): the byte-range compare at the access.
+    if (k == 20i32) { pass true; }
     pass false;
 };
 

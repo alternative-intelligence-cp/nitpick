@@ -1,0 +1,52 @@
+// expect-exit: 16
+// expect-obligation: disjoint discharged 1
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume open 1
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// VERIFICATION §2.1's OWN EXAMPLE, in the operator form (D-286, 1.5.5 step
+// 2): two `$$m` of one array through indices under different rules. The
+// second claim is a guard site against the first; its `disjoint` row --
+// `(not (= i j))` -- discharges under the two rules (`i % 2 == 0`,
+// `j % 2 == 1`, the Int forms of 1.5.4b), so the verified build carries no
+// `BorrowOverlap` compare where the plain build carried one. The two
+// `limit` rows are the entries (opaque first versions, as `limit_subsume`'s).
+mod:disjoint_limit;
+error:E9;
+Rules<int32>:EvenIdx = { $ % 2i32 == 0i32 };
+Rules<int32>:OddIdx  = { $ % 2i32 == 1i32 };
+
+func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[8]:arr) never fails {
+    int32->:a = $$m arr[i => int64];
+    int32->:b = $$m arr[j => int64];
+    <-a = 7i32;
+    <-b = 9i32;
+    pass ((<-a) + (<-b));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[8]:arr = [0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32];
+    int32:i = (argv.len =>! int32) + 1i32;
+    exit (raw update(i, i + 1i32, arr));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

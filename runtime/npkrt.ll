@@ -2856,6 +2856,9 @@ ok:
 ;                            to zero or negative at run time (D-022; 0.9.7)
 ;   -4115  SHIFT_RANGE       a shift by a computed amount outside 0..width-1
 ;                            (D-277, 1.5.4b): the compare before the shift
+;   -4116  BORROW_OVERLAP    two accesses of one root name overlapping storage
+;                            while a `$$i`/`$$m` claim is live (D-286, 1.5.5):
+;                            the byte-range compare at the second access
 ;   -4102  HEAP_INTEGRITY    double-free, foreign/misaligned/null pointer to
 ;                            dalloc/ralloc, corrupted header or torn guard,
 ;                            or a UAF caught by a freed slot's magic (0.10.0)

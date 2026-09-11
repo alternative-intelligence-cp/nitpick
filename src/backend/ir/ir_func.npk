@@ -91,6 +91,17 @@ pub struct:FnEmitter = {
     // D-266 (1.5.2h): true for a lending pick's VIEW binding -- its slot holds
     // the payload's address, and a read loads through it.
     List<bool>:lviews;
+    // THE DECLARING STATEMENT PER BINDING (D-286, 1.5.5 step 2): a guard site
+    // loads a held party's address from its HOLDER's slot, found by the
+    // holder's declaring statement rather than its name -- a nested block may
+    // shadow the name. 0 for a binding no statement declared (a parameter,
+    // an arm's or a loop's binding).
+    List<int32>:ldecls;
+    // A CALL-DURATION PARTY'S ADDRESS (D-286): the SSA value `emit_addr_op`
+    // computed for a claim the analysis paired with a later argument of the
+    // same call; keyed by the claim's expression id.
+    List<int32>:claim_sites;
+    List<string>:claim_refs;
 
     // Which parameters are `move` (consuming) — parallel to pnames. A lent
     // parameter is the CALLER's to drop; a `move` one is this function's, at
@@ -304,6 +315,9 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         lflags: raw list_init::<string>(32i64),
         lrules: raw list_init::<int32>(32i64),
         lviews: raw list_init::<bool>(32i64),
+        ldecls: raw list_init::<int32>(32i64),
+        claim_sites: raw list_init::<int32>(4i64),
+        claim_refs: raw list_init::<string>(4i64),
         dstmts: raw list_init::<int32>(16i64),
         dframes: raw list_init::<int64>(16i64),
         dlmarks: raw list_init::<int64>(16i64),
@@ -392,6 +406,9 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.lflags.count = 0i64;
     fe.lrules.count = 0i64;
     fe.lviews.count = 0i64;
+    fe.ldecls.count = 0i64;
+    fe.claim_sites.count = 0i64;
+    fe.claim_refs.count = 0i64;
     fe.terminated = false;
     fe.dstmts.count = 0i64;
     fe.dframes.count = 0i64;
@@ -943,7 +960,44 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
     drop list_push(@fe.lflags, "");
     drop list_push(@fe.lrules, 0i32);
     drop list_push(@fe.lviews, false);
+    drop list_push(@fe.ldecls, 0i32);
     pass NIL;
+};
+
+// THE DECLARING STATEMENT of the most recent binding (D-286, 1.5.5 step 2),
+// attached the way a view mark or a rule is.
+pub func:fnem_decl_last = NIL(FnEmitter->:fe, int32:stmt_index) never fails {
+    fe.ldecls.items[(fe.lnames.count - 1i64) => int64] = stmt_index;
+    pass NIL;
+};
+
+// A live binding by its declaring statement, backward like the name lookup;
+// -1 when none is live.
+pub func:fnem_lookup_decl = int64(FnEmitter->:fe, int32:stmt_index) never fails {
+    if (stmt_index == 0i32) { pass (0i64 - 1i64); }
+    int64:i = fe.lnames.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (fe.ldecls.items[i => int64] == stmt_index) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// A call-duration claim's address, recorded at the claim and read at the
+// guard site of the same statement.
+pub func:fnem_claim_put = NIL(FnEmitter->:fe, int32:site, string:ref) never fails {
+    drop list_push(@fe.claim_sites, site);
+    drop list_push(@fe.claim_refs, string_concat(ref, ""));
+    pass NIL;
+};
+
+pub func:fnem_claim_get = string(FnEmitter->:fe, int32:site) never fails {
+    int64:i = fe.claim_sites.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (fe.claim_sites.items[i => int64] == site) { pass (string_concat(fe.claim_refs.items[i => int64], "")); }
+    }
+    pass "";
 };
 
 // A VIEW BINDING (D-266, 1.5.2h): the slot holds the payload's ADDRESS, one
@@ -1000,6 +1054,7 @@ pub func:fnem_release = NIL(FnEmitter->:fe, int64:mark) never fails {
     fe.lflags.count = mark;
     fe.lrules.count = mark;
     fe.lviews.count = mark;
+    fe.ldecls.count = mark;
     pass NIL;
 };
 

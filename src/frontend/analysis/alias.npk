@@ -530,6 +530,15 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
         if (!(raw path_steps(x, raw expr_operand(pn), @pp))) { continue; }
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
+        // A COMPUTED PAIR IS A GUARD SITE (D-286, 1.5.5 step 2): the emitter
+        // compares the two storages at run time and traps `BorrowOverlap`,
+        // the encoder records the `disjoint` row the verified build elides.
+        // A claim's own site is never a guard site of ITSELF; every party the
+        // site meets is recorded, and the site keeps its one guard.
+        if (cls == (raw OV_COMPUTED())) {
+            drop exprtypes_mark_alias(x.etypes, place.index, p.site.index, p.holder);
+            continue;
+        }
         string:m1 = string_concat(raw access_word(akind), " of `");
         m1 = string_concat(m1, raw render_place(x, root, ap));
         m1 = string_concat(m1, "` conflicts with ");
@@ -547,11 +556,7 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
         } else {
             m1 = string_concat(m1, ", live for the call it is an argument of");
         }
-        if (cls == (raw OV_COMPUTED())) {
-            m1 = string_concat(m1, " (D-286): the paths meet through computed indices -- until the solver's relaxation lands (1.5.5 step 2) a computed pair is refused; end the claim's scope with a block, or spell `@` for an address that claims nothing");
-        } else {
-            m1 = string_concat(m1, " (D-286): end the claim's scope with a block, or spell `@` for an address that claims nothing");
-        }
+        m1 = string_concat(m1, " (D-286): end the claim's scope with a block, or spell `@` for an address that claims nothing");
         drop alias_err(x, raw BORROW_CONFLICT(), move(m1), at);
         pass NIL;
     }

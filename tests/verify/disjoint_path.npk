@@ -1,0 +1,45 @@
+// expect-exit: 16
+// expect-obligation: disjoint discharged 1
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// A PATH CONDITION DISCHARGES THE PAIR (D-286, 1.5.5 step 2; 1.5.4's
+// path-sensitive encoder): inside `if (i != j)` the branch condition is a
+// hypothesis, and `(not (= i j))` is exactly the row -- no rule needed.
+mod:disjoint_path;
+error:E9;
+
+func:update = int32(int32:i, int32:j, int32[8]:arr) never fails {
+    if (i != j) {
+        int32->:a = $$m arr[i => int64];
+        int32->:b = $$m arr[j => int64];
+        <-a = 7i32;
+        <-b = 9i32;
+        pass ((<-a) + (<-b));
+    }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[8]:arr = [0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32];
+    int32:i = argv.len =>! int32;
+    exit (raw update(i, i + 1i32, arr));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,39 @@
+// expect-exit: 0
+//
+// THE ALIASING GUARD PASSES (D-286, 1.5.5 step 2): the held `$$m arr[i]` and
+// the write `arr[k]` name different elements at run time (`k = i + 1`), so
+// the compare falls through; the values are checked after the claim's block.
+mod:alias_guard_ok;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32:i = argv.len =>! int32;
+    int32:k = i + 1i32;
+    {
+        int32->:p = $$m arr[i => int64];
+        arr[k => int64] = 9i32;
+        <-p = 7i32;
+    }
+    if (arr[1i64] != 7i32) { exit 1i32; }
+    if (arr[2i64] != 9i32) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

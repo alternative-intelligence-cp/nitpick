@@ -1,0 +1,40 @@
+// expect-exit: 90
+//
+// A WHOLE ELEMENT AGAINST A FIELD OF AN ELEMENT (D-286, 1.5.5 step 2): the
+// held `$$m ps[i]` covers the pair's eight bytes, and `ps[k].y` at the same
+// index lies inside them -- the byte-range test, not an address equality,
+// is what catches it. The first write (`k = i + 1`) is disjoint and passes;
+// the second collides and traps.
+mod:alias_elem_field;
+error:E9;
+struct:Pair = { int32:x; int32:y; };
+
+func:main = int32(cstring[]:argv) {
+    Pair[4]:ps = [Pair{ x: 1i32, y: 1i32 }, Pair{ x: 2i32, y: 2i32 }, Pair{ x: 3i32, y: 3i32 }, Pair{ x: 4i32, y: 4i32 }];
+    int32:i = argv.len =>! int32;
+    int32:k = i + 1i32;
+    Pair->:p = $$m ps[i => int64];
+    ps[k => int64].y = 9i32;
+    if (p.x != 2i32) { exit 1i32; }
+    int32:m = argv.len =>! int32;
+    ps[m => int64].y = 8i32;
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

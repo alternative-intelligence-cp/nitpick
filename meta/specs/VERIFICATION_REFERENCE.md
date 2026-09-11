@@ -581,6 +581,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `shift-range` | a shift's COMPUTED amount is inside `0..width-1` (D-277): the compare before the shift, `ShiftRange`; a known amount is the checker's (TYPE-070) and has no row; a `simd` shift's any-lane guard is one row over the lanes (D-282) | yes | 1.5.4b |
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
+| `disjoint` | two accesses of one root through computed indices name disjoint storage while a `$$i`/`$$m` claim is live (D-286): the byte-range compare at the second access, `BorrowOverlap`; a static overlap is the aliasing analysis's (BORROW-013) and has no row | yes | 1.5.5 |
 <!-- END obligation-catalogue -->
 
 > **[D-267, 1.5.3 step 1 (2026-09-06).]** `failsafe-post`'s guard column

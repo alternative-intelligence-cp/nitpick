@@ -1,0 +1,28 @@
+// A GUARD SITE ARMS `BorrowOverlap` (D-286, 1.5.5 step 2): the byte-range
+// compare at an access whose path is computed against a live claim can trap,
+// so `failsafe` must name the identity (D-179) -- this one does not.
+mod:reach_alias;
+error:E9;
+
+// expect-error: NITPICK-REACH-002
+func:main = int32(cstring[]:argv) {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32:i = argv.len =>! int32;
+    int32->:p = $$m arr[i => int64];
+    arr[(i + 1i32) => int64] = 9i32;
+    exit (<-p);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
