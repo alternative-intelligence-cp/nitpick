@@ -77,6 +77,7 @@ written in the meantime so no row is silent.
 | `@npk_clone_exec` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
 | `@npk_exec` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
 | `@npk_sys6` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
+| `@npk_tls_self` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
 | `@npk_ch_at` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_ch_close` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_ch_closed` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
@@ -97,6 +98,8 @@ written in the meantime so no row is silent.
 | `@npk_mx_lock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_mx_unlock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_park_sleep` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_reg_claim` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_reg_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sarena_bump` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sarena_destroy` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sarena_make` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
@@ -105,6 +108,8 @@ written in the meantime so no row is silent.
 | `@npk_sl_push` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sl_wake_due` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_step` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_stop_handler` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_stop_others` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_task_done` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_thread_join` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_trap` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
@@ -167,6 +172,7 @@ written in the meantime so no row is silent.
 | `@npk_mutex_acquire_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_ofd_close` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_open` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_park_forever` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_park_take` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_park_until` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_path_exists` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
@@ -264,6 +270,14 @@ written in the meantime so no row is silent.
 5. That the committed snapshot (`bootstrap/seed/stage1.ll`) is what its STAMP
    says: D-085's diverse double-compilation is the Thompson-attack mitigation,
    and the fixpoint re-derives the snapshot from source on every full run.
+6. That a thread the trap route signals stops before `failsafe` runs (D-291,
+   1.5.6 step 1): the winner waits for every other live thread's handler to
+   park, under the executor's join deadline, and proceeds past a thread the
+   kernel did not interrupt in time -- a state no user-space signal reaches.
+   The thread registry holds 64 threads; the 65th is refused at its start.
+   (The remaining acceptances 1.5.6 owes -- the kernel-effect table, the
+   per-thread constants, the modelling assumption, the bounds, the two
+   opaque calls, the failsafe region -- land with their steps.)
 
 Nothing else is trusted. In particular nothing in `src/`, `lib/` or the prelude
 is exempt from the checks that bind a user program (D-205's switch put the

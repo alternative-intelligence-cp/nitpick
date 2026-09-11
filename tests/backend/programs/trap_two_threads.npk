@@ -1,0 +1,56 @@
+// expect-exit: 41
+// stress: 40
+//
+// TWO THREADS TRAP WITHIN ONE `failsafe` (DEF-47, 1.5.6 step 1; D-291).
+// Thread A divides by the zero main computed from `argv` at once; thread B
+// spins two milliseconds -- never suspending, so D-063's frozen flag cannot
+// hold it -- and divides too, while A's `failsafe` is still running (it
+// spins a hundred milliseconds before exiting 41). On the old floor
+// `npk_trap`'s holder word was a plain load-then-store: B read A's 1, took
+// the re-entry arm and `exit_group(70)`ed the process out from under A's
+// `failsafe` (this program exited 70). Under D-291 the holder is claimed by
+// compare-exchange, a loser that is not the holder parks forever, and the
+// winner stops every other thread before `failsafe` runs: 41, every time.
+// Main never suspends either: it spins past both traps and would exit 0 if
+// neither happened, which is the failure this program reports.
+mod:trap_two_threads;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+thread async func:early = NIL(int32:zero) joins JOIN_5S {
+    discard(10i32 / zero);
+    pass NIL;
+};
+
+thread async func:late = NIL(int32:zero) joins JOIN_5S {
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 2000000i64) { }
+    discard(10i32 / zero);
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    int32:zero = (argv.len =>! int32) - 1i32;
+    drop early(zero);
+    drop late(zero);
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 400000000i64) { }
+    exit 0i32;                                        // neither thread trapped
+};
+
+func:failsafe = int32(Error:e) {
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 100000000i64) { }     // B's trap lands in here
+    pick (e) {
+        (DivByZero)        { exit 41i32; },
+        (DeadlineExceeded) { exit 43i32; },
+        (DivOverflow)      { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

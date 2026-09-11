@@ -4335,6 +4335,17 @@ point.
 
 ---
 
+> **[1.5.6 step 1 (2026-09-11), D-291.]** "Other threads stop before
+> `failsafe` gets control" is implemented, not promised: the floor keeps a
+> preallocated thread registry, the trap route claims the failsafe holder
+> by compare-exchange (a re-entering holder exits 70 as before; any other
+> loser parks forever), signals every other live thread with SIGUSR1 --
+> whose handler counts itself and parks -- and waits for the count under
+> the executor's join deadline before the drivers are killed and `failsafe`
+> runs. Until then `@npk_frozen` stopped the next RESUME on every executor
+> and nothing else; a task running at the trap ran to its next suspension,
+> and two threads trapping at once ran two `failsafe`s (DEF-47).
+
 ## D-064 — Generics: definition-time checking, turbofish-only in expression position, bounded monomorphization — **SETTLED**
 
 Settles the **generics** gap in `PRE_PLANNING_REVIEW.md` §4 — the last

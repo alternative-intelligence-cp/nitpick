@@ -1,0 +1,87 @@
+// expect-exit: 43
+// stress: 40
+//
+// A TASK RUNNING ON ANOTHER THREAD STOPS BEFORE `failsafe` RUNS (DEF-47,
+// 1.5.6 step 1; D-291 -- D-063's promise, made true). The runner thread
+// appends one byte at a time to a file named by the pid, never suspending
+// and never allocating (a thread stopped inside the allocator would hold the
+// heap mutex against the reads below until D-292 lands); the trapper divides
+// by the zero main computed from `argv` twenty milliseconds in. `failsafe`
+// -- on the trapper's thread, after the trap route has signalled every other
+// thread and waited for their handlers to park -- reads the file's length,
+// spins fifty milliseconds, reads it again: unchanged means the runner was
+// stopped (43); a longer file means it kept running (44, this program's
+// answer on the old floor, whose frozen flag stops only the next resume).
+// Module state is `const`/`fixed` only (D-211), so the file is the one
+// channel a running thread has to a `failsafe` on another.
+mod:trap_stops_runner;
+use "../../../lib/nsys.npk".*;
+error:EProbe;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+fixed string:ONE = "x";
+
+func:probe_path = string() {
+    int64:me = relay sys(raw SYS_GETPID());
+    pass (string_concat("/tmp/npk_trap_stops_runner.", int_to_string(me)));
+};
+
+thread async func:runner = NIL(int32:_~v) joins JOIN_5S {
+    string:p = relay probe_path();
+    cstring:c = to_cstring(p) ?! EProbe;
+    // openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_APPEND = 1089, 0644 = 420)
+    fd:f = open(c, 1089i64, 420i64) ?! EProbe;
+    int64:n = 0i64;
+    while (n < 1000000000i64) {                        // the stop is what ends this
+        Result<int64>:w = write(f, ONE.ptr, 1i64);     // one byte, no allocation
+        n = n + 1i64;
+    }
+    discard(close(f) ?| NIL);
+    pass NIL;
+};
+
+thread async func:trapper = NIL(int32:zero) joins JOIN_5S {
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 20000000i64) { }       // the runner is writing
+    discard(10i32 / zero);
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    int32:zero = (argv.len =>! int32) - 1i32;
+    drop runner(1i32);
+    drop trapper(zero);
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 2000000000i64) { }     // never suspends; the trap ends this
+    exit 0i32;                                         // no trap happened
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) {
+            Result<string>:pr = probe_path();
+            if (pr.is_error) { exit 45i32; }
+            Result<cstring>:c = to_cstring(pr.value);
+            if (c.is_error) { exit 45i32; }
+            Result<string>:s1 = read_file(c.value);
+            if (s1.is_error) { exit 45i32; }           // no observation at all
+            int64:t0 = mono_now();
+            while ((mono_now() - t0) < 50000000i64) { }
+            Result<string>:s2 = read_file(c.value);
+            if (s2.is_error) { exit 45i32; }
+            discard(sys(263i64, raw AT_FDCWD(), c.value.ptr, 0i64) ?| 0i64);   // unlinkat
+            if (s1.value.len == s2.value.len) { exit 43i32; }
+            exit 44i32;
+        },
+        (EProbe)           { exit 46i32; },
+        (DeadlineExceeded) { exit 47i32; },
+        (DivOverflow)      { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

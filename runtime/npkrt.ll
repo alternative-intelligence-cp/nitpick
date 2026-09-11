@@ -67,6 +67,16 @@ module asm "  movl $60, %eax"
 module asm "  syscall"
 module asm "  hlt"
 
+; THE SIGNAL RESTORER (D-291, 1.5.6 step 1). x86_64 delivers a signal only
+; to an action that names a restorer (`SA_RESTORER`: the kernel's
+; x64_setup_rt_frame refuses otherwise and the process dies of SIGSEGV
+; instead of stopping), so the stop handler's action names this stub --
+; `rt_sigreturn`, never executed, because the handler never returns.
+module asm ".globl npk_sigreturn"
+module asm "npk_sigreturn:"
+module asm "  movl $15, %eax"
+module asm "  syscall"
+
 module asm ".globl _start"
 module asm "_start:"
 module asm "  xorq %rbp, %rbp"
@@ -218,9 +228,33 @@ done:
 
 define internal void @npk_start(i64 %sp) noreturn {
 entry:
+  %act = alloca [4 x i64], align 16
   ; the executor's TLS block first: every allocation, trap and error chain
   ; below reaches its executor through `%fs:8` (D-181).
   call void @npk_tls_boot()
+  ; THE STOP SIGNAL'S ACTION (D-291): SIGUSR1 -> npk_stop_handler, over the
+  ; kernel's own 32-byte { handler, flags, restorer, mask } with SA_RESTORER
+  ; and the restorer stub the kernel demands before it delivers; a refusal
+  ; here is a floor that cannot stop its threads, which is not a floor.
+  %h = ptrtoint ptr @npk_stop_handler to i64
+  %a0 = getelementptr [4 x i64], ptr %act, i64 0, i64 0
+  store i64 %h, ptr %a0
+  %a1 = getelementptr [4 x i64], ptr %act, i64 0, i64 1
+  store i64 67108864, ptr %a1
+  %a2 = getelementptr [4 x i64], ptr %act, i64 0, i64 2
+  %rs = ptrtoint ptr @npk_sigreturn to i64
+  store i64 %rs, ptr %a2
+  %a3 = getelementptr [4 x i64], ptr %act, i64 0, i64 3
+  store i64 0, ptr %a3
+  %ap = ptrtoint ptr %act to i64
+  ; rt_sigaction(SIGUSR1, &act, NULL, 8)
+  %sr = call i64 @npk_sys6(i64 13, i64 10, i64 %ap, i64 0, i64 8, i64 0, i64 0)
+  %sbad = icmp ne i64 %sr, 0
+  br i1 %sbad, label %nosig, label %go
+nosig:
+  call void @npk_trap(i32 -4102)
+  unreachable
+go:
   %spp = inttoptr i64 %sp to ptr
   %argc = load i64, ptr %spp
   %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
@@ -273,6 +307,21 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; change, and no way for a suspension to be silent about its wake condition.
 ; A suspension with no request is a defect — nothing may park forever.
 @npk_frozen = internal global i32 0         ; D-063: a trap happened; resume nothing
+
+; --- the trap route's whole-program stop (D-291, 1.5.6 step 1) ---------------
+;
+; THE THREAD REGISTRY: 64 entries of two words [ state | tls ], flat i64s in
+; .bss -- the driver registry's shape (preallocated: failsafe's path cannot
+; allocate). state 0 free / 1 claiming / 2 published; claimed by cmpxchg and
+; published with a release store BEFORE the clone, so a trap on any thread
+; finds every thread that can exist; retired by the join once the tid word
+; has cleared. `tls` is the thread's trampoline block, whose tid word
+; PARENT_SETTID wrote. Fixed capacity is the point (D-055's posture): the
+; 65th thread refuses at its start.
+@npk_thread_reg = internal global [128 x i64] zeroinitializer
+@npk_stopped = internal global i32 0        ; threads parked in the stop handler
+@npk_stop_word = internal global i32 0      ; the handler's futex word: written by nobody
+@npk_pid = internal global i64 0            ; recorded once at boot (getpid)
 
 ; The FUTEX word the thread sleeps on. Nothing ever wakes it in a
 ; single-threaded program — the timeout is the wake — but the wait is a real
@@ -379,7 +428,15 @@ entry:
   %res = getelementptr %npk.tls, ptr %tls, i32 0, i32 3
   store ptr null, ptr %res
   %tid = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
-  store i32 0, ptr %tid
+  ; THE MAIN THREAD'S TID IS THE PID (D-291): recorded once for tgkill, and
+  ; written into main's own tid word so the stop walk can signal it as it
+  ; signals any thread; nothing joins main, so the word is never read as a
+  ; join's.
+  %pid = call i64 @npk_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)
+  store i64 %pid, ptr @npk_pid
+  %pid32 = trunc i64 %pid to i32
+  store i32 %pid32, ptr %tid
+  %mslot = call i64 @npk_reg_claim(ptr %tls)
   %ti = ptrtoint ptr %tls to i64
   ; arch_prctl(ARCH_SET_FS = 0x1002, tls)
   %r = call i64 @npk_sys6(i64 158, i64 4098, i64 %ti, i64 0, i64 0, i64 0, i64 0)
@@ -390,6 +447,16 @@ nofs:
   unreachable
 ok:
   ret void
+}
+
+; THIS THREAD'S TRAMPOLINE BLOCK (D-291): `%fs:0` is the block's own
+; address (slot 0, stored at boot and at thread start) -- the failsafe
+; holder's identity, read the way `npk_exec` reads slot 1.
+define internal ptr @npk_tls_self() {
+entry:
+  %v = call i64 asm sideeffect "movq %fs:0, $0", "=r,~{dirflag},~{fpsr},~{flags}"()
+  %p = inttoptr i64 %v to ptr
+  ret ptr %p
 }
 
 define ptr @npk_exec() {
@@ -1664,6 +1731,14 @@ guarded:
   ;
   ; Written as one literal with its bits named — a clone flag word off by a
   ; bit is a thread that shares the wrong thing.
+  ; THE REGISTRY SLOT, CLAIMED AND PUBLISHED BEFORE THE CLONE (D-291): a
+  ; trap on any thread from here on can signal this thread once its tid word
+  ; is written -- by PARENT_SETTID, during the clone itself. A full registry
+  ; refuses the thread as a failed clone does.
+  %slot = call i64 @npk_reg_claim(ptr %tls)
+  %nofree = icmp slt i64 %slot, 0
+  br i1 %nofree, label %bad, label %spawn
+spawn:
   %tlsi = ptrtoint ptr %tls to i64
   %ctid = ptrtoint ptr %t_tid to i64
   %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 %ctid, i64 %tlsi,
@@ -1752,6 +1827,8 @@ wait:
                            i64 0, i64 -1)
   br label %loop
 done:
+  ; the thread is gone: its registry slot is free (D-291)
+  call void @npk_reg_retire(ptr %tls)
   ret i32 0
 expired:
   ret i32 1
@@ -2832,6 +2909,181 @@ ok:
   ret i64 %t
 }
 
+; --- the whole-program stop (D-291, 1.5.6 step 1) ------------------------------
+
+declare void @npk_sigreturn()
+
+; PARK FOREVER: the stop handler's body and a losing trapper's end. A futex
+; wait on a word nothing writes; a spurious return re-waits; the thread dies
+; with the winner's exit_group. Allocation-free by construction.
+define internal void @npk_park_forever() noreturn {
+entry:
+  %wp = ptrtoint ptr @npk_stop_word to i64
+  br label %wait
+wait:
+  ; futex(word, FUTEX_WAIT|PRIVATE, expected 0, NULL, NULL, 0)
+  %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 128, i64 0, i64 0, i64 0, i64 0)
+  br label %wait
+}
+
+; THE STOP HANDLER: SIGUSR1 from the trap route. It counts itself so the
+; winner's wait can end, wakes that wait, and parks. It runs on the
+; interrupted thread's own stack and touches nothing else -- a thread stopped
+; inside the allocator keeps the heap mutex forever, which is why `failsafe`
+; allocates from the region (D-292, step 2).
+define internal void @npk_stop_handler(i32 %sig) noreturn {
+entry:
+  %n = atomicrmw add ptr @npk_stopped, i32 1 seq_cst
+  %cp = ptrtoint ptr @npk_stopped to i64
+  ; futex(&stopped, FUTEX_WAKE|PRIVATE, 1)
+  %w = call i64 @npk_sys6(i64 202, i64 %cp, i64 129, i64 1, i64 0, i64 0, i64 0)
+  call void @npk_park_forever()
+  unreachable
+}
+
+; Claim a registry slot for `tls` and publish it: the slot, or -1 when full.
+define internal i64 @npk_reg_claim(ptr %tls) {
+entry:
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %inx, %miss ]
+  %full = icmp sge i64 %i, 64
+  br i1 %full, label %none, label %try
+try:
+  %si = mul i64 %i, 2
+  %sp = getelementptr i64, ptr @npk_thread_reg, i64 %si
+  %cx = cmpxchg ptr %sp, i64 0, i64 1 acq_rel monotonic
+  %won = extractvalue { i64, i1 } %cx, 1
+  br i1 %won, label %claimed, label %miss
+miss:
+  %inx = add i64 %i, 1
+  br label %scan
+claimed:
+  %ti = add i64 %si, 1
+  %tp = getelementptr i64, ptr @npk_thread_reg, i64 %ti
+  %tv = ptrtoint ptr %tls to i64
+  store i64 %tv, ptr %tp
+  ; PUBLISH (release pairs with the walkers' acquire): from here a trap on
+  ; any thread finds this slot, before the thread exists
+  store atomic i64 2, ptr %sp release, align 8
+  ret i64 %i
+none:
+  ret i64 -1
+}
+
+; Retire the slot holding `tls`, after the thread is gone.
+define internal void @npk_reg_retire(ptr %tls) {
+entry:
+  %tv = ptrtoint ptr %tls to i64
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %inx, %next ]
+  %done = icmp sge i64 %i, 64
+  br i1 %done, label %fin, label %look
+look:
+  %si = mul i64 %i, 2
+  %sp = getelementptr i64, ptr @npk_thread_reg, i64 %si
+  %st = load atomic i64, ptr %sp acquire, align 8
+  %live = icmp eq i64 %st, 2
+  br i1 %live, label %cmp, label %next
+cmp:
+  %ti = add i64 %si, 1
+  %tp = getelementptr i64, ptr @npk_thread_reg, i64 %ti
+  %v = load i64, ptr %tp
+  %hit = icmp eq i64 %v, %tv
+  br i1 %hit, label %clear, label %next
+clear:
+  store atomic i64 0, ptr %sp release, align 8
+  ret void
+next:
+  %inx = add i64 %i, 1
+  br label %scan
+fin:
+  ret void
+}
+
+; STOP EVERY OTHER THREAD: SIGUSR1 to every published slot but the caller's
+; own, then wait on the stopped count under the executor's join deadline (a
+; futex wait, never a spin; five seconds when the executor states none). A
+; thread that does not stop in time -- a state the kernel does not interrupt
+; -- is proceeded past, and TCB.md SS5 says so. Runs before the drivers are
+; killed and before `failsafe`: D-063's "other threads stop before failsafe
+; gets control", made true.
+define internal void @npk_stop_others(ptr %self) {
+entry:
+  %ts = alloca [2 x i64], align 16
+  %pid = load i64, ptr @npk_pid
+  %selfv = ptrtoint ptr %self to i64
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %inx, %next ]
+  %sent = phi i32 [ 0, %entry ], [ %sent2, %next ]
+  %done = icmp sge i64 %i, 64
+  br i1 %done, label %wait, label %look
+look:
+  %si = mul i64 %i, 2
+  %sp = getelementptr i64, ptr @npk_thread_reg, i64 %si
+  %st = load atomic i64, ptr %sp acquire, align 8
+  %live = icmp eq i64 %st, 2
+  br i1 %live, label %who, label %next
+who:
+  %ti = add i64 %si, 1
+  %tp = getelementptr i64, ptr @npk_thread_reg, i64 %ti
+  %tv = load i64, ptr %tp
+  %me = icmp eq i64 %tv, %selfv
+  br i1 %me, label %next, label %sig
+sig:
+  %tls = inttoptr i64 %tv to ptr
+  %tidp = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
+  %tid = load atomic i32, ptr %tidp monotonic, align 4
+  %tid64 = sext i32 %tid to i64
+  %gone = icmp sle i64 %tid64, 0
+  br i1 %gone, label %next, label %kill
+kill:
+  ; tgkill(pid, tid, SIGUSR1)
+  %r = call i64 @npk_sys6(i64 234, i64 %pid, i64 %tid64, i64 10, i64 0, i64 0, i64 0)
+  %ok = icmp eq i64 %r, 0
+  %inc = zext i1 %ok to i32
+  %add = add i32 %sent, %inc
+  br label %next
+next:
+  %sent2 = phi i32 [ %sent, %look ], [ %sent, %who ], [ %sent, %sig ], [ %add, %kill ]
+  %inx = add i64 %i, 1
+  br label %scan
+wait:
+  %ex = call ptr @npk_exec()
+  %jp = getelementptr %npk.exec, ptr %ex, i32 0, i32 6
+  %jn = load i64, ptr %jp
+  %nojn = icmp eq i64 %jn, 0
+  %jn2 = select i1 %nojn, i64 5000000000, i64 %jn
+  %now0 = call i64 @npk_mono_now()
+  %dl = add i64 %now0, %jn2
+  %sec = sdiv i64 %dl, 1000000000
+  %rem = srem i64 %dl, 1000000000
+  %s0 = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 %sec, ptr %s0
+  %s1 = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 %rem, ptr %s1
+  %tsi = ptrtoint ptr %ts to i64
+  %cp = ptrtoint ptr @npk_stopped to i64
+  br label %wloop
+wloop:
+  %c = load atomic i32, ptr @npk_stopped seq_cst, align 4
+  %enough = icmp sge i32 %c, %sent
+  br i1 %enough, label %fin, label %timecheck
+timecheck:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %dl
+  br i1 %late, label %fin, label %sleep
+sleep:
+  %c64 = zext i32 %c to i64
+  ; futex(&stopped, FUTEX_WAIT_BITSET|PRIVATE, expected c, &abs_timeout, NULL, ~0)
+  %fr = call i64 @npk_sys6(i64 202, i64 %cp, i64 137, i64 %c64, i64 %tsi, i64 0, i64 -1)
+  br label %wloop
+fin:
+  ret void
+}
+
 ; ---------------------------------------------------------------------------
 ; The trap route (D-142, cycle 0.9.0): how a RUNTIME FAULT becomes a controlled
 ; shutdown. Emitted guards (division by zero, INT_MIN/-1 — and every guard a
@@ -2911,7 +3163,10 @@ ok:
 
 declare i32 @npk_failsafe(i32)
 
-@npk_in_failsafe = internal global i32 0
+; THE FAILSAFE HOLDER (D-291): the TLS address of the thread that won the
+; trap route's compare-exchange, or 0. A re-entering holder is the one
+; uncatchable stop (exit 70); any other loser parks (`npk_park_forever`).
+@npk_in_failsafe = internal global i64 0
 
 ; THE ORIGIN CHAIN (D-179, 1.1.6): the sites an in-flight error has passed,
 ; oldest first. One per thread when the executor arrives (1.1.8); one per
@@ -2929,9 +3184,26 @@ define void @npk_trap(i32 %code) noreturn {
   store atomic i32 1, ptr @npk_frozen seq_cst, align 4   ; DEF-46 (D-290): read by every executor
   ; CHAIN-NEUTRAL (D-179): `?!` pushes its site and hands over an error whose
   ; chain must survive; guards and the runtime's own callers reset first.
-  %in = load atomic i32, ptr @npk_in_failsafe seq_cst, align 4   ; an atomic word (D-290)
-  %re = icmp ne i32 %in, 0
-  br i1 %re, label %hard, label %run
+  ;
+  ; THE ARBITRATION (D-291, DEF-47): the holder word is claimed by
+  ; compare-exchange with this thread's identity. Until 1.5.6 it was a plain
+  ; load-then-store: two threads trapping at once both read 0 and both ran
+  ; `failsafe`; a thread trapping while another's `failsafe` ran read 1,
+  ; took the re-entry arm and `exit_group(70)`ed the process mid-safing.
+  %self = call ptr @npk_tls_self()
+  %selfv = ptrtoint ptr %self to i64
+  %cx = cmpxchg ptr @npk_in_failsafe, i64 0, i64 %selfv seq_cst seq_cst
+  %won = extractvalue { i64, i1 } %cx, 1
+  br i1 %won, label %run, label %lost
+lost:
+  ; the holder trapped again: re-entry, the one uncatchable stop; any other
+  ; loser parks and dies with the winner's exit_group
+  %holder = extractvalue { i64, i1 } %cx, 0
+  %mine = icmp eq i64 %holder, %selfv
+  br i1 %mine, label %hard, label %park
+park:
+  call void @npk_park_forever()
+  unreachable
 hard:
   ; re-entry: failsafe trapped. There is no second handler to hand the
   ; situation to, so this is the one uncatchable stop: exit 70 directly.
@@ -2939,7 +3211,10 @@ hard:
   %x = call i64 @npk_sys6(i64 231, i64 70, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
 run:
-  store atomic i32 1, ptr @npk_in_failsafe seq_cst, align 4   ; an atomic word (D-290); the arbitration is DEF-47's, step 1
+  ; EVERY OTHER THREAD STOPS FIRST (D-291): signalled and parked, waited for
+  ; under the join deadline -- so the handler cannot be racing a sibling task
+  ; driving the same actuator (D-063's promise).
+  call void @npk_stop_others(ptr %self)
   ; DRIVERS DIE BEFORE FAILSAFE RUNS (1.1.13a; D-149 over D-055): the
   ; registry walk is the runtime's own act, not the program's — safing is
   ; mechanism, not policy (D-013), and an uncontrolled driver DURING
@@ -3075,8 +3350,22 @@ define void @npk_exit(i32 %code) noreturn {
   ; destroy the error it was raising, and error paths carry no cleanup
   ; obligation (the same reasoning as defer-does-not-run-on-trap, D-014).
   ; The count walks preallocated state only.
-  %in = load atomic i32, ptr @npk_in_failsafe seq_cst, align 4   ; an atomic word (D-290)
-  %skip = icmp ne i32 %in, 0
+  %in = load atomic i64, ptr @npk_in_failsafe seq_cst, align 8
+  ; A NON-HOLDER'S EXIT WHILE A FAILSAFE RUNS PARKS (D-291): the controlled
+  ; exit is the failsafe's; the process still ends, by the winner. (D-083's
+  ; lexical threads make this unreachable from a program -- main's `exit`
+  ; joins its threads first -- so this is the floor's own belt.)
+  %xself = call ptr @npk_tls_self()
+  %xselfv = ptrtoint ptr %xself to i64
+  %held = icmp ne i64 %in, 0
+  %notmine = icmp ne i64 %in, %xselfv
+  %foreign = and i1 %held, %notmine
+  br i1 %foreign, label %xpark, label %arb
+xpark:
+  call void @npk_park_forever()
+  unreachable
+arb:
+  %skip = icmp ne i64 %in, 0
   %fail = icmp ne i32 %code, 0
   %pass = or i1 %skip, %fail
   br i1 %pass, label %leave, label %check

@@ -617,3 +617,11 @@ resource under D-233 — for a case nothing has been shown to need (D-073).
   plain call and **may not be `async`**. Async adds no new safing requirement: it
   makes D-014's existing one visible, since a synchronous function already could
   not rely on `defer` at trap time.
+  **[1.5.6 step 1, D-291.]** The stop is a mechanism now: the floor keeps a
+  thread registry (64 slots, claimed and published before the clone), the trap
+  route claims the failsafe holder by compare-exchange, signals every other
+  live thread (SIGUSR1; the handler counts itself and parks forever) and waits
+  for the count under the executor's join deadline before the drivers die and
+  `failsafe` runs; a loser that is not the holder parks, a re-entering holder
+  is the exit-70 stop. A thread the kernel does not interrupt in time is
+  proceeded past (TCB.md §5).

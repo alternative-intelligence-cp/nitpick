@@ -104,7 +104,7 @@
   (word %npk.tls 1 born-before-publish)    ; exec
   (word %npk.tls 2 born-before-publish)    ; root: read by npk_thread_entry on the child, after the clone
   (word %npk.tls 3 born-before-publish)    ; resume
-  (word %npk.tls 4 stated "the join's futex word: written 0 by the creating thread before the clone, then by the kernel (PARENT_SETTID writes the tid, CHILD_CLEARTID zeroes it at exit), read by npk_thread_join with an atomic load and by the kernel's futex compare (DEF-48)")
+  (word %npk.tls 4 stated "the join's futex word and the stop's target: written 0 by the creating thread before the clone -- or the pid, for the main thread at boot -- then by the kernel (PARENT_SETTID writes the tid, CHILD_CLEARTID zeroes it at exit), read by npk_thread_join with an atomic load, by the stop walk with an atomic load (D-291) and by the kernel's futex compare (DEF-48)")
 
   ; --- globals -----------------------------------------------------------------
   (word @npk_ch_tab publish ch-open-lock)  ; the table pointer: a release store under the open lock, acquire loads by readers
@@ -114,7 +114,12 @@
   (word @npk_ch_fn lock ch-open-lock)
   (word @npk_ch_fcap lock ch-open-lock)
   (word @npk_frozen atomic)                ; D-063's flag: written by the trapping thread, read by every executor (DEF-46)
-  (word @npk_in_failsafe atomic)           ; the failsafe holder's word; its arbitration is DEF-47's (step 1)
+  (word @npk_in_failsafe atomic)           ; the failsafe holder: claimed by cmpxchg, read seq_cst (D-291)
+  (word @npk_stopped atomic)               ; threads parked in the stop handler: atomicrmw by the handler, seq_cst reads by the winner's wait (D-291)
+  (word @npk_pid once-before-threads "recorded at boot by getpid, read by the stop walk")
+  (word @npk_thread_reg stated "sixty-four slots of two i64 words: the state word (+0) is atomic -- claimed by cmpxchg acq_rel, published release before the clone, read acquire by the stop walk and the retire; the tls word (+1) is written before the release publish and read after an acquire load of the state (D-291)")
+  ; @npk_stop_word is the park-forever futex word: its address is handed to
+  ; the futex syscall and it is written by nobody, so no access is listed.
   (word @npk_hsec once-before-threads "the heap secret: drawn once at the first allocation, which precedes every thread (npk_thread_start allocates its executor under the heap mutex before it clones), never rewritten -- npk_heap_init re-checks it and returns")
   (word @npk_chtab lock heap-mx)
   (word @npk_chtab_cap lock heap-mx)
