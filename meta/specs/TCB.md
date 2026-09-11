@@ -94,6 +94,7 @@ written in the meantime so no row is silent.
 | `@npk_driver_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_exit` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_frozen_get` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_in_fs` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_io_register` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_mx_lock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_mx_unlock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
@@ -153,6 +154,7 @@ written in the meantime so no row is silent.
 | `@npk_frame_exec_destroy` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_frame_exec_new` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_frame_free` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_fs_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_guard_release` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_hardware_concurrency` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_heap_bad` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
@@ -275,9 +277,12 @@ written in the meantime so no row is silent.
    park, under the executor's join deadline, and proceeds past a thread the
    kernel did not interrupt in time -- a state no user-space signal reaches.
    The thread registry holds 64 threads; the 65th is refused at its start.
+7. That a `failsafe` body lives within the failsafe region (D-292, 1.5.6 step
+   2): one mebibyte of `.bss`, bumped, never freed, exhausted at the re-entry
+   exit 70 -- a diagnostic built by repeated concatenation is quadratic there.
    (The remaining acceptances 1.5.6 owes -- the kernel-effect table, the
    per-thread constants, the modelling assumption, the bounds, the two
-   opaque calls, the failsafe region -- land with their steps.)
+   opaque calls -- land with their steps.)
 
 Nothing else is trusted. In particular nothing in `src/`, `lib/` or the prelude
 is exempt from the checks that bind a user program (D-205's switch put the

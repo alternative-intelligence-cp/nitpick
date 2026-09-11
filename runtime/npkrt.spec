@@ -117,6 +117,10 @@
   (word @npk_in_failsafe atomic)           ; the failsafe holder: claimed by cmpxchg, read seq_cst (D-291)
   (word @npk_stopped atomic)               ; threads parked in the stop handler: atomicrmw by the handler, seq_cst reads by the winner's wait (D-291)
   (word @npk_pid once-before-threads "recorded at boot by getpid, read by the stop walk")
+  ; @npk_fs_region is reached only through address arithmetic (its address
+  ; taken by npk_fs_alloc, never loaded or stored by name), so no access is
+  ; listed; its bytes are the holder's alone, after every other thread is parked.
+  (word @npk_fs_bump stated "the failsafe region's bump offset (D-292): read and written only by the failsafe holder, after every other thread is parked (D-291)")
   (word @npk_thread_reg stated "sixty-four slots of two i64 words: the state word (+0) is atomic -- claimed by cmpxchg acq_rel, published release before the clone, read acquire by the stop walk and the retire; the tls word (+1) is written before the release publish and read after an acquire load of the state (D-291)")
   ; @npk_stop_word is the park-forever futex word: its address is handed to
   ; the futex syscall and it is written by nobody, so no access is listed.

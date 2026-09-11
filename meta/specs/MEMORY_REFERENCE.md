@@ -120,6 +120,17 @@ The canonical method for cleaning up `wild` memory is using a `defer` block imme
 > unknown, so no cleanup code runs before the handler that understands the
 > situation gets control. `failsafe` receives the allocation registry intact and
 > performs whatever cleanup is appropriate.
+>
+> **[1.5.6 step 2, D-292.]** `failsafe` allocates from a preallocated REGION,
+> never from the heap: once the trap route names a holder, every allocation
+> bumps from one mebibyte of `.bss` (16-aligned, zero, never freed), frees are
+> no-ops, a reallocation copies into the region, and exhaustion is `HeapOom`
+> inside `failsafe` — the re-entry rule's exit 70. The heap's mutex may be
+> held forever by a thread the stop parked inside the allocator (D-291), and a
+> `failsafe` that waited for it would hang with no deadline. The mebibyte is
+> the bound a `failsafe` body lives within (TCB.md §5): growing a string by
+> repeated concatenation is quadratic in a region that frees nothing, so a
+> diagnostic is built in few, large steps.
 
 ```nitpick
 wild int8->:buf = alloc(16i64);

@@ -1051,6 +1051,13 @@ dangerous case directly.
 > `ensures`), which the re-entry rule ends at 70 (step 1); a discharged
 > `failsafe-post` row elides the compare (step 2).
 
+> **[1.5.6 step 2 (2026-09-11), D-292.]** "`failsafe` runs on preallocated
+> state" is a mechanism: the failsafe region — one mebibyte of `.bss` the
+> allocator bumps from once the trap route names a holder, frees no-ops,
+> reallocations copying in, exhaustion the re-entry exit 70. Until then a
+> `failsafe` allocated from the heap under the same mutex the program used,
+> which a thread the stop parked (D-291) may hold forever.
+
 ## D-015 — Runtime symbols start as hand-written LLVM IR — **SETTLED**
 
 The D-011 symbol set is implemented as **hand-written LLVM IR at an early rung of

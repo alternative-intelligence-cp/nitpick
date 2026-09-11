@@ -3125,8 +3125,11 @@ fin:
 ;   -4102  HEAP_INTEGRITY    double-free, foreign/misaligned/null pointer to
 ;                            dalloc/ralloc, corrupted header or torn guard,
 ;                            or a UAF caught by a freed slot's magic (0.10.0)
-;   -4103  HEAP_OOM          mmap failed; the trap path allocates nothing,
-;                            which is the allocator's own C-3 obligation
+;   -4103  HEAP_OOM          mmap failed -- or the failsafe region exhausted
+;                            inside failsafe (D-292), the re-entry exit 70;
+;                            the trap path allocates from the region, never
+;                            the heap, which is the allocator's own C-3
+;                            obligation
 ;   -4104  HEAP_BAD_REQUEST  negative size, calloc count*size overflow,
 ;                            ralloc(p, 0), or a non-power-of-two alignment
 ;   -4106  STALE_HANDLE      NOT A TRAP -- the code an arena get/put/free
@@ -4075,8 +4078,11 @@ err:
 ;      pointer, corrupted header, torn guard: npk_trap(-4102) -> failsafe.
 ;      OOM: npk_trap(-4103). Bad request (negative size, calloc overflow,
 ;      ralloc(p,0), bad alignment): npk_trap(-4104). The trap path allocates
-;      nothing (the C-3 obligation): npk_trap -> failsafe runs on preallocated
-;      state, because OOM handling runs when allocation just failed.
+;      nothing from the HEAP (the C-3 obligation): npk_trap -> failsafe runs
+;      on preallocated state -- since 1.5.6 step 2 the failsafe region
+;      (D-292), a mebibyte of .bss it bumps from -- because OOM handling runs
+;      when allocation just failed, and a thread the stop parked (D-291) may
+;      hold the heap mutex forever.
 ;
 ; BLOCK SHAPE. Every block: [ size i64 | magic i64 | payload... ]. The 16-byte
 ; header keeps payloads 16-aligned (the floor's 0.7.3 discipline, still what
@@ -4149,6 +4155,20 @@ err:
 ; paths hold it longer, which is correctness buying its keep first
 ; (performance is measured after, per the standing order).
 @npk_heap_mx = internal global i32 0
+; THE FAILSAFE REGION (D-292, 1.5.6 step 2): one mebibyte of .bss the trap
+; route's holder allocates from. Once `@npk_in_failsafe` names a holder,
+; every allocation bumps here -- 16-aligned, zero by construction, never
+; freed -- because the heap mutex may be held forever by a thread the stop
+; parked inside the allocator (D-291), and a `failsafe` that waited for it
+; would hang with no deadline. Frees are no-ops during `failsafe` (a heap
+; another thread may have left torn is the hazard, and a leak at the exit
+; that follows costs nothing); a reallocation copies into the region;
+; exhaustion is a trap inside `failsafe`, the re-entry rule's exit 70. The
+; size is the bound a `failsafe` body lives within (TCB.md SS5); untouched
+; pages cost nothing. A region block carries the heap's header shape
+; [ size | 0 ] so a reallocation can read its size.
+@npk_fs_region = internal global [1048576 x i8] zeroinitializer, align 16
+@npk_fs_bump = internal global i64 0
 
 @npk_chtab = internal global i64 0
 @npk_chtab_cap = internal global i64 0
@@ -5112,10 +5132,72 @@ done:
   ret void
 }
 
+; --- the failsafe region's bump (D-292) ---------------------------------------
+
+; Is a `failsafe` in progress? (The holder word, read seq_cst; D-291.)
+define internal i1 @npk_in_fs() {
+entry:
+  %h = load atomic i64, ptr @npk_in_failsafe seq_cst, align 8
+  %r = icmp ne i64 %h, 0
+  ret i1 %r
+}
+
+; A block of `n` bytes from the region, its payload aligned to `align` (a
+; power of two the caller checked), with the heap's [ size | 0 ] header
+; before it. Single-threaded by construction: every other thread is parked
+; before `failsafe` runs (D-291). Exhaustion is `HeapOom` inside
+; `failsafe`, which the re-entry rule ends at 70.
+define internal ptr @npk_fs_alloc(i64 %n, i64 %align) {
+entry:
+  %neg = icmp slt i64 %n, 0
+  br i1 %neg, label %badreq, label %norm
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+norm:
+  %z = icmp eq i64 %n, 0
+  %n1 = select i1 %z, i64 16, i64 %n
+  %r15 = add i64 %n1, 15
+  %rn = and i64 %r15, -16
+  %base = ptrtoint ptr @npk_fs_region to i64
+  %off = load i64, ptr @npk_fs_bump
+  %hdr0 = add i64 %base, %off
+  %pay0 = add i64 %hdr0, 16
+  %am1 = add i64 %align, -1
+  %pay1 = add i64 %pay0, %am1
+  %nam1 = sub i64 0, %align
+  %pay = and i64 %pay1, %nam1
+  %end = add i64 %pay, %rn
+  %off2 = sub i64 %end, %base
+  %over = icmp ugt i64 %off2, 1048576
+  br i1 %over, label %oom, label %take
+oom:
+  call void @npk_heap_oom()
+  unreachable
+take:
+  store i64 %off2, ptr @npk_fs_bump
+  %hdr = add i64 %pay, -16
+  %hp = inttoptr i64 %hdr to ptr
+  store i64 %n1, ptr %hp
+  %mp = add i64 %hdr, 8
+  %mpp = inttoptr i64 %mp to ptr
+  store i64 0, ptr %mpp
+  %p = inttoptr i64 %pay to ptr
+  ret ptr %p
+}
+
 ; --- the four builtins, plus aalloc -----------------------------------------
 
 define internal ptr @npk_alloc_impl(i64 %n, i64 %wild) {
 entry:
+  ; A FAILSAFE IN PROGRESS ALLOCATES FROM THE REGION (D-292): no mutex, no
+  ; tables -- the heap may be torn or locked by a thread the stop parked.
+  %infs = call i1 @npk_in_fs()
+  br i1 %infs, label %region, label %heap
+region:
+  %rp = call ptr @npk_fs_alloc(i64 %n, i64 16)
+  ret ptr %rp
+heap:
   call void @npk_mx_lock(ptr @npk_heap_mx)
   %sec = load i64, ptr @npk_hsec
   %uninit = icmp eq i64 %sec, 0
@@ -5259,6 +5341,21 @@ bad:
   call void @npk_heap_bad()
   unreachable
 virginheap:
+  ; A REALLOCATION DURING FAILSAFE (D-292): a fresh region block, the old
+  ; bytes copied by the size every block's header carries (a region block's
+  ; and a heap block's alike, at payload-16); the old block is not freed.
+  %infs = call i1 @npk_in_fs()
+  br i1 %infs, label %fsgrow, label %virgin2
+fsgrow:
+  %fsza = add i64 %ip, -16
+  %fszp = inttoptr i64 %fsza to ptr
+  %fsz = load i64, ptr %fszp
+  %fnp = call ptr @npk_fs_alloc(i64 %n, i64 16)
+  %fsmaller = icmp ult i64 %fsz, %n
+  %fncopy = select i1 %fsmaller, i64 %fsz, i64 %n
+  call ptr @memcpy(ptr %fnp, ptr %old, i64 %fncopy)
+  ret ptr %fnp
+virgin2:
   %sec = load i64, ptr @npk_hsec
   %uninit = icmp eq i64 %sec, 0
   br i1 %uninit, label %bad, label %route
@@ -5370,6 +5467,13 @@ aligned:
   %crooked = icmp ne i64 %misal, 0
   br i1 %crooked, label %bad, label %virginheap
 virginheap:
+  ; A FREE DURING FAILSAFE IS A NO-OP (D-292): the heap may be locked or
+  ; torn by a thread the stop parked, and the process exits next.
+  %infs = call i1 @npk_in_fs()
+  br i1 %infs, label %fsdone, label %virgin2
+fsdone:
+  ret void
+virgin2:
   ; a free before the first allocation cannot name our memory
   %sec = load i64, ptr @npk_hsec
   %uninit = icmp eq i64 %sec, 0
@@ -5431,6 +5535,13 @@ plain:
   %p = call ptr @npk_alloc(i64 %n1)
   ret ptr %p
 wide:
+  ; A FAILSAFE IN PROGRESS: the region, at the requested alignment (D-292).
+  %winfs = call i1 @npk_in_fs()
+  br i1 %winfs, label %wregion, label %wheap
+wregion:
+  %wrp = call ptr @npk_fs_alloc(i64 %n1, i64 %align)
+  ret ptr %wrp
+wheap:
   ; UNDER THE HEAP MUTEX (1.5.1b step 0). This path called `npk_large_new` --
   ; which inserts into the large table -- with no lock since the mutex arrived
   ; at 1.2.5b: `npk_alloc_impl` locks around the same call, and this one did
