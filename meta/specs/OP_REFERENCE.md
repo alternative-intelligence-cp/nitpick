@@ -265,9 +265,21 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | Operator | Name | Description | Example |
 |---|---|---|---|
 | `@` | Address-Of | Takes the memory address of an l-value. **This is `@`'s only meaning** — it is never a builtin prefix (D-020). | `int32->:ptr = @val;` |
+| `$$i` | Shared claim | The address of a place under a SHARED claim (D-286, 1.5.5): many readers may hold one, and no write-capable access of an overlapping place may happen while it lives. A pointer (`T->`) at the type level; the claim is the aliasing analysis's. | `int32->:p = $$i x;` |
+| `$$m` | Exclusive claim | The address of a place under an EXCLUSIVE claim (D-286): no other access of an overlapping place — read or write, `@`, `$$i`, `$$m`, `move`, a pointer receiver — while it lives. `@` claims nothing; `$$i`/`$$m` state intent and are checked. | `int32->:p = $$m arr[i];` |
 | `<-` | Dereference | Extracts the value FROM a pointer. | `int32:val = <-ptr;` |
 | `->` | Pointer To | In types: pointer declaration ONLY. | `type->:p` |
 | `.` | Member Access | Unified member access (automatically dereferences if pointer). Handles **all** member access, including UFCS method calls. | `my_struct.field` |
+
+> **Claims (D-286, 1.5.5).** A `$$i`/`$$m` claim lives for the call it is
+> an argument of, or for the whole scope of the pointer local that holds it
+> (lexical; a holder is used, not copied); it stands only as a whole call
+> argument or a pointer local's whole value — anywhere else is
+> `NITPICK-BORROW-014`, and the fix is to spell `@`. An access that overlaps
+> a live claim statically is `NITPICK-BORROW-013`; one through computed
+> indices is guarded at run time (`BorrowOverlap`, −4116) and proven away by
+> the verified build (the `disjoint` row, VERIFICATION §2.1). A `fixed`
+> binding has no address at all (D-287, `NITPICK-TYPE-071`).
 
 > **`#` is no longer the pin operator.** Pinning existed to stop the garbage
 > collector relocating memory; with no collector (D-003) nothing relocates

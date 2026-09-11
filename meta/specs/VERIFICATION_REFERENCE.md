@@ -175,12 +175,65 @@ suppressing a false-positive aliasing error.
 Rules<int32>:EvenIdx = { $ % 2i32 == 0i32 };
 Rules<int32>:OddIdx  = { $ % 2i32 == 1i32 };
 
-func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[100]:arr) {
-    $$m int32:a = arr[i];   // mutable borrow at even index
-    $$m int32:b = arr[j];   // Z3 proves i != j → borrows are disjoint
-    pass(a + b);
+func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[8]:arr) never fails {
+    int32->:a = $$m arr[i => int64];   // an exclusive claim at an even index
+    int32->:b = $$m arr[j => int64];   // z3 proves i != j: the `disjoint` row discharges
+    <-a = 7i32;
+    <-b = 9i32;
+    pass ((<-a) + (<-b));
 };
 ```
+
+> **Landed at 1.5.5 (D-286, D-287; `meta/roadmap/1.5/1.5.5.md`).** The
+> example above is in the OPERATOR form, which is the language's: `$$i` and
+> `$$m` are unary operators yielding a pointer (`T->`), and the
+> declaration-qualifier spelling the prototype text carried (`$$m int32:a =
+> arr[i];`, AST_REFERENCE's `borrow_imm`/`borrow_mut`) never existed in
+> this compiler. THE RULES. A `$$i place` is a SHARED claim (many readers),
+> a `$$m place` an EXCLUSIVE one (one writer, no other name); `@place` is a
+> plain address that claims nothing and says nothing about direction — and
+> counts as a write-capable access, since the pointer type carries no
+> mutability. A claim's lifetime is LEXICAL: a whole call argument or
+> receiver lives for that call and conflicts with the call's other arguments
+> and receiver; the whole initialiser or assigned value of a pointer local is
+> held by that local from its declaration to the end of the block that
+> declares it; a `defer` body sees every claim of its enclosing blocks.
+> Non-lexical lifetimes and two-phase borrows are decided OUT (D-004's "no
+> lifetime inference"). A claim stands only as a whole call argument or a
+> pointer local's whole value, and a holder is used, not copied: any other
+> position — a literal, a `pass` value, a nested expression, a non-local
+> assignment target, an argument of a call whose result can carry a pointer
+> (D-117 rule A), a place with no named root — is `NITPICK-BORROW-014`, and
+> the fix is to spell `@` for an address that claims nothing. Every access
+> whose root a live claim covers is classified by the paths' common prefix
+> (a field that differs or two unequal numerals: disjoint; nothing computed:
+> statically overlapping; else computed) and by the table — a read or a
+> write-capable access under `$$m`, a write-capable access under `$$i`, a
+> claim on storage a held `@` reaches, a write through a shared claim's
+> holder, a call's arguments among themselves: a STATIC conflict is
+> `NITPICK-BORROW-013` naming the claim, its site and its lifetime. A
+> COMPUTED conflict is a RUNTIME GUARD in every build (D-068's shape): at
+> the access the emitter compares the storage it names and every party's
+> as BYTE RANGES — `p < q+size_q && q < p+size_p` on `ptr` operands, exact
+> for elements, rows and fields, with no captured index — and traps
+> `BorrowOverlap` (−4116, an identity the reach analysis arms) when they
+> intersect; the obligation is the `disjoint` row (§7b, kind 20): the `and`
+> over the parties of the `or` over the computed index pairs of `(not (=
+> tP tQ))`, the party's index terms captured when its claim was encoded,
+> one row per site, its fact a hypothesis after the site; a discharged row
+> removes the compare (no `llvm.assume` over pointers). In the example the
+> two rules make `(not (= i j))` `unsat` under the Int forms of `%`
+> (1.5.4b), so the verified build carries no compare where the plain build
+> carried one; `disjoint_open.npk` is the same shape without the rules —
+> `open`, the compare kept. THE LIMIT, stated: exclusivity is decided among
+> accesses that spell the SAME ROOT; two pointer bindings that alias one
+> storage are two roots, and a claim through one is not seen from the other
+> — a syntactic path analysis cannot know two names alias, and making every
+> pointer parameter exclusive would refuse the compiler's own architecture.
+> Beside it, D-287: a `fixed` binding has no address (`NITPICK-TYPE-071` for
+> `@`, `$$i`, `$$m` and the implicit pointer-receiver address, a `fixed`
+> field included) — a write through such a pointer was one no rule saw, and
+> through a `fixed` module binding it was a SIGSEGV.
 
 This synergy is a direct argument for static ownership over a tracing collector:
 lexical lifetimes give the solver facts it can use, whereas object validity under
@@ -945,6 +998,14 @@ holds compute in floats or vectors.
 > beside `index.txt` names the rows that have a Real-interval twin; a row's
 > twin is asked only after a `budget` at tier 1, and only its `unsat` moves
 > a verdict.
+
+> **[1.5.5 (2026-09-11), D-286.]** `disjoint` produces rows (kind 20, guard
+> `yes`, trap `-4116` in both runners' tables): one per guard site of the
+> aliasing analysis — an access whose path is computed against a live
+> `$$i`/`$$m` claim — with the goal over the index pairs of the paths'
+> common prefix; its discharge removes the byte-range compare, and it is
+> not an assume kind (`loop-step`'s precedent). A static overlap is the
+> analysis's own refusal (BORROW-013) and has no row.
 
 > **[1.5.4e (2026-09-11), D-285.]** The belts count a guard's trap by its
 > text, `@npk_trap(i32 CODE)`; a PROGRAM's raise — `?!`, `!!!` — is

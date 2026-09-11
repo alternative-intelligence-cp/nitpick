@@ -1910,7 +1910,8 @@ level, because `q.x` does.
 ### Pointer / Address / Dereference
 | Operator | Meaning | IR | Notes |
 |---|---|---|---|
-| `@val` | address-of | returns alloca ptr | val must be lvalue |
+| `@val` | address-of | returns alloca ptr | val must be lvalue; a `fixed` binding has no address (D-287, TYPE-071) |
+| `$$i val` / `$$m val` | shared / exclusive claim | the same address | the claim is checked by the aliasing analysis (D-286, VERIFICATION §2.1); one pointer type, no mutability in it |
 | `<-ptr` | dereference | `load T, ptr %ptr` | ptr must be pointer type |
 | `ptr->field` | member via ptr | `getelementptr` + `load` | ptr must be struct ptr |
 | `val.field` | direct member | `getelementptr` + `load` | val must be struct value |

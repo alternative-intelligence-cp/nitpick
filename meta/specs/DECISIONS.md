@@ -18125,3 +18125,87 @@ since DEF-25's, and the close's notice says so beside the previous digest.
 > `failsafe`. `verify/raise_code.npk` is DEF-36's shape, green. `npkrt.o`'s
 > digest moved (the previous, `67cc8186…`, had stood since `a807de9`); the
 > close's notice names both.
+
+## D-286 — the aliasing half of D-004: `$$m` EXCLUDES, `$$i` SHARES, `@` claims nothing; lexical lifetimes; a computed-index overlap is a guard in every build that the verified build elides through the `disjoint` row — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-60 and S-61; lands at 1.5.5 steps 1 and 2)**
+
+Found planning 1.5.5 (2026-09-11, on `cb8cbb0`). 0.5.1 settled D-004's
+escape half and wrote of the other — "the aliasing rules that make `$$i`
+many-readers and `$$m` exclusive … a different question and not settled
+here" — and nothing settled it since: the two spellings built one node the
+checker typed as `T->`, the bindings analysis read `$$m` as the write that
+fills a destination (D-118), the escape analysis treated both as `@`, and
+two `$$m` of one element, or a `$$m x` held while `x` was assigned and then
+written through the pointer, compiled and ran (exit 32). The specification's
+own example (`$$m int32:a = arr[i];`) did not parse: the qualifier forms
+AST_REFERENCE listed never existed, and the operator form is the language's.
+**The decision.** (1) A `$$i place` is a SHARED claim (many readers), a
+`$$m place` an EXCLUSIVE one (one writer, no other name); `@place` is a
+plain address that claims nothing and says nothing about direction — and
+counts as a write-capable ACCESS, since the pointer type carries no
+mutability. (2) A claim's lifetime is LEXICAL: a whole call argument or
+receiver lives for that call and conflicts with the call's other arguments
+and receiver; the whole initialiser or assigned value of a pointer local is
+held by that local from its DECLARATION to the end of the block that
+declares it; a `defer` body sees every claim of its enclosing blocks.
+Non-lexical lifetimes and the prototype's two-phase borrows are decided OUT
+— D-004's "no lifetime inference" applied to the aliasing half; the
+prototype's `LivenessAnalyzer` is the machinery D-004 declined. (3) A claim
+stands only as a whole call argument or a pointer local's whole value; a
+holder is used, not copied; every other position — a literal, a `pass`
+value, a nested expression, a non-local assignment target, an argument of a
+call whose result can carry a pointer (D-117 rule A), a place with no named
+root — is `NITPICK-BORROW-014` with the fix in the sentence: spell `@` for
+an address that claims nothing (the D-019 pattern). (4) Every access whose
+root a live party covers is classified by the paths' common prefix — a
+field that differs or two unequal numerals: disjoint; nothing computed:
+static; else computed — and by the table: a read or a write-capable access
+under `$$m`, a write-capable access under `$$i`, a claim on storage a held
+`@` reaches, a write through a shared claim's holder, a call's arguments
+among themselves; a STATIC conflict is `NITPICK-BORROW-013` naming the
+party, its site and its lifetime. (5) A COMPUTED conflict is a RUNTIME GUARD
+in every build (D-068's shape, the `limit`/`shift-range` precedent, and not
+the prototype's refuse-unless-verified model): at the access the emitter
+compares the storage it names and every party's as BYTE RANGES — `p <
+q+size_q && q < p+size_p` on `ptr` operands, exact for elements, rows and
+fields, with no captured index, no frozen name and no frame slot; a held
+party's address is the value in its holder's slot, a call-duration party's
+the value the same statement computed — and traps `BorrowOverlap` (−4116, a
+prelude identity the reach analysis arms) when they intersect. The row is
+`disjoint` (kind 20, guard `yes`, `-4116` in both runners' trap tables, not
+an assume kind: its discharge removes the compare as `loop-step`'s does):
+the `and` over the parties of the `or` over the paths' computed index pairs
+of `(not (= tP tQ))`, the party's index terms captured when its claim was
+encoded (a version is never reused, so the capture is exact under later
+writes), one row per site; its fact a hypothesis after the site. (6)
+Exclusivity is decided among accesses that spell the SAME ROOT — two pointer
+bindings that alias one storage are two roots, and a claim through one is
+not seen from the other; stated as the limit, since making every pointer
+parameter exclusive would refuse the compiler's own architecture. (7)
+`borrow_imm`/`borrow_mut` are struck from AST_REFERENCE; VERIFICATION
+§2.1's example is rewritten in the operator form.
+
+> Lands at **1.5.5** steps 1 and 2 (`meta/roadmap/1.5/1.5.5.md`).
+
+## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
+
+Found planning 1.5.5 (2026-09-11, on `cb8cbb0`; DEF-43). `fixed int32:x =
+1i32; int32->:p = $$m x; <-p = 2i32;` passed the checker and every analysis
+(the definite-assignment analysis refuses a second ASSIGNMENT, ASSIGN-002,
+and sees no store through a pointer) and silently overwrote `x`; the same
+through `@G` of a `fixed` MODULE binding — an LLVM `constant` in read-only
+memory since D-211 — killed the process with SIGSEGV (exit −11), `failsafe`
+never running: the uncontrolled crash the language exists to make
+impossible. Measured over `src/`, `lib/`, `npkg/`, `tools/` and `tests/`: 98
+`fixed` bindings, none address-taken, none the receiver of a pointer-receiver
+call. **The decision.** `@`, `$$i`, `$$m` and the implicit address a
+pointer-receiver method or UFCS call takes, of a place rooted at a `fixed`
+local, parameter or module binding, or reaching through a `fixed` field,
+refuse at the checker — `NITPICK-TYPE-071`, beside TYPE-063 and for its
+reason: the pointer type carries no mutability, so an address of an
+immutable is a write path no rule sees. Pass a `fixed` value by value, or
+declare it plain; a field read stays a read. The alternative — a read-only
+pointer type — is one the language decided against, and tracking every
+pointer to a `fixed` through every call is the analysis D-286 declines for
+`@`.
+
+> Lands at **1.5.5** step 1 (`meta/roadmap/1.5/1.5.5.md`).

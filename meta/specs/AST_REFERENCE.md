@@ -496,7 +496,13 @@ are ordinary values referenced by `IdentifierExpr`.
 | `Projection` | `base`, `name` (payload) | **`T.Item`** — an associated type projected from a type (D-164). A TYPE node rather than a path because `.` here brings a member of the base toward you, which is what `.` means everywhere else in the language |
 
 Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
-`const`, `fixed`, `borrow_imm`, `borrow_mut`. **`gc` does not exist** (D-003).
+`const`, `fixed`, ~~`borrow_imm`, `borrow_mut`~~. **`gc` does not exist** (D-003).
+
+> **[D-286, 1.5.5 (2026-09-11).]** `borrow_imm` / `borrow_mut` are STRUCK:
+> neither was ever a keyword or a parsed qualifier (0.5.1 recorded the gap),
+> and the borrow spellings are the unary operators `$$i` / `$$m`, which
+> yield a pointer and whose claims the aliasing analysis checks. `const`
+> retired at 1.4.2c (D-222).
 
 > **Three of these were unreachable and one built the wrong node**, all found by
 > 0.2.4's comparison of this table against the generated kinds and fixed in 0.2.8:

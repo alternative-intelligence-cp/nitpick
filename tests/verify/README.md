@@ -76,6 +76,15 @@ by hand with `.internal/quickemit/npkc FILE --obligations D` and then
 The earlier programs are indexed by the subcycle that wrote them
 (`meta/roadmap/1.5/1.5.0.md` … `1.5.4.md`, each step's "Tests" paragraph).
 
+## The programs 1.5.5 added (the aliasing half of D-004, D-286)
+
+| program | what it pins |
+|---|---|
+| `disjoint_limit.npk` | VERIFICATION §2.1's own example in the operator form: two `$$m` of one array under `EvenIdx`/`OddIdx` — the `disjoint` row `(not (= i j))` discharged by the rules' Int `%` forms, the verified build carrying no `BorrowOverlap` compare |
+| `disjoint_open.npk` | the same shape under plain parameters: `open`, the compare retained and counted by the belts (`-4116`), the run's indices differing |
+| `disjoint_path.npk` | `if (i != j)`: the pair discharged by the path condition alone |
+| `disjoint_swap.npk` | two call-duration claims in one call (`swap($$m arr[i], $$m arr[j])`) under the rules: the guard at the second argument against the first, discharged |
+
 ## The programs 1.5.4e added
 
 | program | what it pins |

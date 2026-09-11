@@ -156,6 +156,16 @@ free(buffer);   // NITPICK-019 — use after move, and separately
 - `move` is **not** a memory qualifier, despite older grammar listing it as one.
   It is a keyword operator with a parenthesized operand, the same shape as
   `comptime(expr)`.
+- **A claim is exclusive or shared, and `@` claims nothing** (D-286, 1.5.5).
+  `$$m place` excludes every other access of an overlapping place while it
+  lives, `$$i place` admits readers and excludes writers, and `@place` is a
+  plain address with no claim. A claim's life is lexical (the call it is an
+  argument of, or the scope of the pointer local holding it); a static
+  overlap is refused (`NITPICK-BORROW-013`), a computed-index overlap is
+  guarded at run time (`BorrowOverlap`) and proven away by the verified build.
+  A `fixed` binding has no address (D-287, `NITPICK-TYPE-071`): the pointer
+  type carries no mutability, so an address of an immutable would be a write
+  path no rule sees.
 
 ## 3. Allocation Built-ins (NitpickAlloc)
 

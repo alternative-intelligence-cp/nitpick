@@ -1064,8 +1064,38 @@ DEF-40 with it: `!!!` had called `npk_failsafe` directly — no frozen flag,
 no re-entry guard, no driver kill — and `trap_stmt_reentry.npk` exits 70
 where it exited 33 through a second `failsafe`. `npkrt.o`'s digest moved for
 the first time since DEF-25's fix; the notice to the library listener named
-both. Step 2: the docs. `nitpick.obligations` never moved. **Next: 1.5.5
-(the aliasing/disjointness analysis).**
+both. Step 2: the docs. `nitpick.obligations` never moved.
+**1.5.5 (the aliasing half of D-004) IS COMPLETE (2026-09-11; `meta/roadmap/1.5/
+1.5.5.md`; planned execution-grade on `cb8cbb0`, S-60…S-62 ratified the same day
+as D-286 and D-287; four landings, each a cumulative prefix under a full
+harness, D-228).** Measured first: nothing decided aliasing — two `$$m` of one
+element ran (exit 32), the spec's qualifier example never parsed (the operator
+form is the language's) — and planning found DEF-42 (a borrow assigned to an
+OUTER holder accepted; rule 3 unchecked for local holders, benign only by the
+emitter's construction) and DEF-43 (a write through a pointer to a `fixed`
+module binding was a SIGSEGV with no `failsafe`). Step 0 (DEF-42):
+`check_holder_scope` in `escape_assign`'s bare-local branch over every root the
+value carries. Step 1 (D-286, D-287): `src/frontend/analysis/alias.npk` — `$$m`
+EXCLUDES, `$$i` SHARES, `@` claims nothing but is a write-capable access;
+lifetimes LEXICAL (a call argument for its call, a pointer local's value for
+the holder's whole scope; a `defer` body sees its blocks' claims; NLL and
+two-phase borrows OUT); a claim only as a whole call argument or a pointer
+local's whole value, a holder used and not copied (BORROW-014 elsewhere); the
+conflict table by the paths' common prefix (BORROW-013 for a static overlap);
+one forward walk per function, no fixpoint; TYPE-071 (a `fixed` binding, or a
+`fixed` field, has no address) beside TYPE-063; the tree's cost five sites
+(`diaglist_sort` had moved an element out from under its own live `$$i`). Step
+2 (D-286 §5): a computed-index overlap is a RUNTIME GUARD in every build — the
+byte-range compare at the access in `addr_of`, `BorrowOverlap` (−4116) armed by
+reach — that the verified build elides through the `disjoint` row (kind 20;
+`-4116` in both runners' tables; the party's index terms memoised when its claim
+was encoded; one row per site): the spec's own example discharges under the two
+rules' Int `%` forms. Step 3: the docs. Found on the way: step 0's root
+collector skipped the custom-shaped kinds (a call's arguments, a literal's
+values), and the compiler's own `failsafe` cannot name a new prelude identity
+until a snapshot refresh (D-205). `nitpick.obligations` did not move; no
+snapshot refresh. **Next: 1.5.6 (the floor's spec and the executor
+primitives).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1385,6 +1415,24 @@ that carried them retired at the cycle close):
   A `use`, a `pub use` or a `mod:name;` INSIDE an inline module binds and
   loads as at file level (D-276) — an inline module is sealed from its
   FILE's imports, so a name reaches one by being imported INTO it.
+- **A `$$i`/`$$m` claim is a whole call argument or a pointer local's whole
+  value, and `@` claims nothing** (D-286, 1.5.5): a claim's life is LEXICAL —
+  end it with a block before touching its root again; a holder is used, not
+  copied; a claim anywhere else is BORROW-014 and the fix is `@`. A read of
+  the root under `$$m`, a write under `$$i`, a claim on storage a held `@`
+  reaches, and a write through a shared holder are BORROW-013; two
+  computed-index accesses are guarded at run time (`BorrowOverlap`) and
+  proven away by the verified build (`disjoint`). Exclusivity is decided
+  among accesses that spell the SAME ROOT — two pointer bindings that alias
+  one storage are two roots.
+- **A `fixed` binding has no address** (D-287, 1.5.5): `@`, `$$i`, `$$m` and
+  a pointer-receiver call on one are TYPE-071, a `fixed` field included.
+  Pass it by value or declare it plain.
+- **The compiler's own `failsafe` cannot name a NEW prelude identity until a
+  snapshot refresh** (D-205, found at 1.5.5 step 2): the builder is the
+  snapshot, whose prelude is the old one, so `(BorrowOverlap)` in `npkc.npk`
+  was RESOLVE-002 in the builder's eyes; an arm no identity reaches is
+  accepted, so the arm waits for the refresh that carries the identity.
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open
