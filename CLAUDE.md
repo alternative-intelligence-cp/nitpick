@@ -1095,7 +1095,10 @@ collector skipped the custom-shaped kinds (a call's arguments, a literal's
 values), and the compiler's own `failsafe` cannot name a new prelude identity
 until a snapshot refresh (D-205). `nitpick.obligations` did not move; no
 snapshot refresh. **Next: 1.5.6 (the floor's spec and the executor
-primitives).**
+primitives) — PLANNED 2026-09-11 (`meta/roadmap/1.5/1.5.6.md`; S-63…S-70
+open for the user with recommendations; DEF-44…DEF-48 found by planning —
+four plain cross-thread accesses in the floor and the trap route's
+arbitration, D-063's whole-program stop unimplemented).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
