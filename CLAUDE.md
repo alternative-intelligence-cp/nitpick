@@ -1039,8 +1039,9 @@ ELEMENT's. **Recorded for the user: S-59/DEF-38 — a `simd` integer lane's
 DEF-36 (a program's `?! DivByZero` and a guard's trap share one text, so
 the runners' belts count it — an `npk_raise` floor entry is the recommended
 fix, D-203's). The compiler's own set: 368 rows in 197 function files,
-decided in 3.9 s under the profile. **Next: 1.5.5 (the aliasing/disjointness
-analysis).**
+decided in 3.9 s under the profile. **Next: 1.5.4e (the close's three, ratified 2026-09-10 as D-283…D-285: `simd`
+integer lanes carry D-210, `npk_raise`, the binding-lanes reading), then
+1.5.5 (the aliasing/disjointness analysis).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
