@@ -452,7 +452,15 @@ def main():
             ("bypass-missing", '  %v = call i32 @"npk.m.f"(i32 3)\n', True,
              "a discharged limit-subsume row whose call names the entry must fail"),
             ("bypass-as-value", '  %v = call i32 @"npk.m.f.body"(i32 3)\n  %fp = ptrtoint ptr @"npk.m.f.body" to i64\n', True,
-             "a `.body` taken as a function value must fail")):
+             "a `.body` taken as a function value must fail"),
+            # A RAISE IS NOT A GUARD (D-285, 1.5.4e step 1; DEF-36): a program's
+            # `?! DivByZero` lowers to `@npk_raise(i32 -4097)`, which the trap
+            # count must not read as a `div-zero` guard; the same text spelled
+            # `@npk_trap` is the defect's own shape and must fail.
+            ("raise-not-a-guard", '  %v = call i32 @"npk.m.f.body"(i32 3)\n  call void @npk_raise(i32 -4111)\n', False,
+             "a program's raise beside the retained group's one trap must pass"),
+            ("raise-as-trap", '  %v = call i32 @"npk.m.f.body"(i32 3)\n  call void @npk_trap(i32 -4111)\n', True,
+             "the same raise spelled as a guard's trap must fail: two traps for one retained")):
         fails = harness.elided_ir_checks(B_ROWS, B_HEAD + mid + B_TAIL, name)
         ok = (bool(fails) == must_fail)
         if not ok:

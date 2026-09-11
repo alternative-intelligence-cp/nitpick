@@ -1731,13 +1731,14 @@ func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    // `!!!` is an ORIGIN: the chain restarts at this site (D-179).
+    // `!!!` is an ORIGIN: the chain restarts at this site (D-179). Then THE
+    // ONE TRAP ROUTE (D-285, 1.5.4e step 1; DEF-40): `npk_raise`, which is
+    // `npk_trap` under the program's name -- the frozen flag, the driver
+    // kill and the re-entry rule included. Until this step the statement
+    // called `npk_failsafe` and `npk_exit` directly and had none of them.
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, s.span)) => int64), ")"));
-    string:r = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat3(r, " = call i32 @npk_failsafe(i32 ",
-                      string_concat(v.ref, ")")));
-    drop irw_line(x.fe.w, raw cat3("call void @npk_exit(i32 ", r, ")"));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ", v.ref, ")"));
     drop irw_line(x.fe.w, "unreachable");
     x.fe.terminated = true;
     pass (raw iv_nil());

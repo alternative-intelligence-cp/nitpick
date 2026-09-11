@@ -1016,11 +1016,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                           string_concat(", label %", eo_l)));
         drop irw_label(x.fe.w, et_l);
         // `?!` EXTENDS the chain (D-179): the error carries its stamps from
-        // the callee; this site is one more hop, not a new origin.
+        // the callee; this site is one more hop, not a new origin. The raise
+        // is the PROGRAM's (D-285, 1.5.4e step 1): `npk_raise`, one call of
+        // `npk_trap` under a name the belts do not count as a guard's.
         drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
                           int_to_string((raw x_site(x, n.span)) => int64),
                           ")"));
-        drop irw_line(x.fe.w, raw cat3("call void @npk_trap(i32 ",
+        drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ",
                           ec2.ref, ")"));
         drop irw_line(x.fe.w, "unreachable");
         drop irw_label(x.fe.w, eo_l);

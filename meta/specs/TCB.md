@@ -164,6 +164,7 @@ written in the meantime so no row is silent.
 | `@npk_park_take` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_park_until` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_path_exists` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_raise` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_ralloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_read` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_read_file` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |

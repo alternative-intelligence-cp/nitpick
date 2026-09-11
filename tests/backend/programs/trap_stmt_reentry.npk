@@ -1,0 +1,32 @@
+// expect-exit: 70
+//
+// THE RE-ENTRY RULE HOLDS AFTER A `!!!` (D-285, 1.5.4e step 1; DEF-40): the
+// `(E9)` arm exits through a COMPUTED zero, so `failsafe`'s postcondition
+// traps `EnsuresViolated` inside `failsafe` -- and a trap inside `failsafe`
+// ends the process at 70. Until this step `!!!` called `npk_failsafe`
+// directly, the re-entry guard was never set, and the second trap ran
+// `failsafe` AGAIN: this program exited 33 through the `(EnsuresViolated)`
+// arm instead of 70.
+mod:trap_stmt_reentry;
+
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len > 0i64) { !!! E9; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    int32:z = 0i32;
+    pick (e) {
+        (E9)                { exit z; },
+        (EnsuresViolated)   { exit 33i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 81i32; },
+        (HeapOom)           { exit 82i32; },
+        (Unreachable)       { exit 85i32; },
+        (WildLeak)          { exit 86i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

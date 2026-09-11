@@ -1,0 +1,43 @@
+// expect-exit: 21
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+//
+// A RAISE WITH A SYSTEM CODE IS NOT A GUARD (D-285, 1.5.4e step 1; DEF-36):
+// `half`'s division discharges under its branch, so the verified build
+// elides its guard and expects NO `-4097` trap in the emission -- and the
+// program's own `?! DivByZero` used to lower to exactly that text, failing
+// the belt as "1 traps for 0 retained" (the shape 1.5.4b step 2's first
+// harness found). It lowers to `@npk_raise(i32 -4097)` now, which the belts
+// do not count, and at run time `half(0)` fails, the raise reaches the
+// `(DivByZero)` arm, and the program exits 21.
+mod:raise_code;
+
+error:E9;
+
+func:half = int32(int32:d) {
+    if (d > 0i32) { pass (100i32 / d); }
+    fail E9;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:z = (argv.len =>! int32) - 1i32;                 // 0 at run time
+    int32:r = half(z) ?! DivByZero;
+    exit (r - 100i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 8i32; },
+        (DivByZero)      { exit 21i32; },
+        (DivOverflow)    { exit 22i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

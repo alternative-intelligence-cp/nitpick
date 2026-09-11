@@ -1,0 +1,28 @@
+// expect-exit: 8
+//
+// `!!! e` REACHES `failsafe` THROUGH THE TRAP ROUTE (D-285, 1.5.4e step 1;
+// DEF-40): the statement lowers to `npk_raise`, which is `npk_trap` under
+// the program's name, and the `(E9)` arm answers as before. The direct
+// `npk_failsafe` call it was until this step gave the same exit here and
+// none of the trap route's discipline (`trap_stmt_reentry.npk`).
+mod:trap_stmt_raise;
+
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len > 0i64) { !!! E9; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 8i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

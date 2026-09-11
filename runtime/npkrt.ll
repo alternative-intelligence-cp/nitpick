@@ -2939,6 +2939,18 @@ run:
   unreachable
 }
 
+; A PROGRAM'S RAISE (D-285, 1.5.4e step 1): `?!` and `!!!` enter here with
+; the program's own code, every guard enters `npk_trap` directly -- one
+; behaviour, two names, so the verified build's belts (which count a
+; guard's trap by its text, `@npk_trap(i32 CODE)`) can tell a raise from a
+; guard when a program unwraps with a system code (`?! DivByZero`, DEF-36).
+; `!!!` came here from a direct `npk_failsafe` call that set no frozen flag,
+; no re-entry guard and killed no driver (DEF-40).
+define void @npk_raise(i32 %code) noreturn {
+  call void @npk_trap(i32 %code)
+  unreachable
+}
+
 ; NPK_HEAP_STATS, the report (1.5.1b step 0). Allocation-free and
 ; heap-free by construction -- a stack buffer, four globals and one
 ; `write(2)` -- because it runs at exit, after a trap's failsafe as well as
