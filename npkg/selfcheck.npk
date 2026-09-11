@@ -43,6 +43,11 @@ use "./elf.npk".*;
 use "./verify.npk".*;                          // elided_ir_checks, VRow (the bypass cases)
 use "../src/backend/smt/smt_kinds.npk".*;      // OV_OPEN / OV_DISCHARGED
 use "./floor_shared.npk".*;                    // the shared-state belt's cases
+use "./floor_ir.npk".*;                        // the floor leg's cases (1.5.6 step 3)
+use "./floor_spec.npk".*;
+use "./floor_smt.npk".*;
+use "./floor.npk".*;
+use "../src/backend/smt/smt_manifest.npk".*;   // man_parse_named: the misplaced-kind case
 
 func:FAILSAFE = string() never fails {
     pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 1i32; },\n        (HeapOom) { exit 1i32; },\n        (Unreachable) { exit 1i32; },\n        (WildLeak) { exit 1i32; },\n        (*) { exit 1i32; }\n    }\n    exit 1i32;\n};\n";
@@ -384,6 +389,106 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             if (vmust_fail) { drop strlist_push(@report, "      the verify stage accepted this; it should not have"); }
             else { drop strlist_push(@report, string_concat("      the verify stage rejected this: ", raw strlist_view(vfl, 0i64))); }
         }
+    }
+
+    // THE FLOOR'S LEG (1.5.6 step 3, D-288): a refuted clause fails by name
+    // and the same symbol under a true clause passes; a section with no claim
+    // and no residue fails; an instruction form outside the subset fails by
+    // line; a manifest row of a floor kind in nitpick.obligations is refused,
+    // and a program kind in runtime/npkrt.obligations likewise; and the
+    // committed floor parses to its counts. One synthetic floor text -- the
+    // harness's, byte for byte.
+    string:fl_floor = "define i64 @f(i64 %a) {\nentry:\n  %r = add i64 %a, 1\n  ret i64 %r\n}\ndefine i64 @g(i64 %a) {\nentry:\n  switch i64 %a, label %d [ i64 0, label %z ]\nz:\n  ret i64 0\nd:\n  ret i64 1\n}\n";
+    FloorText:flt = raw floor_parse(fl_floor);
+    for (int64:fi in 0i64...2i64) {
+        string:fname = "floor-refuted";
+        string:fspec = "(symbol @f (ensures (= result a)))\n";
+        bool:fmust_fail = true;
+        string:fwhy = "a spec clause the floor refutes must fail by name";
+        if (fi == 1i64) {
+            fname = "floor-refuted-control";
+            fspec = "(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n";
+            fmust_fail = false;
+            fwhy = "the same symbol under a clause its IR meets must pass";
+        }
+        Sxs:fsx = raw sx_parse(fspec);
+        string:fdir = raw path_join(dir, raw text_replace_byte(fname, 45u8, 95u8));
+        List<string>:ffl = raw floor_emit(@flt, @fsx, fdir);
+        if (ffl.count == 0i64) {
+            Result<List<VRow>>:frows = read_rows(fdir);
+            if (frows.is_error) { fail frows.err; }
+            List<VRow>:frs = move(frows.value);
+            Result<List<VFile>>:ffiles = read_index(fdir);
+            if (ffiles.is_error) { fail ffiles.err; }
+            List<string>:fzf = raw list_init::<string>(1i64);
+            Result<NIL>:fzr = await z3_decide(c, z3p, fdir, @frs, ffiles.value, fname, @fzf);
+            if (fzr.is_error) { fail fzr.err; }
+            for (int64:zi in 0i64...fzf.count) { drop strlist_push(@ffl, raw strlist_view(fzf, zi)); }
+            if (fzf.count == 0i64) {
+                List<string>:fvf = raw floor_verdict_failures(frs);
+                for (int64:vi2 in 0i64...fvf.count) { drop strlist_push(@ffl, raw strlist_view(fvf, vi2)); }
+            }
+        }
+        bool:fok = ((ffl.count > 0i64) == fmust_fail);
+        if (!fok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(fname, fok, fwhy));
+        if (!fok) {
+            if (fmust_fail) { drop strlist_push(@report, "      the floor leg accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the floor leg rejected it: ", raw strlist_view(ffl, 0i64))); }
+        }
+    }
+    Sxs:fsx_un = raw sx_parse("(symbol @f)\n");
+    List<string>:fun = raw floor_spec_current(@flt, @fsx_un);
+    bool:okfu = (fun.count > 0i64);
+    if (!okfu) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("floor-unspecified", okfu, "a section with no claim and no residue sentence must fail"));
+    if (!okfu) { drop strlist_push(@report, "      the spec belt accepted it; it should not have"); }
+    Sxs:fsx_form = raw sx_parse("(symbol @g (ensures (< result 2)))\n");
+    FloorFile:fform = raw floor_translate(@flt, @fsx_form, raw floor_fn_index(@flt, "@g"), raw spec_section(@fsx_form, "@g"));
+    bool:okff = false;
+    if (fform.problems.count > 0i64) { okff = raw text_contains(raw strlist_view(fform.problems, 0i64), "instruction form not read"); }
+    if (!okff) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("floor-form", okff, "an instruction form outside the floor's subset must fail by line"));
+    if (!okff) { drop strlist_push(@report, "      the translator read a `switch`; it should have refused by line"); }
+    string:fhash = "0000000000000000000000000000000000000000000000000000000000000000";
+    string:fman = string_concat("# nitpick.obligations v1\n# z3 4.16.0 sha256 ", fhash);
+    fman = string_concat(fman, "\n# options rlimit=1\n");
+    string:fman_floor = string_concat(fman, string_concat(fhash, " floor-spec int discharged none @f\n"));
+    string:fman_prog = string_concat(fman, string_concat(fhash, " div-zero int discharged elided @f\n"));
+    ObManifest:fm1 = raw man_parse_named(fman_floor, false);
+    ObManifest:fm2 = raw man_parse_named(fman_prog, true);
+    ObManifest:fm3 = raw man_parse_named(fman_floor, true);
+    bool:okfm = (!fm1.ok) && (!fm2.ok) && fm3.ok;
+    if (!okfm) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("floor-kind-misplaced", okfm, "a floor kind in nitpick.obligations and a program kind in runtime/npkrt.obligations must be refused; the floor kind in its own file must pass"));
+    if (!okfm) { drop strlist_push(@report, "      the manifest reader did not hold the kinds to their files"); }
+    // the committed floor's counts: the parser and the classifier, held to the
+    // numbers the 1.5.6 record states (a floor edit moves them, on purpose)
+    Result<cstring>:flc = to_cstring(raw in_root(c, "runtime/npkrt.ll"));
+    if (flc.is_error) { fail flc.err; }
+    Result<string>:fltext = read_file(flc.value);
+    if (fltext.is_error) { fail fltext.err; }
+    FloorText:real_ft = raw floor_parse(fltext.value);
+    List<string>:real_cls = raw floor_classes(@real_ft);
+    int64:n_asm = 0i64; int64:n_atomic = 0i64; int64:n_sys = 0i64; int64:n_pure = 0i64;
+    for (int64:ci in 0i64...real_cls.count) {
+        string:cw = raw strlist_view(real_cls, ci);
+        if (raw text_eq(cw, "asm")) { n_asm = n_asm + 1i64; }
+        if (raw text_eq(cw, "atomic")) { n_atomic = n_atomic + 1i64; }
+        if (raw text_eq(cw, "syscall")) { n_sys = n_sys + 1i64; }
+        if (raw text_eq(cw, "pure")) { n_pure = n_pure + 1i64; }
+    }
+    bool:okfp = (real_ft.fns.count == 175i64) && (n_asm == 4i64) && (n_atomic == 41i64) && (n_sys == 88i64) && (n_pure == 42i64);
+    if (!okfp) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("floor-parse", okfp, "the committed floor parses to 175 defines: 4 asm, 41 atomic, 88 syscall, 42 pure"));
+    if (!okfp) {
+        string:fpw = string_concat("      the floor parsed to ", int_to_string(real_ft.fns.count));
+        fpw = string_concat(fpw, " defines: ");
+        fpw = string_concat(fpw, int_to_string(n_asm)); fpw = string_concat(fpw, " asm, ");
+        fpw = string_concat(fpw, int_to_string(n_atomic)); fpw = string_concat(fpw, " atomic, ");
+        fpw = string_concat(fpw, int_to_string(n_sys)); fpw = string_concat(fpw, " syscall, ");
+        fpw = string_concat(fpw, int_to_string(n_pure)); fpw = string_concat(fpw, " pure");
+        drop strlist_push(@report, fpw);
     }
 
     // THE UNDEF BAN REPORTS AN `undef` (D-218.10, 1.5.0) -- and only a real

@@ -1,0 +1,425 @@
+// floor_instr -- one instruction line of the floor, read into its parts
+// (1.5.6 step 3; D-288's reader, the typed half). `floor_ir.npk` keeps the
+// blocks and lines; this module reads a line on demand into `FInstr` --
+// the destination, the opcode, the primary type, the operands as texts,
+// their types where they vary (a call, a phi, an insertvalue), the labels
+// (a phi's incoming blocks, a branch's targets), a predicate or an ordering
+// or a cast's target type, a call's callee. It reads exactly the floor's
+// own spellings (the vocabulary 1.5.6's plan measured) and answers `op ""`
+// for a line it does not know, which the translator refuses by line.
+
+mod:floor_instr;
+
+use "./text.npk".*;
+
+pub struct:FInstr = {
+    string:dest;            // `%x` or ""
+    string:op;              // the opcode, "" when unread
+    string:ty;              // the primary type text (a value's, a load's, a ret's; a call's return type)
+    string:pred;            // icmp/fcmp predicate; a cast's target type; a load/store's ordering; an atomicrmw's op
+    string:callee;          // `@f`, `%reg` (indirect) or `asm` for a call
+    string:gep_ty;          // a getelementptr's element type
+    List<string>:args;      // operand texts, in order
+    List<string>:tys;       // per-operand types where they vary (call, phi, select, insertvalue, gep indexes)
+    List<string>:labels;    // phi incoming blocks / br targets
+    bool:atomic;            // an atomic load/store
+};
+
+func:instr_none = FInstr() never fails {
+    pass FInstr{ dest: "", op: "", ty: "", pred: "", callee: "", gep_ty: "",
+                 args: raw list_init::<string>(2i64), tys: raw list_init::<string>(2i64),
+                 labels: raw list_init::<string>(2i64), atomic: false };
+};
+
+// --- a cursor over the line ------------------------------------------------------------------
+
+pub struct:Cur = { string:s; int64:i; };
+
+func:cur_ws = NIL(Cur->:c) never fails {
+    while (c.i < c.s.len) {
+        if (!(raw text_is_ws(c.s.ptr[c.i]))) { break; }
+        c.i = c.i + 1i64;
+    }
+    pass NIL;
+};
+
+func:cur_at_end = bool(Cur->:c) never fails { pass (c.i >= c.s.len); };
+
+func:cur_peek = uint8(Cur->:c) never fails {
+    if (c.i >= c.s.len) { pass 0u8; }
+    pass c.s.ptr[c.i];
+};
+
+// `word`: up to whitespace, `,`, `(`, `)`, `[`, `]`
+func:cur_word = string(Cur->:c) never fails {
+    drop cur_ws(c);
+    int64:s = c.i;
+    while (c.i < c.s.len) {
+        uint8:ch = c.s.ptr[c.i];
+        if (raw text_is_ws(ch)) { break; }
+        if ((ch == 44u8) || (ch == 40u8) || (ch == 41u8) || (ch == 91u8) || (ch == 93u8)) { break; }
+        c.i = c.i + 1i64;
+    }
+    pass (raw text_copy(raw text_slice(c.s, s, c.i)));
+};
+
+func:cur_expect = bool(Cur->:c, uint8:ch) never fails {
+    drop cur_ws(c);
+    if (c.i < c.s.len) { if (c.s.ptr[c.i] == ch) { c.i = c.i + 1i64; pass true; } }
+    pass false;
+};
+
+// A TYPE: a balanced token -- `i64`, `ptr`, `double`, `%npk.hdr`,
+// `{ ptr, i64, i64 }`, `[2 x i64]`, `{ { ptr, i64, i64 }, i32 }` -- with
+// nested braces and brackets kept whole.
+pub func:cur_type = string(Cur->:c) never fails {
+    drop cur_ws(c);
+    int64:s = c.i;
+    int64:depth = 0i64;
+    while (c.i < c.s.len) {
+        uint8:ch = c.s.ptr[c.i];
+        if ((ch == 123u8) || (ch == 91u8)) { depth = depth + 1i64; }
+        if ((ch == 125u8) || (ch == 93u8)) { depth = depth - 1i64; }
+        if (depth == 0i64) {
+            if ((ch == 125u8) || (ch == 93u8)) { c.i = c.i + 1i64; break; }
+            if (raw text_is_ws(ch) || (ch == 44u8) || (ch == 40u8) || (ch == 41u8)) {
+                if (c.i == s) { pass ""; }
+                break;
+            }
+        }
+        c.i = c.i + 1i64;
+    }
+    pass (raw text_copy(raw text_slice(c.s, s, c.i)));
+};
+
+// A VALUE: a register, a global, a numeral (decimal, negative, hex float,
+// decimal float), `null`, `zeroinitializer`, `true`/`false`, or an inline
+// aggregate constant `{ ... }` kept whole.
+pub func:cur_value = string(Cur->:c) never fails {
+    drop cur_ws(c);
+    if ((raw cur_peek(c)) == 123u8) { pass (raw cur_type(c)); }
+    pass (raw cur_word(c));
+};
+
+// --- the reader ------------------------------------------------------------------------------
+
+func:is_binop = bool(string:op) never fails {
+    if (raw text_eq(op, "add")) { pass true; }   if (raw text_eq(op, "sub")) { pass true; }
+    if (raw text_eq(op, "mul")) { pass true; }   if (raw text_eq(op, "udiv")) { pass true; }
+    if (raw text_eq(op, "sdiv")) { pass true; }  if (raw text_eq(op, "urem")) { pass true; }
+    if (raw text_eq(op, "srem")) { pass true; }  if (raw text_eq(op, "and")) { pass true; }
+    if (raw text_eq(op, "or")) { pass true; }    if (raw text_eq(op, "xor")) { pass true; }
+    if (raw text_eq(op, "shl")) { pass true; }   if (raw text_eq(op, "lshr")) { pass true; }
+    if (raw text_eq(op, "ashr")) { pass true; }  if (raw text_eq(op, "fadd")) { pass true; }
+    if (raw text_eq(op, "fsub")) { pass true; }  if (raw text_eq(op, "fmul")) { pass true; }
+    if (raw text_eq(op, "fdiv")) { pass true; }  if (raw text_eq(op, "frem")) { pass true; }
+    pass false;
+};
+
+func:is_cast = bool(string:op) never fails {
+    if (raw text_eq(op, "zext")) { pass true; }     if (raw text_eq(op, "sext")) { pass true; }
+    if (raw text_eq(op, "trunc")) { pass true; }    if (raw text_eq(op, "ptrtoint")) { pass true; }
+    if (raw text_eq(op, "inttoptr")) { pass true; } if (raw text_eq(op, "bitcast")) { pass true; }
+    if (raw text_eq(op, "fptosi")) { pass true; }   if (raw text_eq(op, "fptoui")) { pass true; }
+    if (raw text_eq(op, "sitofp")) { pass true; }   if (raw text_eq(op, "uitofp")) { pass true; }
+    if (raw text_eq(op, "fpext")) { pass true; }    if (raw text_eq(op, "fptrunc")) { pass true; }
+    pass false;
+};
+
+func:is_flag = bool(string:w) never fails {
+    if (raw text_eq(w, "nsw")) { pass true; }      if (raw text_eq(w, "nuw")) { pass true; }
+    if (raw text_eq(w, "exact")) { pass true; }    if (raw text_eq(w, "inbounds")) { pass true; }
+    if (raw text_eq(w, "volatile")) { pass true; } if (raw text_eq(w, "tail")) { pass true; }
+    if (raw text_eq(w, "nnan")) { pass true; }     if (raw text_eq(w, "ninf")) { pass true; }
+    pass false;
+};
+
+func:is_ordering = bool(string:w) never fails {
+    if (raw text_eq(w, "seq_cst")) { pass true; }   if (raw text_eq(w, "acquire")) { pass true; }
+    if (raw text_eq(w, "release")) { pass true; }   if (raw text_eq(w, "acq_rel")) { pass true; }
+    if (raw text_eq(w, "monotonic")) { pass true; } if (raw text_eq(w, "unordered")) { pass true; }
+    pass false;
+};
+
+// Read the `(TY VAL, TY VAL, ...)` of a call after the callee; the cursor
+// sits on `(`. Returns false on a malformed list.
+func:read_call_args = bool(Cur->:c, FInstr->:r) never fails {
+    if (!(raw cur_expect(c, 40u8))) { pass false; }
+    while (true) {
+        drop cur_ws(c);
+        if ((raw cur_peek(c)) == 41u8) { c.i = c.i + 1i64; pass true; }
+        string:ty = raw cur_type(c);
+        if (ty.len == 0i64) { pass false; }
+        // a parameter attribute or `asm` string is not a value: the floor's calls carry none
+        string:v = raw cur_value(c);
+        if (v.len == 0i64) { pass false; }
+        drop strlist_push(@r.tys, string_concat(ty, ""));
+        drop strlist_push(@r.args, string_concat(v, ""));
+        drop cur_ws(c);
+        if ((raw cur_peek(c)) == 44u8) { c.i = c.i + 1i64; continue; }
+        if ((raw cur_peek(c)) == 41u8) { c.i = c.i + 1i64; pass true; }
+        pass false;
+    }
+    pass false;
+};
+
+pub func:floor_instr = FInstr(string:line) never fails {
+    // the cursor first: the checker reads every text a cursor call returns as
+    // borrowed from `c` (D-004's conservative rule), so the record that stores
+    // them must be declared after it
+    Cur:c = Cur{ s: raw text_copy(line), i: 0i64 };
+    FInstr:r = raw instr_none();
+    drop cur_ws(@c);
+    if (raw cur_at_end(@c)) { pass r; }
+    // `%x = `
+    if ((raw cur_peek(@c)) == 37u8) {
+        int64:s0 = c.i;
+        string:d = raw cur_word(@c);
+        drop cur_ws(@c);
+        if ((raw cur_peek(@c)) == 61u8) {
+            c.i = c.i + 1i64;
+            r.dest = string_concat(d, "");
+        } else {
+            c.i = s0;
+        }
+    }
+    string:op = raw cur_word(@c);
+    while (raw is_flag(op)) { op = raw cur_word(@c); }
+    if (raw is_binop(op)) {
+        string:w = raw cur_word(@c);
+        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        // `w` is the type
+        r.ty = string_concat(w, "");
+        string:a = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:b = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(a, "")); drop strlist_push(@r.args, string_concat(b, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if ((raw text_eq(op, "icmp")) || (raw text_eq(op, "fcmp"))) {
+        string:pr = raw cur_word(@c);
+        while (raw is_flag(pr)) { pr = raw cur_word(@c); }
+        r.pred = string_concat(pr, "");
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:a = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:b = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(a, "")); drop strlist_push(@r.args, string_concat(b, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "select")) {
+        string:cty = raw cur_type(@c);           // i1
+        string:cv = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:ty1 = raw cur_type(@c);
+        string:a = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:ty2 = raw cur_type(@c);
+        string:b = raw cur_value(@c);
+        r.ty = string_concat(ty1, "");
+        drop strlist_push(@r.tys, string_concat(cty, "")); drop strlist_push(@r.tys, string_concat(ty2, ""));
+        drop strlist_push(@r.args, string_concat(cv, "")); drop strlist_push(@r.args, string_concat(a, "")); drop strlist_push(@r.args, string_concat(b, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw is_cast(op)) {
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:v = raw cur_value(@c);
+        string:to = raw cur_word(@c);            // `to`
+        if (!(raw text_eq(to, "to"))) { pass r; }
+        r.pred = string_concat(raw cur_type(@c), "");
+        drop strlist_push(@r.args, string_concat(v, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "load")) {
+        string:w = raw cur_word(@c);
+        if (raw text_eq(w, "atomic")) { r.atomic = true; w = raw cur_word(@c); }
+        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        // `w` began the type; re-read it as a type from its start
+        c.i = c.i - w.len;
+        r.ty = string_concat(raw cur_type(@c), "");
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:pt = raw cur_word(@c);            // `ptr`
+        string:p = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(p, ""));
+        drop cur_ws(@c);
+        string:tail = raw cur_word(@c);
+        if (raw is_ordering(tail)) { r.pred = string_concat(tail, ""); }
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "store")) {
+        string:w = raw cur_word(@c);
+        if (raw text_eq(w, "atomic")) { r.atomic = true; w = raw cur_word(@c); }
+        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        c.i = c.i - w.len;
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:v = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:pt = raw cur_word(@c);            // `ptr`
+        string:p = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(v, "")); drop strlist_push(@r.args, string_concat(p, ""));
+        drop cur_ws(@c);
+        string:tail = raw cur_word(@c);
+        if (raw is_ordering(tail)) { r.pred = string_concat(tail, ""); }
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "getelementptr")) {
+        string:w = raw cur_word(@c);
+        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        c.i = c.i - w.len;
+        r.gep_ty = string_concat(raw cur_type(@c), "");
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:pt = raw cur_word(@c);            // `ptr`
+        string:base = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(base, ""));
+        while (raw cur_expect(@c, 44u8)) {
+            string:ity = raw cur_type(@c);
+            string:iv = raw cur_value(@c);
+            drop strlist_push(@r.tys, string_concat(ity, ""));
+            drop strlist_push(@r.args, string_concat(iv, ""));
+        }
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "phi")) {
+        r.ty = string_concat(raw cur_type(@c), "");
+        while (true) {
+            drop cur_ws(@c);
+            if (!(raw cur_expect(@c, 91u8))) { break; }
+            string:v = raw cur_value(@c);
+            if (!(raw cur_expect(@c, 44u8))) { pass r; }
+            string:lab = raw cur_word(@c);       // `%bb`
+            if (!(raw cur_expect(@c, 93u8))) { pass r; }
+            drop strlist_push(@r.args, string_concat(v, ""));
+            drop strlist_push(@r.labels, string_concat(raw text_copy(raw text_slice(lab, 1i64, lab.len)), ""));
+            drop cur_ws(@c);
+            if ((raw cur_peek(@c)) == 44u8) { c.i = c.i + 1i64; }
+        }
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "br")) {
+        string:w = raw cur_word(@c);
+        if (raw text_eq(w, "label")) {
+            string:t = raw cur_word(@c);
+            drop strlist_push(@r.labels, string_concat(raw text_copy(raw text_slice(t, 1i64, t.len)), ""));
+            r.op = string_concat(op, "");
+            pass r;
+        }
+        // `i1 %c, label %t, label %f`
+        string:cv = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(cv, ""));
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:l1 = raw cur_word(@c); string:t1 = raw cur_word(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:l2 = raw cur_word(@c); string:t2 = raw cur_word(@c);
+        drop strlist_push(@r.labels, string_concat(raw text_copy(raw text_slice(t1, 1i64, t1.len)), ""));
+        drop strlist_push(@r.labels, string_concat(raw text_copy(raw text_slice(t2, 1i64, t2.len)), ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "ret")) {
+        string:ty = raw cur_type(@c);
+        if (raw text_eq(ty, "void")) { r.ty = "void"; r.op = string_concat(op, ""); pass r; }
+        r.ty = string_concat(ty, "");
+        string:v = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(v, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "unreachable")) { r.op = string_concat(op, ""); pass r; }
+    if (raw text_eq(op, "call")) {
+        string:w = raw cur_word(@c);
+        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        c.i = c.i - w.len;
+        r.ty = string_concat(raw cur_type(@c), "");
+        drop cur_ws(@c);
+        uint8:ch = raw cur_peek(@c);
+        if (ch == 64u8) {                         // @callee(
+            int64:s = c.i;
+            while ((c.i < c.s.len) && (c.s.ptr[c.i] != 40u8)) { c.i = c.i + 1i64; }
+            r.callee = raw text_copy(raw text_slice(c.s, s, c.i));
+            if (!(raw read_call_args(@c, @r))) { pass r; }
+            r.op = string_concat(op, "");
+            pass r;
+        }
+        if (ch == 37u8) {                         // %reg( -- an indirect call
+            int64:s2 = c.i;
+            while ((c.i < c.s.len) && (c.s.ptr[c.i] != 40u8)) { c.i = c.i + 1i64; }
+            r.callee = raw text_copy(raw text_slice(c.s, s2, c.i));
+            if (!(raw read_call_args(@c, @r))) { pass r; }
+            r.op = string_concat(op, "");
+            pass r;
+        }
+        string:aw = raw cur_word(@c);
+        if (raw text_eq(aw, "asm")) { r.callee = "asm"; r.op = string_concat(op, ""); pass r; }
+        pass r;
+    }
+    if (raw text_eq(op, "extractvalue")) {
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:v = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:idx = raw cur_word(@c);
+        drop strlist_push(@r.args, string_concat(v, "")); drop strlist_push(@r.args, string_concat(idx, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "insertvalue")) {
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:v = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:ety = raw cur_type(@c);
+        string:ev = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:idx = raw cur_word(@c);
+        drop strlist_push(@r.args, string_concat(v, "")); drop strlist_push(@r.args, string_concat(ev, "")); drop strlist_push(@r.args, string_concat(idx, ""));
+        drop strlist_push(@r.tys, string_concat(ety, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "alloca")) {
+        r.ty = string_concat(raw cur_type(@c), "");
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "atomicrmw")) {
+        r.pred = string_concat(raw cur_word(@c), "");                // add / sub / xchg
+        string:pt = raw cur_word(@c);             // ptr
+        string:p = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:v = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(p, "")); drop strlist_push(@r.args, string_concat(v, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    if (raw text_eq(op, "cmpxchg")) {
+        string:pt = raw cur_word(@c);             // ptr
+        string:p = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        r.ty = string_concat(raw cur_type(@c), "");
+        string:e = raw cur_value(@c);
+        if (!(raw cur_expect(@c, 44u8))) { pass r; }
+        string:nty = raw cur_type(@c);
+        string:n = raw cur_value(@c);
+        drop strlist_push(@r.args, string_concat(p, "")); drop strlist_push(@r.args, string_concat(e, "")); drop strlist_push(@r.args, string_concat(n, ""));
+        r.op = string_concat(op, "");
+        pass r;
+    }
+    pass r;
+};
+
+// `%npk.hdr`-style names, `i64`, `ptr`, `double`, `float`, `void`: the width
+// of an integer type, or 0 for anything else.
+pub func:int_width = int64(string:ty) never fails {
+    if (ty.len < 2i64) { pass 0i64; }
+    if (ty.ptr[0i64] != 105u8) { pass 0i64; }   // 'i'
+    Result<int64>:w = text_int(raw text_slice(ty, 1i64, ty.len));
+    if (w.is_error) { pass 0i64; }
+    pass w.value;
+};

@@ -176,3 +176,181 @@
   (exempt @npk_wild_release_all heap-mx "the controlled shutdown's release, called from failsafe or before main's exit, when every thread is joined or stopped")
   (exempt @npk_hs_report heap-mx "the NPK_HEAP_STATS line at exit: read without the mutex by design -- a thread that trapped inside the allocator still holds it, and the line is a diagnostic, never a verdict")
 )
+
+; =============================================================================
+; THE SYMBOLS' SPECIFICATIONS (D-288; 1.5.6 step 3). One `(symbol @name ...)`
+; section per specified define. Names: a parameter by its IR name without `%`
+; (an aggregate parameter's fields as `a.0`, `a.1`...); a register likewise
+; (a loop's header phi in an invariant; a value on a path in an ensures);
+; `result` (an aggregate's members `result.0`...); `mem` and `mem2`, the
+; memory before and after (at a loop header, `mem2` is the memory THERE);
+; `trap` and `trap_code`; a global by its name without `@` as its ADDRESS,
+; its contents read through `mem`; `(free j Int)` a free symbol of the
+; section; `(load8 M a)`, `(load16 M a)`, `(load32 M a)`, `(load64 M a)` the
+; little-endian reassembly of the bytes at `a` in memory M; `(xor64 a b)`,
+; `(and64 a b)`, `(or64 a b)` the 64-bit bit operations. A name SMT-LIB owns
+; (`abs`, `mod`, `store`...) or the writer uses is spelled `|r:name|`.
+;
+; Clauses: `(requires P)` -- a hypothesis the floor's callers keep;
+; `(ensures P)` -- one row, on the non-trapping paths; `(ensures-trap P)` --
+; one row, `trap` iff P (absent: a symbol with trap sites claims `not trap`);
+; `(frame (lo len) ...)` -- one row: outside every range memory is unchanged
+; (absent: memory is unchanged everywhere, a row); `(loop LABEL (invariant
+; I) | (unroll N))` with `(inst SYM e)` -- an extra instantiation of the
+; invariant hypothesis at e; `(summary)` -- callers assume this section
+; instead of inlining the body; `(residue "why")` -- what the profile does
+; not decide, copied into TCB.md §5; `(boundary "what")` -- a syscall-class
+; symbol's promise at the kernel boundary. Addresses wrap at 2^64 exactly as
+; the IR's do, so a symbol that walks a range states the range is in the
+; address space (`(<= (+ p n) 18446744073709551616)`) as a requires.
+;
+; THE SINGLE-INSTANCE RULE. An invariant's universal is written over the
+; section's free symbols; the writer asserts the hypothesis at those symbols
+; and demands the conclusion at the same symbols. A step that needs the
+; hypothesis at another point names it: memcpy's step reads the source byte
+; at `src + i`, which the frame conjunct covers only at `x`, so `(inst x (+
+; src i))` instantiates it there.
+
+; --- the byte helpers LLVM calls behind a program's back ---------------------
+
+(symbol @memcpy
+  (free j Int) (free x Int)
+  ; a forward copy is exact when the destination lies below the source or
+  ; wholly past it; the intrinsic (llvm.memcpy) requires the stronger
+  ; disjointness, and its call sites are held to that by the translator
+  (requires (or (<= dst src) (<= (+ src n) dst)))
+  (requires (<= (+ dst n) 18446744073709551616))
+  (requires (<= (+ src n) 18446744073709551616))
+  (loop head
+    (invariant (and (<= 0 i) (<= i n)
+                    (=> (and (<= 0 j) (< j i)) (= (load8 mem2 (+ dst j)) (load8 mem (+ src j))))
+                    (=> (or (< x dst) (>= x (+ dst i))) (= (load8 mem2 x) (load8 mem x)))))
+    (inst x (+ src i)))
+  (ensures (=> (and (<= 0 j) (< j n)) (= (load8 mem2 (+ dst j)) (load8 mem (+ src j)))))
+  (ensures (= result dst))
+  (frame (dst n)))
+
+(symbol @memset
+  (free j Int) (free x Int)
+  (requires (<= (+ dst n) 18446744073709551616))
+  (loop head
+    (invariant (and (<= 0 i) (<= i n)
+                    (=> (and (<= 0 j) (< j i)) (= (load8 mem2 (+ dst j)) (mod c 256)))
+                    (=> (or (< x dst) (>= x (+ dst i))) (= (load8 mem2 x) (load8 mem x))))))
+  (ensures (=> (and (<= 0 j) (< j n)) (= (load8 mem2 (+ dst j)) (mod c 256))))
+  (ensures (= result dst))
+  (frame (dst n)))
+
+(symbol @npk_zero
+  (free j Int) (free x Int)
+  (requires (<= (+ p n) 18446744073709551616))
+  (loop loop
+    (invariant (and (<= 0 i) (<= i n)
+                    (=> (and (<= 0 j) (< j i)) (= (load8 mem2 (+ p j)) 0))
+                    (=> (or (< x p) (>= x (+ p i))) (= (load8 mem2 x) (load8 mem x))))))
+  (ensures (=> (and (<= 0 j) (< j n)) (= (load8 mem2 (+ p j)) 0)))
+  (frame (p n)))
+
+; --- the string helpers ---------------------------------------------------------
+
+(symbol @npk_string_equals
+  (free j Int)
+  (requires (<= (+ a.0 a.1) 18446744073709551616))
+  (requires (<= (+ b.0 b.1) 18446744073709551616))
+  (loop loop
+    (invariant (and (<= 0 i) (<= i a.1) (= a.1 b.1)
+                    (=> (and (<= 0 j) (< j i)) (= (load8 mem (+ a.0 j)) (load8 mem (+ b.0 j)))))))
+  (ensures (or (= result 0) (= result 1)))
+  (ensures (=> (= result 1) (and (= a.1 b.1) (=> (and (<= 0 j) (< j a.1)) (= (load8 mem (+ a.0 j)) (load8 mem (+ b.0 j)))))))
+  ; `i` is the loop's counter where the mismatch was found
+  (ensures (=> (= result 0) (or (not (= a.1 b.1)) (and (<= 0 i) (< i a.1) (not (= (load8 mem (+ a.0 i)) (load8 mem (+ b.0 i)))))))))
+
+(symbol @npk_string_from_bytes
+  (ensures (= result.0 p))
+  (ensures (= result.1 n))
+  (ensures (= result.2 0)))
+
+(symbol @npk_environ
+  (ensures (= result.0 (load64 mem npk_environ_slice)))
+  (ensures (= result.1 (load64 mem (+ npk_environ_slice 8)))))
+
+(symbol @npk_frozen_get
+  (ensures (= result (load32 mem npk_frozen))))
+
+; --- the heap's mixing functions: the formulas ------------------------------------
+
+(symbol @npk_m_chunk  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 14387278266329264483))))
+(symbol @npk_m_live   (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 5885026092677834074))))
+(symbol @npk_m_freed  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 17865445471836548325))))
+(symbol @npk_m_large  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 1884440546999092433))))
+(symbol @npk_m_livew  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 8639445676566075373))))
+(symbol @npk_m_largew (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 4436545153374750491))))
+(symbol @npk_m_guard  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 7651035258233467253))))
+(symbol @npk_m_wildx  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 4358112156723783278))))
+(symbol @npk_m_flive  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 17844352565267513931))))
+(symbol @npk_m_ffree  (ensures (= result (xor64 (xor64 (load64 mem npk_hsec) a) 999621991244018563))))
+
+(symbol @memmove
+  (free j Int) (free x Int)
+  (requires (<= (+ dst n) 18446744073709551616))
+  (requires (<= (+ src n) 18446744073709551616))
+  ; the forward path is memcpy's body inlined (its loop `head` under its own
+  ; invariant); the backward loop copies from the top down
+  (loop bhead
+    (invariant (and (<= 0 i) (<= i n)
+                    (=> (and (<= i j) (< j n)) (= (load8 mem2 (+ dst j)) (load8 mem (+ src j))))
+                    (=> (or (< x (+ dst i)) (>= x (+ dst n))) (= (load8 mem2 x) (load8 mem x)))))
+    (inst x (+ src (- i 1))))
+  (ensures (=> (and (<= 0 j) (< j n)) (= (load8 mem2 (+ dst j)) (load8 mem (+ src j)))))
+  (ensures (= result dst))
+  (frame (dst n)))
+
+; --- the 128-bit division core and its four wrappers --------------------------------
+
+(symbol @npk_udivmod128
+  (summary)
+  ; the restoring loop: the remainder stays below the divisor, the one fact a
+  ; caller needs of it, by invariant (its step decides at 3,093 rlimit)
+  (loop loop (invariant (=> (not (= b 0)) (< r b))))
+  (ensures (=> (not (= b 0)) (< result.1 b)))
+  (residue "the division identity a = q*b + r is not decided under the profile: it needs 2^i, which the IR does not compute, and this writer invents no ghost variable (D-288); the b = 0 answer (q all ones, r = a) and the b = 1 answer (q = a, r = 0) are not decided either -- with the loop unwound 127 times (its bound proven exact in 0.03 s) every row over the whole computation exhausts the rlimit (q all ones unknown after 54 s, b = 1 after 149 s, r = a after 643 s, and even r < b after 652 s, which the invariant's step decides at 3,093), and the multiplier's equivalence is unknown in QF_BV at every width (measured 2026-09-11)"))
+
+(symbol @__udivti3
+  (ensures (= result q)))
+
+(symbol @__umodti3
+  (ensures (= result r))
+  (ensures (=> (not (= b 0)) (< result b))))
+
+(symbol @__divti3
+  ; |a| / |b| by the core, then the sign rule: negative iff exactly one operand is
+  (ensures (=> (= (< (s128 a) 0) (< (s128 b) 0)) (= result q)))
+  (ensures (=> (not (= (< (s128 a) 0) (< (s128 b) 0))) (= result (mod (- 0 q) 340282366920938463463374607431768211456)))))
+
+(symbol @__modti3
+  ; the remainder takes the dividend's sign
+  (ensures (=> (not (< (s128 a) 0)) (= result r)))
+  (ensures (=> (< (s128 a) 0) (= result (mod (- 0 r) 340282366920938463463374607431768211456))))
+  (ensures (=> (not (= b 0)) (< r ba))))
+
+; --- fmod: the special values decided, the reduction residue ---------------------------
+;
+; The two reduction loops carry the trivial invariant: the profile decides
+; nothing about their result -- `|result| < |b|` is `unknown` with both loops
+; unwound 2 times (6.9 s) and 8 times (12.5 s double, 7.3 s single) -- so the
+; loops are cut and the claim is residue, while the special values, decided on
+; the paths before the loops, are rows.
+
+(symbol @fmod
+  (loop outer (invariant true))
+  (loop scale (invariant true))
+  (ensures (=> (or (fp.isNaN a) (fp.isNaN b) (fp.isZero b) (fp.isInfinite a)) (fp.isNaN result)))
+  (ensures (=> (and (not (fp.isNaN a)) (not (fp.isNaN b)) (not (fp.isZero b)) (not (fp.isInfinite a)) (fp.isInfinite b)) (= result a)))
+  (residue "the reduction's result is not decided under the profile: |result| < |b| on the finite path is unknown with the loops unwound 2 and 8 times (z3's floating-point theory bit-blasts every fmul and fsub of the chain; measured 2026-09-11); the special values are rows"))
+
+(symbol @fmodf
+  (loop outer (invariant true))
+  (loop scale (invariant true))
+  (ensures (=> (or (fp.isNaN a) (fp.isNaN b) (fp.isZero b) (fp.isInfinite a)) (fp.isNaN result)))
+  (ensures (=> (and (not (fp.isNaN a)) (not (fp.isNaN b)) (not (fp.isZero b)) (not (fp.isInfinite a)) (fp.isInfinite b)) (= result a)))
+  (residue "as fmod's: the reduction's result is not decided under the profile (unknown with the loops unwound 2 and 8 times, measured 2026-09-11); the special values are rows"))

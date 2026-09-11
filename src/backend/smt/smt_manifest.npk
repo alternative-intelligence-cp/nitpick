@@ -116,7 +116,19 @@ func:split_fields = List<string>(string:line, int64:n) never fails {
     pass out;
 };
 
+// `nitpick.obligations` read: the compiler's manifest, program kinds only.
 pub func:man_parse = ObManifest(string:text) never fails {
+    pass (raw man_parse_named(text, false));
+};
+
+// A manifest read as the file it is (1.5.6 step 3): `floor` says the file
+// is `runtime/npkrt.obligations`, which carries the floor's two kinds and no
+// program kind; `nitpick.obligations` carries the program kinds and neither
+// of the floor's. A row of a kind its file does not carry is refused by
+// name -- the one-vocabulary instrument's other half.
+pub func:man_parse_named = ObManifest(string:text, bool:floor) never fails {
+    string:fname = "nitpick.obligations";
+    if (floor) { fname = "runtime/npkrt.obligations"; }
     ObManifest:m = ObManifest{ ok: true, problem: "", z3_version: "", z3_sha: "",
                                options: "", rows: raw list_init::<ManRow>(64i64) };
     int64:lineno = 0i64;
@@ -169,6 +181,14 @@ pub func:man_parse = ObManifest(string:text) never fails {
             string:w2 = string_concat("nitpick.obligations: line ", int_to_string(lineno));
             w2 = string_concat(w2, ": the kind is not one the catalogue names (D-218.7)");
             pass (raw man_refuse(w2));
+        }
+        if ((raw ok_is_floor(kind)) != floor) {
+            string:w4 = string_concat(fname, ": line ");
+            w4 = string_concat(w4, int_to_string(lineno));
+            w4 = string_concat(w4, ": a row of kind `");
+            w4 = string_concat(w4, raw ok_name(kind));
+            w4 = string_concat(w4, "` belongs to the other manifest (the floor's kinds ride runtime/npkrt.obligations, the program's nitpick.obligations; 1.5.6)");
+            pass (raw man_refuse(w4));
         }
         int32:verdict = raw ov_of_name(raw view_copy(g, 3i64));
         if (verdict == 0i32) {

@@ -111,8 +111,16 @@ def parse_floor(text):
     cur = None
     blk = None
     mutable = set()
-    for raw in text.split("\n"):
-        line = code_part(raw)
+    raws = text.split("\n")
+    ri = 0
+    while ri < len(raws):
+        line = code_part(raws[ri])
+        ri += 1
+        # an instruction may continue on the next line (the clone's call ends a
+        # line with a comma): join until the code part ends in neither `,` nor `(`
+        while cur is not None and line and line[-1] in ",(" and ri < len(raws):
+            line = line + " " + code_part(raws[ri])
+            ri += 1
         if cur is None:
             gd = _GLOBAL_DECL_RE.match(line)
             if gd:
@@ -563,3 +571,210 @@ if __name__ == "__main__":
         print(f)
     print("%d finding(s)" % len(fl))
     sys.exit(1 if fl else 0)
+
+
+# --- the spec belt and TCB.md's disposition column (1.5.6 step 3; D-288) ----------------
+#
+# The Python twins of `npkg/floor.npk`'s `floor_spec_current`, `floor_disposition`
+# and `tcb_floor_current`: the harness runs them on every full run before the
+# floor's writer (`tools/floorspec.npk`) and z3 are spawned.
+
+_DEFINE_HEAD_RE = re.compile(r'^define\s+(?:internal\s+|private\s+)?(.*?)\s*(@[\w.$-]+)\s*\((.*?)\)', re.S)
+_STRUCT_TYPE_RE = re.compile(r'^(%[\w.$-]+)\s*=\s*type\s*(\{.*\})\s*$')
+
+_CLAUSE_HEADS = ("free", "requires", "ensures", "ensures-trap", "frame", "loop", "summary", "residue", "boundary")
+
+_CLASS_DEFAULT = {
+    "asm": "the volatile bottom (inline asm): TRUSTED, documented; no proof",
+    "atomic": "a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor)",
+    "syscall": "specified at the syscall boundary (1.5.6); the kernel is trusted",
+    "pure": "pure IR: Z3-specified at 1.5.6 where feasible",
+}
+
+
+def _split_top(s, sep=","):
+    out, depth, cur = [], 0, ""
+    for ch in s:
+        if ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+        if ch == sep and depth == 0:
+            out.append(cur.strip()); cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur.strip())
+    return out
+
+
+def define_headers(floor_text):
+    """@name -> (return type, [(type, %name)]) for every define of the floor."""
+    out = {}
+    types = {}
+    for raw in floor_text.split("\n"):
+        line = code_part(raw)
+        tm = _STRUCT_TYPE_RE.match(line)
+        if tm:
+            types[tm.group(1)] = tm.group(2)
+        if not line.startswith("define "):
+            continue
+        m = _DEFINE_HEAD_RE.match(line)
+        if not m:
+            continue
+        params = []
+        for piece in _split_top(m.group(3)):
+            pm = re.match(r'^(.*?)\s*(%[\w.$-]+)$', piece)
+            if pm:
+                params.append((pm.group(1).strip(), pm.group(2)))
+            elif piece:
+                params.append((piece, ""))
+        out[m.group(2)] = (m.group(1).strip(), params)
+    return out, types
+
+
+def spec_param_names(header, types):
+    """The names a spec may spell for a define's parameters: `dst`, and an
+    aggregate's fields as `a.0`, `a.1`..."""
+    names = []
+    for ty, pn in header[1]:
+        if not pn:
+            continue
+        bare = pn[1:]
+        body = types.get(ty, ty) if ty.startswith("%") else ty
+        if body.startswith("{"):
+            fields = _split_top(body[1:-1])
+            names.extend("%s.%d" % (bare, i) for i in range(len(fields)))
+        else:
+            names.append(bare)
+    return names
+
+
+def spec_sections(spec_text):
+    """[(name, [clauses])] for every (symbol @name ...) form, in order."""
+    out = []
+    for form in sexpr(spec_text):
+        if isinstance(form, list) and form and _atom(form[0]) == "symbol":
+            out.append((_atom(form[1]) if len(form) > 1 else None, form[2:]))
+    return out
+
+
+def check_spec(floor_text, spec_text, name="floor"):
+    """THE SPEC BELT: every (symbol ...) section names a define; a (loop LABEL
+    ...) names a block of it with exactly one treatment; every section claims
+    something (a clause that yields rows) or says why not (residue, boundary);
+    a (summary) section has an ensures; no symbol twice; no clause head outside
+    the grammar; no free symbol shadowing a parameter."""
+    fails = []
+    try:
+        forms = sexpr(spec_text)
+    except ValueError as e:
+        return ["%s: runtime/npkrt.spec: %s" % (name, e)]
+    fns, _ = parse_floor(floor_text)
+    heads, types = define_headers(floor_text)
+    seen = set()
+    for form in forms:
+        head = _atom(form[0]) if isinstance(form, list) and form else None
+        if head == "shared":
+            continue
+        if head != "symbol":
+            fails.append("%s: runtime/npkrt.spec: a top-level form that is neither (shared ...) nor (symbol ...): %s" % (name, head))
+            continue
+        sym = _atom(form[1]) if len(form) > 1 else None
+        if not sym:
+            fails.append("%s: runtime/npkrt.spec: a (symbol ...) without a name" % name)
+            continue
+        if sym in seen:
+            fails.append("%s: runtime/npkrt.spec: a symbol specified twice: %s" % (name, sym))
+            continue
+        seen.add(sym)
+        if sym not in fns:
+            fails.append("%s: runtime/npkrt.spec names a symbol the floor does not define: %s" % (name, sym))
+            continue
+        claims = excused = summary = has_ensures = False
+        free = []
+        for cl in form[2:]:
+            if not isinstance(cl, list) or not cl:
+                fails.append("%s: runtime/npkrt.spec: a bare word inside the section of %s" % (name, sym))
+                break
+            ch = _atom(cl[0])
+            if ch not in _CLAUSE_HEADS:
+                fails.append("%s: runtime/npkrt.spec: a clause the grammar does not know in %s: %s" % (name, sym, ch))
+                continue
+            if ch == "free" and len(cl) > 1:
+                free.append(_atom(cl[1]))
+            if ch in ("ensures", "ensures-trap", "frame", "loop"):
+                claims = True
+            if ch == "ensures":
+                has_ensures = True
+            if ch == "summary":
+                summary = True
+            if ch in ("residue", "boundary"):
+                excused = True
+            if ch == "loop":
+                label = _atom(cl[1]) if len(cl) > 1 else None
+                if label not in fns[sym].by_label:
+                    fails.append("%s: runtime/npkrt.spec: %s has no block labelled %s" % (name, sym, label))
+                treatments = sum(1 for x in cl[2:] if isinstance(x, list) and x and _atom(x[0]) in ("invariant", "unroll"))
+                if treatments != 1:
+                    fails.append("%s: runtime/npkrt.spec: the loop %s of %s needs exactly one of (invariant I) and (unroll N)" % (name, label, sym))
+        if not (claims or excused):
+            fails.append("%s: runtime/npkrt.spec: a section with no claim and no residue or boundary sentence: %s" % (name, sym))
+        if summary and not has_ensures:
+            fails.append("%s: runtime/npkrt.spec: a (summary) symbol without an ensures -- a caller would assume nothing: %s" % (name, sym))
+        if sym in heads:
+            for f in free:
+                if f in spec_param_names(heads[sym], types):
+                    fails.append("%s: runtime/npkrt.spec: a free symbol of %s shadows its parameter %s" % (name, sym, f))
+    return fails
+
+
+def disposition(sections, sym, cls, rows):
+    """One symbol's disposition in D-288 §2.1's words (the twin of
+    `floor_disposition`): `trusted (inline asm)`; `specified (N discharged, M
+    residue)` from the committed floor manifest's `floor-spec` rows; the
+    `residue (...)` and `boundary (...)` sentences; else the class default."""
+    if cls == "asm":
+        return "trusted (inline asm)"
+    sec = dict(sections).get(sym)
+    if sec is None:
+        return _CLASS_DEFAULT[cls]
+    d = sum(1 for r in rows if r[3] == sym and r[1] == "floor-spec" and r[2] == "discharged")
+    b = sum(1 for r in rows if r[3] == sym and r[1] == "floor-spec" and r[2] == "budget")
+    o = sum(1 for r in rows if r[3] == sym and r[1] == "floor-spec" and r[2] == "open")
+    parts = []
+    if d + b + o:
+        parts.append("specified (%d discharged, %d residue)%s" % (d, b, " -- REFUTED: a red run" if o else ""))
+    for cl in sec:
+        if isinstance(cl, list) and cl and _atom(cl[0]) == "residue" and len(cl) > 1:
+            parts.append("residue (%s)" % _string(cl[1]))
+    for cl in sec:
+        if isinstance(cl, list) and cl and _atom(cl[0]) == "boundary" and len(cl) > 1:
+            parts.append("boundary (%s)" % _string(cl[1]))
+    return "; ".join(parts) if parts else _CLASS_DEFAULT[cls]
+
+
+def manifest_rows_of(text):
+    """(hash, kind, verdict, symbol) per row of a floor manifest text (no
+    validation: the runners' readers do that)."""
+    out = []
+    for l in text.splitlines():
+        if not l.strip() or l.startswith("#"):
+            continue
+        parts = l.split(" ", 5)
+        if len(parts) == 6:
+            out.append((parts[0], parts[1], parts[3], parts[5]))
+    return out
+
+
+def tcb_rows(spec_text, classes, manifest_text):
+    """TCB.md's floor-table rows, sorted: the table's `| symbol | class | disposition |` lines."""
+    sections = spec_sections(spec_text)
+    rows = manifest_rows_of(manifest_text) if manifest_text else []
+    return sorted("| `%s` | %s | %s |" % (sym, cls, disposition(sections, sym, cls, rows))
+                  for sym, cls in classes.items())
+
+
+def tcb_region(spec_text, classes, manifest_text):
+    """The whole marked region's body, header row included."""
+    return "\n".join(["| symbol | class | disposition |", "|---|---|---|"] + tcb_rows(spec_text, classes, manifest_text))

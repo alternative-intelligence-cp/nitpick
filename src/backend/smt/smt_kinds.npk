@@ -55,7 +55,17 @@ pub func:OK_SHIFT_RANGE = int32() never fails   { pass 19i32; };
 // overlap is the aliasing analysis's (BORROW-013) and carries neither guard
 // nor row.
 pub func:OK_DISJOINT = int32() never fails      { pass 20i32; };
-pub func:OK_COUNT = int32() never fails         { pass 20i32; };
+// THE FLOOR'S TWO KINDS (D-288, D-289; 1.5.6 step 3): rows the floor
+// writer (`npkg/floor_smt.npk`, never the compiler) derives from
+// `runtime/npkrt.spec` -- a clause of a symbol's specification holds of its
+// IR (`floor-spec`) -- and, from step 5, from `runtime/models/` -- a bounded
+// protocol model's bad predicate is unreachable (`floor-model`). They live
+// in `runtime/npkrt.obligations`, never in `nitpick.obligations`: a manifest
+// row of a kind its file does not carry is refused by name (`man_parse`).
+// No guard: nothing in the floor elides.
+pub func:OK_FLOOR_SPEC = int32() never fails    { pass 21i32; };
+pub func:OK_FLOOR_MODEL = int32() never fails   { pass 22i32; };
+pub func:OK_COUNT = int32() never fails         { pass 22i32; };
 
 // The manifest spelling of a kind (P-10's `kind` column).
 pub func:ok_name = string(int32:k) never fails {
@@ -79,7 +89,17 @@ pub func:ok_name = string(int32:k) never fails {
     if (k == 18i32) { pass "loop-step"; }
     if (k == 19i32) { pass "shift-range"; }
     if (k == 20i32) { pass "disjoint"; }
+    if (k == 21i32) { pass "floor-spec"; }
+    if (k == 22i32) { pass "floor-model"; }
     pass "?";
+};
+
+// THE FILE A KIND BELONGS TO (1.5.6 step 3): the floor's kinds ride
+// `runtime/npkrt.obligations`, every program kind `nitpick.obligations`.
+pub func:ok_is_floor = bool(int32:k) never fails {
+    if (k == 21i32) { pass true; }
+    if (k == 22i32) { pass true; }
+    pass false;
 };
 
 pub func:ok_has_guard = bool(int32:k) never fails {

@@ -635,6 +635,8 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
 | `disjoint` | two accesses of one root through computed indices name disjoint storage while a `$$i`/`$$m` claim is live (D-286): the byte-range compare at the second access, `BorrowOverlap`; a static overlap is the aliasing analysis's (BORROW-013) and has no row | yes | 1.5.5 |
+| `floor-spec` | a clause of a floor symbol's section in `runtime/npkrt.spec` holds of the symbol's IR (D-288, §9): an `ensures` on the returning, non-trapping paths, the trap outcome, the frame, a loop invariant established at entry and preserved by the body, an unrolled loop's bound where the spec claims it exact, a summary callee's `requires` at the call; rows from the floor writer (1.5.6), never the compiler, in `runtime/npkrt.obligations` | no | 1.5.6 |
+| `floor-model` | a bounded protocol model's bad predicate is unreachable within its depth and preemption bound (D-289, §9); rows from the floor writer over `runtime/models/`, in `runtime/npkrt.obligations` | no | 1.5.6 |
 <!-- END obligation-catalogue -->
 
 > **[D-267, 1.5.3 step 1 (2026-09-06).]** `failsafe-post`'s guard column
@@ -1051,3 +1053,159 @@ rather than silent, which is the achievable guarantee.
 It is also an **audit artifact**: the manifest is evidence that every removed
 check had a proof, reproducible on demand. Certification runs may record full
 proof certificates (unsat cores) rather than outcomes alone.
+
+---
+
+## 9. The floor's obligations (D-288, D-289; landed 1.5.6)
+
+The runtime floor (`runtime/npkrt.ll`, hand-written LLVM IR, permanent under
+D-203) is specified beside itself and decided by the same solver, under the
+same profile, through the same deciders as a program's obligations — and its
+evidence lives in its own files, never in `nitpick.obligations`:
+
+| File | What it holds |
+|---|---|
+| `runtime/npkrt.spec` | the specifications, in SMT-LIB2 syntax: one `(symbol @name …)` section per specified define (§9.1), and the `(shared …)` classification of every word two threads can reach (D-290; CONCURRENCY_REFERENCE §5.3) |
+| `runtime/models/*.model` | the executor primitives as bounded transition systems, one protocol per file (D-289; lands at 1.5.6 step 5) |
+| `runtime/npkrt.obligations` | the floor's manifest, in the `nitpick.obligations v1` format of §8 — written only by `npkg verify --record`, held by both runners exactly as the compiler's manifest is; its rows carry the two floor kinds of §7b (`floor-spec`, `floor-model`), tier the writer's word, elision `none` (nothing in the floor elides: the verified build changes no floor byte) |
+
+**The writer is `npkg/floor_smt.npk`** — the translator — driven by
+`npkg/floor.npk` (`floor_emit`, writing `build/verify/floor/` in the
+compiler's directory shape: `NNNN.smt2`, `index.txt`, `rows.txt`) with
+`npkg/floor_ir.npk` (the floor's text as defines, blocks and lines),
+`floor_instr.npk` (each line read into its parts), `floor_cfg.npk` (loops,
+the dominance order, inlining and unrolling as text transforms) and
+`floor_spec.npk` (the S-expression reader). `tools/floorspec.npk` is the
+harness's entry to the same modules (`floorspec ROOT --emit DIR`); the
+harness's `verify` stage runs it after the compiler's own obligations, and
+its `parity` stage byte-compares the two runners' `rows.txt`. A manifest row
+of a kind its file does not carry — a floor kind in `nitpick.obligations`, a
+program kind in `runtime/npkrt.obligations` — is refused by name in both
+runners.
+
+**The theory is the program's (§7c, D-218 (4)):** every integer or pointer
+value an unbounded Int carrying its width's range axiom, read unsigned (the
+bit pattern's value), the signed operations over the signed view where they
+must; `add`/`sub`/`mul` wrap explicitly (`(mod … 2^w)` — the floor's IR
+carries no `nsw`/`nuw`, and its address arithmetic wraps on purpose);
+`udiv`/`urem` are `div`/`mod`; an `i1` is a Bool; a float is an IEEE term
+(tier `fp`); an aggregate is its fields. The bit operations take D-279's Int
+forms with a numeral operand and D-280's crossing at 64 bits or less; an
+`or` of two symbols is a fresh symbol carrying every fact that holds of a
+bitwise or (`a ≤ o`, `b ≤ o`, `o ≤ a + b`, `o < 2^w`) and the exact reading
+`o = a + b` under each side condition the operands' shapes suggest (`a`'s
+low k bits clear and `b < 2^k`) — the division loop's low-bit insert reads
+as `2r + bit` under the fact that makes it sound, and nothing is assumed.
+**Memory is the uninterpreted function `(mem Int) Int`**, a byte per
+address with the range axiom `0 ≤ mem(a) < 256` at every application the
+translation writes; a `store` a fresh memory function defined pointwise over
+the previous (little-endian, one `ite` per byte), a `load` the reassembly
+`Σ mem(a+j)·256^j`; no array sort, no quantifier, no `Seq` (D-218 (6)). An
+`alloca` is a fresh address, a global a fixed symbolic address per name, and
+every pair of objects a function touches is disjoint (a fact of the layout,
+asserted). Control flow is a path condition per block (`|pc:B|`), an edge
+condition per branch, an `ite` per phi at a join, an `ite`-merged memory at
+a join; a call to a trap symbol ends its path with the outcome `trap` and
+`trap_code`; `result` and `mem2` are merged over the `ret` blocks.
+
+### 9.1 The spec file's grammar
+
+One `(symbol @name …)` section per specified define. Names: a parameter by
+its IR name without `%` (`dst`, `n`; an aggregate parameter's fields as
+`a.0`, `a.1`, …); a register likewise (a loop's header phi in an invariant,
+a value on a path in an `ensures`); `result` (an aggregate's members
+`result.0`, …); `mem` and `mem2`, the memory at entry and at exit (at a loop
+header, `mem2` is the memory THERE); `trap` and `trap_code`; `exec`; a
+global by its name without `@` as its ADDRESS, its contents read through
+`mem`; `(free j Int)` a free symbol of the section; `(load8 M a)`,
+`(load16 M a)`, `(load32 M a)`, `(load64 M a)` the reassembly of the bytes
+at `a` in memory `M`; `(xor64 a b)`, `(and64 a b)`, `(or64 a b)` the 64-bit
+bit operations through the crossing; `(s8 x)`, `(s32 x)`, `(s64 x)`,
+`(s128 x)` the signed view. A name SMT-LIB owns (`abs`, `mod`, `store`, …)
+or the writer uses is spelled `|r:name|`. Addresses wrap at 2^64 exactly as
+the IR's do, so a symbol that walks a range states the range is in the
+address space as a `requires` (`(<= (+ p n) 18446744073709551616)`).
+
+| Clause | Rows |
+|---|---|
+| `(requires P)` | none — a hypothesis over the entry state the floor's callers keep (the emitter's call discipline is the program encoder's business under D-201's table); recorded in the row's cone |
+| `(ensures P)` | one row per clause: `P` on the returning, non-trapping paths (`|pc:exit| ∧ ¬trap ⇒ P`) — the exit edge's condition is what a postcondition is decided under |
+| `(ensures-trap P)` | one row: `trap ⇔ P`; a symbol with trap sites and no such clause gets the row `¬trap` (it claims never to trap) |
+| `(frame (lo len) …)` | one row: for the free symbol `x`, `x` outside every range ⇒ `mem2(x) = mem(x)`; a symbol with no `frame` claims memory unchanged everywhere, a row |
+| `(loop LABEL (invariant I) [(inst SYM e)…])` | the loop cut at its header: the header's phis and — when the loop writes — its memory fresh symbols constrained by `I`; the rows `invariant-init:LABEL` (every entry edge establishes `I`) and `invariant-preserve:LABEL` (every back edge re-establishes it); everything after the loop decided under `I` and the exit edge's condition |
+| `(loop LABEL (unroll N))` | the loop's blocks copied N+1 times (N is the most times the back edge is taken), copy N's back edges assumed not taken — a hypothesis every row it reaches carries as `[<=N]` in its site; `(unroll N exact)` claims the bound exact: the row `unroll-exact:LABEL` proves it (its cone excludes the hypothesis), and a claim the profile does not discharge is a red run |
+| `(summary)` | the symbol is inlined nowhere: at a call, the callee's `requires` are rows at the call (`spec:call:<callee>:<block>:<line>:requires:K`), its `ensures` hypotheses over fresh result symbols, its `ensures-trap` joins the caller's trap outcome, and memory after the call is a fresh function equal to the memory before outside the callee's `frame`, instantiated at the caller's free symbols by name |
+| `(residue "why")` | no rows; the sentence is copied into TCB.md's disposition column |
+| `(boundary "what")` | a syscall-class symbol's promise at the kernel boundary, copied into TCB.md (1.5.6 step 4) |
+
+A callee without `(summary)` is INLINED before translation (the call graph
+is acyclic; a cycle is a refusal): its blocks are spliced at the call with
+its registers and labels prefixed `<callee>#<k>.` and its parameters
+replaced by the arguments, and its own `(loop …)` annotations apply to the
+copy. `llvm.memcpy`/`llvm.memset` are built-in summaries (the intrinsic
+requires disjoint, in-space operands — rows at the call — and copies or
+fills every byte). A loop with neither annotation, an instruction form
+outside the floor's vocabulary, a `switch`, an indirect call, a call of
+`npk_sys6` (the kernel-effect table is step 4's) are refusals naming the
+line: a floor edit outside the subset is a red run, never a silently
+unencoded symbol.
+
+**THE SINGLE-INSTANCE RULE (S-65).** An invariant's universal is written
+over the section's free symbols, and the writer asserts the hypothesis at
+those symbols and demands the conclusion at the same symbols. Sound: a
+proof of `I′(j)` from `I(j)` for an arbitrary `j` is a proof of `∀j.I′(j)`
+from `∀j.I(j)` when the step needs `I` at no other point. Incomplete: a
+step that needs the hypothesis at another point is `open`, and the author
+names the point — `memcpy`'s step reads the source byte at `src + i`, which
+the frame conjunct covers only at `x`, so `(inst x (+ src i))` instantiates
+the hypothesis there (never the conclusion).
+
+### 9.2 The rows and the verdicts
+
+A row per clause as the table says; `kind` `floor-spec`; `symbol` the
+define (`@memcpy`); `hash` the SHA-256 of the row's canonical text (the
+cone's definitions, its hypotheses, `(assert (not goal))`) plus the symbol
+and the kind (D-218 (8), through `lib/nhash.npk`); `site` `spec:<clause>:<K>`
+or `spec:<clause>:<block label>` with `[<=N]` appended when a bound is in
+the cone; `role` `conform`, `group` and `traps` `0`, `encoded` `1`, `tier`
+the writer's word (`int`, `bv`, `fp`). The cone of a row is the relevance
+closure the program encoder computes: every hypothesis sharing a symbol
+with the closure, every definition the closure names.
+
+**Verdicts.** `discharged` is a proof. `budget` is RESIDUE — the row and
+its `--explain` reason appear in TCB.md §5. **`open` in the floor is a run
+failure by name** (`floor: @sym: <site> is refuted …`): nothing in the
+floor is a guard to retain, so a `sat` is a defect or a misstatement, both
+stop-the-line; `npkg verify --record` refuses to write an `open` floor row
+and both runners refuse a committed one. `--explain` covers the floor's
+rows in `build/verify/explain-floor.txt` exactly as the compiler's in
+`explain.txt`.
+
+**The belts, before a solver is spawned** (`floor_spec_current` in npkg,
+`floor.check_spec` in the harness): every section names a define; a
+`(loop LABEL …)` names a block of it with exactly one treatment; every
+section claims something or says why not; a `(summary)` section has an
+`ensures`; no symbol twice; no clause head outside the grammar; no free
+symbol shadowing a parameter. TCB.md's floor table is generated from the
+floor, the spec and the committed floor manifest (`tcb_floor_current`,
+`check_tcb_floor_current`; `bootstrap/harness/tcb_floor.py --write`
+regenerates it): `trusted (inline asm)`, `specified (N discharged, M
+residue)`, the `residue`/`boundary` sentences, the class default for a
+symbol no section names yet.
+
+**What lands at 1.5.6 step 3** (the first specs, 86 rows over 25 symbols,
+every row discharged under the profile, every file decided in under 0.2 s):
+`memcpy`, `memset`, `npk_zero` (a byte loop each, by invariant with
+`(inst …)`), `memmove` (the forward path memcpy's body inlined under
+memcpy's invariant, the backward loop its own), `npk_string_equals` (the
+prefix equal below the counter; the mismatch index named on the `0` path),
+`npk_string_from_bytes`, `npk_environ`, `npk_frozen_get`, the ten `npk_m_*`
+mixing formulas (through `xor64`), `npk_udivmod128` as a `(summary)` with
+the remainder below the divisor by invariant, its four wrappers by the
+summary with the sign rules stated, and `fmod`/`fmodf`'s special values.
+The residue named: the division identity and the `b = 0`/`b = 1` answers
+(the identity needs `2^i`, which the IR does not compute, and the writer
+invents no ghost variable; unwound 127 times — the bound proven exact in
+0.03 s — the rows exhaust the rlimit), and `fmod`'s reduction (`|result| <
+|b|` unknown with the loops unwound 2 and 8 times). Steps 4–6 add the
+allocator's helpers and the envelope symbols, the models, the syscall table.

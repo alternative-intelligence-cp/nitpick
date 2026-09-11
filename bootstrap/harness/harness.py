@@ -3079,14 +3079,19 @@ def stage_runtime(t, s):
 Z3_KINDS = ("div-zero", "div-min", "overflow", "bounds", "cast-range", "exhaustive",
             "requires", "ensures", "invariant", "limit", "limit-subsume", "terminate",
             "stack-depth", "err-exit", "failsafe-post", "prove", "assert-static",
-            "loop-step", "shift-range", "disjoint")
+            "loop-step", "shift-range", "disjoint", "floor-spec", "floor-model")
+# THE FLOOR'S KINDS (D-288, D-289; 1.5.6 step 3): produced by the floor writer
+# from runtime/npkrt.spec and runtime/models/, never by the compiler; they ride
+# runtime/npkrt.obligations and no other file, and a program kind never rides
+# that one (`manifest_rows` refuses a misplaced row by name, as `man_parse` does).
+FLOOR_KINDS = frozenset(("floor-spec", "floor-model"))
 VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
 # THE KINDS WITH NO RUNTIME GUARD (D-218.7's `guard` column; `ok_has_guard`'s
 # twin, 1.5.2 step 3): their rows read `none` in the elision column and their
 # discharge emits nothing into the IR. Diffed against the catalogue's column
 # by `check_obligation_kinds_agree`.
 GUARDLESS_KINDS = frozenset(("exhaustive", "terminate", "stack-depth",
-                             "prove", "assert-static"))
+                             "prove", "assert-static", "floor-spec", "floor-model"))
 # THE ROLE OF A ROW (1.5.3 step 2, L-13; `smt_kinds.npk`'s ROLE_*): `guard`, a
 # check in the row's own function, elided when discharged; `bypass`, a
 # call-site row whose discharge (with every other bypass row of the call)
@@ -3215,9 +3220,11 @@ def elision_word(kind, verdict, role):
     return "elided" if verdict == "discharged" else "retained"
 
 
-def manifest_rows(text):
+def manifest_rows(text, floor=False):
     """The rows of a manifest text as a set of (hash, kind, verdict, symbol),
-    or None with a reason when the text is not one this reader can read."""
+    or None with a reason when the text is not one this reader can read.
+    `floor` says the text is runtime/npkrt.obligations, which carries the
+    floor's kinds and no program kind (and nitpick.obligations the reverse)."""
     lines = [l for l in text.splitlines() if l.strip()]
     if not lines or lines[0] != "# nitpick.obligations v1":
         return None, "the first line is not `# nitpick.obligations v1`"
@@ -3231,6 +3238,9 @@ def manifest_rows(text):
         h, kind, tier, v, elision, sym = parts
         if kind not in Z3_KINDS:
             return None, "a row names a kind the catalogue does not: %r" % kind
+        if (kind in FLOOR_KINDS) != floor:
+            return None, ("a row of kind `%s` belongs to the other manifest (the floor's kinds ride "
+                          "runtime/npkrt.obligations, the program's nitpick.obligations; 1.5.6)" % kind)
         out.add((h, kind, v, sym))
     return out, None
 
@@ -3572,18 +3582,107 @@ def check_verify_compiler(tmp, stage1_ir):
     return []
 
 
+def floor_verdict_failures(full):
+    """THE VERDICT RULE OF THE FLOOR (D-288 §2.6): an `open` floor row is a run
+    failure by name -- nothing in the floor is a guard to retain, so a
+    counterexample is a defect or a misstatement, both stop-the-line -- and
+    so is an `unroll-exact` row the profile did not discharge (the spec
+    claims a bound exact; say `(unroll N)` without `exact` instead)."""
+    fails = []
+    for fno, k, kind, h, v, sym, site, role, group, traps, tier in full:
+        if v == "open":
+            fails.append("floor: %s: %s is refuted (a counterexample exists; either the floor does not meet its "
+                         "specification or the specification is wrong; `npkg verify --explain` writes the model)" % (sym, site))
+        elif site.startswith("spec:unroll-exact") and v != "discharged":
+            fails.append("floor: %s: %s -- the spec claims the bound exact and the profile did not prove it: "
+                         "say `(unroll N)` without `exact`, or raise the bound" % (sym, site))
+    return fails
+
+
+def check_verify_floor(tmp, tools):
+    """THE FLOOR'S LEG (1.5.6 step 3; D-288 §2.11): the spec belt, the floor
+    writer (`tools/floorspec.npk`, built with the snapshot -- the writer needs
+    nothing the snapshot lacks) over runtime/npkrt.ll and runtime/npkrt.spec
+    into tmp/verify/floor/, z3 over it through the same `z3_verdicts`, the
+    verdict rule, and the floor's manifest held to the COMMITTED
+    runtime/npkrt.obligations exactly as the compiler's is to
+    nitpick.obligations (`npkg verify --record` re-baselines on purpose)."""
+    import floor
+    spec = os.path.join(ROOT, "runtime", "npkrt.spec")
+    if not os.path.exists(spec):
+        return ["floor: runtime/npkrt.spec is missing -- the floor's specification is part of the tree (D-288)"]
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        ft = fh.read()
+    with open(spec, encoding="utf-8") as fh:
+        st = fh.read()
+    fails = floor.check_spec(ft, st, "floor")
+    if fails:
+        return fails
+    tool = build_tool(tmp, tools, os.path.join(ROOT, "tools", "floorspec.npk"), "floorspec")
+    if not tool or not os.path.exists(str(tool)):
+        return ["floor: tools/floorspec.npk did not build: %s" % tool]
+    fdir = os.path.join(tmp, "verify", "floor")
+    try:
+        r = subprocess.run([tool, ROOT, "--emit", fdir], capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return ["floor: the writer did not terminate"]
+    if r.returncode != 0:
+        return ["floor: the writer refused: %s" % (r.stdout + r.stderr).strip()[:800]]
+    full, f2 = z3_verdicts(fdir, "floor")
+    if f2:
+        return f2
+    fails = floor_verdict_failures(full)
+    if fails:
+        return fails
+    run_text = manifest_text(full)
+    committed = os.path.join(ROOT, "runtime", "npkrt.obligations")
+    if not os.path.exists(committed):
+        return ["floor: runtime/npkrt.obligations is not committed -- the floor's rows are governed by their manifest "
+                "and nothing writes it implicitly (D-288); run `npkg verify --record` and commit the file"]
+    with open(committed, encoding="utf-8") as fh:
+        ctext = fh.read()
+    crows, why = manifest_rows(ctext, floor=True)
+    if crows is None:
+        return ["floor: runtime/npkrt.obligations cannot be read: %s" % why]
+    rrows, why2 = manifest_rows(run_text, floor=True)
+    if rrows is None:
+        return ["floor: this run's floor manifest does not read back: %s" % why2]
+    if crows != rrows:
+        return ["floor: this run's obligations differ from runtime/npkrt.obligations (D-040: a build that would differ "
+                "from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):\n"
+                + manifest_diff(crows, rrows)]
+    if ctext != run_text:
+        return ["floor: runtime/npkrt.obligations carries the same rows as this run but different bytes -- the header "
+                "(the pinned z3, the profile) or the row order moved; re-record it"]
+    counts = {}
+    for f in full:
+        counts[f[4]] = counts.get(f[4], 0) + 1
+    syms = len(set(f[5] for f in full))
+    print("  %-11s %d floor obligation(s) over %d specified symbol(s): %d discharged, %d budget (residue); "
+          "runtime/npkrt.obligations matches"
+          % ("floor", len(full), syms, counts.get("discharged", 0), counts.get("budget", 0)))
+    return []
+
+
 def _floor_classes():
     """Every `define` in runtime/npkrt.ll, classified as TCB.md's table is
-    (P-26): `asm` (inline assembly in the body), `atomic` (an atomic
-    operation), `syscall` (reaches the trampoline transitively), `pure`
-    (none of those) -- precedence in that order."""
+    (P-26): `asm` (inline assembly in the body, or a call of a symbol
+    `module asm` defines -- the clone's `npk_clone_raw`), `atomic` (an
+    atomic operation), `syscall` (reaches an asm define transitively),
+    `pure` (none of those) -- precedence in that order, over the CODE of
+    each body: a comment that says `asm` classified `npk_clone_exec` until
+    1.5.6 step 3, where the two runners' classifiers were held to one
+    answer (`npkg/floor.npk`'s `floor_classes`)."""
+    import floor
     text = open(RUNTIME_LL, encoding="utf-8").read()
+    asm_syms = set("@" + m for m in re.findall(r'^module asm "\.globl ([\w.$-]+)"', text, re.M))
     defs = {}
     for m in re.finditer(r'^define[^\n]*?(@(?:"[^"]*"|[\w.$-]+))\s*\((.*?)^\}', text, re.S | re.M):
-        defs[m.group(1).strip('"')] = m.group(0)
+        body = "\n".join(floor.code_part(l) for l in m.group(0).split("\n"))
+        defs[m.group(1).strip('"')] = body
     def calls(body):
         return set(re.findall(r'call[^@\n]*(@[\w.$-]+)', body)) | set(re.findall(r'invoke[^@\n]*(@[\w.$-]+)', body))
-    asm = {n for n, b in defs.items() if re.search(r'\basm\b', b)}
+    asm = {n for n, b in defs.items() if re.search(r'\basm\b', b) or (calls(b) & asm_syms)}
     atomic = {n for n, b in defs.items()
               if re.search(r'\b(atomicrmw|cmpxchg|fence)\b', b) or re.search(r'\b(load|store) atomic\b', b)}
     graph = {n: {c for c in calls(b) if c in defs} for n, b in defs.items()}
@@ -3626,9 +3725,15 @@ def check_floor_shared_current():
 def check_tcb_floor_current():
     """TCB.md's enumeration of the floor is GENERATED, never hand-maintained
     (P-26, 1.5.0): the table's symbol and class columns must equal what the
-    classifier computes from runtime/npkrt.ll today. A floor symbol added,
-    removed or reclassified without the table moving is a stale TCB claim --
-    the one table an auditor reads first."""
+    classifier computes from runtime/npkrt.ll today, and -- since 1.5.6 step 3
+    (D-288 §2.10) -- its DISPOSITION column what runtime/npkrt.spec and the
+    committed runtime/npkrt.obligations say: `trusted (inline asm)`,
+    `specified (N discharged, M residue)`, the residue and boundary
+    sentences, the class default for a symbol no section names yet. A symbol
+    added, removed, reclassified or whose disposition drifted from its rows
+    without the table moving is a stale TCB claim -- the one table an auditor
+    reads first. `bootstrap/harness/tcb_floor.py --write` regenerates it."""
+    import floor
     path = os.path.join(ROOT, "meta", "specs", "TCB.md")
     if not os.path.exists(path):
         return ["tcb-floor: meta/specs/TCB.md is missing"]
@@ -3636,18 +3741,17 @@ def check_tcb_floor_current():
     m = re.search(r"<!-- BEGIN floor-table -->(.*?)<!-- END floor-table -->", doc, re.S)
     if not m:
         return ["tcb-floor: TCB.md has no marked floor-table region"]
-    listed = {}
-    for sym, cls in re.findall(r"^\| `(@[^`]+)` \| (asm|atomic|syscall|pure) \|", m.group(1), re.M):
-        listed[sym] = cls
-    real = _floor_classes()
+    have = [l for l in m.group(1).splitlines() if l.startswith("| `@")]
+    spec_path = os.path.join(ROOT, "runtime", "npkrt.spec")
+    spec_text = open(spec_path, encoding="utf-8").read() if os.path.exists(spec_path) else ""
+    man_path = os.path.join(ROOT, "runtime", "npkrt.obligations")
+    man_text = open(man_path, encoding="utf-8").read() if os.path.exists(man_path) else ""
+    want = floor.tcb_rows(spec_text, _floor_classes(), man_text)
     fails = []
-    for s in sorted(set(real) - set(listed)):
-        fails.append("tcb-floor: `%s` (%s) is a floor define TCB.md's table does not list" % (s, real[s]))
-    for s in sorted(set(listed) - set(real)):
-        fails.append("tcb-floor: TCB.md's table lists `%s`, which the floor no longer defines" % s)
-    for s in sorted(set(real) & set(listed)):
-        if real[s] != listed[s]:
-            fails.append("tcb-floor: `%s` is %s in the floor and %s in TCB.md's table" % (s, real[s], listed[s]))
+    for row in sorted(set(want) - set(have))[:10]:
+        fails.append("tcb-floor: TCB.md's table lacks the row: %s" % row)
+    for row in sorted(set(have) - set(want))[:10]:
+        fails.append("tcb-floor: TCB.md's table carries a row the floor, the spec and the manifest do not say: %s" % row)
     return fails
 
 
@@ -4643,6 +4747,10 @@ def main(argv):
         # above held -- it starts from stage 1's bytes.
         if ok:
             failures += check_verify_compiler(tmp, stage1_ir)
+            # THE FLOOR'S LEG (1.5.6 step 3, D-288): the floor's rows decided
+            # under the same profile and held to their own manifest.
+            if Z3_ENABLED:
+                failures += check_verify_floor(tmp, tools)
 
         # --- PARITY WITH `npkg test` (1.4.8, D-206 §5) --------------------
         #
@@ -4843,6 +4951,20 @@ def check_parity(tmp, tools):
                 with open(theirs_v, "rb") as fa, open(ours_v, "rb") as fb:
                     if fa.read() != fb.read():
                         vfails.append("parity: build/verify/npkc (npkg's verified compiler) differs from the harness's -- same manifest, same inputs, different bytes")
+            # THE FLOOR'S ROWS TOO (1.5.6 step 3): the writer built by the
+            # compiler under test (inside npkg) and by the snapshot (the
+            # harness's tool) must write the same rows.
+            for name in ("rows.txt", "index.txt"):
+                theirs_f = os.path.join(ROOT, "build", "verify", "floor", name)
+                ours_f = os.path.join(tmp, "verify", "floor", name)
+                if not os.path.exists(theirs_f):
+                    vfails.append("parity: `npkg verify` left no build/verify/floor/%s behind" % name)
+                elif not os.path.exists(ours_f):
+                    vfails.append("parity: this run wrote no verify/floor/%s to compare with" % name)
+                else:
+                    with open(theirs_f, "rb") as fa, open(ours_f, "rb") as fb:
+                        if fa.read() != fb.read():
+                            vfails.append("parity: build/verify/floor/%s (npkg's floor writer) differs from the harness's tool's -- the same modules built by two compilers wrote different rows" % name)
     fails += vfails
     if not fails:
         agreed = sum(1 for k in ours if k in theirs)

@@ -41,11 +41,19 @@ pub struct:FFn = {
     bool:internal;
     List<FBlock>:blocks;
     List<FGep>:geps;
+    List<string>:params;      // `%dst`, `%src`, `%n` (1.5.6 step 3)
+    List<string>:param_tys;   // `ptr`, `ptr`, `i64`
+    string:ret_ty;            // `ptr`, `void`, `{ ptr, i64 }`
 };
 
 pub struct:FloorText = {
     List<FFn>:fns;
     List<string>:mutable;     // the module's `global` (not `constant`) names
+    List<string>:globals;     // every global's name, `@name`, in file order (1.5.6 step 3)
+    List<string>:global_tys;  // its declared type text (`i32`, `[14 x i64]`, `{ ptr, i64 }`)
+    List<string>:type_names;  // the named struct types, `%npk.hdr` (1.5.6 step 3)
+    List<string>:type_texts;  // their bodies, `{ ptr, i32, ... }`
+    List<string>:asm_syms;    // the symbols `module asm ".globl X"` defines, as `@X` (1.5.6 step 3)
 };
 
 // The line's code part: the comment cut, string contents blanked (the
@@ -74,7 +82,7 @@ pub func:floor_code_part = string(string:line) never fails {
 
 // `@name = internal global ...` / `... constant ...`: the global's name and
 // whether it is mutable; "" when the line declares no global.
-func:global_decl = string(string:line, bool->:is_mutable) never fails {
+func:global_decl = string(string:line, bool->:is_mutable, string->:ty) never fails {
     if (line.len == 0i64) { pass ""; }
     if (line.ptr[0i64] != 64u8) { pass ""; }
     int64:eq = raw text_index_of(line, " = ");
@@ -84,9 +92,40 @@ func:global_decl = string(string:line, bool->:is_mutable) never fails {
     string:name = raw text_trim(raw text_slice(line, 0i64, eq));
     if (raw text_starts_with(rest, "internal ")) { rest = raw text_slice(rest, 9i64, rest.len); }
     if (raw text_starts_with(rest, "private ")) { rest = raw text_slice(rest, 8i64, rest.len); }
-    if (raw text_starts_with(rest, "global ")) { <-is_mutable = true; pass name; }
-    if (raw text_starts_with(rest, "constant ")) { <-is_mutable = false; pass name; }
+    if (raw text_starts_with(rest, "global ")) { <-is_mutable = true; <-ty = raw type_token(raw text_slice(rest, 7i64, rest.len)); pass name; }
+    if (raw text_starts_with(rest, "constant ")) { <-is_mutable = false; <-ty = raw type_token(raw text_slice(rest, 9i64, rest.len)); pass name; }
     pass "";
+};
+
+// The leading TYPE of a text: one balanced token -- `i64`, `ptr`, `[14 x
+// i64]`, `{ ptr, i64 }`, `{ { ptr, i64 }, i32 }` -- braces and brackets
+// kept whole; "" when the text starts with neither a word nor a bracket.
+pub func:type_token = string(string:s) never fails {
+    int64:i = 0i64;
+    while ((i < s.len) && (raw text_is_ws(s.ptr[i]))) { i = i + 1i64; }
+    int64:start = i;
+    int64:depth = 0i64;
+    while (i < s.len) {
+        uint8:ch = s.ptr[i];
+        if ((ch == 123u8) || (ch == 91u8)) { depth = depth + 1i64; }
+        if ((ch == 125u8) || (ch == 93u8)) { depth = depth - 1i64; }
+        if (depth == 0i64) {
+            if ((ch == 125u8) || (ch == 93u8)) { i = i + 1i64; break; }
+            if ((raw text_is_ws(ch)) || (ch == 44u8) || (ch == 40u8) || (ch == 41u8)) { break; }
+        }
+        i = i + 1i64;
+    }
+    pass (raw text_slice(s, start, i));
+};
+
+// `%npk.hdr = type { ... }`: the name, and the body through `ty`; "" otherwise.
+func:type_decl = string(string:line, string->:ty) never fails {
+    if (line.len == 0i64) { pass ""; }
+    if (line.ptr[0i64] != 37u8) { pass ""; }
+    int64:eq = raw text_index_of(line, " = type ");
+    if (eq < 0i64) { pass ""; }
+    <-ty = raw type_token(raw text_slice(line, eq + 8i64, line.len));
+    pass (raw text_trim(raw text_slice(line, 0i64, eq)));
 };
 
 // A label line: `name:` with no space; "" otherwise.
@@ -139,25 +178,120 @@ func:gep_of = FGep(string:line) never fails {
     pass none;
 };
 
+func:ffn_empty = FFn() never fails {
+    pass FFn{ name: "", internal: false, blocks: raw list_init::<FBlock>(8i64), geps: raw list_init::<FGep>(8i64),
+              params: raw list_init::<string>(4i64), param_tys: raw list_init::<string>(4i64), ret_ty: "" };
+};
+
+// `define [internal] RET @name(TY %p, TY %q, ...) [attrs] {`: the return
+// type and the parameters with their types.
+func:define_header = NIL(string:line, FFn->:f) never fails {
+    string:rest = raw text_slice(line, 7i64, line.len);   // after `define `
+    if (raw text_starts_with(rest, "internal ")) { rest = raw text_slice(rest, 9i64, rest.len); }
+    if (raw text_starts_with(rest, "private ")) { rest = raw text_slice(rest, 8i64, rest.len); }
+    f.ret_ty = raw type_token(rest);
+    int64:op = raw text_find_byte(rest, 40u8, 0i64);
+    if (op < 0i64) { pass NIL; }
+    int64:cl = op + 1i64;
+    int64:depth = 1i64;
+    while ((cl < rest.len) && (depth > 0i64)) {
+        if (rest.ptr[cl] == 40u8) { depth = depth + 1i64; }
+        if (rest.ptr[cl] == 41u8) { depth = depth - 1i64; }
+        cl = cl + 1i64;
+    }
+    string:inner = raw text_slice(rest, op + 1i64, cl - 1i64);
+    // split on top-level commas
+    int64:i = 0i64;
+    int64:start = 0i64;
+    int64:d2 = 0i64;
+    while (i <= inner.len) {
+        bool:cut = (i == inner.len);
+        if (!cut) {
+            uint8:c = inner.ptr[i];
+            if ((c == 123u8) || (c == 91u8)) { d2 = d2 + 1i64; }
+            if ((c == 125u8) || (c == 93u8)) { d2 = d2 - 1i64; }
+            if ((c == 44u8) && (d2 == 0i64)) { cut = true; }
+        }
+        if (cut) {
+            string:piece = raw text_trim(raw text_slice(inner, start, i));
+            if (piece.len > 0i64) {
+                string:pty = raw type_token(piece);
+                string:after = raw text_trim(raw text_slice(piece, pty.len, piece.len));
+                // `%name`, possibly after parameter attributes (the floor writes none)
+                int64:pc = raw text_find_byte(after, 37u8, 0i64);
+                string:pname = "";
+                if (pc >= 0i64) {
+                    int64:pe = pc;
+                    while ((pe < after.len) && (!(raw text_is_ws(after.ptr[pe])))) { pe = pe + 1i64; }
+                    pname = raw text_slice(after, pc, pe);
+                }
+                drop strlist_push(@f.params, pname);
+                drop strlist_push(@f.param_tys, pty);
+            }
+            start = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
 pub func:floor_parse = FloorText(string:text) never fails {
-    FloorText:ft = FloorText{ fns: raw list_init::<FFn>(180i64), mutable: raw list_init::<string>(48i64) };
+    FloorText:ft = FloorText{ fns: raw list_init::<FFn>(180i64), mutable: raw list_init::<string>(48i64),
+                              globals: raw list_init::<string>(64i64), global_tys: raw list_init::<string>(64i64),
+                              type_names: raw list_init::<string>(4i64), type_texts: raw list_init::<string>(4i64),
+                              asm_syms: raw list_init::<string>(4i64) };
     List<string>:raw_lines = raw text_lines(text);
     bool:in_fn = false;
-    FFn:cur = FFn{ name: "", internal: false, blocks: raw list_init::<FBlock>(1i64), geps: raw list_init::<FGep>(1i64) };
-    for (int64:i in 0i64...raw_lines.count) {
-        string:line = raw floor_code_part(raw strlist_view(raw_lines, i));
+    FFn:cur = raw ffn_empty();
+    int64:i = 0i64 - 1i64;
+    while ((i + 1i64) < raw_lines.count) {
+        i = i + 1i64;
+        string:rawl = raw strlist_view(raw_lines, i);
+        // `module asm ".globl X"`: X is a symbol the assembler defines -- read
+        // from the raw line, since the code part blanks the string
+        if (raw text_starts_with(rawl, "module asm ")) {
+            int64:q = raw text_find_byte(rawl, 34u8, 0i64);
+            if (q >= 0i64) {
+                string:inner = raw text_slice(rawl, q + 1i64, rawl.len);
+                if (raw text_starts_with(inner, ".globl ")) {
+                    int64:e = raw text_find_byte(inner, 34u8, 7i64);
+                    if (e > 7i64) { drop strlist_push(@ft.asm_syms, string_concat("@", raw text_trim(raw text_slice(inner, 7i64, e)))); }
+                }
+            }
+            continue;
+        }
+        string:line = raw floor_code_part(rawl);
+        // AN INSTRUCTION MAY CONTINUE ON THE NEXT LINE (the clone's call ends a
+        // line with a comma): join until the code part ends in neither `,` nor `(`
+        while (in_fn && (line.len > 0i64) && ((line.ptr[line.len - 1i64] == 44u8) || (line.ptr[line.len - 1i64] == 40u8)) && ((i + 1i64) < raw_lines.count)) {
+            i = i + 1i64;
+            string:more = raw floor_code_part(raw strlist_view(raw_lines, i));
+            line = string_concat(string_concat(line, " "), more);
+        }
         if (!in_fn) {
             bool:mut = false;
-            string:g = raw global_decl(line, @mut);
+            string:gty = "";
+            string:g = raw global_decl(line, @mut, @gty);
             if (g.len > 0i64) {
                 if (mut) { drop strlist_push(@ft.mutable, g); }
+                drop strlist_push(@ft.globals, g);
+                drop strlist_push(@ft.global_tys, gty);
+                continue;
+            }
+            string:tty = "";
+            string:tn = raw type_decl(line, @tty);
+            if (tn.len > 0i64) {
+                drop strlist_push(@ft.type_names, tn);
+                drop strlist_push(@ft.type_texts, tty);
                 continue;
             }
             string:sym = raw ir_define_sym(line);
             if (sym.len == 0i64) { continue; }
             in_fn = true;
-            cur = FFn{ name: move(sym), internal: raw text_contains(line, "define internal "),
-                       blocks: raw list_init::<FBlock>(8i64), geps: raw list_init::<FGep>(8i64) };
+            cur = raw ffn_empty();
+            cur.name = move(sym);
+            cur.internal = raw text_contains(line, "define internal ");
+            drop define_header(line, @cur);
             FBlock:entry = FBlock{ label: "entry", lines: raw list_init::<string>(16i64), succs: raw list_init::<int64>(2i64) };
             drop list_push(@cur.blocks, move(entry));
             continue;
@@ -165,7 +299,7 @@ pub func:floor_parse = FloorText(string:text) never fails {
         if (raw text_eq(line, "}")) {
             drop floor_finish(@cur);
             drop list_push(@ft.fns, move(cur));
-            cur = FFn{ name: "", internal: false, blocks: raw list_init::<FBlock>(1i64), geps: raw list_init::<FGep>(1i64) };
+            cur = raw ffn_empty();
             in_fn = false;
             continue;
         }
@@ -192,8 +326,10 @@ pub func:floor_parse = FloorText(string:text) never fails {
 };
 
 // The successors of every block from its last line's `br` (or `switch`).
-func:floor_finish = NIL(FFn->:f) never fails {
+// Public since 1.5.6 step 3: a CFG transform (`floor_cfg.npk`) recomputes them.
+pub func:floor_finish = NIL(FFn->:f) never fails {
     for (int64:b in 0i64...f.blocks.count) {
+        f.blocks.items[b].succs.count = 0i64;
         int64:n = f.blocks.items[b].lines.count;
         if (n == 0i64) { continue; }
         string:last = raw strlist_view(f.blocks.items[b].lines, n - 1i64);
@@ -248,3 +384,61 @@ pub func:floor_gep_index = int64(FFn->:f, string:reg) never fails {
 pub func:floor_is_mutable = bool(FloorText->:ft, string:global) never fails {
     pass (raw strlist_contains(ft.mutable, global));
 };
+
+// The body of a named struct type (`%npk.hdr` -> `{ ptr, i32, ... }`), or "".
+pub func:floor_type_body = string(FloorText->:ft, string:name) never fails {
+    for (int64:i in 0i64...ft.type_names.count) {
+        if (raw text_eq(raw strlist_view_of(ft.type_names.items[i]), name)) { pass (raw strlist_copy(ft.type_texts, i)); }
+    }
+    pass "";
+};
+
+// A global's declared type text, or "" when the module declares no such global.
+pub func:floor_global_type = string(FloorText->:ft, string:global) never fails {
+    for (int64:i in 0i64...ft.globals.count) {
+        if (raw text_eq(raw strlist_view_of(ft.globals.items[i]), global)) { pass (raw strlist_copy(ft.global_tys, i)); }
+    }
+    pass "";
+};
+
+// --- type texts (1.5.6 step 3; the translator and the CFG transforms share them) ----
+
+// `[14 x i64]` -> 14 and `i64`.
+pub func:array_count = int64(string:ty) never fails {
+    int64:x = raw text_index_of(ty, " x ");
+    if (x < 0i64) { pass 0i64; }
+    Result<int64>:n = text_int(raw text_slice(ty, 1i64, x));
+    if (n.is_error) { pass 0i64; }
+    pass n.value;
+};
+
+pub func:array_elem = string(string:ty) never fails {
+    int64:x = raw text_index_of(ty, " x ");
+    if (x < 0i64) { pass ""; }
+    pass (raw text_trim(raw text_slice(ty, x + 3i64, ty.len - 1i64)));
+};
+
+// `{ ptr, i64, [2 x i32] }` -> its field types, brackets kept whole.
+pub func:struct_fields = List<string>(string:ty) never fails {
+    List<string>:out = raw list_init::<string>(4i64);
+    if (ty.len < 2i64) { pass out; }
+    string:inner = raw text_slice(ty, 1i64, ty.len - 1i64);
+    int64:i = 0i64;
+    int64:start = 0i64;
+    int64:depth = 0i64;
+    while (i < inner.len) {
+        uint8:c = inner.ptr[i];
+        if ((c == 123u8) || (c == 91u8)) { depth = depth + 1i64; }
+        if ((c == 125u8) || (c == 93u8)) { depth = depth - 1i64; }
+        if ((c == 44u8) && (depth == 0i64)) {
+            string:f = raw text_trim(raw text_slice(inner, start, i));
+            if (f.len > 0i64) { drop strlist_push(@out, f); }
+            start = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    string:last = raw text_trim(raw text_slice(inner, start, inner.len));
+    if (last.len > 0i64) { drop strlist_push(@out, last); }
+    pass out;
+};
+

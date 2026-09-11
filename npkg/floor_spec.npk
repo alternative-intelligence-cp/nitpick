@@ -46,9 +46,12 @@ func:push_node = int64(Sxs->:s, int32:kind, move string:text) never fails {
 // Link `child` as the last child of `parent` (or as a root when parent < 0),
 // through `last`, the previous sibling at that level (or -1).
 func:link = NIL(Sxs->:s, int64:parent, int64:last, int64:child) never fails {
-    if (last >= 0i64) { s.nodes.items[last].next = child; pass NIL; }
-    if (parent >= 0i64) { s.nodes.items[parent].first = child; pass NIL; }
-    drop list_push(@s.roots, child);
+    if (last >= 0i64) { s.nodes.items[last].next = child; }
+    else { if (parent >= 0i64) { s.nodes.items[parent].first = child; } }
+    // EVERY top-level form is a root (1.5.6 step 3): until this fix only the
+    // first was listed and the rest hung off its `next`, which the step-0
+    // belt never noticed because it asked for the one section that existed
+    if (parent < 0i64) { drop list_push(@s.roots, child); }
     pass NIL;
 };
 

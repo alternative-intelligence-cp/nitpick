@@ -68,81 +68,75 @@ and the floor disagree:
   at 1.5.6 where feasible (r8 Lesson 2: have Z3 prove the floor's execution
   traces simulate the compiler's memory-model semantics).
 
-The disposition column is 1.5.6's to fill per symbol; the class defaults are
-written in the meantime so no row is silent.
+The disposition column is GENERATED too (1.5.6 step 3, D-288 §2.10;
+`bootstrap/harness/tcb_floor.py --write` rewrites the table, and both
+runners' belts hold it): `trusted (inline asm)` for the asm class;
+`specified (N discharged, M residue)` from the floor's committed manifest
+(`runtime/npkrt.obligations`) for a symbol with a section in
+`runtime/npkrt.spec`; the section's `residue (…)` and `boundary (…)`
+sentences verbatim; and, for a symbol no section names yet, the class
+default — the rows steps 4–6 still owe read exactly as they did before
+this column existed, so a reader can tell the specified from the pending.
+The `asm` class means inline assembly in the body OR a call of a symbol
+`module asm` defines (`npk_thread_start` rides `npk_clone_raw`), over the
+code of each body — a comment that said `asm` classified `npk_clone_exec`
+until step 3 held the two runners' classifiers to one answer.
 
 <!-- BEGIN floor-table -->
 | symbol | class | disposition |
 |---|---|---|
-| `@npk_clone_exec` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
-| `@npk_exec` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
-| `@npk_sys6` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
-| `@npk_tls_self` | asm | the volatile bottom (inline asm): TRUSTED, documented; no proof |
-| `@npk_ch_at` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_close` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_closed` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_get` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_open` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_reclaim` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_recv_wait` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_send_wait` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_try_recv` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_try_send` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_ch_wake_one` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_driver_kill_all` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_driver_live_count` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_driver_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_exit` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_frozen_get` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_in_fs` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_io_register` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_mx_lock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_mx_unlock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_park_sleep` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_reg_claim` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_reg_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sarena_bump` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sarena_destroy` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sarena_make` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sarena_slot` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sl_earliest` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sl_push` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_sl_wake_due` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_step` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_stop_handler` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_stop_others` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_task_done` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_thread_join` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_trap` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_wild_live_count` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_wildx_alloc` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_wildx_free` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
-| `@npk_windup_all` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@__divti3` | pure | specified (3 discharged, 0 residue) |
+| `@__modti3` | pure | specified (4 discharged, 0 residue) |
+| `@__udivti3` | pure | specified (2 discharged, 0 residue) |
+| `@__umodti3` | pure | specified (3 discharged, 0 residue) |
+| `@fmod` | pure | specified (7 discharged, 0 residue); residue (the reduction's result is not decided under the profile: |result| < |b| on the finite path is unknown with the loops unwound 2 and 8 times (z3's floating-point theory bit-blasts every fmul and fsub of the chain; measured 2026-09-11); the special values are rows) |
+| `@fmodf` | pure | specified (7 discharged, 0 residue); residue (as fmod's: the reduction's result is not decided under the profile (unknown with the loops unwound 2 and 8 times, measured 2026-09-11); the special values are rows) |
+| `@memcpy` | pure | specified (5 discharged, 0 residue) |
+| `@memmove` | pure | specified (7 discharged, 0 residue) |
+| `@memset` | pure | specified (5 discharged, 0 residue) |
 | `@npk_aalloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_alloc_impl` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_alloc_internal` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_alloc_managed` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_arena_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_arena_at` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_arena_destroy` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_arena_free` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_arena_make` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_arena_reset` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_barrier_arrive` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_barrier_cancel` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_barrier_poll` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_buffer_new` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_calloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_ch_at` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_close` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_closed` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_get` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_ch_lock` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_ch_open` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_push` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_ch_reclaim` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_recv_wait` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_send_wait` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_try_recv` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_try_send` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ch_unlink` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_ch_unlock` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_ch_wait_link` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_ch_wait_unlink` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_ch_wake_all` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_ch_wake_one` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_chain_depth` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_chain_push` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_chain_reset` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_chain_site` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_chtab_find` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_chtab_insert` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_chunk_guard_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_chunk_new` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_clone_exec` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_close` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_cstr_slice` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_cv_begin` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
@@ -150,10 +144,19 @@ written in the meantime so no row is silent.
 | `@npk_cv_done` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_cv_signal` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_dalloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_driver_kill_all` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_driver_live_count` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_driver_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_environ` | pure | specified (3 discharged, 0 residue) |
+| `@npk_exec` | asm | trusted (inline asm) |
+| `@npk_exit` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_frame_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_frame_bucket` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_frame_drain` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_frame_exec_destroy` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_frame_exec_new` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_frame_free` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_frozen_get` | atomic | specified (2 discharged, 0 residue) |
 | `@npk_fs_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_guard_release` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_hardware_concurrency` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
@@ -162,93 +165,101 @@ written in the meantime so no row is silent.
 | `@npk_heap_init` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_heap_oom` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_hmap` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_hs_report` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_hunmap` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_int_to_string` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_io_unwatch` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_join_deadline` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_large_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_large_new` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_lg_insert` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_mono_now` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_mutex_acquire_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_ofd_close` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_open` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_park_forever` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_park_take` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_park_until` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_path_exists` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_raise` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_ralloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_read` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_read_file` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_read_stdin` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_rq_pop` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_rq_push` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_run_until` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_rw_read_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_rw_release_read` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_rw_write_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_small_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_small_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_small_free` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_start` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_string_concat` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_string_slice` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_thread_entry` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_thread_exit` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_thread_start` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_tls_boot` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_to_cstring` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_wild_release_all` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_wildx_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_wildx_seal` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_windup_grace` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_windup_note` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_write` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@npk_write_file` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
-| `@__divti3` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@__modti3` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@__udivti3` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@__umodti3` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@fmod` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@fmodf` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@memcpy` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@memmove` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@memset` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_arena_at` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_arena_free` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_arena_reset` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_ch_push` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_ch_unlink` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_chtab_find` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_environ` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_frame_bucket` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_frame_drain` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_hs_arm` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_hs_note_alloc` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_hs_note_free` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_hs_note_resize` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_hs_put_dec` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_hs_put_str` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_report` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_hunmap` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_in_fs` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_int_to_string` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_io_register` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_io_unwatch` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_join_deadline` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_large_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_large_new` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_lg_entry` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_lg_find` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_lg_insert` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_lg_remove` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_chunk` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_ffree` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_flive` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_freed` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_guard` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_large` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_largew` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_live` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_livew` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_m_wildx` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_string_equals` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_string_from_bytes` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_udivmod128` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_m_chunk` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_ffree` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_flive` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_freed` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_guard` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_large` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_largew` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_live` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_livew` | pure | specified (2 discharged, 0 residue) |
+| `@npk_m_wildx` | pure | specified (2 discharged, 0 residue) |
+| `@npk_mono_now` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_mutex_acquire_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_mx_lock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_mx_unlock` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_ofd_close` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_open` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_park_forever` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_park_sleep` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_park_take` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_park_until` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_path_exists` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_raise` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_ralloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_read_file` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_read_stdin` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_read` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_reg_claim` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_reg_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_rq_pop` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_rq_push` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_run_until` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_rw_read_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_rw_release_read` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_rw_write_wait` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_sarena_bump` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_sarena_destroy` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_sarena_make` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_sarena_slot` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_sl_earliest` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_sl_push` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_sl_wake_due` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_small_alloc` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_small_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_small_free` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_start` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_step` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_stop_handler` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_stop_others` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_string_concat` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_string_equals` | pure | specified (6 discharged, 0 residue) |
+| `@npk_string_from_bytes` | pure | specified (4 discharged, 0 residue) |
+| `@npk_string_slice` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_sys6` | asm | trusted (inline asm) |
+| `@npk_task_done` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_thread_entry` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_thread_exit` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_thread_join` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_thread_start` | asm | trusted (inline asm) |
+| `@npk_tls_boot` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_tls_self` | asm | trusted (inline asm) |
+| `@npk_to_cstring` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_trap` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_udivmod128` | pure | specified (4 discharged, 0 residue); residue (the division identity a = q*b + r is not decided under the profile: it needs 2^i, which the IR does not compute, and this writer invents no ghost variable (D-288); the b = 0 answer (q all ones, r = a) and the b = 1 answer (q = a, r = 0) are not decided either -- with the loop unwound 127 times (its bound proven exact in 0.03 s) every row over the whole computation exhausts the rlimit (q all ones unknown after 54 s, b = 1 after 149 s, r = a after 643 s, and even r < b after 652 s, which the invariant's step decides at 3,093), and the multiplier's equivalence is unknown in QF_BV at every width (measured 2026-09-11)) |
+| `@npk_wild_live_count` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_wild_release_all` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_wildx_alloc` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_wildx_call` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
-| `@npk_zero` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_wildx_check` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_wildx_free` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_wildx_seal` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_windup_all` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_windup_grace` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_windup_note` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_write_file` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_write` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_zero` | pure | specified (4 discharged, 0 residue) |
 <!-- END floor-table -->
 
 ## 5. What a reader must accept

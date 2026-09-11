@@ -40,6 +40,9 @@ use "./irscan.npk".*;
 use "./strset.npk".*;
 use "./elf.npk".*;
 use "./floor_shared.npk".*;
+use "./floor_ir.npk".*;
+use "./floor_spec.npk".*;
+use "./floor.npk".*;
 
 // One row of rows.txt, with its verdict once decided.
 pub struct:VRow = {
@@ -826,8 +829,139 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     string:line = raw verdict_counts(rows);
     line = string_concat(line, "; nitpick.obligations matches; the verified compiler rebuilds itself byte-identically");
     drop say(raw stage_text("verify", line));
+
+    // 6. THE FLOOR'S LEG (1.5.6 step 3, D-288)
+    Result<Step>:fs = await floor_leg(c, z3, vdir, record, explain);
+    if (fs.is_error) { fail fs.err; }
+    Step:fst = move(fs.value);
+    if (!fst.ok) { pass fst; }
+    drop say(raw stage_text("floor", fst.text));
     drop say(raw stage_text("nikos", "[verify.nikos] declared, not run -- the engine is 1.6.0's gate's (D-217, D-233)"));
     pass (raw step_ok(vbin));
+};
+
+// --- THE FLOOR'S LEG (1.5.6 step 3; D-288 §2.11) ----------------------------------------------
+//
+// After the verified fixpoint: the belts over `runtime/npkrt.spec` (the
+// spec names what the floor defines, every section claims or excuses, the
+// TCB table's disposition column is what the spec and the committed floor
+// manifest say), the translator writing `build/verify/floor/`, z3 over it
+// through the same `z3_decide`, the verdict rule -- an `open` floor row is
+// a run failure by name, and so is an `unroll-exact` row that is not
+// discharged -- and the floor's manifest held to `runtime/npkrt.obligations`
+// exactly as the compiler's is to `nitpick.obligations`, `--record` writing
+// it, `--explain` covering its rows in `build/verify/explain-floor.txt`.
+
+// The verdict rule's findings over decided floor rows.
+pub func:floor_verdict_failures = List<string>(List<VRow>:rows) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    for (int64:i in 0i64...rows.count) {
+        string:site = string_from_bytes(rows.items[i].site.ptr, rows.items[i].site.len);
+        string:sym = string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len);
+        if (rows.items[i].verdict == (raw OV_OPEN())) {
+            string:m = string_concat("floor: ", sym);
+            m = string_concat(m, ": ");
+            m = string_concat(m, site);
+            m = string_concat(m, " is refuted (a counterexample exists; either the floor does not meet its specification or the specification is wrong; `npkg verify --explain` writes the model)");
+            drop strlist_push(@fl, m);
+            continue;
+        }
+        if ((raw text_starts_with(site, "spec:unroll-exact")) && (rows.items[i].verdict != (raw OV_DISCHARGED()))) {
+            string:m2 = string_concat("floor: ", sym);
+            m2 = string_concat(m2, ": ");
+            m2 = string_concat(m2, site);
+            m2 = string_concat(m2, " -- the spec claims the bound exact and the profile did not prove it: say `(unroll N)` without `exact`, or raise the bound");
+            drop strlist_push(@fl, m2);
+        }
+    }
+    pass fl;
+};
+
+// The belts that need no solver: the spec against the floor, TCB.md's
+// table against the spec and the committed floor manifest (absent: the
+// class defaults must stand).
+pub func:floor_belts = List<string>(Ctx->:c, FloorInputs->:inp) never fails {
+    List<string>:fl = raw floor_spec_current(@inp.ft, @inp.spec);
+    if (fl.count > 0i64) { pass fl; }
+    string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
+    List<ManRow>:rows = raw list_init::<ManRow>(64i64);
+    Result<cstring>:mc = to_cstring(raw path_join(root, "runtime/npkrt.obligations"));
+    if (mc.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.obligations: not a path"); pass fl; }
+    if (path_exists(mc.value)) {
+        Result<string>:mt = read_file(mc.value);
+        if (mt.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.obligations cannot be read"); pass fl; }
+        ObManifest:man = raw man_parse_named(mt.value, true);
+        if (!man.ok) { drop strlist_push(@fl, string_concat("floor: ", man.problem)); pass fl; }
+        rows = move(man.rows);
+    }
+    Result<cstring>:tc = to_cstring(raw path_join(root, "meta/specs/TCB.md"));
+    if (tc.is_error) { drop strlist_push(@fl, "tcb-floor: meta/specs/TCB.md: not a path"); pass fl; }
+    Result<string>:tt = read_file(tc.value);
+    if (tt.is_error) { drop strlist_push(@fl, "tcb-floor: meta/specs/TCB.md is missing"); pass fl; }
+    List<string>:tf = raw tcb_floor_current(@inp.ft, @inp.spec, @rows, tt.value);
+    for (int64:i in 0i64...tf.count) { drop strlist_push(@fl, raw strlist_view(tf, i)); }
+    pass fl;
+};
+
+pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bool:explain) {
+    string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
+    FloorInputs:inp = raw floor_read(root);
+    if (!inp.ok) { pass (raw step_bad(inp.problem)); }
+    List<string>:sb = raw floor_shared_current(root);
+    if (sb.count > 0i64) { pass (raw step_bad(raw strlist_view(sb, 0i64))); }
+    List<string>:bl = raw floor_belts(c, @inp);
+    if (bl.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(bl, 0i64), ""))); }
+    string:fdir = raw path_join(vdir, "floor");
+    List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, fdir);
+    if (ef.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(ef, 0i64), ""))); }
+    Result<List<VRow>>:rows_r = read_rows(fdir);
+    if (rows_r.is_error) { pass (raw step_bad("the floor's obligation directory could not be read (rows.txt)")); }
+    List<VRow>:rows = move(rows_r.value);
+    Result<List<VFile>>:files_r = read_index(fdir);
+    if (files_r.is_error) { pass (raw step_bad("the floor's obligation directory could not be read (index.txt)")); }
+    List<VFile>:files = move(files_r.value);
+    List<string>:zf = raw list_init::<string>(1i64);
+    Result<NIL>:zr = await z3_decide(c, z3, fdir, @rows, files, "floor", @zf);
+    if (zr.is_error) { fail zr.err; }
+    if (zf.count > 0i64) { pass (raw step_bad(raw strlist_view(zf, 0i64))); }
+    List<string>:vf = raw floor_verdict_failures(rows);
+    if (vf.count > 0i64) { pass (raw step_bad(raw strlist_view(vf, 0i64))); }
+    string:run_text = raw manifest_of(c, rows);
+    string:committed = raw path_join(root, "runtime/npkrt.obligations");
+    Result<cstring>:cc = to_cstring(committed);
+    if (cc.is_error) { pass (raw step_bad("runtime/npkrt.obligations: not a path")); }
+    if (record) {
+        Result<NIL>:w = write_file(cc.value, run_text);
+        if (w.is_error) { pass (raw step_bad("runtime/npkrt.obligations could not be written")); }
+        drop say(raw stage_text("recorded", "runtime/npkrt.obligations written from this run (--record): commit it with the change that moved it"));
+    } else {
+        if (!(path_exists(cc.value))) {
+            pass (raw step_bad("runtime/npkrt.obligations is not committed -- the floor's rows are governed by their manifest and nothing writes it implicitly (D-288); run `npkg verify --record` and commit the file"));
+        }
+        Result<string>:ct = read_file(cc.value);
+        if (ct.is_error) { pass (raw step_bad("runtime/npkrt.obligations cannot be read")); }
+        ObManifest:cman = raw man_parse_named(ct.value, true);
+        if (!cman.ok) { pass (raw step_bad(string_concat("runtime/npkrt.obligations: ", cman.problem))); }
+        ObManifest:rman = raw man_parse_named(run_text, true);
+        if (!rman.ok) { pass (raw step_bad(string_concat("this run's floor manifest does not read back: ", rman.problem))); }
+        string:diff = raw manifest_compare(move(cman), move(rman));
+        if (diff.len > 0i64) {
+            string:m = "this run's floor obligations differ from runtime/npkrt.obligations (D-040: a build that would differ from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):";
+            m = string_concat(m, diff);
+            pass (raw step_bad(m));
+        }
+        if (!(raw text_eq(ct.value, run_text))) {
+            pass (raw step_bad("runtime/npkrt.obligations carries the same rows as this run but different bytes -- the header (the pinned z3, the profile) or the row order moved; re-record it"));
+        }
+    }
+    if (explain) {
+        Result<NIL>:ex = await explain_run(c, z3, fdir, rows, files, raw path_join(vdir, "explain-floor.txt"));
+        if (ex.is_error) { pass (raw step_bad("the floor's --explain pass could not run")); }
+        drop say(raw stage_text("explain", "build/verify/explain-floor.txt: the floor's rows -- a model per open row, a reason per budget row, a core per discharged row"));
+    }
+    string:line = raw verdict_counts(rows);
+    line = string_concat(line, "; runtime/npkrt.obligations matches");
+    pass (raw step_ok(line));
 };
 
 // --- `--explain` (P-7's second pass) ---------------------------------------------------------

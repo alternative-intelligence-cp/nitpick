@@ -11,6 +11,9 @@ mod:floorspec;
 use "../lib/nio.npk".*;
 use "../npkg/text.npk".*;
 use "../npkg/floor_shared.npk".*;
+use "../npkg/floor.npk".*;
+use "../npkg/floor_ir.npk".*;
+use "../npkg/floor_smt.npk".*;
 
 func:say = NIL(string:s) never fails {
     string:ln = string_concat(s, "\n");
@@ -21,10 +24,34 @@ func:say = NIL(string:s) never fails {
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        drop say("usage: floorspec <manifest root>");
+        drop say("usage: floorspec <manifest root> [--emit DIR]");
         exit 2i32;
     }
     string:root = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    if (argv.len >= 4i64) {
+        if (raw text_eq(string_from_bytes(argv[2i64].ptr, argv[2i64].len), "--emit")) {
+            string:dir = string_from_bytes(argv[3i64].ptr, argv[3i64].len);
+            FloorInputs:inp = raw floor_read(root);
+            if (!inp.ok) { drop say(inp.problem); exit 1i32; }
+            List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, dir);
+            for (int64:i in 0i64...ef.count) { drop say(raw strlist_view(ef, i)); }
+            if (ef.count > 0i64) { drop say(string_concat(int_to_string(ef.count), " finding(s)")); exit 1i32; }
+            drop say(string_concat("floor: obligations written to ", dir));
+            exit 0i32;
+        }
+    }
+    if (argv.len >= 4i64) {
+        if (raw text_eq(string_from_bytes(argv[2i64].ptr, argv[2i64].len), "--dump")) {
+            string:sym = string_from_bytes(argv[3i64].ptr, argv[3i64].len);
+            FloorInputs:inp2 = raw floor_read(root);
+            if (!inp2.ok) { drop say(inp2.problem); exit 1i32; }
+            int64:fi = raw floor_fn_index(@inp2.ft, sym);
+            int64:sec = raw spec_section(@inp2.spec, sym);
+            if (fi < 0i64) { drop say("no such define"); exit 1i32; }
+            drop say(raw floor_dump(@inp2.ft, @inp2.spec, fi, sec));
+            exit 0i32;
+        }
+    }
     List<string>:fl = raw floor_shared_current(root);
     for (int64:i in 0i64...fl.count) { drop say(raw strlist_view(fl, i)); }
     if (fl.count > 0i64) {
@@ -49,6 +76,9 @@ func:failsafe = int32(Error:e) {
         (ETextInt)         { exit 3i32; },
         (intern.BoundsId)  { exit 3i32; },
         (intern.ProvenSlice) { exit 3i32; },
+        (nfs.EFsPath)      { exit 3i32; },
+        (nfs.EFsRecord)    { exit 3i32; },
+        (nfs.EFsIndex)     { exit 3i32; },
         (*)                { exit 3i32; }
     }
     exit 3i32;

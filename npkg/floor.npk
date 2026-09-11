@@ -1,0 +1,458 @@
+// floor -- THE FLOOR'S VERIFICATION LEG (1.5.6 step 3; D-288 §2.2, §2.6,
+// §2.11): the translator's driver over `runtime/npkrt.ll` and
+// `runtime/npkrt.spec`, writing `build/verify/floor/` in the compiler's
+// directory shape (`NNNN.smt2`, `index.txt`, `rows.txt`) so `z3_decide` and
+// the harness's `z3_verdicts` decide it unchanged; and the belts that hold
+// the spec to the floor before a solver is spawned: every specified symbol
+// exists with those parameters, every section has rows or a `residue`
+// sentence, every `(summary)` symbol has an `ensures`, every loop annotation
+// names a loop of its function. `tools/floorspec.npk` is the harness's
+// entry to the same functions.
+
+mod:floor;
+
+use "../src/frontend/paths.npk".*;
+use "../lib/nfs.npk".*;
+use "./text.npk".*;
+use "./floor_ir.npk".*;
+use "./floor_spec.npk".*;
+use "./floor_cfg.npk".*;
+use "./floor_smt.npk".*;
+use "../src/backend/smt/smt_kinds.npk".*;
+use "../src/backend/smt/smt_manifest.npk".*;
+
+pub struct:FloorInputs = {
+    bool:ok;
+    string:problem;
+    FloorText:ft;
+    Sxs:spec;
+};
+
+// The floor and its spec, read from the manifest root.
+pub func:floor_read = FloorInputs(string:root) never fails {
+    FloorInputs:out = FloorInputs{ ok: false, problem: "", ft: raw floor_parse(""), spec: raw sx_parse("") };
+    Result<cstring>:fc = to_cstring(raw path_join(root, "runtime/npkrt.ll"));
+    if (fc.is_error) { out.problem = "floor: runtime/npkrt.ll: not a path"; pass out; }
+    Result<string>:ftext = read_file(fc.value);
+    if (ftext.is_error) { out.problem = "floor: runtime/npkrt.ll cannot be read"; pass out; }
+    Result<cstring>:sc = to_cstring(raw path_join(root, "runtime/npkrt.spec"));
+    if (sc.is_error) { out.problem = "floor: runtime/npkrt.spec: not a path"; pass out; }
+    Result<string>:stext = read_file(sc.value);
+    if (stext.is_error) { out.problem = "floor: runtime/npkrt.spec is missing -- the floor's specification is part of the tree (D-288)"; pass out; }
+    out.ft = raw floor_parse(ftext.value);
+    out.spec = raw sx_parse(stext.value);
+    if (!out.spec.ok) { out.problem = string_concat("floor: runtime/npkrt.spec: ", out.spec.problem); pass out; }
+    out.ok = true;
+    pass out;
+};
+
+// `abs` exists as a directory afterwards (build.npk's `ensure_dir`, repeated
+// here so the harness's tool needs nothing of the runner's build layer).
+func:floor_ensure_dir = NIL(string:abs) {
+    Path:parent = relay path_parse(raw path_dirname(abs));
+    fd:d = relay dir_open(parent);
+    Result<NIL>:mk = mkdir_at(d, raw text_file_name(abs));
+    Result<NIL>:cl = close(d);
+    if (mk.is_error) { if (mk.err != Exists) { fail mk.err; } }
+    if (cl.is_error) { fail cl.err; }
+    pass NIL;
+};
+
+// Every `(symbol @name ...)` section's name, in file order.
+pub func:spec_symbols = List<string>(Sxs->:s) never fails {
+    List<string>:out = raw list_init::<string>(64i64);
+    for (int64:i in 0i64...s.roots.count) {
+        int64:r = s.roots.items[i];
+        if (!(raw text_eq(raw sx_head(s, r), "symbol"))) { continue; }
+        drop strlist_push(@out, raw sx_atom(s, raw sx_nth(s, r, 1i64)));
+    }
+    pass out;
+};
+
+// `NNNN`, four digits, 1-based (the compiler's `file_number`).
+func:fno = string(int64:n) never fails {
+    string:d = int_to_string(n);
+    string:z = "";
+    for (int64:i in d.len...4i64) { z = string_concat(z, "0"); }
+    pass (string_concat(z, d));
+};
+
+// THE WRITER: one file per specified symbol that has rows, `index.txt` and
+// `rows.txt` in the compiler's shape; the problems by name.
+pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, string:dir) never fails {
+    List<string>:fl = raw list_init::<string>(4i64);
+    Result<NIL>:d = floor_ensure_dir(dir);
+    if (d.is_error) { drop strlist_push(@fl, string_concat("floor: cannot create ", dir)); pass fl; }
+    List<string>:syms = raw spec_symbols(s);
+    string:index = "";
+    string:rows = "";
+    int64:n = 0i64;
+    for (int64:i in 0i64...syms.count) {
+        string:name = raw strlist_view(syms, i);
+        int64:fi = raw floor_fn_index(ft, name);
+        int64:sec = raw spec_section(s, name);
+        if (fi < 0i64) { drop strlist_push(@fl, string_concat("floor: the spec names a symbol the floor does not define: ", name)); continue; }
+        // a symbol with a residue sentence and nothing else claims no rows
+        bool:claims = (raw spec_has(s, sec, "ensures")) || (raw spec_has(s, sec, "ensures-trap")) || (raw spec_has(s, sec, "frame")) || (raw spec_has(s, sec, "loop"));
+        if (!claims) { continue; }
+        FloorFile:f = raw floor_translate(ft, s, fi, sec);
+        if (f.problems.count > 0i64) {
+            for (int64:p in 0i64...f.problems.count) { drop strlist_push(@fl, raw strlist_view(f.problems, p)); }
+            continue;
+        }
+        n = n + 1i64;
+        string:no = raw fno(n);
+        Result<cstring>:pc = to_cstring(raw path_join(dir, string_concat(no, ".smt2")));
+        if (pc.is_error) { drop strlist_push(@fl, "floor: an output path is not a path"); continue; }
+        Result<NIL>:w = write_file(pc.value, f.text);
+        if (w.is_error) { drop strlist_push(@fl, string_concat("floor: cannot write ", string_concat(no, ".smt2"))); continue; }
+        index = string_concat(index, no);
+        index = string_concat(index, "\t");
+        index = string_concat(index, name);
+        index = string_concat(index, "\t");
+        index = string_concat(index, int_to_string(f.rows.count));
+        index = string_concat(index, "\n");
+        for (int64:r in 0i64...f.rows.count) {
+            string:ln = string_concat(no, "\t");
+            ln = string_concat(ln, int_to_string(r + 1i64));
+            ln = string_concat(ln, "\tfloor-spec\t");
+            ln = string_concat(ln, raw strlist_view_of(f.rows.items[r].hash));
+            ln = string_concat(ln, "\t1\t");
+            ln = string_concat(ln, name);
+            ln = string_concat(ln, "\t");
+            ln = string_concat(ln, raw strlist_view_of(f.rows.items[r].site));
+            ln = string_concat(ln, "\tconform\t0\t0\t");
+            ln = string_concat(ln, raw strlist_view_of(f.rows.items[r].tier));
+            ln = string_concat(ln, "\n");
+            rows = string_concat(rows, ln);
+        }
+    }
+    Result<cstring>:ic = to_cstring(raw path_join(dir, "index.txt"));
+    if (ic.is_error) { drop strlist_push(@fl, "floor: index.txt: not a path"); pass fl; }
+    Result<NIL>:iw = write_file(ic.value, index);
+    if (iw.is_error) { drop strlist_push(@fl, "floor: cannot write index.txt"); }
+    Result<cstring>:rc = to_cstring(raw path_join(dir, "rows.txt"));
+    if (rc.is_error) { drop strlist_push(@fl, "floor: rows.txt: not a path"); pass fl; }
+    Result<NIL>:rw = write_file(rc.value, rows);
+    if (rw.is_error) { drop strlist_push(@fl, "floor: cannot write rows.txt"); }
+    pass fl;
+};
+
+// --- the belts (before a solver is spawned) ---------------------------------------------
+
+// The parameters of the floor's define `name` as a spec spells them (`dst`, `a.0`...).
+func:param_names = List<string>(FloorText->:ft, int64:fi) never fails {
+    List<string>:out = raw list_init::<string>(8i64);
+    for (int64:p in 0i64...ft.fns.items[fi].params.count) {
+        string:pn = raw strlist_view(ft.fns.items[fi].params, p);
+        if (pn.len == 0i64) { continue; }
+        string:bare = raw text_slice(pn, 1i64, pn.len);
+        string:pty = raw strlist_view(ft.fns.items[fi].param_tys, p);
+        if (raw is_aggregate_ty(pty)) {
+            List<string>:fs = raw struct_fields(pty);
+            if (raw text_starts_with(pty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, pty)); }
+            for (int64:f in 0i64...fs.count) {
+                string:pf = string_concat(bare, ".");
+                pf = string_concat(pf, int_to_string(f));
+                drop strlist_push(@out, pf);
+            }
+            continue;
+        }
+        drop strlist_push(@out, bare);
+    }
+    pass out;
+};
+
+// Does a block of the define carry the label?
+func:has_label = bool(FloorText->:ft, int64:fi, string:label) never fails {
+    pass ((raw floor_block_index(@ft.fns.items[fi], label)) >= 0i64);
+};
+
+// THE SPEC BELT (D-288 §2.11): every `(symbol ...)` section names a define
+// of the floor; a `(loop LABEL ...)` names a block of it with exactly one
+// treatment; every section claims something (a clause that yields rows) or
+// says why not (`residue`, `boundary`); a `(summary)` section has an
+// `ensures` (a summary with nothing to assume is a hole a caller would
+// fall through); no symbol is specified twice; a clause head outside the
+// grammar is refused by name.
+pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails {
+    List<string>:fl = raw list_init::<string>(4i64);
+    List<string>:seen = raw list_init::<string>(64i64);
+    for (int64:i in 0i64...s.roots.count) {
+        int64:r = s.roots.items[i];
+        string:head = raw sx_head(s, r);
+        if (raw text_eq(head, "shared")) { continue; }
+        if (!(raw text_eq(head, "symbol"))) {
+            drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a top-level form that is neither (shared ...) nor (symbol ...): ", head));
+            continue;
+        }
+        string:name = raw sx_atom(s, raw sx_nth(s, r, 1i64));
+        if (name.len == 0i64) { drop strlist_push(@fl, "floor: runtime/npkrt.spec: a (symbol ...) without a name"); continue; }
+        if (raw strlist_contains(seen, name)) { drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a symbol specified twice: ", name)); continue; }
+        drop strlist_push(@seen, name);
+        int64:fi = raw floor_fn_index(ft, name);
+        if (fi < 0i64) { drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec names a symbol the floor does not define: ", name)); continue; }
+        bool:claims = false;
+        bool:excused = false;
+        bool:summary = false;
+        bool:has_ensures = false;
+        int64:c = s.nodes.items[r].first;
+        c = s.nodes.items[c].next;   // past `symbol`
+        c = s.nodes.items[c].next;   // past the name
+        while (c >= 0i64) {
+            if (!(raw sx_is_list(s, c))) {
+                drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a bare word inside the section of ", name));
+                break;
+            }
+            string:ch = raw sx_head(s, c);
+            bool:known = false;
+            if (raw text_eq(ch, "free")) { known = true; }
+            if (raw text_eq(ch, "requires")) { known = true; }
+            if (raw text_eq(ch, "ensures")) { known = true; claims = true; has_ensures = true; }
+            if (raw text_eq(ch, "ensures-trap")) { known = true; claims = true; }
+            if (raw text_eq(ch, "frame")) { known = true; claims = true; }
+            if (raw text_eq(ch, "summary")) { known = true; summary = true; }
+            if (raw text_eq(ch, "residue")) { known = true; excused = true; }
+            if (raw text_eq(ch, "boundary")) { known = true; excused = true; }
+            if (raw text_eq(ch, "loop")) {
+                known = true;
+                claims = true;
+                string:label = raw sx_atom(s, raw sx_nth(s, c, 1i64));
+                if (!(raw has_label(ft, fi, label))) {
+                    string:w = string_concat("floor: runtime/npkrt.spec: ", name);
+                    w = string_concat(w, " has no block labelled ");
+                    w = string_concat(w, label);
+                    drop strlist_push(@fl, w);
+                }
+                int64:treatments = (raw spec_clause_count(s, c, "invariant")) + (raw spec_clause_count(s, c, "unroll"));
+                if (treatments != 1i64) {
+                    string:w2 = string_concat("floor: runtime/npkrt.spec: the loop ", label);
+                    w2 = string_concat(w2, " of ");
+                    w2 = string_concat(w2, name);
+                    w2 = string_concat(w2, " needs exactly one of (invariant I) and (unroll N)");
+                    drop strlist_push(@fl, w2);
+                }
+            }
+            if (!known) {
+                string:w3 = string_concat("floor: runtime/npkrt.spec: a clause the grammar does not know in ", name);
+                w3 = string_concat(w3, ": ");
+                w3 = string_concat(w3, ch);
+                drop strlist_push(@fl, w3);
+            }
+            c = s.nodes.items[c].next;
+        }
+        if (!(claims || excused)) {
+            drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a section with no claim and no residue or boundary sentence: ", name));
+        }
+        if (summary && (!has_ensures)) {
+            drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a (summary) symbol without an ensures -- a caller would assume nothing: ", name));
+        }
+        // every parameter a clause could name exists: a `requires`/`ensures` naming an
+        // unknown word is refused by the translator; here the section's free symbols
+        // must not shadow a parameter
+        List<string>:pn = raw param_names(ft, fi);
+        int64:fk = 0i64;
+        while (true) {
+            int64:fc = raw spec_clause(s, r, "free", fk);
+            if (fc < 0i64) { break; }
+            fk = fk + 1i64;
+            string:fname = raw sx_atom(s, raw sx_nth(s, fc, 1i64));
+            if (raw strlist_contains(pn, fname)) {
+                string:w4 = string_concat("floor: runtime/npkrt.spec: a free symbol of ", name);
+                w4 = string_concat(w4, " shadows its parameter ");
+                w4 = string_concat(w4, fname);
+                drop strlist_push(@fl, w4);
+            }
+        }
+    }
+    pass fl;
+};
+
+// --- TCB.md's disposition column (D-288 §2.10) --------------------------------------------
+
+// The floor's classes as TCB.md's table carries them (`asm`/`atomic`/
+// `syscall`/`pure`; the harness's `_floor_classes`, form for form): inline
+// asm in the body or a call of a symbol `module asm` defines (the clone's
+// `npk_clone_raw`), an atomic operation, reaching an asm define
+// transitively, or none of those -- over code lines, never comments.
+pub func:floor_classes = List<string>(FloorText->:ft) never fails {
+    int64:n = ft.fns.count;
+    List<string>:cls = raw list_init::<string>(n + 1i64);
+    List<bool>:is_asm = raw list_init::<bool>(n + 1i64);
+    List<bool>:is_atomic = raw list_init::<bool>(n + 1i64);
+    for (int64:i in 0i64...n) {
+        bool:a = false;
+        bool:at = false;
+        for (int64:b in 0i64...ft.fns.items[i].blocks.count) {
+            for (int64:l in 0i64...ft.fns.items[i].blocks.items[b].lines.count) {
+                string:ln = raw strlist_view(ft.fns.items[i].blocks.items[b].lines, l);
+                if (raw has_word(ln, "asm")) { a = true; }
+                if ((raw text_index_of(ln, "call ")) >= 0i64) {
+                    for (int64:ai in 0i64...ft.asm_syms.count) {
+                        string:asym = raw strlist_view(ft.asm_syms, ai);
+                        if (raw text_contains(ln, string_concat(asym, "("))) { a = true; }
+                    }
+                }
+                if (raw has_word(ln, "atomicrmw") || raw has_word(ln, "cmpxchg") || raw has_word(ln, "fence")) { at = true; }
+                if (raw text_contains(ln, "load atomic ") || raw text_contains(ln, "store atomic ")) { at = true; }
+            }
+        }
+        drop list_push(@is_asm, a);
+        drop list_push(@is_atomic, at);
+    }
+    // reaches asm: a fixpoint over the call graph
+    List<bool>:reaches = raw list_init::<bool>(n + 1i64);
+    for (int64:i2 in 0i64...n) { drop list_push(@reaches, is_asm.items[i2]); }
+    bool:grew = true;
+    while (grew) {
+        grew = false;
+        for (int64:i3 in 0i64...n) {
+            if (reaches.items[i3]) { continue; }
+            for (int64:b2 in 0i64...ft.fns.items[i3].blocks.count) {
+                for (int64:l2 in 0i64...ft.fns.items[i3].blocks.items[b2].lines.count) {
+                    string:ln2 = raw strlist_view(ft.fns.items[i3].blocks.items[b2].lines, l2);
+                    if ((raw text_index_of(ln2, "call ")) < 0i64) { continue; }
+                    int64:at2 = raw text_find_byte(ln2, 64u8, 0i64);
+                    if (at2 < 0i64) { continue; }
+                    int64:e = at2;
+                    while ((e < ln2.len) && (ln2.ptr[e] != 40u8) && (ln2.ptr[e] != 32u8)) { e = e + 1i64; }
+                    int64:ci = raw floor_fn_index(ft, raw text_slice(ln2, at2, e));
+                    if (ci < 0i64) { continue; }
+                    if (reaches.items[ci]) { reaches.items[i3] = true; grew = true; }
+                }
+            }
+        }
+    }
+    for (int64:i4 in 0i64...n) {
+        if (is_asm.items[i4]) { drop strlist_push(@cls, "asm"); continue; }
+        if (is_atomic.items[i4]) { drop strlist_push(@cls, "atomic"); continue; }
+        if (reaches.items[i4]) { drop strlist_push(@cls, "syscall"); continue; }
+        drop strlist_push(@cls, "pure");
+    }
+    pass cls;
+};
+
+// Does the line carry `w` as a whole word?
+func:has_word = bool(string:line, string:w) never fails {
+    int64:from = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(line, w, from);
+        if (p < 0i64) { pass false; }
+        bool:ok = true;
+        if (p > 0i64) { if (raw is_word_byte(line.ptr[p - 1i64])) { ok = false; } }
+        if ((p + w.len) < line.len) { if (raw is_word_byte(line.ptr[p + w.len])) { ok = false; } }
+        if (ok) { pass true; }
+        from = p + 1i64;
+    }
+    pass false;
+};
+
+func:is_word_byte = bool(uint8:c) never fails {
+    if ((c >= 97u8) && (c <= 122u8)) { pass true; }
+    if ((c >= 65u8) && (c <= 90u8)) { pass true; }
+    if ((c >= 48u8) && (c <= 57u8)) { pass true; }
+    if ((c == 95u8) || (c == 46u8)) { pass true; }
+    pass false;
+};
+
+// The class default text TCB.md carried before a symbol had a disposition.
+func:class_default = string(string:cls) never fails {
+    if (raw text_eq(cls, "asm")) { pass "the volatile bottom (inline asm): TRUSTED, documented; no proof"; }
+    if (raw text_eq(cls, "atomic")) { pass "a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor)"; }
+    if (raw text_eq(cls, "syscall")) { pass "specified at the syscall boundary (1.5.6); the kernel is trusted"; }
+    pass "pure IR: Z3-specified at 1.5.6 where feasible";
+};
+
+// THE DISPOSITION of one symbol, in §2.1's words, from the spec and the
+// committed floor manifest: `trusted (inline asm)` for the asm class;
+// `specified (N discharged, M residue)` for a section with rows in the
+// manifest (M the budget rows -- residue by the verdict rule); `residue
+// (sentence)` and `boundary (sentence)` for a section that says so and has
+// no rows; the class default for a symbol no section names yet.
+pub func:floor_disposition = string(Sxs->:s, string:name, string:cls, List<ManRow>->:rows) never fails {
+    if (raw text_eq(cls, "asm")) { pass "trusted (inline asm)"; }
+    int64:sec = raw spec_section(s, name);
+    if (sec < 0i64) { pass (raw class_default(cls)); }
+    int64:d = 0i64;
+    int64:b = 0i64;
+    int64:o = 0i64;
+    for (int64:i in 0i64...rows.count) {
+        if (!(raw text_eq(raw strlist_view_of(rows.items[i].symbol), name))) { continue; }
+        if (rows.items[i].kind != (raw OK_FLOOR_SPEC())) { continue; }
+        if (rows.items[i].verdict == (raw OV_DISCHARGED())) { d = d + 1i64; }
+        if (rows.items[i].verdict == (raw OV_BUDGET())) { b = b + 1i64; }
+        if (rows.items[i].verdict == (raw OV_OPEN())) { o = o + 1i64; }
+    }
+    string:out = "";
+    if ((d + b + o) > 0i64) {
+        out = string_concat("specified (", int_to_string(d));
+        out = string_concat(out, " discharged, ");
+        out = string_concat(out, int_to_string(b));
+        out = string_concat(out, " residue)");
+        if (o > 0i64) { out = string_concat(out, " -- REFUTED: a red run"); }
+    }
+    int64:rs = raw spec_clause(s, sec, "residue", 0i64);
+    if (rs >= 0i64) {
+        string:sent = raw sx_string(s, raw sx_nth(s, rs, 1i64));
+        if (out.len > 0i64) { out = string_concat(out, "; "); }
+        out = string_concat(out, "residue (");
+        out = string_concat(out, sent);
+        out = string_concat(out, ")");
+    }
+    int64:bd = raw spec_clause(s, sec, "boundary", 0i64);
+    if (bd >= 0i64) {
+        string:sent2 = raw sx_string(s, raw sx_nth(s, bd, 1i64));
+        if (out.len > 0i64) { out = string_concat(out, "; "); }
+        out = string_concat(out, "boundary (");
+        out = string_concat(out, sent2);
+        out = string_concat(out, ")");
+    }
+    if (out.len == 0i64) { pass (raw class_default(cls)); }
+    pass out;
+};
+
+// The table's rows as TCB.md carries them, sorted by symbol: `| `@name` | class | disposition |`.
+pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:rows) never fails {
+    List<string>:cls = raw floor_classes(ft);
+    List<string>:keyed = raw list_init::<string>(ft.fns.count + 1i64);
+    for (int64:i in 0i64...ft.fns.count) {
+        string:name = raw strlist_view_of(ft.fns.items[i].name);
+        string:ln = string_concat("| `", name);
+        ln = string_concat(ln, "` | ");
+        ln = string_concat(ln, raw strlist_view(cls, i));
+        ln = string_concat(ln, " | ");
+        ln = string_concat(ln, raw floor_disposition(s, name, raw strlist_view(cls, i), rows));
+        ln = string_concat(ln, " |");
+        drop strlist_push(@keyed, ln);
+    }
+    pass (raw strlist_sorted(keyed));
+};
+
+// THE TCB BELT (P-26, extended at 1.5.6 step 3): TCB.md's floor table equals
+// what the floor, the spec and the committed floor manifest say today --
+// symbol, class and disposition. A symbol whose disposition drifted from
+// its rows is a red run.
+pub func:tcb_floor_current = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:rows, string:tcb_text) never fails {
+    List<string>:fl = raw list_init::<string>(4i64);
+    int64:b = raw text_index_of(tcb_text, "<!-- BEGIN floor-table -->");
+    int64:e = raw text_index_of(tcb_text, "<!-- END floor-table -->");
+    if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-floor: TCB.md has no marked floor-table region"); pass fl; }
+    List<string>:want = raw tcb_floor_rows(ft, s, rows);
+    List<string>:have = raw list_init::<string>(want.count + 1i64);
+    List<string>:lines = raw text_lines(raw text_slice(tcb_text, b, e));
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (raw text_starts_with(ln, "| `@")) { drop strlist_push(@have, ln); }
+    }
+    List<string>:missing = raw strlist_minus(want, have);
+    List<string>:stale = raw strlist_minus(have, want);
+    for (int64:m in 0i64...missing.count) {
+        if (m >= 10i64) { break; }
+        drop strlist_push(@fl, string_concat("tcb-floor: TCB.md's table lacks the row: ", raw strlist_view(missing, m)));
+    }
+    for (int64:st in 0i64...stale.count) {
+        if (st >= 10i64) { break; }
+        drop strlist_push(@fl, string_concat("tcb-floor: TCB.md's table carries a row the floor, the spec and the manifest do not say: ", raw strlist_view(stale, st)));
+    }
+    pass fl;
+};

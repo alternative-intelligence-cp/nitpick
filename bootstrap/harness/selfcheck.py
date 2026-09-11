@@ -31,6 +31,7 @@ and it is what stops the grammar being quietly made partial.
 import os
 import sys
 import shutil
+import subprocess
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -248,6 +249,82 @@ def main():
                 print("      the belt accepted it; it should not have")
             else:
                 print("      the belt rejected it: %s" % fails[0])
+
+    # THE FLOOR'S LEG (1.5.6 step 3, D-288): a refuted clause fails by name
+    # and the same symbol under a true clause passes; a section with no claim
+    # and no residue fails; an instruction form outside the subset fails by
+    # line; a manifest row of a floor kind in nitpick.obligations is refused,
+    # and a program kind in runtime/npkrt.obligations likewise; the committed
+    # floor parses to its counts. One synthetic floor text -- npkg's, byte for
+    # byte -- through the tool the harness's verify stage builds
+    # (`tools/floorspec.npk`, with the snapshot) over a synthetic root.
+    fl_floor = ("define i64 @f(i64 %a) {\nentry:\n  %r = add i64 %a, 1\n  ret i64 %r\n}\n"
+                "define i64 @g(i64 %a) {\nentry:\n  switch i64 %a, label %d [ i64 0, label %z ]\n"
+                "z:\n  ret i64 0\nd:\n  ret i64 1\n}\n")
+    ftool = harness.build_tool(tmp, tools, os.path.join(ROOT, "tools", "floorspec.npk"), "floorspec")
+    if not ftool or not os.path.exists(str(ftool)):
+        bad += 1
+        print("  %-26s %-4s  %s" % ("floor-refuted", "BAD", "tools/floorspec.npk did not build: %s" % ftool))
+    else:
+        for name, spec_text, must_fail, why in (
+                ("floor-refuted", "(symbol @f (ensures (= result a)))\n", True,
+                 "a spec clause the floor refutes must fail by name"),
+                ("floor-refuted-control", "(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n", False,
+                 "the same symbol under a clause its IR meets must pass"),
+                ("floor-form", "(symbol @g (ensures (< result 2)))\n", True,
+                 "an instruction form outside the floor's subset must fail by line")):
+            froot = os.path.join(tmp, name.replace("-", "_"))
+            os.makedirs(os.path.join(froot, "runtime"), exist_ok=True)
+            with open(os.path.join(froot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:
+                fh.write(fl_floor)
+            with open(os.path.join(froot, "runtime", "npkrt.spec"), "w", encoding="utf-8") as fh:
+                fh.write(spec_text)
+            fdir = os.path.join(froot, "obl")
+            r = subprocess.run([ftool, froot, "--emit", fdir], capture_output=True, text=True, timeout=300)
+            fails = []
+            if r.returncode != 0:
+                fails.append((r.stdout + r.stderr).strip())
+            else:
+                full, f2 = harness.z3_verdicts(fdir, name)
+                fails = f2 or harness.floor_verdict_failures(full)
+            ok = (bool(fails) == must_fail)
+            if name == "floor-form" and ok:
+                ok = "instruction form not read" in fails[0]
+            if not ok:
+                bad += 1
+            print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+            if not ok:
+                if must_fail:
+                    print("      the floor leg accepted it; it should not have%s" % ((": " + fails[0][:200]) if fails else ""))
+                else:
+                    print("      the floor leg rejected it: %s" % fails[0][:300])
+    fun = floor.check_spec(fl_floor, "(symbol @f)\n", "floor-unspecified")
+    okfu = bool(fun)
+    if not okfu:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("floor-unspecified", "ok" if okfu else "BAD",
+                                "a section with no claim and no residue sentence must fail"))
+    fhash = "0" * 64
+    fman = "# nitpick.obligations v1\n# z3 4.16.0 sha256 %s\n# options rlimit=1\n" % fhash
+    m1, _ = harness.manifest_rows(fman + "%s floor-spec int discharged none @f\n" % fhash)
+    m2, _ = harness.manifest_rows(fman + "%s div-zero int discharged elided @f\n" % fhash, floor=True)
+    m3, _ = harness.manifest_rows(fman + "%s floor-spec int discharged none @f\n" % fhash, floor=True)
+    okfm = (m1 is None) and (m2 is None) and (m3 is not None)
+    if not okfm:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("floor-kind-misplaced", "ok" if okfm else "BAD",
+                                "a floor kind in nitpick.obligations and a program kind in runtime/npkrt.obligations must be refused; the floor kind in its own file must pass"))
+    real_fns, _ = floor.parse_floor(open(harness.RUNTIME_LL, encoding="utf-8").read())
+    real_cls = harness._floor_classes()
+    counts = (len(real_fns), sum(1 for v in real_cls.values() if v == "asm"), sum(1 for v in real_cls.values() if v == "atomic"),
+              sum(1 for v in real_cls.values() if v == "syscall"), sum(1 for v in real_cls.values() if v == "pure"))
+    okfp = counts == (175, 4, 41, 88, 42)
+    if not okfp:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("floor-parse", "ok" if okfp else "BAD",
+                                "the committed floor parses to 175 defines: 4 asm, 41 atomic, 88 syscall, 42 pure"))
+    if not okfp:
+        print("      the floor parsed to %d defines: %d asm, %d atomic, %d syscall, %d pure" % counts)
 
     # THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     # value is its failure path, and a check that has only ever been seen to

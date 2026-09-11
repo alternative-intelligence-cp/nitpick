@@ -23,8 +23,8 @@
 //   npkg verify --record       write nitpick.obligations from this run (a deliberate re-baseline)
 //   npkg verify --explain      also build/verify/explain.txt: a model per open row, a reason per
 //                              budget row, an unsat core per discharged one
-//   npkg verify --floor-only   the floor's belts alone (1.5.6 step 0: the shared-state
-//                              classification, D-290) -- no ladder, no solver; PARTIAL
+//   npkg verify --floor-only   the floor's leg alone (1.5.6: the belts, the translator over
+//                              runtime/npkrt.spec, z3, runtime/npkrt.obligations) -- no ladder; PARTIAL
 //
 // Exit codes, the contract every tool holds (src/npkc.npk):
 //
@@ -191,18 +191,29 @@ async func:main = int32(cstring[]:argv) {
     }
     Ctx:c = raw ctx_init(move(m), move(t));
 
-    // THE FLOOR'S BELTS ALONE (1.5.6 step 0): for iterating on `runtime/npkrt.spec`;
-    // no ladder is built and nothing else is judged, and the run says so.
+    // THE FLOOR'S LEG ALONE (1.5.6 step 0 the belts, step 3 the leg): for
+    // iterating on `runtime/npkrt.spec` -- the belts, the translator, z3 and
+    // the manifest comparison, with `--record` and `--explain` honoured; no
+    // ladder is built and nothing else is judged, and the run says so.
     if (is_verify && floor_only) {
-        List<string>:fb = raw floor_shared_current(string_from_bytes(c.m.root.ptr, c.m.root.len));
-        for (int64:i in 0i64...fb.count) { drop say(raw strlist_view(fb, i)); }
-        if (fb.count > 0i64) {
-            drop say(string_concat(string_concat("\n", int_to_string(fb.count)), " finding(s) -- the floor's classification does not hold"));
+        if (!c.m.z3) { drop say_err("nitpick.toml: [verify] z3 is not true (D-068)"); exit 1i32; }
+        Result<string>:z3r = which("z3");
+        if (z3r.is_error) { drop say_err("npkg verify: PATH cannot be read"); exit 2i32; }
+        Result<NIL>:bd = ensure_dir(string_from_bytes(c.bdir.ptr, c.bdir.len));
+        if (bd.is_error) { drop say_err("build/ could not be created"); exit 2i32; }
+        string:vdir = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "verify");
+        Result<NIL>:vd = ensure_dir(vdir);
+        if (vd.is_error) { drop say_err("build/verify/ could not be created"); exit 2i32; }
+        Result<Step>:fs = await floor_leg(@c, z3r.value, vdir, record, explain);
+        if (fs.is_error) { drop say_err("npkg verify --floor-only: a spawn or a read failed"); exit 2i32; }
+        if (!fs.value.ok) {
+            drop say_err(fs.value.text);
+            drop say("\nPARTIAL RUN -- the floor's leg alone. THE TREE IS NOT KNOWN GREEN.");
             wild_release_all();
             exit 1i32;
         }
-        drop say(raw stage_text("floor", "the shared-state classification holds (D-290)"));
-        drop say("\nPARTIAL RUN -- the floor's belts alone. THE TREE IS NOT KNOWN GREEN.");
+        drop say(raw stage_text("floor", fs.value.text));
+        drop say("\nPARTIAL RUN -- the floor's leg alone. THE TREE IS NOT KNOWN GREEN.");
         wild_release_all();
         exit 0i32;
     }
