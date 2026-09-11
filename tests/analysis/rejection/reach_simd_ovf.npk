@@ -1,0 +1,27 @@
+// expect-error: NITPICK-REACH-002
+//
+// AN INTEGER LANE ARMS `IntOverflow` (D-284, 1.5.4e step 0): a `simd` `+`
+// on integer lanes and an integer `.sum()` both reach the trap now, so a
+// `failsafe` that names nothing of it refuses once, for the one missing
+// name -- the counterweight to the float lanes of `accept/float_total.npk`,
+// which arm nothing.
+mod:reach_simd_ovf;
+
+func:main = int32(cstring[]:argv) {
+    int32:k = argv.len =>! int32;
+    simd<int32, 4>:a = simd(k, k, k, k);
+    simd<int32, 4>:b = simd(1i32, 2i32, 3i32, 4i32);
+    simd<int32, 4>:c = a + b;
+    exit c.sum();
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

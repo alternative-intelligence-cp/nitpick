@@ -1,0 +1,29 @@
+// expect-exit: 93
+//
+// The same rule for `*` (D-284): `llvm.smul.with.overflow` on the vector,
+// its overflow lanes folded to one any-lane test. `(2^30 + 1) * 2` in lane 0.
+mod:simd_ovf_mul;
+
+func:main = int32(cstring[]:argv) {
+    int32:half = (argv.len =>! int32) + 1073741823i32;   // 2^30 at run time
+    simd<int32, 4>:a = simd(half + 1i32, 1i32, 2i32, 3i32);
+    simd<int32, 4>:b = simd(2i32);
+    simd<int32, 4>:c = a * b;
+    exit c[1];
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

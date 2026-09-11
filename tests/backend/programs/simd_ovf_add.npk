@@ -1,0 +1,32 @@
+// expect-exit: 93
+//
+// D-210 PER LANE (D-284, 1.5.4e step 0): an integer lane's `+` traps
+// `IntOverflow` as its scalar does. The lane holding `INT_MAX` plus a lane
+// holding one is the Therac shape D-210 was written against, and until this
+// step it wrapped to a negative lane and the program ran on (DEF-38). The
+// operand comes through `argv.len`, so nothing folds.
+mod:simd_ovf_add;
+
+func:main = int32(cstring[]:argv) {
+    int32:big = (argv.len =>! int32) + 2147483646i32;   // INT_MAX at run time
+    simd<int32, 4>:a = simd(big, 1i32, 2i32, 3i32);
+    simd<int32, 4>:b = simd(1i32, 1i32, 1i32, 1i32);
+    simd<int32, 4>:c = a + b;
+    exit c[1];
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

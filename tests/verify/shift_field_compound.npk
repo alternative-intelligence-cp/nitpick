@@ -1,0 +1,43 @@
+// expect-exit: 0
+// expect-obligation: shift-range open 1
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// A COMPOUND SHIFT THROUGH A FIELD HAS ITS ROW (DEF-41, 1.5.4e step 0): the
+// emitter has guarded `s.f <<= n` since D-277, and the encoder's field-target
+// branch recorded a row for the division beside it and none for the shift --
+// a verified build carried a trap the belts could not account for. Nothing
+// bounds `n` before the shift, so its row is `open` and the guard stays (one
+// `-4115` trap for one retained group is what the belts count); AFTER the
+// shift its fact holds -- every continuing path passed the trap, `0 <= n <
+// 32` -- so the division's `div-min` row discharges (`n` is not -1) while
+// its `div-zero` stays open (`n` may be 0).
+mod:shift_field_compound;
+
+struct:S = { int32:f; int32:g; };
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;                          // 1 at run time
+    S:s = S{ f: 3i32, g: 8i32 };
+    s.f <<= n;                                             // 6
+    s.g /= n;                                              // 8
+    exit (s.f + s.g - 14i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

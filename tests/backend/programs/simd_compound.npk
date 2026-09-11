@@ -1,0 +1,54 @@
+// expect-exit: 0
+//
+// THE COMPOUND SPELLING ON A `simd` (DEF-39, fixed under D-284, 1.5.4e step
+// 0): `v op= w` was admitted by the checker and refused by the emitter as
+// EMIT-002 from 1.3.3 until now, because the one arithmetic core dispatched
+// no vector. Every `op=` on integer lanes, four on float lanes, and a
+// struct FIELD as the target; each lane checked.
+mod:simd_compound;
+
+struct:S = { simd<int32, 4>:v; };
+
+func:main = int32(cstring[]:argv) {
+    int32:k = argv.len =>! int32;                          // 1 at run time
+    simd<int32, 4>:v = simd(8i32, 6i32, 4i32, 2i32);
+    simd<int32, 4>:w = simd(k, k + 1i32, k + 2i32, k + 3i32);   // 1 2 3 4
+    v += w;                 // 9 8 7 6
+    v -= simd(k);           // 8 7 6 5
+    v *= simd(2i32);        // 16 14 12 10
+    v /= w;                 // 16 7 4 2
+    v %= simd(5i32);        // 1 2 4 2
+    v <<= simd(k);          // 2 4 8 4
+    v >>= simd(k);          // 1 2 4 2
+    v &= simd(6i32);        // 0 2 4 2
+    v |= simd(k);           // 1 3 5 3
+    v ^= simd(k);           // 0 2 4 2
+    if ((v[0] != 0i32) || (v[1] != 2i32) || (v[2] != 4i32) || (v[3] != 2i32)) { exit 1i32; }
+    simd<flt64, 2>:f = simd(1.5f64, 2.0f64);
+    f += simd(0.5f64);      // 2.0 2.5
+    f *= simd(2.0f64);      // 4.0 5.0
+    f -= simd(1.0f64);      // 3.0 4.0
+    f /= simd(2.0f64);      // 1.5 2.0
+    if ((f[0] != 1.5f64) || (f[1] != 2.0f64)) { exit 2i32; }
+    S:s = S{ v: simd(1i32, 2i32, 3i32, 4i32) };
+    s.v += w;               // 2 4 6 8
+    s.v /= simd(2i32);      // 1 2 3 4
+    if (s.v[3] != 4i32) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

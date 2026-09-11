@@ -1,0 +1,28 @@
+// expect-exit: 93
+//
+// AN INTEGER `.sum()` TRAPS PER FOLD STEP (D-284): every lane fits, the fold
+// does not -- four lanes of 2^30 overflow at the third step, through the
+// scalar `+` the fold now is. Before this step the fold was a bare `add`.
+mod:simd_ovf_sum;
+
+func:main = int32(cstring[]:argv) {
+    int32:q = (argv.len =>! int32) + 1073741823i32;   // 2^30 at run time
+    simd<int32, 4>:a = simd(q, q, q, q);
+    exit (a.sum() - 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

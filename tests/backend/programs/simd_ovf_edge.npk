@@ -1,0 +1,42 @@
+// expect-exit: 0
+//
+// NO FALSE TRAP (D-284): lanes at the bounds that do not overflow -- `INT_MAX
+// + 0`, `INT_MIN - 0`, times one, an unsigned `0 - 0`, and a fold that lands
+// exactly on `INT_MAX`. The zero comes through `argv.len`, so nothing folds.
+mod:simd_ovf_edge;
+
+func:main = int32(cstring[]:argv) {
+    int32:z = (argv.len =>! int32) - 1i32;                 // 0 at run time
+    simd<int32, 4>:a = simd(2147483647i32, (-2147483647i32 - 1i32), 5i32, -5i32);
+    simd<int32, 4>:zs = simd(z);
+    simd<int32, 4>:p = a + zs;
+    simd<int32, 4>:m = a - zs;
+    simd<int32, 4>:q = a * simd(z + 1i32);
+    if (p[0] != 2147483647i32) { exit 1i32; }
+    if (m[1] != (-2147483647i32 - 1i32)) { exit 2i32; }
+    if (q[3] != -5i32) { exit 3i32; }
+    simd<uint32, 4>:u = simd(4294967295u32, 0u32, 7u32, 1u32);
+    simd<uint32, 4>:uz = simd(z =>! uint32);
+    simd<uint32, 4>:us = u - uz;
+    if (us[0] != 4294967295u32) { exit 4i32; }
+    if (us[1] != 0u32) { exit 5i32; }
+    simd<int32, 4>:s = simd(1073741823i32, 1073741823i32, 1i32, z);
+    if (s.sum() != 2147483647i32) { exit 6i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

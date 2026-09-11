@@ -1,0 +1,29 @@
+// expect-exit: 91
+//
+// THE COMPOUND PATH CARRIES THE GUARDS (DEF-39 under D-284): `v /= simd(z)`
+// with a zero lane traps `DivByZero` through the vector emitter's any-lane
+// guard, exactly as `v / simd(z)` does.
+mod:simd_compound_trap;
+
+func:main = int32(cstring[]:argv) {
+    int32:z = (argv.len =>! int32) - 1i32;                 // 0 at run time
+    simd<int32, 4>:v = simd(8i32, 6i32, 4i32, 2i32);
+    v /= simd(z);
+    exit v[0];
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

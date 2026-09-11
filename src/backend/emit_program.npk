@@ -1329,6 +1329,11 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // now — emitting them beside the declares wrote a one-row sentinel table
     // before any function had spoken.
     drop emit_site_tables(w);
+    // THE VECTOR INTRINSICS THE BODIES USED (D-284, 1.5.4e step 0), noted by
+    // the vector emitter and declared here, after them.
+    for (int64:vdi in 0i64...c.vec_decls.count) {
+        drop irw_raw(w, string_concat(c.vec_decls.items[vdi], ""));
+    }
     // INSTANCES THE BODIES CREATED (1.0.7): a `List<int64>` that exists only
     // because `list_make<int64>`'s body built one. Textual IR resolves a named
     // type wherever its definition appears, so the late ones go at the end.

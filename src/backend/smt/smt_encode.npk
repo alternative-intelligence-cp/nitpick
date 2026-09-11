@@ -3377,9 +3377,28 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     // lanes were recorded at the expression, the binding's not yet).
     int64:sb = raw bind_find(e, name);
     if (sb >= 0i64) {
-        if (raw is_simd(e, e.binds.items[sb].type_id)) {
-            if (op == TokenKind.OpAssign) { drop bind_lanes_assign(e, name, raw stmt_assigned(s)); }
-            else { drop bind_lanes_assign(e, name, ExprId{ index: 0i32 }); }
+        int32:svt = e.binds.items[sb].type_id;
+        if (raw is_simd(e, svt)) {
+            if (op == TokenKind.OpAssign) { drop bind_lanes_assign(e, name, raw stmt_assigned(s)); pass NIL; }
+            // A COMPOUND ON A `simd` BINDING (D-284, 1.5.4e step 0; DEF-39):
+            // the emitter lowers `v op= w` through the vector path now, so
+            // its any-lane guards have rows here as the expression form's
+            // do -- at the target's site, the key the emitter elides under.
+            // The binding's lanes are the current value, the right-hand
+            // side's were recorded by its walk; the new set stays opaque.
+            int32:selem = raw type_elem(e.types, svt);
+            TokenKind:sbop = raw arith_base(op);
+            if ((sbop == TokenKind.OpSlash) || (sbop == TokenKind.OpPercent)) {
+                drop lanes_of_binding(e, sb, target.index);
+                List<Term>:sla = raw lanes_of(e, target, svt);
+                List<Term>:slb = raw lanes_of(e, raw stmt_assigned(s), svt);
+                drop record_division_lanes(e, selem, sla, slb, target.index, s.span);
+            }
+            if ((sbop == TokenKind.OpShl) || (sbop == TokenKind.OpShr)) {
+                List<Term>:slb2 = raw lanes_of(e, raw stmt_assigned(s), svt);
+                drop record_shift_lanes(e, selem, slb2, target.index, s.span);
+            }
+            drop bind_lanes_assign(e, name, ExprId{ index: 0i32 });
             pass NIL;
         }
     }
@@ -4685,6 +4704,29 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                 if (raw is_int(e, pt)) {
                     Term:cur = raw term_opaque(e, pt);
                     drop record_division(e, pt, cur, rhs, target.index, s.span);
+                }
+                // A `simd` PLACE's compound division (D-284, 1.5.4e step 0;
+                // DEF-39): the any-lane rows over opaque current lanes and the
+                // right-hand side's.
+                if (raw is_simd(e, pt)) {
+                    List<Term>:pla = raw lanes_of(e, target, pt);
+                    List<Term>:plb = raw lanes_of(e, raw stmt_assigned(s), pt);
+                    drop record_division_lanes(e, raw type_elem(e.types, pt), pla, plb, target.index, s.span);
+                }
+            }
+            // A COMPOUND SHIFT THROUGH A FIELD OR ELEMENT (DEF-41, 1.5.4e step
+            // 0): the emitter has guarded `s.f <<= n` since D-277 and this
+            // branch recorded no row for it, so a verified build carried a
+            // trap the belts could not account for. The scalar row as the
+            // identifier path's, the any-lane row for a `simd` place.
+            if ((op == TokenKind.OpShlAssign) || (op == TokenKind.OpShrAssign)) {
+                int32:pt2 = raw ty_of(e, target);
+                if (raw is_int(e, pt2)) {
+                    drop record_shift(e, pt2, rhs, raw stmt_assigned(s), target.index, s.span);
+                }
+                if (raw is_simd(e, pt2)) {
+                    List<Term>:plb2 = raw lanes_of(e, raw stmt_assigned(s), pt2);
+                    drop record_shift_lanes(e, raw type_elem(e.types, pt2), plb2, target.index, s.span);
                 }
             }
             // THE SECOND WRITE POINT through a field or element (D-251): the

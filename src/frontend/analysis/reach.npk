@@ -316,8 +316,11 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         if (aop == TokenKind.OpMinusAssign) { aovf = true; }
         if (aop == TokenKind.OpStarAssign)  { aovf = true; }
         if (aovf) {
-            if ((raw type_kind(x.types, raw exprtypes_get(x.ets, raw stmt_target(s))))
-                    != (raw TY_INT())) { aovf = false; }
+            int32:aotid = raw exprtypes_get(x.ets, raw stmt_target(s));
+            int32:aok2 = raw type_kind(x.types, aotid);
+            // The element's rule for a `simd` target (D-284, 1.5.4e step 0).
+            if (aok2 == (raw TY_SIMD())) { aok2 = raw type_kind(x.types, raw type_elem(x.types, aotid)); }
+            if (aok2 != (raw TY_INT())) { aovf = false; }
         }
         if (aovf) { x.saw_ovf = true; }
         // ...and a compound `<<=`/`>>=` IS the shift (D-277), guarded the same.
@@ -527,8 +530,12 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         if (op == TokenKind.OpMinus) { ovflike = true; }
         if (op == TokenKind.OpStar)  { ovflike = true; }
         if (ovflike) {
-            if ((raw type_kind(x.types, raw exprtypes_get(x.ets, id)))
-                    != (raw TY_INT())) { ovflike = false; }
+            int32:otid = raw exprtypes_get(x.ets, id);
+            int32:ok2 = raw type_kind(x.types, otid);
+            // A `simd` rides its ELEMENT's rule (D-284, 1.5.4e step 0):
+            // integer lanes trap `IntOverflow` any-lane as their scalar does.
+            if (ok2 == (raw TY_SIMD())) { ok2 = raw type_kind(x.types, raw type_elem(x.types, otid)); }
+            if (ok2 != (raw TY_INT())) { ovflike = false; }
         }
         if (ovflike) { x.saw_ovf = true; }
         // A SHIFT BY A COMPUTED AMOUNT (D-277, 1.5.4b step 0) is guarded and
@@ -538,6 +545,21 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
             if ((raw ast_expr(x.ast, raw expr_rhs(n))).kind != ExprKind.ExprIntLiteral) {
                 x.saw_shift = true;
+            }
+        }
+    }
+    // AN INTEGER `.sum()` (D-284, 1.5.4e step 0): the fold's steps are the
+    // scalar `+`, so the reduction arms `IntOverflow` as `a + b` does; the
+    // other reductions compare and carry nothing.
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        int32:rtid = raw exprtypes_get(x.ets, raw expr_operand(n));
+        if (rtid != 0i32) {
+            if ((raw type_kind(x.types, rtid)) == (raw TY_SIMD())) {
+                if ((raw type_kind(x.types, raw type_elem(x.types, rtid))) == (raw TY_INT())) {
+                    if (raw string_eq(raw intern_get(x.interns, n.payload =>! int32), "sum")) {
+                        x.saw_ovf = true;
+                    }
+                }
             }
         }
     }

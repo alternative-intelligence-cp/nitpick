@@ -1,0 +1,43 @@
+// expect-exit: 0
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: shift-range discharged 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// THE COMPOUND FORM'S ANY-LANE ROWS (D-284, DEF-39; 1.5.4e step 0): `v /=
+// simd(k)` and `v <<= simd(k)` record the same rows the expression forms
+// do -- at the target's site, the key the emitter elides under -- so under
+// the branch's bounds all three discharge and the verified build carries
+// three `llvm.assume` and no trap of theirs. The `.sum()` and `main`'s
+// subtraction keep their overflow guards (no row until 1.5.8).
+mod:simd_compound_rows;
+
+func:scale = int32(int32:k) never fails {
+    simd<int32, 4>:v = simd(8i32, 6i32, 4i32, 2i32);
+    if ((k > 0i32) && (k < 4i32)) {
+        v /= simd(k);
+        v <<= simd(k);
+    }
+    pass v.sum();
+};
+
+func:main = int32(cstring[]:argv) {
+    exit ((raw scale(argv.len =>! int32)) - 40i32);   // k = 1: (16, 12, 8, 4)
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 90i32; },
+        (ShiftRange)     { exit 89i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 81i32; },
+        (HeapOom)        { exit 82i32; },
+        (Unreachable)    { exit 85i32; },
+        (WildLeak)       { exit 86i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

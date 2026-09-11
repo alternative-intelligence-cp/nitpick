@@ -163,6 +163,13 @@ pub struct:LlCtx = {
     // struct's drop calls its fields' drops, so the emission loop re-reads the
     // count exactly as the generic-instance loop does.
     List<int32>:drop_types;
+    // THE VECTOR OVERFLOW INTRINSICS THIS MODULE USES (D-284, 1.5.4e step
+    // 0): the scalar families are declared for every width unconditionally
+    // in the declare block, but D-194's vector shapes number 116 per family,
+    // so a module declares the ones it used -- noted here by the vector
+    // emitter, written by `emit_all` after the bodies (LLVM accepts a
+    // declaration anywhere at module level).
+    List<string>:vec_decls;
 };
 
 pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) never fails {
@@ -182,7 +189,8 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      vt_self: raw list_init::<int32>(vn),
                      vt_trait: raw list_init::<int32>(vn),
                      vt_sym: raw list_init::<int32>(vn),
-                     drop_types: raw list_init::<int32>(vn) };
+                     drop_types: raw list_init::<int32>(vn),
+                     vec_decls: raw list_init::<string>(4i64) };
     pass c;
 };
 
@@ -1220,4 +1228,15 @@ pub func:ll_zero = string(LlType:t) never fails {
     if (raw ll_is_scalar_int(t)) { pass "0"; }
     if (raw ll_is_pointer(t))    { pass "null"; }
     pass "zeroinitializer";
+};
+
+// A DECLARATION NOTED ONCE (D-284, 1.5.4e step 0): the vector emitter names
+// the intrinsic it calls; the program emitter writes every noted line after
+// the bodies. A repeat is a no-op, so the note costs the caller nothing.
+pub func:llctx_note_decl = NIL(LlCtx->:c, move string:text) never fails {
+    for (int64:i in 0i64...c.vec_decls.count) {
+        if (raw string_eq(c.vec_decls.items[i], text)) { pass NIL; }
+    }
+    drop list_push(@c.vec_decls, move(text));
+    pass NIL;
 };
