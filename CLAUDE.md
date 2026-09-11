@@ -1039,9 +1039,33 @@ ELEMENT's. **Recorded for the user: S-59/DEF-38 — a `simd` integer lane's
 DEF-36 (a program's `?! DivByZero` and a guard's trap share one text, so
 the runners' belts count it — an `npk_raise` floor entry is the recommended
 fix, D-203's). The compiler's own set: 368 rows in 197 function files,
-decided in 3.9 s under the profile. **Next: 1.5.4e (the close's three, ratified 2026-09-10 as D-283…D-285: `simd`
-integer lanes carry D-210, `npk_raise`, the binding-lanes reading), then
-1.5.5 (the aliasing/disjointness analysis).**
+decided in 3.9 s under the profile. **1.5.4e (the 1.5.4b close's three) IS COMPLETE (2026-09-11;
+`meta/roadmap/1.5/1.5.4e.md`; ratified 2026-09-10 as D-283…D-285; three
+landings, each a cumulative prefix under a full harness, D-228).** Step 0
+(D-284): a `simd` integer lane's `+ - *` computes through
+`llvm.{s,u}{add,sub,mul}.with.overflow.<N x iW>` — legal at every lane
+count and width, measured through `opt -O2` with no libcall — the overflow
+lanes folded to one any-lane test trapping `IntOverflow`, the intrinsic
+declared once per module after the bodies (`llctx_note_decl`); an integer
+`.sum()` folds through the scalar core and traps per step; the reach
+analysis reads a lane's element kind. DEF-39 fixed with it: `v op= w` on a
+`simd` was admitted by the checker and EMIT-002 in the emitter since 1.3.3
+— `emit_arith_value` dispatches a `simd` operand to the vector binop now,
+and the encoder records the compound form's any-lane rows at the target's
+site. DEF-41, found on the way: a compound shift through a field or element
+had its `ShiftRange` guard and no row (the field-target branch recorded the
+division's and not the shift's), so a verified build carried a trap the
+belts could not account for. Step 1 (D-285): `npk_raise` in the floor — one
+call of `npk_trap` under the program's name, class `syscall`, an export by
+construction — is where `?!` and `!!!` enter, every guard keeping
+`npk_trap`; the belts count `@npk_trap(` alone and each runner's self-check
+holds the pair; DEF-36 closes (`?! DivByZero` in a verified build), and
+DEF-40 with it: `!!!` had called `npk_failsafe` directly — no frozen flag,
+no re-entry guard, no driver kill — and `trap_stmt_reentry.npk` exits 70
+where it exited 33 through a second `failsafe`. `npkrt.o`'s digest moved for
+the first time since DEF-25's fix; the notice to the library listener named
+both. Step 2: the docs. `nitpick.obligations` never moved. **Next: 1.5.5
+(the aliasing/disjointness analysis).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1412,9 +1436,17 @@ that carried them retired at the cycle close):
   `.sum()` are known to the solver; a `simd` division is ONE `div-zero` row
   over all lanes, so one unconstrained lane keeps the whole guard. A
   `simd(...)` constructor needs an annotated context (`simd<int32, 4>:v =
-  simd(k);`). **A `simd` integer lane's `+ - *` WRAPS today** where its
-  scalar traps (DEF-38/S-59, the user's): do not rely on a lane overflow
-  reaching `failsafe` until it lands.
+  simd(k);`). **A `simd` integer lane's `+ - *` and an integer `.sum()` TRAP
+  `IntOverflow`** as their scalars do (D-284, 1.5.4e), so a program with
+  integer lanes names `(IntOverflow)`; `v op= w` on a `simd` lowers (DEF-39)
+  and carries the guards.
+- **A program's raise is `npk_raise`; a guard's trap is `npk_trap`** (D-285,
+  1.5.4e): `?!` and `!!!` enter the trap route through the former, so a
+  verified build's belts (which count `@npk_trap(i32 CODE)`) no longer
+  mistake `?! DivByZero` for a guard — unwrapping with a system code is
+  legal again — and `!!!` freezes, kills drivers and observes the re-entry
+  rule (it called `failsafe` directly before, DEF-40). A compound shift
+  through a field or element records its `shift-range` row (DEF-41).
 
 ### Reserved words that read like ordinary names
 

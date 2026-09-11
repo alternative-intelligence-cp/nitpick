@@ -75,3 +75,11 @@ by hand with `.internal/quickemit/npkc FILE --obligations D` and then
 
 The earlier programs are indexed by the subcycle that wrote them
 (`meta/roadmap/1.5/1.5.0.md` … `1.5.4.md`, each step's "Tests" paragraph).
+
+## The programs 1.5.4e added
+
+| program | what it pins |
+|---|---|
+| `simd_compound_rows.npk` | the compound form's any-lane rows (D-284, DEF-39): `v /= simd(k)` and `v <<= simd(k)` under a branch's bounds, all three rows discharged and their guards elided |
+| `shift_field_compound.npk` | DEF-41: a compound shift through a field records its `shift-range` row (open, the guard kept), and the shift's fact after its site discharges the division's `div-min` beside it |
+| `raise_code.npk` | D-285 (DEF-36): a division discharged and elided beside the program's own `?! DivByZero` — a raise, not a guard, to the belts; at run time the raise reaches its arm |

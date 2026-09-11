@@ -896,8 +896,9 @@ constant `int`.
 or an array (P-12's residue) and the `TbbErr` guards over a `frac` or a
 tfp-element `complex` are `unencoded`, their guards kept; `frem`, a float
 leaving to an integer and every other `=>!` are opaque until 1.5.8's
-`cast-range` rows; D-210's overflow rows are 1.5.8's, and a `simd` integer
-lane's overflow is S-59's (it wraps today — DEF-38). The compiler's own
+`cast-range` rows; D-210's overflow rows are 1.5.8's, over the lane
+conjunction for a `simd` (whose integer lanes trap as scalars do since
+1.5.4e, D-284). The compiler's own
 manifest at the close: 368 rows in 197 function files, decided in 3.9 s
 under the profile — 329 `int`, 11 `bv` (step 1's crossings), 28 `-`, no
 `fp` row, since neither the compiler nor the prelude functions its emission
@@ -943,6 +944,13 @@ holds compute in floats or vectors.
 > beside `index.txt` names the rows that have a Real-interval twin; a row's
 > twin is asked only after a `budget` at tier 1, and only its `unsat` moves
 > a verdict.
+
+> **[1.5.4e (2026-09-11), D-285.]** The belts count a guard's trap by its
+> text, `@npk_trap(i32 CODE)`; a PROGRAM's raise — `?!`, `!!!` — is
+> `@npk_raise(i32 CODE)`, one call of `npk_trap` under its own name, which
+> the belts do not count. So a verified build of a program that unwraps
+> with a system code (`?! DivByZero`) no longer reads as a guard (DEF-36),
+> and both runners' self-checks hold the pair.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

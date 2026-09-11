@@ -56,6 +56,9 @@ br i1 %cond, label %then, label %else
   - Lowers through `llvm.{s,u}{add,sub,mul}.with.overflow.iN`, the overflow bit
     branching to the trap. Signedness picks the family; the intrinsics are legal
     and legalized at every width the language has, `int8` through `int4096`.
+    A `simd`'s integer lanes go through the vector form `.<N x iW>`, the
+    overflow lanes folded to one any-lane test, and an integer `.sum()`
+    traps per fold step (D-284, 1.5.4e).
 - A `limit<Rules>` binding of an integer type is checked AFTER every write
   (D-251, 1.5.2): a value its rule refuses traps `LimitViolated` (−4111)
   through the same route. The integer families are the encoder's fragment,
@@ -1328,9 +1331,12 @@ extern:"storage_driver" = {
 > signed element) over the lanes' conjunction, a shift's one `shift-range`
 > row — VERIFICATION_REFERENCE §7c. A `simd` division arms `DivByZero` by
 > its ELEMENT's kind (DEF-37, 1.5.4b step 4b): integer lanes do, float lanes
-> do not. **Open (DEF-38, S-59):** an integer lane's `+ - *` lowers to a
-> bare vector `add`/`sub`/`mul` and WRAPS where the scalar traps (D-210) —
-> measured at 1.5.4b, the user's decision.
+> do not. **Since 1.5.4e (D-284):** an integer lane's `+ - *` and an
+> integer `.sum()` trap `IntOverflow` as their scalars do — the vector
+> overflow intrinsics any-lane, the fold through the scalar `+` — where a
+> bare vector `add` had wrapped since 1.3.1 (DEF-38); and the compound
+> spelling `v op= w` lowers through the same vector path with its guards
+> (DEF-39: it was EMIT-002).
 
 ---
 

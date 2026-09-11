@@ -14508,6 +14508,12 @@ Closes C-11, and settles D-015's open "later" row. Three parts:
 > README.md marks it as not optional: a snapshot that compiles the compiler but
 > whose output does not rebuild itself works exactly once.
 
+> **[1.5.4e (2026-09-11).]** The floor gained a define — `@npk_raise`, a
+> program's raise as one call of `npk_trap` under its own name (D-285) —
+> the first change to `npkrt.ll` since DEF-25's `string_concat` fix. The
+> permanent form stays hand-written IR; the addition is the user's, ratified
+> as D-285, and TCB.md's table carries its row.
+
 ## D-204 — byte-reproducibility defined and checked — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-12. D-078's claim becomes three checked facts (mechanics at
@@ -14852,6 +14858,11 @@ checked family (`tbb`, saturate-to-ERR) required opting in.
 Lands at 1.4.2b with a `src/`/`lib/`/`tests/` sweep expecting few or no
 deliberate-wrap sites (audit at implementation; the prelude's hash
 mixers ride `tbb`/wide arithmetic already).
+
+> **[1.5.4e (2026-09-11), D-284.]** Per lane too: a `simd` integer lane's
+> `+ - *` and an integer `.sum()` trap `IntOverflow` through the vector
+> overflow intrinsics, any-lane; the family had wrapped since 1.3.1
+> (DEF-38, measured at 1.5.4b's close).
 
 ## D-211 — module bindings are `const`/`fixed` only — **SETTLED (coverage-audit batch, user-ratified)**
 
@@ -17993,6 +18004,9 @@ P-12's residue.
 > site threaded, the trap written whatever the verdict); each elides into
 > one `llvm.assume` of the negated any-lane test now, the scalar shape.
 
+> **[D-283 (2026-09-10), noted at 1.5.4e step 2.]** The reading through
+> bindings is confirmed: a `simd` local's lanes are its versions.
+
 ## D-283 — a `simd` binding's lanes are its versions: D-282 read through bindings — **SETTLED (user decision, 2026-09-10: "I am fine with the three recommendatins you made for the decisions"; OPEN_DECISIONS S-58; landed with 1.5.4b step 4 and confirmed here)**
 
 D-282's text gave a `simd` EXPRESSION its lanes — the constructor, a splat,
@@ -18011,6 +18025,9 @@ opaque wherever a path could differ. **The decision.** The reading stands: a
 `simd` local is a binding like any scalar, its lanes its versions. No code
 lands under this number; `meta/roadmap/1.5/1.5.4b.md` step 4's record is the
 landing, and 1.5.4e step 2 notes it on D-282.
+
+> **Noted on D-282 (2026-09-11, 1.5.4e step 2).** No code; the record is
+> 1.5.4b step 4's.
 
 ## D-284 — a `simd` integer lane's `+ - *` and an integer `.sum()` trap `IntOverflow` as their scalars do; the compound spelling lowers through the vector path — **SETTLED (user decision, 2026-09-10: "I am fine with the three recommendatins you made for the decisions"; OPEN_DECISIONS S-59 / DEF-38; lands at 1.5.4e step 0)**
 
@@ -18052,6 +18069,22 @@ shift any-lane rows recorded for it at the target's site, so a discharged
 row elides as the expression form's does. A `tbb`-lane vector does not
 exist (D-194's elements), so no saturating variant is needed.
 
+> **Landed (2026-09-11, 1.5.4e step 0).** `emit_simd_binop` computes an
+> integer lane's `+ - *` through the vector overflow intrinsic, the lanes
+> folded to one any-lane test trapping `IntOverflow` after the chain reset;
+> the intrinsic is noted on the lowering context (`llctx_note_decl`) and
+> declared once per module after the bodies; the `.sum()` fold's steps go
+> through the scalar core; the reach analysis reads a lane's element kind
+> (expression and compound) and arms `IntOverflow` for an integer `sum`.
+> The compound spelling lowers (DEF-39): `emit_arith_value` dispatches a
+> `simd` operand type to the vector binop, and the encoder records the
+> compound form's any-lane rows at the target's site. Found on the way and
+> fixed there: DEF-41, a compound shift through a field or element with a
+> guard and no row. `simd_ovf_add`/`_mul`/`_sum` (exit 93),
+> `simd_ovf_edge`, `simd_compound`, `simd_compound_trap`,
+> `rejection/reach_simd_ovf.npk`, `verify/simd_compound_rows.npk`,
+> `verify/shift_field_compound.npk`; the manifest did not move.
+
 ## D-285 — a program's raise enters the floor through `npk_raise`, a guard's trap through `npk_trap`: one behaviour, two names — **SETTLED (user decision, 2026-09-10: "I am fine with the three recommendatins you made for the decisions"; OPEN_DECISIONS DEF-36; a D-203 floor addition; lands at 1.5.4e step 1)**
 
 Found by 1.5.4b step 2's first harness (DEF-36): the runners' elision belts
@@ -18083,3 +18116,12 @@ observes the re-entry rule. `npkrt.o`'s digest moves, the first floor change
 since DEF-25's, and the close's notice says so beside the previous digest.
 
 > Lands at **1.5.4e** (`meta/roadmap/1.5/1.5.4e.md`).
+
+> **Landed (2026-09-11, 1.5.4e step 1).** As written: `@npk_raise` in the
+> floor (class `syscall`, an export by construction), the declare beside
+> `npk_trap`'s, `?!` and `!!!` through it, the belts unchanged, the pair of
+> self-check cases in both runners. DEF-40 measured: `trap_stmt_reentry.npk`
+> exits 70 where the direct `npk_failsafe` call gave 33 through a second
+> `failsafe`. `verify/raise_code.npk` is DEF-36's shape, green. `npkrt.o`'s
+> digest moved (the previous, `67cc8186…`, had stood since `a807de9`); the
+> close's notice names both.

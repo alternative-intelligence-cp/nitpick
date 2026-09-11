@@ -122,9 +122,9 @@ result at all.
 > evidence, that silent wraparound under the type nobody opts into is the
 > Therac 255→0 shape — and deliberate modular arithmetic is spelled
 > widen–compute–truncate with `=>!` at the narrowing (TYPE_REFERENCE §1.2).
-> The `tbb` row and the float row stand. A `simd` integer lane wraps today
-> where its scalar traps — measured at 1.5.4b and recorded as DEF-38 / S-59
-> for the user.
+> The `tbb` row and the float row stand. A `simd` integer lane traps as its
+> scalar does since 1.5.4e (D-284); it had wrapped, measured at 1.5.4b
+> (DEF-38).
 
 ERR is **absorbing and overrides identities**: `ERR * 0` is `ERR`, not `0`; so is
 `ERR - ERR`. Once a value is ERR, no arithmetic yields a non-ERR result from it.
@@ -209,7 +209,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 |---|---|---|---|
 | `?\|` | Result Fallback | Unwraps a **`Result`**. If error, evaluates to the right-hand-side default. | `val = fn() ?\| 0i32;` |
 | `??` | Null Coalesce | Unwraps an **`Optional`**. If `NIL`, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
-| `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(err)`. **Takes exactly one argument**, an `Error` constant (D-009's derivation, retyped by D-179). | `val = fn() ?! Timeout;` |
+| `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(err)`. **Takes exactly one argument**, an `Error` constant (D-009's derivation, retyped by D-179). Lowers to `npk_raise`, the program's entry to the one trap route (D-285, 1.5.4e). | `val = fn() ?! Timeout;` |
 
 > **`?\|` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?\|`).
 | `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. | `val = obj?.field;` |
@@ -218,7 +218,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `_!` | Raw | Desugars to `raw expr` — unwrap the value of a `never fails` call (**D-163**: a checked, zero-cost unwrap — refused unless the callee is `never fails`, `TYPE-042`). | `val = _! my_func();` |
 | **`_^`** | **Relay** | Desugars to `relay expr` — **propagates the error to the caller, verbatim** (D-080). On error the enclosing function returns immediately with the same code; otherwise evaluates to `.value`. `defer` runs — it is a normal exit path, not a trap. Illegal in `main` / `failsafe`. | `val = _^ my_func();` |
 | `_~` | Discard | **Two positions** (D-089). As a statement it desugars to `discard(expr)` and suppresses the unused-variable warning. At a **declaration site**, `Type:_~name` marks a parameter the body deliberately does not read — and reading it anyway is an error, not a warning. | `_~ unused;` / `cstring[]:_~argv` |
-| `!!!` | Failsafe Shorthand | Immediately invokes `failsafe(err)`. | `!!! errCode;` |
+| `!!!` | Failsafe Shorthand | Immediately invokes `failsafe(err)` — through the trap route (`npk_raise`, D-285, 1.5.4e): the frozen flag, the driver kill and the re-entry rule apply as to any trap. Until then it called `failsafe` directly and had none of them (DEF-40). | `!!! errCode;` |
 
 > ### One wrapper per unwrap operator (D-099)
 >
