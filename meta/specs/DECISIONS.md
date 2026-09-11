@@ -18209,3 +18209,239 @@ pointer to a `fixed` through every call is the analysis D-286 declines for
 `@`.
 
 > Lands at **1.5.5** step 1 (`meta/roadmap/1.5/1.5.5.md`).
+
+
+## D-288 — the floor's obligations: the evidence beside the floor, the program's theory, loops by invariant or by a stated bound, the residue named, TCB.md generated — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-63, S-64, S-65, S-68; lands at 1.5.6 steps 3, 4 and 6)**
+
+Planned 1.5.6 (`meta/roadmap/1.5/1.5.6.md`, 2026-09-11, on `149dbf6`) under
+D-218 (11)'s claim — verified middle-end plus validated floor, the
+unverifiable residue enumerated — and r8's Lesson 2 (specify the
+hand-written floor mathematically; have the solver check it where feasible;
+quarantine and document the rest). **The decision, in four parts.**
+
+1. **Where the evidence lives.** The floor's specifications are
+   `runtime/npkrt.spec` (per symbol: `requires`, `ensures`, `ensures-trap`,
+   `frame`, a loop's `invariant` or `unroll`, `summary`, `residue`,
+   `boundary`; and the file's one `shared` classification, D-290), its
+   protocol models `runtime/models/*.model` (D-289), and its manifest
+   `runtime/npkrt.obligations` — the `nitpick.obligations v1` FORMAT, the
+   file's name saying whose rows — written only by `npkg verify --record`
+   and held by both runners exactly as the compiler's manifest is (D-040: a
+   verdict that moves is a red run). The translator that reads the floor's
+   text and writes the obligations is Nitpick in `npkg/` (the permanent
+   runner, D-206), with `tools/floorspec.npk` as the harness's entry; it
+   writes the compiler's own obligation-directory shapes (`NNNN.smt2`,
+   `index.txt`, `rows.txt`), so both runners' z3 loops decide the floor
+   without a change. Two kinds join the ONE catalogue — `floor-spec`,
+   `floor-model` — guard-less, elision `none`; a floor kind in
+   `nitpick.obligations` or a program kind in `npkrt.obligations` is
+   refused by name. **`open` in the floor is a run failure**, never a
+   manifest row: nothing in the floor is a guard to retain, so a
+   counterexample is a defect or a misstatement, both stop-the-line.
+   Declined: floor rows in `nitpick.obligations` (a second producer in one
+   file; every belt that assumes an emitted function would need an
+   exemption).
+2. **The theory.** The floor's rows are encoded under D-218 (4)'s partition
+   exactly as the program's: unbounded Int with the exact range axiom of
+   every width, the Int forms of D-279 for a bit operation with a numeral
+   operand plus four floor idioms stated sound in the translator's header
+   (the low-bit insert `or (shl x 1) y` with `y ∈ {0,1}`; the align-down
+   `and x (−2^k)`; numeral shifts at any width, symbolic shifts at ≤ 64
+   bits through D-280's crossing and opaque above it; `ptrtoint`/`inttoptr`
+   as identities over addresses in `[0, 2^64)`), floats as D-281's two
+   tiers. Memory is a byte-addressed UNINTERPRETED FUNCTION with explicit
+   store chains — no array sort, no quantifier, no `Seq` (D-218 (6), now
+   measured on the floor's own shape: a 16-byte `memcpy` needs twenty times
+   the budget over an array sort and rlimit 17,169 without one; QF_BV cannot
+   close the 128-bit division's identity at any width — a multiplier
+   equivalence — while the Int partition decides its inductive step at
+   3,093).
+3. **Loops and the residue.** A loop is decided by an INVARIANT the spec
+   supplies — quantifier-free; a universal it needs is written over the
+   section's declared free symbols, the hypothesis asserted and the
+   conclusion demanded at THOSE symbols (the single-instance rule: sound,
+   incomplete, with `(inst e)` as the spec author's extra instantiation of
+   the hypothesis and never of the conclusion) — or by UNWINDING to a
+   stated `N`, the row saying `[≤N]` and the disposition `bounded`; a
+   numeral trip count unwinds exactly. No ghost variables (a fact the IR
+   does not compute is residue, not invented), no per-row budget (one
+   profile for every verdict, D-218 (2)). The residue is NAMED, each with
+   its reason, in the spec file's `residue` sentences and in TCB.md §5:
+   `npk_udivmod128`'s multiplicative identity (its remainder bound, total
+   `b = 0` answer, termination and the four sign wrappers relative to the
+   core are decided), the `fmod` loops' exit value, `npk_wild_live_count`'s
+   two-table sum, and every `budget` row.
+4. **TCB.md is generated where it can be.** The floor table's disposition
+   column (`trusted`, `specified (N discharged, M residue)`, `modelled`,
+   `boundary`, `residue`) and two new marked regions — `floor-syscalls`
+   (per symbol, the syscall numbers issued directly and transitively, from
+   the classifier's own walk) and `floor-residue` — are produced from the
+   spec file, the floor manifest and the floor's text and held by
+   `check_tcb_floor_current`'s extension in both runners, so a disposition
+   that drifts from its rows is a red run (P-26's rule, extended). §5 gains
+   seven acceptances: the kernel-effect table (what a syscall may write —
+   `read` its buffer to `result`, `clock_gettime` its timespec, `mmap` a
+   fresh zeroed mapping, …); `npk_exec`/`npk_tls_self` as per-thread
+   constants; the sequentially-consistent modelling assumption with the
+   shared-state classification as its evidence; the bounds of bounded rows;
+   `npk_wildx_call`'s indirect call and `npk_failsafe`'s call as opaque;
+   the failsafe region's size (D-292); the stop's deadline (D-291). The
+   syscall-class symbols carry a `boundary` promise each; those shaped as
+   an envelope around one syscall (the fd quartet, the file helpers, the
+   clock, the string builders) get decided rows with `sys` uninterpreted;
+   the allocator proper, the waits, the thread and process boundaries carry
+   the promise and no rows here — D-233 assigned their invariants to leg A
+   and the depth tools, and the residue region says so per symbol.
+
+> Lands at **1.5.6** steps 3, 4 and 6 (`meta/roadmap/1.5/1.5.6.md`).
+
+## D-289 — the executor's primitives are MODELLED, never proven whole: bounded transition systems through the pinned z3, with negative controls and a correspondence belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-66; lands at 1.5.6 step 5)**
+
+The r6 verdict (`meta/roadmap/research/digests/r6-digest.md` §3): model
+checking is proven at the PRIMITIVE granularity — an AtomicWaker, a
+park/unpark protocol, one channel — and exhaustively modelling a whole
+hand-written executor is infeasible; the sound configuration under spin
+loops is preemption bounding (BPOR). **The decision.** Six protocol models
+in `runtime/models/` — `park-unpark`, `futex-mutex`, `channel-table`,
+`shared-arena`, `driver-registry`, `trap-route` — each a transition system
+whose atomic steps are the floor's atomic operations and syscalls (the
+kernel's futex, eventfd and signal rules as library steps), UNROLLED by the
+translator to SMT-LIB2 (QF_LIA) at a depth `K` with a preemption bound `D`
+(the thread index changes at most `D` times over `K` steps — BPOR's bound
+in the symbolic setting), decided by the pinned z3 under the one profile,
+one row per bad predicate with `K` and `D` in the row's site. The bad
+predicates are the r6 taxonomy's classes instantiated on this floor
+(wake-before-sleep, absorbed notification, the spent marker, wound but
+asleep; mutual exclusion and lost wake; torn publish and stale handle;
+duplicate index and wrong chunk; double claim and unkilled driver; two
+failsafes, a task step after failsafe began, exit mid-failsafe, failsafe
+blocked on the heap). **Every model carries negative controls** — a
+variant with one step dropped or reordered — that the runners require to be
+REFUTED (`sat`); a control that is `unsat` fails the run (the model cannot
+see the defect it exists for). **The correspondence belt** parses the floor,
+takes every atomic instruction and syscall of the modelled symbols, and
+fails when one sits in a block no step of any model names — a model may be
+wrong about a step's meaning, never silent about a step. The models are
+sequentially consistent over the atomics; the soundness of that reading
+rests on D-290's classification (every cross-thread datum in the modelled
+protocols travels through a `seq_cst` operation or a `release`/`acquire`
+pair whose payload is read after the acquire) and on x86-TSO, stated in
+the translator's header and in TCB.md §5. Liveness (a due task is
+eventually run, a walker's spin ends) needs fairness a bounded unrolling
+cannot state and is residue by name; 1.5.7's schedule-exploration harness
+is the instrument for the real code, and each model is the shape its mocked
+primitives are driven through. Measured before the decision: the
+park/unpark model decides `unsat` at `K` 14, `D` 6 in 0.76 s (rlimit
+3,613,294) and its no-re-check control `sat` in 0.28 s. Declined: TLA+/TLC
+— a second engine against D-218 (1)'s "one solver", a second determinism
+profile, a JVM on the workbench.
+
+> Lands at **1.5.6** step 5 (`meta/roadmap/1.5/1.5.6.md`).
+
+## D-290 — every word two threads can reach is atomic or ordered by a NAMED edge: the shared-state rule, classified per word and held by a belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-67; DEF-44, DEF-45, DEF-46, DEF-48; lands at 1.5.6 step 0)**
+
+Found planning 1.5.6 by reading the floor's shared-state map against the
+threads that reach each word: four plain accesses race in LLVM's memory
+model — a frame's `windup` word stored from the joiner's thread and loaded
+plain at every resume (DEF-44), a channel's generation read outside the
+lock that writes it (DEF-45), `@npk_frozen` stored by the trapping thread
+and loaded plain by every executor (DEF-46), the join's tid word read plain
+(DEF-48). LangRef gives a racing non-atomic load the value `undef`, which
+D-218 (10) banned from the emitted IR and which the floor's own text could
+mint at run time; nothing had ever failed because each `undef` fed a
+compare whose both outcomes were safe, or an instruction the hardware
+orders anyway. **The decision.** A load or store of a word two threads can
+reach is either an ATOMIC access (`monotonic` at least — an atomic load
+never returns `undef`) or a PLAIN access that a named happens-before edge
+orders, and `runtime/npkrt.spec`'s `(shared …)` section classifies EVERY
+such word: `atomic`, `lock <word>` (accessed under that futex mutex),
+`owner-only` (the executor's own thread), `born-before-publish` (written
+where the frame is born, before it is published under a lock or a
+`seq_cst` store), `once-before-threads` (written at start before any thread
+exists). A belt in both runners lists every access of `%npk.hdr`,
+`%npk.exec`, `%npk.chan`, `%npk.tls` and every `global` of the floor and
+fails when an access has no classification, when an `atomic` word has a
+plain access, or when a `lock` word's access is not dominated by the lock
+call and post-dominated by the unlock in its function (or the function is
+named `under-lock` by its caller's discipline). The four promotions are the
+rule's first application: `release`/`acquire` on the wind-up word,
+`monotonic` on the generation's three accesses, `seq_cst` on the frozen
+flag, `monotonic` on the tid word — the same instructions on x86, a
+different model. A plain access that is BY DESIGN is classified and stated
+in TCB.md §5, never silently promoted (the caution the outgoing session
+raised, kept).
+
+> Lands at **1.5.6** step 0 (`meta/roadmap/1.5/1.5.6.md`).
+
+## D-291 — a trap STOPS every other thread before `failsafe` runs: the thread registry, the stop signal, the failsafe holder's arbitration — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-69; DEF-47; a D-203 floor addition; lands at 1.5.6 step 1)**
+
+D-063 says a trap is a whole-program event and that "other threads stop
+BEFORE `failsafe` gets control, so the handler cannot be racing a sibling
+task driving the same actuator". Found planning 1.5.6: the floor sets
+`@npk_frozen`, which stops the next RESUME on every executor, and nothing
+else; and `npk_trap`'s `@npk_in_failsafe` is a plain load-then-store — two
+threads trapping at once both read 0, both kill the drivers and both run
+`failsafe` concurrently; a thread trapping while another's `failsafe` is
+running reads 1, takes the re-entry arm and `exit_group(70)`s the process
+mid-safing; a task running on another thread at the trap runs to its next
+suspension point or its own trap (DEF-47). This is the actuator scenario
+the language exists for. **The decision.** (1) A THREAD REGISTRY —
+`@npk_thread_reg`, 64 entries of `{ state i32, tls ptr }` in `.bss`, the
+driver registry's shape: CAS-claimed (`0 → 1 acq_rel`) and published
+(`store atomic 2 release`) by `npk_thread_start` BEFORE the clone, the main
+thread's slot claimed at `npk_tls_boot`, retired by `npk_thread_join` after
+the tid word clears; full is the refusal `npk_thread_start` already has.
+(2) A STOP SIGNAL — `rt_sigaction(SIGUSR1)` at `npk_start` over the
+kernel's 32-byte action with `SA_RESTORER` and a two-instruction
+`rt_sigreturn` stub in `module asm` (x86_64 refuses to deliver a signal
+whose action has no restorer; the stub is never executed because the
+handler never returns); the handler `npk_stop_handler` counts itself
+(`atomicrmw add @npk_stopped`) and parks forever on a futex word nothing
+writes; it allocates nothing. (3) ARBITRATION — `npk_trap` claims
+`@npk_in_failsafe` by `cmpxchg 0 → <self tls>` (`npk_tls_self`, a second
+one-instruction `%fs` read, class `asm`): the winner proceeds; a loser that
+IS the holder (re-entry: `failsafe` trapped) takes the hard exit 70 as
+today; any other loser parks in the handler's loop and dies with the
+winner's `exit_group`. (4) THE STOP — after `@npk_frozen` and before
+`npk_driver_kill_all`, the winner sends `tgkill(pid, tid, SIGUSR1)` to every
+published slot but its own (the pid recorded at start by `getpid`; the tid
+the slot's TLS word that `PARENT_SETTID` wrote) and waits on the stopped
+count under the executor's join deadline (`futex_wait`, never a spin); a
+thread that does not stop in time is proceeded past and TCB.md §5 says so.
+Then the drivers, then `failsafe` on the trapping thread. (5) `npk_exit`
+from a thread that is not the holder while a holder exists parks likewise —
+the controlled exit is the failsafe's, and D-224 keeps its meaning because
+the process still exits, by the winner. Three syscalls join the floor
+(`rt_sigaction` 13, `tgkill` 234, `getpid` 39). The `trap-route` model
+(D-289) is built on the OLD floor first — its bad predicates `sat`, the
+negative control — then on the new. Declined: recording the gap as residue.
+
+> Lands at **1.5.6** step 1 (`meta/roadmap/1.5/1.5.6.md`); D-063 gains a
+> dated landing note there.
+
+## D-292 — `failsafe` allocates from a PREALLOCATED REGION: the trap route's allocator — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-70; a D-203 floor addition; lands at 1.5.6 step 2)**
+
+D-014 and the heap's own header say the trap path allocates nothing and
+`failsafe` runs on preallocated state; today a `failsafe` body that
+allocates takes the same heap mutex the program was using, and a thread
+that trapped inside the allocator — or, under D-291, a thread stopped
+mid-allocation — holds it forever: the `failsafe` hangs with no deadline,
+an uncontrolled stop. **The decision.** A FAILSAFE REGION — `@npk_fs_region`,
+1 MiB of `.bss` (a size stated once in the floor and in TCB.md §5 as the
+bound a `failsafe` body lives within; untouched pages cost nothing) with a
+bump pointer — that `npk_alloc_impl`, the one entry every allocation
+reaches, bumps from once `@npk_in_failsafe` holds a winner: 16-aligned,
+zeroed by construction, never freed; `npk_dalloc` and `npk_ralloc`-as-free
+are no-ops during `failsafe` (freeing into a heap another thread may have
+left torn is the hazard, and a leak at the exit that follows costs
+nothing; `npk_exit`'s registry walks are unchanged); `npk_ralloc`-as-grow
+copies into the region; exhaustion is a trap inside `failsafe`, the
+re-entry rule's hard exit 70 — today's answer to `HeapOom` there.
+`NPK_HEAP_STATS` counts region bytes as allocated. Declined: a checker rule
+refusing every allocation reachable from `failsafe` — it refuses the
+diagnostics a `failsafe` most needs to build and the library tier's
+`failsafe` idioms, where the region makes the documents' claim true
+instead of forbidding what a `failsafe` is for.
+
+> Lands at **1.5.6** step 2 (`meta/roadmap/1.5/1.5.6.md`); D-014 gains a
+> dated landing note there.
