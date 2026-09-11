@@ -1124,7 +1124,7 @@ pub func:fnem_flag_at = NIL(FnEmitter->:fe, int64:i, move string:flag) never fai
     pass NIL;
 };
 pub func:fnem_local_flag_at = string->(FnEmitter->:fe, int64:i) never fails {
-    pass ($$i fe.lflags.items[i => int64]);
+    pass (@fe.lflags.items[i => int64]);   // a plain address: a claim cannot travel up (D-286)
 };
 
 // THE RULE A LOCAL IS LIMITED BY (1.5.2 step 2, D-251), attached to the most

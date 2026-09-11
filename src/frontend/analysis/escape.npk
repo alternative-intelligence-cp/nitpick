@@ -1309,6 +1309,33 @@ func:collect_local_roots = NIL(Escape->:x, ExprId:id, int32:depth, List<int32>->
             }
         }
     }
+    // THE CUSTOM-SHAPED KINDS BY THEIR OWN WINDOWS (1.5.5 step 1 -- step 0's
+    // collector fell to `expr_shape` for these and CUSTOM was skipped, so a
+    // call's arguments, a builtin's and a struct literal's values were not
+    // walked: `p = wrap(@x)` and `h = Holder{ inner: @x }` into an outer
+    // holder passed). A call: the callee and the value arguments past the
+    // generic count; a builtin: its value arguments; a struct literal: the
+    // values (the window alternates NAME, VALUE).
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop collect_local_roots(x, raw expr_callee(n), d, out);
+        int32:cg = raw expr_generic_count(n);
+        drop collect_roots_window(x, (raw expr_list_start(n)) + cg, (raw expr_list_count(n)) - cg, d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:bg = raw builtin_generic_count(n);
+        drop collect_roots_window(x, (raw expr_list_start(n)) + bg, (raw expr_list_count(n)) - bg, d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:scnt = raw expr_list_count(n);
+        int32:si = 1i32;
+        while (si < scnt) {
+            drop collect_local_roots(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) }, d, out);
+            si = si + 2i32;
+        }
+        pass NIL;
+    }
     // A PICK EXPRESSION'S VALUE IS ITS ARMS' `give` VALUES (the shape
     // `gives_borrowy` walks for the escape verdict).
     if (n.kind == ExprKind.ExprPickExpr) {
@@ -2280,9 +2307,11 @@ func:escape_yields = bool(Escape->:x, ExprId:id) never fails {
 // wrong answer is safe.
 pub func:CARRY_FUEL = int32() never fails { pass 32i32; };
 
-func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
+// OVER THE TYPE TABLE ALONE (1.5.5 step 1): the aliasing analysis asks the
+// same question of a call's result type, and an `Escape` is not what it has.
+pub func:carries_pointer_ty = bool(TypeTable->:table, int32:ty, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
-    int32:k = raw type_kind(x.types, ty);
+    int32:k = raw type_kind(table, ty);
 
     // A pointer, and the three fat ones. A slice is `{ptr, len}` and a string and
     // a `cstring` are pointers at whatever they name, whatever the element is.
@@ -2296,16 +2325,16 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
 
     // The wrappers carry exactly what they wrap. An `int32[4]` is four integers
     // stored inline and carries nothing, which is why an array is not a slice here.
-    if (k == (raw TY_ARRAY()))    { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_ARRAY()))    { pass (raw carries_pointer_ty(table, raw type_elem(table, ty), fuel - 1i32)); }
     if (k == (raw TY_ARENA()))    { pass true; }
     if (k == (raw TY_SHARED_ARENA())) { pass true; }
     if (k == (raw TY_HANDLE()))   { pass false; }
-    if (k == (raw TY_OPTIONAL())) { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
-    if (k == (raw TY_RANGE()))    { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw carries_pointer_ty(table, raw type_elem(table, ty), fuel - 1i32)); }
+    if (k == (raw TY_RANGE()))    { pass (raw carries_pointer_ty(table, raw type_elem(table, ty), fuel - 1i32)); }
 
     // A `Result<T>` carries what its success type carries. The error field is a
     // `tbb32` (D-005) and can hold nothing.
-    if (k == (raw TY_RESULT()))   { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw carries_pointer_ty(table, raw type_elem(table, ty), fuel - 1i32)); }
 
     // THE SCALARS, which are the whole point of asking. Each is a value with no
     // room for an address in it, and `bool`, `char` and the kernel handles are not
@@ -2335,6 +2364,10 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
     // of a wrong `true` is a program refused, and the cost of a wrong `false` is a
     // pointer into a dead frame.
     pass true;
+};
+
+func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
+    pass (raw carries_pointer_ty(x.types, ty, fuel));
 };
 
 func:escape_window = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {

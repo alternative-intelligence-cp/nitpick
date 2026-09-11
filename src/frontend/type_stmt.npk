@@ -1089,6 +1089,82 @@ pub func:place_limited = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails 
     pass false;
 };
 
+// A PLACE ROOTED AT A `fixed` BINDING, OR REACHING THROUGH A `fixed` FIELD
+// (D-287, 1.5.5 step 1; TYPE-071): a local's `fixed` qualifier, a parameter's,
+// a module binding's -- and a field's, wherever the struct lives, since the
+// qualifier is the field's own (the bindings analysis's `field_declares_fixed`
+// reads the same bit). The root question stops at a pointer, slice or handle
+// base exactly as `place_limited` does (the storage there is not the
+// binding's own); the field question does not, because `p.f` through a
+// pointer reaches the pointee's `fixed` field all the same.
+pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass false; }
+        Symbol:s = raw symtab_get(e.tab, n.a);
+        if (s.origin_kind == (raw SYM_STMT())) {
+            StmtNode:sn = raw ast_stmt(e.ast, StmtId{ index: s.origin });
+            if (sn.kind != StmtKind.StmtVarDeclStmt) { pass false; }
+            pass (((raw stmt_quals(e.ast, sn)) & (raw QUAL_FIXED())) != 0i32);
+        }
+        if (s.origin_kind == (raw SYM_DECL())) {
+            DeclNode:dn = raw ast_decl(e.ast, DeclId{ index: s.origin });
+            if (dn.kind == DeclKind.DeclParamDecl) {
+                pass (((raw param_quals(dn)) & (raw QUAL_FIXED())) != 0i32);
+            }
+            if (dn.kind == DeclKind.DeclGlobalDecl) {
+                pass (((raw global_quals(dn)) & (raw QUAL_FIXED())) != 0i32);
+            }
+            pass false;
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        if (bt != 0i32) {
+            int32:st = bt;
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { st = raw type_elem(e.types, bt); }
+            if (raw struct_field_fixed(e, st, (raw expr_name(n)) =>! int32)) { pass true; }
+            if (bk == (raw TY_POINTER())) { pass false; }
+            if (bk == (raw TY_HANDLE()))  { pass false; }
+        }
+        pass (raw place_fixed(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_lhs(n));
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { pass false; }
+            if (bk == (raw TY_SLICE()))   { pass false; }
+            if (bk == (raw TY_HANDLE()))  { pass false; }
+        }
+        pass (raw place_fixed(e, raw expr_lhs(n), fuel - 1i32));
+    }
+    pass false;
+};
+
+// Does this struct type declare the named field `fixed`?
+func:struct_field_fixed = bool(ExprTyper->:e, int32:sty, int32:name) never fails {
+    if (sty == 0i32) { pass false; }
+    if ((raw type_kind(e.types, sty)) != (raw TY_STRUCT())) { pass false; }
+    int32:sd = raw type_decl_of(e.types, sty);
+    if (sd == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: sd });
+    int32:cnt = raw item_member_count(e.ast, d);
+    for (int32:i in 0i32...cnt) {
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            if ((raw decl_name(m)) == name) {
+                pass (((raw field_quals(m)) & (raw QUAL_FIXED())) != 0i32);
+            }
+        }
+    }
+    pass false;
+};
+
 // `Type:name = init;` — the initialiser is checked against the ANNOTATION, and
 // the annotation is also what an unsuffixed literal in the initialiser takes its
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is

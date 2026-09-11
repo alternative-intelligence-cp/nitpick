@@ -40,7 +40,7 @@ func:passes_down = int32() never fails {
 func:passes_binding_down = int32() never fails {
     int32:x = 9i32;
     int32->:p = @x;
-    int32->:q = $$i x;
+    int32->:q = @x;   // two plain addresses (D-286: a `$$i` claim beside a held `@` of `x` is BORROW-013)
     pass (raw sum_through(p, q));
 };
 

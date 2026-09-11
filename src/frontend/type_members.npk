@@ -2352,6 +2352,14 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             if ((raw type_kind(e.types, rxt)) == (raw TY_POINTER())) { rx_is_ptr = true; }
         }
         if (!rx_is_ptr) {
+            // A `fixed` BINDING HAS NO ADDRESS EITHER (D-287, 1.5.5 step 1):
+            // the same implicit address, the same question.
+            if (raw place_fixed(e, raw expr_operand(n), 64i32)) {
+                discard(raw te_error(e, raw TYPE_FIXED_ADDRESS(),
+                    "a `fixed` binding has no address (D-287), and a method whose receiver is a pointer takes one: a write through `Self->` would be one no rule sees -- call a by-value receiver, or declare the binding plain",
+                    n.span));
+                pass 0i32;
+            }
             if (raw place_limited(e, raw expr_operand(n), 64i32)) {
                 discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
                     "a limited binding has no address (D-251), and a method whose receiver is a pointer takes one: a write through `Self->` would be one no rule sees -- call a by-value receiver, or read the fields",

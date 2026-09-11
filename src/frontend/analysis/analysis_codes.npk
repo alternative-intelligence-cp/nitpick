@@ -114,6 +114,30 @@ pub func:BORROW_WILD_STORE = string() never fails { pass "NITPICK-BORROW-011"; }
 // value first, after which the view is a borrow of that binding.
 pub func:BORROW_VIEW_OF_TEMPORARY = string() never fails { pass "NITPICK-BORROW-012"; };
 
+// --- D-286 (1.5.5): the aliasing half of D-004 ---------------------------------
+//
+// `$$m place` is an EXCLUSIVE claim, `$$i place` a SHARED one, `@place` a plain
+// address that claims nothing; a claim lives for the call it is an argument of
+// or for the whole scope of the pointer local that holds it; every access of
+// an overlapping place under the same root is checked against it. Two codes,
+// because a reader filtering a log asks two different questions: "what did I
+// touch that a claim covers" and "where may a claim stand at all".
+
+// A CONFLICT: an access of a place a live claim covers (a read under `$$m`, a
+// write-capable access under `$$i` or `$$m`, a claim on storage a plain address
+// held in scope reaches, a write through a shared claim's holder). The message
+// names the party, its site and its lifetime, and the fix.
+pub func:BORROW_CONFLICT = string() never fails { pass "NITPICK-BORROW-013"; };
+
+// A CLAIM WHERE THE ANALYSIS CANNOT FOLLOW IT: anywhere but a whole call
+// argument or a pointer local's whole value -- a literal, a `pass` value, a
+// nested expression, an assignment to a non-local place, an argument of a call
+// whose result can carry a pointer (D-117 rule A), a place with no named root,
+// or a copy of a binding that holds one. The fix is in the sentence: spell `@`
+// for an address that claims nothing (the D-019 pattern: an opt-out is
+// greppable, never silent).
+pub func:BORROW_CLAIM_POSITION = string() never fails { pass "NITPICK-BORROW-014"; };
+
 // --- D-010: definite assignment (0.5.2) ---------------------------------------
 //
 // D-010 chose "no implicit default" over poisoning every scalar with `ERR`, on the

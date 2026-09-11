@@ -1,0 +1,1089 @@
+// The aliasing half of D-004: `$$m` EXCLUDES, `$$i` SHARES, `@` claims nothing
+// (1.5.5 step 1; D-286 as recommended in S-60).
+//
+// Written where the escape analysis left off. 0.5.1 said of `$$i`/`$$m`: "the
+// aliasing rules that make `$$i` many-readers and `$$m` exclusive … a different
+// question and not settled here" -- and until this pass the two spellings built
+// one node the checker typed as `T->`, the bindings analysis read `$$m` as the
+// write that fills a destination (D-118), the escape analysis treated both as
+// `@`, and nothing else told them apart: two `$$m` of one element, or a `$$m x`
+// held while `x` was assigned and then written through the pointer, compiled
+// and ran (measured 2026-09-11: exit 32).
+//
+// THE VOCABULARY (meta/roadmap/1.5/1.5.5.md §2.1). A CLAIM is a `$$i place`
+// (shared: many readers) or `$$m place` (exclusive: one writer, no other name).
+// `@place` is a PLAIN ADDRESS: it claims nothing and says nothing about
+// direction. An ACCESS is any way source reaches storage under a root -- a
+// read, a write, an address of either spelling, a `move`, the implicit address
+// a pointer-receiver call takes, a range view, a `pick` selector; an access is
+// WRITE-CAPABLE unless it is a plain read, because the pointer type carries no
+// mutability and whatever holds an address may write through it. A claim's
+// ROOT is the identifier at the bottom of its place path (`place_root`); its
+// PATH the steps outward, each a field name or an index (a NUMERAL when the
+// folder knows it, COMPUTED otherwise). Two paths under one root OVERLAP when
+// every field step of their common prefix names the same field and every index
+// pair the same element; they are STATICALLY DISJOINT when a field differs or
+// two numerals differ, STATICALLY OVERLAPPING when nothing along the prefix is
+// computed, COMPUTED otherwise.
+//
+// THE LIFETIME OF A CLAIM IS LEXICAL (§2.2; non-lexical lifetimes and the
+// prototype's two-phase borrows are decided OUT with D-004's "no lifetime
+// inference"). A whole call argument or receiver lives for that call and
+// conflicts with the call's other arguments and receiver; the whole initialiser
+// or assigned value of a pointer local is HELD by that local from its
+// DECLARATION to the end of the block that declares it -- the holder's whole
+// scope, since a loop reaches every statement after the declaration again
+// after an assignment. A holder's own uses (`<-p`, `p.f`, passing `p`) are the
+// claim's uses, not accesses of the root. A `defer` body runs at its block's
+// exit and is checked against every party of the enclosing blocks at any
+// position. A holder is USED, NOT COPIED; a claim standing anywhere else -- a
+// literal, a `pass` value, nested in another expression, assigned to a
+// non-local place, an argument of a call whose result can carry a pointer
+// (D-117 rule A: the callee decides what the result points at) -- is refused
+// by name (BORROW-014) with the fix in the sentence: "spell `@` for an address
+// that claims nothing". `$$i`/`$$m` STATE intent; this pass follows exactly the
+// shapes it can honour and refuses the rest, the D-019 pattern.
+//
+// THE CONFLICTS (§2.4), checked at every access whose root is a live party's:
+//
+//     party \ access   | a read      | write-capable
+//     shared  (`$$i`)  | fine        | BORROW-013
+//     exclusive (`$$m`)| BORROW-013  | BORROW-013
+//     plain (`@` held) | fine unless the access is a CLAIM
+//
+// A conflict over statically disjoint paths is nothing; over statically
+// overlapping paths it is BORROW-013 naming the party; over computed paths it
+// is a GUARD SITE -- at this step still BORROW-013 (the plan's conservative
+// refusal), at step 2 the byte-range compare the verified build elides. A
+// write-capable access rooted at a SHARED claim's holder is BORROW-013 too:
+// shared means readers. WHAT THIS CHECKS AND WHAT IT DOES NOT: exclusivity is
+// decided among accesses that spell the SAME ROOT; two pointer bindings that
+// alias one storage are two roots, and a claim through one is not seen from
+// the other -- a syntactic path analysis cannot know two names alias, and
+// making every pointer parameter exclusive would refuse the compiler's own
+// architecture (every walker holds pointers to shared state).
+//
+// ONE FORWARD WALK, NO FIXPOINT: because a holder is never copied, every party
+// is admitted at exactly one site (a declaration's initialiser, an assignment's
+// value, a call's argument), and a pre-scan of the function's assignments
+// registers an assignment-admitted party at its holder's DECLARATION, which is
+// where the holder's scope begins. FAIL CLOSED like every walk here: a
+// statement or expression kind without an entry is BORROW-008, the escape
+// walk's internal code, and the depth bound refuses rather than guesses.
+mod:alias;
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../parser.npk".*;
+use "../types.npk".*;
+use "../type_resolve.npk".*;
+use "../type_members.npk".*;   // type_param_at_of: the receiver's parameter
+use "../expr_types.npk".*;
+use "./analysis_codes.npk".*;
+use "./escape.npk".*;          // carries_pointer (pub since 1.5.5 step 1)
+
+pub func:ALIAS_DEPTH = int32() never fails { pass 256i32; };
+
+// The three party kinds, and the four access kinds.
+pub func:PARTY_PLAIN = int32() never fails     { pass 0i32; };
+pub func:PARTY_SHARED = int32() never fails    { pass 1i32; };
+pub func:PARTY_EXCLUSIVE = int32() never fails { pass 2i32; };
+pub func:ACC_READ = int32() never fails        { pass 0i32; };
+pub func:ACC_WRITE = int32() never fails       { pass 1i32; };
+pub func:ACC_SHARED = int32() never fails      { pass 2i32; };
+pub func:ACC_EXCLUSIVE = int32() never fails   { pass 3i32; };
+
+// The overlap classes.
+pub func:OV_DISJOINT = int32() never fails { pass 0i32; };
+pub func:OV_STATIC = int32() never fails   { pass 1i32; };
+pub func:OV_COMPUTED = int32() never fails { pass 2i32; };
+
+pub struct:Party = {
+    ExprId:site;       // the `$$i`/`$$m`/`@` expression
+    int32:kind;        // PARTY_*
+    int32:root;        // the root symbol
+    int32:holder;      // the holder's symbol, or 0 for a call-duration party
+};
+
+pub struct:Alias = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    TypeTable->:types;
+    ExprTypes->:etypes;
+    InternTable->:it;
+    DiagList->:diags;
+    TypeResolver->:tr;
+    int32:scope;               // the module scope the function is folded in
+    List<Party>:live;          // the live parties, a stack
+    List<int64>:frames;        // the block marks into `live`
+    List<Party>:pre;           // every party of the function, by admission site
+    List<int64>:call_marks;    // the mark before each open call's parties
+    // THE SYMBOL A VAR-DECL STATEMENT DECLARED, by statement index (a name
+    // may be shadowed, so the origin decides): built once from the table.
+    wild int32->:stmt_sym;
+    int32:stmt_count;
+};
+
+pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
+                            ExprTypes->:etypes, InternTable->:it, DiagList->:diags,
+                            TypeResolver->:tr) never fails {
+    int32:sc = raw ast_stmt_count(ast);
+    if (sc < 1i32) { sc = 1i32; }
+    wild int8->:mem = alloc((sc => int64) * #size_of<int32>());
+    wild int32->:map = mem =>! wild int32->;
+    for (int64:i in 0i64...(sc => int64)) { map[i] = 0i32; }
+    int32:n = raw symtab_count(tab);
+    for (int32:si in 1i32...n) {
+        Symbol:s = raw symtab_get(tab, si);
+        if (s.origin_kind == (raw SYM_STMT())) {
+            if ((s.origin >= 0i32) && (s.origin < sc)) { map[s.origin => int64] = si; }
+        }
+    }
+    pass Alias{ ast: ast, tab: tab, types: types, etypes: etypes, it: it, diags: diags, tr: tr,
+                scope: 0i32,
+                live: raw list_init::<Party>(16i64),
+                frames: raw list_init::<int64>(16i64),
+                pre: raw list_init::<Party>(16i64),
+                call_marks: raw list_init::<int64>(8i64),
+                stmt_sym: map, stmt_count: sc };
+};
+
+func:alias_err = NIL(Alias->:x, move string:code, move string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
+    pass NIL;
+};
+
+// --- modules and declarations --------------------------------------------------
+
+pub func:alias_module = NIL(Alias->:x, DeclId:mod_id, int32:scope) never fails {
+    x.scope = scope;
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    for (int32:i in 0i32...n) {
+        drop alias_decl(x, raw item_member(x.ast, m, i), scope);
+    }
+    pass NIL;
+};
+
+func:alias_decl = NIL(Alias->:x, DeclId:id, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        StmtId:body = raw fn_body(x.ast, d);
+        if (!(raw stmt_is_none(body))) { drop alias_fn(x, d, body); }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(x.tab, d, scope);
+        if (inner == 0i32) { pass NIL; }
+        int32:saved = x.scope;
+        drop alias_module(x, id, inner);
+        x.scope = saved;
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        for (int32:j in 0i32...(raw impl_member_count(x.ast, d))) {
+            drop alias_decl(x, raw impl_member(x.ast, d, j), scope);
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        for (int32:k in 0i32...(raw item_member_count(x.ast, d))) {
+            drop alias_decl(x, raw item_member(x.ast, d, k), scope);
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// ONE FUNCTION: the pre-scan, then the walk over the body with the parameters'
+// assignment-admitted parties live from the entry.
+func:alias_fn = NIL(Alias->:x, DeclNode:d, StmtId:body) never fails {
+    x.live.count = 0i64;
+    x.frames.count = 0i64;
+    x.pre.count = 0i64;
+    x.call_marks.count = 0i64;
+    drop prescan_stmt(x, body, raw ALIAS_DEPTH());
+    // A parameter holder's scope is the function: its parties are live at entry.
+    for (int64:i in 0i64...x.pre.count) {
+        Party:pp = x.pre.items[i];
+        if (pp.holder == 0i32) { continue; }
+        Symbol:hs = raw symtab_get(x.tab, pp.holder);
+        if (hs.origin_kind == (raw SYM_DECL())) { drop list_push(@x.live, pp); }
+    }
+    drop alias_stmt(x, body, raw ALIAS_DEPTH());
+    pass NIL;
+};
+
+// --- the pre-scan: where each held party is admitted ----------------------------
+//
+// Every var-decl initialiser and every assignment value that IS a claim or a
+// plain address into a local holder is recorded with its holder's symbol, so
+// the walk can make it live at the holder's DECLARATION (an assignment inside
+// a loop reaches every statement after the declaration again) and a `defer`
+// body can see the parties of its enclosing blocks at any position.
+func:prescan_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    if (depth <= 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+    int32:dd = depth - 1i32;
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        ExprId:init = raw stmt_decl_init(x.ast, s);
+        int32:pk = raw party_kind_of(x, init);
+        if (pk >= 0i32) {
+            int32:hsym = raw decl_symbol(x, id, raw stmt_name(s));
+            drop prescan_party(x, init, pk, hsym);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        ExprId:val = raw stmt_assigned(s);
+        int32:pk2 = raw party_kind_of(x, val);
+        if (pk2 >= 0i32) {
+            int32:tsym = raw bare_local_symbol(x, raw stmt_target(s));
+            if (tsym != 0i32) { drop prescan_party(x, val, pk2, tsym); }
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop prescan_stmt(x, StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) }, dd);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop prescan_stmt(x, raw stmt_then(s), dd);
+        drop prescan_stmt(x, raw stmt_else(s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop prescan_stmt(x, raw stmt_body(x.ast, s), dd); pass NIL; }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop prescan_stmt(x, raw stmt_when_body(x.ast, s), dd);
+        drop prescan_stmt(x, raw stmt_when_then(x.ast, s), dd);
+        drop prescan_stmt(x, raw stmt_when_end(x.ast, s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) { drop prescan_stmt(x, raw stmt_for_body(x.ast, s), dd); pass NIL; }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        drop prescan_stmt(x, raw stmt_counted_body(s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:pa in 0i32...(raw pick_arm_count(s))) {
+            drop prescan_stmt(x, raw pick_arm_at(x.ast, raw pick_arm_start(s), pa), dd);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) { drop prescan_stmt(x, raw arm_body(s), dd); pass NIL; }
+    if (s.kind == StmtKind.StmtDeferStmt) { drop prescan_stmt(x, StmtId{ index: s.a }, dd); pass NIL; }
+    pass NIL;
+};
+
+// The party kind an admitted value would make, or -1 for an ordinary value:
+// `$$i` shared, `$$m` exclusive, `@` plain -- the WHOLE value, nothing nested.
+func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
+    if (raw expr_is_none(val)) { pass (0i32 - 1i32); }
+    ExprNode:n = raw ast_expr(x.ast, val);
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        if (raw borrow_is_mut(n)) { pass (raw PARTY_EXCLUSIVE()); }
+        pass (raw PARTY_SHARED());
+    }
+    if (n.kind == ExprKind.ExprAddressOfExpr) { pass (raw PARTY_PLAIN()); }
+    pass (0i32 - 1i32);
+};
+
+func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never fails {
+    if (holder == 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, site);
+    int32:root = raw place_root_symbol(x, raw expr_operand(n));
+    if (root == 0i32) { pass NIL; }   // no named root: BORROW-014 at the walk
+    drop list_push(@x.pre, Party{ site: site, kind: kind, root: root, holder: holder });
+    pass NIL;
+};
+
+// The symbol a var-decl statement declared, from the map built at init.
+func:decl_symbol = int32(Alias->:x, StmtId:sid, int32:name) never fails {
+    if (sid.index < 0i32) { pass 0i32; }
+    if (sid.index >= x.stmt_count) { pass 0i32; }
+    pass x.stmt_sym[sid.index => int64];
+};
+
+// A bare local or parameter name as an assignment target, else 0.
+func:bare_local_symbol = int32(Alias->:x, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass 0i32; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    if (n.a == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(x.tab, n.a);
+    if (s.origin_kind == (raw SYM_STMT())) { pass n.a; }
+    if (s.origin_kind == (raw SYM_DECL())) {
+        DeclNode:dn = raw ast_decl(x.ast, DeclId{ index: s.origin });
+        if (dn.kind == DeclKind.DeclParamDecl) { pass n.a; }
+    }
+    pass 0i32;
+};
+
+// The root symbol of a place, through views (a lending `pick`'s binding stands
+// in for its selector's root, D-266), or 0 when the place has no named root.
+func:place_root_symbol = int32(Alias->:x, ExprId:id) never fails {
+    ExprId:cur = id;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass 0i32; }
+        if (raw expr_is_none(r.id)) { pass 0i32; }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+        if (rn.a == 0i32) { pass 0i32; }
+        if (!(raw sym_is_view(x.tab, x.ast, rn.a))) { pass rn.a; }
+        cur = ExprId{ index: (raw symtab_get(x.tab, rn.a)).link };
+    }
+    pass 0i32;
+};
+
+// --- paths ------------------------------------------------------------------------
+//
+// A step outward from the root: a field (its interned name), an index (its
+// expression, and its value when the folder knows it), or a range view (the
+// whole extent at that position -- it overlaps every index there).
+pub struct:Step = {
+    int32:kind;      // 0 field, 1 index, 2 range
+    int32:name;
+    ExprId:index;
+    bool:numeral;
+    int64:value;
+};
+
+// The steps of a place, root-outward, through views. False when the walk
+// exhausted or the place has no named root.
+func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
+    List<Step>:rev = raw list_init::<Step>(8i64);
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+            drop list_push(@rev, Step{ kind: 0i32, name: (raw expr_name(n)) =>! int32, index: raw expr_none(), numeral: false, value: 0i64 });
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprId:ix = raw expr_rhs(n);
+            ExprNode:ixn = raw ast_expr(x.ast, ix);
+            if (ixn.kind == ExprKind.ExprRangeExpr) {
+                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: ix, numeral: false, value: 0i64 });
+            } else {
+                ConstVal:cv = raw fold_const(x.tr, ix, x.scope);
+                bool:num = (cv.kind == (raw CV_INT()));
+                drop list_push(@rev, Step{ kind: 1i32, name: 0i32, index: ix, numeral: num, value: cv.num });
+            }
+            cur = raw expr_lhs(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            if (n.a == 0i32) { pass false; }
+            // THROUGH A VIEW (D-266): the binding stands in for the payload it
+            // views; the selector's own path is not spelled, so the view's
+            // steps extend the selector's ROOT with an opaque step -- a view is
+            // a part of the selector nobody can name here, so it overlaps every
+            // part of it (conservative).
+            if (raw sym_is_view(x.tab, x.ast, n.a)) {
+                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64 });
+                cur = ExprId{ index: (raw symtab_get(x.tab, n.a)).link };
+                continue;
+            }
+            // root reached: reverse
+            int64:k = rev.count;
+            while (k > 0i64) {
+                k = k - 1i64;
+                drop list_push(out, rev.items[k]);
+            }
+            pass true;
+        }
+        pass false;
+    }
+    pass false;
+};
+
+// The overlap class of two paths under one root, and whether a computed pair
+// exists along the common prefix.
+func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
+    int64:n = a.count;
+    if (b.count < n) { n = b.count; }
+    bool:computed = false;
+    for (int64:i in 0i64...n) {
+        Step:sa = a.items[i];
+        Step:sb = b.items[i];
+        if ((sa.kind == 0i32) && (sb.kind == 0i32)) {
+            if (sa.name != sb.name) { pass (raw OV_DISJOINT()); }
+            continue;
+        }
+        if ((sa.kind == 1i32) && (sb.kind == 1i32)) {
+            if (sa.numeral && sb.numeral) {
+                if (sa.value != sb.value) { pass (raw OV_DISJOINT()); }
+                continue;
+            }
+            computed = true;
+            continue;
+        }
+        // A range view against anything at this position, or a field against
+        // an index (which typing does not admit): the extent overlaps.
+        continue;
+    }
+    if (computed) { pass (raw OV_COMPUTED()); }
+    pass (raw OV_STATIC());
+};
+
+// The spelling of a place for a diagnostic: `arr[3]`, `a.b[…]`.
+func:render_place = string(Alias->:x, int32:root, List<Step>:steps) never fails {
+    string:s = string_concat(raw intern_get(x.it, (raw symtab_get(x.tab, root)).name), "");
+    for (int64:i in 0i64...steps.count) {
+        Step:st = steps.items[i];
+        if (st.kind == 0i32) {
+            s = string_concat(s, ".");
+            s = string_concat(s, raw intern_get(x.it, st.name));
+        }
+        if (st.kind == 1i32) {
+            if (st.numeral) {
+                s = string_concat(s, "[");
+                s = string_concat(s, int_to_string(st.value));
+                s = string_concat(s, "]");
+            } else {
+                s = string_concat(s, "[…]");
+            }
+        }
+        if (st.kind == 2i32) { s = string_concat(s, "[…]"); }
+    }
+    pass s;
+};
+
+func:party_spelling = string(Alias->:x, Party:p) never fails {
+    string:pre = "@";
+    if (p.kind == (raw PARTY_SHARED())) { pre = "$$i "; }
+    if (p.kind == (raw PARTY_EXCLUSIVE())) { pre = "$$m "; }
+    ExprNode:n = raw ast_expr(x.ast, p.site);
+    List<Step>:ps = raw list_init::<Step>(4i64);
+    if (!(raw path_steps(x, raw expr_operand(n), @ps))) { pass (string_concat(pre, "…")); }
+    pass (string_concat(pre, raw render_place(x, p.root, ps)));
+};
+
+func:party_word = string(Alias->:x, Party:p) never fails {
+    if (p.kind == (raw PARTY_SHARED())) { pass "the shared claim"; }
+    if (p.kind == (raw PARTY_EXCLUSIVE())) { pass "the exclusive claim"; }
+    pass "the plain address held by a binding";
+};
+
+// --- the conflict check at one access ---------------------------------------------
+
+// Does an access of this kind conflict with a party of that kind?
+func:conflicts = bool(int32:pkind, int32:akind) never fails {
+    if (pkind == (raw PARTY_EXCLUSIVE())) { pass true; }
+    if (pkind == (raw PARTY_SHARED())) {
+        pass ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE())));
+    }
+    // a plain address: only a claim conflicts
+    pass ((akind == (raw ACC_SHARED())) || (akind == (raw ACC_EXCLUSIVE())));
+};
+
+func:access_word = string(int32:akind) never fails {
+    if (akind == (raw ACC_READ())) { pass "this read"; }
+    if (akind == (raw ACC_WRITE())) { pass "this write-capable access"; }
+    if (akind == (raw ACC_SHARED())) { pass "this shared claim (`$$i`)"; }
+    pass "this exclusive claim (`$$m`)";
+};
+
+// AN ACCESS OF A PLACE: classified against every live party of the same root.
+// `self_site` excludes the access's own party (a claim argument is live for
+// its call and is not its own conflict).
+func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, Span:at) never fails {
+    int32:root = raw place_root_symbol(x, place);
+    if (root == 0i32) { pass NIL; }
+    List<Step>:ap = raw list_init::<Step>(8i64);
+    if (!(raw path_steps(x, place, @ap))) { pass NIL; }
+    // A WRITE THROUGH A SHARED CLAIM'S HOLDER: shared means readers.
+    if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
+        for (int64:h in 0i64...x.live.count) {
+            Party:hp = x.live.items[h];
+            if ((hp.kind == (raw PARTY_SHARED())) && (hp.holder == root)) {
+                string:m = string_concat("a write-capable access through `", raw intern_get(x.it, (raw symtab_get(x.tab, root)).name));
+                m = string_concat(m, "`, which holds ");
+                m = string_concat(m, raw party_spelling(x, hp));
+                m = string_concat(m, " (a SHARED claim: readers only, D-286) -- claim it `$$m` to write through it");
+                drop alias_err(x, raw BORROW_CONFLICT(), move(m), at);
+                pass NIL;
+            }
+        }
+    }
+    for (int64:i in 0i64...x.live.count) {
+        Party:p = x.live.items[i];
+        if (p.root != root) { continue; }
+        if (p.site.index == self_site.index) { continue; }
+        if (!(raw conflicts(p.kind, akind))) { continue; }
+        ExprNode:pn = raw ast_expr(x.ast, p.site);
+        List<Step>:pp = raw list_init::<Step>(8i64);
+        if (!(raw path_steps(x, raw expr_operand(pn), @pp))) { continue; }
+        int32:cls = raw overlap_class(x, pp, ap);
+        if (cls == (raw OV_DISJOINT())) { continue; }
+        string:m1 = string_concat(raw access_word(akind), " of `");
+        m1 = string_concat(m1, raw render_place(x, root, ap));
+        m1 = string_concat(m1, "` conflicts with ");
+        m1 = string_concat(m1, raw party_word(x, p));
+        m1 = string_concat(m1, " `");
+        m1 = string_concat(m1, raw party_spelling(x, p));
+        m1 = string_concat(m1, "` at ");
+        m1 = string_concat(m1, int_to_string(pn.span.line => int64));
+        m1 = string_concat(m1, ":");
+        m1 = string_concat(m1, int_to_string(pn.span.col => int64));
+        if (p.holder != 0i32) {
+            m1 = string_concat(m1, ", live until the end of the block that declares its holder `");
+            m1 = string_concat(m1, raw intern_get(x.it, (raw symtab_get(x.tab, p.holder)).name));
+            m1 = string_concat(m1, "`");
+        } else {
+            m1 = string_concat(m1, ", live for the call it is an argument of");
+        }
+        if (cls == (raw OV_COMPUTED())) {
+            m1 = string_concat(m1, " (D-286): the paths meet through computed indices -- until the solver's relaxation lands (1.5.5 step 2) a computed pair is refused; end the claim's scope with a block, or spell `@` for an address that claims nothing");
+        } else {
+            m1 = string_concat(m1, " (D-286): end the claim's scope with a block, or spell `@` for an address that claims nothing");
+        }
+        drop alias_err(x, raw BORROW_CONFLICT(), move(m1), at);
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// --- statements ---------------------------------------------------------------------
+
+func:frame_push = NIL(Alias->:x) never fails { drop list_push(@x.frames, x.live.count); pass NIL; };
+func:frame_pop = NIL(Alias->:x) never fails {
+    if (x.frames.count == 0i64) { pass NIL; }
+    int64:mark = x.frames.items[x.frames.count - 1i64];
+    x.frames.count = x.frames.count - 1i64;
+    x.live.count = mark;
+    pass NIL;
+};
+
+// The parties admitted into this holder, made live now (its declaration).
+func:register_holder = NIL(Alias->:x, int32:hsym) never fails {
+    if (hsym == 0i32) { pass NIL; }
+    for (int64:i in 0i64...x.pre.count) {
+        Party:pp = x.pre.items[i];
+        if (pp.holder == hsym) { drop list_push(@x.live, pp); }
+    }
+    pass NIL;
+};
+
+func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+    if (depth <= 0i32) {
+        drop alias_err(x, raw BORROW_TOO_DEEP(),
+            "this statement nests deeper than the aliasing analysis will follow, so its accesses cannot be checked",
+            s.span);
+        pass NIL;
+    }
+    int32:dd = depth - 1i32;
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        drop frame_push(x);
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop alias_stmt(x, StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) }, dd);
+        }
+        drop frame_pop(x);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        ExprId:init = raw stmt_decl_init(x.ast, s);
+        int32:hsym = raw decl_symbol(x, id, raw stmt_name(s));
+        if (!(raw expr_is_none(init))) {
+            int32:pk = raw party_kind_of(x, init);
+            if (pk >= 0i32) {
+                drop admit_value(x, init, pk, hsym);
+            } else {
+                drop refuse_holder_copy(x, init, hsym);
+                drop acc_expr(x, init, raw ACC_READ(), dd);
+            }
+        }
+        drop register_holder(x, hsym);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        ExprId:tgt = raw stmt_target(s);
+        ExprId:val = raw stmt_assigned(s);
+        drop acc_place(x, tgt, raw ACC_WRITE(), raw expr_none(), dd);
+        int32:pk2 = raw party_kind_of(x, val);
+        if (pk2 >= 0i32) {
+            int32:tsym = raw bare_local_symbol(x, tgt);
+            if (tsym == 0i32) {
+                if (pk2 != (raw PARTY_PLAIN())) {
+                    drop alias_err(x, raw BORROW_CLAIM_POSITION(),
+                        "a `$$i`/`$$m` claim is a whole call argument or a pointer local's whole value (D-286), and this assigns one to a place that is not a local binding -- spell `@` for an address that claims nothing",
+                        (raw ast_expr(x.ast, val)).span);
+                    pass NIL;
+                }
+                drop acc_place(x, raw expr_operand(raw ast_expr(x.ast, val)), raw ACC_WRITE(), raw expr_none(), dd);
+                pass NIL;
+            }
+            // The party was registered at the holder's declaration (or the
+            // function's entry): the claim is checked here as an access, once.
+            drop admit_value(x, val, pk2, 0i32);
+            pass NIL;
+        }
+        drop refuse_holder_copy(x, val, raw bare_local_symbol(x, tgt));
+        drop acc_expr(x, val, raw ACC_READ(), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop acc_expr(x, raw stmt_cond(s), raw ACC_READ(), dd);
+        drop alias_stmt(x, raw stmt_then(s), dd);
+        drop alias_stmt(x, raw stmt_else(s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop acc_expr(x, raw stmt_cond(s), raw ACC_READ(), dd);
+        drop alias_stmt(x, raw stmt_body(x.ast, s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop acc_expr(x, raw stmt_cond(s), raw ACC_READ(), dd);
+        drop alias_stmt(x, raw stmt_when_body(x.ast, s), dd);
+        drop alias_stmt(x, raw stmt_when_then(x.ast, s), dd);
+        drop alias_stmt(x, raw stmt_when_end(x.ast, s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop acc_expr(x, raw stmt_for_iter(x.ast, s), raw ACC_READ(), dd);
+        drop alias_stmt(x, raw stmt_for_body(x.ast, s), dd);
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        for (int32:ai in 0i32...(raw stmt_counted_argc(x.ast, s))) {
+            drop acc_expr(x, raw stmt_counted_arg(x.ast, s, ai), raw ACC_READ(), dd);
+        }
+        drop alias_stmt(x, raw stmt_counted_body(s), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop acc_expr(x, raw pick_selector(s), raw ACC_READ(), dd);
+        for (int32:pa in 0i32...(raw pick_arm_count(s))) {
+            drop alias_stmt(x, raw pick_arm_at(x.ast, raw pick_arm_start(s), pa), dd);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop acc_expr(x, raw arm_guard(s), raw ACC_READ(), dd);
+        drop alias_stmt(x, raw arm_body(s), dd);
+        pass NIL;
+    }
+    // A `defer` BODY RUNS AT ITS BLOCK'S EXIT: every party whose holder is
+    // declared in an enclosing block is live for it, at any position.
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        int64:mark = x.live.count;
+        drop push_enclosing_parties(x, id);
+        drop alias_stmt(x, StmtId{ index: s.a }, dd);
+        x.live.count = mark;
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
+        drop acc_expr(x, raw stmt_operand(s), raw ACC_READ(), dd);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+    if (raw stmt_carries_expr(s.kind)) {
+        drop acc_expr(x, raw stmt_expr(s), raw ACC_READ(), dd);
+        pass NIL;
+    }
+    drop alias_err(x, raw BORROW_INTERNAL(),
+        "this statement kind has no entry in the aliasing walk, so its accesses cannot be checked",
+        s.span);
+    pass NIL;
+};
+
+// The parties of the enclosing blocks not yet live -- a `defer` body's view.
+// A holder's scope encloses the defer's statement when the holder's declaring
+// scope is the defer's own scope or an ancestor of it; the defer's scope is
+// read off the nearest enclosing declaration the pre-scan knows, which is
+// conservative in the closed direction: a party whose holder is declared in
+// a SIBLING block would be pushed too, and a sibling's party can only refuse.
+func:push_enclosing_parties = NIL(Alias->:x, StmtId:defer_id) never fails {
+    for (int64:i in 0i64...x.pre.count) {
+        Party:pp = x.pre.items[i];
+        bool:already = false;
+        for (int64:j in 0i64...x.live.count) {
+            if (x.live.items[j].site.index == pp.site.index) { already = true; }
+        }
+        if (already) { continue; }
+        drop list_push(@x.live, pp);
+    }
+    pass NIL;
+};
+
+// A CLAIM OR PLAIN ADDRESS ADMITTED AS A WHOLE VALUE: the operand's index
+// expressions are reads, the place is an access of the claim's own kind against
+// every live party, and a claim without a named root is refused. `holder` is
+// the declaring holder (registered by the caller) or 0.
+func:admit_value = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never fails {
+    ExprNode:n = raw ast_expr(x.ast, site);
+    ExprId:place = raw expr_operand(n);
+    int32:akind = raw ACC_WRITE();
+    if (kind == (raw PARTY_SHARED())) { akind = raw ACC_SHARED(); }
+    if (kind == (raw PARTY_EXCLUSIVE())) { akind = raw ACC_EXCLUSIVE(); }
+    if (kind != (raw PARTY_PLAIN())) {
+        if ((raw place_root_symbol(x, place)) == 0i32) {
+            drop alias_err(x, raw BORROW_CLAIM_POSITION(),
+                "a `$$i`/`$$m` claim needs a place with a named root (D-286): a call's result or a dereference at the bottom names no binding whose accesses could be checked -- bind the value first, or spell `@`",
+                n.span);
+            pass NIL;
+        }
+    }
+    drop acc_indices(x, place, raw ALIAS_DEPTH());
+    drop check_access(x, place, akind, site, n.span);
+    pass NIL;
+};
+
+// A HOLDER IS USED, NOT COPIED (D-286): a value that is a bare identifier
+// holding a live claim, or a literal carrying one, cannot initialise or be
+// assigned to another binding.
+func:refuse_holder_copy = NIL(Alias->:x, ExprId:val, int32:target_sym) never fails {
+    if (raw expr_is_none(val)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, val);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (raw sym_holds_claim(x, n.a)) {
+            drop alias_err(x, raw BORROW_CLAIM_POSITION(),
+                "a binding that holds a `$$i`/`$$m` claim is used, not copied (D-286): the claim's life would follow the copy where this walk cannot see it -- pass it down, or spell the claim `@`",
+                n.span);
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:sym_holds_claim = bool(Alias->:x, int32:sym) never fails {
+    if (sym == 0i32) { pass false; }
+    for (int64:i in 0i64...x.live.count) {
+        Party:p = x.live.items[i];
+        if ((p.holder == sym) && (p.kind != (raw PARTY_PLAIN()))) { pass true; }
+    }
+    pass false;
+};
+
+// --- expressions ---------------------------------------------------------------------
+
+// The index expressions inside a place are READS of their own.
+func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass NIL; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            drop acc_expr(x, raw expr_rhs(n), raw ACC_READ(), depth - 1i32);
+            cur = raw expr_lhs(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass NIL; }
+        // a non-place base (a call, a deref): walked as an ordinary expression
+        drop acc_expr(x, cur, raw ACC_READ(), depth - 1i32);
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// Is this expression a place chain -- a name, or `.`/`[]` steps down to one?
+func:is_place_chain = bool(Alias->:x, ExprId:id) never fails {
+    ExprId:cur = id;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        pass (n.kind == ExprKind.ExprIdentifierExpr);
+    }
+    pass false;
+};
+
+// A PLACE ACCESSED AS A WHOLE in the given kind: its indices read, the access
+// checked once at the top.
+func:acc_place = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, int32:depth) never fails {
+    if (raw expr_is_none(place)) { pass NIL; }
+    // NOT A CHAIN DOWN TO A NAME (a call's result, a dereference, an operator
+    // at the bottom): no named root, so the CHILDREN are walked as reads --
+    // never the node itself, which would be this walk calling itself.
+    if (!(raw is_place_chain(x, place))) {
+        ExprNode:pn = raw ast_expr(x.ast, place);
+        if ((pn.kind == ExprKind.ExprMemberAccessExpr) || (pn.kind == ExprKind.ExprSafeNavExpr)) {
+            drop acc_expr(x, raw expr_operand(pn), raw ACC_READ(), depth);
+            pass NIL;
+        }
+        if (pn.kind == ExprKind.ExprIndexExpr) {
+            drop acc_expr(x, raw expr_lhs(pn), raw ACC_READ(), depth);
+            drop acc_expr(x, raw expr_rhs(pn), raw ACC_READ(), depth);
+            pass NIL;
+        }
+        drop acc_expr(x, place, raw ACC_READ(), depth);
+        pass NIL;
+    }
+    // `.len` OF AN ARRAY, A SLICE, A STRING OR A BUFFER READS NO ELEMENT.
+    ExprNode:n = raw ast_expr(x.ast, place);
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        if (raw is_len_read(x, n)) {
+            drop acc_indices(x, raw expr_operand(n), depth);
+            pass NIL;
+        }
+    }
+    drop acc_indices(x, place, depth);
+    drop check_access(x, place, akind, self_site, n.span);
+    pass NIL;
+};
+
+func:is_len_read = bool(Alias->:x, ExprNode:n) never fails {
+    if (!(raw string_eq(raw intern_get(x.it, (raw expr_name(n)) =>! int32), "len"))) { pass false; }
+    int32:bt = raw exprtypes_get(x.etypes, raw expr_operand(n));
+    if (bt == 0i32) { pass false; }
+    int32:bk = raw type_kind(x.types, bt);
+    if (bk == (raw TY_POINTER())) { bk = raw type_kind(x.types, raw type_elem(x.types, bt)); }
+    if (bk == (raw TY_ARRAY()))  { pass true; }
+    if (bk == (raw TY_SLICE()))  { pass true; }
+    if (bk == (raw TY_STRING())) { pass true; }
+    if (bk == (raw TY_BUFFER())) { pass true; }
+    pass false;
+};
+
+func:acc_window = NIL(Alias->:x, int32:start, int32:count, int32:depth) never fails {
+    for (int32:i in 0i32...count) {
+        drop acc_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) }, raw ACC_READ(), depth);
+    }
+    pass NIL;
+};
+
+func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (depth <= 0i32) {
+        drop alias_err(x, raw BORROW_TOO_DEEP(),
+            "this expression nests deeper than the aliasing analysis will follow, so its accesses cannot be checked",
+            n.span);
+        pass NIL;
+    }
+    int32:dd = depth - 1i32;
+
+    // A PLACE: one access, at the top of the chain.
+    if ((n.kind == ExprKind.ExprIdentifierExpr) || (n.kind == ExprKind.ExprMemberAccessExpr)
+        || (n.kind == ExprKind.ExprSafeNavExpr) || (n.kind == ExprKind.ExprIndexExpr)) {
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprNode:ixn = raw ast_expr(x.ast, raw expr_rhs(n));
+            // A RANGE VIEW hands out the base's address (D-249): write-capable
+            // over the whole extent.
+            if (ixn.kind == ExprKind.ExprRangeExpr) {
+                drop acc_expr(x, raw expr_lhs(ixn), raw ACC_READ(), dd);
+                drop acc_expr(x, raw expr_rhs(ixn), raw ACC_READ(), dd);
+                drop acc_place(x, id, raw ACC_WRITE(), raw expr_none(), dd);
+                pass NIL;
+            }
+        }
+        drop acc_place(x, id, akind, raw expr_none(), dd);
+        pass NIL;
+    }
+
+    // A CLAIM ANYWHERE ELSE THAN AN ADMITTING SITE (D-286): refused by name.
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop acc_indices(x, raw expr_operand(n), dd);
+        drop alias_err(x, raw BORROW_CLAIM_POSITION(),
+            "a `$$i`/`$$m` claim is a whole call argument or a pointer local's whole value (D-286), and this one stands elsewhere -- in a literal, a `pass` value, a nested expression -- spell `@` for an address that claims nothing",
+            n.span);
+        pass NIL;
+    }
+    // A PLAIN ADDRESS IS A WRITE-CAPABLE ACCESS OF ITS PLACE.
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        drop acc_place(x, raw expr_operand(n), raw ACC_WRITE(), raw expr_none(), dd);
+        pass NIL;
+    }
+    // `move(place)` vacates it: write-capable.
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        drop acc_place(x, raw expr_operand(n), raw ACC_WRITE(), raw expr_none(), dd);
+        pass NIL;
+    }
+    // `<-p` reads the pointer binding; the pointee is no named root.
+    if (n.kind == ExprKind.ExprDerefExpr) {
+        drop acc_expr(x, raw expr_operand(n), raw ACC_READ(), dd);
+        pass NIL;
+    }
+
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop acc_call(x, id, n, raw expr_none(), (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                      (raw expr_list_count(n)) - (raw expr_generic_count(n)), raw expr_callee(n), dd);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        ExprId:recv = raw expr_operand(n);
+        if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { recv = raw expr_none(); }
+        drop acc_call(x, id, n, recv, raw expr_list_start(n), raw expr_list_count(n), raw expr_none(), dd);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        drop acc_call(x, id, n, raw expr_none(), (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                      (raw expr_list_count(n)) - (raw builtin_generic_count(n)), raw expr_none(), dd);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+            drop refuse_holder_copy(x, v, 0i32);
+            drop acc_expr(x, v, raw ACC_READ(), dd);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr) {
+        for (int32:ai in 0i32...(raw expr_list_count(n))) {
+            ExprId:av = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), ai) };
+            drop refuse_holder_copy(x, av, 0i32);
+            drop acc_expr(x, av, raw ACC_READ(), dd);
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop acc_expr(x, raw pickx_selector(n), raw ACC_READ(), dd);
+        for (int32:pi in 0i32...(raw pickx_arm_count(n))) {
+            drop alias_stmt(x, raw pick_arm_at(x.ast, raw pickx_arm_start(n), pi), dd);
+        }
+        pass NIL;
+    }
+
+    // EVERYTHING ELSE BY SHAPE: reads of the children.
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop alias_err(x, raw BORROW_INTERNAL(),
+            "this expression kind has no entry in `expr_shape`, so the aliasing walk cannot reach its slots",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        drop alias_err(x, raw BORROW_INTERNAL(),
+            "this expression kind has a custom shape the aliasing walk has no case for",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop acc_window(x, raw expr_list_start(n), raw expr_list_count(n), dd);
+        pass NIL;
+    }
+    drop acc_expr(x, raw expr_lhs(n), raw ACC_READ(), dd);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop acc_window(x, raw expr_list_start(n), raw expr_list_count(n), dd);
+        pass NIL;
+    }
+    drop acc_expr(x, raw expr_rhs(n), raw ACC_READ(), dd);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop acc_expr(x, raw expr_third(n), raw ACC_READ(), dd);
+    pass NIL;
+};
+
+// A CALL: its claim arguments are live for the call, each checked against
+// the outer parties and the call's own; the receiver is write-capable when the
+// callee's first parameter is a pointer and the receiver expression is not one
+// (the auto-ref the checker performs, 1.0.9b) and a read otherwise; a claim
+// argument of a call whose RESULT can carry a pointer is refused (D-117 rule
+// A: the result may point at it, and no holder's value could be compared).
+func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, int32:count,
+                    ExprId:callee, int32:depth) never fails {
+    drop acc_expr(x, callee, raw ACC_READ(), depth);
+    int64:mark = x.live.count;
+    bool:result_carries = false;
+    int32:rty = raw exprtypes_get(x.etypes, id);
+    if (rty != 0i32) { result_carries = raw carries_pointer_type(x.types, rty); }
+    // The claim arguments become parties first.
+    for (int32:i in 0i32...count) {
+        ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        int32:pk = raw party_kind_of(x, a);
+        if (pk < 0i32) { continue; }
+        if (pk == (raw PARTY_PLAIN())) { continue; }
+        ExprNode:an = raw ast_expr(x.ast, a);
+        if (result_carries) {
+            drop alias_err(x, raw BORROW_CLAIM_POSITION(),
+                "a `$$i`/`$$m` claim cannot be an argument of a call whose result can carry a pointer (D-286, D-117 rule A): the callee decides what the result points at, and no holder's value could be compared -- spell `@`",
+                an.span);
+            continue;
+        }
+        int32:root = raw place_root_symbol(x, raw expr_operand(an));
+        if (root == 0i32) { continue; }   // refused below as a claim without a root
+        drop list_push(@x.live, Party{ site: a, kind: pk, root: root, holder: 0i32 });
+    }
+    // The receiver.
+    if (!(raw expr_is_none(recv))) {
+        int32:rk = raw ACC_READ();
+        int32:ft = raw exprtypes_callee_ft(x.etypes, id);
+        bool:ptr_recv = true;   // unknown callee: conservative
+        if (ft != 0i32) {
+            ptr_recv = false;
+            if ((raw type_param_count_of(x.types, ft)) > 0i32) {
+                int32:p0 = raw type_param_at_of(x.ast, x.types, ft, 0i32);
+                if ((raw type_kind(x.types, p0)) == (raw TY_POINTER())) { ptr_recv = true; }
+            }
+        }
+        int32:rxt = raw exprtypes_get(x.etypes, recv);
+        if (rxt != 0i32) {
+            if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { ptr_recv = false; }
+        }
+        if (ptr_recv) { rk = raw ACC_WRITE(); }
+        drop acc_expr(x, recv, rk, depth);
+    }
+    // Every ordinary argument as an access against the outer parties and all
+    // of the call's claims.
+    for (int32:j in 0i32...count) {
+        ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, j) };
+        int32:pk2 = raw party_kind_of(x, a2);
+        if (pk2 >= 0i32) {
+            if (pk2 == (raw PARTY_PLAIN())) { drop admit_value(x, a2, pk2, 0i32); }
+            continue;
+        }
+        drop refuse_holder_copy_arg(x, a2, result_carries);
+        drop acc_expr(x, a2, raw ACC_READ(), depth);
+    }
+    // Then each claim against the outer parties and the EARLIER claims of the
+    // call -- one report per conflicting pair, at the later claim.
+    x.live.count = mark;
+    for (int32:k in 0i32...count) {
+        ExprId:a3 = ExprId{ index: raw ast_id_at(x.ast, start, k) };
+        int32:pk3 = raw party_kind_of(x, a3);
+        if (pk3 < 0i32) { continue; }
+        if (pk3 == (raw PARTY_PLAIN())) { continue; }
+        if (result_carries) { continue; }
+        drop admit_value(x, a3, pk3, 0i32);
+        ExprNode:an3 = raw ast_expr(x.ast, a3);
+        int32:root3 = raw place_root_symbol(x, raw expr_operand(an3));
+        if (root3 == 0i32) { continue; }
+        drop list_push(@x.live, Party{ site: a3, kind: pk3, root: root3, holder: 0i32 });
+    }
+    x.live.count = mark;
+    pass NIL;
+};
+
+// A holder passed to a call whose result can carry a pointer is a copy the walk
+// cannot follow (rule A); passed to any other call it is a use.
+func:refuse_holder_copy_arg = NIL(Alias->:x, ExprId:a, bool:result_carries) never fails {
+    if (!result_carries) { pass NIL; }
+    drop refuse_holder_copy(x, a, 0i32);
+    pass NIL;
+};
+
+// `carries_pointer` is the escape analysis's, over a type table alone.
+func:carries_pointer_type = bool(TypeTable->:types, int32:ty) never fails {
+    pass (raw carries_pointer_ty(types, ty, raw CARRY_FUEL()));
+};

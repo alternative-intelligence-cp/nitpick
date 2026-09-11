@@ -212,8 +212,16 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
         Diagnostic:cur = move(list.items[i]);      // the hole is at i
         int64:j = i;
         while (j > 0i64) {
-            Diagnostic->:prev = $$i list.items[j - 1i64];
-            if (raw span_before(cur.span, prev.span)) {
+            // THE VIEW ENDS BEFORE THE MOVE (D-286, 1.5.5 step 1): the shared
+            // claim on `items[j-1]` lives for its block, and the move out of
+            // that same element below is a conflict the aliasing analysis
+            // names -- the first one it found in the tree.
+            bool:before = false;
+            {
+                Diagnostic->:prev = $$i list.items[j - 1i64];
+                before = raw span_before(cur.span, prev.span);
+            }
+            if (before) {
                 list.items[j] = move(list.items[j - 1i64]);   // the hole moves to j-1
                 j = j - 1i64;
             } else {

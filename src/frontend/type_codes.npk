@@ -420,3 +420,14 @@ pub func:TYPE_ASSERT_STATIC = string() never fails { pass "NITPICK-TYPE-069"; };
 // run time (`ShiftRange`, the `shift-range` row). Both spellings, `<<=`/`>>=`
 // included; a `simd` shift's amount is a vector and is always the guard's.
 pub func:TYPE_SHIFT_RANGE = string() never fails { pass "NITPICK-TYPE-070"; };
+// A `fixed` BINDING HAS NO ADDRESS (D-287, S-62; 1.5.5 step 1; DEF-43). `@`,
+// `$$i`, `$$m` and the implicit address a pointer-receiver call takes, of a
+// place rooted at a `fixed` local, parameter or module binding, or reaching
+// through a `fixed` field, refuse: the pointer type carries no mutability, so
+// an address of an immutable is a write path no rule sees -- the definite-
+// assignment analysis refuses a second ASSIGNMENT (ASSIGN-002) and saw no store
+// through a pointer. Measured before the rule: a `fixed` local was silently
+// overwritten through `$$m`, and a `fixed` module binding -- an LLVM constant
+// in read-only memory (D-211) -- died with SIGSEGV, `failsafe` never running.
+// TYPE-063's twin: pass a `fixed` value by value, or declare it plain.
+pub func:TYPE_FIXED_ADDRESS = string() never fails { pass "NITPICK-TYPE-071"; };

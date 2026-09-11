@@ -3818,6 +3818,16 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop require_place_operand(e, raw expr_operand(n), "@");
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1; DEF-43): the
+        // pointer type carries no mutability, so `@` of an immutable is a
+        // write path no rule sees -- a `fixed` module binding is read-only
+        // memory, and the store through it was SIGSEGV. One report (D-240).
+        if (raw place_fixed(e, raw expr_operand(n), 64i32)) {
+            discard(raw te_error(e, raw TYPE_FIXED_ADDRESS(),
+                "a `fixed` binding has no address (D-287): the pointer type carries no mutability, so a write through `@` would be one no rule sees -- pass it by value, or declare it plain",
+                n.span));
+            pass 0i32;
+        }
         // A LIMITED BINDING HAS NO ADDRESS (1.5.2 step 1, D-251): every
         // write to it is a write point the emitter checks, and a write
         // through the pointer would be one no rule sees. The invalid type
@@ -3842,6 +3852,15 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop require_place_operand(e, raw expr_operand(n), "a borrow");
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1): a claim of
+        // either kind is an address, and a shared claim's read-only promise
+        // is the aliasing analysis's, not the pointer type's.
+        if (raw place_fixed(e, raw expr_operand(n), 64i32)) {
+            discard(raw te_error(e, raw TYPE_FIXED_ADDRESS(),
+                "a `fixed` binding has no address (D-287): `$$i` and `$$m` are one pointer type, and a write through it would be one no rule sees -- pass it by value, or declare it plain",
+                n.span));
+            pass 0i32;
+        }
         // A LIMITED BINDING HAS NO ADDRESS (1.5.2 step 1, D-251) -- the
         // borrow of either kind included, since the pointer type carries no
         // mutability and a write through it is one no rule sees.

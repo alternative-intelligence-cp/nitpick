@@ -2191,7 +2191,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     // the byte constants first
     int32:i = 0i32;
     while (i < n) {
-        string->:sp2 = $$i w.site_paths.items[i => int64];
+        string->:sp2 = @w.site_paths.items[i => int64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, "@npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, " = internal constant [");
@@ -2225,7 +2225,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_write(w, " x { ptr, i64 }] [{ ptr, i64 } { ptr null, i64 0 }");
     i = 0i32;
     while (i < n) {
-        string->:sp3 = $$i w.site_paths.items[i => int64];
+        string->:sp3 = @w.site_paths.items[i => int64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, ", { ptr, i64 } { ptr @npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, ", i64 ");

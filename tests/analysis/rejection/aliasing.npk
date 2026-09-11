@@ -1,0 +1,271 @@
+// The aliasing half of D-004 (D-286, 1.5.5 step 1): `$$m` EXCLUDES, `$$i`
+// SHARES, `@` claims nothing -- and a claim stands only where the analysis can
+// follow it. Every case here type-checks and is refused by the aliasing walk.
+//
+// Until this step the two spellings built one node the checker typed as
+// `T->`; two `$$m` of one element, or a `$$m x` held while `x` was written
+// directly, compiled and ran (measured 2026-09-11, exit 32).
+
+mod:aliasing;
+error:E9;
+
+struct:Pair = { int32:x; int32:y; };
+struct:Holder = { int32->:inner; };
+
+func:sink = NIL(int32->:p) never fails { pass NIL; };
+func:sink2 = NIL(int32->:p, int32:v) never fails { pass NIL; };
+func:sink3 = NIL(int32->:p, int32->:q) never fails { pass NIL; };
+func:wrap = Holder(int32->:p) never fails { pass Holder{ inner: p }; };
+func:bump = NIL(Pair->:self) never fails { self.x = self.x + 1i32; pass NIL; };
+
+// --- an exclusive claim freezes its root (BORROW-013) -----------------------------
+
+// A READ of the root while `$$m` is held.
+// expect-error: NITPICK-BORROW-013
+func:excl_read = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$m x;
+    int32:y = x;
+    pass ((<-p) + y);
+};
+
+// A WRITE to the root.
+// expect-error: NITPICK-BORROW-013
+func:excl_write = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$m x;
+    x = 2i32;
+    pass (<-p);
+};
+
+// A plain address of the root.
+// expect-error: NITPICK-BORROW-013
+func:excl_addr = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$m x;
+    drop sink(@x);
+    pass (<-p);
+};
+
+// A second exclusive claim.
+// expect-error: NITPICK-BORROW-013
+func:excl_excl = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$m x;
+    int32->:q = $$m x;
+    pass ((<-p) + (<-q));
+};
+
+// A shared claim under an exclusive one.
+// expect-error: NITPICK-BORROW-013
+func:excl_shared = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$m x;
+    int32->:q = $$i x;
+    pass ((<-p) + (<-q));
+};
+
+// A `move` of the root vacates it under the claim.
+// expect-error: NITPICK-BORROW-013
+func:excl_move = int32() never fails {
+    string:s = "abc";
+    string->:p = $$m s;
+    string:t = move(s);
+    pass (((<-p).len + t.len) =>! int32);
+};
+
+// A pointer-receiver call on the root takes its address.
+// expect-error: NITPICK-BORROW-013
+func:excl_receiver = int32() never fails {
+    Pair:pr = Pair{ x: 1i32, y: 2i32 };
+    int32->:p = $$m pr.x;
+    drop pr.bump();
+    pass (<-p);
+};
+
+// A range view of the root hands out its address.
+// expect-error: NITPICK-BORROW-013
+func:excl_range = int32() never fails {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32->:p = $$m arr[1i64];
+    int32[]:v = arr[0i64...2i64];
+    pass ((<-p) + (v.len =>! int32));
+};
+
+// Two exclusive claims of ONE element by numeral: statically the same storage.
+// expect-error: NITPICK-BORROW-013
+func:excl_same_element = int32() never fails {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32->:a = $$m arr[1i64];
+    int32->:b = $$m arr[1i64];
+    pass ((<-a) + (<-b));
+};
+
+// The whole root against a claimed element: a prefix overlaps everything under it.
+// expect-error: NITPICK-BORROW-013
+func:excl_whole = int32() never fails {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32->:a = $$m arr[1i64];
+    int32[4]:copy = arr;
+    pass ((<-a) + copy[0i64]);
+};
+
+// A COMPUTED PAIR: refused at this step; the solver's relaxation is step 2's.
+// expect-error: NITPICK-BORROW-013
+func:excl_computed = int32(int32:i, int32:k) never fails {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32->:a = $$m arr[i => int64];
+    arr[k => int64] = 9i32;
+    pass (<-a);
+};
+
+// --- a shared claim admits readers and refuses writers ------------------------------
+
+// A write to the root under `$$i`.
+// expect-error: NITPICK-BORROW-013
+func:shared_write = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$i x;
+    x = 2i32;
+    pass (<-p);
+};
+
+// An exclusive claim under a shared one.
+// expect-error: NITPICK-BORROW-013
+func:shared_excl = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$i x;
+    int32->:q = $$m x;
+    pass ((<-p) + (<-q));
+};
+
+// A plain address under a shared claim: whoever holds it may write.
+// expect-error: NITPICK-BORROW-013
+func:shared_addr = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$i x;
+    drop sink(@x);
+    pass (<-p);
+};
+
+// A write THROUGH a shared claim's holder: shared means readers.
+// expect-error: NITPICK-BORROW-013
+func:shared_write_through = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$i x;
+    <-p = 5i32;
+    pass x;
+};
+
+// --- a plain address held in scope refuses a later claim on the same storage ------
+
+// expect-error: NITPICK-BORROW-013
+func:plain_then_claim = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = @x;
+    int32->:q = $$m x;
+    pass ((<-p) + (<-q));
+};
+
+// --- a call's arguments conflict among themselves ------------------------------------
+
+// The root read beside its exclusive claim in one call.
+// expect-error: NITPICK-BORROW-013
+func:call_read_beside = NIL() never fails {
+    int32:x = 1i32;
+    drop sink2($$m x, x);
+    pass NIL;
+};
+
+// A plain address beside the claim.
+// expect-error: NITPICK-BORROW-013
+func:call_addr_beside = NIL() never fails {
+    int32:x = 1i32;
+    drop sink3($$m x, @x);
+    pass NIL;
+};
+
+// Two exclusive claims of one field.
+// expect-error: NITPICK-BORROW-013
+func:call_same_field = NIL() never fails {
+    Pair:pr = Pair{ x: 1i32, y: 2i32 };
+    drop sink3($$m pr.x, $$m pr.x);
+    pass NIL;
+};
+
+// --- where a claim may not stand (BORROW-014) ---------------------------------------
+
+// Inside a struct literal.
+// expect-error: NITPICK-BORROW-014
+func:pos_literal = int32() never fails {
+    int32:x = 1i32;
+    Holder:h = Holder{ inner: $$m x };
+    pass (<-h.inner);
+};
+
+// In a `pass` value (a parameter-rooted claim: the escape rule admits the
+// borrow up one frame, the claim cannot travel).
+// expect-error: NITPICK-BORROW-014
+func:pos_pass = int32->(Pair->:p) never fails {
+    pass ($$i p.x);
+};
+
+// Nested in another expression: a dereference of a claim.
+// expect-error: NITPICK-BORROW-014
+func:pos_nested = int32() never fails {
+    int32:x = 1i32;
+    int32:v = <-($$i x);
+    pass v;
+};
+
+// Assigned to a field: the escape rule's BORROW-002 (a borrow stored into an
+// aggregate, D-004 rule 3) and the claim-position rule both speak -- two rules
+// about one statement, each about a different thing it does.
+// expect-error: NITPICK-BORROW-002
+// expect-error: NITPICK-BORROW-014
+func:pos_field = int32() never fails {
+    int32:x = 1i32;
+    Holder:h = Holder{ inner: NULL };
+    h.inner = $$m x;
+    pass (<-h.inner);
+};
+
+// An argument of a call whose result can carry a pointer (D-117 rule A).
+// expect-error: NITPICK-BORROW-014
+func:pos_rule_a = int32() never fails {
+    int32:x = 1i32;
+    Holder:h = raw wrap($$m x);
+    pass (<-h.inner);
+};
+
+// A copy of a holder.
+// expect-error: NITPICK-BORROW-014
+func:pos_copy = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = $$m x;
+    int32->:q = p;
+    pass ((<-p) + (<-q));
+};
+
+// --- a `defer` body runs at the block's exit: every claim of the block is live ----
+
+// expect-error: NITPICK-BORROW-013
+func:defer_reads_claimed = int32() never fails {
+    int32:x = 1i32;
+    int32:sum = 0i32;
+    defer { sum = sum + x; }
+    int32->:p = $$m x;
+    <-p = 3i32;
+    pass sum;
+};
+
+func:main = int32() { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 1i32; },
+        (Unreachable) { exit 3i32; }, (HeapOom) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; }, (WildLeak) { exit 3i32; },
+        (IntOverflow) { exit 3i32; }, (OutOfBounds) { exit 3i32; },
+        (*)  { exit 2i32; }
+    }
+};

@@ -1,0 +1,73 @@
+// A `fixed` BINDING HAS NO ADDRESS (D-287, S-62; 1.5.5 step 1; DEF-43). The
+// pointer type carries no mutability, so an address of an immutable is a write
+// path no rule sees: measured before the rule, a `fixed` local was silently
+// overwritten through `$$m`, and a `fixed` module binding -- read-only memory
+// -- killed the process with SIGSEGV, `failsafe` never running.
+
+mod:fixed_address;
+error:E9;
+fixed int32:G = 1i32;
+struct:Cfg = { fixed int32:bound; int32:n; };
+fixed Cfg:GC = Cfg{ bound: 3i32, n: 4i32 };
+
+func:bump = NIL(Cfg->:self) never fails { self.n = self.n + 1i32; pass NIL; };
+
+// expect-error: NITPICK-TYPE-071
+func:addr_of_local = int32() never fails {
+    fixed int32:x = 1i32;
+    int32->:p = @x;
+    pass (<-p);
+};
+
+// expect-error: NITPICK-TYPE-071
+func:shared_of_local = int32() never fails {
+    fixed int32:x = 1i32;
+    int32->:p = $$i x;
+    pass (<-p);
+};
+
+// expect-error: NITPICK-TYPE-071
+func:excl_of_local = int32() never fails {
+    fixed int32:x = 1i32;
+    int32->:p = $$m x;
+    <-p = 2i32;
+    pass x;
+};
+
+// expect-error: NITPICK-TYPE-071
+func:addr_of_global = int32() never fails {
+    int32->:p = @G;
+    <-p = 3i32;
+    pass G;
+};
+
+// A pointer-receiver call takes the implicit address.
+// expect-error: NITPICK-TYPE-071
+func:receiver_of_fixed = int32() never fails {
+    fixed Cfg:c = Cfg{ bound: 1i32, n: 2i32 };
+    drop c.bump();
+    pass c.n;
+};
+
+// A `fixed` FIELD, reached through a plain struct.
+// expect-error: NITPICK-TYPE-071
+func:addr_of_fixed_field = int32() never fails {
+    Cfg:c = Cfg{ bound: 1i32, n: 2i32 };
+    int32->:p = @c.bound;
+    pass (<-p);
+};
+
+// A `fixed` field of a global struct.
+// expect-error: NITPICK-TYPE-071
+func:addr_of_global_field = int32() never fails {
+    int32->:p = @GC.n;
+    pass (<-p);
+};
+
+func:main = int32() { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 1i32; },
+        (*)  { exit 2i32; }
+    }
+};

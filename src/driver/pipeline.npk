@@ -59,6 +59,7 @@ use "../frontend/type_expr.npk".*;
 use "../frontend/type_stmt.npk".*;
 use "../frontend/analysis/analysis_codes.npk".*;
 use "../frontend/analysis/escape.npk".*;
+use "../frontend/analysis/alias.npk".*;
 use "../frontend/analysis/bindings.npk".*;
 use "../frontend/analysis/exhaust.npk".*;
 use "../frontend/analysis/locks.npk".*;
@@ -442,6 +443,17 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     }
     drop escape_report_mode(@esc);
     drop escape_walk(@esc, @f.g);
+
+    // THE ALIASING HALF OF D-004 (D-286, 1.5.5 step 1): `$$m` excludes, `$$i`
+    // shares, `@` claims nothing. One forward walk per function, no fixpoint
+    // -- a holder is never copied, so every party has one admission site.
+    Alias:als = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags, @tr);
+    int32:ya = 0i32;
+    while (ya < (raw graph_count(@f.g))) {
+        ModuleEntry:ea = raw graph_at(@f.g, ya);
+        drop alias_module(@als, DeclId{ index: ea.root }, ea.scope);
+        ya = ya + 1i32;
+    }
 
     // DEFINITE ASSIGNMENT (D-010, 0.5.2). No fixpoint: this is a MUST analysis
     // with an intersection merge, and a loop body that may run zero times is both

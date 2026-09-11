@@ -148,6 +148,30 @@ func:outer_copy = int32() never fails {
     pass (<-q);
 };
 
+// THROUGH A LITERAL AND THROUGH A CALL'S RESULT (1.5.5 step 1: step 0's
+// collector fell to `expr_shape` for the custom-shaped kinds, so a struct
+// literal's values and a call's arguments were not walked). The holder is
+// outer in both.
+// expect-error: NITPICK-BORROW-002
+func:outer_literal = int32() never fails {
+    Holder:h = Holder{ inner: NULL };
+    if (true) {
+        int32:x = 3i32;
+        h = Holder{ inner: @x };
+    }
+    pass (<-h.inner);
+};
+
+// expect-error: NITPICK-BORROW-002
+func:outer_call = int32() never fails {
+    int32->:q = NULL;
+    if (true) {
+        int32:x = 4i32;
+        q = raw launder(@x);
+    }
+    pass (<-q);
+};
+
 // --- a call's result carries what its arguments did ----------------------------
 //
 // D-004 says passing a borrow down needs no annotation "because the callee's frame

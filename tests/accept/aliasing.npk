@@ -1,0 +1,126 @@
+// The aliasing half of D-004 used legally (D-286, 1.5.5 step 1): disjoint
+// fields, unequal numerals, many readers, sequential scopes, a holder's own
+// uses, a claim beside an unrelated argument. A file here must produce NO
+// diagnostics at all -- the bound on the analysis's conservatism, as
+// `accept/borrows.npk` is for the escape rules.
+
+mod:aliasing;
+error:E9;
+
+struct:Pair = { int32:x; int32:y; };
+struct:Items = { int32[4]:items; int32:count; };
+
+func:sink = NIL(int32->:p) never fails { pass NIL; };
+func:sink2 = NIL(int32->:p, int32:v) never fails { pass NIL; };
+func:sink3 = NIL(int32->:p, int32->:q) never fails { pass NIL; };
+func:read_pair = int32(Pair:p) never fails { pass (p.x + p.y); };
+
+// Disjoint fields under one root, each claimed exclusively.
+func:disjoint_fields = int32() never fails {
+    Pair:pr = Pair{ x: 1i32, y: 2i32 };
+    int32->:a = $$m pr.x;
+    int32->:b = $$m pr.y;
+    <-a = 10i32;
+    <-b = 20i32;
+    pass ((<-a) + (<-b));
+};
+
+// A read of a sibling field under an exclusive claim of the other.
+func:sibling_read = int32() never fails {
+    Pair:pr = Pair{ x: 1i32, y: 2i32 };
+    int32->:a = $$m pr.x;
+    int32:y = pr.y;
+    pass ((<-a) + y);
+};
+
+// Two numerals that differ name two elements.
+func:unequal_numerals = int32() never fails {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32->:a = $$m arr[1i64];
+    int32->:b = $$m arr[2i64];
+    <-a = 7i32;
+    <-b = 8i32;
+    pass ((<-a) + (<-b));
+};
+
+// Many readers: two shared claims, and a read of the root under them.
+func:many_readers = int32() never fails {
+    int32:x = 5i32;
+    int32->:p = $$i x;
+    int32->:q = $$i x;
+    int32:y = x;
+    pass ((<-p) + (<-q) + y);
+};
+
+// A block ends the claim; the root is written after.
+func:sequential_scopes = int32() never fails {
+    int32:x = 1i32;
+    {
+        int32->:p = $$m x;
+        <-p = 2i32;
+    }
+    x = x + 1i32;
+    pass x;
+};
+
+// A claim beside an unrelated argument, and beside a sibling field.
+func:call_unrelated = NIL() never fails {
+    int32:x = 1i32;
+    int32:z = 2i32;
+    drop sink2($$m x, z);
+    Pair:pr = Pair{ x: 1i32, y: 2i32 };
+    drop sink2($$m pr.x, pr.y);
+    pass NIL;
+};
+
+// `.len` of the array and `.count` of the struct read no claimed element.
+func:len_and_count = int32() never fails {
+    Items:it = Items{ items: [1i32, 2i32, 3i32, 4i32], count: 4i32 };
+    int32->:e = $$i it.items[1i64];
+    int32:n = it.count;
+    int32:l = it.items.len =>! int32;
+    pass ((<-e) + n + l);
+};
+
+// A holder's own uses across a loop: `<-p`, `p` passed down, the index variable
+// written (the claim captured its element).
+func:holder_uses = int32() never fails {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    int32:total = 0i32;
+    int64:i = 0i64;
+    while (i < 4i64) {
+        int32->:p = $$i arr[i];
+        total = total + (<-p);
+        drop sink(p);
+        i = i + 1i64;
+    }
+    pass total;
+};
+
+// A claim of a parameter's field, and a by-value read of the whole parameter's
+// sibling: the same root, disjoint paths.
+func:param_fields = int32(Pair->:pr) never fails {
+    int32->:a = $$m pr.x;
+    int32:y = pr.y;
+    pass ((<-a) + y);
+};
+
+// A plain address held and a plain address taken again: plain claims nothing.
+func:two_plain = int32() never fails {
+    int32:x = 1i32;
+    int32->:p = @x;
+    drop sink(@x);
+    x = 3i32;
+    pass ((<-p) + x);
+};
+
+func:main = int32() { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 1i32; },
+        (Unreachable) { exit 3i32; }, (HeapOom) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; }, (WildLeak) { exit 3i32; },
+        (IntOverflow) { exit 3i32; }, (OutOfBounds) { exit 3i32; },
+        (*)  { exit 2i32; }
+    }
+};

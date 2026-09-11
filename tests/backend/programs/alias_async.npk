@@ -1,0 +1,42 @@
+// expect-exit: 0
+//
+// A CLAIM HELD ACROSS AN `await` (D-286, 1.5.5 step 1): a `$$m` of an element
+// is held in a coroutine's local, the task suspends, and the holder is written
+// through after resume. Sound by residency -- an address-taken local lives to
+// the function's end in a coroutine (the suspend walk's rule), so the claim's
+// holder and its root are frame-resident -- and legal: nothing else touches
+// `arr` while the claim lives.
+mod:alias_async;
+error:E9;
+
+async func:hold_across = int32(int32:seed) {
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    {
+        int32->:p = $$m arr[2i64];
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        <-p = seed;
+    }
+    // the block ended the claim: `arr` is readable again
+    pass (arr[2i64] + arr[0i64]);
+};
+
+async func:main = int32() {
+    Result<int32>:r = await hold_across(41i32);
+    if (r.is_error) { exit 4i32; }
+    if (r.value != 42i32) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (DeadlineExceeded) { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (IntOverflow)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+};

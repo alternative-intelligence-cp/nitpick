@@ -1,0 +1,37 @@
+// A `fixed` binding is read, passed by value, and its fields read (D-287,
+// 1.5.5 step 1): none of these takes an address, and every one is accepted.
+// The counterweight to `types/rejection/fixed_address.npk`.
+
+mod:fixed_value;
+error:E9;
+fixed int32:G = 7i32;
+struct:Cfg = { fixed int32:bound; int32:n; };
+
+func:by_value = int32(Cfg:c) never fails { pass (c.bound + c.n); };
+func:through_pointer = int32(Cfg->:c) never fails { pass c.n; };
+
+func:reads = int32() never fails {
+    fixed int32:x = 1i32;
+    fixed Cfg:c = Cfg{ bound: 2i32, n: 3i32 };
+    int32:a = x + G;
+    int32:b = raw by_value(c);
+    int32:d = c.bound + c.n;
+    // A pointer PARAMETER that is not `fixed` may be addressed and its plain
+    // field written: the storage is the caller's.
+    Cfg:plain = Cfg{ bound: 4i32, n: 5i32 };
+    Cfg->:pp = @plain;
+    pp.n = 6i32;
+    int32:e = raw through_pointer(pp);
+    pass (a + b + d + e);
+};
+
+func:main = int32() { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 1i32; },
+        (Unreachable) { exit 3i32; }, (HeapOom) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; }, (WildLeak) { exit 3i32; },
+        (IntOverflow) { exit 3i32; },
+        (*)  { exit 2i32; }
+    }
+};
