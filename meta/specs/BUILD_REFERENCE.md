@@ -54,7 +54,7 @@ nfs = { path = "../nfs", version = "0.3.1" }
 z3         = true
 z3-version = "4.16.0"            # what `z3 -version` must report
 z3-sha256  = "9a1657b3…c069bc3c"  # the binary z3 resolves to on PATH, hashed
-z3-options = ["smt.random_seed=0", "sat.random_seed=0", "rlimit=20000000"]
+z3-options = ["smt.random_seed=0", "sat.random_seed=0", "rlimit=20000000", "lp.dio=false"]
 
 [verify.nikos]
 domain = "interval"

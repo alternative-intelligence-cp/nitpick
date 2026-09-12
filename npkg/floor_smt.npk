@@ -96,6 +96,7 @@ use "./floor_spec.npk".*;
 use "./floor_cfg.npk".*;
 use "../src/backend/smt/smt_writer.npk".*;
 use "../lib/nhash.npk".*;
+use "./strset.npk".*;
 
 // --- numerals to 128 bits ------------------------------------------------------------------------
 
@@ -379,33 +380,44 @@ pub struct:Term = {
     int64:bits;
     int64:shl_k;
     int64:lt_k;
+    string:div_root;    // `(div ROOT div_by)`: a chain of unsigned divisions by numerals folded ("" for none)
+    uint128:div_by;
+    string:lin_root;    // `ROOT + parts + lin_off` wrapped once: a chain of additions and address computations folded ("" for none)
+    uint128:lin_off;
+    string:lin_parts;   // the symbolic parts of that sum, space-joined (`pos`, `(* 8 ci)`; "" for none)
+    string:tbl_global;  // an element address into a constant table: the global's IR name ("" for none)
+    string:tbl_idx;     // the index term
+    int64:tbl_scale;    // the element size
 };
 
 func:term_none = Term() never fails {
-    pass Term{ ok: false, text: "", sort: "", is_num: false, num: 0u128, bits: 0i64, shl_k: 0i64 - 1i64, lt_k: 0i64 - 1i64 };
+    pass Term{ ok: false, text: "", sort: "", is_num: false, num: 0u128, bits: 0i64, shl_k: 0i64 - 1i64, lt_k: 0i64 - 1i64, div_root: "", div_by: 0u128, lin_root: "", lin_off: 0u128, lin_parts: "", tbl_global: "", tbl_idx: "", tbl_scale: 0i64 };
 };
 
 pub func:term_copy = Term(Term:t) never fails {
     pass Term{ ok: t.ok, text: raw text_copy(raw strlist_view_of(t.text)), sort: raw text_copy(raw strlist_view_of(t.sort)),
-               is_num: t.is_num, num: t.num, bits: t.bits, shl_k: t.shl_k, lt_k: t.lt_k };
+               is_num: t.is_num, num: t.num, bits: t.bits, shl_k: t.shl_k, lt_k: t.lt_k,
+               div_root: raw text_copy(raw strlist_view_of(t.div_root)), div_by: t.div_by,
+               lin_root: raw text_copy(raw strlist_view_of(t.lin_root)), lin_off: t.lin_off, lin_parts: raw text_copy(raw strlist_view_of(t.lin_parts)),
+               tbl_global: raw text_copy(raw strlist_view_of(t.tbl_global)), tbl_idx: raw text_copy(raw strlist_view_of(t.tbl_idx)), tbl_scale: t.tbl_scale };
 };
 
 func:term_int = Term(string:text, int64:bits) never fails {
-    pass Term{ ok: true, text: raw text_copy(text), sort: "Int", is_num: false, num: 0u128, bits: bits, shl_k: 0i64 - 1i64, lt_k: bits };
+    pass Term{ ok: true, text: raw text_copy(text), sort: "Int", is_num: false, num: 0u128, bits: bits, shl_k: 0i64 - 1i64, lt_k: bits, div_root: "", div_by: 0u128, lin_root: "", lin_off: 0u128, lin_parts: "", tbl_global: "", tbl_idx: "", tbl_scale: 0i64 };
 };
 
 func:term_bool = Term(string:text) never fails {
-    pass Term{ ok: true, text: raw text_copy(text), sort: "Bool", is_num: false, num: 0u128, bits: 1i64, shl_k: 0i64 - 1i64, lt_k: 0i64 - 1i64 };
+    pass Term{ ok: true, text: raw text_copy(text), sort: "Bool", is_num: false, num: 0u128, bits: 1i64, shl_k: 0i64 - 1i64, lt_k: 0i64 - 1i64, div_root: "", div_by: 0u128, lin_root: "", lin_off: 0u128, lin_parts: "", tbl_global: "", tbl_idx: "", tbl_scale: 0i64 };
 };
 
 func:term_num = Term(uint128:v, int64:bits) never fails {
-    pass Term{ ok: true, text: raw u128_text(v), sort: "Int", is_num: true, num: v, bits: bits, shl_k: 0i64 - 1i64, lt_k: raw u128_bitlen(v) };
+    pass Term{ ok: true, text: raw u128_text(v), sort: "Int", is_num: true, num: v, bits: bits, shl_k: 0i64 - 1i64, lt_k: raw u128_bitlen(v), div_root: "", div_by: 0u128, lin_root: "", lin_off: 0u128, lin_parts: "", tbl_global: "", tbl_idx: "", tbl_scale: 0i64 };
 };
 
 func:term_fp = Term(string:text, int64:bits) never fails {
     string:sort = "F64";
     if (bits == 32i64) { sort = "F32"; }
-    pass Term{ ok: true, text: raw text_copy(text), sort: move(sort), is_num: false, num: 0u128, bits: bits, shl_k: 0i64 - 1i64, lt_k: 0i64 - 1i64 };
+    pass Term{ ok: true, text: raw text_copy(text), sort: move(sort), is_num: false, num: 0u128, bits: bits, shl_k: 0i64 - 1i64, lt_k: 0i64 - 1i64, div_root: "", div_by: 0u128, lin_root: "", lin_off: 0u128, lin_parts: "", tbl_global: "", tbl_idx: "", tbl_scale: 0i64 };
 };
 
 pub func:sort_text = string(string:sort) never fails {
@@ -445,7 +457,7 @@ pub struct:Tx = {
     List<string>:row_sites;          // `spec:ensures:1`...
     List<string>:row_goals;
     List<string>:row_excl;           // a hypothesis tag the row's cone must not include ("" for none)
-    List<string>:known;              // every symbol introduced (for the reference scanner)
+    StrSet:known;                    // every symbol introduced (for the reference scanner)
     // registers: IR name -> SMT symbol, sort, width (aggregates as `%a.0`...)
     List<string>:reg_ir;
     List<string>:reg_sym;
@@ -455,6 +467,41 @@ pub struct:Tx = {
     List<uint128>:reg_num;
     List<int64>:reg_shl_k;           // the shape facts a term carries, kept across the register (the `or` reading)
     List<int64>:reg_lt_k;
+    List<string>:reg_div_root;       // the folded division chain a register is (`div_root`, `div_by`)
+    List<uint128>:reg_div_by;
+    List<string>:reg_lin_root;       // the folded addition chain a register is (`lin_root`, `lin_parts`, `lin_off`)
+    List<uint128>:reg_lin_off;
+    List<string>:reg_lin_parts;
+    List<string>:reg_tbl_global;     // the constant-table element a register addresses (`tbl_global`, `tbl_idx`, `tbl_scale`)
+    List<string>:reg_alias;          // a register defined as another symbol reads as that symbol ("" for none) -- the two sides of a claim then match term for term
+    List<string>:reg_tbl_idx;
+    List<int64>:reg_tbl_scale;
+    // LOOP OBJECTS (1.5.6 step 4): the ranges a `(loop L (objects ...))` clause
+    // names, live across the loop under the header's path condition -- an
+    // allocation inside the loop is disjoint from them, and a call's frame
+    // over `objects` leaves them unchanged
+    List<string>:lobj_lo;
+    List<string>:lobj_len;
+    List<string>:lobj_pc;
+    // TABLE VALUES (1.5.6 step 4): the `ite` a constant-table load reads as,
+    // by its exact text -- a division by it distributes over the cases
+    List<string>:tv_text;
+    List<string>:tv_idx;
+    List<List<string>>:tv_vals;
+    List<string>:tv_sym;
+    // THE CROSSING AS A SYMBOL (1.5.6 step 4): each `bv2nat (bvop ...)` text once,
+    // as `|bv:N|` with its equation a `bv`-tagged hypothesis -- a row whose goal
+    // names no crossing is decided with the crossed values opaque (the int tier)
+    List<string>:cx_text;
+    List<string>:cx_sym;
+    List<string>:wr_text;            // a wrapped computation is ONE named symbol `|w:N|` (`tx_wrap`): the memo by the wrapped text
+    List<string>:wr_sym;
+    List<string>:rb_text;            // the body of every register that reads as its NAME (no alias): a clause rendering that text reads as the register (`reg_of_text`)
+    List<string>:rb_sym;
+    // what a defined symbol reaches, transitively (memoised): a hypothesis is
+    // about everything its symbols are made of
+    List<string>:tr_name;
+    List<List<string>>:tr_syms;
     // blocks (by index in the transformed function)
     List<string>:blk_pc;
     List<string>:blk_mem_in;
@@ -466,6 +513,10 @@ pub struct:Tx = {
     List<string>:mem_apps;           // memory applications seen (for the range axioms), unique
     List<string>:trap_pcs;
     List<string>:trap_codes;
+    List<string>:summary_traps;      // the trap conditions summary callees contributed (a caller's clause describes its OWN traps)
+    List<string>:fresh_blocks;       // (result, len) texts of every fresh allocation so far: two are disjoint
+    List<string>:fresh_lens;
+    List<string>:fresh_guards;       // the path condition of each allocation
     List<string>:ret_pcs;
     List<string>:ret_mems;
     List<List<string>>:ret_vals;     // per ret block: its field texts (one for a scalar)
@@ -475,9 +526,58 @@ pub struct:Tx = {
     bool:uses_bv;
     List<string>:problems;
     List<string>:free_syms;          // the section's declared free symbols (bare)
+    List<string>:addr_syms;          // those declared `Addr`: within the address space
     List<string>:objects;            // the address symbols of the globals and allocas touched
     List<int64>:object_sizes;
     List<string>:globals_ir;         // `@name` for each registered global
+    // MEMORY TEMPLATES (1.5.6 step 4): what a summary call, a memory intrinsic
+    // or a syscall promises of the memory function it introduces, at ANY point
+    // `|pt|` -- instantiated after the translation at every point the file
+    // applies that function to (`tx_instantiate_templates`)
+    List<string>:mt_mem;             // the memory function the template describes
+    List<string>:mt_prev;            // the memory before it
+    List<string>:mt_guard;           // the path condition of the call
+    List<string>:mt_unchanged;       // the condition over `|pt|` under which the byte is unchanged ("" for none)
+    List<string>:mt_value_when;      // the condition over `|pt|` under which the byte has a value ("" for none)
+    List<string>:mt_value;           // that value, over `|pt|`
+    List<string>:mem_syms;           // every memory function introduced, for the application scan
+    // INVARIANT TEMPLATES (1.5.6 step 4): an invariant over an Addr free
+    // symbol, rendered with the symbol as `|pt|`, instantiated at every point
+    // the file applies the loop's memory to (the single-instance rule's
+    // generalisation: the reads of the body are the points that matter)
+    List<string>:it_mem;             // the loop's memory at the header
+    List<string>:it_guard;           // the header's path condition
+    List<string>:it_tag;             // the hypothesis tag (the init row excludes it)
+    List<int64>:it_inv;              // the invariant clause node
+    List<int64>:it_lclause;          // its loop clause
+    List<int64>:it_blk;              // the header block (its rename environment)
+    List<string>:it_cm;              // what `mem` renders as there
+    List<string>:it_sym;             // the Addr free symbol the instance reads as the point
+    string:narrow;                   // a summary call's no-trap condition, folded into the block's path condition after the call ("" for none)
+    // STORE-TO-LOAD FORWARDING (1.5.6 step 4): what each defined memory
+    // function is -- a store of `size` bytes of `val` at `addr` over `prev`
+    // (guarded by `guard`, "true" for a plain store), or a merge of `mems`
+    // under `edges` -- so a load at the same address text is the value itself
+    // and the solver never reassembles a word it has just seen stored
+    List<string>:st_name;
+    List<string>:st_prev;
+    List<string>:st_addr;
+    List<int64>:st_size;
+    List<string>:st_val;
+    List<string>:st_guard;
+    List<string>:mg_name;
+    List<List<string>>:mg_edges;
+    List<List<string>>:mg_mems;
+    List<string>:ld_mem;             // the forwarded loads already named, by (memory, address, size)
+    List<string>:ld_addr;
+    List<int64>:ld_size;
+    List<string>:ld_sym;
+    // THE CALLER'S OBJECTS (`(objects (lo len) ...)`): the byte ranges its
+    // parameters name, which a fresh allocation is disjoint from and preserves
+    List<string>:obj_lo;
+    List<string>:obj_len;
+    bool:used_opaque;                // an opaque call was met: the section must carry a residue sentence
+    bool:used_sys;                   // `sys` is declared
 };
 
 pub func:tx_init = Tx(string:fn) never fails {
@@ -488,22 +588,49 @@ pub func:tx_init = Tx(string:fn) never fails {
              hyp_tags: raw list_init::<string>(64i64), hyp_bounds: raw list_init::<int64>(64i64),
              row_sites: raw list_init::<string>(8i64), row_goals: raw list_init::<string>(8i64),
              row_excl: raw list_init::<string>(8i64),
-             known: raw list_init::<string>(128i64),
+             known: raw strset_init(256i64),
              reg_ir: raw list_init::<string>(64i64), reg_sym: raw list_init::<string>(64i64),
              reg_sort: raw list_init::<string>(64i64), reg_bits: raw list_init::<int64>(64i64),
              reg_is_num: raw list_init::<bool>(64i64), reg_num: raw list_init::<uint128>(64i64),
              reg_shl_k: raw list_init::<int64>(64i64), reg_lt_k: raw list_init::<int64>(64i64),
+             reg_div_root: raw list_init::<string>(64i64), reg_div_by: raw list_init::<uint128>(64i64),
+             reg_lin_root: raw list_init::<string>(64i64), reg_lin_off: raw list_init::<uint128>(64i64), reg_lin_parts: raw list_init::<string>(64i64),
+             reg_tbl_global: raw list_init::<string>(64i64), reg_tbl_idx: raw list_init::<string>(64i64), reg_tbl_scale: raw list_init::<int64>(64i64),
+             reg_alias: raw list_init::<string>(64i64),
+             lobj_lo: raw list_init::<string>(4i64), lobj_len: raw list_init::<string>(4i64), lobj_pc: raw list_init::<string>(4i64),
+             tv_text: raw list_init::<string>(8i64), tv_idx: raw list_init::<string>(8i64), tv_vals: raw list_init::<List<string>>(8i64), tv_sym: raw list_init::<string>(8i64),
+             cx_text: raw list_init::<string>(8i64), cx_sym: raw list_init::<string>(8i64),
+             wr_text: raw list_init::<string>(16i64), wr_sym: raw list_init::<string>(16i64),
+             rb_text: raw list_init::<string>(32i64), rb_sym: raw list_init::<string>(32i64),
+             tr_name: raw list_init::<string>(64i64), tr_syms: raw list_init::<List<string>>(64i64),
              blk_pc: raw list_init::<string>(16i64), blk_mem_in: raw list_init::<string>(16i64),
              blk_mem_out: raw list_init::<string>(16i64), blk_ended: raw list_init::<bool>(16i64),
              blk_done: raw list_init::<bool>(16i64),
              mem_n: 0i64, tmp_n: 0i64, mem_apps: raw list_init::<string>(64i64),
              trap_pcs: raw list_init::<string>(4i64), trap_codes: raw list_init::<string>(4i64),
+             summary_traps: raw list_init::<string>(4i64),
+             fresh_blocks: raw list_init::<string>(4i64), fresh_lens: raw list_init::<string>(4i64), fresh_guards: raw list_init::<string>(4i64),
              ret_pcs: raw list_init::<string>(4i64), ret_mems: raw list_init::<string>(4i64),
              ret_vals: raw list_init::<List<string>>(4i64), ret_ty: "",
              nonlinear: false, uses_fp: false, uses_bv: false,
-             problems: raw list_init::<string>(4i64), free_syms: raw list_init::<string>(4i64),
+             problems: raw list_init::<string>(4i64), free_syms: raw list_init::<string>(4i64), addr_syms: raw list_init::<string>(4i64),
              objects: raw list_init::<string>(8i64), object_sizes: raw list_init::<int64>(8i64),
-             globals_ir: raw list_init::<string>(8i64) };
+             globals_ir: raw list_init::<string>(8i64),
+             mt_mem: raw list_init::<string>(8i64), mt_prev: raw list_init::<string>(8i64),
+             mt_guard: raw list_init::<string>(8i64), mt_unchanged: raw list_init::<string>(8i64),
+             mt_value_when: raw list_init::<string>(8i64), mt_value: raw list_init::<string>(8i64),
+             mem_syms: raw list_init::<string>(16i64),
+             st_name: raw list_init::<string>(16i64), st_prev: raw list_init::<string>(16i64),
+             st_addr: raw list_init::<string>(16i64), st_size: raw list_init::<int64>(16i64),
+             st_val: raw list_init::<string>(16i64), st_guard: raw list_init::<string>(16i64),
+             mg_name: raw list_init::<string>(8i64), mg_edges: raw list_init::<List<string>>(8i64),
+             mg_mems: raw list_init::<List<string>>(8i64),
+             ld_mem: raw list_init::<string>(32i64), ld_addr: raw list_init::<string>(32i64),
+             ld_size: raw list_init::<int64>(32i64), ld_sym: raw list_init::<string>(32i64),
+             obj_lo: raw list_init::<string>(4i64), obj_len: raw list_init::<string>(4i64),
+             it_mem: raw list_init::<string>(4i64), it_guard: raw list_init::<string>(4i64), it_tag: raw list_init::<string>(4i64),
+             it_inv: raw list_init::<int64>(4i64), it_lclause: raw list_init::<int64>(4i64), it_blk: raw list_init::<int64>(4i64), it_cm: raw list_init::<string>(4i64), it_sym: raw list_init::<string>(4i64),
+             narrow: "", used_opaque: false, used_sys: false };
 };
 
 pub func:tx_problem = NIL(Tx->:t, string:why) never fails {
@@ -538,7 +665,7 @@ pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
             while ((j < text.len) && (text.ptr[j] != 124u8)) { j = j + 1i64; }
             if (j < text.len) {
                 string:q = raw text_slice(text, i, j + 1i64);
-                if ((raw strlist_contains(t.known, q)) && (!(raw strlist_contains(out, q)))) { drop strlist_push(@out, q); }
+                if ((raw strset_has(t.known, q)) && (!(raw strlist_contains(out, q)))) { drop strlist_push(@out, q); }
                 i = j + 1i64;
                 continue;
             }
@@ -550,7 +677,7 @@ pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
             while ((k < text.len) && (raw is_sym_char(text.ptr[k]))) { k = k + 1i64; }
             string:w = raw text_slice(text, i, k);
             if (!(raw text_is_digit(w.ptr[0i64]))) {
-                if ((raw strlist_contains(t.known, w)) && (!(raw strlist_contains(out, w)))) { drop strlist_push(@out, w); }
+                if ((raw strset_has(t.known, w)) && (!(raw strlist_contains(out, w)))) { drop strlist_push(@out, w); }
             }
             i = k;
             continue;
@@ -563,7 +690,7 @@ pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
 // --- introducing symbols ----------------------------------------------------------------------
 
 func:tx_known = NIL(Tx->:t, string:sym) never fails {
-    if (!(raw strlist_contains(t.known, sym))) { drop strlist_push(@t.known, sym); }
+    discard(raw strset_add(@t.known, sym));
     pass NIL;
 };
 
@@ -604,6 +731,7 @@ pub func:tx_mem_declare = NIL(Tx->:t, string:name) never fails {
     drop strlist_push(@t.def_names, name);
     drop list_push(@t.def_refs, raw list_init::<string>(1i64));
     drop tx_known(t, name);
+    drop strlist_push(@t.mem_syms, name);
     pass NIL;
 };
 
@@ -617,15 +745,102 @@ pub func:tx_mem_define = NIL(Tx->:t, string:name, string:body) never fails {
     drop strlist_push(@t.def_names, name);
     drop list_push(@t.def_refs, move(refs));
     drop tx_known(t, name);
+    drop strlist_push(@t.mem_syms, name);
     pass NIL;
+};
+
+// Every symbol the definition of `sym` reaches, transitively (memoised);
+// control symbols (`|pc:`, `|e:`) are not crossed -- the cone's backward pass
+// walks the graph itself, and a sink's hypothesis names its reach explicitly.
+func:trans_refs = List<string>(Tx->:t, string:sym) never fails {
+    for (int64:m in 0i64...t.tr_name.count) {
+        if (raw text_eq(raw strlist_view(t.tr_name, m), sym)) { pass (raw strlist_clone(t.tr_syms.items[m])); }
+    }
+    List<string>:out = raw list_init::<string>(8i64);
+    StrSet:seen = raw strset_init(32i64);
+    List<string>:work = raw list_init::<string>(8i64);
+    drop strlist_push(@work, sym);
+    int64:w = 0i64;
+    while (w < work.count) {
+        string:cur = raw strlist_copy(work, w);
+        w = w + 1i64;
+        if (!(raw strset_add(@seen, cur))) { continue; }
+        if (raw text_starts_with(cur, "|pc:") || raw text_starts_with(cur, "|e:")) { continue; }
+        if (raw strlist_contains(t.mem_syms, cur)) { continue; }
+        if (w > 1i64) { drop strlist_push(@out, cur); }
+        for (int64:d in 0i64...t.def_names.count) {
+            if (!(raw text_eq(raw strlist_view(t.def_names, d), cur))) { continue; }
+            for (int64:r in 0i64...t.def_refs.items[d].count) { drop strlist_push(@work, raw strlist_view(t.def_refs.items[d], r)); }
+            break;
+        }
+    }
+    drop strset_free(@seen);
+    drop strlist_push(@t.tr_name, sym);
+    drop list_push(@t.tr_syms, raw strlist_clone(out));
+    pass out;
 };
 
 pub func:tx_hyp = NIL(Tx->:t, string:text, string:tag, int64:bound) never fails {
     List<string>:syms = raw syms_in(t, text);
+    // A HYPOTHESIS IS ABOUT WHAT ITS SYMBOLS ARE MADE OF: a fact over a defined
+    // symbol (a load's word, a crossing) joins a cone that names anything its
+    // definition reaches -- the backward pass from a goal never meets it else
+    int64:n0 = syms.count;
+    for (int64:i in 0i64...n0) {
+        if (raw text_starts_with(raw strlist_view(syms, i), "|pc:") || raw text_starts_with(raw strlist_view(syms, i), "|e:")) { continue; }
+        List<string>:more = raw trans_refs(t, raw strlist_view(syms, i));
+        for (int64:k in 0i64...more.count) {
+            if (!(raw strlist_contains(syms, raw strlist_view(more, k)))) { drop strlist_push(@syms, raw strlist_view(more, k)); }
+        }
+    }
+    // A MEMORY FUNCTION IS NO SHARED SYMBOL: `mem` and its successors stand in
+    // nearly every hypothesis, so sharing one would put the whole file in every
+    // cone -- a memory fact is about the ADDRESSES it applies the function to,
+    // and those relate it to a goal
+    List<string>:kept = raw list_init::<string>(syms.count + 1i64);
+    for (int64:q in 0i64...syms.count) {
+        if (raw strlist_contains(t.mem_syms, raw strlist_view(syms, q))) { continue; }
+        drop strlist_push(@kept, raw strlist_view(syms, q));
+    }
+    syms = move(kept);
     drop strlist_push(@t.hyps, text);
     drop list_push(@t.hyp_syms, move(syms));
     drop strlist_push(@t.hyp_tags, tag);
     drop list_push(@t.hyp_bounds, bound);
+    pass NIL;
+};
+
+// The last hypothesis is about every symbol the definition of `sym` reaches
+// (transitively), so a cone that names any of them includes it.
+pub func:tx_hyp_reaches = NIL(Tx->:t, string:sym) never fails {
+    if (t.hyps.count == 0i64) { pass NIL; }
+    // two levels: the stop's edge, and that edge's path condition and exit
+    // test -- the symbols a row about the loop's exit values reaches; deeper
+    // would put the hypothesis in every cone of the file
+    StrSet:seen = raw strset_init(64i64);
+    List<string>:work = raw list_init::<string>(16i64);
+    List<int64>:depth = raw list_init::<int64>(16i64);
+    drop strlist_push(@work, sym);
+    drop list_push(@depth, 0i64);
+    int64:w = 0i64;
+    while (w < work.count) {
+        string:cur = raw strlist_copy(work, w);
+        int64:dp = depth.items[w];
+        w = w + 1i64;
+        if (!(raw strset_add(@seen, cur))) { continue; }
+        if (dp >= 2i64) { continue; }
+        for (int64:d in 0i64...t.def_names.count) {
+            if (!(raw text_eq(raw strlist_view(t.def_names, d), cur))) { continue; }
+            for (int64:r in 0i64...t.def_refs.items[d].count) { drop strlist_push(@work, raw strlist_view(t.def_refs.items[d], r)); drop list_push(@depth, dp + 1i64); }
+            break;
+        }
+    }
+    int64:last = t.hyps.count - 1i64;
+    for (int64:k in 0i64...raw strset_count(seen)) {
+        string:s2 = raw strset_key(seen, k);
+        if (!(raw strlist_contains(t.hyp_syms.items[last], s2))) { drop strlist_push(@t.hyp_syms.items[last], s2); }
+    }
+    drop strset_free(@seen);
     pass NIL;
 };
 
@@ -661,6 +876,174 @@ pub func:tx_mem_app = string(Tx->:t, string:memsym, string:addr) never fails {
     pass app;
 };
 
+// --- memory applications and templates (1.5.6 step 4) ---------------------------------------------
+
+// Every application `(M A)` of a memory function in `text`, as `M` and `A`
+// texts, appended to the two lists; `A` is the balanced term after the name.
+func:apps_in = NIL(Tx->:t, string:text, List<string>->:ms, List<string>->:ats) never fails {
+    int64:i = 0i64;
+    while (i < text.len) {
+        if (text.ptr[i] != 40u8) { i = i + 1i64; continue; }   // (
+        // the head token
+        int64:j = i + 1i64;
+        if (j < text.len) {
+            if (text.ptr[j] == 124u8) {   // |quoted|
+                int64:k = j + 1i64;
+                while ((k < text.len) && (text.ptr[k] != 124u8)) { k = k + 1i64; }
+                if (k < text.len) { j = k + 1i64; }
+            } else {
+                while ((j < text.len) && (raw is_sym_char(text.ptr[j]))) { j = j + 1i64; }
+            }
+        }
+        string:head = raw text_slice(text, i + 1i64, j);
+        if ((head.len > 0i64) && (raw strlist_contains(t.mem_syms, head))) {
+            // one argument: a balanced term, then `)`
+            int64:a = j;
+            while ((a < text.len) && (text.ptr[a] == 32u8)) { a = a + 1i64; }
+            int64:e = a;
+            int64:depth = 0i64;
+            bool:quoted = false;
+            while (e < text.len) {
+                uint8:c = text.ptr[e];
+                if (c == 124u8) { quoted = !quoted; }
+                if (!quoted) {
+                    if (c == 40u8) { depth = depth + 1i64; }
+                    if (c == 41u8) { if (depth == 0i64) { break; } depth = depth - 1i64; }
+                    if ((c == 32u8) && (depth == 0i64)) { break; }
+                }
+                e = e + 1i64;
+            }
+            if (e > a) {
+                drop strlist_push(ms, head);
+                drop strlist_push(ats, raw text_slice(text, a, e));
+            }
+        }
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// The range axiom of every memory application in `text`, recorded once each.
+pub func:tx_note_apps = NIL(Tx->:t, string:text) never fails {
+    List<string>:ms = raw list_init::<string>(4i64);
+    List<string>:ats = raw list_init::<string>(4i64);
+    drop apps_in(t, text, @ms, @ats);
+    for (int64:i in 0i64...ms.count) { discard(raw tx_mem_app(t, raw strlist_view(ms, i), raw strlist_view(ats, i))); }
+    pass NIL;
+};
+
+// A template over the point `|pt|`: under `guard`, the byte of `mem` at a
+// point satisfying `unchanged` equals `prev`'s, and at a point satisfying
+// `value_when` equals `value`.
+func:tx_template = NIL(Tx->:t, string:mem, string:prev, string:guard, string:unchanged, string:value_when, string:value) never fails {
+    drop strlist_push(@t.mt_mem, mem);
+    drop strlist_push(@t.mt_prev, prev);
+    drop strlist_push(@t.mt_guard, guard);
+    drop strlist_push(@t.mt_unchanged, unchanged);
+    drop strlist_push(@t.mt_value_when, value_when);
+    drop strlist_push(@t.mt_value, value);
+    pass NIL;
+};
+
+// The template's facts at the point `a` (the token `|pt|` replaced), as hypotheses.
+func:tx_template_at = NIL(Tx->:t, int64:ti, string:a) never fails {
+    string:mem = raw strlist_view(t.mt_mem, ti);
+    string:prev = raw strlist_view(t.mt_prev, ti);
+    string:guard = raw strlist_view(t.mt_guard, ti);
+    string:unch = raw strlist_view(t.mt_unchanged, ti);
+    string:vw = raw strlist_view(t.mt_value_when, ti);
+    string:val = raw strlist_view(t.mt_value, ti);
+    string:app = raw tx_mem_app(t, mem, a);
+    if (unch.len > 0i64) {
+        string:cond = raw text_replace_all(unch, "|pt|", a);
+        string:papp = raw tx_mem_app(t, prev, a);
+        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("and", guard, cond), raw smt_app2("=", app, papp)), "template", 0i64);
+    }
+    if (vw.len > 0i64) {
+        string:cond2 = raw text_replace_all(vw, "|pt|", a);
+        string:v2 = raw text_replace_all(val, "|pt|", a);
+        drop tx_note_apps(t, v2);
+        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("and", guard, cond2), raw smt_app2("=", app, v2)), "template", 0i64);
+    }
+    // when the call did not happen, the byte is whatever it was
+    string:papp2 = raw tx_mem_app(t, prev, a);
+    drop tx_hyp(t, raw smt_app2("=>", raw smt_app1("not", guard), raw smt_app2("=", app, papp2)), "template", 0i64);
+    pass NIL;
+};
+
+// INSTANTIATION AT EVERY POINT (the record's rule): after the translation and
+// the section's rows, each template's facts are asserted at every point its
+// memory function is applied to anywhere in the file -- a definition, a
+// hypothesis, a goal -- and at every point that REACHES it: an instance
+// applies the previous memory at the same point, and a pointwise definition
+// applied at a point applies every memory its body applies at that point (a
+// store's or a merge's body applies them at its bound variable `|m:x|`, which
+// is no point of its own). A worklist over (memory, point) pairs, each once.
+pub func:tx_instantiate_templates = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
+    if ((t.mt_mem.count == 0i64) && (t.it_mem.count == 0i64)) { pass NIL; }
+    StrSet:done = raw strset_init(64i64);
+    List<string>:ms = raw list_init::<string>(64i64);
+    List<string>:ats = raw list_init::<string>(64i64);
+    for (int64:d in 0i64...t.defs.count) { drop apps_in(t, raw strlist_view(t.defs, d), @ms, @ats); }
+    for (int64:h in 0i64...t.hyps.count) { drop apps_in(t, raw strlist_view(t.hyps, h), @ms, @ats); }
+    for (int64:g in 0i64...t.row_goals.count) { drop apps_in(t, raw strlist_view(t.row_goals, g), @ms, @ats); }
+    int64:i = 0i64;
+    while (i < ms.count) {
+        string:m = raw strlist_copy(ms, i);
+        string:a = raw strlist_copy(ats, i);
+        i = i + 1i64;
+        if (i > 20000i64) {
+            string:w = string_concat("instantiation runaway at ", m);
+            w = string_concat(w, " @ ");
+            int64:alen = a.len;
+            if (alen > 300i64) { alen = 300i64; }
+            w = string_concat(w, raw text_slice(a, 0i64, alen));
+            drop tx_problem(t, w);
+            break;
+        }
+        if (raw text_contains(a, "|m:x|")) { continue; }
+        if (!(raw strset_add(@done, raw smt_app1(m, a)))) { continue; }
+        // the templates over `m` at `a`; their facts apply the previous memory at `a`
+        int64:before = t.hyps.count;
+        int64:before_d = t.defs.count;
+        for (int64:ti in 0i64...t.mt_mem.count) {
+            if (raw text_eq(raw strlist_view(t.mt_mem, ti), m)) { drop tx_template_at(t, ti, a); }
+        }
+        // the invariants over an Addr, rendered at `a` (a render at the point,
+        // so its loads forward and its applications carry their range axioms)
+        for (int64:ii in 0i64...t.it_mem.count) {
+            if (!(raw text_eq(raw strlist_view(t.it_mem, ii), m))) { continue; }
+            int64:hb = t.it_blk.items[ii];
+            REnv:ea = raw renv_new(raw strlist_view(t.it_cm, ii), raw strlist_view(t.it_mem, ii), false, true);
+            drop renv_add(@ea, raw strlist_view(t.it_sym, ii), a);
+            string:inst = raw inv_conjuncts_over(t, ft, s, t.it_inv.items[ii], raw strlist_view(t.it_sym, ii), @ea, @x.meta.items[hb]);
+            if (raw text_eq(inst, "true")) { continue; }
+            drop tx_hyp(t, raw smt_app2("=>", raw strlist_view(t.it_guard, ii), inst), raw strlist_view(t.it_tag, ii), 0i64);
+        }
+        for (int64:h2 in before...t.hyps.count) { drop apps_in(t, raw strlist_view(t.hyps, h2), @ms, @ats); }
+        for (int64:d3 in before_d...t.defs.count) { drop apps_in(t, raw strlist_view(t.defs, d3), @ms, @ats); }
+        // through a pointwise definition
+        for (int64:d2 in 0i64...t.def_names.count) {
+            if (!(raw text_eq(raw strlist_view(t.def_names, d2), m))) { continue; }
+            for (int64:r in 0i64...t.def_refs.items[d2].count) {
+                string:ref = raw strlist_view(t.def_refs.items[d2], r);
+                if (raw strlist_contains(t.mem_syms, ref)) { drop strlist_push(@ms, ref); drop strlist_push(@ats, a); }
+            }
+            break;
+        }
+    }
+    drop strset_free(@done);
+    pass NIL;
+};
+
+func:tx_fresh_mem = string(Tx->:t) never fails {
+    t.mem_n = t.mem_n + 1i64;
+    string:name = string_concat("|mem:", int_to_string(t.mem_n));
+    name = string_concat(name, "|");
+    drop tx_mem_declare(t, name);
+    pass name;
+};
+
 // --- registers -----------------------------------------------------------------------------------
 
 pub func:reg_index = int64(Tx->:t, string:ir) never fails {
@@ -676,7 +1059,7 @@ func:tx_reg = bool(Tx->:t, string:ir, string:sym, string:sort, int64:bits) never
         drop tx_problem(t, string_concat("a register is defined twice: ", ir));
         pass false;
     }
-    if (raw strlist_contains(t.known, sym)) {
+    if (raw strset_has(t.known, sym)) {
         string:w = string_concat("the register ", ir);
         w = string_concat(w, " collides with another symbol of the translation: ");
         w = string_concat(w, sym);
@@ -691,6 +1074,15 @@ func:tx_reg = bool(Tx->:t, string:ir, string:sym, string:sort, int64:bits) never
     drop list_push(@t.reg_num, 0u128);
     drop list_push(@t.reg_shl_k, 0i64 - 1i64);
     drop list_push(@t.reg_lt_k, bits);
+    drop strlist_push(@t.reg_div_root, "");
+    drop list_push(@t.reg_div_by, 0u128);
+    drop strlist_push(@t.reg_lin_root, "");
+    drop list_push(@t.reg_lin_off, 0u128);
+    drop strlist_push(@t.reg_lin_parts, "");
+    drop strlist_push(@t.reg_tbl_global, "");
+    drop strlist_push(@t.reg_tbl_idx, "");
+    drop list_push(@t.reg_tbl_scale, 0i64);
+    drop strlist_push(@t.reg_alias, "");
     pass true;
 };
 
@@ -714,6 +1106,34 @@ func:tx_set = NIL(Tx->:t, string:ir, string:ty, Term:v) never fails {
     // remembers what their definitions were
     t.reg_shl_k.items[ri] = v.shl_k;
     t.reg_lt_k.items[ri] = v.lt_k;
+    t.reg_div_root.items[ri] = string_concat(raw strlist_view_of(v.div_root), "");
+    t.reg_div_by.items[ri] = v.div_by;
+    t.reg_lin_root.items[ri] = string_concat(raw strlist_view_of(v.lin_root), "");
+    t.reg_lin_off.items[ri] = v.lin_off;
+    t.reg_lin_parts.items[ri] = string_concat(raw strlist_view_of(v.lin_parts), "");
+    t.reg_tbl_global.items[ri] = string_concat(raw strlist_view_of(v.tbl_global), "");
+    t.reg_tbl_idx.items[ri] = string_concat(raw strlist_view_of(v.tbl_idx), "");
+    t.reg_tbl_scale.items[ri] = v.tbl_scale;
+    // AN ALIAS: `%s = load` names `|ld:3|`, `%ex` names `exec` -- a reader of the
+    // register gets the symbol itself, so a clause's load and the body's register
+    // are one term (the define-fun stays, for a clause that names the register)
+    // -- and a PLAIN SUM of atoms (an address inside an object) reads as its
+    // text: a wrapped one is already a `|w:N|` atom (`tx_wrap`), so every
+    // address the body computes is the very text a clause renders
+    if ((raw text_eq(sort, "Int")) && (!v.is_num)) {
+        bool:atom = (raw is_word_atom(raw strlist_view_of(v.text), 128i64)) && (!(raw text_starts_with(raw strlist_view_of(v.text), "(")));
+        if (atom || (raw is_plain_sum(raw strlist_view_of(v.text)))) { t.reg_alias.items[ri] = string_concat(raw strlist_view_of(v.text), ""); }
+        else {
+            // THE OTHER DIRECTION: a register the body reads by NAME (a quotient,
+            // a cleared-low-bits form, a product) is what a clause rendering the
+            // same text reads too (`reg_of_text`), so `(- r15 (mod r15 16))` in a
+            // clause is the body's `rn` and `(+ ip rn)` on both sides is one word
+            if (raw text_starts_with(raw strlist_view_of(v.text), "(")) {
+                drop strlist_push(@t.rb_text, raw strlist_view_of(v.text));
+                drop strlist_push(@t.rb_sym, sym);
+            }
+        }
+    }
     pass NIL;
 };
 
@@ -737,9 +1157,19 @@ func:term_of_reg = Term(Tx->:t, string:ir) never fails {
     if (raw text_eq(sort, "Bool")) { pass (raw term_bool(raw strlist_view(t.reg_sym, i))); }
     if (raw text_eq(sort, "Int")) {
         if (t.reg_is_num.items[i]) { pass (raw term_num(t.reg_num.items[i], t.reg_bits.items[i])); }
-        Term:r = raw term_int(raw strlist_view(t.reg_sym, i), t.reg_bits.items[i]);
+        string:rname = raw strlist_copy(t.reg_sym, i);
+        if ((raw strlist_view(t.reg_alias, i)).len > 0i64) { rname = raw strlist_copy(t.reg_alias, i); }
+        Term:r = raw term_int(rname, t.reg_bits.items[i]);
         r.shl_k = t.reg_shl_k.items[i];
         r.lt_k = t.reg_lt_k.items[i];
+        r.div_root = raw strlist_copy(t.reg_div_root, i);
+        r.div_by = t.reg_div_by.items[i];
+        r.lin_root = raw strlist_copy(t.reg_lin_root, i);
+        r.lin_off = t.reg_lin_off.items[i];
+        r.lin_parts = raw strlist_copy(t.reg_lin_parts, i);
+        r.tbl_global = raw strlist_copy(t.reg_tbl_global, i);
+        r.tbl_idx = raw strlist_copy(t.reg_tbl_idx, i);
+        r.tbl_scale = t.reg_tbl_scale.items[i];
         pass r;
     }
     pass (raw term_fp(raw strlist_view(t.reg_sym, i), t.reg_bits.items[i]));
@@ -795,12 +1225,427 @@ pub func:tx_global = string(Tx->:t, FloorText->:ft, string:ir) never fails {
     drop strlist_push(@t.globals_ir, ir);
     int64:size = raw ty_size(ft, gty);
     drop tx_object(t, sym, size);
+    // A CONSTANT'S BYTES (1.5.6 step 4): the class tables and the stats key are
+    // `constant` globals with initialisers -- their bytes in the entry memory
+    // are facts, one per byte (a constant is written by nobody)
+    string:init = raw floor_global_init(ft, ir);
+    if (init.len > 0i64) {
+        List<int64>:bytes = raw const_bytes(ft, gty, init);
+        if (bytes.count != size) {
+            if (bytes.count > 0i64) { drop tx_problem(t, string_concat("a constant's initialiser does not fill its type: ", ir)); }
+        } else {
+            for (int64:i in 0i64...bytes.count) {
+                string:a = raw text_copy(sym);
+                if (i > 0i64) { a = raw smt_app2("+", sym, int_to_string(i)); }
+                // the fact IS the byte's range: no range axiom beside it
+                string:app = raw smt_app1("mem", a);
+                if (!(raw strlist_contains(t.mem_apps, app))) { drop strlist_push(@t.mem_apps, app); }
+                drop tx_hyp(t, raw smt_app2("=", app, int_to_string(bytes.items[i])), "constant", 0i64);
+            }
+        }
+    }
     pass sym;
+};
+
+// The bytes of an initialiser: `[i64 16, i64 32, ...]` (an array of integers,
+// little-endian each), `c"..."` (a byte string with `\XX` hex escapes), a bare
+// numeral (a scalar of the declared width); empty for a form not read
+// (`zeroinitializer` is a global's, never a constant's, in the floor).
+func:const_bytes = List<int64>(FloorText->:ft, string:ty, string:init) never fails {
+    List<int64>:out = raw list_init::<int64>(64i64);
+    if (init.len == 0i64) { pass out; }
+    if (init.ptr[0i64] == 99u8) {   // c"..."
+        int64:i = 2i64;
+        while ((i < init.len) && (init.ptr[i] != 34u8)) {
+            uint8:c = init.ptr[i];
+            if ((c == 92u8) && ((i + 2i64) < init.len)) {
+                int64:hv = (raw hex_digit(init.ptr[i + 1i64]) * 16i64) + raw hex_digit(init.ptr[i + 2i64]);
+                drop list_push(@out, hv);
+                i = i + 3i64;
+                continue;
+            }
+            drop list_push(@out, c => int64);
+            i = i + 1i64;
+        }
+        pass out;
+    }
+    if (init.ptr[0i64] == 91u8) {   // [i64 16, i64 32, ...]
+        string:inner = raw text_slice(init, 1i64, init.len - 1i64);
+        List<string>:parts = raw split_top_commas(inner);
+        string:ety = raw array_elem(ty);
+        int64:esz = raw ty_size(ft, ety);
+        for (int64:pi in 0i64...parts.count) {
+            string:piece = raw text_trim(raw strlist_view(parts, pi));
+            int64:sp = raw text_find_byte(piece, 32u8, 0i64);
+            if (sp < 0i64) { out.count = 0i64; pass out; }
+            uint128:v = 0u128;
+            if (!(raw u128_parse(raw text_slice(piece, sp + 1i64, piece.len), esz * 8i64, @v))) { out.count = 0i64; pass out; }
+            for (int64:b in 0i64...esz) {
+                drop list_push(@out, (v % 256u128) =>! int64);
+                v = v / 256u128;
+            }
+        }
+        pass out;
+    }
+    uint128:sv = 0u128;
+    int64:bits = raw ty_bits(ty);
+    if ((bits > 0i64) && (raw u128_parse(init, bits, @sv))) {
+        for (int64:b2 in 0i64...(bits / 8i64)) {
+            drop list_push(@out, (sv % 256u128) =>! int64);
+            sv = sv / 256u128;
+        }
+    }
+    pass out;
+};
+
+func:hex_digit = int64(uint8:c) never fails {
+    if ((c >= 48u8) && (c <= 57u8)) { pass ((c - 48u8) => int64); }
+    if ((c >= 65u8) && (c <= 70u8)) { pass ((c - 55u8) => int64); }
+    if ((c >= 97u8) && (c <= 102u8)) { pass ((c - 87u8) => int64); }
+    pass 0i64;
+};
+
+func:split_top_commas = List<string>(string:s) never fails {
+    List<string>:out = raw list_init::<string>(16i64);
+    int64:start = 0i64;
+    int64:depth = 0i64;
+    for (int64:i in 0i64...s.len) {
+        uint8:c = s.ptr[i];
+        if ((c == 91u8) || (c == 123u8)) { depth = depth + 1i64; }
+        if ((c == 93u8) || (c == 125u8)) { depth = depth - 1i64; }
+        if ((c == 44u8) && (depth == 0i64)) {
+            drop strlist_push(@out, raw text_slice(s, start, i));
+            start = i + 1i64;
+        }
+    }
+    drop strlist_push(@out, raw text_slice(s, start, s.len));
+    pass out;
+};
+
+// `(objects (lo len) ...)`: the caller's objects -- each range within the
+// address space and the listed ranges pairwise disjoint (a null or an empty
+// range is no object and overlaps nothing) -- as facts rendered under `e`; a
+// section's are its hypotheses (`record` keeps the ranges for the allocator's
+// freshness promise), a summary callee's are rows at the call.
+func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, REnv->:e, BMeta->:m, bool:record) never fails {
+    List<string>:los = raw list_init::<string>(4i64);
+    List<string>:lens = raw list_init::<string>(4i64);
+    List<string>:facts = raw list_init::<string>(8i64);
+    int64:oc = s.nodes.items[oc0].first;
+    oc = s.nodes.items[oc].next;
+    while (oc >= 0i64) {
+        if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); break; }
+        drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
+        drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
+        oc = s.nodes.items[oc].next;
+    }
+    string:top = raw pow2_decimal(64i64);
+    for (int64:i in 0i64...los.count) {
+        string:lo = raw strlist_view(los, i);
+        string:ln = raw strlist_view(lens, i);
+        drop strlist_push(@facts, raw smt_app2("and", raw smt_app2("<=", "0", lo), raw smt_app2("<=", raw smt_app2("+", lo, ln), top)));
+        for (int64:k in 0i64...i) {
+            string:o = raw strlist_view(los, k);
+            string:oln = raw strlist_view(lens, k);
+            string:apart = raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", lo, ln), o), raw smt_app2("<=", raw smt_app2("+", o, oln), lo));
+            string:no_obj = raw smt_app2("or", raw smt_app2("or", raw smt_app2("=", lo, "0"), raw smt_app2("=", o, "0")),
+                                             raw smt_app2("or", raw smt_app2("=", ln, "0"), raw smt_app2("=", oln, "0")));
+            drop strlist_push(@facts, raw smt_app2("or", no_obj, apart));
+        }
+        if (record) { drop strlist_push(@t.obj_lo, lo); drop strlist_push(@t.obj_len, ln); }
+    }
+    pass facts;
+};
+
+// A load of one element of a constant table `[N x iW]` as the `ite` over its
+// index: the table's values by the case, the raw reassembly past the end
+// ("" when the initialiser is not a list of integers of the load's size).
+func:const_table_ite = string(Tx->:t, FloorText->:ft, string:gname, string:idx, int64:n, string:raw_ld) never fails {
+    string:init = raw floor_global_init(ft, gname);
+    string:gty = raw floor_global_type(ft, gname);
+    if ((init.len < 2i64) || (init.ptr[0i64] != 91u8)) { pass ""; }
+    if ((raw ty_size(ft, raw array_elem(gty))) != n) { pass ""; }
+    List<string>:items = raw split_top_commas(raw text_slice(init, 1i64, init.len - 1i64));
+    List<string>:vals = raw list_init::<string>(items.count + 1i64);
+    for (int64:i in 0i64...items.count) {
+        string:it = raw text_trim(raw strlist_view(items, i));
+        int64:sp = raw text_index_of(it, " ");
+        if (sp < 0i64) { pass ""; }
+        string:num = raw text_trim(raw text_slice(it, sp + 1i64, it.len));
+        uint128:v = 0u128;
+        if (!(raw u128_parse(num, n * 8i64, @v))) { pass ""; }
+        drop strlist_push(@vals, raw u128_text(v));
+    }
+    string:out = raw text_copy(raw_ld);
+    for (int64:k in 0i64...vals.count) {
+        int64:j = vals.count - 1i64 - k;
+        out = string_concat(raw smt_app3("ite", raw smt_app2("=", idx, int_to_string(j)), raw strlist_view(vals, j), out), "");
+    }
+    // named: a word both the body's register and a clause's load resolve to
+    for (int64:m in 0i64...t.tv_text.count) {
+        if (raw text_eq(raw strlist_view(t.tv_text, m), out)) { pass (raw strlist_copy(t.tv_sym, m)); }
+    }
+    string:tsym = raw tx_fresh(t, "tv");
+    drop tx_define(t, tsym, "Int", out);
+    drop strlist_push(@t.tv_text, out);
+    drop strlist_push(@t.tv_idx, idx);
+    drop list_push(@t.tv_vals, raw strlist_clone(vals));
+    drop strlist_push(@t.tv_sym, tsym);
+    pass tsym;
+};
+
+// The index of the last space in `s`, or -1.
+func:text_last_space = int64(string:s) never fails {
+    int64:i = s.len - 1i64;
+    while (i >= 0i64) { if (s.ptr[i] == 32u8) { pass i; } i = i - 1i64; }
+    pass (0i64 - 1i64);
+};
+
+// The body of a zero-arity definition `sym`, or "".
+func:def_body = string(Tx->:t, string:sym) never fails {
+    for (int64:d in 0i64...t.def_names.count) {
+        if (!(raw text_eq(raw strlist_view(t.def_names, d), sym))) { continue; }
+        string:l = raw strlist_view(t.defs, d);
+        string:pre = string_concat("(define-fun ", sym);
+        pre = string_concat(pre, " () ");
+        if (!(raw text_starts_with(l, pre))) { pass ""; }
+        int64:sp = raw text_index_of(raw text_slice(l, pre.len, l.len), " ");
+        if (sp < 0i64) { pass ""; }
+        pass (raw text_slice(l, pre.len + sp + 1i64, l.len - 1i64));
+    }
+    pass "";
+};
+
+// THE CASES OF A DIVISOR: a table value (its `ite` text, or a symbol defined
+// as one), or such a value plus a numeral, wrapped or not -- `idx` and the
+// per-case numerals; a division by it distributes over the cases and every
+// branch divides by a numeral (linear), the out-of-table tail a fresh symbol.
+func:divisor_cases = string(Tx->:t, string:text, List<string>->:vals) never fails {
+    string:s = raw text_copy(text);
+    uint128:k = 0u128;
+    string:w = raw pow2_decimal(64i64);
+    string:msuf = string_concat(" ", w);
+    msuf = string_concat(msuf, ")");
+    int64:steps = 0i64;
+    while (steps < 8i64) {
+        steps = steps + 1i64;
+        // a symbol: its definition
+        if (!(raw text_starts_with(s, "("))) {
+            string:body = raw def_body(t, s);
+            if (body.len == 0i64) { break; }
+            s = move(body);
+            continue;
+        }
+        // the writer's own wrap of a sum, `(ite (< (+ X k) W) (+ X k) (- (+ X k) W))`: the sum
+        if (raw text_starts_with(s, "(ite (< (+ ")) {
+            List<string>:ia = raw smt_split_top(raw text_slice(s, 5i64, s.len - 1i64));
+            if (ia.count == 3i64) { s = raw strlist_copy(ia, 1i64); }
+        }
+        // (mod (+ X k) 2^64) or (+ X k): the numeral joins the offset, X is next
+        string:inner = "";
+        if ((raw text_starts_with(s, "(mod (+ ")) && (raw text_ends_with(s, msuf))) { inner = raw text_slice(s, 8i64, s.len - msuf.len - 1i64); }
+        else { if ((raw text_starts_with(s, "(+ ")) && (raw text_ends_with(s, ")"))) { inner = raw text_slice(s, 3i64, s.len - 1i64); } }
+        if (inner.len > 0i64) {
+            int64:sp = raw text_last_space(inner);
+            if (sp < 0i64) { break; }
+            uint128:kk = 0u128;
+            if (!(raw u128_parse(raw text_slice(inner, sp + 1i64, inner.len), 64i64, @kk))) { break; }
+            k = raw u128_add(k, kk, 64i64);
+            s = raw text_slice(inner, 0i64, sp);
+            continue;
+        }
+        break;
+    }
+    for (int64:i in 0i64...t.tv_text.count) {
+        if (!(raw text_eq(raw strlist_view(t.tv_text, i), s))) { continue; }
+        for (int64:j in 0i64...t.tv_vals.items[i].count) {
+            uint128:v = 0u128;
+            if (!(raw u128_parse(raw strlist_view(t.tv_vals.items[i], j), 64i64, @v))) { pass ""; }
+            drop strlist_push(vals, raw u128_text(raw u128_add(v, k, 64i64)));
+        }
+        pass (raw strlist_copy(t.tv_idx, i));
+    }
+    pass "";
+};
+
+// `(div a B)`/`(mod a B)` over the cases of B: an `ite` per case with a
+// numeral divisor, the tail a fresh ranged symbol (out of the table, the
+// quotient is some word).
+func:div_over_cases = string(Tx->:t, string:op, string:a, string:idx, List<string>:vals, int64:bits) never fails {
+    string:tail = raw tx_fresh(t, op);
+    drop tx_declare(t, tail, "Int");
+    drop tx_range(t, tail, bits);
+    string:out = raw text_copy(tail);
+    for (int64:k in 0i64...vals.count) {
+        int64:j = vals.count - 1i64 - k;
+        string:v = raw strlist_view(vals, j);
+        string:branch = raw smt_app2(op, a, v);
+        if (raw text_eq(op, "div")) { branch = raw div_text(a, v); }
+        if (raw text_eq(v, "0")) { branch = raw text_copy(tail); }
+        out = string_concat(raw smt_app3("ite", raw smt_app2("=", idx, int_to_string(j)), branch, out), "");
+    }
+    pass out;
+};
+
+// The ranges of an `(objects (lo len) ...)` clause rendered under `e`, into `los`/`lens`.
+func:objects_ranges = NIL(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, REnv->:e, BMeta->:m, List<string>->:los, List<string>->:lens) never fails {
+    int64:oc = s.nodes.items[oc0].first;
+    oc = s.nodes.items[oc].next;
+    while (oc >= 0i64) {
+        if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); break; }
+        drop strlist_push(los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
+        drop strlist_push(lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
+        oc = s.nodes.items[oc].next;
+    }
+    pass NIL;
+};
+
+// The condition that the point `f` lies in one of the CALLER's objects: the
+// section's declared ranges and, under their headers' path conditions, the
+// loop objects ("false" with none).
+func:caller_objects_in = string(Tx->:t, string:f, bool:with_loops) never fails {
+    string:out = "false";
+    for (int64:ob in 0i64...t.obj_lo.count) {
+        string:lo = raw strlist_view(t.obj_lo, ob);
+        string:ln = raw strlist_view(t.obj_len, ob);
+        string:inside = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
+        if (raw text_eq(out, "false")) { out = move(inside); } else { out = string_concat(raw smt_app2("or", out, inside), ""); }
+    }
+    if (!with_loops) { pass out; }
+    // the caller's live blocks (under the guard of the allocation that made each)
+    for (int64:fb in 0i64...t.fresh_blocks.count) {
+        string:flo = raw strlist_view(t.fresh_blocks, fb);
+        string:fln = raw strlist_view(t.fresh_lens, fb);
+        string:fin = raw smt_app2("and", raw strlist_view(t.fresh_guards, fb),
+                                          raw smt_app2("and", raw smt_app2("<=", flo, f), raw smt_app2("<", f, raw smt_app2("+", flo, fln))));
+        if (raw text_eq(out, "false")) { out = move(fin); } else { out = string_concat(raw smt_app2("or", out, fin), ""); }
+    }
+    for (int64:lb in 0i64...t.lobj_lo.count) {
+        string:lo2 = raw strlist_view(t.lobj_lo, lb);
+        string:ln2 = raw strlist_view(t.lobj_len, lb);
+        string:inside2 = raw smt_app2("and", raw strlist_view(t.lobj_pc, lb),
+                                              raw smt_app2("and", raw smt_app2("<=", lo2, f), raw smt_app2("<", f, raw smt_app2("+", lo2, ln2))));
+        if (raw text_eq(out, "false")) { out = move(inside2); } else { out = string_concat(raw smt_app2("or", out, inside2), ""); }
+    }
+    pass out;
+};
+
+// Whether the S-expression `node` mentions the atom `name` anywhere.
+func:sx_mentions = bool(Sxs->:s, int64:node, string:name) never fails {
+    if (node < 0i64) { pass false; }
+    if (!(raw sx_is_list(s, node))) { pass (raw text_eq(raw sx_atom(s, node), name)); }
+    int64:c = s.nodes.items[node].first;
+    while (c >= 0i64) {
+        if (raw sx_mentions(s, c, name)) { pass true; }
+        c = s.nodes.items[c].next;
+    }
+    pass false;
+};
+
+// The conjuncts of the invariant `inv` (`(invariant (and c1 c2 ...))`, or one
+// proposition) that mention the free symbol `name`, rendered under `e` as one
+// conjunction -- an instance at a point needs only what the point varies;
+// the rest stands once, in the header's own hypothesis. "true" when none.
+func:inv_conjuncts_over = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:inv, string:name, REnv->:e, BMeta->:m) never fails {
+    if ((raw sx_len(s, inv)) != 2i64) { pass (raw render_clause(t, ft, s, inv, e, m)); }
+    int64:body = raw sx_nth(s, inv, 1i64);
+    if (!(raw sx_is_list(s, body)) || !(raw text_eq(raw sx_head(s, body), "and"))) {
+        if (raw sx_mentions(s, body, name)) { pass (raw render(t, ft, s, body, e, m)); }
+        pass "true";
+    }
+    string:out = "true";
+    int64:c = s.nodes.items[body].first;
+    c = s.nodes.items[c].next;   // past `and`
+    while (c >= 0i64) {
+        if (raw sx_mentions(s, c, name)) {
+            string:r = raw render(t, ft, s, c, e, m);
+            if (raw text_eq(out, "true")) { out = move(r); } else { out = string_concat(raw smt_app2("and", out, r), ""); }
+        }
+        c = s.nodes.items[c].next;
+    }
+    pass out;
+};
+
+// The invariant of a loop clause, with its `(objects (lo len) ...)` facts
+// conjoined: the ranges are objects on every visit of the header (in the
+// address space, disjoint), proven at init and preserved like the rest.
+func:loop_inv_text = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:lclause, int64:inv, REnv->:e, BMeta->:m) never fails {
+    string:text = raw render_clause(t, ft, s, inv, e, m);
+    int64:oc = raw spec_clause(s, lclause, "objects", 0i64);
+    if (oc < 0i64) { pass text; }
+    List<string>:facts = raw objects_facts(t, ft, s, oc, e, m, false);
+    for (int64:i in 0i64...facts.count) { text = string_concat(raw smt_app2("and", text, raw strlist_view(facts, i)), ""); }
+    pass text;
+};
+
+// Whether `prefix + total` lies inside an object the file knows: a declared
+// object whose `lo` is spelled `prefix` with a numeral length above `total`,
+// or an alloca or global named `prefix` of a size above it -- then the
+// address needs no wrap (the object's range axiom is a hypothesis of the
+// file, and the wrapped and the plain sum agree under it).
+// A numeral, or a sum/difference/product of two numerals (`(+ n 16)` as an
+// `ensures-fresh` length renders): its value, or false.
+func:numeral_fold = bool(string:x, uint128->:out) never fails {
+    if (raw u128_parse(x, 64i64, out)) { pass true; }
+    if (!((raw text_starts_with(x, "(+ ") || raw text_starts_with(x, "(- ") || raw text_starts_with(x, "(* ")) && (raw text_ends_with(x, ")")))) { pass false; }
+    List<string>:ps = raw smt_split_top(raw text_slice(x, 3i64, x.len - 1i64));
+    if (ps.count != 2i64) { pass false; }
+    uint128:a = 0u128;
+    uint128:b = 0u128;
+    if (!(raw u128_parse(raw strlist_view(ps, 0i64), 64i64, @a))) { pass false; }
+    if (!(raw u128_parse(raw strlist_view(ps, 1i64), 64i64, @b))) { pass false; }
+    if (raw text_starts_with(x, "(+ ")) { if ((a + b) >= (raw u128_pow2(64i64))) { pass false; } <-out = a + b; pass true; }
+    if (raw text_starts_with(x, "(- ")) { if (a < b) { pass false; } <-out = a - b; pass true; }
+    if ((a * b) >= (raw u128_pow2(64i64))) { pass false; }
+    <-out = a * b;
+    pass true;
+};
+
+// Whether the address `prefix + total` lies inside the range [lo, lo+len):
+// `lo` the prefix itself, or the prefix at a numeral offset either way
+// (`(+ p 8)`, `(- result 16)` -- an allocator's block starts below the
+// pointer it hands out); `len` a numeral or a fold of numerals.
+func:range_covers = bool(string:lo, string:len, string:prefix, uint128:total) never fails {
+    uint128:n = 0u128;
+    if (!(raw numeral_fold(len, @n))) { pass false; }
+    if (raw text_eq(lo, prefix)) { pass (total < n); }
+    if (!((raw text_starts_with(lo, "(+ ") || raw text_starts_with(lo, "(- ")) && (raw text_ends_with(lo, ")")))) { pass false; }
+    List<string>:ps = raw smt_split_top(raw text_slice(lo, 3i64, lo.len - 1i64));
+    if (ps.count != 2i64) { pass false; }
+    if (!(raw text_eq(raw strlist_view(ps, 0i64), prefix))) { pass false; }
+    uint128:k = 0u128;
+    if (!(raw u128_parse(raw strlist_view(ps, 1i64), 64i64, @k))) { pass false; }
+    if (raw text_starts_with(lo, "(+ ")) {
+        // the range starts k above the prefix: k <= total < k + n
+        if (total < k) { pass false; }
+        pass ((total - k) < n);
+    }
+    // the range starts k below the prefix: total + k < n
+    pass ((total + k) < n);
+};
+
+// Whether `prefix + total` (a numeral offset from an atom or a plain sum)
+// lies inside an object the section declares, a block a summary callee
+// handed out (`ensures-fresh`; its facts stand where the block is used --
+// the use is dominated by the call), or an alloca/global: then the sum
+// cannot wrap and stays plain, the spelling a clause writes.
+func:addr_in_object = bool(Tx->:t, string:prefix, uint128:total) never fails {
+    for (int64:i in 0i64...t.obj_lo.count) {
+        if (raw range_covers(raw strlist_view(t.obj_lo, i), raw strlist_view(t.obj_len, i), prefix, total)) { pass true; }
+    }
+    for (int64:fb in 0i64...t.fresh_blocks.count) {
+        if (raw range_covers(raw strlist_view(t.fresh_blocks, fb), raw strlist_view(t.fresh_lens, fb), prefix, total)) { pass true; }
+    }
+    for (int64:o in 0i64...t.objects.count) {
+        if (!(raw text_eq(raw strlist_view(t.objects, o), prefix))) { continue; }
+        if (total < (t.object_sizes.items[o] =>! uint128)) { pass true; }
+    }
+    pass false;
 };
 
 // An object's address facts (globals and allocas).
 func:tx_object = NIL(Tx->:t, string:sym, int64:size) never fails {
-    if (raw strlist_contains(t.known, sym)) {
+    if (raw strset_has(t.known, sym)) {
         drop tx_problem(t, string_concat("an object's address symbol collides with another symbol: ", sym));
         pass NIL;
     }
@@ -813,6 +1658,16 @@ func:tx_object = NIL(Tx->:t, string:sym, int64:size) never fails {
         string:osz = int_to_string(t.object_sizes.items[i]);
         drop tx_hyp(t, raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", sym, sz), o),
                                           raw smt_app2("<=", raw smt_app2("+", o, osz), sym)), "layout", 0i64);
+    }
+    // AN ALLOCA IS FRESH STACK: apart from every object the caller declares (a
+    // global may BE a declared object, so only the stack's are held apart)
+    if (raw text_starts_with(sym, "|a:")) {
+        for (int64:ob in 0i64...t.obj_lo.count) {
+            string:lo = raw strlist_view(t.obj_lo, ob);
+            string:ln = raw strlist_view(t.obj_len, ob);
+            drop tx_hyp(t, raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", sym, sz), lo),
+                                              raw smt_app2("<=", raw smt_app2("+", lo, ln), sym)), "layout", 0i64);
+        }
     }
     drop strlist_push(@t.objects, sym);
     drop list_push(@t.object_sizes, size);
@@ -863,11 +1718,215 @@ func:signed_view = string(string:x, int64:bits) never fails {
                        raw smt_app2("-", x, raw pow2_text(bits)), x));
 };
 
+// A top-level split of `s` at spaces (parentheses and `|quoted|` respected).
+func:smt_split_top = List<string>(string:s) never fails {
+    List<string>:out = raw list_init::<string>(4i64);
+    int64:depth = 0i64;
+    bool:q = false;
+    int64:start = 0i64;
+    for (int64:i in 0i64...s.len) {
+        uint8:c = s.ptr[i];
+        if (c == 124u8) { q = !q; continue; }
+        if (q) { continue; }
+        if (c == 40u8) { depth = depth + 1i64; continue; }
+        if (c == 41u8) { depth = depth - 1i64; continue; }
+        if ((c == 32u8) && (depth == 0i64)) {
+            if (i > start) { drop strlist_push(@out, raw text_slice(s, start, i)); }
+            start = i + 1i64;
+        }
+    }
+    if (s.len > start) { drop strlist_push(@out, raw text_slice(s, start, s.len)); }
+    pass out;
+};
+
+// An atom of the writer's: a symbol, or a numeral below 2^bits.
+func:is_word_atom = bool(string:s, int64:bits) never fails {
+    if (s.len == 0i64) { pass false; }
+    // a wrapped sum, a wrap by mod, a quotient of a word, a crossing: in range by construction
+    if (raw text_starts_with(s, "(ite ") || raw text_starts_with(s, "(mod ") || raw text_starts_with(s, "(div ") || raw text_starts_with(s, "(bv2nat ")) { pass true; }
+    if (s.ptr[0i64] == 40u8) { pass false; }
+    if (raw text_contains(s, " ")) { pass false; }
+    if (raw text_is_digit(s.ptr[0i64])) { uint128:v = 0u128; pass (raw u128_parse(s, bits, @v)); }
+    pass true;
+};
+
+// WRAPPING. `(+ A B ...)` over two to four atoms and `(- A B)` over two --
+// symbols or numerals, every symbol a word by its range axiom or definition
+// -- wrap by ONE comparison per possible multiple: an n-atom sum lies below
+// n times the width, the difference above minus it, so an `ite` decides the
+// case where a `mod` would cost the solver a division's axioms at every
+// address compared. Anything else wraps by `mod`. Callers go through
+// `tx_wrap`, which names the result once.
 func:wrap_text = string(string:x, int64:bits) never fails {
-    pass (raw smt_app2("mod", x, raw pow2_text(bits)));
+    string:w = raw pow2_text(bits);
+    if ((raw text_starts_with(x, "(+ ") || raw text_starts_with(x, "(- ")) && (raw text_ends_with(x, ")"))) {
+        List<string>:parts = raw smt_split_top(raw text_slice(x, 3i64, x.len - 1i64));
+        bool:atoms = (parts.count >= 2i64) && (parts.count <= 4i64);
+        for (int64:i in 0i64...parts.count) { if (!(raw is_word_atom(raw strlist_view(parts, i), bits))) { atoms = false; } }
+        if (atoms && (raw text_starts_with(x, "(- ")) && (parts.count == 2i64)) {
+            pass (raw smt_app3("ite", raw smt_app2(">=", raw strlist_view(parts, 0i64), raw strlist_view(parts, 1i64)), x, raw smt_app2("+", x, w)));
+        }
+        if (atoms && (raw text_starts_with(x, "(+ "))) {
+            // n atoms: below n times the width, so n-1 thresholds decide the multiple to take off
+            string:out = raw smt_app2("-", x, raw smt_app2("*", int_to_string(parts.count - 1i64), w));
+            int64:k = parts.count - 1i64;
+            while (k >= 1i64) {
+                string:thr = raw text_copy(w);
+                if (k > 1i64) { thr = raw smt_app2("*", int_to_string(k), w); }
+                string:val = raw text_copy(x);
+                if (k > 1i64) { val = raw smt_app2("-", x, raw smt_app2("*", int_to_string(k - 1i64), w)); }
+                out = string_concat(raw smt_app3("ite", raw smt_app2("<", x, thr), val, out), "");
+                k = k - 1i64;
+            }
+            pass out;
+        }
+    }
+    pass (raw smt_app2("mod", x, w));
 };
 
 // add/sub/mul over Int terms of one width, wrapped; numerals fold.
+// `ROOT + off` as a clause writes it: an offset past half the width is the
+// subtraction of its complement (`(- ip 16)`, not `(+ ip 18446744073709551600)`)
+// -- the two wrap to the same word and the solver matches the spelling.
+func:lin_sum_text = string(string:root, uint128:off, int64:bits) never fails {
+    uint128:half = raw u128_pow2(bits - 1i64);
+    if (off >= half) { pass (raw smt_app2("-", root, raw u128_text(raw u128_sub(0u128, off, bits)))); }
+    pass (raw smt_app2("+", root, raw u128_text(off)));
+};
+
+// THE WRAP IS A NAMED SYMBOL. `wrap_text` spells a wrapped computation out as
+// an `ite` (or a `mod`); the text is returned ONCE as the definition of a
+// fresh `|w:N|` and every later wrap of the same text is the same symbol --
+// so an address is an atom wherever it is read (a load's memo key, a store's
+// address, a crossing's operand, a comparison), the body's register and the
+// clause's expression are ONE term, and a chain of wrapped steps can never
+// nest a wrap's text inside another's (three copies per level, before).
+func:tx_wrap = string(Tx->:t, string:x, int64:bits) never fails {
+    string:w = raw wrap_text(x, bits);
+    for (int64:i in 0i64...t.wr_text.count) {
+        if (raw text_eq(raw strlist_view(t.wr_text, i), w)) { pass (raw strlist_copy(t.wr_sym, i)); }
+    }
+    string:sym = raw tx_fresh(t, "w");
+    drop tx_define(t, sym, "Int", w);
+    drop strlist_push(@t.wr_text, w);
+    drop strlist_push(@t.wr_sym, sym);
+    pass sym;
+};
+
+// THE LINEAR SHAPE, ONE TEXT: `root + parts + off` -- a numeral offset past
+// half the width spelled as the subtraction of its complement (`(- ip 16)`),
+// the sum PLAIN where the address lies inside an object the caller declared,
+// a fresh block or the stack (`addr_in_object`: no wrap can happen), wrapped
+// once otherwise. The GEP arm and the addition fold both build their result
+// here, so `%p = gep %line, %pos` then `gep %p, 5` and a clause's
+// `(+ line pos 5)` are the same term.
+func:tx_lin_term = Term(Tx->:t, string:root, List<string>:parts, uint128:off, int64:bits) never fails {
+    string:joined = "";
+    for (int64:pj in 0i64...parts.count) {
+        if (pj > 0i64) { joined = string_concat(joined, " "); }
+        joined = string_concat(joined, raw strlist_view(parts, pj));
+    }
+    if ((parts.count == 0i64) && (off == 0u128)) {
+        Term:r0 = raw term_int(root, bits);
+        r0.lin_root = raw text_copy(root);
+        r0.lin_off = 0u128;
+        pass r0;
+    }
+    uint128:half = raw u128_pow2(bits - 1i64);
+    bool:neg = off >= half;
+    // THE ATOMS IN CANONICAL ORDER (the root among them), the numeral last:
+    // `line + (k + pos)` and a clause's `(+ line pos k)` are one text
+    // whatever order the body added in (`sum_atoms_text`)
+    string:prefix = raw text_copy(root);
+    if (parts.count > 0i64) {
+        List<string>:atoms = raw list_init::<string>(parts.count + 1i64);
+        drop strlist_push(@atoms, root);
+        for (int64:pa in 0i64...parts.count) { drop strlist_push(@atoms, raw strlist_view(parts, pa)); }
+        prefix = raw sum_atoms_text(atoms, "");
+    }
+    string:sum = "";
+    if (parts.count == 0i64) { sum = raw lin_sum_text(root, off, bits); }
+    else {
+        sum = raw text_copy(prefix);
+        if ((off != 0u128) && (!neg)) {
+            List<string>:atoms2 = raw list_init::<string>(parts.count + 1i64);
+            drop strlist_push(@atoms2, root);
+            for (int64:pb in 0i64...parts.count) { drop strlist_push(@atoms2, raw strlist_view(parts, pb)); }
+            sum = raw sum_atoms_text(atoms2, raw u128_text(off));
+        }
+        if (neg) { sum = raw smt_app2("-", prefix, raw u128_text(raw u128_sub(0u128, off, bits))); }
+    }
+    Term:r = raw term_none();
+    if ((bits == 64i64) && (!neg) && (raw addr_in_object(t, prefix, off))) { r = raw term_int(sum, bits); }
+    else { r = raw term_int(raw tx_wrap(t, sum, bits), bits); }
+    r.lin_root = raw text_copy(root);
+    r.lin_parts = move(joined);
+    r.lin_off = off;
+    pass r;
+};
+
+// `(+ atoms... [numeral])` with the non-numeral atoms in lexicographic order
+// and the numerals after them in their own order: the one spelling of a sum
+// both sides write, whatever order they computed in.
+func:sum_atoms_text = string(List<string>:atoms, string:numeral) never fails {
+    List<string>:syms = raw list_init::<string>(atoms.count);
+    List<string>:nums = raw list_init::<string>(2i64);
+    for (int64:i in 0i64...atoms.count) {
+        string:a = raw strlist_view(atoms, i);
+        if (raw is_numeral(a)) { drop strlist_push(@nums, a); } else { drop strlist_push(@syms, a); }
+    }
+    List<string>:sorted = raw strlist_sorted(syms);
+    string:out = "(+";
+    for (int64:j in 0i64...sorted.count) { out = string_concat(out, " "); out = string_concat(out, raw strlist_view(sorted, j)); }
+    for (int64:k in 0i64...nums.count) { out = string_concat(out, " "); out = string_concat(out, raw strlist_view(nums, k)); }
+    if (numeral.len > 0i64) { out = string_concat(out, " "); out = string_concat(out, numeral); }
+    pass (string_concat(out, ")"));
+};
+
+// A plain sum of atoms: `(+ a b 8)`, `(- ip 16)`, `(+ line (* 8 ci))` -- the
+// unwrapped shape `tx_lin_term` gives an address inside an object; a
+// register defined as one reads as the text, as one defined as a symbol does.
+func:is_plain_sum = bool(string:x) never fails {
+    if (!((raw text_starts_with(x, "(+ ") || raw text_starts_with(x, "(- ")) && (raw text_ends_with(x, ")")))) { pass false; }
+    List<string>:parts = raw smt_split_top(raw text_slice(x, 3i64, x.len - 1i64));
+    if (parts.count < 2i64) { pass false; }
+    for (int64:i in 0i64...parts.count) {
+        string:p = raw strlist_view(parts, i);
+        if (raw text_starts_with(p, "(")) {
+            // a scaled index `(* k sym)`: two atoms
+            if (!(raw text_starts_with(p, "(* ") && raw text_ends_with(p, ")"))) { pass false; }
+            List<string>:ps = raw smt_split_top(raw text_slice(p, 3i64, p.len - 1i64));
+            if (ps.count != 2i64) { pass false; }
+            if (raw text_starts_with(raw strlist_view(ps, 0i64), "(") || raw text_starts_with(raw strlist_view(ps, 1i64), "(")) { pass false; }
+            continue;
+        }
+        if (!(raw is_word_atom(p, 128i64))) { pass false; }
+    }
+    pass true;
+};
+
+// A DIVISION BY A POWER OF TEN IS THE CHAIN OF DIVISIONS BY TEN the digit
+// loop computes: `(div v 1000)` renders as `(div (div (div v 10) 10) 10)`,
+// both for the body's folded quotient and for a clause's. Measured on
+// `npk_hs_put_dec`'s per-length rows (z3 4.16.0, the profile): the flat
+// constants decide the ten-digit row in 4 s and never return the answer for
+// nineteen digits; the chain decides ten digits in 1.7 s and nineteen in
+// 15 s -- each quotient a linear relation with a one-digit remainder to the
+// one before it, where the flat form relates twenty quotients of one value
+// through twenty independent remainders. Any other divisor stays as written.
+func:div_text = string(string:x, string:by) never fails {
+    int64:n = 0i64;
+    if (raw text_starts_with(by, "1")) {
+        bool:pow10 = true;
+        for (int64:i in 1i64...by.len) { if (by.ptr[i] != 48u8) { pow10 = false; } }
+        if (pow10) { n = by.len - 1i64; }
+    }
+    if (n < 2i64) { pass (raw smt_app2("div", x, by)); }
+    string:out = raw text_copy(x);
+    for (int64:k in 0i64...n) { out = string_concat(raw smt_app2("div", out, "10"), ""); }
+    pass out;
+};
+
 func:tx_arith = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails {
     if (!(a.ok && b.ok)) { pass (raw term_none()); }
     if (a.is_num && b.is_num) {
@@ -878,7 +1937,59 @@ func:tx_arith = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails 
     string:sop = "+";
     if (raw text_eq(op, "sub")) { sop = "-"; }
     if (raw text_eq(op, "mul")) { sop = "*"; if (!(a.is_num || b.is_num)) { t.nonlinear = true; } }
-    Term:r = raw term_int(raw wrap_text(raw smt_app2(sop, a.text, b.text), bits), bits);
+    if (!(raw text_eq(op, "mul"))) {
+        // A CHAIN OF ADDITIONS OF NUMERALS FOLDS: `x + c` is `ROOT + off` wrapped
+        // once, whatever chain of wrapped steps `x` is -- an unrolled counter's
+        // twentieth value is `(mod (+ j 20) 2^64)`, not twenty nested wraps
+        // the solver would have to normalise before comparing two addresses
+        bool:xa = (!a.is_num) && b.is_num;
+        bool:xb = a.is_num && (!b.is_num) && (raw text_eq(op, "add"));
+        if (xa || xb) {
+            string:xtext = raw text_copy(raw strlist_view_of(a.text));
+            string:xroot = raw text_copy(raw strlist_view_of(a.lin_root));
+            uint128:xoff = a.lin_off;
+            string:xparts = raw text_copy(raw strlist_view_of(a.lin_parts));
+            uint128:c = b.num;
+            if (xb) { xtext = raw text_copy(raw strlist_view_of(b.text)); xroot = raw text_copy(raw strlist_view_of(b.lin_root)); xoff = b.lin_off; xparts = raw text_copy(raw strlist_view_of(b.lin_parts)); c = a.num; }
+            if (raw text_eq(op, "sub")) { c = raw u128_sub(0u128, c, bits); }
+            string:root = raw text_copy(raw strlist_view_of(xtext));
+            uint128:off = c;
+            List<string>:lparts = raw list_init::<string>(4i64);
+            if (xroot.len > 0i64) {
+                root = raw text_copy(raw strlist_view_of(xroot));
+                off = raw u128_add(xoff, c, bits);
+                if (xparts.len > 0i64) { lparts = raw smt_split_top(xparts); }
+            }
+            pass (raw tx_lin_term(t, root, lparts, off, bits));
+        }
+        // TWO SYMBOLS ADDED: the linear shape grows by a part -- `ch + go` is
+        // root `ch`, part `go`; a later `+ 8` then reads `(+ ch go 8)`, the
+        // flat sum a clause writes, instead of a wrap of a wrap (`tx_lin_term`)
+        if (raw text_eq(op, "add")) {
+            string:aroot = raw text_copy(raw strlist_view_of(a.text));
+            uint128:aoff = 0u128;
+            List<string>:aparts = raw list_init::<string>(4i64);
+            if (a.lin_root.len > 0i64) {
+                aroot = raw text_copy(raw strlist_view_of(a.lin_root));
+                aoff = a.lin_off;
+                if (a.lin_parts.len > 0i64) { aparts = raw smt_split_top(raw strlist_view_of(a.lin_parts)); }
+            }
+            if (b.lin_root.len > 0i64) {
+                drop strlist_push(@aparts, raw strlist_view_of(b.lin_root));
+                if (b.lin_parts.len > 0i64) {
+                    List<string>:bparts = raw smt_split_top(raw strlist_view_of(b.lin_parts));
+                    for (int64:bi in 0i64...bparts.count) { drop strlist_push(@aparts, raw strlist_view(bparts, bi)); }
+                }
+                aoff = raw u128_add(aoff, b.lin_off, bits);
+            } else { drop strlist_push(@aparts, raw strlist_view_of(b.text)); }
+            pass (raw tx_lin_term(t, aroot, aparts, aoff, bits));
+        }
+        // two symbols subtracted: each operand as its own word (a register's
+        // name), so the difference wraps by one comparison and a clause over
+        // the same two words reads the same
+        pass (raw term_int(raw tx_wrap(t, raw smt_app2(sop, a.text, b.text), bits), bits));
+    }
+    Term:r = raw term_int(raw tx_wrap(t, raw smt_app2(sop, a.text, b.text), bits), bits);
     // a multiplication by a power of two is a shift's shape
     if (raw text_eq(op, "mul")) {
         if (b.is_num) { int64:k = raw u128_log2(b.num); if (k >= 0i64) { r.shl_k = k; } }
@@ -893,9 +2004,32 @@ func:tx_udiv = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails {
         if (raw text_eq(op, "udiv")) { pass (raw term_num(a.num / b.num, bits)); }
         pass (raw term_num(a.num % b.num, bits));
     }
-    if (!b.is_num) { t.nonlinear = true; }
+    if (!b.is_num) {
+        List<string>:cvals = raw list_init::<string>(16i64);
+        string:cidx = raw divisor_cases(t, raw strlist_view_of(b.text), @cvals);
+        if (cidx.len > 0i64) {
+            string:dop = "div";
+            if (raw text_eq(op, "urem")) { dop = "mod"; }
+            pass (raw term_int(string_concat(raw div_over_cases(t, dop, raw strlist_view_of(a.text), cidx, cvals, bits), ""), bits));
+        }
+        t.nonlinear = true;
+    }
     if (raw text_eq(op, "udiv")) {
-        Term:r = raw term_int(raw smt_app2("div", a.text, b.text), bits);
+        // A CHAIN OF DIVISIONS BY NUMERALS FOLDS: `div (div v a) b` is `div v (a * b)`
+        // for the non-negative v every Int here is -- so the k-th quotient of a
+        // decimal loop reads as `(div v 10^k)`, the form a clause writes, and
+        // the solver matches the two by congruence instead of relating nineteen
+        // nested quotients through their remainders
+        string:root = raw text_copy(raw strlist_view_of(a.text));
+        uint128:by = b.num;
+        uint128:lim64 = (4294967295u128 * 4294967296u128) + 4294967295u128;   // 2^64 - 1, built (D-148)
+        if (b.is_num && (a.div_by != 0u128) && (a.div_root.len > 0i64) && (a.div_by <= lim64) && (b.num <= lim64)) {
+            root = raw text_copy(raw strlist_view_of(a.div_root));
+            by = a.div_by * b.num;
+        }
+        Term:r = raw term_none();
+        if (b.is_num) { r = raw term_int(raw div_text(root, raw u128_text(by)), bits); r.div_root = raw text_copy(raw strlist_view_of(root)); r.div_by = by; }
+        else { r = raw term_int(raw smt_app2("div", a.text, b.text), bits); }
         if (b.is_num) { int64:k = raw u128_log2(b.num); if (k >= 0i64) { r.lt_k = bits - k; } }
         pass r;
     }
@@ -914,9 +2048,9 @@ func:tx_sdiv = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails {
     string:q = raw smt_app3("ite", raw smt_app2(">=", sa, "0"),
                  raw smt_app3("ite", raw smt_app2(">=", sb, "0"), raw smt_app2("div", sa, sb), raw smt_app1("-", raw smt_app2("div", sa, raw smt_app1("-", sb)))),
                  raw smt_app3("ite", raw smt_app2(">=", sb, "0"), raw smt_app1("-", raw smt_app2("div", raw smt_app1("-", sa), sb)), raw smt_app2("div", raw smt_app1("-", sa), raw smt_app1("-", sb))));
-    if (raw text_eq(op, "sdiv")) { pass (raw term_int(raw wrap_text(q, bits), bits)); }
+    if (raw text_eq(op, "sdiv")) { pass (raw term_int(raw tx_wrap(t, q, bits), bits)); }
     string:rem = raw smt_app2("-", sa, raw smt_app2("*", sb, q));
-    pass (raw term_int(raw wrap_text(rem, bits), bits));
+    pass (raw term_int(raw tx_wrap(t, rem, bits), bits));
 };
 
 // THE CROSSING (D-280): both operands into bit-vectors of the width, the
@@ -929,11 +2063,9 @@ func:tx_cross = Term(Tx->:t, string:bvop, Term:a, Term:b, int64:bits) never fail
         drop tx_range(t, o, bits);
         pass (raw term_int(o, bits));
     }
-    t.uses_bv = true;
-    string:tobv = string_concat("(_ int2bv ", int_to_string(bits));
-    tobv = string_concat(tobv, ")");
-    string:inner = raw smt_app2(bvop, raw smt_app1(tobv, a.text), raw smt_app1(tobv, b.text));
-    pass (raw term_int(raw smt_app1("bv2nat", inner), bits));
+    // one builder for the body's crossing and a clause's (`cross_text`): the
+    // same text is the same `|bv:N|` symbol on both sides
+    pass (raw term_int(raw cross_text(t, bvop, raw strlist_view_of(a.text), raw strlist_view_of(b.text), bits), bits));
 };
 
 func:tx_shift = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails {
@@ -953,7 +2085,7 @@ func:tx_shift = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails 
             if (raw text_eq(op, "lshr")) { pass (raw term_num(a.num / (raw u128_pow2(k)), bits)); }
         }
         if (raw text_eq(op, "shl")) {
-            Term:r = raw term_int(raw wrap_text(raw smt_app2("*", a.text, raw pow2_text(k)), bits), bits);
+            Term:r = raw term_int(raw tx_wrap(t, raw smt_app2("*", a.text, raw pow2_text(k)), bits), bits);
             r.shl_k = k;
             pass r;
         }
@@ -964,7 +2096,7 @@ func:tx_shift = Term(Tx->:t, string:op, Term:a, Term:b, int64:bits) never fails 
         }
         // ashr: the signed view divided (floor), re-wrapped
         string:sv = raw signed_view(a.text, bits);
-        pass (raw term_int(raw wrap_text(raw smt_app2("div", sv, raw pow2_text(k)), bits), bits));
+        pass (raw term_int(raw tx_wrap(t, raw smt_app2("div", sv, raw pow2_text(k)), bits), bits));
     }
     string:bvs = "bvshl";
     if (raw text_eq(op, "lshr")) { bvs = "bvlshr"; }
@@ -1284,11 +2416,14 @@ pub struct:REnv = {
     string:mem2;             // what `mem2` renders as ("" when not allowed)
     bool:allow_result;
     bool:allow_regs;         // false at a summary site
+    bool:probe;              // a failure sets `failed` instead of reporting a problem
+    bool:failed;
 };
 
 pub func:renv_new = REnv(string:mem, string:mem2, bool:allow_result, bool:allow_regs) never fails {
     pass REnv{ from: raw list_init::<string>(4i64), to: raw list_init::<string>(4i64),
-               mem: raw text_copy(mem), mem2: raw text_copy(mem2), allow_result: allow_result, allow_regs: allow_regs };
+               mem: raw text_copy(mem), mem2: raw text_copy(mem2), allow_result: allow_result, allow_regs: allow_regs,
+               probe: false, failed: false };
 };
 
 pub func:renv_add = NIL(REnv->:e, string:from, string:to) never fails {
@@ -1355,12 +2490,51 @@ func:cross_text = string(Tx->:t, string:bvop, string:a, string:b, int64:bits) ne
     t.uses_bv = true;
     string:tobv = string_concat("(_ int2bv ", int_to_string(bits));
     tobv = string_concat(tobv, ")");
-    pass (raw smt_app1("bv2nat", raw smt_app2(bvop, raw smt_app1(tobv, a), raw smt_app1(tobv, b))));
+    string:txt = raw smt_app1("bv2nat", raw smt_app2(bvop, raw smt_app1(tobv, a), raw smt_app1(tobv, b)));
+    for (int64:i in 0i64...t.cx_text.count) {
+        if (raw text_eq(raw strlist_view(t.cx_text, i), txt)) { pass (raw strlist_copy(t.cx_sym, i)); }
+    }
+    string:sym = raw tx_fresh(t, "bv");
+    drop tx_declare(t, sym, "Int");
+    drop tx_range(t, sym, bits);
+    drop tx_hyp(t, raw smt_app2("=", sym, txt), "bv", 0i64);
+    drop strlist_push(@t.cx_text, txt);
+    drop strlist_push(@t.cx_sym, sym);
+    pass sym;
 };
 
+// A renderer's problem: reported, or -- in the probe mode -- recorded on the
+// environment for the caller to decide (a summary callee's trap condition over
+// its own registers is a condition the caller cannot name).
+func:rproblem = NIL(Tx->:t, REnv->:e, string:msg) never fails {
+    if (e.probe) { e.failed = true; pass NIL; }
+    drop tx_problem(t, msg);
+    pass NIL;
+};
+
+// The register whose definition is exactly `text`, if the body reads one by
+// name ("" for none): the clause's term is then the body's.
+func:reg_of_text = string(Tx->:t, string:text) never fails {
+    for (int64:i in 0i64...t.rb_text.count) {
+        if (raw text_eq(raw strlist_view(t.rb_text, i), text)) { pass (raw strlist_copy(t.rb_sym, i)); }
+    }
+    pass "";
+};
+
+// A clause's node rendered, and a composite text that IS some register's
+// definition read as that register (see `tx_set`).
 pub func:render = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, BMeta->:m) never fails {
-    if (node < 0i64) { drop tx_problem(t, "a clause is incomplete"); pass "false"; }
-    if (raw sx_is_string(s, node)) { drop tx_problem(t, "a string inside a clause"); pass "false"; }
+    string:out = raw render_node(t, ft, s, node, e, m);
+    if (raw text_starts_with(out, "(")) {
+        string:r = raw reg_of_text(t, out);
+        if (r.len > 0i64) { pass r; }
+    }
+    pass out;
+};
+
+func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, BMeta->:m) never fails {
+    if (node < 0i64) { drop rproblem(t, e, "a clause is incomplete"); pass "false"; }
+    if (raw sx_is_string(s, node)) { drop rproblem(t, e, "a string inside a clause"); pass "false"; }
     if (!(raw sx_is_list(s, node))) {
         string:a = raw sx_atom(s, node);
         if (raw is_numeral(a)) { pass a; }
@@ -1370,25 +2544,53 @@ pub func:render = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, 
         }
         if (raw text_eq(a, "mem")) { pass (raw text_copy(raw strlist_view_of(e.mem))); }
         if (raw text_eq(a, "mem2")) {
-            if (e.mem2.len == 0i64) { drop tx_problem(t, "`mem2` in a clause where only the entry memory exists (a requires)"); pass "false"; }
+            if (e.mem2.len == 0i64) { drop rproblem(t, e, "`mem2` in a clause where only the entry memory exists (a requires)"); pass "false"; }
             pass (raw text_copy(raw strlist_view_of(e.mem2)));
         }
         if (raw text_eq(a, "result") || raw text_starts_with(a, "result.")) {
-            if (!e.allow_result) { drop tx_problem(t, "`result` in a clause that has no result (a requires or an invariant)"); pass "false"; }
-            if (!(raw strlist_contains(t.known, a))) { drop tx_problem(t, string_concat("no such result field: ", a)); pass "false"; }
+            if (!e.allow_result) { drop rproblem(t, e, "`result` in a clause that has no result (a requires or an invariant)"); pass "false"; }
+            if (!(raw strset_has(t.known, a))) { drop rproblem(t, e, string_concat("no such result field: ", a)); pass "false"; }
             pass a;
         }
-        if (raw text_eq(a, "trap") || raw text_eq(a, "trap_code") || raw text_eq(a, "exec") || raw text_eq(a, "tls")) {
-            if (!(raw strlist_contains(t.known, a))) { drop tx_problem(t, string_concat("a clause names a symbol the translation has not introduced: ", a)); pass "false"; }
+        if (raw text_eq(a, "exec") || raw text_eq(a, "tls")) {
+            // the per-thread constants: an object of the struct's size, introduced
+            // here when a clause names one before the body's call does (an objects
+            // clause is rendered before the blocks)
+            if (!(raw strset_has(t.known, a))) {
+                string:cty = "%npk.exec";
+                if (raw text_eq(a, "tls")) { cty = "%npk.tls"; }
+                drop tx_object(t, a, raw ty_size(ft, cty));
+                drop tx_range(t, a, 64i64);
+            }
+            pass a;
+        }
+        if (raw text_eq(a, "trap") || raw text_eq(a, "trap_code")) {
+            if (!(raw strset_has(t.known, a))) { drop rproblem(t, e, string_concat("a clause names a symbol the translation has not introduced: ", a)); pass "false"; }
             pass a;
         }
         if (raw strlist_contains(t.free_syms, a)) { pass (raw spec_sym(a)); }
+        // an inlined callee's own free symbol (its invariant, rendered in the
+        // caller's file): declared here on first use, shared by name
+        if ((m.origin_fn.len > 0i64) && (!(raw text_eq(raw strlist_view_of(m.origin_fn), raw strlist_view_of(t.fn))))) {
+            int64:osec = raw spec_section(s, raw strlist_view_of(m.origin_fn));
+            int64:fk = 0i64;
+            while (osec >= 0i64) {
+                int64:fc = raw spec_clause(s, osec, "free", fk);
+                if (fc < 0i64) { break; }
+                fk = fk + 1i64;
+                if (raw text_eq(raw sx_atom(s, raw sx_nth(s, fc, 1i64)), a)) {
+                    string:fsym = raw spec_sym(a);
+                    if (!(raw strset_has(t.known, fsym))) { drop tx_declare(t, fsym, "Int"); drop strlist_push(@t.free_syms, a); }
+                    pass fsym;
+                }
+            }
+        }
         string:g = string_concat("@", a);
         if ((raw floor_global_type(ft, g)).len > 0i64) { pass (raw tx_global(t, ft, g)); }
         if (!e.allow_regs) {
             string:w0 = string_concat("a summary clause names `", a);
             w0 = string_concat(w0, "`: only parameters, result, mem, mem2 and free symbols mean anything at a call");
-            drop tx_problem(t, w0);
+            drop rproblem(t, e, w0);
             pass "false";
         }
         string:ir = raw meta_rename(m, string_concat("%", a));
@@ -1397,15 +2599,16 @@ pub func:render = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, 
             if (ri < 0i64) {
                 string:w = string_concat("a clause names `", a);
                 w = string_concat(w, "`, which is no parameter, register, free symbol or global here");
-                drop tx_problem(t, w);
+                drop rproblem(t, e, w);
                 pass "false";
             }
+            if ((raw strlist_view(t.reg_alias, ri)).len > 0i64) { pass (raw strlist_copy(t.reg_alias, ri)); }
             pass (raw strlist_copy(t.reg_sym, ri));
         }
         if (raw text_starts_with(ir, "@")) { pass (raw tx_global(t, ft, ir)); }
         uint128:v = 0u128;
         if (raw u128_parse(ir, 128i64, @v)) { pass (raw u128_text(v)); }
-        drop tx_problem(t, string_concat("a clause names an operand the translator does not read: ", ir));
+        drop rproblem(t, e, string_concat("a clause names an operand the translator does not read: ", ir));
         pass "false";
     }
     string:head = raw sx_head(s, node);
@@ -1417,16 +2620,64 @@ pub func:render = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, 
         if (raw text_eq(head, "load32")) { n = 4i64; }
         if (raw text_eq(head, "load64")) { n = 8i64; }
         if (n > 0i64) {
-            if (len != 3i64) { drop tx_problem(t, string_concat(head, " takes a memory and an address")); pass "false"; }
+            if (len != 3i64) { drop rproblem(t, e, string_concat(head, " takes a memory and an address")); pass "false"; }
             string:ms = raw render(t, ft, s, raw sx_nth(s, node, 1i64), e, m);
-            if (!(raw is_mem_sym(t, ms))) { drop tx_problem(t, string_concat(head, "'s first argument is not a memory")); pass "false"; }
-            string:ad = raw render(t, ft, s, raw sx_nth(s, node, 2i64), e, m);
-            pass (raw load_text(t, ms, ad, n));
+            if (!(raw is_mem_sym(t, ms))) { drop rproblem(t, e, string_concat(head, "'s first argument is not a memory")); pass "false"; }
+            // A COMPUTED ADDRESS WRAPS AT THE ADDRESS SPACE, as the IR's every
+            // computed address does (`getelementptr`, `add`, `sub`, `mul`): a
+            // spec's `(load64 mem (+ exec 48))` reads where the floor writes only
+            // when both are the same 64-bit address. A symbol -- a parameter, a
+            // register, a global's address, a free Addr -- or a loaded word is a
+            // 64-bit value by its range axiom and stays as it is, as the IR's own
+            // load through it does: the two sides match term for term.
+            int64:an = raw sx_nth(s, node, 2i64);
+            string:ad = raw render(t, ft, s, an, e, m);
+            if (raw sx_is_list(s, an)) {
+                string:ah = raw sx_head(s, an);
+                bool:plain = false;
+                if (raw text_eq(ah, "+")) {
+                    // `(+ a ... k)` with k a numeral inside the object `(+ a ...)` names: no wrap
+                    int64:alen = raw sx_len(s, an);
+                    int64:last = raw sx_nth(s, an, alen - 1i64);
+                    if ((alen >= 3i64) && (!(raw sx_is_list(s, last))) && (raw is_numeral(raw sx_atom(s, last)))) {
+                        uint128:kk = 0u128;
+                        if (raw u128_parse(raw sx_atom(s, last), 64i64, @kk)) {
+                            string:prefix2 = "";
+                            if (alen == 3i64) { prefix2 = raw render(t, ft, s, raw sx_nth(s, an, 1i64), e, m); }
+                            else {
+                                prefix2 = "(+";
+                                for (int64:ai2 in 1i64...(alen - 1i64)) { prefix2 = string_concat(prefix2, " "); prefix2 = string_concat(prefix2, raw render(t, ft, s, raw sx_nth(s, an, ai2), e, m)); }
+                                prefix2 = string_concat(prefix2, ")");
+                            }
+                            if (raw addr_in_object(t, prefix2, kk)) { plain = true; }
+                        }
+                    }
+                }
+                if ((!plain) && (raw text_eq(ah, "+") || raw text_eq(ah, "-") || raw text_eq(ah, "*"))) { ad = raw tx_wrap(t, ad, 64i64); }
+            }
+            string:ld = raw fwd_load(t, ms, ad, n, 0i64);
+            // an element of a constant table, `(+ G (* K IDX))`: the same `ite` the body's load reads
+            if (raw sx_is_list(s, an)) {
+                if ((raw text_eq(raw sx_head(s, an), "+")) && ((raw sx_len(s, an)) == 3i64)) {
+                    int64:gn = raw sx_nth(s, an, 1i64);
+                    int64:pn = raw sx_nth(s, an, 2i64);
+                    if ((!(raw sx_is_list(s, gn))) && (raw sx_is_list(s, pn)) && (raw text_eq(raw sx_head(s, pn), "*")) && ((raw sx_len(s, pn)) == 3i64)) {
+                        string:gname2 = string_concat("@", raw sx_atom(s, gn));
+                        string:kt = raw sx_atom(s, raw sx_nth(s, pn, 1i64));
+                        if (((raw floor_global_init(ft, gname2)).len > 0i64) && (raw is_numeral(kt)) && (raw text_eq(kt, int_to_string(n)))) {
+                            string:it2 = raw render(t, ft, s, raw sx_nth(s, pn, 2i64), e, m);
+                            string:cti2 = raw const_table_ite(t, ft, gname2, it2, n, ld);
+                            if (cti2.len > 0i64) { ld = move(cti2); }
+                        }
+                    }
+                }
+            }
+            pass ld;
         }
     }
     if (raw text_eq(head, "s8") || raw text_eq(head, "s32") || raw text_eq(head, "s64") || raw text_eq(head, "s128")) {
         // the signed view of a word: `(s64 x)` is x read as a two's-complement Int
-        if (len != 2i64) { drop tx_problem(t, string_concat(head, " takes one operand")); pass "false"; }
+        if (len != 2i64) { drop rproblem(t, e, string_concat(head, " takes one operand")); pass "false"; }
         int64:sb = 64i64;
         if (raw text_eq(head, "s8")) { sb = 8i64; }
         if (raw text_eq(head, "s32")) { sb = 32i64; }
@@ -1434,13 +2685,70 @@ pub func:render = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, 
         pass (raw signed_view(raw render(t, ft, s, raw sx_nth(s, node, 1i64), e, m), sb));
     }
     if (raw text_eq(head, "xor64") || raw text_eq(head, "and64") || raw text_eq(head, "or64")) {
-        if (len != 3i64) { drop tx_problem(t, string_concat(head, " takes two operands")); pass "false"; }
+        if (len != 3i64) { drop rproblem(t, e, string_concat(head, " takes two operands")); pass "false"; }
         string:bvop = "bvxor";
         if (raw text_eq(head, "and64")) { bvop = "bvand"; }
         if (raw text_eq(head, "or64")) { bvop = "bvor"; }
-        string:x = raw render(t, ft, s, raw sx_nth(s, node, 1i64), e, m);
-        string:y = raw render(t, ft, s, raw sx_nth(s, node, 2i64), e, m);
+        // a computed operand wraps, as a load's address does: the word the
+        // floor's `xor` sees is the wrapped `add`'s
+        int64:xn = raw sx_nth(s, node, 1i64);
+        int64:yn = raw sx_nth(s, node, 2i64);
+        string:x = raw render(t, ft, s, xn, e, m);
+        string:y = raw render(t, ft, s, yn, e, m);
+        if (raw sx_is_list(s, xn)) { string:xh = raw sx_head(s, xn); if (raw text_eq(xh, "+") || raw text_eq(xh, "-") || raw text_eq(xh, "*")) { x = raw tx_wrap(t, x, 64i64); } }
+        if (raw sx_is_list(s, yn)) { string:yh = raw sx_head(s, yn); if (raw text_eq(yh, "+") || raw text_eq(yh, "-") || raw text_eq(yh, "*")) { y = raw tx_wrap(t, y, 64i64); } }
+        if (raw text_eq(head, "and64")) {
+            // the body's `and` with a mask reads as `mod` or as the cleared low
+            // bits (`tx_and`): the clause's reads the same
+            Term:ta = raw term_int(x, 64i64);
+            Term:tb = raw term_int(y, 64i64);
+            uint128:nx = 0u128;
+            uint128:ny = 0u128;
+            if (raw u128_parse(x, 64i64, @nx)) { ta = raw term_num(nx, 64i64); }
+            if (raw u128_parse(y, 64i64, @ny)) { tb = raw term_num(ny, 64i64); }
+            Term:tr = raw tx_and(t, ta, tb, 64i64);
+            if (tr.ok) { pass (raw text_copy(raw strlist_view_of(tr.text))); }
+        }
         pass (raw cross_text(t, bvop, x, y, 64i64));
+    }
+    if ((raw text_eq(head, "div") || raw text_eq(head, "mod")) && (len == 3i64)) {
+        // a division by a table value distributes over its cases, as the body's does
+        string:da = raw render(t, ft, s, raw sx_nth(s, node, 1i64), e, m);
+        string:db = raw render(t, ft, s, raw sx_nth(s, node, 2i64), e, m);
+        // `(mod X 2^64)` written out is the writer's own wrap: spelled as the body spells it
+        if (raw text_eq(head, "mod")) {
+            if (raw text_eq(db, raw pow2_text(8i64))) { pass (raw tx_wrap(t, da, 8i64)); }
+            if (raw text_eq(db, raw pow2_text(16i64))) { pass (raw tx_wrap(t, da, 16i64)); }
+            if (raw text_eq(db, raw pow2_text(32i64))) { pass (raw tx_wrap(t, da, 32i64)); }
+            if (raw text_eq(db, raw pow2_text(64i64))) { pass (raw tx_wrap(t, da, 64i64)); }
+            if (raw text_eq(db, raw pow2_text(128i64))) { pass (raw tx_wrap(t, da, 128i64)); }
+        }
+        List<string>:cvals2 = raw list_init::<string>(16i64);
+        string:cidx2 = raw divisor_cases(t, db, @cvals2);
+        if (cidx2.len > 0i64) { pass (string_concat(raw div_over_cases(t, head, da, cidx2, cvals2, 64i64), "")); }
+        if (raw text_eq(head, "div")) { pass (raw div_text(da, db)); }
+        pass (raw smt_app2(head, da, db));
+    }
+    // A PRODUCT OF TWO SYMBOLS IS THE BODY'S `mul`: wrapped as its own word,
+    // so `(mod (+ base (* idx stride)) 2^64)` is the body's `add` over the
+    // body's `mul` -- the same two named words -- and not a non-linear fact
+    // the solver must relate to them. A product with a numeral is a scaled
+    // index and stays as written (a `getelementptr`'s part).
+    if ((raw text_eq(head, "*")) && (len == 3i64)) {
+        string:pa = raw render(t, ft, s, raw sx_nth(s, node, 1i64), e, m);
+        string:pb = raw render(t, ft, s, raw sx_nth(s, node, 2i64), e, m);
+        if (!((raw is_numeral(pa)) || (raw is_numeral(pb)))) { pass (raw tx_wrap(t, raw smt_app2("*", pa, pb), 64i64)); }
+        pass (raw smt_app2("*", pa, pb));
+    }
+    // A SUM IS WRITTEN IN CANONICAL ORDER (`sum_atoms_text`): the body's flat
+    // sums are, so a clause's `(+ line pos k)` and the body's `line + (k + pos)`
+    // are one text
+    if ((raw text_eq(head, "+")) && (len >= 3i64)) {
+        List<string>:sa = raw list_init::<string>(len);
+        int64:sc = s.nodes.items[node].first;
+        sc = s.nodes.items[sc].next;
+        while (sc >= 0i64) { drop strlist_push(@sa, raw render(t, ft, s, sc, e, m)); sc = s.nodes.items[sc].next; }
+        pass (raw sum_atoms_text(sa, ""));
     }
     string:out = "(";
     int64:c = s.nodes.items[node].first;
@@ -1458,7 +2766,7 @@ pub func:render = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e, 
 // operand after its head is refused.
 func:render_clause = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:clause, REnv->:e, BMeta->:m) never fails {
     if ((raw sx_len(s, clause)) != 2i64) {
-        drop tx_problem(t, string_concat("a clause takes exactly one proposition: ", raw sx_head(s, clause)));
+        drop rproblem(t, e, string_concat("a clause takes exactly one proposition: ", raw sx_head(s, clause)));
         pass "false";
     }
     pass (raw render(t, ft, s, raw sx_nth(s, clause, 1i64), e, m));
@@ -1488,18 +2796,136 @@ func:tx_store = string(Tx->:t, string:prev, string:addr, string:v, int64:n) neve
         body = raw smt_app3("ite", raw smt_app2("=", "|m:x|", a), raw byte_of(v, i), body);
     }
     drop tx_mem_define(t, name, body);
+    drop strlist_push(@t.st_name, name);
+    drop strlist_push(@t.st_prev, prev);
+    drop strlist_push(@t.st_addr, addr);
+    drop list_push(@t.st_size, n);
+    drop strlist_push(@t.st_val, v);
+    drop strlist_push(@t.st_guard, "true");
+    pass name;
+};
+
+// THE LOAD, FORWARDED: a load of `n` bytes at `addr` from `memsym` is the
+// value a store of `n` bytes at the same address text put there (under its
+// guard), the previous memory's load where the store's address differs (an
+// `ite` on the addresses), the branches' loads through a merge, and the
+// byte reassembly only from a declared memory.
+pub func:fwd_load = string(Tx->:t, string:memsym, string:addr, int64:n, int64:depth) never fails {
+    // memoised by (memory, address, size): a chain is walked once per query,
+    // and a merge's branches share their symbols -- without this the text of
+    // a load through the unrolled copies of a loop is exponential
+    for (int64:q in 0i64...t.ld_mem.count) {
+        if ((t.ld_size.items[q] == n) && (raw text_eq(raw strlist_view(t.ld_mem, q), memsym)) && (raw text_eq(raw strlist_view(t.ld_addr, q), addr))) {
+            pass (raw strlist_copy(t.ld_sym, q));
+        }
+    }
+    if (depth > 512i64) { pass (raw load_text(t, memsym, addr, n)); }
+    string:out = "";
+    bool:named = false;
+    for (int64:i in 0i64...t.st_name.count) {
+        if (!(raw text_eq(raw strlist_view(t.st_name, i), memsym))) { continue; }
+        if (t.st_size.items[i] != n) {
+            // a store of another size: the bytes here where the two ranges
+            // overlap, else what the memory below holds at the address -- a
+            // four-byte store beside an eight-byte word must not turn the word's
+            // read into the byte identity the solver cannot prove
+            string:below0 = raw fwd_load(t, raw strlist_view(t.st_prev, i), addr, n, depth + 1i64);
+            string:sa = raw strlist_view(t.st_addr, i);
+            string:ov = raw smt_app2("and", raw smt_app2("<", sa, raw smt_app2("+", addr, int_to_string(n))),
+                                            raw smt_app2("<", addr, raw smt_app2("+", sa, int_to_string(t.st_size.items[i]))));
+            string:g0 = raw strlist_view(t.st_guard, i);
+            if (!(raw text_eq(g0, "true"))) { ov = raw smt_app2("and", g0, ov); }
+            out = raw smt_app3("ite", ov, raw load_text(t, memsym, addr, n), below0);
+            named = true;
+            break;
+        }
+        string:g = raw strlist_view(t.st_guard, i);
+        if (raw text_eq(addr, raw strlist_view(t.st_addr, i)) && (raw text_eq(g, "true"))) { out = raw strlist_copy(t.st_val, i); break; }
+        string:below = raw fwd_load(t, raw strlist_view(t.st_prev, i), addr, n, depth + 1i64);
+        string:same = raw smt_app2("=", addr, raw strlist_view(t.st_addr, i));
+        if (!(raw text_eq(g, "true"))) { same = raw smt_app2("and", g, same); }
+        out = raw smt_app3("ite", same, raw strlist_view(t.st_val, i), below);
+        named = true;
+        break;
+    }
+    if (out.len == 0i64) {
+        for (int64:m in 0i64...t.mg_name.count) {
+            if (!(raw text_eq(raw strlist_view(t.mg_name, m), memsym))) { continue; }
+            int64:k = t.mg_mems.items[m].count;
+            string:v = raw fwd_load(t, raw strlist_view(t.mg_mems.items[m], k - 1i64), addr, n, depth + 1i64);
+            for (int64:j in 0i64...(k - 1i64)) {
+                int64:bi = k - 2i64 - j;
+                v = raw smt_app3("ite", raw strlist_view(t.mg_edges.items[m], bi), raw fwd_load(t, raw strlist_view(t.mg_mems.items[m], bi), addr, n, depth + 1i64), v);
+            }
+            out = move(v);
+            named = true;
+            break;
+        }
+    }
+    if (out.len == 0i64) { out = raw load_text(t, memsym, addr, n); }
+    // a byte stays inline; a word -- forwarded or reassembled -- is a symbol,
+    // so a load whose address is another load composes by name (a list walk's
+    // eight nested links would otherwise be eight-to-the-eighth bytes of text)
+    if ((!named) && (n <= 1i64)) { pass out; }
+    // a symbol for the composite, shared by every later reader
+    string:sym = raw tx_fresh(t, "ld");
+    drop tx_define(t, sym, "Int", out);
+    drop strlist_push(@t.ld_mem, memsym);
+    drop strlist_push(@t.ld_addr, addr);
+    drop list_push(@t.ld_size, n);
+    drop strlist_push(@t.ld_sym, sym);
+    pass sym;
+};
+
+// A merge memory function: `mems[i]` under `edges[i]`, the last the default.
+func:tx_merge_mem = string(Tx->:t, List<string>:edges, List<string>:mems) never fails {
+    t.mem_n = t.mem_n + 1i64;
+    string:name = string_concat("|mem:", int_to_string(t.mem_n));
+    name = string_concat(name, "|");
+    int64:k = mems.count;
+    string:body = raw smt_app1(raw strlist_view(mems, k - 1i64), "|m:x|");
+    for (int64:j in 0i64...(k - 1i64)) {
+        int64:bi = k - 2i64 - j;
+        body = raw smt_app3("ite", raw strlist_view(edges, bi), raw smt_app1(raw strlist_view(mems, bi), "|m:x|"), body);
+    }
+    drop tx_mem_define(t, name, body);
+    drop strlist_push(@t.mg_name, name);
+    drop list_push(@t.mg_edges, raw strlist_clone(edges));
+    drop list_push(@t.mg_mems, raw strlist_clone(mems));
     pass name;
 };
 
 // --- the fields of an aggregate value -----------------------------------------------------------------
+//
+// AN AGGREGATE IS ITS LEAVES (1.5.6 step 4, nested since the envelopes
+// `{ { ptr, i64, i64 }, i32 }` of the string builders): a register `%r` of
+// an aggregate type is the scalars `%r.0.0`, `%r.0.1`, ..., one per leaf,
+// named by the path of indices; `result` likewise (`result.0.1`).
 
-// The field texts of an aggregate operand: a register's fields, or zeros.
-func:agg_fields = List<string>(Tx->:t, FloorText->:ft, string:text, string:ty) never fails {
-    List<string>:out = raw list_init::<string>(4i64);
-    List<string>:fs = raw struct_fields(ty);
-    if (raw text_starts_with(ty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, ty)); }
+// The leaf paths (`.0`, `.1.0`...) and leaf types of an aggregate type.
+pub func:agg_leaves = NIL(FloorText->:ft, string:ty, string:prefix, List<string>->:paths, List<string>->:tys) never fails {
+    string:body = raw text_copy(ty);
+    if (raw text_starts_with(ty, "%")) { body = raw floor_type_body(ft, ty); }
+    List<string>:fs = raw struct_fields(body);
     for (int64:i in 0i64...fs.count) {
         string:fty = raw strlist_view(fs, i);
+        string:path = string_concat(prefix, ".");
+        path = string_concat(path, int_to_string(i));
+        if (raw is_aggregate_ty(fty)) { drop agg_leaves(ft, fty, path, paths, tys); continue; }
+        drop strlist_push(paths, path);
+        drop strlist_push(tys, fty);
+    }
+    pass NIL;
+};
+
+// The leaf texts of an aggregate operand: a register's leaves, or zeros.
+func:agg_fields = List<string>(Tx->:t, FloorText->:ft, string:text, string:ty) never fails {
+    List<string>:out = raw list_init::<string>(4i64);
+    List<string>:paths = raw list_init::<string>(4i64);
+    List<string>:tys = raw list_init::<string>(4i64);
+    drop agg_leaves(ft, ty, "", @paths, @tys);
+    for (int64:i in 0i64...paths.count) {
+        string:fty = raw strlist_view(tys, i);
         if (raw text_eq(text, "zeroinitializer")) {
             string:z = "0";
             if (raw text_eq(raw ty_sort(fty), "Bool")) { z = "false"; }
@@ -1507,8 +2933,7 @@ func:agg_fields = List<string>(Tx->:t, FloorText->:ft, string:text, string:ty) n
             drop strlist_push(@out, z);
             continue;
         }
-        string:fir = string_concat(text, ".");
-        fir = string_concat(fir, int_to_string(i));
+        string:fir = string_concat(text, raw strlist_view(paths, i));
         Term:ft2 = raw term_of_reg(t, fir);
         if (!ft2.ok) { drop tx_problem(t, string_concat("an aggregate value the translator does not know: ", text)); drop strlist_push(@out, "0"); continue; }
         drop strlist_push(@out, raw strlist_view_of(ft2.text));
@@ -1517,21 +2942,32 @@ func:agg_fields = List<string>(Tx->:t, FloorText->:ft, string:text, string:ty) n
 };
 
 func:tx_set_fields = NIL(Tx->:t, FloorText->:ft, string:ir, string:ty, List<string>:vals) never fails {
-    List<string>:fs = raw struct_fields(ty);
-    if (raw text_starts_with(ty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, ty)); }
-    if (fs.count != vals.count) { drop tx_problem(t, "an aggregate's field count does not match its type"); pass NIL; }
-    for (int64:i in 0i64...fs.count) {
-        string:fir = string_concat(ir, ".");
-        fir = string_concat(fir, int_to_string(i));
-        string:fty = raw strlist_view(fs, i);
+    List<string>:paths = raw list_init::<string>(4i64);
+    List<string>:tys = raw list_init::<string>(4i64);
+    drop agg_leaves(ft, ty, "", @paths, @tys);
+    if (paths.count != vals.count) { drop tx_problem(t, "an aggregate's leaf count does not match its type"); pass NIL; }
+    for (int64:i in 0i64...paths.count) {
+        string:fir = string_concat(ir, raw strlist_view(paths, i));
+        string:fty = raw strlist_view(tys, i);
         string:sort = raw ty_sort(fty);
-        if (sort.len == 0i64) { drop tx_problem(t, string_concat("a nested aggregate field: not read: ", fty)); pass NIL; }
         Term:v = raw term_int(raw strlist_view(vals, i), raw ty_bits(fty));
         if (raw text_eq(sort, "Bool")) { v = raw term_bool(raw strlist_view(vals, i)); }
         if (raw text_starts_with(sort, "F")) { v = raw term_fp(raw strlist_view(vals, i), raw ty_bits(fty)); }
         drop tx_set(t, fir, fty, v);
     }
     pass NIL;
+};
+
+// The leaves under index `k` of an aggregate's leaf list: their positions.
+func:leaf_positions = List<int64>(List<string>:paths, int64:k) never fails {
+    List<int64>:out = raw list_init::<int64>(4i64);
+    string:want = string_concat(".", int_to_string(k));
+    for (int64:i in 0i64...paths.count) {
+        string:p = raw strlist_view(paths, i);
+        if (raw text_eq(p, want)) { drop list_push(@out, i); continue; }
+        if (raw text_starts_with(p, string_concat(want, "."))) { drop list_push(@out, i); }
+    }
+    pass out;
 };
 
 // --- calls --------------------------------------------------------------------------------------------------
@@ -1542,10 +2978,197 @@ func:is_trap_callee = bool(string:c) never fails {
     if (raw text_eq(c, "@npk_heap_bad")) { pass true; }
     if (raw text_eq(c, "@npk_heap_oom")) { pass true; }
     if (raw text_eq(c, "@npk_heap_badreq")) { pass true; }
-    if (raw text_eq(c, "@npk_exit")) { pass true; }
     if (raw text_eq(c, "@npk_park_forever")) { pass true; }
-    if (raw text_eq(c, "@npk_failsafe")) { pass true; }
     pass false;
+};
+
+// AN OPAQUE CALL (`npk_failsafe`, the indirect call of `npk_wildx_call`):
+// a fresh result, a fresh memory -- the path continues knowing nothing, and
+// the section must say so (`residue`).
+func:tx_opaque_call = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:mem_cur) never fails {
+    t.used_opaque = true;
+    if (ins.dest.len > 0i64) {
+        string:rty = raw strlist_view_of(ins.ty);
+        if (raw is_aggregate_ty(rty)) {
+            List<string>:op_paths = raw list_init::<string>(4i64);
+            List<string>:op_tys = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, rty, "", @op_paths, @op_tys);
+            for (int64:f in 0i64...op_paths.count) {
+                drop tx_declare_reg(t, string_concat(ins.dest, raw strlist_view(op_paths, f)), raw strlist_view(op_tys, f));
+            }
+        } else {
+            drop tx_declare_reg(t, ins.dest, rty);
+        }
+    }
+    pass (raw tx_fresh_mem(t));
+};
+
+// `cmpxchg ptr P, T CMP, T NEW`: the sequential reading -- the prior value
+// loaded, the new one stored where it matched; `{ prior, matched }`.
+func:tx_cmpxchg = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:mem_cur) never fails {
+    Term:p = raw term_of(t, ft, raw strlist_view(ins.args, 0i64), "ptr");
+    Term:c = raw term_of(t, ft, raw strlist_view(ins.args, 1i64), ins.ty);
+    Term:nv = raw term_of(t, ft, raw strlist_view(ins.args, 2i64), ins.ty);
+    if (!(p.ok && c.ok && nv.ok)) { pass (raw text_copy(mem_cur)); }
+    int64:n = raw ty_size(ft, ins.ty);
+    string:prior = raw fwd_load(t, mem_cur, raw strlist_view_of(p.text), n, 0i64);
+    string:ok = raw smt_app2("=", prior, c.text);
+    // the guarded store
+    t.mem_n = t.mem_n + 1i64;
+    string:name = string_concat("|mem:", int_to_string(t.mem_n));
+    name = string_concat(name, "|");
+    string:body = raw smt_app1(mem_cur, "|m:x|");
+    for (int64:j in 0i64...n) {
+        int64:i = n - 1i64 - j;
+        string:a = raw text_copy(raw strlist_view_of(p.text));
+        if (i > 0i64) { a = raw smt_app2("+", p.text, int_to_string(i)); }
+        body = raw smt_app3("ite", raw smt_app2("and", ok, raw smt_app2("=", "|m:x|", a)), raw byte_of(nv.text, i), body);
+    }
+    drop tx_mem_define(t, name, body);
+    drop strlist_push(@t.st_name, name);
+    drop strlist_push(@t.st_prev, mem_cur);
+    drop strlist_push(@t.st_addr, raw strlist_view_of(p.text));
+    drop list_push(@t.st_size, n);
+    drop strlist_push(@t.st_val, raw strlist_view_of(nv.text));
+    drop strlist_push(@t.st_guard, ok);
+    List<string>:vals = raw list_init::<string>(2i64);
+    drop strlist_push(@vals, prior);
+    drop strlist_push(@vals, ok);
+    string:aty = string_concat("{ ", ins.ty);
+    aty = string_concat(aty, ", i1 }");
+    drop tx_set_fields(t, ft, ins.dest, aty, vals);
+    pass name;
+};
+
+// `atomicrmw OP ptr P, T V`: the prior value returned, `prior OP V` stored.
+func:tx_atomicrmw = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:mem_cur) never fails {
+    Term:p = raw term_of(t, ft, raw strlist_view(ins.args, 0i64), "ptr");
+    Term:v = raw term_of(t, ft, raw strlist_view(ins.args, 1i64), ins.ty);
+    if (!(p.ok && v.ok)) { pass (raw text_copy(mem_cur)); }
+    int64:n = raw ty_size(ft, ins.ty);
+    int64:bits = raw ty_bits(ins.ty);
+    Term:prior = raw term_int(raw fwd_load(t, mem_cur, raw strlist_view_of(p.text), n, 0i64), bits);
+    string:op = raw strlist_view_of(ins.pred);
+    Term:nv = raw term_none();
+    if (raw text_eq(op, "add")) { nv = raw tx_arith(t, "add", prior, v, bits); }
+    if (raw text_eq(op, "sub")) { nv = raw tx_arith(t, "sub", prior, v, bits); }
+    if (raw text_eq(op, "xchg")) { nv = raw term_copy(v); }
+    if (raw text_eq(op, "and")) { nv = raw tx_and(t, prior, v, bits); }
+    if (raw text_eq(op, "or")) { nv = raw tx_or(t, prior, v, bits); }
+    if (raw text_eq(op, "xor")) { nv = raw tx_xor(t, prior, v, bits); }
+    if (!nv.ok) { drop tx_problem(t, string_concat("an atomicrmw operation the translator does not read: ", op)); pass (raw text_copy(mem_cur)); }
+    drop tx_set(t, ins.dest, ins.ty, prior);
+    pass (raw tx_store(t, mem_cur, raw strlist_view_of(p.text), raw strlist_view_of(nv.text), n));
+};
+
+// THE SYSCALL (D-288 §2.8): `npk_sys6(NR, a1..a6)` is an application of the
+// uninterpreted `sys` to the number, the six arguments and a sequence number
+// (two identical calls may answer differently); its MEMORY EFFECT is the
+// kernel-effect table's -- the one row per number the floor uses, what the
+// kernel promises, which a reader accepts (TCB.md SS5). Returns 1 when the
+// path ends (exit, exit_group), 0 otherwise; the memory after through `mem`.
+func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string:mem, string:line) never fails {
+    if (ins.args.count != 7i64) { drop tx_problem(t, string_concat("a syscall with other than seven operands: ", line)); pass (raw text_copy(mem)); }
+    Term:nr = raw term_of(t, ft, raw strlist_view(ins.args, 0i64), "i64");
+    if (!(nr.ok && nr.is_num)) { drop tx_problem(t, string_concat("a syscall whose number is not a numeral: ", line)); pass (raw text_copy(mem)); }
+    int64:k = nr.num =>! int64;
+    List<Term>:av = raw list_init::<Term>(6i64);
+    for (int64:i in 1i64...7i64) {
+        Term:a = raw term_of(t, ft, raw strlist_view(ins.args, i), "i64");
+        if (!a.ok) { pass (raw text_copy(mem)); }
+        drop list_push(@av, move(a));
+    }
+    if (!t.used_sys) {
+        drop strlist_push(@t.defs, "(declare-fun sys (Int Int Int Int Int Int Int Int) Int)");
+        drop strlist_push(@t.def_names, "sys");
+        drop list_push(@t.def_refs, raw list_init::<string>(1i64));
+        drop tx_known(t, "sys");
+        t.used_sys = true;
+    }
+    // the effect
+    int64:kind = 0i64;        // 0 none, 1 writes, 2 ends, 3 mmap, 4 refused
+    int64:buf_arg = 0i64;     // 1-based argument index of the buffer
+    string:len_text = "";     // the length: a numeral, `result`, or an argument
+    if ((k == 1i64) || (k == 3i64) || (k == 10i64) || (k == 11i64) || (k == 39i64) || (k == 110i64) || (k == 157i64) || (k == 158i64) ||
+        (k == 202i64) || (k == 233i64) || (k == 234i64) || (k == 257i64) || (k == 290i64) || (k == 291i64) || (k == 292i64) || (k == 424i64)) { kind = 0i64; }
+    else { if (k == 0i64) { kind = 1i64; buf_arg = 2i64; len_text = "result"; }              // read(fd, buf, n)
+    else { if (k == 318i64) { kind = 1i64; buf_arg = 1i64; len_text = "result"; }            // getrandom(buf, n, flags)
+    else { if (k == 228i64) { kind = 1i64; buf_arg = 2i64; len_text = "16"; }                // clock_gettime(clk, ts)
+    else { if (k == 204i64) { kind = 1i64; buf_arg = 3i64; len_text = "arg2"; }              // sched_getaffinity(pid, len, mask)
+    else { if (k == 13i64) { kind = 1i64; buf_arg = 3i64; len_text = "arg4"; }               // rt_sigaction(sig, act, oldact, size)
+    else { if (k == 281i64) { kind = 1i64; buf_arg = 2i64; len_text = "result12"; }          // epoll_pwait(epfd, events, max, ...)
+    else { if ((k == 60i64) || (k == 231i64)) { kind = 2i64; }                               // exit, exit_group
+    else { if (k == 9i64) { kind = 3i64; }                                                   // mmap
+    else { kind = 4i64; } } } } } } } } }
+    if (kind == 4i64) {
+        string:w = string_concat("a syscall the kernel-effect table has no row for (", int_to_string(k));
+        w = string_concat(w, "): ");
+        w = string_concat(w, line);
+        drop tx_problem(t, w);
+        pass (raw text_copy(mem));
+    }
+    if (kind == 2i64) {
+        // the process ends: a trap site whose code is the status; "" says so
+        drop tx_trap_site(t, pc, raw signed_view(av.items[0i64].text, 64i64));
+        pass "";
+    }
+    // the result
+    t.tmp_n = t.tmp_n + 1i64;
+    string:app = string_concat("(sys ", int_to_string(k));
+    for (int64:i2 in 0i64...6i64) { app = string_concat(app, " "); app = string_concat(app, av.items[i2].text); }
+    app = string_concat(app, " ");
+    app = string_concat(app, int_to_string(t.tmp_n));
+    app = string_concat(app, ")");
+    string:rs = raw tx_fresh(t, "sys");
+    drop tx_declare(t, rs, "Int");
+    drop tx_range(t, rs, 64i64);
+    drop tx_hyp(t, raw smt_app2("=", rs, app), "sys", 0i64);
+    if (ins.dest.len > 0i64) { drop tx_set(t, ins.dest, "i64", raw term_int(rs, 64i64)); }
+    string:sr = raw signed_view(rs, 64i64);
+    // THE KERNEL'S ANSWER SHAPE: a value, or an errno in [-4095, -1] -- the
+    // ABI every libc reads (TCB.md SS5's kernel-effect table)
+    drop tx_hyp(t, raw smt_app2(">=", sr, "(- 4095)"), "sys", 0i64);
+    // THE KERNEL'S COUNT PROMISE: read, write, getrandom answer at most the
+    // count asked, epoll_pwait at most the events room -- a non-negative answer
+    // never exceeds the argument (what the kernel promises, TCB.md SS5)
+    int64:bound_arg = 0i64;
+    if ((k == 0i64) || (k == 1i64)) { bound_arg = 3i64; }
+    if (k == 318i64) { bound_arg = 2i64; }
+    if (k == 281i64) { bound_arg = 3i64; }
+    if (bound_arg > 0i64) {
+        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2(">=", sr, "0"), raw smt_app2("<=", sr, av.items[bound_arg - 1i64].text)), "sys", 0i64);
+    }
+    if (kind == 1i64) {
+        string:buf = raw text_copy(raw strlist_view_of(av.items[buf_arg - 1i64].text));
+        string:len = "";
+        if (raw text_eq(len_text, "result")) { len = raw text_copy(sr); }
+        if (raw text_eq(len_text, "result12")) { len = raw smt_app2("*", "12", sr); }
+        if (raw text_eq(len_text, "arg2")) { len = raw text_copy(raw strlist_view_of(av.items[1i64].text)); }
+        if (raw text_eq(len_text, "arg4")) { len = raw text_copy(raw strlist_view_of(av.items[3i64].text)); }
+        if (len.len == 0i64) { len = raw text_copy(len_text); }
+        string:inr = raw smt_app2("and", raw smt_app2("<=", buf, "|pt|"), raw smt_app2("<", "|pt|", raw smt_app2("+", buf, len)));
+        // an error answer writes nothing; a NULL buffer is written nowhere (rt_sigaction's oldact)
+        string:unch = raw smt_app2("or", raw smt_app2("<", sr, "0"), raw smt_app2("or", raw smt_app2("=", buf, "0"), raw smt_app1("not", inr)));
+        string:name = raw tx_fresh_mem(t);
+        drop tx_template(t, name, mem, pc, unch, "", "");
+        pass name;
+    }
+    if (kind == 3i64) {
+        // mmap(addr, len, prot, flags, fd, off): an address, or an errno past 2^64-4096;
+        // the mapping's bytes fresh, and zero when anonymous (flags & 0x20)
+        string:len2 = raw text_copy(raw strlist_view_of(av.items[1i64].text));
+        string:errs = raw smt_app2(">=", rs, raw smt_app2("-", raw pow2_decimal(64i64), "4096"));
+        string:inr2 = raw smt_app2("and", raw smt_app2("<=", rs, "|pt|"), raw smt_app2("<", "|pt|", raw smt_app2("+", rs, len2)));
+        string:unch2 = raw smt_app2("or", errs, raw smt_app1("not", inr2));
+        string:vw = "";
+        bool:anon = false;
+        if (av.items[3i64].is_num) { if (((av.items[3i64].num / 32u128) % 2u128) == 1u128) { anon = true; } }
+        if (anon) { vw = raw smt_app2("and", raw smt_app1("not", errs), inr2); }
+        string:name2 = raw tx_fresh_mem(t);
+        drop tx_template(t, name2, mem, pc, unch2, vw, "0");
+        pass name2;
+    }
+    pass (raw text_copy(mem));
 };
 
 // The trap identity a trap callee ends the path with: `npk_trap`'s and
@@ -1575,8 +3198,9 @@ func:tx_trap_site = NIL(Tx->:t, string:pc, string:code) never fails {
 };
 
 // THE INTRINSIC COPY AND FILL as built-in summaries: `llvm.memcpy` requires
-// disjoint, in-space operands and copies every byte (at the section's free
-// symbols), `llvm.memset` fills; both leave every other byte as it was.
+// disjoint, in-space operands and copies every byte, `llvm.memset` fills;
+// both leave every other byte as it was -- a template, instantiated at
+// every point the file reads the memory after.
 func:tx_intrinsic_mem = string(Tx->:t, FloorText->:ft, string:callee, FInstr->:ins, string:pc, string:mem_cur, string:site) never fails {
     bool:is_set = raw text_eq(callee, "@llvm.memset.p0.i64");
     if (ins.args.count < 3i64) { drop tx_problem(t, "an intrinsic memory call with too few operands"); pass (raw text_copy(mem_cur)); }
@@ -1589,7 +3213,6 @@ func:tx_intrinsic_mem = string(Tx->:t, FloorText->:ft, string:callee, FInstr->:i
     if (!(dst.ok && n.ok)) { pass (raw text_copy(mem_cur)); }
     string:two64 = raw pow2_decimal(64i64);
     string:dend = raw smt_app2("+", dst.text, n.text);
-    // the requires, as rows the caller proves
     drop tx_row_ex(t, string_concat(site, ":in-space"), raw smt_app2("=>", pc, raw smt_app2("<=", dend, two64)), "");
     if (!is_set) {
         string:send = raw smt_app2("+", src.text, n.text);
@@ -1597,28 +3220,12 @@ func:tx_intrinsic_mem = string(Tx->:t, FloorText->:ft, string:callee, FInstr->:i
         drop tx_row_ex(t, string_concat(site, ":disjoint"),
             raw smt_app2("=>", pc, raw smt_app2("or", raw smt_app2("<=", dend, src.text), raw smt_app2("<=", send, dst.text))), "");
     }
-    // the memory after
-    t.mem_n = t.mem_n + 1i64;
-    string:name = string_concat("|mem:", int_to_string(t.mem_n));
-    name = string_concat(name, "|");
-    drop tx_mem_declare(t, name);
-    // at every instantiation point: inside the range the copy/fill, outside unchanged
-    List<string>:pts = raw strlist_clone(t.free_syms);
-    for (int64:i in 0i64...pts.count) { pts.items[i] = raw spec_sym(raw strlist_view(pts, i)); }
-    drop strlist_push(@pts, "|frame:x|");
-    for (int64:i2 in 0i64...pts.count) {
-        string:f = raw strlist_view(pts, i2);
-        string:inr = raw smt_app2("and", raw smt_app2("<=", dst.text, f), raw smt_app2("<", f, dend));
-        string:after = raw tx_mem_app(t, name, f);
-        string:before = raw tx_mem_app(t, mem_cur, f);
-        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("and", pc, raw smt_app1("not", inr)), raw smt_app2("=", after, before)), "summary", 0i64);
-        string:inside = "";
-        if (is_set) { inside = raw smt_app2("mod", val.text, "256"); }
-        else { inside = raw tx_mem_app(t, mem_cur, raw smt_app2("+", src.text, raw smt_app2("-", f, dst.text))); }
-        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("and", pc, inr), raw smt_app2("=", after, inside)), "summary", 0i64);
-        // and when the call does not happen, nothing changes
-        drop tx_hyp(t, raw smt_app2("=>", raw smt_app1("not", pc), raw smt_app2("=", after, before)), "summary", 0i64);
-    }
+    string:name = raw tx_fresh_mem(t);
+    string:inr = raw smt_app2("and", raw smt_app2("<=", dst.text, "|pt|"), raw smt_app2("<", "|pt|", dend));
+    string:inside = "";
+    if (is_set) { inside = raw smt_app2("mod", val.text, "256"); }
+    else { inside = raw smt_app1(mem_cur, raw smt_app2("+", src.text, raw smt_app2("-", "|pt|", dst.text))); }
+    drop tx_template(t, name, mem_cur, pc, raw smt_app1("not", inr), inr, inside);
     pass name;
 };
 
@@ -1645,10 +3252,11 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
         string:pname = raw strlist_view(ft.fns.items[cfi].params, pi);
         if (raw is_aggregate_ty(pty)) {
             List<string>:fv = raw agg_fields(t, ft, raw strlist_view(ins.args, pi), pty);
+            List<string>:spaths = raw list_init::<string>(4i64);
+            List<string>:stys = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, pty, "", @spaths, @stys);
             for (int64:fi in 0i64...fv.count) {
-                string:pf = string_concat(raw text_slice(pname, 1i64, pname.len), ".");
-                pf = string_concat(pf, int_to_string(fi));
-                drop renv_add(@e, pf, raw strlist_view(fv, fi));
+                drop renv_add(@e, string_concat(raw text_slice(pname, 1i64, pname.len), raw strlist_view(spaths, fi)), raw strlist_view(fv, fi));
             }
             continue;
         }
@@ -1681,25 +3289,33 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
         st = string_concat(st, int_to_string(rk));
         drop tx_row_ex(t, st, raw smt_app2("=>", pc, p), "");
     }
+    // 1b. the callee's objects: rows at the call
+    int64:oc = raw spec_clause(s, sec, "objects", 0i64);
+    if (oc >= 0i64) {
+        List<string>:ofacts = raw objects_facts(t, ft, s, oc, @e, @plain, false);
+        for (int64:oi2 in 0i64...ofacts.count) {
+            string:st2 = string_concat(site, ":objects:");
+            st2 = string_concat(st2, int_to_string(oi2 + 1i64));
+            drop tx_row_ex(t, st2, raw smt_app2("=>", pc, raw strlist_view(ofacts, oi2)), "");
+        }
+    }
     // 2. the result symbols
     string:rty = raw strlist_view_of(ft.fns.items[cfi].ret_ty);
     if (!(raw text_eq(rty, "void"))) {
         if (raw is_aggregate_ty(rty)) {
-            List<string>:fs = raw struct_fields(rty);
-            if (raw text_starts_with(rty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, rty)); }
+            List<string>:fs = raw list_init::<string>(4i64);
+            List<string>:rp = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, rty, "", @rp, @fs);
             for (int64:fi2 in 0i64...fs.count) {
                 string:fty = raw strlist_view(fs, fi2);
                 string:rs = raw tx_fresh(t, "ret");
                 drop tx_declare(t, rs, raw ty_sort(fty));
                 if (raw text_eq(raw ty_sort(fty), "Int")) { drop tx_range(t, rs, raw ty_bits(fty)); }
-                string:rf = string_concat("result.", int_to_string(fi2));
-                drop renv_add(@e, rf, rs);
+                drop renv_add(@e, string_concat("result", raw strlist_view(rp, fi2)), rs);
                 if (ins.dest.len > 0i64) {
-                    string:dfir = string_concat(ins.dest, ".");
-                    dfir = string_concat(dfir, int_to_string(fi2));
                     Term:rv = raw term_int(rs, raw ty_bits(fty));
                     if (raw text_eq(raw ty_sort(fty), "Bool")) { rv = raw term_bool(rs); }
-                    drop tx_set(t, dfir, fty, rv);
+                    drop tx_set(t, string_concat(ins.dest, raw strlist_view(rp, fi2)), fty, rv);
                 }
             }
         } else {
@@ -1716,34 +3332,92 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
         }
     }
     e.allow_result = true;
-    // 3. the trap outcome
+    // 3. the trap outcome: the callee's condition joins the caller's trap sites,
+    // listed apart so the caller's own `ensures-trap` describes its own traps
+    // and the writer adds the callees'; a callee that always traps ends the path
     string:notrap = "true";
+    bool:always = false;
     int64:et = raw spec_clause(s, sec, "ensures-trap", 0i64);
     if (et >= 0i64) {
+        e.probe = true;
+        e.failed = false;
         string:tp = raw render_clause(t, ft, s, et, @e, @plain);
+        e.probe = false;
+        if (e.failed) {
+            // the condition names the callee's own registers (a validation's
+            // checks): at the call it is a condition nobody knows -- a fresh
+            // Boolean, both outcomes live
+            tp = raw tx_fresh(t, "ctrap");
+            drop tx_declare(t, tp, "Bool");
+        }
         string:code = raw tx_fresh(t, "code");
         drop tx_declare(t, code, "Int");
-        drop tx_trap_site(t, raw smt_app2("and", pc, tp), code);
+        string:site_pc = raw smt_app2("and", pc, tp);
+        drop tx_trap_site(t, site_pc, code);
+        drop strlist_push(@t.summary_traps, site_pc);
         notrap = string_concat(raw smt_app1("not", tp), "");
+        if (raw text_eq(tp, "true")) { always = true; }
     }
+    if (always) { pass ""; }
+    // the path continues only where the callee did not trap: the block folds
+    // this into its path condition for everything after the call
+    if (et >= 0i64) { t.narrow = string_concat(notrap, ""); }
     string:guard = raw smt_app2("and", pc, notrap);
-    // 4. the memory after: the frame
+    // 4. the memory after: the frame as a template (outside the ranges, unchanged);
+    // `(ensures-fresh LEN)`: the result block is disjoint from every object the
+    // caller declares, and those objects are unchanged -- the allocator's promise
+    // (an acceptance TCB.md SS5 carries: leg A's tenant), everything else
+    // unspecified
     string:mafter = raw text_copy(mem_cur);
     int64:fr = raw spec_clause(s, sec, "frame", 0i64);
-    if (fr >= 0i64) {
-        t.mem_n = t.mem_n + 1i64;
-        string:name = string_concat("|mem:", int_to_string(t.mem_n));
-        name = string_concat(name, "|");
-        drop tx_mem_declare(t, name);
-        List<string>:pts = raw strlist_clone(t.free_syms);
-        for (int64:i in 0i64...pts.count) { pts.items[i] = raw spec_sym(raw strlist_view(pts, i)); }
-        drop strlist_push(@pts, "|frame:x|");
-        for (int64:i2 in 0i64...pts.count) {
-            string:f = raw strlist_view(pts, i2);
-            string:inr = raw frame_in_ranges(t, ft, s, fr, @e, @plain, f);
-            string:after = raw tx_mem_app(t, name, f);
-            string:before = raw tx_mem_app(t, mem_cur, f);
-            drop tx_hyp(t, raw smt_app2("=>", raw smt_app1("not", inr), raw smt_app2("=", after, before)), "summary", 0i64);
+    int64:ef = raw spec_clause(s, sec, "ensures-fresh", 0i64);
+    if ((fr >= 0i64) || (ef >= 0i64)) {
+        string:name = raw tx_fresh_mem(t);
+        if (fr >= 0i64) {
+            string:inr = raw frame_in_ranges(t, ft, s, fr, @e, @plain, "|pt|");
+            string:unch = raw smt_app1("not", inr);
+            if (raw frame_names_objects(s, fr)) {
+                // `objects` in a callee's frame are the CALLER's: what it was handed
+                string:oin = raw caller_objects_in(t, "|pt|", true);
+                if (raw text_eq(oin, "false")) { unch = ""; } else { unch = string_concat(raw smt_app2("and", oin, unch), ""); }
+            }
+            if (unch.len > 0i64) { drop tx_template(t, name, mem_cur, guard, unch, "", ""); }
+        }
+        if (ef >= 0i64) {
+            int64:efl = raw sx_len(s, ef);
+            if ((efl != 2i64) && (efl != 3i64)) { drop tx_problem(t, "an ensures-fresh clause is `(ensures-fresh LEN)` or `(ensures-fresh LO LEN)`"); pass (raw text_copy(mem_cur)); }
+            string:len = raw render(t, ft, s, raw sx_nth(s, ef, efl - 1i64), @e, @plain);
+            string:res = "";
+            if (efl == 3i64) { res = string_concat(raw render(t, ft, s, raw sx_nth(s, ef, 1i64), @e, @plain), ""); }
+            else { for (int64:oi in 0i64...e.from.count) { if (raw text_eq(raw strlist_view(e.from, oi), "result")) { res = raw strlist_copy(e.to, oi); } } }
+            if (res.len == 0i64) { drop tx_problem(t, "ensures-fresh on a callee without a scalar result"); pass (raw text_copy(mem_cur)); }
+            // two live allocations are disjoint
+            for (int64:fb in 0i64...t.fresh_blocks.count) {
+                string:pb = raw strlist_view(t.fresh_blocks, fb);
+                string:pl = raw strlist_view(t.fresh_lens, fb);
+                drop tx_hyp(t, raw smt_app2("=>", guard, raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", res, len), pb),
+                                                                           raw smt_app2("<=", raw smt_app2("+", pb, pl), res))), "summary", 0i64);
+            }
+            drop strlist_push(@t.fresh_blocks, res);
+            drop strlist_push(@t.fresh_guards, guard);
+            drop strlist_push(@t.fresh_lens, len);
+            string:objs = "false";
+            for (int64:ob in 0i64...t.obj_lo.count) {
+                string:lo = raw strlist_view(t.obj_lo, ob);
+                string:ln = raw strlist_view(t.obj_len, ob);
+                drop tx_hyp(t, raw smt_app2("=>", guard, raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", res, len), lo),
+                                                                           raw smt_app2("<=", raw smt_app2("+", lo, ln), res))), "summary", 0i64);
+            }
+            // the loop objects live at their headers: disjoint from the block there
+            for (int64:lb in 0i64...t.lobj_lo.count) {
+                string:lo3 = raw strlist_view(t.lobj_lo, lb);
+                string:ln3 = raw strlist_view(t.lobj_len, lb);
+                drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("and", guard, raw strlist_view(t.lobj_pc, lb)),
+                                            raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", res, len), lo3),
+                                                               raw smt_app2("<=", raw smt_app2("+", lo3, ln3), res))), "summary", 0i64);
+            }
+            objs = string_concat(raw caller_objects_in(t, "|pt|", true), "");
+            if (!(raw text_eq(objs, "false"))) { drop tx_template(t, name, mem_cur, guard, objs, "", ""); }
         }
         mafter = move(name);
     }
@@ -1766,12 +3440,47 @@ func:frame_in_ranges = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:fr, REnv->:
     int64:c = s.nodes.items[fr].first;
     c = s.nodes.items[c].next;   // past the head
     while (c >= 0i64) {
-        if (!(raw sx_is_list(s, c)) || ((raw sx_len(s, c)) != 2i64)) { drop tx_problem(t, "a frame range is not `(lo len)`"); pass "false"; }
+        // the atom `objects` narrows the claim to the caller's objects (`frame_names_objects`, `objects_in`)
+        if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { c = s.nodes.items[c].next; continue; }
+        if (!(raw sx_is_list(s, c)) || ((raw sx_len(s, c)) != 2i64)) { drop tx_problem(t, "a frame range is not `(lo len)` or the atom `objects`"); pass "false"; }
         string:lo = raw render(t, ft, s, raw sx_nth(s, c, 0i64), e, m);
         string:ln = raw render(t, ft, s, raw sx_nth(s, c, 1i64), e, m);
         string:inr = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
         if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
         c = s.nodes.items[c].next;
+    }
+    pass out;
+};
+
+// Whether a frame clause names the atom `objects`: the claim is over the
+// caller's objects only -- a symbol that allocates changes the heap's own
+// words and its fresh blocks, which no caller can name, and promises the
+// objects it was handed.
+func:frame_names_objects = bool(Sxs->:s, int64:fr) never fails {
+    int64:c = s.nodes.items[fr].first;
+    c = s.nodes.items[c].next;
+    while (c >= 0i64) {
+        if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { pass true; }
+        c = s.nodes.items[c].next;
+    }
+    pass false;
+};
+
+// The condition that the point `f` lies in one of a section's declared
+// objects, rendered under `e` ("false" when it declares none).
+func:objects_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, BMeta->:m, string:f) never fails {
+    string:out = "false";
+    int64:oc0 = raw spec_clause(s, sec, "objects", 0i64);
+    if (oc0 < 0i64) { pass out; }
+    int64:oc = s.nodes.items[oc0].first;
+    oc = s.nodes.items[oc].next;
+    while (oc >= 0i64) {
+        if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); pass "false"; }
+        string:lo = raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m);
+        string:ln = raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m);
+        string:inr = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
+        if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
+        oc = s.nodes.items[oc].next;
     }
     pass out;
 };
@@ -1850,6 +3559,17 @@ func:ctx_mem = string(Tx->:t, XFn->:x, int64:b) never fails {
 // Does the loop write memory? A store, or a call that is neither a pure
 // intrinsic nor a per-thread constant nor a trap (a summary, a syscall, a
 // memory intrinsic).
+// Whether syscall `k` writes the caller's memory, by the kernel-effect table
+// of `tx_syscall` (read, getrandom, clock_gettime, sched_getaffinity,
+// rt_sigaction, epoll_pwait, mmap); a number the table lacks is taken to.
+func:sys_writes = bool(int64:k) never fails {
+    if ((k == 0i64) || (k == 318i64) || (k == 228i64) || (k == 204i64) || (k == 13i64) || (k == 281i64) || (k == 9i64)) { pass true; }
+    if ((k == 1i64) || (k == 3i64) || (k == 10i64) || (k == 11i64) || (k == 39i64) || (k == 110i64) || (k == 157i64) || (k == 158i64) ||
+        (k == 202i64) || (k == 233i64) || (k == 234i64) || (k == 257i64) || (k == 290i64) || (k == 291i64) || (k == 292i64) || (k == 424i64) ||
+        (k == 60i64) || (k == 231i64)) { pass false; }
+    pass true;
+};
+
 func:loop_writes = bool(XFn->:x, int64:li) never fails {
     for (int64:m in 0i64...x.loops.items[li].members.count) {
         int64:b = x.loops.items[li].members.items[m];
@@ -1864,6 +3584,12 @@ func:loop_writes = bool(XFn->:x, int64:li) never fails {
             if (raw text_eq(c, "@llvm.umul.with.overflow.i64")) { continue; }
             if (raw text_eq(c, "@npk_exec") || raw text_eq(c, "@npk_tls_self")) { continue; }
             if (raw is_trap_callee(c)) { continue; }
+            if (raw text_eq(c, "@npk_sys6") && (ins.args.count == 7i64)) {
+                uint128:sn = 0u128;
+                if (raw u128_parse(raw strlist_view(ins.args, 0i64), 128i64, @sn)) {
+                    if (!(raw sys_writes(sn =>! int64))) { continue; }
+                }
+            }
             pass true;
         }
     }
@@ -1934,17 +3660,22 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
     if (!(is_header && (raw loop_writes(x, li)))) {
         if (preds.count == 1i64) { mem_cur = raw strlist_copy(t.blk_mem_out, preds.items[0i64]); }
         if (preds.count > 1i64) {
-            t.mem_n = t.mem_n + 1i64;
-            string:name = string_concat("|mem:", int_to_string(t.mem_n));
-            name = string_concat(name, "|");
-            string:body = raw smt_app1(raw strlist_view(t.blk_mem_out, preds.items[preds.count - 1i64]), "|m:x|");
-            for (int64:j in 0i64...(preds.count - 1i64)) {
-                int64:pi = preds.count - 2i64 - j;
-                string:e2 = raw edge_sym(raw strlist_view_of(x.f.blocks.items[preds.items[pi]].label), label);
-                body = raw smt_app3("ite", e2, raw smt_app1(raw strlist_view(t.blk_mem_out, preds.items[pi]), "|m:x|"), body);
+            // the same memory on every edge needs no merge (a loop that
+            // writes nothing, in every copy)
+            bool:same = true;
+            for (int64:j0 in 1i64...preds.count) {
+                if (!(raw text_eq(raw strlist_view(t.blk_mem_out, preds.items[j0]), raw strlist_view(t.blk_mem_out, preds.items[0i64])))) { same = false; }
             }
-            drop tx_mem_define(t, name, body);
-            mem_cur = move(name);
+            if (same) { mem_cur = raw strlist_copy(t.blk_mem_out, preds.items[0i64]); }
+            else {
+                List<string>:medges = raw list_init::<string>(preds.count + 1i64);
+                List<string>:mmems = raw list_init::<string>(preds.count + 1i64);
+                for (int64:j in 0i64...preds.count) {
+                    drop strlist_push(@medges, raw edge_sym(raw strlist_view_of(x.f.blocks.items[preds.items[j]].label), label));
+                    drop strlist_push(@mmems, raw strlist_view(t.blk_mem_out, preds.items[j]));
+                }
+                mem_cur = string_concat(raw tx_merge_mem(t, medges, mmems), "");
+            }
         }
     }
     t.blk_mem_in.items[b] = string_concat(mem_cur, "");
@@ -1956,6 +3687,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
         string:line = raw strlist_view(x.f.blocks.items[b].lines, l);
         FInstr:ins = raw floor_instr(line);
         if (ins.op.len == 0i64) { drop tx_problem(t, string_concat("instruction form not read: ", line)); continue; }
+        if (ended && (raw text_eq(ins.op, "unreachable"))) { continue; }   // the `unreachable` a trap call is followed by
         if (ended) { drop tx_problem(t, string_concat("an instruction after the path ended: ", line)); continue; }
         string:op = raw strlist_view_of(ins.op);
         if (raw text_eq(op, "phi")) {
@@ -1968,23 +3700,39 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             if (preds.count == 0i64) { drop tx_declare_reg(t, ins.dest, ins.ty); continue; }
             // the ite over the predecessors' edges, the last the default
             string:v = "";
+            bool:all_same = true;   // every incoming the same text: the phi IS that value (an unrolled counter's exits agree)
+            string:first_inc = "";
+            // one incoming: its shape rides through (a folded division chain, the or-reading facts)
+            bool:s_ok = false;
+            int64:s_shl = 0i64 - 1i64;
+            int64:s_lt = 0i64 - 1i64;
+            string:s_root = "";
+            uint128:s_by = 0u128;
+            string:s_lroot = "";
+            uint128:s_loff = 0u128;
+            string:s_lparts = "";
             for (int64:j2 in 0i64...preds.count) {
                 int64:pi2 = preds.count - 1i64 - j2;
                 string:inc = raw phi_incoming(t, x, @ins, preds.items[pi2]);
                 if (inc.len == 0i64) { break; }
                 Term:tv = raw term_of(t, ft, inc, ins.ty);
                 if (!tv.ok) { break; }
+                if (preds.count == 1i64) { s_ok = true; s_shl = tv.shl_k; s_lt = tv.lt_k; s_root = string_concat(raw strlist_view_of(tv.div_root), ""); s_by = tv.div_by; s_lroot = string_concat(raw strlist_view_of(tv.lin_root), ""); s_loff = tv.lin_off; s_lparts = string_concat(raw strlist_view_of(tv.lin_parts), ""); }
+                if (j2 == 0i64) { first_inc = string_concat(tv.text, ""); }
+                else { if (!(raw text_eq(raw strlist_view_of(tv.text), first_inc))) { all_same = false; } }
                 if (j2 == 0i64) { v = string_concat(tv.text, ""); continue; }
                 string:e3 = raw edge_sym(raw strlist_view_of(x.f.blocks.items[preds.items[pi2]].label), label);
                 v = string_concat(raw smt_app3("ite", e3, tv.text, v), "");
             }
             if (v.len == 0i64) { continue; }
+            if (all_same && (first_inc.len > 0i64)) { v = string_concat(first_inc, ""); }
             Term:pv = raw term_int(v, raw ty_bits(ins.ty));
             if (raw text_eq(raw ty_sort(ins.ty), "Bool")) { pv = raw term_bool(v); }
             if (raw text_starts_with(raw ty_sort(ins.ty), "F")) { pv = raw term_fp(v, raw ty_bits(ins.ty)); }
             if ((preds.count == 1i64) && (raw text_eq(pv.sort, "Int"))) {
                 uint128:nv = 0u128;
                 if (raw u128_parse(v, raw ty_bits(ins.ty), @nv)) { pv = raw term_num(nv, raw ty_bits(ins.ty)); }
+                else { if (s_ok) { pv.shl_k = s_shl; pv.lt_k = s_lt; pv.div_root = string_concat(s_root, ""); pv.div_by = s_by; pv.lin_root = string_concat(s_lroot, ""); pv.lin_off = s_loff; pv.lin_parts = string_concat(s_lparts, ""); } }
             }
             drop tx_set(t, ins.dest, ins.ty, pv);
             continue;
@@ -2067,51 +3815,86 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             continue;
         }
         if (raw text_eq(op, "getelementptr")) {
+            // ONE FLAT SUM, WRAPPED ONCE: the base's linear shape and every numeral
+            // index fold into one offset, a symbolic index contributes its scaled
+            // term (a linear index its root), so `line + p` with p = pos + k reads
+            // `(mod (+ line pos k) 2^64)` -- the form a clause's `(+ line pos j)` takes
             Term:base = raw term_of(t, ft, raw strlist_view(ins.args, 0i64), "ptr");
             if (!base.ok) { continue; }
-            string:addr = raw text_copy(raw strlist_view_of(base.text));
+            string:root = raw text_copy(raw strlist_view_of(base.text));
+            uint128:total = 0u128;
+            List<string>:parts = raw list_init::<string>(4i64);
+            if (base.lin_root.len > 0i64) {
+                root = raw text_copy(raw strlist_view_of(base.lin_root));
+                total = base.lin_off;
+                if (base.lin_parts.len > 0i64) { parts = raw smt_split_top(raw strlist_view_of(base.lin_parts)); }
+            }
+            string:tbl_idx = "";
+            int64:tbl_scale = 0i64;
             string:cur_ty = raw text_copy(raw strlist_view_of(ins.gep_ty));
             bool:bad = false;
             for (int64:gi in 1i64...ins.args.count) {
                 string:ity = raw strlist_view(ins.tys, gi - 1i64);
                 Term:idx = raw term_of(t, ft, raw strlist_view(ins.args, gi), ity);
                 if (!idx.ok) { bad = true; break; }
-                if (gi == 1i64) {
-                    // the first index scales by the whole type
-                    // the index's unsigned pattern and its signed value are congruent
-                    // modulo 2^64, and the address wraps there: no signed view needed
-                    int64:sz = raw ty_size(ft, cur_ty);
-                    string:off = raw smt_app2("*", int_to_string(sz), idx.text);
-                    if (sz == 1i64) { off = raw text_copy(raw strlist_view_of(idx.text)); }
-                    addr = raw smt_app2("+", addr, off);
-                    continue;
+                int64:sz = 0i64;
+                if (gi == 1i64) { sz = raw ty_size(ft, cur_ty); }
+                else {
+                    if (raw text_starts_with(cur_ty, "[")) {
+                        string:ety = raw array_elem(cur_ty);
+                        sz = raw ty_size(ft, ety);
+                        cur_ty = move(ety);
+                    } else {
+                        if (!(raw is_aggregate_ty(cur_ty))) { drop tx_problem(t, string_concat("a getelementptr index into a scalar: ", line)); bad = true; break; }
+                        if (!idx.is_num) { drop tx_problem(t, string_concat("a struct index that is not a numeral: ", line)); bad = true; break; }
+                        int64:k = idx.num =>! int64;
+                        int64:foff = raw struct_field_offset(ft, cur_ty, k);
+                        string:fty = raw struct_field_type(ft, cur_ty, k);
+                        if ((foff < 0i64) || (fty.len == 0i64)) { drop tx_problem(t, string_concat("a struct index past the type's fields: ", line)); bad = true; break; }
+                        total = raw u128_add(total, (foff =>! uint128), 64i64);
+                        cur_ty = move(fty);
+                        continue;
+                    }
                 }
-                if (raw text_starts_with(cur_ty, "[")) {
-                    string:ety = raw array_elem(cur_ty);
-                    int64:esz = raw ty_size(ft, ety);
-                    string:off2 = raw smt_app2("*", int_to_string(esz), idx.text);
-                    if (esz == 1i64) { off2 = raw text_copy(raw strlist_view_of(idx.text)); }
-                    addr = raw smt_app2("+", addr, off2);
-                    cur_ty = move(ety);
-                    continue;
+                uint128:usz = sz =>! uint128;
+                if (idx.is_num) { total = raw u128_add(total, raw u128_wrap(usz * idx.num, 64i64), 64i64); continue; }
+                string:itext = raw text_copy(raw strlist_view_of(idx.text));
+                if (idx.lin_root.len > 0i64) {
+                    // an index with a linear shape: its root, EACH of its parts (scaled
+                    // alike -- `line + (pos + k)` is `(+ line pos k)`, never `(+ line pos)`)
+                    // and its offset folded
+                    itext = raw text_copy(raw strlist_view_of(idx.lin_root));
+                    total = raw u128_add(total, raw u128_wrap(usz * idx.lin_off, 64i64), 64i64);
+                    if (idx.lin_parts.len > 0i64) {
+                        List<string>:ips = raw smt_split_top(raw strlist_view_of(idx.lin_parts));
+                        for (int64:ii in 0i64...ips.count) {
+                            if (sz == 1i64) { drop strlist_push(@parts, raw strlist_view(ips, ii)); }
+                            else { drop strlist_push(@parts, raw smt_app2("*", int_to_string(sz), raw strlist_view(ips, ii))); }
+                        }
+                    }
                 }
-                if (raw is_aggregate_ty(cur_ty)) {
-                    if (!idx.is_num) { drop tx_problem(t, string_concat("a struct index that is not a numeral: ", line)); bad = true; break; }
-                    int64:k = idx.num =>! int64;
-                    int64:foff = raw struct_field_offset(ft, cur_ty, k);
-                    string:fty = raw struct_field_type(ft, cur_ty, k);
-                    if ((foff < 0i64) || (fty.len == 0i64)) { drop tx_problem(t, string_concat("a struct index past the type's fields: ", line)); bad = true; break; }
-                    addr = raw smt_app2("+", addr, int_to_string(foff));
-                    cur_ty = move(fty);
-                    continue;
-                }
-                drop tx_problem(t, string_concat("a getelementptr index into a scalar: ", line));
-                bad = true;
-                break;
+                if (sz == 1i64) { drop strlist_push(@parts, itext); }
+                else { drop strlist_push(@parts, raw smt_app2("*", int_to_string(sz), itext)); }
+                if ((gi > 1i64) && (idx.lin_root.len == 0i64)) { tbl_idx = string_concat(itext, ""); tbl_scale = sz; }
             }
             if (bad) { continue; }
-            // numerals fold; the rest wraps at the address space
-            drop tx_set(t, ins.dest, "ptr", raw term_int(raw wrap_text(addr, 64i64), 64i64));
+            // one n-ary sum `(+ root part... total)`, the spelling a clause's `(+ line pos j)`
+            // takes -- plain inside an object, wrapped once otherwise (`tx_lin_term`);
+            // the shape rides the register, so a later GEP over it re-flattens
+            Term:gt = raw tx_lin_term(t, root, parts, total, 64i64);
+            // AN ELEMENT OF A CONSTANT TABLE: `[N x iW]` with an initialiser, one
+            // scaled index and nothing else -- a load through it reads as an `ite`
+            // over the index (`const_table_ite`), the table's values by the case,
+            // where the byte facts alone leave the solver to enumerate the index
+            if ((parts.count == 1i64) && (total == 0u128) && (tbl_idx.len > 0i64) && (raw text_eq(root, raw strlist_view_of(base.text)))) {
+                string:gname = string_concat("@", root);
+                if (((raw floor_global_init(ft, gname)).len > 0i64) && (raw text_starts_with(raw floor_global_type(ft, gname), "["))) {
+                    gt.tbl_global = string_concat(gname, "");
+                    gt.tbl_idx = string_concat(tbl_idx, "");
+                    gt.tbl_scale = tbl_scale;
+                }
+            }
+            drop tx_set(t, ins.dest, "ptr", gt);
             continue;
         }
         if (raw text_eq(op, "load")) {
@@ -2127,7 +3910,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                     int64:foff2 = raw struct_field_offset(ft, ins.ty, fi);
                     string:fa = raw smt_app2("+", p.text, int_to_string(foff2));
                     if (foff2 == 0i64) { fa = raw text_copy(raw strlist_view_of(p.text)); }
-                    drop strlist_push(@vals, raw load_text(t, mem_cur, fa, raw ty_size(ft, fty)));
+                    drop strlist_push(@vals, raw fwd_load(t, mem_cur, fa, raw ty_size(ft, fty), 0i64));
                 }
                 if (vals.count == fs.count) { drop tx_set_fields(t, ft, ins.dest, ins.ty, vals); }
                 continue;
@@ -2135,7 +3918,12 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             string:sort = raw ty_sort(ins.ty);
             if (!(raw text_eq(sort, "Int"))) { drop tx_problem(t, string_concat("a load of a type the translator does not read: ", line)); continue; }
             int64:n = raw ty_size(ft, ins.ty);
-            Term:lv = raw term_int(raw load_text(t, mem_cur, raw strlist_view_of(p.text), n), raw ty_bits(ins.ty));
+            string:raw_ld = raw fwd_load(t, mem_cur, raw strlist_view_of(p.text), n, 0i64);
+            if ((p.tbl_global.len > 0i64) && (p.tbl_scale == n)) {
+                string:cti = raw const_table_ite(t, ft, raw strlist_view_of(p.tbl_global), raw strlist_view_of(p.tbl_idx), n, raw_ld);
+                if (cti.len > 0i64) { raw_ld = move(cti); }
+            }
+            Term:lv = raw term_int(raw_ld, raw ty_bits(ins.ty));
             drop tx_set(t, ins.dest, ins.ty, lv);
             continue;
         }
@@ -2165,22 +3953,30 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
         if (raw text_eq(op, "alloca")) {
             string:asym = string_concat("|a:", raw text_slice(ins.dest, 1i64, ins.dest.len));
             asym = string_concat(asym, "|");
-            drop tx_object(t, asym, raw ty_size(ft, ins.ty));
-            if (raw tx_reg(t, ins.dest, asym, "Int", 64i64)) { }
+            if (raw tx_reg(t, ins.dest, asym, "Int", 64i64)) { drop tx_object(t, asym, raw ty_size(ft, ins.ty)); }
             continue;
         }
         if (raw text_eq(op, "extractvalue")) {
-            string:fir = string_concat(raw strlist_view(ins.args, 0i64), ".");
-            fir = string_concat(fir, raw strlist_view(ins.args, 1i64));
             Result<int64>:k2 = text_int(raw strlist_view(ins.args, 1i64));
             if (k2.is_error) { drop tx_problem(t, string_concat("an extractvalue index that is not a numeral: ", line)); continue; }
             string:fty3 = raw struct_field_type(ft, ins.ty, k2.value);
-            if (raw text_eq(raw strlist_view(ins.args, 0i64), "zeroinitializer")) {
-                drop tx_set(t, ins.dest, fty3, raw term_num(0u128, raw ty_bits(fty3)));
+            List<string>:src_leaves = raw agg_fields(t, ft, raw strlist_view(ins.args, 0i64), ins.ty);
+            List<string>:xpaths = raw list_init::<string>(4i64);
+            List<string>:xtys = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, ins.ty, "", @xpaths, @xtys);
+            List<int64>:pos = raw leaf_positions(xpaths, k2.value);
+            if (raw is_aggregate_ty(fty3)) {
+                // the whole inner aggregate: its leaves become the dest's
+                List<string>:inner = raw list_init::<string>(4i64);
+                for (int64:pi4 in 0i64...pos.count) { drop strlist_push(@inner, raw strlist_view(src_leaves, pos.items[pi4])); }
+                drop tx_set_fields(t, ft, ins.dest, fty3, inner);
                 continue;
             }
-            Term:fv2 = raw term_of_reg(t, fir);
-            if (!fv2.ok) { drop tx_problem(t, string_concat("an aggregate field the translator does not know: ", fir)); continue; }
+            if (pos.count != 1i64) { drop tx_problem(t, string_concat("an extractvalue index past the fields: ", line)); continue; }
+            string:leaf = raw strlist_view(src_leaves, pos.items[0i64]);
+            Term:fv2 = raw term_int(leaf, raw ty_bits(fty3));
+            if (raw text_eq(raw ty_sort(fty3), "Bool")) { fv2 = raw term_bool(leaf); }
+            if (raw text_starts_with(raw ty_sort(fty3), "F")) { fv2 = raw term_fp(leaf, raw ty_bits(fty3)); }
             drop tx_set(t, ins.dest, fty3, fv2);
             continue;
         }
@@ -2188,18 +3984,34 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             List<string>:fv3 = raw agg_fields(t, ft, raw strlist_view(ins.args, 0i64), ins.ty);
             Result<int64>:k3 = text_int(raw strlist_view(ins.args, 2i64));
             if (k3.is_error) { drop tx_problem(t, string_concat("an insertvalue index that is not a numeral: ", line)); continue; }
-            if ((k3.value < 0i64) || (k3.value >= fv3.count)) { drop tx_problem(t, string_concat("an insertvalue index past the fields: ", line)); continue; }
-            Term:ev = raw term_of(t, ft, raw strlist_view(ins.args, 1i64), raw strlist_view(ins.tys, 0i64));
-            if (!ev.ok) { continue; }
-            fv3.items[k3.value] = raw text_copy(raw strlist_view_of(ev.text));
+            List<string>:ipaths = raw list_init::<string>(4i64);
+            List<string>:itys = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, ins.ty, "", @ipaths, @itys);
+            List<int64>:pos2 = raw leaf_positions(ipaths, k3.value);
+            if (pos2.count == 0i64) { drop tx_problem(t, string_concat("an insertvalue index past the fields: ", line)); continue; }
+            string:ety = raw strlist_view(ins.tys, 0i64);
+            if (raw is_aggregate_ty(ety)) {
+                List<string>:ev_leaves = raw agg_fields(t, ft, raw strlist_view(ins.args, 1i64), ety);
+                if (ev_leaves.count != pos2.count) { drop tx_problem(t, string_concat("an insertvalue of an aggregate whose leaves do not fit: ", line)); continue; }
+                for (int64:pi5 in 0i64...pos2.count) { fv3.items[pos2.items[pi5]] = raw text_copy(raw strlist_view(ev_leaves, pi5)); }
+            } else {
+                Term:ev = raw term_of(t, ft, raw strlist_view(ins.args, 1i64), ety);
+                if (!ev.ok) { continue; }
+                fv3.items[pos2.items[0i64]] = raw text_copy(raw strlist_view_of(ev.text));
+            }
             drop tx_set_fields(t, ft, ins.dest, ins.ty, fv3);
             continue;
         }
         if (raw text_eq(op, "fence")) { continue; }
+        if (raw text_eq(op, "cmpxchg")) { mem_cur = string_concat(raw tx_cmpxchg(t, ft, @ins, mem_cur), ""); continue; }
+        if (raw text_eq(op, "atomicrmw")) { mem_cur = string_concat(raw tx_atomicrmw(t, ft, @ins, mem_cur), ""); continue; }
         if (raw text_eq(op, "call")) {
             string:callee = raw strlist_view_of(ins.callee);
             if (raw text_eq(callee, "asm")) { drop tx_problem(t, string_concat("inline asm: not read (the volatile bottom): ", line)); continue; }
-            if (raw text_starts_with(callee, "%")) { drop tx_problem(t, string_concat("an indirect call: residue by construction: ", line)); continue; }
+            if ((raw text_starts_with(callee, "%")) || (raw text_eq(callee, "@npk_failsafe"))) {
+                mem_cur = string_concat(raw tx_opaque_call(t, ft, @ins, mem_cur), "");
+                continue;
+            }
             if (raw is_trap_callee(callee)) {
                 string:code = raw trap_code_of(t, ft, callee, @ins);
                 drop tx_trap_site(t, pc, code);
@@ -2207,9 +4019,14 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 continue;
             }
             if (raw text_eq(callee, "@npk_exec") || raw text_eq(callee, "@npk_tls_self")) {
+                // the per-thread constants: objects of their struct's size
                 string:cs = "exec";
-                if (raw text_eq(callee, "@npk_tls_self")) { cs = "tls"; }
-                if (!(raw strlist_contains(t.known, cs))) { drop tx_declare(t, cs, "Int"); drop tx_range(t, cs, 64i64); drop tx_hyp(t, raw smt_app2(">", cs, "0"), "range", 0i64); }
+                string:cty = "%npk.exec";
+                if (raw text_eq(callee, "@npk_tls_self")) { cs = "tls"; cty = "%npk.tls"; }
+                if (!(raw strset_has(t.known, cs))) {
+                    drop tx_object(t, cs, raw ty_size(ft, cty));
+                    drop tx_range(t, cs, 64i64);
+                }
                 drop tx_set(t, ins.dest, "ptr", raw term_int(cs, 64i64));
                 continue;
             }
@@ -2236,7 +4053,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 t.nonlinear = true;
                 string:prod = raw smt_app2("*", ua.text, ub.text);
                 List<string>:uv = raw list_init::<string>(2i64);
-                drop strlist_push(@uv, raw wrap_text(prod, 64i64));
+                drop strlist_push(@uv, raw tx_wrap(t, prod, 64i64));
                 drop strlist_push(@uv, raw smt_app2(">=", prod, raw pow2_decimal(64i64)));
                 drop tx_set_fields(t, ft, ins.dest, "{ i64, i1 }", uv);
                 continue;
@@ -2251,7 +4068,12 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 continue;
             }
             if (raw text_starts_with(callee, "@llvm.")) { drop tx_problem(t, string_concat("an intrinsic the translator does not read: ", line)); continue; }
-            if (raw text_eq(callee, "@npk_sys6")) { drop tx_problem(t, string_concat("a syscall: the kernel-effect table is step 4's: ", line)); continue; }
+            if (raw text_eq(callee, "@npk_sys6")) {
+                string:m_after = string_concat(raw tx_syscall(t, ft, @ins, pc, mem_cur, line), "");
+                if (m_after.len == 0i64) { ended = true; continue; }
+                mem_cur = string_concat(m_after, "");
+                continue;
+            }
             int64:cfi = raw floor_fn_index(ft, callee);
             if (cfi < 0i64) { drop tx_problem(t, string_concat("a call of a symbol the floor does not define: ", line)); continue; }
             int64:csec = raw spec_section(s, callee);
@@ -2261,7 +4083,10 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 site2 = string_concat(site2, label);
                 site2 = string_concat(site2, ":");
                 site2 = string_concat(site2, int_to_string(l + 1i64));
-                mem_cur = string_concat(raw tx_summary_call(t, ft, s, callee, @ins, pc, mem_cur, site2), "");
+                string:m_sum = string_concat(raw tx_summary_call(t, ft, s, callee, @ins, pc, mem_cur, site2), "");
+                if (m_sum.len == 0i64) { ended = true; continue; }
+                mem_cur = string_concat(m_sum, "");
+                if (t.narrow.len > 0i64) { pc = raw smt_app2("and", pc, t.narrow); t.narrow = ""; }
                 continue;
             }
             drop tx_problem(t, string_concat("a call that was not inlined (a cycle in the call graph?): ", line));
@@ -2313,6 +4138,10 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 } else {
                     drop tx_hyp(t, raw smt_app1("not", pc), tag, x.meta.items[b].bound);
                 }
+                // the stop's pc is a sink nothing is defined from: the hypothesis
+                // joins a cone through what the pc is made of (a bound on one loop
+                // is what another loop's exactness rests on)
+                drop tx_hyp_reaches(t, pc);
                 ended = true;
                 continue;
             }
@@ -2329,7 +4158,20 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
     if (is_header && (inv >= 0i64)) {
         string:cm = raw ctx_mem(t, x, b);
         REnv:eh = raw renv_new(cm, mem_cur, false, true);
-        string:ih = raw render_clause(t, ft, s, inv, @eh, @x.meta.items[b]);
+        string:ih = raw loop_inv_text(t, ft, s, lclause, inv, @eh, @x.meta.items[b]);
+        // the loop's objects, for the allocations inside it
+        int64:loc = raw spec_clause(s, lclause, "objects", 0i64);
+        if (loc >= 0i64) {
+            REnv:eo2 = raw renv_new(cm, raw strlist_view(t.blk_mem_in, b), false, true);
+            List<string>:llo = raw list_init::<string>(4i64);
+            List<string>:lln = raw list_init::<string>(4i64);
+            drop objects_ranges(t, ft, s, loc, @eo2, @x.meta.items[b], @llo, @lln);
+            for (int64:li2 in 0i64...llo.count) {
+                drop strlist_push(@t.lobj_lo, raw strlist_view(llo, li2));
+                drop strlist_push(@t.lobj_len, raw strlist_view(lln, li2));
+                drop strlist_push(@t.lobj_pc, pc);
+            }
+        }
         string:tag2 = string_concat("invariant:", label);
         // GUARDED BY THE HEADER'S PATH CONDITION: the invariant over the fresh
         // symbols is a fact only where the loop is reached -- asserted bare, an
@@ -2338,18 +4180,18 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
         // it (the base case is decided without the claim it establishes); the
         // wrong-invariant control of the record found both
         drop tx_hyp(t, raw smt_app2("=>", pc, ih), tag2, 0i64);
-        // `(inst SYM e)`: the hypothesis once more with SYM read as e
-        int64:ik = 0i64;
-        while (true) {
-            int64:ic = raw spec_clause(s, lclause, "inst", ik);
-            if (ic < 0i64) { break; }
-            ik = ik + 1i64;
-            if ((raw sx_len(s, ic)) != 3i64) { drop tx_problem(t, "an inst clause is `(inst SYM e)`"); break; }
-            REnv:ei = raw renv_new(cm, mem_cur, false, true);
-            string:isym = raw sx_atom(s, raw sx_nth(s, ic, 1i64));
-            string:iexp = raw render(t, ft, s, raw sx_nth(s, ic, 2i64), @ei, @x.meta.items[b]);
-            drop renv_add(@ei, isym, iexp);
-            drop tx_hyp(t, raw smt_app2("=>", pc, raw render_clause(t, ft, s, inv, @ei, @x.meta.items[b])), tag2, 0i64);
+        // over an Addr: the invariant at every point the file applies this
+        // memory to (`tx_instantiate_templates`), so the body's reads and the
+        // rows' points see it without an `inst` each
+        for (int64:ai in 0i64...t.addr_syms.count) {
+            drop strlist_push(@t.it_mem, raw strlist_view(t.blk_mem_in, b));
+            drop strlist_push(@t.it_guard, pc);
+            drop strlist_push(@t.it_tag, tag2);
+            drop list_push(@t.it_inv, inv);
+            drop list_push(@t.it_lclause, lclause);
+            drop list_push(@t.it_blk, b);
+            drop strlist_push(@t.it_cm, cm);
+            drop strlist_push(@t.it_sym, raw strlist_view(t.addr_syms, ai));
         }
         // init: every entry edge establishes I with the phis at their incoming values
         string:goal = "true";
@@ -2368,7 +4210,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             }
             if (!okp) { break; }
             string:ig = raw smt_app2("=>", raw edge_sym(raw strlist_view_of(x.f.blocks.items[p].label), label),
-                                     raw render_clause(t, ft, s, inv, @ep, @x.meta.items[b]));
+                                     raw loop_inv_text(t, ft, s, lclause, inv, @ep, @x.meta.items[b]));
             if (pi3 == 0i64) { goal = string_concat(ig, ""); } else { goal = string_concat(raw smt_app2("and", goal, ig), ""); }
         }
         string:st2 = string_concat("spec:invariant-init:", label);
@@ -2389,6 +4231,33 @@ func:tx_preserve_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fail
         if (inv < 0i64) { continue; }
         string:hlabel = raw strlist_view_of(x.f.blocks.items[h].label);
         string:cm = raw ctx_mem(t, x, h);
+        string:hpc = raw strlist_view(t.blk_pc, h);
+        string:hmem = raw strlist_view(t.blk_mem_in, h);
+        string:tag2 = string_concat("invariant:", hlabel);
+        // `(inst SYM e [SYM e]...)`: the invariant hypothesis once more with the
+        // symbols read as the expressions -- rendered HERE, after every block,
+        // because an instantiation point may be a register of the body (the
+        // binary search's `mid`); the pairs are SIMULTANEOUS: every expression
+        // rendered first, then every symbol read as its expression --
+        // `(inst j mid k j)` reads j as mid and k as the original j
+        int64:ik = 0i64;
+        while (true) {
+            int64:ic = raw spec_clause(s, lclause, "inst", ik);
+            if (ic < 0i64) { break; }
+            ik = ik + 1i64;
+            int64:iln = raw sx_len(s, ic);
+            if ((iln < 3i64) || ((iln % 2i64) != 1i64)) { drop tx_problem(t, "an inst clause is `(inst SYM e [SYM e]...)`"); break; }
+            REnv:ei = raw renv_new(cm, hmem, false, true);
+            REnv:ei0 = raw renv_new(cm, hmem, false, true);
+            int64:pair = 1i64;
+            while ((pair + 1i64) < iln) {
+                string:isym = raw sx_atom(s, raw sx_nth(s, ic, pair));
+                string:iexp = raw render(t, ft, s, raw sx_nth(s, ic, pair + 1i64), @ei0, @x.meta.items[h]);
+                drop renv_add(@ei, isym, iexp);
+                pair = pair + 2i64;
+            }
+            drop tx_hyp(t, raw smt_app2("=>", hpc, raw loop_inv_text(t, ft, s, lclause, inv, @ei, @x.meta.items[h])), tag2, 0i64);
+        }
         string:goal = "true";
         for (int64:a in 0i64...x.loops.items[li].latches.count) {
             int64:p = x.loops.items[li].latches.items[a];
@@ -2406,7 +4275,7 @@ func:tx_preserve_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fail
             }
             if (!okp) { break; }
             string:pg = raw smt_app2("=>", raw edge_sym(raw strlist_view_of(x.f.blocks.items[p].label), hlabel),
-                                     raw render_clause(t, ft, s, inv, @ep, @x.meta.items[h]));
+                                     raw loop_inv_text(t, ft, s, lclause, inv, @ep, @x.meta.items[h]));
             if (a == 0i64) { goal = string_concat(pg, ""); } else { goal = string_concat(raw smt_app2("and", goal, pg), ""); }
         }
         string:st = string_concat("spec:invariant-preserve:", hlabel);
@@ -2438,15 +4307,13 @@ func:tx_exit = NIL(Tx->:t, FloorText->:ft, XFn->:x) never fails {
     string:rty = raw strlist_view_of(x.f.ret_ty);
     if (!(raw text_eq(rty, "void")) && (rty.len > 0i64)) {
         List<string>:fs = raw list_init::<string>(2i64);
-        if (raw is_aggregate_ty(rty)) {
-            fs = raw struct_fields(rty);
-            if (raw text_starts_with(rty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, rty)); }
-        } else { drop strlist_push(@fs, rty); }
+        List<string>:rpaths = raw list_init::<string>(2i64);
+        if (raw is_aggregate_ty(rty)) { drop agg_leaves(ft, rty, "", @rpaths, @fs); }
+        else { drop strlist_push(@fs, rty); drop strlist_push(@rpaths, ""); }
         for (int64:f in 0i64...fs.count) {
             string:fty = raw strlist_view(fs, f);
             string:sort = raw ty_sort(fty);
-            string:name = "result";
-            if (raw is_aggregate_ty(rty)) { name = string_concat("result.", int_to_string(f)); }
+            string:name = string_concat("result", raw strlist_view(rpaths, f));
             if (t.ret_pcs.count == 0i64) {
                 drop tx_declare(t, name, sort);
                 continue;
@@ -2463,16 +4330,27 @@ func:tx_exit = NIL(Tx->:t, FloorText->:ft, XFn->:x) never fails {
             drop tx_define(t, name, sort, v);
         }
     }
-    // mem2
-    string:body = raw smt_app1("mem", "|m:x|");
-    if (t.ret_pcs.count > 0i64) {
-        body = raw smt_app1(raw strlist_view(t.ret_mems, t.ret_pcs.count - 1i64), "|m:x|");
-        for (int64:k2 in 0i64...(t.ret_pcs.count - 1i64)) {
-            int64:ri2 = t.ret_pcs.count - 2i64 - k2;
-            body = raw smt_app3("ite", raw strlist_view(t.ret_pcs, ri2), raw smt_app1(raw strlist_view(t.ret_mems, ri2), "|m:x|"), body);
-        }
+    // mem2: the merge over the returns
+    if (t.ret_pcs.count == 0i64) {
+        drop tx_mem_define(t, "mem2", raw smt_app1("mem", "|m:x|"));
+        List<string>:e0 = raw list_init::<string>(1i64);
+        List<string>:m0 = raw list_init::<string>(1i64);
+        drop strlist_push(@e0, "true");
+        drop strlist_push(@m0, "mem");
+        drop strlist_push(@t.mg_name, "mem2");
+        drop list_push(@t.mg_edges, move(e0));
+        drop list_push(@t.mg_mems, move(m0));
+        pass NIL;
+    }
+    string:body = raw smt_app1(raw strlist_view(t.ret_mems, t.ret_pcs.count - 1i64), "|m:x|");
+    for (int64:k2 in 0i64...(t.ret_pcs.count - 1i64)) {
+        int64:ri2 = t.ret_pcs.count - 2i64 - k2;
+        body = raw smt_app3("ite", raw strlist_view(t.ret_pcs, ri2), raw smt_app1(raw strlist_view(t.ret_mems, ri2), "|m:x|"), body);
     }
     drop tx_mem_define(t, "mem2", body);
+    drop strlist_push(@t.mg_name, "mem2");
+    drop list_push(@t.mg_edges, raw strlist_clone(t.ret_pcs));
+    drop list_push(@t.mg_mems, raw strlist_clone(t.ret_mems));
     pass NIL;
 };
 
@@ -2502,28 +4380,60 @@ func:tx_section_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:sec) 
         // a branch's outcome) is what the postcondition is decided under
         drop tx_row_ex(t, st, raw smt_app2("=>", raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap")), p), "");
     }
-    // the trap outcome
+    // the trap outcome: the clause describes the symbol's OWN traps; a summary
+    // callee's condition is joined by the writer (a caller cannot name it)
+    string:callee_traps = "false";
+    for (int64:st in 0i64...t.summary_traps.count) {
+        string:c = raw strlist_view(t.summary_traps, st);
+        if (st == 0i64) { callee_traps = raw text_copy(c); } else { callee_traps = raw smt_app2("or", callee_traps, c); }
+    }
     int64:et = raw spec_clause(s, sec, "ensures-trap", 0i64);
     if (et >= 0i64) {
         REnv:etr = raw renv_new("mem", "", false, true);
         string:tp = raw render_clause(t, ft, s, et, @etr, @plain);
+        if (t.summary_traps.count > 0i64) { tp = string_concat(raw smt_app2("or", tp, callee_traps), ""); }
         drop tx_row_ex(t, "spec:ensures-trap", raw smt_app2("=", "trap", tp), "");
     } else {
-        if (t.trap_pcs.count > 0i64) { drop tx_row_ex(t, "spec:no-trap", raw smt_app1("not", "trap"), ""); }
+        if (t.trap_pcs.count > 0i64) {
+            if (t.summary_traps.count > 0i64) { drop tx_row_ex(t, "spec:no-trap", raw smt_app2("=>", "trap", callee_traps), ""); }
+            else { drop tx_row_ex(t, "spec:no-trap", raw smt_app1("not", "trap"), ""); }
+        }
     }
     // the frame: outside the listed ranges memory is unchanged; no clause claims every byte
     int64:fr = raw spec_clause(s, sec, "frame", 0i64);
     string:fx = "|frame:x|";
-    if (raw strlist_contains(t.free_syms, "x")) { fx = raw spec_sym("x"); }
+    if (raw strlist_contains(t.free_syms, "x")) {
+        fx = raw spec_sym("x");
+        if (!(raw strlist_contains(t.addr_syms, "x"))) { drop tx_problem(t, "the free symbol `x` is the frame row's point and must be an Addr"); }
+    }
     string:after = raw tx_mem_app(t, "mem2", fx);
     string:before = raw tx_mem_app(t, "mem", fx);
     string:same = raw smt_app2("=", after, before);
+    // THE STACK'S OWN CELLS ARE NO PART OF A FRAME CLAIM: an alloca dies with the
+    // call, so the memory a caller sees after it is the memory outside every alloca
+    string:stack_in = "false";
+    for (int64:ao in 0i64...t.objects.count) {
+        string:asym = raw strlist_view(t.objects, ao);
+        if (!(raw text_starts_with(asym, "|a:"))) { continue; }
+        string:ain = raw smt_app2("and", raw smt_app2("<=", asym, fx), raw smt_app2("<", fx, raw smt_app2("+", asym, int_to_string(t.object_sizes.items[ao]))));
+        if (raw text_eq(stack_in, "false")) { stack_in = move(ain); } else { stack_in = string_concat(raw smt_app2("or", stack_in, ain), ""); }
+    }
     if (fr >= 0i64) {
         REnv:ef = raw renv_new("mem", "mem2", true, true);
         string:inr = raw frame_in_ranges(t, ft, s, fr, @ef, @plain, fx);
-        drop tx_row_ex(t, "spec:frame", raw smt_app2("=>", raw smt_app2("and", raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap")), raw smt_app1("not", inr)), same), "");
+        if (!(raw text_eq(stack_in, "false"))) { inr = string_concat(raw smt_app2("or", inr, stack_in), ""); }
+        string:fguard = raw smt_app2("and", raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap")), raw smt_app1("not", inr));
+        bool:emit_frame = true;
+        if (raw frame_names_objects(s, fr)) {
+            // over the caller's objects only; with none declared nothing is claimed
+            string:oin = raw objects_in(t, ft, s, sec, @ef, @plain, fx);
+            if (raw text_eq(oin, "false")) { emit_frame = false; } else { fguard = string_concat(raw smt_app2("and", fguard, oin), ""); }
+        }
+        if (emit_frame) { drop tx_row_ex(t, "spec:frame", raw smt_app2("=>", fguard, same), ""); }
     } else {
-        drop tx_row_ex(t, "spec:frame-default", raw smt_app2("=>", raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap")), same), "");
+        string:dguard = raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap"));
+        if (!(raw text_eq(stack_in, "false"))) { dguard = string_concat(raw smt_app2("and", dguard, raw smt_app1("not", stack_in)), ""); }
+        drop tx_row_ex(t, "spec:frame-default", raw smt_app2("=>", dguard, same), "");
     }
     pass NIL;
 };
@@ -2558,6 +4468,12 @@ func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
                 if (cfi < 0i64) { continue; }
                 int64:csec = raw spec_section(s, callee);
                 if ((csec >= 0i64) && (raw spec_has(s, csec, "summary"))) { continue; }
+                if ((csec >= 0i64) && (raw spec_has(s, csec, "boundary"))) {
+                    string:wb = string_concat("a call of a boundary symbol that is not a (summary): ", callee);
+                    wb = string_concat(wb, " -- its promise cannot be inlined, only assumed");
+                    drop tx_problem(t, wb);
+                    pass NIL;
+                }
                 if (ft.fns.items[cfi].params.count != ins.args.count) {
                     drop tx_problem(t, string_concat("a call's operand count differs from the callee's parameters: ", callee));
                     pass NIL;
@@ -2631,32 +4547,44 @@ func:has_common = bool(List<string>:a, List<string>:b) never fails {
 func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
     string:goal = raw strlist_view(t.row_goals, ri);
     string:excl = raw strlist_view(t.row_excl, ri);
-    List<string>:syms = raw syms_in(t, goal);
+    // THE TIERS: a goal that names no crossing is decided with every crossed
+    // value opaque -- the `bv`-tagged equations stay out of its cone, so the
+    // solver's linear strategy serves it (with them in, the mixed logic sends
+    // a two-line geometry fact past the budget)
+    bool:bv_goal = (raw text_contains(goal, "|bv:")) || (raw text_contains(goal, "int2bv"));
+    List<string>:gs = raw syms_in(t, goal);
+    StrSet:syms = raw strset_init(256i64);
+    for (int64:g in 0i64...gs.count) { discard(raw strset_add(@syms, raw strlist_view(gs, g))); }
     List<bool>:hin = raw list_init::<bool>(t.hyps.count + 1i64);
     for (int64:i in 0i64...t.hyps.count) { drop list_push(@hin, false); }
     List<bool>:din = raw list_init::<bool>(t.defs.count + 1i64);
     for (int64:i2 in 0i64...t.defs.count) { drop list_push(@din, false); }
+    // a definition references only earlier names, so one BACKWARD pass over
+    // the definitions closes them; a hypothesis may name anything, so the
+    // two passes alternate until nothing is new (two rounds in practice)
     bool:grew = true;
     while (grew) {
         grew = false;
-        for (int64:d in 0i64...t.defs.count) {
+        for (int64:dd in 0i64...t.defs.count) {
+            int64:d = t.defs.count - 1i64 - dd;
             if (din.items[d]) { continue; }
-            if (!(raw strlist_contains(syms, raw strlist_view(t.def_names, d)))) { continue; }
+            if (!(raw strset_has(syms, raw strlist_view(t.def_names, d)))) { continue; }
             din.items[d] = true;
             for (int64:r in 0i64...t.def_refs.items[d].count) {
-                string:rs = raw strlist_view(t.def_refs.items[d], r);
-                if (!(raw strlist_contains(syms, rs))) { drop strlist_push(@syms, rs); grew = true; }
+                if (raw strset_add(@syms, raw strlist_view(t.def_refs.items[d], r))) { grew = true; }
             }
         }
         for (int64:h in 0i64...t.hyps.count) {
             if (hin.items[h]) { continue; }
             if (excl.len > 0i64) { if (raw text_eq(raw strlist_view(t.hyp_tags, h), excl)) { continue; } }
-            if (!(raw has_common(t.hyp_syms.items[h], syms))) { continue; }
+            if ((!bv_goal) && (raw text_eq(raw strlist_view(t.hyp_tags, h), "bv"))) { continue; }
+            bool:touch = false;
+            for (int64:q in 0i64...t.hyp_syms.items[h].count) { if (raw strset_has(syms, raw strlist_view(t.hyp_syms.items[h], q))) { touch = true; break; } }
+            if (!touch) { continue; }
             hin.items[h] = true;
             grew = true;
             for (int64:r2 in 0i64...t.hyp_syms.items[h].count) {
-                string:hs = raw strlist_view(t.hyp_syms.items[h], r2);
-                if (!(raw strlist_contains(syms, hs))) { drop strlist_push(@syms, hs); }
+                discard(raw strset_add(@syms, raw strlist_view(t.hyp_syms.items[h], r2)));
             }
         }
     }
@@ -2685,6 +4613,7 @@ func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
         site = string_concat(site, int_to_string(bound));
         site = string_concat(site, "]");
     }
+    drop strset_free(@syms);
     pass FloorRow{ site: move(site), hash: raw sha256_hex(hin2), tier: move(tier), canon: move(canon), cone_hyps: move(ch), bound: bound };
 };
 
@@ -2727,6 +4656,7 @@ pub func:floor_dump = string(FloorText->:ft, Sxs->:s, int64:fi, int64:sec) never
             out = string_concat(out, "\n");
         }
     }
+    drop strset_free(@t.known);
     pass out;
 };
 
@@ -2743,12 +4673,11 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
         string:pty = raw strlist_view(x.f.param_tys, pi);
         if (pname.len == 0i64) { drop tx_problem(@t, "an unnamed parameter"); continue; }
         if (raw is_aggregate_ty(pty)) {
-            List<string>:fs = raw struct_fields(pty);
-            if (raw text_starts_with(pty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, pty)); }
-            for (int64:f in 0i64...fs.count) {
-                string:fir = string_concat(pname, ".");
-                fir = string_concat(fir, int_to_string(f));
-                drop tx_declare_reg(@t, fir, raw strlist_view(fs, f));
+            List<string>:ppaths = raw list_init::<string>(4i64);
+            List<string>:ptys = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, pty, "", @ppaths, @ptys);
+            for (int64:f in 0i64...ppaths.count) {
+                drop tx_declare_reg(@t, string_concat(pname, raw strlist_view(ppaths, f)), raw strlist_view(ptys, f));
             }
             continue;
         }
@@ -2759,15 +4688,30 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
         int64:fc = raw spec_clause(s, sec, "free", fk);
         if (fc < 0i64) { break; }
         fk = fk + 1i64;
-        if ((raw sx_len(s, fc)) != 3i64) { drop tx_problem(@t, "a free clause is `(free NAME Int)`"); break; }
+        if ((raw sx_len(s, fc)) != 3i64) { drop tx_problem(@t, "a free clause is `(free NAME Int)` or `(free NAME Addr)`"); break; }
         string:fname = raw sx_atom(s, raw sx_nth(s, fc, 1i64));
-        if (!(raw text_eq(raw sx_atom(s, raw sx_nth(s, fc, 2i64)), "Int"))) { drop tx_problem(@t, "a free symbol's sort must be Int"); break; }
+        string:fsort = raw sx_atom(s, raw sx_nth(s, fc, 2i64));
+        bool:is_addr = raw text_eq(fsort, "Addr");
+        if (!(is_addr || (raw text_eq(fsort, "Int")))) { drop tx_problem(@t, "a free symbol's sort must be Int or Addr"); break; }
         string:fsym = raw spec_sym(fname);
-        if (raw strlist_contains(t.known, fsym)) { drop tx_problem(@t, string_concat("a free symbol collides with a register or parameter: ", fname)); break; }
+        if (raw strset_has(t.known, fsym)) { drop tx_problem(@t, string_concat("a free symbol collides with a register or parameter: ", fname)); break; }
         drop strlist_push(@t.free_syms, fname);
         drop tx_declare(@t, fsym, "Int");
+        // an Addr ranges over the address space: a universal over addresses (an
+        // invariant's frame conjunct, the frame row) is stated there, where a
+        // load's wrapped address is the address itself
+        if (is_addr) { drop strlist_push(@t.addr_syms, fname); drop tx_range(@t, fsym, 64i64); }
     }
     drop tx_declare(@t, "|frame:x|", "Int");
+    drop tx_range(@t, "|frame:x|", 64i64);
+    // `(objects (lo len) ...)`: the byte ranges the parameters name
+    int64:ok_ = raw spec_clause(s, sec, "objects", 0i64);
+    if (ok_ >= 0i64) {
+        BMeta:plain0 = raw meta_plain_of(@x);
+        REnv:eo = raw renv_new("mem", "", false, true);
+        List<string>:ofacts = raw objects_facts(@t, ft, s, ok_, @eo, @plain0, true);
+        for (int64:of in 0i64...ofacts.count) { drop tx_hyp(@t, raw strlist_view(ofacts, of), "requires", 0i64); }
+    }
     // the blocks in dominance order
     int64:nb = x.f.blocks.count;
     for (int64:b in 0i64...nb) {
@@ -2786,9 +4730,13 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
         drop tx_exit(@t, ft, @x);
         drop tx_preserve_rows(@t, ft, s, @x);
         drop tx_section_rows(@t, ft, s, @x, sec);
+        drop tx_instantiate_templates(@t, ft, s, @x);
+    }
+    if (t.used_opaque && (!(raw spec_has(s, sec, "residue")))) {
+        drop tx_problem(@t, "an opaque call (npk_failsafe, an indirect call) makes the paths past it residue by construction: the section needs a (residue \"...\") sentence");
     }
     FloorFile:out = FloorFile{ symbol: raw text_copy(name), text: "", rows: raw list_init::<FloorRow>(8i64), problems: raw strlist_clone(t.problems) };
-    if (t.problems.count > 0i64) { pass out; }
+    if (t.problems.count > 0i64) { drop strset_free(@t.known); pass out; }
     for (int64:ri in 0i64...t.row_goals.count) { drop list_push(@out.rows, raw tx_cone(@t, ri)); }
     // the file
     SmtBuf:b2 = raw smtbuf_init();
@@ -2824,5 +4772,6 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
         drop smtbuf_line(@b2, "(pop)");
     }
     out.text = raw smtbuf_text(move(b2));
+    drop strset_free(@t.known);
     pass out;
 };

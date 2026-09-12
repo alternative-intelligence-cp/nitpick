@@ -15069,6 +15069,20 @@ become `poison` and a harness grep enforces the ban thereafter;
 `llc`/`ld.lld` named trusted, the floor's volatile bottom enumerated
 in `meta/specs/TCB.md` (r8 Lesson 2).
 
+> **AMENDMENT PROPOSED at 1.5.6 step 4 (2026-09-11; S-71, landed under its
+> recommendation, the user's to ratify).** The profile of (2) carries
+> `lp.dio=false`: z3 4.16.0's Diophantine-equation sub-solver undoes its
+> terms at every `(pop)` by a big-rational matrix elimination (gdb:
+> `lp::dioph_eq::imp::undo_add_term_method` under
+> `smt::theory_lra::pop_scope_eh`), so a row that answered in 8 s returned
+> 200 s later and a larger one not within 22 minutes — a wedged solver under
+> P-13 with no clock to cut it. Off, the pop is instant and no verdict moves
+> (the compiler's 411 encoded rows and the floor's 350, measured both ways on
+> the step's final emission: 325 s against 587 s for the floor's set; the
+> non-returning pops belong to the step's earlier encoding, one rendering
+> change away). Fixed seeds, no wall clock and `rlimit` as the sole budget
+> all stand.
+
 > **LANDED at 1.5.0 (2026-09-03), the skeleton with one real obligation
 > kind — the record is `meta/roadmap/1.5/1.5.0.md`, whose P-1…P-27 are the
 > landing's decisions.** The compiler emits obligations (`--obligations`)

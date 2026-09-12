@@ -1098,15 +1098,92 @@ low k bits clear and `b < 2^k`) — the division loop's low-bit insert reads
 as `2r + bit` under the fact that makes it sound, and nothing is assumed.
 **Memory is the uninterpreted function `(mem Int) Int`**, a byte per
 address with the range axiom `0 ≤ mem(a) < 256` at every application the
-translation writes; a `store` a fresh memory function defined pointwise over
-the previous (little-endian, one `ite` per byte), a `load` the reassembly
-`Σ mem(a+j)·256^j`; no array sort, no quantifier, no `Seq` (D-218 (6)). An
-`alloca` is a fresh address, a global a fixed symbolic address per name, and
-every pair of objects a function touches is disjoint (a fact of the layout,
-asserted). Control flow is a path condition per block (`|pc:B|`), an edge
-condition per branch, an `ite` per phi at a join, an `ite`-merged memory at
-a join; a call to a trap symbol ends its path with the outcome `trap` and
-`trap_code`; `result` and `mem2` are merged over the `ret` blocks.
+translation writes (a constant global's byte is the fact `mem(a) = v`
+instead); a `store` a fresh memory function defined pointwise over the
+previous (little-endian, one `ite` per byte), a `load` the reassembly
+`Σ mem(a+j)·256^j` — FORWARDED through the stores above it (a load at a
+store's own address text is the value stored; a store of another size the
+`ite` on the two ranges' overlap), and every word-sized load a named symbol
+`|ld:N|` shared by every later reader, so a load whose address is another
+load composes by name; no array sort, no quantifier, no `Seq` (D-218 (6)).
+An `alloca` is a fresh address, a global a fixed symbolic address per name,
+the per-thread constants `exec` and `tls` (`npk_exec()`, `npk_tls_self()`)
+addresses of their struct's size, and every pair of objects a function
+touches is disjoint (a fact of the layout, asserted). **An address computed
+by the body wraps once** (`getelementptr`, `add`, `sub`: the floor's IR
+carries no `inbounds`), and the wrap is spelled as an `ite` over up to four
+atoms (`(ite (< (+ a b) 2^64) (+ a b) (- (+ a b) 2^64))` — every symbol is a
+word by its range, so one comparison per possible multiple decides the case
+where a `mod` would cost the solver a division's axioms at every address
+compared) or as `mod` for anything larger; **every wrap is a named word
+`|w:N|`**, one per distinct wrapped text, so an address is an atom wherever
+it is read and a wrap never nests inside another's text. Every sum the body
+computes carries its LINEAR SHAPE across registers — a root, its symbolic
+parts, one numeral offset — so a chain of additions and address computations
+is one flat sum wrapped once (`ch + go` then `+ 8` is `(+ ch go 8)`; an
+unrolled counter's twentieth value is `(+ j 20)`, never twenty nested wraps;
+an offset past half the width is the subtraction of its complement, the
+spelling a clause uses), a `getelementptr` is that sum with its numeral
+indices folded, and a sum whose root and offset lie inside an object the
+section declares, a block a summary callee handed out (`ensures-fresh`) or
+the stack stays PLAIN — no wrap can happen there, and the plain sum is the
+text a clause writes; a sum's atoms are written in ONE order (lexicographic,
+the numeral last) on both sides, so `line + (k + pos)` and a clause's
+`(+ line pos k)` are one text. A register defined as a symbol or as a plain
+sum READS AS ITS TEXT wherever the body uses it (its `define-fun` stays, for
+a clause that names the register), and in the other direction a clause's
+composite text that IS some other register's definition — a quotient, a
+cleared-low-bits form, a product — reads as that register; a clause's
+product of two symbols is the body's `mul`, wrapped as its own word. So the
+body's load, store, crossing and table-index memo keys are the clause's own
+— `|ld:N|`, `|bv:N|`, `|tv:N|` and `|w:N|` unify by text — and a
+validation's `xor64` over the body's address is the clause's one term where
+two congruent symbols with distinct bodies cost the solver twenty seconds
+and `unknown` (`npk_chunk_guard_check`, `npk_large_check`: 0.1 s once
+unified; `npk_arena_free`'s slot address `base + idx·stride`, non-linear
+to relate between a `mod` of the sum and a sum of a `mod`, 3 s as one
+word). A chain of unsigned divisions by
+numerals folds into one divisor, and a division by a power of ten is
+RENDERED as the chain of divisions by ten the digit loop computes
+(`(div v 100)` is `(div (div v 10) 10)` on both sides): each quotient a
+linear relation with a one-digit remainder to the one before it, where
+twenty flat quotients of one value related through twenty independent
+remainders ran past the budget (`npk_hs_put_dec`: the ten-digit row 4 s →
+1.7 s, the nineteen-digit row unanswered → 15 s). **A load of an element of
+a constant table** (`[N x iW]` with an
+initialiser, one scaled index) reads as the `ite` over the index of the
+table's values — a named word (`|tv:N|`), so a clause's `(load64 mem (+
+npk_cls_size (* 8 ci)))` and the body's register are one term — and a
+division by such a value — or by it plus a numeral —
+distributes over the cases, every branch a division by a numeral (linear),
+the out-of-table tail a fresh word. Control flow is a path condition per
+block (`|pc:B|`), an edge condition per branch, an `ite` per phi at a join
+(a phi with one incoming carries the incoming's shape: its folded chain, its
+numeral; a phi whose incomings agree is that value), an `ite`-merged memory
+at a join; a call to a trap symbol ends its
+path with the outcome `trap` and `trap_code`; `result` and `mem2` are merged
+over the `ret` blocks.
+
+**The bit-vector crossing is a symbol** (`|bv:N|`, one per distinct crossed
+text) whose equation `(= |bv:N| (bv2nat (bvop …)))` is a hypothesis of the
+`bv` tier: a row whose goal names no crossing is decided with every crossed
+value opaque — its cone keeps the `bv` equations out — so the solver's linear
+strategy serves it (with them in, the mixed logic sends a two-line geometry
+fact past the budget); a goal that writes `xor64` or names a crossed word is
+decided with them (its tier `bv`). **A memory the translation cannot define
+pointwise is a fresh function with a TEMPLATE** — what a summary callee's
+frame, an allocation, a memory intrinsic or a syscall promises of it at any
+point `|pt|`: unchanged outside the callee's ranges, the caller's objects
+kept, a mapping's bytes zero — instantiated after the translation at every
+point the file applies that function to (a definition, a hypothesis, a
+goal), and at every point that reaches it: an instance applies the previous
+memory at the same point, and a pointwise definition applied at a point
+applies every memory its body applies there (a store's bound variable is no
+point). A loop invariant over an `Addr` free symbol is instantiated the same
+way, at every point the loop's memory is applied to — rendered at the point
+(only the conjuncts that mention the symbol: the rest stands once, in the
+header's own hypothesis), so its loads forward and its applications carry
+their range axioms.
 
 ### 9.1 The spec file's grammar
 
@@ -1115,28 +1192,39 @@ its IR name without `%` (`dst`, `n`; an aggregate parameter's fields as
 `a.0`, `a.1`, …); a register likewise (a loop's header phi in an invariant,
 a value on a path in an `ensures`); `result` (an aggregate's members
 `result.0`, …); `mem` and `mem2`, the memory at entry and at exit (at a loop
-header, `mem2` is the memory THERE); `trap` and `trap_code`; `exec`; a
-global by its name without `@` as its ADDRESS, its contents read through
-`mem`; `(free j Int)` a free symbol of the section; `(load8 M a)`,
-`(load16 M a)`, `(load32 M a)`, `(load64 M a)` the reassembly of the bytes
-at `a` in memory `M`; `(xor64 a b)`, `(and64 a b)`, `(or64 a b)` the 64-bit
-bit operations through the crossing; `(s8 x)`, `(s32 x)`, `(s64 x)`,
-`(s128 x)` the signed view. A name SMT-LIB owns (`abs`, `mod`, `store`, …)
-or the writer uses is spelled `|r:name|`. Addresses wrap at 2^64 exactly as
-the IR's do, so a symbol that walks a range states the range is in the
-address space as a `requires` (`(<= (+ p n) 18446744073709551616)`).
+header, `mem2` is the memory THERE); `trap` and `trap_code`; `exec` and
+`tls`, the per-thread constants; a global by its name without `@` as its
+ADDRESS, its contents read through `mem`; `(free j Int)` a free symbol of
+the section and `(free x Addr)` one that ranges over the address space —
+the universal an invariant's frame conjunct or the frame row states is over
+addresses, and the free `x` is the frame row's point when the section
+declares one; `(load8 M a)`, `(load16 M a)`, `(load32 M a)`, `(load64 M a)`
+the reassembly of the bytes at `a` in memory `M`, `a` wrapped when it is
+computed (`(+ exec 48)`) and as it is when it is a symbol or a loaded word
+— the two sides of a claim match term for term; `(xor64 a b)`, `(and64 a
+b)`, `(or64 a b)` the 64-bit bit operations, a computed operand wrapped
+likewise, `and64` with a mask in the body's own Int forms; `(s8 x)`, `(s32
+x)`, `(s64 x)`, `(s128 x)` the signed view; `div` and `mod` distribute over
+a table value's cases as the body's do. A name SMT-LIB owns (`abs`, `mod`,
+`store`, …) or the writer uses is spelled `|r:name|`. Addresses wrap at 2^64
+exactly as the IR's do, so a symbol that walks a range states the range is
+in the address space — `(objects (p n))`, or `(<= (+ p n)
+18446744073709551616)` as a `requires` where a weaker condition than
+disjointness is the true precondition (memcpy's forward copy).
 
 | Clause | Rows |
 |---|---|
-| `(requires P)` | none — a hypothesis over the entry state the floor's callers keep (the emitter's call discipline is the program encoder's business under D-201's table); recorded in the row's cone |
+| `(requires P)` | none — a hypothesis over the entry state the floor's callers keep (the emitter's call discipline is the program encoder's business under D-201's table); recorded in the row's cone; at a `(summary)` call, a row |
+| `(objects (lo len) …)` | none here — the caller's objects: each range lies in the address space (`0 ≤ lo`, `lo + len ≤ 2^64`) and the listed ranges are pairwise disjoint (a null or an empty range is no object and overlaps nothing — a list's tail may be null), hypotheses of the section and rows at a summary call; the ranges an allocation inside the section is disjoint from and a callee's `objects` frame keeps |
 | `(ensures P)` | one row per clause: `P` on the returning, non-trapping paths (`|pc:exit| ∧ ¬trap ⇒ P`) — the exit edge's condition is what a postcondition is decided under |
 | `(ensures-trap P)` | one row: `trap ⇔ P`; a symbol with trap sites and no such clause gets the row `¬trap` (it claims never to trap) |
-| `(frame (lo len) …)` | one row: for the free symbol `x`, `x` outside every range ⇒ `mem2(x) = mem(x)`; a symbol with no `frame` claims memory unchanged everywhere, a row |
-| `(loop LABEL (invariant I) [(inst SYM e)…])` | the loop cut at its header: the header's phis and — when the loop writes — its memory fresh symbols constrained by `I`; the rows `invariant-init:LABEL` (every entry edge establishes `I`) and `invariant-preserve:LABEL` (every back edge re-establishes it); everything after the loop decided under `I` and the exit edge's condition |
+| `(frame (lo len) …)` | one row: for the free symbol `x` (an `Addr`; the writer's own `|frame:x|` when the section declares none), `x` outside every range and outside the section's allocas (the stack's own cells die with the call and are no part of the claim) ⇒ `mem2(x) = mem(x)`; a symbol with no `frame` claims memory unchanged everywhere, a row; with the atom `objects` (`(frame objects)`, `(frame (lo len) objects)`) the claim is over the caller's declared objects only — a symbol that allocates changes the heap's own words and its fresh blocks, which no caller can name, and promises the objects it was handed (none declared: nothing claimed, no row); at a summary call the atom names the CALLER's objects, kept outside the callee's ranges |
+| `(ensures-fresh LEN)`, `(ensures-fresh LO LEN)` | none here — a summary allocator's promise at every call: the block `[result, result+LEN)` (or `[LO, LO+LEN)`, the header included) is disjoint from the caller's objects, its loop objects and every earlier fresh block of the caller, and those objects are unchanged (a template); everything else the allocator's |
+| `(loop LABEL (invariant I) [(inst SYM e [SYM e]…)…] [(objects (lo len) …)])` | the loop cut at its header: the header's phis and — when the loop writes (a store, an atomic, a call the kernel-effect table says writes) — its memory fresh symbols constrained by `I`; the rows `invariant-init:LABEL` (every entry edge establishes `I`) and `invariant-preserve:LABEL` (every back edge re-establishes it); everything after the loop decided under `I` and the exit edge's condition; `(inst …)` substitutes its pairs together; the loop's `(objects …)` are objects on every visit of the header — their facts join `I`, an allocation inside the loop is disjoint from them, a call's `objects` frame keeps them |
 | `(loop LABEL (unroll N))` | the loop's blocks copied N+1 times (N is the most times the back edge is taken), copy N's back edges assumed not taken — a hypothesis every row it reaches carries as `[<=N]` in its site; `(unroll N exact)` claims the bound exact: the row `unroll-exact:LABEL` proves it (its cone excludes the hypothesis), and a claim the profile does not discharge is a red run |
-| `(summary)` | the symbol is inlined nowhere: at a call, the callee's `requires` are rows at the call (`spec:call:<callee>:<block>:<line>:requires:K`), its `ensures` hypotheses over fresh result symbols, its `ensures-trap` joins the caller's trap outcome, and memory after the call is a fresh function equal to the memory before outside the callee's `frame`, instantiated at the caller's free symbols by name |
+| `(summary)` | the symbol is inlined nowhere: at a call, the callee's `requires` and `objects` facts are rows at the call (`spec:call:<callee>:<block>:<line>:requires:K`, `…:objects:K`), its `ensures` hypotheses over fresh result symbols, its `ensures-trap` joins the caller's trap outcome and narrows the path past the call (a condition over the callee's own registers is a condition nobody knows at the call: a fresh Boolean, both outcomes live; `(ensures-trap true)` ends the path), and memory after the call is a fresh function with the callee's `frame` as its template |
 | `(residue "why")` | no rows; the sentence is copied into TCB.md's disposition column |
-| `(boundary "what")` | a syscall-class symbol's promise at the kernel boundary, copied into TCB.md (1.5.6 step 4) |
+| `(boundary "what")` | a syscall-class symbol's promise at the kernel boundary, copied into TCB.md; the section is never translated, and its other clauses are assumed at its `(summary)` calls (an allocator's freshness, a free's frame) |
 
 A callee without `(summary)` is INLINED before translation (the call graph
 is acyclic; a cycle is a refusal): its blocks are spliced at the call with
@@ -1144,23 +1232,81 @@ its registers and labels prefixed `<callee>#<k>.` and its parameters
 replaced by the arguments, and its own `(loop …)` annotations apply to the
 copy. `llvm.memcpy`/`llvm.memset` are built-in summaries (the intrinsic
 requires disjoint, in-space operands — rows at the call — and copies or
-fills every byte). A loop with neither annotation, an instruction form
-outside the floor's vocabulary, a `switch`, an indirect call, a call of
-`npk_sys6` (the kernel-effect table is step 4's) are refusals naming the
-line: a floor edit outside the subset is a red run, never a silently
-unencoded symbol.
+fills every byte). A call of `npk_sys6` is the uninterpreted `sys` under
+the kernel-effect table (§9.2); an opaque call (`npk_failsafe`, an indirect
+call) a fresh result and a fresh memory, admitted only in a section that
+names its `(residue …)`. A loop with neither annotation, an instruction
+form outside the floor's vocabulary, a `switch`, a syscall number the table
+lacks, a boundary callee inlined, are refusals naming the line: a floor
+edit outside the subset is a red run, never a silently unencoded symbol.
 
-**THE SINGLE-INSTANCE RULE (S-65).** An invariant's universal is written
-over the section's free symbols, and the writer asserts the hypothesis at
-those symbols and demands the conclusion at the same symbols. Sound: a
-proof of `I′(j)` from `I(j)` for an arbitrary `j` is a proof of `∀j.I′(j)`
-from `∀j.I(j)` when the step needs `I` at no other point. Incomplete: a
-step that needs the hypothesis at another point is `open`, and the author
-names the point — `memcpy`'s step reads the source byte at `src + i`, which
-the frame conjunct covers only at `x`, so `(inst x (+ src i))` instantiates
-the hypothesis there (never the conclusion).
+**THE INSTANTIATION RULE (S-65, generalised at step 4).** An invariant's
+universal is written over the section's free symbols, and the writer
+asserts the hypothesis at those symbols and demands the conclusion at the
+same symbols. Sound: a proof of `I′(j)` from `I(j)` for an arbitrary `j` is
+a proof of `∀j.I′(j)` from `∀j.I(j)` when the step needs `I` at no other
+point. A step that needs the hypothesis at another point gets it two ways:
+over an `Addr` symbol the hypothesis is instantiated at every point the
+loop's memory is applied to anywhere in the file (the body's reads, the
+rows' points — the same fixpoint the memory templates use), and at any
+other point the author names it — `memcpy`'s step reads the source byte at
+`src + i`, so `(inst x (+ src i))` instantiates the hypothesis there (never
+the conclusion); several pairs substitute together. An instance is a
+hypothesis tagged with its loop, and the loop's own `init` row excludes the
+tag (the base case is decided without the claim it establishes).
 
-### 9.2 The rows and the verdicts
+**THE CONE.** A row's cone is the relevance closure the program encoder
+computes — every definition the goal's symbols reach (a backward pass), and
+every hypothesis sharing a symbol with the closure, to a fixpoint — with two
+readings the floor needed: a hypothesis is about everything its defined
+symbols are made of (a fact over a loaded word joins a cone that names the
+address the word was read at; a bound on a loop's stop block, a sink nothing
+is defined from, names what its path condition is made of), and a memory
+function is no shared symbol (`mem` and its successors stand in nearly every
+hypothesis; a memory fact is about the addresses it applies the function to).
+
+### 9.2 The kernel boundary
+
+A call of `npk_sys6(nr, a1…a6)` is `(sys nr a1 … a6 k)` — `sys` an
+uninterpreted function, `k` the call's sequence number (two calls with the
+same arguments are two answers) — with **the kernel's answer shape**: the
+result is a value or an errno in `[-4095, -1]` (the ABI every libc reads),
+and for `read`, `write`, `getrandom` a non-negative answer never exceeds the
+count asked, for `epoll_pwait` the events room. **The kernel-effect table**
+(`tx_syscall`; a number outside it is a refusal by name) says what each
+does to memory: `read` (0), `getrandom` (318) write `[buf, buf+result)` on a
+non-negative answer and nothing otherwise; `clock_gettime` (228) writes the
+16-byte timespec; `sched_getaffinity` (204) the mask up to its length;
+`rt_sigaction` (13) the old action (a null pointer written nowhere);
+`epoll_pwait` (281) `12·result` bytes of events; `mmap` (9) answers an
+address or an errno past `2^64 − 4096`, the mapping's bytes fresh and zero
+when anonymous (`MAP_ANONYMOUS` in the flags) — each a template over the
+memory after; `exit` (60) and `exit_group` (231) end the path (a trap site
+with the status); `write`, `close`, `openat`, `futex`, `epoll_ctl`,
+`eventfd2`, `epoll_create1`, `dup3`, `prctl`, `arch_prctl`, `getppid`,
+`munmap`, `mprotect`, `pidfd_send_signal`, `tgkill`, `getpid` (1, 3, 257,
+202, 233, 290, 291, 292, 157, 158, 110, 11, 10, 424, 234, 39) leave memory
+as it was. The table IS TCB.md §3's kernel row made concrete (§5's eighth
+acceptance): a syscall whose effect the table understates is an unsound
+proof, and the table is the reviewer's to read against the kernel's
+documentation.
+
+**The envelope symbols** (`npk_open`, `npk_close`, `npk_read`,
+`npk_write`, `npk_ofd_close`, `npk_mono_now`, `npk_path_exists`,
+`npk_write_file`, `npk_read_file`, `npk_read_stdin`, `npk_to_cstring`,
+`npk_string_concat`, `npk_string_slice`, `npk_int_to_string`) are decided
+under it: a negative kernel answer is the error field with a zeroed value
+slot, a non-negative one the value with error 0; their allocator calls are
+`(summary)` calls of `npk_alloc_internal` — a boundary symbol whose
+clauses are its promise: a fresh 16-aligned block of `n` bytes disjoint
+from the caller's objects, its loop objects and its earlier blocks, those
+objects unchanged, the block's header word `n`, `n` below the size ceiling,
+or the trap outcome under a condition nobody names — and a superseded
+buffer's return is a `(summary)` call of `npk_dalloc` (the block's bytes
+and the heap's the allocator's, the caller's objects kept, the trap outcome
+likewise unknown).
+
+### 9.3 The rows and the verdicts
 
 A row per clause as the table says; `kind` `floor-spec`; `symbol` the
 define (`@memcpy`); `hash` the SHA-256 of the row's canonical text (the
@@ -1180,6 +1326,23 @@ stop-the-line; `npkg verify --record` refuses to write an `open` floor row
 and both runners refuse a committed one. `--explain` covers the floor's
 rows in `build/verify/explain-floor.txt` exactly as the compiler's in
 `explain.txt`.
+
+**The profile carries `lp.dio=false` since step 4 (S-71).** z3 4.16.0's
+Diophantine-equation sub-solver (`lp.dio`, on by default) undoes the terms
+it added at every `(pop)` by a big-rational matrix elimination — traced in
+gdb to `lp::dioph_eq::imp::undo_add_term_method` under
+`smt::theory_lra::pop_scope_eh`: `npk_hs_put_dec`'s fourteen-digit row
+answers `unsat` in 8 s and returns from its pop 200 s later, its
+eighteen-digit row had not returned after 22 minutes, and `(exit)` runs the
+same pop. A solver that has answered and does not return is a wedged solver
+under P-13 — a build failure by rule, and the harness has no clock to cut
+it — so the sub-solver is off. Measured on the step's final emission: the
+compiler's 411 encoded rows and the floor's 350 give the same verdict row
+for row with it on and off, the floor's set in 325 s against 587 s; the
+non-returning pops belong to the step's earlier encoding (the flat
+`(div v 10^k)` quotients), one rendering change away, which is the case
+for keeping the option rather than a condition of today's rows. The
+amendment is the user's to ratify (OPEN_DECISIONS S-71).
 
 **The belts, before a solver is spawned** (`floor_spec_current` in npkg,
 `floor.check_spec` in the harness): every section names a define; a
@@ -1207,5 +1370,29 @@ The residue named: the division identity and the `b = 0`/`b = 1` answers
 (the identity needs `2^i`, which the IR does not compute, and the writer
 invents no ghost variable; unwound 127 times — the bound proven exact in
 0.03 s — the rows exhaust the rlimit), and `fmod`'s reduction (`|result| <
-|b|` unknown with the loops unwound 2 and 8 times). Steps 4–6 add the
-allocator's helpers and the envelope symbols, the models, the syscall table.
+|b|` unknown with the loops unwound 2 and 8 times).
+
+**What lands at 1.5.6 step 4** (350 rows over 79 symbols in
+79 files: 343 discharged, 7 residue, 0 open, every
+`unroll-exact` row discharged): the chain ring, the park words, the run
+queue, the waiter list (the unlink's walk unwound eight times over the
+first nine waiters as objects), the wind-up words, the heap-stats writers
+(`npk_hs_put_dec` unwound in full with one row per decimal length), the
+arenas, the frame arena, the heap's tables and lists (the searches as
+summaries under sortedness, the removal by invariant), the validations
+(`npk_small_check` as a summary whose ensures say what validated means),
+`npk_small_free`, the traps' `(ensures-trap true)`, the boundary summaries,
+the fd quartet, the file helpers, the clock and the string builders under
+the kernel-effect table, and the `(boundary "…")` promise of every other
+syscall-class symbol. The residue named: `npk_small_free`'s five ensures and its frame (six budget rows -- each claim over the state after the poison loop must separate its address from the tail's stores through the class table's geometry, a fourteen-way case over the class index the solver does not finish at the budget or at ten times it), `npk_int_to_string`'s sign row (one budget row -- the sign byte reaches the block's base through the rehome copy's twenty unrolled loads, whose addresses the solver must relate to the sign store's wrapped one), and `npk_wildx_call`'s sentence (no row: an indirect call into a sealed wildx page, whose contents are outside verification by construction -- D-035 -- so its effect on memory and its result are opaque and no clause claims either). Found on the way:
+DEF-49 (`npk_read_file`/`npk_read_stdin` leaked every buffer they outgrew;
+fixed in the floor, held by `tests/cost/read_file.toml`); the spec's own
+wrong statements, each a refuted row corrected (among them
+`npk_hs_put_dec`'s precondition, which admitted `pos = 2^64 − 20`, where
+the twenty-digit row's `result = pos + 20` is a word that wraps to 0 — the
+position after the digits is a word now); S-71, the profile's
+`lp.dio=false` (above); and one refutation of the translator's own making
+(a `getelementptr` over a shaped index dropped the index's parts for one
+round — caught by `npk_hs_put_str`'s preservation row, which is what an
+`open` floor row is for). Steps 5 and 6 add the models and the syscall
+table.

@@ -51,6 +51,7 @@ pub struct:FloorText = {
     List<string>:mutable;     // the module's `global` (not `constant`) names
     List<string>:globals;     // every global's name, `@name`, in file order (1.5.6 step 3)
     List<string>:global_tys;  // its declared type text (`i32`, `[14 x i64]`, `{ ptr, i64 }`)
+    List<string>:global_inits; // a `constant`'s initialiser text, raw (`[i64 16, i64 32, ...]`, `c"..."`, `16`); "" for a global (1.5.6 step 4)
     List<string>:type_names;  // the named struct types, `%npk.hdr` (1.5.6 step 3)
     List<string>:type_texts;  // their bodies, `{ ptr, i32, ... }`
     List<string>:asm_syms;    // the symbols `module asm ".globl X"` defines, as `@X` (1.5.6 step 3)
@@ -238,6 +239,7 @@ func:define_header = NIL(string:line, FFn->:f) never fails {
 pub func:floor_parse = FloorText(string:text) never fails {
     FloorText:ft = FloorText{ fns: raw list_init::<FFn>(180i64), mutable: raw list_init::<string>(48i64),
                               globals: raw list_init::<string>(64i64), global_tys: raw list_init::<string>(64i64),
+                              global_inits: raw list_init::<string>(64i64),
                               type_names: raw list_init::<string>(4i64), type_texts: raw list_init::<string>(4i64),
                               asm_syms: raw list_init::<string>(4i64) };
     List<string>:raw_lines = raw text_lines(text);
@@ -261,9 +263,10 @@ pub func:floor_parse = FloorText(string:text) never fails {
             continue;
         }
         string:line = raw floor_code_part(rawl);
-        // AN INSTRUCTION MAY CONTINUE ON THE NEXT LINE (the clone's call ends a
+        // AN INSTRUCTION -- OR A DEFINE HEADER -- MAY CONTINUE ON THE NEXT LINE
+        // (the clone's call and the string builders' parameter lists end a
         // line with a comma): join until the code part ends in neither `,` nor `(`
-        while (in_fn && (line.len > 0i64) && ((line.ptr[line.len - 1i64] == 44u8) || (line.ptr[line.len - 1i64] == 40u8)) && ((i + 1i64) < raw_lines.count)) {
+        while ((in_fn || (raw text_starts_with(line, "define "))) && (line.len > 0i64) && ((line.ptr[line.len - 1i64] == 44u8) || (line.ptr[line.len - 1i64] == 40u8)) && ((i + 1i64) < raw_lines.count)) {
             i = i + 1i64;
             string:more = raw floor_code_part(raw strlist_view(raw_lines, i));
             line = string_concat(string_concat(line, " "), more);
@@ -276,6 +279,19 @@ pub func:floor_parse = FloorText(string:text) never fails {
                 if (mut) { drop strlist_push(@ft.mutable, g); }
                 drop strlist_push(@ft.globals, g);
                 drop strlist_push(@ft.global_tys, gty);
+                // a constant's initialiser, from the RAW line (the code part
+                // blanks a `c"..."` string): the text after the type, up to `, align`
+                string:init = "";
+                if (!mut) {
+                    int64:ce = raw text_index_of(rawl, "constant ");
+                    if (ce >= 0i64) {
+                        string:after = raw text_trim(raw text_slice(rawl, ce + 9i64 + gty.len, rawl.len));
+                        int64:al = raw text_index_of(after, ", align");
+                        if (al >= 0i64) { after = raw text_trim(raw text_slice(after, 0i64, al)); }
+                        init = string_concat(after, "");
+                    }
+                }
+                drop strlist_push(@ft.global_inits, init);
                 continue;
             }
             string:tty = "";
@@ -442,3 +458,11 @@ pub func:struct_fields = List<string>(string:ty) never fails {
     pass out;
 };
 
+// A constant global's initialiser text (raw), or "" for a mutable global or
+// a global without one.
+pub func:floor_global_init = string(FloorText->:ft, string:global) never fails {
+    for (int64:i in 0i64...ft.globals.count) {
+        if (raw text_eq(raw strlist_view_of(ft.globals.items[i]), global)) { pass (raw strlist_copy(ft.global_inits, i)); }
+    }
+    pass "";
+};

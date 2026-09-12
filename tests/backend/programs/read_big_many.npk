@@ -1,0 +1,41 @@
+// expect-exit: 0
+// Fifty reads of a 256 KiB file (tests/cost/read_file.toml), each result
+// dropped at its scope: `read_file` grows its buffer by doubling from 64 KiB,
+// and a superseded buffer that stayed live (DEF-49) would peak fifty times
+// the once-twin's; returned to the heap, the peak is one read's.
+mod:read_big_many;
+error:E9;
+
+func:big = string() never fails {
+    string:s = "0123456789abcdef";
+    for (int64:i in 0i64...14i64) { s = string_concat(s, s); }
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    cstring:path = to_cstring(".internal/read_big_many.tmp") ?! E9;
+    string:data = raw big();
+    Result<NIL>:w = write_file(path, data);
+    if (w.is_error) { exit 2i32; }
+    for (int64:k in 0i64...50i64) {
+        Result<string>:r = read_file(path);
+        if (r.is_error) { exit 3i32; }
+        string:back = move(r.value);
+        if (back.len != 262144i64) { exit 4i32; }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

@@ -1,0 +1,39 @@
+// expect-exit: 0
+// The twin of read_big_many.npk (tests/cost/read_file.toml): one read of a
+// 256 KiB file. `read_file` grows its buffer by doubling from 64 KiB; the
+// superseded buffers must return to the heap (DEF-49), so the many-reads
+// twin's peak stays that of one read.
+mod:read_big_once;
+error:E9;
+
+func:big = string() never fails {
+    string:s = "0123456789abcdef";
+    for (int64:i in 0i64...14i64) { s = string_concat(s, s); }
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    cstring:path = to_cstring(".internal/read_big_once.tmp") ?! E9;
+    string:data = raw big();
+    Result<NIL>:w = write_file(path, data);
+    if (w.is_error) { exit 2i32; }
+    Result<string>:r = read_file(path);
+    if (r.is_error) { exit 3i32; }
+    string:back = move(r.value);
+    if (back.len != 262144i64) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

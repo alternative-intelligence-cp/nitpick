@@ -582,7 +582,8 @@ if __name__ == "__main__":
 _DEFINE_HEAD_RE = re.compile(r'^define\s+(?:internal\s+|private\s+)?(.*?)\s*(@[\w.$-]+)\s*\((.*?)\)', re.S)
 _STRUCT_TYPE_RE = re.compile(r'^(%[\w.$-]+)\s*=\s*type\s*(\{.*\})\s*$')
 
-_CLAUSE_HEADS = ("free", "requires", "ensures", "ensures-trap", "frame", "loop", "summary", "residue", "boundary")
+_CLAUSE_HEADS = ("free", "requires", "ensures", "ensures-trap", "frame", "loop", "summary", "residue", "boundary",
+                 "objects", "ensures-fresh")
 
 _CLASS_DEFAULT = {
     "asm": "the volatile bottom (inline asm): TRUSTED, documented; no proof",
@@ -703,9 +704,9 @@ def check_spec(floor_text, spec_text, name="floor"):
                 continue
             if ch == "free" and len(cl) > 1:
                 free.append(_atom(cl[1]))
-            if ch in ("ensures", "ensures-trap", "frame", "loop"):
+            if ch in ("ensures", "ensures-trap", "frame", "loop", "ensures-fresh"):
                 claims = True
-            if ch == "ensures":
+            if ch in ("ensures", "ensures-trap", "frame", "ensures-fresh"):
                 has_ensures = True
             if ch == "summary":
                 summary = True

@@ -1,0 +1,11 @@
+# DEF-49 (1.5.6 step 4): `read_file` doubles its buffer from 64 KiB and the
+# superseded buffers return to the heap. `read_big_many.npk` reads a 256 KiB
+# file fifty times, dropping each result; `read_big_once.npk` reads it once.
+# Under NPK_HEAP_STATS the fifty reads' peak must stay within `bound` times
+# the one read's -- a growth that leaked its predecessors peaked fifty times
+# higher (the floor did, until this unit).
+kind    = "probe"
+program = "tests/backend/programs/read_big_many.npk"
+against = "tests/backend/programs/read_big_once.npk"
+bound   = 2
+expect  = "pass"

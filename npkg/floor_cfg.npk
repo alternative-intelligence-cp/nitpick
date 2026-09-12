@@ -161,7 +161,58 @@ pub struct:XFn = {
     FFn:f;
     List<BMeta>:meta;
     List<FLoop>:loops;       // the loops left after the transforms (cut by invariants)
+    List<int64>:be_from;     // THE BACK EDGES, maintained through the transforms (dominators are
+    List<int64>:be_to;       // computed once, on the small original; a transformed graph's loops
+                             // are the originals' back edges that survived, copied with their copies)
     List<string>:problems;   // refusals, by name
+};
+
+// The natural loops of the back edges listed: for each (s -> h), the blocks
+// reaching s without passing h, and h.
+pub func:loops_of_edges = List<FLoop>(FFn->:f, List<int64>:be_from, List<int64>:be_to) never fails {
+    int64:n = f.blocks.count;
+    List<FLoop>:out = raw list_init::<FLoop>(4i64);
+    for (int64:e in 0i64...be_from.count) {
+        int64:s = be_from.items[e];
+        int64:h = be_to.items[e];
+        int64:li = 0i64 - 1i64;
+        for (int64:j in 0i64...out.count) { if (out.items[j].header == h) { li = j; } }
+        if (li < 0i64) {
+            FLoop:l = FLoop{ header: h, latches: raw list_init::<int64>(2i64), members: raw list_init::<int64>(8i64) };
+            drop list_push(@out, move(l));
+            li = out.count - 1i64;
+        }
+        if (!(raw has_int(out.items[li].latches, s))) { drop list_push(@out.items[li].latches, s); }
+    }
+    // predecessor lists once
+    List<List<int64>>:preds = raw list_init::<List<int64>>(n + 1i64);
+    for (int64:i2 in 0i64...n) { drop list_push(@preds, raw list_init::<int64>(2i64)); }
+    for (int64:b in 0i64...n) {
+        for (int64:k in 0i64...f.blocks.items[b].succs.count) { drop list_push(@preds.items[f.blocks.items[b].succs.items[k]], b); }
+    }
+    for (int64:li2 in 0i64...out.count) {
+        int64:h2 = out.items[li2].header;
+        drop list_push(@out.items[li2].members, h2);
+        List<int64>:work = raw list_init::<int64>(8i64);
+        for (int64:a in 0i64...out.items[li2].latches.count) {
+            int64:s2 = out.items[li2].latches.items[a];
+            if (!(raw has_int(out.items[li2].members, s2))) {
+                drop list_push(@out.items[li2].members, s2);
+                drop list_push(@work, s2);
+            }
+        }
+        while (work.count > 0i64) {
+            int64:b2 = work.items[work.count - 1i64];
+            work.count = work.count - 1i64;
+            for (int64:pi in 0i64...preds.items[b2].count) {
+                int64:p = preds.items[b2].items[pi];
+                if (raw has_int(out.items[li2].members, p)) { continue; }
+                drop list_push(@out.items[li2].members, p);
+                drop list_push(@work, p);
+            }
+        }
+    }
+    pass out;
 };
 
 func:meta_plain = BMeta(string:fn, string:label) never fails {
@@ -355,7 +406,9 @@ pub func:xfn_of = XFn(FFn->:f) never fails {
                          params: raw strlist_clone(f.params), param_tys: raw strlist_clone(f.param_tys),
                          ret_ty: raw text_copy(raw strlist_view_of(f.ret_ty)) },
                  meta: raw list_init::<BMeta>(f.blocks.count + 4i64),
-                 loops: raw list_init::<FLoop>(2i64), problems: raw list_init::<string>(1i64) };
+                 loops: raw list_init::<FLoop>(2i64),
+                 be_from: raw list_init::<int64>(4i64), be_to: raw list_init::<int64>(4i64),
+                 problems: raw list_init::<string>(1i64) };
     for (int64:b in 0i64...f.blocks.count) {
         FBlock:nb = FBlock{ label: raw text_copy(raw strlist_view_of(f.blocks.items[b].label)),
                             lines: raw strlist_clone(f.blocks.items[b].lines), succs: raw list_init::<int64>(2i64) };
@@ -363,8 +416,32 @@ pub func:xfn_of = XFn(FFn->:f) never fails {
         drop list_push(@x.meta, raw meta_plain(raw strlist_view_of(f.name), raw strlist_view_of(f.blocks.items[b].label)));
     }
     drop floor_finish(@x.f);
-    x.loops = raw floor_loops(@x.f);
+    // the back edges, once, by dominators over the small original
+    List<FLoop>:orig = raw floor_loops(@x.f);
+    for (int64:li in 0i64...orig.count) {
+        for (int64:a in 0i64...orig.items[li].latches.count) {
+            drop list_push(@x.be_from, orig.items[li].latches.items[a]);
+            drop list_push(@x.be_to, orig.items[li].header);
+        }
+    }
+    x.loops = raw loops_of_edges(@x.f, x.be_from, x.be_to);
     pass x;
+};
+
+// Replace the back-edge list by the edges (from_label -> to_label) named,
+// resolved against the current blocks.
+func:xfn_set_edges = NIL(XFn->:x, List<string>:from_labels, List<string>:to_labels) never fails {
+    x.be_from.count = 0i64;
+    x.be_to.count = 0i64;
+    for (int64:i in 0i64...from_labels.count) {
+        int64:fi = raw floor_block_index(@x.f, raw strlist_view(from_labels, i));
+        int64:ti = raw floor_block_index(@x.f, raw strlist_view(to_labels, i));
+        if ((fi < 0i64) || (ti < 0i64)) { continue; }
+        drop list_push(@x.be_from, fi);
+        drop list_push(@x.be_to, ti);
+    }
+    x.loops = raw loops_of_edges(@x.f, x.be_from, x.be_to);
+    pass NIL;
 };
 
 pub func:xfn_block_index = int64(XFn->:x, string:label) never fails {
@@ -419,6 +496,15 @@ func:copy_line = string(string:ln, List<string>:from, List<string>:to, List<stri
 pub func:xfn_unroll = NIL(XFn->:x, int64:li, int64:n, int64:unroll_id, bool:exact) never fails {
     int64:h = x.loops.items[li].header;
     drop xfn_lcssa(x, li, unroll_id);
+    // the back edges after: this loop's are consumed; every other edge stays,
+    // and one inside this loop is copied with the copies
+    List<string>:ef = raw list_init::<string>(x.be_from.count + 4i64);
+    List<string>:et = raw list_init::<string>(x.be_from.count + 4i64);
+    for (int64:e in 0i64...x.be_from.count) {
+        if (x.be_to.items[e] == h) { continue; }
+        drop strlist_push(@ef, raw strlist_view_of(x.f.blocks.items[x.be_from.items[e]].label));
+        drop strlist_push(@et, raw strlist_view_of(x.f.blocks.items[x.be_to.items[e]].label));
+    }
     List<int64>:members = raw list_init::<int64>(x.loops.items[li].members.count + 1i64);
     for (int64:m in 0i64...x.loops.items[li].members.count) { drop list_push(@members, x.loops.items[li].members.items[m]); }
     List<int64>:latches = raw list_init::<int64>(x.loops.items[li].latches.count + 1i64);
@@ -474,6 +560,15 @@ pub func:xfn_unroll = NIL(XFn->:x, int64:li, int64:n, int64:unroll_id, bool:exac
             }
             drop list_push(@x.meta, move(nm));
         }
+        // an inner loop's back edge inside this copy
+        if (k > 0i64) {
+            for (int64:e2 in 0i64...x.be_from.count) {
+                if (x.be_to.items[e2] == h) { continue; }
+                if (!(raw has_int(members, x.be_from.items[e2]))) { continue; }
+                drop strlist_push(@ef, string_concat(raw strlist_view_of(x.f.blocks.items[x.be_from.items[e2]].label), sfx));
+                drop strlist_push(@et, string_concat(raw strlist_view_of(x.f.blocks.items[x.be_to.items[e2]].label), sfx));
+            }
+        }
     }
     // the stop block
     FBlock:stop = FBlock{ label: raw text_copy(stop_label), lines: raw list_init::<string>(1i64), succs: raw list_init::<int64>(1i64) };
@@ -486,7 +581,7 @@ pub func:xfn_unroll = NIL(XFn->:x, int64:li, int64:n, int64:unroll_id, bool:exac
     sm.origin_label = raw text_copy(hlabel);
     drop list_push(@x.meta, move(sm));
     drop floor_finish(@x.f);
-    x.loops = raw floor_loops(@x.f);
+    drop xfn_set_edges(x, ef, et);
     pass NIL;
 };
 
@@ -753,6 +848,23 @@ pub func:xfn_inline = NIL(XFn->:x, int64:bi, int64:li, FFn->:callee, List<string
     cm.entry_of = "";
     drop list_push(@x.meta, move(cm));
     drop floor_finish(@x.f);
-    x.loops = raw floor_loops(@x.f);
+    // the back edges: the caller's -- a latch split at the call ends in its
+    // continuation now, so an edge from the split block moves there -- plus
+    // the callee's under the prefix
+    List<string>:ef = raw list_init::<string>(x.be_from.count + 4i64);
+    List<string>:et = raw list_init::<string>(x.be_from.count + 4i64);
+    for (int64:e in 0i64...x.be_from.count) {
+        if (x.be_from.items[e] == bi) { drop strlist_push(@ef, cont_label); }
+        else { drop strlist_push(@ef, raw strlist_view_of(x.f.blocks.items[x.be_from.items[e]].label)); }
+        drop strlist_push(@et, raw strlist_view_of(x.f.blocks.items[x.be_to.items[e]].label));
+    }
+    List<FLoop>:cl = raw floor_loops(callee);
+    for (int64:li in 0i64...cl.count) {
+        for (int64:a3 in 0i64...cl.items[li].latches.count) {
+            drop strlist_push(@ef, string_concat(prefix, raw strlist_view_of(callee.blocks.items[cl.items[li].latches.items[a3]].label)));
+            drop strlist_push(@et, string_concat(prefix, raw strlist_view_of(callee.blocks.items[cl.items[li].header].label)));
+        }
+    }
+    drop xfn_set_edges(x, ef, et);
     pass NIL;
 };

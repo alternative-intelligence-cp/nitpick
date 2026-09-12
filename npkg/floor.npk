@@ -92,9 +92,12 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, string:dir) never fa
         int64:fi = raw floor_fn_index(ft, name);
         int64:sec = raw spec_section(s, name);
         if (fi < 0i64) { drop strlist_push(@fl, string_concat("floor: the spec names a symbol the floor does not define: ", name)); continue; }
-        // a symbol with a residue sentence and nothing else claims no rows
+        // a symbol with a residue sentence and nothing else claims no rows; a
+        // BOUNDARY symbol's clauses are its promise at the kernel boundary --
+        // assumed at its (summary) calls, never proven here (1.5.6 step 4)
         bool:claims = (raw spec_has(s, sec, "ensures")) || (raw spec_has(s, sec, "ensures-trap")) || (raw spec_has(s, sec, "frame")) || (raw spec_has(s, sec, "loop"));
         if (!claims) { continue; }
+        if (raw spec_has(s, sec, "boundary")) { continue; }
         FloorFile:f = raw floor_translate(ft, s, fi, sec);
         if (f.problems.count > 0i64) {
             for (int64:p in 0i64...f.problems.count) { drop strlist_push(@fl, raw strlist_view(f.problems, p)); }
@@ -214,6 +217,10 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
             if (raw text_eq(ch, "summary")) { known = true; summary = true; }
             if (raw text_eq(ch, "residue")) { known = true; excused = true; }
             if (raw text_eq(ch, "boundary")) { known = true; excused = true; }
+            if (raw text_eq(ch, "objects")) { known = true; }
+            if (raw text_eq(ch, "ensures-fresh")) { known = true; claims = true; has_ensures = true; }
+            if (raw text_eq(ch, "ensures-trap")) { has_ensures = true; }
+            if (raw text_eq(ch, "frame")) { has_ensures = true; }
             if (raw text_eq(ch, "loop")) {
                 known = true;
                 claims = true;

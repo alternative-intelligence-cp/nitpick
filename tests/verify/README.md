@@ -38,7 +38,7 @@ Three things every file carries:
 
 A row's kind, site, role, group, traps and tier are `rows.txt`'s. Read one
 by hand with `.internal/quickemit/npkc FILE --obligations D` and then
-`z3 smt.random_seed=0 sat.random_seed=0 rlimit=20000000 -smt2 D/NNNN.smt2`
+`z3 smt.random_seed=0 sat.random_seed=0 rlimit=20000000 lp.dio=false -smt2 D/NNNN.smt2`
 (CLAUDE.md's verification leg); a row with a Real-interval twin has
 `D/NNNN.t2.smt2` beside it, named in `D/index.t2.txt`.
 

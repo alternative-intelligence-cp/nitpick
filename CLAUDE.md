@@ -1217,7 +1217,7 @@ function's obligations and reads a manifest of verdicts; `npkg` owns z3:
 .internal/quickemit/p_main_npk verify --record     # write nitpick.obligations from this run -- a deliberate re-baseline, committed with the change that moved it
 .internal/quickemit/p_main_npk verify --explain    # plus build/verify/explain.txt: a model per open row, a reason per budget row, a core per discharged one
 .internal/quickemit/npkc file.npk --obligations D  # the compiler's half by hand: D/NNNN.smt2, index.txt, rows.txt
-z3 smt.random_seed=0 sat.random_seed=0 rlimit=20000000 -smt2 D/0001.smt2   # one file, the profile spelled out
+z3 smt.random_seed=0 sat.random_seed=0 rlimit=20000000 lp.dio=false -smt2 D/0001.smt2   # one file, the profile spelled out
 ```
 
 The harness's `verify` stage does the same over `tests/verify/` (each file
