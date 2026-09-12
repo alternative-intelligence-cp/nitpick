@@ -152,6 +152,15 @@ CASES = [
 ]
 
 
+# The toy model both `floor-control-blind` cases run (npkg's copy is
+# `selfcheck.npk`'s, byte for byte): `set` fires once, and `tick` sets y
+# AND clears x, so the two are never 1 together -- unless a mutation drops
+# the clear, which is what the seeing control does.
+TOY = ('(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) %s)')
+BLIND = '(control blind both (remove b tick))'
+SEEING = '(control seeing both (replace b tick (guard (= y 0)) (next (y 1))))'
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="npk-selfcheck-")
     tools = shutil.which("llc") and shutil.which("ld.lld")
@@ -298,6 +307,42 @@ def main():
                     print("      the floor leg accepted it; it should not have%s" % ((": " + fails[0][:200]) if fails else ""))
                 else:
                     print("      the floor leg rejected it: %s" % fails[0][:300])
+    # floor-control-blind (1.5.6 step 5): a model whose control reaches no bad
+    # state fails by name through the same tool; one that does passes. The
+    # tool reads runtime/models/ under the synthetic root.
+    if ftool and os.path.exists(str(ftool)):
+        toy = ("%s\n" % TOY)
+        for name, control, must_fail, why in (
+                ("floor-control-blind", BLIND, True,
+                 "a control that reaches no bad state must fail by name"),
+                ("floor-control-blind-control", SEEING, False,
+                 "a control that reaches its bad state passes")):
+            froot = os.path.join(tmp, name.replace("-", "_"))
+            os.makedirs(os.path.join(froot, "runtime", "models"), exist_ok=True)
+            with open(os.path.join(froot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:
+                fh.write(fl_floor)
+            with open(os.path.join(froot, "runtime", "npkrt.spec"), "w", encoding="utf-8") as fh:
+                fh.write("(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n")
+            with open(os.path.join(froot, "runtime", "models", "toy.model"), "w", encoding="utf-8") as fh:
+                fh.write(toy % control)
+            fdir = os.path.join(froot, "obl")
+            r = subprocess.run([ftool, froot, "--emit", fdir], capture_output=True, text=True, timeout=300)
+            fails = []
+            if r.returncode != 0:
+                fails.append((r.stdout + r.stderr).strip())
+            else:
+                fails = harness.floor_controls(fdir)
+            ok = (bool(fails) == must_fail)
+            if ok and must_fail:
+                ok = "floor-control-blind" in fails[0]
+            if not ok:
+                bad += 1
+            print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+            if not ok:
+                if must_fail:
+                    print("      the floor leg accepted a blind control; it should not have%s" % ((": " + fails[0][:200]) if fails else ""))
+                else:
+                    print("      the floor leg rejected a seeing control: %s" % fails[0][:300])
     fun = floor.check_spec(fl_floor, "(symbol @f)\n", "floor-unspecified")
     okfu = bool(fun)
     if not okfu:

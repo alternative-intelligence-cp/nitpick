@@ -1385,7 +1385,7 @@ summaries under sortedness, the removal by invariant), the validations
 the fd quartet, the file helpers, the clock and the string builders under
 the kernel-effect table, and the `(boundary "…")` promise of every other
 syscall-class symbol. The residue named: `npk_small_free`'s five ensures and its frame (six budget rows -- each claim over the state after the poison loop must separate its address from the tail's stores through the class table's geometry, a fourteen-way case over the class index the solver does not finish at the budget or at ten times it), `npk_int_to_string`'s sign row (one budget row -- the sign byte reaches the block's base through the rehome copy's twenty unrolled loads, whose addresses the solver must relate to the sign store's wrapped one), and `npk_wildx_call`'s sentence (no row: an indirect call into a sealed wildx page, whose contents are outside verification by construction -- D-035 -- so its effect on memory and its result are opaque and no clause claims either). Found on the way:
-DEF-49 (`npk_read_file`/`npk_read_stdin` leaked every buffer they outgrew;
+DEF-51 (`npk_read_file`/`npk_read_stdin` leaked every buffer they outgrew;
 fixed in the floor, held by `tests/cost/read_file.toml`); the spec's own
 wrong statements, each a refuted row corrected (among them
 `npk_hs_put_dec`'s precondition, which admitted `pos = 2^64 − 20`, where
@@ -1394,5 +1394,110 @@ position after the digits is a word now); S-71, the profile's
 `lp.dio=false` (above); and one refutation of the translator's own making
 (a `getelementptr` over a shaped index dropped the index's parts for one
 round — caught by `npk_hs_put_str`'s preservation row, which is what an
-`open` floor row is for). Steps 5 and 6 add the models and the syscall
-table.
+`open` floor row is for). Step 6 adds the syscall table.
+
+### 9.4 The protocol models (D-289; landed 1.5.6 step 5)
+
+A specification says what one function does to memory on one thread. The
+floor's hazards are not there: they are in the PROTOCOLS two threads run
+between them — a wake that arrives before the sleep, a publish read before
+its payload, a slot claimed twice. The r6 verdict is to model the
+primitive, never the whole executor, so each protocol is a small
+transition system in its own file under `runtime/models/`, unrolled to
+SMT-LIB2 in QF_LIA by `npkg/floor_model.npk`:
+
+```
+(model NAME
+  (of "one sentence: what the model is of")
+  (state (VAR LO HI) ...)                ; Int variables with their ranges
+  (init PROPOSITION)
+  (thread THREAD
+    (step STEP
+      (ir @sym BLOCK ...) ...            ; the floor blocks this step abstracts
+      (guard PROPOSITION)                ; absent: true
+      (next (VAR EXPR) ...)              ; the rest keep their values
+      (kernel WORD ARGS ...)))           ; a library rule, expanded into `next`
+  (bad PRED PROPOSITION) ...
+  (depth K) (preempt D)
+  (control CNAME PRED MUTATION ...))     ; (replace THREAD STEP ...) | (remove THREAD STEP)
+```
+
+The unrolling asserts one step per tick for K ticks, every variable inside
+its range at every tick, and — BPOR's idea in the symbolic setting — that
+the running thread changes at most `D` times over the K steps: a bug that
+needs more context switches than `D` is outside the bound, and the row's
+site says so (`bad:<predicate>:K<k>:D<d>`). **A tick may also STUTTER**, the
+state unchanged. That is not a convenience: without it, a protocol that
+runs out of enabled steps before tick K makes its own unrolling
+unsatisfiable, and every bad predicate is then unreachable for the wrong
+reason — "the protocol halted" read as "the protocol is safe". With it the
+unrolling is monotone in K, so what is reachable in fewer than K steps is
+reachable at K, and a stutter reaches no state a step did not. The hazard
+is not hypothetical: the runner self-check's own toy model halts at its
+third tick, and its `seeing` control — the mutation that MUST reach the bad
+state — answered `unsat` until the stutter existed. A row is one bad predicate,
+asserted reachable at some tick and refuted: `kind` `floor-model`, `symbol`
+`model:<name>`. The kernel rules a step may name are the library's, so no
+model writes its own: `futex-wait` (the wait returns at once unless the
+word still holds the expected value), `futex-wake` (a parked waiter is
+unparked, and a wake with nobody parked is lost), `spurious` (a parked
+waiter returns for no reason), `eventfd-write`/`eventfd-read`, and
+`signal` (a delivered stop parks the thread in its handler).
+
+**A model that claims nothing is worth nothing, so every model carries
+CONTROLS.** A control names a bad predicate and mutates the model — a
+step's guard and updates replaced, or a step removed — and the mutated
+system must REACH that state: the query is `sat`, and a control that is not
+is a run failure by name (`floor-control-blind`), listed in `controls.txt`
+beside the rows. The controls are the defects the protocol was written
+against: the executor's second sweep dropped, the park word cleared after
+it instead of before, `sl_push`'s keep path dropped, the epoll path's
+re-check of the word dropped, a mutex released by a plain store, a waiter
+waiting on the wrong expected value, the channel table's count published
+before its pointer, the reclaim's under-lock re-check dropped, an arena
+index read-then-written instead of one atomic add, a chunk linked without
+the compare-and-swap, a driver slot claimed by a plain store, a slot
+published before its pidfd word is prefilled, and the whole pre-step-1 trap
+route (the holder read in one step and written in the next, the winner into
+`failsafe` with no stop, a losing thread exiting the process) and the
+pre-step-2 allocator (the `failsafe` body taking the heap mutex a stopped
+thread holds). Each is `sat`; each is a defect the floor does not have.
+
+**Soundness of the sequential-consistency reading.** The unrolling
+interleaves steps in SC order, and that is sound for these protocols
+because §2.9's shared-state table says every cross-thread datum they touch
+travels through a `seq_cst` operation or a `release`/`acquire` pair whose
+payload is read only after the acquire; x86-TSO and LLVM's ordering rules
+make an SC interleaving of those operations the only observable order. The
+belt holds the models to the floor in the other direction:
+`floor_models_current` (npkg) and `check_floor_models_current` (the
+harness) read every `(ir @sym BLOCK ...)` form, refuse a symbol or a block
+the floor does not have, and refuse a block of a NAMED symbol that holds an
+atomic operation or an `npk_sys6` call which no step names — **a model can
+be wrong about what a step means, but it cannot be silent about a step.**
+TCB.md's disposition column reads `modelled (a, b)` for a symbol some
+model's steps name.
+
+**What lands at 1.5.6 step 5** (20 rows over 6 models, every one
+discharged; 16 controls, every one `sat`): `park-unpark` (the executor's
+idle path against a channel waker, the registration race, the wind-up
+sweep, the eventfd path; K 14, D 5 — wake-before-sleep,
+absorbed-notification, spent-marker, wound-but-asleep), `futex-mutex`
+(Drepper's mutex2 over three threads and the kernel; K 11, D 6 — mutual
+exclusion, lost wake, unlock-without-wake), `channel-table` (the publish
+and the reclaim; K 12, D 6 — torn publish, double reclaim),
+`shared-arena` (the lock-free bump and the chunk walk; K 12, D 5 —
+duplicate index, wrong chunk, unlinked forever), `driver-registry` (the
+claim, the publish and the kill walk; K 10, D 5 — double claim, unkilled
+live driver, stale pidfd signalled, retire of a free slot) and
+`trap-route` (the whole-program stop and the failsafe region; K 14, D 6 —
+two failsafes, a task step after `failsafe` began, an exit mid-failsafe, a
+`failsafe` blocked on the heap). Each depth is the SMALLEST that decides
+every row with a margin under the profile, measured: the largest row of the
+set is `futex-mutex`'s mutual exclusion at 13.0M of the 20M rlimit (the
+next is `park-unpark`'s wound-but-asleep at 12.9M, and every other row is
+under 8M), and every control decides in under a second. **Liveness is residue by name** — that a due task is
+eventually run, and that the arena walker's spin ends, need a fairness
+assumption a bounded unrolling cannot state; 1.5.7's schedule-exploration
+harness is the instrument for the real code, and every model here is the
+shape its mocked primitives will be driven through.

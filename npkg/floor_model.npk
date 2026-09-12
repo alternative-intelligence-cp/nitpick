@@ -1,0 +1,838 @@
+// floor_model -- THE FLOOR'S PROTOCOL MODELS (1.5.6 step 5; D-289 SS2.7):
+// a model file under `runtime/models/` is a bounded transition system the
+// writer UNROLLS to SMT-LIB2 in QF_LIA -- state variables over Int, an
+// initial predicate, per-thread named steps (a guard, the next values, the
+// floor's IR blocks the step abstracts), bad predicates, a depth K and a
+// preemption bound D (the unrolling asserts that the running thread changes
+// at most D times over K steps: a bug that needs more context switches than
+// D is outside the bound, and the row's site says K and D), and controls --
+// a mutation of the model under which a named bad predicate MUST be
+// reachable (`sat`), the proof that the model sees what it is for. One row
+// per bad predicate (`floor-model`, `model:<name>`, `bad:<pred>:K<k>:D<d>`),
+// one query per control, listed in `controls.txt`.
+//
+// THE SOUNDNESS OF SC OVER THE ATOMICS. Every step is one atomic operation
+// of the floor or a run of thread-local work between two, and the unrolling
+// interleaves steps in sequential-consistency order. This is sound for the
+// protocols modelled because SS2.9's shared-state table (`runtime/npkrt.spec`'s
+// `(shared ...)` section, held by `floor_shared_current`) says every
+// cross-thread datum they touch travels through a `seq_cst` operation or a
+// `release`/`acquire` pair whose payload is read only after the acquire,
+// and x86-TSO plus LLVM's ordering rules make an SC interleaving of those
+// operations the only observable order. The correspondence belt
+// (`floor_models_current`) holds the models to the floor the other way:
+// every atomic instruction and every `npk_sys6` call of a symbol any model
+// names must sit in a block some step names -- a model can be wrong about a
+// step's meaning, but it cannot be silent about a step.
+//
+// THE GRAMMAR (S-expressions, `floor_spec.npk`'s reader):
+//
+//   (model NAME
+//     (of "one sentence: what the model is of")
+//     (state (VAR LO HI) ...)                  ; Int variables with their ranges
+//     (init PROPOSITION)                       ; over the variables
+//     (thread THREAD
+//       (step STEP
+//         (ir @sym BLOCK ...) ...              ; the IR blocks the step abstracts (any number of forms)
+//         (guard PROPOSITION)                  ; over the variables (absent: true)
+//         (next (VAR EXPR) ...)                ; the variables that change; the rest keep their values
+//         (kernel WORD ARGS ...)               ; a library rule, expanded into `next` (below)
+//       ) ...)
+//     (bad PRED PROPOSITION) ...               ; unreachable at every step 1..K, or the row is refuted
+//     (depth K) (preempt D)
+//     (control CNAME PRED MUTATION ...)         ; one or more of
+//       (replace THREAD STEP (guard P) (next ...))   ; the step's guard and next replaced
+//       (remove THREAD STEP)                         ; the step removed
+//     ...)
+//
+// The kernel rules every model may name inside a step (each a `next`
+// binding the author could write by hand; the word says which rule it is):
+//   (kernel futex-wait WORD EXPECTED PARKED)  ; the wait returns at once when WORD is not EXPECTED, else parks: PARKED := (ite (= WORD EXPECTED) 1 0)
+//   (kernel futex-wake PARKED)                ; a wake unparks a parked waiter, and is otherwise lost: PARKED := 0
+//   (kernel spurious PARKED)                  ; a parked waiter returns spuriously: guard PARKED = 1, PARKED := 0
+//   (kernel eventfd-write EV)                 ; the eventfd becomes readable: EV := 1
+//   (kernel eventfd-read EV)                  ; the drain: EV := 0
+//   (kernel signal PC STOPPED)                ; a delivered stop signal parks the thread in its handler: PC := STOPPED
+//
+// Every proposition and expression is SMT-LIB2 over the variables (`=`,
+// `and`, `or`, `not`, `ite`, `+`, `-`, `<`, `<=`, `>`, `>=`, `distinct`,
+// numerals); a variable at step k renders as `VAR_k`.
+
+mod:floor_model;
+
+use "../src/frontend/paths.npk".*;
+use "../lib/nfs.npk".*;
+use "../lib/nhash.npk".*;
+use "../src/backend/smt/smt_writer.npk".*;
+use "./text.npk".*;
+use "./floor_ir.npk".*;
+use "./floor_spec.npk".*;
+
+// A step: its thread, its name, the blocks it abstracts, its guard and
+// next templates (`{var}` marks a variable; `subst_at` puts the step in).
+pub struct:MStep = {
+    int64:thr;
+    string:name;
+    List<string>:ir_syms;      // `@npk_step`, one per named block (parallel to ir_blocks)
+    List<string>:ir_blocks;    // `nothing`
+    string:gd;                 // the guard template ("true" for none)
+    List<string>:next_vars;
+    List<string>:next_exprs;   // templates
+};
+
+// What a step's or a mutation's body reads to: the problem ("" for none) and
+// the guard. NO STRING OUT-PARAMETER anywhere in this module: a string
+// written through a pointer is a borrow wherever it is read again (D-004
+// rule 2), and these values end up inside the returned model.
+pub struct:SBody = {
+    string:why;
+    string:gd;
+};
+
+pub struct:MControl = {
+    string:name;
+    string:bad;                // the bad predicate that must be reachable
+    int64:thr;
+    string:step;
+    bool:remove;
+    string:gd;
+    List<string>:next_vars;
+    List<string>:next_exprs;
+};
+
+pub struct:MModel = {
+    bool:ok;
+    string:problem;
+    string:name;
+    string:of;
+    List<string>:vars;
+    List<int64>:lo;
+    List<int64>:hi;
+    string:init;               // template
+    List<string>:threads;
+    List<MStep>:steps;
+    List<string>:bad_names;
+    List<string>:bad_preds;    // templates
+    int64:depth;
+    int64:preempt;
+    List<MControl>:controls;
+};
+
+func:mm_problem = MModel(string:name, string:why) never fails {
+    pass MModel{ ok: false, problem: string_concat("floor: runtime/models/", string_concat(name, string_concat(": ", why))), name: string_concat(name, ""), of: "",
+                 vars: raw list_init::<string>(1i64), lo: raw list_init::<int64>(1i64), hi: raw list_init::<int64>(1i64), init: "true",
+                 threads: raw list_init::<string>(1i64), steps: raw list_init::<MStep>(1i64),
+                 bad_names: raw list_init::<string>(1i64), bad_preds: raw list_init::<string>(1i64), depth: 0i64, preempt: 0i64,
+                 controls: raw list_init::<MControl>(1i64) };
+};
+
+// --- templates ------------------------------------------------------------------------
+
+// An S-expression rendered with every variable atom as `{var}`; any other
+// atom (a numeral, an operator, `true`) as itself.
+func:tmpl_of = string(Sxs->:s, int64:node, List<string>:vars) never fails {
+    if (node < 0i64) { pass "true"; }
+    if (raw sx_is_string(s, node)) { pass "true"; }
+    if (!(raw sx_is_list(s, node))) {
+        string:a = raw sx_atom(s, node);
+        if (raw strlist_contains(vars, a)) {
+            string:t = string_concat("{", a);
+            pass (string_concat(t, "}"));
+        }
+        pass (string_concat(a, ""));
+    }
+    string:out = "(";
+    int64:c = s.nodes.items[node].first;
+    bool:first = true;
+    while (c >= 0i64) {
+        if (!first) { out = string_concat(out, " "); }
+        first = false;
+        out = string_concat(out, raw tmpl_of(s, c, vars));
+        c = s.nodes.items[c].next;
+    }
+    pass (string_concat(out, ")"));
+};
+
+// `{var}` -> `var_k`.
+pub func:subst_at = string(string:tmpl, int64:k) never fails {
+    string:out = "";
+    int64:i = 0i64;
+    string:suffix = string_concat("_", int_to_string(k));
+    while (i < tmpl.len) {
+        uint8:c = tmpl.ptr[i];
+        if (c == 123u8) {
+            int64:e = i + 1i64;
+            while ((e < tmpl.len) && (tmpl.ptr[e] != 125u8)) { e = e + 1i64; }
+            out = string_concat(out, raw text_slice(tmpl, i + 1i64, e));
+            out = string_concat(out, suffix);
+            i = e + 1i64;
+            continue;
+        }
+        out = string_concat(out, raw text_slice(tmpl, i, i + 1i64));
+        i = i + 1i64;
+    }
+    pass out;
+};
+
+// Every variable a template names.
+func:tmpl_mentions = bool(string:tmpl, string:v) never fails {
+    string:key = string_concat("{", v);
+    key = string_concat(key, "}");
+    pass (raw text_contains(tmpl, key));
+};
+
+// --- the reader --------------------------------------------------------------------------
+
+func:read_next = string(Sxs->:s, int64:nx, List<string>:vars, List<string>->:nv, List<string>->:ne) never fails {
+    int64:c = s.nodes.items[nx].first;
+    c = s.nodes.items[c].next;   // past `next`
+    while (c >= 0i64) {
+        if (!(raw sx_is_list(s, c)) || ((raw sx_len(s, c)) != 2i64)) { pass "a next binding is (VAR EXPR)"; }
+        string:v = raw sx_atom(s, raw sx_nth(s, c, 0i64));
+        if (!(raw strlist_contains(vars, v))) { pass (string_concat("a next binding names no state variable: ", v)); }
+        if (raw strlist_contains(<-nv, v)) { pass (string_concat("a variable bound twice in one step: ", v)); }
+        drop strlist_push(nv, v);
+        drop strlist_push(ne, raw tmpl_of(s, raw sx_nth(s, c, 1i64), vars));
+        c = s.nodes.items[c].next;
+    }
+    pass "";
+};
+
+// `(kernel WORD ARGS...)` expanded into next bindings (and a guard conjunct).
+func:read_kernel = SBody(Sxs->:s, int64:kn, List<string>:vars, List<string>->:nv, List<string>->:ne, string:gd) never fails {
+    SBody:out = SBody{ why: "", gd: string_concat(gd, "") };
+    int64:n = raw sx_len(s, kn);
+    if (n < 2i64) { out.why = "a kernel rule needs a word"; pass out; }
+    string:w = raw sx_atom(s, raw sx_nth(s, kn, 1i64));
+    List<string>:args = raw list_init::<string>(4i64);
+    for (int64:i in 2i64...n) {
+        int64:an = raw sx_nth(s, kn, i);
+        if (raw sx_is_list(s, an)) { out.why = "a kernel rule's arguments are variables and numerals"; pass out; }
+        string:a = raw sx_atom(s, an);
+        if (raw strlist_contains(vars, a)) { drop strlist_push(@args, string_concat("{", string_concat(a, "}"))); }
+        else { if (!(raw is_numeral_text(a))) { out.why = string_concat("a kernel rule names no state variable: ", a); pass out; } drop strlist_push(@args, a); }
+    }
+    if (raw text_eq(w, "futex-wait")) {
+        if (args.count != 3i64) { out.why = "(kernel futex-wait WORD EXPECTED PARKED)"; pass out; }
+        string:parked = raw strlist_view(args, 2i64);
+        drop strlist_push(nv, raw text_slice(parked, 1i64, parked.len - 1i64));
+        drop strlist_push(ne, raw smt_app3("ite", raw smt_app2("=", raw strlist_view(args, 0i64), raw strlist_view(args, 1i64)), "1", "0"));
+        pass out;
+    }
+    if (raw text_eq(w, "futex-wake") || raw text_eq(w, "eventfd-read")) {
+        if (args.count != 1i64) { out.why = string_concat("(kernel ", string_concat(w, " VAR)")); pass out; }
+        string:p = raw strlist_view(args, 0i64);
+        drop strlist_push(nv, raw text_slice(p, 1i64, p.len - 1i64));
+        drop strlist_push(ne, "0");
+        pass out;
+    }
+    if (raw text_eq(w, "eventfd-write")) {
+        if (args.count != 1i64) { out.why = "(kernel eventfd-write EV)"; pass out; }
+        string:ev = raw strlist_view(args, 0i64);
+        drop strlist_push(nv, raw text_slice(ev, 1i64, ev.len - 1i64));
+        drop strlist_push(ne, "1");
+        pass out;
+    }
+    if (raw text_eq(w, "spurious")) {
+        if (args.count != 1i64) { out.why = "(kernel spurious PARKED)"; pass out; }
+        string:sp = raw strlist_view(args, 0i64);
+        string:g = raw smt_app2("=", sp, "1");
+        if (raw text_eq(raw strlist_view_of(out.gd), "true")) { out.gd = move(g); } else { out.gd = raw smt_app2("and", raw strlist_view_of(out.gd), g); }
+        drop strlist_push(nv, raw text_slice(sp, 1i64, sp.len - 1i64));
+        drop strlist_push(ne, "0");
+        pass out;
+    }
+    if (raw text_eq(w, "signal")) {
+        if (args.count != 2i64) { out.why = "(kernel signal PC STOPPED)"; pass out; }
+        string:pc = raw strlist_view(args, 0i64);
+        drop strlist_push(nv, raw text_slice(pc, 1i64, pc.len - 1i64));
+        drop strlist_push(ne, raw strlist_copy(args, 1i64));
+        pass out;
+    }
+    out.why = string_concat("a kernel rule the library does not know: ", w);
+    pass out;
+};
+
+func:is_numeral_text = bool(string:a) never fails {
+    if (a.len == 0i64) { pass false; }
+    int64:i = 0i64;
+    if (a.ptr[0i64] == 45u8) { i = 1i64; if (a.len == 1i64) { pass false; } }
+    while (i < a.len) { if (!(raw text_is_digit(a.ptr[i]))) { pass false; } i = i + 1i64; }
+    pass true;
+};
+
+func:read_step_body = SBody(Sxs->:s, int64:sn, int64:from, List<string>:vars, List<string>->:nv, List<string>->:ne,
+                            List<string>->:isyms, List<string>->:iblocks) never fails {
+    SBody:out = SBody{ why: "", gd: "true" };
+    int64:c = from;
+    while (c >= 0i64) {
+        if (!(raw sx_is_list(s, c))) { out.why = "a bare word inside a step"; pass out; }
+        string:h = raw sx_head(s, c);
+        if (raw text_eq(h, "ir")) {
+            int64:n = raw sx_len(s, c);
+            if (n < 3i64) { out.why = "(ir @sym BLOCK ...) names a symbol and at least one block"; pass out; }
+            string:sym = raw sx_atom(s, raw sx_nth(s, c, 1i64));
+            for (int64:i in 2i64...n) {
+                drop strlist_push(isyms, sym);
+                drop strlist_push(iblocks, raw sx_atom(s, raw sx_nth(s, c, i)));
+            }
+        } else { if (raw text_eq(h, "guard")) {
+            if ((raw sx_len(s, c)) != 2i64) { out.why = "a guard takes one proposition"; pass out; }
+            string:g = raw tmpl_of(s, raw sx_nth(s, c, 1i64), vars);
+            if (raw text_eq(raw strlist_view_of(out.gd), "true")) { out.gd = move(g); } else { out.gd = raw smt_app2("and", raw strlist_view_of(out.gd), g); }
+        } else { if (raw text_eq(h, "next")) {
+            string:w1 = raw read_next(s, c, vars, nv, ne);
+            if (w1.len > 0i64) { out.why = move(w1); pass out; }
+        } else { if (raw text_eq(h, "kernel")) {
+            SBody:k = raw read_kernel(s, c, vars, nv, ne, raw strlist_view_of(out.gd));
+            if (k.why.len > 0i64) { out.why = string_concat(raw strlist_view_of(k.why), ""); pass out; }
+            out.gd = string_concat(raw strlist_view_of(k.gd), "");
+        } else {
+            out.why = string_concat("a step form the grammar does not know: ", h);
+            pass out;
+        } } } }
+        c = s.nodes.items[c].next;
+    }
+    pass out;
+};
+
+// The model at `path` read and checked for shape (the floor's blocks are the
+// belt's business, `floor_models_current`).
+pub func:model_parse = MModel(string:fname, string:text) never fails {
+    Sxs:s = raw sx_parse(text);
+    if (!s.ok) { pass (raw mm_problem(fname, s.problem)); }
+    if (s.roots.count != 1i64) { pass (raw mm_problem(fname, "one (model NAME ...) form per file")); }
+    int64:r = s.roots.items[0i64];
+    if (!(raw sx_is_list(@s, r)) || !(raw text_eq(raw sx_head(@s, r), "model"))) { pass (raw mm_problem(fname, "the file's form is (model NAME ...)")); }
+    if ((raw sx_len(@s, r)) < 3i64) { pass (raw mm_problem(fname, "a model needs a name and clauses")); }
+    string:name = raw sx_atom(@s, raw sx_nth(@s, r, 1i64));
+    if (name.len == 0i64) { pass (raw mm_problem(fname, "a model's name is a bare word")); }
+    MModel:m = MModel{ ok: true, problem: "", name: string_concat(name, ""), of: "",
+                       vars: raw list_init::<string>(8i64), lo: raw list_init::<int64>(8i64), hi: raw list_init::<int64>(8i64), init: "true",
+                       threads: raw list_init::<string>(4i64), steps: raw list_init::<MStep>(16i64),
+                       bad_names: raw list_init::<string>(4i64), bad_preds: raw list_init::<string>(4i64), depth: 0i64, preempt: 0i64,
+                       controls: raw list_init::<MControl>(4i64) };
+    // pass 1: the state (every later clause names its variables)
+    int64:c0 = s.nodes.items[r].first;
+    c0 = s.nodes.items[c0].next;   // past `model`
+    c0 = s.nodes.items[c0].next;   // past the name
+    int64:c = c0;
+    while (c >= 0i64) {
+        if (!(raw sx_is_list(@s, c))) { pass (raw mm_problem(fname, "a bare word inside the model")); }
+        if (raw text_eq(raw sx_head(@s, c), "state")) {
+            int64:v = s.nodes.items[c].first;
+            v = s.nodes.items[v].next;
+            while (v >= 0i64) {
+                if (!(raw sx_is_list(@s, v)) || ((raw sx_len(@s, v)) != 3i64)) { pass (raw mm_problem(fname, "a state variable is (VAR LO HI)")); }
+                string:vn = raw sx_atom(@s, raw sx_nth(@s, v, 0i64));
+                if (raw strlist_contains(m.vars, vn)) { pass (raw mm_problem(fname, string_concat("a state variable declared twice: ", vn))); }
+                string:lo = raw sx_atom(@s, raw sx_nth(@s, v, 1i64));
+                string:hi = raw sx_atom(@s, raw sx_nth(@s, v, 2i64));
+                if (!(raw is_numeral_text(lo) && raw is_numeral_text(hi))) { pass (raw mm_problem(fname, string_concat("a range is two numerals: ", vn))); }
+                drop strlist_push(@m.vars, vn);
+                drop list_push(@m.lo, raw parse_i64(lo));
+                drop list_push(@m.hi, raw parse_i64(hi));
+                v = s.nodes.items[v].next;
+            }
+        }
+        c = s.nodes.items[c].next;
+    }
+    if (m.vars.count == 0i64) { pass (raw mm_problem(fname, "a model without state")); }
+    // pass 2: everything else
+    c = c0;
+    bool:has_init = false;
+    List<string>:ctl_names = raw list_init::<string>(4i64);
+    while (c >= 0i64) {
+        string:h = raw sx_head(@s, c);
+        if (raw text_eq(h, "state")) { c = s.nodes.items[c].next; continue; }
+        if (raw text_eq(h, "of")) {
+            if (((raw sx_len(@s, c)) != 2i64) || !(raw sx_is_string(@s, raw sx_nth(@s, c, 1i64)))) { pass (raw mm_problem(fname, "(of \"sentence\")")); }
+            m.of = string_concat(raw sx_string(@s, raw sx_nth(@s, c, 1i64)), "");
+        } else { if (raw text_eq(h, "init")) {
+            if ((raw sx_len(@s, c)) != 2i64) { pass (raw mm_problem(fname, "(init PROPOSITION)")); }
+            m.init = string_concat(raw tmpl_of(@s, raw sx_nth(@s, c, 1i64), m.vars), "");
+            has_init = true;
+        } else { if (raw text_eq(h, "thread")) {
+            if ((raw sx_len(@s, c)) < 3i64) { pass (raw mm_problem(fname, "(thread NAME (step ...) ...)")); }
+            string:tn = raw sx_atom(@s, raw sx_nth(@s, c, 1i64));
+            if (raw strlist_contains(m.threads, tn)) { pass (raw mm_problem(fname, string_concat("a thread declared twice: ", tn))); }
+            int64:ti = m.threads.count;
+            drop strlist_push(@m.threads, tn);
+            int64:sc = s.nodes.items[c].first;
+            sc = s.nodes.items[sc].next;
+            sc = s.nodes.items[sc].next;
+            while (sc >= 0i64) {
+                if (!(raw sx_is_list(@s, sc)) || !(raw text_eq(raw sx_head(@s, sc), "step")) || ((raw sx_len(@s, sc)) < 2i64)) { pass (raw mm_problem(fname, string_concat("a thread's forms are (step NAME ...): ", tn))); }
+                string:sname = raw sx_atom(@s, raw sx_nth(@s, sc, 1i64));
+                for (int64:k in 0i64...m.steps.count) {
+                    if ((m.steps.items[k].thr == ti) && (raw text_eq(raw strlist_view_of(m.steps.items[k].name), sname))) { pass (raw mm_problem(fname, string_concat("a step declared twice: ", sname))); }
+                }
+                MStep:st = MStep{ thr: ti, name: string_concat(sname, ""), ir_syms: raw list_init::<string>(2i64), ir_blocks: raw list_init::<string>(2i64), gd: "true",
+                                  next_vars: raw list_init::<string>(4i64), next_exprs: raw list_init::<string>(4i64) };
+                int64:body = s.nodes.items[sc].first;
+                body = s.nodes.items[body].next;
+                body = s.nodes.items[body].next;
+                SBody:sb = raw read_step_body(@s, sc, body, m.vars, @st.next_vars, @st.next_exprs, @st.ir_syms, @st.ir_blocks);
+                if (sb.why.len > 0i64) {
+                    pass (raw mm_problem(fname, string_concat(string_concat("step ", sname), string_concat(": ", raw strlist_view_of(sb.why)))));
+                }
+                st.gd = string_concat(raw strlist_view_of(sb.gd), "");
+                if (st.ir_syms.count == 0i64) { pass (raw mm_problem(fname, string_concat("a step names no IR block (the correspondence belt has nothing to hold it to): ", sname))); }
+                if (st.next_vars.count == 0i64) { pass (raw mm_problem(fname, string_concat("a step that changes nothing: ", sname))); }
+                drop list_push(@m.steps, move(st));
+                sc = s.nodes.items[sc].next;
+            }
+        } else { if (raw text_eq(h, "bad")) {
+            if ((raw sx_len(@s, c)) != 3i64) { pass (raw mm_problem(fname, "(bad NAME PROPOSITION)")); }
+            string:bn = raw sx_atom(@s, raw sx_nth(@s, c, 1i64));
+            if (raw strlist_contains(m.bad_names, bn)) { pass (raw mm_problem(fname, string_concat("a bad predicate named twice: ", bn))); }
+            drop strlist_push(@m.bad_names, bn);
+            drop strlist_push(@m.bad_preds, raw tmpl_of(@s, raw sx_nth(@s, c, 2i64), m.vars));
+        } else { if (raw text_eq(h, "depth") || raw text_eq(h, "preempt")) {
+            if ((raw sx_len(@s, c)) != 2i64) { pass (raw mm_problem(fname, "(depth K), (preempt D)")); }
+            string:nt = raw sx_atom(@s, raw sx_nth(@s, c, 1i64));
+            if (!(raw is_numeral_text(nt))) { pass (raw mm_problem(fname, "a depth and a preemption bound are numerals")); }
+            if (raw text_eq(h, "depth")) { m.depth = raw parse_i64(nt); } else { m.preempt = raw parse_i64(nt); }
+        } else { if (raw text_eq(h, "control")) {
+            if ((raw sx_len(@s, c)) < 4i64) { pass (raw mm_problem(fname, "(control NAME BAD MUTATION ...) with (replace THREAD STEP ...) or (remove THREAD STEP)")); }
+            string:cn = raw sx_atom(@s, raw sx_nth(@s, c, 1i64));
+            string:cb = raw sx_atom(@s, raw sx_nth(@s, c, 2i64));
+            if (raw strlist_contains(ctl_names, cn)) { pass (raw mm_problem(fname, string_concat("a control named twice: ", cn))); }
+            drop strlist_push(@ctl_names, cn);
+            int64:mut = s.nodes.items[c].first;
+            mut = s.nodes.items[mut].next;
+            mut = s.nodes.items[mut].next;
+            mut = s.nodes.items[mut].next;
+            while (mut >= 0i64) {
+                if (!(raw sx_is_list(@s, mut)) || ((raw sx_len(@s, mut)) < 3i64)) { pass (raw mm_problem(fname, string_concat("a control's mutation is (replace THREAD STEP ...) or (remove THREAD STEP): ", cn))); }
+                string:mh = raw sx_head(@s, mut);
+                string:mt = raw sx_atom(@s, raw sx_nth(@s, mut, 1i64));
+                string:ms = raw sx_atom(@s, raw sx_nth(@s, mut, 2i64));
+                int64:mti = raw strlist_index(m.threads, mt);
+                MControl:ctl = MControl{ name: string_concat(cn, ""), bad: string_concat(cb, ""), thr: mti, step: string_concat(ms, ""), remove: false, gd: "true",
+                                         next_vars: raw list_init::<string>(4i64), next_exprs: raw list_init::<string>(4i64) };
+                if (raw text_eq(mh, "remove")) { ctl.remove = true; }
+                else { if (raw text_eq(mh, "replace")) {
+                    List<string>:dsyms = raw list_init::<string>(1i64);
+                    List<string>:dblocks = raw list_init::<string>(1i64);
+                    int64:mb = s.nodes.items[mut].first;
+                    mb = s.nodes.items[mb].next;
+                    mb = s.nodes.items[mb].next;
+                    mb = s.nodes.items[mb].next;
+                    SBody:cb2 = raw read_step_body(@s, mut, mb, m.vars, @ctl.next_vars, @ctl.next_exprs, @dsyms, @dblocks);
+                    if (cb2.why.len > 0i64) {
+                        pass (raw mm_problem(fname, string_concat(string_concat("control ", cn), string_concat(": ", raw strlist_view_of(cb2.why)))));
+                    }
+                    ctl.gd = string_concat(raw strlist_view_of(cb2.gd), "");
+                    if (ctl.next_vars.count == 0i64) { pass (raw mm_problem(fname, string_concat("a replaced step that changes nothing: ", cn))); }
+                } else { pass (raw mm_problem(fname, string_concat("a control's mutation is replace or remove: ", cn))); } }
+                drop list_push(@m.controls, move(ctl));
+                mut = s.nodes.items[mut].next;
+            }
+        } else {
+            pass (raw mm_problem(fname, string_concat("a clause the grammar does not know: ", h)));
+        } } } } } }
+        c = s.nodes.items[c].next;
+    }
+    if (!has_init) { pass (raw mm_problem(fname, "a model without (init ...)")); }
+    if (m.threads.count == 0i64) { pass (raw mm_problem(fname, "a model without a thread")); }
+    if (m.bad_names.count == 0i64) { pass (raw mm_problem(fname, "a model without a bad predicate claims nothing")); }
+    if (m.depth <= 0i64) { pass (raw mm_problem(fname, "a model needs (depth K) with K > 0")); }
+    if (m.preempt < 0i64) { pass (raw mm_problem(fname, "a model needs (preempt D)")); }
+    // every control names a bad predicate, a thread and a step that exist.
+    // The fields are read through the list directly: a `->` binding into `m`
+    // is a claim on `m` for the rest of this scope (D-286), and the scope
+    // ends with `pass m`.
+    for (int64:ci in 0i64...m.controls.count) {
+        if (!(raw strlist_contains(m.bad_names, raw strlist_view_of(m.controls.items[ci].bad)))) { pass (raw mm_problem(fname, string_concat("a control names no bad predicate: ", raw strlist_view_of(m.controls.items[ci].name)))); }
+        if (m.controls.items[ci].thr < 0i64) { pass (raw mm_problem(fname, string_concat("a control names no thread: ", raw strlist_view_of(m.controls.items[ci].name)))); }
+        bool:found = false;
+        for (int64:k2 in 0i64...m.steps.count) {
+            if ((m.steps.items[k2].thr == m.controls.items[ci].thr) && (raw text_eq(raw strlist_view_of(m.steps.items[k2].name), raw strlist_view_of(m.controls.items[ci].step)))) { found = true; }
+        }
+        if (!found) { pass (raw mm_problem(fname, string_concat("a control names no step: ", raw strlist_view_of(m.controls.items[ci].name)))); }
+    }
+    // every variable the init, a guard, a next or a bad predicate names is one of the state's (tmpl_of left any other atom as itself: an unknown word is refused by z3, so it is refused here)
+    pass m;
+};
+
+func:parse_i64 = int64(string:a) never fails {
+    int64:v = 0i64;
+    int64:i = 0i64;
+    bool:neg = false;
+    if (a.ptr[0i64] == 45u8) { neg = true; i = 1i64; }
+    while (i < a.len) { v = (v * 10i64) + ((a.ptr[i] - 48u8) =>! int64); i = i + 1i64; }
+    if (neg) { pass (0i64 - v); }
+    pass v;
+};
+
+// --- the unrolling ---------------------------------------------------------------------
+
+// One step's transition at k: guard_k, next_{k+1} = expr_k, keep for the rest.
+func:step_text = string(MModel->:m, int64:thr, string:gd, List<string>:nv, List<string>:ne, int64:k) never fails {
+    string:out = string_concat("(and (= t_", int_to_string(k));
+    out = string_concat(out, " ");
+    out = string_concat(out, int_to_string(thr));
+    out = string_concat(out, ")");
+    if (!(raw text_eq(gd, "true"))) { out = string_concat(out, " "); out = string_concat(out, raw subst_at(gd, k)); }
+    for (int64:v in 0i64...m.vars.count) {
+        string:vn = raw strlist_view(m.vars, v);
+        int64:ni = raw strlist_index(nv, vn);
+        string:lhs = string_concat(vn, "_");
+        lhs = string_concat(lhs, int_to_string(k + 1i64));
+        string:rhs = "";
+        if (ni >= 0i64) { rhs = raw subst_at(raw strlist_view(ne, ni), k); }
+        else { rhs = string_concat(vn, "_"); rhs = string_concat(rhs, int_to_string(k)); }
+        out = string_concat(out, " ");
+        out = string_concat(out, raw smt_app2("=", lhs, rhs));
+    }
+    pass (string_concat(out, ")"));
+};
+
+// The model's base text (declarations, init, K transitions, the preemption
+// bound), with a control's mutation applied when `ctl` is not negative.
+pub func:model_base = string(MModel->:m, int64:ctl) never fails {
+    SmtBuf:b = raw smtbuf_init();
+    drop smtbuf_line(@b, "(set-logic QF_LIA)");
+    int64:K = m.depth;
+    for (int64:k in 0i64..K) {
+        for (int64:v in 0i64...m.vars.count) {
+            string:d = string_concat("(declare-const ", raw strlist_view(m.vars, v));
+            d = string_concat(d, "_");
+            d = string_concat(d, int_to_string(k));
+            d = string_concat(d, " Int)");
+            drop smtbuf_line(@b, d);
+        }
+        if (k < K) {
+            string:dt = string_concat("(declare-const t_", int_to_string(k));
+            drop smtbuf_line(@b, string_concat(dt, " Int)"));
+        }
+    }
+    drop smtbuf_line(@b, raw smt_app1("assert", raw subst_at(raw strlist_view_of(m.init), 0i64)));
+    // the ranges hold at every step (a variable is a word of the protocol, never an integer at large)
+    for (int64:k2 in 0i64..K) {
+        for (int64:v2 in 0i64...m.vars.count) {
+            string:vk = string_concat(raw strlist_view(m.vars, v2), "_");
+            vk = string_concat(vk, int_to_string(k2));
+            drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app2("and", raw smt_app2("<=", int_to_string(m.lo.items[v2]), vk), raw smt_app2("<=", vk, int_to_string(m.hi.items[v2])))));
+        }
+    }
+    for (int64:k3 in 0i64...K) {
+        string:tr = "(or";
+        for (int64:si in 0i64...m.steps.count) {
+            MStep->:st = @m.steps.items[si];
+            bool:replaced = false;
+            bool:removed = false;
+            if (ctl >= 0i64) {
+                for (int64:cj in 0i64...m.controls.count) {
+                    MControl->:cc = @m.controls.items[cj];
+                    if (!(raw text_eq(raw strlist_view_of(cc.name), raw strlist_view_of(m.controls.items[ctl].name)))) { continue; }
+                    if ((cc.thr == st.thr) && (raw text_eq(raw strlist_view_of(cc.step), raw strlist_view_of(st.name)))) {
+                        if (cc.remove) { removed = true; continue; }
+                        replaced = true;
+                        tr = string_concat(tr, " ");
+                        tr = string_concat(tr, raw step_text(m, st.thr, raw strlist_view_of(cc.gd), cc.next_vars, cc.next_exprs, k3));
+                    }
+                }
+            }
+            if (replaced || removed) { continue; }
+            tr = string_concat(tr, " ");
+            tr = string_concat(tr, raw step_text(m, st.thr, raw strlist_view_of(st.gd), st.next_vars, st.next_exprs, k3));
+        }
+        // A TICK MAY STUTTER. Without it a system that runs out of enabled
+        // steps before tick K makes its own unrolling unsatisfiable, and
+        // every bad predicate is then unreachable for the wrong reason --
+        // "the protocol halted", read as "the protocol is safe". With it the
+        // unrolling is monotone in K (what is reachable in j <= K steps is
+        // reachable at K) and an `unsat` row means what it says. A stutter
+        // reaches no new state, so it weakens no claim.
+        string:st_ = "(and";
+        for (int64:v3 in 0i64...m.vars.count) {
+            string:vn3 = raw strlist_view(m.vars, v3);
+            string:lhs3 = string_concat(vn3, "_");
+            lhs3 = string_concat(lhs3, int_to_string(k3 + 1i64));
+            string:rhs3 = string_concat(vn3, "_");
+            rhs3 = string_concat(rhs3, int_to_string(k3));
+            st_ = string_concat(st_, " ");
+            st_ = string_concat(st_, raw smt_app2("=", lhs3, rhs3));
+        }
+        st_ = string_concat(st_, ")");
+        tr = string_concat(tr, " ");
+        tr = string_concat(tr, st_);
+        tr = string_concat(tr, ")");
+        drop smtbuf_line(@b, raw smt_app1("assert", tr));
+        // the thread index is one of the threads'
+        string:tk = string_concat("t_", int_to_string(k3));
+        drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app2("and", raw smt_app2("<=", "0", tk), raw smt_app2("<", tk, int_to_string(m.threads.count)))));
+    }
+    if (K >= 2i64) {
+        string:sw = "(+";
+        for (int64:k4 in 0i64...(K - 1i64)) {
+            string:a = string_concat("t_", int_to_string(k4));
+            string:c2 = string_concat("t_", int_to_string(k4 + 1i64));
+            sw = string_concat(sw, " ");
+            sw = string_concat(sw, raw smt_app3("ite", raw smt_app2("distinct", a, c2), "1", "0"));
+        }
+        sw = string_concat(sw, ")");
+        drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app2("<=", sw, int_to_string(m.preempt))));
+    }
+    pass (raw smtbuf_text(move(b)));
+};
+
+// The disjunction of a bad predicate over steps 1..K.
+pub func:model_bad_text = string(MModel->:m, int64:bi) never fails {
+    string:out = "(or";
+    for (int64:k in 1i64..m.depth) {
+        out = string_concat(out, " ");
+        out = string_concat(out, raw subst_at(raw strlist_view(m.bad_preds, bi), k));
+    }
+    pass (string_concat(out, ")"));
+};
+
+pub struct:ModelFile = {
+    string:name;               // `model:<name>`
+    string:text;               // the rows' file
+    List<string>:row_sites;    // `bad:<pred>:K<k>:D<d>`
+    List<string>:row_hashes;
+    List<string>:ctl_names;    // one control file each
+    List<string>:ctl_bads;
+    List<string>:ctl_texts;
+};
+
+// A model's file in the compiler's shape (the header comments, `(push)` per
+// row, `(check-sat)`, `(pop)`) and its control files.
+pub func:model_emit = ModelFile(MModel->:m) never fails {
+    string:sym = string_concat("model:", raw strlist_view_of(m.name));
+    ModelFile:out = ModelFile{ name: string_concat(sym, ""), text: "", row_sites: raw list_init::<string>(4i64), row_hashes: raw list_init::<string>(4i64),
+                               ctl_names: raw list_init::<string>(4i64), ctl_bads: raw list_init::<string>(4i64), ctl_texts: raw list_init::<string>(4i64) };
+    string:base = raw model_base(m, 0i64 - 1i64);
+    string:kd = string_concat(":K", int_to_string(m.depth));
+    kd = string_concat(kd, ":D");
+    kd = string_concat(kd, int_to_string(m.preempt));
+    for (int64:bi in 0i64...m.bad_names.count) {
+        string:site = string_concat("bad:", raw strlist_view(m.bad_names, bi));
+        site = string_concat(site, kd);
+        string:goal = raw smt_app1("not", raw model_bad_text(m, bi));
+        string:canon = string_concat(base, raw smt_app1("assert", raw smt_app1("not", goal)));
+        canon = string_concat(canon, "\n");
+        string:hin = string_concat(canon, sym);
+        hin = string_concat(hin, "\nfloor-model\n");
+        drop strlist_push(@out.row_sites, site);
+        drop strlist_push(@out.row_hashes, raw sha256_hex(hin));
+    }
+    SmtBuf:b = raw smtbuf_init();
+    drop smtbuf_line(@b, string_concat("; ", sym));
+    for (int64:ri in 0i64...out.row_sites.count) {
+        string:c = string_concat("; o", int_to_string(ri + 1i64));
+        c = string_concat(c, " floor-model ");
+        c = string_concat(c, raw strlist_view(out.row_hashes, ri));
+        c = string_concat(c, " ");
+        c = string_concat(c, raw strlist_view(out.row_sites, ri));
+        drop smtbuf_line(@b, c);
+    }
+    drop smtbuf_line(@b, string_concat("; checks ", int_to_string(out.row_sites.count)));
+    drop smtbuf_line(@b, raw text_trim(base));
+    for (int64:ri2 in 0i64...out.row_sites.count) {
+        drop smtbuf_line(@b, "(push)");
+        string:goal2 = raw smt_app1("not", raw model_bad_text(m, ri2));
+        string:g = string_concat("(! ", raw smt_app1("not", goal2));
+        g = string_concat(g, " :named o");
+        g = string_concat(g, int_to_string(ri2 + 1i64));
+        g = string_concat(g, ")");
+        drop smtbuf_line(@b, raw smt_app1("assert", g));
+        drop smtbuf_line(@b, "(check-sat)");
+        drop smtbuf_line(@b, "(pop)");
+    }
+    out.text = raw smtbuf_text(move(b));
+    // the controls: the mutated base, the named bad predicate asserted reachable, one check-sat that must be `sat`
+    for (int64:ci in 0i64...m.controls.count) {
+        MControl->:cc = @m.controls.items[ci];
+        if (raw strlist_contains(out.ctl_names, raw strlist_view_of(cc.name))) { continue; }
+        int64:bi2 = raw strlist_index(m.bad_names, raw strlist_view_of(cc.bad));
+        SmtBuf:cb = raw smtbuf_init();
+        drop smtbuf_line(@cb, string_concat("; control ", raw strlist_view_of(cc.name)));
+        drop smtbuf_line(@cb, string_concat("; of ", sym));
+        drop smtbuf_line(@cb, string_concat("; reaches bad:", raw strlist_view_of(cc.bad)));
+        drop smtbuf_line(@cb, raw text_trim(raw model_base(m, ci)));
+        drop smtbuf_line(@cb, "(push)");
+        drop smtbuf_line(@cb, raw smt_app1("assert", raw model_bad_text(m, bi2)));
+        drop smtbuf_line(@cb, "(check-sat)");
+        drop smtbuf_line(@cb, "(pop)");
+        drop strlist_push(@out.ctl_names, raw strlist_view_of(cc.name));
+        drop strlist_push(@out.ctl_bads, raw strlist_view_of(cc.bad));
+        drop strlist_push(@out.ctl_texts, raw smtbuf_text(move(cb)));
+    }
+    pass out;
+};
+
+// --- the correspondence belt ------------------------------------------------------------
+
+// A line the models must not be silent about: an atomic operation or a
+// syscall (the floor's one trampoline).
+pub func:line_is_step = bool(string:line) never fails {
+    if (raw has_word(line, "atomicrmw") || raw has_word(line, "cmpxchg") || raw has_word(line, "fence")) { pass true; }
+    if (raw text_contains(line, "load atomic ") || raw text_contains(line, "store atomic ")) { pass true; }
+    if (raw text_contains(line, "@npk_sys6(")) { pass true; }
+    pass false;
+};
+
+// Every step names blocks that exist, and every atomic operation or syscall
+// of a symbol any model names sits in a block some step names.
+pub func:floor_models_current = List<string>(FloorText->:ft, List<MModel>:models) never fails {
+    List<string>:fl = raw list_init::<string>(4i64);
+    List<string>:named_syms = raw list_init::<string>(16i64);
+    List<string>:named_pairs = raw list_init::<string>(64i64);   // "@sym:block"
+    for (int64:mi in 0i64...models.count) {
+        MModel->:m = @models.items[mi];
+        if (!m.ok) { drop strlist_push(@fl, raw strlist_view_of(m.problem)); continue; }
+        for (int64:si in 0i64...m.steps.count) {
+            MStep->:st = @m.steps.items[si];
+            for (int64:ii in 0i64...st.ir_syms.count) {
+                string:sym = raw strlist_view(st.ir_syms, ii);
+                string:blk = raw strlist_view(st.ir_blocks, ii);
+                int64:fi = raw floor_fn_index(ft, sym);
+                if (fi < 0i64) {
+                    string:w = string_concat("floor: runtime/models/", raw strlist_view_of(m.name));
+                    w = string_concat(w, ": step ");
+                    w = string_concat(w, raw strlist_view_of(st.name));
+                    w = string_concat(w, " names a symbol the floor does not define: ");
+                    w = string_concat(w, sym);
+                    drop strlist_push(@fl, w);
+                    continue;
+                }
+                if ((raw floor_block_index(@ft.fns.items[fi], blk)) < 0i64) {
+                    string:w2 = string_concat("floor: runtime/models/", raw strlist_view_of(m.name));
+                    w2 = string_concat(w2, ": step ");
+                    w2 = string_concat(w2, raw strlist_view_of(st.name));
+                    w2 = string_concat(w2, " names a block ");
+                    w2 = string_concat(w2, sym);
+                    w2 = string_concat(w2, " does not have: ");
+                    w2 = string_concat(w2, blk);
+                    drop strlist_push(@fl, w2);
+                    continue;
+                }
+                if (!(raw strlist_contains(named_syms, sym))) { drop strlist_push(@named_syms, sym); }
+                string:pair = string_concat(sym, ":");
+                pair = string_concat(pair, blk);
+                if (!(raw strlist_contains(named_pairs, pair))) { drop strlist_push(@named_pairs, pair); }
+            }
+        }
+    }
+    for (int64:ni in 0i64...named_syms.count) {
+        string:sym2 = raw strlist_view(named_syms, ni);
+        int64:fi2 = raw floor_fn_index(ft, sym2);
+        FFn->:f = @ft.fns.items[fi2];
+        for (int64:b in 0i64...f.blocks.count) {
+            string:pair2 = string_concat(sym2, ":");
+            pair2 = string_concat(pair2, raw strlist_view_of(f.blocks.items[b].label));
+            if (raw strlist_contains(named_pairs, pair2)) { continue; }
+            for (int64:l in 0i64...f.blocks.items[b].lines.count) {
+                string:line = raw strlist_view(f.blocks.items[b].lines, l);
+                if (!(raw line_is_step(line))) { continue; }
+                string:w3 = string_concat("floor: runtime/models/: ", sym2);
+                w3 = string_concat(w3, "'s block ");
+                w3 = string_concat(w3, raw strlist_view_of(f.blocks.items[b].label));
+                w3 = string_concat(w3, " holds a step no model names: ");
+                w3 = string_concat(w3, raw text_trim(line));
+                drop strlist_push(@fl, w3);
+                break;
+            }
+        }
+    }
+    pass fl;
+};
+
+// --- the directory ---------------------------------------------------------------------
+
+// The `*.model` files directly under `dir`, sorted by name. One lister over
+// `lib/nfs.npk` rather than the runner's `list_suffix`: that one lives in
+// `suites.npk` beside the manifest reader and the tool runner, and this
+// module is imported by the harness's tool, which is built by the SNAPSHOT
+// and wants none of them.
+func:model_names_try = List<string>(string:dir) {
+    List<string>:out = raw list_init::<string>(8i64);
+    Path:p = relay path_parse(dir);
+    Dir:d = relay dir_list(p);
+    int64:n = raw dir_count(@d);
+    for (int64:i in 0i64...n) {
+        string:name = relay dir_name(@d, i);
+        DirKind:k = relay dir_kind(@d, i);
+        if (name.ptr[0i64] == 46u8) { continue; }
+        if (!(raw text_ends_with(name, ".model"))) { continue; }
+        if ((k == DirKind.File) || (k == DirKind.Link)) { drop strlist_push(@out, name); }
+    }
+    drop dir_free(@d);
+    pass (raw strlist_sorted(out));
+};
+
+// -- and the never-failing face the reader uses: an unreadable directory is
+// an empty listing, which its caller reports as the missing models it is.
+func:model_names = List<string>(string:dir) never fails {
+    Result<List<string>>:r = model_names_try(dir);
+    if (r.is_error) { pass (raw list_init::<string>(1i64)); }
+    pass (move(r.value));
+};
+
+// The models and whatever went wrong reading them. Returned together rather
+// than collected through a pointer: a list filled through an out-parameter
+// carries the pointer's root into everything derived from it (D-004 rule 3).
+pub struct:ModelSet = {
+    List<MModel>:models;
+    List<string>:problems;
+};
+
+// Every `*.model` under `runtime/models/`, sorted by name, parsed.
+pub func:models_read = ModelSet(string:root) never fails {
+    ModelSet:set = ModelSet{ models: raw list_init::<MModel>(8i64), problems: raw list_init::<string>(4i64) };
+    string:dir = raw path_join(root, "runtime/models");
+    List<string>:names = raw model_names(dir);
+    // An absent or empty directory is NO MODEL, not a problem: the tool runs
+    // over synthetic roots in both runner self-checks. The real tree's belt
+    // (`floor_models_current`'s caller) is what requires the models to exist.
+    if (names.count == 0i64) { pass set; }
+    for (int64:i in 0i64...names.count) {
+        string:n = raw strlist_view(names, i);
+        string:full = raw path_join(dir, n);
+        Result<cstring>:pc = to_cstring(full);
+        if (pc.is_error) { drop strlist_push(@set.problems, string_concat("floor: runtime/models/", string_concat(n, ": not a path"))); continue; }
+        Result<string>:t = read_file(pc.value);
+        if (t.is_error) { drop strlist_push(@set.problems, string_concat("floor: runtime/models/", string_concat(n, " cannot be read"))); continue; }
+        MModel:m = raw model_parse(n, t.value);
+        if (!m.ok) { drop strlist_push(@set.problems, raw strlist_view_of(m.problem)); continue; }
+        // the file's name is the model's
+        string:want = string_concat(raw strlist_view_of(m.name), ".model");
+        if (!(raw text_eq(want, n))) { drop strlist_push(@set.problems, string_concat("floor: runtime/models/", string_concat(n, ": the file's name is not the model's"))); continue; }
+        drop list_push(@set.models, move(m));
+    }
+    pass set;
+};
+
+// --- small helpers ---------------------------------------------------------------------
+
+func:strlist_index = int64(List<string>:l, string:s) never fails {
+    for (int64:i in 0i64...l.count) { if (raw text_eq(raw strlist_view(l, i), s)) { pass i; } }
+    pass (0i64 - 1i64);
+};
+
+// `w` as a whole word of `line` (a token boundary on both sides).
+func:has_word = bool(string:line, string:w) never fails {
+    int64:from = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(line, w, from);
+        if (p < 0i64) { pass false; }
+        bool:lok = (p == 0i64) || (!(raw is_word_byte(line.ptr[p - 1i64])));
+        int64:e = p + w.len;
+        bool:rok = (e >= line.len) || (!(raw is_word_byte(line.ptr[e])));
+        if (lok && rok) { pass true; }
+        from = p + 1i64;
+    }
+    pass false;
+};
+
+func:is_word_byte = bool(uint8:c) never fails {
+    if (raw text_is_digit(c)) { pass true; }
+    if ((c >= 97u8) && (c <= 122u8)) { pass true; }
+    if ((c >= 65u8) && (c <= 90u8)) { pass true; }
+    if ((c == 95u8) || (c == 46u8) || (c == 36u8)) { pass true; }
+    pass false;
+};

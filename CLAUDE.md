@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE: the compiler is self-hosting under D-202, `npkg` runs beside the harness, and cycle 1.5 (verification) is NEXT
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) is at its last subcycle: 1.5.0–1.5.6 have landed, the floor itself is specified and modelled, and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -1094,11 +1094,41 @@ rules' Int `%` forms. Step 3: the docs. Found on the way: step 0's root
 collector skipped the custom-shaped kinds (a call's arguments, a literal's
 values), and the compiler's own `failsafe` cannot name a new prelude identity
 until a snapshot refresh (D-205). `nitpick.obligations` did not move; no
-snapshot refresh. **Next: 1.5.6 (the floor's spec and the executor
-primitives) — PLANNED 2026-09-11 (`meta/roadmap/1.5/1.5.6.md`; S-63…S-70
-RATIFIED the same day as D-288…D-292; DEF-44…DEF-48 found by planning —
-four plain cross-thread accesses in the floor and the trap route's
-arbitration, D-063's whole-program stop unimplemented).**
+snapshot refresh.
+**1.5.6 (the floor's spec and the executor primitives) IS COMPLETE
+(2026-09-12; `meta/roadmap/1.5/1.5.6.md`; S-63…S-70 ratified the day they
+were asked as D-288…D-292; six landings, each a cumulative prefix under a
+full harness, D-228).** The floor had been the one part of the artifact with
+no evidence of its own: hand-written LLVM IR, permanent by D-203, trusted
+because nothing could check it. It now has a SPECIFICATION
+(`runtime/npkrt.spec`: 137 sections stating what each symbol does to memory
+— `requires`/`ensures`/`frame`/`objects`, loop invariants and exact
+unrollings, `(summary)` calls, `(ensures-trap …)`, and a `(boundary "…")`
+promise where the kernel is the answer), a TRANSLATOR that reads the floor's
+own IR against it (`npkg/floor_smt.npk`), six PROTOCOL MODELS with sixteen
+controls (`runtime/models/`), and an enumerated SYSCALL BOUNDARY. 370 rows
+live in `runtime/npkrt.obligations`: 363 discharged, 7 residue, none
+refuted — and **an `open` floor row is a run failure by name**, because
+nothing in the floor is a guard to retain: a counterexample there is a
+defect or a false claim, both stop-the-line. **Four floor defects were fixed
+on the way, none found by a test**: D-290 promoted four plain cross-thread
+accesses that race in LLVM's model (a frame's `windup`, a channel's
+generation, `@npk_frozen`, the join's tid word); D-291 made a trap a
+whole-program event as D-063 always said (a thread registry, a SIGUSR1 stop
+handler, `cmpxchg` arbitration of the failsafe holder, the stop walk under
+the join deadline — two threads trapping at once used to run two
+`failsafe`s); D-292 gave `failsafe` a 1 MiB preallocated region to allocate
+from, so a handler can never block on the heap mutex a stopped thread holds;
+and **DEF-51** — `npk_read_file`/`npk_read_stdin` leaked every buffer they
+outgrew, invisible to D-151 and to every test, found because a frame claim
+would not discharge. TCB.md is FINALIZED: three generated regions (the
+membership table with each symbol's class and disposition, the syscall
+boundary, and what the evidence does not cover) that cannot go stale without
+a red run. Recorded for the user: **S-71**, the determinism profile gaining
+`lp.dio=false` — z3 4.16.0's Diophantine sub-solver undoes its terms at
+every `(pop)`, so a row that answered `unsat` in 8 s returned 200 s later
+and a larger one not within 22 minutes, a wedged solver under P-13 with only
+the runners' hang net to catch it; off, no verdict moves anywhere.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1491,6 +1521,19 @@ that carried them retired at the cycle close):
   `IntOverflow`** as their scalars do (D-284, 1.5.4e), so a program with
   integer lanes names `(IntOverflow)`; `v op= w` on a `simd` lowers (DEF-39)
   and carries the guards.
+- **The floor is specified now, and an `open` floor row is a red run**
+  (D-288/D-289, 1.5.6): `runtime/npkrt.spec` says what each symbol does,
+  `runtime/models/` says what its protocols do, and both are decided on
+  every full run. Touching `runtime/npkrt.ll` means the spec may need to
+  move with it — `npkg verify --floor-only` is the fast loop, and
+  `.internal/quickemit/p_floorspec_npk <ABSOLUTE root> --emit DIR` writes
+  the rows by hand (the root must be absolute: `Path` is). A spec clause the
+  floor refutes fails by name; a `budget` row is residue and must carry a
+  `(residue "…")` sentence saying why; a model's control that stops being
+  `sat` is a model gone blind. After any floor, spec or model edit run
+  `bootstrap/harness/tcb_floor.py --write`, which regenerates TCB.md's three
+  marked regions, and re-record with `npkg verify --record` in the same
+  commit (D-040).
 - **A program's raise is `npk_raise`; a guard's trap is `npk_trap`** (D-285,
   1.5.4e): `?!` and `!!!` enter the trap route through the former, so a
   verified build's belts (which count `@npk_trap(i32 CODE)`) no longer

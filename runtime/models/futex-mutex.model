@@ -1,0 +1,86 @@
+; futex-mutex -- the floor's futex mutex (npk_mx_lock / npk_mx_unlock,
+; Drepper's mutex2): the word is 0 free, 1 locked, 2 locked with a waiter
+; possible; three threads and the kernel. A thread's pc: 0 outside, 1 the
+; fast path failed (in the loop), 2 waiting (futex_wait expecting 2), 3 in
+; the critical section, 4 the release done (outside again).
+;
+; The kernel: futex_wait(word, 2) returns at once unless the word is 2;
+; a release that saw 2 issues one wake (`pending`), which the kernel
+; delivers to ONE parked waiter or loses when none is parked; a parked
+; waiter may return spuriously.
+
+(model futex-mutex
+  (of "the futex mutex: mutual exclusion, no lost wake, a contended release always wakes")
+  (state (w 0 2) (pa 0 4) (pb 0 4) (pc 0 4) (parked_a 0 1) (parked_b 0 1) (parked_c 0 1) (pending 0 1) (wakes 0 20) (contended 0 20))
+  (init (and (= w 0) (= pa 0) (= pb 0) (= pc 0) (= parked_a 0) (= parked_b 0) (= parked_c 0) (= pending 0) (= wakes 0) (= contended 0)))
+  (thread a
+    (step fast   (ir @npk_mx_lock entry)
+                 (guard (= pa 0)) (next (pa (ite (= w 0) 3 1)) (w (ite (= w 0) 1 w))))
+    (step xchg   (ir @npk_mx_lock loop)
+                 (guard (= pa 1)) (next (pa (ite (= w 0) 3 2)) (w 2)))
+    (step wait   (ir @npk_mx_lock wait)
+                 (guard (and (= pa 2) (= parked_a 0)))
+                 (next (pa (ite (= w 2) 2 1)))
+                 (kernel futex-wait w 2 parked_a))
+    (step woken  (ir @npk_mx_lock wait)
+                 (guard (and (= pa 2) (= parked_a 0))) (next (pa 1)))
+    (step unlock (ir @npk_mx_unlock entry wake done) (ir @npk_mx_lock done)
+                 (guard (= pa 3))
+                 (next (pa 4) (w 0) (contended (ite (= w 2) (+ contended 1) contended)) (wakes (ite (= w 2) (+ wakes 1) wakes)) (pending (ite (= w 2) 1 pending)))))
+  (thread b
+    (step fast   (ir @npk_mx_lock entry)
+                 (guard (= pb 0)) (next (pb (ite (= w 0) 3 1)) (w (ite (= w 0) 1 w))))
+    (step xchg   (ir @npk_mx_lock loop)
+                 (guard (= pb 1)) (next (pb (ite (= w 0) 3 2)) (w 2)))
+    (step wait   (ir @npk_mx_lock wait)
+                 (guard (and (= pb 2) (= parked_b 0)))
+                 (next (pb (ite (= w 2) 2 1)))
+                 (kernel futex-wait w 2 parked_b))
+    (step woken  (ir @npk_mx_lock wait)
+                 (guard (and (= pb 2) (= parked_b 0))) (next (pb 1)))
+    (step unlock (ir @npk_mx_unlock entry wake done)
+                 (guard (= pb 3))
+                 (next (pb 4) (w 0) (contended (ite (= w 2) (+ contended 1) contended)) (wakes (ite (= w 2) (+ wakes 1) wakes)) (pending (ite (= w 2) 1 pending)))))
+  (thread c
+    (step fast   (ir @npk_mx_lock entry)
+                 (guard (= pc 0)) (next (pc (ite (= w 0) 3 1)) (w (ite (= w 0) 1 w))))
+    (step xchg   (ir @npk_mx_lock loop)
+                 (guard (= pc 1)) (next (pc (ite (= w 0) 3 2)) (w 2)))
+    (step wait   (ir @npk_mx_lock wait)
+                 (guard (and (= pc 2) (= parked_c 0)))
+                 (next (pc (ite (= w 2) 2 1)))
+                 (kernel futex-wait w 2 parked_c))
+    (step woken  (ir @npk_mx_lock wait)
+                 (guard (and (= pc 2) (= parked_c 0))) (next (pc 1)))
+    (step unlock (ir @npk_mx_unlock entry wake done)
+                 (guard (= pc 3))
+                 (next (pc 4) (w 0) (contended (ite (= w 2) (+ contended 1) contended)) (wakes (ite (= w 2) (+ wakes 1) wakes)) (pending (ite (= w 2) 1 pending)))))
+  (thread kernel
+    ; one wake delivered to one parked waiter, or lost when none is parked
+    (step deliver-a (ir @npk_mx_unlock wake)
+                    (guard (and (= pending 1) (= parked_a 1))) (next (pending 0)) (kernel futex-wake parked_a))
+    (step deliver-b (ir @npk_mx_unlock wake)
+                    (guard (and (= pending 1) (= parked_b 1))) (next (pending 0)) (kernel futex-wake parked_b))
+    (step deliver-c (ir @npk_mx_unlock wake)
+                    (guard (and (= pending 1) (= parked_c 1))) (next (pending 0)) (kernel futex-wake parked_c))
+    (step lost      (ir @npk_mx_unlock wake)
+                    (guard (and (= pending 1) (= parked_a 0) (= parked_b 0) (= parked_c 0))) (next (pending 0)))
+    (step spurious-a (ir @npk_mx_lock wait) (kernel spurious parked_a) (next (pa 1)))
+    (step spurious-b (ir @npk_mx_lock wait) (kernel spurious parked_b) (next (pb 1)))
+    (step spurious-c (ir @npk_mx_lock wait) (kernel spurious parked_c) (next (pc 1))))
+  ; two threads past the lock at once
+  (bad mutual-exclusion (or (and (= pa 3) (= pb 3)) (and (= pa 3) (= pc 3)) (and (= pb 3) (= pc 3))))
+  ; Drepper's lost wake: a waiter parked while the lock is free, no wake pending, and no thread on its way
+  ; to retake the lock (in the loop, returning from the wait, or inside) -- only a spurious return would end the sleep
+  (bad lost-wake (and (= w 0) (= pending 0) (or (= parked_a 1) (= parked_b 1) (= parked_c 1))
+                      (or (= pa 0) (= pa 4) (= parked_a 1)) (or (= pb 0) (= pb 4) (= parked_b 1)) (or (= pc 0) (= pc 4) (= parked_c 1))))
+  ; a contended release that issued no wake
+  (bad unlock-without-wake (< wakes contended))
+  (depth 11) (preempt 6)
+  ; release with a plain store of 0 instead of the exchange: the waiter bit is never seen, no wake
+  (control store-release lost-wake
+    (replace a unlock (guard (= pa 3)) (next (pa 4) (w 0))))
+  ; the waiter marks the word 1 and waits expecting 1: the release sees 1, wakes nobody, and the waiter sleeps on a free word
+  (control wait-expecting-one lost-wake
+    (replace b xchg (guard (= pb 1)) (next (pb (ite (= w 0) 3 2)) (w 1)))
+    (replace b wait (guard (and (= pb 2) (= parked_b 0))) (next (pb (ite (= w 1) 2 1)) (parked_b (ite (= w 1) 1 0))))))

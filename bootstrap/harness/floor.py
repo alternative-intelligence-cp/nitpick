@@ -730,15 +730,76 @@ def check_spec(floor_text, spec_text, name="floor"):
     return fails
 
 
-def disposition(sections, sym, cls, rows):
+# --- the protocol models (1.5.6 step 5; D-289 §2.7) ---------------------------------
+
+import glob
+import os
+
+_STEP_LINE = re.compile(r"\b(atomicrmw|cmpxchg|fence)\b|\b(load|store) atomic\b|@npk_sys6\(")
+
+
+def read_models(root):
+    """Every `runtime/models/*.model`, sorted by name: (name, [(symbol, block), ...])
+    from its steps' `(ir @sym BLOCK ...)` forms -- the belt's reading; the
+    model's meaning is the writer's (`npkg/floor_model.npk`)."""
+    import glob
+    out = []
+    for path in sorted(glob.glob(os.path.join(root, "runtime", "models", "*.model"))):
+        text = "\n".join(code_part(l) for l in open(path, encoding="utf-8").read().split("\n"))
+        pairs = []
+        for m in re.finditer(r"\(ir (@[\w.$-]+)((?:\s+[\w.$-]+)+)\)", text):
+            for b in m.group(2).split():
+                pairs.append((m.group(1), b))
+        out.append((os.path.basename(path)[:-len(".model")], pairs))
+    return out
+
+
+def check_models(floor_text, models, name="floor"):
+    """THE CORRESPONDENCE BELT (the twin of `floor_models_current`): every
+    step names a define of the floor and a block of it, and every atomic
+    operation or syscall of a symbol any model names sits in a block some
+    step names -- a model can be wrong about a step's meaning, but it cannot
+    be silent about a step."""
+    fns, _ = parse_floor(floor_text)
+    fails = []
+    named_syms = set()
+    named_pairs = set()
+    for mname, pairs in models:
+        for sym, blk in pairs:
+            f = fns.get(sym)
+            if f is None:
+                fails.append("%s: runtime/models/%s names a symbol the floor does not define: %s" % (name, mname, sym))
+                continue
+            if blk not in f.by_label:
+                fails.append("%s: runtime/models/%s names a block %s does not have: %s" % (name, mname, sym, blk))
+                continue
+            named_syms.add(sym)
+            named_pairs.add((sym, blk))
+    for sym in sorted(named_syms):
+        for b in fns[sym].blocks:
+            if (sym, b.label) in named_pairs:
+                continue
+            for line in b.lines:
+                if _STEP_LINE.search(line):
+                    fails.append("%s: runtime/models/: %s's block %s holds a step no model names: %s" % (name, sym, b.label, line.strip()[:120]))
+                    break
+    return fails
+
+
+def disposition(sections, sym, cls, rows, models=()):
     """One symbol's disposition in D-288 §2.1's words (the twin of
     `floor_disposition`): `trusted (inline asm)`; `specified (N discharged, M
     residue)` from the committed floor manifest's `floor-spec` rows; the
-    `residue (...)` and `boundary (...)` sentences; else the class default."""
+    `residue (...)` and `boundary (...)` sentences; `modelled (a, b)` for the
+    models whose steps name a block of the symbol (1.5.6 step 5); else the
+    class default."""
     if cls == "asm":
         return "trusted (inline asm)"
+    modelled = [mname for mname, pairs in models if any(s == sym for s, _ in pairs)]
     sec = dict(sections).get(sym)
     if sec is None:
+        if modelled:
+            return "modelled (%s)" % ", ".join(modelled)
         return _CLASS_DEFAULT[cls]
     d = sum(1 for r in rows if r[3] == sym and r[1] == "floor-spec" and r[2] == "discharged")
     b = sum(1 for r in rows if r[3] == sym and r[1] == "floor-spec" and r[2] == "budget")
@@ -752,6 +813,8 @@ def disposition(sections, sym, cls, rows):
     for cl in sec:
         if isinstance(cl, list) and cl and _atom(cl[0]) == "boundary" and len(cl) > 1:
             parts.append("boundary (%s)" % _string(cl[1]))
+    if modelled:
+        parts.append("modelled (%s)" % ", ".join(modelled))
     return "; ".join(parts) if parts else _CLASS_DEFAULT[cls]
 
 
@@ -768,14 +831,204 @@ def manifest_rows_of(text):
     return out
 
 
-def tcb_rows(spec_text, classes, manifest_text):
+# --- the syscall boundary (1.5.6 step 6; D-288 §2.8) -------------------------------
+#
+# THE NUMBERS THE FLOOR ISSUES, with the names the kernel gives them. A
+# number the floor uses and this table does not name is a finding: the
+# kernel-effect table in `npkg/floor_smt.npk` has one row per number, and
+# TCB.md's reader accepts those rows as what the kernel promises.
+SYSCALL_NAMES = {
+    0: "read", 1: "write", 3: "close", 9: "mmap", 10: "mprotect", 11: "munmap",
+    13: "rt_sigaction", 39: "getpid", 56: "clone", 59: "execve", 60: "exit",
+    110: "getppid", 157: "prctl", 158: "arch_prctl", 202: "futex",
+    204: "sched_getaffinity", 228: "clock_gettime", 231: "exit_group",
+    233: "epoll_ctl", 234: "tgkill", 257: "openat", 281: "epoll_pwait",
+    290: "eventfd2", 291: "epoll_create1", 292: "dup3", 318: "getrandom",
+    424: "pidfd_send_signal",
+}
+
+
+def syscall_map(floor_text):
+    """Per define: the syscall numbers it issues DIRECTLY (`npk_sys6(NR, …)`)
+    and the numbers it can reach transitively through the call graph. The
+    walk is `_floor_classes`'s, over code lines only."""
+    fns, order = parse_floor(floor_text)
+    direct = {}
+    graph = {}
+    for name, fn in fns.items():
+        nrs = set()
+        callees = set()
+        for b in fn.blocks:
+            for line in b.lines:
+                for m in re.finditer(r"call i64 @npk_sys6\(i64 (-?\d+)", line):
+                    nrs.add(int(m.group(1)))
+                for m in re.finditer(r"call[^@\n]*(@[\w.$-]+)", line):
+                    if m.group(1) in fns:
+                        callees.add(m.group(1))
+        direct[name] = nrs
+        graph[name] = callees
+    trans = {}
+
+    def walk(n, seen):
+        if n in seen:
+            return set()
+        seen.add(n)
+        out = set(direct[n])
+        for c in graph[n]:
+            out |= walk(c, seen)
+        return out
+    for name in fns:
+        trans[name] = walk(name, set())
+    return order, direct, trans
+
+
+# The trap route's entries. EVERY symbol reaches `exit_group` through a trap,
+# so a transitive set that counts the route says nothing about the symbol:
+# the table reports what a symbol reaches ON ITS OWN PATHS and says "and the
+# trap route" where it can also trap.
+TRAP_ENTRIES = ("@npk_trap", "@npk_raise", "@npk_heap_badreq", "@npk_heap_oom", "@npk_heap_bad")
+
+
+def syscall_rows(floor_text, classes):
+    """TCB.md's syscall-table rows, in the floor's own order: every symbol
+    that issues or reaches a syscall, its direct numbers and the numbers it
+    reaches without going through the trap route, with a note when it can
+    trap. A symbol that reaches none of either is not a row."""
+    order, direct, trans = syscall_map(floor_text)
+    own, traps = syscall_map_own(floor_text)
+    def fmt(s):
+        return ", ".join("%d %s" % (n, SYSCALL_NAMES.get(n, "?")) for n in sorted(s)) or "--"
+    rows = []
+    for name in order:
+        # a symbol that issues nothing and reaches nothing ON ITS OWN paths is
+        # not a row: the trap entries themselves reach the whole route, and a
+        # row saying `-- | --` about them is noise, not a boundary.
+        if not own[name] and not traps[name] and not direct[name]:
+            continue
+        reach = fmt(own[name])
+        if traps[name]:
+            reach = (reach + ", and the trap route") if own[name] else "the trap route only"
+        rows.append("| `%s` | %s | %s | %s |" % (name, classes.get(name, "?"), fmt(direct[name]), reach))
+    return rows
+
+
+def syscall_map_own(floor_text):
+    """Per define: the numbers it reaches WITHOUT passing through a trap
+    entry, and whether it can reach one."""
+    fns, order = parse_floor(floor_text)
+    direct = {}
+    graph = {}
+    for name, fn in fns.items():
+        nrs = set()
+        callees = set()
+        for b in fn.blocks:
+            for line in b.lines:
+                for m in re.finditer(r"call i64 @npk_sys6\(i64 (-?\d+)", line):
+                    nrs.add(int(m.group(1)))
+                for m in re.finditer(r"call[^@\n]*(@[\w.$-]+)", line):
+                    if m.group(1) in fns:
+                        callees.add(m.group(1))
+        direct[name] = nrs
+        graph[name] = callees
+    own = {}
+    traps = {}
+
+    def walk(n, seen):
+        if n in seen:
+            return set(), False
+        seen.add(n)
+        out = set(direct[n])
+        hit = False
+        for c in graph[n]:
+            if c in TRAP_ENTRIES:
+                hit = True
+                continue
+            sub, subhit = walk(c, seen)
+            out |= sub
+            hit = hit or subhit
+        return out, hit
+    for name in fns:
+        o, h = walk(name, set())
+        own[name] = o
+        traps[name] = h and name not in TRAP_ENTRIES
+    return own, traps
+
+
+def syscalls_region(floor_text, classes):
+    """The whole marked region's body: the numbers once, then the table."""
+    order, direct, trans = syscall_map(floor_text)
+    used = sorted({n for s in direct.values() for n in s})
+    head = ("The floor issues %d syscall numbers, and no others: %s. Each has one row in the\n"
+            "kernel-effect table (`npkg/floor_smt.npk`) saying what it does to memory and to the\n"
+            "result; that table is what a reader accepts as the kernel's promise (§5).\n"
+            % (len(used), ", ".join("**%d** %s" % (n, SYSCALL_NAMES.get(n, "?")) for n in used)))
+    return head + "\n" + "\n".join(["| symbol | class | issues | reaches |", "|---|---|---|---|"]
+                                    + syscall_rows(floor_text, classes))
+
+
+def check_syscall_names(floor_text):
+    """Every number the floor issues is named here (a new syscall in the
+    floor without a row in the kernel-effect table is a translation the
+    reader cannot check)."""
+    _, direct, _ = syscall_map(floor_text)
+    used = sorted({n for s in direct.values() for n in s})
+    return ["floor: runtime/npkrt.ll issues syscall %d, which the table does not name -- give it a "
+            "kernel-effect row (npkg/floor_smt.npk) and a name here" % n
+            for n in used if n not in SYSCALL_NAMES]
+
+
+def residue_rows(spec_text, manifest_text, models=()):
+    """TCB.md's residue region (1.5.6 step 6; D-288 §2.10): every `budget`
+    row by symbol and site -- the rows the profile did not decide, which the
+    verdict rule keeps as residue rather than a proof -- then every
+    `(residue "…")` sentence the spec carries, then the models' standing
+    residue. One place that says what the floor's evidence does NOT cover."""
+    lines = []
+    rows = []
+    for l in (manifest_text or "").splitlines():
+        if not l.strip() or l.startswith("#"):
+            continue
+        p = l.split(" ", 5)
+        if len(p) == 6 and p[3] == "budget":
+            rows.append((p[5].strip(), p[1]))
+    lines.append("**Rows the profile did not decide** (`budget`; the verdict rule keeps them as")
+    lines.append("residue, never as a proof). %s:" % ("%d of them" % len(rows) if rows else "None"))
+    lines.append("")
+    by = {}
+    for sym, kind in rows:
+        by.setdefault(sym, 0)
+        by[sym] += 1
+    for sym in sorted(by):
+        lines.append("- `%s` -- %d row(s); the section's `(residue ...)` sentence says why." % (sym, by[sym]))
+    lines.append("")
+    lines.append("**Sentences the spec carries**, each a claim NOT made:")
+    lines.append("")
+    for sym, sec in spec_sections(spec_text):
+        for cl in sec:
+            if isinstance(cl, list) and cl and _atom(cl[0]) == "residue" and len(cl) > 1:
+                lines.append("- `%s` -- %s" % (sym, _string(cl[1])))
+    lines.append("")
+    lines.append("**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model row holds to")
+    lines.append("its own depth and preemption bound and no further; LIVENESS is not claimed at")
+    lines.append("all -- that a due task is eventually run, and that the shared arena's walker")
+    lines.append("stops spinning, need a fairness assumption a bounded unrolling cannot state.")
+    if models:
+        lines.append("The bounds in force: %s." % ", ".join("`%s`" % m[0] for m in models))
+    return lines
+
+
+def residue_region(spec_text, manifest_text, models=()):
+    return "\n".join(residue_rows(spec_text, manifest_text, models))
+
+
+def tcb_rows(spec_text, classes, manifest_text, models=()):
     """TCB.md's floor-table rows, sorted: the table's `| symbol | class | disposition |` lines."""
     sections = spec_sections(spec_text)
     rows = manifest_rows_of(manifest_text) if manifest_text else []
-    return sorted("| `%s` | %s | %s |" % (sym, cls, disposition(sections, sym, cls, rows))
+    return sorted("| `%s` | %s | %s |" % (sym, cls, disposition(sections, sym, cls, rows, models))
                   for sym, cls in classes.items())
 
 
-def tcb_region(spec_text, classes, manifest_text):
+def tcb_region(spec_text, classes, manifest_text, models=()):
     """The whole marked region's body, header row included."""
-    return "\n".join(["| symbol | class | disposition |", "|---|---|---|"] + tcb_rows(spec_text, classes, manifest_text))
+    return "\n".join(["| symbol | class | disposition |", "|---|---|---|"] + tcb_rows(spec_text, classes, manifest_text, models))

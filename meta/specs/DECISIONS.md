@@ -14532,6 +14532,19 @@ Closes C-11, and settles D-015's open "later" row. Three parts:
 > permanent form stays hand-written IR; the addition is the user's, ratified
 > as D-285, and TCB.md's table carries its row.
 
+> **[1.5.6 (2026-09-12).]** The floor grew again and its permanent form is
+> unchanged: a thread registry, a stop handler with its own `rt_sigreturn`
+> stub and the arbitration that makes a trap a whole-program event (D-291);
+> a 1 MiB preallocated region `failsafe` allocates from (D-292); four plain
+> accesses promoted to atomics (D-290); and one leak fixed (DEF-51). It is
+> 175 defines now, 4 of them the volatile bottom. **What changed is that it
+> is no longer trusted merely because it cannot be checked**: 137 of those
+> defines have a written specification beside them (`runtime/npkrt.spec`),
+> six of its protocols have bounded models (`runtime/models/`), and 370
+> committed rows say which claims are proven and which are residue (D-288,
+> D-289). The IR stays hand-written, permanent and the artifact of record;
+> the evidence sits beside it, in the same tree, under the same harness.
+
 ## D-204 — byte-reproducibility defined and checked — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-12. D-078's claim becomes three checked facts (mechanics at
@@ -18326,6 +18339,23 @@ quarantine and document the rest). **The decision, in four parts.**
    and the depth tools, and the residue region says so per symbol.
 
 > Lands at **1.5.6** steps 3, 4 and 6 (`meta/roadmap/1.5/1.5.6.md`).
+>
+> **LANDED at 1.5.6 (2026-09-12).** `runtime/npkrt.spec` states what 137
+> symbols do, `npkg/floor_smt.npk` translates each against the floor's own
+> IR, and `runtime/npkrt.obligations` carries 350 `floor-spec` rows (343
+> discharged, 7 residue, none refuted) beside step 5's 20 `floor-model`
+> rows. The verdict rule bit as written: several spec clauses were REFUTED
+> on the way and were wrong rather than the floor (a digit row reading
+> `line[pos]` as an absolute address; a claim over a register no path
+> defines; a rehome bound one short; a precondition admitting a position
+> whose result wraps to zero), and one refutation was the translator's own
+> (a `getelementptr` over a shaped index dropped the index's parts). The
+> theory grew where the specs pushed it — the `objects` clause, the `Addr`
+> sort, `ensures-fresh`, loop objects, the instantiation rule — and the
+> encoding work is recorded in VERIFICATION_REFERENCE §9. Found by
+> specifying rather than by testing: **DEF-51**, a leak in the two file
+> readers that D-151 could not see. TCB.md's three generated regions are
+> S-68's half.
 
 ## D-289 — the executor's primitives are MODELLED, never proven whole: bounded transition systems through the pinned z3, with negative controls and a correspondence belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-66; lands at 1.5.6 step 5)**
 
@@ -18369,6 +18399,20 @@ park/unpark model decides `unsat` at `K` 14, `D` 6 in 0.76 s (rlimit
 profile, a JVM on the workbench.
 
 > Lands at **1.5.6** step 5 (`meta/roadmap/1.5/1.5.6.md`).
+>
+> **LANDED at 1.5.6 (2026-09-12).** Six models in `runtime/models/`
+> (park-unpark, futex-mutex, channel-table, shared-arena, driver-registry,
+> trap-route), 20 rows every one discharged at depths K 10–14 and
+> preemption bounds D 5–6, and **16 controls every one `sat`** — the
+> mutation per bad predicate that must reach it, without which a model
+> claims nothing. The kernel's rules are a library the models name
+> (`futex-wait`, `futex-wake`, `spurious`, `eventfd-write`/`-read`,
+> `signal`), and the correspondence belt refuses a block of a modelled
+> symbol that holds an atomic operation or a syscall no step names. Found
+> by the work: an unroller that asserts exactly one step per tick makes a
+> protocol that halts before tick K unsatisfiable in its own unrolling, so
+> every bad predicate reads unreachable — a vacuous `unsat`; a tick may
+> stutter now. Liveness is residue by name.
 
 ## D-290 — every word two threads can reach is atomic or ordered by a NAMED edge: the shared-state rule, classified per word and held by a belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-67; DEF-44, DEF-45, DEF-46, DEF-48; lands at 1.5.6 step 0)**
 
@@ -18404,6 +18448,15 @@ in TCB.md §5, never silently promoted (the caution the outgoing session
 raised, kept).
 
 > Lands at **1.5.6** step 0 (`meta/roadmap/1.5/1.5.6.md`).
+>
+> **LANDED at 1.5.6 step 0 (2026-09-11).** `runtime/npkrt.spec`'s `(shared
+> …)` section classifies every word of the floor two threads can reach, and
+> the belt (`check_floor_shared_current` / `floor_shared_current`) refuses
+> an access it does not cover. Four plain accesses that race in LLVM's
+> model were promoted to atomics with it (DEF-44, DEF-45, DEF-46, DEF-48);
+> DEF-49 and DEF-50 were found by the same belt. The classification is also
+> what step 5's models rest on: TCB.md §5's acceptance 12 states the
+> sequential-consistency reading and points here for its argument.
 
 ## D-291 — a trap STOPS every other thread before `failsafe` runs: the thread registry, the stop signal, the failsafe holder's arbitration — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-69; DEF-47; a D-203 floor addition; lands at 1.5.6 step 1)**
 
@@ -18448,6 +18501,15 @@ the process still exits, by the winner. Three syscalls join the floor
 (D-289) is built on the OLD floor first — its bad predicates `sat`, the
 negative control — then on the new. Declined: recording the gap as residue.
 
+> **LANDED at 1.5.6 step 1 (2026-09-11).** The thread registry, the SIGUSR1
+> stop handler with its own `rt_sigreturn` stub, the `cmpxchg` arbitration
+> of the failsafe holder and the stop walk under the join deadline are in
+> the floor; DEF-47 reads FIXED. **The standing evidence is the `trap-route`
+> model** (step 5): `two-failsafes`, `step-after-failsafe` and
+> `exit-mid-failsafe` are unreachable at K 14 / D 6, and the controls that
+> restore the pre-step-1 route reach all three — the model was built on the
+> old floor first for exactly that reason.
+>
 > Lands at **1.5.6** step 1 (`meta/roadmap/1.5/1.5.6.md`); D-063 gains a
 > dated landing note there.
 
@@ -18475,5 +18537,12 @@ diagnostics a `failsafe` most needs to build and the library tier's
 `failsafe` idioms, where the region makes the documents' claim true
 instead of forbidding what a `failsafe` is for.
 
+> **LANDED at 1.5.6 step 2 (2026-09-11).** `npk_alloc_impl` bumps from a
+> 1 MiB `.bss` region once a failsafe holder exists; frees and shrinks are
+> no-ops there; exhaustion is the re-entry exit 70. TCB.md §5 states the
+> region's size as the bound a `failsafe` body lives within, and the
+> `trap-route` model's `failsafe-blocked-on-heap` predicate is unreachable
+> with it and reachable without (the `heap-mutex-in-failsafe` control).
+>
 > Lands at **1.5.6** step 2 (`meta/roadmap/1.5/1.5.6.md`); D-014 gains a
 > dated landing note there.

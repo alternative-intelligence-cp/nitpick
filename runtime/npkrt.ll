@@ -3923,7 +3923,7 @@ grow:                                     ; preds = %loop
   %cap2 = mul i64 %cap, 2
   %buf2 = call ptr @npk_alloc_internal(i64 %cap2)
   call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
-  ; THE SUPERSEDED BUFFER RETURNS TO THE HEAP (1.5.6 step 4, DEF-49): a managed
+  ; THE SUPERSEDED BUFFER RETURNS TO THE HEAP (1.5.6 step 4, DEF-51): a managed
   ; block nobody owns is a leak the drop walk never sees -- every doubling
   ; left its predecessor live until the process ended
   call void @npk_dalloc(ptr %buf)
@@ -4019,7 +4019,7 @@ grow:                                     ; preds = %loop
   %cap2 = mul i64 %cap, 2
   %buf2 = call ptr @npk_alloc_internal(i64 %cap2)
   call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
-  ; THE SUPERSEDED BUFFER RETURNS TO THE HEAP (1.5.6 step 4, DEF-49): a managed
+  ; THE SUPERSEDED BUFFER RETURNS TO THE HEAP (1.5.6 step 4, DEF-51): a managed
   ; block nobody owns is a leak the drop walk never sees -- every doubling
   ; left its predecessor live until the process ended
   call void @npk_dalloc(ptr %buf)

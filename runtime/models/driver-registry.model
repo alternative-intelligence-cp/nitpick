@@ -1,0 +1,58 @@
+; driver-registry -- the driver registry (npk_clone_exec's claim and
+; publish, npk_driver_retire, npk_driver_kill_all, npk_driver_live_count):
+; a slot is claimed by a cmpxchg 0 -> 1, its pid and pidfd words prefilled
+; (0, -1), published by a release store of 2 BEFORE the clone writes the
+; pidfd (`pfd`: 0 the previous tenant's word, 1 the prefilled -1, 2 the clone's); the trap route's kill walk reads every slot's state with an
+; acquire load and signals the pidfd of a published slot whose pidfd is set;
+; a retire of a slot that is not published traps by design. One slot; two
+; spawners racing for it; the kill walk; a retirer.
+;
+; a spawner (s1/s2): 0 outside; 1 the slot claimed (won the cmpxchg);
+;   2 the words prefilled; 3 published; 4 the clone done (the pidfd written
+;   by the kernel); 5 lost the claim (no free slot). the kill walk (kpc):
+;   0 outside; 1 the state read; 2 the pidfd read and signalled (or skipped);
+;   3 done. the retirer (rpc): 0 outside; 1 retired; 2 trapped.
+
+(model driver-registry
+  (of "the driver registry: one claimant per slot, a published slot with a pidfd is never skipped by the kill walk, a retire of a free slot traps")
+  (state (st 0 2) (pfd 0 2) (s1 0 5) (s2 0 5) (own 0 2) (kpc 0 3) (kst 0 2) (kpfd 0 2) (killed 0 1) (rpc 0 2))
+  (init (and (= st 0) (= pfd 0) (= s1 0) (= s2 0) (= own 0) (= kpc 0) (= kst 0) (= kpfd 0) (= killed 0) (= rpc 0)))
+  (thread spawner1
+    (step claim   (ir @npk_clone_exec entry scan try miss nofree einval) (guard (= s1 0))
+                  (next (s1 (ite (= st 0) 1 5)) (st (ite (= st 0) 1 st)) (own (ite (= st 0) 1 own))))
+    (step prefill (ir @npk_clone_exec claimed) (guard (= s1 1)) (next (s1 2) (pfd 1)))
+    (step publish (ir @npk_clone_exec claimed) (guard (= s1 2)) (next (s1 3) (st 2)))
+    (step clone   (ir @npk_clone_exec claimed parent cfail ok child cdie harden dupctrl doexec) (guard (= s1 3)) (next (s1 4) (pfd 2))))
+  (thread spawner2
+    (step claim   (ir @npk_clone_exec try) (guard (= s2 0))
+                  (next (s2 (ite (= st 0) 1 5)) (st (ite (= st 0) 1 st)) (own (ite (= st 0) 2 own))))
+    (step prefill (ir @npk_clone_exec claimed) (guard (= s2 1)) (next (s2 2) (pfd 1)))
+    (step publish (ir @npk_clone_exec claimed) (guard (= s2 2)) (next (s2 3) (st 2)))
+    (step clone   (ir @npk_clone_exec claimed parent ok) (guard (= s2 3)) (next (s2 4) (pfd 2))))
+  (thread killer
+    (step look    (ir @npk_driver_kill_all entry scan look next fin) (ir @npk_driver_live_count entry scan step fin)
+                  (guard (= kpc 0)) (next (kpc 1) (kst st)))
+    ; a published slot whose pidfd word is not the prefilled -1 is signalled (the walk cannot tell a stale positive word from a live one)
+    (step signal  (ir @npk_driver_kill_all kill sig) (guard (= kpc 1))
+                  (next (kpc 3) (kpfd pfd) (killed (ite (and (= kst 2) (not (= pfd 1))) 1 killed)))))
+  (thread retirer
+    ; a retire after the driver's reap (the clone complete), or of a slot that is not published: the trap
+    (step retire  (ir @npk_driver_retire entry check clear bad) (guard (and (= rpc 0) (or (not (= st 2)) (= pfd 2))))
+                  (next (rpc (ite (= st 2) 1 2)) (st (ite (= st 2) 0 st)))))
+  ; two spawners hold the slot before either's clone completed
+  (bad double-claim (and (>= s1 1) (<= s1 3) (>= s2 1) (<= s2 3)))
+  ; the walk finished having read the slot published with its pidfd set, and did not signal it
+  (bad unkilled-live-driver (and (= kpc 3) (= kst 2) (= kpfd 2) (= killed 0)))
+  ; the walk signalled the slot's previous tenant's pidfd (the word not yet prefilled to -1 when the slot was published)
+  (bad stale-pidfd-signalled (and (= killed 1) (= pfd 0)))
+  ; a retire of a slot that is not published took the clear path instead of the trap
+  (bad retire-of-free-slot (and (= rpc 1) (= own 0)))
+  (depth 10) (preempt 5)
+  ; claim with a plain store: both spawners see 0 and both take the slot
+  (control plain-store-claim double-claim
+    (replace spawner1 claim (guard (= s1 0)) (next (s1 (ite (<= st 1) 1 5)) (st (ite (<= st 1) 1 st)) (own (ite (<= st 1) 1 own))))
+    (replace spawner2 claim (guard (= s2 0)) (next (s2 (ite (<= st 1) 1 5)) (st (ite (<= st 1) 1 st)) (own (ite (<= st 1) 2 own)))))
+  ; publish before prefilling the pidfd: the walk reads a pidfd word the clone has not written
+  (control publish-before-prefill stale-pidfd-signalled
+    (replace spawner1 prefill (guard (= s1 1)) (next (s1 2) (st 2)))
+    (replace spawner1 publish (guard (= s1 2)) (next (s1 3) (pfd 1)))))

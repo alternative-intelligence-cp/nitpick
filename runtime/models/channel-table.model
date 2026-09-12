@@ -1,0 +1,55 @@
+; channel-table -- the channel table's publish and reclaim (npk_ch_open,
+; npk_ch_at, npk_ch_get, npk_ch_reclaim): a fresh slot's pointer is stored
+; before the count's release store publishes it, a reader's acquire load of
+; the count precedes its read of the slot, a handle carries the slot's
+; generation, and a reclaim re-checks the generation UNDER the channel's
+; lock before moving it. One slot (index 0); an opener publishing it, a
+; reader holding the handle of generation 2, and two reclaimers of that
+; handle racing.
+;
+; opener (opc): 0 the open lock taken, 1 the slot's pointer stored (plain),
+;   2 the count published (release), 3 the open lock released.
+; reader (rpc): 0 loads the count (acquire); 1 (count >= 1) reads the slot;
+;   2 reads the generation and compares it with the handle's; 3 accepted, 4 stale.
+; a reclaimer (r1/r2): 0 ch_get (the count, the slot, the generation compared);
+;   1 the channel lock taken; 2 the generation re-checked under the lock;
+;   3 the generation moved, the buffer freed (the reclaim done); 4 the lock
+;   released; 5 stale (answered -4106).
+
+(model channel-table
+  (of "the channel table: a slot is read only after its publish, and a handle's generation is moved by exactly one reclaim")
+  (state (n 0 1) (written 0 1) (gen 2 4) (lk 0 1) (opc 0 3) (rpc 0 4) (r1 0 5) (r2 0 5) (r1seen 2 4) (r2seen 2 4) (reclaims 0 2) (torn 0 1))
+  (init (and (= n 0) (= written 0) (= gen 2) (= lk 0) (= opc 0) (= rpc 0) (= r1 0) (= r2 0) (= r1seen 2) (= r2seen 2) (= reclaims 0) (= torn 0)))
+  (thread opener
+    (step lock    (ir @npk_ch_open entry grow copy pub have) (guard (= opc 0)) (next (opc 1)))
+    (step store   (ir @npk_ch_open fresh revive) (guard (= opc 1)) (next (opc 2) (written 1)))
+    (step publish (ir @npk_ch_open fresh) (guard (= opc 2)) (next (opc 3) (n 1))))
+  (thread reader
+    (step count   (ir @npk_ch_get entry stale) (guard (= rpc 0)) (next (rpc (ite (= n 1) 1 4))))
+    (step slot    (ir @npk_ch_at entry) (ir @npk_ch_get live) (guard (= rpc 1)) (next (rpc 2) (torn (ite (= written 0) 1 torn))))
+    (step compare (ir @npk_ch_get ok) (guard (= rpc 2)) (next (rpc (ite (= gen 2) 3 4)))))
+  (thread reclaimer1
+    (step get     (ir @npk_ch_reclaim entry stale) (guard (and (= r1 0) (= n 1) (= written 1))) (next (r1 (ite (= gen 2) 1 5)) (r1seen gen)))
+    (step lock    (ir @npk_ch_reclaim live) (ir @npk_ch_lock entry) (guard (and (= r1 1) (= lk 0))) (next (r1 2) (lk 1)))
+    (step recheck (ir @npk_ch_reclaim live lost) (guard (= r1 2)) (next (r1 (ite (= gen 2) 3 4))))
+    (step take    (ir @npk_ch_reclaim take freebuf woken) (guard (= r1 3)) (next (r1 4) (gen (+ gen 1)) (reclaims (+ reclaims 1))))
+    (step unlock  (ir @npk_ch_reclaim woken done push grow copyold swap put) (ir @npk_ch_unlock entry) (guard (= r1 4)) (next (r1 5) (lk 0))))
+  (thread reclaimer2
+    (step get     (ir @npk_ch_reclaim entry stale) (guard (and (= r2 0) (= n 1) (= written 1))) (next (r2 (ite (= gen 2) 1 5)) (r2seen gen)))
+    (step lock    (ir @npk_ch_reclaim live) (guard (and (= r2 1) (= lk 0))) (next (r2 2) (lk 1)))
+    (step recheck (ir @npk_ch_reclaim live lost) (guard (= r2 2)) (next (r2 (ite (= gen 2) 3 4))))
+    (step take    (ir @npk_ch_reclaim take freebuf woken) (guard (= r2 3)) (next (r2 4) (gen (+ gen 1)) (reclaims (+ reclaims 1))))
+    (step unlock  (ir @npk_ch_reclaim woken done) (guard (= r2 4)) (next (r2 5) (lk 0))))
+  ; a reader that saw the count read a slot nobody had written
+  (bad torn-publish (= torn 1))
+  ; one handle reclaimed twice: the generation moved past the handle's by two takes
+  (bad double-reclaim (>= reclaims 2))
+  (depth 12) (preempt 6)
+  ; publish the count before the pointer: a reader between the two reads an unwritten slot
+  (control count-before-pointer torn-publish
+    (replace opener store (guard (= opc 1)) (next (opc 2) (n 1)))
+    (replace opener publish (guard (= opc 2)) (next (opc 3) (written 1))))
+  ; drop the under-lock re-check: the second reclaimer, whose ch_get preceded the first's take, takes again
+  (control drop-recheck double-reclaim
+    (replace reclaimer1 recheck (guard (= r1 2)) (next (r1 3)))
+    (replace reclaimer2 recheck (guard (= r2 2)) (next (r2 3)))))

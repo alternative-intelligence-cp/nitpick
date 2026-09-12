@@ -341,6 +341,26 @@ the borrow ban closes the *aliasing* half, since two threads holding borrows of 
 piece of storage is a data race regardless of how long either lives. Both are
 needed.
 
+**All five are properties of the LANGUAGE, and the floor is underneath them**
+(1.5.6, D-289/D-290). The runtime's own protocols — the park/unpark
+handshake, the futex mutex, the channel table, the shared arena, the driver
+registry, the trap route — run on several threads by construction, so none
+of the five applies to them and the evidence has to be of a different kind.
+It is two things, both in the tree and both checked on every full run.
+Every word of `runtime/npkrt.ll` that two threads can reach is classified
+in `runtime/npkrt.spec`'s `(shared …)` section as an atomic access or a
+plain one ordered by a named edge (a lock, a publish, a birth before the
+publish), and a belt refuses an access the classification does not cover.
+Each protocol then has a bounded model in `runtime/models/` whose bad
+predicates — a wake before the sleep, a lost wake, two threads past one
+mutex, a torn publish, a handle reclaimed twice, a duplicate arena index,
+an unkilled driver, two `failsafe`s at once, a task step after `failsafe`
+began — are proven unreachable to a stated depth and preemption bound, with
+a CONTROL per predicate that removes the guarding step and must reach it.
+VERIFICATION_REFERENCE §9.4 is the mechanism; liveness (that a due task is
+eventually run) needs fairness a bounded unrolling cannot state and is
+residue by name, which 1.5.7's schedule-exploration harness takes up.
+
 ## 6. Channels
 
 `CONCURRENCY_REFERENCE` previously recorded channels as implemented-but-unspecified.

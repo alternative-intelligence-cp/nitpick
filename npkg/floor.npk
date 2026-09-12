@@ -18,6 +18,7 @@ use "./floor_ir.npk".*;
 use "./floor_spec.npk".*;
 use "./floor_cfg.npk".*;
 use "./floor_smt.npk".*;
+use "./floor_model.npk".*;
 use "../src/backend/smt/smt_kinds.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;
 
@@ -26,11 +27,12 @@ pub struct:FloorInputs = {
     string:problem;
     FloorText:ft;
     Sxs:spec;
+    List<MModel>:models;        // `runtime/models/*.model`, sorted by name (1.5.6 step 5)
 };
 
 // The floor and its spec, read from the manifest root.
 pub func:floor_read = FloorInputs(string:root) never fails {
-    FloorInputs:out = FloorInputs{ ok: false, problem: "", ft: raw floor_parse(""), spec: raw sx_parse("") };
+    FloorInputs:out = FloorInputs{ ok: false, problem: "", ft: raw floor_parse(""), spec: raw sx_parse(""), models: raw list_init::<MModel>(8i64) };
     Result<cstring>:fc = to_cstring(raw path_join(root, "runtime/npkrt.ll"));
     if (fc.is_error) { out.problem = "floor: runtime/npkrt.ll: not a path"; pass out; }
     Result<string>:ftext = read_file(fc.value);
@@ -42,6 +44,12 @@ pub func:floor_read = FloorInputs(string:root) never fails {
     out.ft = raw floor_parse(ftext.value);
     out.spec = raw sx_parse(stext.value);
     if (!out.spec.ok) { out.problem = string_concat("floor: runtime/npkrt.spec: ", out.spec.problem); pass out; }
+    // the protocol models beside the spec (1.5.6 step 5, D-289): each read
+    // and checked for shape here; the correspondence belt holds them to the
+    // floor before a solver is spawned
+    ModelSet:ms = raw models_read(root);
+    if (ms.problems.count > 0i64) { out.problem = raw strlist_copy(ms.problems, 0i64); pass out; }
+    out.models = move(ms.models);
     out.ok = true;
     pass out;
 };
@@ -77,9 +85,11 @@ func:fno = string(int64:n) never fails {
     pass (string_concat(z, d));
 };
 
-// THE WRITER: one file per specified symbol that has rows, `index.txt` and
-// `rows.txt` in the compiler's shape; the problems by name.
-pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, string:dir) never fails {
+// THE WRITER: one file per specified symbol that has rows, then one per
+// model (1.5.6 step 5), `index.txt` and `rows.txt` in the compiler's shape,
+// and `controls.txt` -- one line per control, `cNNNN\tmodel:NAME\tCONTROL\tBAD`,
+// each a file `cNNNN.smt2` that must answer `sat`; the problems by name.
+pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models, string:dir) never fails {
     List<string>:fl = raw list_init::<string>(4i64);
     Result<NIL>:d = floor_ensure_dir(dir);
     if (d.is_error) { drop strlist_push(@fl, string_concat("floor: cannot create ", dir)); pass fl; }
@@ -130,6 +140,57 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, string:dir) never fa
             rows = string_concat(rows, ln);
         }
     }
+    // the models: one file each, one row per bad predicate; the controls beside them
+    string:controls = "";
+    int64:cn = 0i64;
+    for (int64:mi in 0i64...models.count) {
+        MModel->:m = @models.items[mi];
+        ModelFile:mf = raw model_emit(m);
+        n = n + 1i64;
+        string:mno = raw fno(n);
+        Result<cstring>:mpc = to_cstring(raw path_join(dir, string_concat(mno, ".smt2")));
+        if (mpc.is_error) { drop strlist_push(@fl, "floor: an output path is not a path"); continue; }
+        Result<NIL>:mw = write_file(mpc.value, mf.text);
+        if (mw.is_error) { drop strlist_push(@fl, string_concat("floor: cannot write ", string_concat(mno, ".smt2"))); continue; }
+        index = string_concat(index, mno);
+        index = string_concat(index, "\t");
+        index = string_concat(index, raw strlist_view_of(mf.name));
+        index = string_concat(index, "\t");
+        index = string_concat(index, int_to_string(mf.row_sites.count));
+        index = string_concat(index, "\n");
+        for (int64:r2 in 0i64...mf.row_sites.count) {
+            string:ml = string_concat(mno, "\t");
+            ml = string_concat(ml, int_to_string(r2 + 1i64));
+            ml = string_concat(ml, "\tfloor-model\t");
+            ml = string_concat(ml, raw strlist_view(mf.row_hashes, r2));
+            ml = string_concat(ml, "\t1\t");
+            ml = string_concat(ml, raw strlist_view_of(mf.name));
+            ml = string_concat(ml, "\t");
+            ml = string_concat(ml, raw strlist_view(mf.row_sites, r2));
+            ml = string_concat(ml, "\tconform\t0\t0\tint\n");
+            rows = string_concat(rows, ml);
+        }
+        for (int64:ci in 0i64...mf.ctl_names.count) {
+            cn = cn + 1i64;
+            string:cno = string_concat("c", raw fno(cn));
+            Result<cstring>:cpc = to_cstring(raw path_join(dir, string_concat(cno, ".smt2")));
+            if (cpc.is_error) { drop strlist_push(@fl, "floor: a control's path is not a path"); continue; }
+            Result<NIL>:cw = write_file(cpc.value, raw strlist_view(mf.ctl_texts, ci));
+            if (cw.is_error) { drop strlist_push(@fl, string_concat("floor: cannot write ", string_concat(cno, ".smt2"))); continue; }
+            string:cl = string_concat(cno, "\t");
+            cl = string_concat(cl, raw strlist_view_of(mf.name));
+            cl = string_concat(cl, "\t");
+            cl = string_concat(cl, raw strlist_view(mf.ctl_names, ci));
+            cl = string_concat(cl, "\t");
+            cl = string_concat(cl, raw strlist_view(mf.ctl_bads, ci));
+            cl = string_concat(cl, "\n");
+            controls = string_concat(controls, cl);
+        }
+    }
+    Result<cstring>:cc = to_cstring(raw path_join(dir, "controls.txt"));
+    if (cc.is_error) { drop strlist_push(@fl, "floor: controls.txt: not a path"); pass fl; }
+    Result<NIL>:cw2 = write_file(cc.value, controls);
+    if (cw2.is_error) { drop strlist_push(@fl, "floor: cannot write controls.txt"); }
     Result<cstring>:ic = to_cstring(raw path_join(dir, "index.txt"));
     if (ic.is_error) { drop strlist_push(@fl, "floor: index.txt: not a path"); pass fl; }
     Result<NIL>:iw = write_file(ic.value, index);
@@ -376,10 +437,24 @@ func:class_default = string(string:cls) never fails {
 // manifest (M the budget rows -- residue by the verdict rule); `residue
 // (sentence)` and `boundary (sentence)` for a section that says so and has
 // no rows; the class default for a symbol no section names yet.
-pub func:floor_disposition = string(Sxs->:s, string:name, string:cls, List<ManRow>->:rows) never fails {
+pub func:floor_disposition = string(Sxs->:s, string:name, string:cls, List<ManRow>->:rows, List<MModel>:models) never fails {
     if (raw text_eq(cls, "asm")) { pass "trusted (inline asm)"; }
+    // `modelled (a, b)`: the models whose steps name a block of the symbol (1.5.6 step 5)
+    string:modelled = "";
+    for (int64:mi in 0i64...models.count) {
+        bool:names_it = false;
+        for (int64:si in 0i64...models.items[mi].steps.count) {
+            if (raw strlist_contains(models.items[mi].steps.items[si].ir_syms, name)) { names_it = true; }
+        }
+        if (!names_it) { continue; }
+        if (modelled.len > 0i64) { modelled = string_concat(modelled, ", "); }
+        modelled = string_concat(modelled, raw strlist_view_of(models.items[mi].name));
+    }
     int64:sec = raw spec_section(s, name);
-    if (sec < 0i64) { pass (raw class_default(cls)); }
+    if (sec < 0i64) {
+        if (modelled.len > 0i64) { pass (string_concat("modelled (", string_concat(modelled, ")"))); }
+        pass (raw class_default(cls));
+    }
     int64:d = 0i64;
     int64:b = 0i64;
     int64:o = 0i64;
@@ -414,12 +489,18 @@ pub func:floor_disposition = string(Sxs->:s, string:name, string:cls, List<ManRo
         out = string_concat(out, sent2);
         out = string_concat(out, ")");
     }
+    if (modelled.len > 0i64) {
+        if (out.len > 0i64) { out = string_concat(out, "; "); }
+        out = string_concat(out, "modelled (");
+        out = string_concat(out, modelled);
+        out = string_concat(out, ")");
+    }
     if (out.len == 0i64) { pass (raw class_default(cls)); }
     pass out;
 };
 
 // The table's rows as TCB.md carries them, sorted by symbol: `| `@name` | class | disposition |`.
-pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:rows) never fails {
+pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:rows, List<MModel>:models) never fails {
     List<string>:cls = raw floor_classes(ft);
     List<string>:keyed = raw list_init::<string>(ft.fns.count + 1i64);
     for (int64:i in 0i64...ft.fns.count) {
@@ -428,23 +509,314 @@ pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:r
         ln = string_concat(ln, "` | ");
         ln = string_concat(ln, raw strlist_view(cls, i));
         ln = string_concat(ln, " | ");
-        ln = string_concat(ln, raw floor_disposition(s, name, raw strlist_view(cls, i), rows));
+        ln = string_concat(ln, raw floor_disposition(s, name, raw strlist_view(cls, i), rows, models));
         ln = string_concat(ln, " |");
         drop strlist_push(@keyed, ln);
     }
     pass (raw strlist_sorted(keyed));
 };
 
+// --- what the evidence does not cover (1.5.6 step 6; D-288 SS2.10) ----------------------
+
+// TCB.md's residue region, byte for byte with the harness's `residue_region`:
+// every `budget` row by symbol, every `(residue "...")` sentence the spec
+// carries, and the models' standing residue. The list a reader is likeliest
+// to skip is the one that matters most, so it is generated, not maintained.
+pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:models) never fails {
+    List<string>:syms = raw list_init::<string>(4i64);
+    List<int64>:counts = raw list_init::<int64>(4i64);
+    int64:total = 0i64;
+    for (int64:i in 0i64...rows.count) {
+        if (rows.items[i].verdict != (raw OV_BUDGET())) { continue; }
+        total = total + 1i64;
+        string:sym = raw strlist_view_of(rows.items[i].symbol);
+        int64:at = 0i64 - 1i64;
+        for (int64:k in 0i64...syms.count) { if (raw text_eq(raw strlist_view(syms, k), sym)) { at = k; } }
+        if (at < 0i64) { drop strlist_push(@syms, sym); drop list_push(@counts, 1i64); }
+        else { counts.items[at] = counts.items[at] + 1i64; }
+    }
+    string:out = "**Rows the profile did not decide** (`budget`; the verdict rule keeps them as\nresidue, never as a proof). ";
+    if (total > 0i64) { out = string_concat(out, string_concat(int_to_string(total), " of them")); }
+    else { out = string_concat(out, "None"); }
+    out = string_concat(out, ":\n\n");
+    // the symbols in ascending order, as the harness's `sorted` gives them
+    List<string>:ordered = raw strlist_sorted(syms);
+    for (int64:o in 0i64...ordered.count) {
+        string:sym2 = raw strlist_view(ordered, o);
+        int64:c2 = 0i64;
+        for (int64:k2 in 0i64...syms.count) { if (raw text_eq(raw strlist_view(syms, k2), sym2)) { c2 = counts.items[k2]; } }
+        out = string_concat(out, "- `");
+        out = string_concat(out, sym2);
+        out = string_concat(out, "` -- ");
+        out = string_concat(out, int_to_string(c2));
+        out = string_concat(out, " row(s); the section's `(residue ...)` sentence says why.\n");
+    }
+    out = string_concat(out, "\n**Sentences the spec carries**, each a claim NOT made:\n\n");
+    for (int64:r in 0i64...s.roots.count) {
+        int64:root = s.roots.items[r];
+        if (!(raw text_eq(raw sx_head(s, root), "symbol"))) { continue; }
+        string:name = raw sx_atom(s, raw sx_nth(s, root, 1i64));
+        int64:rs = raw spec_clause(s, root, "residue", 0i64);
+        if (rs < 0i64) { continue; }
+        out = string_concat(out, "- `");
+        out = string_concat(out, name);
+        out = string_concat(out, "` -- ");
+        out = string_concat(out, raw sx_string(s, raw sx_nth(s, rs, 1i64)));
+        out = string_concat(out, "\n");
+    }
+    out = string_concat(out, "\n**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model row holds to\n");
+    out = string_concat(out, "its own depth and preemption bound and no further; LIVENESS is not claimed at\n");
+    out = string_concat(out, "all -- that a due task is eventually run, and that the shared arena's walker\n");
+    out = string_concat(out, "stops spinning, need a fairness assumption a bounded unrolling cannot state.");
+    if (models.count > 0i64) {
+        out = string_concat(out, "\nThe bounds in force: ");
+        for (int64:m in 0i64...models.count) {
+            if (m > 0i64) { out = string_concat(out, ", "); }
+            out = string_concat(out, "`");
+            out = string_concat(out, raw strlist_view_of(models.items[m].name));
+            out = string_concat(out, "`");
+        }
+        out = string_concat(out, ".");
+    }
+    pass out;
+};
+
+pub func:tcb_residue_current = List<string>(Sxs->:s, List<ManRow>->:rows, List<MModel>:models, string:tcb_text) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    string:bmark = "<!-- BEGIN floor-residue -->\n";
+    string:emark = "\n<!-- END floor-residue -->";
+    int64:b = raw text_index_of(tcb_text, bmark);
+    int64:e = raw text_index_of(tcb_text, emark);
+    if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-residue: TCB.md has no marked floor-residue region"); pass fl; }
+    string:have = raw text_slice(tcb_text, b + bmark.len, e);
+    string:want = raw tcb_residue_region(s, rows, models);
+    if (!(raw text_eq(have, want))) {
+        drop strlist_push(@fl, "tcb-residue: TCB.md's residue region is not what the spec and the committed floor manifest say -- regenerate it (bootstrap/harness/tcb_floor.py --write)");
+    }
+    pass fl;
+};
+
+// --- the syscall boundary (1.5.6 step 6; D-288 SS2.8) -----------------------------------
+
+// The kernel's name for a number the floor issues ("" when the table does
+// not name it -- a finding, not a blank: the kernel-effect table has one row
+// per number and a reader accepts those rows as the kernel's promise).
+pub func:syscall_name = string(int64:n) never fails {
+    if (n == 0i64) { pass "read"; }
+    if (n == 1i64) { pass "write"; }
+    if (n == 3i64) { pass "close"; }
+    if (n == 9i64) { pass "mmap"; }
+    if (n == 10i64) { pass "mprotect"; }
+    if (n == 11i64) { pass "munmap"; }
+    if (n == 13i64) { pass "rt_sigaction"; }
+    if (n == 39i64) { pass "getpid"; }
+    if (n == 56i64) { pass "clone"; }
+    if (n == 59i64) { pass "execve"; }
+    if (n == 60i64) { pass "exit"; }
+    if (n == 110i64) { pass "getppid"; }
+    if (n == 157i64) { pass "prctl"; }
+    if (n == 158i64) { pass "arch_prctl"; }
+    if (n == 202i64) { pass "futex"; }
+    if (n == 204i64) { pass "sched_getaffinity"; }
+    if (n == 228i64) { pass "clock_gettime"; }
+    if (n == 231i64) { pass "exit_group"; }
+    if (n == 233i64) { pass "epoll_ctl"; }
+    if (n == 234i64) { pass "tgkill"; }
+    if (n == 257i64) { pass "openat"; }
+    if (n == 281i64) { pass "epoll_pwait"; }
+    if (n == 290i64) { pass "eventfd2"; }
+    if (n == 291i64) { pass "epoll_create1"; }
+    if (n == 292i64) { pass "dup3"; }
+    if (n == 318i64) { pass "getrandom"; }
+    if (n == 424i64) { pass "pidfd_send_signal"; }
+    pass "";
+};
+
+// Is `name` one of the trap route's entries? Every symbol reaches
+// `exit_group` through a trap, which says nothing about the symbol, so the
+// route is NAMED in the table rather than counted into a reach.
+func:is_trap_entry = bool(string:name) never fails {
+    if (raw text_eq(name, "@npk_trap")) { pass true; }
+    if (raw text_eq(name, "@npk_raise")) { pass true; }
+    if (raw text_eq(name, "@npk_heap_badreq")) { pass true; }
+    if (raw text_eq(name, "@npk_heap_oom")) { pass true; }
+    if (raw text_eq(name, "@npk_heap_bad")) { pass true; }
+    pass false;
+};
+
+// The syscall numbers `fi` issues directly, in ascending order.
+pub func:floor_direct_syscalls = List<int64>(FloorText->:ft, int64:fi) never fails {
+    List<int64>:out = raw list_init::<int64>(4i64);
+    for (int64:b in 0i64...ft.fns.items[fi].blocks.count) {
+        for (int64:l in 0i64...ft.fns.items[fi].blocks.items[b].lines.count) {
+            string:ln = raw strlist_view(ft.fns.items[fi].blocks.items[b].lines, l);
+            int64:p = raw text_index_of(ln, "call i64 @npk_sys6(i64 ");
+            if (p < 0i64) { continue; }
+            int64:s2 = p + 23i64;
+            int64:e = s2;
+            while ((e < ln.len) && (ln.ptr[e] != 44u8)) { e = e + 1i64; }
+            uint128:v = 0u128;
+            if (!(raw u128_parse(raw text_slice(ln, s2, e), 64i64, @v))) { continue; }
+            int64:n = v =>! int64;
+            bool:have = false;
+            for (int64:i in 0i64...out.count) { if (out.items[i] == n) { have = true; } }
+            if (!have) { drop list_push(@out, n); }
+        }
+    }
+    // ascending
+    for (int64:i2 in 0i64...out.count) {
+        for (int64:j in (i2 + 1i64)...out.count) {
+            if (out.items[j] < out.items[i2]) { int64:t = out.items[i2]; out.items[i2] = out.items[j]; out.items[j] = t; }
+        }
+    }
+    pass out;
+};
+
+// The defines `fi` calls, by index.
+func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
+    List<int64>:out = raw list_init::<int64>(4i64);
+    for (int64:b in 0i64...ft.fns.items[fi].blocks.count) {
+        for (int64:l in 0i64...ft.fns.items[fi].blocks.items[b].lines.count) {
+            string:ln = raw strlist_view(ft.fns.items[fi].blocks.items[b].lines, l);
+            if ((raw text_index_of(ln, "call ")) < 0i64) { continue; }
+            int64:at = raw text_find_byte(ln, 64u8, 0i64);
+            if (at < 0i64) { continue; }
+            int64:e = at;
+            while ((e < ln.len) && (ln.ptr[e] != 40u8) && (ln.ptr[e] != 32u8)) { e = e + 1i64; }
+            int64:ci = raw floor_fn_index(ft, raw text_slice(ln, at, e));
+            if (ci < 0i64) { continue; }
+            bool:have = false;
+            for (int64:i in 0i64...out.count) { if (out.items[i] == ci) { have = true; } }
+            if (!have) { drop list_push(@out, ci); }
+        }
+    }
+    pass out;
+};
+
+// The numbers `fi` reaches WITHOUT passing through a trap entry, and whether
+// it can reach one (`traps`). A fixpoint over the call graph, the classifier's.
+pub func:floor_reach_syscalls = List<int64>(FloorText->:ft, int64:fi, bool->:traps) never fails {
+    List<int64>:out = raw list_init::<int64>(8i64);
+    List<int64>:work = raw list_init::<int64>(8i64);
+    List<bool>:seen = raw list_init::<bool>(ft.fns.count + 1i64);
+    for (int64:i in 0i64...ft.fns.count) { drop list_push(@seen, false); }
+    drop list_push(@work, fi);
+    seen.items[fi] = true;
+    <-traps = false;
+    while (work.count > 0i64) {
+        int64:cur = work.items[work.count - 1i64];
+        work.count = work.count - 1i64;
+        List<int64>:d = raw floor_direct_syscalls(ft, cur);
+        for (int64:k in 0i64...d.count) {
+            bool:have = false;
+            for (int64:i2 in 0i64...out.count) { if (out.items[i2] == d.items[k]) { have = true; } }
+            if (!have) { drop list_push(@out, d.items[k]); }
+        }
+        List<int64>:cs = raw floor_callees(ft, cur);
+        for (int64:c in 0i64...cs.count) {
+            int64:ci = cs.items[c];
+            if (raw is_trap_entry(raw strlist_view_of(ft.fns.items[ci].name))) { <-traps = true; continue; }
+            if (seen.items[ci]) { continue; }
+            seen.items[ci] = true;
+            drop list_push(@work, ci);
+        }
+    }
+    if (raw is_trap_entry(raw strlist_view_of(ft.fns.items[fi].name))) { <-traps = false; }
+    for (int64:i3 in 0i64...out.count) {
+        for (int64:j in (i3 + 1i64)...out.count) {
+            if (out.items[j] < out.items[i3]) { int64:t = out.items[i3]; out.items[i3] = out.items[j]; out.items[j] = t; }
+        }
+    }
+    pass out;
+};
+
+// `0 read, 1 write` -- a number list as the table spells it ("--" for none).
+func:syscall_list_text = string(List<int64>:ns) never fails {
+    if (ns.count == 0i64) { pass "--"; }
+    string:out = "";
+    for (int64:i in 0i64...ns.count) {
+        if (i > 0i64) { out = string_concat(out, ", "); }
+        out = string_concat(out, int_to_string(ns.items[i]));
+        out = string_concat(out, " ");
+        out = string_concat(out, raw syscall_name(ns.items[i]));
+    }
+    pass out;
+};
+
+// TCB.md's syscall-table rows, in the floor's own order.
+pub func:tcb_syscall_rows = List<string>(FloorText->:ft) never fails {
+    List<string>:cls = raw floor_classes(ft);
+    List<string>:out = raw list_init::<string>(64i64);
+    for (int64:i in 0i64...ft.fns.count) {
+        bool:traps = false;
+        List<int64>:reach = raw floor_reach_syscalls(ft, i, @traps);
+        if ((reach.count == 0i64) && (!traps)) { continue; }
+        List<int64>:direct = raw floor_direct_syscalls(ft, i);
+        string:rt = raw syscall_list_text(reach);
+        if (traps) {
+            if (reach.count == 0i64) { rt = "the trap route only"; }
+            else { rt = string_concat(rt, ", and the trap route"); }
+        }
+        string:ln = string_concat("| `", raw strlist_view_of(ft.fns.items[i].name));
+        ln = string_concat(ln, "` | ");
+        ln = string_concat(ln, raw strlist_view(cls, i));
+        ln = string_concat(ln, " | ");
+        ln = string_concat(ln, raw syscall_list_text(direct));
+        ln = string_concat(ln, " | ");
+        ln = string_concat(ln, rt);
+        ln = string_concat(ln, " |");
+        drop strlist_push(@out, ln);
+    }
+    pass out;
+};
+
+// THE SYSCALL BELT: TCB.md's syscall table equals what the floor says today,
+// and every number the floor issues has a name (a new syscall without a
+// kernel-effect row is a translation the reader cannot check).
+pub func:tcb_syscalls_current = List<string>(FloorText->:ft, string:tcb_text) never fails {
+    List<string>:fl = raw list_init::<string>(4i64);
+    for (int64:i in 0i64...ft.fns.count) {
+        List<int64>:d = raw floor_direct_syscalls(ft, i);
+        for (int64:k in 0i64...d.count) {
+            if ((raw syscall_name(d.items[k])).len > 0i64) { continue; }
+            string:w = string_concat("floor: runtime/npkrt.ll issues syscall ", int_to_string(d.items[k]));
+            w = string_concat(w, ", which the table does not name -- give it a kernel-effect row (npkg/floor_smt.npk) and a name here");
+            drop strlist_push(@fl, w);
+        }
+    }
+    int64:b = raw text_index_of(tcb_text, "<!-- BEGIN floor-syscalls -->");
+    int64:e = raw text_index_of(tcb_text, "<!-- END floor-syscalls -->");
+    if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-syscalls: TCB.md has no marked floor-syscalls region"); pass fl; }
+    List<string>:want = raw tcb_syscall_rows(ft);
+    List<string>:have = raw list_init::<string>(want.count + 1i64);
+    List<string>:lines = raw text_lines(raw text_slice(tcb_text, b, e));
+    for (int64:i2 in 0i64...lines.count) {
+        string:ln2 = raw strlist_view(lines, i2);
+        if (raw text_starts_with(ln2, "| `@")) { drop strlist_push(@have, ln2); }
+    }
+    List<string>:missing = raw strlist_minus(want, have);
+    List<string>:stale = raw strlist_minus(have, want);
+    for (int64:m in 0i64...missing.count) {
+        if (m >= 10i64) { break; }
+        drop strlist_push(@fl, string_concat("tcb-syscalls: TCB.md's table lacks the row: ", raw strlist_view(missing, m)));
+    }
+    for (int64:st in 0i64...stale.count) {
+        if (st >= 10i64) { break; }
+        drop strlist_push(@fl, string_concat("tcb-syscalls: TCB.md's table carries a row the floor does not say: ", raw strlist_view(stale, st)));
+    }
+    pass fl;
+};
+
 // THE TCB BELT (P-26, extended at 1.5.6 step 3): TCB.md's floor table equals
 // what the floor, the spec and the committed floor manifest say today --
 // symbol, class and disposition. A symbol whose disposition drifted from
 // its rows is a red run.
-pub func:tcb_floor_current = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:rows, string:tcb_text) never fails {
+pub func:tcb_floor_current = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:rows, List<MModel>:models, string:tcb_text) never fails {
     List<string>:fl = raw list_init::<string>(4i64);
     int64:b = raw text_index_of(tcb_text, "<!-- BEGIN floor-table -->");
     int64:e = raw text_index_of(tcb_text, "<!-- END floor-table -->");
     if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-floor: TCB.md has no marked floor-table region"); pass fl; }
-    List<string>:want = raw tcb_floor_rows(ft, s, rows);
+    List<string>:want = raw tcb_floor_rows(ft, s, rows, models);
     List<string>:have = raw list_init::<string>(want.count + 1i64);
     List<string>:lines = raw text_lines(raw text_slice(tcb_text, b, e));
     for (int64:i in 0i64...lines.count) {

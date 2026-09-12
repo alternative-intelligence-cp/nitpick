@@ -1,0 +1,69 @@
+; shared-arena -- the lock-free shared arena (npk_sarena_bump,
+; npk_sarena_slot, npk_sarena_make): an index is reserved by one atomic
+; add of `top`; a bumper past the capacity reserves a range by one atomic
+; add of `cap`, allocates a chunk carrying that range, and links it at the
+; head by a cmpxchg loop; a walker finds an index's chunk by its range.
+; Three chunks: A (the first, linked at make, holding no slot here so that
+; both bumpers grow), B (bumper1's) and C (bumper2's), each grower's range
+; one slot; one walker.
+;
+; a bumper (b1/b2): 0 outside; 1 the index taken (atomicrmw add top);
+;   2 the range reserved (atomicrmw add cap; the chunk allocated with its
+;   base and count); 3 the head read and the chunk's next stored; 4 the
+;   cmpxchg (won: done; lost: back to 3); 5 done.
+; the walker (wpc): 0 outside; 1 top read; 2 walking from the head; 3 found; 4 stale.
+; `head` 1 A, 2 B, 3 C; `bnext`/`cnext` 0 none, else a chunk; a chunk is
+; reachable when the head or the head's next names it.
+
+(model shared-arena
+  (of "the shared arena: one index per bump, every grower's chunk reachable from the head, a found slot's chunk holds its index")
+  (state (top 0 3) (cap 0 3) (head 1 3) (bbase 0 3) (bn 0 1) (bnext 0 3) (cbase 0 3) (cn 0 1) (cnext 0 3)
+         (b1 0 5) (b2 0 5) (i1 0 3) (i2 0 3) (h1 1 3) (h2 1 3) (wpc 0 4) (widx 0 2) (wchunk 0 3))
+  (init (and (= top 0) (= cap 0) (= head 1) (= bbase 0) (= bn 0) (= bnext 0) (= cbase 0) (= cn 0) (= cnext 0)
+             (= b1 0) (= b2 0) (= i1 0) (= i2 0) (= h1 1) (= h2 1) (= wpc 0) (= wchunk 0)))
+  (thread bumper1
+    (step take    (ir @npk_sarena_bump entry) (guard (and (= b1 0) (< top 3))) (next (b1 1) (i1 top) (top (+ top 1))))
+    (step check   (ir @npk_sarena_bump check) (guard (= b1 1)) (next (b1 (ite (< i1 cap) 5 2))))
+    (step reserve (ir @npk_sarena_bump grow badreq reserve) (guard (and (= b1 2) (< cap 3)))
+                  (next (b1 3) (bbase cap) (bn 1) (cap (+ cap 1))))
+    (step read    (ir @npk_sarena_bump push) (guard (= b1 3)) (next (b1 4) (h1 head) (bnext head)))
+    (step link    (ir @npk_sarena_bump push) (guard (= b1 4))
+                  (next (b1 (ite (= head h1) 5 3)) (head (ite (= head h1) 2 head))))
+    (step done    (ir @npk_sarena_bump done) (guard (= b1 5)) (next (b1 5))))
+  (thread bumper2
+    (step take    (ir @npk_sarena_bump entry) (guard (and (= b2 0) (< top 3))) (next (b2 1) (i2 top) (top (+ top 1))))
+    (step check   (ir @npk_sarena_bump check) (guard (= b2 1)) (next (b2 (ite (< i2 cap) 5 2))))
+    (step reserve (ir @npk_sarena_bump grow reserve) (guard (and (= b2 2) (< cap 3)))
+                  (next (b2 3) (cbase cap) (cn 1) (cap (+ cap 1))))
+    (step read    (ir @npk_sarena_bump push) (guard (= b2 3)) (next (b2 4) (h2 head) (cnext head)))
+    (step link    (ir @npk_sarena_bump push) (guard (= b2 4))
+                  (next (b2 (ite (= head h2) 5 3)) (head (ite (= head h2) 3 head))))
+    (step done    (ir @npk_sarena_bump done) (guard (= b2 5)) (next (b2 5))))
+  (thread walker
+    (step top     (ir @npk_sarena_slot entry stale) (guard (= wpc 0)) (next (wpc (ite (< widx top) 2 4))))
+    ; the walk from the head: the first chunk whose range holds the index (B's [bbase, bbase+bn), C's [cbase, cbase+cn), A's [0,1))
+    (step walk    (ir @npk_sarena_slot walk chead cbody cnext found) (guard (= wpc 2))
+                  (next (wpc 3)
+                        (wchunk (ite (and (= head 2) (= bn 1) (= widx bbase)) 2
+                                (ite (and (= head 3) (= cn 1) (= widx cbase)) 3
+                                (ite (and (= head 2) (= bnext 3) (= cn 1) (= widx cbase)) 3
+                                (ite (and (= head 3) (= cnext 2) (= bn 1) (= widx bbase)) 2
+                                (ite (< widx 0) 1 0)))))))))
+  ; two bumps returned one index
+  (bad duplicate-index (and (= b1 5) (= b2 5) (= i1 i2)))
+  ; a found slot's chunk does not hold its index
+  (bad wrong-chunk (and (= wpc 3) (or (and (= wchunk 2) (not (= widx bbase)))
+                                      (and (= wchunk 3) (not (= widx cbase)))
+                                      (and (= wchunk 1) (>= widx 0)))))
+  ; a grower done with a chunk the head no longer reaches
+  (bad unlinked-forever (or (and (= b1 5) (= bn 1) (not (or (= head 2) (and (= head 3) (= cnext 2)))))
+                            (and (= b2 5) (= cn 1) (not (or (= head 3) (and (= head 2) (= bnext 3)))))))
+  (depth 12) (preempt 5)
+  ; the index read then written instead of one atomic add: two bumps take one index
+  (control index-read-then-write duplicate-index
+    (replace bumper1 take (guard (and (= b1 0) (< top 3))) (next (b1 1) (i1 top)))
+    (replace bumper2 take (guard (and (= b2 0) (< top 3))) (next (b2 1) (i2 top))))
+  ; link with a plain store instead of the cmpxchg: a concurrent push is overwritten and its chunk unreachable
+  (control link-without-cas unlinked-forever
+    (replace bumper1 link (guard (= b1 4)) (next (b1 5) (head 2)))
+    (replace bumper2 link (guard (= b2 4)) (next (b2 5) (head 3)))))

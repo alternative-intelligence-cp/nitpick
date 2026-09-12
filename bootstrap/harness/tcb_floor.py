@@ -27,19 +27,32 @@ def main(argv):
     man = os.path.join(ROOT, "runtime", "npkrt.obligations")
     spec_text = open(spec, encoding="utf-8").read() if os.path.exists(spec) else ""
     man_text = open(man, encoding="utf-8").read() if os.path.exists(man) else ""
-    region = floor.tcb_region(spec_text, harness._floor_classes(), man_text)
+    classes = harness._floor_classes()
+    floor_ll = open(harness.RUNTIME_LL, encoding="utf-8").read()
+    region = floor.tcb_region(spec_text, classes, man_text, floor.read_models(ROOT))
+    sysregion = floor.syscalls_region(floor_ll, classes)
+    resregion = floor.residue_region(spec_text, man_text, floor.read_models(ROOT))
     if "--write" not in argv:
         print(region)
+        print()
+        print(sysregion)
+        print()
+        print(resregion)
         return 0
     path = os.path.join(ROOT, "meta", "specs", "TCB.md")
     doc = open(path, encoding="utf-8").read()
     new = re.sub(r"(<!-- BEGIN floor-table -->\n).*?(\n<!-- END floor-table -->)",
                  lambda m: m.group(1) + region + m.group(2), doc, flags=re.S)
+    new = re.sub(r"(<!-- BEGIN floor-syscalls -->\n).*?(\n<!-- END floor-syscalls -->)",
+                 lambda m: m.group(1) + sysregion + m.group(2), new, flags=re.S)
+    new = re.sub(r"(<!-- BEGIN floor-residue -->\n).*?(\n<!-- END floor-residue -->)",
+                 lambda m: m.group(1) + resregion + m.group(2), new, flags=re.S)
     if new == doc:
-        print("TCB.md: the floor table is current")
+        print("TCB.md: the floor table and the syscall table are current")
         return 0
     open(path, "w", encoding="utf-8").write(new)
-    print("TCB.md: the floor table rewritten (%d rows)" % (region.count("\n") - 1))
+    print("TCB.md: the floor table (%d rows) and the syscall table (%d rows) rewritten"
+          % (region.count("\n") - 1, len(floor.syscall_rows(floor_ll, classes))))
     return 0
 
 

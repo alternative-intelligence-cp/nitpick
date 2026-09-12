@@ -1,0 +1,116 @@
+; park-unpark -- the executor's idle path against a channel waker, the
+; registration race, the wind-up sweep, the eventfd path and the kernel's
+; futex and eventfd rules (1.5.6 step 5; D-289 SS2.7). One task, one
+; executor, one waker; the kernel's spurious return is the executor's own
+; step. The floor's blocks each step abstracts are named on the step.
+;
+; The executor (epc):
+;   0 the task parks: it links on the channel's waiter list under the lock
+;   1 sl_push: the deadline exchanged into wake_at (a 1 already there is kept), the task on the sleeper list
+;   2 the sweep: a due sleeper (wake_at = 1) moves to the ready queue
+;   3 rq_pop: a ready task runs (7), else the idle path
+;   4 the park word cleared
+;   5 the second sweep and the re-check of the ready queue (the lost-wakeup guard)
+;   6 the wait: futex_wait(park_word, 0) -- returns at once when the word moved, else parks; a parked executor returns on a wake or spuriously
+;   7 the task resumes: the due mark consumed (cmpxchg 1 -> 0) unless the task is wound; the good end of a round
+; The waker (wpc): 0 pops the waiter and stamps wake_at := 1 (nothing to pop:
+; done at once); 1 sets the park word; 2 futex_wake; 3 done (wdone := 1).
+; The eventfd path: `ev` 1 once the executor armed its reactor (the first
+; io_register), `evr` the eventfd's readability; an armed executor's wait is
+; the epoll wait, which the eventfd's write ends (a futex wake does not) and
+; which drains the eventfd; the waker pings the eventfd only when it finds
+; the executor armed, so the park word's re-check before the epoll wait is
+; what catches a rouse that came before the arming.
+
+(model park-unpark
+  (of "the park/unpark protocol: a task parking through sl_push against a channel waker's stamp-and-rouse, the second sweep, the futex and eventfd rules")
+  (state (epc 0 8) (wpc 0 3) (wa 0 2) (pw 0 1) (sl 0 1) (rq 0 1) (parked 0 1) (linked 0 1) (wdone 0 1)
+         (ev 0 1) (evr 0 1) (stamped 0 1) (wound 0 1))
+  (init (and (= epc 0) (= wpc 0) (= wa 0) (= pw 1) (= sl 0) (= rq 0) (= parked 0) (= linked 0) (= wdone 0)
+             (= ev 0) (= evr 0) (= stamped 0) (= wound 0)))
+  (thread executor
+    (step link    (ir @npk_ch_wait_link entry) (ir @npk_park_until entry)
+                  (guard (= epc 0)) (next (epc 1) (linked 1)))
+    (step push    (ir @npk_sl_push entry keep sleep) (ir @npk_park_take entry yes no) (ir @npk_step parked sleep)
+                  (guard (= epc 1)) (next (epc 2) (wa (ite (= wa 1) 1 2)) (sl 1)))
+    (step sweep   (ir @npk_sl_wake_due entry loop again ready keep done) (ir @npk_sl_earliest entry loop step done)
+                  (guard (= epc 2))
+                  (next (epc 3) (rq (ite (and (= sl 1) (= wa 1)) 1 rq)) (sl (ite (and (= sl 1) (= wa 1)) 0 sl))))
+    (step pop     (ir @npk_step go run) (ir @npk_task_done entry)
+                  (guard (= epc 3)) (next (epc (ite (= rq 1) 7 4))))
+    (step clear   (ir @npk_step nothing)
+                  (guard (= epc 4)) (next (epc 5) (pw 0)))
+    (step recheck (ir @npk_step retry idle2 wait clamp plain)
+                  (guard (= epc 5))
+                  (next (epc (ite (or (= rq 1) (and (= sl 1) (= wa 1))) 3 6))
+                        (rq (ite (and (= sl 1) (= wa 1)) 1 rq))
+                        (sl (ite (and (= sl 1) (= wa 1)) 0 sl))))
+    ; the reactor armed before the wait: from here the wait is the epoll wait
+    (step arm     (ir @npk_io_register entry create mkev addev trap arm mod ck1 duenow out)
+                  (guard (and (= epc 6) (= ev 0) (= parked 0))) (next (ev 1)))
+    ; the futex wait: the in-kernel check of the word against 0
+    (step wait    (ir @npk_park_sleep entry futex)
+                  (guard (and (= epc 6) (= ev 0) (= parked 0)))
+                  (next (epc (ite (= pw 0) 6 2)))
+                  (kernel futex-wait pw 0 parked))
+    ; the epoll wait: the word re-checked first, the eventfd's readability the wake, the drain
+    (step epwait  (ir @npk_park_sleep epoll epgo deliver dloop done1 drain due dnext out)
+                  (guard (and (= epc 6) (= ev 1) (= parked 0)))
+                  (next (epc (ite (or (= pw 1) (= evr 1)) 2 6)) (parked (ite (or (= pw 1) (= evr 1)) 0 1)) (evr 0)))
+    (step epreturn (ir @npk_park_sleep out)
+                  (guard (and (= epc 6) (= ev 1) (= parked 1) (= evr 1)))
+                  (next (epc 2) (parked 0) (evr 0)))
+    ; a parked futex sleeper returns: unparked by the wake (the waker's step) or spuriously
+    (step return  (ir @npk_park_sleep futex)
+                  (guard (and (= epc 6) (= ev 0)))
+                  (kernel spurious parked)
+                  (next (epc 2)))
+    ; the task resumes: a due mark is consumed unless the task is wound
+    (step spend   (ir @npk_step spend resume finished unwakeable) (ir @npk_step entry frozen)
+                  (guard (= epc 7))
+                  (next (epc 7) (wa (ite (and (= wound 0) (= wa 1)) 0 wa)) (stamped (ite (and (= wound 0) (= wa 1)) 0 stamped)))))
+  (thread waker
+    ; under the channel lock: the waiter popped and stamped due (nothing linked: done at once)
+    (step pop     (ir @npk_ch_wake_one entry pop done)
+                  (guard (= wpc 0))
+                  (next (wpc (ite (= linked 1) 1 3)) (wa (ite (= linked 1) 1 wa)) (stamped (ite (= linked 1) 1 stamped)) (linked 0)))
+    (step rouse   (ir @npk_ch_wake_one rouse)
+                  (guard (= wpc 1)) (next (wpc 2) (pw 1)))
+    ; the futex wake ends a futex sleep only; the eventfd is pinged when the executor is found armed
+    (step wake    (ir @npk_ch_wake_one rouse ping)
+                  (guard (= wpc 2))
+                  (next (wpc 3) (parked (ite (= ev 1) parked 0)) (evr (ite (= ev 1) 1 evr))))
+    (step done    (ir @npk_ch_wake_one done)
+                  (guard (= wpc 3)) (next (wdone 1))))
+  (thread joiner
+    ; the wind-up sweep: every task marked wound and due, its executor roused
+    (step windup  (ir @npk_windup_all entry loop mark due rouse pingw next done)
+                  (guard (= wound 0))
+                  (next (wound 1) (wa 1) (pw 1) (parked (ite (= ev 1) parked 0)) (evr (ite (= ev 1) 1 evr)))))
+  ; the probe's predicate: the executor parked, the waker finished, the task due and still sleeping, and no
+  ; eventfd wake on its way (an epoll sleeper's unpark is the eventfd's readability, taken at its next step)
+  (bad wake-before-sleep (and (= parked 1) (= wdone 1) (= wa 1) (= sl 1) (= evr 0)))
+  ; an armed executor parked while its eventfd was written before the wait and is not readable
+  (bad absorbed-notification (and (= ev 1) (= parked 1) (= wdone 1) (= wa 1) (= sl 1) (= evr 0)))
+  ; a stamp the task has not consumed leaves the task due: never sleeping with the mark gone or overwritten
+  (bad spent-marker (and (= wdone 1) (= stamped 1) (= sl 1) (not (= wa 1))))
+  ; a wound task's next park returns at once: never parked after the wind-up
+  (bad wound-but-asleep (and (= wound 1) (= parked 1) (= wdone 1) (= evr 0)))
+  (depth 14) (preempt 5)
+  ; drop the second sweep: the lost wakeup the floor's comment names
+  (control drop-second-sweep wake-before-sleep
+    (replace executor recheck (guard (= epc 5)) (next (epc (ite (= rq 1) 3 6)))))
+  ; move the park word's clear after the second sweep: a set between the sweep and the clear is erased
+  (control clear-after-sweep wake-before-sleep
+    (replace executor pop (guard (= epc 3)) (next (epc (ite (= rq 1) 7 5))))
+    (replace executor recheck (guard (= epc 5))
+      (next (epc (ite (or (= rq 1) (and (= sl 1) (= wa 1))) 3 8))
+            (rq (ite (and (= sl 1) (= wa 1)) 1 rq)) (sl (ite (and (= sl 1) (= wa 1)) 0 sl))))
+    (replace executor clear (guard (= epc 8)) (next (epc 6) (pw 0))))
+  ; drop sl_push's keep path: a stamp that raced the exchange is overwritten by the deadline
+  (control drop-keep-path spent-marker
+    (replace executor push (guard (= epc 1)) (next (epc 2) (wa 2) (sl 1))))
+  ; drop the epoll path's re-check of the word: the notification written before the wait is absorbed
+  (control drop-epoll-recheck absorbed-notification
+    (replace executor epwait (guard (and (= epc 6) (= ev 1) (= parked 0)))
+      (next (epc (ite (= evr 1) 2 6)) (parked (ite (= evr 1) 0 1)) (evr 0)))))

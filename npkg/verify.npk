@@ -43,6 +43,7 @@ use "./floor_shared.npk".*;
 use "./floor_ir.npk".*;
 use "./floor_spec.npk".*;
 use "./floor.npk".*;
+use "./floor_model.npk".*;
 
 // One row of rows.txt, with its verdict once decided.
 pub struct:VRow = {
@@ -882,6 +883,13 @@ pub func:floor_verdict_failures = List<string>(List<VRow>:rows) never fails {
 // class defaults must stand).
 pub func:floor_belts = List<string>(Ctx->:c, FloorInputs->:inp) never fails {
     List<string>:fl = raw floor_spec_current(@inp.ft, @inp.spec);
+    // the models against the floor: every named block exists, every atomic
+    // operation and syscall of a named symbol is in a named block (1.5.6 step 5)
+    if (inp.models.count == 0i64) {
+        drop strlist_push(@fl, "floor: runtime/models is missing, unreadable or holds no model -- the floor's protocol models are part of the tree (D-289)");
+    }
+    List<string>:mfl = raw floor_models_current(@inp.ft, inp.models);
+    for (int64:mi in 0i64...mfl.count) { drop strlist_push(@fl, raw strlist_view(mfl, mi)); }
     if (fl.count > 0i64) { pass fl; }
     string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
     List<ManRow>:rows = raw list_init::<ManRow>(64i64);
@@ -898,7 +906,11 @@ pub func:floor_belts = List<string>(Ctx->:c, FloorInputs->:inp) never fails {
     if (tc.is_error) { drop strlist_push(@fl, "tcb-floor: meta/specs/TCB.md: not a path"); pass fl; }
     Result<string>:tt = read_file(tc.value);
     if (tt.is_error) { drop strlist_push(@fl, "tcb-floor: meta/specs/TCB.md is missing"); pass fl; }
-    List<string>:tf = raw tcb_floor_current(@inp.ft, @inp.spec, @rows, tt.value);
+    List<string>:tf = raw tcb_floor_current(@inp.ft, @inp.spec, @rows, inp.models, tt.value);
+    List<string>:ts = raw tcb_syscalls_current(@inp.ft, tt.value);
+    for (int64:si in 0i64...ts.count) { drop strlist_push(@tf, raw strlist_view(ts, si)); }
+    List<string>:tr2 = raw tcb_residue_current(@inp.spec, @rows, inp.models, tt.value);
+    for (int64:ri2 in 0i64...tr2.count) { drop strlist_push(@tf, raw strlist_view(tr2, ri2)); }
     for (int64:i in 0i64...tf.count) { drop strlist_push(@fl, raw strlist_view(tf, i)); }
     pass fl;
 };
@@ -912,7 +924,7 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     List<string>:bl = raw floor_belts(c, @inp);
     if (bl.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(bl, 0i64), ""))); }
     string:fdir = raw path_join(vdir, "floor");
-    List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, fdir);
+    List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, inp.models, fdir);
     if (ef.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(ef, 0i64), ""))); }
     Result<List<VRow>>:rows_r = read_rows(fdir);
     if (rows_r.is_error) { pass (raw step_bad("the floor's obligation directory could not be read (rows.txt)")); }
@@ -926,6 +938,11 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     if (zf.count > 0i64) { pass (raw step_bad(raw strlist_view(zf, 0i64))); }
     List<string>:vf = raw floor_verdict_failures(rows);
     if (vf.count > 0i64) { pass (raw step_bad(raw strlist_view(vf, 0i64))); }
+    // THE CONTROLS (D-289 SS2.7): every control must be `sat` -- a model whose
+    // mutation reaches no bad state is blind to what it claims to see
+    Result<List<string>>:cf = await controls_decide(c, z3, fdir);
+    if (cf.is_error) { fail cf.err; }
+    if (cf.value.count > 0i64) { pass (raw step_bad(raw strlist_view(cf.value, 0i64))); }
     string:run_text = raw manifest_of(c, rows);
     string:committed = raw path_join(root, "runtime/npkrt.obligations");
     Result<cstring>:cc = to_cstring(committed);
@@ -962,6 +979,55 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     string:line = raw verdict_counts(rows);
     line = string_concat(line, "; runtime/npkrt.obligations matches");
     pass (raw step_ok(line));
+};
+
+// The controls of `dir/controls.txt` (`cNNNN\tmodel:NAME\tCONTROL\tBAD`), each
+// decided once; a control that is not `sat` is a finding by name
+// (`floor-control-blind` in the runner self-check).
+pub async func:controls_decide = List<string>(Ctx->:c, string:z3, string:dir) {
+    List<string>:fl = raw list_init::<string>(2i64);
+    Result<cstring>:cc = to_cstring(raw path_join(dir, "controls.txt"));
+    if (cc.is_error) { fail cc.err; }
+    if (!(path_exists(cc.value))) { drop strlist_push(@fl, "floor: the writer left no controls.txt"); pass fl; }
+    Result<string>:ct = read_file(cc.value);
+    if (ct.is_error) { fail ct.err; }
+    List<string>:lines = raw text_lines(ct.value);
+    int64:seen = 0i64;
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (ln.len == 0i64) { continue; }
+        List<string>:f = raw split_tabs(ln);
+        if (f.count != 4i64) { drop strlist_push(@fl, "floor: a controls.txt line is not `cNNNN model:NAME CONTROL BAD`"); pass fl; }
+        List<string>:args = raw strlist_clone(c.m.z3_options);
+        drop strlist_push(@args, "-smt2");
+        drop strlist_push(@args, raw path_join(dir, string_concat(raw strlist_view(f, 0i64), ".smt2")));
+        Result<Run>:r = await run_argv(z3, args, c.t.env, raw duration_secs(130i64));
+        if (r.is_error) { fail r.err; }
+        Run:run = move(r.value);
+        if (run.timed_out) {
+            string:m1 = string_concat("floor: z3 exceeded the wall-clock net on the control ", raw strlist_view(f, 2i64));
+            m1 = string_concat(m1, " of ");
+            m1 = string_concat(m1, raw strlist_view(f, 1i64));
+            m1 = string_concat(m1, " -- not a verdict: a wedged solver is a build failure (P-13)");
+            drop list_push(@fl, move(m1));
+            pass fl;
+        }
+        string:a = raw text_trim(run.x.out);
+        if (!(raw text_eq(a, "sat"))) {
+            string:m2 = string_concat("floor: the control ", raw strlist_view(f, 2i64));
+            m2 = string_concat(m2, " of ");
+            m2 = string_concat(m2, raw strlist_view(f, 1i64));
+            m2 = string_concat(m2, " does not reach bad:");
+            m2 = string_concat(m2, raw strlist_view(f, 3i64));
+            m2 = string_concat(m2, " (z3 said `");
+            m2 = string_concat(m2, raw text_head(a, 40i64));
+            m2 = string_concat(m2, "`, not `sat`): a model blind to what it claims to see (floor-control-blind)");
+            drop list_push(@fl, move(m2));
+            pass fl;
+        }
+        seen = seen + 1i64;
+    }
+    pass fl;
 };
 
 // --- `--explain` (P-7's second pass) ---------------------------------------------------------

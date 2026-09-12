@@ -1,0 +1,133 @@
+; trap-route -- the whole-program stop (D-291, 1.5.6 step 1): two threads A
+; and B, each an executor resuming tasks that may trap; the failsafe
+; holder word (cmpxchg arbitration), the frozen flag, the stop signal, the
+; stopped count and the failsafe region's allocator (D-292). This is the
+; model D-291's measurement was made with (the probe of 1.5.6 SS1): on the
+; pre-step-1 floor its bad predicates were `sat` -- step 1's record carries
+; them; on this floor they are `unsat` at the depth below, and the controls
+; are the pre-step-1 route (the holder read in one step and written in
+; another, a loser exiting the process, no stop) and the pre-step-2
+; allocator (the failsafe body taking the heap mutex).
+;
+; A thread's pc: 0 in npk_step (the frozen flag checked before a resume),
+; 7 inside a task's resume (steps until it returns to npk_step), 1 trapped
+; (entering npk_trap), 2 the winner sending the stop and waiting, 3 in
+; failsafe, 4 exit_group done, 5 parked (a loser, or a program exit racing
+; the holder), 6 stopped in the handler. `holder` 0 none, 1 A, 2 B; `sa`/`sb`
+; the holder each thread last read; `mx` the heap mutex's holder; `blocked`
+; 1 when the failsafe body waits on the mutex a stopped thread holds.
+
+(model trap-route
+  (of "the trap route's whole-program stop: cmpxchg arbitration of the failsafe holder, the stop signal to every other thread, and the failsafe region's allocator")
+  (state (apc 0 7) (bpc 0 7) (holder 0 2) (sa 0 2) (sb 0 2) (frozen 0 1) (fs_a 0 1) (fs_b 0 1) (steps_after 0 20) (exited_by 0 2)
+         (stop_sent 0 1) (mx 0 2) (blocked 0 1))
+  (init (and (= apc 0) (= bpc 0) (= holder 0) (= sa 0) (= sb 0) (= frozen 0) (= fs_a 0) (= fs_b 0) (= steps_after 0) (= exited_by 0)
+             (= stop_sent 0) (= mx 0) (= blocked 0)))
+  (thread a
+    ; npk_step: the flag clear, a task resumed
+    (step resume  (ir @npk_step entry go run spend resume) (ir @npk_frozen_get entry)
+                  (guard (and (= apc 0) (= frozen 0))) (next (apc 7)))
+    ; the flag set: the executor traps (-4102) on the same route as any trap
+    (step frozen  (ir @npk_step frozen)
+                  (guard (and (= apc 0) (= frozen 1))) (next (apc 1)))
+    ; a step inside the task: counted when the other thread's failsafe has begun
+    (step task    (ir @npk_step finished parked sleep) (ir @npk_park_until entry) (ir @npk_park_take entry yes no)
+                  (guard (= apc 7))
+                  (next (steps_after (ite (= fs_b 1) (+ steps_after 1) steps_after))))
+    ; the task returns to npk_step
+    (step yield   (ir @npk_step nothing retry idle2 wait clamp plain)
+                  (guard (= apc 7)) (next (apc 0)))
+    ; the allocator's mutex, taken and released by a running task (a trap inside the allocator holds it)
+    (step lock    (ir @npk_mx_lock entry done)
+                  (guard (and (= apc 7) (= mx 0))) (next (mx 1)))
+    (step unlock  (ir @npk_mx_unlock entry done)
+                  (guard (and (= apc 7) (= mx 1))) (next (mx 0)))
+    ; the trap: the flag set, then the arbitration
+    (step trap    (ir @npk_trap entry)
+                  (guard (= apc 7)) (next (apc 1) (frozen 1)))
+    ; the holder read (the cmpxchg re-reads it atomically: harmless here, the old route's first half)
+    (step read    (ir @npk_trap entry)
+                  (guard (= apc 1)) (next (sa holder)))
+    ; the cmpxchg: 0 -> A wins, sends the stop; the loser parks; a re-entry exits 70
+    (step win     (ir @npk_trap run) (ir @npk_stop_others entry scan look who sig kill next)
+                  (guard (and (= apc 1) (= holder 0))) (next (holder 1) (apc 2) (stop_sent 1)))
+    (step lose    (ir @npk_trap lost park) (ir @npk_park_forever entry wait)
+                  (guard (and (= apc 1) (= holder 2))) (next (apc 5)))
+    (step reenter (ir @npk_trap lost hard)
+                  (guard (and (= apc 1) (= holder 1))) (next (apc 4) (exited_by 1)))
+    ; the winner enters failsafe once every other thread is parked, stopped or exited (or the deadline passed: residue)
+    (step enter   (ir @npk_stop_others wait wloop timecheck sleep fin) (ir @npk_driver_kill_all entry scan look kill sig next fin)
+                  (guard (and (= apc 2) (or (= bpc 4) (= bpc 5) (= bpc 6))))
+                  (next (apc 3) (fs_a 1)))
+    ; the failsafe body allocates: from the region, never the mutex another thread may hold
+    (step fsalloc (ir @npk_fs_alloc entry badreq norm oom take) (ir @npk_alloc_impl entry)
+                  (guard (and (= apc 3) (= mx 2)))
+                  (next (blocked 0)))
+    ; the stop delivered: the thread parks in the handler, wherever it was
+    (step stopped (ir @npk_stop_handler entry)
+                  (guard (and (or (= apc 0) (= apc 7)) (= stop_sent 1) (= holder 2)))
+                  (kernel signal apc 6))
+    ; failsafe ends: exit_group by the holder
+    (step exit    (ir @npk_exit entry arb leave) (ir @npk_hs_report entry print)
+                  (guard (= apc 3)) (next (apc 4) (exited_by 1)))
+    ; a program exit from a non-holder while a holder exists: parks
+    (step xpark   (ir @npk_exit xpark)
+                  (guard (and (= apc 7) (= holder 2))) (next (apc 5))))
+  (thread b
+    (step resume  (ir @npk_step entry go run spend resume)
+                  (guard (and (= bpc 0) (= frozen 0))) (next (bpc 7)))
+    (step frozen  (ir @npk_step frozen)
+                  (guard (and (= bpc 0) (= frozen 1))) (next (bpc 1)))
+    (step task    (ir @npk_step finished parked sleep)
+                  (guard (= bpc 7))
+                  (next (steps_after (ite (= fs_a 1) (+ steps_after 1) steps_after))))
+    (step yield   (ir @npk_step nothing retry idle2 wait clamp plain)
+                  (guard (= bpc 7)) (next (bpc 0)))
+    (step lock    (ir @npk_mx_lock entry done)
+                  (guard (and (= bpc 7) (= mx 0))) (next (mx 2)))
+    (step unlock  (ir @npk_mx_unlock entry done)
+                  (guard (and (= bpc 7) (= mx 2))) (next (mx 0)))
+    (step trap    (ir @npk_trap entry)
+                  (guard (= bpc 7)) (next (bpc 1) (frozen 1)))
+    (step read    (ir @npk_trap entry)
+                  (guard (= bpc 1)) (next (sb holder)))
+    (step win     (ir @npk_trap run)
+                  (guard (and (= bpc 1) (= holder 0))) (next (holder 2) (bpc 2) (stop_sent 1)))
+    (step lose    (ir @npk_trap lost park)
+                  (guard (and (= bpc 1) (= holder 1))) (next (bpc 5)))
+    (step reenter (ir @npk_trap lost hard)
+                  (guard (and (= bpc 1) (= holder 2))) (next (bpc 4) (exited_by 2)))
+    (step enter   (ir @npk_stop_others wait wloop timecheck sleep fin)
+                  (guard (and (= bpc 2) (or (= apc 4) (= apc 5) (= apc 6))))
+                  (next (bpc 3) (fs_b 1)))
+    (step fsalloc (ir @npk_fs_alloc entry)
+                  (guard (and (= bpc 3) (= mx 1)))
+                  (next (blocked 0)))
+    (step stopped (ir @npk_stop_handler entry)
+                  (guard (and (or (= bpc 0) (= bpc 7)) (= stop_sent 1) (= holder 1)))
+                  (kernel signal bpc 6))
+    (step exit    (ir @npk_exit arb leave)
+                  (guard (= bpc 3)) (next (bpc 4) (exited_by 2)))
+    (step xpark   (ir @npk_exit xpark)
+                  (guard (and (= bpc 7) (= holder 1))) (next (bpc 5))))
+  (bad two-failsafes (and (= fs_a 1) (= fs_b 1)))
+  (bad step-after-failsafe (> steps_after 0))
+  (bad exit-mid-failsafe (or (and (= exited_by 2) (= holder 1) (= fs_a 1) (not (= apc 4)))
+                             (and (= exited_by 1) (= holder 2) (= fs_b 1) (not (= bpc 4)))))
+  (bad failsafe-blocked-on-heap (= blocked 1))
+  (depth 14) (preempt 6)
+  ; the pre-step-1 arbitration: the holder read in one step, written in the next, the winner straight into failsafe, no stop
+  (control old-arbitration two-failsafes
+    (replace a win (guard (and (= apc 1) (= sa 0))) (next (holder 1) (apc 3) (fs_a 1)))
+    (replace b win (guard (and (= bpc 1) (= sb 0))) (next (holder 2) (bpc 3) (fs_b 1))))
+  ; the pre-step-1 route's missing stop: the winner enters failsafe while the other thread keeps running its task
+  (control no-stop step-after-failsafe
+    (replace a win (guard (and (= apc 1) (= holder 0))) (next (holder 1) (apc 3) (fs_a 1)))
+    (replace b win (guard (and (= bpc 1) (= holder 0))) (next (holder 2) (bpc 3) (fs_b 1))))
+  ; the pre-step-1 loser: a second trapping thread exits the process under the holder's failsafe
+  (control old-loser-exits exit-mid-failsafe
+    (replace a win (guard (and (= apc 1) (= holder 0))) (next (holder 1) (apc 3) (fs_a 1)))
+    (replace b lose (guard (and (= bpc 1) (= holder 1))) (next (bpc 4) (exited_by 2))))
+  ; the pre-step-2 allocator: the failsafe body takes the heap mutex a stopped thread holds
+  (control heap-mutex-in-failsafe failsafe-blocked-on-heap
+    (replace a fsalloc (guard (and (= apc 3) (= mx 2))) (next (blocked 1)))))

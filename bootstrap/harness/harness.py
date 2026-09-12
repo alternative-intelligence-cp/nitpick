@@ -3634,6 +3634,9 @@ def check_verify_floor(tmp, tools):
     fails = floor_verdict_failures(full)
     if fails:
         return fails
+    fails = floor_controls(fdir)
+    if fails:
+        return fails
     run_text = manifest_text(full)
     committed = os.path.join(ROOT, "runtime", "npkrt.obligations")
     if not os.path.exists(committed):
@@ -3662,6 +3665,33 @@ def check_verify_floor(tmp, tools):
           "runtime/npkrt.obligations matches"
           % ("floor", len(full), syms, counts.get("discharged", 0), counts.get("budget", 0)))
     return []
+
+
+def floor_controls(fdir):
+    """THE CONTROLS (1.5.6 step 5, D-289 §2.7): every line of controls.txt
+    (`cNNNN\tmodel:NAME\tCONTROL\tBAD`) is a file that must answer `sat` --
+    a model whose mutation reaches no bad state is blind to what it claims
+    to see (`floor-control-blind`). The wall-clock net is a hang net."""
+    z3 = shutil.which("z3")
+    path = os.path.join(fdir, "controls.txt")
+    if not os.path.exists(path):
+        return ["floor: the writer left no controls.txt"]
+    fails = []
+    for l in open(path, encoding="utf-8"):
+        if not l.strip():
+            continue
+        f = l.rstrip("\n").split("\t")
+        if len(f) != 4:
+            return ["floor: a controls.txt line is not `cNNNN model:NAME CONTROL BAD`"]
+        try:
+            r = subprocess.run([z3] + Z3_OPTIONS + ["-smt2", os.path.join(fdir, f[0] + ".smt2")],
+                               capture_output=True, text=True, timeout=130)
+        except subprocess.TimeoutExpired:
+            return ["floor: z3 exceeded the wall-clock net on the control %s of %s -- not a verdict: a wedged solver is a build failure (P-13)" % (f[2], f[1])]
+        a = r.stdout.strip()
+        if a != "sat":
+            fails.append("floor: the control %s of %s does not reach bad:%s (z3 said %r, not `sat`): a model blind to what it claims to see (floor-control-blind)" % (f[2], f[1], f[3], a[:40]))
+    return fails
 
 
 def _floor_classes():
@@ -3722,6 +3752,70 @@ def check_floor_shared_current():
     return floor.check_shared(ft, st, "floor")
 
 
+def check_tcb_residue_current():
+    """TCB.md's residue region is generated too (1.5.6 step 6): the `budget`
+    rows of the committed floor manifest, the spec's `(residue …)` sentences
+    and the models' standing residue. A row that stops being decided, or a
+    sentence that changes, moves the document with it -- the list of what the
+    evidence does NOT cover is the half a reader is likeliest to skip."""
+    import floor
+    path = os.path.join(ROOT, "meta", "specs", "TCB.md")
+    doc = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+    m = re.search(r"<!-- BEGIN floor-residue -->\n(.*?)\n<!-- END floor-residue -->", doc, re.S)
+    if not m:
+        return ["tcb-residue: TCB.md has no marked floor-residue region"]
+    spec_path = os.path.join(ROOT, "runtime", "npkrt.spec")
+    spec_text = open(spec_path, encoding="utf-8").read() if os.path.exists(spec_path) else ""
+    man_path = os.path.join(ROOT, "runtime", "npkrt.obligations")
+    man_text = open(man_path, encoding="utf-8").read() if os.path.exists(man_path) else ""
+    want = floor.residue_region(spec_text, man_text, floor.read_models(ROOT))
+    if m.group(1) != want:
+        return ["tcb-residue: TCB.md's residue region is not what the spec and the committed floor "
+                "manifest say -- regenerate it (bootstrap/harness/tcb_floor.py --write)"]
+    return []
+
+
+def check_tcb_syscalls_current():
+    """TCB.md's SYSCALL table is generated too (1.5.6 step 6, D-288 §2.8):
+    every symbol that issues or reaches a syscall, with its direct numbers
+    and its transitive set, straight from runtime/npkrt.ll. A syscall added
+    to the floor without the document moving is a stale claim about the one
+    boundary the kernel is trusted across; a number the table cannot name is
+    a kernel-effect row the translator is missing."""
+    import floor
+    path = os.path.join(ROOT, "meta", "specs", "TCB.md")
+    if not os.path.exists(path):
+        return ["tcb-syscalls: meta/specs/TCB.md is missing"]
+    doc = open(path, encoding="utf-8").read()
+    m = re.search(r"<!-- BEGIN floor-syscalls -->(.*?)<!-- END floor-syscalls -->", doc, re.S)
+    if not m:
+        return ["tcb-syscalls: TCB.md has no marked floor-syscalls region"]
+    ft = open(RUNTIME_LL, encoding="utf-8").read()
+    fails = floor.check_syscall_names(ft)
+    have = [l for l in m.group(1).splitlines() if l.startswith("| `@")]
+    want = floor.syscall_rows(ft, _floor_classes())
+    for row in sorted(set(want) - set(have))[:10]:
+        fails.append("tcb-syscalls: TCB.md's table lacks the row: %s" % row)
+    for row in sorted(set(have) - set(want))[:10]:
+        fails.append("tcb-syscalls: TCB.md's table carries a row the floor does not say: %s" % row)
+    return fails
+
+
+def check_floor_models_current():
+    """THE CORRESPONDENCE BELT (1.5.6 step 5, D-289 §2.7): every protocol model
+    under runtime/models/ names blocks the floor has, and every atomic
+    operation or syscall of a symbol any model names sits in a block some
+    step names. The rules and findings are `floor.py`'s (`check_models`);
+    `npkg/floor_model.npk`'s `floor_models_current` is the twin."""
+    import floor
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        ft = fh.read()
+    models = floor.read_models(ROOT)
+    if not models:
+        return ["floor: runtime/models holds no model -- the floor's protocol models are part of the tree (D-289)"]
+    return floor.check_models(ft, models, "floor")
+
+
 def check_tcb_floor_current():
     """TCB.md's enumeration of the floor is GENERATED, never hand-maintained
     (P-26, 1.5.0): the table's symbol and class columns must equal what the
@@ -3746,7 +3840,7 @@ def check_tcb_floor_current():
     spec_text = open(spec_path, encoding="utf-8").read() if os.path.exists(spec_path) else ""
     man_path = os.path.join(ROOT, "runtime", "npkrt.obligations")
     man_text = open(man_path, encoding="utf-8").read() if os.path.exists(man_path) else ""
-    want = floor.tcb_rows(spec_text, _floor_classes(), man_text)
+    want = floor.tcb_rows(spec_text, _floor_classes(), man_text, floor.read_models(ROOT))
     fails = []
     for row in sorted(set(want) - set(have))[:10]:
         fails.append("tcb-floor: TCB.md's table lacks the row: %s" % row)
@@ -4269,6 +4363,9 @@ def main(argv):
         failures += check_obligation_kinds_agree()
         failures += check_tcb_floor_current()
         failures += check_floor_shared_current()
+        failures += check_floor_models_current()
+        failures += check_tcb_syscalls_current()
+        failures += check_tcb_residue_current()
 
         # The two standalone instruments that were wired to NOTHING until
         # 1.4.1 (found by the 1.4.0 survey): the harness's own self-check
@@ -4954,7 +5051,7 @@ def check_parity(tmp, tools):
             # THE FLOOR'S ROWS TOO (1.5.6 step 3): the writer built by the
             # compiler under test (inside npkg) and by the snapshot (the
             # harness's tool) must write the same rows.
-            for name in ("rows.txt", "index.txt"):
+            for name in ("rows.txt", "index.txt", "controls.txt"):
                 theirs_f = os.path.join(ROOT, "build", "verify", "floor", name)
                 ours_f = os.path.join(tmp, "verify", "floor", name)
                 if not os.path.exists(theirs_f):

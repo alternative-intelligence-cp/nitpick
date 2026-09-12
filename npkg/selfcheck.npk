@@ -47,6 +47,7 @@ use "./floor_ir.npk".*;                        // the floor leg's cases (1.5.6 s
 use "./floor_spec.npk".*;
 use "./floor_smt.npk".*;
 use "./floor.npk".*;
+use "./floor_model.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;   // man_parse_named: the misplaced-kind case
 
 func:FAILSAFE = string() never fails {
@@ -413,7 +414,8 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         }
         Sxs:fsx = raw sx_parse(fspec);
         string:fdir = raw path_join(dir, raw text_replace_byte(fname, 45u8, 95u8));
-        List<string>:ffl = raw floor_emit(@flt, @fsx, fdir);
+        List<MModel>:no_models = raw list_init::<MModel>(1i64);
+        List<string>:ffl = raw floor_emit(@flt, @fsx, no_models, fdir);
         if (ffl.count == 0i64) {
             Result<List<VRow>>:frows = read_rows(fdir);
             if (frows.is_error) { fail frows.err; }
@@ -435,6 +437,47 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         if (!fok) {
             if (fmust_fail) { drop strlist_push(@report, "      the floor leg accepted it; it should not have"); }
             else { drop strlist_push(@report, string_concat("      the floor leg rejected it: ", raw strlist_view(ffl, 0i64))); }
+        }
+    }
+    // floor-control-blind (1.5.6 step 5): a model whose control reaches no bad
+    // state is refused by name; the same model with a control that does passes
+    for (int64:ci in 0i64...2i64) {
+        string:cname = "floor-control-blind";
+        string:cwhy = "a control that reaches no bad state must fail by name";
+        bool:cmust_fail = true;
+        // the toy model the harness's twin runs, byte for byte: `set` fires once
+        // and `tick` sets y AND clears x, so the two are never 1 together --
+        // unless a mutation drops the clear, which the seeing control does
+        string:mtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control blind both (remove b tick)))\n";
+        if (ci == 1i64) {
+            cname = "floor-control-blind-control";
+            cwhy = "a control that reaches its bad state passes";
+            cmust_fail = false;
+            mtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control seeing both (replace b tick (guard (= y 0)) (next (y 1)))))\n";
+        }
+        MModel:cm = raw model_parse("toy.model", mtext);
+        List<string>:cfl = raw list_init::<string>(2i64);
+        if (!cm.ok) { drop strlist_push(@cfl, raw strlist_view_of(cm.problem)); }
+        else {
+            List<MModel>:cms = raw list_init::<MModel>(1i64);
+            drop list_push(@cms, move(cm));
+            Sxs:csx = raw sx_parse("(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n");
+            string:cdir = raw path_join(dir, raw text_replace_byte(cname, 45u8, 95u8));
+            List<string>:cef = raw floor_emit(@flt, @csx, cms, cdir);
+            for (int64:ei in 0i64...cef.count) { drop strlist_push(@cfl, raw strlist_view(cef, ei)); }
+            if (cef.count == 0i64) {
+                Result<List<string>>:cdf = await controls_decide(c, z3p, cdir);
+                if (cdf.is_error) { fail cdf.err; }
+                for (int64:di in 0i64...cdf.value.count) { drop strlist_push(@cfl, raw strlist_view(cdf.value, di)); }
+            }
+        }
+        bool:cok = ((cfl.count > 0i64) == cmust_fail);
+        if (cok && cmust_fail) { cok = raw text_contains(raw strlist_view(cfl, 0i64), "floor-control-blind"); }
+        if (!cok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(cname, cok, cwhy));
+        if (!cok) {
+            if (cmust_fail) { drop strlist_push(@report, "      the floor leg accepted a blind control; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the floor leg rejected a seeing control: ", raw strlist_view(cfl, 0i64))); }
         }
     }
     Sxs:fsx_un = raw sx_parse("(symbol @f)\n");
