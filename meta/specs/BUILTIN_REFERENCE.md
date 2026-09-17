@@ -6,8 +6,7 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 
 ---
 
-> **What is a builtin, exactly.** The regions between
-> `> **The `Views` column (1.5.1b step 2, D-249, S-22):** `—` on every row but
+> **The `Views` column (1.5.1b step 2, D-249, S-22):** `—` on every row but
 > two, else the 1-based index of the ARGUMENT WHOSE STORAGE THE RESULT
 > ALIASES, generated into `builtin_views` beside `builtin_pure`. `string_bytes`
 > views its string (1); `string_from_bytes` views the bytes its pointer names
@@ -21,7 +20,8 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 > builtins: a builtin whose result aliased an argument while its row said `—`
 > would be a wrong row, never a rule the analysis carries on its own.
 
-<!-- builtins:begin -->` and `<!-- builtins:end -->` markers define the
+> **What is a builtin, exactly.** The regions between
+> `<!-- builtins:begin -->` and `<!-- builtins:end -->` markers define the
 > BARE-NAME BUILTIN set — the names the resolver admits with no declaration and
 > no import, generated into `src/frontend/builtins.npk` by `gen_tables.py`.
 > That set is deliberately small (0.8.4): the **runtime floor** (§1, §2b), the

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has TWO subcycles left — 1.5.7 (the schedule-exploration harness) and 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.6 have landed, the floor itself is specified and modelled, and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.6c (the floor spec's caller assumptions: two `(objects …)` clauses found false for legal callers), 1.5.7 (the schedule-exploration harness) and 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.6b have landed, the floor itself is specified, modelled and its models read twice, and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -15,7 +15,7 @@ with `comptime` and `#[derive]`, IR emission, `nlibc` and the runtime floor, ful
 type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists**:
 `src/npkc.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
-**172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
+**272 real-backend programs** (the count at the 1.5.6b close — this sentence said 172 from cycle 1.0 until then; each also re-run through `opt -O2` + `llc -O2`
 since 1.3.8) and, since 1.5.4 retired the rung suite, asserts NO `NITPICK-RUNG-001` rejection (1 until 1.5.4 lowered `prove`/`assert_static`; 4 until 1.5.3 lowered the three contract cases; 6 until 1.5.2 lowered the two `limit<Rules>` cases; 8 until 1.4.7's
 OWED-8 moved the two channel-element cases to the type checker as `TYPE-057`), and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
 through every cycle since 0.8.
@@ -1129,10 +1129,58 @@ a red run. **S-71, RATIFIED by the user 2026-09-17 as an amendment to D-218
 every `(pop)`, so a row that answered `unsat` in 8 s returned 200 s later
 and a larger one not within 22 minutes, a wedged solver under P-13 with only
 the runners' hang net to catch it; off, no verdict moves anywhere.
+**1.5.6b (the floor's evidence, re-examined by measurement) IS COMPLETE
+(2026-09-17; `meta/roadmap/1.5/1.5.6b.md`; planned execution-grade the day of
+the s6→s7 hand-off, S-72…S-76 ratified the day each was asked as D-293…D-296
+and an amendment to D-288; nine landings — steps 0–4, 4b, 4c, 4d, 5 — each a
+cumulative prefix under a full harness, D-228).** The outgoing seat named four
+places it would try to prove 1.5.6's evidence wrong, and the first, taken up by
+MEASUREMENT, paid within the hour. Step 0, the stack rule: **DEF-52** —
+`npk_hardware_concurrency` handed the raw `sched_getaffinity` an unzeroed
+128-byte mask, the kernel wrote 8 bytes and returned the count (the zero-fill is
+glibc's wrapper's, and this runtime has none), and the popcount over all
+sixteen words answered 1008 on a 48-thread machine; **DEF-53** — D-173's
+entry-block rule had never been pointed at the hand-written floor: eight of
+fifteen allocas outside their entry blocks, two in loops (a loop-body alloca
+SIGSEGVs at the pinned `-O0` and `-O2`). All fifteen sit in their entry blocks
+and are fully DEFINED there, held by D-173's own check over the floor and a
+new `alloca-not-defined` belt. Step 1: the kernel-effect table is ONE generated
+authority (VERIFICATION_REFERENCE §9.2's `kernel-effects` region; four
+hand-maintained lists became zero) and `kernel_effects.npk` holds every write
+row to the RUNNING kernel, demanding equality — four things were wrong in the
+table, one in the unsound direction, and `npk_hardware_concurrency`, specified
+at last, has six rows of which exactly one is refuted on a floor without step
+0's memset: the method would have found DEF-52. Step 2: `park-unpark` read
+against `npk_park_sleep` case by case — a deviation, a MISSING STEP (the epoll
+wait's empty return: the model's reachable states went 263 → 358, no verdict
+moved) and a gap, the seventh model `reactor-io`. Step 3 (D-293):
+`hardware_concurrency()` is a builtin — its own program exits 20 on the old
+floor at its FIRST call. Steps 4 and 4b (D-294, D-296): a builtin's name is
+the compiler's — a module-level function, an `extern` METHOD (its stub is one)
+and any CALLABLE binding of that name are `NITPICK-RESOLVE-001`. Step 4c: three
+defects of the function-value corner found by writing 4b's test (DEF-54: a call
+through a pattern-bound function value emitted a symbol that does not exist;
+DEF-55: `raw o.f(x)` refused where `raw (o.f)(x)` was accepted; DEF-56: a trait
+method with a function-typed parameter could never be implemented). Step 4d
+(D-295): **the models are read a SECOND way** — exhaustive explicit-state
+search, no bound and no solver, a belt in both runners beside the solver's
+rows, the twins byte-identical on twelve planted texts; three of seven models'
+depths were smaller than their diameters, a model's meaning had had ONE reader,
+and the belt's first finding was the runner self-check's own toy model,
+commented safe and unsafe in two steps. TCB.md §5's eighth and thirteenth
+acceptances are narrowed. `runtime/npkrt.obligations`: 379 rows, 372
+discharged, 7 `budget`, 0 open; `nitpick.obligations` never moved; the floor's
+bytes moved once.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): TWO subcycles.** 1.5.7 is D-212's schedule-exploration harness,
-not yet planned. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+throughout): THREE subcycles.** **1.5.6c runs first (approved 2026-09-17):**
+leads E-1 and E-2 — a `(objects …)` clause asserts its ranges pairwise apart as
+a HYPOTHESIS that nothing checks of the callers no row covers, and a first walk
+found two FALSE for legal callers (`npk_string_concat`'s two inputs, since
+`string_concat(s, s)` is a program; `npk_small_free`'s list objects, in the
+allocator's most common state) — evidence that says nothing where it looks like
+it speaks; both fixes are measured (no verdict moves). 1.5.7 is D-212's
+schedule-exploration harness, not yet planned. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving
@@ -1557,6 +1605,84 @@ that carried them retired at the cycle close):
   legal again — and `!!!` freezes, kills drivers and observes the re-entry
   rule (it called `failsafe` directly before, DEF-40). A compound shift
   through a field or element records its `shift-range` row (DEF-41).
+- **Every alloca of the floor sits in its entry block and is fully DEFINED
+  there** (the stack rule, 1.5.6b step 0; DEF-52, DEF-53): an alloca outside
+  the entry block is dynamic (it moves the stack pointer each time it runs —
+  D-173, which held every EMITTED module since 1.0.9a and had never been
+  pointed at the hand-written floor), and a kernel-written buffer is zeroed
+  first because how much the kernel writes is the kernel's promise (the raw
+  `sched_getaffinity` writes 8 of the 128 bytes asked and RETURNS the count;
+  the zero-fill is glibc's, and this runtime has none). Define by STORES
+  where the function carries rows or runs hot — a `llvm.memset` cost
+  `npk_hs_put_dec` 8 of its 23 rows — and by one whole-size memset for a cold
+  buffer. `alloca-not-defined` is the belt, in both runners.
+- **The kernel-effect table is ONE authority** (1.5.6b step 1; D-288 as
+  amended): VERIFICATION_REFERENCE §9.2's `kernel-effects` region, generated
+  into `npkg/floor_kernel.npk` and into the probe's claims. To make the floor
+  issue a NEW syscall: the row first (effect, buffer, length, bound, the
+  option set if the effect depends on an option), `gen_tables.py`, then a
+  case in `tests/backend/programs/kernel_effects.npk` — the probe demands
+  EQUALITY with what the running kernel writes, because an over-approximating
+  row is sound and is what hid DEF-52. A `(boundary "…")` section emits NO
+  rows whatever else it claims: moving a symbol from promised to proven means
+  removing the sentence. A new section or model needs `tcb_floor.py --write`
+  BEFORE `npkg verify --record` (the TCB belt runs before the solver) and
+  again after.
+- **A named block is not a modelled one** (1.5.6b step 2; E-3): the
+  correspondence belt proves every atomic operation and syscall of a modelled
+  symbol sits in a block some step NAMES; it cannot see a `next` that means
+  something else, a named block's path with no transition (`park-unpark` had
+  no step for the epoll wait's empty return), or a block named and not
+  modelled at all. Read a model against the code CASE BY CASE. A row's budget
+  margin is `(get-info :rlimit)` after each `(check-sat)` of the emitted file
+  (the runners' push/pop mode; the rlimit is per check), and
+  `meta/roadmap/1.5/tools/model_bfs.py` reads a model's whole reachable space
+  with no bound — a measurement, outside the gates.
+- **A builtin's name is the compiler's** (D-294, D-296; 1.5.6b steps 4, 4b):
+  a module-level `func:` — or an `extern` METHOD, whose stub is one — named
+  after a bare-name builtin is `NITPICK-RESOLVE-001`, and so is any CALLABLE
+  binding of that name inside a function: a parameter, a local, a `for`
+  binding or a `pick` pattern's binding whose TYPE is a function type
+  (decided by the type at the sites that type a binding, never by a
+  spelling — a pattern binding has no annotation). Methods are exempt, a
+  function-typed FIELD is exempt (reached through its receiver), a binding
+  of any other type is fine (`int64:read` cannot be called) — but a STRUCT
+  PATTERN binds its field by name, so destructuring a function-typed field
+  named after a builtin is refused. So ADDING a row to a `builtins` region
+  reserves a name in every program: measure it across the tree, the
+  libraries and the apps, and tell the library listener before it lands.
+  `gen_tables.py` takes `--check` and nothing else — ANY other argument
+  writes.
+- **When a decision ENUMERATES the cases it knows and defaults the rest, the
+  default must be the safe reading** (DEF-54, 1.5.6b step 4c): `emit_call`
+  listed "a local" and "a parameter" as function VALUES and defaulted every
+  other symbol to "a declared function" — so a function value bound by a
+  `pick` pattern was called as a symbol that does not exist, and `llc`
+  rejected the module. `emit_pipe`, beside it, had always defaulted to "a
+  value". The same corner held two more twins that never got their rule
+  (DEF-55: `raw o.f(x)` vs `raw (o.f)(x)`; DEF-56: the impl-versus-trait
+  comparison had no function-type case, so a trait method with a callback
+  could not be implemented) — `tt_func` interns a function type's parameter
+  window by its START INDEX, so two spellings of one function type never
+  share an id and every comparison of them must be structural.
+- **The floor's models are read TWICE, and a probe with two cases in one
+  file is read against the file** (D-295, 1.5.6b step 4d): the solver's
+  bounded rows and an exhaustive explicit-state search
+  (`floor.check_models_explicit`, `npkg/floor_explore.npk`) must both hold;
+  a bad state reachable ANYWHERE, a control that cannot reach inside the
+  bounds, or a step a variable's range blocks is a red run by name. Editing
+  a model: `npkg verify --floor-only` runs both readings; TCB.md's generated
+  paragraph prints each model's reachable states, so `tcb_floor.py --write`
+  after a model edit. The twins must stay byte-identical — validate
+  expressions whole and in one order, hold arithmetic operands under 2^31
+  (plain integers trap here and Python's do not). And: a runner's fixture
+  that CLAIMS a property is evidence of nothing until something decides it
+  (the self-check's toy model was commented safe for a cycle and was unsafe
+  in two steps).
+- **The harness's `--only` reaches the UNIT tests alone** (found at 1.5.6b
+  step 4): a new rejection file is iterated with its stage's tool by hand
+  (`quickemit.py --keep tools/resolve_check.npk`, then the binary over the
+  file) or with `quickcheck.py`, and concluded by the full run.
 
 ### Reserved words that read like ordinary names
 
