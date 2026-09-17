@@ -40,6 +40,21 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 > a deliberately different one: the symbols the emitter calls that are not
 > builtins and never resolve as names. They feed `ir_runtime.npk` only.
 
+> **A builtin's name is the compiler's (D-294, 1.5.6b).** A bare-name builtin is
+> declared in no module, so the resolver looks a name up in scope first and
+> admits it as a builtin only when nothing binds it — and until D-294 a program's
+> own `func:mono_now` silently won over the clock wherever its module's scope
+> reached. A module-level function — plain, `pub`, `async`, `thread`, inside an
+> inline module or out — whose name is a row's name in a `builtins` region is
+> `NITPICK-RESOLVE-001` at the declaration; so is an `extern` block's METHOD of
+> that name, because its generated stub is a module-level function (D-190). A
+> METHOD is exempt (`w.write(…)` is reached through its receiver's type and can
+> never be mistaken for the bare call), and a module-level BINDING cannot carry a
+> function value at all (TYPE-035). **So every row added to a marked region
+> RESERVES A NAME in every program**: measure the name across the compiler tree,
+> the libraries and the apps before adding it, and tell the library listener
+> before it lands.
+
 > **The Signature column is machine-read (D-201, 1.4.2).** Every row inside a
 > marked region carries a signature in ONE syntax, and `gen_tables.py` hard-fails
 > on a row it cannot parse — the checker types builtin calls from what it emits,

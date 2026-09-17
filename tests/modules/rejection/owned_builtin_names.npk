@@ -1,0 +1,91 @@
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 39:1
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 44:1
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 49:1
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 53:1
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 60:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 68:5
+//
+// A PROGRAM MAY NOT DECLARE A BUILTIN'S NAME (D-294, 1.5.6b step 4) -- D-239's
+// rule in the FUNCTION namespace. A bare-name builtin is declared in no module,
+// so the resolver looks a name up in scope first and excuses it as a builtin
+// only when nothing binds it: a program's own `func:mono_now` silently won over
+// the clock wherever its module's scope reached (measured: `raw mono_now()`
+// answered the program's 7), and a `read_file` of another signature and contract
+// was typed and called by its binding. One name, one meaning. Six shapes:
+//
+//   a plain, a `pub`, an `async` and a `thread` function at the file's top level;
+//   a function inside an inline module (its own scope, the same takeover);
+//   an `extern` METHOD -- the block binds nothing and its generated stub is a
+//   module-level `pub async func:<method>` (D-190), so the method's name is a
+//   module-level function's. Reported once, at the method, never at the stub.
+//
+// And what the rule does NOT reach, accepted below in silence: a METHOD of a
+// builtin's name (reached through its receiver's type, a namespace of its own --
+// the prelude's `Writer.write` is one), a field, a local, a parameter, and a
+// function whose name merely contains one.
+
+mod:owned_builtin_names;
+use "../../../lib/nbridge.npk".*;
+
+fixed Duration:JOIN_1S = Duration{ ns: 1000000000i64 };
+
+// plain: the measured case -- the program's clock instead of the floor's
+func:mono_now = int64() never fails {
+    pass 7i64;
+};
+
+// `pub`, and another signature and contract than the builtin's
+pub func:read_file = int64(int64:n) never fails {
+    pass n;
+};
+
+// `async`
+async func:close = int32(int32:d) {
+    pass d;
+};
+
+thread async func:alloc = NIL() joins JOIN_1S {
+    pass NIL;
+};
+
+// inside an inline module
+mod:inner = {
+    // the newest builtin (D-293) is reserved like the oldest
+    func:hardware_concurrency = int64() never fails {
+        pass 4i64;
+    };
+};
+
+// an `extern` method: its stub would be `pub async func:read` at this file's
+// top level
+extern:"drv" = {
+    func:read  = int64(Bridge->:b, int64:n, Duration:within);
+    func:fetch = int64(Bridge->:b, int64:n, Duration:within);
+};
+
+// --- accepted: none of these takes a bare name over ---------------------------
+
+struct:Pipe = {
+    int32:close;                      // a field
+};
+
+trait:Source = {
+    func:read = int64(Self:self);     // a trait method
+};
+
+impl:Pipe:Source = {
+    func:read = int64(Self:self) {    // an impl method
+        pass (self.close => int64);
+    };
+};
+
+func:alloc_twice = int64(int64:alloc) never fails {   // a name that CONTAINS one; a parameter
+    int64:dalloc = alloc;                              // a local
+    pass dalloc;
+};

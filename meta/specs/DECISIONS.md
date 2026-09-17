@@ -18706,3 +18706,32 @@ varies by circumstance, and the circumstance is invisible where it matters.
 > Lands at **1.5.6b** step 4 (`meta/roadmap/1.5/1.5.6b.md`); the library
 > listener hears it, with the code and the measured zero sites in its own
 > tree, BEFORE the step lands.
+>
+> **LANDED at 1.5.6b step 4 (2026-09-17).** `owned_builtin_name` in
+> `src/frontend/module_graph.npk`, called by the loader's owned-names walk
+> (D-239's) for every module-level function, inline modules included —
+> `NITPICK-RESOLVE-001` at the declaration, naming the builtin;
+> `tests/modules/rejection/owned_builtin_names.npk` holds six refusals and six
+> accepted shapes (a trait method, an impl method, a field, a parameter, a
+> local, a name that merely contains one). **One shape the text above did not
+> name, found at implementation and covered by the decision's own reasoning:
+> an `extern` block's METHOD.** The block binds nothing and its generated stub
+> is a module-level `pub async func:<method>` (D-190), so `func:read = …` inside
+> a block takes `read` over exactly as a hand-written function would. It is
+> refused too — reported ONCE, at the method's own declaration in the
+> program's source; the stub is `DECL_DERIVED` text in a synthetic file and
+> the walk skips it (D-240). The tree's three textual hits of that shape are
+> parse-level fixtures the loader never sees. **Two neighbours measured, so the
+> rule's edge is known:** a module-level BINDING cannot carry a function value
+> at all (`fixed func int64() never fails:mono_now = seven;` is TYPE-035 — a
+> module binding's initialiser is a compile-time constant, D-165), so `func:`
+> declarations are the whole module-level hazard; a LOCAL or a PARAMETER of
+> function type named after a builtin DOES redirect the bare call inside its
+> own function (measured: exit 8 through a local `path_exists`) — lexical, in
+> view, none in the tree (15 function-typed bindings, 0 named so), and outside
+> this decision's text. Whether the rule reaches it is **S-76**. The name
+> count at landing is 57 — `is_builtin_name`'s table, the names the resolver
+> admits; the "65" above counted a wider set of the reference's rows, and the
+> zero it measured was re-measured over the 57 at landing (7,107 `func:`
+> declarations in 778 tracked files: 8 methods, 3 parse-level `extern`
+> fixtures, nothing the loader refuses).

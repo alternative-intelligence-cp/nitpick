@@ -46,6 +46,7 @@ use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./prelude_names.npk".*;
 use "./prelude_source.npk".*;
+use "./builtins.npk".*;        // is_builtin_name: the names D-294 says a program's function cannot take
 
 pub struct:ModuleEntry = {
     int32:file;      // index into the SourceManager
@@ -620,6 +621,51 @@ func:owned_name_error = NIL(ModuleGraph->:g, int32:pscope, int32:name, string:wh
     pass NIL;
 };
 
+// A BUILTIN'S NAME IS THE COMPILER'S, IN THE FUNCTION NAMESPACE (D-294, 1.5.6b
+// step 4) -- D-239's rule where a call resolves. A bare-name builtin is declared
+// in no module, so the resolver looks a name up in SCOPE first and excuses it as
+// a builtin only when nothing binds it (`resolve.npk`): a program's own
+// `func:mono_now` silently won over the clock everywhere its module's scope
+// reached -- measured, `raw mono_now()` answered the program's 7, and a
+// `read_file` of another signature and contract was typed and called by its
+// binding through checker and emitter alike. One name, one meaning: a
+// module-level function -- plain, `pub`, `async`, `thread`, inside an inline
+// module or out -- whose name is a builtin's is refused here, by the loader,
+// under the code D-239's clash already carries. METHODS ARE EXEMPT: a method is
+// reached through its receiver's type (`w.write(...)`), a namespace of its own,
+// and can never be mistaken for the bare call -- this walk never reads a
+// member's name for that reason. An import cannot bring one in, because its
+// declaration was refused where it was written.
+func:owned_builtin_name = NIL(ModuleGraph->:g, int32:name, string:what, Span:at) never fails {
+    if (raw intern_is_none(name)) { pass NIL; }
+    string:nm = raw intern_get(g.interns, name);
+    if (!(raw is_builtin_name(nm))) { pass NIL; }
+    string:m1 = string_concat("`", nm);
+    string:m2 = string_concat(m1, "` is a builtin (BUILTIN_REFERENCE), so a program cannot declare it as ");
+    string:m3 = string_concat(m2, what);
+    drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_DUPLICATE(),
+        string_concat(m3, ": the declaration would silently take the name over wherever this module's scope reaches, and one call would mean two things (D-294) -- rename it"),
+        at));
+    pass NIL;
+};
+
+// AN `extern` METHOD'S NAME IS A MODULE-LEVEL FUNCTION'S (D-190): the block
+// binds nothing and its generated stub `pub async func:<method>` carries the
+// name, so `func:read = ...` inside a block takes `read` over exactly as a
+// hand-written function would. Reported HERE, at the method's own declaration
+// in the program's source; the stub is `DECL_DERIVED` text in a synthetic file
+// and is skipped by the module walk so one mistake is one report (D-240).
+func:owned_extern_methods = NIL(ModuleGraph->:g, DeclNode:d) never fails {
+    int32:n = raw decl_win_count(d);
+    for (int32:k in 0i32...n) {
+        DeclId:fnid = DeclId{ index: raw ast_id_at(@g.ast, raw decl_win_start(d), k) };
+        DeclNode:f = raw ast_decl(@g.ast, fnid);
+        if (f.kind != DeclKind.DeclExternFn) { continue; }    // an `opaque struct:` is a type's name
+        drop owned_builtin_name(g, raw decl_name(f), "an `extern` method (its generated stub is a module-level function of that name, D-190)", f.span);
+    }
+    pass NIL;
+};
+
 func:owned_what = string(DeclNode:d) never fails {
     if (d.kind == DeclKind.DeclFunctionDecl) { pass "a function"; }
     if (d.kind == DeclKind.DeclStructDecl)   { pass "a struct"; }
@@ -676,7 +722,12 @@ func:owned_names_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:pscope) n
         DeclId:item = raw item_member(@g.ast, m, i);
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclImportDecl) { continue; }
-        if (d.kind == DeclKind.DeclExternBlock) { continue; }
+        if (d.kind == DeclKind.DeclExternBlock) {
+            // the block declares no name of its own; its METHODS' names are
+            // module-level functions' (D-190), which D-294 holds
+            drop owned_extern_methods(g, d);
+            continue;
+        }
         if (d.kind == DeclKind.DeclImplDecl) {
             // an impl declares no name of its own; its parameters and its
             // methods' parameters are names
@@ -685,6 +736,13 @@ func:owned_names_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:pscope) n
             continue;
         }
         drop owned_name_error(g, pscope, raw decl_name(d), raw owned_what(d), d.span, false);
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            // D-294. A generated function (an `extern` method's stub) was
+            // reported at the method that named it.
+            if (!(raw decl_has(d, raw DECL_DERIVED()))) {
+                drop owned_builtin_name(g, raw decl_name(d), "a function", d.span);
+            }
+        }
         drop owned_generic_params(g, pscope, d);
         if (d.kind == DeclKind.DeclTraitDecl) {
             drop owned_names_in_members(g, pscope, d, false);

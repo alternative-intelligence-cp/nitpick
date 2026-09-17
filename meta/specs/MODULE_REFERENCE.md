@@ -125,7 +125,13 @@ the module lacks is `NITPICK-RESOLVE-007` and a private one
 (§2.4): the loader applies imports to a fixed point, so `use lib.*;` may stand
 above or below the `use "./lib.npk" as lib;` that binds `lib`. `std` is a name
 no program declares as a module (`NITPICK-RESOLVE-001`, D-239's table): a
-module of that name could never be reached by the path that spells it.
+module of that name could never be reached by the path that spells it. The
+same code refuses a module-level FUNCTION — or an `extern` method, whose stub
+is one — named after a bare-name builtin (D-294, 1.5.6b): the resolver admits a
+builtin only when nothing in scope binds the name, so the declaration would
+take `alloc(…)` or `mono_now()` over wherever the module's scope reaches,
+imports of it included. Methods are exempt; BUILTIN_REFERENCE's preamble has
+the rule and what adding a builtin therefore owes.
 
 ### 2.3 Search Paths & Transitivity
 *   **Transitivity**: `use` imports are strictly **not transitive**. Symbols imported into a module are not automatically re-exported. You must explicitly wrap or use `pub use` to expose them. A `pub use` of a path the module has already imported plain re-exports it all the same — the two lines mean the same in either order (1.5.1b step 3c; until then the later `pub use` was silently downgraded to the earlier plain `use`).
