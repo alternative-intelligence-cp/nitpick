@@ -172,7 +172,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_frozen_get` | atomic | specified (2 discharged, 0 residue); modelled (trap-route) |
 | `@npk_fs_alloc` | syscall | boundary (a block of n bytes at the requested alignment bumped from the one-mebibyte failsafe region with the heap's [ size | 0 ] header before it, single-threaded by construction since every other thread is parked before failsafe runs (D-291); exhaustion is HeapOom inside failsafe, the re-entry rule's exit 70 (D-292)); modelled (trap-route) |
 | `@npk_guard_release` | syscall | boundary (releases an exclusive hold: the state word to free and a wake by the cell's kind (a mutex wakes one waiter, an rwlock's writer release wakes all -- a crowd of readers may proceed together)) |
-| `@npk_hardware_concurrency` | syscall | boundary (the number of hardware threads the program may use (D-073): the popcount of the sched_getaffinity mask over 1024 bits, at least 1) |
+| `@npk_hardware_concurrency` | syscall | specified (6 discharged, 0 residue) |
 | `@npk_heap_bad` | syscall | specified (2 discharged, 0 residue) |
 | `@npk_heap_badreq` | syscall | specified (2 discharged, 0 residue) |
 | `@npk_heap_init` | syscall | boundary (the heap's first initialisation, under the mutex (D-290): the hash secret from getrandom (a zero draw takes a fixed odd constant -- weaker keying for one run in 2^64, never a stall), the large table mapped, the class tables' derived words computed) |
@@ -290,8 +290,11 @@ trusted across.
 
 <!-- BEGIN floor-syscalls -->
 The floor issues 27 syscall numbers, and no others: **0** read, **1** write, **3** close, **9** mmap, **10** mprotect, **11** munmap, **13** rt_sigaction, **39** getpid, **56** clone, **59** execve, **60** exit, **110** getppid, **157** prctl, **158** arch_prctl, **202** futex, **204** sched_getaffinity, **228** clock_gettime, **231** exit_group, **233** epoll_ctl, **234** tgkill, **257** openat, **281** epoll_pwait, **290** eventfd2, **291** epoll_create1, **292** dup3, **318** getrandom, **424** pidfd_send_signal. Each has one row in the
-kernel-effect table (`npkg/floor_smt.npk`) saying what it does to memory and to the
-result; that table is what a reader accepts as the kernel's promise (§5).
+kernel-effect table -- the `kernel-effects` region of VERIFICATION_REFERENCE §9.2, generated
+into `npkg/floor_kernel.npk` -- saying what it does to memory and to the result, and the
+belt holds that sentence: a number without a row, or a call site whose option the row does
+not speak for, is a finding. The rows that WRITE memory are held to the running kernel by
+`tests/backend/programs/kernel_effects.npk`; what no probe reaches is what a reader accepts (§5).
 
 | symbol | class | issues | reaches |
 |---|---|---|---|
@@ -463,16 +466,32 @@ The bounds in force: `channel-table`, `driver-registry`, `futex-mutex`, `park-un
 7. That a `failsafe` body lives within the failsafe region (D-292, 1.5.6 step
    2): one mebibyte of `.bss`, bumped, never freed, exhausted at the re-entry
    exit 70 -- a diagnostic built by repeated concatenation is quadratic there.
-8. That the kernel-effect table (VERIFICATION_REFERENCE §9.2; 1.5.6 step
-   4) is what the syscalls the floor issues do: the answer a value or an
-   errno in `[-4095, -1]`, `read`/`write`/`getrandom` answering at most the
-   count asked and `epoll_pwait` at most the events room, and each number's
-   memory effect as the table states it (`read`, `getrandom`,
-   `clock_gettime`, `sched_getaffinity`, `rt_sigaction`, `epoll_pwait`
-   writing where and how much it says, `mmap` a fresh mapping zero when
-   anonymous, `exit`/`exit_group` ending the process, the rest leaving
-   memory as it was). A syscall whose effect the table understates is an
-   unsound proof; the table is read against the kernel's documentation.
+8. About the kernel-effect table (VERIFICATION_REFERENCE §9.2's
+   `kernel-effects` region -- the ONE authority, generated into
+   `npkg/floor_kernel.npk`; D-288 as amended, 1.5.6b), LESS than this item
+   asked until then. It used to ask a reader to accept the whole table,
+   "read against the kernel's documentation" -- and it named, among the rows
+   "writing where and how much it says", the two that measurement then found
+   WRONG (`sched_getaffinity`: the requested length, where the raw call writes
+   `result` bytes, an over-approximation that hid DEF-52; `rt_sigaction`: the
+   8-byte sigset size, where the kernel writes the whole 32-byte action, an
+   under-approximation -- the unsound direction -- latent because the floor's
+   one call passes a null `oldact`). No recorded verdict rested on either. The
+   rows that WRITE memory are now HELD TO THE RUNNING KERNEL on every run, in
+   both runners, by `tests/backend/programs/kernel_effects.npk`: each raw
+   syscall over a sentinel-filled buffer, the bytes the kernel changed EQUAL to
+   the row's on a success and none on a failure, the row's buffer and bound
+   columns held with them. What a reader still accepts: the answer shape (a
+   value or an errno in `[-4095, -1]`); the rows no probe reaches --
+   `exit`/`exit_group` ending the process, the `asm` rows (`clone`, `execve`:
+   issued only from inline asm, no effect modelled), the `none` rows for the
+   options the floor passes (an option outside a row's set is refused by name,
+   because `arch_prctl(ARCH_GET_FS)` and `prctl(PR_GET_NAME)` WRITE user
+   memory), and failure paths beyond the ones probed; that the claim is about
+   the kernel the suite ran on; and that "no memory effect" speaks of BYTES
+   and not of mappings -- a load after `munmap` is modelled as the old bytes,
+   so a use-after-unmap is outside the model by construction. A syscall whose
+   effect the table understates is an unsound proof.
 9. That `npk_exec()` and `npk_tls_self()` answer the calling thread's own
    executor and trampoline block -- one object each of its struct's size,
    apart from every other object a symbol touches -- and that a symbol's

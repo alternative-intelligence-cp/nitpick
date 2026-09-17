@@ -1271,25 +1271,95 @@ A call of `npk_sys6(nr, a1…a6)` is `(sys nr a1 … a6 k)` — `sys` an
 uninterpreted function, `k` the call's sequence number (two calls with the
 same arguments are two answers) — with **the kernel's answer shape**: the
 result is a value or an errno in `[-4095, -1]` (the ABI every libc reads),
-and for `read`, `write`, `getrandom` a non-negative answer never exceeds the
-count asked, for `epoll_pwait` the events room. **The kernel-effect table**
-(`tx_syscall`; a number outside it is a refusal by name) says what each
-does to memory: `read` (0), `getrandom` (318) write `[buf, buf+result)` on a
-non-negative answer and nothing otherwise; `clock_gettime` (228) writes the
-16-byte timespec; `sched_getaffinity` (204) the mask up to its length;
-`rt_sigaction` (13) the old action (a null pointer written nowhere);
-`epoll_pwait` (281) `12·result` bytes of events; `mmap` (9) answers an
-address or an errno past `2^64 − 4096`, the mapping's bytes fresh and zero
-when anonymous (`MAP_ANONYMOUS` in the flags) — each a template over the
-memory after; `exit` (60) and `exit_group` (231) end the path (a trap site
-with the status); `write`, `close`, `openat`, `futex`, `epoll_ctl`,
-`eventfd2`, `epoll_create1`, `dup3`, `prctl`, `arch_prctl`, `getppid`,
-`munmap`, `mprotect`, `pidfd_send_signal`, `tgkill`, `getpid` (1, 3, 257,
-202, 233, 290, 291, 292, 157, 158, 110, 11, 10, 424, 234, 39) leave memory
-as it was. The table IS TCB.md §3's kernel row made concrete (§5's eighth
-acceptance): a syscall whose effect the table understates is an unsound
-proof, and the table is the reviewer's to read against the kernel's
-documentation.
+and where a row below names a `bound`, a non-negative answer never exceeds
+that argument.
+
+**The kernel-effect table is ONE authority, and it is this region** (D-288 as
+amended, 1.5.6b; D-201's pattern). `bootstrap/generator/gen_tables.py` parses
+it STRICTLY — a row it cannot read stops the generator — and writes
+`npkg/floor_kernel.npk`, which is all the translator knows about a syscall:
+`tx_syscall` and `sys_writes` keep no list of their own, and the harness reads
+the same region. One row per number the floor issues:
+
+- **effect** — `none` (memory is as it was), `writes` (the kernel writes
+  `length` bytes at `buffer`), `maps` (`mmap`: an address, or an errno past
+  `2^64 − 4096`; the mapping's bytes fresh, and zero when anonymous), `ends`
+  (the path ends: a trap site with the status), `asm` (issued only by a
+  symbol the translator never reads — inline asm — so no effect is modelled
+  and none is needed; the row exists so that EVERY issued number has one).
+- **buffer**, **length** — for `writes`: the argument holding the address,
+  and `result`, `result*12` or a numeral. ONE RULE conditions every write and
+  so no row carries its own: **an error answer writes nothing, and a NULL
+  buffer is written nowhere** (`rt_sigaction`'s `oldact`).
+- **bound** — the argument a non-negative answer never exceeds.
+- **option** — for a number whose effect DEPENDS on an option argument
+  (`arch_prctl(ARCH_GET_FS)` and `prctl(PR_GET_NAME)` WRITE user memory where
+  the options the floor passes do not), the argument and the numerals the row
+  speaks for. A call site whose option is not a numeral in that set is refused
+  by name, in the translator and by the belt over every `npk_sys6` site of the
+  floor, translated or not — as a number without a row always was.
+
+<!-- BEGIN kernel-effects -->
+| nr | name | option | effect | buffer | length | bound |
+|---|---|---|---|---|---|---|
+| 0 | `read` | — | writes | arg2 | result | arg3 |
+| 1 | `write` | — | none | — | — | arg3 |
+| 3 | `close` | — | none | — | — | — |
+| 9 | `mmap` | arg4 in 34 | maps | — | — | — |
+| 10 | `mprotect` | — | none | — | — | — |
+| 11 | `munmap` | — | none | — | — | — |
+| 13 | `rt_sigaction` | — | writes | arg3 | 32 | — |
+| 39 | `getpid` | — | none | — | — | — |
+| 56 | `clone` | — | asm | — | — | — |
+| 59 | `execve` | — | asm | — | — | — |
+| 60 | `exit` | — | ends | — | — | — |
+| 110 | `getppid` | — | none | — | — | — |
+| 157 | `prctl` | arg1 in 1 38 | none | — | — | — |
+| 158 | `arch_prctl` | arg1 in 4098 | none | — | — | — |
+| 202 | `futex` | arg2 in 9 128 129 137 | none | — | — | — |
+| 204 | `sched_getaffinity` | — | writes | arg3 | result | arg2 |
+| 228 | `clock_gettime` | — | writes | arg2 | 16 | — |
+| 231 | `exit_group` | — | ends | — | — | — |
+| 233 | `epoll_ctl` | arg2 in 1 2 3 | none | — | — | — |
+| 234 | `tgkill` | — | none | — | — | — |
+| 257 | `openat` | — | none | — | — | — |
+| 281 | `epoll_pwait` | — | writes | arg2 | result*12 | arg3 |
+| 290 | `eventfd2` | — | none | — | — | — |
+| 291 | `epoll_create1` | — | none | — | — | — |
+| 292 | `dup3` | — | none | — | — | — |
+| 318 | `getrandom` | — | writes | arg1 | result | arg2 |
+| 424 | `pidfd_send_signal` | — | none | — | — | — |
+<!-- END kernel-effects -->
+
+The option sets are the floor's own: `mmap` flags 34 (`MAP_PRIVATE |
+MAP_ANONYMOUS`, never `MAP_FIXED`), `prctl` 1 and 38 (`PR_SET_PDEATHSIG`,
+`PR_SET_NO_NEW_PRIVS`), `arch_prctl` 4098 (`ARCH_SET_FS`), `futex` 9, 128,
+129, 137 (wait-bitset, and wait, wake and wait-bitset under
+`FUTEX_PRIVATE_FLAG`), `epoll_ctl` 1, 2, 3 (add, delete, modify).
+
+**The write-region rows are HELD TO THE RUNNING KERNEL, not accepted**
+(1.5.6b). `tests/backend/programs/kernel_effects.npk` — an ordinary program,
+so both runners run it — calls each `writes` row's raw syscall over a
+sentinel-filled buffer, twice with two sentinels so a written byte that
+equals one is still seen, and demands that the bytes the kernel changed are
+EXACTLY the row's on a success and NONE on a failure. Equality, not
+containment, because an over-approximating row is sound and is what hid a
+defect: two rows of this table were measured wrong on the day it became an
+authority. `sched_getaffinity` claimed the REQUESTED length where the raw
+call writes `result` bytes — 8 of 128 on the measuring machine, the tail
+untouched; it is glibc's wrapper that zero-fills it — and behind that row
+`npk_hardware_concurrency` popcounted 120 bytes of stack nobody had written
+(DEF-52: 1008 hardware threads on a 48-thread machine); it also lacked its
+bound, without which no caller's frame claim can be proven. `rt_sigaction`
+claimed the 8-byte sigset size where the kernel writes the whole 32-byte
+action to a non-null `oldact` — an UNDER-approximation, the unsound
+direction, latent only because the floor's one call passes `oldact = 0`. No
+recorded verdict rested on either. What no probe reaches a reader still
+accepts, and TCB.md §5 says so in words: `exit`/`exit_group` (the path
+ends), the `asm` rows, failure paths beyond the ones probed, that the claim
+is about the kernel the suite ran on, and that "no memory effect" speaks of
+BYTES and not of mappings — a load after `munmap` is modelled as the old
+bytes, so a use-after-unmap is outside the model by construction.
 
 **The envelope symbols** (`npk_open`, `npk_close`, `npk_read`,
 `npk_write`, `npk_ofd_close`, `npk_mono_now`, `npk_path_exists`,

@@ -18398,6 +18398,15 @@ quarantine and document the rest). **The decision, in four parts.**
 > that "no memory effect" speaks of BYTES and not of mappings (a load after
 > `munmap` is modelled as the old bytes). An amendment, so it keeps this
 > decision's number. Lands at **1.5.6b** step 1 (`meta/roadmap/1.5/1.5.6b.md`).
+>
+> **LANDED at 1.5.6b step 1 (2026-09-17).** The region is the authority (27 rows), `gen_tables.py`
+> parses it strictly and generates `npkg/floor_kernel.npk`, the translator and both
+> runners' belts read it and keep no list of their own, and
+> `tests/backend/programs/kernel_effects.npk` holds every `writes` row to the running
+> kernel: exit 0, and exit 42 / exit 52 with the two old rows put back. A `when` column
+> was not needed -- one rule already conditions every write (an error answer writes
+> nothing; a NULL buffer is written nowhere). TCB.md SS5's eighth acceptance is narrowed
+> as decided.
 
 ## D-289 — the executor's primitives are MODELLED, never proven whole: bounded transition systems through the pinned z3, with negative controls and a correspondence belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-66; lands at 1.5.6 step 5)**
 

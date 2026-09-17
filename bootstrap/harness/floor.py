@@ -939,15 +939,37 @@ def manifest_rows_of(text):
 # number the floor uses and this table does not name is a finding: the
 # kernel-effect table in `npkg/floor_smt.npk` has one row per number, and
 # TCB.md's reader accepts those rows as what the kernel promises.
-SYSCALL_NAMES = {
-    0: "read", 1: "write", 3: "close", 9: "mmap", 10: "mprotect", 11: "munmap",
-    13: "rt_sigaction", 39: "getpid", 56: "clone", 59: "execve", 60: "exit",
-    110: "getppid", 157: "prctl", 158: "arch_prctl", 202: "futex",
-    204: "sched_getaffinity", 228: "clock_gettime", 231: "exit_group",
-    233: "epoll_ctl", 234: "tgkill", 257: "openat", 281: "epoll_pwait",
-    290: "eventfd2", 291: "epoll_create1", 292: "dup3", 318: "getrandom",
-    424: "pidfd_send_signal",
-}
+def kernel_effects():
+    """THE KERNEL-EFFECT TABLE, READ FROM ITS ONE AUTHORITY (1.5.6b): the
+    `kernel-effects` region of VERIFICATION_REFERENCE SS9.2, through the
+    generator's own strict parser -- no second parser and no second list. Until
+    1.5.6b this module carried a name table of its own, `npkg/floor.npk` a twin
+    of it, and `npkg/floor_smt.npk` two effect tables; two of the rows were
+    wrong and nothing held any of the four to another. nr -> the row:
+    (nr, name, option arg, option values, effect, buffer arg, length, bound arg)."""
+    import os, sys
+    gen = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generator")
+    if gen not in sys.path:
+        sys.path.insert(0, gen)
+    import gen_tables
+    return {r[0]: r for r in gen_tables.kernel_effect_rows(gen_tables.VERIF)}
+
+
+class _Names(dict):
+    """`SYSCALL_NAMES[n]`, filled from the authority on first use."""
+    def _fill(self):
+        if not dict.__len__(self):
+            for nr, row in kernel_effects().items():
+                dict.__setitem__(self, nr, row[1])
+    def __contains__(self, k):
+        self._fill(); return dict.__contains__(self, k)
+    def get(self, k, d=None):
+        self._fill(); return dict.get(self, k, d)
+    def __getitem__(self, k):
+        self._fill(); return dict.__getitem__(self, k)
+
+
+SYSCALL_NAMES = _Names()
 
 
 def syscall_map(floor_text):
@@ -1061,22 +1083,52 @@ def syscalls_region(floor_text, classes):
     order, direct, trans = syscall_map(floor_text)
     used = sorted({n for s in direct.values() for n in s})
     head = ("The floor issues %d syscall numbers, and no others: %s. Each has one row in the\n"
-            "kernel-effect table (`npkg/floor_smt.npk`) saying what it does to memory and to the\n"
-            "result; that table is what a reader accepts as the kernel's promise (§5).\n"
+            "kernel-effect table -- the `kernel-effects` region of VERIFICATION_REFERENCE §9.2, generated\n"
+            "into `npkg/floor_kernel.npk` -- saying what it does to memory and to the result, and the\n"
+            "belt holds that sentence: a number without a row, or a call site whose option the row does\n"
+            "not speak for, is a finding. The rows that WRITE memory are held to the running kernel by\n"
+            "`tests/backend/programs/kernel_effects.npk`; what no probe reaches is what a reader accepts (§5).\n"
             % (len(used), ", ".join("**%d** %s" % (n, SYSCALL_NAMES.get(n, "?")) for n in used)))
     return head + "\n" + "\n".join(["| symbol | class | issues | reaches |", "|---|---|---|---|"]
                                     + syscall_rows(floor_text, classes))
 
 
 def check_syscall_names(floor_text):
-    """Every number the floor issues is named here (a new syscall in the
-    floor without a row in the kernel-effect table is a translation the
-    reader cannot check)."""
+    """Every number the floor issues has a ROW in the kernel-effect table (not
+    merely a name: TCB.md's generated head said "each has one row" while
+    `clone` and `execve` had none, until 1.5.6b gave them their `asm` rows),
+    and every `npk_sys6` call site of the floor -- translated or not -- passes,
+    where its row's effect depends on an option, a NUMERAL the row speaks for.
+    `arch_prctl(ARCH_GET_FS)` and `prctl(PR_GET_NAME)` WRITE user memory where
+    the options the floor passes do not; a row keyed by number alone would
+    model either as writing nothing. `npkg/floor.npk` is the twin."""
+    rows = kernel_effects()
     _, direct, _ = syscall_map(floor_text)
     used = sorted({n for s in direct.values() for n in s})
-    return ["floor: runtime/npkrt.ll issues syscall %d, which the table does not name -- give it a "
-            "kernel-effect row (npkg/floor_smt.npk) and a name here" % n
-            for n in used if n not in SYSCALL_NAMES]
+    fails = ["floor: floor-syscall-row: runtime/npkrt.ll issues syscall %d, which the kernel-effect table has no row "
+             "for -- give it one in VERIFICATION_REFERENCE SS9.2's `kernel-effects` region and regenerate" % n
+             for n in used if n not in rows]
+    fns, order = parse_floor(floor_text)
+    for fname in order:
+        for b in fns[fname].blocks:
+            for line in b.lines:
+                cm = re.search(r'@npk_sys6\(([^)]*)\)', line)
+                if not cm:
+                    continue
+                args = [a.strip().split(" ", 1)[-1].strip() for a in cm.group(1).split(",")]
+                if not args or not re.fullmatch(r"\d+", args[0]) or int(args[0]) not in rows:
+                    continue
+                nr = int(args[0])
+                oa, ovals = rows[nr][2], rows[nr][3]
+                if oa == 0:
+                    continue
+                val = args[oa] if oa < len(args) else ""
+                if not re.fullmatch(r"-?\d+", val) or int(val) not in ovals:
+                    fails.append("floor: floor-syscall-option: `%s` issues syscall %d (%s) with argument %d = `%s`, which the "
+                                 "kernel-effect table's row does not speak for -- an option the row does not list may "
+                                 "write memory the row says it does not (add the option to the row, measured, or do "
+                                 "not pass it)" % (fname, nr, rows[nr][1], oa, val))
+    return fails
 
 
 def residue_rows(spec_text, manifest_text, models=()):

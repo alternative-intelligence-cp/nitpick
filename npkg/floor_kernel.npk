@@ -1,0 +1,160 @@
+// floor_kernel -- THE KERNEL-EFFECT TABLE, GENERATED. DO NOT EDIT.
+//
+// Written by bootstrap/generator/gen_tables.py from the `kernel-effects` region of
+// meta/specs/VERIFICATION_REFERENCE.md SS9.2 -- the ONE authority on what each syscall
+// the floor issues does to memory (D-288 as amended, 1.5.6b). `tx_syscall` and
+// `sys_writes` (floor_smt.npk) and the syscall belt (floor.npk) read these functions
+// and keep no list of their own; `gen_tables.py --check` holds this file to the region.
+// It imports nothing, on purpose: the floor tool is built by the snapshot.
+
+mod:floor_kernel;
+
+// 0 none, 1 writes, 2 ends, 3 maps, 5 asm (issued only from inline asm: no effect is
+// modelled and none is needed); 4 is NO ROW -- a number the table does not speak for.
+pub func:ke_effect = int64(int64:nr) never fails {
+    if (nr == 0i64) { pass 1i64; }
+    if (nr == 1i64) { pass 0i64; }
+    if (nr == 3i64) { pass 0i64; }
+    if (nr == 9i64) { pass 3i64; }
+    if (nr == 10i64) { pass 0i64; }
+    if (nr == 11i64) { pass 0i64; }
+    if (nr == 13i64) { pass 1i64; }
+    if (nr == 39i64) { pass 0i64; }
+    if (nr == 56i64) { pass 5i64; }
+    if (nr == 59i64) { pass 5i64; }
+    if (nr == 60i64) { pass 2i64; }
+    if (nr == 110i64) { pass 0i64; }
+    if (nr == 157i64) { pass 0i64; }
+    if (nr == 158i64) { pass 0i64; }
+    if (nr == 202i64) { pass 0i64; }
+    if (nr == 204i64) { pass 1i64; }
+    if (nr == 228i64) { pass 1i64; }
+    if (nr == 231i64) { pass 2i64; }
+    if (nr == 233i64) { pass 0i64; }
+    if (nr == 234i64) { pass 0i64; }
+    if (nr == 257i64) { pass 0i64; }
+    if (nr == 281i64) { pass 1i64; }
+    if (nr == 290i64) { pass 0i64; }
+    if (nr == 291i64) { pass 0i64; }
+    if (nr == 292i64) { pass 0i64; }
+    if (nr == 318i64) { pass 1i64; }
+    if (nr == 424i64) { pass 0i64; }
+    pass 4i64;
+};
+
+// The 1-based argument holding a `writes` row's buffer; 0 otherwise.
+pub func:ke_buf_arg = int64(int64:nr) never fails {
+    if (nr == 0i64) { pass 2i64; }
+    if (nr == 13i64) { pass 3i64; }
+    if (nr == 204i64) { pass 3i64; }
+    if (nr == 228i64) { pass 2i64; }
+    if (nr == 281i64) { pass 2i64; }
+    if (nr == 318i64) { pass 1i64; }
+    pass 0i64;
+};
+
+// A `writes` row's length: "result", "result12" (12 bytes an event) or a numeral; "" otherwise.
+pub func:ke_len = string(int64:nr) never fails {
+    if (nr == 0i64) { pass "result"; }
+    if (nr == 13i64) { pass "32"; }
+    if (nr == 204i64) { pass "result"; }
+    if (nr == 228i64) { pass "16"; }
+    if (nr == 281i64) { pass "result12"; }
+    if (nr == 318i64) { pass "result"; }
+    pass "";
+};
+
+// The 1-based argument a non-negative answer never exceeds; 0 for none.
+pub func:ke_bound_arg = int64(int64:nr) never fails {
+    if (nr == 0i64) { pass 3i64; }
+    if (nr == 1i64) { pass 3i64; }
+    if (nr == 204i64) { pass 2i64; }
+    if (nr == 281i64) { pass 3i64; }
+    if (nr == 318i64) { pass 2i64; }
+    pass 0i64;
+};
+
+// The 1-based argument the row's effect DEPENDS on; 0 when it depends on none.
+pub func:ke_option_arg = int64(int64:nr) never fails {
+    if (nr == 9i64) { pass 4i64; }
+    if (nr == 157i64) { pass 1i64; }
+    if (nr == 158i64) { pass 1i64; }
+    if (nr == 202i64) { pass 2i64; }
+    if (nr == 233i64) { pass 2i64; }
+    pass 0i64;
+};
+
+// Does the row speak for this value of its option argument? (true where there is no option)
+pub func:ke_option_ok = bool(int64:nr, int64:v) never fails {
+    if (nr == 9i64) { pass ((v == 34i64)); }
+    if (nr == 157i64) { pass ((v == 1i64) || (v == 38i64)); }
+    if (nr == 158i64) { pass ((v == 4098i64)); }
+    if (nr == 202i64) { pass ((v == 9i64) || (v == 128i64) || (v == 129i64) || (v == 137i64)); }
+    if (nr == 233i64) { pass ((v == 1i64) || (v == 2i64) || (v == 3i64)); }
+    pass true;
+};
+
+// The kernel's name for the number; "?" for a number without a row.
+pub func:ke_name = string(int64:nr) never fails {
+    if (nr == 0i64) { pass "read"; }
+    if (nr == 1i64) { pass "write"; }
+    if (nr == 3i64) { pass "close"; }
+    if (nr == 9i64) { pass "mmap"; }
+    if (nr == 10i64) { pass "mprotect"; }
+    if (nr == 11i64) { pass "munmap"; }
+    if (nr == 13i64) { pass "rt_sigaction"; }
+    if (nr == 39i64) { pass "getpid"; }
+    if (nr == 56i64) { pass "clone"; }
+    if (nr == 59i64) { pass "execve"; }
+    if (nr == 60i64) { pass "exit"; }
+    if (nr == 110i64) { pass "getppid"; }
+    if (nr == 157i64) { pass "prctl"; }
+    if (nr == 158i64) { pass "arch_prctl"; }
+    if (nr == 202i64) { pass "futex"; }
+    if (nr == 204i64) { pass "sched_getaffinity"; }
+    if (nr == 228i64) { pass "clock_gettime"; }
+    if (nr == 231i64) { pass "exit_group"; }
+    if (nr == 233i64) { pass "epoll_ctl"; }
+    if (nr == 234i64) { pass "tgkill"; }
+    if (nr == 257i64) { pass "openat"; }
+    if (nr == 281i64) { pass "epoll_pwait"; }
+    if (nr == 290i64) { pass "eventfd2"; }
+    if (nr == 291i64) { pass "epoll_create1"; }
+    if (nr == 292i64) { pass "dup3"; }
+    if (nr == 318i64) { pass "getrandom"; }
+    if (nr == 424i64) { pass "pidfd_send_signal"; }
+    pass "?";
+};
+
+// The rows, for a walk: how many, and the i-th row's number (ascending).
+pub func:ke_count = int64() never fails { pass 27i64; };
+pub func:ke_nr = int64(int64:i) never fails {
+    if (i == 0i64) { pass 0i64; }
+    if (i == 1i64) { pass 1i64; }
+    if (i == 2i64) { pass 3i64; }
+    if (i == 3i64) { pass 9i64; }
+    if (i == 4i64) { pass 10i64; }
+    if (i == 5i64) { pass 11i64; }
+    if (i == 6i64) { pass 13i64; }
+    if (i == 7i64) { pass 39i64; }
+    if (i == 8i64) { pass 56i64; }
+    if (i == 9i64) { pass 59i64; }
+    if (i == 10i64) { pass 60i64; }
+    if (i == 11i64) { pass 110i64; }
+    if (i == 12i64) { pass 157i64; }
+    if (i == 13i64) { pass 158i64; }
+    if (i == 14i64) { pass 202i64; }
+    if (i == 15i64) { pass 204i64; }
+    if (i == 16i64) { pass 228i64; }
+    if (i == 17i64) { pass 231i64; }
+    if (i == 18i64) { pass 233i64; }
+    if (i == 19i64) { pass 234i64; }
+    if (i == 20i64) { pass 257i64; }
+    if (i == 21i64) { pass 281i64; }
+    if (i == 22i64) { pass 290i64; }
+    if (i == 23i64) { pass 291i64; }
+    if (i == 24i64) { pass 292i64; }
+    if (i == 25i64) { pass 318i64; }
+    if (i == 26i64) { pass 424i64; }
+    pass (0i64 - 1i64);
+};

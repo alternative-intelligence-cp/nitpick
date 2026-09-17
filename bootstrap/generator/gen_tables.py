@@ -1522,6 +1522,8 @@ pub func:is_keyword = bool(string:text) {
     write("prelude_source.npk", "\n".join(pl) + "\n")
     print("prelude: %d bytes" % len(pre))
 
+    print("kernel effects: %d rows" % write_kernel_effects(kernel_effect_rows(VERIF)))
+
     print("token kinds: %d  keywords: %d  operators: %d  punctuation: %d  widths: %d"
           % (idx, len(kw_all), len(ops), len(punct), len(sfx)))
     if CHECK:
@@ -1846,6 +1848,159 @@ def scalar_table_text(fams):
 
 
 NF_SIG = re.compile(r'^((?:pub )?func:\w+ = [\w\[\]<>-]+\([^)]*\))(\s*)\{', re.M)
+
+# --- THE KERNEL-EFFECT TABLE, PARSED (D-288 as amended, 1.5.6b step 1) ----------
+# VERIFICATION_REFERENCE SS9.2's marked region is the ONE authority on what each
+# syscall the floor issues does to memory; `npkg/floor_kernel.npk` is generated
+# from it and is all the floor's translator knows about a syscall. Parsed
+# STRICTLY, like the builtin rows (D-201): a row this cannot read stops the
+# generator, because a row read loosely is a kernel promise nobody wrote.
+VERIF = os.path.join(ROOT, "meta", "specs", "VERIFICATION_REFERENCE.md")
+KE_EFFECT = {"none": 0, "writes": 1, "ends": 2, "maps": 3, "asm": 5}   # 4 is "no row"
+KE_DASH = "—"
+
+def kernel_effect_rows(path):
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    b, e = "<!-- BEGIN kernel-effects -->", "<!-- END kernel-effects -->"
+    if text.count(b) != 1 or text.count(e) != 1:
+        sys.exit("gen_tables: %s must carry exactly one kernel-effects region" % os.path.relpath(path, ROOT))
+    body = text[text.index(b) + len(b):text.index(e)]
+    rows, last = [], -1
+    for ln in body.strip().split("\n"):
+        if not ln.startswith("|") or ln.startswith("| nr ") or ln.startswith("|---"):
+            if ln.startswith("| nr ") or ln.startswith("|---"):
+                continue
+            sys.exit("gen_tables: kernel-effects: a line that is not a row: %r" % ln)
+        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+        where = "kernel-effects row %r" % ln
+        if len(cells) != 7:
+            sys.exit("gen_tables: %s: seven cells, found %d" % (where, len(cells)))
+        nr_s, name, option, effect, buf, length, bound = cells
+        if not re.fullmatch(r"\d+", nr_s):
+            sys.exit("gen_tables: %s: the number" % where)
+        nr = int(nr_s)
+        if nr <= last:
+            sys.exit("gen_tables: %s: rows ascend by number, one row a number" % where)
+        last = nr
+        if not re.fullmatch(r"`[a-z_0-9]+`", name):
+            sys.exit("gen_tables: %s: the name is a backquoted kernel name" % where)
+        if effect not in KE_EFFECT:
+            sys.exit("gen_tables: %s: the effect is one of %s" % (where, ", ".join(sorted(KE_EFFECT))))
+        opt_arg, opt_vals = 0, []
+        if option != KE_DASH:
+            m = re.fullmatch(r"arg([1-6]) in (\d+(?: \d+)*)", option)
+            if not m:
+                sys.exit("gen_tables: %s: an option reads `argK in N N ...`" % where)
+            opt_arg, opt_vals = int(m.group(1)), [int(v) for v in m.group(2).split()]
+        def arg_of(cell, what):
+            if cell == KE_DASH:
+                return 0
+            m2 = re.fullmatch(r"arg([1-6])", cell)
+            if not m2:
+                sys.exit("gen_tables: %s: the %s is `argK` or a dash" % (where, what))
+            return int(m2.group(1))
+        buf_arg, bound_arg = arg_of(buf, "buffer"), arg_of(bound, "bound")
+        if length == KE_DASH:
+            len_tok = ""
+        elif length == "result":
+            len_tok = "result"
+        elif length == "result*12":
+            len_tok = "result12"
+        elif re.fullmatch(r"\d+", length):
+            len_tok = length
+        else:
+            sys.exit("gen_tables: %s: the length is `result`, `result*12`, a numeral or a dash" % where)
+        if (effect == "writes") != (buf_arg != 0 and len_tok != ""):
+            sys.exit("gen_tables: %s: a `writes` row names its buffer and its length, and no other row does" % where)
+        rows.append((nr, name.strip("`"), opt_arg, opt_vals, KE_EFFECT[effect], buf_arg, len_tok, bound_arg))
+    if not rows:
+        sys.exit("gen_tables: kernel-effects: no rows")
+    return rows
+
+
+def write_kernel_effects(rows):
+    def chain(ret_ty, default, pick, fmt):
+        out = []
+        for r in rows:
+            v = pick(r)
+            if v is not None:
+                out.append("    if (nr == %di64) { pass %s; }" % (r[0], fmt(v)))
+        out.append("    pass %s;" % default)
+        return out
+    L = ["// floor_kernel -- THE KERNEL-EFFECT TABLE, GENERATED. DO NOT EDIT.",
+         "//",
+         "// Written by bootstrap/generator/gen_tables.py from the `kernel-effects` region of",
+         "// meta/specs/VERIFICATION_REFERENCE.md SS9.2 -- the ONE authority on what each syscall",
+         "// the floor issues does to memory (D-288 as amended, 1.5.6b). `tx_syscall` and",
+         "// `sys_writes` (floor_smt.npk) and the syscall belt (floor.npk) read these functions",
+         "// and keep no list of their own; `gen_tables.py --check` holds this file to the region.",
+         "// It imports nothing, on purpose: the floor tool is built by the snapshot.",
+         "",
+         "mod:floor_kernel;",
+         "",
+         "// 0 none, 1 writes, 2 ends, 3 maps, 5 asm (issued only from inline asm: no effect is",
+         "// modelled and none is needed); 4 is NO ROW -- a number the table does not speak for.",
+         "pub func:ke_effect = int64(int64:nr) never fails {"]
+    L += chain("int64", "4i64", lambda r: r[4], lambda v: "%di64" % v)
+    L += ["};", "", "// The 1-based argument holding a `writes` row's buffer; 0 otherwise.",
+          "pub func:ke_buf_arg = int64(int64:nr) never fails {"]
+    L += chain("int64", "0i64", lambda r: r[5] or None, lambda v: "%di64" % v)
+    L += ["};", "", '// A `writes` row\'s length: "result", "result12" (12 bytes an event) or a numeral; "" otherwise.',
+          "pub func:ke_len = string(int64:nr) never fails {"]
+    L += chain("string", '""', lambda r: r[6] or None, lambda v: '"%s"' % v)
+    L += ["};", "", "// The 1-based argument a non-negative answer never exceeds; 0 for none.",
+          "pub func:ke_bound_arg = int64(int64:nr) never fails {"]
+    L += chain("int64", "0i64", lambda r: r[7] or None, lambda v: "%di64" % v)
+    L += ["};", "", "// The 1-based argument the row's effect DEPENDS on; 0 when it depends on none.",
+          "pub func:ke_option_arg = int64(int64:nr) never fails {"]
+    L += chain("int64", "0i64", lambda r: r[2] or None, lambda v: "%di64" % v)
+    L += ["};", "", "// Does the row speak for this value of its option argument? (true where there is no option)",
+          "pub func:ke_option_ok = bool(int64:nr, int64:v) never fails {"]
+    for r in rows:
+        if r[2]:
+            L.append("    if (nr == %di64) { pass (%s); }" % (r[0], " || ".join("(v == %di64)" % x for x in r[3])))
+    L += ["    pass true;", "};", "", "// The kernel's name for the number; \"?\" for a number without a row.",
+          "pub func:ke_name = string(int64:nr) never fails {"]
+    L += chain("string", '"?"', lambda r: r[1], lambda v: '"%s"' % v)
+    L += ["};", "", "// The rows, for a walk: how many, and the i-th row's number (ascending).",
+          "pub func:ke_count = int64() never fails { pass %di64; };" % len(rows),
+          "pub func:ke_nr = int64(int64:i) never fails {"]
+    for i, r in enumerate(rows):
+        L.append("    if (i == %di64) { pass %di64; }" % (i, r[0]))
+    L += ["    pass (0i64 - 1i64);", "};", ""]
+    emit_text(os.path.join(ROOT, "npkg", "floor_kernel.npk"), "\n".join(L))
+    write_kernel_probe_claims(rows)
+    return len(rows)
+
+
+def write_kernel_probe_claims(rows):
+    """THE PROBE'S CLAIMS, spliced into `tests/backend/programs/kernel_effects.npk`
+    between its markers (the prelude's `scalar-impls` pattern): what each `writes`
+    row says, as the probe needs it -- the buffer argument, the length's kind and
+    numeral, the bound argument. The program holds the table to the running kernel
+    in both runners; generating its claims is what stops it carrying a stale copy."""
+    path = os.path.join(ROOT, "tests", "backend", "programs", "kernel_effects.npk")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    sb, se = "// --- kernel-effects:begin", "// --- kernel-effects:end"
+    if text.count(sb) != 1 or text.count(se) != 1:
+        sys.exit("gen_tables: tests/backend/programs/kernel_effects.npk: the kernel-effects region markers are missing")
+    head_end = text.index("\n", text.index(sb)) + 1
+    writes = [r for r in rows if r[4] == KE_EFFECT["writes"]]
+    def fn(name, doc, pick):
+        out = ["// " + doc, "func:%s = int64(int64:nr) never fails {" % name]
+        for r in writes:
+            out.append("    if (nr == %di64) { pass %di64; }   // %s" % (r[0], pick(r), r[1]))
+        return out + ["    pass 0i64;", "};"]
+    kind = lambda r: 1 if r[6] == "result" else (2 if r[6] == "result12" else 3)
+    num = lambda r: int(r[6]) if r[6].isdigit() else 0
+    region = (fn("ke_buf_arg", "the 1-based argument a `writes` row names as its buffer", lambda r: r[5])
+              + fn("ke_len_kind", "the length the row claims: 1 `result`, 2 `result*12`, 3 a numeral (ke_len_num)", kind)
+              + fn("ke_len_num", "the numeral, where the length is one", num)
+              + fn("ke_bound_arg", "the 1-based argument a non-negative answer never exceeds; 0 for none", lambda r: r[7]))
+    emit_text(path, text[:head_end] + "\n".join(region) + "\n" + text[text.index(se):])
+
 
 def write(name, text):
     # EVERY GENERATED FUNCTION IS `never fails` (D-163, 1.1.1): each is a pure

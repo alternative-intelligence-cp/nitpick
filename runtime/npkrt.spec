@@ -1103,7 +1103,20 @@
 (symbol @npk_thread_exit
   (boundary "exit(60) of the calling thread alone: the kernel clears and wakes the CLONE_CHILD_CLEARTID word the joiner waits on (a shared wake, 1.4.4); the path never returns"))
 (symbol @npk_hardware_concurrency
-  (boundary "the number of hardware threads the program may use (D-073): the popcount of the sched_getaffinity mask over 1024 bits, at least 1"))
+  ; DEF-52 (1.5.6b): the mask is ZEROED before the kernel sees it, because the
+  ; raw sched_getaffinity writes only `z` bytes of the 128 and nothing else
+  ; zero-fills the rest. The third claim is the one that bites: when the kernel
+  ; wrote nothing, every word is zero, the popcounts sum to zero and the answer
+  ; is the floor's 1 -- REFUTED on the floor as it stood before the fix, where
+  ; the sixteen words were whatever the stack held. `ctpop64` is uninterpreted,
+  ; in [0, 64], zero at zero; the sixteen-word walk is unwound exactly.
+  (loop loop (unroll 16 exact))
+  (ensures (>= result 1))
+  (ensures (<= result 1024))
+  (ensures (=> (= z 0) (= result 1))))
+; (it was a BOUNDARY section until 1.5.6b -- a promise, never proven, which is
+; where DEF-52 lived. WHICH bits the kernel sets stays the kernel's answer; how
+; many bytes it writes is the kernel-effect table's row 204, measured.)
 (symbol @npk_run_until
   (boundary "the executor loop until the target task completes (0) or the absolute deadline dl expires (1; 0 is no deadline): every ready task stepped in queue order, the idle wait epoll_pwait carrying the earliest sleeper's deadline (1.1.12), the waker's due-now stamp consumed at resume"))
 (symbol @npk_io_unwatch

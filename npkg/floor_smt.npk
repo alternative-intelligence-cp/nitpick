@@ -94,6 +94,7 @@ use "./floor_ir.npk".*;
 use "./floor_instr.npk".*;
 use "./floor_spec.npk".*;
 use "./floor_cfg.npk".*;
+use "./floor_kernel.npk".*;               // the kernel-effect table, GENERATED from VERIFICATION_REFERENCE SS9.2 (1.5.6b)
 use "../src/backend/smt/smt_writer.npk".*;
 use "../lib/nhash.npk".*;
 use "./strset.npk".*;
@@ -578,6 +579,7 @@ pub struct:Tx = {
     List<string>:obj_len;
     bool:used_opaque;                // an opaque call was met: the section must carry a residue sentence
     bool:used_sys;                   // `sys` is declared
+    bool:used_ctpop;                 // `ctpop64` is declared (1.5.6b step 1)
 };
 
 pub func:tx_init = Tx(string:fn) never fails {
@@ -630,7 +632,7 @@ pub func:tx_init = Tx(string:fn) never fails {
              obj_lo: raw list_init::<string>(4i64), obj_len: raw list_init::<string>(4i64),
              it_mem: raw list_init::<string>(4i64), it_guard: raw list_init::<string>(4i64), it_tag: raw list_init::<string>(4i64),
              it_inv: raw list_init::<int64>(4i64), it_lclause: raw list_init::<int64>(4i64), it_blk: raw list_init::<int64>(4i64), it_cm: raw list_init::<string>(4i64), it_sym: raw list_init::<string>(4i64),
-             narrow: "", used_opaque: false, used_sys: false };
+             narrow: "", used_opaque: false, used_sys: false, used_ctpop: false };
 };
 
 pub func:tx_problem = NIL(Tx->:t, string:why) never fails {
@@ -3085,27 +3087,39 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
         drop tx_known(t, "sys");
         t.used_sys = true;
     }
-    // the effect
-    int64:kind = 0i64;        // 0 none, 1 writes, 2 ends, 3 mmap, 4 refused
-    int64:buf_arg = 0i64;     // 1-based argument index of the buffer
-    string:len_text = "";     // the length: a numeral, `result`, or an argument
-    if ((k == 1i64) || (k == 3i64) || (k == 10i64) || (k == 11i64) || (k == 39i64) || (k == 110i64) || (k == 157i64) || (k == 158i64) ||
-        (k == 202i64) || (k == 233i64) || (k == 234i64) || (k == 257i64) || (k == 290i64) || (k == 291i64) || (k == 292i64) || (k == 424i64)) { kind = 0i64; }
-    else { if (k == 0i64) { kind = 1i64; buf_arg = 2i64; len_text = "result"; }              // read(fd, buf, n)
-    else { if (k == 318i64) { kind = 1i64; buf_arg = 1i64; len_text = "result"; }            // getrandom(buf, n, flags)
-    else { if (k == 228i64) { kind = 1i64; buf_arg = 2i64; len_text = "16"; }                // clock_gettime(clk, ts)
-    else { if (k == 204i64) { kind = 1i64; buf_arg = 3i64; len_text = "arg2"; }              // sched_getaffinity(pid, len, mask)
-    else { if (k == 13i64) { kind = 1i64; buf_arg = 3i64; len_text = "arg4"; }               // rt_sigaction(sig, act, oldact, size)
-    else { if (k == 281i64) { kind = 1i64; buf_arg = 2i64; len_text = "result12"; }          // epoll_pwait(epfd, events, max, ...)
-    else { if ((k == 60i64) || (k == 231i64)) { kind = 2i64; }                               // exit, exit_group
-    else { if (k == 9i64) { kind = 3i64; }                                                   // mmap
-    else { kind = 4i64; } } } } } } } } }
-    if (kind == 4i64) {
-        string:w = string_concat("a syscall the kernel-effect table has no row for (", int_to_string(k));
+    // THE EFFECT IS THE TABLE'S, and the table is not here (1.5.6b): it is the
+    // `kernel-effects` region of VERIFICATION_REFERENCE SS9.2, generated into
+    // `floor_kernel.npk`. This function kept its own if-chain until then, and
+    // `sys_writes` a second one -- and two of the rows were wrong.
+    int64:kind = raw ke_effect(k);          // 0 none, 1 writes, 2 ends, 3 maps, 5 asm, 4 no row
+    int64:buf_arg = raw ke_buf_arg(k);      // 1-based argument index of the buffer
+    string:len_text = raw ke_len(k);        // the length: `result`, `result12` or a numeral
+    if ((kind == 4i64) || (kind == 5i64)) {
+        string:w = "a syscall the kernel-effect table has no row for (";
+        if (kind == 5i64) { w = "a syscall the kernel-effect table marks `asm` -- issued only from inline asm, no effect modelled -- reached by a translated symbol ("; }
+        w = string_concat(w, int_to_string(k));
         w = string_concat(w, "): ");
         w = string_concat(w, line);
         drop tx_problem(t, w);
         pass (raw text_copy(mem));
+    }
+    // A ROW WHOSE EFFECT DEPENDS ON AN OPTION SPEAKS ONLY FOR THE OPTIONS IT LISTS:
+    // `arch_prctl(ARCH_GET_FS)` and `prctl(PR_GET_NAME)` WRITE user memory where the
+    // options the floor passes do not, so an option outside the row's set -- or one
+    // that is not a numeral -- is refused by name, as a number without a row is.
+    int64:oa = raw ke_option_arg(k);
+    if (oa > 0i64) {
+        bool:opt_ok = false;
+        if (av.items[oa - 1i64].is_num) { opt_ok = raw ke_option_ok(k, av.items[oa - 1i64].num =>! int64); }
+        if (!opt_ok) {
+            string:wo = string_concat("a syscall option the kernel-effect table has no row for (", int_to_string(k));
+            wo = string_concat(wo, ", argument ");
+            wo = string_concat(wo, int_to_string(oa));
+            wo = string_concat(wo, "): ");
+            wo = string_concat(wo, line);
+            drop tx_problem(t, wo);
+            pass (raw text_copy(mem));
+        }
     }
     if (kind == 2i64) {
         // the process ends: a trap site whose code is the status; "" says so
@@ -3131,10 +3145,9 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
     // THE KERNEL'S COUNT PROMISE: read, write, getrandom answer at most the
     // count asked, epoll_pwait at most the events room -- a non-negative answer
     // never exceeds the argument (what the kernel promises, TCB.md SS5)
-    int64:bound_arg = 0i64;
-    if ((k == 0i64) || (k == 1i64)) { bound_arg = 3i64; }
-    if (k == 318i64) { bound_arg = 2i64; }
-    if (k == 281i64) { bound_arg = 3i64; }
+    // the table's `bound` column (sched_getaffinity gained its own at 1.5.6b: without it the row's `result`
+    // bytes are unbounded in the model and no caller's frame claim can be proven -- found by a refuted row)
+    int64:bound_arg = raw ke_bound_arg(k);
     if (bound_arg > 0i64) {
         drop tx_hyp(t, raw smt_app2("=>", raw smt_app2(">=", sr, "0"), raw smt_app2("<=", sr, av.items[bound_arg - 1i64].text)), "sys", 0i64);
     }
@@ -3143,8 +3156,6 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
         string:len = "";
         if (raw text_eq(len_text, "result")) { len = raw text_copy(sr); }
         if (raw text_eq(len_text, "result12")) { len = raw smt_app2("*", "12", sr); }
-        if (raw text_eq(len_text, "arg2")) { len = raw text_copy(raw strlist_view_of(av.items[1i64].text)); }
-        if (raw text_eq(len_text, "arg4")) { len = raw text_copy(raw strlist_view_of(av.items[3i64].text)); }
         if (len.len == 0i64) { len = raw text_copy(len_text); }
         string:inr = raw smt_app2("and", raw smt_app2("<=", buf, "|pt|"), raw smt_app2("<", "|pt|", raw smt_app2("+", buf, len)));
         // an error answer writes nothing; a NULL buffer is written nowhere (rt_sigaction's oldact)
@@ -3563,10 +3574,12 @@ func:ctx_mem = string(Tx->:t, XFn->:x, int64:b) never fails {
 // of `tx_syscall` (read, getrandom, clock_gettime, sched_getaffinity,
 // rt_sigaction, epoll_pwait, mmap); a number the table lacks is taken to.
 func:sys_writes = bool(int64:k) never fails {
-    if ((k == 0i64) || (k == 318i64) || (k == 228i64) || (k == 204i64) || (k == 13i64) || (k == 281i64) || (k == 9i64)) { pass true; }
-    if ((k == 1i64) || (k == 3i64) || (k == 10i64) || (k == 11i64) || (k == 39i64) || (k == 110i64) || (k == 157i64) || (k == 158i64) ||
-        (k == 202i64) || (k == 233i64) || (k == 234i64) || (k == 257i64) || (k == 290i64) || (k == 291i64) || (k == 292i64) || (k == 424i64) ||
-        (k == 60i64) || (k == 231i64)) { pass false; }
+    // THE TABLE IS `floor_kernel.npk`'s (1.5.6b): this function kept a list of its
+    // own until then, a second hand-written copy of `tx_syscall`'s. A row that
+    // says `none` or `ends` writes nothing; `writes` and `maps` write; a number
+    // with no row, or an `asm` one, is answered conservatively.
+    int64:e = raw ke_effect(k);
+    if ((e == 0i64) || (e == 2i64)) { pass false; }
     pass true;
 };
 
@@ -3582,6 +3595,7 @@ func:loop_writes = bool(XFn->:x, int64:li) never fails {
             if (raw text_eq(c, "@llvm.fabs.f64") || raw text_eq(c, "@llvm.fabs.f32")) { continue; }
             if (raw text_eq(c, "@llvm.copysign.f64") || raw text_eq(c, "@llvm.copysign.f32")) { continue; }
             if (raw text_eq(c, "@llvm.umul.with.overflow.i64")) { continue; }
+            if (raw text_eq(c, "@llvm.ctpop.i64")) { continue; }
             if (raw text_eq(c, "@npk_exec") || raw text_eq(c, "@npk_tls_self")) { continue; }
             if (raw is_trap_callee(c)) { continue; }
             if (raw text_eq(c, "@npk_sys6") && (ins.args.count == 7i64)) {
@@ -4044,6 +4058,31 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 t.uses_fp = true;
                 string:mag = raw smt_app1("fp.abs", ca.text);
                 drop tx_set(t, ins.dest, ins.ty, raw term_fp(raw smt_app3("ite", raw smt_app1("fp.isNegative", cb.text), raw smt_app1("fp.neg", mag), mag), raw ty_bits(ins.ty)));
+                continue;
+            }
+            if (raw text_eq(callee, "@llvm.ctpop.i64")) {
+                // THE POPCOUNT IS AN UNINTERPRETED FUNCTION (1.5.6b step 1) carrying the
+                // two facts every popcount satisfies and nothing else: it lies in
+                // [0, 64], and the popcount of zero is zero. Sound by construction --
+                // both hold of the instruction whatever its operand -- and enough for
+                // what `npk_hardware_concurrency` claims: a count between 1 and 1024,
+                // and exactly 1 when the kernel wrote nothing (the row DEF-52 refutes).
+                Term:pa = raw term_of(t, ft, raw strlist_view(ins.args, 0i64), "i64");
+                if (!pa.ok) { continue; }
+                if (!t.used_ctpop) {
+                    drop strlist_push(@t.defs, "(declare-fun ctpop64 (Int) Int)");
+                    drop strlist_push(@t.def_names, "ctpop64");
+                    drop list_push(@t.def_refs, raw list_init::<string>(1i64));
+                    drop tx_known(t, "ctpop64");
+                    t.used_ctpop = true;
+                }
+                string:pcs = raw tx_fresh(t, "ctpop");
+                drop tx_declare(t, pcs, "Int");
+                drop tx_range(t, pcs, 64i64);
+                drop tx_hyp(t, raw smt_app2("=", pcs, raw smt_app1("ctpop64", pa.text)), "ctpop", 0i64);
+                drop tx_hyp(t, raw smt_app2("<=", pcs, "64"), "ctpop", 0i64);
+                drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("=", pa.text, "0"), raw smt_app2("=", pcs, "0")), "ctpop", 0i64);
+                drop tx_set(t, ins.dest, "i64", raw term_int(pcs, 64i64));
                 continue;
             }
             if (raw text_eq(callee, "@llvm.umul.with.overflow.i64")) {

@@ -298,6 +298,26 @@ def main():
             else:
                 print("      the belt rejected it: %s" % fails[0])
 
+    # THE KERNEL-EFFECT TABLE'S BELT (1.5.6b step 1; D-288 as amended): a call site whose
+    # option its row does not speak for fails by name -- `arch_prctl(ARCH_GET_FS)` WRITES user
+    # memory where `ARCH_SET_FS` does not, and a row keyed by number alone would model either as
+    # writing nothing -- the row's own option passes, and a number with no row fails.
+    # `npkg/selfcheck.npk` carries the same three cases by name, over the same texts.
+    for name, text, must_fail, finding, why in (
+            ("floor-syscall-option", "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\ndefine i64 @f(i64 %a) {\nentry:\n  %r = call i64 @npk_sys6(i64 158, i64 4099, i64 %a, i64 0, i64 0, i64 0, i64 0)\n  ret i64 %r\n}\n", True, "floor-syscall-option",
+             "arch_prctl with ARCH_GET_FS (4099), an option its row does not speak for, must fail"),
+            ("floor-syscall-option-control", "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\ndefine i64 @f(i64 %a) {\nentry:\n  %r = call i64 @npk_sys6(i64 158, i64 4098, i64 %a, i64 0, i64 0, i64 0, i64 0)\n  ret i64 %r\n}\n", False, "floor-syscall-option",
+             "the same call with ARCH_SET_FS (4098), the row's option, must pass"),
+            ("floor-syscall-row", "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\ndefine i64 @f(i64 %a) {\nentry:\n  %r = call i64 @npk_sys6(i64 12, i64 0, i64 %a, i64 0, i64 0, i64 0, i64 0)\n  ret i64 %r\n}\n", True, "floor-syscall-row",
+             "a syscall number the kernel-effect table has no row for (12) must fail")):
+        fails = [f for f in floor.check_syscall_names(text) if finding in f]
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0])
+
     # THE FLOOR'S LEG (1.5.6 step 3, D-288): a refuted clause fails by name
     # and the same symbol under a true clause passes; a section with no claim
     # and no residue fails; an instruction form outside the subset fails by

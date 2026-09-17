@@ -18,6 +18,7 @@ use "./floor_ir.npk".*;
 use "./floor_spec.npk".*;
 use "./floor_cfg.npk".*;
 use "./floor_smt.npk".*;
+use "./floor_kernel.npk".*;                  // the kernel-effect table, GENERATED (1.5.6b)
 use "./floor_model.npk".*;
 use "../src/backend/smt/smt_kinds.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;
@@ -602,34 +603,36 @@ pub func:tcb_residue_current = List<string>(Sxs->:s, List<ManRow>->:rows, List<M
 // not name it -- a finding, not a blank: the kernel-effect table has one row
 // per number and a reader accepts those rows as the kernel's promise).
 pub func:syscall_name = string(int64:n) never fails {
-    if (n == 0i64) { pass "read"; }
-    if (n == 1i64) { pass "write"; }
-    if (n == 3i64) { pass "close"; }
-    if (n == 9i64) { pass "mmap"; }
-    if (n == 10i64) { pass "mprotect"; }
-    if (n == 11i64) { pass "munmap"; }
-    if (n == 13i64) { pass "rt_sigaction"; }
-    if (n == 39i64) { pass "getpid"; }
-    if (n == 56i64) { pass "clone"; }
-    if (n == 59i64) { pass "execve"; }
-    if (n == 60i64) { pass "exit"; }
-    if (n == 110i64) { pass "getppid"; }
-    if (n == 157i64) { pass "prctl"; }
-    if (n == 158i64) { pass "arch_prctl"; }
-    if (n == 202i64) { pass "futex"; }
-    if (n == 204i64) { pass "sched_getaffinity"; }
-    if (n == 228i64) { pass "clock_gettime"; }
-    if (n == 231i64) { pass "exit_group"; }
-    if (n == 233i64) { pass "epoll_ctl"; }
-    if (n == 234i64) { pass "tgkill"; }
-    if (n == 257i64) { pass "openat"; }
-    if (n == 281i64) { pass "epoll_pwait"; }
-    if (n == 290i64) { pass "eventfd2"; }
-    if (n == 291i64) { pass "epoll_create1"; }
-    if (n == 292i64) { pass "dup3"; }
-    if (n == 318i64) { pass "getrandom"; }
-    if (n == 424i64) { pass "pidfd_send_signal"; }
-    pass "";
+    // the name is the kernel-effect table's (floor_kernel.npk, generated from
+    // VERIFICATION_REFERENCE SS9.2); this function carried a copy until 1.5.6b
+    string:nm = raw ke_name(n);
+    if (raw text_eq(nm, "?")) { pass ""; }
+    pass nm;
+};
+
+// The value operands of an `@npk_sys6(...)` call on this line, the number
+// first; none when the line is no such call. Every operand is `i64 VALUE`.
+func:sys6_args = List<string>(string:line) never fails {
+    List<string>:out = raw list_init::<string>(8i64);
+    int64:c = raw text_index_of(line, "@npk_sys6(");
+    if (c < 0i64) { pass out; }
+    int64:s = c + 10i64;
+    int64:e = raw text_find_byte(line, 41u8, s);
+    if (e < 0i64) { pass out; }
+    List<string>:w = raw text_split_ws(raw text_replace_byte(raw text_slice(line, s, e), 44u8, 32u8));
+    int64:i = 1i64;
+    while (i < w.count) {
+        drop strlist_push(@out, raw strlist_copy(w, i));
+        i = i + 2i64;
+    }
+    pass out;
+};
+
+// The decimal a word spells, or -1 (no syscall number and no option is negative).
+func:sys6_int = int64(string:s) never fails {
+    Result<int64>:r = text_int(s);
+    if (r.is_error) { pass (0i64 - 1i64); }
+    pass r.value;
 };
 
 // Is `name` one of the trap route's entries? Every symbol reaches
@@ -770,20 +773,60 @@ pub func:tcb_syscall_rows = List<string>(FloorText->:ft) never fails {
     pass out;
 };
 
-// THE SYSCALL BELT: TCB.md's syscall table equals what the floor says today,
-// and every number the floor issues has a name (a new syscall without a
-// kernel-effect row is a translation the reader cannot check).
-pub func:tcb_syscalls_current = List<string>(FloorText->:ft, string:tcb_text) never fails {
+// THE SYSCALL BELT: TCB.md's syscall table equals what the floor says today;
+// every number the floor issues has a ROW in the kernel-effect table (not
+// merely a name: TCB.md's head said "each has one row" while `clone` and
+// `execve` had none, until 1.5.6b gave them their `asm` rows); and every
+// `npk_sys6` call site of the floor -- translated or not -- passes, where its
+// row's effect depends on an option, a NUMERAL the row speaks for.
+// `arch_prctl(ARCH_GET_FS)` and `prctl(PR_GET_NAME)` WRITE user memory where
+// the options the floor passes do not. `floor.py`'s `check_syscall_names` is
+// the twin, finding for finding.
+// Every number the floor issues has a row, and every `npk_sys6` site's option is one its row
+// speaks for: the findings by name (`floor-syscall-row`, `floor-syscall-option`).
+pub func:floor_syscall_sites = List<string>(FloorText->:ft) never fails {
     List<string>:fl = raw list_init::<string>(4i64);
     for (int64:i in 0i64...ft.fns.count) {
         List<int64>:d = raw floor_direct_syscalls(ft, i);
         for (int64:k in 0i64...d.count) {
-            if ((raw syscall_name(d.items[k])).len > 0i64) { continue; }
-            string:w = string_concat("floor: runtime/npkrt.ll issues syscall ", int_to_string(d.items[k]));
-            w = string_concat(w, ", which the table does not name -- give it a kernel-effect row (npkg/floor_smt.npk) and a name here");
+            if ((raw ke_effect(d.items[k])) != 4i64) { continue; }
+            string:w = string_concat("floor: floor-syscall-row: runtime/npkrt.ll issues syscall ", int_to_string(d.items[k]));
+            w = string_concat(w, ", which the kernel-effect table has no row for -- give it one in VERIFICATION_REFERENCE SS9.2's `kernel-effects` region and regenerate");
             drop strlist_push(@fl, w);
         }
+        for (int64:bi in 0i64...ft.fns.items[i].blocks.count) {
+            for (int64:li in 0i64...ft.fns.items[i].blocks.items[bi].lines.count) {
+                List<string>:sa = raw sys6_args(raw strlist_view(ft.fns.items[i].blocks.items[bi].lines, li));
+                if (sa.count == 0i64) { continue; }
+                int64:nr = raw sys6_int(raw strlist_view(sa, 0i64));
+                if (nr < 0i64) { continue; }
+                int64:oa = raw ke_option_arg(nr);
+                if (oa == 0i64) { continue; }
+                string:ov = "";
+                if (oa < sa.count) { ov = raw strlist_copy(sa, oa); }
+                int64:oval = raw sys6_int(ov);
+                bool:admitted = false;
+                if (oval >= 0i64) { admitted = raw ke_option_ok(nr, oval); }
+                if (admitted) { continue; }
+                string:wo = string_concat("floor: floor-syscall-option: `", ft.fns.items[i].name);
+                wo = string_concat(wo, "` issues syscall ");
+                wo = string_concat(wo, int_to_string(nr));
+                wo = string_concat(wo, " (");
+                wo = string_concat(wo, raw ke_name(nr));
+                wo = string_concat(wo, ") with argument ");
+                wo = string_concat(wo, int_to_string(oa));
+                wo = string_concat(wo, " = `");
+                wo = string_concat(wo, ov);
+                wo = string_concat(wo, "`, which the kernel-effect table's row does not speak for -- an option the row does not list may write memory the row says it does not (add the option to the row, measured, or do not pass it)");
+                drop strlist_push(@fl, wo);
+            }
+        }
     }
+    pass fl;
+};
+
+pub func:tcb_syscalls_current = List<string>(FloorText->:ft, string:tcb_text) never fails {
+    List<string>:fl = raw floor_syscall_sites(ft);
     int64:b = raw text_index_of(tcb_text, "<!-- BEGIN floor-syscalls -->");
     int64:e = raw text_index_of(tcb_text, "<!-- END floor-syscalls -->");
     if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-syscalls: TCB.md has no marked floor-syscalls region"); pass fl; }

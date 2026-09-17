@@ -306,6 +306,42 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         }
     }
 
+    // THE KERNEL-EFFECT TABLE'S BELT (1.5.6b step 1; D-288 as amended): a call site whose
+    // option its row does not speak for fails by name, the row's own option passes, and a
+    // number with no row fails. The harness's three cases, byte for byte.
+    for (int64:yi in 0i64...3i64) {
+        string:yname = "floor-syscall-option";
+        string:ytext = "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\ndefine i64 @f(i64 %a) {\nentry:\n  %r = call i64 @npk_sys6(i64 158, i64 4099, i64 %a, i64 0, i64 0, i64 0, i64 0)\n  ret i64 %r\n}\n";
+        bool:ymust_fail = true;
+        string:yfinding = "floor-syscall-option";
+        string:ywhy = "arch_prctl with ARCH_GET_FS (4099), an option its row does not speak for, must fail";
+        if (yi == 1i64) {
+            yname = "floor-syscall-option-control";
+            ytext = "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\ndefine i64 @f(i64 %a) {\nentry:\n  %r = call i64 @npk_sys6(i64 158, i64 4098, i64 %a, i64 0, i64 0, i64 0, i64 0)\n  ret i64 %r\n}\n";
+            ymust_fail = false;
+            yfinding = "floor-syscall-option";
+            ywhy = "the same call with ARCH_SET_FS (4098), the row's option, must pass";
+        }
+        if (yi == 2i64) {
+            yname = "floor-syscall-row";
+            ytext = "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\ndefine i64 @f(i64 %a) {\nentry:\n  %r = call i64 @npk_sys6(i64 12, i64 0, i64 %a, i64 0, i64 0, i64 0, i64 0)\n  ret i64 %r\n}\n";
+            ymust_fail = true;
+            yfinding = "floor-syscall-row";
+            ywhy = "a syscall number the kernel-effect table has no row for (12) must fail";
+        }
+        FloorText:yft = raw floor_parse(ytext);
+        List<string>:yall = raw floor_syscall_sites(@yft);
+        int64:yhits = 0i64;
+        for (int64:yj in 0i64...yall.count) { if (raw text_contains(raw strlist_view(yall, yj), yfinding)) { yhits = yhits + 1i64; } }
+        bool:yok = ((yhits > 0i64) == ymust_fail);
+        if (!yok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(yname, yok, ywhy));
+        if (!yok) {
+            if (ymust_fail) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+            else { drop strlist_push(@report, "      the belt rejected it"); }
+        }
+    }
+
     // THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     // value is its failure path, and a check that has only ever been seen
     // to PASS is a check nobody has tested.
