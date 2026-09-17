@@ -369,7 +369,8 @@ def main():
     fl_floor = ("define i64 @f(i64 %a) {\nentry:\n  %r = add i64 %a, 1\n  ret i64 %r\n}\n"
                 "define i64 @g(i64 %a) {\nentry:\n  switch i64 %a, label %d [ i64 0, label %z ]\n"
                 "z:\n  ret i64 0\nd:\n  ret i64 1\n}\n"
-                "define void @v(ptr %p, ptr %q) {\nentry:\n  ret void\n}\n")
+                "define void @v(ptr %p, ptr %q) {\nentry:\n  ret void\n}\n"
+                "define void @w(ptr %p, ptr %q) {\nentry:\n  store i64 1, ptr %p\n  ret void\n}\n")
     ftool = harness.build_tool(tmp, tools, os.path.join(ROOT, "tools", "floorspec.npk"), "floorspec")
     if not ftool or not os.path.exists(str(ftool)):
         bad += 1
@@ -387,7 +388,18 @@ def main():
                 ("floor-apart-when", "(symbol @v (objects (p 8) (q 8 apart-when (= p 16))) (ensures (=> (and (not (= p 0)) (not (= q 0))) (not (= p q)))))\n", True,
                  "an `apart-when` range is apart only under its condition: a claim that needs it everywhere must fail"),
                 ("floor-apart-when-control", "(symbol @v (objects (p 8) (q 8 apart-when (= p 16))) (ensures (=> (and (= p 16) (not (= q 0))) (not (= p q)))))\n", False,
-                 "the same claim under the range's condition must pass")):
+                 "the same claim under the range's condition must pass"),
+                # `(views ...)` (1.5.6c step 1): read-only is PROVEN -- the frame row exempts no byte of a
+                # view, so a body that stores through one is refuted; and views MAY alias, so a claim that
+                # two of them differ is refuted where the same claim over two objects discharges
+                ("floor-views-written", "(symbol @w (free x Addr) (requires (not (= p 0))) (views (p 8) (q 8)) (frame (p 8)))\n", True,
+                 "a body that writes a byte of a view must fail: the frame row exempts none"),
+                ("floor-views-control", "(symbol @w (free x Addr) (requires (not (= p 0))) (objects (p 8)) (views (q 8)) (frame (p 8)))\n", False,
+                 "the same body writing its OBJECT, the view apart from it, must pass"),
+                ("floor-views-alias", "(symbol @v (views (p 8) (q 8)) (ensures (=> (and (not (= p 0)) (not (= q 0))) (not (= p q)))))\n", True,
+                 "two views may be one range: a claim that they differ must fail"),
+                ("floor-objects-apart-control", "(symbol @v (objects (p 8) (q 8)) (ensures (=> (and (not (= p 0)) (not (= q 0))) (not (= p q)))))\n", False,
+                 "two objects are apart: the same claim over them must pass")):
             froot = os.path.join(tmp, name.replace("-", "_"))
             os.makedirs(os.path.join(froot, "runtime"), exist_ok=True)
             with open(os.path.join(froot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:
@@ -455,6 +467,27 @@ def main():
         bad += 1
     print("  %-26s %-4s  %s" % ("floor-unspecified", "ok" if okfu else "BAD",
                                 "a section with no claim and no residue sentence must fail"))
+    # A HEAD READ ONCE IS WRITTEN ONCE, AND A LOOP HOLDS WHAT THE TRANSLATOR READS (1.5.6c step 1): the
+    # translator takes the FIRST `frame`/`objects`/`views`/`ensures-trap`/... and drops the rest in silence, and
+    # a loop sub-clause outside its four was never read at all -- a claim written and never proven. By name.
+    f_ens = "(ensures (= result (mod (+ a 1) 18446744073709551616)))"
+    for name, spec_text, phrase, why in (
+            ("floor-spec-duplicate", "(symbol @f %s (frame) (frame))\n" % f_ens, "a clause read once and written twice in @f: frame",
+             "a second `frame` clause -- read by nobody -- must fail by name"),
+            ("floor-spec-duplicate-control", "(symbol @f %s (frame))\n" % f_ens, None,
+             "the same section with one `frame` clause must pass"),
+            ("floor-spec-loop-clause", "(symbol @g (loop z (unroll 1) (decreases a)) (ensures (< result 2)))\n",
+             "a loop sub-clause the grammar does not know in the loop z of @g: decreases",
+             "a loop sub-clause the translator does not read must fail by name"),
+            ("floor-spec-loop-control", "(symbol @g (loop z (unroll 1)) (ensures (< result 2)))\n", None,
+             "the same loop holding only what is read must pass")):
+        got = floor.check_spec(fl_floor, spec_text, name)
+        okg = (any(phrase in g for g in got) if phrase else not got)
+        if not okg:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if okg else "BAD", why))
+        if not okg:
+            print("      the spec belt said: %s" % (got[0][:300] if got else "nothing"))
     fhash = "0" * 64
     fman = "# nitpick.obligations v1\n# z3 4.16.0 sha256 %s\n# options rlimit=1\n" % fhash
     m1, _ = harness.manifest_rows(fman + "%s floor-spec int discharged none @f\n" % fhash)

@@ -240,7 +240,9 @@ func:has_label = bool(FloorText->:ft, int64:fi, string:label) never fails {
 // says why not (`residue`, `boundary`); a `(summary)` section has an
 // `ensures` (a summary with nothing to assume is a hole a caller would
 // fall through); no symbol is specified twice; a clause head outside the
-// grammar is refused by name.
+// grammar is refused by name; a head the translator reads once is written
+// once, and a loop holds only the four sub-clauses it reads (1.5.6c step 1:
+// either was dropped in silence before).
 pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails {
     List<string>:fl = raw list_init::<string>(4i64);
     List<string>:seen = raw list_init::<string>(64i64);
@@ -281,6 +283,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
             if (raw text_eq(ch, "residue")) { known = true; excused = true; }
             if (raw text_eq(ch, "boundary")) { known = true; excused = true; }
             if (raw text_eq(ch, "objects")) { known = true; }
+            if (raw text_eq(ch, "views")) { known = true; }
             if (raw text_eq(ch, "ensures-fresh")) { known = true; claims = true; has_ensures = true; }
             if (raw text_eq(ch, "ensures-trap")) { has_ensures = true; }
             if (raw text_eq(ch, "frame")) { has_ensures = true; }
@@ -302,6 +305,38 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
                     w2 = string_concat(w2, " needs exactly one of (invariant I) and (unroll N)");
                     drop strlist_push(@fl, w2);
                 }
+                // a sub-clause the translator does not read would be dropped in silence (1.5.6c step 1)
+                int64:lc = s.nodes.items[c].first;
+                lc = s.nodes.items[lc].next;   // past `loop`
+                if (lc >= 0i64) { lc = s.nodes.items[lc].next; }   // past the label
+                while (lc >= 0i64) {
+                    if (!(raw sx_is_list(s, lc))) {
+                        string:w5 = string_concat("floor: runtime/npkrt.spec: a bare word inside the loop ", label);
+                        w5 = string_concat(w5, " of ");
+                        w5 = string_concat(w5, name);
+                        drop strlist_push(@fl, w5);
+                        lc = s.nodes.items[lc].next;
+                        continue;
+                    }
+                    string:lh = raw sx_head(s, lc);
+                    bool:lknown = (raw text_eq(lh, "invariant")) || (raw text_eq(lh, "unroll")) || (raw text_eq(lh, "objects")) || (raw text_eq(lh, "inst"));
+                    if (!lknown) {
+                        string:w6 = string_concat("floor: runtime/npkrt.spec: a loop sub-clause the grammar does not know in the loop ", label);
+                        w6 = string_concat(w6, " of ");
+                        w6 = string_concat(w6, name);
+                        w6 = string_concat(w6, ": ");
+                        w6 = string_concat(w6, lh);
+                        drop strlist_push(@fl, w6);
+                    }
+                    lc = s.nodes.items[lc].next;
+                }
+                if ((raw spec_clause_count(s, c, "objects")) > 1i64) {
+                    string:w7 = string_concat("floor: runtime/npkrt.spec: a clause read once and written twice in the loop ", label);
+                    w7 = string_concat(w7, " of ");
+                    w7 = string_concat(w7, name);
+                    w7 = string_concat(w7, ": objects");
+                    drop strlist_push(@fl, w7);
+                }
             }
             if (!known) {
                 string:w3 = string_concat("floor: runtime/npkrt.spec: a clause the grammar does not know in ", name);
@@ -310,6 +345,29 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
                 drop strlist_push(@fl, w3);
             }
             c = s.nodes.items[c].next;
+        }
+        // A HEAD THE TRANSLATOR READS ONCE MAY BE WRITTEN ONCE (1.5.6c step 1):
+        // `spec_clause(s, sec, HEAD, 0)` is how `floor_smt.npk` reads each of
+        // these, so a second was dropped in silence -- for `frame`,
+        // `ensures-trap` and `ensures-fresh` a CLAIM written and never proven,
+        // for `objects` and `views` a hypothesis written and never assumed. The
+        // harness's `_ONCE_HEADS`, in its order.
+        List<string>:once = raw list_init::<string>(8i64);
+        drop strlist_push(@once, "objects");
+        drop strlist_push(@once, "views");
+        drop strlist_push(@once, "frame");
+        drop strlist_push(@once, "ensures-trap");
+        drop strlist_push(@once, "ensures-fresh");
+        drop strlist_push(@once, "residue");
+        drop strlist_push(@once, "boundary");
+        drop strlist_push(@once, "summary");
+        for (int64:oi in 0i64...once.count) {
+            if ((raw spec_clause_count(s, r, raw strlist_view(once, oi))) > 1i64) {
+                string:w8 = string_concat("floor: runtime/npkrt.spec: a clause read once and written twice in ", name);
+                w8 = string_concat(w8, ": ");
+                w8 = string_concat(w8, raw strlist_view(once, oi));
+                drop strlist_push(@fl, w8);
+            }
         }
         if (!(claims || excused)) {
             drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a section with no claim and no residue or boundary sentence: ", name));

@@ -1353,27 +1353,56 @@ func:range_entry_ok = bool(Sxs->:s, int64:node) never fails {
 // about the range is an object's -- so the body's text, and the solver's work,
 // stay what they were (an `ite` to a null `lo` says the same and cost the file
 // 357 s against 202, past the hang net: measured in the runners' own mode).
-func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, REnv->:e, BMeta->:m, bool:record) never fails {
+//
+// `(views (lo len) ...)` (1.5.6c step 1; `vc0`, -1 for none): ranges the symbol
+// is handed to READ. A view is within the address space and disjoint from
+// every OBJECT -- and from no other view: two views of one string overlap, and
+// `string_concat(s, s)` is a legal program (the clause this form replaced
+// asserted the two inputs apart, false for that call). Recorded as an object
+// is. That a view is only read is PROVEN, not named: the section's frame row
+// exempts no byte of one (`views_in`, `tx_section_rows`). The objects' facts
+// come first and are the text they were before views existed, so a section
+// without views emits what it always did and no hash of it moves. Either
+// clause may be absent (`oc0`/`vc0` negative).
+func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, int64:vc0, REnv->:e, BMeta->:m, bool:record) never fails {
     List<string>:los = raw list_init::<string>(4i64);
     List<string>:lens = raw list_init::<string>(4i64);
     List<string>:whens = raw list_init::<string>(4i64);
     List<string>:facts = raw list_init::<string>(8i64);
-    int64:oc = s.nodes.items[oc0].first;
-    oc = s.nodes.items[oc].next;
-    while (oc >= 0i64) {
-        if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); break; }
-        drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
-        drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
-        if ((raw sx_len(s, oc)) == 4i64) { drop strlist_push(@whens, raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m)); }
-        else { drop strlist_push(@whens, ""); }
+    if (oc0 >= 0i64) {
+        int64:oc = s.nodes.items[oc0].first;
         oc = s.nodes.items[oc].next;
+        while (oc >= 0i64) {
+            if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); break; }
+            drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
+            drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
+            if ((raw sx_len(s, oc)) == 4i64) { drop strlist_push(@whens, raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m)); }
+            else { drop strlist_push(@whens, ""); }
+            oc = s.nodes.items[oc].next;
+        }
+    }
+    int64:nobj = los.count;
+    if (vc0 >= 0i64) {
+        int64:vc = s.nodes.items[vc0].first;
+        vc = s.nodes.items[vc].next;
+        while (vc >= 0i64) {
+            // a view is `(lo len)`: the conditional form is an object's (no section needs a conditional view)
+            if (!(raw sx_is_list(s, vc)) || ((raw sx_len(s, vc)) != 2i64)) { drop tx_problem(t, "a views range is not `(lo len)`"); break; }
+            drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, vc, 0i64), e, m));
+            drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, vc, 1i64), e, m));
+            drop strlist_push(@whens, "");
+            vc = s.nodes.items[vc].next;
+        }
     }
     string:top = raw pow2_decimal(64i64);
     for (int64:i in 0i64...los.count) {
         string:lo = raw strlist_view(los, i);
         string:ln = raw strlist_view(lens, i);
         drop strlist_push(@facts, raw smt_app2("and", raw smt_app2("<=", "0", lo), raw smt_app2("<=", raw smt_app2("+", lo, ln), top)));
-        for (int64:k in 0i64...i) {
+        // an object: apart from every object before it; a view: apart from every object, from no view
+        int64:kmax = i;
+        if (i >= nobj) { kmax = nobj; }
+        for (int64:k in 0i64...kmax) {
             string:o = raw strlist_view(los, k);
             string:oln = raw strlist_view(lens, k);
             string:apart = raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", lo, ln), o), raw smt_app2("<=", raw smt_app2("+", o, oln), lo));
@@ -1607,7 +1636,8 @@ func:loop_inv_text = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:lclause, int6
     string:text = raw render_clause(t, ft, s, inv, e, m);
     int64:oc = raw spec_clause(s, lclause, "objects", 0i64);
     if (oc < 0i64) { pass text; }
-    List<string>:facts = raw objects_facts(t, ft, s, oc, e, m, false);
+    // a loop clause takes no views (the spec belt refuses the sub-clause)
+    List<string>:facts = raw objects_facts(t, ft, s, oc, 0i64 - 1i64, e, m, false);
     for (int64:i in 0i64...facts.count) { text = string_concat(raw smt_app2("and", text, raw strlist_view(facts, i)), ""); }
     pass text;
 };
@@ -3332,10 +3362,11 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
         st = string_concat(st, int_to_string(rk));
         drop tx_row_ex(t, st, raw smt_app2("=>", pc, p), "");
     }
-    // 1b. the callee's objects: rows at the call
+    // 1b. the callee's objects and views: rows at the call
     int64:oc = raw spec_clause(s, sec, "objects", 0i64);
-    if (oc >= 0i64) {
-        List<string>:ofacts = raw objects_facts(t, ft, s, oc, @e, @plain, false);
+    int64:vc = raw spec_clause(s, sec, "views", 0i64);
+    if ((oc >= 0i64) || (vc >= 0i64)) {
+        List<string>:ofacts = raw objects_facts(t, ft, s, oc, vc, @e, @plain, false);
         for (int64:oi2 in 0i64...ofacts.count) {
             string:st2 = string_concat(site, ":objects:");
             st2 = string_concat(st2, int_to_string(oi2 + 1i64));
@@ -3509,23 +3540,54 @@ func:frame_names_objects = bool(Sxs->:s, int64:fr) never fails {
     pass false;
 };
 
-// The condition that the point `f` lies in one of a section's declared
-// objects, rendered under `e` ("false" when it declares none).
+// The condition that the point `f` lies in one of a section's VIEWS, rendered
+// under `e` ("false" when it declares none). A NULL view is no view (the
+// convention `objects_facts` keeps for its pairs): without the conjunct a null
+// view of length n would name the bytes [0, n), which nothing sets apart from
+// an object, and the frame row below would claim an object's written bytes
+// unchanged.
+func:views_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, BMeta->:m, string:f) never fails {
+    string:out = "false";
+    int64:vc0 = raw spec_clause(s, sec, "views", 0i64);
+    if (vc0 < 0i64) { pass out; }
+    int64:vc = s.nodes.items[vc0].first;
+    vc = s.nodes.items[vc].next;
+    while (vc >= 0i64) {
+        if (!(raw sx_is_list(s, vc)) || ((raw sx_len(s, vc)) != 2i64)) { drop tx_problem(t, "a views range is not `(lo len)`"); pass "false"; }
+        string:lo = raw render(t, ft, s, raw sx_nth(s, vc, 0i64), e, m);
+        string:ln = raw render(t, ft, s, raw sx_nth(s, vc, 1i64), e, m);
+        string:inr = raw smt_app2("and", raw smt_app1("not", raw smt_app2("=", lo, "0")),
+                                         raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln))));
+        if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
+        vc = s.nodes.items[vc].next;
+    }
+    pass out;
+};
+
+// The condition that the point `f` lies in what a section was HANDED -- one
+// of its declared objects or one of its views -- rendered under `e` ("false"
+// when it declares neither). The objects come first, the text they always
+// were.
 func:objects_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, BMeta->:m, string:f) never fails {
     string:out = "false";
     int64:oc0 = raw spec_clause(s, sec, "objects", 0i64);
-    if (oc0 < 0i64) { pass out; }
-    int64:oc = s.nodes.items[oc0].first;
-    oc = s.nodes.items[oc].next;
-    while (oc >= 0i64) {
-        if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); pass "false"; }
-        string:lo = raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m);
-        string:ln = raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m);
-        string:inr = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
-        // an `apart-when` range is one of the symbol's objects where its condition holds
-        if ((raw sx_len(s, oc)) == 4i64) { inr = raw smt_app2("and", raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m), inr); }
-        if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
+    if (oc0 >= 0i64) {
+        int64:oc = s.nodes.items[oc0].first;
         oc = s.nodes.items[oc].next;
+        while (oc >= 0i64) {
+            if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); pass "false"; }
+            string:lo = raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m);
+            string:ln = raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m);
+            string:inr = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
+            // an `apart-when` range is one of the symbol's objects where its condition holds
+            if ((raw sx_len(s, oc)) == 4i64) { inr = raw smt_app2("and", raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m), inr); }
+            if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
+            oc = s.nodes.items[oc].next;
+        }
+    }
+    string:vin = raw views_in(t, ft, s, sec, e, m, f);
+    if (!(raw text_eq(vin, "false"))) {
+        if (raw text_eq(out, "false")) { out = move(vin); } else { out = raw smt_app2("or", out, vin); }
     }
     pass out;
 };
@@ -4495,7 +4557,16 @@ func:tx_section_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:sec) 
         REnv:ef = raw renv_new("mem", "mem2", true, true);
         string:inr = raw frame_in_ranges(t, ft, s, fr, @ef, @plain, fx);
         if (!(raw text_eq(stack_in, "false"))) { inr = string_concat(raw smt_app2("or", inr, stack_in), ""); }
-        string:fguard = raw smt_app2("and", raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap")), raw smt_app1("not", inr));
+        // A VIEW IS READ-ONLY, AND THIS ROW IS WHAT PROVES IT (1.5.6c step 1): no
+        // frame range exempts a byte of a view -- a point inside one is claimed
+        // unchanged wherever else it lies. A section without views builds the
+        // text it always did. (With no frame clause the default row below claims
+        // every byte; under `(frame objects)` `objects_in` counts the views among
+        // what the symbol was handed.)
+        string:outside = raw smt_app1("not", inr);
+        string:vin = raw views_in(t, ft, s, sec, @ef, @plain, fx);
+        if (!(raw text_eq(vin, "false"))) { outside = string_concat(raw smt_app2("or", outside, vin), ""); }
+        string:fguard = raw smt_app2("and", raw smt_app2("and", "|pc:exit|", raw smt_app1("not", "trap")), outside);
         bool:emit_frame = true;
         if (raw frame_names_objects(s, fr)) {
             // over the caller's objects only; with none declared nothing is claimed
@@ -4777,12 +4848,13 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
     }
     drop tx_declare(@t, "|frame:x|", "Int");
     drop tx_range(@t, "|frame:x|", 64i64);
-    // `(objects (lo len) ...)`: the byte ranges the parameters name
+    // `(objects (lo len) ...)` and `(views (lo len) ...)`: the byte ranges the parameters name
     int64:ok_ = raw spec_clause(s, sec, "objects", 0i64);
-    if (ok_ >= 0i64) {
+    int64:vk_ = raw spec_clause(s, sec, "views", 0i64);
+    if ((ok_ >= 0i64) || (vk_ >= 0i64)) {
         BMeta:plain0 = raw meta_plain_of(@x);
         REnv:eo = raw renv_new("mem", "", false, true);
-        List<string>:ofacts = raw objects_facts(@t, ft, s, ok_, @eo, @plain0, true);
+        List<string>:ofacts = raw objects_facts(@t, ft, s, ok_, vk_, @eo, @plain0, true);
         for (int64:of in 0i64...ofacts.count) { drop tx_hyp(@t, raw strlist_view(ofacts, of), "requires", 0i64); }
     }
     // the blocks in dominance order

@@ -958,7 +958,13 @@
   ; a's bytes then b's in a fresh block of exactly their total, or a's pointer
   ; with length 0 for an empty result (DEF-25); the quarantine tripwire traps
   ; on a poisoned source
-  (objects (a.0 a.1) (b.0 b.1))
+  ; THE TWO INPUTS ARE VIEWS, NOT OBJECTS (1.5.6c step 1, lead E-1): `(objects (a.0 a.1) (b.0 b.1))` asserted
+  ; them APART, false for `string_concat(s, s)` -- a legal program, in the tree twice -- and for any two
+  ; overlapping views `string_from_bytes` makes; for such a call every row here assumed a falsehood and claimed
+  ; nothing. The body only reads them (the frame row proves it: no byte of a view changes) and writes a fresh
+  ; block, so the apartness was never needed: with it deleted all twelve rows still discharge. WHO KEEPS THE
+  ; REST (in the address space, live): emitted code, the one caller -- nothing proves it at the call.
+  (views (a.0 a.1) (b.0 b.1))
   (requires (<= (+ a.0 a.1) 18446744073709551616))
   (requires (<= (+ b.0 b.1) 18446744073709551616))
   (requires (< (+ a.1 b.1) 18446744073709551616))

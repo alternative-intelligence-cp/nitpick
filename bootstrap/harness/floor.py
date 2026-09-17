@@ -685,7 +685,16 @@ _DEFINE_HEAD_RE = re.compile(r'^define\s+(?:internal\s+|private\s+)?(.*?)\s*(@[\
 _STRUCT_TYPE_RE = re.compile(r'^(%[\w.$-]+)\s*=\s*type\s*(\{.*\})\s*$')
 
 _CLAUSE_HEADS = ("free", "requires", "ensures", "ensures-trap", "frame", "loop", "summary", "residue", "boundary",
-                 "objects", "ensures-fresh")
+                 "objects", "ensures-fresh", "views")
+
+# A HEAD THE TRANSLATOR READS ONCE MAY BE WRITTEN ONCE (1.5.6c step 1). `spec_clause(s, sec, HEAD, 0)` is how
+# `npkg/floor_smt.npk` reads each of these, so a second one was dropped in silence: for `frame`, `ensures-trap` and
+# `ensures-fresh` a CLAIM written and never proven, for `objects` and `views` a hypothesis written and never
+# assumed. The order is the order both runners report in.
+_ONCE_HEADS = ("objects", "views", "frame", "ensures-trap", "ensures-fresh", "residue", "boundary", "summary")
+
+# what a `(loop LABEL ...)` clause may hold: the translator reads these four and nothing else
+_LOOP_CLAUSE_HEADS = ("invariant", "unroll", "objects", "inst")
 
 _CLASS_DEFAULT = {
     "asm": "the volatile bottom (inline asm): TRUSTED, documented; no proof",
@@ -767,7 +776,9 @@ def check_spec(floor_text, spec_text, name="floor"):
     ...) names a block of it with exactly one treatment; every section claims
     something (a clause that yields rows) or says why not (residue, boundary);
     a (summary) section has an ensures; no symbol twice; no clause head outside
-    the grammar; no free symbol shadowing a parameter."""
+    the grammar; no free symbol shadowing a parameter; a head the translator
+    reads once written once, and a loop holding only the four sub-clauses it
+    reads (1.5.6c step 1: either was dropped in silence before)."""
     fails = []
     try:
         forms = sexpr(spec_text)
@@ -821,6 +832,19 @@ def check_spec(floor_text, spec_text, name="floor"):
                 treatments = sum(1 for x in cl[2:] if isinstance(x, list) and x and _atom(x[0]) in ("invariant", "unroll"))
                 if treatments != 1:
                     fails.append("%s: runtime/npkrt.spec: the loop %s of %s needs exactly one of (invariant I) and (unroll N)" % (name, label, sym))
+                # a sub-clause the translator does not read would be dropped in silence (1.5.6c step 1)
+                for x in cl[2:]:
+                    if not isinstance(x, list):
+                        fails.append("%s: runtime/npkrt.spec: a bare word inside the loop %s of %s" % (name, label, sym))
+                        continue
+                    xh = (_atom(x[0]) if x else None) or ""   # the twin's `sx_head`: "" for a head that is no atom
+                    if xh not in _LOOP_CLAUSE_HEADS:
+                        fails.append("%s: runtime/npkrt.spec: a loop sub-clause the grammar does not know in the loop %s of %s: %s" % (name, label, sym, xh))
+                if sum(1 for x in cl[2:] if isinstance(x, list) and x and _atom(x[0]) == "objects") > 1:
+                    fails.append("%s: runtime/npkrt.spec: a clause read once and written twice in the loop %s of %s: objects" % (name, label, sym))
+        for once in _ONCE_HEADS:
+            if sum(1 for cl in form[2:] if isinstance(cl, list) and cl and _atom(cl[0]) == once) > 1:
+                fails.append("%s: runtime/npkrt.spec: a clause read once and written twice in %s: %s" % (name, sym, once))
         if not (claims or excused):
             fails.append("%s: runtime/npkrt.spec: a section with no claim and no residue or boundary sentence: %s" % (name, sym))
         if summary and not has_ensures:
