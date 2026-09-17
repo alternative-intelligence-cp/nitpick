@@ -368,7 +368,8 @@ def main():
     # (`tools/floorspec.npk`, with the snapshot) over a synthetic root.
     fl_floor = ("define i64 @f(i64 %a) {\nentry:\n  %r = add i64 %a, 1\n  ret i64 %r\n}\n"
                 "define i64 @g(i64 %a) {\nentry:\n  switch i64 %a, label %d [ i64 0, label %z ]\n"
-                "z:\n  ret i64 0\nd:\n  ret i64 1\n}\n")
+                "z:\n  ret i64 0\nd:\n  ret i64 1\n}\n"
+                "define void @v(ptr %p, ptr %q) {\nentry:\n  ret void\n}\n")
     ftool = harness.build_tool(tmp, tools, os.path.join(ROOT, "tools", "floorspec.npk"), "floorspec")
     if not ftool or not os.path.exists(str(ftool)):
         bad += 1
@@ -380,7 +381,13 @@ def main():
                 ("floor-refuted-control", "(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n", False,
                  "the same symbol under a clause its IR meets must pass"),
                 ("floor-form", "(symbol @g (ensures (< result 2)))\n", True,
-                 "an instruction form outside the floor's subset must fail by line")):
+                 "an instruction form outside the floor's subset must fail by line"),
+                # `(lo len apart-when COND)` (1.5.6c step 0): the range is set apart only where COND holds, so
+                # a claim that needs the apartness everywhere is refuted and the same claim under COND discharges
+                ("floor-apart-when", "(symbol @v (objects (p 8) (q 8 apart-when (= p 16))) (ensures (=> (and (not (= p 0)) (not (= q 0))) (not (= p q)))))\n", True,
+                 "an `apart-when` range is apart only under its condition: a claim that needs it everywhere must fail"),
+                ("floor-apart-when-control", "(symbol @v (objects (p 8) (q 8 apart-when (= p 16))) (ensures (=> (and (= p 16) (not (= q 0))) (not (= p q)))))\n", False,
+                 "the same claim under the range's condition must pass")):
             froot = os.path.join(tmp, name.replace("-", "_"))
             os.makedirs(os.path.join(froot, "runtime"), exist_ok=True)
             with open(os.path.join(froot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:

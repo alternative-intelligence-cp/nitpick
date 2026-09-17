@@ -1324,21 +1324,48 @@ func:split_top_commas = List<string>(string:s) never fails {
     pass out;
 };
 
+// Whether an `objects` entry is `(lo len)` or `(lo len apart-when COND)`.
+func:range_entry_ok = bool(Sxs->:s, int64:node) never fails {
+    if (!(raw sx_is_list(s, node))) { pass false; }
+    int64:n = raw sx_len(s, node);
+    if (n == 2i64) { pass true; }
+    if (n != 4i64) { pass false; }
+    int64:kw = raw sx_nth(s, node, 2i64);
+    if (raw sx_is_list(s, kw)) { pass false; }
+    pass (raw text_eq(raw sx_atom(s, kw), "apart-when"));
+};
+
 // `(objects (lo len) ...)`: the caller's objects -- each range within the
 // address space and the listed ranges pairwise disjoint (a null or an empty
 // range is no object and overlaps nothing) -- as facts rendered under `e`; a
 // section's are its hypotheses (`record` keeps the ranges for the allocator's
 // freshness promise), a summary callee's are rows at the call.
+//
+// `(lo len apart-when COND)` (1.5.6c step 0): a range that lies in the address
+// space ALWAYS and is set apart from the section's other objects only WHERE
+// `COND` HOLDS -- the form for an object the body touches on some paths alone.
+// `npk_small_free`'s list neighbours are the case: the body moves the chunk
+// between lists only when it was full, and only then are the neighbours and
+// the partial list's head three OTHER chunks; asserted apart unconditionally
+// (the clause 1.5.6 wrote) the hypothesis was false for the ordinary free,
+// into a chunk already on the partial list, and every row claimed nothing
+// for it. A pair is apart where BOTH ranges' conditions hold. Everything else
+// about the range is an object's -- so the body's text, and the solver's work,
+// stay what they were (an `ite` to a null `lo` says the same and cost the file
+// 357 s against 202, past the hang net: measured in the runners' own mode).
 func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, REnv->:e, BMeta->:m, bool:record) never fails {
     List<string>:los = raw list_init::<string>(4i64);
     List<string>:lens = raw list_init::<string>(4i64);
+    List<string>:whens = raw list_init::<string>(4i64);
     List<string>:facts = raw list_init::<string>(8i64);
     int64:oc = s.nodes.items[oc0].first;
     oc = s.nodes.items[oc].next;
     while (oc >= 0i64) {
-        if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); break; }
+        if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); break; }
         drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
         drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
+        if ((raw sx_len(s, oc)) == 4i64) { drop strlist_push(@whens, raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m)); }
+        else { drop strlist_push(@whens, ""); }
         oc = s.nodes.items[oc].next;
     }
     string:top = raw pow2_decimal(64i64);
@@ -1352,7 +1379,12 @@ func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, RE
             string:apart = raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", lo, ln), o), raw smt_app2("<=", raw smt_app2("+", o, oln), lo));
             string:no_obj = raw smt_app2("or", raw smt_app2("or", raw smt_app2("=", lo, "0"), raw smt_app2("=", o, "0")),
                                              raw smt_app2("or", raw smt_app2("=", ln, "0"), raw smt_app2("=", oln, "0")));
-            drop strlist_push(@facts, raw smt_app2("or", no_obj, apart));
+            string:pairf = raw smt_app2("or", no_obj, apart);
+            string:wi = raw strlist_view(whens, i);
+            string:wk = raw strlist_view(whens, k);
+            if (wi.len > 0i64) { pairf = raw smt_app2("or", raw smt_app1("not", wi), pairf); }
+            if (wk.len > 0i64) { pairf = raw smt_app2("or", raw smt_app1("not", wk), pairf); }
+            drop strlist_push(@facts, pairf);
         }
         if (record) { drop strlist_push(@t.obj_lo, lo); drop strlist_push(@t.obj_len, ln); }
     }
@@ -3486,10 +3518,12 @@ func:objects_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, B
     int64:oc = s.nodes.items[oc0].first;
     oc = s.nodes.items[oc].next;
     while (oc >= 0i64) {
-        if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); pass "false"; }
+        if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); pass "false"; }
         string:lo = raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m);
         string:ln = raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m);
         string:inr = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
+        // an `apart-when` range is one of the symbol's objects where its condition holds
+        if ((raw sx_len(s, oc)) == 4i64) { inr = raw smt_app2("and", raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m), inr); }
         if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
         oc = s.nodes.items[oc].next;
     }

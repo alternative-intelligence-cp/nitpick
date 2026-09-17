@@ -674,10 +674,22 @@
   (requires (=> (and (<= 0 j) (< j k) (< k (load64 mem npk_chtab_len)))
                 (< (load64 mem (+ (load64 mem npk_chtab) (* 8 j))) (load64 mem (+ (load64 mem npk_chtab) (* 8 k))))))
   (requires (<= (+ (- ip (mod ip 65536)) 65536) 18446744073709551616))
+  ; THE LIST OBJECTS ARE OBJECTS ONLY WHEN THE BODY TOUCHES THEM (1.5.6c step 0, lead E-1). The chunk's two
+  ; list neighbours and the class's partial-list head were declared apart from the chunk and from one another
+  ; UNCONDITIONALLY -- false for the ordinary free: a chunk that is already partial is ON the partial list, so
+  ; when it is that list's head the chunk and the head are one 64 KiB, and when it is second its `prev` is the
+  ; head (npk_small_alloc allocates from the partial head, so a LIFO free lands exactly there). For those frees
+  ; every row of this section assumed a falsehood and claimed nothing. The body reads the three only in
+  ; `topart` -- when the chunk WAS FULL (its free count at entry, the word at +24, is zero) and moves from the
+  ; full list to the partial one -- and there the clause is true: a chunk is on one list and the lists are
+  ; linear, so its full-list neighbours and the partial head are three other chunks, or null. So each of the
+  ; three is `apart-when` that count is zero: in the address space always (a list word is null or a chunk),
+  ; set apart only where the body reads it. WHO KEEPS IT: npk_dalloc, the one caller, a boundary symbol --
+  ; nothing proves it at the call; that a chunk is on one list and the lists are linear is leg A's (D-233).
   (objects ((- ip (mod ip 65536)) 65536)
-           ((load64 mem (+ (- ip (mod ip 65536)) 40)) 65536)
-           ((load64 mem (+ (- ip (mod ip 65536)) 48)) 65536)
-           ((load64 mem (+ npk_cls_part (* 8 (load64 mem (+ (- ip (mod ip 65536)) 8))))) 65536)
+           ((load64 mem (+ (- ip (mod ip 65536)) 40)) 65536 apart-when (= (load64 mem (+ (- ip (mod ip 65536)) 24)) 0))
+           ((load64 mem (+ (- ip (mod ip 65536)) 48)) 65536 apart-when (= (load64 mem (+ (- ip (mod ip 65536)) 24)) 0))
+           ((load64 mem (+ npk_cls_part (* 8 (load64 mem (+ (- ip (mod ip 65536)) 8))))) 65536 apart-when (= (load64 mem (+ (- ip (mod ip 65536)) 24)) 0))
            (npk_cls_part 112) (npk_cls_full 112) (npk_hs_live 8) (npk_quarantine 8) (npk_hsec 8) (npk_cls_size 112) (npk_cls_data 112))
   (loop poison (invariant (and (<= 0 pi) (<= pi cls)
                     (= (load64 mem2 npk_hs_live) (mod (- (load64 mem npk_hs_live) hsn) 18446744073709551616))

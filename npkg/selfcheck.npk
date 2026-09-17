@@ -558,9 +558,9 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     // and a program kind in runtime/npkrt.obligations likewise; and the
     // committed floor parses to its counts. One synthetic floor text -- the
     // harness's, byte for byte.
-    string:fl_floor = "define i64 @f(i64 %a) {\nentry:\n  %r = add i64 %a, 1\n  ret i64 %r\n}\ndefine i64 @g(i64 %a) {\nentry:\n  switch i64 %a, label %d [ i64 0, label %z ]\nz:\n  ret i64 0\nd:\n  ret i64 1\n}\n";
+    string:fl_floor = "define i64 @f(i64 %a) {\nentry:\n  %r = add i64 %a, 1\n  ret i64 %r\n}\ndefine i64 @g(i64 %a) {\nentry:\n  switch i64 %a, label %d [ i64 0, label %z ]\nz:\n  ret i64 0\nd:\n  ret i64 1\n}\ndefine void @v(ptr %p, ptr %q) {\nentry:\n  ret void\n}\n";
     FloorText:flt = raw floor_parse(fl_floor);
-    for (int64:fi in 0i64...2i64) {
+    for (int64:fi in 0i64...4i64) {
         string:fname = "floor-refuted";
         string:fspec = "(symbol @f (ensures (= result a)))\n";
         bool:fmust_fail = true;
@@ -570,6 +570,22 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             fspec = "(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n";
             fmust_fail = false;
             fwhy = "the same symbol under a clause its IR meets must pass";
+        }
+        // `(lo len apart-when COND)` (1.5.6c step 0), the harness's two texts byte
+        // for byte: the range is set apart only where COND holds, so a claim that
+        // needs the apartness everywhere is refuted and the same claim under COND
+        // discharges
+        if (fi == 2i64) {
+            fname = "floor-apart-when";
+            fspec = "(symbol @v (objects (p 8) (q 8 apart-when (= p 16))) (ensures (=> (and (not (= p 0)) (not (= q 0))) (not (= p q)))))\n";
+            fmust_fail = true;
+            fwhy = "an `apart-when` range is apart only under its condition: a claim that needs it everywhere must fail";
+        }
+        if (fi == 3i64) {
+            fname = "floor-apart-when-control";
+            fspec = "(symbol @v (objects (p 8) (q 8 apart-when (= p 16))) (ensures (=> (and (= p 16) (not (= q 0))) (not (= p q)))))\n";
+            fmust_fail = false;
+            fwhy = "the same claim under the range's condition must pass";
         }
         Sxs:fsx = raw sx_parse(fspec);
         string:fdir = raw path_join(dir, raw text_replace_byte(fname, 45u8, 95u8));
