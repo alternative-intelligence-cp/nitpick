@@ -43,6 +43,7 @@ use "./elf.npk".*;
 use "./verify.npk".*;                          // elided_ir_checks, VRow (the bypass cases)
 use "../src/backend/smt/smt_kinds.npk".*;      // OV_OPEN / OV_DISCHARGED
 use "./floor_shared.npk".*;                    // the shared-state belt's cases
+use "./floor_stack.npk".*;                     // the stack rule's cases (1.5.6b)
 use "./floor_ir.npk".*;                        // the floor leg's cases (1.5.6 step 3)
 use "./floor_spec.npk".*;
 use "./floor_smt.npk".*;
@@ -241,6 +242,67 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         if (!sok) {
             if (smust_fail) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
             else { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(sfl, 0i64))); }
+        }
+    }
+
+    // THE STACK RULE (1.5.6b; DEF-52, DEF-53). SECOND HALF, `floor_stack_check`: an
+    // alloca handed to a call before its entry block has defined ALL of it must
+    // fail -- undefined, and half defined -- and the same alloca under one
+    // whole-size memset, or under covering stores, must pass. FIRST HALF: D-173's
+    // own `ir_allocas_hoisted` REACHES A FLOOR TEXT -- an alloca in a loop body of
+    // a hand-written define must fail and the same alloca hoisted must pass; that
+    // the check was never pointed at the floor WAS the defect. The harness's six
+    // cases, byte for byte.
+    for (int64:ki in 0i64...6i64) {
+        string:kname = "alloca-not-defined";
+        string:ktext = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n";
+        bool:kmust_fail = true;
+        bool:kfirst = false;
+        string:kwhy = "an alloca handed to a call with none of it defined must fail";
+        if (ki == 1i64) {
+            kname = "alloca-half-defined";
+            ktext = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  %m0 = getelementptr [2 x i64], ptr %m, i64 0, i64 0\n  store i64 0, ptr %m0\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n";
+            kmust_fail = true;
+            kfirst = false;
+            kwhy = "an alloca with 8 of its 16 bytes stored must fail";
+        }
+        if (ki == 2i64) {
+            kname = "alloca-memset-control";
+            ktext = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  call void @llvm.memset.p0.i64(ptr %m, i8 0, i64 16, i1 false)\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n";
+            kmust_fail = false;
+            kfirst = false;
+            kwhy = "the same alloca under one whole-size memset must pass";
+        }
+        if (ki == 3i64) {
+            kname = "alloca-stores-control";
+            ktext = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  %m0 = getelementptr [2 x i64], ptr %m, i64 0, i64 0\n  store i64 0, ptr %m0\n  %m1 = getelementptr [2 x i64], ptr %m, i64 0, i64 1\n  store i64 0, ptr %m1\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n";
+            kmust_fail = false;
+            kfirst = false;
+            kwhy = "the same alloca under two covering stores must pass";
+        }
+        if (ki == 4i64) {
+            kname = "floor-alloca-not-entry";
+            ktext = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f(i64 %n) {\nentry:\n  br label %loop\nloop:\n  %i = phi i64 [ 0, %entry ], [ %j, %body ]\n  %d = icmp uge i64 %i, %n\n  br i1 %d, label %fin, label %body\nbody:\n  %m = alloca i64, align 8\n  store i64 1, ptr %m\n  %r = call i64 @k(ptr %m)\n  %j = add i64 %i, 1\n  br label %loop\nfin:\n  ret i64 0\n}\n";
+            kmust_fail = true;
+            kfirst = true;
+            kwhy = "D-173's check must reach a floor text: an alloca in a loop body must fail";
+        }
+        if (ki == 5i64) {
+            kname = "floor-alloca-entry-control";
+            ktext = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f(i64 %n) {\nentry:\n  %m = alloca i64, align 8\n  store i64 1, ptr %m\n  br label %loop\nloop:\n  %i = phi i64 [ 0, %entry ], [ %j, %body ]\n  %d = icmp uge i64 %i, %n\n  br i1 %d, label %fin, label %body\nbody:\n  %r = call i64 @k(ptr %m)\n  %j = add i64 %i, 1\n  br label %loop\nfin:\n  ret i64 0\n}\n";
+            kmust_fail = false;
+            kfirst = true;
+            kwhy = "the same alloca hoisted to the entry block must pass";
+        }
+        List<string>:kfl = raw list_init::<string>(1i64);
+        if (kfirst) { kfl = raw ir_allocas_hoisted(ktext, kname); }
+        else { kfl = raw floor_stack_check(ktext, kname); }
+        bool:kok = ((kfl.count > 0i64) == kmust_fail);
+        if (!kok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(kname, kok, kwhy));
+        if (!kok) {
+            if (kmust_fail) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(kfl, 0i64))); }
         }
     }
 

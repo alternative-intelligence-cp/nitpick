@@ -547,6 +547,108 @@ def check_shared(floor_text, spec_text, name="floor"):
     return fails
 
 
+# ---------------------------------------------------------------------------
+# THE STACK RULE's SECOND HALF (1.5.6b; DEF-52). Every `alloca` of the floor is
+# FULLY DEFINED in its entry block before anything else touches it -- by stores
+# that cover every byte of it, or by one `llvm.memset` of its whole size.
+#
+# The FIRST half -- every alloca sits in the entry block -- is D-173's, settled
+# at 1.0.9a and held by `check_allocas_hoisted` over every EMITTED module since.
+# It had never been pointed at the hand-written floor (DEF-53: eight of the
+# floor's fifteen allocas sat outside their entry blocks, two of them inside
+# loops); the harness and `npkg build` now run that same check over
+# `runtime/npkrt.ll`, and this function adds nothing to it. One rule, one belt.
+#
+# DEF-52 is what this half is for: `npk_hardware_concurrency` handed the kernel
+# a buffer it never zeroed and read all of it back, where the raw syscall
+# writes only `result` bytes -- a value never written (D-227's family). The
+# rule is syntactic on purpose: no exceptions to remember, and a belt can hold
+# it. It looks only at the entry block, because D-173 says that is where every
+# alloca is. `npkg/floor_stack.npk` is this function's twin, finding for
+# finding.
+_ALLOCA_RE = re.compile(r'^(%[\w.$-]+) = alloca (.+?)(?:, align \d+)?$')
+_GEP_ARR_RE = re.compile(r'^(%[\w.$-]+) = getelementptr (?:inbounds )?\[(\d+) x ([^\]]+)\], ptr (%[\w.$-]+), i64 0, i64 (\d+)$')
+_GEP_I8_RE = re.compile(r'^(%[\w.$-]+) = getelementptr (?:inbounds )?i8, ptr (%[\w.$-]+), i64 (\d+)$')
+_STORE_TO_RE = re.compile(r'^store (?:atomic )?(?:volatile )?(i\d+|ptr) .+, ptr (%[\w.$-]+)(?:,| |$)')
+_MEMSET_RE = re.compile(r'^call void @llvm\.memset\.p0\.i64\(ptr (%[\w.$-]+), i8 \d+, i64 (\d+), i1 false\)$')
+_REG_RE = re.compile(r'%[\w.$-]+')
+
+
+def ir_type_bytes(ty):
+    """The size in bytes of the IR types the floor's allocas use: iN, ptr, and
+    arrays of them. Anything else is a ValueError -- a form the rule was not
+    written for is a finding, never a guess."""
+    ty = ty.strip()
+    m = re.match(r'^\[(\d+) x (.+)\]$', ty)
+    if m:
+        return int(m.group(1)) * ir_type_bytes(m.group(2))
+    if ty == "ptr":
+        return 8
+    m = re.match(r'^i(\d+)$', ty)
+    if m:
+        return (int(m.group(1)) + 7) // 8
+    raise ValueError("an alloca of a type the stack rule does not size: %s" % ty)
+
+
+def check_stack(floor_text, name="floor"):
+    """The rule over one floor text; the failures by name (`alloca-not-defined`)."""
+    try:
+        fns, order = parse_floor(floor_text)
+    except ValueError as e:
+        return ["%s: %s" % (name, e)]
+    fails = []
+    for fname in order:
+        fn = fns[fname]
+        size = {}      # alloca register -> bytes
+        at = {}        # register -> (alloca register, byte offset)
+        have = {}      # alloca register -> set of defined byte offsets
+        told = set()
+        for line in fn.blocks[0].lines:
+            m = _ALLOCA_RE.match(line)
+            if m:
+                try:
+                    size[m.group(1)] = ir_type_bytes(m.group(2))
+                except ValueError as e:
+                    fails.append("%s: alloca-not-defined: `%s`: %s" % (name, fname, e))
+                    continue
+                at[m.group(1)] = (m.group(1), 0)
+                have[m.group(1)] = set()
+                continue
+            g = _GEP_ARR_RE.match(line)
+            if g and g.group(4) in size:
+                at[g.group(1)] = (g.group(4), int(g.group(5)) * ir_type_bytes(g.group(3)))
+                continue
+            g = _GEP_I8_RE.match(line)
+            if g and g.group(2) in size:
+                at[g.group(1)] = (g.group(2), int(g.group(3)))
+                continue
+            s = _STORE_TO_RE.match(line)
+            if s and s.group(2) in at:
+                base, off = at[s.group(2)]
+                have[base].update(range(off, off + ir_type_bytes(s.group(1))))
+                continue
+            ms = _MEMSET_RE.match(line)
+            if ms and ms.group(1) in size:
+                have[ms.group(1)].update(range(0, int(ms.group(2))))
+                continue
+            # any other line naming the alloca, or a constant offset of it, is a USE
+            for reg in _REG_RE.findall(line):
+                if reg in at:
+                    base = at[reg][0]
+                    if base not in told and not set(range(size[base])) <= have[base]:
+                        told.add(base)
+                        fails.append("%s: alloca-not-defined: `%s` uses `%s` (%d bytes) before its entry block has "
+                                     "defined all of it -- %d byte(s) defined; cover it with stores or one "
+                                     "llvm.memset of its whole size before anything else touches it (DEF-52)"
+                                     % (name, fname, base, size[base], len(have[base])))
+        for base in size:
+            if base not in told and not set(range(size[base])) <= have[base]:
+                fails.append("%s: alloca-not-defined: `%s` leaves `%s` (%d bytes) with %d byte(s) defined at the end of "
+                             "its entry block -- cover it with stores or one llvm.memset of its whole size (DEF-52)"
+                             % (name, fname, base, size[base], len(have[base])))
+    return fails
+
+
 def stated_words(spec_text):
     """The reviewer's statements, for TCB.md SS5: [(word text, class, reason)]."""
     words, under, exempt, locks = read_shared(spec_text)

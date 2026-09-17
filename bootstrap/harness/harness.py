@@ -3736,6 +3736,18 @@ def _floor_classes():
     return out
 
 
+def check_floor_stack_current():
+    """THE STACK RULE's SECOND HALF (1.5.6b, DEF-52): every alloca of the floor
+    is fully DEFINED in its entry block before anything else touches it -- by
+    covering stores or one whole-size `llvm.memset`. The first half (every
+    alloca IN the entry block) is D-173's and `check_allocas_hoisted` holds it,
+    over the floor as over every emission. The rule and its finding are
+    `floor.py`'s `check_stack`; `npkg/floor_stack.npk` is the twin."""
+    import floor
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        return floor.check_stack(fh.read(), "floor")
+
+
 def check_floor_shared_current():
     """THE SHARED-STATE BELT (1.5.6 step 0, D-290): every word of the floor
     two threads can reach is atomic or ordered by a named edge, and
@@ -4363,6 +4375,7 @@ def main(argv):
         failures += check_obligation_kinds_agree()
         failures += check_tcb_floor_current()
         failures += check_floor_shared_current()
+        failures += check_floor_stack_current()
         failures += check_floor_models_current()
         failures += check_tcb_syscalls_current()
         failures += check_tcb_residue_current()
@@ -4405,8 +4418,17 @@ def main(argv):
 
         # THE FLOOR IS HELD TO THE SAME BAN as every emission (D-218.10): it
         # is linked into every artifact, including the one that ships.
+        # ...AND TO D-173 (DEF-53, 1.5.6b): every alloca in its entry block. The
+        # rule was settled at 1.0.9a for the EMITTER and held over every emitted
+        # module since -- and never pointed at the hand-written floor, where
+        # eight of fifteen allocas sat outside their entry blocks and two of
+        # them inside loops (16 bytes of stack per pinged task in
+        # `npk_windup_all`, per futex return in `npk_thread_join`). A rule
+        # written for one spelling is owed to the other.
         with open(RUNTIME_LL, encoding="utf-8") as fh:
-            failures += check_no_undef(fh.read(), "runtime/npkrt.ll")
+            floor_text = fh.read()
+        failures += check_no_undef(floor_text, "runtime/npkrt.ll")
+        failures += check_allocas_hoisted(floor_text, "runtime/npkrt.ll")
 
 
 

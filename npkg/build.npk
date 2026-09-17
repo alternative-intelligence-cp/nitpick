@@ -286,6 +286,12 @@ pub async func:build_floor = Step(Ctx->:c) {
     if (ftext.is_error) { pass (raw step_bad("runtime/npkrt.ll could not be read for the undef ban")); }
     List<string>:fnu = raw ir_no_undef(ftext.value, "runtime/npkrt.ll");
     if (fnu.count > 0i64) { pass (raw step_bad(raw strlist_view(fnu, 0i64))); }
+    // ...AND TO D-173 (DEF-53, 1.5.6b): every alloca in its entry block. Settled
+    // at 1.0.9a for the emitter, held over every emitted module since, and never
+    // pointed at the hand-written floor -- where eight of fifteen allocas sat
+    // outside their entry blocks, two of them inside loops.
+    List<string>:fah = raw ir_allocas_hoisted(ftext.value, "runtime/npkrt.ll");
+    if (fah.count > 0i64) { pass (raw step_bad(raw strlist_view(fah, 0i64))); }
     string:obj = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "npkrt.o");
     Result<Step>:s = await llc_obj(c, c.m.llc_flags, rt, obj);
     if (s.is_error) { fail s.err; }

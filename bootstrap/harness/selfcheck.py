@@ -259,6 +259,45 @@ def main():
             else:
                 print("      the belt rejected it: %s" % fails[0])
 
+    # THE STACK RULE (1.5.6b; DEF-52, DEF-53). SECOND HALF, `floor.check_stack`:
+    # an alloca handed to a call before its entry block has defined ALL of it
+    # must fail -- undefined, and half defined -- and the same alloca under one
+    # whole-size memset, or under covering stores, must pass. FIRST HALF: D-173's
+    # own `check_allocas_hoisted` REACHES A FLOOR TEXT -- an alloca in a loop body
+    # of a hand-written define must fail and the same alloca hoisted must pass;
+    # that the check was never pointed at the floor WAS the defect.
+    # `npkg/selfcheck.npk` carries the same six cases by name, over the same texts.
+    st_undef = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n"
+    st_half = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  %m0 = getelementptr [2 x i64], ptr %m, i64 0, i64 0\n  store i64 0, ptr %m0\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n"
+    st_memset = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  call void @llvm.memset.p0.i64(ptr %m, i8 0, i64 16, i1 false)\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n"
+    st_stores = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f() {\nentry:\n  %m = alloca [2 x i64], align 16\n  %m0 = getelementptr [2 x i64], ptr %m, i64 0, i64 0\n  store i64 0, ptr %m0\n  %m1 = getelementptr [2 x i64], ptr %m, i64 0, i64 1\n  store i64 0, ptr %m1\n  %r = call i64 @k(ptr %m)\n  ret i64 %r\n}\n"
+    st_loop = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f(i64 %n) {\nentry:\n  br label %loop\nloop:\n  %i = phi i64 [ 0, %entry ], [ %j, %body ]\n  %d = icmp uge i64 %i, %n\n  br i1 %d, label %fin, label %body\nbody:\n  %m = alloca i64, align 8\n  store i64 1, ptr %m\n  %r = call i64 @k(ptr %m)\n  %j = add i64 %i, 1\n  br label %loop\nfin:\n  ret i64 0\n}\n"
+    st_hoisted = "declare i64 @k(ptr)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\ndefine i64 @f(i64 %n) {\nentry:\n  %m = alloca i64, align 8\n  store i64 1, ptr %m\n  br label %loop\nloop:\n  %i = phi i64 [ 0, %entry ], [ %j, %body ]\n  %d = icmp uge i64 %i, %n\n  br i1 %d, label %fin, label %body\nbody:\n  %r = call i64 @k(ptr %m)\n  %j = add i64 %i, 1\n  br label %loop\nfin:\n  ret i64 0\n}\n"
+    for name, text, must_fail, first_half, why in (
+            ("alloca-not-defined", st_undef, True, False,
+             "an alloca handed to a call with none of it defined must fail"),
+            ("alloca-half-defined", st_half, True, False,
+             "an alloca with 8 of its 16 bytes stored must fail"),
+            ("alloca-memset-control", st_memset, False, False,
+             "the same alloca under one whole-size memset must pass"),
+            ("alloca-stores-control", st_stores, False, False,
+             "the same alloca under two covering stores must pass"),
+            ("floor-alloca-not-entry", st_loop, True, True,
+             "D-173's check must reach a floor text: an alloca in a loop body must fail"),
+            ("floor-alloca-entry-control", st_hoisted, False, True,
+             "the same alloca hoisted to the entry block must pass")):
+        fails = (harness.check_allocas_hoisted(text, name) if first_half
+                 else floor.check_stack(text, name))
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      the belt accepted it; it should not have")
+            else:
+                print("      the belt rejected it: %s" % fails[0])
+
     # THE FLOOR'S LEG (1.5.6 step 3, D-288): a refuted clause fails by name
     # and the same symbol under a true clause passes; a section with no claim
     # and no residue fails; an instruction form outside the subset fails by

@@ -11,6 +11,7 @@ mod:floorspec;
 use "../lib/nio.npk".*;
 use "../npkg/text.npk".*;
 use "../npkg/floor_shared.npk".*;
+use "../npkg/floor_stack.npk".*;
 use "../npkg/floor.npk".*;
 use "../npkg/floor_ir.npk".*;
 use "../npkg/floor_smt.npk".*;
@@ -54,11 +55,14 @@ func:main = int32(cstring[]:argv) {
     }
     List<string>:fl = raw floor_shared_current(root);
     for (int64:i in 0i64...fl.count) { drop say(raw strlist_view(fl, i)); }
-    if (fl.count > 0i64) {
-        drop say(string_concat(int_to_string(fl.count), " finding(s)"));
+    // the stack rule (1.5.6b): every alloca in its entry block, defined there
+    List<string>:sl = raw floor_stack_current(root);
+    for (int64:j in 0i64...sl.count) { drop say(raw strlist_view(sl, j)); }
+    if ((fl.count + sl.count) > 0i64) {
+        drop say(string_concat(int_to_string(fl.count + sl.count), " finding(s)"));
         exit 1i32;
     }
-    drop say("floor: the shared-state classification holds (D-290)");
+    drop say("floor: the shared-state classification holds (D-290) and the stack rule holds (1.5.6b)");
     exit 0i32;
 };
 

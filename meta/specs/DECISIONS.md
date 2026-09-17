@@ -11995,6 +11995,19 @@ noted for when a lowering next adds an alloca.
 
 ---
 
+> **EXTENDED TO THE FLOOR at 1.5.6b step 0 (2026-09-17; DEF-53).** This rule and its
+> belt were written for the EMITTER and have held every emitted module since. They
+> had never been pointed at the hand-written `runtime/npkrt.ll`, where eight of
+> fifteen allocas sat outside their entry blocks and two of those inside loops (16
+> bytes of stack per pinged task in `npk_windup_all`, per futex return in
+> `npk_thread_join`; a loop-body alloca was measured to SIGSEGV under the pinned
+> `llc` at `-O0` and `-O2`). All eight are hoisted, and `check_allocas_hoisted`
+> (harness) and `ir_allocas_hoisted` (`npkg build`) run over the floor now -- the
+> same check, one more file. The floor gains the rule's complement beside it: every
+> alloca is fully DEFINED in its entry block before anything else touches it (DEF-52;
+> `floor.check_stack`, `npkg/floor_stack.npk`). A rule written for one spelling of a
+> construct was owed to the other.
+
 ## D-174 — `++` / `--` are struck; an increment is `x += 1`, not a value — **SETTLED**
 
 Closing cycle 1.0, `++`/`--` (`ExprPostfixExpr`) was the last "1.0" backend rung

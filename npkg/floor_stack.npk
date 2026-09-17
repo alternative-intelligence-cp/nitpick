@@ -1,0 +1,274 @@
+// floor_stack -- THE STACK RULE's SECOND HALF (1.5.6b; DEF-52): every
+// `alloca` of `runtime/npkrt.ll` is FULLY DEFINED in its entry block before
+// anything else touches it -- by stores that cover every byte of it, or by one
+// `llvm.memset` of its whole size.
+//
+// The FIRST half -- every alloca sits in the entry block -- is D-173's,
+// settled at 1.0.9a and held by `ir_allocas_hoisted` (irscan.npk) over every
+// EMITTED module since. It had never been pointed at the hand-written floor
+// (DEF-53: eight of the floor's fifteen allocas sat outside their entry
+// blocks, two of them inside loops -- 16 bytes of stack per pinged task in
+// `npk_windup_all`, per futex return in `npk_thread_join` -- and a loop-body
+// alloca was measured to SIGSEGV under the pinned `llc -O0` and `-O2` alike).
+// `npkg build` now runs that same check over the floor and this module adds
+// nothing to it: one rule, one belt.
+//
+// DEF-52 is what this half is for: `npk_hardware_concurrency` handed the
+// kernel a buffer it never zeroed and read all of it back, where the raw
+// syscall writes only `result` bytes -- a value never written (D-227's
+// family). The rule is syntactic on purpose: no exceptions to remember, and a
+// belt can hold it. It looks only at the entry block, because D-173 says that
+// is where every alloca is.
+//
+//   alloca-not-defined   an alloca whose bytes the entry block has not all
+//                        defined when something else first names it, or at
+//                        the entry block's end
+//
+// `bootstrap/harness/floor.py`'s `check_stack` is this module's twin, finding
+// for finding. A defining line is one of exactly four forms: the alloca, a
+// `getelementptr` of it at a CONSTANT offset (`[N x T], ptr %a, i64 0, i64 K`
+// or `i8, ptr %a, i64 K`), a `store` of an `iN` or a `ptr` through it or
+// through such an offset, and the whole-size memset intrinsic. Any other line
+// that names the alloca or one of its constant offsets is a USE.
+
+mod:floor_stack;
+
+use "./text.npk".*;
+use "./floor_ir.npk".*;
+
+// The bytes of `iN` or `ptr`; -1 for anything else. No division on purpose: a
+// belt adds no arm to the `failsafe` of every root that imports it.
+func:scalar_bytes = int64(string:ty) never fails {
+    if (raw text_eq(ty, "ptr")) { pass 8i64; }
+    if (raw text_eq(ty, "i8")) { pass 1i64; }
+    if (raw text_eq(ty, "i16")) { pass 2i64; }
+    if (raw text_eq(ty, "i32")) { pass 4i64; }
+    if (raw text_eq(ty, "i64")) { pass 8i64; }
+    if (raw text_eq(ty, "i128")) { pass 16i64; }
+    pass (0i64 - 1i64);
+};
+
+// The bytes of an alloca's type: a scalar, or one array level of scalars --
+// every shape the floor allocates. -1 is a finding, never a guess.
+func:alloca_bytes = int64(string:ty) never fails {
+    if (ty.len == 0i64) { pass (0i64 - 1i64); }
+    if (ty.ptr[0i64] != 91u8) { pass (raw scalar_bytes(ty)); }      // '['
+    int64:n = raw array_count(ty);
+    int64:eb = raw scalar_bytes(raw array_elem(ty));
+    if ((n <= 0i64) || (eb < 0i64)) { pass (0i64 - 1i64); }
+    pass (n * eb);
+};
+
+// `%r = alloca TY[, align N]`: the register, or "".
+func:alloca_reg = string(string:line) never fails {
+    if (line.len == 0i64) { pass ""; }
+    if (line.ptr[0i64] != 37u8) { pass ""; }                        // '%'
+    int64:eq = raw text_index_of(line, " = alloca ");
+    if (eq < 0i64) { pass ""; }
+    pass (raw text_slice(line, 0i64, eq));
+};
+
+func:alloca_type = string(string:line) never fails {
+    int64:eq = raw text_index_of(line, " = alloca ");
+    if (eq < 0i64) { pass ""; }
+    int64:s = eq + 10i64;
+    int64:e = raw text_index_from(line, ", align ", s);
+    if (e < 0i64) { e = line.len; }
+    pass (raw text_trim(raw text_slice(line, s, e)));
+};
+
+// The line's words, with the punctuation that glues operands blanked.
+func:words_of = List<string>(string:line) never fails {
+    string:a = raw text_replace_byte(line, 44u8, 32u8);             // ','
+    string:b = raw text_replace_byte(a, 40u8, 32u8);                // '('
+    string:c = raw text_replace_byte(b, 41u8, 32u8);                // ')'
+    pass (raw text_split_ws(c));
+};
+
+// The decimal a word spells, or -1: no offset and no size is negative, and the
+// taint rule wants `is_error` tested on its own before `value` is read.
+func:word_int = int64(string:s) never fails {
+    Result<int64>:r = text_int(s);
+    if (r.is_error) { pass (0i64 - 1i64); }
+    pass r.value;
+};
+
+// The index of `reg` in a list of register names, or -1.
+func:known_at = int64(List<string>:regs, string:reg) never fails {
+    for (int64:i in 0i64...regs.count) {
+        if (raw text_eq(raw strlist_view(regs, i), reg)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// The rule over one floor text; the failures by name.
+pub func:floor_stack_check = List<string>(string:floor_text, string:name) never fails {
+    List<string>:found = raw list_init::<string>(4i64);
+    FloorText:ft = raw floor_parse(floor_text);
+    for (int64:fi in 0i64...ft.fns.count) {
+        if (ft.fns.items[fi].blocks.count == 0i64) { continue; }
+        // the entry block defines every alloca before anything else names it
+        // (an alloca in any other block is D-173's finding, `ir_allocas_hoisted`)
+        List<string>:a_reg = raw list_init::<string>(4i64);     // the allocas, in order
+        List<int64>:a_size = raw list_init::<int64>(4i64);
+        List<int64>:a_base = raw list_init::<int64>(4i64);      // where its bytes start in `have`
+        List<int64>:a_told = raw list_init::<int64>(4i64);
+        List<int64>:have = raw list_init::<int64>(64i64);       // one cell per byte, all allocas end to end
+        List<string>:k_reg = raw list_init::<string>(8i64);     // a register known as alloca + constant offset
+        List<int64>:k_owner = raw list_init::<int64>(8i64);
+        List<int64>:k_off = raw list_init::<int64>(8i64);
+        for (int64:li2 in 0i64...ft.fns.items[fi].blocks.items[0i64].lines.count) {
+            string:line = raw strlist_copy(ft.fns.items[fi].blocks.items[0i64].lines, li2);
+            // 1. the alloca
+            string:ar = raw alloca_reg(line);
+            if (ar.len > 0i64) {
+                int64:nb = raw alloca_bytes(raw alloca_type(line));
+                if (nb < 0i64) {
+                    string:mu = string_concat(name, ": alloca-not-defined: `");
+                    mu = string_concat(mu, ft.fns.items[fi].name);
+                    mu = string_concat(mu, "`: an alloca of a type the stack rule does not size: ");
+                    mu = string_concat(mu, raw alloca_type(line));
+                    drop strlist_push(@found, mu);
+                    continue;
+                }
+                drop strlist_push(@k_reg, string_concat(ar, ""));
+                drop list_push(@k_owner, a_reg.count);
+                drop list_push(@k_off, 0i64);
+                drop list_push(@a_base, have.count);
+                drop list_push(@a_size, nb);
+                drop list_push(@a_told, 0i64);
+                drop strlist_push(@a_reg, string_concat(ar, ""));
+                for (int64:z in 0i64...nb) { drop list_push(@have, 0i64); }
+                continue;
+            }
+            List<string>:w = raw words_of(line);
+            // 2. a constant-offset getelementptr of a known register
+            bool:is_gep = false;
+            if (w.count >= 8i64) {
+                if ((raw text_eq(raw strlist_view(w, 1i64), "=")) && (raw text_eq(raw strlist_view(w, 2i64), "getelementptr"))) { is_gep = true; }
+            }
+            if (is_gep) {
+                int64:t0 = 3i64;
+                if (raw text_eq(raw strlist_view(w, t0), "inbounds")) { t0 = t0 + 1i64; }
+                // `i8 ptr %a i64 K`  or  `[N x T] ptr %a i64 0 i64 K` (the type is three words)
+                bool:is_arr = false;
+                if (t0 < w.count) { if (raw text_starts_with(raw strlist_view(w, t0), "[")) { is_arr = true; } }
+                int64:pidx = t0 + 1i64;
+                if (is_arr) { pidx = t0 + 3i64; }
+                bool:shaped = false;
+                int64:kidx = 0i64 - 1i64;
+                int64:scale = 1i64;
+                if (!is_arr) {
+                    if ((w.count == (pidx + 4i64)) && (raw text_eq(raw strlist_view(w, t0), "i8"))) { shaped = true; kidx = pidx + 3i64; }
+                } else {
+                    if (w.count == (pidx + 6i64)) {
+                        if (raw text_eq(raw strlist_view(w, pidx + 3i64), "0")) {
+                            string:et = raw strlist_copy(w, t0 + 2i64);                 // `T]`
+                            int64:sb = raw scalar_bytes(raw text_slice(et, 0i64, et.len - 1i64));
+                            if (sb > 0i64) { shaped = true; kidx = pidx + 5i64; scale = sb; }
+                        }
+                    }
+                }
+                if (shaped && (raw text_eq(raw strlist_view(w, pidx), "ptr"))) {
+                    // the base is an ALLOCA itself, never an offset of one -- the twin's rule
+                    int64:ko = raw known_at(a_reg, raw strlist_view(w, pidx + 1i64));
+                    int64:kval = raw word_int(raw strlist_view(w, kidx));
+                    if ((ko >= 0i64) && (kval >= 0i64)) {
+                        drop strlist_push(@k_reg, raw strlist_copy(w, 0i64));
+                        drop list_push(@k_owner, ko);
+                        drop list_push(@k_off, kval * scale);
+                        continue;
+                    }
+                }
+            }
+            // 3. a store of an iN or a ptr through a known register
+            bool:is_store = false;
+            if (w.count >= 5i64) { if (raw text_eq(raw strlist_view(w, 0i64), "store")) { is_store = true; } }
+            if (is_store) {
+                int64:ti = 1i64;
+                if (raw text_eq(raw strlist_view(w, ti), "atomic")) { ti = ti + 1i64; }
+                if (raw text_eq(raw strlist_view(w, ti), "volatile")) { ti = ti + 1i64; }
+                int64:wb = raw scalar_bytes(raw strlist_view(w, ti));
+                // the address is the LAST `ptr %reg` pair (`store ptr %v, ptr %slot` has two)
+                int64:ap = 0i64 - 1i64;
+                for (int64:q in (ti + 1i64)...(w.count - 1i64)) {
+                    if (raw text_eq(raw strlist_view(w, q), "ptr")) { ap = q + 1i64; }
+                }
+                if ((wb > 0i64) && (ap > 0i64)) {
+                    int64:ks = raw known_at(k_reg, raw strlist_view(w, ap));
+                    if (ks >= 0i64) {
+                        int64:oi = k_owner.items[ks];
+                        for (int64:by in 0i64...wb) {
+                            int64:cell = k_off.items[ks] + by;
+                            if (cell < a_size.items[oi]) { have.items[a_base.items[oi] + cell] = 1i64; }
+                        }
+                        continue;
+                    }
+                }
+            }
+            // 4. the whole-size memset intrinsic
+            bool:is_memset = false;
+            if (w.count == 11i64) {
+                if ((raw text_eq(raw strlist_view(w, 0i64), "call")) && (raw text_eq(raw strlist_view(w, 2i64), "@llvm.memset.p0.i64"))) { is_memset = true; }
+            }
+            if (is_memset) {
+                int64:km = raw known_at(a_reg, raw strlist_view(w, 4i64));
+                int64:mval = raw word_int(raw strlist_view(w, 8i64));
+                if ((km >= 0i64) && (mval >= 0i64)) {
+                    for (int64:by2 in 0i64...mval) {
+                        if (by2 < a_size.items[km]) { have.items[a_base.items[km] + by2] = 1i64; }
+                    }
+                    continue;
+                }
+            }
+            // anything else that names a known register is a USE
+            for (int64:u in 0i64...w.count) {
+                int64:ku = raw known_at(k_reg, raw strlist_view(w, u));
+                if (ku < 0i64) { continue; }
+                int64:own3 = k_owner.items[ku];
+                if (a_told.items[own3] != 0i64) { continue; }
+                int64:got = 0i64;
+                for (int64:c3 in 0i64...a_size.items[own3]) { got = got + have.items[a_base.items[own3] + c3]; }
+                if (got == a_size.items[own3]) { continue; }
+                a_told.items[own3] = 1i64;
+                string:md = string_concat(name, ": alloca-not-defined: `");
+                md = string_concat(md, ft.fns.items[fi].name);
+                md = string_concat(md, "` uses `");
+                md = string_concat(md, raw strlist_view(a_reg, own3));
+                md = string_concat(md, "` (");
+                md = string_concat(md, int_to_string(a_size.items[own3]));
+                md = string_concat(md, " bytes) before its entry block has defined all of it -- ");
+                md = string_concat(md, int_to_string(got));
+                md = string_concat(md, " byte(s) defined; cover it with stores or one llvm.memset of its whole size before anything else touches it (DEF-52)");
+                drop strlist_push(@found, md);
+            }
+        }
+        for (int64:ai in 0i64...a_reg.count) {
+            if (a_told.items[ai] != 0i64) { continue; }
+            int64:got2 = 0i64;
+            for (int64:c4 in 0i64...a_size.items[ai]) { got2 = got2 + have.items[a_base.items[ai] + c4]; }
+            if (got2 == a_size.items[ai]) { continue; }
+            string:me = string_concat(name, ": alloca-not-defined: `");
+            me = string_concat(me, ft.fns.items[fi].name);
+            me = string_concat(me, "` leaves `");
+            me = string_concat(me, raw strlist_view(a_reg, ai));
+            me = string_concat(me, "` (");
+            me = string_concat(me, int_to_string(a_size.items[ai]));
+            me = string_concat(me, " bytes) with ");
+            me = string_concat(me, int_to_string(got2));
+            me = string_concat(me, " byte(s) defined at the end of its entry block -- cover it with stores or one llvm.memset of its whole size (DEF-52)");
+            drop strlist_push(@found, me);
+        }
+    }
+    pass found;
+};
+
+// The belt over the tree's floor.
+pub func:floor_stack_current = List<string>(string:root) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    Result<cstring>:fc = to_cstring(string_concat(root, "/runtime/npkrt.ll"));
+    if (fc.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.ll: not a path"); pass fl; }
+    Result<string>:ftx = read_file(fc.value);
+    if (ftx.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.ll cannot be read"); pass fl; }
+    pass (raw floor_stack_check(ftx.value, "floor"));
+};

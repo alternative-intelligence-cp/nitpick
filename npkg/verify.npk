@@ -40,6 +40,7 @@ use "./irscan.npk".*;
 use "./strset.npk".*;
 use "./elf.npk".*;
 use "./floor_shared.npk".*;
+use "./floor_stack.npk".*;
 use "./floor_ir.npk".*;
 use "./floor_spec.npk".*;
 use "./floor.npk".*;
@@ -673,7 +674,10 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     // evidence worth deciding.
     List<string>:fb = raw floor_shared_current(string_from_bytes(c.m.root.ptr, c.m.root.len));
     if (fb.count > 0i64) { pass (raw step_bad(raw strlist_view(fb, 0i64))); }
-    drop say(raw stage_text("floor", "the shared-state classification holds (D-290)"));
+    // the stack rule's second half (1.5.6b, DEF-52): every alloca defined in its entry block
+    List<string>:fk = raw floor_stack_current(string_from_bytes(c.m.root.ptr, c.m.root.len));
+    if (fk.count > 0i64) { pass (raw step_bad(raw strlist_view(fk, 0i64))); }
+    drop say(raw stage_text("floor", "the shared-state classification holds (D-290) and every alloca is defined in its entry block (1.5.6b)"));
     if (!c.m.z3) { pass (raw step_bad("nitpick.toml: [verify] z3 is not true -- this project declares no z3 verification, and a verify that pretended otherwise would be a green light nobody earned (D-068)")); }
     Result<string>:z3r = which("z3");
     if (z3r.is_error) { pass (raw step_bad("npkg verify: PATH cannot be read")); }
@@ -921,6 +925,8 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     if (!inp.ok) { pass (raw step_bad(inp.problem)); }
     List<string>:sb = raw floor_shared_current(root);
     if (sb.count > 0i64) { pass (raw step_bad(raw strlist_view(sb, 0i64))); }
+    List<string>:sk = raw floor_stack_current(root);
+    if (sk.count > 0i64) { pass (raw step_bad(raw strlist_view(sk, 0i64))); }
     List<string>:bl = raw floor_belts(c, @inp);
     if (bl.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(bl, 0i64), ""))); }
     string:fdir = raw path_join(vdir, "floor");

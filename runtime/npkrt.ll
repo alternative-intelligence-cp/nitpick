@@ -657,6 +657,11 @@ done:
 ; and reports DeadlineExceeded for a value that already arrived.
 define internal void @npk_ch_wake_one(ptr %hp) {
 entry:
+  ; the stack rule (1.5.6b, DEF-53's class): the eventfd's 8-byte payload,
+  ; in the ENTRY block and defined there -- an alloca anywhere else moves the
+  ; stack pointer each time it executes
+  %one = alloca i64, align 8
+  store i64 1, ptr %one
   %f = load ptr, ptr %hp
   %none = icmp eq ptr %f, null
   br i1 %none, label %done, label %pop
@@ -688,8 +693,6 @@ rouse:
   %noev = icmp eq i32 %evfd, 0
   br i1 %noev, label %done, label %ping
 ping:
-  %one = alloca i64, align 8
-  store i64 1, ptr %one
   %onep = ptrtoint ptr %one to i64
   %evl = sext i32 %evfd to i64
   %wr = call i64 @npk_sys6(i64 1, i64 %evl, i64 %onep, i64 8, i64 0, i64 0, i64 0)
@@ -1801,6 +1804,22 @@ entry:
 define i32 @npk_thread_join(ptr %tls, i64 %dl) {
 entry:
   %tp = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
+  ; DEF-53 (1.5.6b): THE TIMESPEC IS THE ENTRY BLOCK'S. It sat in `wait`,
+  ; inside this loop, and an alloca outside the entry block is dynamic: it
+  ; moves the stack pointer every time it executes and nothing gives the
+  ; space back before the return -- 16 bytes of stack per return of the futex
+  ; wait (a wake, EINTR, a spurious return), toward a guard page and a SIGSEGV
+  ; with no failsafe. Measured under the pinned flags: a loop-body alloca
+  ; dies at 4,000,000 iterations at llc -O0 and at -O2. The deadline is a
+  ; parameter, so the two words are computed and stored once, here.
+  %ts = alloca [2 x i64], align 16
+  %sec = sdiv i64 %dl, 1000000000
+  %rem = srem i64 %dl, 1000000000
+  %s0 = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 %sec, ptr %s0
+  %s1 = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 %rem, ptr %s1
+  %tsi = ptrtoint ptr %ts to i64
   br label %loop
 loop:
   %t = load atomic i32, ptr %tp monotonic, align 4   ; DEF-48 (D-290): the kernel writes this futex word
@@ -1813,14 +1832,6 @@ check:
 wait:
   ; FUTEX_WAIT on the tid word, with the join deadline as the absolute
   ; monotonic timeout — the same clock discipline every wait here uses.
-  %ts = alloca [2 x i64], align 16
-  %sec = sdiv i64 %dl, 1000000000
-  %rem = srem i64 %dl, 1000000000
-  %s0 = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
-  store i64 %sec, ptr %s0
-  %s1 = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
-  store i64 %rem, ptr %s1
-  %tsi = ptrtoint ptr %ts to i64
   %wp = ptrtoint ptr %tp to i64
   %te = zext i32 %t to i64
   %fr = call i64 @npk_sys6(i64 202, i64 %wp, i64 9, i64 %te, i64 %tsi,
@@ -1839,6 +1850,19 @@ expired:
 define i64 @npk_hardware_concurrency() {
 entry:
   %mask = alloca [16 x i64], align 16
+  ; DEF-52 (1.5.6b): THE MASK IS ZEROED BEFORE THE KERNEL SEES IT. The RAW
+  ; sched_getaffinity writes only as many bytes as the kernel's own cpumask
+  ; and RETURNS that count -- it is glibc's wrapper that zero-fills the rest,
+  ; and this runtime has no glibc. Measured on a 48-thread machine: the call
+  ; returns 8, bytes 0..7 carry the 48 bits, and bytes 8..127 are left exactly
+  ; as the stack held them -- so the popcount over all sixteen words answered
+  ; 1008 after a call chain that had left one-bits there. A value never
+  ; written (D-227's family). Found by measuring the kernel-effect table's
+  ; row, which claimed the kernel wrote the REQUESTED length and so hid it.
+  ; The intrinsic, not npk_zero: the translator reads it as a pointwise
+  ; definition of the memory after, which is what the rows over the sixteen
+  ; loads need. A cold path.
+  call void @llvm.memset.p0.i64(ptr %mask, i8 0, i64 128, i1 false)
   %mi = ptrtoint ptr %mask to i64
   %z = call i64 @npk_sys6(i64 204, i64 0, i64 128, i64 %mi, i64 0, i64 0, i64 0)
   %bad = icmp slt i64 %z, 0
@@ -2465,6 +2489,13 @@ expired:
 ; its own `defer`s. Preemptive destruction stays removed (D-062).
 define void @npk_windup_all(ptr %head) {
 entry:
+  ; DEF-53 (1.5.6b): THE EVENTFD'S PAYLOAD IS THE ENTRY BLOCK'S. It sat in
+  ; `pingw`, inside the per-task loop: 16 bytes of stack for EVERY unfinished
+  ; child on a reactor-armed executor, in the function that runs when a join's
+  ; deadline has already expired -- the degraded state, the worst place to
+  ; walk into a guard page with no failsafe. One word, written once.
+  %onew = alloca i64, align 8
+  store i64 1, ptr %onew
   br label %loop
 loop:
   %cur = phi ptr [ %head, %entry ], [ %nx, %next ]
@@ -2510,8 +2541,6 @@ rouse:
   %noevw = icmp eq i32 %evfdw, 0
   br i1 %noevw, label %next, label %pingw
 pingw:
-  %onew = alloca i64, align 8
-  store i64 1, ptr %onew
   %onepw = ptrtoint ptr %onew to i64
   %evlw = sext i32 %evfdw to i64
   %wrw = call i64 @npk_sys6(i64 1, i64 %evlw, i64 %onepw, i64 8, i64 0, i64 0, i64 0)
@@ -2607,6 +2636,26 @@ entry:
 ; and returned instantly. The first sleeping program caught it.
 define void @npk_park_sleep(i64 %at) {
 entry:
+  ; THE STACK RULE (1.5.6b; DEF-53's class): this function's three allocas sat
+  ; in `futex`, `epgo` and -- inside the event loop -- `drain`. An alloca
+  ; outside the entry block moves the stack pointer each time it executes;
+  ; here each is the entry block's, and DEFINED here before anything else
+  ; touches it. The timepoint is a parameter, so the futex path's timespec is
+  ; computed once; the event buffer and the drain word are kernel-written, and
+  ; how much the kernel writes is the kernel's promise -- the rule does not
+  ; rest on promises (DEF-52 is what resting on one looks like). An idle
+  ; wait: cold beside the syscall it is about to make.
+  %ts = alloca [2 x i64], align 16
+  %sec = sdiv i64 %at, 1000000000
+  %rem = srem i64 %at, 1000000000
+  %sp = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 %sec, ptr %sp
+  %np = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 %rem, ptr %np
+  %evbuf = alloca [192 x i8], align 8
+  call void @llvm.memset.p0.i64(ptr %evbuf, i8 0, i64 192, i1 false)
+  %tmp8 = alloca i64, align 8
+  store i64 0, ptr %tmp8
   %ex = call ptr @npk_exec()
   ; THE REACTOR-ARMED WAIT (B-3a, 1.1.12a). Once any io_ready has run on
   ; this executor, the idle wait is epoll_pwait over the interest set — the
@@ -2620,13 +2669,6 @@ entry:
   br i1 %armed, label %epoll, label %futex
 futex:
   %p_npk_park_word = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
-  %ts = alloca [2 x i64], align 16
-  %sec = sdiv i64 %at, 1000000000
-  %rem = srem i64 %at, 1000000000
-  %sp = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
-  store i64 %sec, ptr %sp
-  %np = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
-  store i64 %rem, ptr %np
   %tp = ptrtoint ptr %ts to i64
   %wp = ptrtoint ptr %p_npk_park_word to i64
   ; futex(word, FUTEX_WAIT_BITSET|PRIVATE, expected 0, &abs_timeout, NULL, ~0)
@@ -2655,7 +2697,6 @@ epgo:
   %ms = sdiv i64 %msu, 1000000
   %cap = icmp sgt i64 %ms, 2147483647
   %ms2 = select i1 %cap, i64 2147483647, i64 %ms
-  %evbuf = alloca [192 x i8], align 8
   %ebp = ptrtoint ptr %evbuf to i64
   %epi = sext i32 %epfd to i64
   ; epoll_pwait(epfd, events, 16, timeout_ms, NULL, 8)
@@ -2679,7 +2720,6 @@ done1:
   br i1 %isev, label %drain, label %due
 drain:
   ; the eventfd's counter resets on read; the wake it carried is spent
-  %tmp8 = alloca i64, align 8
   %t8 = ptrtoint ptr %tmp8 to i64
   %evi = sext i32 %evfd0 to i64
   %dr = call i64 @npk_sys6(i64 0, i64 %evi, i64 %t8, i64 8, i64 0, i64 0, i64 0)
@@ -2706,6 +2746,18 @@ out:
 ; set and the eventfd and arms the executor's idle wait.
 define void @npk_io_register(i32 %fd, i32 %ev) {
 entry:
+  ; the stack rule (1.5.6b): both 12-byte epoll_event cells are the entry
+  ; block's and defined here. The eventfd's is two constants (EPOLLIN, the
+  ; drain marker 0); the descriptor's is zero-defined and takes its real
+  ; words in `arm`, where they are known.
+  %eev = alloca [12 x i8], align 4
+  store i32 1, ptr %eev, align 4
+  %edp = getelementptr i8, ptr %eev, i64 4
+  store i64 0, ptr %edp, align 4
+  %tev = alloca [12 x i8], align 4
+  store i32 0, ptr %tev, align 4
+  %tdp = getelementptr i8, ptr %tev, i64 4
+  store i64 0, ptr %tdp, align 4
   %ex = call ptr @npk_exec()
   %ctp0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 13
   %fr = load ptr, ptr %ctp0
@@ -2731,11 +2783,8 @@ addev:
   ; RELEASE: a rouser that sees evfd nonzero must also see the descriptor
   ; it names fully created; rousers load it acquire.
   store atomic i32 %ev32, ptr %evp release, align 4
-  ; the eventfd rides the set with data 0 — the drain marker
-  %eev = alloca [12 x i8], align 4
-  store i32 1, ptr %eev, align 4
-  %edp = getelementptr i8, ptr %eev, i64 4
-  store i64 0, ptr %edp, align 4
+  ; the eventfd rides the set with data 0 — the drain marker (the cell is
+  ; the entry block's)
   %eevp = ptrtoint ptr %eev to i64
   ; epoll_ctl(epfd, ADD, evfd, &ev)
   %ar = call i64 @npk_sys6(i64 233, i64 %ep, i64 1, i64 %ev2, i64 %eevp, i64 0, i64 0)
@@ -2751,9 +2800,7 @@ arm:
   %fdl = sext i32 %fd to i64
   ; EPOLLONESHOT on top of the caller's interest
   %evones = or i32 %ev, 1073741824
-  %tev = alloca [12 x i8], align 4
   store i32 %evones, ptr %tev, align 4
-  %tdp = getelementptr i8, ptr %tev, i64 4
   %fri = ptrtoint ptr %fr to i64
   store i64 %fri, ptr %tdp, align 4
   %tevp = ptrtoint ptr %tev to i64
@@ -2891,6 +2938,16 @@ oob:
 define i64 @npk_mono_now() {
 entry:
   %ts = alloca [2 x i64], align 16
+  ; THE STACK RULE (1.5.6b; DEF-52's class): every alloca sits in the entry
+  ; block and is fully DEFINED there before anything else touches it. This one
+  ; is kernel-written, and how much the kernel writes is the kernel's promise
+  ; -- the rule does not rest on promises. Two stores, not a memset: under the
+  ; pinned -O0 a memset of any size is a CALL, and this runs at every
+  ; executor step.
+  %z0 = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 0, ptr %z0
+  %z1 = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 0, ptr %z1
   %p = ptrtoint ptr %ts to i64
   %r = call i64 @npk_sys6(i64 228, i64 1, i64 %p, i64 0, i64 0, i64 0, i64 0)
   %bad = icmp ne i64 %r, 0
@@ -3012,6 +3069,12 @@ fin:
 define internal void @npk_stop_others(ptr %self) {
 entry:
   %ts = alloca [2 x i64], align 16
+  ; the stack rule (1.5.6b): defined in the entry block; the deadline's two
+  ; words are stored in `wait`, once the walk knows it has anyone to wait for
+  %tsz0 = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 0, ptr %tsz0
+  %tsz1 = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 0, ptr %tsz1
   %pid = load i64, ptr @npk_pid
   %selfv = ptrtoint ptr %self to i64
   br label %scan
@@ -3289,6 +3352,19 @@ done:
 define internal i64 @npk_hs_put_dec(ptr %line, i64 %pos, i64 %v) {
 entry:
   %tmp = alloca [24 x i8]
+  ; the stack rule (1.5.6b): defined in the entry block before any other use.
+  ; This function's rows prove every byte the copy reads was stored by the
+  ; digit loop -- the rule is syntactic on purpose and asks anyway. THREE
+  ; STORES, NOT A MEMSET, and the reason is measured: under the intrinsic's
+  ; pointwise memory layer this file's 23 rows fell to 16 discharged and 8
+  ; unknown (238 s); under three covering stores all 23 hold (67 s, against
+  ; 81 s before). Where a function carries rows, define by stores.
+  %tz0 = getelementptr [24 x i8], ptr %tmp, i64 0, i64 0
+  store i64 0, ptr %tz0
+  %tz1 = getelementptr [24 x i8], ptr %tmp, i64 0, i64 8
+  store i64 0, ptr %tz1
+  %tz2 = getelementptr [24 x i8], ptr %tmp, i64 0, i64 16
+  store i64 0, ptr %tz2
   br label %loop
 loop:
   %i = phi i64 [ 24, %entry ], [ %i1, %loop ]
@@ -3320,6 +3396,9 @@ done:
 define internal void @npk_hs_report() {
 entry:
   %line = alloca [128 x i8]
+  ; the stack rule (1.5.6b): defined before use. Only [0, pos) is ever handed
+  ; to write(2); the rule asks anyway. The exit path under NPK_HEAP_STATS: cold.
+  call void @llvm.memset.p0.i64(ptr %line, i8 0, i64 128, i1 false)
   %on = load i64, ptr @npk_hs_on
   %off = icmp eq i64 %on, 0
   br i1 %off, label %done, label %print

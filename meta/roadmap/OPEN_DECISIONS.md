@@ -1257,9 +1257,11 @@ read is atomic; the same step moved the heap initialiser's unlocked call in
 `npk_alloc_impl` had always taken it. `wildx_threads.npk` churns 600 pages
 across two threads and exits 0 only when the count agrees.
 
-**DEF-52 — OPEN (found 2026-09-17 on `b7d60dc` by `nitpick-compiler_s7`,
-taking up lead E-4 of §2g; owner: the compiler seat; fixed before planned work,
-as 1.5.1b and 1.5.5 step 0 were) — `npk_hardware_concurrency` popcounts 120
+**DEF-52 — FIXED at 1.5.6b step 0 (2026-09-17): the mask is zeroed by one
+`llvm.memset` before the kernel sees it; `runtime/tests/hwconc.ll` exits 0 where
+it exited 1 (the floor answering 1008 on a 48-thread machine), and the new
+`alloca-not-defined` belt holds the class in both runners.** ~~OPEN~~ (found
+2026-09-17 on `b7d60dc` by `nitpick-compiler_s7`, taking up lead E-4 of §2g) — `npk_hardware_concurrency` popcounts 120
 bytes of UNINITIALISED STACK.** The floor hands the kernel an `alloca [16 x
 i64]` it never zeroes (`runtime/npkrt.ll` ~1841), asks `sched_getaffinity(0,
 128, mask)`, and popcounts all sixteen words. The RAW syscall writes only as
@@ -1282,9 +1284,11 @@ decided with the garbage tail read as kernel-written. The fix is the floor's
 reviewed IR), with the row corrected to `result` and a program that calls the
 symbol once something can; `npkrt.o`'s digest moves, so the notice names both.
 
-**DEF-53 — OPEN (found 2026-09-17 on `b7d60dc` by `nitpick-compiler_s7`, auditing
-DEF-52's class over all fifteen of the floor's allocas; owner: the compiler
-seat; fixed before planned work, 1.5.6b step 0) — D-173 WAS NEVER EXTENDED TO
+**DEF-53 — FIXED at 1.5.6b step 0 (2026-09-17): all eight hoisted, and D-173's
+own check (`check_allocas_hoisted` / `ir_allocas_hoisted`) run over
+`runtime/npkrt.ll` in both runners -- one line each, no second mechanism.**
+~~OPEN~~ (found 2026-09-17 on `b7d60dc` by `nitpick-compiler_s7`, auditing
+DEF-52's class over all fifteen of the floor's allocas) — D-173 WAS NEVER EXTENDED TO
 THE FLOOR: eight of its fifteen allocas sit outside their entry blocks, two of
 them inside loops.** D-173 (SETTLED, 1.0.9a: "allocas are hoisted to the entry
 block") was written when the seed-built compiler segfaulted on exactly this,
