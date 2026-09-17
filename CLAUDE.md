@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) is at its last subcycle: 1.5.0–1.5.6 have landed, the floor itself is specified and modelled, and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has TWO subcycles left — 1.5.7 (the schedule-exploration harness) and 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.6 have landed, the floor itself is specified and modelled, and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -1124,11 +1124,27 @@ outgrew, invisible to D-151 and to every test, found because a frame claim
 would not discharge. TCB.md is FINALIZED: three generated regions (the
 membership table with each symbol's class and disposition, the syscall
 boundary, and what the evidence does not cover) that cannot go stale without
-a red run. Recorded for the user: **S-71**, the determinism profile gaining
-`lp.dio=false` — z3 4.16.0's Diophantine sub-solver undoes its terms at
+a red run. **S-71, RATIFIED by the user 2026-09-17 as an amendment to D-218
+(2)**: the determinism profile carries `lp.dio=false` — z3 4.16.0's Diophantine sub-solver undoes its terms at
 every `(pop)`, so a row that answered `unsat` in 8 s returned 200 s later
 and a larger one not within 22 minutes, a wedged solver under P-13 with only
 the runners' hang net to catch it; off, no verdict moves anywhere.
+**WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
+subcycle" from the 1.5.6 close until then; the README's map was right
+throughout): TWO subcycles.** 1.5.7 is D-212's schedule-exploration harness,
+not yet planned. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+§7b's catalogue assigns it the five obligation kinds that have NO rows in
+`nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
+and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving
+the overflow traps away, and 1.6's leg B lists those rows as evidence arriving
+from 1.5. Sized at `b7d60dc`: 2,248 of the 2,503 guard-trap call sites in the
+compiler's own emission (90%) are `IntOverflow`, against the 273 guards the
+verified build elides today (202 manifest rows). `terminate` has no surface syntax (`decreases`
+appears nowhere in the lexer, the parser, the grammar or a spec), so 1.5.8's
+planning opens with a language question — the user's — and the library
+listener is owed the keyword-or-refusal answer, named with its code, before a
+re-pin could surprise it. **Read the map, the catalogue and the manifest, not
+a summary of them** — a hand-written summary of a held fact has no check on it.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

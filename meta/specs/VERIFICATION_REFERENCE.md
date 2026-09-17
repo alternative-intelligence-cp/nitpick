@@ -1342,7 +1342,7 @@ for row with it on and off, the floor's set in 325 s against 587 s; the
 non-returning pops belong to the step's earlier encoding (the flat
 `(div v 10^k)` quotients), one rendering change away, which is the case
 for keeping the option rather than a condition of today's rows. The
-amendment is the user's to ratify (OPEN_DECISIONS S-71).
+amendment was ratified by the user on 2026-09-17 (S-71; D-218 (2) as amended).
 
 **The belts, before a solver is spawned** (`floor_spec_current` in npkg,
 `floor.check_spec` in the harness): every section names a define; a

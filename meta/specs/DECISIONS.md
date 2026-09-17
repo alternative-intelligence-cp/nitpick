@@ -15082,8 +15082,8 @@ become `poison` and a harness grep enforces the ban thereafter;
 `llc`/`ld.lld` named trusted, the floor's volatile bottom enumerated
 in `meta/specs/TCB.md` (r8 Lesson 2).
 
-> **AMENDMENT PROPOSED at 1.5.6 step 4 (2026-09-11; S-71, landed under its
-> recommendation, the user's to ratify).** The profile of (2) carries
+> **AMENDED — proposed at 1.5.6 step 4 (2026-09-11; S-71, landed under its
+> recommendation) and user-ratified 2026-09-17.** The profile of (2) carries
 > `lp.dio=false`: z3 4.16.0's Diophantine-equation sub-solver undoes its
 > terms at every `(pop)` by a big-rational matrix elimination (gdb:
 > `lp::dioph_eq::imp::undo_add_term_method` under
@@ -15094,7 +15094,12 @@ in `meta/specs/TCB.md` (r8 Lesson 2).
 > the step's final emission: 325 s against 587 s for the floor's set; the
 > non-returning pops belong to the step's earlier encoding, one rendering
 > change away). Fixed seeds, no wall clock and `rlimit` as the sole budget
-> all stand.
+> all stand. **RATIFIED (the user, 2026-09-17: "ratify it, and let s7 make the 1.5.8 corrections" —
+> said to the outgoing seat `nitpick-compiler_s6` and relayed at the s6→s7 hand-off):**
+> an amendment, so it keeps D-218's number (the D-180 pattern). Item (2) now
+> reads: fixed seeds, no wall-clock timeout, `rlimit` the sole budget, and
+> `lp.dio=false`. A documentation act only — `nitpick.toml`'s `z3-options`
+> and both manifests' header lines have carried the option since step 4.
 
 > **LANDED at 1.5.0 (2026-09-03), the skeleton with one real obligation
 > kind — the record is `meta/roadmap/1.5/1.5.0.md`, whose P-1…P-27 are the
