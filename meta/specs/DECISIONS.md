@@ -18362,6 +18362,30 @@ quarantine and document the rest). **The decision, in four parts.**
 > readers that D-151 could not see. TCB.md's three generated regions are
 > S-68's half.
 
+> **AMENDED 2026-09-17, user-ratified (S-74: "the recommendations you had for those questions looks fine to me"): TCB.md §5's
+> EIGHTH ACCEPTANCE is narrowed.** It asked a reader to ACCEPT the
+> kernel-effect table -- "the table is read against the kernel's
+> documentation" -- and named `sched_getaffinity` and `rt_sigaction` among the
+> rows "writing where and how much it says". Measured through the raw syscalls
+> with sentinel-filled buffers on 2026-09-17, those are the two rows that were
+> WRONG: 204 claimed the requested length where the kernel writes `result`
+> bytes (an over-approximation, sound, and the thing that hid DEF-52), and 13
+> claimed the 8-byte sigset size where the kernel writes the whole 32-byte
+> action to a non-null `oldact` (an under-approximation, the unsound
+> direction, latent because the floor's one call passes `oldact = 0`). No
+> recorded verdict rested on either. **The decision:** the table becomes ONE
+> authority (a marked region of VERIFICATION_REFERENCE §9.2, generated into
+> the translator -- D-201's pattern), its option-dependent rows keyed by
+> (number, option) with an unlisted option refused by name, and its
+> write-region rows HELD TO THE RUNNING KERNEL on every run in both runners by
+> a probe program that demands EQUALITY (an over-approximating row is sound and
+> hid a defect). What a reader still accepts is said in words: the paths no
+> probe reaches (`exit`/`exit_group`, `clone`/`execve`, failure paths beyond
+> the ones probed), that the claim is about the kernel the suite ran on, and
+> that "no memory effect" speaks of BYTES and not of mappings (a load after
+> `munmap` is modelled as the old bytes). An amendment, so it keeps this
+> decision's number. Lands at **1.5.6b** step 1 (`meta/roadmap/1.5/1.5.6b.md`).
+
 ## D-289 — the executor's primitives are MODELLED, never proven whole: bounded transition systems through the pinned z3, with negative controls and a correspondence belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-66; lands at 1.5.6 step 5)**
 
 The r6 verdict (`meta/roadmap/research/digests/r6-digest.md` §3): model
@@ -18551,3 +18575,70 @@ instead of forbidding what a `failsafe` is for.
 >
 > Lands at **1.5.6** step 2 (`meta/roadmap/1.5/1.5.6.md`); D-014 gains a
 > dated landing note there.
+
+## D-293 — `hardware_concurrency()` is a builtin: D-181 §4's promise kept — **SETTLED (user decision, 2026-09-17: "the recommendations you had for those questions looks fine to me"; S-72)**
+
+D-181 §4 settled that "`hardware_concurrency` is `sched_getaffinity` (the
+prototype hardcoded `4` -- D-073)". The floor implemented it
+(`@npk_hardware_concurrency`), the emitter declared it in every module
+(`emit_program.npk`), and NO builtin row reached it: no program could call
+it. That is also why DEF-52 lived there -- the symbol handed the kernel an
+unzeroed buffer and popcounted all of it, answering 1008 on a 48-thread
+machine, and nothing had ever executed it to notice. A floor symbol only a
+hand-written IR test can reach is a symbol the next defect hides in.
+**The decision.** BUILTIN_REFERENCE gains the row `hardware_concurrency`,
+`() → int64`, **never fails**, `effect` (it reads the machine, not its
+arguments): the number of hardware threads the process may run on -- the
+popcount of its affinity mask, at least 1 and at most 1024 (the mask the
+floor asks the kernel for). Typed from the one signature table like every
+builtin (D-201); `ir_runtime.npk`'s declaration is GENERATED from the row and
+the emitter's hand-written `declare` is deleted -- a hand-written twin of a
+generated row is the next stale list. A pool can size itself instead of
+hardcoding a number, which D-073's own table names as the prototype's defect.
+The name is free everywhere it could collide (measured: no Nitpick source in
+the compiler tree, `nitpick-libs` or `nitpick-apps` uses it as an identifier),
+which D-294 makes a question worth asking of every builtin added from now on.
+**Alternative costed:** decide it OUT and delete the floor symbol and the
+declaration (a smaller TCB) -- declined: the library tier's pools need it, and
+D-181 already settled that it exists. `src/` and the library `src/` imports
+may not CALL it before a snapshot that carries it (D-205).
+
+> Lands at **1.5.6b** step 3 (`meta/roadmap/1.5/1.5.6b.md`); D-181 §4 gains a
+> dated landing note there.
+
+## D-294 — A program may not declare a builtin's name: D-239's rule in the function namespace — **SETTLED (user decision, 2026-09-17: "the recommendations you had for those questions looks fine to me"; S-73)**
+
+A builtin's name is a RESOLVER FALLBACK: `resolve.npk` looks a name up in
+scope first and excuses it as a builtin only when nothing binds it. So a
+program that declares its own `func:mono_now` silently wins over the clock,
+everywhere that module's scope reaches -- measured: `raw mono_now()` answers
+the program's 7, and a `read_file` of a different signature and contract is
+typed and called by its BINDING through checker and emitter alike. Consistent,
+and not a defect; a question of what the language means. D-239 already answers
+it for the type namespace: a name the compiler or the prelude owns cannot be
+declared by a program. **The decision.** The builtin table's names are the
+compiler's, in the FUNCTION namespace: a module-level `func:` -- plain, `pub`,
+`async`, `thread`, inside an inline module or out -- whose name is a builtin's
+is `NITPICK-RESOLVE-001` at the declaration, naming the builtin. `alloc(...)`,
+`sys(...)` and `wild_release_all()` mean one thing wherever they stand
+(blueprint facet 1: a construct does not change meaning by context, and here
+the context would be invisible at the call), and a reviewer or a prover reading
+a builtin call never has to look for a shadow first. METHODS ARE EXEMPT:
+`Writer.write` lives in a per-type namespace, is reached only through a
+receiver, and can never be mistaken for the bare call. An import cannot bring
+one in, because its declaration was refused where it was written. One
+predicate -- `is_builtin_name`, over the generated table -- read by the
+loader's owned-names check. It costs nothing today (measured over
+BUILTIN_REFERENCE's 65 names: no module-level function in `src/`, `lib/`,
+`npkg/`, `tools/`, `tests/` or `nitpick-libs` shadows one; the nine textual
+hits are trait methods and one grammar fixture) and more every day it waits.
+**A consequence, stated because it is easy to miss:** from this decision on,
+ADDING a builtin reserves a name -- a program that used it is refused -- so
+every new builtin row is a new refusal, and the library listener is told the
+name before it lands, as for any refusal. **Alternative costed:** leave it and
+document that a builtin is a fallback -- declined: that is a default that
+varies by circumstance, and the circumstance is invisible where it matters.
+
+> Lands at **1.5.6b** step 4 (`meta/roadmap/1.5/1.5.6b.md`); the library
+> listener hears it, with the code and the measured zero sites in its own
+> tree, BEFORE the step lands.
