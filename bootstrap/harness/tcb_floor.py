@@ -9,6 +9,10 @@ define of runtime/npkrt.ll with its class (`_floor_classes`) and its
 disposition from runtime/npkrt.spec and the committed
 runtime/npkrt.obligations (`floor.tcb_rows`). Run it after a floor edit, a
 spec edit or a `npkg verify --record`, and commit the document with them.
+
+Four marked regions are written: `floor-table`, `floor-syscalls`,
+`floor-residue`, and (1.5.6c step 3) `floor-callers` -- TCB.md SS4d, who
+keeps each section's caller assumptions (`floor.callers_region`).
 """
 import os
 import re
@@ -32,12 +36,15 @@ def main(argv):
     region = floor.tcb_region(spec_text, classes, man_text, floor.read_models(ROOT))
     sysregion = floor.syscalls_region(floor_ll, classes)
     resregion = floor.residue_region(spec_text, man_text, floor.read_models(ROOT), floor.model_facts_all(ROOT))
+    callregion = floor.callers_region(floor_ll, spec_text)
     if "--write" not in argv:
         print(region)
         print()
         print(sysregion)
         print()
         print(resregion)
+        print()
+        print(callregion)
         return 0
     path = os.path.join(ROOT, "meta", "specs", "TCB.md")
     doc = open(path, encoding="utf-8").read()
@@ -47,12 +54,19 @@ def main(argv):
                  lambda m: m.group(1) + sysregion + m.group(2), new, flags=re.S)
     new = re.sub(r"(<!-- BEGIN floor-residue -->\n).*?(\n<!-- END floor-residue -->)",
                  lambda m: m.group(1) + resregion + m.group(2), new, flags=re.S)
+    new = re.sub(r"(<!-- BEGIN floor-callers -->\n).*?(\n<!-- END floor-callers -->)",
+                 lambda m: m.group(1) + callregion + m.group(2), new, flags=re.S)
     if new == doc:
-        print("TCB.md: the floor table and the syscall table are current")
+        print("TCB.md: the floor table, the syscall table, the residue and the callers table are current")
         return 0
     open(path, "w", encoding="utf-8").write(new)
-    print("TCB.md: the floor table (%d rows) and the syscall table (%d rows) rewritten"
-          % (region.count("\n") - 1, len(floor.syscall_rows(floor_ll, classes))))
+    # say WHICH regions moved (until 1.5.6c step 3 this named the first two whatever had changed)
+    moved = [nm for nm, body in (("floor-table", region), ("floor-syscalls", sysregion),
+                                 ("floor-residue", resregion), ("floor-callers", callregion))
+             if ("<!-- BEGIN %s -->\n%s\n<!-- END %s -->" % (nm, body, nm)) not in doc]
+    print("TCB.md rewritten: %s (the floor table %d rows, the syscall table %d, the callers table %d)"
+          % (", ".join(moved), region.count("\n") - 1, len(floor.syscall_rows(floor_ll, classes)),
+             len(floor.callers_rows(floor_ll, spec_text))))
     return 0
 
 

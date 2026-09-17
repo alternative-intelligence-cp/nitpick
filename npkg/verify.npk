@@ -935,6 +935,9 @@ pub func:floor_belts = List<string>(Ctx->:c, FloorInputs->:inp) never fails {
     for (int64:si in 0i64...ts.count) { drop strlist_push(@tf, raw strlist_view(ts, si)); }
     List<string>:tr2 = raw tcb_residue_current(@inp.spec, @rows, inp.models, tt.value, root);
     for (int64:ri2 in 0i64...tr2.count) { drop strlist_push(@tf, raw strlist_view(tr2, ri2)); }
+    // TCB.md SS4d (1.5.6c step 3): who keeps a section's caller assumptions
+    List<string>:tc2 = raw tcb_callers_current(@inp.ft, @inp.spec, tt.value);
+    for (int64:ci2 in 0i64...tc2.count) { drop strlist_push(@tf, raw strlist_view(tc2, ci2)); }
     for (int64:i in 0i64...tf.count) { drop strlist_push(@fl, raw strlist_view(tf, i)); }
     pass fl;
 };

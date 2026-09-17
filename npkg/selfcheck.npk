@@ -696,6 +696,34 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!okfu) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("floor-unspecified", okfu, "a section with no claim and no residue sentence must fail"));
     if (!okfu) { drop strlist_push(@report, "      the spec belt accepted it; it should not have"); }
+    // WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator
+    // on a planted floor whose answer is known by reading it -- `@callee`
+    // assumes something of its caller; `@covered` is translated and INLINES it;
+    // `@bare` has no section, so nothing covers its call; `@callee` is
+    // `internal`, so emitted code cannot reach it. The harness computes the
+    // same text from the same two strings, and both are held to ONE literal, so
+    // a twin that drifts fails here before it fails on the real floor. Then the
+    // currency belt's own failure path.
+    string:cl_floor = "define internal i64 @callee(i64 %a) {\nentry:\n  ret i64 %a\n}\ndefine i64 @covered(i64 %a) {\nentry:\n  %r = call i64 @callee(i64 %a)\n  ret i64 %r\n}\ndefine i64 @bare(i64 %a) {\nentry:\n  %r = call i64 @callee(i64 %a)\n  ret i64 %r\n}\n";
+    string:cl_want = "1 sections have rows AND assume something of their caller. For 0 of them every caller is covered -- no\nuntranslated floor caller, and the symbol is not exported; 1 have a floor caller no row covers; 0 are\nEXPORTED, so emitted code can call them and nothing proves the assumption there.\n\n| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |\n|---|---|---|---|---|---|\n| `@callee` | requires | -- | `@covered` | `@bare` | no |";
+    FloorText:clt = raw floor_parse(cl_floor);
+    Sxs:cls = raw sx_parse("(symbol @callee (requires (< a 10)) (ensures (= result a)))\n(symbol @covered (ensures (= result a)))\n");
+    string:cl_got = raw tcb_callers_region(@clt, @cls);
+    bool:okcr = raw text_eq(cl_got, cl_want);
+    if (!okcr) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("tcb-callers-region", okcr, "the callers table of a planted floor must be the text its reading gives"));
+    if (!okcr) { drop strlist_push(@report, string_concat("      the generator said:\n", cl_got)); }
+    List<string>:cl_stale = raw tcb_callers_current(@clt, @cls, "x\n<!-- BEGIN floor-callers -->\nstale\n<!-- END floor-callers -->\ny\n");
+    bool:okcs = false;
+    for (int64:csi in 0i64...cl_stale.count) { if (raw text_contains(raw strlist_view(cl_stale, csi), "tcb-callers:")) { okcs = true; } }
+    if (!okcs) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("tcb-callers-stale", okcs, "a callers region that is not what the floor and the spec say must fail by name"));
+    string:cl_doc = string_concat("x\n<!-- BEGIN floor-callers -->\n", cl_want);
+    cl_doc = string_concat(cl_doc, "\n<!-- END floor-callers -->\ny\n");
+    List<string>:cl_cur = raw tcb_callers_current(@clt, @cls, cl_doc);
+    bool:okcc = (cl_cur.count == 0i64);
+    if (!okcc) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("tcb-callers-control", okcc, "the generated region must pass"));
     // A HEAD READ ONCE IS WRITTEN ONCE, AND A LOOP HOLDS WHAT THE TRANSLATOR
     // READS (1.5.6c step 1): the translator takes the FIRST `frame`/`objects`/
     // `views`/`ensures-trap`/... and drops the rest in silence, and a loop

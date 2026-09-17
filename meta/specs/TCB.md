@@ -440,6 +440,64 @@ fairness assumption neither reading can state.
 The models, each with its bounds and its reachable states (and how many of them the bounds reach): `channel-table` (K 12, D 6; 151 states, 141 inside), `driver-registry` (K 10, D 5; 414 states, 398 inside), `futex-mutex` (K 11, D 6; 350 states, 350 inside), `park-unpark` (K 14, D 5; 358 states, 314 inside), `reactor-io` (K 16, D 7; 68 states, 68 inside), `shared-arena` (K 12, D 5; 1086 states, 1086 inside), `trap-route` (K 14, D 6; 105 states, 105 inside).
 <!-- END floor-residue -->
 
+## 4d. Who keeps a section's assumptions (1.5.6c step 3; leads E-1 and E-2)
+
+A section's `requires`, `(objects …)` and `(views …)` are HYPOTHESES of its
+rows: the rows are decided under them, so for a call that does not keep them
+the rows say nothing. A translated caller of a `(summary)` symbol PROVES them,
+as rows at the call. A translated caller of any other symbol INLINES it, so the
+caller's own rows cover the body in the caller's context, under the caller's
+hypotheses. Every other call is checked by NOTHING: a floor caller that is not
+translated (a boundary symbol, a symbol with no claims), and EMITTED code —
+the emitter's own calls and LLVM's lowering (`llvm.memcpy` becomes a call of
+`memcpy`) reach whatever the floor EXPORTS, a `define` that is not `internal`.
+
+The table is generated from the floor and the spec, because the hand-written
+account of it was wrong twice in eleven sections (1.5.6c step 2's record) and
+because it is the list of what §5's sixteenth acceptance asks for. Where an
+assumption is STRUCTURAL — two ranges that cannot coincide — the argument for
+it is written in `runtime/npkrt.spec` beside the clause.
+
+<!-- BEGIN floor-callers -->
+31 sections have rows AND assume something of their caller. For 2 of them every caller is covered -- no
+untranslated floor caller, and the symbol is not exported; 18 have a floor caller no row covers; 15 are
+EXPORTED, so emitted code can call them and nothing proves the assumption there.
+
+| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |
+|---|---|---|---|---|---|
+| `@memcpy` | requires | -- | `@npk_to_cstring` `@npk_read_file` `@npk_read_stdin` `@memmove` `@npk_string_concat` | `@npk_ch_open` `@npk_ch_reclaim` `@npk_ch_recv_wait` `@npk_ch_send_wait` `@npk_ch_try_send` `@npk_ch_try_recv` `@npk_ralloc` | yes |
+| `@memset` | requires | -- | -- | `@npk_buffer_new` | yes |
+| `@npk_zero` | requires | -- | -- | `@npk_ch_open` `@npk_thread_start` | no |
+| `@npk_string_equals` | requires | -- | -- | -- | yes |
+| `@memmove` | requires | -- | -- | -- | yes |
+| `@npk_rq_push` | requires objects | -- | -- | `@npk_thread_entry` `@npk_sl_wake_due` | yes |
+| `@npk_rq_pop` | objects | -- | -- | `@npk_step` | yes |
+| `@npk_ch_wait_link` | requires objects | -- | -- | `@npk_mutex_acquire_wait` `@npk_rw_read_wait` `@npk_rw_write_wait` `@npk_cv_begin` `@npk_barrier_poll` `@npk_ch_recv_wait` `@npk_ch_send_wait` | no |
+| `@npk_ch_wait_unlink` | requires objects | -- | -- | `@npk_mutex_acquire_wait` `@npk_rw_read_wait` `@npk_rw_write_wait` `@npk_cv_done` `@npk_barrier_poll` `@npk_barrier_cancel` `@npk_ch_recv_wait` `@npk_ch_send_wait` | no |
+| `@npk_hs_put_str` | requires | -- | -- | `@npk_hs_report` | no |
+| `@npk_arena_at` | requires objects | -- | `@npk_arena_free` | -- | yes |
+| `@npk_arena_free` | requires objects | -- | -- | -- | yes |
+| `@npk_arena_reset` | requires objects | -- | -- | -- | yes |
+| `@npk_frame_bucket` | requires | -- | -- | `@npk_frame_alloc` `@npk_frame_free` | no |
+| `@npk_frame_drain` | objects | -- | -- | -- | yes |
+| `@npk_chtab_find` | requires | `@npk_small_check` | -- | -- | no |
+| `@npk_lg_find` | requires | -- | -- | `@npk_ralloc` `@npk_dalloc` | no |
+| `@npk_lg_remove` | requires objects | -- | -- | `@npk_dalloc` | no |
+| `@npk_ch_push` | requires objects | -- | `@npk_small_free` | `@npk_small_alloc` | no |
+| `@npk_ch_unlink` | requires objects | -- | `@npk_small_free` | `@npk_small_alloc` | no |
+| `@npk_small_free` | requires objects | -- | -- | `@npk_dalloc` | no |
+| `@npk_hs_put_dec` | requires objects | -- | -- | `@npk_hs_report` | no |
+| `@npk_chunk_guard_check` | requires | `@npk_small_check` | -- | -- | no |
+| `@npk_small_check` | requires | `@npk_small_free` | -- | `@npk_ralloc` | no |
+| `@npk_large_check` | requires | -- | -- | `@npk_ralloc` `@npk_dalloc` | no |
+| `@npk_wildx_check` | requires | -- | -- | `@npk_wildx_seal` `@npk_wildx_free` | no |
+| `@npk_read` | objects | -- | -- | -- | yes |
+| `@npk_read_file` | objects | -- | -- | -- | yes |
+| `@npk_to_cstring` | requires objects | -- | -- | -- | yes |
+| `@npk_string_concat` | requires views | -- | -- | -- | yes |
+| `@npk_string_slice` | requires objects | -- | -- | -- | yes |
+<!-- END floor-callers -->
+
 ## 5. What a reader must accept
 
 1. That the LLVM toolchain at the pinned patch release translates the emitted
@@ -572,6 +630,26 @@ The models, each with its bounds and its reachable states (and how many of them 
     interrupt -- one blocked in an uninterruptible wait -- is therefore
     running, in principle, while `failsafe` runs. The alternative is waiting
     forever, which is the failure this whole route exists to prevent.
+16. That the floor's CALLERS keep what its sections assume of them (1.5.6c;
+    leads E-1 and E-2). A section's `requires`, `(objects …)` and `(views …)`
+    — that a range lies in the address space, that it is LIVE memory (which
+    is what makes the allocator's fresh block apart from it), that two ranges
+    do not coincide — are hypotheses of its rows, and §4d lists, per section,
+    the callers for which a row proves them and the callers for which nothing
+    does: the floor's untranslated symbols, and emitted code. For the second
+    kind the evidence is an ARGUMENT, written in `runtime/npkrt.spec` beside
+    the clause — a frame is in at most one of a run queue, a sleeper list and
+    running; a task is linked on at most one waiter list, once; a chunk is on
+    at most one class list and the lists are linear; a frame's header is never
+    a slot; an arena value is never an arena element; the kernel maps nothing
+    over a live mapping unless asked — and the emitter's call discipline
+    (D-201's table is the program encoder's business). Two such hypotheses
+    were FALSE for a legal caller until 1.5.6c and no solver could have said
+    so: `npk_string_concat` assumed its two inputs apart (`string_concat(s, s)`)
+    and `npk_small_free` assumed a chunk apart from the head of the list it
+    was on. They were found by reading. What would TEST the rest rather than
+    argue it is 1.5.7's explorer carrying these invariants as executable
+    assertions in its floor; until it does, this item is what a reader accepts.
 
 Nothing else is trusted. In particular nothing in `src/`, `lib/` or the prelude
 is exempt from the checks that bind a user program (D-205's switch put the

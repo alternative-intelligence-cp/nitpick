@@ -21,6 +21,7 @@ use "./floor_smt.npk".*;
 use "./floor_kernel.npk".*;                  // the kernel-effect table, GENERATED (1.5.6b)
 use "./floor_model.npk".*;
 use "./floor_explore.npk".*;                 // the models' second reading (1.5.6b step 4d, D-295): TCB's numbers
+use "./floor_shared.npk".*;                  // `floor_calls`, the harness's `calls_of` (1.5.6c step 3: TCB's callers table)
 use "../src/backend/smt/smt_kinds.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;
 
@@ -676,6 +677,130 @@ pub func:tcb_residue_current = List<string>(Sxs->:s, List<ManRow>->:rows, List<M
     string:want = raw tcb_residue_region(s, rows, models, root);
     if (!(raw text_eq(have, want))) {
         drop strlist_push(@fl, "tcb-residue: TCB.md's residue region is not what the spec and the committed floor manifest say -- regenerate it (bootstrap/harness/tcb_floor.py --write)");
+    }
+    pass fl;
+};
+
+// --- who keeps a section's assumptions (1.5.6c step 3; leads E-1 and E-2) ------------------
+//
+// A section's `requires`, `(objects ...)` and `(views ...)` are HYPOTHESES of its
+// rows. A translated caller of a `(summary)` symbol proves them, as rows at the
+// call; a translated caller of any other symbol INLINES it, so the caller's own
+// rows cover the body in the caller's context. Every other call -- from a floor
+// symbol that is not translated, or from EMITTED code, which reaches whatever
+// the floor exports -- is checked by nothing. TCB.md SS4d says which calls are
+// which, generated: the hand-written account (1.5.6c's first walk) was wrong
+// twice in eleven sections. The harness's `floor.callers_region`, byte for
+// byte: the sections in the SPEC's order, the callers in the FLOOR's order --
+// neither runner sorts.
+
+// `floor_emit`'s own rule for what becomes a file of rows: a claim that yields
+// rows, and no `(boundary ...)` sentence. A symbol with no section is not.
+func:callers_translated = bool(Sxs->:s, string:name) never fails {
+    int64:sec = raw spec_section(s, name);
+    if (sec < 0i64) { pass false; }
+    bool:claims = (raw spec_has(s, sec, "ensures")) || (raw spec_has(s, sec, "ensures-trap")) || (raw spec_has(s, sec, "frame")) || (raw spec_has(s, sec, "loop"));
+    if (!claims) { pass false; }
+    pass (!(raw spec_has(s, sec, "boundary")));
+};
+
+// Does define `fi` call `sym` (a direct call, anywhere in its body)?
+func:callers_calls = bool(FloorText->:ft, int64:fi, string:sym) never fails {
+    List<FCall>:cs = raw floor_calls(@ft.fns.items[fi]);
+    for (int64:i in 0i64...cs.count) {
+        if (raw text_eq(raw strlist_view_of(cs.items[i].callee), sym)) { pass true; }
+    }
+    pass false;
+};
+
+// "`@a` `@b`", or "--" for none.
+func:callers_names = string(List<string>:xs) never fails {
+    if (xs.count == 0i64) { pass "--"; }
+    string:out = "";
+    for (int64:i in 0i64...xs.count) {
+        if (i > 0i64) { out = string_concat(out, " "); }
+        out = string_concat(out, "`");
+        out = string_concat(out, raw strlist_view(xs, i));
+        out = string_concat(out, "`");
+    }
+    pass out;
+};
+
+pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
+    List<string>:syms = raw spec_symbols(s);
+    string:table = "";
+    int64:total = 0i64;
+    int64:n_open = 0i64;
+    int64:n_exp = 0i64;
+    int64:n_closed = 0i64;
+    for (int64:i in 0i64...syms.count) {
+        string:sym = raw strlist_view(syms, i);
+        int64:fi = raw floor_fn_index(ft, sym);
+        if (fi < 0i64) { continue; }
+        if (!(raw callers_translated(s, sym))) { continue; }
+        int64:sec = raw spec_section(s, sym);
+        string:assumes = "";
+        if (raw spec_has(s, sec, "requires")) { assumes = string_concat(assumes, "requires"); }
+        if (raw spec_has(s, sec, "objects")) {
+            if (assumes.len > 0i64) { assumes = string_concat(assumes, " "); }
+            assumes = string_concat(assumes, "objects");
+        }
+        if (raw spec_has(s, sec, "views")) {
+            if (assumes.len > 0i64) { assumes = string_concat(assumes, " "); }
+            assumes = string_concat(assumes, "views");
+        }
+        if (assumes.len == 0i64) { continue; }
+        bool:summary = raw spec_has(s, sec, "summary");
+        List<string>:covered = raw list_init::<string>(4i64);
+        List<string>:unproved = raw list_init::<string>(4i64);
+        for (int64:c in 0i64...ft.fns.count) {
+            if (c == fi) { continue; }
+            if (!(raw callers_calls(ft, c, sym))) { continue; }
+            string:cname = raw strlist_view_of(ft.fns.items[c].name);
+            if (raw callers_translated(s, cname)) { drop strlist_push(@covered, cname); }
+            else { drop strlist_push(@unproved, cname); }
+        }
+        List<string>:none = raw list_init::<string>(1i64);
+        bool:exported = !ft.fns.items[fi].internal;
+        total = total + 1i64;
+        if (unproved.count > 0i64) { n_open = n_open + 1i64; }
+        if (exported) { n_exp = n_exp + 1i64; }
+        if ((unproved.count == 0i64) && (!exported)) { n_closed = n_closed + 1i64; }
+        table = string_concat(table, "\n| `");
+        table = string_concat(table, sym);
+        table = string_concat(table, "` | ");
+        table = string_concat(table, assumes);
+        table = string_concat(table, " | ");
+        if (summary) { table = string_concat(table, raw callers_names(covered)); } else { table = string_concat(table, raw callers_names(none)); }
+        table = string_concat(table, " | ");
+        if (summary) { table = string_concat(table, raw callers_names(none)); } else { table = string_concat(table, raw callers_names(covered)); }
+        table = string_concat(table, " | ");
+        table = string_concat(table, raw callers_names(unproved));
+        if (exported) { table = string_concat(table, " | yes |"); } else { table = string_concat(table, " | no |"); }
+    }
+    string:out = string_concat(int_to_string(total), " sections have rows AND assume something of their caller. For ");
+    out = string_concat(out, int_to_string(n_closed));
+    out = string_concat(out, " of them every caller is covered -- no\nuntranslated floor caller, and the symbol is not exported; ");
+    out = string_concat(out, int_to_string(n_open));
+    out = string_concat(out, " have a floor caller no row covers; ");
+    out = string_concat(out, int_to_string(n_exp));
+    out = string_concat(out, " are\nEXPORTED, so emitted code can call them and nothing proves the assumption there.\n\n");
+    out = string_concat(out, "| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |\n|---|---|---|---|---|---|");
+    out = string_concat(out, table);
+    pass out;
+};
+
+pub func:tcb_callers_current = List<string>(FloorText->:ft, Sxs->:s, string:tcb_text) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    string:bmark = "<!-- BEGIN floor-callers -->\n";
+    string:emark = "\n<!-- END floor-callers -->";
+    int64:b = raw text_index_of(tcb_text, bmark);
+    int64:e = raw text_index_of(tcb_text, emark);
+    if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-callers: TCB.md has no marked floor-callers region"); pass fl; }
+    string:have = raw text_slice(tcb_text, b + bmark.len, e);
+    string:want = raw tcb_callers_region(ft, s);
+    if (!(raw text_eq(have, want))) {
+        drop strlist_push(@fl, "tcb-callers: TCB.md's callers region is not what the floor and the spec say -- regenerate it (bootstrap/harness/tcb_floor.py --write)");
     }
     pass fl;
 };

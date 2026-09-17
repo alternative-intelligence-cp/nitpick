@@ -3801,6 +3801,32 @@ def check_tcb_residue_current():
     return []
 
 
+def check_tcb_callers_current(doc=None, ft=None, spec_text=None):
+    """TCB.md SS4d is generated (1.5.6c step 3; leads E-1 and E-2): per section
+    that has rows and assumes something of its caller, the callers a row covers
+    and the callers nothing does -- read from the floor's own calls and its own
+    `define` lines and from the spec. A caller added to the floor, a symbol
+    exported, a section that gains an assumption: the document moves with it,
+    or the run is red. The twin is `npkg/floor.npk`'s `tcb_callers_current`.
+    (The three texts are parameters for the self-check alone; a run reads the tree.)"""
+    import floor
+    if doc is None:
+        path = os.path.join(ROOT, "meta", "specs", "TCB.md")
+        doc = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+    m = re.search(r"<!-- BEGIN floor-callers -->\n(.*?)\n<!-- END floor-callers -->", doc, re.S)
+    if not m:
+        return ["tcb-callers: TCB.md has no marked floor-callers region"]
+    if spec_text is None:
+        spec_path = os.path.join(ROOT, "runtime", "npkrt.spec")
+        spec_text = open(spec_path, encoding="utf-8").read() if os.path.exists(spec_path) else ""
+    if ft is None:
+        ft = open(RUNTIME_LL, encoding="utf-8").read()
+    if m.group(1) != floor.callers_region(ft, spec_text):
+        return ["tcb-callers: TCB.md's callers region is not what the floor and the spec say -- "
+                "regenerate it (bootstrap/harness/tcb_floor.py --write)"]
+    return []
+
+
 def check_tcb_syscalls_current():
     """TCB.md's SYSCALL table is generated too (1.5.6 step 6, D-288 §2.8):
     every symbol that issues or reaches a syscall, with its direct numbers
@@ -4407,6 +4433,7 @@ def main(argv):
         failures += check_floor_models_explicit()
         failures += check_tcb_syscalls_current()
         failures += check_tcb_residue_current()
+        failures += check_tcb_callers_current()
 
         # The two standalone instruments that were wired to NOTHING until
         # 1.4.1 (found by the 1.4.0 survey): the harness's own self-check

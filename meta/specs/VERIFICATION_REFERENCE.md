@@ -1232,7 +1232,17 @@ disjointness is the true precondition (memcpy's forward copy).
 for a call that does not keep them the rows say nothing — and only a
 translated caller of a `(summary)` symbol proves them, as rows at the call.
 A caller that is a boundary symbol, a symbol with no section, or emitted
-code is checked by nothing. Two consequences a spec author owes the file: a range that may legitimately coincide with another
+code is checked by nothing. **TCB.md §4d, GENERATED** (`floor.callers_region`;
+`tcb_callers_region` in `npkg/floor.npk`; held current by both runners, a
+stale region a red run), lists per section which callers a row covers — a
+translated caller of a `(summary)` symbol, at the call; a translated caller
+of any other symbol, which inlines it — and which nothing does: the floor's
+untranslated callers, and emitted code wherever the symbol is EXPORTED (its
+`define` is not `internal`: the emitter's calls and LLVM's own lowering reach
+it). A structural assumption is ARGUED in the spec beside the clause, and
+TCB.md §5's sixteenth acceptance is what a reader is asked for. Two
+consequences a spec author owes the file: a range that may legitimately
+coincide with another
 is a VIEW or stays a bare `requires` (memmove's), never an object; and an
 object the body touches only on some paths is set apart only there —
 `(lo len apart-when COND)` (`npk_small_free`'s list neighbours, apart only

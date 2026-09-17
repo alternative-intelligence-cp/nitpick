@@ -1653,6 +1653,73 @@ def residue_region(spec_text, manifest_text, models=(), facts=()):
     return "\n".join(residue_rows(spec_text, manifest_text, models, facts))
 
 
+# --- WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3; leads E-1 and E-2) ------------------------------------
+#
+# A section's `requires`, `(objects ...)` and `(views ...)` are HYPOTHESES of its rows. A translated caller of a
+# `(summary)` symbol proves them, as rows at the call; a translated caller of any other symbol INLINES it, so the
+# caller's own rows cover the body in the caller's context. Every other call -- from a floor symbol that is not
+# translated, or from EMITTED code, which reaches whatever the floor exports -- is checked by nothing, and for it
+# the section's rows hold IF the assumption does. TCB.md SS4d says, per section, which calls are which: generated,
+# because the hand-written account of it (1.5.6c's first walk) was wrong twice in eleven sections. The Nitpick twin
+# is `npkg/floor.npk`'s `tcb_callers_region`, byte for byte: the sections in the SPEC's order, the callers in the
+# FLOOR's order -- neither runner sorts.
+
+def _translated(heads):
+    """`floor_emit`'s own rule for what becomes a file of rows: a claim that yields rows, and no `(boundary ...)`."""
+    return any(h in heads for h in ("ensures", "ensures-trap", "frame", "loop")) and "boundary" not in heads
+
+
+def callers_facts(floor_text, spec_text):
+    """[(symbol, assumes, rows_at_call, inlined_into, unproved_floor_callers, exported)] -- see above."""
+    fns, order = parse_floor(floor_text)
+    sections = spec_sections(spec_text)
+    heads = {sym: [_atom(c[0]) for c in cl if isinstance(c, list) and c] for sym, cl in sections}
+    callers = {}
+    for name in order:
+        seen = set()
+        for (_b, _l, callee) in calls_of(fns[name]):
+            if callee in seen or callee == name:
+                continue
+            seen.add(callee)
+            callers.setdefault(callee, []).append(name)
+    out = []
+    for sym, _cl in sections:
+        h = heads[sym]
+        if sym not in fns or not _translated(h):
+            continue
+        assumes = [x for x in ("requires", "objects", "views") if x in h]
+        if not assumes:
+            continue
+        summary = "summary" in h
+        cs = callers.get(sym, [])
+        covered = [c for c in cs if _translated(heads.get(c, []))]
+        unproved = [c for c in cs if not _translated(heads.get(c, []))]
+        out.append((sym, assumes, covered if summary else [], [] if summary else covered, unproved, not fns[sym].internal))
+    return out
+
+
+def callers_rows(floor_text, spec_text):
+    def names(xs):
+        return " ".join("`%s`" % x for x in xs) if xs else "--"
+    return ["| `%s` | %s | %s | %s | %s | %s |" % (sym, " ".join(assumes), names(at_call), names(inlined), names(unproved),
+                                                   "yes" if exported else "no")
+            for (sym, assumes, at_call, inlined, unproved, exported) in callers_facts(floor_text, spec_text)]
+
+
+def callers_region(floor_text, spec_text):
+    """The whole marked region's body: the counts, then the table."""
+    facts = callers_facts(floor_text, spec_text)
+    n_open = sum(1 for f in facts if f[4])
+    n_exp = sum(1 for f in facts if f[5])
+    n_closed = sum(1 for f in facts if not f[4] and not f[5])
+    head = ("%d sections have rows AND assume something of their caller. For %d of them every caller is covered -- no\n"
+            "untranslated floor caller, and the symbol is not exported; %d have a floor caller no row covers; %d are\n"
+            "EXPORTED, so emitted code can call them and nothing proves the assumption there.\n"
+            % (len(facts), n_closed, n_open, n_exp))
+    return head + "\n" + "\n".join(["| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |",
+                                    "|---|---|---|---|---|---|"] + callers_rows(floor_text, spec_text))
+
+
 def model_facts_all(root):
     """(name, K, D, reachable, inside) per model, sorted by name -- TCB.md's generated sentence. A model
     the explicit reading cannot read contributes nothing here; `check_models_explicit` names it."""

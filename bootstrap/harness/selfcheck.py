@@ -467,6 +467,36 @@ def main():
         bad += 1
     print("  %-26s %-4s  %s" % ("floor-unspecified", "ok" if okfu else "BAD",
                                 "a section with no claim and no residue sentence must fail"))
+    # WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator on a planted floor whose
+    # answer is known by reading it -- `@callee` assumes something of its caller; `@covered` is translated
+    # and INLINES it; `@bare` has no section, so nothing covers its call; `@callee` is `internal`, so
+    # emitted code cannot reach it. npkg's twin computes the same text from the same two strings, and both
+    # are held to ONE literal, so a twin that drifts fails here before it fails on the real floor. Then
+    # the currency belt's own failure path: a stale region must fail by name, the current one must pass.
+    cl_floor = ("define internal i64 @callee(i64 %a) {\nentry:\n  ret i64 %a\n}\n"
+                "define i64 @covered(i64 %a) {\nentry:\n  %r = call i64 @callee(i64 %a)\n  ret i64 %r\n}\n"
+                "define i64 @bare(i64 %a) {\nentry:\n  %r = call i64 @callee(i64 %a)\n  ret i64 %r\n}\n")
+    cl_spec = "(symbol @callee (requires (< a 10)) (ensures (= result a)))\n(symbol @covered (ensures (= result a)))\n"
+    cl_want = ("1 sections have rows AND assume something of their caller. For 0 of them every caller is covered -- no\n"
+               "untranslated floor caller, and the symbol is not exported; 1 have a floor caller no row covers; 0 are\n"
+               "EXPORTED, so emitted code can call them and nothing proves the assumption there.\n\n"
+               "| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |\n"
+               "|---|---|---|---|---|---|\n"
+               "| `@callee` | requires | -- | `@covered` | `@bare` | no |")
+    cl_got = floor.callers_region(cl_floor, cl_spec)
+    cl_doc = "x\n<!-- BEGIN floor-callers -->\n%s\n<!-- END floor-callers -->\ny\n"
+    for name, okc, why in (
+            ("tcb-callers-region", cl_got == cl_want,
+             "the callers table of a planted floor must be the text its reading gives"),
+            ("tcb-callers-stale", any("tcb-callers:" in f for f in harness.check_tcb_callers_current(cl_doc % "stale", cl_floor, cl_spec)),
+             "a callers region that is not what the floor and the spec say must fail by name"),
+            ("tcb-callers-control", harness.check_tcb_callers_current(cl_doc % cl_want, cl_floor, cl_spec) == [],
+             "the generated region must pass")):
+        if not okc:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if okc else "BAD", why))
+        if not okc and name == "tcb-callers-region":
+            print("      the generator said:\n%s" % cl_got)
     # A HEAD READ ONCE IS WRITTEN ONCE, AND A LOOP HOLDS WHAT THE TRANSLATOR READS (1.5.6c step 1): the
     # translator takes the FIRST `frame`/`objects`/`views`/`ensures-trap`/... and drops the rest in silence, and
     # a loop sub-clause outside its four was never read at all -- a claim written and never proven. By name.
