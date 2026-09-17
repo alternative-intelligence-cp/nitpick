@@ -1313,7 +1313,11 @@ in count, exact in kind. One more is bounded at 16 a call (`npk_park_sleep`'s
 eight and adds ONE LINE to each runner (D-173's own check, over the floor) --
 a rule written for one spelling of a construct was owed to the other.
 
-**DEF-54, DEF-55, DEF-56 — OPEN (found 2026-09-17 on `129d56f` by
+**DEF-54, DEF-55, DEF-56 — FIXED at 1.5.6b step 4c (2026-09-17), each in the one
+function named below, each with a program that runs the shape and a control
+that still refuses: `fn_value_pattern.npk` (exit 42; `llc` REJECTS the module
+under the compiler as it stood), `fn_field_raw.npk` + `raw_field_rules.npk`,
+`trait_fn_param.npk` + `trait_callback_sig.npk`.** ~~OPEN~~ (found 2026-09-17 on `129d56f` by
 `nitpick-compiler_s7`, all three by writing D-296's probes and its rejection
 test; owner: the compiler seat, 1.5.6b step 4c). THE FUNCTION-VALUE CORNER:
 three places where a rule written for one shape of a function value was never

@@ -1,0 +1,41 @@
+// THE LICENCE READS A FIELD CALL'S TYPE IN BOTH SPELLINGS (DEF-55, 1.5.6b step
+// 4c) -- and that must not have made it lenient. `(o.f)(x)` and `o.f(x)` are
+// one call through a function-valued field; since the fix both ask the field's
+// FUNCTION TYPE whether the callee is `never fails`. Here the field is MAY-FAIL,
+// so `raw` and `drop` are refused in both spellings -- the control for
+// `backend/programs/fn_field_raw.npk`, where the same four lines over a `never
+// fails` field are accepted and run.
+mod:raw_field_rules;
+
+func:dbl = int64(int64:x) { pass x * 2i64; };
+func:note = NIL(int64:x) { discard(x); pass NIL; };
+
+struct:Ops = {
+    func int64(int64):op;
+    func NIL(int64):say;
+};
+
+// expect-error: NITPICK-TYPE-042
+func:raw_call_shape = int64(Ops:o) never fails {
+    pass (raw (o.op)(1i64));
+};
+
+// expect-error: NITPICK-TYPE-042
+func:raw_method_shape = int64(Ops:o) never fails {
+    pass (raw o.op(1i64));
+};
+
+// expect-error: NITPICK-TYPE-042
+func:drop_call_shape = NIL(Ops:o) never fails {
+    drop (o.say)(1i64);
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-042
+func:drop_method_shape = NIL(Ops:o) never fails {
+    drop o.say(1i64);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

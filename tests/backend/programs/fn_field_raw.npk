@@ -1,0 +1,41 @@
+// expect-exit: 42
+//
+// `raw` AND `drop` OVER A CALL THROUGH A `never fails` FUNCTION-TYPED FIELD, IN
+// BOTH SPELLINGS OF THE CALL (DEF-55, 1.5.6b step 4c). `(o.f)(x)` and `o.f(x)`
+// are one call (1.0.9c: the field loaded first, then an indirect call). The
+// licence (`unwrap_licence_of`) read the recorded callee FUNCTION TYPE for the
+// first spelling and only a method DECLARATION for the second -- a field call
+// has none -- so `raw o.f(x)` was TYPE-042 "licensed only by a `never fails`
+// callee" about a callee whose type says `never fails`, while `raw (o.f)(x)`
+// was accepted. One call, two spellings, two answers. The may-fail field is
+// still refused in both (`types/rejection/raw_field_rules.npk`).
+mod:fn_field_raw;
+
+func:dbl = int64(int64:x) never fails { pass x * 2i64; };
+func:note = NIL(int64:x) never fails { discard(x); pass NIL; };
+
+struct:Ops = {
+    func int64(int64) never fails:op;
+    func NIL(int64) never fails:say;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Ops:o = Ops{ op: dbl, say: note };
+    int64:a = raw (o.op)(10i64);      // CallExpr, member-access callee      -> 20
+    int64:b = raw o.op(11i64);        // method-call parse shape             -> 22
+    drop (o.say)(a);
+    drop o.say(b);
+    exit ((a + b) =>! int32);         // 42
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

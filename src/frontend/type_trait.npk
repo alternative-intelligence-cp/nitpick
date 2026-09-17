@@ -1601,6 +1601,30 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
         if (bound == 0i32) { pass true; }
         pass (got == bound);
     }
+    // A FUNCTION TYPE COMPARES STRUCTURALLY (DEF-56, 1.5.6b step 4c). `tt_func`
+    // interns the parameter window's START INDEX -- an allocation artifact -- so
+    // two spellings of one function type never share an id; `types_agree`
+    // (`type_expr.npk`) has compared them structurally for that reason since
+    // 0.9.6, and this walk never learned to: a trait method with a callback
+    // parameter could not be implemented at all -- TYPE-014, "does not have the
+    // signature the trait declares", about two signatures spelled identically.
+    // The return goes through `same_return` and the parameters through this
+    // walk, so `Self` and an associated type substitute INSIDE a callback's
+    // signature as they do outside it; the `never fails` bit must be EQUAL --
+    // the caller hands the callback the TRAIT spells, and an impl that spelled
+    // it otherwise would be promising, or demanding, something else.
+    if (raw type_is_func(r.types, want)) {
+        if ((raw type_kind(r.types, want)) != (raw type_kind(r.types, got))) { pass false; }
+        if ((raw func_never_fails(r.types, want)) != (raw func_never_fails(r.types, got))) { pass false; }
+        if (!(raw same_return(r, raw type_elem(r.types, want), raw type_elem(r.types, got), sc))) { pass false; }
+        int32:fpn = raw type_param_count_of(r.types, want);
+        if (fpn != (raw type_param_count_of(r.types, got))) { pass false; }
+        for (int32:fpi in 0i32...fpn) {
+            if (!(raw same_after_self(r, raw type_param_at_of(r.ast, r.types, want, fpi),
+                                         raw type_param_at_of(r.ast, r.types, got, fpi), sc))) { pass false; }
+        }
+        pass true;
+    }
     pass false;
 };
 

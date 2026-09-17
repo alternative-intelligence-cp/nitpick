@@ -1,0 +1,69 @@
+// expect-exit: 42
+//
+// A TRAIT METHOD WITH A FUNCTION-TYPED PARAMETER CAN BE IMPLEMENTED (DEF-56,
+// 1.5.6b step 4c). `tt_func` interns a function type's parameter window by its
+// START INDEX -- an allocation artifact -- so two spellings of one function type
+// never share a type id. `types_agree` has compared them structurally since
+// 0.9.6 for exactly that reason; the impl-versus-trait comparison
+// (`same_after_self`) never learned to, and every trait method that took or
+// returned a function value was unimplementable: TYPE-014, "does not have the
+// signature the trait declares", about two signatures spelled identically.
+//
+// A callback taken, a callback returned, a callback whose own signature names
+// `Self` (substituted INSIDE the function type, as it is outside), and the
+// same through a generic bound. 20 + 12 + 7 + 3 = 42.
+mod:trait_fn_param;
+
+func:dbl = int64(int64:x) never fails { pass x * 2i64; };
+func:inc = int64(int64:x) never fails { pass x + 1i64; };
+
+struct:Box = { int64:n; };
+
+func:peek = int64(Box:b) never fails { pass b.n; };
+
+trait:Apply = {
+    func:run     = int64(Self:self, func int64(int64) never fails:cb);
+    func:pick_cb = func int64(int64) never fails(Self:self);
+    func:on_self = int64(Self:self, func int64(Self) never fails:look);
+};
+
+impl:Box:Apply = {
+    func:run = int64(Self:self, func int64(int64) never fails:cb) {
+        pass (raw cb(self.n));
+    };
+    func:pick_cb = func int64(int64) never fails(Self:self) {
+        if (self.n > 5i64) { pass inc; }
+        pass dbl;
+    };
+    func:on_self = int64(Self:self, func int64(Box) never fails:look) {
+        pass (raw look(self));
+    };
+};
+
+func:through_bound<T: Apply> = int64(T:v) {
+    pass (v.run(inc) ?| 0i64);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Box:b = Box{ n: 10i64 };
+    int64:a = b.run(dbl) ?| 0i64;                      // 20
+    func int64(int64) never fails:g = b.pick_cb() ?| dbl;
+    int64:c = raw g(11i64);                            // inc(11) = 12
+    Box:s = Box{ n: 7i64 };
+    int64:d = s.on_self(peek) ?| 0i64;                 // 7
+    Box:t = Box{ n: 2i64 };
+    int64:f = (through_bound::<Box>(t)) ?| 0i64;       // inc(2) = 3
+    exit ((a + c + d + f) =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

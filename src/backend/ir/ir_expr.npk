@@ -6850,18 +6850,23 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw emit_indirect_call(x, id, n));
     }
     if (cnode.a != 0i32) {
+        // THE CALLEE IS A DECLARED FUNCTION'S NAME, OR IT IS A VALUE (DEF-54,
+        // 1.5.6b step 4c). This decision ENUMERATED the bindings it knew -- a
+        // local (`SYM_STMT`), a parameter -- and fell through to the direct
+        // path for everything else, so a function value bound by a `pick`
+        // PATTERN (`SYM_PAT`) was read as a declaration: `(Op.Run(f)) { raw
+        // f(); }` emitted `call @"npk.prelude.f"()`, a symbol that does not
+        // exist, and `llc` rejected the module. `emit_pipe` below has always
+        // decided the right way round, and this is its rule now: DIRECT only
+        // for a symbol that names a declared function; every other symbol is
+        // a value, evaluated to a pointer and called through.
         Symbol:csym = raw symtab_get(x.tab, cnode.a);
-        if (csym.origin_kind == (raw SYM_STMT())) {
-            // The callee is a LOCAL holding a function value — indirect too.
-            pass (raw emit_indirect_call(x, id, n));
-        }
+        bool:direct = false;
         if (csym.origin_kind == (raw SYM_DECL())) {
             DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: csym.origin });
-            // A PARAMETER holding a function value: indirect, same as a local.
-            if (cdecl.kind == DeclKind.DeclParamDecl) {
-                pass (raw emit_indirect_call(x, id, n));
-            }
+            if (cdecl.kind == DeclKind.DeclFunctionDecl) { direct = true; }
         }
+        if (!direct) { pass (raw emit_indirect_call(x, id, n)); }
     }
 
     // The turbofish's arguments were consumed by the checker (which recorded the

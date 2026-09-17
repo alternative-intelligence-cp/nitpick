@@ -1904,6 +1904,18 @@ func:unwrap_licence_of = int32(ExprTyper->:e, ExprNode:opn, ExprId:opid) never f
         if (md != 0i32) {
             DeclNode:mdn = raw ast_decl(e.ast, DeclId{ index: md });
             if (raw fn_declares_never_fails(e.ast, mdn)) { pass 0i32; }
+            pass 1i32;
+        }
+        // NO METHOD DECLARATION: a call through a function-valued FIELD in the
+        // method-call parse shape, `o.f(x)` (1.0.9c) -- the same call as
+        // `(o.f)(x)`, whose `CallExpr` branch above reads the recorded callee
+        // FUNCTION TYPE. This branch read only a declaration, so `raw o.f(x)`
+        // over a `never fails` field was TYPE-042 while `raw (o.f)(x)` was
+        // accepted (DEF-55, 1.5.6b step 4c): one call, two spellings, two
+        // answers. The field's type answers here too; `drop` shares the licence.
+        int32:mft = raw exprtypes_callee_ft(e.expr_types, opid);
+        if (mft != 0i32) {
+            if (raw func_never_fails(e.types, mft)) { pass 0i32; }
         }
         pass 1i32;
     }

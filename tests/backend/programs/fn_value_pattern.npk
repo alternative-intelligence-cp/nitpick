@@ -1,0 +1,91 @@
+// expect-exit: 42
+//
+// A FUNCTION VALUE BOUND BY A `pick` PATTERN IS CALLED THROUGH (DEF-54, 1.5.6b
+// step 4c). `emit_call` decided "indirect" by enumerating the bindings it knew
+// -- a local, a parameter -- and fell through to the DIRECT path for everything
+// else, so a pattern-bound callee was read as a declaration: `(Op.Run(f)) { raw
+// f(); }` emitted `call @"npk.prelude.f"()`, a symbol that does not exist, and
+// `llc` rejected the module -- an internal defect reaching the user as an
+// assembler error. The checker had admitted the call all along. The decision is
+// `emit_pipe`'s now: direct ONLY for a symbol that names a declared function,
+// a value otherwise.
+//
+// Every shape a pattern can bind a function value in, each CALLED, the answers
+// summed into the exit code (1 + 2 + 4 + 8 + 27 = 42):
+//   an enum payload, lending form, `pick` STATEMENT             -> 1
+//   an enum payload, lending form, `pick` EXPRESSION            -> 2
+//   an enum payload, CONSUMING form (`pick (move(v))`)          -> 4
+//   a struct FIELD bound by a struct pattern                    -> 8
+//   a payload with PARAMETERS and a may-fail contract, `?|`     -> 27
+mod:fn_value_pattern;
+
+func:one = int64() never fails { pass 1i64; };
+func:two = int64() never fails { pass 2i64; };
+func:four = int64() never fails { pass 4i64; };
+func:eight = int64() never fails { pass 8i64; };
+func:cube = int64(int64:x) { pass x * x * x; };
+
+enum:Op = { Run(func int64() never fails); Idle; };
+// an OWNING enum, so the consuming form is legal (a `move` of a selector that
+// owns nothing is TYPE-046)
+enum:Job = { Call(func int64() never fails); Named(string); };
+enum:Fn1 = { Apply(func int64(int64)); Skip; };
+struct:Ops = { func int64() never fails:go; int64:k; };
+
+func:stmt_form = int64(Op:o) never fails {
+    pick (o) {
+        (Op.Run(f)) { pass (raw f()); },
+        (Op.Idle)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:expr_form = int64(Op:o) never fails {
+    int64:v = pick (o) { (Op.Run(g)) { give (raw g()); }, (Op.Idle) { give 0i64; } };
+    pass v;
+};
+
+func:consuming_form = int64(move Job:j) never fails {
+    pick (move(j)) {
+        (Job.Call(h))  { pass (raw h()); },
+        (Job.Named(_)) { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:struct_form = int64(Ops:p) never fails {
+    pick (p) {
+        (Ops{ go, k }) { pass ((raw go()) + k); }
+    }
+    pass 0i64;
+};
+
+func:with_params = int64(Fn1:a) never fails {
+    pick (a) {
+        (Fn1.Apply(fx)) { pass ((fx(3i64)) ?| 0i64); },
+        (Fn1.Skip)      { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:s = 0i64;
+    s = s + (raw stmt_form(Op.Run(one)));
+    s = s + (raw expr_form(Op.Run(two)));
+    s = s + (raw consuming_form(Job.Call(four)));
+    s = s + (raw struct_form(Ops{ go: eight, k: 0i64 }));
+    s = s + (raw with_params(Fn1.Apply(cube)));
+    exit (s =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
