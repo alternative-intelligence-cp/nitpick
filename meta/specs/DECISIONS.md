@@ -18735,3 +18735,99 @@ varies by circumstance, and the circumstance is invisible where it matters.
 > zero it measured was re-measured over the 57 at landing (7,107 `func:`
 > declarations in 778 tracked files: 8 methods, 3 parse-level `extern`
 > fixtures, nothing the loader refuses).
+
+## D-295 — The floor's protocol models are read a SECOND way: exhaustive explicit-state search, a belt in both runners beside the solver's rows — **SETTLED (user decision, 2026-09-17: "go with your recommendations on all three"; S-75)**
+
+D-289 decides each model's bad predicates by unrolling the model to a depth
+K under a preemption bound D and asking the pinned solver; TCB.md §5's
+thirteenth acceptance is the honest consequence — "a defect that needs more
+steps than K, or more thread switches than D, is outside what was proven".
+Measured at 1.5.6b step 2 by a probe (`meta/roadmap/1.5/tools/model_bfs.py`):
+the seven models are SMALL (68 to 1,086 reachable states) and plain
+breadth-first search reads each whole reachable space in under half a second
+with no depth bound, no preemption bound and no solver. It found no bad state
+anywhere in any model, every control's bad state inside its bounds, and no
+disagreement with the solver wherever both speak — and it found what the
+bounded rows cannot say: in three models the depth is smaller than the
+diameter (`channel-table` 12 against 15, `driver-registry` 10 against 11,
+`park-unpark` 14 against 19; 70 reachable states outside the bounds), and
+`park-unpark` cannot be unrolled to its diameter under the profile (K 19
+answers `unknown`). It also showed where the two-runner rule had stopped: a
+model's MEANING had exactly one reader in the tree — `npkg/floor_model.npk`'s
+unroller writes the SMT text for BOTH runners, the harness's Python side
+reads only the `(ir …)` forms — so the rule that holds every other belt did
+not reach what a model means. **The decision.** The explicit-state reading is
+a standing belt in both runners (`floor.check_models_explicit`,
+`npkg/floor_explore.npk`), the same findings by name: a bad state reachable
+ANYWHERE in a model's reachable space; a control whose bad state is reachable
+nowhere; a step a variable's range blocks (a transition silently removed);
+and THE TWO READINGS DISAGREEING inside (K, D) — a row the solver discharged
+whose bad state the search reaches within the bounds, or a control the solver
+answered `sat` that the search cannot reach within them. The solver's rows
+STAY: two algorithms over one model text is the two-runner rule applied to
+the evidence itself (1.5.6's stutter hole — an unroller that made a halted
+protocol read as a safe one — would have been a disagreement on its first
+run), the manifest and D-040's discipline are built on the solver's
+verdicts, and a model that outgrows enumeration still has the symbolic
+reading. With the belt, TCB.md §5's thirteenth acceptance narrows to
+LIVENESS for every model the search covers: the bounds stop being where the
+SAFETY claims stop. A model too large to enumerate is refused BY NAME, never
+skipped. **Alternatives costed:** leave it a probe — declined, the next model
+edit would be covered by the bounded reading alone; REPLACE the unrolling
+with the search ("one mechanism rather than two") — declined: they are not
+two mechanisms for one job but two independent readings that check each
+other.
+
+> Lands at **1.5.6b** step 4d (`meta/roadmap/1.5/1.5.6b.md`).
+
+## D-296 — A CALLABLE binding may not take a builtin's name: D-294 inside a function — **SETTLED (user decision, 2026-09-17: "go with your recommendations on all three"; S-76)**
+
+D-294 refuses a module-level function named after a builtin, because the
+resolver admits a bare-name builtin only when nothing in scope binds the
+name. Landing it measured the rule's edge: a module-level BINDING cannot
+carry a function value (TYPE-035), but a LOCAL can —
+`func int64() never fails:path_exists = eight;` makes `raw path_exists()`
+call the local for the rest of its scope (exit 8). Lexical and in view, where
+the module-level case was invisible at the call and crossed imports; but
+D-294's own principle is that the builtin table's names are the compiler's
+IN THE FUNCTION NAMESPACE, and a function-typed binding is in it — it is
+called by its bare name. "Visible if the reader looks" is the argument D-294
+already rejected. **The decision.** A PARAMETER (a function's or a method's,
+with a body or without), a LOCAL, a `for` binding or a `pick` PATTERN
+binding (either spelling of `pick`; an enum payload's or a struct field's)
+whose TYPE is a function type may not take a builtin's name:
+`NITPICK-RESOLVE-001` at the binding — the loader's own code for "this name
+already means something here", reported by the CHECKER because only the
+checker knows a binding's type (D-275's precedent). Decided by the binding's
+TYPE at every site that types one, never by its spelling: a pattern binding
+has no annotation to read, and one predicate is one rule. NOT refused: a
+binding of any other type named after a builtin (`int64:read`: calling it is
+a type error, loud); a function-typed FIELD (reached through its receiver, as
+a method is — it is no binding); methods (D-294's exemption). One
+consequence, stated because it is easy to miss: a STRUCT PATTERN binds its
+field BY NAME, so a function-typed field named after a builtin is declared
+and called through its receiver and is NOT destructured — the binding the
+pattern would create is exactly the callable local this decision refuses.
+Cost at ratification: zero sites (the tree's 15 function-typed declarations
+— one of them a struct field, the library listener's catch — carry no
+builtin's name). A new refusal: the listener had it as a forecast with its
+code before it was written. **Alternative costed:** leave it, a local shadow
+being ordinary lexical scoping — declined: it would be the only place a bare
+builtin call can mean something else, and a reader or a prover of
+`alloc(…)` would have to look for a shadow after all.
+
+> Lands at **1.5.6b** step 4b (`meta/roadmap/1.5/1.5.6b.md`).
+>
+> **LANDED at 1.5.6b step 4b (2026-09-17).** `check_callable_name` in
+> `src/frontend/type_stmt.npk`, called where a local (`check_var_decl`), a
+> parameter (`check_function`), a `for` binding (`check_for`) and a pattern's
+> bindings (`type_enum_bindings`, `type_struct_bindings` — under
+> `type_pick_rules`, the ONE function both spellings of `pick` call) get
+> their types. `tests/types/rejection/callable_builtin_names.npk`: seven
+> refusals (a local, a function's parameter, a method's, a `for` binding, an
+> enum pattern's binding in the statement AND the expression form, a struct
+> pattern's) and the accepted shapes in the same file — the listener's
+> negative case among them, a function-typed field named `open` declared and
+> called through its receiver in both call spellings. Writing that test found
+> three defects in the function-value corner that have nothing to do with
+> names (DEF-54, DEF-55, DEF-56: OPEN_DECISIONS §2f), fixed at step 4c.

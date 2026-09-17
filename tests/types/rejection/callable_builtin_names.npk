@@ -1,0 +1,116 @@
+// A CALLABLE BINDING MAY NOT TAKE A BUILTIN'S NAME (D-296, 1.5.6b step 4b) --
+// D-294 inside a function. The resolver admits a bare-name builtin only when
+// nothing in scope binds the name, so a binding of FUNCTION TYPE takes it over
+// for its whole scope: measured, `func int64() never fails:path_exists = eight;`
+// made `raw path_exists()` answer 8. Decided by the binding's TYPE, at every site
+// that types one -- a local, a parameter (a function's and a method's), a `for`
+// binding and a `pick` pattern's binding in BOTH spellings of `pick` -- under
+// the loader's own code for "this name already means something here".
+//
+// And what the rule must NOT reach, accepted below in silence (the file fails
+// if it reaches too far as surely as if it does not reach): a binding of any
+// OTHER type named after a builtin (calling it is a type error, loud); a
+// function-typed FIELD of that name, declared and called through its receiver
+// (the library listener's case: a field is reached like a method, and is no
+// binding); a function-typed binding with an ordinary name; a METHOD of a
+// builtin's name (D-294's exemption).
+mod:callable_builtin_names;
+
+func:eight = int64() never fails { pass 8i64; };
+func:twice = int64(int64:x) never fails { pass x * 2i64; };
+func:twice_mf = int64(int64:x) { pass x * 2i64; };
+
+// --- refused ---------------------------------------------------------------------
+
+// a local
+// expect-error: NITPICK-RESOLVE-001
+func:as_local = int64() never fails {
+    func int64() never fails:path_exists = eight;
+    pass (raw path_exists());
+};
+
+// a function's parameter
+// expect-error: NITPICK-RESOLVE-001
+func:as_param = int64(func int64(int64) never fails:alloc) never fails {
+    pass (raw alloc(4i64));
+};
+
+struct:Box = { int64:n; };
+// a METHOD's parameter -- a trait's default body here; a bodiless signature's
+// parameter is held to the same rule (one rule, no "unless it has no body")
+// expect-error: NITPICK-RESOLVE-001
+trait:Apply = {
+    func:run = int64(Self:self, func int64(int64) never fails:read) {
+        pass (raw read(1i64));
+    };
+};
+impl:Box:Apply = {};
+
+// a `for` binding
+// expect-error: NITPICK-RESOLVE-001
+func:as_for = int64() never fails {
+    func int64() never fails[2]:fs = [eight, eight];
+    int64:s = 0i64;
+    for (func int64() never fails:close in fs) { s = s + (raw close()); }
+    pass s;
+};
+
+enum:Op = { Run(func int64() never fails); Idle; };
+// a `pick` pattern's binding, the STATEMENT form
+// expect-error: NITPICK-RESOLVE-001
+func:as_pattern = int64(Op:o) never fails {
+    pick (o) {
+        (Op.Run(mono_now)) { pass (raw mono_now()); },
+        (Op.Idle) { pass 0i64; }
+    }
+    pass 1i64;
+};
+
+// ...and the EXPRESSION form: a rule written for one spelling is owed to the other
+// expect-error: NITPICK-RESOLVE-001
+func:as_pattern_expr = int64(Op:o) never fails {
+    int64:v = pick (o) { (Op.Run(dalloc)) { give (raw dalloc()); }, (Op.Idle) { give 0i64; } };
+    pass v;
+};
+
+// a STRUCT pattern binds its field BY NAME: the field below is legal, its
+// destructuring is not
+struct:Ops = { func int64(int64):open; int64:k; };
+// expect-error: NITPICK-RESOLVE-001
+func:as_struct_pattern = int64(Ops:p) never fails {
+    pick (p) {
+        (Ops{ open, k }) { pass ((open(k)) ?| 0i64); }
+    }
+    pass 0i64;
+};
+
+// --- accepted --------------------------------------------------------------------
+
+// a function-typed FIELD named after a builtin, declared and called through its receiver
+func:field_call = int64() never fails {
+    Ops:o = Ops{ open: twice_mf, k: 21i64 };
+    int64:a = (o.open)(o.k) ?| 0i64;       // CallExpr, member-access callee
+    int64:b = o.open(1i64) ?| 0i64;        // method-call parse shape
+    pass a + b;
+};
+
+// bindings of OTHER types named after builtins: a local, a parameter, a `for` binding
+func:other_types = int64(int64:close) never fails {
+    int64:read = close + 1i64;
+    int64:s = read;
+    for (int64:alloc in 0i64...3i64) { s = s + alloc; }
+    pass s;
+};
+
+// a function-typed binding with an ordinary name
+func:ordinary = int64(func int64(int64) never fails:f) never fails {
+    func int64() never fails:g = eight;
+    pass (raw f(raw g()));
+};
+
+// a METHOD of a builtin's name (D-294's exemption)
+trait:Sink2 = { func:write = int64(Self:self); };
+impl:Box:Sink2 = { func:write = int64(Self:self) { pass self.n; }; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

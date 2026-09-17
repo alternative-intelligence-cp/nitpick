@@ -50,7 +50,13 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 > that name, because its generated stub is a module-level function (D-190). A
 > METHOD is exempt (`w.write(…)` is reached through its receiver's type and can
 > never be mistaken for the bare call), and a module-level BINDING cannot carry a
-> function value at all (TYPE-035). **So every row added to a marked region
+> function value at all (TYPE-035). INSIDE a function the same holds for every
+> CALLABLE binding (D-296): a parameter, a local, a `for` binding or a `pick`
+> pattern's binding whose TYPE is a function type may not take a row's name
+> either — the same code, from the checker, decided by the type and never by
+> the spelling; a binding of any other type may (`int64:read` cannot be
+> called), and so may a function-typed FIELD, which is reached through its
+> receiver. **So every row added to a marked region
 > RESERVES A NAME in every program**: measure the name across the compiler tree,
 > the libraries and the apps before adding it, and tell the library listener
 > before it lands.
