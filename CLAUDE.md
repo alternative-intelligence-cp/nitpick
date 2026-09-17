@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.6c (the floor spec's caller assumptions: two `(objects …)` clauses found false for legal callers), 1.5.7 (the schedule-exploration harness) and 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.6b have landed, the floor itself is specified, modelled and its models read twice, and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has TWO subcycles left — 1.5.7 (the schedule-exploration harness) and 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.6c have landed, the floor itself is specified, modelled, its models read twice and its spec's caller assumptions written down, and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -1171,15 +1171,31 @@ commented safe and unsafe in two steps. TCB.md §5's eighth and thirteenth
 acceptances are narrowed. `runtime/npkrt.obligations`: 379 rows, 372
 discharged, 7 `budget`, 0 open; `nitpick.obligations` never moved; the floor's
 bytes moved once.
+**1.5.6c (what the floor's spec ASSUMES of its callers) IS COMPLETE
+(2026-09-17; `meta/roadmap/1.5/1.5.6c.md`; approved by the user to run before
+1.5.7's plan; five landings, each a cumulative prefix under a full harness,
+D-228).** A section's `requires` and `(objects …)` are HYPOTHESES of its rows,
+and nothing checks the callers no row covers. **Two were FALSE for a legal
+caller**, neither a behavioural defect, both evidence that said nothing where
+it looked like it spoke, and no solver could have said so — they were found by
+READING: `npk_string_concat` assumed its two inputs apart (`string_concat(s,
+s)` is in the tree twice; the proof never needed it) and `npk_small_free`
+assumed a chunk apart from the head of the list it was on, the ordinary LIFO
+free. Step 0: `(lo len apart-when COND)` — a range in the address space always,
+set apart only where the body reads it. Step 1: `(views (lo len) …)` — ranges
+handed over to READ: apart from objects, never from each other, read-only
+PROVEN by the frame row; and two silences refused in both runners (a clause
+head the translator reads once, written twice; a loop sub-clause it does not
+read). Step 2: every other apartness argued in the spec beside its clause, on
+six named invariants. Step 3: TCB.md §4d GENERATED in both runners — per
+section, the callers a row covers and the callers nothing does (31 sections: 2
+covered, 18 with an unproved floor caller, 15 exported) — with §5's sixteenth
+acceptance. No verdict moved (25 hashes over two symbols), no floor byte, no
+ladder row. **S-77 is OPEN (the user's):** the solver's hang net leaves
+`npk_small_free` at 81% of its bound.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): THREE subcycles.** **1.5.6c runs first (approved 2026-09-17):**
-leads E-1 and E-2 — a `(objects …)` clause asserts its ranges pairwise apart as
-a HYPOTHESIS that nothing checks of the callers no row covers, and a first walk
-found two FALSE for legal callers (`npk_string_concat`'s two inputs, since
-`string_concat(s, s)` is a program; `npk_small_free`'s list objects, in the
-allocator's most common state) — evidence that says nothing where it looks like
-it speaks; both fixes are measured (no verdict moves). 1.5.7 is D-212's
+throughout): TWO subcycles.** 1.5.7 is D-212's
 schedule-exploration harness, not yet planned. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
@@ -1683,6 +1699,32 @@ that carried them retired at the cycle close):
   step 4): a new rejection file is iterated with its stage's tool by hand
   (`quickemit.py --keep tools/resolve_check.npk`, then the binary over the
   file) or with `quickcheck.py`, and concluded by the full run.
+- **A floor spec clause is a HYPOTHESIS ABOUT THE CALLER, and TCB.md §4d says
+  who keeps it** (1.5.6c; E-1, E-2): a section's `requires`, `(objects …)` and
+  `(views …)` are assumed by its rows and PROVEN only at a translated call of
+  a `(summary)` symbol; an untranslated floor caller and emitted code (the
+  symbol is exported) are checked by nothing. So write a structural
+  assumption's ARGUMENT beside the clause, and choose the form by what is
+  TRUE for every legal caller: ranges that may coincide are `(views …)`
+  (read-only, proven by the frame row) or a bare `requires`, never objects;
+  an object the body touches on some paths alone is `(lo len apart-when
+  COND)` — never an `ite` inside a range. A false hypothesis is invisible to
+  a solver (the rows just hold vacuously for that caller): the two found were
+  found by reading. `tcb_floor.py --write` writes FOUR regions now; a new
+  CALL in the floor, or a `define` that gains or loses `internal`, moves §4d.
+- **What the translator reads once is written once** (1.5.6c step 1): a
+  second `objects`, `views`, `frame`, `ensures-trap`, `ensures-fresh`,
+  `residue`, `boundary` or `summary` in a section, a loop sub-clause other
+  than `invariant`/`unroll`/`inst`/`objects`, is refused by both runners —
+  each was dropped in silence before, a claim written and never proven.
+- **A solver cost is measured in the RUNNER'S OWN MODE** (1.5.6c step 0): one
+  z3 process over the whole file under the profile, wall-clock BESIDE rlimit
+  (`/usr/bin/time -f %es z3 smt.random_seed=0 sat.random_seed=0
+  rlimit=20000000 lp.dio=false -smt2 FILE`). A row split out of its file, or a
+  cost in rlimit alone, measured a spelling as free that took its file from
+  202 s to 357 s — past the hang net (`120 + 10·checks` seconds per file,
+  P-13), which is a red run and no verdict. `npk_small_free` stands at 81% of
+  that net on this machine (S-77, open).
 
 ### Reserved words that read like ordinary names
 
