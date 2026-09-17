@@ -18464,6 +18464,23 @@ profile, a JVM on the workbench.
 > protocol that halts before tick K unsatisfiable in its own unrolling, so
 > every bad predicate reads unreachable — a vacuous `unsat`; a tick may
 > stutter now. Liveness is residue by name.
+>
+> **Dated note, 2026-09-17 (1.5.6b step 2; lead E-3 of OPEN_DECISIONS
+> §2g).** The models were re-read against the floor, `park-unpark`'s epoll
+> wait case by case: its early-out now keeps the eventfd readable, as the
+> block does, and it gained the step it did not have — the wait's EMPTY
+> return (timeout or EINTR), which the futex path had as the library's
+> `spurious` rule from the start; the model's reachable states went 263 →
+> 358 and no verdict moved. A SEVENTH model, `reactor-io`, gives the I/O
+> wake path (a one-shot registration whose payload is the waiting frame,
+> the deferred unwatch, the kernel declining a watch) evidence of its own
+> where `park-unpark` had only named its blocks: 23 rows, 19 controls. And
+> the models were read a second way, by explicit-state search with no
+> bound (`meta/roadmap/1.5/tools/model_bfs.py`, a measurement outside the
+> gates): no bad state anywhere in any model's reachable space, agreement
+> with z3 wherever both speak — and three models whose depth is smaller
+> than their diameter, which the bounded rows cannot say and S-75 asks
+> about. VERIFICATION_REFERENCE §9.4 carries all three.
 
 ## D-290 — every word two threads can reach is atomic or ordered by a NAMED edge: the shared-state rule, classified per word and held by a belt — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-67; DEF-44, DEF-45, DEF-46, DEF-48; lands at 1.5.6 step 0)**
 

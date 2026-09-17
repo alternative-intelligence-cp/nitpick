@@ -1571,3 +1571,73 @@ eventually run, and that the arena walker's spin ends, need a fairness
 assumption a bounded unrolling cannot state; 1.5.7's schedule-exploration
 harness is the instrument for the real code, and every model here is the
 shape its mocked primitives will be driven through.
+
+**A NAMED BLOCK IS NOT A MODELLED ONE — what the belt cannot see, and the
+seventh model (1.5.6b step 2; lead E-3 of OPEN_DECISIONS §2g).** The
+correspondence belt proves that every block holding an atomic operation or a
+syscall is NAMED by some step. It cannot prove that the step's `next` bindings
+MEAN what the block does, and a step may name a block while saying nothing
+about it — or give a named block's PATH no transition at all. Reading
+`park-unpark` against `npk_park_sleep`, case by case, found all three kinds.
+(1) A deviation: the floor's `epoll` block returns WITHOUT draining the eventfd
+when the park word is already set — the read is only in `drain` — so the
+eventfd's readability survives and ends the NEXT wait at once; the `epwait`
+step cleared it on that path too. Fewer wakes than the code has, and not what
+the blocks do; the step is faithful now. (2) A missing step: the wait returns
+with NOTHING at its timeout (the sleeper deadline it carries) or on EINTR —
+`n <= 0`, straight to `out`, no event read and no drain — and the model let a
+parked epoll sleeper return only when the eventfd was readable, where its futex
+path has had the library's `spurious` return since it was written. Every round
+AFTER an empty return was behaviour the floor has and the model did not: the
+reachable states of the model went 263 → 275 with (1) → 358 with `epempty`.
+All four rows stay `unsat` and all four controls `sat` at K 14, D 5, the
+largest row (wound-but-asleep) at 15.3M of the 20M rlimit in the runners' own
+mode. (3) A gap: `epwait` named the `due` block (a descriptor's event
+stamps its frame due) and `arm` named all ten blocks of `npk_io_register` for
+one bit, while the model has no variable for a descriptor's readiness — so no
+predicate of it could speak about an event, a one-shot, or the frame an event's
+payload points at. The belt was green, correctly, and the I/O wake path had no
+evidence. It has its own model now, not a bigger `park-unpark` (r6: model the
+primitive; that model's largest row sat at 12.0M of the 20M budget before this
+step, measured the same way, and sits at 15.3M after (2)):
+**`reactor-io`** — one executor, one task waiting on one descriptor, and the
+kernel, over `npk_io_register`, `npk_park_sleep`'s epoll blocks,
+`npk_io_unwatch`, `npk_sl_push`, `npk_sl_wake_due` and `npk_step`'s `finished`;
+K 16, D 7, its three rows deciding in 1.2 s at under 2M of the rlimit each. Three bad predicates,
+unreachable: **stamp-after-free** (a due stamp written into a freed frame — the
+hazard `npk_io_unwatch`'s own comment names, and the reason `io_ready` DEFERS
+the unwatch so a registration lives exactly as long as its wait),
+**event-consumed-task-asleep** (the one-shot fired and disarmed, its event
+consumed, the task neither due nor woken and the executor parked again), and
+**declined-but-asleep** (the kernel refused the watch — EPERM for a regular
+file, EBADF — and the task sleeps on a descriptor nothing will ever report:
+`duenow`'s reason to exist). Three controls, each `sat`: the delivery loop
+stamping nothing, the frame freed BEFORE its unwatch (a task resumed by its
+deadline leaves an armed one-shot behind), a declined watch that does not make
+the task due. One modelling fact worth its sentence: the event is delivered
+INSIDE `npk_park_sleep`, right after the wait returns, so nothing else of that
+thread can run in between — every other executor step's guard asks for `evt =
+0`, and without that the model lets the sweep interleave there and reports a
+use-after-free the code cannot reach. That makes 23 rows over 7 models and 19
+controls. 1.5.7's synthetic EPOLLIN drives this same path over the real code.
+
+**What the bounds cover, measured (1.5.6b step 2).** A row holds to its K and
+its D and no further, and "the smallest depth that decides with a margin" says
+nothing about how much of the model that depth reaches. An explicit-state
+reading of the same model texts (`meta/roadmap/1.5/tools/model_bfs.py`: the
+unroller's semantics mirrored, then breadth-first search with no depth bound,
+no preemption bound and no solver — a MEASUREMENT, outside every gate; its
+table is in 1.5.6b's record) says: the models are small — 68 to 1,086
+reachable states — and in four of the seven (`futex-mutex`, `reactor-io`,
+`shared-arena`, `trap-route`) the bounds reach EVERY reachable state, so their
+rows are complete for state predicates; in three the depth is smaller than the
+model's diameter (`channel-table` K 12 against 15, `driver-registry` 10
+against 11, `park-unpark` 14 against 19 — 70 reachable states in all lie
+outside the bounds), and `park-unpark` cannot be unrolled to its diameter under
+the profile (K 19 answers `unknown`). In ALL seven the search finds no bad
+state anywhere in the reachable space, every control's bad state inside the
+bounds, no step ever blocked by a variable's range, and no disagreement with
+z3 wherever both speak. None of this is claimed in TCB.md — the search is one
+implementation, in no runner — and whether it becomes a standing belt, which
+would let §5's thirteenth acceptance stop at LIVENESS, is S-75
+(OPEN_DECISIONS §2e).

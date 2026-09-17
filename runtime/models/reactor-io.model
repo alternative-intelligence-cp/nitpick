@@ -1,0 +1,105 @@
+; reactor-io -- the reactor's I/O wake path (1.5.6b step 2; lead E-3 of
+; OPEN_DECISIONS SS2g). `park-unpark` NAMES this path's blocks -- its `arm`
+; step lists all ten blocks of `npk_io_register` for one bit, and its
+; `epwait` step lists `npk_park_sleep`'s `due` block -- and MODELS none of it:
+; it has no variable for a descriptor's readiness, so no predicate of it can
+; speak about an event, a one-shot, or the frame an event's payload points at.
+; The correspondence belt is green there because a block is named, and a named
+; block is not a modelled one. This model is the path's own (r6: model the
+; primitive, never grow the big model -- `park-unpark`'s largest row already
+; sits at 12.9M of the 20M budget).
+;
+; One executor, one task waiting on one descriptor, and the kernel.
+;
+; The task (tpc):
+;   0 io_ready is about to register the descriptor
+;   1 registered -- one-shot, the waiting FRAME the event's payload -- or the
+;     kernel DECLINED the watch (EPERM: a regular file, always ready by
+;     definition; EBADF) and `duenow` made the task due at once
+;   2 suspended: sl_push exchanged the deadline in and kept a due mark that
+;     got there first
+;   3 resumed by the sweep: due, or its deadline passed
+;   4 the DEFERRED io_unwatch ran: the registration lives exactly as long as
+;     its wait, and not a step longer
+;   5 the frame is freed
+; The executor waits in epoll_pwait only when nothing is due, and the event is
+; delivered INSIDE npk_park_sleep, right after the wait returns: `evt = 1` says
+; this thread is in that delivery loop, and nothing else of it runs until the
+; loop has stamped the frame -- which is why every other executor step's guard
+; asks for `evt = 0`. Without that the model lets the sweep run between the
+; wait's return and the stamp, and reports a use-after-free the code cannot
+; reach.
+; The kernel: the descriptor becomes readable when it likes; the deadline
+; passes when it likes; a parked epoll sleeper returns with the event once the
+; ARMED descriptor is readable -- and the one-shot disarms -- or with NOTHING:
+; its timeout, or EINTR, which asks no condition at all (the library's
+; `spurious` rule; the executor finds nothing due and waits again). A
+; descriptor readable BEFORE the wait ends the wait at once, whatever the
+; caller's event mask says about edges: the registration is an ADD or a MOD
+; re-arm, and the kernel polls the file at both and queues an event that is
+; already there (`npk_io_register` adds only EPOLLONESHOT to the caller's
+; interest; the eventfd's own mask is EPOLLIN alone, level-triggered).
+
+(model reactor-io
+  (of "the reactor's I/O wake: a one-shot registration whose payload is the waiting frame, the event delivered as a due stamp, the deferred unwatch before the frame dies, and the kernel declining a watch")
+  (state (tpc 0 5) (reg 0 2) (ready 0 1) (wa 0 2) (alive 0 1) (parked 0 1) (evt 0 1) (expired 0 1) (uaf 0 1) (declined 0 1))
+  (init (and (= tpc 0) (= reg 0) (= ready 0) (= wa 0) (= alive 1) (= parked 0) (= evt 0) (= expired 0) (= uaf 0) (= declined 0)))
+  (thread executor
+    (step register (ir @npk_io_register entry create mkev addev arm mod ck1 out)
+                   (guard (and (= tpc 0) (= evt 0)))
+                   (next (tpc 1) (reg 1)))
+    (step declined (ir @npk_io_register entry arm mod ck1 duenow out)
+                   (guard (and (= tpc 0) (= evt 0)))
+                   (next (tpc 1) (declined 1) (wa 1)))
+    (step suspend  (ir @npk_sl_push entry keep sleep)
+                   (guard (and (= tpc 1) (= evt 0)))
+                   (next (tpc 2) (wa (ite (= wa 1) 1 2))))
+    (step sweep    (ir @npk_sl_wake_due entry loop again ready keep done)
+                   (guard (and (= tpc 2) (= parked 0) (= evt 0) (or (= wa 1) (= expired 1))))
+                   (next (tpc 3)))
+    ; the wait: at once with the event when the armed descriptor is already readable, else parked.
+    ; While the task sleeps the executor waits only when nothing is due; once the task is gone it
+    ; idles for other work, which is when a registration that outlived its frame would fire.
+    (step epwait   (ir @npk_park_sleep epoll epgo)
+                   (guard (and (= parked 0) (= evt 0)
+                               (or (>= tpc 4) (and (= tpc 2) (not (= wa 1)) (= expired 0)))))
+                   (next (parked (ite (and (= reg 1) (= ready 1)) 0 1))
+                         (evt    (ite (and (= reg 1) (= ready 1)) 1 0))
+                         (reg    (ite (and (= reg 1) (= ready 1)) 2 reg))))
+    ; the delivery loop: the payload is the waiting frame, stamped due -- into a LIVE frame, or it is the defect
+    (step deliver  (ir @npk_park_sleep deliver dloop done1 drain due dnext out)
+                   (guard (and (= evt 1) (= parked 0)))
+                   (next (evt 0) (wa (ite (= alive 1) 1 wa)) (uaf (ite (= alive 0) 1 uaf))))
+    (step unwatch  (ir @npk_io_unwatch entry del out)
+                   (guard (and (= tpc 3) (= evt 0)))
+                   (next (tpc 4) (reg 0)))
+    (step free     (ir @npk_step finished)
+                   (guard (and (= tpc 4) (= evt 0)))
+                   (next (tpc 5) (alive 0))))
+  (thread kernel
+    (step readable (ir @npk_park_sleep epgo) (guard (= ready 0)) (next (ready 1)))
+    (step expire   (ir @npk_park_sleep epgo) (guard (= expired 0)) (next (expired 1)))
+    (step fire     (ir @npk_park_sleep epgo)
+                   (guard (and (= parked 1) (= reg 1) (= ready 1)))
+                   (next (parked 0) (evt 1) (reg 2)))
+    ; the wait returns with nothing -- the timeout or EINTR: `n <= 0`, straight to `out`
+    (step empty    (ir @npk_park_sleep epgo out)
+                   (kernel spurious parked)))
+  ; a due stamp written into a frame that has been freed -- the hazard npk_io_unwatch's own comment names
+  (bad stamp-after-free (= uaf 1))
+  ; the one-shot fired and disarmed, its event consumed, and the task neither due nor woken: the executor
+  ; is parked again and only the task's deadline will ever end the sleep
+  (bad event-consumed-task-asleep (and (= reg 2) (= evt 0) (= tpc 2) (not (= wa 1)) (= parked 1)))
+  ; the kernel declined the watch and the task sleeps on a descriptor nothing will ever report
+  (bad declined-but-asleep (and (= declined 1) (= tpc 2) (not (= wa 1))))
+  (depth 16) (preempt 7)
+  ; the delivery loop consumes the event and stamps nothing
+  (control drop-due-stamp event-consumed-task-asleep
+    (replace executor deliver (guard (and (= evt 1) (= parked 0))) (next (evt 0))))
+  ; the frame dies before its registration does: a task resumed by its DEADLINE leaves an armed one-shot behind
+  (control free-before-unwatch stamp-after-free
+    (replace executor unwatch (guard (and (= tpc 4) (= evt 0))) (next (tpc 5) (reg 0)))
+    (replace executor free    (guard (and (= tpc 3) (= evt 0))) (next (tpc 4) (alive 0))))
+  ; a declined watch that does not make the task due
+  (control drop-duenow declined-but-asleep
+    (replace executor declined (guard (and (= tpc 0) (= evt 0))) (next (tpc 1) (declined 1)))))

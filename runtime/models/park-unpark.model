@@ -53,13 +53,27 @@
                   (guard (and (= epc 6) (= ev 0) (= parked 0)))
                   (next (epc (ite (= pw 0) 6 2)))
                   (kernel futex-wait pw 0 parked))
-    ; the epoll wait: the word re-checked first, the eventfd's readability the wake, the drain
+    ; the epoll wait: the word re-checked first, the eventfd's readability the wake, the drain.
+    ; THE EARLY-OUT DOES NOT DRAIN (E-3, 1.5.6b step 2): when the park word is set the floor's `epoll`
+    ; block returns WITHOUT reading the eventfd -- the read is only in `drain` -- so its readability
+    ; survives and ends the NEXT wait at once. This step cleared `evr` on that path too until then:
+    ; fewer wakes than the code has, the sound direction for these four predicates, and not what the
+    ; blocks do. What a descriptor's event does (the `due` block) is `reactor-io`'s to model.
     (step epwait  (ir @npk_park_sleep epoll epgo deliver dloop done1 drain due dnext out)
                   (guard (and (= epc 6) (= ev 1) (= parked 0)))
-                  (next (epc (ite (or (= pw 1) (= evr 1)) 2 6)) (parked (ite (or (= pw 1) (= evr 1)) 0 1)) (evr 0)))
+                  (next (epc (ite (or (= pw 1) (= evr 1)) 2 6)) (parked (ite (or (= pw 1) (= evr 1)) 0 1)) (evr (ite (= pw 1) evr 0))))
     (step epreturn (ir @npk_park_sleep out)
                   (guard (and (= epc 6) (= ev 1) (= parked 1) (= evr 1)))
                   (next (epc 2) (parked 0) (evr 0)))
+    ; THE EPOLL WAIT RETURNS WITH NOTHING (E-3, 1.5.6b step 2): its timeout -- the sleeper deadline it
+    ; carries -- or EINTR. `n <= 0` goes straight to `out`: no event read, no drain, the executor back at
+    ; its sweep. The futex path has had this step since the model was written (`return`, below); the
+    ; epoll path returned only when the eventfd was readable, so every round AFTER an empty return --
+    ; 83 reachable states of 358 -- was behaviour the floor has and the model did not.
+    (step epempty (ir @npk_park_sleep out)
+                  (guard (and (= epc 6) (= ev 1)))
+                  (kernel spurious parked)
+                  (next (epc 2)))
     ; a parked futex sleeper returns: unparked by the wake (the waker's step) or spuriously
     (step return  (ir @npk_park_sleep futex)
                   (guard (and (= epc 6) (= ev 0)))

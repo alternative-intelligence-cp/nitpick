@@ -188,8 +188,8 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_hunmap` | syscall | boundary (munmap of a mapping the heap made; a refusal means the table and the kernel disagree about what is mapped -- an integrity failure, HeapBadRequest, not an OOM) |
 | `@npk_in_fs` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_int_to_string` | syscall | specified (7 discharged, 1 residue); residue (the digit bytes are the same computation as npk_hs_put_dec's, whose twenty rows state them; here the length, the capacity, the zero and the sign are rows -- and the sign row is not decided under the profile (unknown at ten times the budget): the sign byte reaches the block's base through the rehome copy's twenty unrolled loads, whose addresses the solver must relate to the sign store's wrapped one) |
-| `@npk_io_register` | atomic | modelled (park-unpark) |
-| `@npk_io_unwatch` | syscall | boundary (epoll_ctl DEL of the descriptor from the executor's epoll instance, so a later readiness can never write into a freed registration; ENOENT (never watched, or closed -- the kernel removed it) is the no-op answer, and with no reactor armed there is nothing to remove) |
+| `@npk_io_register` | atomic | modelled (park-unpark, reactor-io) |
+| `@npk_io_unwatch` | syscall | boundary (epoll_ctl DEL of the descriptor from the executor's epoll instance, so a later readiness can never write into a freed registration; ENOENT (never watched, or closed -- the kernel removed it) is the no-op answer, and with no reactor armed there is nothing to remove); modelled (reactor-io) |
 | `@npk_join_deadline` | syscall | specified (2 discharged, 0 residue) |
 | `@npk_large_check` | syscall | specified (2 discharged, 0 residue) |
 | `@npk_large_new` | syscall | boundary (a large block: a page-rounded anonymous mapping of the header, the payload at the requested alignment and the size, registered in the large table with its base and mapping size; the payload meets the alignment and the block fits its mapping, asserted where they are produced) |
@@ -214,7 +214,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_ofd_close` | syscall | boundary (the descriptor's drop: close(2) once, its answer discarded by design (D-185: a drop cannot fail); no memory is touched) |
 | `@npk_open` | syscall | specified (3 discharged, 0 residue) |
 | `@npk_park_forever` | syscall | boundary (a futex wait on a word nothing writes, re-waited on a spurious return: the stop handler's body and a losing trapper's end; the thread dies with the winner's exit_group; allocation-free by construction (D-291)); modelled (trap-route) |
-| `@npk_park_sleep` | atomic | modelled (park-unpark) |
+| `@npk_park_sleep` | atomic | modelled (park-unpark, reactor-io) |
 | `@npk_park_take` | syscall | specified (4 discharged, 0 residue); modelled (park-unpark, trap-route) |
 | `@npk_park_until` | syscall | specified (3 discharged, 0 residue); modelled (park-unpark, trap-route) |
 | `@npk_path_exists` | syscall | specified (3 discharged, 0 residue) |
@@ -236,13 +236,13 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_sarena_make` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sarena_slot` | atomic | modelled (shared-arena) |
 | `@npk_sl_earliest` | atomic | modelled (park-unpark) |
-| `@npk_sl_push` | atomic | modelled (park-unpark) |
-| `@npk_sl_wake_due` | atomic | modelled (park-unpark) |
+| `@npk_sl_push` | atomic | modelled (park-unpark, reactor-io) |
+| `@npk_sl_wake_due` | atomic | modelled (park-unpark, reactor-io) |
 | `@npk_small_alloc` | syscall | boundary (a slot of a small chunk of class ci under the heap mutex: the first clear bit of a partial chunk from the hint word on (a partial chunk with no clear bit is a bookkeeping violation and traps), a chunk moved to the full list when its last slot goes, a new chunk mapped when no partial one exists; the slot's header stamped by the wild role) |
 | `@npk_small_check` | syscall | specified (14 discharged, 0 residue) |
 | `@npk_small_free` | syscall | specified (7 discharged, 6 residue); residue (the five ensures and the frame are not decided under the profile (unknown at the budget; at ten times it two answer unknown and four do not answer within forty minutes): each claim over the state after the poison loop must separate its address from the tail's stores -- the stamp, the counter, the bitmap word, the chunk's counters and the list words -- through the class table's geometry, a fourteen-way case over the class index the solver does not finish; the validation's four preconditions, the poison loop's two rows and the no-trap row discharge) |
 | `@npk_start` | syscall | boundary (the process entry, called by _start with the initial stack pointer: argv and envp measured, the main thread's TLS block and executor booted (npk_tls_boot), SIGUSR1 armed for the stop signal over the kernel's own sigaction shape (D-291), the driver registry cleared, main run to completion under the executor, then the exit sequence (npk_exit) -- the path never returns) |
-| `@npk_step` | atomic | modelled (park-unpark, trap-route) |
+| `@npk_step` | atomic | modelled (park-unpark, reactor-io, trap-route) |
 | `@npk_stop_handler` | atomic | modelled (trap-route) |
 | `@npk_stop_others` | atomic | boundary (signals every other registered thread (tgkill) and waits, under the executor's join deadline, for each to park in the stop handler; a thread the kernel did not interrupt in time is proceeded past (TCB.md SS5 item 6); it writes no memory of its own -- the count it waits on is the handlers' atomic word); modelled (trap-route) |
 | `@npk_string_concat` | syscall | specified (12 discharged, 0 residue) |
@@ -434,7 +434,7 @@ residue, never as a proof). 7 of them:
 its own depth and preemption bound and no further; LIVENESS is not claimed at
 all -- that a due task is eventually run, and that the shared arena's walker
 stops spinning, need a fairness assumption a bounded unrolling cannot state.
-The bounds in force: `channel-table`, `driver-registry`, `futex-mutex`, `park-unpark`, `shared-arena`, `trap-route`.
+The bounds in force: `channel-table`, `driver-registry`, `futex-mutex`, `park-unpark`, `reactor-io`, `shared-arena`, `trap-route`.
 <!-- END floor-residue -->
 
 ## 5. What a reader must accept
