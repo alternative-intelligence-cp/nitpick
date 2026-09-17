@@ -441,6 +441,20 @@
   ; the frame's qnext cleared, the frame appended: the tail's qnext (or the
   ; head, of an empty queue) names it, and the tail is it
   (requires (not (= f 0)))
+  ; WHY THE THREE ARE APART (1.5.6c step 2, lead E-1; the rows need f/exec and f/tail -- measured, pair by pair):
+  ; f vs the TAIL -- a double push would make them one frame and the body would write `f.qnext = f`, a cycle the
+  ;   executor spins in -- cannot happen: A FRAME IS IN AT MOST ONE OF {a run queue, a sleeper list, running} (the
+  ;   two lists thread through the SAME word, `qnext` at +48), and only its owning executor's thread moves it
+  ;   (D-032: a task never migrates), so no interleaving is involved. The four callers, read: npk_sl_wake_due
+  ;   DETACHES the whole sleeper list first and pushes each due frame of it once (a frame reaches the sleeper list
+  ;   only after npk_rq_pop took it off the queue); npk_thread_entry and the emitter's `main` shim push a root
+  ;   once onto an EMPTY queue (the tail is null: no object); emit_spawn pushes the child frame it has just carved.
+  ;   npk_windup_all does not push (it stamps and rouses; the owner's sweep pushes); an awaited child is driven
+  ;   inline and is never queued.
+  ; f and the tail vs exec -- a frame is frame-arena memory, the executor block is the thread's own mapping.
+  ; WHO KEEPS IT: npk_sl_wake_due and npk_thread_entry are not translated and emitted code calls this symbol
+  ;   (exported): nothing proves the invariant at any call. It is argued here and is what 1.5.7's explorer can
+  ;   carry as an executable assertion ("f is on no run queue").
   (objects (f 56) (exec 16) ((load64 mem (+ exec 8)) 56))
   (ensures (= (load64 mem2 (+ f 48)) 0))
   (ensures (= (load64 mem2 (+ exec 8)) f))
@@ -449,6 +463,9 @@
   (frame ((+ f 48) 8) (exec 16) ((+ t 48) 8)))
 
 (symbol @npk_rq_pop
+  ; WHY THE TWO ARE APART (1.5.6c step 2; the rows need the pair): the head frame is frame-arena memory, the
+  ; executor block is the thread's own mapping -- two allocations, whatever the caller does. WHO KEEPS IT:
+  ; npk_step, the one caller, is not translated; nothing to keep beyond "the head is a frame".
   (objects (exec 16) ((load64 mem exec) 56))
   (ensures (=> (= h 0) (= result 0)))
   (ensures (=> (not (= h 0)) (and (= result h) (= (load64 mem2 exec) nx) (= (load64 mem2 (+ h 48)) 0))))
@@ -457,6 +474,14 @@
 
 (symbol @npk_ch_wait_link
   ; the current task is linked at the head of the list at hp
+  ; WHY THE THREE ARE APART (1.5.6c step 2; the rows need hp vs the task's frame): hp is a waiter-list head inside
+  ; a primitive's cell -- a channel's slot in the table, a Mutex/RwLock/CondVar/Barrier cell wherever its binding
+  ; lives. The one place it can lie INSIDE a frame is a frame-resident primitive (a lock declared in an `async`
+  ; body), and there the layout separates them: a frame is its 88-byte header and THEN its slots, so hp >= frame +
+  ; 88 while the object is the header's first 80 bytes (through `wlink` at +72; `owner` at +80 is outside it).
+  ; True of the task's own frame and of any other. The executor block is the thread's own mapping. WHO KEEPS IT:
+  ; the seven wait entries, none translated -- the argument is the layout's, which the emitter fixes
+  ; (`fnem_slot_gep` indexes slots from field 12).
   (objects (hp 8) (exec 112) ((load64 mem (+ exec 104)) 80))
   (requires (not (= (load64 mem (+ exec 104)) 0)))
   (ensures (= (load64 mem2 (+ fr 72)) (load64 mem hp)))
@@ -468,6 +493,18 @@
   ; first-order clause states; the head case is decided, the rest residue
   (loop loop (unroll 8))
   ; the head and the first nine waiters -- as far as nine copies walk -- are objects (frames, null at the end); the current task is one of them
+  ; WHY THEY ARE APART (1.5.6c step 2; the rows stand on it -- with every pair fact deleted the head row is refuted):
+  ; THE WAITERS PAIRWISE DISTINCT -- a list with a frame on it twice would be a cycle. A task is linked AT MOST
+  ;   ONCE: every wait entry UNLINKS the current task on entry (it is re-entered at every resume) before it may
+  ;   LINK it, a task waits on one primitive at a time, and the list is changed only under the primitive's own lock
+  ;   (the channel's lock, the futex mutex). The current task is NOT declared beside the nine -- it is one of them
+  ;   when it is linked at all, and this symbol is called, routinely, when it is not.
+  ; A LIST SHORTER THAN NINE: past the null the "next waiter" is `load64` at address 72, memory the body never
+  ;   reads (the walk stops at null). The hypothesis constrains the MODEL's bytes there and no caller's: every real
+  ;   state extends to a model that satisfies it (those bytes zero: every later range null, no object).
+  ; A WAITER vs hp, vs exec: as npk_ch_wait_link's -- a header's first 80 bytes against a cell that is never in a
+  ;   header, and against the thread's own mapping.
+  ; WHO KEEPS IT: the eight callers, none translated. "fr is not already linked" is what 1.5.7's explorer can carry.
   (objects (hp 8) (exec 112) ((load64 mem hp) 80) ((load64 mem (+ (load64 mem hp) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 72)) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 72)) 72)) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 72)) 72)) 72)) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 72)) 72)) 72)) 72)) 72)) 80) ((load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem (+ (load64 mem hp) 72)) 72)) 72)) 72)) 72)) 72)) 72)) 72)) 80))
   (requires (not (= hp 0)))
   (requires (not (= (load64 mem (+ exec 104)) 0)))
@@ -525,6 +562,13 @@
   (requires (not (= a 0)))
   (requires (=> (> (load64 mem (+ a 24)) 0) (not (= (load64 mem (+ a 8)) 0))))
   ; the slot answers iff its index is below the top and its generation matches
+  ; WHY THE ARENA VALUE AND ITS GENERATION TABLE ARE APART (1.5.6c step 2; the three arena sections share the
+  ; clause -- this one's rows do not need the pair, npk_arena_free's and npk_arena_reset's do): `a` is the arena
+  ; VALUE, the 40 bytes `{slab, gens, cap, top, free_head}` the program's binding holds; `gens` is a block
+  ; npk_arena_make takes from the allocator and never hands out, so no binding can lie inside it. And `a` is in
+  ; no SLAB either, its own included: an arena is an owning type and an owning element is refused at `arena_make`
+  ; (D-183), so an arena value is never an arena element. WHO KEEPS IT: emitted code, the only caller (exported)
+  ; -- nothing proves it at the call; the argument is the type checker's refusal plus the allocator's freshness.
   (objects (a 40) ((load64 mem (+ a 8)) (* 4 (load64 mem (+ a 24)))))
   (ensures (=> (>= idx (load64 mem (+ a 24))) (= result 0)))
   (ensures (=> (and (< idx (load64 mem (+ a 24))) (not (= (load32 mem (+ (load64 mem (+ a 8)) (* 4 idx))) gen))) (= result 0)))
@@ -536,6 +580,10 @@
   (requires (=> (> (load64 mem (+ a 24)) 0) (not (= (load64 mem (+ a 8)) 0))))
   ; a live slot's generation moves on and, below the retirement cap, the
   ; slot joins the free list; a stale handle answers 1 and changes nothing
+  ; THE PAIR: npk_arena_at's argument (the rows here need it). THE TWO `requires` BELOW ARE APARTNESS TOO, of the
+  ; same kind and with the same keeper (1.5.6c step 2): the freed SLOT's first word -- where the free list's link
+  ; is written -- lies outside the generation table and outside the arena value. The slab and `gens` are two
+  ; blocks of the allocator's, and the value is in no slab (above).
   (objects (a 40) ((load64 mem (+ a 8)) (* 4 (load64 mem (+ a 24)))))
   (requires (or (<= (+ (mod (+ (load64 mem a) (* idx stride)) 18446744073709551616) 8) (load64 mem (+ a 8)))
                 (<= (+ (load64 mem (+ a 8)) (* 4 (load64 mem (+ a 24)))) (mod (+ (load64 mem a) (* idx stride)) 18446744073709551616))))
@@ -551,6 +599,8 @@
   (requires (not (= a 0)))
   (requires (=> (> (load64 mem (+ a 24)) 0) (not (= (load64 mem (+ a 8)) 0))))
   (free j Int) (free x Addr)
+  ; THE PAIR: npk_arena_at's argument (the rows here need it -- the loop writes the table and then the value's
+  ; `top` and `free_head`).
   (objects (a 40) ((load64 mem (+ a 8)) (* 4 (load64 mem (+ a 24)))))
   (loop head
     (invariant (and (<= 0 i) (<= i top)
@@ -624,6 +674,12 @@
   ; every entry above idx moves down one place, the count drops by one
   (requires (< idx (load64 mem npk_lgtab_len)))
   (requires (not (= (load64 mem npk_lgtab) 0)))
+  ; WHY THE TABLE'S BLOCK IS APART FROM THE TWO WORDS THAT NAME IT (1.5.6c step 2; the rows need both pairs, not
+  ; the third -- two globals): the block is a MAPPING (npk_hmap, from npk_heap_init and from npk_lg_insert's growth:
+  ; `mmap` at address 0 with no MAP_FIXED, as the floor's only other `mmap`, npk_wildx_alloc's, is), and
+  ; `npk_lgtab`/`npk_lgtab_len` are words of the image; the kernel places no such
+  ; mapping over memory already mapped (the kernel-effect table's `maps` row: the mapping is FRESH). WHO KEEPS IT:
+  ; npk_dalloc, not translated -- and nothing a caller does can break it; it is the kernel's promise.
   (objects ((load64 mem npk_lgtab) (* 32 (load64 mem npk_lgtab_len))) (npk_lgtab 8) (npk_lgtab_len 8))
   (loop head
     (invariant (and (<= idx i) (< i len)
@@ -638,6 +694,15 @@
   ; the chunk becomes the head of the list at hp: its next the old head, its
   ; prev 0, the old head's prev the chunk
   (requires (not (= ch 0)))
+  ; WHY THE THREE ARE APART (1.5.6c step 2; the rows need ch vs hp and ch vs the old head): hp is a cell of a
+  ; global table (`npk_cls_part`/`npk_cls_full`) and a chunk is a mapping -- the kernel's promise, as
+  ; npk_lg_remove's. THE CHUNK vs THE OLD HEAD: a chunk is pushed only when it is on NO list -- fresh from
+  ; npk_chunk_new (npk_small_alloc's `fresh`), or just taken off the OTHER list by npk_ch_unlink (partial -> full
+  ; in npk_small_alloc's `tofull`, full -> partial in npk_small_free's `topart`) -- and A CHUNK IS ON AT MOST ONE
+  ; LIST, so the list's head is another chunk, or null.
+  ; WHO KEEPS IT: npk_small_free inlines this body, so there its own rows cover it under ITS hypotheses
+  ; (`apart-when` the chunk was full); npk_small_alloc is not translated and nothing proves it at its calls.
+  ; "a chunk is on at most one list" is leg A's (D-233) and what 1.5.7's explorer can assert.
   (objects (hp 8) (ch 56) ((load64 mem hp) 56))
   (ensures (= (load64 mem2 hp) ch))
   (ensures (= (load64 mem2 (+ ch 40)) (load64 mem hp)))
@@ -649,6 +714,11 @@
   ; the chunk leaves the list at hp: its prev's next (or the head) becomes its
   ; next, its next's prev becomes its prev, its own links are cleared
   (requires (not (= ch 0)))
+  ; WHY THE FOUR ARE APART (1.5.6c step 2; the rows need five of the six pairs): hp against a chunk as
+  ; npk_ch_push's. THE CHUNK vs ITS NEIGHBOURS, AND THE NEIGHBOURS vs EACH OTHER: the lists are LINEAR and
+  ; null-terminated (npk_ch_push sets `prev` 0 and links at the head; nothing links a tail to a head), so a chunk
+  ; is not its own neighbour and its `next` and `prev` are two other chunks, or null -- a chunk on no list has
+  ; both null, and no object. WHO KEEPS IT: as npk_ch_push's.
   (objects (hp 8) (ch 56) ((load64 mem (+ ch 40)) 56) ((load64 mem (+ ch 48)) 56))
   (ensures (=> (= (load64 mem (+ ch 48)) 0) (= (load64 mem2 hp) (load64 mem (+ ch 40)))))
   (ensures (=> (not (= (load64 mem (+ ch 48)) 0)) (= (load64 mem2 (+ (load64 mem (+ ch 48)) 40)) (load64 mem (+ ch 40)))))
