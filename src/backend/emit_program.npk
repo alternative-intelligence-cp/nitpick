@@ -965,7 +965,10 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare i64 @npk_windup_grace()");
     drop irw_raw(w, "declare ptr @npk_thread_start(ptr, ptr, i64)");
     drop irw_raw(w, "declare i32 @npk_thread_join(ptr, i64)");
-    drop irw_raw(w, "declare i64 @npk_hardware_concurrency()");
+    // `@npk_hardware_concurrency` is the builtin `hardware_concurrency` since
+    // 1.5.6b (D-293) and is declared by the generated table above; the
+    // hand-written line it had here since 1.1.9 is gone -- no program could
+    // reach the symbol through it, which is how DEF-52 lived there unexecuted.
     drop irw_raw(w, "declare i64 @npk_ch_open(i64, i64)");
     drop irw_raw(w, "declare i32 @npk_ch_close(i64)");
     drop irw_raw(w, "declare i32 @npk_ch_try_send(i64, ptr)");

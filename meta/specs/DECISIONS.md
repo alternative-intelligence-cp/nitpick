@@ -12611,6 +12611,20 @@ trapping thread as a plain call, `exit_group`.
   Relaxed load/store plus one compare-exchange; the full permitted-`T`
   question stays with C-9's channel half.
 
+> **Dated note, 2026-09-17 (1.5.6b step 3; D-293) — §4's last bullet is
+> KEPT, a year late.** The floor implemented `@npk_hardware_concurrency` at
+> 1.1.9 and every module declared it, but no builtin row reached it: no
+> program could ask, and the symbol ran for the first time on the day
+> 1.5.6b measured the kernel-effect table — answering 1008 on a 48-thread
+> machine (DEF-52: the raw `sched_getaffinity` writes only the kernel's own
+> cpumask size and returns that count; the wrapper that zero-fills the rest
+> is glibc's, and this runtime has none). `hardware_concurrency() → int64`
+> is a builtin now — never fails, `effect`, 1 to 1024, asked at each call —
+> typed and declared from the one signature table, the emitter's hand-written
+> `declare` deleted. Its own program (`hwconc_builtin.npk`) exits 0 on the
+> fixed floor and 20 on the floor as it stood, at its FIRST call, before it
+> dirties anything: executing the symbol once was all the defect ever needed.
+
 ## D-182 — Channels: endpoints are handles, `channel()` constructs, `Work` replaces the job, and `atomic<T>`'s set — **SETTLED**
 
 C-9's channel half, ratified from `meta/roadmap/1.1/C9_CHANNEL_STUDY.md`, and
@@ -18644,6 +18658,17 @@ may not CALL it before a snapshot that carries it (D-205).
 
 > Lands at **1.5.6b** step 3 (`meta/roadmap/1.5/1.5.6b.md`); D-181 §4 gains a
 > dated landing note there.
+>
+> **LANDED at 1.5.6b step 3 (2026-09-17).** The row is BUILTIN_REFERENCE §2b's
+> (after `mono_now`); `builtins.npk` and `ir_runtime.npk` regenerated from it
+> (48 floor symbols, 39 of them builtins), `emit_program.npk`'s hand-written
+> `declare` deleted. `tests/backend/programs/hwconc_builtin.npk` holds the
+> range, EQUALITY with the truth (the raw syscall over a zeroed mask, counted
+> in the language), the same answer after 100 frames of one-bits where the
+> floor's frame lands, and two calls agreeing: exit 0 on this floor, exit 20
+> on `b7d60dc`'s — at the first call — in the plain and the `opt -O2` leg
+> alike. No snapshot refresh: nothing in `src/` calls it (D-205). The library
+> listener was told before the landing: the name is reserved from this commit.
 
 ## D-294 — A program may not declare a builtin's name: D-239's rule in the function namespace — **SETTLED (user decision, 2026-09-17: "the recommendations you had for those questions looks fine to me"; S-73)**
 

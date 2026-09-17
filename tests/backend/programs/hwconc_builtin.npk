@@ -1,0 +1,91 @@
+// expect-exit: 0
+//
+// `hardware_concurrency()` (D-293, 1.5.6b step 3 -- D-181 SS4's promise kept).
+// The floor has implemented `@npk_hardware_concurrency` since 1.1.9 and every
+// module declared it, but no builtin row reached it, so no program could call
+// it -- and DEF-52 lived there for a year: the symbol handed the raw
+// `sched_getaffinity` an unzeroed 128-byte mask, the kernel wrote 8 of them,
+// and the popcount over all sixteen words answered 1008 on a 48-thread
+// machine after a call chain that had left one-bits on the stack. A floor
+// symbol only a hand-written IR test can reach is a symbol the next defect
+// hides in; this is the builtin's own program.
+//
+// What it holds: the answer is inside the promised range (1..1024); it EQUALS
+// the truth, computed here from the raw syscall over a ZEROED buffer and a
+// popcount in the language; it is the same after the stack has been filled
+// with one-bits exactly where the floor's frame will land (DEF-52's
+// regression, reachable from Nitpick now -- `runtime/tests/hwconc.ll` is its
+// IR twin); and two calls agree.
+//
+// Exit codes: 1x the range, 2x the truth, 3x the dirtied stack, 4x agreement.
+mod:hwconc_builtin;
+
+// One-bits on the stack: sixteen words of all-ones per frame, `depth` frames
+// deep. The sum makes the stores observable (16 * -1 per frame).
+func:dirty = int64(int64:depth) never fails {
+    int64[16]:pad = [ (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64),
+                      (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64),
+                      (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64),
+                      (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64), (0i64 - 1i64) ];
+    int64:s = 0i64;
+    for (int64:i in 0i64...16i64) { s = s + pad[i]; }
+    if (depth > 0i64) { s = s + (raw dirty(depth - 1i64)); }
+    pass s;
+};
+
+func:bits8 = int64(uint8:c0) never fails {
+    uint8:c = c0;
+    int64:n = 0i64;
+    for (int64:k in 0i64...8i64) {
+        if ((c & 1u8) != 0u8) { n = n + 1i64; }
+        c = c >> 1u8;
+    }
+    pass n;
+};
+
+// The truth: the raw call over a zeroed mask, every byte counted. A failed
+// call or an empty mask reads as 1, as the floor's does.
+func:truth = int64(wild int8->:mask) never fails {
+    for (int64:z in 0i64...128i64) { <-(#ptr_add<uint8>(mask, z)) = 0u8; }
+    int64:wrote = sys(204i64, 0i64, 128i64, mask) ?| (0i64 - 1i64);
+    if (wrote < 0i64) { pass 1i64; }
+    int64:n = 0i64;
+    for (int64:i in 0i64...128i64) { n = n + (raw bits8(<-(#ptr_add<uint8>(mask, i)))); }
+    if (n == 0i64) { pass 1i64; }
+    pass n;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    wild int8->:mask = alloc(128i64);
+
+    int64:n = hardware_concurrency();
+    if (n < 1i64) { exit 10i32; }
+    if (n > 1024i64) { exit 11i32; }
+
+    int64:t = raw truth(mask);
+    if (n != t) { exit 20i32; }
+
+    // 100 frames of one-bits, then the floor's frame over them
+    int64:s = raw dirty(99i64);
+    if (s != (0i64 - 1600i64)) { exit 30i32; }
+    int64:after = hardware_concurrency();
+    if (after != t) { exit 31i32; }
+
+    if (hardware_concurrency() != hardware_concurrency()) { exit 40i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

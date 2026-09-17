@@ -128,6 +128,10 @@ pub func:rt_sig = RtSig(string:name) never fails {
         pass (raw rt("@npk_exit", "void", false, "", 1i32,
                      "i32", "", "", ""));
     }
+    if (raw string_eq(name, "hardware_concurrency")) {
+        pass (raw rt("@npk_hardware_concurrency", "i64", false, "", 0i32,
+                     "", "", "", ""));
+    }
     if (raw string_eq(name, "int_to_string")) {
         pass (raw rt("@npk_int_to_string", "{ { ptr, i64, i64 }, i32 }", true, "{ ptr, i64, i64 }", 1i32,
                      "i64", "", "", ""));
@@ -247,7 +251,7 @@ pub func:rt_sig = RtSig(string:name) never fails {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER -- the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() never fails { pass 47i32; };
+pub func:rt_count = int32() never fails { pass 48i32; };
 
 pub func:rt_name_at = string(int32:i) never fails {
     if (i == 0i32) { pass "aalloc"; }
@@ -269,33 +273,34 @@ pub func:rt_name_at = string(int32:i) never fails {
     if (i == 16i32) { pass "driver_retire"; }
     if (i == 17i32) { pass "environ"; }
     if (i == 18i32) { pass "exit"; }
-    if (i == 19i32) { pass "int_to_string"; }
-    if (i == 20i32) { pass "mcpy"; }
-    if (i == 21i32) { pass "memset"; }
-    if (i == 22i32) { pass "mmov"; }
-    if (i == 23i32) { pass "mono_now"; }
-    if (i == 24i32) { pass "open"; }
-    if (i == 25i32) { pass "path_exists"; }
-    if (i == 26i32) { pass "ralloc"; }
-    if (i == 27i32) { pass "read"; }
-    if (i == 28i32) { pass "read_file"; }
-    if (i == 29i32) { pass "read_stdin"; }
-    if (i == 30i32) { pass "sarena_bump"; }
-    if (i == 31i32) { pass "sarena_destroy"; }
-    if (i == 32i32) { pass "sarena_slot"; }
-    if (i == 33i32) { pass "shared_arena_make"; }
-    if (i == 34i32) { pass "string_concat"; }
-    if (i == 35i32) { pass "string_equals"; }
-    if (i == 36i32) { pass "string_from_bytes"; }
-    if (i == 37i32) { pass "string_slice"; }
-    if (i == 38i32) { pass "to_cstring"; }
-    if (i == 39i32) { pass "wild_live_count"; }
-    if (i == 40i32) { pass "wild_release_all"; }
-    if (i == 41i32) { pass "wildx_alloc"; }
-    if (i == 42i32) { pass "wildx_call"; }
-    if (i == 43i32) { pass "wildx_free"; }
-    if (i == 44i32) { pass "wildx_seal"; }
-    if (i == 45i32) { pass "write"; }
+    if (i == 19i32) { pass "hardware_concurrency"; }
+    if (i == 20i32) { pass "int_to_string"; }
+    if (i == 21i32) { pass "mcpy"; }
+    if (i == 22i32) { pass "memset"; }
+    if (i == 23i32) { pass "mmov"; }
+    if (i == 24i32) { pass "mono_now"; }
+    if (i == 25i32) { pass "open"; }
+    if (i == 26i32) { pass "path_exists"; }
+    if (i == 27i32) { pass "ralloc"; }
+    if (i == 28i32) { pass "read"; }
+    if (i == 29i32) { pass "read_file"; }
+    if (i == 30i32) { pass "read_stdin"; }
+    if (i == 31i32) { pass "sarena_bump"; }
+    if (i == 32i32) { pass "sarena_destroy"; }
+    if (i == 33i32) { pass "sarena_slot"; }
+    if (i == 34i32) { pass "shared_arena_make"; }
+    if (i == 35i32) { pass "string_concat"; }
+    if (i == 36i32) { pass "string_equals"; }
+    if (i == 37i32) { pass "string_from_bytes"; }
+    if (i == 38i32) { pass "string_slice"; }
+    if (i == 39i32) { pass "to_cstring"; }
+    if (i == 40i32) { pass "wild_live_count"; }
+    if (i == 41i32) { pass "wild_release_all"; }
+    if (i == 42i32) { pass "wildx_alloc"; }
+    if (i == 43i32) { pass "wildx_call"; }
+    if (i == 44i32) { pass "wildx_free"; }
+    if (i == 45i32) { pass "wildx_seal"; }
+    if (i == 46i32) { pass "write"; }
     pass "write_file";
 };
 
