@@ -1637,7 +1637,47 @@ outside the bounds), and `park-unpark` cannot be unrolled to its diameter under
 the profile (K 19 answers `unknown`). In ALL seven the search finds no bad
 state anywhere in the reachable space, every control's bad state inside the
 bounds, no step ever blocked by a variable's range, and no disagreement with
-z3 wherever both speak. None of this is claimed in TCB.md — the search is one
-implementation, in no runner — and whether it becomes a standing belt, which
-would let §5's thirteenth acceptance stop at LIVENESS, is S-75
-(OPEN_DECISIONS §2e).
+z3 wherever both speak. At step 2 that was a probe, in no runner, and nothing
+in TCB.md rested on it.
+
+**The second reading is a BELT (1.5.6b step 4d; D-295).** The search runs on
+every full run in both runners — `floor.check_models_explicit` (the harness's
+`check_floor_models_explicit`, beside the correspondence belt) and
+`npkg/floor_explore.npk` (`floor_models_explicit`: both of `npkg verify`'s belt
+sites and `tools/floorspec.npk`'s default mode) — with the same findings, byte
+for byte: `floor-model-bad-reachable` (a bad state reachable ANYWHERE; the
+message gives the least depth and the least thread changes and says whether it
+lies inside (K, D), where a discharged row says the opposite and one of the two
+readers is therefore wrong), `floor-model-control-unreachable` (a control whose
+bad state is not reachable inside the bounds — the solver's `sat` says the
+opposite), `floor-model-range-blocks` (a step whose successor leaves a
+variable's range: the unrolling asserts the ranges at every tick, so it DROPS
+that transition silently — a model that loses behaviour without saying so),
+`floor-model-too-large` (the state product does not fit one 64-bit key, or more
+than 200,000 states: refused by name, never skipped) and
+`floor-model-unreadable`. THE SEMANTICS ARE THE UNROLLER'S, MIRRORED — one step
+per tick or a stutter, `next` reads the pre-state, the first binding of a
+variable wins, the kernel library's six rules expanded as `read_kernel` expands
+them, thread changes counted over real steps, the initial state read at tick 1
+through the stutter — and the two are INDEPENDENT readers of a model's meaning,
+the first two it has had: the unroller writes the SMT text for both runners,
+and the harness's Python side read only the `(ir …)` forms. No verdict passes
+between them: the run is green only when the solver's rows hold AND the search
+finds nothing, which is the disagreement check (1.5.6's stutter hole — an
+unroller under which a halted protocol read as a safe one — would have been a
+red run on its first day). The twins were held to each other on twelve planted
+texts (a bad state inside the bounds and one outside them, a blind control and
+one that reaches only outside the bounds, a blocked range, every kernel rule, a
+free initial variable, an unknown variable, a wrong arity, an unknown operator):
+identical findings, byte for byte. **Its first finding was in the runner
+self-check's own fixture**: the toy model the two `floor-control-blind` cases
+run was commented as safe and was not — `tick` then `set` reaches `both` in two
+steps — and nothing had ever decided its row, because those cases decide its
+CONTROLS; `set`'s guard asks `y = 0` now, in both runners' copies. TCB.md's
+generated residue paragraph prints, per model, its bounds, its reachable states
+and how many of them the bounds reach (both generators), and §5's thirteenth
+acceptance is narrowed: the bounds are no longer where the SAFETY claims stop.
+Expressions are validated whole and up front, in one order in both twins (an
+evaluation short-circuits; a validation does not), and every arithmetic operand
+is held under 2^31 in magnitude so that the Nitpick twin's plain integers, which
+trap on overflow, and Python's, which do not, cannot disagree.

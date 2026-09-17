@@ -49,6 +49,7 @@ use "./floor_spec.npk".*;
 use "./floor_smt.npk".*;
 use "./floor.npk".*;
 use "./floor_model.npk".*;
+use "./floor_explore.npk".*;                   // the models' second reading's cases (1.5.6b step 4d, D-295)
 use "../src/backend/smt/smt_manifest.npk".*;   // man_parse_named: the misplaced-kind case
 
 func:FAILSAFE = string() never fails {
@@ -342,6 +343,66 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         }
     }
 
+    // THE MODELS' SECOND READING (1.5.6b step 4d; D-295): the explicit-state search over a
+    // model's whole reachable space. A bad state reachable fails by name and the safe model
+    // passes; a control whose bad state is reachable nowhere fails and the seeing one passes;
+    // a step a variable's range blocks fails and the guarded one passes; an operator outside
+    // the grammar fails by name. No solver, no tool: the belt reads text. The harness's six
+    // cases, the same texts byte for byte (`selfcheck.py`'s TOY, MX_UNSAFE, MX_RANGE,
+    // MX_UNREADABLE).
+    for (int64:xi in 0i64...6i64) {
+        string:xname = "model-bad-reachable";
+        string:xtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3))";
+        bool:xmust_fail = true;
+        string:xfinding = "floor-model-bad-reachable";
+        string:xwhy = "a model whose bad state is reachable must fail the explicit reading by name";
+        if (xi == 1i64) {
+            xname = "model-bad-reachable-control";
+            xtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0) (= y 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control seeing both (replace b tick (guard (= y 0)) (next (y 1)))))";
+            xmust_fail = false;
+            xfinding = "floor-model-";
+            xwhy = "the safe toy model under its seeing control must pass the explicit reading";
+        }
+        if (xi == 2i64) {
+            xname = "model-control-unreachable";
+            xtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0) (= y 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control blind both (remove b tick)))";
+            xmust_fail = true;
+            xfinding = "floor-model-control-unreachable";
+            xwhy = "a control whose bad state is reachable nowhere must fail the explicit reading by name";
+        }
+        if (xi == 3i64) {
+            xname = "model-range-blocks";
+            xtext = "(model toy (state (n 0 2)) (init (and (= n 0))) (thread a (step inc (ir @f entry) (next (n (+ n 1))))) (bad never (= n 9)) (depth 6) (preempt 3))";
+            xmust_fail = true;
+            xfinding = "floor-model-range-blocks";
+            xwhy = "a step that takes a variable out of its range must fail by name: the unrolling drops it silently";
+        }
+        if (xi == 4i64) {
+            xname = "model-range-blocks-control";
+            xtext = "(model toy (state (n 0 2)) (init (and (= n 0))) (thread a (step inc (ir @f entry) (guard (< n 2)) (next (n (+ n 1))))) (bad never (= n 9)) (depth 6) (preempt 3))";
+            xmust_fail = false;
+            xfinding = "floor-model-";
+            xwhy = "the same step under a guard that keeps the variable in range must pass";
+        }
+        if (xi == 5i64) {
+            xname = "model-unreadable";
+            xtext = "(model toy (state (n 0 2)) (init (and (= n 0))) (thread a (step inc (ir @f entry) (guard (< n 2)) (next (n (mod (+ n 1) 3))))) (bad never (= n 9)) (depth 6) (preempt 3))";
+            xmust_fail = true;
+            xfinding = "floor-model-unreadable";
+            xwhy = "an operator outside the models' grammar must fail by name, never be guessed at";
+        }
+        List<string>:xall = raw floor_explore_model("toy", xtext);
+        int64:xhits = 0i64;
+        for (int64:xj in 0i64...xall.count) { if (raw text_contains(raw strlist_view(xall, xj), xfinding)) { xhits = xhits + 1i64; } }
+        bool:xok = ((xhits > 0i64) == xmust_fail);
+        if (!xok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(xname, xok, xwhy));
+        if (!xok) {
+            if (xmust_fail) { drop strlist_push(@report, "      the explicit reading accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the explicit reading rejected it: ", raw strlist_view(xall, 0i64))); }
+        }
+    }
+
     // THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     // value is its failure path, and a check that has only ever been seen
     // to PASS is a check nobody has tested.
@@ -544,14 +605,20 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         string:cwhy = "a control that reaches no bad state must fail by name";
         bool:cmust_fail = true;
         // the toy model the harness's twin runs, byte for byte: `set` fires once
-        // and `tick` sets y AND clears x, so the two are never 1 together --
-        // unless a mutation drops the clear, which the seeing control does
-        string:mtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control blind both (remove b tick)))\n";
+        // AND ONLY BEFORE `tick` (its guard asks `y = 0`), and `tick` sets y and
+        // clears x, so the two are never 1 together -- unless a mutation drops
+        // the clear, which the seeing control does. THE `y = 0` CONJUNCT ARRIVED
+        // AT 1.5.6b STEP 4d: until then this comment claimed the safety and the
+        // model did not have it (`tick` then `set` reaches `both` in two steps),
+        // and nothing had ever decided the toy's own row -- these two cases
+        // decide its CONTROLS. The explicit reading (D-295) found it on its
+        // first run, in the self-check's own fixture.
+        string:mtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0) (= y 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control blind both (remove b tick)))\n";
         if (ci == 1i64) {
             cname = "floor-control-blind-control";
             cwhy = "a control that reaches its bad state passes";
             cmust_fail = false;
-            mtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control seeing both (replace b tick (guard (= y 0)) (next (y 1)))))\n";
+            mtext = "(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0) (= y 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) (control seeing both (replace b tick (guard (= y 0)) (next (y 1)))))\n";
         }
         MModel:cm = raw model_parse("toy.model", mtext);
         List<string>:cfl = raw list_init::<string>(2i64);

@@ -31,7 +31,7 @@ def main(argv):
     floor_ll = open(harness.RUNTIME_LL, encoding="utf-8").read()
     region = floor.tcb_region(spec_text, classes, man_text, floor.read_models(ROOT))
     sysregion = floor.syscalls_region(floor_ll, classes)
-    resregion = floor.residue_region(spec_text, man_text, floor.read_models(ROOT))
+    resregion = floor.residue_region(spec_text, man_text, floor.read_models(ROOT), floor.model_facts_all(ROOT))
     if "--write" not in argv:
         print(region)
         print()

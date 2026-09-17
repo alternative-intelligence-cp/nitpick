@@ -888,6 +888,449 @@ def check_models(floor_text, models, name="floor"):
     return fails
 
 
+# --- the models read a SECOND way: explicit-state search (1.5.6b step 4d; D-295) ------
+#
+# D-289 decides a model's bad predicates by unrolling it to a depth K under a
+# preemption bound D and asking the solver. The models are SMALL (68 to 1,086
+# reachable states when this was written), and plain breadth-first search reads
+# a model's WHOLE reachable space in well under a second: no depth bound, no
+# preemption bound, no solver. It is a second, independent reader of what a
+# model MEANS -- the unroller (`npkg/floor_model.npk`) writes the SMT text for
+# BOTH runners, so until this belt the two-runner rule never reached a model's
+# meaning -- and it says what a bounded row cannot: that a bad state is
+# reachable NOWHERE, not merely nowhere within K steps.
+#
+# The semantics are the unroller's, mirrored: one step per tick or a stutter; a
+# step's `next` expressions read the PRE-state, the first binding of a variable
+# wins, an unbound variable keeps its value; the ranges hold at every tick (a
+# successor out of range is no transition: the unrolling drops it SILENTLY,
+# which is why it is a finding here); the kernel library's rules expand exactly
+# as `read_kernel` expands them; a stutter tick's thread is free, so thread
+# changes are counted over real steps; a bad predicate is read at ticks 1..K,
+# and a stutter keeps the initial state at tick 1.
+#
+# THE RUN IS GREEN ONLY WHEN BOTH READINGS HOLD -- the solver's rows and this
+# search -- which is the disagreement check: no verdict is passed between them.
+# `npkg/floor_explore.npk` is the twin, finding for finding, byte for byte.
+
+MODEL_STATE_CAP = 200000
+_MX_OPERAND_MAX = 2147483648
+_MX_PRODUCT_MAX = 4611686018427387904
+
+
+class _ModelProblem(Exception):
+    pass
+
+
+def _mx_num(a):
+    return a is not None and (a.isdigit() or (a.startswith("-") and a[1:].isdigit()))
+
+
+_MX_ARITY = {"and": (1, None), "or": (1, None), "+": (1, None), "*": (1, None), "-": (1, None),
+             "not": (1, 1), "=>": (2, 2), "ite": (3, 3), "=": (2, None), "distinct": (2, None),
+             "<": (2, None), "<=": (2, None), ">": (2, None), ">=": (2, None)}
+
+
+def _mx_check(e, names):
+    """THE EXPRESSION IS VALIDATED WHOLE, UP FRONT, depth-first and left to right -- the order the Nitpick
+    twin compiles in, so the first problem is the same problem (evaluation short-circuits; validation
+    does not)."""
+    a = _atom(e)
+    if a is not None:
+        if _mx_num(a):
+            if len(a) > 18:
+                raise _ModelProblem("a numeral too large for the explicit reading: %s" % a)
+            return
+        if a in ("true", "false"):
+            return
+        if a not in names:
+            raise _ModelProblem("an expression names no state variable: %s" % a)
+        return
+    if not isinstance(e, list) or not e or _atom(e[0]) is None or _atom(e[0]) == "":
+        raise _ModelProblem("an expression that is neither a word nor an application")
+    h, n = _atom(e[0]), len(e) - 1
+    if h not in _MX_ARITY:
+        raise _ModelProblem("an operator the models' grammar does not have: %s" % h)
+    lo, hi = _MX_ARITY[h]
+    if n < lo or (hi is not None and n > hi):
+        raise _ModelProblem("an application with the wrong number of arguments: %s" % h)
+    for x in e[1:]:
+        _mx_check(x, names)
+
+
+def _mx_operand(v):
+    if v > _MX_OPERAND_MAX or v < -_MX_OPERAND_MAX:
+        raise _ModelProblem("an expression's value leaves the range the explicit reading computes in")
+    return v
+
+
+def _mx_eval(e, env):
+    """A validated expression's value (a proposition is True/False). The short-circuits and the fold order
+    are the Nitpick twin's pool's: `=` compares each operand with the first, `distinct` every pair in order,
+    a comparison chain adjacent pairs, `+ - *` fold left with every operand held under 2^31 in magnitude."""
+    a = _atom(e)
+    if a is not None:
+        if _mx_num(a):
+            return int(a)
+        if a == "true":
+            return True
+        if a == "false":
+            return False
+        return env[a]
+    h, args = _atom(e[0]), e[1:]
+    if h == "and":
+        return all(_mx_eval(x, env) for x in args)
+    if h == "or":
+        return any(_mx_eval(x, env) for x in args)
+    if h == "not":
+        return not _mx_eval(args[0], env)
+    if h == "=>":
+        return (not _mx_eval(args[0], env)) or bool(_mx_eval(args[1], env))
+    if h == "ite":
+        return _mx_eval(args[1], env) if _mx_eval(args[0], env) else _mx_eval(args[2], env)
+    if h == "=":
+        for x in args[1:]:
+            if _mx_eval(args[0], env) != _mx_eval(x, env):
+                return False
+        return True
+    if h == "distinct":
+        for i in range(len(args)):
+            for j in range(i + 1, len(args)):
+                if _mx_eval(args[i], env) == _mx_eval(args[j], env):
+                    return False
+        return True
+    if h in ("<", "<=", ">", ">="):
+        ok = {"<": lambda p, q: p < q, "<=": lambda p, q: p <= q,
+              ">": lambda p, q: p > q, ">=": lambda p, q: p >= q}[h]
+        for i in range(len(args) - 1):
+            if not ok(_mx_eval(args[i], env), _mx_eval(args[i + 1], env)):
+                return False
+        return True
+    if h == "-" and len(args) == 1:
+        return -_mx_operand(_mx_eval(args[0], env))
+    acc = _mx_eval(args[0], env)
+    for x in args[1:]:
+        y = _mx_eval(x, env)
+        _mx_operand(acc)
+        _mx_operand(y)
+        acc = acc + y if h == "+" else (acc - y if h == "-" else acc * y)
+    return acc
+
+
+def _mx_kernel(form, names):
+    w = _atom(form[1]) if len(form) > 1 else None
+    args = [_atom(x) for x in form[2:]]
+    for x in args:
+        if x is None or x == "":
+            raise _ModelProblem("a kernel rule's arguments are state variables and numerals")
+        if _mx_num(x):
+            if len(x) > 18:
+                raise _ModelProblem("a numeral too large for the explicit reading: %s" % x)
+        elif x not in names:
+            raise _ModelProblem("a kernel rule's arguments are state variables and numerals")
+    def word(x):
+        return ("atom", x)
+    written = {"futex-wait": 2, "futex-wake": 0, "eventfd-read": 0, "eventfd-write": 0, "spurious": 0, "signal": 0}
+    arity = {"futex-wait": 3, "futex-wake": 1, "eventfd-read": 1, "eventfd-write": 1, "spurious": 1, "signal": 2}
+    if w in arity and len(args) == arity[w] and args[written[w]] not in names:
+        raise _ModelProblem("a kernel rule's arguments are state variables and numerals")
+    if w == "futex-wait" and len(args) == 3:
+        return None, [(args[2], [word("ite"), [word("="), word(args[0]), word(args[1])], word("1"), word("0")])]
+    if w in ("futex-wake", "eventfd-read") and len(args) == 1:
+        return None, [(args[0], word("0"))]
+    if w == "eventfd-write" and len(args) == 1:
+        return None, [(args[0], word("1"))]
+    if w == "spurious" and len(args) == 1:
+        return [word("="), word(args[0]), word("1")], [(args[0], word("0"))]
+    if w == "signal" and len(args) == 2:
+        return None, [(args[0], word(args[1]))]
+    raise _ModelProblem("a kernel rule the library does not know: %s" % w)
+
+
+def _mx_body(forms, names):
+    gd, nxt = None, []
+    for f in forms:
+        h = _atom(f[0]) if isinstance(f, list) and f else None
+        if h == "ir":
+            continue
+        if h == "guard":
+            _mx_check(f[1], names)
+            gd = f[1] if gd is None else [("atom", "and"), gd, f[1]]
+        elif h == "next":
+            for b in f[1:]:
+                if _atom(b[0]) not in names:
+                    raise _ModelProblem("a next binding names no state variable: %s" % _atom(b[0]))
+                _mx_check(b[1], names)
+                nxt.append((_atom(b[0]), b[1]))
+        elif h == "kernel":
+            g, b = _mx_kernel(f, names)
+            if g is not None:
+                gd = g if gd is None else [("atom", "and"), gd, g]
+            nxt += b
+        else:
+            raise _ModelProblem("a form the models' grammar does not have inside a step: %s" % h)
+    first = {}
+    for v, e in nxt:
+        if v not in names:
+            raise _ModelProblem("a next binding names no state variable: %s" % v)
+        first.setdefault(v, e)
+    return gd, first
+
+
+class ExplicitModel:
+    pass
+
+
+def read_model_explicit(text):
+    """One model file as the explicit reading sees it (raises _ModelProblem)."""
+    forms = sexpr(text)
+    if len(forms) != 1 or not isinstance(forms[0], list) or _atom(forms[0][0]) != "model":
+        raise _ModelProblem("a model file is one (model NAME ...) form")
+    sx = forms[0]
+    m = ExplicitModel()
+    m.name = _atom(sx[1]); m.vars = []; m.lo = {}; m.hi = {}; m.threads = []; m.steps = []
+    m.bad = []; m.controls = []; m.depth = None; m.preempt = None; m.init = None
+    for f in sx[2:]:
+        if isinstance(f, list) and f and _atom(f[0]) == "state":
+            for v in f[1:]:
+                n = _atom(v[0]) if isinstance(v, list) and len(v) > 0 else None
+                lo = _atom(v[1]) if isinstance(v, list) and len(v) > 1 else None
+                hi = _atom(v[2]) if isinstance(v, list) and len(v) > 2 else None
+                if not n or not _mx_num(lo) or not _mx_num(hi) or len(lo) > 18 or len(hi) > 18:
+                    raise _ModelProblem("a state variable is (NAME LO HI) with numeral bounds")
+                m.vars.append(n); m.lo[n] = int(lo); m.hi[n] = int(hi)
+    names = set(m.vars)
+    for f in sx[2:]:
+        h = _atom(f[0]) if isinstance(f, list) and f else None
+        if h in ("of", "state"):
+            continue
+        if h == "init":
+            _mx_check(f[1], names)
+            m.init = f[1]
+        elif h == "thread":
+            ti = len(m.threads); m.threads.append(_atom(f[1]))
+            for st in f[2:]:
+                gd, nx = _mx_body(st[2:], names)
+                m.steps.append((ti, _atom(st[1]), gd, nx))
+        elif h == "bad":
+            _mx_check(f[2], names)
+            m.bad.append((_atom(f[1]), f[2]))
+        elif h in ("depth", "preempt"):
+            nt = _atom(f[1]) if len(f) > 1 else None
+            if not _mx_num(nt) or len(nt) > 18:
+                raise _ModelProblem("a model needs (state ...), (init ...), (depth K) and (preempt D)")
+            if h == "depth":
+                m.depth = int(nt)
+            else:
+                m.preempt = int(nt)
+        elif h == "control":
+            muts = []
+            for mu in f[3:]:
+                k = _atom(mu[0])
+                if k == "replace":
+                    gd, nx = _mx_body(mu[3:], names)
+                    muts.append((k, _atom(mu[1]), _atom(mu[2]), gd, nx))
+                elif k == "remove":
+                    muts.append((k, _atom(mu[1]), _atom(mu[2]), None, None))
+                else:
+                    raise _ModelProblem("a mutation the models' grammar does not have: %s" % k)
+            m.controls.append((_atom(f[1]), _atom(f[2]), muts))
+        else:
+            raise _ModelProblem("a form the models' grammar does not have: %s" % h)
+    if m.init is None or m.depth is None or m.preempt is None or not m.vars or m.depth < 0 or m.preempt < 0:
+        raise _ModelProblem("a model needs (state ...), (init ...), (depth K) and (preempt D)")
+    return m
+
+
+def _mx_steps_under(m, ctl):
+    if ctl is None:
+        return m.steps
+    out = []
+    for (ti, nm, gd, nx) in m.steps:
+        hit = [mu for mu in ctl[2] if mu[1] in m.threads and m.threads.index(mu[1]) == ti and mu[2] == nm]
+        if not hit:
+            out.append((ti, nm, gd, nx))
+            continue
+        for mu in hit:
+            if mu[0] == "replace":
+                out.append((ti, nm, mu[3], mu[4]))
+    return out
+
+
+def _mx_initial(m):
+    """The initial states: every assignment of the variables `init` leaves free, in declaration order."""
+    pin = {}
+    if isinstance(m.init, list) and _atom(m.init[0]) == "and":
+        for c in m.init[1:]:
+            if isinstance(c, list) and len(c) == 3 and _atom(c[0]) == "=" and _atom(c[1]) in m.lo and _mx_num(_atom(c[2])) and len(_atom(c[2])) <= 18:
+                pin.setdefault(_atom(c[1]), int(_atom(c[2])))
+    free = [v for v in m.vars if v not in pin]
+    cur = [dict(pin)]
+    for v in free:
+        cur = [dict(c, **{v: x}) for c in cur for x in range(m.lo[v], m.hi[v] + 1)]
+        if len(cur) > MODEL_STATE_CAP:
+            raise _ModelProblem("too-large")
+    return [tuple(c[v] for v in m.vars) for c in cur if _mx_eval(m.init, c)]
+
+
+def explore_model(m, ctl=None):
+    """(dist, minsw, inside, blocked): least depth per reachable state, least thread changes per reachable
+    state (no step bound), the states reachable within (K, D), and the first variable (declaration order) each
+    step can take out of its range from a reachable state."""
+    from collections import deque
+    steps = _mx_steps_under(m, ctl)
+    V = m.vars
+    blocked = {}
+    cache = {}
+
+    def succ(s):
+        r = cache.get(s)
+        if r is not None:
+            return r
+        env = dict(zip(V, s)); r = []
+        for (ti, nm, gd, nx) in steps:
+            if gd is not None and not _mx_eval(gd, env):
+                continue
+            ns = tuple(_mx_eval(nx[v], env) if v in nx else env[v] for v in V)
+            out = [v for v, x in zip(V, ns) if not (m.lo[v] <= x <= m.hi[v])]
+            if out:
+                key = (ti, nm)
+                vi = V.index(out[0])
+                if key not in blocked or vi < blocked[key]:
+                    blocked[key] = vi
+                continue
+            r.append((ti, ns))
+        cache[s] = r
+        return r
+
+    prod = 1
+    for v in V:
+        radix = m.hi[v] - m.lo[v] + 1
+        if radix < 1 or prod > _MX_PRODUCT_MAX // radix:
+            raise _ModelProblem("too-large")     # the twin's state is one int64: the same refusal here
+        prod *= radix
+    inits = _mx_initial(m)
+    dist = {s: 0 for s in inits}
+    q = deque(inits)
+    while q:
+        s = q.popleft()
+        for (_, ns) in succ(s):
+            if ns not in dist:
+                dist[ns] = dist[s] + 1
+                q.append(ns)
+                if len(dist) > MODEL_STATE_CAP:
+                    raise _ModelProblem("too-large")
+    INF = 10 ** 9
+    sw = {}
+    dq = deque()
+    for s in inits:
+        for (ti, ns) in succ(s):
+            if sw.get((ns, ti), INF) > 0:
+                sw[(ns, ti)] = 0
+                dq.appendleft((ns, ti))
+    while dq:
+        (s, t) = dq.popleft()
+        c = sw[(s, t)]
+        for (ti, ns) in succ(s):
+            nc = c + (0 if ti == t else 1)
+            if sw.get((ns, ti), INF) > nc:
+                sw[(ns, ti)] = nc
+                (dq.appendleft if ti == t else dq.append)((ns, ti))
+    minsw = {}
+    for (s, t), c in sw.items():
+        if c < minsw.get(s, INF):
+            minsw[s] = c
+    for s in inits:
+        minsw[s] = 0
+    layer = {}
+    for s in inits:
+        for (ti, ns) in succ(s):
+            layer[(ns, ti)] = 0
+    best = dict(layer)
+    for _k in range(2, m.depth + 1):
+        nxt = {}
+        for (s, t), c in layer.items():
+            for (ti, ns) in succ(s):
+                nc = c + (0 if ti == t else 1)
+                if nc < nxt.get((ns, ti), INF):
+                    nxt[(ns, ti)] = nc
+        layer = {}
+        for key, c in nxt.items():
+            if c < best.get(key, INF):
+                best[key] = c
+                layer[key] = c
+    inside = set(inits)
+    for (s, t), c in best.items():
+        if c <= m.preempt:
+            inside.add(s)
+    return dist, minsw, inside, blocked
+
+
+def model_facts(m):
+    """(reachable, inside) for TCB.md's generated sentence."""
+    dist, _, inside, _ = explore_model(m)
+    return len(dist), len([s for s in dist if s in inside])
+
+
+def check_model_explicit(mname, text, name="floor"):
+    """One model's explicit reading: its findings, by name (the twin of `floor_explore_model`)."""
+    head = "%s: runtime/models/%s: " % (name, mname)
+    try:
+        m = read_model_explicit(text)
+        dist, minsw, inside, blocked = explore_model(m)
+        fails = []
+        V = m.vars
+        for (ti, nm) in sorted(blocked, key=lambda k: [(s[0], s[1]) for s in m.steps].index(k)):
+            fails.append(head + "floor-model-range-blocks: step `%s.%s` can take `%s` out of its range from a reachable state -- the unrolling drops that transition silently"
+                         % (m.threads[ti], nm, V[blocked[(ti, nm)]]))
+        for (bn, bp) in m.bad:
+            hits = [s for s in dist if _mx_eval(bp, dict(zip(V, s)))]
+            if not hits:
+                continue
+            where = ("INSIDE the model's bounds (K %d, D %d): a discharged row says the opposite, so one of the two readings is wrong"
+                     if any(s in inside for s in hits) else
+                     "outside the model's bounds (K %d, D %d): the bounded rows cannot see it") % (m.depth, m.preempt)
+            fails.append(head + "floor-model-bad-reachable: `%s` is reachable -- least depth %d, least thread changes %d, %s"
+                         % (bn, min(dist[s] for s in hits), min(minsw[s] for s in hits), where))
+        bads = dict(m.bad)
+        for ctl in m.controls:
+            if ctl[1] not in bads:
+                fails.append(head + "floor-model-unreadable: a control names no bad predicate: %s" % ctl[0])
+                continue
+            cdist, cminsw, cinside, _ = explore_model(m, ctl)
+            hits = [s for s in cdist if _mx_eval(bads[ctl[1]], dict(zip(V, s)))]
+            if any(s in cinside for s in hits):
+                continue
+            why = ("it is reachable nowhere" if not hits else
+                   "it needs depth %d and %d thread change(s)" % (min(cdist[s] for s in hits), min(cminsw[s] for s in hits)))
+            fails.append(head + "floor-model-control-unreachable: control `%s` does not reach `%s` inside the bounds (K %d, D %d) -- %s; the solver's `sat` says the opposite, so one of the two readings is wrong"
+                         % (ctl[0], ctl[1], m.depth, m.preempt, why))
+        return fails
+    except _ModelProblem as e:
+        if str(e) == "too-large":
+            return [head + "floor-model-too-large: more than %d states -- the explicit reading refuses a model it cannot finish, and never skips one (D-295)" % MODEL_STATE_CAP]
+        return [head + "floor-model-unreadable: %s" % e]
+    except (ValueError, IndexError, TypeError) as e:
+        return [head + "floor-model-unreadable: %s" % e]
+
+
+def read_model_texts(root):
+    """Every `runtime/models/*.model`, sorted by name: (name, text)."""
+    import glob
+    out = []
+    for path in sorted(glob.glob(os.path.join(root, "runtime", "models", "*.model"))):
+        out.append((os.path.basename(path)[:-len(".model")], open(path, encoding="utf-8").read()))
+    return out
+
+
+def check_models_explicit(root, name="floor"):
+    """THE MODELS' SECOND READING (D-295): every model's whole reachable space searched."""
+    fails = []
+    for mname, text in read_model_texts(root):
+        fails += check_model_explicit(mname, text, name)
+    return fails
+
+
 def disposition(sections, sym, cls, rows, models=()):
     """One symbol's disposition in D-288 §2.1's words (the twin of
     `floor_disposition`): `trusted (inline asm)`; `specified (N discharged, M
@@ -1131,7 +1574,7 @@ def check_syscall_names(floor_text):
     return fails
 
 
-def residue_rows(spec_text, manifest_text, models=()):
+def residue_rows(spec_text, manifest_text, models=(), facts=()):
     """TCB.md's residue region (1.5.6 step 6; D-288 §2.10): every `budget`
     row by symbol and site -- the rows the profile did not decide, which the
     verdict rule keeps as residue rather than a proof -- then every
@@ -1162,17 +1605,42 @@ def residue_rows(spec_text, manifest_text, models=()):
             if isinstance(cl, list) and cl and _atom(cl[0]) == "residue" and len(cl) > 1:
                 lines.append("- `%s` -- %s" % (sym, _string(cl[1])))
     lines.append("")
-    lines.append("**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model row holds to")
-    lines.append("its own depth and preemption bound and no further; LIVENESS is not claimed at")
-    lines.append("all -- that a due task is eventually run, and that the shared arena's walker")
-    lines.append("stops spinning, need a fairness assumption a bounded unrolling cannot state.")
-    if models:
+    # THE MODELS ARE READ TWICE (1.5.6b step 4d; D-295): the solver's bounded rows,
+    # and the explicit-state search over each model's whole reachable space --
+    # `facts` is that search's (name, K, D, reachable, inside) per model, and a
+    # bad state reachable anywhere is a red run (`check_models_explicit`), which
+    # is what lets this paragraph say "no bad state" without a bound.
+    lines.append("**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model is read twice --")
+    lines.append("bounded, by the solver (its rows hold to their own depth and preemption bound and no")
+    lines.append("further), and exhaustively, by explicit-state search over its whole reachable space")
+    lines.append("(D-295), which is where the SAFETY claim rests: no bad state is reachable in any model")
+    lines.append("below, inside its bounds or outside them. LIVENESS is not claimed at all -- that a due")
+    lines.append("task is eventually run, and that the shared arena's walker stops spinning, need a")
+    lines.append("fairness assumption neither reading can state.")
+    if facts:
+        lines.append("The models, each with its bounds and its reachable states (and how many of them the bounds reach): %s."
+                     % ", ".join("`%s` (K %d, D %d; %d states, %d inside)" % f for f in facts))
+    elif models:
         lines.append("The bounds in force: %s." % ", ".join("`%s`" % m[0] for m in models))
     return lines
 
 
-def residue_region(spec_text, manifest_text, models=()):
-    return "\n".join(residue_rows(spec_text, manifest_text, models))
+def residue_region(spec_text, manifest_text, models=(), facts=()):
+    return "\n".join(residue_rows(spec_text, manifest_text, models, facts))
+
+
+def model_facts_all(root):
+    """(name, K, D, reachable, inside) per model, sorted by name -- TCB.md's generated sentence. A model
+    the explicit reading cannot read contributes nothing here; `check_models_explicit` names it."""
+    out = []
+    for mname, text in read_model_texts(root):
+        try:
+            m = read_model_explicit(text)
+            reach, inside = model_facts(m)
+            out.append((mname, m.depth, m.preempt, reach, inside))
+        except (_ModelProblem, ValueError, IndexError, TypeError):
+            continue
+    return out
 
 
 def tcb_rows(spec_text, classes, manifest_text, models=()):

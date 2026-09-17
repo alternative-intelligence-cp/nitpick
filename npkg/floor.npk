@@ -20,6 +20,7 @@ use "./floor_cfg.npk".*;
 use "./floor_smt.npk".*;
 use "./floor_kernel.npk".*;                  // the kernel-effect table, GENERATED (1.5.6b)
 use "./floor_model.npk".*;
+use "./floor_explore.npk".*;                 // the models' second reading (1.5.6b step 4d, D-295): TCB's numbers
 use "../src/backend/smt/smt_kinds.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;
 
@@ -523,7 +524,7 @@ pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:r
 // every `budget` row by symbol, every `(residue "...")` sentence the spec
 // carries, and the models' standing residue. The list a reader is likeliest
 // to skip is the one that matters most, so it is generated, not maintained.
-pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:models) never fails {
+pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:models, string:root) never fails {
     List<string>:syms = raw list_init::<string>(4i64);
     List<int64>:counts = raw list_init::<int64>(4i64);
     int64:total = 0i64;
@@ -565,10 +566,34 @@ pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:
         out = string_concat(out, raw sx_string(s, raw sx_nth(s, rs, 1i64)));
         out = string_concat(out, "\n");
     }
-    out = string_concat(out, "\n**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model row holds to\n");
-    out = string_concat(out, "its own depth and preemption bound and no further; LIVENESS is not claimed at\n");
-    out = string_concat(out, "all -- that a due task is eventually run, and that the shared arena's walker\n");
-    out = string_concat(out, "stops spinning, need a fairness assumption a bounded unrolling cannot state.");
+    // THE MODELS ARE READ TWICE (1.5.6b step 4d; D-295): the solver's bounded
+    // rows, and the explicit-state search over each model's whole reachable
+    // space (`floor_explore.npk`), whose numbers this paragraph prints and
+    // whose belt is what lets it say "no bad state" without a bound.
+    out = string_concat(out, "\n**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model is read twice --\n");
+    out = string_concat(out, "bounded, by the solver (its rows hold to their own depth and preemption bound and no\n");
+    out = string_concat(out, "further), and exhaustively, by explicit-state search over its whole reachable space\n");
+    out = string_concat(out, "(D-295), which is where the SAFETY claim rests: no bad state is reachable in any model\n");
+    out = string_concat(out, "below, inside its bounds or outside them. LIVENESS is not claimed at all -- that a due\n");
+    out = string_concat(out, "task is eventually run, and that the shared arena's walker stops spinning, need a\n");
+    out = string_concat(out, "fairness assumption neither reading can state.");
+    XTexts:mt = raw xp_model_texts(root);
+    string:facts = "";
+    for (int64:fi in 0i64...mt.names.count) {
+        string:one = raw xp_facts(raw strlist_view(mt.texts, fi));
+        if (one.len == 0i64) { continue; }
+        if (facts.len > 0i64) { facts = string_concat(facts, ", "); }
+        facts = string_concat(facts, "`");
+        facts = string_concat(facts, raw strlist_view(mt.names, fi));
+        facts = string_concat(facts, "` ");
+        facts = string_concat(facts, one);
+    }
+    if (facts.len > 0i64) {
+        out = string_concat(out, "\nThe models, each with its bounds and its reachable states (and how many of them the bounds reach): ");
+        out = string_concat(out, facts);
+        out = string_concat(out, ".");
+        pass out;
+    }
     if (models.count > 0i64) {
         out = string_concat(out, "\nThe bounds in force: ");
         for (int64:m in 0i64...models.count) {
@@ -582,7 +607,7 @@ pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:
     pass out;
 };
 
-pub func:tcb_residue_current = List<string>(Sxs->:s, List<ManRow>->:rows, List<MModel>:models, string:tcb_text) never fails {
+pub func:tcb_residue_current = List<string>(Sxs->:s, List<ManRow>->:rows, List<MModel>:models, string:tcb_text, string:root) never fails {
     List<string>:fl = raw list_init::<string>(2i64);
     string:bmark = "<!-- BEGIN floor-residue -->\n";
     string:emark = "\n<!-- END floor-residue -->";
@@ -590,7 +615,7 @@ pub func:tcb_residue_current = List<string>(Sxs->:s, List<ManRow>->:rows, List<M
     int64:e = raw text_index_of(tcb_text, emark);
     if ((b < 0i64) || (e < 0i64) || (e < b)) { drop strlist_push(@fl, "tcb-residue: TCB.md has no marked floor-residue region"); pass fl; }
     string:have = raw text_slice(tcb_text, b + bmark.len, e);
-    string:want = raw tcb_residue_region(s, rows, models);
+    string:want = raw tcb_residue_region(s, rows, models, root);
     if (!(raw text_eq(have, want))) {
         drop strlist_push(@fl, "tcb-residue: TCB.md's residue region is not what the spec and the committed floor manifest say -- regenerate it (bootstrap/harness/tcb_floor.py --write)");
     }

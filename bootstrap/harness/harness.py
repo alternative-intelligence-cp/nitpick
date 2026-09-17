@@ -3576,9 +3576,18 @@ def check_verify_compiler(tmp, stage1_ir):
     for f in full:
         counts[f[4]] = counts.get(f[4], 0) + 1
     disch = counts.get("discharged", 0)
-    print("  %-11s %d obligation(s): %d discharged, %d open, %d budget, %d unencoded; nitpick.obligations "
+    # THE PARTS SUM TO THE TOTAL, OR THE RUN IS RED (1.5.6b step 4d; the library listener's catch): this
+    # line said "439 obligation(s): 273 discharged, 138 open, 0 budget, 22 unencoded" from 1.5.4 on -- 433 of
+    # 439, the six `checker` rows in the total and not in the breakdown. Every number was true and the line
+    # did not add up. A category is printed, and a verdict word no category counts fails by name.
+    known = ("discharged", "open", "budget", "unencoded", "checker")
+    if sum(counts.get(k, 0) for k in known) != n:
+        return ["verify: the verdict breakdown does not sum to its total -- %d row(s) against %s: a verdict word the summary does not count"
+                % (n, ", ".join("%d %s" % (v, k) for k, v in sorted(counts.items())))]
+    print("  %-11s %d obligation(s): %d discharged, %d open, %d budget, %d unencoded, %d checker; nitpick.obligations "
           "matches; %d guard(s) elided; the verified compiler rebuilds itself byte-identically"
-          % ("verify", n, disch, counts.get("open", 0), counts.get("budget", 0), counts.get("unencoded", 0), disch))
+          % ("verify", n, disch, counts.get("open", 0), counts.get("budget", 0), counts.get("unencoded", 0),
+             counts.get("checker", 0), disch))
     return []
 
 
@@ -3661,6 +3670,11 @@ def check_verify_floor(tmp, tools):
     for f in full:
         counts[f[4]] = counts.get(f[4], 0) + 1
     syms = len(set(f[5] for f in full))
+    # the parts sum to the total here too: any word but these two is a run failure the verdict rule
+    # reported above, so a third word reaching this line is the summary's own defect
+    if counts.get("discharged", 0) + counts.get("budget", 0) != len(full):
+        return ["floor: the verdict breakdown does not sum to its total -- %d row(s) against %s: a verdict word the summary does not count"
+                % (len(full), ", ".join("%d %s" % (v, k) for k, v in sorted(counts.items())))]
     print("  %-11s %d floor obligation(s) over %d specified symbol(s): %d discharged, %d budget (residue); "
           "runtime/npkrt.obligations matches"
           % ("floor", len(full), syms, counts.get("discharged", 0), counts.get("budget", 0)))
@@ -3780,7 +3794,7 @@ def check_tcb_residue_current():
     spec_text = open(spec_path, encoding="utf-8").read() if os.path.exists(spec_path) else ""
     man_path = os.path.join(ROOT, "runtime", "npkrt.obligations")
     man_text = open(man_path, encoding="utf-8").read() if os.path.exists(man_path) else ""
-    want = floor.residue_region(spec_text, man_text, floor.read_models(ROOT))
+    want = floor.residue_region(spec_text, man_text, floor.read_models(ROOT), floor.model_facts_all(ROOT))
     if m.group(1) != want:
         return ["tcb-residue: TCB.md's residue region is not what the spec and the committed floor "
                 "manifest say -- regenerate it (bootstrap/harness/tcb_floor.py --write)"]
@@ -3826,6 +3840,19 @@ def check_floor_models_current():
     if not models:
         return ["floor: runtime/models holds no model -- the floor's protocol models are part of the tree (D-289)"]
     return floor.check_models(ft, models, "floor")
+
+
+def check_floor_models_explicit():
+    """THE MODELS' SECOND READING (1.5.6b step 4d; D-295): every protocol model's
+    WHOLE reachable state space searched -- no depth bound, no preemption bound,
+    no solver. A bad state reachable anywhere, a control whose bad state is not
+    reachable inside the model's bounds, a step a variable's range blocks, a
+    model too large to finish or one the reader cannot read: each fails by
+    name. The solver's rows stay; the run is green only when BOTH readings
+    hold, which is the disagreement check. `floor.check_models_explicit` has
+    the rules; `npkg/floor_explore.npk`'s `floor_models_explicit` is the twin."""
+    import floor
+    return floor.check_models_explicit(ROOT, "floor")
 
 
 def check_tcb_floor_current():
@@ -4377,6 +4404,7 @@ def main(argv):
         failures += check_floor_shared_current()
         failures += check_floor_stack_current()
         failures += check_floor_models_current()
+        failures += check_floor_models_explicit()
         failures += check_tcb_syscalls_current()
         failures += check_tcb_residue_current()
 

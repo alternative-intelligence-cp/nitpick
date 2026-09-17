@@ -153,12 +153,25 @@ CASES = [
 
 
 # The toy model both `floor-control-blind` cases run (npkg's copy is
-# `selfcheck.npk`'s, byte for byte): `set` fires once, and `tick` sets y
-# AND clears x, so the two are never 1 together -- unless a mutation drops
-# the clear, which is what the seeing control does.
-TOY = ('(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) %s)')
+# `selfcheck.npk`'s, byte for byte): `set` fires once AND ONLY BEFORE `tick`
+# (its guard asks `y = 0`), and `tick` sets y and clears x, so the two are
+# never 1 together -- unless a mutation drops the clear, which is what the
+# seeing control does. THE `y = 0` CONJUNCT ARRIVED AT 1.5.6b STEP 4d: until
+# then this comment claimed the safety and the model did not have it -- `tick`
+# then `set` reaches `both` in two steps -- and nothing had ever decided the
+# toy's own row (the two cases decide its CONTROLS). The explicit reading
+# (D-295) found it on its first run, in the self-check's own fixture.
+TOY = ('(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0) (= y 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1) (x 0)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3) %s)')
 BLIND = '(control blind both (remove b tick))'
 SEEING = '(control seeing both (replace b tick (guard (= y 0)) (next (y 1))))'
+
+# The explicit reading's texts (1.5.6b step 4d; D-295; npkg's copies are `selfcheck.npk`'s, byte for
+# byte). MX_UNSAFE is the toy with the clear ALREADY dropped from the model itself: `both` is reachable
+# in two steps. MX_RANGE counts past its variable's range unless the guard is spliced in. MX_UNREADABLE
+# uses an operator the models' grammar does not have.
+MX_UNSAFE = ('(model toy (state (x 0 1) (y 0 1) (done 0 1)) (init (and (= x 0) (= y 0) (= done 0))) (thread a (step set (ir @f entry) (guard (and (= x 0) (= done 0))) (next (x 1) (done 1)))) (thread b (step tick (ir @g entry) (guard (= y 0)) (next (y 1)))) (bad both (and (= x 1) (= y 1))) (depth 6) (preempt 3))')
+MX_RANGE = ('(model toy (state (n 0 2)) (init (and (= n 0))) (thread a (step inc (ir @f entry) %s(next (n (+ n 1))))) (bad never (= n 9)) (depth 6) (preempt 3))')
+MX_UNREADABLE = ('(model toy (state (n 0 2)) (init (and (= n 0))) (thread a (step inc (ir @f entry) (guard (< n 2)) (next (n (mod (+ n 1) 3))))) (bad never (= n 9)) (depth 6) (preempt 3))')
 
 
 def main():
@@ -317,6 +330,33 @@ def main():
         print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
         if not ok:
             print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0])
+
+    # THE MODELS' SECOND READING (1.5.6b step 4d; D-295): the explicit-state search over a
+    # model's whole reachable space. A bad state reachable fails by name and the safe model
+    # passes; a control whose bad state is reachable nowhere fails and the seeing one passes;
+    # a step a variable's range blocks fails and the guarded one passes. No solver and no
+    # tool: the belt reads text. `npkg/selfcheck.npk` carries the same six by name, over the
+    # same texts, byte for byte.
+    for name, text, finding, must_fail, why in (
+            ("model-bad-reachable", MX_UNSAFE, "floor-model-bad-reachable", True,
+             "a model whose bad state is reachable must fail the explicit reading by name"),
+            ("model-bad-reachable-control", TOY % SEEING, "floor-model-", False,
+             "the safe toy model under its seeing control must pass the explicit reading"),
+            ("model-control-unreachable", TOY % BLIND, "floor-model-control-unreachable", True,
+             "a control whose bad state is reachable nowhere must fail the explicit reading by name"),
+            ("model-range-blocks", MX_RANGE % "", "floor-model-range-blocks", True,
+             "a step that takes a variable out of its range must fail by name: the unrolling drops it silently"),
+            ("model-range-blocks-control", MX_RANGE % "(guard (< n 2)) ", "floor-model-", False,
+             "the same step under a guard that keeps the variable in range must pass"),
+            ("model-unreadable", MX_UNREADABLE, "floor-model-unreadable", True,
+             "an operator outside the models' grammar must fail by name, never be guessed at")):
+        fails = [f for f in floor.check_model_explicit("toy", text) if finding in f]
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the explicit reading accepted it; it should not have" if must_fail else "      the explicit reading rejected it: %s" % fails[0][:300])
 
     # THE FLOOR'S LEG (1.5.6 step 3, D-288): a refuted clause fails by name
     # and the same symbol under a true clause passes; a section with no claim

@@ -430,11 +430,14 @@ residue, never as a proof). 7 of them:
 - `@npk_int_to_string` -- the digit bytes are the same computation as npk_hs_put_dec's, whose twenty rows state them; here the length, the capacity, the zero and the sign are rows -- and the sign row is not decided under the profile (unknown at ten times the budget): the sign byte reaches the block's base through the rehome copy's twenty unrolled loads, whose addresses the solver must relate to the sign store's wrapped one
 - `@npk_wildx_call` -- an ordinary indirect call into a sealed wildx page: the analysis has proven the page sealed before this runs, and the contents are outside verification by construction (D-035) -- the call's effect on memory and its result are opaque, and no clause claims either
 
-**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model row holds to
-its own depth and preemption bound and no further; LIVENESS is not claimed at
-all -- that a due task is eventually run, and that the shared arena's walker
-stops spinning, need a fairness assumption a bounded unrolling cannot state.
-The bounds in force: `channel-table`, `driver-registry`, `futex-mutex`, `park-unpark`, `reactor-io`, `shared-arena`, `trap-route`.
+**The models' residue** (VERIFICATION_REFERENCE SS9.4): every model is read twice --
+bounded, by the solver (its rows hold to their own depth and preemption bound and no
+further), and exhaustively, by explicit-state search over its whole reachable space
+(D-295), which is where the SAFETY claim rests: no bad state is reachable in any model
+below, inside its bounds or outside them. LIVENESS is not claimed at all -- that a due
+task is eventually run, and that the shared arena's walker stops spinning, need a
+fairness assumption neither reading can state.
+The models, each with its bounds and its reachable states (and how many of them the bounds reach): `channel-table` (K 12, D 6; 151 states, 141 inside), `driver-registry` (K 10, D 5; 414 states, 398 inside), `futex-mutex` (K 11, D 6; 350 states, 350 inside), `park-unpark` (K 14, D 5; 358 states, 314 inside), `reactor-io` (K 16, D 7; 68 states, 68 inside), `shared-arena` (K 12, D 5; 1086 states, 1086 inside), `trap-route` (K 14, D 6; 105 states, 105 inside).
 <!-- END floor-residue -->
 
 ## 5. What a reader must accept
@@ -531,16 +534,29 @@ The bounds in force: `channel-table`, `driver-registry`, `futex-mutex`, `park-un
     fails the run); its TRUTH -- that a word marked `owner-only` is touched by
     one thread, that a `born-before-publish` word is written before its
     publish -- is the reader's, stated per word with the edge that orders it.
-13. That the models' BOUNDS are where the claims stop (1.5.6 step 5). Each
-    row says its depth and its preemption bound in its own site
-    (`bad:<predicate>:K<k>:D<d>`): a defect that needs more steps than `K`,
-    or more thread switches than `D`, is outside what was proven. The
-    controls are the evidence that the bound is not vacuous -- each removes
-    the guarding step and reaches the bad state within the same bound -- and
-    the stutter tick is what keeps a protocol that halts early from reading
-    as safe. LIVENESS is not claimed at all: that a due task is eventually
-    run, and that the shared arena's walker stops spinning, need a fairness
-    assumption a bounded unrolling cannot state.
+13. That a MODEL is what was checked, and that LIVENESS was not (1.5.6 step
+    5; narrowed at 1.5.6b step 4d, D-295). This acceptance used to ask for
+    more: each solver row holds to its own depth and preemption bound
+    (`bad:<predicate>:K<k>:D<d>`), so "a defect that needs more steps than
+    `K`, or more thread switches than `D`, is outside what was proven" --
+    and measured, three of the seven models' depths are smaller than their
+    state spaces' diameters. It no longer has to be accepted for SAFETY: every
+    model is read a second way, by explicit-state search over its WHOLE
+    reachable space with no bound and no solver, a belt in both runners, and
+    a bad state reachable anywhere is a red run (the generated paragraph of
+    §4c prints each model's reachable states and how many its bounds reach).
+    The two readings are independent -- different algorithms, and the first
+    two readers a model's MEANING has had -- and the run is green only when
+    both hold. What a reader still accepts: that the MODEL says what the
+    floor's blocks do (the correspondence belt proves every atomic operation
+    and syscall is NAMED by some step, not that a step means what its block
+    does -- 1.5.6b step 2 found a deviation, a missing step and a gap by
+    reading one model against its code; 1.5.7's explorer drives the real
+    blocks); that the controls, each of which removes a guarding step and
+    must reach its bad state within the bounds, show the predicates are not
+    vacuous; and that LIVENESS is not claimed at all -- that a due task is
+    eventually run, and that the shared arena's walker stops spinning, need
+    a fairness assumption neither reading can state.
 14. That two calls are OPAQUE and everything past them is residue:
     `npk_wildx_call`'s indirect call into a sealed executable page (D-035 --
     the analysis has proven the page sealed before it runs, and its contents

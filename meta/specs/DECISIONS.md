@@ -18779,6 +18779,24 @@ two mechanisms for one job but two independent readings that check each
 other.
 
 > Lands at **1.5.6b** step 4d (`meta/roadmap/1.5/1.5.6b.md`).
+>
+> **LANDED at 1.5.6b step 4d (2026-09-17).** `floor.check_models_explicit`
+> (the harness's `check_floor_models_explicit`) and `npkg/floor_explore.npk`
+> (`floor_models_explicit`: both of `npkg verify`'s belt sites and
+> `tools/floorspec.npk`'s default mode), the same five findings byte for
+> byte; held to each other on twelve planted texts before anything was wired.
+> The cap is 200,000 states, not the 2,000,000 the plan wrote (the largest
+> model has 1,086; the Nitpick twin's least-thread-changes pass is a fixpoint
+> over every edge, and a cap it could not finish in reasonable time would be
+> a refusal in name only). Six self-check cases in both runners from one set
+> of texts. TCB.md's generated residue paragraph prints each model's bounds,
+> reachable states and how many the bounds reach, from both generators, and
+> §5's thirteenth acceptance is narrowed to the model's fidelity and
+> LIVENESS. **The belt's first finding was in the self-check's own toy
+> model**, commented as safe since 1.5.6 and unsafe in two steps; nothing had
+> ever decided its row. The `verify` stage's summary line, whose parts summed
+> to 433 of its stated 439 (the library listener's catch), prints `checker`
+> and both runners assert the sum.
 
 ## D-296 — A CALLABLE binding may not take a builtin's name: D-294 inside a function — **SETTLED (user decision, 2026-09-17: "go with your recommendations on all three"; S-76)**
 

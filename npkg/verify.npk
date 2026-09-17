@@ -41,6 +41,7 @@ use "./strset.npk".*;
 use "./elf.npk".*;
 use "./floor_shared.npk".*;
 use "./floor_stack.npk".*;
+use "./floor_explore.npk".*;
 use "./floor_ir.npk".*;
 use "./floor_spec.npk".*;
 use "./floor.npk".*;
@@ -667,6 +668,21 @@ func:verdict_counts = string(List<VRow>:rows) never fails {
     pass s;
 };
 
+// THE PARTS SUM TO THE TOTAL, OR THE RUN IS RED (1.5.6b step 4d; the library
+// listener's catch). The harness's line said "439 obligation(s): 273
+// discharged, 138 open, 0 budget, 22 unencoded" from 1.5.4 on -- 433 of 439,
+// the six `checker` rows in the total and not in the breakdown; this runner
+// printed the category, and neither checked the sum. A verdict word no
+// category counts fails by name in both now.
+func:verdict_counts_sum = bool(List<VRow>:rows) never fails {
+    int64:counted = 0i64;
+    for (int64:i in 0i64...rows.count) {
+        int32:v = rows.items[i].verdict;
+        if ((v == (raw OV_DISCHARGED())) || (v == (raw OV_OPEN())) || (v == (raw OV_BUDGET())) || (v == (raw OV_UNENCODED())) || (v == (raw OV_CHECKER()))) { counted = counted + 1i64; }
+    }
+    pass (counted == rows.count);
+};
+
 pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     // THE FLOOR'S BELTS FIRST (1.5.6 step 0, D-290): the shared-state
     // classification of `runtime/npkrt.spec` against `runtime/npkrt.ll`, before
@@ -677,7 +693,10 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     // the stack rule's second half (1.5.6b, DEF-52): every alloca defined in its entry block
     List<string>:fk = raw floor_stack_current(string_from_bytes(c.m.root.ptr, c.m.root.len));
     if (fk.count > 0i64) { pass (raw step_bad(raw strlist_view(fk, 0i64))); }
-    drop say(raw stage_text("floor", "the shared-state classification holds (D-290) and every alloca is defined in its entry block (1.5.6b)"));
+    // the models' second reading (1.5.6b step 4d, D-295): explicit-state search, no bound and no solver
+    List<string>:fx = raw floor_models_explicit(string_from_bytes(c.m.root.ptr, c.m.root.len));
+    if (fx.count > 0i64) { pass (raw step_bad(raw strlist_view(fx, 0i64))); }
+    drop say(raw stage_text("floor", "the shared-state classification holds (D-290), every alloca is defined in its entry block (1.5.6b), and no model reaches a bad state anywhere (D-295)"));
     if (!c.m.z3) { pass (raw step_bad("nitpick.toml: [verify] z3 is not true -- this project declares no z3 verification, and a verify that pretended otherwise would be a green light nobody earned (D-068)")); }
     Result<string>:z3r = which("z3");
     if (z3r.is_error) { pass (raw step_bad("npkg verify: PATH cannot be read")); }
@@ -831,6 +850,7 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
         if (ex.is_error) { pass (raw step_bad("the --explain pass could not run")); }
         drop say(raw stage_text("explain", "build/verify/explain.txt: a model per open row, a reason per budget row, a core per discharged row"));
     }
+    if (!(raw verdict_counts_sum(rows))) { pass (raw step_bad("verify: the verdict breakdown does not sum to its total -- a verdict word the summary does not count")); }
     string:line = raw verdict_counts(rows);
     line = string_concat(line, "; nitpick.obligations matches; the verified compiler rebuilds itself byte-identically");
     drop say(raw stage_text("verify", line));
@@ -913,7 +933,7 @@ pub func:floor_belts = List<string>(Ctx->:c, FloorInputs->:inp) never fails {
     List<string>:tf = raw tcb_floor_current(@inp.ft, @inp.spec, @rows, inp.models, tt.value);
     List<string>:ts = raw tcb_syscalls_current(@inp.ft, tt.value);
     for (int64:si in 0i64...ts.count) { drop strlist_push(@tf, raw strlist_view(ts, si)); }
-    List<string>:tr2 = raw tcb_residue_current(@inp.spec, @rows, inp.models, tt.value);
+    List<string>:tr2 = raw tcb_residue_current(@inp.spec, @rows, inp.models, tt.value, root);
     for (int64:ri2 in 0i64...tr2.count) { drop strlist_push(@tf, raw strlist_view(tr2, ri2)); }
     for (int64:i in 0i64...tf.count) { drop strlist_push(@fl, raw strlist_view(tf, i)); }
     pass fl;
@@ -927,6 +947,8 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     if (sb.count > 0i64) { pass (raw step_bad(raw strlist_view(sb, 0i64))); }
     List<string>:sk = raw floor_stack_current(root);
     if (sk.count > 0i64) { pass (raw step_bad(raw strlist_view(sk, 0i64))); }
+    List<string>:sx = raw floor_models_explicit(root);
+    if (sx.count > 0i64) { pass (raw step_bad(raw strlist_view(sx, 0i64))); }
     List<string>:bl = raw floor_belts(c, @inp);
     if (bl.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(bl, 0i64), ""))); }
     string:fdir = raw path_join(vdir, "floor");
@@ -982,6 +1004,7 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
         if (ex.is_error) { pass (raw step_bad("the floor's --explain pass could not run")); }
         drop say(raw stage_text("explain", "build/verify/explain-floor.txt: the floor's rows -- a model per open row, a reason per budget row, a core per discharged row"));
     }
+    if (!(raw verdict_counts_sum(rows))) { pass (raw step_bad("floor: the verdict breakdown does not sum to its total -- a verdict word the summary does not count")); }
     string:line = raw verdict_counts(rows);
     line = string_concat(line, "; runtime/npkrt.obligations matches");
     pass (raw step_ok(line));

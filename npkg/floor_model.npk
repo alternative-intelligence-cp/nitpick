@@ -767,7 +767,7 @@ func:model_names_try = List<string>(string:dir) {
 
 // -- and the never-failing face the reader uses: an unreadable directory is
 // an empty listing, which its caller reports as the missing models it is.
-func:model_names = List<string>(string:dir) never fails {
+pub func:model_names = List<string>(string:dir) never fails {
     Result<List<string>>:r = model_names_try(dir);
     if (r.is_error) { pass (raw list_init::<string>(1i64)); }
     pass (move(r.value));
