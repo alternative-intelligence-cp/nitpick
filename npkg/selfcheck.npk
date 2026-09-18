@@ -814,6 +814,66 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         xw3 = string_concat(xw3, " first=");
         drop strlist_push(@report, string_concat(xw3, int_to_string(xm3.explore_first.count)));
     }
+    // THE ORACLE'S OFFSETS (1.5.7 step 3; D-301): the shim's three struct offsets
+    // held to the floor's own type lines -- a tampered constant fails by name, the
+    // real pair passes. The harness's two cases, on the same two files.
+    string:xo_root = string_from_bytes(c.m.root.ptr, c.m.root.len);
+    string:xo_floor = relay read_text(string_concat(xo_root, "/runtime/npkrt.ll"));
+    string:xo_shim = relay read_text(string_concat(xo_root, "/runtime/explore/npkx.ll"));
+    string:xo_tampered = raw text_replace_all(xo_shim, "@npkx_off_qnext = internal constant i64 48", "@npkx_off_qnext = internal constant i64 40");
+    List<string>:xof1 = raw check_oracle_offsets(xo_floor, xo_tampered, "explore");
+    bool:oko1 = false;
+    if (xof1.count > 0i64) { oko1 = raw text_contains(raw strlist_view(xof1, 0i64), "explore-oracle-offsets"); }
+    if (!oko1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-oracle-offsets", oko1, "a shim reading `qnext` at a byte the floor's type does not put it must fail by name"));
+    if (!oko1) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+    List<string>:xof2 = raw check_oracle_offsets(xo_floor, xo_shim, "explore");
+    bool:oko2 = (xof2.count == 0i64);
+    if (!oko2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-oracle-offsets-control", oko2, "the shim as committed reads the floor's own offsets"));
+    if (!oko2) { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(xof2, 0i64))); }
+    // THE CONTROLS (1.5.7 step 3; X-10): the grammar refuses a control without its
+    // verdict, the substitution refuses `old` lines that do not occur exactly once,
+    // and -- end to end through the real mechanism -- a control that plants NOTHING
+    // (a comment line replaced by itself) is one the explorer is blind to, by name,
+    // where the committed `store-release` is found within three seeds.
+    Control:xc_bad = raw read_control("program: tests/backend/programs/mutex_basic.npk\nwithin: 2\nold:\n  a\nnew:\n  b\n", "planted");
+    bool:okc1 = (!xc_bad.ok) && (raw text_contains(xc_bad.problem, "verdict"));
+    if (!okc1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-malformed", okc1, "a control with no `verdict:` must be refused by name"));
+    Control:xc_two = raw read_control("program: p\nverdict: DEADLOCK\nwithin: 2\nold:\n  ret void\nnew:\n  ret void\n", "planted");
+    Patched:xc_pt = raw apply_control(xo_floor, @xc_two, "planted");
+    bool:okc2 = (xc_pt.text.len == 0i64) && (raw text_contains(xc_pt.problem, "explore-control-unmatched"));
+    if (!okc2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-unmatched", okc2, "`old` lines that occur more than once in the floor must be refused by name"));
+    string:xc_shim_o = raw path_join(dir, "npkx_selfcheck.o");
+    Result<Step>:xcs = await llc_obj(c, c.m.llc_flags, string_concat(xo_root, "/runtime/explore/npkx.ll"), xc_shim_o);
+    if (xcs.is_error) { fail xcs.err; }
+    Step:xcst = move(xcs.value);
+    string:xc_blind = raw path_join(dir, "blind.ctl");
+    Result<NIL>:xcw1 = text_write_file(xc_blind, "; a control that plants nothing: a comment line replaced by itself\nprogram: tests/backend/programs/mutex_basic.npk\nverdict: LOST-FUTEX-WAKE\nwithin: 2\nold:\n  ; ...and the eventfd, when the owner's idle wait is the reactor's\nnew:\n  ; ...and the eventfd, when the owner's idle wait is the reactor's\n");
+    if (xcw1.is_error) { fail xcw1.err; }
+    string:xc_found = raw path_join(dir, "found.ctl");
+    string:xc_sr = relay read_text(string_concat(xo_root, "/runtime/explore/controls/store-release.ctl"));
+    Result<NIL>:xcw2 = text_write_file(xc_found, raw text_replace_all(xc_sr, "within: 20", "within: 3"));
+    if (xcw2.is_error) { fail xcw2.err; }
+    if (!xcst.ok) {
+        bad = bad + 2i64;
+        drop strlist_push(@report, raw case_line("explore-control-blind", false, string_concat("llc rejected the shim: ", raw text_head(xcst.text, 100i64))));
+        drop strlist_push(@report, raw case_line("explore-control-found", false, "llc rejected the shim"));
+    } else {
+        CtlRun:xcb = relay await run_explore_control(c, xc_blind, "explore-control-blind", xc_shim_o);
+        bool:okc3 = false;
+        if (xcb.findings.count > 0i64) { okc3 = raw text_contains(raw strlist_view(xcb.findings, 0i64), "explore-control-blind"); }
+        if (!okc3) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line("explore-control-blind", okc3, "a control the explorer never reaches the verdict of must fail by name"));
+        if (!okc3) { drop strlist_push(@report, "      the mechanism accepted a blind control; it should not have"); }
+        CtlRun:xcf = relay await run_explore_control(c, xc_found, "explore-control-found", xc_shim_o);
+        bool:okc4 = (xcf.findings.count == 0i64);
+        if (!okc4) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line("explore-control-found", okc4, "the committed `store-release` control is found within three seeds"));
+        if (!okc4) { drop strlist_push(@report, string_concat("      the mechanism said: ", raw text_head(raw strlist_view(xcf.findings, 0i64), 300i64))); }
+    }
     // WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator
     // on a planted floor whose answer is known by reading it -- `@callee`
     // assumes something of its caller; `@covered` is translated and INLINES it;

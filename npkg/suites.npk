@@ -937,6 +937,24 @@ async func:run_explore = NIL(Ctx->:c, int64:t) {
     sum = string_concat(sum, int_to_string(n_no));
     sum = string_concat(sum, " marked not explored with a reason; the first seed of each replayed to the same schedule hash");
     drop say(raw stage_text(tname, sum));
+    // THE NEGATIVE CONTROLS (step 3; X-10): the instrument must FIND what is planted
+    List<string>:ctl_dirs = raw list_init::<string>(1i64);
+    drop strlist_push(@ctl_dirs, "runtime/explore/controls");
+    List<string>:ctls = relay files_of(c, ctl_dirs, false, ".ctl");
+    int64:found = 0i64;
+    for (int64:ci in 0i64...ctls.count) {
+        string:cp = raw strlist_view(ctls, ci);
+        string:cname = raw rel_to_root(c, cp);
+        CtlRun:cr = relay await run_explore_control(c, cp, cname, xo.shim_o);
+        drop record(c, tname, cname, cr.findings);
+        if (cr.findings.count == 0i64) {
+            found = found + 1i64;
+            string:cl = string_concat(cname, ": the planted defect found at seed ");
+            drop say(raw stage_text("explore", string_concat(cl, int_to_string(cr.seed))));
+        }
+    }
+    string:csum = string_concat(int_to_string(found), " negative control(s): the explorer reached each planted defect's verdict within its seeds");
+    drop say(raw stage_text(tname, csum));
     pass NIL;
 };
 

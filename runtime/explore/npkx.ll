@@ -1,4 +1,4 @@
-; npkx.ll -- THE SCHEDULE EXPLORER'S SHIM (1.5.7 steps 1-2; D-212, D-298, D-300, D-301).
+; npkx.ll -- THE SCHEDULE EXPLORER'S SHIM (1.5.7 steps 1-3; D-212, D-298, D-300, D-301).
 ;
 ; Hand-written LLVM IR (D-203's form; D-298 says why it cannot be Nitpick: mutable
 ; module state, and code that runs inside the floor's critical sections and may
@@ -33,7 +33,7 @@
 ; Parameters, by environment (read once from /proc/self/environ at the first call):
 ;   NPKX_SEED (default 1)     NPKX_POLICY (0 PCT, 1 uniform random walk)
 ;   NPKX_D (PCT depth, 3)     NPKX_K (the step estimate the change points fall in, 2000)
-;   NPKX_BUDGET (50,000,000 steps)
+;   NPKX_BUDGET (50,000,000 steps)    NPKX_ORACLE (1; 0 turns the quiescence oracles off)
 ;   NPKX_TRACE (1: the seed, steps, hash, clock and thread count at exit; 2: every step as `me what`)
 ;
 ; Verdicts end the process with `exit_group(97)` after printing the seed, the
@@ -43,8 +43,12 @@
 ; (step 2): `rt_sigaction` is remembered, `tgkill` marks its target and makes a
 ; virtually blocked one runnable, and the handler runs in the target's own
 ; context at its next grant -- so the trap route (D-291's stop walk) is explored
-; like everything else. The quiescence oracles (LOST-WAKE, LOST-FUTEX-WAKE;
-; D-301) join at step 3.
+; like everything else. THE QUIESCENCE ORACLES (step 3; D-301): before virtual
+; time may jump and before a DEADLOCK is declared, LOST-FUTEX-WAKE (a virtual
+; waiter's word no longer holds the value it waited on) and LOST-WAKE (a
+; blocked thread's executor holds a task stamped DUE on its sleeper list) are
+; read off the REAL state -- a lost wakeup here is lateness an exit code cannot
+; see; NPKX_ORACLE=0 turns them off, for comparison only.
 
 target triple = "x86_64-unknown-linux-gnu"
 
@@ -359,6 +363,9 @@ entry:
   store i32 %trace32, ptr @npkx_trace
   %budget = call i64 @npkx_env_u64(ptr @npkx_key_budget, i64 11, i64 50000000)
   store i64 %budget, ptr @npkx_budget
+  %oracle = call i64 @npkx_env_u64(ptr @npkx_key_oracle, i64 11, i64 1)
+  %oracle32 = trunc i64 %oracle to i32
+  store i32 %oracle32, ptr @npkx_oracle
   ; rng = seed * 0x9E3779B97F4A7C15 + 0x1234567, never 0
   %m = mul i64 %seed, -7046029254386353131
   %r = add i64 %m, 19088743
@@ -661,9 +668,135 @@ pret:
   ret i32 %best
 }
 
+; --- the quiescence oracles (step 3; D-301) -----------------------------------
+;
+; A lost wakeup in this runtime is LATENESS: every wait carries a deadline
+; (D-071), so an executor that misses its wake sleeps until the next deadline
+; and the program still exits right, late -- and virtual time hides the
+; lateness completely. So the state is read at QUIESCENCE, before virtual time
+; may jump and before a DEADLOCK is declared:
+;   LOST-FUTEX-WAKE -- a virtual waiter's word no longer holds the value it
+;     waited on: every futex protocol of the floor is "wait while the word is
+;     v; whoever changes it wakes", so a changed word and a sleeping waiter is
+;     a wake somebody owed and nobody sent;
+;   LOST-WAKE -- a blocked thread's executor holds, on its sleeper list, a
+;     frame stamped DUE (`wake_at` = 1): the models' wake-before-sleep,
+;     absorbed-notification and spent-marker, read off the REAL executor.
+; The three offsets below are the floor's struct layouts (`%npk.exec` field 2,
+; `%npk.hdr` fields 7 and 8), held to `runtime/npkrt.ll` by a belt in both
+; runners (`explore-oracle-offsets`). NPKX_ORACLE=0 turns the oracles off, for
+; comparison only.
+@npkx_off_sl_head = internal constant i64 16
+@npkx_off_qnext = internal constant i64 48
+@npkx_off_wake_at = internal constant i64 56
+@npkx_oracle = internal global i32 1
+@npkx_key_oracle = internal constant [11 x i8] c"NPKX_ORACLE"
+@npkx_s_lostfutex = internal constant [60 x i8] c"LOST-FUTEX-WAKE (a waiter's word changed and nobody woke it)"
+@npkx_s_lostwake = internal constant [52 x i8] c"LOST-WAKE (an executor sleeps on a task stamped due)"
+
+define internal void @npkx_lost_wake_oracle() {
+entry:
+  %on = load i32, ptr @npkx_oracle
+  %off = icmp eq i32 %on, 0
+  br i1 %off, label %ret, label %futex
+
+futex:
+  %n = load i32, ptr @npkx_nslots
+  br label %floop
+
+floop:
+  %fi = phi i32 [ 0, %futex ], [ %fi1, %fnext ]
+  %fdone = icmp sge i32 %fi, %n
+  br i1 %fdone, label %wake, label %fcheck
+
+fcheck:
+  %fst = call i32 @npkx_ld32(i32 %fi, i32 1)
+  %fisf = icmp eq i32 %fst, 3
+  br i1 %fisf, label %fword, label %fnext
+
+fword:
+  %fad = call i64 @npkx_ld64(i32 %fi, i32 4)
+  %fap = inttoptr i64 %fad to ptr
+  %fcur = load atomic i32, ptr %fap seq_cst, align 4
+  %fwant = call i32 @npkx_ld32(i32 %fi, i32 13)
+  %fchanged = icmp ne i32 %fcur, %fwant
+  br i1 %fchanged, label %lostfutex, label %fnext
+
+lostfutex:
+  call void @npkx_die(ptr @npkx_s_lostfutex, i64 60)
+  unreachable
+
+fnext:
+  %fi1 = add i32 %fi, 1
+  br label %floop
+
+wake:
+  br label %wloop
+
+wloop:
+  %wi = phi i32 [ 0, %wake ], [ %wi1, %wnext ]
+  %wdone = icmp sge i32 %wi, %n
+  br i1 %wdone, label %ret, label %wcheck
+
+wcheck:
+  %wst = call i32 @npkx_ld32(i32 %wi, i32 1)
+  %wisf = icmp eq i32 %wst, 3
+  %wise = icmp eq i32 %wst, 4
+  %wblocked = or i1 %wisf, %wise
+  br i1 %wblocked, label %wexec, label %wnext
+
+wexec:
+  %wex = call i64 @npkx_ld64(i32 %wi, i32 12)
+  %wnoex = icmp eq i64 %wex, 0
+  br i1 %wnoex, label %wnext, label %whead
+
+whead:
+  %shoff = load i64, ptr @npkx_off_sl_head
+  %headat = add i64 %wex, %shoff
+  %headp = inttoptr i64 %headat to ptr
+  %f0 = load i64, ptr %headp
+  %qoff = load i64, ptr @npkx_off_qnext
+  %waoff = load i64, ptr @npkx_off_wake_at
+  br label %walk
+
+walk:
+  %f = phi i64 [ %f0, %whead ], [ %fn, %wstep ]
+  %cnt = phi i64 [ 0, %whead ], [ %cnt1, %wstep ]
+  %fnull = icmp eq i64 %f, 0
+  %toofar = icmp uge i64 %cnt, 100000
+  %stop = or i1 %fnull, %toofar
+  br i1 %stop, label %wnext, label %wframe
+
+wframe:
+  %waat = add i64 %f, %waoff
+  %wap = inttoptr i64 %waat to ptr
+  %wa = load i64, ptr %wap
+  %due = icmp eq i64 %wa, 1
+  br i1 %due, label %lostwake, label %wstep
+
+lostwake:
+  call void @npkx_die(ptr @npkx_s_lostwake, i64 52)
+  unreachable
+
+wstep:
+  %qat = add i64 %f, %qoff
+  %qp = inttoptr i64 %qat to ptr
+  %fn = load i64, ptr %qp
+  %cnt1 = add i64 %cnt, 1
+  br label %walk
+
+wnext:
+  %wi1 = add i32 %wi, 1
+  br label %wloop
+
+ret:
+  ret void
+}
+
 ; nobody can step: move virtual time to the earliest deadline; -1 when none
 define internal i32 @npkx_advance() {
 entry:
+  call void @npkx_lost_wake_oracle()
   %n = load i32, ptr @npkx_nslots
   br label %loop
 
@@ -753,6 +886,7 @@ counted:
   br i1 %quiet, label %ret, label %deadlock
 
 deadlock:
+  call void @npkx_lost_wake_oracle()
   call void @npkx_die(ptr @npkx_s_deadlock, i64 8)
   unreachable
 

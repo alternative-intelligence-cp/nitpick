@@ -1229,9 +1229,18 @@ runners. **Step 2 LANDED 2026-09-18**: the signals are virtual
 runnable, the handler runs in the target's context at its next grant), so the
 trap route is explored like everything else — the four trap-route programs
 say `// explore: 1000` and agree with the C reference hash for hash on 20
-seeds each; 34 of 34 explorable programs do. Steps 3–7: the quiescence
-oracles and the controls, the nineteen model controls walked, the spec's
-hypotheses executed, program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+seeds each; 34 of 34 explorable programs do. **Step 3 LANDED 2026-09-18**:
+the quiescence oracles are live in every explored run (D-301: `LOST-WAKE`
+and `LOST-FUTEX-WAKE` are red verdicts read off the REAL executor state at
+quiescence — a lost wakeup here is lateness an exit code cannot see; the
+shim's three struct offsets are held to the floor's type lines by
+`explore-oracle-offsets` in both runners), and the CONTROL MECHANISM under
+`runtime/explore/controls/` (a `.ctl` plants a defect by one exact-line
+substitution and names the verdict the explorer must reach within N seeds —
+`explore-control-blind` otherwise; `store-release` and `no-rouse` landed, both
+found at seed 1; 680 clean runs, no false positive). Steps 4–7: the nineteen
+model controls walked, the spec's hypotheses executed, program-level
+atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving

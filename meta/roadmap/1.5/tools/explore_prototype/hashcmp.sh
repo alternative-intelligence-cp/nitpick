@@ -25,7 +25,8 @@ for f in $(grep -l '^// stress:' tests/backend/programs/*.npk | sort); do
     NPKX_SEED=$s NPKX_TRACE=1 timeout 30 "$OUT/$name.c" < /dev/null > /dev/null 2> "$OUT/$name.tc"; ec=$?
     NPKX_SEED=$s NPKX_TRACE=1 timeout 30 "$OUT/$name.ir" < /dev/null > /dev/null 2> "$OUT/$name.ti"; ei=$?
     hc=$(grep -o 'steps=[0-9]* hash=[0-9]*' "$OUT/$name.tc" | head -1); hi=$(grep -o 'steps=[0-9]* hash=[0-9]*' "$OUT/$name.ti" | head -1)
-    vc=$(grep -oE 'npkx: (DEADLOCK|STEP BUDGET|LOST[A-Z -]*|ASSUMPTION)' "$OUT/$name.tc" | head -1); vi=$(grep -oE 'npkx: (DEADLOCK|STEP BUDGET|LOST[A-Z -]*|ASSUMPTION)' "$OUT/$name.ti" | head -1)
+    # the verdict WORD, letters only: the C reference prints "LOST WAKE (...)" where the IR prints "LOST-WAKE (...)"
+    vc=$(grep -oE 'npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST[A-Z -]*|ASSUMPTION)' "$OUT/$name.tc" | head -1 | tr -cd 'A-Z'); vi=$(grep -oE 'npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST[A-Z -]*|ASSUMPTION)' "$OUT/$name.ti" | head -1 | tr -cd 'A-Z')
     if [ "$ec:$hc:$vc" = "$ei:$hi:$vi" ]; then same=$((same+1)); else diff=$((diff+1)); [ -z "$first" ] && first="seed $s: c=$ec:$hc:$vc ir=$ei:$hi:$vi"; fi
   done
   if [ "$diff" = 0 ]; then agree=$((agree+1)); else disagree=$((disagree+1)); fi

@@ -610,6 +610,67 @@ def main():
         if not ok:
             print("      the marker belt said %r; explore=%r no=%r depth=%r first=%r"
                   % (fails, xe.explore, xe.explore_no, xe.explore_depth, xe.explore_first))
+    # THE ORACLE'S OFFSETS (1.5.7 step 3; D-301): the shim's three struct offsets held to
+    # the floor's own type lines -- a tampered constant fails by name, the real pair passes.
+    with open(harness.RUNTIME_LL, encoding="utf-8") as fh:
+        xo_floor = fh.read()
+    with open(os.path.join(ROOT, "runtime", "explore", "npkx.ll"), encoding="utf-8") as fh:
+        xo_shim = fh.read()
+    xo_tampered = xo_shim.replace("@npkx_off_qnext = internal constant i64 48", "@npkx_off_qnext = internal constant i64 40")
+    for name, shim_text, must_fail, why in (
+            ("explore-oracle-offsets", xo_tampered, True, "a shim reading `qnext` at a byte the floor's type does not put it must fail by name"),
+            ("explore-oracle-offsets-control", xo_shim, False, "the shim as committed reads the floor's own offsets")):
+        fails = explore.check_oracle_offsets(xo_floor, shim_text)
+        ok = (bool(fails) == must_fail)
+        if ok and must_fail:
+            ok = "explore-oracle-offsets" in fails[0]
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0][:300])
+    # THE CONTROLS (1.5.7 step 3; X-10): the grammar refuses a control without its verdict, the
+    # substitution refuses `old` lines that do not occur exactly once, and -- end to end through the
+    # real mechanism -- a control that plants NOTHING (a comment line replaced by itself) is a
+    # control the explorer is blind to, by name, where the committed `store-release` is found.
+    xc_bad, xc_why = explore.read_control("program: tests/backend/programs/mutex_basic.npk\nwithin: 2\nold:\n  a\nnew:\n  b\n", "planted")
+    okc1 = xc_bad is None and "verdict" in xc_why
+    if not okc1:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-malformed", "ok" if okc1 else "BAD", "a control with no `verdict:` must be refused by name"))
+    xc_two, _ = explore.read_control("program: p\nverdict: DEADLOCK\nwithin: 2\nold:\n  ret void\nnew:\n  ret void\n", "planted")
+    xc_patched, xc_why2 = explore.apply_control(xo_floor, xc_two, "planted")
+    okc2 = xc_patched is None and "explore-control-unmatched" in xc_why2
+    if not okc2:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-unmatched", "ok" if okc2 else "BAD", "`old` lines that occur more than once in the floor must be refused by name"))
+    if xtool and os.path.exists(str(xtool)) and harness.COMPILER and os.path.exists(str(harness.COMPILER)):
+        xc_shim_o = os.path.join(tmp, "npkx_selfcheck.o")
+        r = subprocess.run(["llc"] + harness.LLC_FLAGS + [os.path.join(ROOT, "runtime", "explore", "npkx.ll"), "-o", xc_shim_o], capture_output=True, text=True)
+        xc_blind_path = os.path.join(tmp, "blind.ctl")
+        with open(xc_blind_path, "w", encoding="utf-8") as fh:
+            fh.write("; a control that plants nothing: a comment line replaced by itself\nprogram: tests/backend/programs/mutex_basic.npk\n"
+                     "verdict: LOST-FUTEX-WAKE\nwithin: 2\nold:\n  ; ...and the eventfd, when the owner's idle wait is the reactor's\n"
+                     "new:\n  ; ...and the eventfd, when the owner's idle wait is the reactor's\n")
+        xc_found_path = os.path.join(tmp, "found.ctl")
+        with open(os.path.join(ROOT, "runtime", "explore", "controls", "store-release.ctl"), encoding="utf-8") as fh:
+            with open(xc_found_path, "w", encoding="utf-8") as out:
+                out.write(fh.read().replace("within: 20", "within: 3"))
+        for name, cpath, must_fail, why in (
+                ("explore-control-blind", xc_blind_path, True, "a control the explorer never reaches the verdict of must fail by name"),
+                ("explore-control-found", xc_found_path, False, "the committed `store-release` control is found within three seeds")):
+            if r.returncode != 0:
+                fails, seed = ["llc rejected the shim: %s" % r.stderr[:100]], 0
+            else:
+                fails, seed = harness.run_explore_control(tmp, cpath, name, xc_shim_o)
+            ok = (bool(fails) == must_fail)
+            if ok and must_fail:
+                ok = "explore-control-blind" in fails[0]
+            if not ok:
+                bad += 1
+            print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+            if not ok:
+                print("      the mechanism accepted a blind control; it should not have" if must_fail else "      the mechanism said: %s" % fails[0][:300])
     # WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator on a planted floor whose
     # answer is known by reading it -- `@callee` assumes something of its caller; `@covered` is translated
     # and INLINES it; `@bare` has no section, so nothing covers its call; `@callee` is `internal`, so

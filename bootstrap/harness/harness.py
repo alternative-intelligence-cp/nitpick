@@ -3816,6 +3816,9 @@ def _explored_objects(tmp, tools):
         sh = fh.read()
     fails = check_no_undef(sh, "runtime/explore/npkx.ll") + check_allocas_hoisted(sh, "runtime/explore/npkx.ll") \
         + floor.check_stack(sh, "explore")
+    # THE ORACLE'S OFFSETS (step 3; D-301): the three words the quiescence
+    # oracle reads off the floor's structs, held to the floor's type lines
+    fails += explore.check_oracle_offsets(ft, sh)
     if fails:
         return None, None, fails, ""
     shim_o = os.path.join(xdir, "npkx.o")
@@ -3825,7 +3828,7 @@ def _explored_objects(tmp, tools):
     fails = check_zero_dependency(shim_o, runtime_allowlist(), "runtime/explore/npkx.o")
     if fails:
         return None, None, fails, ""
-    return xfloor_o, shim_o, [], summary + "; the shim under the floor's belts, assembled"
+    return xfloor_o, shim_o, [], summary + "; the shim under the floor's belts, its oracle's offsets the floor's, assembled"
 
 
 def check_explore_totality(tmp, tools):
@@ -3855,7 +3858,7 @@ def check_explore_totality(tmp, tools):
 # each unit from its measured thread count and k (X-8). `npkg test` runs the
 # same stage, unit for unit, message for message.
 
-_NPKX_VERDICT = re.compile(r"^npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST[A-Z -]*|ASSUMPTION)", re.M)
+_NPKX_VERDICT = re.compile(r"^npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST-[A-Z-]+|ASSUMPTION)", re.M)
 _NPKX_TRACE = re.compile(r"^npkx: +seed=(\d+) steps=(\d+) hash=(\d+)(?: vnow=(\d+))?(?: threads=(\d+))?", re.M)
 
 
@@ -3967,6 +3970,83 @@ def stage_explore(t, s):
         n += 1
     print("  %-11s %d program(s) explored under the shim's PCT scheduler, %d marked not explored with a reason; "
           "the first seed of each replayed to the same schedule hash" % (t["name"], n, n_no))
+    # THE NEGATIVE CONTROLS (step 3; X-10): the instrument must FIND what is planted
+    ctl_dir = os.path.join(ROOT, "runtime", "explore", "controls")
+    ctl_paths = sorted(glob.glob(os.path.join(ctl_dir, "*.ctl")))
+    found = 0
+    for cp in ctl_paths:
+        cname = os.path.relpath(cp, ROOT)
+        fails, seed = run_explore_control(s.tmp, cp, cname, shim_o)
+        s.failures += record_verdict(t["name"], cname, fails)
+        if not fails:
+            found += 1
+            print("  %-11s %s: the planted defect found at seed %d" % ("explore", cname, seed))
+    print("  %-11s %d negative control(s): the explorer reached each planted defect's verdict within its seeds"
+          % (t["name"], found))
+
+
+def run_explore_control(tmp, path, name, shim_o):
+    """One control (`runtime/explore/controls/<name>.ctl`): the floor with the
+    control's `old` lines replaced by its `new` (exactly one occurrence),
+    transformed by the ONE transformer over a synthetic root, counted, assembled;
+    the program compiled and linked against it and the shim; seeds 1..within
+    under the prototype's measuring parameters (k = 2000, d = 3) until the named
+    verdict appears -- (fails, the seed it appeared at). A control the explorer
+    is blind to fails by name; so does one the grammar cannot read or whose
+    `old` lines do not occur exactly once."""
+    import explore
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    ctl, why = explore.read_control(text, name)
+    if ctl is None:
+        return ["%s: explore-control-malformed: %s" % (name, why)], 0
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        ft = fh.read()
+    patched, why = explore.apply_control(ft, ctl, name)
+    if patched is None:
+        return [why], 0
+    croot = os.path.join(tmp, "explore_ctl", os.path.basename(path)[:-4].replace("-", "_"))
+    os.makedirs(os.path.join(croot, "runtime"), exist_ok=True)
+    with open(os.path.join(croot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:
+        fh.write(patched)
+    tool = os.path.join(tmp, "explored")
+    cdir = os.path.join(croot, "out")
+    r = subprocess.run([tool, croot, "--emit", cdir], capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        return ["%s: the transformer refused the patched floor: %s" % (name, (r.stdout + r.stderr).strip()[:300])], 0
+    with open(os.path.join(cdir, "npkrt.explore.ll"), encoding="utf-8") as fh:
+        xt = fh.read()
+    fails = explore.check_totality(patched, xt, name)
+    if fails:
+        return fails, 0
+    cfloor_o = os.path.join(cdir, "npkrt.explore.o")
+    r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(cdir, "npkrt.explore.ll"), "-o", cfloor_o], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["%s: llc rejected the patched explored floor: %s" % (name, r.stderr.strip()[:160])], 0
+    prog = os.path.join(ROOT, ctl["program"])
+    if not os.path.exists(prog):
+        return ["%s: names a program that does not exist: %s" % (name, ctl["program"])], 0
+    exp = read_expectations(prog)
+    base = os.path.join(croot, "prog")
+    fails = emit_and_object(COMPILER, prog, ctl["program"], base, runtime_allowlist())
+    if fails:
+        return fails, 0
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o", cfloor_o, shim_o], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["%s: link against the patched floor failed: %s" % (name, r.stderr.strip()[:140])], 0
+    seen = []
+    for seed in range(1, ctl["within"] + 1):
+        try:
+            r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(seed, 2000, 3))
+        except subprocess.TimeoutExpired:
+            seen.append("seed %d: hung" % seed)
+            continue
+        m = _NPKX_VERDICT.search(r.stderr.decode("utf-8", "replace"))
+        if m and m.group(1) == ctl["verdict"]:
+            return [], seed
+        seen.append("seed %d: %s" % (seed, m.group(1) if m else "exit %d" % r.returncode))
+    return ["%s: explore-control-blind: the explorer did not reach %s within %d seed(s) of the planted defect (%s) -- an instrument blind "
+            "to what it claims to see" % (name, ctl["verdict"], ctl["within"], ", ".join(seen[:6]))], 0
 
 
 def floor_controls(fdir):

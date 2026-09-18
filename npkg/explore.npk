@@ -316,3 +316,207 @@ pub func:explore_totality_current = List<string>(string:root) never fails {
     if (fl.count > 0i64) { pass fl; }
     pass (raw explore_totality(ftx.value, x.text));
 };
+
+// --- the oracle's offsets (step 3; D-301) ---------------------------------------------
+//
+// The shim reads three words of the floor's structs -- `%npk.exec` field 2
+// (the sleeper list's head), `%npk.hdr` fields 7 (`qnext`) and 8 (`wake_at`)
+// -- by byte offsets it carries as named constants (`@npkx_off_sl_head`,
+// `@npkx_off_qnext`, `@npkx_off_wake_at`); this holds them to the floor's own
+// type lines (`explore-oracle-offsets`). The layout is x86_64's: `ptr` 8/8,
+// `iN` its bytes at a power-of-two alignment capped at 8, an array its
+// elements, a struct its fields at their alignments and padded to its own.
+
+// (size, align) of an IR type, as a pair; a type the reader does not know is (-1, -1).
+pub struct:TySize = { int64:size; int64:align; };
+
+func:pow2_ceil = int64(int64:n) never fails {
+    int64:p = 1i64;
+    while (p < n) { p = p * 2i64; }
+    pass p;
+};
+
+pub func:layout_size_align = TySize(string:ty0) never fails {
+    string:ty = raw text_trim(ty0);
+    if (raw text_eq(ty, "ptr")) { pass TySize{ size: 8i64, align: 8i64 }; }
+    if (ty.len == 0i64) { pass TySize{ size: 0i64 - 1i64, align: 0i64 - 1i64 }; }
+    if (ty.ptr[0i64] == 105u8) {                                    // 'i': iN
+        Result<int64>:bits = text_int(raw text_slice(ty, 1i64, ty.len));
+        if (bits.is_error) { pass TySize{ size: 0i64 - 1i64, align: 0i64 - 1i64 }; }
+        if ((bits.value < 1i64) || (bits.value > 64i64)) { pass TySize{ size: 0i64 - 1i64, align: 0i64 - 1i64 }; }
+        int64:bytes = (bits.value + 7i64) / 8i64;
+        int64:al = raw pow2_ceil(bytes);
+        if (al > 8i64) { al = 8i64; }
+        pass TySize{ size: bytes, align: al };
+    }
+    if (ty.ptr[0i64] == 91u8) {                                     // '[': [N x T]
+        int64:n = raw array_count(ty);
+        TySize:e = raw layout_size_align(raw array_elem(ty));
+        if ((n <= 0i64) || (e.size < 0i64)) { pass TySize{ size: 0i64 - 1i64, align: 0i64 - 1i64 }; }
+        pass TySize{ size: n * e.size, align: e.align };
+    }
+    if (ty.ptr[0i64] == 123u8) {                                    // '{': a struct
+        List<string>:fields = raw struct_fields(ty);
+        int64:off = 0i64;
+        int64:align = 1i64;
+        for (int64:i in 0i64...fields.count) {
+            TySize:f = raw layout_size_align(raw strlist_view(fields, i));
+            if (f.size < 0i64) { pass TySize{ size: 0i64 - 1i64, align: 0i64 - 1i64 }; }
+            off = ((off + f.align - 1i64) / f.align) * f.align + f.size;
+            if (f.align > align) { align = f.align; }
+        }
+        pass TySize{ size: ((off + align - 1i64) / align) * align, align: align };
+    }
+    pass TySize{ size: 0i64 - 1i64, align: 0i64 - 1i64 };
+};
+
+// The byte offset of field `k` of a struct body `{ ... }`; -1 when the body cannot be read or has no such field.
+pub func:layout_field_offset = int64(string:body, int64:k) never fails {
+    List<string>:fields = raw struct_fields(raw text_trim(body));
+    if ((k < 0i64) || (k >= fields.count)) { pass (0i64 - 1i64); }
+    int64:off = 0i64;
+    for (int64:i in 0i64...fields.count) {
+        TySize:f = raw layout_size_align(raw strlist_view(fields, i));
+        if (f.size < 0i64) { pass (0i64 - 1i64); }
+        off = ((off + f.align - 1i64) / f.align) * f.align;
+        if (i == k) { pass off; }
+        off = off + f.size;
+    }
+    pass (0i64 - 1i64);
+};
+
+// `%name = type { ... }` in a floor text: the body, or "".
+func:type_body_of = string(string:floor, string:name) never fails {
+    List<string>:lines = raw raw_lines(floor);
+    string:head = string_concat(name, " = type ");
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (raw text_starts_with(ln, head)) { pass (raw text_trim(raw text_slice(ln, head.len, ln.len))); }
+    }
+    pass "";
+};
+
+// `@npkx_off_<key> = internal constant i64 N` in the shim's text: N, or -1.
+func:shim_offset_of = int64(string:shim, string:key) never fails {
+    List<string>:lines = raw raw_lines(shim);
+    string:head = string_concat("@npkx_off_", key);
+    head = string_concat(head, " = internal constant i64 ");
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (raw text_starts_with(ln, head)) {
+            Result<int64>:v = text_int(raw text_trim(raw text_slice(ln, head.len, ln.len)));
+            if (v.is_error) { pass (0i64 - 1i64); }
+            pass v.value;
+        }
+    }
+    pass (0i64 - 1i64);
+};
+
+func:offset_finding = string(string:name, string:key, int64:have, int64:want) never fails {
+    string:m = string_concat(name, "-oracle-offsets: the shim reads `");
+    m = string_concat(m, key);
+    m = string_concat(m, "` at byte ");
+    m = string_concat(m, int_to_string(have));
+    m = string_concat(m, " and the floor's type puts it at ");
+    pass (string_concat(m, int_to_string(want)));
+};
+
+pub func:check_oracle_offsets = List<string>(string:floor, string:shim, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(3i64);
+    int64:h_head = raw shim_offset_of(shim, "sl_head");
+    int64:h_qnext = raw shim_offset_of(shim, "qnext");
+    int64:h_wake = raw shim_offset_of(shim, "wake_at");
+    if (h_head < 0i64) { drop strlist_push(@fl, string_concat(name, "-oracle-offsets: the shim carries no `@npkx_off_sl_head` constant")); }
+    if (h_qnext < 0i64) { drop strlist_push(@fl, string_concat(name, "-oracle-offsets: the shim carries no `@npkx_off_qnext` constant")); }
+    if (h_wake < 0i64) { drop strlist_push(@fl, string_concat(name, "-oracle-offsets: the shim carries no `@npkx_off_wake_at` constant")); }
+    if (fl.count > 0i64) { pass fl; }
+    string:ex = raw type_body_of(floor, "%npk.exec");
+    string:hd = raw type_body_of(floor, "%npk.hdr");
+    if (ex.len == 0i64) { drop strlist_push(@fl, string_concat(name, "-oracle-offsets: the floor defines no `%npk.exec` type")); pass fl; }
+    if (hd.len == 0i64) { drop strlist_push(@fl, string_concat(name, "-oracle-offsets: the floor defines no `%npk.hdr` type")); pass fl; }
+    int64:w_head = raw layout_field_offset(ex, 2i64);
+    int64:w_qnext = raw layout_field_offset(hd, 7i64);
+    int64:w_wake = raw layout_field_offset(hd, 8i64);
+    if (h_head != w_head) { drop strlist_push(@fl, raw offset_finding(name, "sl_head", h_head, w_head)); }
+    if (h_qnext != w_qnext) { drop strlist_push(@fl, raw offset_finding(name, "qnext", h_qnext, w_qnext)); }
+    if (h_wake != w_wake) { drop strlist_push(@fl, raw offset_finding(name, "wake_at", h_wake, w_wake)); }
+    pass fl;
+};
+
+// --- the controls (step 3; X-10) ---------------------------------------------------------
+//
+// `runtime/explore/controls/<name>.ctl`: `program:`, `verdict:`, `within:` and
+// the `old:`/`new:` line blocks (each line indented by two spaces); the `old`
+// lines must occur EXACTLY ONCE in `runtime/npkrt.ll`. Both runners build the
+// patched floor, transform it, and REQUIRE the verdict within the seeds
+// (`explore-control-blind` otherwise).
+
+pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after; };
+
+func:control_bad = Control(string:problem) never fails {
+    pass Control{ ok: false, problem: raw text_copy(problem), program: "", verdict: "", within: 0i64,
+                  before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64) };
+};
+
+pub func:read_control = Control(string:text, string:name) never fails {
+    Control:c = Control{ ok: true, problem: "", program: "", verdict: "", within: 0i64,
+                         before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64) };
+    List<string>:lines = raw raw_lines(text);
+    int64:block = 0i64;                                             // 0 none, 1 old, 2 new
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (raw text_starts_with(ln, ";")) { continue; }
+        if (raw text_eq(ln, "old:")) { block = 1i64; continue; }
+        if (raw text_eq(ln, "new:")) { block = 2i64; continue; }
+        if ((block != 0i64) && ((ln.len == 0i64) || (raw text_starts_with(ln, "  ")))) {
+            if (ln.len > 0i64) {
+                if (block == 1i64) { drop strlist_push(@c.before, ln); } else { drop strlist_push(@c.after, ln); }
+            }
+            continue;
+        }
+        block = 0i64;
+        if ((raw text_trim(ln)).len == 0i64) { continue; }
+        int64:colon = raw text_find_byte(ln, 58u8, 0i64);
+        if (colon < 0i64) { pass (raw control_bad(string_concat(string_concat(name, ": a line the control grammar does not know: "), raw text_head(ln, 80i64)))); }
+        string:key = raw text_trim(raw text_slice(ln, 0i64, colon));
+        string:val = raw text_trim(raw text_slice(ln, colon + 1i64, ln.len));
+        if (raw text_eq(key, "within")) {
+            Result<int64>:w = text_int(val);
+            if (w.is_error) { pass (raw control_bad(string_concat(name, ": `within:` is not a number"))); }
+            c.within = w.value;
+            continue;
+        }
+        if (raw text_eq(key, "program")) { c.program = move(val); continue; }
+        if (raw text_eq(key, "verdict")) { c.verdict = move(val); continue; }
+        pass (raw control_bad(string_concat(string_concat(name, ": a line the control grammar does not know: "), raw text_head(ln, 80i64))));
+    }
+    if (c.program.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `program:`"))); }
+    if (c.verdict.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `verdict:`"))); }
+    if (c.within < 1i64) { pass (raw control_bad(string_concat(name, ": `within:` must be at least 1"))); }
+    if ((c.before.count == 0i64) || (c.after.count == 0i64)) { pass (raw control_bad(string_concat(name, ": `old:` and `new:` must each hold at least one line"))); }
+    pass c;
+};
+
+// The floor with the control's `old` lines replaced by its `new` lines, or ""
+// with the finding: exactly one occurrence, else `explore-control-unmatched`.
+pub struct:Patched = { string:text; string:problem; };
+
+pub func:apply_control = Patched(string:floor, Control->:c, string:name) never fails {
+    string:before = string_concat(raw text_join(c.before, "\n"), "\n");
+    string:after = string_concat(raw text_join(c.after, "\n"), "\n");
+    int64:n = 0i64;
+    int64:at = raw text_index_of(floor, before);
+    int64:first = at;
+    while (at >= 0i64) {
+        n = n + 1i64;
+        at = raw text_index_from(floor, before, at + 1i64);
+    }
+    if (n != 1i64) {
+        string:m = string_concat(name, ": explore-control-unmatched: the control's `old` lines occur ");
+        m = string_concat(m, int_to_string(n));
+        m = string_concat(m, " time(s) in runtime/npkrt.ll, not once");
+        pass Patched{ text: "", problem: move(m) };
+    }
+    string:out = string_concat(raw text_slice(floor, 0i64, first), after);
+    pass Patched{ text: string_concat(out, raw text_slice(floor, first + before.len, floor.len)), problem: "" };
+};
