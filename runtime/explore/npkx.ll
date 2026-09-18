@@ -1,4 +1,4 @@
-; npkx.ll -- THE SCHEDULE EXPLORER'S SHIM (1.5.7 step 1; D-212, D-298, D-300, D-301).
+; npkx.ll -- THE SCHEDULE EXPLORER'S SHIM (1.5.7 steps 1-2; D-212, D-298, D-300, D-301).
 ;
 ; Hand-written LLVM IR (D-203's form; D-298 says why it cannot be Nitpick: mutable
 ; module state, and code that runs inside the floor's critical sections and may
@@ -39,9 +39,12 @@
 ; Verdicts end the process with `exit_group(97)` after printing the seed, the
 ; step count and every slot's state: DEADLOCK (nobody can step, no deadline
 ; pending, a thread lives), STEP BUDGET (a livelock the fairness rule did not
-; break), MMAP (no deterministic address in 64 tries). The quiescence oracles
-; (LOST-WAKE, LOST-FUTEX-WAKE; D-301) and the virtual signals join at steps 3
-; and 2.
+; break), MMAP (no deterministic address in 64 tries). THE SIGNALS ARE VIRTUAL
+; (step 2): `rt_sigaction` is remembered, `tgkill` marks its target and makes a
+; virtually blocked one runnable, and the handler runs in the target's own
+; context at its next grant -- so the trap route (D-291's stop walk) is explored
+; like everything else. The quiescence oracles (LOST-WAKE, LOST-FUTEX-WAKE;
+; D-301) join at step 3.
 
 target triple = "x86_64-unknown-linux-gnu"
 
@@ -113,6 +116,8 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 @npkx_s_budget = internal constant [23 x i8] c"STEP BUDGET (livelock?)"
 @npkx_s_mmap = internal constant [34 x i8] c"MMAP (no deterministic address)   "
 @npkx_map_next = internal global i64 17592186044416
+; the virtual signals (step 2): the handler `rt_sigaction` installed, per signal number
+@npkx_sig_handler = internal global [65 x ptr] zeroinitializer
 
 ; --- the slot fields, by (slot, field) ---------------------------------------
 ;
@@ -901,6 +906,34 @@ ret:
   ret void
 }
 
+; --- the virtual signals (step 2) --------------------------------------------
+
+; A pending signal runs its handler NOW, in this thread's own context, at the
+; grant it was made runnable for; the handler's own steps are explored like
+; any others. The stop handler (D-291) never returns: it parks forever on a
+; word nothing writes, a virtual wait with no deadline.
+define internal void @npkx_run_pending(i32 %me) {
+entry:
+  %sg = call i32 @npkx_ld32(i32 %me, i32 10)
+  %none = icmp eq i32 %sg, 0
+  br i1 %none, label %ret, label %fire
+
+fire:
+  call void @npkx_st32(i32 %me, i32 10, i32 0)
+  call void @npkx_st32(i32 %me, i32 1, i32 1)
+  %hp = getelementptr [65 x ptr], ptr @npkx_sig_handler, i64 0, i32 %sg
+  %h = load ptr, ptr %hp
+  %noh = icmp eq ptr %h, null
+  br i1 %noh, label %ret, label %handle
+
+handle:
+  call void %h(i32 %sg, ptr null, ptr null)
+  br label %ret
+
+ret:
+  ret void
+}
+
 ; --- the hooks the transformed floor calls -----------------------------------
 
 define void @npkx_point(i32 %site) {
@@ -925,6 +958,7 @@ step:
   call void @npkx_st32(i32 %me, i32 1, i32 2)
   call void @npkx_resched(i32 %me)
   call void @npkx_st32(i32 %me, i32 1, i32 1)
+  call void @npkx_run_pending(i32 %me)
   br label %ret
 
 ret:
@@ -1001,6 +1035,7 @@ entry:
   %w = call i64 @npk_sys6(i64 202, i64 %ra, i64 129, i64 64, i64 0, i64 0, i64 0)
   call void @npkx_wait_grant(i32 %n)
   call void @npkx_st32(i32 %n, i32 1, i32 1)
+  call void @npkx_run_pending(i32 %n)
   ret void
 }
 
@@ -1172,8 +1207,79 @@ step:
   call void @npkx_st32(i32 %me, i32 1, i32 2)
   call void @npkx_resched(i32 %me)
   call void @npkx_st32(i32 %me, i32 1, i32 1)
+  call void @npkx_run_pending(i32 %me)
+  %issigaction = icmp eq i64 %n, 13
+  br i1 %issigaction, label %sigaction, label %notsigaction
+
+; THE VIRTUAL SIGNALS (step 2). rt_sigaction: the handler is remembered (the
+; real action is installed too, and never fires: no real signal is ever sent)
+sigaction:
+  %sigok0 = icmp sgt i64 %a, 0
+  %sigok1 = icmp slt i64 %a, 65
+  %sigokp = icmp ne i64 %b, 0
+  %sigok2 = and i1 %sigok0, %sigok1
+  %sigok = and i1 %sigok2, %sigokp
+  br i1 %sigok, label %remember, label %passthrough
+
+remember:
+  %actp = inttoptr i64 %b to ptr
+  %handler = load ptr, ptr %actp
+  %hp = getelementptr [65 x ptr], ptr @npkx_sig_handler, i64 0, i64 %a
+  store ptr %handler, ptr %hp
+  br label %passthrough
+
+notsigaction:
+  %istgkill = icmp eq i64 %n, 234
+  br i1 %istgkill, label %tgkill, label %notclock
+
+; tgkill: the target is marked; it runs the handler in its own context at its
+; next grant, and a virtually BLOCKED target is made runnable (a signal
+; interrupts a blocking call); an unknown tid is ESRCH
+tgkill:
+  %nk = load i32, ptr @npkx_nslots
+  br label %kloop
+
+kloop:
+  %ki = phi i32 [ 0, %tgkill ], [ %ki1, %knext ]
+  %kdone = icmp sge i32 %ki, %nk
+  br i1 %kdone, label %esrch, label %kcheck
+
+kcheck:
+  %ktid = call i64 @npkx_ld64(i32 %ki, i32 2)
+  %ksame = icmp eq i64 %ktid, %b
+  br i1 %ksame, label %klive, label %knext
+
+klive:
+  %kst = call i32 @npkx_ld32(i32 %ki, i32 1)
+  %kended = icmp eq i32 %kst, 5
+  br i1 %kended, label %knext, label %kmark
+
+kmark:
+  %sig32 = trunc i64 %c to i32
+  call void @npkx_st32(i32 %ki, i32 10, i32 %sig32)
+  %kisf = icmp eq i32 %kst, 3
+  %kise = icmp eq i32 %kst, 4
+  %kblocked = or i1 %kisf, %kise
+  br i1 %kblocked, label %kwake, label %kdone2
+
+kwake:
+  call void @npkx_st32(i32 %ki, i32 1, i32 2)
+  call void @npkx_st32(i32 %ki, i32 6, i32 5)
+  br label %kdone2
+
+kdone2:
+  ret i64 0
+
+knext:
+  %ki1 = add i32 %ki, 1
+  br label %kloop
+
+esrch:
+  ret i64 -3
+
+notclock:
   %isclock = icmp eq i64 %n, 228
-  br i1 %isclock, label %clock, label %notclock
+  br i1 %isclock, label %clock, label %notclock1
 
 ; the virtual clock: +1 us per read
 clock:
@@ -1188,7 +1294,7 @@ clock:
   store i64 %nsecs, ptr %nsp
   ret i64 0
 
-notclock:
+notclock1:
   %ismmap = icmp eq i64 %n, 9
   br i1 %ismmap, label %mmap, label %notmmap
 
@@ -1317,6 +1423,7 @@ block:
   call void @npkx_resched(i32 %me)
   call void @npkx_st32(i32 %me, i32 1, i32 1)
   call void @npkx_st64(i32 %me, i32 5, i64 -1)
+  call void @npkx_run_pending(i32 %me)
   %why = call i32 @npkx_ld32(i32 %me, i32 6)
   %exitwait = icmp eq i32 %why, 3
   br i1 %exitwait, label %exitwait1, label %woken
@@ -1431,6 +1538,7 @@ epblock:
   call void @npkx_resched(i32 %me)
   call void @npkx_st32(i32 %me, i32 1, i32 1)
   call void @npkx_st64(i32 %me, i32 5, i64 -1)
+  call void @npkx_run_pending(i32 %me)
   %why2 = call i32 @npkx_ld32(i32 %me, i32 6)
   %eptimeout = icmp eq i32 %why2, 2
   br i1 %eptimeout, label %eplast, label %eploop

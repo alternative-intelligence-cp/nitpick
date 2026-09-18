@@ -1224,9 +1224,14 @@ with `MAP_FIXED_NOREPLACE`; the `explore` stage in both runners (a
 replayed to the same hash, PCT's bound printed); `// explore: 1000` on 30
 `// stress:` programs, `// explore: no <reason>` on 14 (ten real-child, four
 trap-route until step 2), the marker belt `explore-unmarked` in both
-runners. Steps 2–7: virtual signals, the quiescence oracles and the
-controls, the nineteen model controls walked, the spec's hypotheses executed,
-program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+runners. **Step 2 LANDED 2026-09-18**: the signals are virtual
+(`rt_sigaction` remembered, `tgkill` marks its target and makes a blocked one
+runnable, the handler runs in the target's context at its next grant), so the
+trap route is explored like everything else — the four trap-route programs
+say `// explore: 1000` and agree with the C reference hash for hash on 20
+seeds each; 34 of 34 explorable programs do. Steps 3–7: the quiescence
+oracles and the controls, the nineteen model controls walked, the spec's
+hypotheses executed, program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving
