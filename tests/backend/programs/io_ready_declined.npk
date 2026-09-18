@@ -1,0 +1,45 @@
+// expect-exit: 42
+// stress: 40
+// explore: 200
+//
+// A WATCH THE KERNEL DECLINES RESUMES THE TASK AT ONCE (1.5.7 step 4).
+// `epoll_ctl` refuses a regular file (EPERM: always ready by definition), and
+// `npk_io_register`'s `duenow` block stamps the waiting frame due so the
+// caller retries its syscall now instead of sleeping to its deadline --
+// `reactor-io`'s declined-but-asleep, the bad state its `drop-duenow` control
+// reaches in the model. No explored program had a declined watch: this one
+// waits on its own executable, a regular file, with a deadline of half a
+// second, and requires the wait to end well inside it. Under the explorer the
+// virtual clock makes the lateness exact: the clean run takes microseconds,
+// a sleep to the deadline takes the whole half second.
+mod:io_ready_declined;
+error:EOpen;
+error:EWait;
+error:ELate;
+
+async func:main = int32(cstring[]:_~argv) {
+    cstring:self = to_cstring("/proc/self/exe") ?! EOpen;
+    fd:f = open(self, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! EOpen;
+    int64:t0 = mono_now();
+    await io_ready(f => int32, 1i32, raw duration_ms(500i64)) ?! EWait;
+    int64:dt = (mono_now()) - t0;
+    if (dt >= 100000000i64) { exit 10i32; }
+    discard(close(f) ?| NIL);
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EOpen)            { exit 81i32; },
+        (EWait)            { exit 82i32; },
+        (ELate)            { exit 83i32; },
+        (IntOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -446,31 +446,63 @@ pub func:check_oracle_offsets = List<string>(string:floor, string:shim, string:n
 // --- the controls (step 3; X-10) ---------------------------------------------------------
 //
 // `runtime/explore/controls/<name>.ctl`: `program:`, `verdict:`, `within:` and
-// the `old:`/`new:` line blocks (each line indented by two spaces); the `old`
-// lines must occur EXACTLY ONCE in `runtime/npkrt.ll`. Both runners build the
-// patched floor, transform it, and REQUIRE the verdict within the seeds
-// (`explore-control-blind` otherwise).
+// one or more `old:`/`new:` pairs of line blocks (each line indented by two
+// spaces). Step 4 widened the grammar in two ways, both runners: a control may
+// hold SEVERAL pairs -- each is applied in order and each `old` block must
+// occur EXACTLY ONCE in the text as it stands when the pair is applied -- and
+// the VERDICT may name the program's own answer instead of a word of the shim
+// -- `wrong-exit` (any exit other than the program's `expect-exit:`, a signal
+// included, or any shim verdict) or `exit N` (that exit exactly) -- or its
+// LATENESS: `late N`, the virtual run time at or past N nanoseconds (the shim's
+// `vrun=`; the class a lost wakeup degrades to under D-301, which no exit code
+// and no stamp oracle can see). A DIRECTED control (X-15) adds up to four
+// `preempt-at: @function <instruction text prefix>` lines, each naming one
+// atomic site of the explored floor at which every arriving thread is demoted
+// below every other -- a change point at a place, for a window one step wide
+// that blind PCT cannot land on; the runners resolve each against the patched
+// floor's sites.txt (exactly one `atomic` row, or the control is refused by
+// name). Both runners build the patched floor, transform it, and REQUIRE the
+// verdict within the seeds (`explore-control-blind` otherwise).
 
-pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after; };
+// `before`/`after` hold one string per pair: the pair's lines joined by "\n";
+// `preempt` one `@function <prefix>` value per `preempt-at:` line.
+pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after; List<string>:preempt; };
 
 func:control_bad = Control(string:problem) never fails {
     pass Control{ ok: false, problem: raw text_copy(problem), program: "", verdict: "", within: 0i64,
-                  before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64) };
+                  before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64) };
 };
 
 pub func:read_control = Control(string:text, string:name) never fails {
     Control:c = Control{ ok: true, problem: "", program: "", verdict: "", within: 0i64,
-                         before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64) };
+                         before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64) };
     List<string>:lines = raw raw_lines(text);
     int64:block = 0i64;                                             // 0 none, 1 old, 2 new
+    bool:open = false;                                              // a pair is being read
+    List<string>:cur_old = raw list_init::<string>(4i64);
+    List<string>:cur_new = raw list_init::<string>(4i64);
     for (int64:i in 0i64...lines.count) {
         string:ln = raw strlist_view(lines, i);
         if (raw text_starts_with(ln, ";")) { continue; }
-        if (raw text_eq(ln, "old:")) { block = 1i64; continue; }
-        if (raw text_eq(ln, "new:")) { block = 2i64; continue; }
+        if (raw text_eq(ln, "old:")) {
+            if (open) {
+                drop list_push(@c.before, raw text_join(cur_old, "\n"));
+                drop list_push(@c.after, raw text_join(cur_new, "\n"));
+                cur_old = raw list_init::<string>(4i64);
+                cur_new = raw list_init::<string>(4i64);
+            }
+            open = true;
+            block = 1i64;
+            continue;
+        }
+        if (raw text_eq(ln, "new:")) {
+            if ((!open) || (cur_new.count > 0i64)) { pass (raw control_bad(string_concat(name, ": a `new:` with no `old:` before it"))); }
+            block = 2i64;
+            continue;
+        }
         if ((block != 0i64) && ((ln.len == 0i64) || (raw text_starts_with(ln, "  ")))) {
             if (ln.len > 0i64) {
-                if (block == 1i64) { drop strlist_push(@c.before, ln); } else { drop strlist_push(@c.after, ln); }
+                if (block == 1i64) { drop strlist_push(@cur_old, ln); } else { drop strlist_push(@cur_new, ln); }
             }
             continue;
         }
@@ -488,35 +520,148 @@ pub func:read_control = Control(string:text, string:name) never fails {
         }
         if (raw text_eq(key, "program")) { c.program = move(val); continue; }
         if (raw text_eq(key, "verdict")) { c.verdict = move(val); continue; }
+        if (raw text_eq(key, "preempt-at")) {
+            int64:sp = raw text_find_byte(val, 32u8, 0i64);
+            bool:shaped = (val.len > 1i64) && (val.ptr[0i64] == 64u8) && (sp > 1i64) && ((raw text_trim(raw text_slice(val, sp + 1i64, val.len))).len > 0i64);
+            if (!shaped) { pass (raw control_bad(string_concat(string_concat(name, ": `preempt-at:` is `@function <instruction text prefix>`: "), val))); }
+            drop list_push(@c.preempt, move(val));
+            continue;
+        }
         pass (raw control_bad(string_concat(string_concat(name, ": a line the control grammar does not know: "), raw text_head(ln, 80i64))));
+    }
+    if (open) {
+        drop list_push(@c.before, raw text_join(cur_old, "\n"));
+        drop list_push(@c.after, raw text_join(cur_new, "\n"));
     }
     if (c.program.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `program:`"))); }
     if (c.verdict.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `verdict:`"))); }
     if (c.within < 1i64) { pass (raw control_bad(string_concat(name, ": `within:` must be at least 1"))); }
-    if ((c.before.count == 0i64) || (c.after.count == 0i64)) { pass (raw control_bad(string_concat(name, ": `old:` and `new:` must each hold at least one line"))); }
+    if (c.before.count == 0i64) { pass (raw control_bad(string_concat(name, ": no `old:`/`new:` pair"))); }
+    for (int64:p in 0i64...c.before.count) {
+        if (((raw strlist_view(c.before, p)).len == 0i64) || ((raw strlist_view(c.after, p)).len == 0i64)) {
+            string:m = string_concat(name, ": `old:` and `new:` must each hold at least one line (pair ");
+            m = string_concat(m, int_to_string(p + 1i64));
+            pass (raw control_bad(string_concat(m, ")")));
+        }
+    }
+    if (c.preempt.count > 4i64) { pass (raw control_bad(string_concat(name, ": at most four `preempt-at:` sites (the shim holds four)"))); }
+    if (raw text_starts_with(c.verdict, "exit ")) {
+        Result<int64>:e = text_int(raw text_trim(raw text_slice(c.verdict, 5i64, c.verdict.len)));
+        if (e.is_error) { pass (raw control_bad(string_concat(string_concat(name, ": `verdict: exit N` needs a number: "), c.verdict))); }
+    }
+    if (raw text_starts_with(c.verdict, "late ")) {
+        Result<int64>:l = text_int(raw text_trim(raw text_slice(c.verdict, 5i64, c.verdict.len)));
+        if (l.is_error) { pass (raw control_bad(string_concat(string_concat(name, ": `verdict: late N` needs a number: "), c.verdict))); }
+    }
     pass c;
 };
 
-// The floor with the control's `old` lines replaced by its `new` lines, or ""
-// with the finding: exactly one occurrence, else `explore-control-unmatched`.
+// The floor with each pair's `old` lines replaced by its `new` lines, in order,
+// or "" with the finding: each exactly one occurrence in the text as it
+// stands, else `explore-control-unmatched` naming the pair.
 pub struct:Patched = { string:text; string:problem; };
 
 pub func:apply_control = Patched(string:floor, Control->:c, string:name) never fails {
-    string:before = string_concat(raw text_join(c.before, "\n"), "\n");
-    string:after = string_concat(raw text_join(c.after, "\n"), "\n");
-    int64:n = 0i64;
-    int64:at = raw text_index_of(floor, before);
-    int64:first = at;
-    while (at >= 0i64) {
-        n = n + 1i64;
-        at = raw text_index_from(floor, before, at + 1i64);
+    string:text = string_concat(floor, "");
+    for (int64:p in 0i64...c.before.count) {
+        string:before = string_concat(raw strlist_view(c.before, p), "\n");
+        string:after = string_concat(raw strlist_view(c.after, p), "\n");
+        int64:n = 0i64;
+        int64:at = raw text_index_of(text, before);
+        int64:first = at;
+        while (at >= 0i64) {
+            n = n + 1i64;
+            at = raw text_index_from(text, before, at + 1i64);
+        }
+        if (n != 1i64) {
+            string:m = string_concat(name, ": explore-control-unmatched: the control's `old` lines (pair ");
+            m = string_concat(m, int_to_string(p + 1i64));
+            m = string_concat(m, ") occur ");
+            m = string_concat(m, int_to_string(n));
+            m = string_concat(m, " time(s) in runtime/npkrt.ll, not once");
+            pass Patched{ text: "", problem: move(m) };
+        }
+        string:out = string_concat(raw text_slice(text, 0i64, first), after);
+        string:next = string_concat(out, raw text_slice(text, first + before.len, text.len));
+        text = move(next);
     }
-    if (n != 1i64) {
-        string:m = string_concat(name, ": explore-control-unmatched: the control's `old` lines occur ");
-        m = string_concat(m, int_to_string(n));
-        m = string_concat(m, " time(s) in runtime/npkrt.ll, not once");
-        pass Patched{ text: "", problem: move(m) };
+    pass Patched{ text: move(text), problem: "" };
+};
+
+// Whether one run met the control's verdict: a shim word by equality;
+// `wrong-exit` by any exit other than the program's own or any shim verdict;
+// `exit N` by that exit exactly; `late N` by a virtual run time at or past N.
+// `code` is the run's exit, a signal as its negative; `word` the shim's verdict
+// word or ""; `vrun` the trace line's virtual run time.
+pub func:control_verdict_met = bool(Control->:c, int64:expected_exit, int64:code, string:word, int64:vrun) never fails {
+    if (raw text_eq(c.verdict, "wrong-exit")) { pass ((word.len > 0i64) || (code != expected_exit)); }
+    if (raw text_starts_with(c.verdict, "exit ")) {
+        Result<int64>:e = text_int(raw text_trim(raw text_slice(c.verdict, 5i64, c.verdict.len)));
+        if (e.is_error) { pass false; }
+        pass (code == e.value);
     }
-    string:out = string_concat(raw text_slice(floor, 0i64, first), after);
-    pass Patched{ text: string_concat(out, raw text_slice(floor, first + before.len, floor.len)), problem: "" };
+    if (raw text_starts_with(c.verdict, "late ")) {
+        Result<int64>:l = text_int(raw text_trim(raw text_slice(c.verdict, 5i64, c.verdict.len)));
+        if (l.is_error) { pass false; }
+        pass (vrun >= l.value);
+    }
+    pass (raw text_eq(word, c.verdict));
+};
+
+// THE DIRECTED SITES' NUMBERS (X-15): each `preempt-at:` against the patched
+// floor's sites.txt -- exactly one row of that function whose text starts with
+// the prefix, and an `atomic` one (a `sys6` site is a routed call, not a point
+// the shim can hold). `numbers` holds one number per resolved site; a problem is
+// a finding by name in `findings`.
+pub struct:Sites = { List<int64>:numbers; List<string>:findings; };
+
+pub func:resolve_sites = Sites(Control->:c, string:sites, string:name) never fails {
+    Sites:out = Sites{ numbers: raw list_init::<int64>(4i64), findings: raw list_init::<string>(1i64) };
+    List<string>:rows = raw raw_lines(sites);
+    for (int64:p in 0i64...c.preempt.count) {
+        string:want = raw strlist_view(c.preempt, p);
+        int64:sp = raw text_find_byte(want, 32u8, 0i64);
+        string:fn = raw text_slice(want, 0i64, sp);
+        string:prefix = raw text_trim(raw text_slice(want, sp + 1i64, want.len));
+        int64:hits = 0i64;
+        int64:hit_n = 0i64;
+        string:hit_kind = "";
+        for (int64:r in 0i64...rows.count) {
+            string:row = raw strlist_view(rows, r);
+            if (row.len == 0i64) { continue; }
+            // N<TAB>function<TAB>kind<TAB>text
+            int64:t1 = raw text_find_byte(row, 9u8, 0i64);
+            if (t1 < 0i64) { continue; }
+            int64:t2 = raw text_find_byte(row, 9u8, t1 + 1i64);
+            if (t2 < 0i64) { continue; }
+            int64:t3 = raw text_find_byte(row, 9u8, t2 + 1i64);
+            if (t3 < 0i64) { continue; }
+            if (!(raw text_eq(raw text_slice(row, t1 + 1i64, t2), fn))) { continue; }
+            if (!(raw text_starts_with(raw text_slice(row, t3 + 1i64, row.len), prefix))) { continue; }
+            hits = hits + 1i64;
+            Result<int64>:n = text_int(raw text_slice(row, 0i64, t1));
+            if (!n.is_error) { hit_n = n.value; }
+            hit_kind = raw text_slice(row, t2 + 1i64, t3);
+        }
+        if (hits != 1i64) {
+            string:m = string_concat(name, ": explore-control-site-unmatched: `preempt-at: ");
+            m = string_concat(m, want);
+            m = string_concat(m, "` names ");
+            m = string_concat(m, int_to_string(hits));
+            m = string_concat(m, " site(s) of the explored floor, not one");
+            drop list_push(@out.findings, move(m));
+            continue;
+        }
+        if (!(raw text_eq(hit_kind, "atomic"))) {
+            string:m2 = string_concat(name, ": explore-control-site-kind: `preempt-at: ");
+            m2 = string_concat(m2, want);
+            m2 = string_concat(m2, "` is a `");
+            m2 = string_concat(m2, hit_kind);
+            m2 = string_concat(m2, "` site; only an atomic step can be a directed site");
+            drop list_push(@out.findings, move(m2));
+            continue;
+        }
+        drop list_push(@out.numbers, hit_n);
+    }
+    pass out;
 };

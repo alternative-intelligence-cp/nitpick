@@ -1,0 +1,72 @@
+// expect-exit: 42
+// stress: 40
+// explore: 1000
+//
+// TWO BUMPERS, EVERY SLOT RE-READ (1.5.7 step 4). `shared-arena`'s two
+// controls plant a torn index reservation (`index-read-then-write`: two
+// bumpers handed one index) and a chunk linked by a plain store
+// (`link-without-cas`: a concurrent grower's chunk unreachable from the
+// head). `shared_arena_spawn` checks each value right after its alloc, so a
+// slot the OTHER thread later overwrites is never seen there and its sum of
+// last values still adds up. Here each filler keeps every handle it was
+// given and, once BOTH have finished allocating (a two-party barrier: a
+// re-read before the other's last write would miss the overwrite), re-reads
+// them all: a duplicate index shows as a foreign value, an unreachable chunk
+// as a stale handle -- and both are `!!! E9`, a wrong exit the explorer can
+// see. The arena starts at eight slots so both fillers grow it, and grow it
+// at the same time.
+mod:shared_arena_race;
+error:E9;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:filler = NIL(shared_arena<int64>->:s,
+                               Barrier<2i32, 6i32>->:both,
+                               Channel<int64, 4i32, 4i64>:done,
+                               int64:base) joins JOIN_2S {
+    List<Handle<int64>>:hs = raw list_init::<Handle<int64>>(64i64);
+    for (int64:i in 0i64...50i64) {
+        Handle<int64>:h = s.alloc(base + i);
+        drop list_push(@hs, h);
+    }
+    await both.arrive(raw duration_ms(1000i64)) ?! E9;
+    int64:sum = 0i64;
+    for (int64:j in 0i64...hs.count) {
+        int64:v = s.get(hs.items[j]) ?! E9;
+        if (v != (base + j)) { !!! E9; }
+        sum = sum + v;
+    }
+    await done.send(sum, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int64, 4i32, 4i64>:done = channel() ?! Unreachable;
+    {
+        shared_arena<int64>:s = shared_arena_make(8i64);
+        Barrier<2i32, 6i32>:both = barrier() ?! Unreachable;
+        drop filler(@s, @both, done, 2000i64);
+        drop filler(@s, @both, done, 5000i64);
+    }
+    int64:a = await done.recv(raw duration_ms(5i64)) ?! E9;
+    int64:b = await done.recv(raw duration_ms(5i64)) ?! E9;
+    // 50 * 2000 + 1225 + 50 * 5000 + 1225
+    if ((a + b) != 352450i64) { exit 11i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (IntOverflow)      { exit 90i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

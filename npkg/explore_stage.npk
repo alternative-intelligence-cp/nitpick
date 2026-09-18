@@ -113,7 +113,10 @@ pub async func:explored_objects = ExploredObjects(Ctx->:c) {
 
 // The explored binary's WHOLE environment: the shim reads /proc/self/environ,
 // first match wins, so nothing of ours rides along.
-func:explored_env = ProcArgs(int64:seed, int64:k, int64:depth) {
+// `p1`..`p4` are a directed control's site numbers (X-15), NPKX_PREEMPT1..4, -1
+// for none; a unit passes four -1s. (Four values, not a list: a value built
+// from a borrowed list would carry the borrow into the run's text, D-004 rule 3.)
+func:explored_env = ProcArgs(int64:seed, int64:k, int64:depth, int64:p1, int64:p2, int64:p3, int64:p4) {
     ProcArgs:e = raw args_init();
     Result<NIL>:r1 = args_push(@e, string_concat("NPKX_SEED=", int_to_string(seed)));
     if (r1.is_error) { drop args_free(@e); fail r1.err; }
@@ -123,7 +126,17 @@ func:explored_env = ProcArgs(int64:seed, int64:k, int64:depth) {
     if (r3.is_error) { drop args_free(@e); fail r3.err; }
     Result<NIL>:r4 = args_push(@e, "NPKX_TRACE=1");
     if (r4.is_error) { drop args_free(@e); fail r4.err; }
+    if (p1 >= 0i64) { Result<NIL>:q1 = args_push(@e, string_concat("NPKX_PREEMPT1=", int_to_string(p1))); if (q1.is_error) { drop args_free(@e); fail q1.err; } }
+    if (p2 >= 0i64) { Result<NIL>:q2 = args_push(@e, string_concat("NPKX_PREEMPT2=", int_to_string(p2))); if (q2.is_error) { drop args_free(@e); fail q2.err; } }
+    if (p3 >= 0i64) { Result<NIL>:q3 = args_push(@e, string_concat("NPKX_PREEMPT3=", int_to_string(p3))); if (q3.is_error) { drop args_free(@e); fail q3.err; } }
+    if (p4 >= 0i64) { Result<NIL>:q4 = args_push(@e, string_concat("NPKX_PREEMPT4=", int_to_string(p4))); if (q4.is_error) { drop args_free(@e); fail q4.err; } }
     pass e;
+};
+
+// The i-th directed site of a resolved control, or -1 past its count.
+func:site_or_none = int64(Sites->:s, int64:i) never fails {
+    if (i < s.numbers.count) { pass s.numbers.items[i]; }
+    pass (0i64 - 1i64);
 };
 
 // The shim's verdict word on a line `npkx: WORD ...`, or "".
@@ -193,7 +206,7 @@ pub async func:run_explored = SeedRun(Ctx->:c, string:exe, int64:seed, int64:k, 
     replay = string_concat(replay, " NPKX_TRACE=1 ");
     replay = string_concat(replay, exe);
     replay = string_concat(replay, " < /dev/null");
-    ProcArgs:env = relay explored_env(seed, k, depth);
+    ProcArgs:env = relay explored_env(seed, k, depth, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64);
     List<string>:noargs = raw list_init::<string>(1i64);
     Result<Run>:r = await run_argv(exe, noargs, env, raw duration_secs(60i64));
     drop args_free(@env);
@@ -327,13 +340,15 @@ pub async func:check_explored_program = XMeasured(Ctx->:c, string:path, string:n
 // --- the negative controls (step 3; X-10) ------------------------------------------------
 //
 // One control (`runtime/explore/controls/<name>.ctl`): the floor with the
-// control's `old` lines replaced by its `new` (exactly one occurrence),
-// transformed by the ONE transformer, counted, assembled; the program compiled
-// and linked against it and the shim; seeds 1..within under the prototype's
-// measuring parameters (k = 2000, d = 3) until the named verdict appears. A
-// control the explorer is blind to fails by name (`explore-control-blind`);
-// so does one the grammar cannot read or whose `old` lines do not occur
-// exactly once. The harness's `run_explore_control`, message for message.
+// control's `old` lines replaced by its `new` (exactly one occurrence each, in
+// order), transformed by the ONE transformer, counted, assembled; the program
+// compiled and linked against it and the shim; a measuring run (seed 0, depth
+// 1: k is the schedule's length, as a unit's is -- step 4), then seeds
+// 1..within at depth 3 until the verdict appears -- a word of the shim,
+// `wrong-exit`, `exit N` or `late N`. A control the explorer is blind to fails
+// by name (`explore-control-blind`); so does one the grammar cannot read or
+// whose `old` lines do not occur exactly once. The harness's
+// `run_explore_control`, message for message.
 pub struct:CtlRun = { List<string>:findings; int64:seed; };
 
 pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, string:shim_o) {
@@ -374,6 +389,10 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
     List<string>:tot = raw explore_totality(pt.text, xf.text);
     for (int64:j in 0i64...tot.count) { drop strlist_push(@out.findings, raw strlist_view(tot, j)); }
     if (out.findings.count > 0i64) { pass out; }
+    // the directed sites (X-15), resolved against THIS floor's sites
+    Sites:sites = raw resolve_sites(@ctl, xf.sites, name);
+    for (int64:j2 in 0i64...sites.findings.count) { drop strlist_push(@out.findings, raw strlist_view(sites.findings, j2)); }
+    if (out.findings.count > 0i64) { pass out; }
     string:xll = raw path_join(cdir, "npkrt.explore.ll");
     Result<cstring>:xc = to_cstring(xll);
     if (xc.is_error) { fail xc.err; }
@@ -394,6 +413,9 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
         drop list_push(@out.findings, string_concat(string_concat(name, ": names a program that does not exist: "), ctl.program));
         pass out;
     }
+    Result<string>:ptx = read_file(pc.value);
+    if (ptx.is_error) { fail ptx.err; }
+    Expect:exp = raw expect_read(ptx.value);
     string:base = raw path_join(cdir, "prog");
     List<string>:fl = relay await emit_and_object(c, string_from_bytes(c.npkc.ptr, c.npkc.len), prog, ctl.program, base, c.allow);
     if (fl.count > 0i64) { out.findings = move(fl); pass out; }
@@ -410,10 +432,34 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
         drop list_push(@out.findings, string_concat(string_concat(name, ": link against the patched floor failed: "), raw text_head(raw text_trim(lst.text), 140i64)));
         pass out;
     }
+    // the measuring run: seed 0, no change points -- k is the schedule's length. A verdict there is
+    // not counted, but its line carries the steps too (`npkx: WORD (...) seed=0 steps=N`, which
+    // `npkx_field` reads off any `npkx:` line naming a seed): the planted defect may fire on the
+    // unperturbed schedule, and the measurement is the steps it took to get there.
+    int64:ds1 = raw site_or_none(@sites, 0i64);
+    int64:ds2 = raw site_or_none(@sites, 1i64);
+    int64:ds3 = raw site_or_none(@sites, 2i64);
+    int64:ds4 = raw site_or_none(@sites, 3i64);
+    ProcArgs:menv = relay explored_env(0i64, 2000i64, 1i64, ds1, ds2, ds3, ds4);
+    List<string>:mnoargs = raw list_init::<string>(1i64);
+    Result<Run>:mr = await run_argv(base, mnoargs, menv, raw duration_secs(60i64));
+    drop args_free(@menv);
+    if (mr.is_error) { fail mr.err; }
+    Run:mrun = move(mr.value);
+    if (mrun.timed_out) {
+        drop list_push(@out.findings, string_concat(name, ": the measuring run (seed 0) hung"));
+        pass out;
+    }
+    int64:k = raw npkx_count(mrun.x.err, " steps=");
+    if (k < 0i64) {
+        drop list_push(@out.findings, string_concat(name, ": no schedule trace from the shim at the measuring run (seed 0)"));
+        pass out;
+    }
+    if (k < 1i64) { k = 1i64; }
     string:seen = "";
     int64:nseen = 0i64;
     for (int64:seed in 1i64..ctl.within) {
-        ProcArgs:env = relay explored_env(seed, 2000i64, 3i64);
+        ProcArgs:env = relay explored_env(seed, k, 3i64, ds1, ds2, ds3, ds4);
         List<string>:noargs = raw list_init::<string>(1i64);
         Result<Run>:r = await run_argv(base, noargs, env, raw duration_secs(60i64));
         drop args_free(@env);
@@ -423,12 +469,16 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
         if (run.timed_out) { what = "hung"; }
         else {
             string:v = raw npkx_verdict(run.x.err);
-            if (raw text_eq(v, ctl.verdict)) { out.seed = seed; pass out; }
+            int64:got = run.x.status;
+            if (!run.x.exited) { got = 0i64 - run.x.signal; }
+            int64:vrun = raw npkx_count(run.x.err, " vrun=");
+            if (vrun < 0i64) { vrun = 0i64; }
+            if (raw control_verdict_met(@ctl, exp.exit_code, got, v, vrun)) { out.seed = seed; pass out; }
             if (v.len > 0i64) { what = move(v); }
             else {
-                int64:got = run.x.status;
-                if (!run.x.exited) { got = 0i64 - run.x.signal; }
                 what = string_concat("exit ", int_to_string(got));
+                what = string_concat(what, ", vrun ");
+                what = string_concat(what, int_to_string(vrun));
             }
         }
         if (nseen < 6i64) {
@@ -442,7 +492,16 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
     m = string_concat(m, ctl.verdict);
     m = string_concat(m, " within ");
     m = string_concat(m, int_to_string(ctl.within));
-    m = string_concat(m, " seed(s) of the planted defect (");
+    m = string_concat(m, " seed(s) of the planted defect (k ");
+    m = string_concat(m, int_to_string(k));
+    if (sites.numbers.count > 0i64) {
+        m = string_concat(m, ", directed at ");
+        for (int64:d in 0i64...sites.numbers.count) {
+            if (d > 0i64) { m = string_concat(m, ","); }
+            m = string_concat(m, int_to_string(sites.numbers.items[d]));
+        }
+    }
+    m = string_concat(m, "; ");
     m = string_concat(m, seen);
     m = string_concat(m, ") -- an instrument blind to what it claims to see");
     drop list_push(@out.findings, move(m));

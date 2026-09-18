@@ -644,6 +644,49 @@ def main():
     if not okc2:
         bad += 1
     print("  %-26s %-4s  %s" % ("explore-control-unmatched", "ok" if okc2 else "BAD", "`old` lines that occur more than once in the floor must be refused by name"))
+    # STEP 4's two widenings, on planted text in both runners: SEVERAL pairs apply in order -- the second
+    # pair's `old` is a line the FIRST pair wrote, so it matches only after the first is applied -- and
+    # the verdict judgement's three forms answer the same in both runners.
+    xc_multi, xc_why3 = explore.read_control("program: p\nverdict: wrong-exit\nwithin: 1\nold:\n  b\n  c\nnew:\n  B\n  C2\nold:\n  C2\n  d\nnew:\n  D\n", "planted")
+    xc_out, xc_why4 = (None, xc_why3) if xc_multi is None else explore.apply_control("a\n  b\n  c\n  d\ne\n", xc_multi, "planted")
+    okc3 = xc_out == "a\n  B\n  D\ne\n"
+    if not okc3:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-two-pairs", "ok" if okc3 else "BAD", "a control's pairs apply in order, each `old` against the text as it stands"))
+    if not okc3:
+        print("      got %r (%s)" % (xc_out, xc_why4))
+
+    class _XcExp:
+        exit = 3
+    xc_forms = [(("wrong-exit", 3, "", 0), False), (("wrong-exit", 4, "", 0), True), (("wrong-exit", -11, "", 0), True), (("wrong-exit", 3, "DEADLOCK", 0), True),
+                (("exit 7", 7, "", 0), True), (("exit 7", 3, "", 0), False), (("exit 7", 7, "DEADLOCK", 0), True),
+                (("LOST-WAKE", 3, "LOST-WAKE", 0), True), (("LOST-WAKE", 4, "LOST-FUTEX-WAKE", 0), False), (("LOST-WAKE", 4, "", 0), False),
+                (("late 1000", 3, "", 1000), True), (("late 1000", 3, "", 999), False)]
+    xc_got = [explore.control_verdict_met({"verdict": v}, _XcExp, code, word, vrun) for (v, code, word, vrun), _ in xc_forms]
+    okc4 = xc_got == [want for _, want in xc_forms]
+    if not okc4:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-verdicts", "ok" if okc4 else "BAD", "`wrong-exit`, `exit N`, `late N` and a shim word are judged as the grammar says"))
+    if not okc4:
+        print("      got %r" % (xc_got,))
+    # THE DIRECTED SITES (X-15), against the planted floor's sites: a `preempt-at:` that names one
+    # atomic row resolves to its number; one naming two rows, none, or a `sys6` row is refused by name.
+    xc_dir = ("program: p\nverdict: DEADLOCK\nwithin: 1\npreempt-at: @npk_lock %v = load atomic i32\npreempt-at: @npk_lock %c = cmpxchg\n"
+              "old:\n  a\nnew:\n  b\n")
+    xc_dctl, xc_dwhy = explore.read_control(xc_dir, "planted")
+    xc_dnums, xc_dfails = explore.resolve_sites(xc_dctl, xp_sites, "planted") if xc_dctl else ([], [xc_dwhy])
+    xc_bad2 = [explore.resolve_sites(explore.read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %\nold:\n  a\nnew:\n  b\n", "planted")[0], xp_sites, "planted")[1],
+               explore.resolve_sites(explore.read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %z = nothing\nold:\n  a\nnew:\n  b\n", "planted")[0], xp_sites, "planted")[1],
+               explore.resolve_sites(explore.read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %s = call i64 @npk_sys6\nold:\n  a\nnew:\n  b\n", "planted")[0], xp_sites, "planted")[1]]
+    okc7 = (xc_dnums == [1, 0] and not xc_dfails
+            and len(xc_bad2[0]) == 1 and "explore-control-site-unmatched" in xc_bad2[0][0] and "3 site(s)" in xc_bad2[0][0]
+            and len(xc_bad2[1]) == 1 and "explore-control-site-unmatched" in xc_bad2[1][0] and "0 site(s)" in xc_bad2[1][0]
+            and len(xc_bad2[2]) == 1 and "explore-control-site-kind" in xc_bad2[2][0])
+    if not okc7:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-sites", "ok" if okc7 else "BAD", "a directed site resolves to one atomic row of sites.txt, or is refused by name"))
+    if not okc7:
+        print("      got %r %r %r" % (xc_dnums, xc_dfails, xc_bad2))
     if xtool and os.path.exists(str(xtool)) and harness.COMPILER and os.path.exists(str(harness.COMPILER)):
         xc_shim_o = os.path.join(tmp, "npkx_selfcheck.o")
         r = subprocess.run(["llc"] + harness.LLC_FLAGS + [os.path.join(ROOT, "runtime", "explore", "npkx.ll"), "-o", xc_shim_o], capture_output=True, text=True)

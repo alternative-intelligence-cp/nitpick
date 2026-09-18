@@ -71,6 +71,7 @@ static u64 kest = 2000, budget = 50000000UL;
 static i32 last_site[MAXT];
 static u64 change[16];
 static i32 nchange;
+static i64 preempt_at[4];
 static i64 ended_tids[MAXT];
 static void (*sig_handler[65])(i32, void *, void *);
 extern void *npk_exec(void);
@@ -111,6 +112,12 @@ static void init(void) {
     trace = (i32)env_u64(buf, len, "NPKX_TRACE", 0);
     budget = env_u64(buf, len, "NPKX_BUDGET", 50000000UL);
     oracle = (i32)env_u64(buf, len, "NPKX_ORACLE", 1);
+    /* DIRECTED SITES (1.5.7 step 4, X-15, amended into the reference the same day): up to four atomic sites at which
+       the arriving thread is demoted below every other, at every arrival -- a change point at a place. -1: none. */
+    preempt_at[0] = (i64)env_u64(buf, len, "NPKX_PREEMPT1", (u64)-1);
+    preempt_at[1] = (i64)env_u64(buf, len, "NPKX_PREEMPT2", (u64)-1);
+    preempt_at[2] = (i64)env_u64(buf, len, "NPKX_PREEMPT3", (u64)-1);
+    preempt_at[3] = (i64)env_u64(buf, len, "NPKX_PREEMPT4", (u64)-1);
     rng = seed * 0x9E3779B97F4A7C15UL + 0x1234567;
     if (!rng) rng = 1;
     for (i32 i = 0; i < 8; i++) next_rand();
@@ -219,9 +226,14 @@ static i32 last_runner = -1;
 static u64 run_len, demote = 1UL << 20;
 #define FAIR 4096
 
+static u64 fair_extra;
 static void count_step(i32 me, u64 what) {
     if (me == last_runner) run_len++; else { last_runner = me; run_len = 0; }
-    if (policy == 0 && run_len > FAIR) {
+    /* THE FAIRNESS BOUND IS JITTERED (1.5.7 step 4, X-16, amended into the reference the same day): a fixed bound
+       resonates with a periodic thread, which then rests at the same phase on every slice; 0..63 more steps, drawn
+       from the seed's stream when the bound is reached. */
+    if (run_len == FAIR) fair_extra = next_rand() & 63;
+    if (policy == 0 && run_len > FAIR + fair_extra) {
         i32 other = 0;
         for (i32 t = 0; t < nslots; t++) if (t != me && (S[t].state == READY || S[t].state == B_EPOLL)) other = 1;
         if (other) { S[me].prio = --demote; run_len = 0; }   /* below every undemoted thread, and below every EARLIER demotion */
@@ -229,6 +241,7 @@ static void count_step(i32 me, u64 what) {
     last_site[me] = (i32)what;
     steps++;
     hash = (hash ^ (((u64)me << 32) | what)) * 1099511628211UL;
+    for (i32 i = 0; i < 4; i++) if (preempt_at[i] == (i64)what) { S[me].prio = --demote; run_len = 0; break; }   /* a directed site (X-15) */
     if (policy == 0) for (i32 i = 0; i < nchange; i++) if (steps == change[i]) S[me].prio = (1UL << 30) + (u64)(nchange - i);   /* below every initial priority, ABOVE every fairness demotion */
     if (steps > budget) die("STEP BUDGET (livelock?)");
 }
@@ -353,10 +366,16 @@ i64 npkx_sys6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
             if (cur != (u32)c) return -11;              /* EAGAIN */
             for (i32 i = 0; i < nended; i++) if ((u32)ended_tids[i] == cur) { real_exit_wait((u64)a, cur); return 0; }
             i64 rel = rel_ns(d);
+            i64 dl = rel < 0 ? -1 : (op == 9 ? rel : vnow + rel);
+            /* THE KERNEL NEVER SLEEPS PAST AN EXPIRED DEADLINE (1.5.7 step 4's finding, X-14, amended into the
+               reference the same day): a wait whose absolute timeout is already due returns ETIMEDOUT at once --
+               it arms an hrtimer that has already expired -- and never waits for anything else. Blocking it
+               virtually until quiescence made a floor that reads a due stamp as a 1 ns deadline into a LOST-WAKE. */
+            if (dl >= 0 && dl <= vnow) return -110;
             S[me].exec = (u64)npk_exec();
             S[me].waitval = (u32)c;
             S[me].state = B_FUTEX; S[me].addr = (u64)a; S[me].reason = R_NONE; S[me].blocked_seq = ++seq;
-            S[me].deadline = rel < 0 ? -1 : (op == 9 ? rel : vnow + rel);
+            S[me].deadline = dl;
             resched(me);
             S[me].state = RUNNING; S[me].deadline = -1;
             run_pending(me);

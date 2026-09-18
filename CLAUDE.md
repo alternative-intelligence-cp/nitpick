@@ -1238,9 +1238,37 @@ shim's three struct offsets are held to the floor's type lines by
 `runtime/explore/controls/` (a `.ctl` plants a defect by one exact-line
 substitution and names the verdict the explorer must reach within N seeds —
 `explore-control-blind` otherwise; `store-release` and `no-rouse` landed, both
-found at seed 1; 680 clean runs, no false positive). Steps 4–7: the nineteen
-model controls walked, the spec's hypotheses executed, program-level
-atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+found at seed 1; 680 clean runs, no false positive). **Step 4 LANDED
+2026-09-18: the nineteen model controls walked** — eleven are `.ctl`s (ten
+new), five measured NOT A FLOOR BUG (the stamp-as-deadline in
+`npk_sl_earliest` is a second line of defence the `park-unpark` model has no
+deadline to represent; a handle is minted by the open that publishes its slot
+and a reclaim is the scope exit, once), one NOT OBSERVABLE (a write into freed
+memory: the model's), two NOT EXPLORABLE (the driver pair is real-child); the
+grammar grew several `old:`/`new:` pairs, the program's-answer verdicts
+`wrong-exit`/`exit N`, the LATENESS verdict `late N` (the shim prints `vrun=`;
+X-17), and DIRECTED controls (`preempt-at:` names a site of the floor at which
+the shim demotes the arriving thread — a change point at a place, X-15 — for
+the three windows one step wide that blind PCT cannot land on); and the walk
+found and fixed THREE DEFECTS OF THE SHIM, each mirrored in the C reference
+and re-swept (38 of 38 explorable programs agree hash for hash): a wait whose
+deadline had already passed slept virtually until quiescence where the kernel
+returns at once (X-14 — 3 false LOST-WAKEs in 100 seeds), the fixed fairness
+bound resonated with a period-three thread so it never rested holding the lock
+a control needed (X-16 — jittered by a seeded draw), and the measuring run's
+steps were read off the wrong line when the defect fired at seed 0. Four
+explored programs were written for shapes none had (`io_ready_declined`,
+`shared_arena_race`, `trap_one_failsafe`, `reactor_arm_race`). **And the step's
+own harness found the explorer's FIRST FLOOR DEFECT, DEF-57, fixed in the same
+landing**: `npk_trap` publishes the frozen flag before it claims the failsafe
+holder, and `npk_step`'s `frozen:` block, older than D-291, answered the flag
+by trapping `Unreachable` ITSELF. So an executor that merely watched a trap
+could win the holder in that two-instruction window, and `failsafe` ran with
+the wrong error (seed 371 of `trap_one_failsafe`; 40 stress runs never reached
+it). A watcher parks now and the holder keeps the re-entry exit 70. The
+`trap-route` model, blind for want of an error code, gained one: `wrong-error`
+and `holder-parks`, each with a control. The floor's bytes moved. Steps 5–7:
+the spec's hypotheses executed, program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving

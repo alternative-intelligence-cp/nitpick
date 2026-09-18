@@ -12,24 +12,44 @@
 ; A thread's pc: 0 in npk_step (the frozen flag checked before a resume),
 ; 7 inside a task's resume (steps until it returns to npk_step), 1 trapped
 ; (entering npk_trap), 2 the winner sending the stop and waiting, 3 in
-; failsafe, 4 exit_group done, 5 parked (a loser, or a program exit racing
-; the holder), 6 stopped in the handler. `holder` 0 none, 1 A, 2 B; `sa`/`sb`
-; the holder each thread last read; `mx` the heap mutex's holder; `blocked`
-; 1 when the failsafe body waits on the mutex a stopped thread holds.
+; failsafe, 4 exit_group done, 5 parked (a loser, an executor that saw the
+; frozen flag, or a program exit racing the holder), 6 stopped in the
+; handler. `holder` 0 none, 1 A, 2 B; `sa`/`sb` the holder each thread last
+; read; `mx` the heap mutex's holder; `blocked` 1 when the failsafe body waits
+; on the mutex a stopped thread holds; `ca`/`cb` the code each thread carries
+; into the arbitration -- 0 none, 1 a fault of its own, 2 the `Unreachable`
+; the frozen flag's executor raised until DEF-57.
+;
+; DEF-57 (1.5.7 step 4, 2026-09-18): the model had no error code, so it could
+; not see what the explorer found at seed 371 of `trap_one_failsafe` -- an
+; executor that saw the flag entered the arbitration with `Unreachable` of its
+; own and could WIN the holder in the window between the trapper's frozen
+; store and its cmpxchg, so `failsafe` ran with the wrong error (every bad
+; predicate below stayed unsat: two failsafes never ran). The codes, the bad
+; predicate `wrong-error` and the control `frozen-traps` (the old `frozen`
+; step) say it now; `holder-parks` and its control `frozen-parks-holder` hold
+; the one case the fix must not lose -- the holder's own `failsafe` driving
+; the executor (no program can: `failsafe` is never `async`, TYPE-043) takes
+; the re-entry exit 70, where a plain park would end nothing.
 
 (model trap-route
   (of "the trap route's whole-program stop: cmpxchg arbitration of the failsafe holder, the stop signal to every other thread, and the failsafe region's allocator")
   (state (apc 0 7) (bpc 0 7) (holder 0 2) (sa 0 2) (sb 0 2) (frozen 0 1) (fs_a 0 1) (fs_b 0 1) (steps_after 0 20) (exited_by 0 2)
-         (stop_sent 0 1) (mx 0 2) (blocked 0 1))
+         (stop_sent 0 1) (mx 0 2) (blocked 0 1) (ca 0 2) (cb 0 2))
   (init (and (= apc 0) (= bpc 0) (= holder 0) (= sa 0) (= sb 0) (= frozen 0) (= fs_a 0) (= fs_b 0) (= steps_after 0) (= exited_by 0)
-             (= stop_sent 0) (= mx 0) (= blocked 0)))
+             (= stop_sent 0) (= mx 0) (= blocked 0) (= ca 0) (= cb 0)))
   (thread a
     ; npk_step: the flag clear, a task resumed
     (step resume  (ir @npk_step entry go run spend resume) (ir @npk_frozen_get entry)
                   (guard (and (= apc 0) (= frozen 0))) (next (apc 7)))
-    ; the flag set: the executor traps (-4102) on the same route as any trap
-    (step frozen  (ir @npk_step frozen)
-                  (guard (and (= apc 0) (= frozen 1))) (next (apc 1)))
+    ; the flag set and the holder another thread's, or nobody's yet: the
+    ; executor is WATCHING a trap and parks (DEF-57)
+    (step frozen  (ir @npk_step frozen fzpark)
+                  (guard (and (= apc 0) (= frozen 1) (not (= holder 1)))) (next (apc 5)))
+    ; the holder's own failsafe driving the executor: the re-entry arm of the
+    ; route (`reenter` below), exit 70 -- never a park
+    (step refrozen (ir @npk_step frozen fzhold)
+                  (guard (and (= apc 3) (= frozen 1) (= holder 1))) (next (apc 1)))
     ; a step inside the task: counted when the other thread's failsafe has begun
     (step task    (ir @npk_step finished parked sleep) (ir @npk_park_until entry) (ir @npk_park_take entry yes no)
                   (guard (= apc 7))
@@ -42,9 +62,9 @@
                   (guard (and (= apc 7) (= mx 0))) (next (mx 1)))
     (step unlock  (ir @npk_mx_unlock entry done)
                   (guard (and (= apc 7) (= mx 1))) (next (mx 0)))
-    ; the trap: the flag set, then the arbitration
+    ; the trap: the flag set, then the arbitration, with the fault's own code
     (step trap    (ir @npk_trap entry)
-                  (guard (= apc 7)) (next (apc 1) (frozen 1)))
+                  (guard (= apc 7)) (next (apc 1) (frozen 1) (ca 1)))
     ; the holder read (the cmpxchg re-reads it atomically: harmless here, the old route's first half)
     (step read    (ir @npk_trap entry)
                   (guard (= apc 1)) (next (sa holder)))
@@ -76,8 +96,10 @@
   (thread b
     (step resume  (ir @npk_step entry go run spend resume)
                   (guard (and (= bpc 0) (= frozen 0))) (next (bpc 7)))
-    (step frozen  (ir @npk_step frozen)
-                  (guard (and (= bpc 0) (= frozen 1))) (next (bpc 1)))
+    (step frozen  (ir @npk_step frozen fzpark)
+                  (guard (and (= bpc 0) (= frozen 1) (not (= holder 2)))) (next (bpc 5)))
+    (step refrozen (ir @npk_step frozen fzhold)
+                  (guard (and (= bpc 3) (= frozen 1) (= holder 2))) (next (bpc 1)))
     (step task    (ir @npk_step finished parked sleep)
                   (guard (= bpc 7))
                   (next (steps_after (ite (= fs_a 1) (+ steps_after 1) steps_after))))
@@ -88,7 +110,7 @@
     (step unlock  (ir @npk_mx_unlock entry done)
                   (guard (and (= bpc 7) (= mx 2))) (next (mx 0)))
     (step trap    (ir @npk_trap entry)
-                  (guard (= bpc 7)) (next (bpc 1) (frozen 1)))
+                  (guard (= bpc 7)) (next (bpc 1) (frozen 1) (cb 1)))
     (step read    (ir @npk_trap entry)
                   (guard (= bpc 1)) (next (sb holder)))
     (step win     (ir @npk_trap run)
@@ -115,6 +137,10 @@
   (bad exit-mid-failsafe (or (and (= exited_by 2) (= holder 1) (= fs_a 1) (not (= apc 4)))
                              (and (= exited_by 1) (= holder 2) (= fs_b 1) (not (= bpc 4)))))
   (bad failsafe-blocked-on-heap (= blocked 1))
+  ; DEF-57: a failsafe that runs with the frozen flag's `Unreachable`, not the fault's code
+  (bad wrong-error (or (and (= fs_a 1) (= ca 2)) (and (= fs_b 1) (= cb 2))))
+  ; the holder parked: nothing is left to end the process
+  (bad holder-parks (or (and (= holder 1) (= apc 5)) (and (= holder 2) (= bpc 5))))
   (depth 14) (preempt 6)
   ; the pre-step-1 arbitration: the holder read in one step, written in the next, the winner straight into failsafe, no stop
   (control old-arbitration two-failsafes
@@ -130,4 +156,10 @@
     (replace b lose (guard (and (= bpc 1) (= holder 1))) (next (bpc 4) (exited_by 2))))
   ; the pre-step-2 allocator: the failsafe body takes the heap mutex a stopped thread holds
   (control heap-mutex-in-failsafe failsafe-blocked-on-heap
-    (replace a fsalloc (guard (and (= apc 3) (= mx 2))) (next (blocked 1)))))
+    (replace a fsalloc (guard (and (= apc 3) (= mx 2))) (next (blocked 1))))
+  ; the pre-DEF-57 `frozen` block: the executor that saw the flag traps `Unreachable` and competes for the holder
+  (control frozen-traps wrong-error
+    (replace b frozen (guard (and (= bpc 0) (= frozen 1))) (next (bpc 1) (cb 2))))
+  ; the fix as first proposed: EVERY executor that sees the flag parks, the holder included
+  (control frozen-parks-holder holder-parks
+    (replace a refrozen (guard (and (= apc 3) (= frozen 1) (= holder 1))) (next (apc 5)))))

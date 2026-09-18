@@ -18595,6 +18595,18 @@ negative control — then on the new. Declined: recording the gap as residue.
 > Lands at **1.5.6** step 1 (`meta/roadmap/1.5/1.5.6.md`); D-063 gains a
 > dated landing note there.
 
+> **DEF-57 (1.5.7 step 4, 2026-09-18).** An executor that sees `@npk_frozen`
+> is WATCHING the trap, not making one: it parks, as (3)'s "any other loser"
+> does, and the winner's stop walk counts it. Only the holder takes the
+> re-entry exit 70. Until then `npk_step`'s `frozen:` block, which is older
+> than this decision, entered the arbitration with `Unreachable` of its own.
+> In the two-instruction window between a trapper's frozen store and its
+> claim, that executor could WIN, and `failsafe` ran with the wrong error
+> (seed 371 of `trap_one_failsafe`, the schedule explorer's first floor
+> find). The decision's text is unchanged and (4)'s order is kept. The
+> `trap-route` model gained the error code it lacked (`wrong-error`,
+> `holder-parks`). OPEN_DECISIONS §2f has the record.
+
 ## D-292 — `failsafe` allocates from a PREALLOCATED REGION: the trap route's allocator — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-70; a D-203 floor addition; lands at 1.5.6 step 2)**
 
 D-014 and the heap's own header say the trap path allocates nothing and

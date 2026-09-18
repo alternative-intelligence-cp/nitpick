@@ -213,7 +213,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_mx_unlock` | atomic | modelled (futex-mutex, trap-route) |
 | `@npk_ofd_close` | syscall | boundary (the descriptor's drop: close(2) once, its answer discarded by design (D-185: a drop cannot fail); no memory is touched) |
 | `@npk_open` | syscall | specified (3 discharged, 0 residue) |
-| `@npk_park_forever` | syscall | boundary (a futex wait on a word nothing writes, re-waited on a spurious return: the stop handler's body and a losing trapper's end; the thread dies with the winner's exit_group; allocation-free by construction (D-291)); modelled (trap-route) |
+| `@npk_park_forever` | syscall | boundary (a futex wait on a word nothing writes, re-waited on a spurious return: the stop handler's body, a losing trapper's end, and the end of an executor that saw the frozen flag and is not the holder (DEF-57); the thread dies with the winner's exit_group; allocation-free by construction (D-291)); modelled (trap-route) |
 | `@npk_park_sleep` | atomic | modelled (park-unpark, reactor-io) |
 | `@npk_park_take` | syscall | specified (4 discharged, 0 residue); modelled (park-unpark, trap-route) |
 | `@npk_park_until` | syscall | specified (3 discharged, 0 residue); modelled (park-unpark, trap-route) |
@@ -437,7 +437,7 @@ further), and exhaustively, by explicit-state search over its whole reachable sp
 below, inside its bounds or outside them. LIVENESS is not claimed at all -- that a due
 task is eventually run, and that the shared arena's walker stops spinning, need a
 fairness assumption neither reading can state.
-The models, each with its bounds and its reachable states (and how many of them the bounds reach): `channel-table` (K 12, D 6; 151 states, 141 inside), `driver-registry` (K 10, D 5; 414 states, 398 inside), `futex-mutex` (K 11, D 6; 350 states, 350 inside), `park-unpark` (K 14, D 5; 358 states, 314 inside), `reactor-io` (K 16, D 7; 68 states, 68 inside), `shared-arena` (K 12, D 5; 1086 states, 1086 inside), `trap-route` (K 14, D 6; 105 states, 105 inside).
+The models, each with its bounds and its reachable states (and how many of them the bounds reach): `channel-table` (K 12, D 6; 151 states, 141 inside), `driver-registry` (K 10, D 5; 414 states, 398 inside), `futex-mutex` (K 11, D 6; 350 states, 350 inside), `park-unpark` (K 14, D 5; 358 states, 314 inside), `reactor-io` (K 16, D 7; 68 states, 68 inside), `shared-arena` (K 12, D 5; 1086 states, 1086 inside), `trap-route` (K 14, D 6; 201 states, 201 inside).
 <!-- END floor-residue -->
 
 ## 4d. Who keeps a section's assumptions (1.5.6c step 3; leads E-1 and E-2)

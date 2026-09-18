@@ -1,0 +1,76 @@
+// expect-exit: 42
+// stress: 40
+// explore: 1000
+//
+// THE REACTOR ARMS WHILE A CHANNEL WAKER ROUSES ITS EXECUTOR (1.5.7 step 4).
+// `park-unpark`'s absorbed-notification control (`drop-epoll-recheck`) needs
+// a shape no explored program had: an executor whose first `io_ready` arms
+// its reactor while a task on it is parked on a channel and a thread sends
+// to that channel -- the rouse (park word, futex wake, then the eventfd
+// read) racing the arming (the eventfd stored, the wait becoming the epoll
+// wait). Here main spawns the receiver task and the sender thread, then
+// makes the first `io_ready` of its executor on a silent pipe: the deadline
+// answers, the receiver's value arrives through `back`, and the exit says
+// the wake was neither lost nor late. On the clean floor the ordering
+// argument in `runtime/explore/controls/README.md` says the race cannot
+// absorb a notification; this program is where that claim is measured, and
+// where the oracle would see it if the floor ever changed.
+mod:reactor_arm_race;
+error:EPipe;
+error:ESend;
+error:ERecv;
+error:EBack;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+// a thread that sends at once: its rouse races main's first io_ready
+thread async func:sender = NIL(Channel<int32, 3i32, 4i64>:ch) joins JOIN_2S {
+    await ch.send(41i32, raw duration_ms(1000i64)) ?! ESend;
+    pass NIL;
+};
+
+// a task on main's executor: parked on the channel while main arms
+async func:receiver = NIL(Channel<int32, 3i32, 4i64>:ch, Channel<int32, 3i32, 4i64>:back) {
+    int32:v = await ch.recv(raw duration_ms(1500i64)) ?! ERecv;
+    await back.send(v + 1i32, raw duration_ms(500i64)) ?! EBack;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 4i64>:ch = channel() ?! Unreachable;
+    Channel<int32, 3i32, 4i64>:back = channel() ?! Unreachable;
+    // pipe2(&fds, O_NONBLOCK): nobody ever writes it
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 2048i64) ?! EPipe);
+    wild int32->:fdi = fds =>! wild int32->;
+    int32:rfd = fdi[0i64];
+    drop receiver(ch, back);
+    drop sender(ch);
+    // the first io_ready of this executor ARMS its reactor; silence answers the deadline
+    Result<NIL>:early = await io_ready(rfd, 1i32, raw duration_ms(25i64));
+    if (!early.is_error)               { exit 10i32; }
+    if (early.err != DeadlineExceeded) { exit 11i32; }
+    int32:got = await back.recv(raw duration_ms(1500i64)) ?! EBack;
+    if (got != 42i32)                  { exit 12i32; }
+    dalloc(fds);
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EPipe)            { exit 81i32; },
+        (ESend)            { exit 82i32; },
+        (ERecv)            { exit 83i32; },
+        (EBack)            { exit 84i32; },
+        (IntOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

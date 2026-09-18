@@ -1179,7 +1179,7 @@
 (symbol @npk_barrier_cancel
   (boundary "a timed-out party hands its slot back under the cell's futex: unlinked from the waiter list, and the count down by one unless its round already completed (the generation moved), in which case there is nothing to hand back"))
 (symbol @npk_park_forever
-  (boundary "a futex wait on a word nothing writes, re-waited on a spurious return: the stop handler's body and a losing trapper's end; the thread dies with the winner's exit_group; allocation-free by construction (D-291)"))
+  (boundary "a futex wait on a word nothing writes, re-waited on a spurious return: the stop handler's body, a losing trapper's end, and the end of an executor that saw the frozen flag and is not the holder (DEF-57); the thread dies with the winner's exit_group; allocation-free by construction (D-291)"))
 
 ; the threads, the process, the executor loop
 (symbol @npk_start

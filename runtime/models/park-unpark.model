@@ -128,3 +128,17 @@
   (control drop-epoll-recheck absorbed-notification
     (replace executor epwait (guard (and (= epc 6) (= ev 1) (= parked 0)))
       (next (epc (ite (= evr 1) 2 6)) (parked (ite (= evr 1) 0 1)) (evr 0)))))
+
+; MEASURED AGAINST THE FLOOR (1.5.7 step 4, 2026-09-18; runtime/explore/controls/README.md): three of the
+; four controls above reach their bad state in the MODEL and not in the floor, and each says something
+; about this model. `drop-second-sweep` and `clear-after-sweep` (wake-before-sleep): the model has no
+; DEADLINE -- its `wait` step parks whenever the park word is clear -- while the floor's `npk_sl_earliest`
+; reads a due stamp (`wake_at` = 1) as an absolute deadline of 1 ns, so the wait the floor computes ends at
+; once and the next sweep runs the task: the clear-then-recheck protocol is the floor's first line and the
+; stamp-as-deadline its second, and this model represents only the first (0 LOST-WAKE in 200 seeds and 0
+; `late` in 1000 on `channel_threads`, either control). `drop-epoll-recheck` (absorbed-notification): the
+; model's `arm` step is enabled at epc 6, AFTER the clear, where the floor arms in a task's `io_register`
+; BEFORE the idle path clears -- and a rouser stores the park word before it reads the eventfd word, so
+; under one total order the notification cannot be absorbed (arm -> clear -> store -> read; 0 in 1000
+; seeds on `reactor_arm_race`, written for the shape). The model is coarser than the floor in both places
+; and its controls remain what they were: proof that the MODEL sees its bad states.

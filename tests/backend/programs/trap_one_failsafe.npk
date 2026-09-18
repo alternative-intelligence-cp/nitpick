@@ -1,0 +1,80 @@
+// expect-exit: 41
+// stress: 40
+// explore: 1000
+// explore-seed: 371
+//
+// EXACTLY ONE `failsafe` RUNS, AND THE PROGRAM CAN TELL (1.5.7 step 4).
+// `trap-route`'s `old-arbitration` control reaches two-failsafes in the
+// model: the holder word read in one step and written in another, so two
+// trapping threads both read zero and both win. `trap_two_threads` cannot
+// see that -- two `failsafe`s exit 41 as one does -- so here the `failsafe`
+// leaves a mark the process can read back: main opens a nonblocking pipe
+// (descriptors 3 and 4 in a fresh process) before anything else, and every
+// `failsafe` first READS the pipe -- a byte already there means a `failsafe`
+// ran before it, 77 -- then writes one and spins a hundred milliseconds so
+// the second thread's trap lands inside it. The clean floor answers 41 on
+// every schedule; a floor whose arbitration or stop is broken answers 77
+// under the explorer, which is where that claim is measured.
+//
+// SEED 371 IS DEF-57's SCHEDULE (X-11: kept, run first, forever). On the
+// floor this program was written against, the late thread trapped first and
+// was preempted between its frozen store and its claim of the failsafe
+// holder; the early thread's executor, starting its first step, saw the flag
+// and trapped `Unreachable` ITSELF -- and won. `failsafe` ran with the wrong
+// error. `Unreachable` has its own exit here, 72, so the schedule names that
+// failure if it ever returns; 40 stress runs never reached it.
+mod:trap_one_failsafe;
+error:EPipe;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+thread async func:early = NIL(int32:zero) joins JOIN_5S {
+    discard(10i32 / zero);
+    pass NIL;
+};
+
+thread async func:late = NIL(int32:zero) joins JOIN_5S {
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 2000000i64) { }
+    discard(10i32 / zero);
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    // pipe2(&fds, O_NONBLOCK): the first descriptors of the process, 3 and 4
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 2048i64) ?! EPipe);
+    wild int32->:fdi = fds =>! wild int32->;
+    if (fdi[0i64] != 3i32) { exit 20i32; }
+    if (fdi[1i64] != 4i32) { exit 21i32; }
+    int32:zero = (argv.len =>! int32) - 1i32;
+    drop early(zero);
+    drop late(zero);
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 400000000i64) { }
+    exit 0i32;                                        // neither thread trapped
+};
+
+func:failsafe = int32(Error:e) {
+    wild int8->:b = alloc(8i64);
+    // a byte already in the pipe: a `failsafe` ran before this one
+    int64:seen = sys(0i64, 3i64, b, 1i64) ?| (0i64 - 11i64);
+    if (seen == 1i64) { exit 77i32; }
+    <-b = 1i8;
+    discard(sys(1i64, 4i64, b, 1i64) ?| 0i64);
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 100000000i64) { }     // the second trap lands in here
+    pick (e) {
+        (EPipe)            { exit 81i32; },
+        (DivByZero)        { exit 41i32; },
+        (DeadlineExceeded) { exit 43i32; },
+        (DivOverflow)      { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 72i32; },           // DEF-57: a watcher's code won the holder
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

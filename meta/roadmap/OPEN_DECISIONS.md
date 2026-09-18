@@ -1356,6 +1356,41 @@ given to its twin.**
   function type never match. Any function-typed parameter or return, `never
   fails` or not.
 
+**DEF-57 — FIXED at 1.5.7 step 4 (2026-09-18), in `npk_step`'s `frozen:` block:
+an executor that sees the frozen flag and is not the failsafe holder PARKS, and
+the holder takes the re-entry exit 70. `trap_one_failsafe.npk` keeps seed 371
+(X-11) and gives `Unreachable` its own exit (72), so the schedule names the
+failure if it ever returns; the `trap-route` model gained the error code it
+lacked (`wrong-error` and `holder-parks`, each with a control).** ~~OPEN~~ (found
+2026-09-18 on `9c8baf2` by `nitpick-compiler_s8`, by step 4's own full harness —
+the explorer's FIRST floor find; fixed in step 4's landing by
+`nitpick-compiler_s10`) — AN EXECUTOR THAT WATCHED A TRAP COULD WIN THE FAILSAFE
+HOLDER WITH `Unreachable`. `npk_trap` stores `@npk_frozen` (D-063: resume
+nothing) and THEN claims `@npk_in_failsafe` by cmpxchg (D-291 (3)). `npk_step`'s
+`frozen:` block is older than D-291 and answered the flag by calling
+`npk_trap(-4102)`, which entered the arbitration with a code of its OWN. In the
+two-instruction window between a trapper's store and its claim, another
+thread's executor that began a step read the flag, trapped `Unreachable` and
+could WIN. `failsafe` then ran with `Unreachable` where the fault was the
+trapper's `DivByZero`, and the real trapper lost and parked (D-291's loser
+rule, working as written). A `failsafe` that keys its shutdown on the error,
+which is what it exists to do, took the wrong branch. Deterministic under the
+explorer: seed 371 of `trap_one_failsafe` (the late thread traps first and is
+preempted at its claim; the early thread's executor sees the flag on its first
+step). Seeds 370 and 372 exit 41, 40 stress runs never reached the window, and
+`trap_two_threads` has the same shape but its 1,000 seeds did not land there.
+The `trap-route` model could not see it, because it had no error code: all four
+of its bad predicates (two failsafes, a step after failsafe, an exit
+mid-failsafe, a blocked failsafe) stayed unreachable. **The fix keeps D-291's
+text and `npk_trap`'s order** (the freeze first, as (4) states). The watcher is
+D-291's "any other loser": it parks, and the winner's stop walk signals and
+counts it. The holder itself keeps the re-entry exit 70 — its own `failsafe`
+driving the executor, which no program can do (`failsafe` is never `async`,
+TYPE-043) — because a holder that parked would end nothing. The fix as first
+proposed (claim before publishing, every watcher parks) would have parked the
+holder as well; the model's `frozen-parks-holder` control reaches
+`holder-parks` with exactly that change.
+
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 
 None of these was a known defect when it was recorded. They are the four places

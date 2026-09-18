@@ -3859,13 +3859,18 @@ def check_explore_totality(tmp, tools):
 # same stage, unit for unit, message for message.
 
 _NPKX_VERDICT = re.compile(r"^npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST-[A-Z-]+|ASSUMPTION)", re.M)
-_NPKX_TRACE = re.compile(r"^npkx: +seed=(\d+) steps=(\d+) hash=(\d+)(?: vnow=(\d+))?(?: threads=(\d+))?", re.M)
+_NPKX_STEPS = re.compile(r"^npkx: .*\bseed=\d+ steps=(\d+)", re.M)
+_NPKX_TRACE = re.compile(r"^npkx: +seed=(\d+) steps=(\d+) hash=(\d+)(?: vnow=(\d+))?(?: vrun=(\d+))?(?: threads=(\d+))?", re.M)
 
 
-def explored_env(seed, k, depth):
+def explored_env(seed, k, depth, preempt=()):
     """The explored binary's WHOLE environment: the shim reads it from
-    /proc/self/environ, first match wins, so nothing of ours rides along."""
-    return {"NPKX_SEED": str(seed), "NPKX_K": str(k), "NPKX_D": str(depth), "NPKX_TRACE": "1"}
+    /proc/self/environ, first match wins, so nothing of ours rides along.
+    `preempt` are a directed control's site numbers (X-15), NPKX_PREEMPT1..4."""
+    env = {"NPKX_SEED": str(seed), "NPKX_K": str(k), "NPKX_D": str(depth), "NPKX_TRACE": "1"}
+    for i, site in enumerate(preempt):
+        env["NPKX_PREEMPT%d" % (i + 1)] = str(site)
+    return env
 
 
 def explore_marker_finding(exp, name):
@@ -3899,7 +3904,7 @@ def run_explored(base, seed, k, depth, exp, name):
     t = _NPKX_TRACE.search(err)
     if not t:
         return ["%s: no schedule trace from the shim at seed %d (replay: %s)" % (name, seed, replay)], 0, "", 0
-    return [], int(t.group(2)), t.group(3), int(t.group(5) or 0)
+    return [], int(t.group(2)), t.group(3), int(t.group(6) or 0)
 
 
 def check_explored_program(binary, path, name, exp, tmp, xfloor_o, shim_o):
@@ -3986,14 +3991,18 @@ def stage_explore(t, s):
 
 
 def run_explore_control(tmp, path, name, shim_o):
-    """One control (`runtime/explore/controls/<name>.ctl`): the floor with the
-    control's `old` lines replaced by its `new` (exactly one occurrence),
-    transformed by the ONE transformer over a synthetic root, counted, assembled;
-    the program compiled and linked against it and the shim; seeds 1..within
-    under the prototype's measuring parameters (k = 2000, d = 3) until the named
-    verdict appears -- (fails, the seed it appeared at). A control the explorer
-    is blind to fails by name; so does one the grammar cannot read or whose
-    `old` lines do not occur exactly once."""
+    """One control (`runtime/explore/controls/<name>.ctl`): the floor with each
+    pair's `old` lines replaced by its `new` (exactly one occurrence each, in
+    order), transformed by the ONE transformer over a synthetic root, counted,
+    assembled; the program compiled and linked against it and the shim; a
+    measuring run (seed 0, depth 1: k is the schedule's length, as a unit's
+    is -- step 4; the prototype's fixed k = 2000 wasted every change point past
+    a short program's last step), then seeds 1..within at depth 3 until the
+    verdict appears -- a word of the shim, `wrong-exit`, `exit N` or `late N`
+    (the virtual run time at or past N ns: the lateness a lost wakeup degrades
+    to, D-301) -- (fails, the seed it appeared at). A control the explorer is
+    blind to fails by name; so does one the grammar cannot read or whose `old`
+    lines do not occur exactly once."""
     import explore
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
@@ -4019,6 +4028,10 @@ def run_explore_control(tmp, path, name, shim_o):
     fails = explore.check_totality(patched, xt, name)
     if fails:
         return fails, 0
+    with open(os.path.join(cdir, "sites.txt"), encoding="utf-8") as fh:
+        preempt, fails = explore.resolve_sites(ctl, fh.read(), name)
+    if fails:
+        return fails, 0
     cfloor_o = os.path.join(cdir, "npkrt.explore.o")
     r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(cdir, "npkrt.explore.ll"), "-o", cfloor_o], capture_output=True, text=True)
     if r.returncode != 0:
@@ -4034,19 +4047,35 @@ def run_explore_control(tmp, path, name, shim_o):
     r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o", cfloor_o, shim_o], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link against the patched floor failed: %s" % (name, r.stderr.strip()[:140])], 0
+    # the measuring run: seed 0, no change points -- k is the schedule's length. A verdict there is not
+    # counted, but its line carries the steps too (`npkx: WORD (...) seed=0 steps=N`): the planted defect
+    # may fire on the unperturbed schedule, and the measurement is the steps it took to get there.
+    try:
+        r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(0, 2000, 1, preempt))
+    except subprocess.TimeoutExpired:
+        return ["%s: the measuring run (seed 0) hung" % name], 0
+    tm = _NPKX_STEPS.search(r.stderr.decode("utf-8", "replace"))
+    if not tm:
+        return ["%s: no schedule trace from the shim at the measuring run (seed 0)" % name], 0
+    k = max(1, int(tm.group(1)))
     seen = []
     for seed in range(1, ctl["within"] + 1):
         try:
-            r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(seed, 2000, 3))
+            r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(seed, k, 3, preempt))
         except subprocess.TimeoutExpired:
             seen.append("seed %d: hung" % seed)
             continue
-        m = _NPKX_VERDICT.search(r.stderr.decode("utf-8", "replace"))
-        if m and m.group(1) == ctl["verdict"]:
+        err = r.stderr.decode("utf-8", "replace")
+        m = _NPKX_VERDICT.search(err)
+        word = m.group(1) if m else ""
+        tr = _NPKX_TRACE.search(err)
+        vrun = int(tr.group(5) or 0) if tr else 0
+        if explore.control_verdict_met(ctl, exp, r.returncode, word, vrun):
             return [], seed
-        seen.append("seed %d: %s" % (seed, m.group(1) if m else "exit %d" % r.returncode))
-    return ["%s: explore-control-blind: the explorer did not reach %s within %d seed(s) of the planted defect (%s) -- an instrument blind "
-            "to what it claims to see" % (name, ctl["verdict"], ctl["within"], ", ".join(seen[:6]))], 0
+        seen.append("seed %d: %s" % (seed, word or "exit %d, vrun %d" % (r.returncode, vrun)))
+    return ["%s: explore-control-blind: the explorer did not reach %s within %d seed(s) of the planted defect (k %d%s; %s) -- an instrument "
+            "blind to what it claims to see" % (name, ctl["verdict"], ctl["within"], k,
+                                                 ", directed at %s" % ",".join(str(s) for s in preempt) if preempt else "", ", ".join(seen[:6]))], 0
 
 
 def floor_controls(fdir):

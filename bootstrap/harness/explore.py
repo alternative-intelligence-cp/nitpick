@@ -205,18 +205,38 @@ def check_oracle_offsets(floor_text, shim_text, name="explore"):
 
 def read_control(text, name="explore"):
     """A control file (`runtime/explore/controls/<name>.ctl`): `program:`,
-    `verdict:`, `within:` and the `old:`/`new:` line blocks; (control, reason)."""
-    ctl = {"program": "", "verdict": "", "within": 0, "old": [], "new": []}
+    `verdict:`, `within:` and one or more `old:`/`new:` pairs of line blocks
+    (step 4: a control may mutate several places; each pair is applied in
+    order and each `old` must occur exactly once). The verdict is a word of
+    the shim (`DEADLOCK`, `LOST-WAKE`, ...), the program's own answer --
+    `wrong-exit` (any exit other than its `expect-exit:`, a signal included,
+    or any shim verdict) or `exit N` (that exit exactly) -- or its LATENESS:
+    `late N`, the virtual run time at or past N nanoseconds (the shim's
+    `vrun=`; the class a lost wakeup degrades to under D-301, which no exit
+    code and no stamp oracle can see). A DIRECTED control (X-15) adds up to
+    four `preempt-at: @function <instruction text prefix>` lines, each naming
+    one atomic site of the explored floor at which every arriving thread is
+    demoted below every other -- a change point at a place, for a window one
+    step wide that blind PCT cannot land on; the runners resolve each against
+    the patched floor's sites.txt (exactly one `atomic` row, or the control is
+    refused by name). (control, reason)."""
+    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "preempt": []}
     block = None
     for raw in text.split("\n"):
         if raw.startswith(";"):
             continue
-        if raw in ("old:", "new:"):
-            block = raw[:-1]
+        if raw == "old:":
+            ctl["subs"].append(([], []))
+            block = 0
+            continue
+        if raw == "new:":
+            if not ctl["subs"] or ctl["subs"][-1][1]:
+                return None, "%s: a `new:` with no `old:` before it" % name
+            block = 1
             continue
         if block is not None and (raw.startswith("  ") or raw == ""):
             if raw:
-                ctl[block].append(raw)
+                ctl["subs"][-1][block].append(raw)
             continue
         block = None
         if not raw.strip():
@@ -230,6 +250,11 @@ def read_control(text, name="explore"):
                 return None, "%s: `within:` is not a number: %r" % (name, val)
         elif key in ("program", "verdict"):
             ctl[key] = val
+        elif key == "preempt-at":
+            fn, _, prefix = val.partition(" ")
+            if not fn.startswith("@") or not prefix.strip():
+                return None, "%s: `preempt-at:` is `@function <instruction text prefix>`: %r" % (name, val)
+            ctl["preempt"].append((fn, prefix.strip()))
         else:
             return None, "%s: a line the control grammar does not know: %r" % (name, raw[:80])
     for key in ("program", "verdict"):
@@ -237,16 +262,68 @@ def read_control(text, name="explore"):
             return None, "%s: no `%s:`" % (name, key)
     if ctl["within"] < 1:
         return None, "%s: `within:` must be at least 1" % name
-    if not ctl["old"] or not ctl["new"]:
-        return None, "%s: `old:` and `new:` must each hold at least one line" % name
+    if not ctl["subs"]:
+        return None, "%s: no `old:`/`new:` pair" % name
+    for i, (old, new) in enumerate(ctl["subs"]):
+        if not old or not new:
+            return None, "%s: `old:` and `new:` must each hold at least one line (pair %d)" % (name, i + 1)
+    if len(ctl["preempt"]) > 4:
+        return None, "%s: at most four `preempt-at:` sites (the shim holds four)" % name
+    v = ctl["verdict"]
+    for form in ("exit ", "late "):
+        if v.startswith(form):
+            try:
+                int(v[len(form):].strip())
+            except ValueError:
+                return None, "%s: `verdict: %sN` needs a number: %r" % (name, form, v)
     return ctl, ""
 
 
 def apply_control(floor_text, ctl, name="explore"):
-    """The floor with the control's `old` lines replaced by its `new` lines --
-    exactly one occurrence, or the control is refused by name."""
-    old = "\n".join(ctl["old"]) + "\n"
-    n = floor_text.count(old)
-    if n != 1:
-        return None, ("%s: explore-control-unmatched: the control's `old` lines occur %d time(s) in runtime/npkrt.ll, not once" % (name, n))
-    return floor_text.replace(old, "\n".join(ctl["new"]) + "\n"), ""
+    """The floor with each pair's `old` lines replaced by its `new` lines, in
+    order -- each exactly one occurrence in the text as it stands, or the
+    control is refused by name."""
+    text = floor_text
+    for i, (old_lines, new_lines) in enumerate(ctl["subs"]):
+        old = "\n".join(old_lines) + "\n"
+        n = text.count(old)
+        if n != 1:
+            return None, ("%s: explore-control-unmatched: the control's `old` lines (pair %d) occur %d time(s) in runtime/npkrt.ll, not once"
+                          % (name, i + 1, n))
+        text = text.replace(old, "\n".join(new_lines) + "\n")
+    return text, ""
+
+
+def control_verdict_met(ctl, exp, returncode, shim_verdict, vrun=0):
+    """Whether one run met the control's verdict: a shim word by equality;
+    `wrong-exit` by any exit other than the program's own or any shim verdict;
+    `exit N` by that exit exactly; `late N` by a virtual run time at or past N."""
+    v = ctl["verdict"]
+    if v == "wrong-exit":
+        return bool(shim_verdict) or returncode != exp.exit
+    if v.startswith("exit "):
+        return returncode == int(v[5:].strip())
+    if v.startswith("late "):
+        return vrun >= int(v[5:].strip())
+    return shim_verdict == v
+
+
+def resolve_sites(ctl, sites_text, name="explore"):
+    """The directed sites' numbers (X-15): each `preempt-at:` against the
+    patched floor's sites.txt -- exactly one row of that function whose text
+    starts with the prefix, and an `atomic` one (a `sys6` site is a routed
+    call, not a point the shim can hold). (numbers, fails)."""
+    rows = [l.split("\t") for l in sites_text.split("\n") if l.strip()]
+    nums, fails = [], []
+    for fn, prefix in ctl["preempt"]:
+        hits = [r for r in rows if len(r) == 4 and r[1] == fn and r[3].startswith(prefix)]
+        if len(hits) != 1:
+            fails.append("%s: explore-control-site-unmatched: `preempt-at: %s %s` names %d site(s) of the explored floor, not one"
+                         % (name, fn, prefix, len(hits)))
+            continue
+        if hits[0][2] != "atomic":
+            fails.append("%s: explore-control-site-kind: `preempt-at: %s %s` is a `%s` site; only an atomic step can be a directed site"
+                         % (name, fn, prefix, hits[0][2]))
+            continue
+        nums.append(int(hits[0][0]))
+    return nums, fails

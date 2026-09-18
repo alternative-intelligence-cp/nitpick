@@ -35,6 +35,15 @@ align. Both shims now place an anonymous mapping with no hint at a bump pointer 
 `MAP_FIXED_NOREPLACE` (X-13 in the plan); the amendment is the one block marked in `npkx.c`. `hashcmp.sh` beside
 it is the measurement the IR shim is held to.
 
+**Amended a second time, at 1.5.7 step 4 (X-14), and recorded here.** Walking the models' controls found that both
+shims BLOCKED a futex wait whose absolute deadline had already passed, until quiescence, where the kernel arms an
+hrtimer that has already expired and returns `ETIMEDOUT` at once. The floor's `npk_sl_earliest` reads a due stamp
+(`wake_at` = 1) as a deadline of 1 ns, so an executor whose second sweep is dropped (`park-unpark`'s
+`drop-second-sweep`) sleeps for no time at all on the kernel and forever on the old shim -- where the LOST-WAKE
+oracle then reported a lateness the kernel never has. Both shims return `-110` before parking when the deadline is
+at or before virtual now (a relative timeout of zero included); the amendment is the second block marked in
+`npkx.c`, and the sweep was re-run after it.
+
 **Running it by hand** (a measurement, never a verdict):
 
 ```

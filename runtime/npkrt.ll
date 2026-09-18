@@ -2333,8 +2333,28 @@ entry:
   %stop = icmp ne i32 %fz, 0
   br i1 %stop, label %frozen, label %go
 frozen:
-  ; D-063: after a trap nothing is resumed, anywhere, ever again.
+  ; D-063: after a trap nothing is resumed, anywhere, ever again. AN EXECUTOR
+  ; THAT SEES THE FLAG IS WATCHING A TRAP, NOT MAKING ONE (DEF-57, 1.5.7 step
+  ; 4). Until then this block entered the route with a code of its own,
+  ; `Unreachable`, and competed for the failsafe holder: in the window between
+  ; a trapper's frozen store and its cmpxchg it could WIN, and `failsafe` ran
+  ; with `Unreachable` where the fault was the trapper's -- the explorer's
+  ; first floor find (seed 371 of `trap_one_failsafe`; 40 stress runs never
+  ; reached it). A watcher PARKS: D-291's loser, which the winner's stop walk
+  ; signals and counts. The HOLDER itself -- its own `failsafe` driving the
+  ; executor, which the language gives it no way to do (`failsafe` is never
+  ; `async`, TYPE-043) -- takes the re-entry exit 70 through the route's own
+  ; arm and never parks: a holder that parked would end nothing.
+  %fzh = load atomic i64, ptr @npk_in_failsafe seq_cst, align 8
+  %fzself = call ptr @npk_tls_self()
+  %fzselfv = ptrtoint ptr %fzself to i64
+  %fzmine = icmp eq i64 %fzh, %fzselfv
+  br i1 %fzmine, label %fzhold, label %fzpark
+fzhold:
   call void @npk_trap(i32 -4102)
+  unreachable
+fzpark:
+  call void @npk_park_forever()
   unreachable
 go:
   %now = call i64 @npk_mono_now()
@@ -2970,9 +2990,10 @@ ok:
 
 declare void @npk_sigreturn()
 
-; PARK FOREVER: the stop handler's body and a losing trapper's end. A futex
-; wait on a word nothing writes; a spurious return re-waits; the thread dies
-; with the winner's exit_group. Allocation-free by construction.
+; PARK FOREVER: the stop handler's body, a losing trapper's end, and the end
+; of an executor that saw the frozen flag and is not the holder (DEF-57). A
+; futex wait on a word nothing writes; a spurious return re-waits; the thread
+; dies with the winner's exit_group. Allocation-free by construction.
 define internal void @npk_park_forever() noreturn {
 entry:
   %wp = ptrtoint ptr @npk_stop_word to i64

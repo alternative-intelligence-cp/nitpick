@@ -98,6 +98,25 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 @npkx_key_policy = internal constant [11 x i8] c"NPKX_POLICY"
 @npkx_key_d = internal constant [6 x i8] c"NPKX_D"
 @npkx_key_k = internal constant [6 x i8] c"NPKX_K"
+; DIRECTED SITES (step 4, X-15): up to four atomic sites of the explored floor
+; (their numbers in sites.txt) at which the arriving thread is demoted below
+; every other, at every arrival -- a change point that fires at a place
+; instead of a step count. A control names them (`preempt-at:`); the unit
+; stage never sets them. -1: none.
+@npkx_key_p1 = internal constant [13 x i8] c"NPKX_PREEMPT1"
+@npkx_key_p2 = internal constant [13 x i8] c"NPKX_PREEMPT2"
+@npkx_key_p3 = internal constant [13 x i8] c"NPKX_PREEMPT3"
+@npkx_key_p4 = internal constant [13 x i8] c"NPKX_PREEMPT4"
+@npkx_preempt = internal global [4 x i64] [i64 -1, i64 -1, i64 -1, i64 -1]
+; THE FAIRNESS BOUND IS JITTERED (step 4, X-16): a thread that has run 4096
+; consecutive steps yields to another that can run -- after a further 0..63
+; steps drawn from the seed's stream when it reaches the bound. A FIXED bound
+; resonates with a periodic thread: `failsafe_alloc`'s churner (lock, unlock,
+; a flag read: period three) rested before its LOCK on every slice of every
+; seed, never holding the mutex the control needed it stopped inside, since
+; its slices were all one length. The draw breaks the resonance and keeps
+; the bound: liveness is 4096 + 63 at most.
+@npkx_fair_extra = internal global i64 0
 @npkx_key_trace = internal constant [10 x i8] c"NPKX_TRACE"
 @npkx_key_budget = internal constant [11 x i8] c"NPKX_BUDGET"
 
@@ -106,6 +125,7 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 @npkx_s_steps = internal constant [7 x i8] c" steps="
 @npkx_s_hash = internal constant [6 x i8] c" hash="
 @npkx_s_vnow = internal constant [6 x i8] c" vnow="
+@npkx_s_vrun = internal constant [6 x i8] c" vrun="
 @npkx_s_threads = internal constant [9 x i8] c" threads="
 @npkx_s_nl = internal constant [1 x i8] c"\0A"
 @npkx_s_sp = internal constant [1 x i8] c" "
@@ -366,6 +386,14 @@ entry:
   %oracle = call i64 @npkx_env_u64(ptr @npkx_key_oracle, i64 11, i64 1)
   %oracle32 = trunc i64 %oracle to i32
   store i32 %oracle32, ptr @npkx_oracle
+  %p1 = call i64 @npkx_env_u64(ptr @npkx_key_p1, i64 13, i64 -1)
+  store i64 %p1, ptr getelementptr ([4 x i64], ptr @npkx_preempt, i64 0, i64 0)
+  %p2 = call i64 @npkx_env_u64(ptr @npkx_key_p2, i64 13, i64 -1)
+  store i64 %p2, ptr getelementptr ([4 x i64], ptr @npkx_preempt, i64 0, i64 1)
+  %p3 = call i64 @npkx_env_u64(ptr @npkx_key_p3, i64 13, i64 -1)
+  store i64 %p3, ptr getelementptr ([4 x i64], ptr @npkx_preempt, i64 0, i64 2)
+  %p4 = call i64 @npkx_env_u64(ptr @npkx_key_p4, i64 13, i64 -1)
+  store i64 %p4, ptr getelementptr ([4 x i64], ptr @npkx_preempt, i64 0, i64 3)
   ; rng = seed * 0x9E3779B97F4A7C15 + 0x1234567, never 0
   %m = mul i64 %seed, -7046029254386353131
   %r = add i64 %m, 19088743
@@ -933,7 +961,19 @@ entry:
   store i64 %rlnew, ptr @npkx_run_len
   %policy = load i32, ptr @npkx_policy
   %pct = icmp eq i32 %policy, 0
-  %long = icmp ugt i64 %rlnew, 4096
+  %atbound = icmp eq i64 %rlnew, 4096
+  br i1 %atbound, label %draw, label %bound
+
+draw:
+  %jr = call i64 @npkx_next_rand()
+  %jit = and i64 %jr, 63
+  store i64 %jit, ptr @npkx_fair_extra
+  br label %bound
+
+bound:
+  %extra = load i64, ptr @npkx_fair_extra
+  %limit = add i64 4096, %extra
+  %long = icmp ugt i64 %rlnew, %limit
   %fair = and i1 %pct, %long
   br i1 %fair, label %others, label %record
 
@@ -998,6 +1038,33 @@ hash:
   %hx = xor i64 %h, %ev
   %h1 = mul i64 %hx, 1099511628211
   store i64 %h1, ptr @npkx_hash
+  br label %dsloop
+
+; a directed site (X-15): the arriving thread demoted below every other
+dsloop:
+  %dsi = phi i32 [ 0, %hash ], [ %dsi1, %dsnext ]
+  %dsdone = icmp sge i32 %dsi, 4
+  br i1 %dsdone, label %policy2, label %dscheck
+
+dscheck:
+  %dsp = getelementptr [4 x i64], ptr @npkx_preempt, i64 0, i32 %dsi
+  %dssite = load i64, ptr %dsp
+  %dshit = icmp eq i64 %dssite, %what
+  br i1 %dshit, label %directed, label %dsnext
+
+dsnext:
+  %dsi1 = add i32 %dsi, 1
+  br label %dsloop
+
+directed:
+  %ddm = load i64, ptr @npkx_demote
+  %ddm1 = sub i64 %ddm, 1
+  store i64 %ddm1, ptr @npkx_demote
+  call void @npkx_st64(i32 %me, i32 3, i64 %ddm1)
+  store i64 0, ptr @npkx_run_len
+  br label %policy2
+
+policy2:
   br i1 %pct, label %chg, label %budget
 
 ; a change point: below every initial priority, ABOVE every fairness demotion
@@ -1291,6 +1358,12 @@ print:
   call void @npkx_put(ptr @npkx_s_vnow, i64 6)
   %v = load i64, ptr @npkx_vnow
   call void @npkx_putn(i64 %v)
+  ; THE VIRTUAL RUN TIME (step 4): the clock's advance since the start -- the
+  ; lateness a lost wakeup degrades to (D-301), which a control's `late N`
+  ; verdict reads; the clock starts at one second so no timepoint is zero
+  call void @npkx_put(ptr @npkx_s_vrun, i64 6)
+  %vrun = sub i64 %v, 1000000000
+  call void @npkx_putn(i64 %vrun)
   ; the thread count, n in PCT's per-run bound 1/(n*k^(d-1)), which the stage prints
   call void @npkx_put(ptr @npkx_s_threads, i64 9)
   %ns = load i32, ptr @npkx_nslots
@@ -1537,6 +1610,28 @@ exitwait0:
 
 block:
   %rel = call i64 @npkx_rel_ns(i64 %d)
+  %norel = icmp slt i64 %rel, 0
+  %vnow = load i64, ptr @npkx_vnow
+  %vrel = add i64 %vnow, %rel
+  %absdl = select i1 %iswaitb, i64 %rel, i64 %vrel
+  %dl = select i1 %norel, i64 -1, i64 %absdl
+  ; THE KERNEL NEVER SLEEPS PAST AN EXPIRED DEADLINE (X-14, step 4): a wait
+  ; whose absolute timeout is already due (WAIT_BITSET with a timepoint at or
+  ; before now; a relative timeout of zero) queues, arms an hrtimer that has
+  ; already expired, and returns ETIMEDOUT without waiting for anything else.
+  ; Blocking it virtually until quiescence -- what this shim and its C
+  ; reference did until `drop-second-sweep` was measured -- made a wait the
+  ; kernel ends at once into a sleeper the LOST-WAKE oracle then reported:
+  ; a floor that reads a due stamp as a deadline of 1 ns is not late by it.
+  %hasdl = icmp sge i64 %dl, 0
+  %due0 = icmp sle i64 %dl, %vnow
+  %expired = and i1 %hasdl, %due0
+  br i1 %expired, label %expiredwait, label %park
+
+expiredwait:
+  ret i64 -110
+
+park:
   %ex = call ptr @npk_exec()
   %exi = ptrtoint ptr %ex to i64
   call void @npkx_st64(i32 %me, i32 12, i64 %exi)
@@ -1548,11 +1643,6 @@ block:
   %sq1 = add i64 %sq, 1
   store i64 %sq1, ptr @npkx_seq
   call void @npkx_st64(i32 %me, i32 8, i64 %sq1)
-  %norel = icmp slt i64 %rel, 0
-  %vnow = load i64, ptr @npkx_vnow
-  %vrel = add i64 %vnow, %rel
-  %absdl = select i1 %iswaitb, i64 %rel, i64 %vrel
-  %dl = select i1 %norel, i64 -1, i64 %absdl
   call void @npkx_st64(i32 %me, i32 5, i64 %dl)
   call void @npkx_resched(i32 %me)
   call void @npkx_st32(i32 %me, i32 1, i32 1)

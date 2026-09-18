@@ -846,6 +846,57 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     bool:okc2 = (xc_pt.text.len == 0i64) && (raw text_contains(xc_pt.problem, "explore-control-unmatched"));
     if (!okc2) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("explore-control-unmatched", okc2, "`old` lines that occur more than once in the floor must be refused by name"));
+    // STEP 4's two widenings, on planted text in both runners: SEVERAL pairs apply in
+    // order -- the second pair's `old` is a line the FIRST pair wrote, so it matches only
+    // after the first is applied -- and the verdict judgement's three forms answer the
+    // same in both runners.
+    Control:xc_multi = raw read_control("program: p\nverdict: wrong-exit\nwithin: 1\nold:\n  b\n  c\nnew:\n  B\n  C2\nold:\n  C2\n  d\nnew:\n  D\n", "planted");
+    bool:okc5 = false;
+    string:xc_got = "";
+    if (xc_multi.ok) {
+        Patched:xc_mp = raw apply_control("a\n  b\n  c\n  d\ne\n", @xc_multi, "planted");
+        okc5 = raw text_eq(xc_mp.text, "a\n  B\n  D\ne\n");
+        xc_got = string_concat(xc_mp.text, xc_mp.problem);
+    } else { xc_got = string_concat(xc_multi.problem, ""); }
+    if (!okc5) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-two-pairs", okc5, "a control's pairs apply in order, each `old` against the text as it stands"));
+    if (!okc5) { drop strlist_push(@report, string_concat("      got: ", xc_got)); }
+    Control:xc_v1 = raw read_control("program: p\nverdict: wrong-exit\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_v2 = raw read_control("program: p\nverdict: exit 7\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_v3 = raw read_control("program: p\nverdict: LOST-WAKE\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_v4 = raw read_control("program: p\nverdict: late 1000\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");
+    bool:okc6 = xc_v1.ok && xc_v2.ok && xc_v3.ok && xc_v4.ok;
+    if (okc6) {
+        okc6 = (!(raw control_verdict_met(@xc_v1, 3i64, 3i64, "", 0i64))) && (raw control_verdict_met(@xc_v1, 3i64, 4i64, "", 0i64))
+            && (raw control_verdict_met(@xc_v1, 3i64, 0i64 - 11i64, "", 0i64)) && (raw control_verdict_met(@xc_v1, 3i64, 3i64, "DEADLOCK", 0i64))
+            && (raw control_verdict_met(@xc_v2, 3i64, 7i64, "", 0i64)) && (!(raw control_verdict_met(@xc_v2, 3i64, 3i64, "", 0i64)))
+            && (raw control_verdict_met(@xc_v2, 3i64, 7i64, "DEADLOCK", 0i64))
+            && (raw control_verdict_met(@xc_v3, 3i64, 3i64, "LOST-WAKE", 0i64)) && (!(raw control_verdict_met(@xc_v3, 3i64, 4i64, "LOST-FUTEX-WAKE", 0i64)))
+            && (!(raw control_verdict_met(@xc_v3, 3i64, 4i64, "", 0i64)))
+            && (raw control_verdict_met(@xc_v4, 3i64, 3i64, "", 1000i64)) && (!(raw control_verdict_met(@xc_v4, 3i64, 3i64, "", 999i64)));
+    }
+    if (!okc6) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-verdicts", okc6, "`wrong-exit`, `exit N`, `late N` and a shim word are judged as the grammar says"));
+    // THE DIRECTED SITES (X-15), against the planted floor's sites: a `preempt-at:` that
+    // names one atomic row resolves to its number; one naming three rows, none, or a
+    // `sys6` row is refused by name.
+    Control:xc_d = raw read_control("program: p\nverdict: DEADLOCK\nwithin: 1\npreempt-at: @npk_lock %v = load atomic i32\npreempt-at: @npk_lock %c = cmpxchg\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_d1 = raw read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_d2 = raw read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %z = nothing\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_d3 = raw read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %s = call i64 @npk_sys6\nold:\n  a\nnew:\n  b\n", "planted");
+    bool:okc7 = xc_d.ok && xc_d1.ok && xc_d2.ok && xc_d3.ok;
+    if (okc7) {
+        Sites:xs0 = raw resolve_sites(@xc_d, xp_sites, "planted");
+        Sites:xs1 = raw resolve_sites(@xc_d1, xp_sites, "planted");
+        Sites:xs2 = raw resolve_sites(@xc_d2, xp_sites, "planted");
+        Sites:xs3 = raw resolve_sites(@xc_d3, xp_sites, "planted");
+        okc7 = (xs0.findings.count == 0i64) && (xs0.numbers.count == 2i64) && (xs0.numbers.items[0i64] == 1i64) && (xs0.numbers.items[1i64] == 0i64)
+            && (xs1.findings.count == 1i64) && (raw text_contains(raw strlist_view(xs1.findings, 0i64), "explore-control-site-unmatched")) && (raw text_contains(raw strlist_view(xs1.findings, 0i64), "3 site(s)"))
+            && (xs2.findings.count == 1i64) && (raw text_contains(raw strlist_view(xs2.findings, 0i64), "explore-control-site-unmatched")) && (raw text_contains(raw strlist_view(xs2.findings, 0i64), "0 site(s)"))
+            && (xs3.findings.count == 1i64) && (raw text_contains(raw strlist_view(xs3.findings, 0i64), "explore-control-site-kind"));
+    }
+    if (!okc7) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-sites", okc7, "a directed site resolves to one atomic row of sites.txt, or is refused by name"));
     string:xc_shim_o = raw path_join(dir, "npkx_selfcheck.o");
     Result<Step>:xcs = await llc_obj(c, c.m.llc_flags, string_concat(xo_root, "/runtime/explore/npkx.ll"), xc_shim_o);
     if (xcs.is_error) { fail xcs.err; }

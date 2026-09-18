@@ -53,3 +53,14 @@
   (control drop-recheck double-reclaim
     (replace reclaimer1 recheck (guard (= r1 2)) (next (r1 3)))
     (replace reclaimer2 recheck (guard (= r2 2)) (next (r2 3)))))
+
+; MEASURED AGAINST THE FLOOR (1.5.7 step 4, 2026-09-18; runtime/explore/controls/README.md): both controls
+; reach their bad state in the MODEL and not in the floor, by the language's discipline this model does not
+; represent. `count-before-pointer` (torn-publish): the model's reader holds the handle of a slot still
+; being opened, where the floor MINTS a handle by the open that publishes its slot (the fresh path returns
+; the packed generation and index after the count's release store; the revive path reuses an index under
+; the channel lock and moves its generation), so no reader can read a fresh slot before its count. `drop-
+; recheck` (double-reclaim): the model has two reclaimers of one handle, where a program cannot spell a
+; reclaim -- it is the creating scope's exit (D-183), once, or the caller's under `gives`, once. 0 wrong
+; exits in 300 seeds on each of four channel programs, either control. The controls remain what they were:
+; proof that the MODEL sees its bad states.
