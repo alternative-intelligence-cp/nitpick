@@ -43,6 +43,7 @@ use "./build.npk".*;
 use "./irscan.npk".*;
 use "./verify.npk".*;
 use "./explore_stage.npk".*;                 // the explore stage's pieces (1.5.7 step 1)
+use "./explore_req.npk".*;                   // req_summary: the D-302 sentence (1.5.7 step 5)
 use "../src/backend/smt/smt_kinds.npk".*;
 
 // --- discovery ---------------------------------------------------------------------
@@ -887,6 +888,12 @@ async func:run_explore = NIL(Ctx->:c, int64:t) {
         drop record(c, tname, "runtime/explore/npkx.ll", xo.findings);
         drop strset_free(@skip);
         pass NIL;
+    }
+    // D-302: the hypotheses checked at every call, and every one the checkers cannot evaluate, by name
+    List<string>:sm = raw req_summary(xo.assumptions);
+    for (int64:si in 0i64...sm.count) {
+        if (si == 0i64) { drop say(raw stage_text("explore", raw strlist_view(sm, si))); }
+        else { drop say(raw stage_text("explore", string_concat("  listed, not checked: ", raw strlist_view(sm, si)))); }
     }
     int64:n = 0i64;
     int64:n_no = 0i64;

@@ -14,7 +14,8 @@
 //   - every `@npk_sys6(` CALL becomes `@npkx_sys6(` (same signature: the shim
 //     takes the scheduling point itself and virtualizes what blocks);
 //   - the thread lifecycle: `@npkx_prespawn()` before and `@npkx_spawned(i64
-//     %r)` after the `@npk_clone_raw(` call (a statement that may span lines),
+//     %r, i64 %ctid)` after the `@npk_clone_raw(` call (a statement that may
+//     span lines; the second argument is the clone's CHILD_CLEARTID word, X-19),
 //     `@npkx_begin()` first in `@npk_thread_entry`, `@npkx_end()` before its
 //     `ret`;
 //   - `module asm`, `@npk_sys6`'s own body and every declaration are left
@@ -34,15 +35,18 @@
 mod:explore;
 
 use "./text.npk".*;
-use "./floor_ir.npk".*;                        // floor_code_part: the line without its comment
+use "./floor_ir.npk".*;                        // floor_code_part: the line without its comment; floor_parse for the checkers
 use "./floor_model.npk".*;                     // line_is_step: the census's own definition
+use "./explore_req.npk".*;                     // the spec's caller hypotheses as checkers (step 5, D-302)
 use "../src/backend/smt/smt_writer.npk".*;     // SmtBuf: one allocation for the joined text
 
 pub struct:Explored = {
     string:text;             // the transformed floor
     string:sites;            // sites.txt
+    string:assumptions;      // assumptions.txt (step 5, D-302): every caller clause, checked or listed
     int64:points;            // `@npkx_point` calls inserted -- the atomic step lines
     int64:routed;            // `@npk_sys6(` calls routed to `@npkx_sys6(`
+    int64:checkers;          // symbols given an entry checker
     List<string>:problems;   // what the transform could not do, by name
 };
 
@@ -107,12 +111,19 @@ func:site_row = string(int64:n, string:fn, string:kind, string:code) never fails
     pass (string_concat(s, raw text_head(code, 80i64)));
 };
 
-// The transform. `floor` is `runtime/npkrt.ll`'s text.
-pub func:explore_transform = Explored(string:floor) never fails {
+// The transform. `floor` is `runtime/npkrt.ll`'s text; `spec` is
+// `runtime/npkrt.spec`'s, whose caller hypotheses become checkers called at
+// their symbols' entries (step 5, D-302) -- "" for none.
+pub func:explore_transform = Explored(string:floor, string:spec) never fails {
     List<string>:lines = raw raw_lines(floor);
     SmtBuf:out = raw smtbuf_init();
     SmtBuf:sites = raw smtbuf_init();
     List<string>:problems = raw list_init::<string>(2i64);
+    // THE CHECKERS (step 5): generated from the spec over the floor's own defines before the walk
+    // (the generator parses the floor itself: a value built from a borrowed parse would carry the
+    // borrow into the result, D-004 rule 2)
+    ReqGen:req = raw req_generate(floor, spec);
+    for (int64:rp in 0i64...req.problems.count) { drop strlist_push(@problems, raw strlist_view(req.problems, rp)); }
     int64:points = 0i64;
     int64:routed = 0i64;
     int64:nsite = 0i64;
@@ -121,6 +132,7 @@ pub func:explore_transform = Explored(string:floor) never fails {
     bool:saw_end = false;
     bool:saw_clone = false;
     string:fn = "";
+    int64:pending_call = 0i64 - 1i64;                 // a checker call owed at the next instruction
     int64:i = 0i64;
     while (i < lines.count) {
         string:line = raw strlist_view(lines, i);
@@ -130,8 +142,32 @@ pub func:explore_transform = Explored(string:floor) never fails {
             fn = string_concat(sym, "");
             if (raw text_eq(fn, "@npk_thread_entry")) { saw_entry = true; }
             drop smtbuf_line(@out, line);
+            // a header that continues on the next lines (a parameter list after a comma) ends at `{`
+            while ((!(raw text_ends_with(code, "{"))) && ((i + 1i64) < lines.count)) {
+                i = i + 1i64;
+                line = raw strlist_view(lines, i);
+                code = raw floor_code_part(line);
+                drop smtbuf_line(@out, line);
+            }
+            // the checker's call (step 5): the FIRST INSTRUCTION of a section symbol -- after the
+            // `entry:` label when the entry block has one (three of the floor's do not)
+            pending_call = raw strlist_index(req.syms, fn);
             i = i + 1i64;
             continue;
+        }
+        if (pending_call >= 0i64) {
+            bool:is_label = (code.len > 1i64) && (code.ptr[code.len - 1i64] == 58u8) && (raw text_find_byte(code, 32u8, 0i64) < 0i64);
+            if (is_label) {
+                drop smtbuf_line(@out, line);
+                drop smtbuf_line(@out, raw strlist_view(req.calls, pending_call));
+                if (raw text_eq(fn, "@npk_thread_entry")) { drop smtbuf_line(@out, "  call void @npkx_begin()"); saw_begin = true; }
+                pending_call = 0i64 - 1i64;
+                i = i + 1i64;
+                continue;
+            }
+            drop smtbuf_line(@out, raw strlist_view(req.calls, pending_call));
+            pending_call = 0i64 - 1i64;
+            // the line itself is handled below as any other
         }
         if ((fn.len == 0i64) || (raw text_starts_with(code, "module asm"))) {
             drop smtbuf_line(@out, line);
@@ -175,14 +211,23 @@ pub func:explore_transform = Explored(string:floor) never fails {
             }
             saw_clone = true;
             drop smtbuf_line(@out, "  call void @npkx_prespawn()");
+            string:whole = "";
             while (true) {
                 string:part = raw strlist_view(lines, i);
                 drop smtbuf_line(@out, part);
+                whole = string_concat(whole, raw floor_code_part(part));
                 if (raw text_ends_with(raw floor_code_part(part), ")")) { break; }
                 i = i + 1i64;
                 if (i >= lines.count) { break; }
             }
+            // THE SETTLED END (step 5, X-19): the clone's third argument is the CHILD_CLEARTID word the
+            // kernel clears at the thread's exit, handed to the shim beside the tid so a thread's end is
+            // settled -- the word seen cleared -- before anyone else steps
+            string:ctid = raw clone_arg(whole, 2i64);
+            if (ctid.len == 0i64) { drop strlist_push(@problems, "explore: the `@npk_clone_raw` call has no third argument (the CHILD_CLEARTID word)"); }
             string:sp = string_concat("  call void @npkx_spawned(i64 ", reg);
+            sp = string_concat(sp, ", ");
+            sp = string_concat(sp, ctid);
             drop smtbuf_line(@out, string_concat(sp, ")"));
             i = i + 1i64;
             continue;
@@ -217,11 +262,37 @@ pub func:explore_transform = Explored(string:floor) never fails {
     drop smtbuf_line(@out, "declare void @npkx_point(i32)");
     drop smtbuf_line(@out, "declare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)");
     drop smtbuf_line(@out, "declare void @npkx_prespawn()");
-    drop smtbuf_line(@out, "declare void @npkx_spawned(i64)");
+    drop smtbuf_line(@out, "declare void @npkx_spawned(i64, i64)");
     drop smtbuf_line(@out, "declare void @npkx_begin()");
     drop smtbuf_line(@out, "declare void @npkx_end()");
-    pass Explored{ text: raw smtbuf_text(move(out)), sites: raw smtbuf_text(move(sites)),
-                   points: points, routed: routed, problems: move(problems) };
+    if (req.ir.len > 0i64) { drop smtbuf_line(@out, raw text_slice(req.ir, 0i64, req.ir.len - 1i64)); }
+    int64:nck = req.syms.count;
+    pass Explored{ text: raw smtbuf_text(move(out)), sites: raw smtbuf_text(move(sites)), assumptions: move(req.assumptions),
+                   points: points, routed: routed, checkers: nck, problems: move(problems) };
+};
+
+// The index of `s` in `l`, or -1.
+func:strlist_index = int64(List<string>:l, string:s) never fails {
+    for (int64:i in 0i64...l.count) { if (raw text_eq(raw strlist_view(l, i), s)) { pass i; } }
+    pass (0i64 - 1i64);
+};
+
+// The k-th argument (0-based) of a call's text, type and value (`i64 %ctid`), or "".
+func:clone_arg = string(string:call, int64:k) never fails {
+    int64:open = raw text_find_byte(call, 40u8, 0i64);           // the first `(`
+    if (open < 0i64) { pass ""; }
+    int64:close = 0i64 - 1i64;
+    for (int64:j in 0i64...call.len) { if (call.ptr[j] == 41u8) { close = j; } }   // the last `)`
+    if (close <= open) { pass ""; }
+    string:inner = raw text_slice(call, open + 1i64, close);
+    List<string>:args = raw list_init::<string>(8i64);
+    int64:start = 0i64;
+    for (int64:m in 0i64...inner.len) {
+        if (inner.ptr[m] == 44u8) { drop strlist_push(@args, raw text_trim(raw text_slice(inner, start, m))); start = m + 1i64; }
+    }
+    drop strlist_push(@args, raw text_trim(raw text_slice(inner, start, inner.len)));
+    if (k >= args.count) { pass ""; }
+    pass (raw strlist_copy(args, k));
 };
 
 // The first occurrence of `what` in `line` replaced by `repl`; the line itself when absent.
@@ -311,10 +382,27 @@ pub func:explore_totality_current = List<string>(string:root) never fails {
     if (fc.is_error) { drop strlist_push(@fl, "explore: runtime/npkrt.ll: not a path"); pass fl; }
     Result<string>:ftx = read_file(fc.value);
     if (ftx.is_error) { drop strlist_push(@fl, "explore: runtime/npkrt.ll cannot be read"); pass fl; }
-    Explored:x = raw explore_transform(ftx.value);
+    string:spec = raw spec_text_of(root);
+    if (spec.len == 0i64) { drop strlist_push(@fl, "explore: runtime/npkrt.spec is missing -- the entry checkers have no source (D-302)"); pass fl; }
+    Explored:x = raw explore_transform(ftx.value, spec);
     for (int64:i in 0i64...x.problems.count) { drop strlist_push(@fl, raw strlist_view(x.problems, i)); }
     if (fl.count > 0i64) { pass fl; }
-    pass (raw explore_totality(ftx.value, x.text));
+    List<string>:tot = raw explore_totality(ftx.value, x.text);
+    for (int64:j in 0i64...tot.count) { drop strlist_push(@fl, raw strlist_view(tot, j)); }
+    if (fl.count > 0i64) { pass fl; }
+    // THE SPEC'S CALLER HYPOTHESES (step 5, D-302): the counting belt over the same transform
+    pass (raw explore_assumptions(spec, x.text, x.assumptions, "explore"));
+};
+
+// `runtime/npkrt.spec`'s text under `root`, or "" when it is not there (the
+// transform then places no checker -- the belts that need it say so).
+pub func:spec_text_of = string(string:root) never fails {
+    Result<cstring>:sc = to_cstring(string_concat(root, "/runtime/npkrt.spec"));
+    if (sc.is_error) { pass ""; }
+    if (!(path_exists(sc.value))) { pass ""; }
+    Result<string>:stx = read_file(sc.value);
+    if (stx.is_error) { pass ""; }
+    pass (string_concat(stx.value, ""));
 };
 
 // --- the oracle's offsets (step 3; D-301) ---------------------------------------------
@@ -465,38 +553,64 @@ pub func:check_oracle_offsets = List<string>(string:floor, string:shim, string:n
 // verdict within the seeds (`explore-control-blind` otherwise).
 
 // `before`/`after` hold one string per pair: the pair's lines joined by "\n";
-// `preempt` one `@function <prefix>` value per `preempt-at:` line.
-pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after; List<string>:preempt; };
+// `spec_before`/`spec_after` likewise for a SPEC control's `spec-old:`/
+// `spec-new:` pairs (step 5, D-302: a false caller hypothesis planted in
+// `runtime/npkrt.spec`, the verdict the shim's `ASSUMPTION`); `preempt` one
+// `@function <prefix>` value per `preempt-at:` line.
+pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after;
+                       List<string>:spec_before; List<string>:spec_after; List<string>:preempt; };
 
 func:control_bad = Control(string:problem) never fails {
     pass Control{ ok: false, problem: raw text_copy(problem), program: "", verdict: "", within: 0i64,
-                  before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64) };
+                  before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64),
+                  spec_before: raw list_init::<string>(1i64), spec_after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64) };
 };
 
 pub func:read_control = Control(string:text, string:name) never fails {
     Control:c = Control{ ok: true, problem: "", program: "", verdict: "", within: 0i64,
-                         before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64) };
+                         before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64),
+                         spec_before: raw list_init::<string>(2i64), spec_after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64) };
     List<string>:lines = raw raw_lines(text);
     int64:block = 0i64;                                             // 0 none, 1 old, 2 new
     bool:open = false;                                              // a pair is being read
+    bool:spec_pair = false;                                         // the open pair is a spec pair
     List<string>:cur_old = raw list_init::<string>(4i64);
     List<string>:cur_new = raw list_init::<string>(4i64);
     for (int64:i in 0i64...lines.count) {
         string:ln = raw strlist_view(lines, i);
         if (raw text_starts_with(ln, ";")) { continue; }
-        if (raw text_eq(ln, "old:")) {
+        bool:is_old = raw text_eq(ln, "old:");
+        bool:is_spec_old = raw text_eq(ln, "spec-old:");
+        if (is_old || is_spec_old) {
             if (open) {
-                drop list_push(@c.before, raw text_join(cur_old, "\n"));
-                drop list_push(@c.after, raw text_join(cur_new, "\n"));
+                if (spec_pair) {
+                    drop list_push(@c.spec_before, raw text_join(cur_old, "\n"));
+                    drop list_push(@c.spec_after, raw text_join(cur_new, "\n"));
+                } else {
+                    drop list_push(@c.before, raw text_join(cur_old, "\n"));
+                    drop list_push(@c.after, raw text_join(cur_new, "\n"));
+                }
                 cur_old = raw list_init::<string>(4i64);
                 cur_new = raw list_init::<string>(4i64);
             }
             open = true;
+            spec_pair = is_spec_old;
             block = 1i64;
             continue;
         }
-        if (raw text_eq(ln, "new:")) {
-            if ((!open) || (cur_new.count > 0i64)) { pass (raw control_bad(string_concat(name, ": a `new:` with no `old:` before it"))); }
+        bool:is_new = raw text_eq(ln, "new:");
+        bool:is_spec_new = raw text_eq(ln, "spec-new:");
+        if (is_new || is_spec_new) {
+            if ((!open) || (cur_new.count > 0i64) || (spec_pair != is_spec_new)) {
+                string:kw = "new:";
+                string:before_kw = "old:";
+                if (is_spec_new) { kw = "spec-new:"; before_kw = "spec-old:"; }
+                string:m0 = string_concat(name, ": a `");
+                m0 = string_concat(m0, kw);
+                m0 = string_concat(m0, "` with no `");
+                m0 = string_concat(m0, before_kw);
+                pass (raw control_bad(string_concat(m0, "` before it")));
+            }
             block = 2i64;
             continue;
         }
@@ -530,18 +644,30 @@ pub func:read_control = Control(string:text, string:name) never fails {
         pass (raw control_bad(string_concat(string_concat(name, ": a line the control grammar does not know: "), raw text_head(ln, 80i64))));
     }
     if (open) {
-        drop list_push(@c.before, raw text_join(cur_old, "\n"));
-        drop list_push(@c.after, raw text_join(cur_new, "\n"));
+        if (spec_pair) {
+            drop list_push(@c.spec_before, raw text_join(cur_old, "\n"));
+            drop list_push(@c.spec_after, raw text_join(cur_new, "\n"));
+        } else {
+            drop list_push(@c.before, raw text_join(cur_old, "\n"));
+            drop list_push(@c.after, raw text_join(cur_new, "\n"));
+        }
     }
     if (c.program.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `program:`"))); }
     if (c.verdict.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `verdict:`"))); }
     if (c.within < 1i64) { pass (raw control_bad(string_concat(name, ": `within:` must be at least 1"))); }
-    if (c.before.count == 0i64) { pass (raw control_bad(string_concat(name, ": no `old:`/`new:` pair"))); }
+    if ((c.before.count == 0i64) && (c.spec_before.count == 0i64)) { pass (raw control_bad(string_concat(name, ": no `old:`/`new:` pair and no `spec-old:`/`spec-new:` pair"))); }
     for (int64:p in 0i64...c.before.count) {
         if (((raw strlist_view(c.before, p)).len == 0i64) || ((raw strlist_view(c.after, p)).len == 0i64)) {
             string:m = string_concat(name, ": `old:` and `new:` must each hold at least one line (pair ");
             m = string_concat(m, int_to_string(p + 1i64));
             pass (raw control_bad(string_concat(m, ")")));
+        }
+    }
+    for (int64:p2 in 0i64...c.spec_before.count) {
+        if (((raw strlist_view(c.spec_before, p2)).len == 0i64) || ((raw strlist_view(c.spec_after, p2)).len == 0i64)) {
+            string:m2 = string_concat(name, ": `spec-old:` and `spec-new:` must each hold at least one line (pair ");
+            m2 = string_concat(m2, int_to_string(p2 + 1i64));
+            pass (raw control_bad(string_concat(m2, ")")));
         }
     }
     if (c.preempt.count > 4i64) { pass (raw control_bad(string_concat(name, ": at most four `preempt-at:` sites (the shim holds four)"))); }
@@ -558,14 +684,23 @@ pub func:read_control = Control(string:text, string:name) never fails {
 
 // The floor with each pair's `old` lines replaced by its `new` lines, in order,
 // or "" with the finding: each exactly one occurrence in the text as it
-// stands, else `explore-control-unmatched` naming the pair.
+// stands, else `explore-control-unmatched` naming the pair. `apply_spec_control`
+// is the same over `runtime/npkrt.spec` and the `spec-old:`/`spec-new:` pairs.
 pub struct:Patched = { string:text; string:problem; };
 
 pub func:apply_control = Patched(string:floor, Control->:c, string:name) never fails {
-    string:text = string_concat(floor, "");
-    for (int64:p in 0i64...c.before.count) {
-        string:before = string_concat(raw strlist_view(c.before, p), "\n");
-        string:after = string_concat(raw strlist_view(c.after, p), "\n");
+    pass (raw apply_pairs(floor, @c.before, @c.after, name, "old", "runtime/npkrt.ll"));
+};
+
+pub func:apply_spec_control = Patched(string:spec, Control->:c, string:name) never fails {
+    pass (raw apply_pairs(spec, @c.spec_before, @c.spec_after, name, "spec-old", "runtime/npkrt.spec"));
+};
+
+func:apply_pairs = Patched(string:src, List<string>->:befores, List<string>->:afters, string:name, string:key, string:what) never fails {
+    string:text = string_concat(src, "");
+    for (int64:p in 0i64...befores.count) {
+        string:before = string_concat(raw strlist_view_of(befores.items[p]), "\n");
+        string:after = string_concat(raw strlist_view_of(afters.items[p]), "\n");
         int64:n = 0i64;
         int64:at = raw text_index_of(text, before);
         int64:first = at;
@@ -574,11 +709,15 @@ pub func:apply_control = Patched(string:floor, Control->:c, string:name) never f
             at = raw text_index_from(text, before, at + 1i64);
         }
         if (n != 1i64) {
-            string:m = string_concat(name, ": explore-control-unmatched: the control's `old` lines (pair ");
+            string:m = string_concat(name, ": explore-control-unmatched: the control's `");
+            m = string_concat(m, key);
+            m = string_concat(m, "` lines (pair ");
             m = string_concat(m, int_to_string(p + 1i64));
             m = string_concat(m, ") occur ");
             m = string_concat(m, int_to_string(n));
-            m = string_concat(m, " time(s) in runtime/npkrt.ll, not once");
+            m = string_concat(m, " time(s) in ");
+            m = string_concat(m, what);
+            m = string_concat(m, ", not once");
             pass Patched{ text: "", problem: move(m) };
         }
         string:out = string_concat(raw text_slice(text, 0i64, first), after);

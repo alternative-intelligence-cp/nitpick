@@ -721,11 +721,21 @@ def _split_top(s, sep=","):
 
 
 def define_headers(floor_text):
-    """@name -> (return type, [(type, %name)]) for every define of the floor."""
+    """@name -> (return type, [(type, %name)]) for every define of the floor. A
+    header may continue on the next line (three of the floor's do, their
+    parameter lists after a comma): joined as `parse_floor` joins them -- until
+    1.5.7 step 5 those three had no header here, and `check_spec`'s free-symbol
+    check and the entry checkers' second reader skipped them in silence."""
     out = {}
     types = {}
-    for raw in floor_text.split("\n"):
-        line = code_part(raw)
+    raws = floor_text.split("\n")
+    ri = 0
+    while ri < len(raws):
+        line = code_part(raws[ri])
+        ri += 1
+        while line.startswith("define ") and line and line[-1] in ",(" and ri < len(raws):
+            line = line + " " + code_part(raws[ri])
+            ri += 1
         tm = _STRUCT_TYPE_RE.match(line)
         if tm:
             types[tm.group(1)] = tm.group(2)
@@ -1699,25 +1709,50 @@ def callers_facts(floor_text, spec_text):
 
 
 def callers_rows(floor_text, spec_text):
+    """The table's rows; the last column (1.5.7 step 5, D-302) is how many of the
+    section's caller hypotheses the explorer's entry checker executes at every
+    call of every explored schedule, of how many it states."""
+    import explore
+    executed = {}
+    for (sym, status, _text, _why) in explore.assumption_facts(floor_text, spec_text):
+        c, n = executed.get(sym, (0, 0))
+        executed[sym] = (c + (1 if status == "checked" else 0), n + 1)
+
     def names(xs):
         return " ".join("`%s`" % x for x in xs) if xs else "--"
-    return ["| `%s` | %s | %s | %s | %s | %s |" % (sym, " ".join(assumes), names(at_call), names(inlined), names(unproved),
-                                                   "yes" if exported else "no")
+
+    def ex(sym):
+        c, n = executed.get(sym, (0, 0))
+        return "%d of %d" % (c, n)
+    return ["| `%s` | %s | %s | %s | %s | %s | %s |" % (sym, " ".join(assumes), names(at_call), names(inlined), names(unproved),
+                                                        "yes" if exported else "no", ex(sym))
             for (sym, assumes, at_call, inlined, unproved, exported) in callers_facts(floor_text, spec_text)]
 
 
 def callers_region(floor_text, spec_text):
-    """The whole marked region's body: the counts, then the table."""
+    """The whole marked region's body: the counts, then the table, then (D-302)
+    every hypothesis the entry checkers cannot evaluate, BY NAME."""
+    import explore
     facts = callers_facts(floor_text, spec_text)
     n_open = sum(1 for f in facts if f[4])
     n_exp = sum(1 for f in facts if f[5])
     n_closed = sum(1 for f in facts if not f[4] and not f[5])
+    afacts = explore.assumption_facts(floor_text, spec_text)
+    n_checked = sum(1 for f in afacts if f[1] == "checked")
+    listed = [f for f in afacts if f[1] == "listed"]
     head = ("%d sections have rows AND assume something of their caller. For %d of them every caller is covered -- no\n"
             "untranslated floor caller, and the symbol is not exported; %d have a floor caller no row covers; %d are\n"
-            "EXPORTED, so emitted code can call them and nothing proves the assumption there.\n"
-            % (len(facts), n_closed, n_open, n_exp))
-    return head + "\n" + "\n".join(["| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |",
-                                    "|---|---|---|---|---|---|"] + callers_rows(floor_text, spec_text))
+            "EXPORTED, so emitted code can call them and nothing proves the assumption there. Under the explorer (1.5.7\n"
+            "step 5, D-302) %d of the %d hypotheses these sections state are EXECUTED at every call of every explored\n"
+            "schedule by a generated entry checker, untranslated floor callers and emitted code alike; the %d it cannot\n"
+            "evaluate are listed by name below the table.\n"
+            % (len(facts), n_closed, n_open, n_exp, n_checked, len(afacts), len(listed)))
+    body = head + "\n" + "\n".join(["| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code | executed at every explored call |",
+                                    "|---|---|---|---|---|---|---|"] + callers_rows(floor_text, spec_text))
+    if listed:
+        body += "\n\nListed, not checked -- a clause the entry checker cannot evaluate over the entry state:\n" + \
+            "\n".join("- `%s`: `%s` -- %s" % (s, tx, r) for (s, _st, tx, r) in listed)
+    return body
 
 
 def model_facts_all(root):

@@ -21,12 +21,20 @@ old:                                             one or more pairs; each line in
   <lines of runtime/npkrt.ll, exactly once>
 new:
   <their replacement>
+spec-old:                                        a SPEC control's pairs (step 5, D-302): the same over
+  <lines of runtime/npkrt.spec, exactly once>    runtime/npkrt.spec -- a FALSE caller hypothesis planted
+spec-new:                                        where the floor is untouched
+  <their replacement>
 ```
+
+A control holds floor pairs, spec pairs, or both; the patched spec goes beside the patched floor in the
+run's build directory, so the entry checkers (D-302) are generated from it as from the real one.
 
 The verdict is one of:
 
-- a word of the shim — `DEADLOCK`, `STEP BUDGET`, `MMAP`, `LOST-FUTEX-WAKE`, `LOST-WAKE` — met when the shim
-  prints it;
+- a word of the shim — `DEADLOCK`, `STEP BUDGET`, `MMAP`, `LOST-FUTEX-WAKE`, `LOST-WAKE`, and `ASSUMPTION`
+  (a caller hypothesis of the spec false at a call, reported by the generated entry checker: the spec
+  control's verdict) — met when the shim prints it;
 - `wrong-exit` — the program's own answer: any exit other than its `expect-exit:`, a signal included, or any
   shim verdict;
 - `exit N` — that exit exactly;
@@ -48,6 +56,15 @@ scheduling point wide inside runs of 100,000 steps; blind PCT's bound there is 1
 seed, and 0 of 100 seeds found any of them, so they are directed. A directed site takes effect BEFORE
 the named instruction (the scheduling point precedes the step), so a control names the first step AFTER
 its window — the reserve, not the capacity read; the stop walk's first read, not the claim.
+
+## The spec control (step 5, 2026-09-18)
+
+`unconditional-apartness.ctl` plants 1.5.6's unconditional apartness clause for `npk_small_free`'s three
+list neighbours back into the spec — the clause 1.5.6c found FALSE by reading (the ordinary free into a
+chunk already on the partial list, whose head IS that chunk) — and requires `ASSUMPTION` within two
+seeds: `drop_string` reports `ASSUMPTION @npk_small_free: (apart (partial-list head) (chunk))` on its
+27th step, every seed. What reading found after a year, the entry checker finds in the first millisecond
+of any program that frees a small block; the control is the mechanism's proof that it would.
 
 ## The nineteen model controls, walked (step 4, 2026-09-18)
 

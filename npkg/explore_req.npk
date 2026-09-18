@@ -1,0 +1,1106 @@
+// explore_req -- THE SPEC'S CALLER HYPOTHESES, EXECUTED (1.5.7 step 5; D-302).
+//
+// For every section of `runtime/npkrt.spec` that has rows (the translator's
+// own rule: an `ensures`, `ensures-trap`, `frame` or `loop` clause and no
+// `(boundary ...)`) and assumes something of its caller (`requires`,
+// `(objects ...)`, `(views ...)`), this module writes a CHECKER in LLVM IR
+// text -- `@"npkx.req.<symbol>"`, taking the symbol's own parameters -- that
+// evaluates each assumption over the ENTRY state in the spec's mathematical
+// integers (i128: every register read UNSIGNED, the translator's reading;
+// `+ - *` exact, `mod` by a power of two the low bits, a load through an
+// address below the null page reading as 0 -- the spec's own convention that
+// a null range is no object) and calls `@npkx_assumption` with the clause's
+// text when one is false: the shim's verdict `ASSUMPTION <symbol>: <clause>`.
+// The transformer (`explore.npk`) places one call of the checker at the
+// symbol's entry in the explored floor, so the hypotheses are checked at
+// every call of every explored schedule -- untranslated floor callers and
+// emitted code alike, TCB.md SS4d's two "NOT PROVED" columns tested instead
+// of argued.
+//
+// A clause the generator cannot evaluate is LISTED BY NAME, never skipped in
+// silence: one naming a free symbol (`(free j Int)`), a body register, the
+// post-state (`mem2`, `result`), or a form outside the entry vocabulary. The
+// objects facts are EXACTLY `floor_smt.npk`'s `objects_facts`: each range
+// within the address space, each object apart from every object before it,
+// each view apart from every object and from no view, a null or empty range
+// no object, and an `apart-when` condition guarding its pair facts. The
+// Python twin (`bootstrap/harness/explore.py`, `assumption_facts`) enumerates
+// and classifies the same facts by the same rules and holds this module's
+// `assumptions.txt` to them (X-9: one generator, a counting second reader).
+
+mod:explore_req;
+
+use "./text.npk".*;
+use "./floor_ir.npk".*;
+use "./floor_spec.npk".*;
+use "./floor_smt.npk".*;                      // is_aggregate_ty, agg_leaves: the parameter leaves the translator names
+use "../src/backend/smt/smt_writer.npk".*;    // SmtBuf: the generated text
+
+// One assumption of one section: `status` is "checked" or "listed".
+pub struct:ReqClause = { string:symbol; string:text; string:status; string:reason; };
+
+pub struct:ReqGen = {
+    string:ir;                 // the checkers, their messages and the declares, appended to the explored floor
+    string:assumptions;        // assumptions.txt: one line per clause, `SYMBOL<TAB>STATUS<TAB>TEXT<TAB>REASON`
+    List<string>:syms;         // `@npk_rq_push`: the symbols with a checker (a call line each)
+    List<string>:calls;        // `  call void @"npkx.req.npk_rq_push"(ptr %f, ptr %exec)`
+    List<ReqClause>:clauses;   // every assumption of every eligible section, checked or listed
+    List<string>:problems;     // what the generator could not do, by name
+};
+
+// --- the S-expression's text, canonical (one space, no newlines) ---------------------------
+
+pub func:sx_text = string(Sxs->:s, int64:node) never fails {
+    if (node < 0i64) { pass ""; }
+    if (s.nodes.items[node].kind == (raw SX_ATOM())) { pass (raw sx_atom(s, node)); }
+    if (s.nodes.items[node].kind == (raw SX_STRING())) {
+        string:q = string_concat("\"", raw sx_string(s, node));
+        pass (string_concat(q, "\""));
+    }
+    string:out = "(";
+    int64:c = s.nodes.items[node].first;
+    bool:first = true;
+    while (c >= 0i64) {
+        if (!first) { out = string_concat(out, " "); }
+        out = string_concat(out, raw sx_text(s, c));
+        first = false;
+        c = s.nodes.items[c].next;
+    }
+    pass (string_concat(out, ")"));
+};
+
+// --- the emitter ---------------------------------------------------------------------------
+
+// The state of one checker's text: lines, fresh registers, the parameter and
+// global values already converted to i128 (by name), and the first reason a
+// clause could not be evaluated (`ok` false).
+struct:ReqEmit = {
+    SmtBuf:lines;
+    int64:next;
+    List<string>:val_names;    // "f", "a.0", "npk_chtab": names already materialised
+    List<string>:val_regs;     // their i128 registers
+    bool:ok;
+    string:reason;
+    int64:fi;                  // the define's index in the floor
+};
+
+func:req_fresh = string(ReqEmit->:e) never fails {
+    string:r = string_concat("%req.", int_to_string(e.next));
+    e.next = e.next + 1i64;
+    pass r;
+};
+
+func:req_fail = string(ReqEmit->:e, string:why) never fails {
+    if (e.ok) { e.ok = false; e.reason = raw text_copy(why); }
+    pass "";
+};
+
+// A decimal numeral (the spec's are non-negative; `-` is a form).
+func:req_is_numeral = bool(string:a) never fails {
+    if (a.len == 0i64) { pass false; }
+    for (int64:i in 0i64...a.len) { if (!(raw text_is_digit(a.ptr[i]))) { pass false; } }
+    pass true;
+};
+
+// The extractvalue index list of an aggregate leaf path `.0.1` -> `0, 1`.
+func:req_leaf_indices = string(string:path) never fails {
+    string:out = "";
+    int64:i = 0i64;
+    while (i < path.len) {
+        if (path.ptr[i] == 46u8) {                     // '.'
+            int64:j = i + 1i64;
+            while ((j < path.len) && (path.ptr[j] != 46u8)) { j = j + 1i64; }
+            if (out.len > 0i64) { out = string_concat(out, ", "); }
+            out = string_concat(out, raw text_slice(path, i + 1i64, j));
+            i = j;
+            continue;
+        }
+        i = i + 1i64;
+    }
+    pass out;
+};
+
+// A parameter leaf or global named in a clause, as an i128 register: a
+// pointer through `ptrtoint`, an integer zero-extended (the unsigned reading),
+// an aggregate parameter's leaf through `extractvalue`, a global's ADDRESS.
+// "" with the reason when the name is not the entry state.
+func:req_name = string(ReqEmit->:e, FloorText->:ft, string:name) never fails {
+    for (int64:i in 0i64...e.val_names.count) {
+        if (raw text_eq(raw strlist_view(e.val_names, i), name)) { pass (raw strlist_copy(e.val_regs, i)); }
+    }
+    // a parameter, or an aggregate parameter's leaf `a.0`
+    int64:dot = raw text_find_byte(name, 46u8, 0i64);
+    string:base = raw text_copy(name);
+    string:path = "";
+    if (dot >= 0i64) { base = raw text_slice(name, 0i64, dot); path = raw text_slice(name, dot, name.len); }
+    string:want = string_concat("%", base);
+    for (int64:p in 0i64...ft.fns.items[e.fi].params.count) {
+        if (!(raw text_eq(raw strlist_view(ft.fns.items[e.fi].params, p), want))) { continue; }
+        string:pty = raw strlist_copy(ft.fns.items[e.fi].param_tys, p);
+        string:leaf_ty = raw text_copy(pty);
+        string:src = raw text_copy(want);
+        if (raw is_aggregate_ty(pty)) {
+            if (path.len == 0i64) { pass (raw req_fail(e, string_concat("names the aggregate parameter whole: ", name))); }
+            List<string>:paths = raw list_init::<string>(4i64);
+            List<string>:tys = raw list_init::<string>(4i64);
+            drop agg_leaves(ft, pty, "", @paths, @tys);
+            bool:found = false;
+            for (int64:l in 0i64...paths.count) {
+                if (raw text_eq(raw strlist_view(paths, l), path)) { leaf_ty = raw strlist_copy(tys, l); found = true; }
+            }
+            if (!found) { pass (raw req_fail(e, string_concat("names a leaf the parameter does not have: ", name))); }
+            string:ev = raw req_fresh(e);
+            string:evl = string_concat("  ", ev);
+            evl = string_concat(evl, " = extractvalue ");
+            evl = string_concat(evl, pty);
+            evl = string_concat(evl, " ");
+            evl = string_concat(evl, want);
+            evl = string_concat(evl, ", ");
+            evl = string_concat(evl, raw req_leaf_indices(path));
+            drop smtbuf_line(@e.lines, evl);
+            src = move(ev);
+        } else {
+            if (path.len > 0i64) { pass (raw req_fail(e, string_concat("names a leaf of a scalar parameter: ", name))); }
+        }
+        string:wide = raw req_widen(e, leaf_ty, src);
+        if (wide.len == 0i64) { pass ""; }
+        drop strlist_push(@e.val_names, name);
+        drop strlist_push(@e.val_regs, wide);
+        pass wide;
+    }
+    // the per-thread constants, by their own calls (`exec` is `npk_exec()`, `tls` is `npk_tls_self()`)
+    if ((raw text_eq(name, "exec")) || (raw text_eq(name, "tls"))) {
+        string:callee = "@npk_exec";
+        if (raw text_eq(name, "tls")) { callee = "@npk_tls_self"; }
+        string:pv = raw req_fresh(e);
+        string:pvl = string_concat("  ", pv);
+        pvl = string_concat(pvl, " = call ptr ");
+        pvl = string_concat(pvl, callee);
+        pvl = string_concat(pvl, "()");
+        drop smtbuf_line(@e.lines, pvl);
+        string:wide3 = raw req_widen(e, "ptr", pv);
+        if (wide3.len == 0i64) { pass ""; }
+        drop strlist_push(@e.val_names, name);
+        drop strlist_push(@e.val_regs, wide3);
+        pass wide3;
+    }
+    // a global: its address
+    string:gname = string_concat("@", name);
+    for (int64:g in 0i64...ft.globals.count) {
+        if (!(raw text_eq(raw strlist_view(ft.globals, g), gname))) { continue; }
+        string:wide2 = raw req_widen(e, "ptr", gname);
+        if (wide2.len == 0i64) { pass ""; }
+        drop strlist_push(@e.val_names, name);
+        drop strlist_push(@e.val_regs, wide2);
+        pass wide2;
+    }
+    pass (raw req_fail(e, string_concat(string_concat("names `", name), "`, which is not the entry state")));
+};
+
+// `src` of LLVM type `ty` as an i128 register (the unsigned reading).
+func:req_widen = string(ReqEmit->:e, string:ty, string:src) never fails {
+    if (raw text_eq(ty, "ptr")) {
+        string:p = raw req_fresh(e);
+        string:pl = string_concat("  ", p);
+        pl = string_concat(pl, " = ptrtoint ptr ");
+        pl = string_concat(pl, src);
+        pl = string_concat(pl, " to i64");
+        drop smtbuf_line(@e.lines, pl);
+        string:z = raw req_fresh(e);
+        string:zl = string_concat("  ", z);
+        zl = string_concat(zl, " = zext i64 ");
+        zl = string_concat(zl, p);
+        zl = string_concat(zl, " to i128");
+        drop smtbuf_line(@e.lines, zl);
+        pass z;
+    }
+    if ((ty.len >= 2i64) && (ty.ptr[0i64] == 105u8)) {        // iN
+        if (raw text_eq(ty, "i128")) { pass (raw text_copy(src)); }
+        string:z2 = raw req_fresh(e);
+        string:zl2 = string_concat("  ", z2);
+        zl2 = string_concat(zl2, " = zext ");
+        zl2 = string_concat(zl2, ty);
+        zl2 = string_concat(zl2, " ");
+        zl2 = string_concat(zl2, src);
+        zl2 = string_concat(zl2, " to i128");
+        drop smtbuf_line(@e.lines, zl2);
+        pass z2;
+    }
+    pass (raw req_fail(e, string_concat("a parameter of a type the checker cannot read: ", ty)));
+};
+
+// A binary i128 operation line; the result register.
+func:req_bin = string(ReqEmit->:e, string:op, string:a, string:b) never fails {
+    string:r = raw req_fresh(e);
+    string:l = string_concat("  ", r);
+    l = string_concat(l, " = ");
+    l = string_concat(l, op);
+    l = string_concat(l, " i128 ");
+    l = string_concat(l, a);
+    l = string_concat(l, ", ");
+    l = string_concat(l, b);
+    drop smtbuf_line(@e.lines, l);
+    pass r;
+};
+
+// An i1 operation line (`and`/`or`/`xor` on i1); the result register.
+func:req_bool_bin = string(ReqEmit->:e, string:op, string:a, string:b) never fails {
+    string:r = raw req_fresh(e);
+    string:l = string_concat("  ", r);
+    l = string_concat(l, " = ");
+    l = string_concat(l, op);
+    l = string_concat(l, " i1 ");
+    l = string_concat(l, a);
+    l = string_concat(l, ", ");
+    l = string_concat(l, b);
+    drop smtbuf_line(@e.lines, l);
+    pass r;
+};
+
+// Whether the numeral `n` is a power of two (at most 2^64 here: a wider one is
+// refused as a form the checker cannot evaluate).
+func:req_is_pow2 = bool(string:n) never fails {
+    if ((n.len == 0i64) || (n.len > 21i64)) { pass false; }
+    uint128:v = 0u128;
+    for (int64:i in 0i64...n.len) { v = (v * 10u128) + ((n.ptr[i] - 48u8) => uint128); }
+    if (v == 0u128) { pass false; }
+    pass ((v & (v - 1u128)) == 0u128);
+};
+
+// An INTEGER expression as an i128 register or numeral text; "" when it
+// cannot be evaluated over the entry state (the reason recorded).
+func:req_val = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node) never fails {
+    if (!e.ok) { pass ""; }
+    if (node < 0i64) { pass (raw req_fail(e, "an empty expression")); }
+    if (s.nodes.items[node].kind == (raw SX_ATOM())) {
+        string:a = raw sx_atom(s, node);
+        if (raw req_is_numeral(a)) { pass a; }
+        pass (raw req_name(e, ft, a));
+    }
+    if (s.nodes.items[node].kind != (raw SX_LIST())) { pass (raw req_fail(e, "a string where an integer was expected")); }
+    string:h = raw sx_head(s, node);
+    int64:n = raw sx_len(s, node);
+    if ((raw text_eq(h, "+")) || (raw text_eq(h, "*"))) {
+        if (n < 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:acc = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (acc.len == 0i64) { pass ""; }
+        for (int64:i in 2i64...n) {
+            string:b = raw req_val(e, ft, s, raw sx_nth(s, node, i));
+            if (b.len == 0i64) { pass ""; }
+            string:op = "add";
+            if (raw text_eq(h, "*")) { op = "mul"; }
+            acc = raw req_bin(e, op, acc, b);
+        }
+        pass acc;
+    }
+    if (raw text_eq(h, "-")) {
+        if (n == 2i64) {
+            string:u = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
+            if (u.len == 0i64) { pass ""; }
+            pass (raw req_bin(e, "sub", "0", u));
+        }
+        if (n != 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:a1 = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (a1.len == 0i64) { pass ""; }
+        string:b1 = raw req_val(e, ft, s, raw sx_nth(s, node, 2i64));
+        if (b1.len == 0i64) { pass ""; }
+        pass (raw req_bin(e, "sub", a1, b1));
+    }
+    if (raw text_eq(h, "mod")) {
+        if (n != 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        int64:dn = raw sx_nth(s, node, 2i64);
+        string:da = "";
+        if (s.nodes.items[dn].kind == (raw SX_ATOM())) { da = raw sx_atom(s, dn); }
+        if (!((raw req_is_numeral(da)) && (raw req_is_pow2(da)))) { pass (raw req_fail(e, string_concat("a `mod` by other than a power of two: ", raw sx_text(s, node)))); }
+        string:a2 = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (a2.len == 0i64) { pass ""; }
+        // the Euclidean remainder by a power of two is the low bits, of a negative value too
+        string:mask = raw req_bin(e, "sub", da, "1");
+        pass (raw req_bin(e, "and", a2, mask));
+    }
+    if (raw text_eq(h, "ite")) {
+        if (n != 4i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:c = raw req_bool(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (c.len == 0i64) { pass ""; }
+        string:t = raw req_val(e, ft, s, raw sx_nth(s, node, 2i64));
+        if (t.len == 0i64) { pass ""; }
+        string:f = raw req_val(e, ft, s, raw sx_nth(s, node, 3i64));
+        if (f.len == 0i64) { pass ""; }
+        string:r = raw req_fresh(e);
+        string:l = string_concat("  ", r);
+        l = string_concat(l, " = select i1 ");
+        l = string_concat(l, c);
+        l = string_concat(l, ", i128 ");
+        l = string_concat(l, t);
+        l = string_concat(l, ", i128 ");
+        l = string_concat(l, f);
+        drop smtbuf_line(@e.lines, l);
+        pass r;
+    }
+    if ((raw text_eq(h, "and64")) || (raw text_eq(h, "or64")) || (raw text_eq(h, "xor64"))) {
+        // the 64-bit bit operations: a computed operand (`+ - *`) wraps first, as the translator's does
+        if (n != 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:x = raw req_val_wrapped64(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (x.len == 0i64) { pass ""; }
+        string:y = raw req_val_wrapped64(e, ft, s, raw sx_nth(s, node, 2i64));
+        if (y.len == 0i64) { pass ""; }
+        string:bop = raw text_slice(h, 0i64, h.len - 2i64);           // "and", "or", "xor"
+        pass (raw req_bin(e, bop, x, y));
+    }
+    if ((raw text_eq(h, "s8")) || (raw text_eq(h, "s32")) || (raw text_eq(h, "s64"))) {
+        // the signed reading of a word: x - 2^w where x >= 2^(w-1)
+        if (n != 2i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:xv = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (xv.len == 0i64) { pass ""; }
+        string:half = "128";
+        string:full = "256";
+        if (raw text_eq(h, "s32")) { half = "2147483648"; full = "4294967296"; }
+        if (raw text_eq(h, "s64")) { half = "9223372036854775808"; full = "18446744073709551616"; }
+        string:neg = raw req_fresh(e);
+        string:negl = string_concat("  ", neg);
+        negl = string_concat(negl, " = icmp sge i128 ");
+        negl = string_concat(negl, xv);
+        negl = string_concat(negl, ", ");
+        negl = string_concat(negl, half);
+        drop smtbuf_line(@e.lines, negl);
+        string:down = raw req_bin(e, "sub", xv, full);
+        string:sv = raw req_fresh(e);
+        string:svl = string_concat("  ", sv);
+        svl = string_concat(svl, " = select i1 ");
+        svl = string_concat(svl, neg);
+        svl = string_concat(svl, ", i128 ");
+        svl = string_concat(svl, down);
+        svl = string_concat(svl, ", i128 ");
+        svl = string_concat(svl, xv);
+        drop smtbuf_line(@e.lines, svl);
+        pass sv;
+    }
+    if ((raw text_eq(h, "load8")) || (raw text_eq(h, "load16")) || (raw text_eq(h, "load32")) || (raw text_eq(h, "load64"))) {
+        if (n != 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        if (!(raw text_eq(raw sx_atom(s, raw sx_nth(s, node, 1i64)), "mem"))) {
+            pass (raw req_fail(e, string_concat("reads a memory that is not the entry state: ", raw sx_text(s, node))));
+        }
+        string:addr = raw req_val(e, ft, s, raw sx_nth(s, node, 2i64));
+        if (addr.len == 0i64) { pass ""; }
+        string:w = raw text_slice(h, 4i64, h.len);                // "8", "16", "32", "64"
+        // a load through an address below the null page reads as 0: the address is
+        // redirected to a zero word of the checker's own (no branch, no phi)
+        string:lt = raw req_fresh(e);
+        string:ltl = string_concat("  ", lt);
+        ltl = string_concat(ltl, " = icmp ult i128 ");
+        ltl = string_concat(ltl, addr);
+        ltl = string_concat(ltl, ", 4096");
+        drop smtbuf_line(@e.lines, ltl);
+        string:a64 = raw req_fresh(e);
+        string:a64l = string_concat("  ", a64);
+        a64l = string_concat(a64l, " = trunc i128 ");
+        a64l = string_concat(a64l, addr);
+        a64l = string_concat(a64l, " to i64");
+        drop smtbuf_line(@e.lines, a64l);
+        string:sel = raw req_fresh(e);
+        string:sell = string_concat("  ", sel);
+        sell = string_concat(sell, " = select i1 ");
+        sell = string_concat(sell, lt);
+        sell = string_concat(sell, ", i64 ptrtoint (ptr @\"npkx.req.zero\" to i64), i64 ");
+        sell = string_concat(sell, a64);
+        drop smtbuf_line(@e.lines, sell);
+        string:p = raw req_fresh(e);
+        string:pl = string_concat("  ", p);
+        pl = string_concat(pl, " = inttoptr i64 ");
+        pl = string_concat(pl, sel);
+        pl = string_concat(pl, " to ptr");
+        drop smtbuf_line(@e.lines, pl);
+        string:v = raw req_fresh(e);
+        string:vl = string_concat("  ", v);
+        vl = string_concat(vl, " = load i");
+        vl = string_concat(vl, w);
+        vl = string_concat(vl, ", ptr ");
+        vl = string_concat(vl, p);
+        vl = string_concat(vl, ", align 1");
+        drop smtbuf_line(@e.lines, vl);
+        if (raw text_eq(w, "128")) { pass v; }
+        string:z = raw req_fresh(e);
+        string:zl = string_concat("  ", z);
+        zl = string_concat(zl, " = zext i");
+        zl = string_concat(zl, w);
+        zl = string_concat(zl, " ");
+        zl = string_concat(zl, v);
+        zl = string_concat(zl, " to i128");
+        drop smtbuf_line(@e.lines, zl);
+        pass z;
+    }
+    pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node))));
+};
+
+// An operand of a 64-bit bit operation: a `+`, `-` or `*` form wrapped to its
+// low 64 bits (the word the floor's instruction sees), anything else as it is.
+func:req_val_wrapped64 = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node) never fails {
+    string:v = raw req_val(e, ft, s, node);
+    if (v.len == 0i64) { pass ""; }
+    if (raw sx_is_list(s, node)) {
+        string:h = raw sx_head(s, node);
+        if ((raw text_eq(h, "+")) || (raw text_eq(h, "-")) || (raw text_eq(h, "*"))) { pass (raw req_bin(e, "and", v, "18446744073709551615")); }
+    }
+    pass v;
+};
+
+// A PROPOSITION as an i1 register; "" when it cannot be evaluated.
+func:req_bool = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node) never fails {
+    if (!e.ok) { pass ""; }
+    if (node < 0i64) { pass (raw req_fail(e, "an empty proposition")); }
+    if (s.nodes.items[node].kind == (raw SX_ATOM())) {
+        string:a = raw sx_atom(s, node);
+        if (raw text_eq(a, "true")) { pass "true"; }
+        if (raw text_eq(a, "false")) { pass "false"; }
+        pass (raw req_fail(e, string_concat("a bare name where a proposition was expected: ", a)));
+    }
+    if (s.nodes.items[node].kind != (raw SX_LIST())) { pass (raw req_fail(e, "a string where a proposition was expected")); }
+    string:h = raw sx_head(s, node);
+    int64:n = raw sx_len(s, node);
+    if ((raw text_eq(h, "and")) || (raw text_eq(h, "or"))) {
+        if (n < 2i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:acc = raw req_bool(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (acc.len == 0i64) { pass ""; }
+        for (int64:i in 2i64...n) {
+            string:b = raw req_bool(e, ft, s, raw sx_nth(s, node, i));
+            if (b.len == 0i64) { pass ""; }
+            acc = raw req_bool_bin(e, h, acc, b);
+        }
+        pass acc;
+    }
+    if (raw text_eq(h, "not")) {
+        if (n != 2i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:x = raw req_bool(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (x.len == 0i64) { pass ""; }
+        pass (raw req_bool_bin(e, "xor", x, "true"));
+    }
+    if (raw text_eq(h, "=>")) {
+        if (n != 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
+        string:p = raw req_bool(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (p.len == 0i64) { pass ""; }
+        string:q = raw req_bool(e, ft, s, raw sx_nth(s, node, 2i64));
+        if (q.len == 0i64) { pass ""; }
+        string:np = raw req_bool_bin(e, "xor", p, "true");
+        pass (raw req_bool_bin(e, "or", np, q));
+    }
+    string:pred = "";
+    if (raw text_eq(h, "<")) { pred = "slt"; }
+    if (raw text_eq(h, "<=")) { pred = "sle"; }
+    if (raw text_eq(h, ">")) { pred = "sgt"; }
+    if (raw text_eq(h, ">=")) { pred = "sge"; }
+    if (raw text_eq(h, "=")) { pred = "eq"; }
+    if (pred.len > 0i64) {
+        if (n != 3i64) { pass (raw req_fail(e, string_concat("a comparison of other than two operands: ", raw sx_text(s, node)))); }
+        string:a1 = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
+        if (a1.len == 0i64) { pass ""; }
+        string:b1 = raw req_val(e, ft, s, raw sx_nth(s, node, 2i64));
+        if (b1.len == 0i64) { pass ""; }
+        string:r = raw req_fresh(e);
+        string:l = string_concat("  ", r);
+        l = string_concat(l, " = icmp ");
+        l = string_concat(l, pred);
+        l = string_concat(l, " i128 ");
+        l = string_concat(l, a1);
+        l = string_concat(l, ", ");
+        l = string_concat(l, b1);
+        drop smtbuf_line(@e.lines, l);
+        pass r;
+    }
+    pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node))));
+};
+
+// --- the checkers ---------------------------------------------------------------------------
+
+// The IR text of a C string constant and its byte length: `c"..."` with `"`,
+// `\` and every byte outside printable ASCII as `\XX`.
+func:req_cstring = string(string:s) never fails {
+    string:out = "c\"";
+    for (int64:i in 0i64...s.len) {
+        uint8:c = s.ptr[i];
+        bool:plain = (c >= 32u8) && (c < 127u8) && (c != 34u8) && (c != 92u8);
+        if (plain) { out = string_concat(out, raw text_slice(s, i, i + 1i64)); continue; }
+        int64:hi = (c / 16u8) => int64;
+        int64:lo = (c % 16u8) => int64;
+        out = string_concat(out, "\\");
+        out = string_concat(out, raw text_slice("0123456789ABCDEF", hi, hi + 1i64));
+        out = string_concat(out, raw text_slice("0123456789ABCDEF", lo, lo + 1i64));
+    }
+    pass (string_concat(out, "\""));
+};
+
+// The section's rule for having rows (the translator's `_translated`): an
+// `ensures`, `ensures-trap`, `frame` or `loop` clause and no `boundary`.
+func:req_section_translated = bool(Sxs->:s, int64:sec) never fails {
+    bool:claims = false;
+    bool:boundary = false;
+    int64:c = s.nodes.items[sec].first;
+    while (c >= 0i64) {
+        if (raw sx_is_list(s, c)) {
+            string:h = raw sx_head(s, c);
+            if ((raw text_eq(h, "ensures")) || (raw text_eq(h, "ensures-trap")) || (raw text_eq(h, "frame")) || (raw text_eq(h, "loop"))) { claims = true; }
+            if (raw text_eq(h, "boundary")) { boundary = true; }
+        }
+        c = s.nodes.items[c].next;
+    }
+    pass (claims && (!boundary));
+};
+
+// One fact: the i1 register of its truth (or "" when the clause is listed).
+struct:ReqFact = { string:text; string:ok; };
+
+// The fact texts of an `(objects ...)`/`(views ...)` clause and their i1s --
+// `objects_facts`' enumeration exactly: each range within the address space,
+// each object apart from every object before it, each view apart from every
+// object and from no view; a null or an empty range is no object; an
+// `apart-when` condition guards its pair facts. `first_view` is the index of
+// the first view range among `entries` (its count when none).
+func:req_range_facts = List<ReqFact>(ReqEmit->:e, FloorText->:ft, Sxs->:s, List<int64>->:entries, int64:first_view) never fails {
+    List<ReqFact>:out = raw list_init::<ReqFact>(8i64);
+    List<string>:los = raw list_init::<string>(4i64);
+    List<string>:lens = raw list_init::<string>(4i64);
+    List<string>:whens = raw list_init::<string>(4i64);
+    List<string>:texts = raw list_init::<string>(4i64);
+    // every range's values first: a range the checker cannot read lists the whole clause
+    for (int64:i in 0i64...entries.count) {
+        int64:en = entries.items[i];
+        drop strlist_push(@texts, raw sx_text(s, en));
+        int64:len = raw sx_len(s, en);
+        bool:shaped = (raw sx_is_list(s, en)) && ((len == 2i64) || ((len == 4i64) && (raw text_eq(raw sx_atom(s, raw sx_nth(s, en, 2i64)), "apart-when"))));
+        if (!shaped) { discard(raw req_fail(e, string_concat("a range that is not `(lo len)` or `(lo len apart-when COND)`: ", raw sx_text(s, en)))); }
+        string:lo = "";
+        string:ln = "";
+        string:wh = "";
+        if (e.ok) { lo = raw req_val(e, ft, s, raw sx_nth(s, en, 0i64)); }
+        if (e.ok) { ln = raw req_val(e, ft, s, raw sx_nth(s, en, 1i64)); }
+        if (e.ok && (len == 4i64)) { wh = raw req_bool(e, ft, s, raw sx_nth(s, en, 3i64)); }
+        drop strlist_push(@los, lo);
+        drop strlist_push(@lens, ln);
+        drop strlist_push(@whens, wh);
+    }
+    for (int64:i2 in 0i64...entries.count) {
+        string:lo2 = raw strlist_view(los, i2);
+        string:ln2 = raw strlist_view(lens, i2);
+        // within the address space: 0 <= lo and lo + len <= 2^64
+        string:okr = "";
+        if (e.ok) {
+            string:total = raw req_bin(e, "add", lo2, ln2);
+            string:c1 = raw req_fresh(e);
+            string:c1l = string_concat("  ", c1);
+            c1l = string_concat(c1l, " = icmp sge i128 ");
+            c1l = string_concat(c1l, lo2);
+            c1l = string_concat(c1l, ", 0");
+            drop smtbuf_line(@e.lines, c1l);
+            string:c2 = raw req_fresh(e);
+            string:c2l = string_concat("  ", c2);
+            c2l = string_concat(c2l, " = icmp sle i128 ");
+            c2l = string_concat(c2l, total);
+            c2l = string_concat(c2l, ", 18446744073709551616");
+            drop smtbuf_line(@e.lines, c2l);
+            okr = raw req_bool_bin(e, "and", c1, c2);
+        }
+        drop list_push(@out, ReqFact{ text: string_concat(string_concat("(in-space ", raw strlist_view(texts, i2)), ")"), ok: move(okr) });
+        int64:kmax = i2;
+        if (i2 >= first_view) { kmax = first_view; }
+        for (int64:k in 0i64...kmax) {
+            string:o = raw strlist_view(los, k);
+            string:oln = raw strlist_view(lens, k);
+            string:okp = "";
+            if (e.ok) {
+                // apart: lo + len <= o or o + olen <= lo
+                string:s1 = raw req_bin(e, "add", lo2, ln2);
+                string:a1 = raw req_fresh(e);
+                string:a1l = string_concat("  ", a1);
+                a1l = string_concat(a1l, " = icmp sle i128 ");
+                a1l = string_concat(a1l, s1);
+                a1l = string_concat(a1l, ", ");
+                a1l = string_concat(a1l, o);
+                drop smtbuf_line(@e.lines, a1l);
+                string:s2 = raw req_bin(e, "add", o, oln);
+                string:a2 = raw req_fresh(e);
+                string:a2l = string_concat("  ", a2);
+                a2l = string_concat(a2l, " = icmp sle i128 ");
+                a2l = string_concat(a2l, s2);
+                a2l = string_concat(a2l, ", ");
+                a2l = string_concat(a2l, lo2);
+                drop smtbuf_line(@e.lines, a2l);
+                string:apart = raw req_bool_bin(e, "or", a1, a2);
+                // no object: a null or an empty range on either side
+                string:z1 = raw req_fresh(e);
+                string:z1l = string_concat("  ", z1);
+                z1l = string_concat(z1l, " = icmp eq i128 ");
+                z1l = string_concat(z1l, lo2);
+                z1l = string_concat(z1l, ", 0");
+                drop smtbuf_line(@e.lines, z1l);
+                string:z2 = raw req_fresh(e);
+                string:z2l = string_concat("  ", z2);
+                z2l = string_concat(z2l, " = icmp eq i128 ");
+                z2l = string_concat(z2l, o);
+                z2l = string_concat(z2l, ", 0");
+                drop smtbuf_line(@e.lines, z2l);
+                string:z3 = raw req_fresh(e);
+                string:z3l = string_concat("  ", z3);
+                z3l = string_concat(z3l, " = icmp eq i128 ");
+                z3l = string_concat(z3l, ln2);
+                z3l = string_concat(z3l, ", 0");
+                drop smtbuf_line(@e.lines, z3l);
+                string:z4 = raw req_fresh(e);
+                string:z4l = string_concat("  ", z4);
+                z4l = string_concat(z4l, " = icmp eq i128 ");
+                z4l = string_concat(z4l, oln);
+                z4l = string_concat(z4l, ", 0");
+                drop smtbuf_line(@e.lines, z4l);
+                string:n12 = raw req_bool_bin(e, "or", z1, z2);
+                string:n34 = raw req_bool_bin(e, "or", z3, z4);
+                string:noobj = raw req_bool_bin(e, "or", n12, n34);
+                string:pairf = raw req_bool_bin(e, "or", noobj, apart);
+                string:wi = raw strlist_view(whens, i2);
+                string:wk = raw strlist_view(whens, k);
+                if (wi.len > 0i64) { string:nwi = raw req_bool_bin(e, "xor", wi, "true"); pairf = raw req_bool_bin(e, "or", nwi, pairf); }
+                if (wk.len > 0i64) { string:nwk = raw req_bool_bin(e, "xor", wk, "true"); pairf = raw req_bool_bin(e, "or", nwk, pairf); }
+                okp = move(pairf);
+            }
+            string:pt = string_concat("(apart ", raw strlist_view(texts, i2));
+            pt = string_concat(pt, " ");
+            pt = string_concat(pt, raw strlist_view(texts, k));
+            pt = string_concat(pt, ")");
+            drop list_push(@out, ReqFact{ text: move(pt), ok: move(okp) });
+        }
+    }
+    pass out;
+};
+
+// The checker of one section: its IR appended to `ir`, its call line and its
+// clauses recorded. `sec` is the `(symbol @name ...)` node; `fi` the define.
+// Each clause is evaluated into a buffer of its own with a fresh name cache,
+// so a clause that turns out to be listed leaves no text and no register
+// behind, and the ones kept form one chain of blocks: `entry`, then per
+// checked fact a branch to `f<n>` (the call of the shim) and `c<n+1>`.
+func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:sec, string:sym, int64:fi) never fails {
+    string:bare = raw text_slice(sym, 1i64, sym.len);                   // without the `@`
+    SmtBuf:fb = raw smtbuf_init();                                       // the function's body
+    List<string>:msgs = raw list_init::<string>(8i64);                  // the message constants' definitions
+    int64:nchecked = 0i64;
+    int64:nreg = 0i64;                                                   // fresh registers, across clauses
+    int64:c = s.nodes.items[sec].first;
+    while (c >= 0i64) {
+        if (!(raw sx_is_list(s, c))) { c = s.nodes.items[c].next; continue; }
+        string:h = raw sx_head(s, c);
+        bool:is_req = raw text_eq(h, "requires");
+        bool:is_obj = raw text_eq(h, "objects");
+        bool:is_view = raw text_eq(h, "views");
+        if (!(is_req || is_obj || is_view)) { c = s.nodes.items[c].next; continue; }
+        ReqEmit:e = ReqEmit{ lines: raw smtbuf_init(), next: nreg, val_names: raw list_init::<string>(8i64), val_regs: raw list_init::<string>(8i64),
+                             ok: true, reason: "", fi: fi };
+        List<ReqFact>:facts = raw list_init::<ReqFact>(4i64);
+        if (is_req) {
+            string:okb = "";
+            if ((raw sx_len(s, c)) == 2i64) { okb = raw req_bool(@e, ft, s, raw sx_nth(s, c, 1i64)); }
+            else { discard(raw req_fail(@e, "a `requires` of other than one proposition")); }
+            drop list_push(@facts, ReqFact{ text: raw sx_text(s, c), ok: move(okb) });
+        } else {
+            // an `objects` clause's entries are its own; a `views` clause's follow the section's objects
+            List<int64>:entries = raw list_init::<int64>(8i64);
+            int64:first_view = 0i64;
+            if (is_view) {
+                int64:oc = raw req_find_clause(s, sec, "objects");
+                if (oc >= 0i64) {
+                    int64:oe = s.nodes.items[oc].first;
+                    oe = s.nodes.items[oe].next;
+                    while (oe >= 0i64) { drop list_push(@entries, oe); oe = s.nodes.items[oe].next; }
+                }
+                first_view = entries.count;
+            }
+            int64:ce = s.nodes.items[c].first;
+            ce = s.nodes.items[ce].next;
+            while (ce >= 0i64) { drop list_push(@entries, ce); ce = s.nodes.items[ce].next; }
+            if (!is_view) { first_view = entries.count; }
+            List<ReqFact>:rf = raw req_range_facts(@e, ft, s, @entries, first_view);
+            // a views clause records only ITS ranges' facts; the objects' come first in `rf`
+            int64:skip = 0i64;
+            if (is_view) { skip = raw req_facts_before(first_view, first_view); }
+            for (int64:r in skip...rf.count) {
+                drop list_push(@facts, ReqFact{ text: string_concat(raw strlist_view_of(rf.items[r].text), ""),
+                                                ok: string_concat(raw strlist_view_of(rf.items[r].ok), "") });
+            }
+        }
+        if (!e.ok) {
+            // listed: every fact of the clause, by name, with the one reason; nothing emitted
+            for (int64:f0 in 0i64...facts.count) {
+                drop list_push(@g.clauses, ReqClause{ symbol: raw text_copy(sym), text: string_concat(raw strlist_view_of(facts.items[f0].text), ""),
+                                                      status: "listed", reason: raw text_copy(e.reason) });
+            }
+            c = s.nodes.items[c].next;
+            continue;
+        }
+        // checked: the clause's computations, then per fact the branch and the shim's call
+        for (int64:f in 0i64...facts.count) {
+            string:ftext = string_concat(raw strlist_view_of(facts.items[f].text), "");
+            string:msg = string_concat(sym, ": ");
+            msg = string_concat(msg, raw strlist_view_of(facts.items[f].text));
+            string:mname = string_concat("@\"npkx.req.msg.", bare);
+            mname = string_concat(mname, ".");
+            mname = string_concat(mname, int_to_string(nchecked));
+            mname = string_concat(mname, "\"");
+            string:mdef = string_concat(mname, " = internal constant [");
+            mdef = string_concat(mdef, int_to_string(msg.len));
+            mdef = string_concat(mdef, " x i8] ");
+            mdef = string_concat(mdef, raw req_cstring(msg));
+            drop strlist_push(@msgs, mdef);
+            string:bl = string_concat("  br i1 ", raw strlist_view_of(facts.items[f].ok));
+            bl = string_concat(bl, ", label %c");
+            bl = string_concat(bl, int_to_string(nchecked + 1i64));
+            bl = string_concat(bl, ", label %f");
+            bl = string_concat(bl, int_to_string(nchecked));
+            drop smtbuf_line(@e.lines, bl);
+            drop smtbuf_line(@e.lines, string_concat(string_concat("f", int_to_string(nchecked)), ":"));
+            string:cl = string_concat("  call void @npkx_assumption(ptr ", mname);
+            cl = string_concat(cl, ", i64 ");
+            cl = string_concat(cl, int_to_string(msg.len));
+            cl = string_concat(cl, ")");
+            drop smtbuf_line(@e.lines, cl);
+            drop smtbuf_line(@e.lines, string_concat("  br label %c", int_to_string(nchecked + 1i64)));
+            drop smtbuf_line(@e.lines, string_concat(string_concat("c", int_to_string(nchecked + 1i64)), ":"));
+            nchecked = nchecked + 1i64;
+            drop list_push(@g.clauses, ReqClause{ symbol: raw text_copy(sym), text: move(ftext), status: "checked", reason: "" });
+        }
+        nreg = e.next;
+        string:ctext = raw smtbuf_text(move(e.lines));
+        if (ctext.len > 1i64) { drop smtbuf_line(@fb, raw text_slice(ctext, 0i64, ctext.len - 1i64)); }
+        c = s.nodes.items[c].next;
+    }
+    if (nchecked == 0i64) { pass NIL; }
+    // the define's parameter list, verbatim, for the header and the call
+    string:plist = "";
+    for (int64:p in 0i64...ft.fns.items[fi].params.count) {
+        if (p > 0i64) { plist = string_concat(plist, ", "); }
+        plist = string_concat(plist, raw strlist_view(ft.fns.items[fi].param_tys, p));
+        plist = string_concat(plist, " ");
+        plist = string_concat(plist, raw strlist_view(ft.fns.items[fi].params, p));
+    }
+    for (int64:m in 0i64...msgs.count) { drop smtbuf_line(ir, raw strlist_view(msgs, m)); }
+    string:head = string_concat("define internal void @\"npkx.req.", bare);
+    head = string_concat(head, "\"(");
+    head = string_concat(head, plist);
+    head = string_concat(head, ") {");
+    drop smtbuf_line(ir, head);
+    drop smtbuf_line(ir, "entry:");
+    string:body = raw smtbuf_text(move(fb));
+    if (body.len > 1i64) { drop smtbuf_line(ir, raw text_slice(body, 0i64, body.len - 1i64)); }
+    drop smtbuf_line(ir, "  ret void");
+    drop smtbuf_line(ir, "}");
+    string:call = string_concat("  call void @\"npkx.req.", bare);
+    call = string_concat(call, "\"(");
+    call = string_concat(call, plist);
+    call = string_concat(call, ")");
+    drop strlist_push(@g.syms, sym);
+    drop strlist_push(@g.calls, call);
+    pass NIL;
+};
+
+// The first clause of `sec` with head `name`, or -1.
+func:req_find_clause = int64(Sxs->:s, int64:sec, string:name) never fails {
+    int64:c = s.nodes.items[sec].first;
+    while (c >= 0i64) {
+        if ((raw sx_is_list(s, c)) && (raw text_eq(raw sx_head(s, c), name))) { pass c; }
+        c = s.nodes.items[c].next;
+    }
+    pass (0i64 - 1i64);
+};
+
+// How many facts `req_range_facts` records for the first `n` ranges of a
+// clause whose objects are the first `nobj`: each range one in-space fact
+// and one pair fact per earlier object.
+func:req_facts_before = int64(int64:n, int64:nobj) never fails {
+    int64:total = 0i64;
+    for (int64:i in 0i64...n) {
+        int64:kmax = i;
+        if (i >= nobj) { kmax = nobj; }
+        total = total + 1i64 + kmax;
+    }
+    pass total;
+};
+
+// THE GENERATOR: every eligible section's checker, the call lines, the
+// clauses. `floor` is `runtime/npkrt.ll`'s text (parsed here), `spec` is
+// `runtime/npkrt.spec`'s ("" for none: no checkers).
+pub func:req_generate = ReqGen(string:floor, string:spec) never fails {
+    ReqGen:g = ReqGen{ ir: "", assumptions: "", syms: raw list_init::<string>(32i64), calls: raw list_init::<string>(32i64),
+                       clauses: raw list_init::<ReqClause>(64i64), problems: raw list_init::<string>(2i64) };
+    if (spec.len == 0i64) { pass g; }
+    FloorText:ftv = raw floor_parse(floor);
+    Sxs:s = raw sx_parse(spec);
+    if (!s.ok) { drop strlist_push(@g.problems, string_concat("explore: the spec does not parse: ", s.problem)); pass g; }
+    SmtBuf:ir = raw smtbuf_init();
+    drop smtbuf_line(@ir, "");
+    drop smtbuf_line(@ir, "; --- THE SPEC'S CALLER HYPOTHESES, EXECUTED (1.5.7 step 5; D-302): one checker per section, called at its entry ---");
+    drop smtbuf_line(@ir, "declare void @npkx_assumption(ptr, i64)");
+    drop smtbuf_line(@ir, "@\"npkx.req.zero\" = internal global i128 0, align 16");
+    drop req_walk(@g, @ir, @ftv, @s);
+    g.ir = raw smtbuf_text(move(ir));
+    // `assumptions.txt`: one line per clause, `SYMBOL<TAB>STATUS<TAB>TEXT<TAB>REASON`
+    SmtBuf:b = raw smtbuf_init();
+    for (int64:i in 0i64...g.clauses.count) {
+        string:l = string_concat(raw strlist_view_of(g.clauses.items[i].symbol), "\t");
+        l = string_concat(l, raw strlist_view_of(g.clauses.items[i].status));
+        l = string_concat(l, "\t");
+        l = string_concat(l, raw strlist_view_of(g.clauses.items[i].text));
+        l = string_concat(l, "\t");
+        l = string_concat(l, raw strlist_view_of(g.clauses.items[i].reason));
+        drop smtbuf_line(@b, l);
+    }
+    g.assumptions = raw smtbuf_text(move(b));
+    pass g;
+};
+
+// --- the belt: a counting second reader (X-9) ---------------------------------------------
+//
+// The harness's `explore.check_assumptions` classifies every clause again by
+// the generator's rules and holds `assumptions.txt` to that line for line;
+// this twin COUNTS: the sections the generator must have walked and how many
+// facts each yields, against the rows the generator recorded, and the explored
+// text's shape -- every checked symbol's checker defined and called as the
+// FIRST INSTRUCTION of the symbol, and no such call anywhere else.
+
+// The walk: every eligible section's checker into `ir`, its call and clauses into `g`.
+func:req_walk = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s) never fails {
+    for (int64:r in 0i64...s.roots.count) {
+        int64:root = s.roots.items[r];
+        if (!(raw text_eq(raw sx_head(s, root), "symbol"))) { continue; }
+        string:sym = raw sx_atom(s, raw sx_nth(s, root, 1i64));
+        if (sym.len == 0i64) { continue; }
+        if (!(raw req_section_translated(s, root))) { continue; }
+        bool:assumes = ((raw req_find_clause(s, root, "requires")) >= 0i64) || ((raw req_find_clause(s, root, "objects")) >= 0i64) || ((raw req_find_clause(s, root, "views")) >= 0i64);
+        if (!assumes) { continue; }
+        int64:fi = raw floor_fn_index(ft, sym);
+        if (fi < 0i64) { drop strlist_push(@g.problems, string_concat("explore: a section with caller assumptions names no define of the floor: ", sym)); continue; }
+        drop req_section(g, ir, ft, s, root, sym, fi);
+    }
+    pass NIL;
+};
+
+// The clauses alone, from a parsed floor and spec (TCB.md SS4d's generators, both runners).
+pub func:req_clauses = List<ReqClause>(FloorText->:ft, Sxs->:s) never fails {
+    ReqGen:g = ReqGen{ ir: "", assumptions: "", syms: raw list_init::<string>(32i64), calls: raw list_init::<string>(32i64),
+                       clauses: raw list_init::<ReqClause>(64i64), problems: raw list_init::<string>(2i64) };
+    SmtBuf:ir = raw smtbuf_init();
+    drop req_walk(@g, @ir, ft, s);
+    pass (move(g.clauses));
+};
+
+// The eligible sections of `spec` and each one's fact count: `syms` and `counts`.
+func:req_expected_counts = NIL(Sxs->:s, List<string>->:syms, List<int64>->:counts) never fails {
+    for (int64:r in 0i64...s.roots.count) {
+        int64:root = s.roots.items[r];
+        if (!(raw text_eq(raw sx_head(s, root), "symbol"))) { continue; }
+        string:sym = raw sx_atom(s, raw sx_nth(s, root, 1i64));
+        if (sym.len == 0i64) { continue; }
+        if (!(raw req_section_translated(s, root))) { continue; }
+        int64:total = 0i64;
+        int64:nobj = 0i64;
+        int64:oc = raw req_find_clause(s, root, "objects");
+        if (oc >= 0i64) { nobj = (raw sx_len(s, oc)) - 1i64; }
+        int64:c = s.nodes.items[root].first;
+        while (c >= 0i64) {
+            if (raw sx_is_list(s, c)) {
+                string:h = raw sx_head(s, c);
+                if (raw text_eq(h, "requires")) { total = total + 1i64; }
+                if (raw text_eq(h, "objects")) { total = total + (raw req_facts_before(nobj, nobj)); }
+                if (raw text_eq(h, "views")) {
+                    int64:nv = (raw sx_len(s, c)) - 1i64;
+                    total = total + nv + (nv * nobj);
+                }
+            }
+            c = s.nodes.items[c].next;
+        }
+        if (total == 0i64) { continue; }
+        drop strlist_push(syms, sym);
+        drop list_push(counts, total);
+    }
+    pass NIL;
+};
+
+pub func:explore_assumptions = List<string>(string:spec, string:explored, string:assumptions, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    Sxs:s = raw sx_parse(spec);
+    if (!s.ok) { drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: the spec does not parse: "), s.problem)); pass fl; }
+    List<string>:syms = raw list_init::<string>(32i64);
+    List<int64>:counts = raw list_init::<int64>(32i64);
+    drop req_expected_counts(@s, @syms, @counts);
+    // the rows: per symbol, how many, and whether any is checked
+    List<string>:rows = raw text_lines(assumptions);
+    List<string>:row_syms = raw list_init::<string>(32i64);
+    List<int64>:row_counts = raw list_init::<int64>(32i64);
+    List<int64>:row_checked = raw list_init::<int64>(32i64);
+    for (int64:i in 0i64...rows.count) {
+        string:row = raw strlist_view(rows, i);
+        if (row.len == 0i64) { continue; }
+        int64:t1 = raw text_find_byte(row, 9u8, 0i64);
+        if (t1 < 0i64) { drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: a row without its fields: "), raw text_head(row, 80i64))); pass fl; }
+        int64:t2 = raw text_find_byte(row, 9u8, t1 + 1i64);
+        if (t2 < 0i64) { drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: a row without its fields: "), raw text_head(row, 80i64))); pass fl; }
+        string:rsym = raw text_slice(row, 0i64, t1);
+        string:status = raw text_slice(row, t1 + 1i64, t2);
+        bool:is_checked = raw text_eq(status, "checked");
+        if (!(is_checked || (raw text_eq(status, "listed")))) {
+            drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: a status that is neither checked nor listed: "), raw text_head(row, 80i64)));
+            pass fl;
+        }
+        int64:k = raw strlist_index_of(@row_syms, rsym);
+        if (k < 0i64) {
+            drop strlist_push(@row_syms, rsym);
+            drop list_push(@row_counts, 1i64);
+            int64:one = 0i64;
+            if (is_checked) { one = 1i64; }
+            drop list_push(@row_checked, one);
+        } else {
+            row_counts.items[k] = row_counts.items[k] + 1i64;
+            if (is_checked) { row_checked.items[k] = row_checked.items[k] + 1i64; }
+        }
+    }
+    // every eligible section has exactly its facts recorded, and no other symbol has rows
+    for (int64:e in 0i64...syms.count) {
+        string:es = raw strlist_view(syms, e);
+        int64:k2 = raw strlist_index_of(@row_syms, es);
+        int64:got = 0i64;
+        if (k2 >= 0i64) { got = row_counts.items[k2]; }
+        if (got != counts.items[e]) {
+            string:m = string_concat(name, "-assumptions: `");
+            m = string_concat(m, es);
+            m = string_concat(m, "` has ");
+            m = string_concat(m, int_to_string(got));
+            m = string_concat(m, " row(s) in assumptions.txt and ");
+            m = string_concat(m, int_to_string(counts.items[e]));
+            m = string_concat(m, " caller fact(s) in the spec");
+            drop list_push(@fl, move(m));
+        }
+    }
+    for (int64:r2 in 0i64...row_syms.count) {
+        if ((raw strlist_index_of(@syms, raw strlist_view(row_syms, r2))) < 0i64) {
+            drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: assumptions.txt names a symbol with no caller clause in the spec: "), raw strlist_view(row_syms, r2)));
+        }
+    }
+    // the explored text: the checker defined and called first, for every checked symbol
+    List<string>:xl = raw text_lines(explored);
+    List<string>:defined = raw list_init::<string>(32i64);
+    List<string>:first_called = raw list_init::<string>(32i64);
+    int64:elsewhere = 0i64;
+    string:fn = "";
+    bool:first = false;
+    bool:in_header = false;
+    for (int64:li in 0i64...xl.count) {
+        string:code = raw req_code_keep_strings(raw strlist_view(xl, li));
+        if (in_header) { in_header = !(raw text_ends_with(code, "{")); continue; }
+        if (fn.len == 0i64) {
+            if (raw text_starts_with(code, "define ")) {
+                // the name: `@name` or `@"quoted.name"`, up to its `(`; the quotes dropped
+                int64:at = raw text_find_byte(code, 64u8, 0i64);
+                int64:stop = at;
+                while (stop < code.len) { uint8:ch = code.ptr[stop]; if ((ch == 40u8) || (ch == 32u8)) { break; } stop = stop + 1i64; }
+                fn = raw text_replace_all(raw text_slice(code, at, stop), "\"", "");
+                if (raw text_starts_with(fn, "@npkx.req.")) { drop strlist_push(@defined, string_concat("@", raw text_slice(fn, 10i64, fn.len))); }
+                first = true;
+                in_header = !(raw text_ends_with(code, "{"));
+            }
+            continue;
+        }
+        if (raw text_eq(code, "}")) { fn = ""; continue; }
+        if (code.len == 0i64) { continue; }
+        bool:label = (code.ptr[code.len - 1i64] == 58u8) && ((raw text_find_byte(code, 32u8, 0i64)) < 0i64);
+        if (label) { continue; }
+        if (raw text_starts_with(code, "call void @\"npkx.req.")) {
+            if (first) { drop strlist_push(@first_called, fn); } else { elsewhere = elsewhere + 1i64; }
+        }
+        first = false;
+    }
+    for (int64:c2 in 0i64...row_syms.count) {
+        if (row_checked.items[c2] == 0i64) { continue; }
+        string:cs = raw strlist_view(row_syms, c2);
+        if ((raw strlist_index_of(@defined, cs)) < 0i64) {
+            drop strlist_push(@fl, string_concat(string_concat(string_concat(name, "-assumptions: no `@\"npkx.req."), raw text_slice(cs, 1i64, cs.len)), "\"` is defined in the explored floor"));
+        }
+        int64:calls = 0i64;
+        for (int64:f2 in 0i64...first_called.count) { if (raw text_eq(raw strlist_view(first_called, f2), cs)) { calls = calls + 1i64; } }
+        if (calls != 1i64) {
+            string:m3 = string_concat(name, "-assumptions: `");
+            m3 = string_concat(m3, cs);
+            m3 = string_concat(m3, "` has ");
+            m3 = string_concat(m3, int_to_string(calls));
+            m3 = string_concat(m3, " checker call(s) as its first instruction, not one");
+            drop list_push(@fl, move(m3));
+        }
+    }
+    for (int64:f3 in 0i64...first_called.count) {
+        string:fs = raw strlist_view(first_called, f3);
+        int64:k3 = raw strlist_index_of(@row_syms, fs);
+        bool:has_checked = (k3 >= 0i64) && (row_checked.items[k3] > 0i64);
+        if (!has_checked) { drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: `"), string_concat(fs, "` calls a checker and has no checked clause"))); }
+    }
+    if (elsewhere > 0i64) {
+        string:m4 = string_concat(name, "-assumptions: ");
+        m4 = string_concat(m4, int_to_string(elsewhere));
+        m4 = string_concat(m4, " checker call(s) somewhere other than a function's first instruction");
+        drop list_push(@fl, move(m4));
+    }
+    pass fl;
+};
+
+// The stage's sentence (both runners print the same): the counts, then the
+// listed clauses one per line.
+pub func:req_summary = List<string>(string:assumptions) never fails {
+    List<string>:out = raw list_init::<string>(8i64);
+    List<string>:rows = raw text_lines(assumptions);
+    int64:checked = 0i64;
+    List<string>:syms = raw list_init::<string>(32i64);
+    List<string>:listed = raw list_init::<string>(8i64);
+    for (int64:i in 0i64...rows.count) {
+        string:row = raw strlist_view(rows, i);
+        if (row.len == 0i64) { continue; }
+        int64:t1 = raw text_find_byte(row, 9u8, 0i64);
+        int64:t2 = raw text_find_byte(row, 9u8, t1 + 1i64);
+        int64:t3 = raw text_find_byte(row, 9u8, t2 + 1i64);
+        if ((t1 < 0i64) || (t2 < 0i64) || (t3 < 0i64)) { continue; }
+        string:sym = raw text_slice(row, 0i64, t1);
+        if (raw text_eq(raw text_slice(row, t1 + 1i64, t2), "checked")) {
+            checked = checked + 1i64;
+            if ((raw strlist_index_of(@syms, sym)) < 0i64) { drop strlist_push(@syms, sym); }
+        } else {
+            string:l = string_concat(sym, " ");
+            l = string_concat(l, raw text_slice(row, t2 + 1i64, t3));
+            l = string_concat(l, " -- ");
+            l = string_concat(l, raw text_slice(row, t3 + 1i64, row.len));
+            drop list_push(@listed, move(l));
+        }
+    }
+    string:head = string_concat("D-302: ", int_to_string(checked));
+    head = string_concat(head, " caller hypotheses checked at every call of ");
+    head = string_concat(head, int_to_string(syms.count));
+    head = string_concat(head, " symbol(s), ");
+    head = string_concat(head, int_to_string(listed.count));
+    head = string_concat(head, " listed by name");
+    drop list_push(@out, move(head));
+    for (int64:j in 0i64...listed.count) { drop strlist_push(@out, raw strlist_view(listed, j)); }
+    pass out;
+};
+
+// The line's code with its comment cut and its quoted names KEPT (`floor_code_part` blanks them).
+func:req_code_keep_strings = string(string:line) never fails {
+    wild int8->:buf = alloc(line.len + 1i64);
+    int64:n = 0i64;
+    bool:in_str = false;
+    for (int64:i in 0i64...line.len) {
+        uint8:c = line.ptr[i];
+        if (c == 34u8) { in_str = !in_str; }
+        if ((c == 59u8) && (!in_str)) { break; }
+        buf[n] = c =>! int8;
+        n = n + 1i64;
+    }
+    string:out = raw text_trim(string_from_bytes(buf, n));
+    dalloc(buf);
+    pass out;
+};
+
+// The index of `s` in `l`, or -1.
+func:strlist_index_of = int64(List<string>->:l, string:s) never fails {
+    for (int64:i in 0i64...l.count) { if (raw text_eq(raw strlist_view_of(l.items[i]), s)) { pass i; } }
+    pass (0i64 - 1i64);
+};

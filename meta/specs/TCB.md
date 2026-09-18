@@ -461,41 +461,50 @@ it is written in `runtime/npkrt.spec` beside the clause.
 <!-- BEGIN floor-callers -->
 31 sections have rows AND assume something of their caller. For 2 of them every caller is covered -- no
 untranslated floor caller, and the symbol is not exported; 18 have a floor caller no row covers; 15 are
-EXPORTED, so emitted code can call them and nothing proves the assumption there.
+EXPORTED, so emitted code can call them and nothing proves the assumption there. Under the explorer (1.5.7
+step 5, D-302) 236 of the 240 hypotheses these sections state are EXECUTED at every call of every explored
+schedule by a generated entry checker, untranslated floor callers and emitted code alike; the 4 it cannot
+evaluate are listed by name below the table.
 
-| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |
-|---|---|---|---|---|---|
-| `@memcpy` | requires | -- | `@npk_to_cstring` `@npk_read_file` `@npk_read_stdin` `@memmove` `@npk_string_concat` | `@npk_ch_open` `@npk_ch_reclaim` `@npk_ch_recv_wait` `@npk_ch_send_wait` `@npk_ch_try_send` `@npk_ch_try_recv` `@npk_ralloc` | yes |
-| `@memset` | requires | -- | -- | `@npk_buffer_new` | yes |
-| `@npk_zero` | requires | -- | -- | `@npk_ch_open` `@npk_thread_start` | no |
-| `@npk_string_equals` | requires | -- | -- | -- | yes |
-| `@memmove` | requires | -- | -- | -- | yes |
-| `@npk_rq_push` | requires objects | -- | -- | `@npk_thread_entry` `@npk_sl_wake_due` | yes |
-| `@npk_rq_pop` | objects | -- | -- | `@npk_step` | yes |
-| `@npk_ch_wait_link` | requires objects | -- | -- | `@npk_mutex_acquire_wait` `@npk_rw_read_wait` `@npk_rw_write_wait` `@npk_cv_begin` `@npk_barrier_poll` `@npk_ch_recv_wait` `@npk_ch_send_wait` | no |
-| `@npk_ch_wait_unlink` | requires objects | -- | -- | `@npk_mutex_acquire_wait` `@npk_rw_read_wait` `@npk_rw_write_wait` `@npk_cv_done` `@npk_barrier_poll` `@npk_barrier_cancel` `@npk_ch_recv_wait` `@npk_ch_send_wait` | no |
-| `@npk_hs_put_str` | requires | -- | -- | `@npk_hs_report` | no |
-| `@npk_arena_at` | requires objects | -- | `@npk_arena_free` | -- | yes |
-| `@npk_arena_free` | requires objects | -- | -- | -- | yes |
-| `@npk_arena_reset` | requires objects | -- | -- | -- | yes |
-| `@npk_frame_bucket` | requires | -- | -- | `@npk_frame_alloc` `@npk_frame_free` | no |
-| `@npk_frame_drain` | objects | -- | -- | -- | yes |
-| `@npk_chtab_find` | requires | `@npk_small_check` | -- | -- | no |
-| `@npk_lg_find` | requires | -- | -- | `@npk_ralloc` `@npk_dalloc` | no |
-| `@npk_lg_remove` | requires objects | -- | -- | `@npk_dalloc` | no |
-| `@npk_ch_push` | requires objects | -- | `@npk_small_free` | `@npk_small_alloc` | no |
-| `@npk_ch_unlink` | requires objects | -- | `@npk_small_free` | `@npk_small_alloc` | no |
-| `@npk_small_free` | requires objects | -- | -- | `@npk_dalloc` | no |
-| `@npk_hs_put_dec` | requires objects | -- | -- | `@npk_hs_report` | no |
-| `@npk_chunk_guard_check` | requires | `@npk_small_check` | -- | -- | no |
-| `@npk_small_check` | requires | `@npk_small_free` | -- | `@npk_ralloc` | no |
-| `@npk_large_check` | requires | -- | -- | `@npk_ralloc` `@npk_dalloc` | no |
-| `@npk_wildx_check` | requires | -- | -- | `@npk_wildx_seal` `@npk_wildx_free` | no |
-| `@npk_read` | objects | -- | -- | -- | yes |
-| `@npk_read_file` | objects | -- | -- | -- | yes |
-| `@npk_to_cstring` | requires objects | -- | -- | -- | yes |
-| `@npk_string_concat` | requires views | -- | -- | -- | yes |
-| `@npk_string_slice` | requires objects | -- | -- | -- | yes |
+| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code | executed at every explored call |
+|---|---|---|---|---|---|---|
+| `@memcpy` | requires | -- | `@npk_to_cstring` `@npk_read_file` `@npk_read_stdin` `@memmove` `@npk_string_concat` | `@npk_ch_open` `@npk_ch_reclaim` `@npk_ch_recv_wait` `@npk_ch_send_wait` `@npk_ch_try_send` `@npk_ch_try_recv` `@npk_ralloc` | yes | 3 of 3 |
+| `@memset` | requires | -- | -- | `@npk_buffer_new` | yes | 1 of 1 |
+| `@npk_zero` | requires | -- | -- | `@npk_ch_open` `@npk_thread_start` | no | 1 of 1 |
+| `@npk_string_equals` | requires | -- | -- | -- | yes | 2 of 2 |
+| `@memmove` | requires | -- | -- | -- | yes | 2 of 2 |
+| `@npk_rq_push` | requires objects | -- | -- | `@npk_thread_entry` `@npk_sl_wake_due` | yes | 7 of 7 |
+| `@npk_rq_pop` | objects | -- | -- | `@npk_step` | yes | 3 of 3 |
+| `@npk_ch_wait_link` | requires objects | -- | -- | `@npk_mutex_acquire_wait` `@npk_rw_read_wait` `@npk_rw_write_wait` `@npk_cv_begin` `@npk_barrier_poll` `@npk_ch_recv_wait` `@npk_ch_send_wait` | no | 7 of 7 |
+| `@npk_ch_wait_unlink` | requires objects | -- | -- | `@npk_mutex_acquire_wait` `@npk_rw_read_wait` `@npk_rw_write_wait` `@npk_cv_done` `@npk_barrier_poll` `@npk_barrier_cancel` `@npk_ch_recv_wait` `@npk_ch_send_wait` | no | 68 of 68 |
+| `@npk_hs_put_str` | requires | -- | -- | `@npk_hs_report` | no | 3 of 3 |
+| `@npk_arena_at` | requires objects | -- | `@npk_arena_free` | -- | yes | 5 of 5 |
+| `@npk_arena_free` | requires objects | -- | -- | -- | yes | 7 of 7 |
+| `@npk_arena_reset` | requires objects | -- | -- | -- | yes | 5 of 5 |
+| `@npk_frame_bucket` | requires | -- | -- | `@npk_frame_alloc` `@npk_frame_free` | no | 1 of 1 |
+| `@npk_frame_drain` | objects | -- | -- | -- | yes | 1 of 1 |
+| `@npk_chtab_find` | requires | `@npk_small_check` | -- | -- | no | 2 of 3 |
+| `@npk_lg_find` | requires | -- | -- | `@npk_ralloc` `@npk_dalloc` | no | 2 of 3 |
+| `@npk_lg_remove` | requires objects | -- | -- | `@npk_dalloc` | no | 8 of 8 |
+| `@npk_ch_push` | requires objects | -- | `@npk_small_free` | `@npk_small_alloc` | no | 7 of 7 |
+| `@npk_ch_unlink` | requires objects | -- | `@npk_small_free` | `@npk_small_alloc` | no | 11 of 11 |
+| `@npk_small_free` | requires objects | -- | -- | `@npk_dalloc` | no | 70 of 71 |
+| `@npk_hs_put_dec` | requires objects | -- | -- | `@npk_hs_report` | no | 2 of 2 |
+| `@npk_chunk_guard_check` | requires | `@npk_small_check` | -- | -- | no | 2 of 2 |
+| `@npk_small_check` | requires | `@npk_small_free` | -- | `@npk_ralloc` | no | 3 of 4 |
+| `@npk_large_check` | requires | -- | -- | `@npk_ralloc` `@npk_dalloc` | no | 1 of 1 |
+| `@npk_wildx_check` | requires | -- | -- | `@npk_wildx_seal` `@npk_wildx_free` | no | 1 of 1 |
+| `@npk_read` | objects | -- | -- | -- | yes | 1 of 1 |
+| `@npk_read_file` | objects | -- | -- | -- | yes | 1 of 1 |
+| `@npk_to_cstring` | requires objects | -- | -- | -- | yes | 2 of 2 |
+| `@npk_string_concat` | requires views | -- | -- | -- | yes | 5 of 5 |
+| `@npk_string_slice` | requires objects | -- | -- | -- | yes | 2 of 2 |
+
+Listed, not checked -- a clause the entry checker cannot evaluate over the entry state:
+- `@npk_chtab_find`: `(requires (=> (and (<= 0 j) (< j k) (< k (load64 mem npk_chtab_len))) (< (load64 mem (+ (load64 mem npk_chtab) (* 8 j))) (load64 mem (+ (load64 mem npk_chtab) (* 8 k))))))` -- names `j`, which is not the entry state
+- `@npk_lg_find`: `(requires (=> (and (<= 0 j) (< j k) (< k (load64 mem npk_lgtab_len))) (< (load64 mem (+ (load64 mem npk_lgtab) (* 32 j))) (load64 mem (+ (load64 mem npk_lgtab) (* 32 k))))))` -- names `j`, which is not the entry state
+- `@npk_small_free`: `(requires (=> (and (<= 0 j) (< j k) (< k (load64 mem npk_chtab_len))) (< (load64 mem (+ (load64 mem npk_chtab) (* 8 j))) (load64 mem (+ (load64 mem npk_chtab) (* 8 k))))))` -- names `j`, which is not the entry state
+- `@npk_small_check`: `(requires (=> (and (<= 0 j) (< j k) (< k (load64 mem npk_chtab_len))) (< (load64 mem (+ (load64 mem npk_chtab) (* 8 j))) (load64 mem (+ (load64 mem npk_chtab) (* 8 k))))))` -- names `j`, which is not the entry state
 <!-- END floor-callers -->
 
 ## 5. What a reader must accept

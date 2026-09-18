@@ -44,6 +44,18 @@ oracle then reported a lateness the kernel never has. Both shims return `-110` b
 at or before virtual now (a relative timeout of zero included); the amendment is the second block marked in
 `npkx.c`, and the sweep was re-run after it.
 
+**Amended a third and a fourth time, at 1.5.7 step 4 (X-15, X-16) and step 5 (D-302).** Step 4: the four directed
+sites (`NPKX_PREEMPT1..4`: the arriving thread demoted below every other at every arrival) and the jittered
+fairness bound (0..63 further steps drawn from the seed's stream when a thread reaches 4096 — a fixed bound
+resonated with a period-three thread). Step 5: `npkx_assumption(msg, len)`, the verdict `ASSUMPTION <symbol>:
+<clause>` the explored floor's generated entry checkers report when a caller hypothesis of the spec is false at a
+call; the checkers are in the explored floor both shims link, so the reference prints the same verdict at the
+same step. Step 5 also brought X-19, the settled end: `npkx_spawned(tid, ctid)` keeps the clone's CHILD_CLEARTID
+word per slot, an ending thread queues it, and the next holder of the baton waits for the kernel's clear before it
+steps — the D-303 sweep after the checkers had found `shared_arena_spawn` at 784 or 787 steps in either shim, a race
+between the kernel's clear and the joiner's read of the word (`transform.py` hands the word too). Each block is
+marked in `npkx.c`; the sweep was re-run after each.
+
 **Running it by hand** (a measurement, never a verdict):
 
 ```

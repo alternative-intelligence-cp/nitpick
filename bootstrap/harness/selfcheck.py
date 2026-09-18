@@ -518,7 +518,7 @@ def main():
                    "  call void @npkx_prespawn()\n"
                    "  %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 0, i64 0,\n"
                    "                               ptr @npk_thread_entry, i64 0)\n"
-                   "  call void @npkx_spawned(i64 %r)\n"
+                   "  call void @npkx_spawned(i64 %r, i64 0)\n"
                    "  ret i64 %r\n}\n"
                    "declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)\n"
                    "\n"
@@ -526,7 +526,7 @@ def main():
                    "declare void @npkx_point(i32)\n"
                    "declare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)\n"
                    "declare void @npkx_prespawn()\n"
-                   "declare void @npkx_spawned(i64)\n"
+                   "declare void @npkx_spawned(i64, i64)\n"
                    "declare void @npkx_begin()\n"
                    "declare void @npkx_end()\n")
     xp_sites = ("0\t@npk_lock\tatomic\t%c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst\n"
@@ -699,9 +699,11 @@ def main():
         with open(os.path.join(ROOT, "runtime", "explore", "controls", "store-release.ctl"), encoding="utf-8") as fh:
             with open(xc_found_path, "w", encoding="utf-8") as out:
                 out.write(fh.read().replace("within: 20", "within: 3"))
+        xc_spec_path = os.path.join(ROOT, "runtime", "explore", "controls", "unconditional-apartness.ctl")
         for name, cpath, must_fail, why in (
                 ("explore-control-blind", xc_blind_path, True, "a control the explorer never reaches the verdict of must fail by name"),
-                ("explore-control-found", xc_found_path, False, "the committed `store-release` control is found within three seeds")):
+                ("explore-control-found", xc_found_path, False, "the committed `store-release` control is found within three seeds"),
+                ("explore-control-spec", xc_spec_path, False, "the committed SPEC control plants a false hypothesis and the entry checker reports it (D-302)")):
             if r.returncode != 0:
                 fails, seed = ["llc rejected the shim: %s" % r.stderr[:100]], 0
             else:
@@ -714,6 +716,35 @@ def main():
             print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
             if not ok:
                 print("      the mechanism accepted a blind control; it should not have" if must_fail else "      the mechanism said: %s" % fails[0][:300])
+    # THE SPEC'S CALLER HYPOTHESES, EXECUTED (1.5.7 step 5, D-302): the real floor and spec through the
+    # built tool; the second reader agrees with the tool's assumptions.txt and finds every checker at its
+    # symbol's first instruction (clean), and a row whose status is flipped or a call that is gone fails by
+    # name (the two tampers).
+    if xtool and os.path.exists(str(xtool)):
+        xa_dir = os.path.join(tmp, "xa")
+        r = subprocess.run([str(xtool), ROOT, "--emit", xa_dir], capture_output=True, text=True, timeout=300)
+        xa_ok = r.returncode == 0
+        xa_why = ""
+        if xa_ok:
+            with open(os.path.join(ROOT, "runtime", "npkrt.spec"), encoding="utf-8") as fh:
+                xa_spec = fh.read()
+            with open(os.path.join(xa_dir, "npkrt.explore.ll"), encoding="utf-8") as fh:
+                xa_xt = fh.read()
+            with open(os.path.join(xa_dir, "assumptions.txt"), encoding="utf-8") as fh:
+                xa_at = fh.read()
+            xa_clean = explore.check_assumptions(xo_floor, xa_spec, xa_xt, xa_at)
+            xa_flip = explore.check_assumptions(xo_floor, xa_spec, xa_xt, xa_at.replace("\tchecked\t", "\tlisted\t", 1))
+            xa_gone = explore.check_assumptions(xo_floor, xa_spec, xa_xt.replace('  call void @"npkx.req.memcpy"', "  ; gone", 1), xa_at)
+            xa_ok = (not xa_clean and len(xa_flip) >= 1 and "explore-assumptions" in xa_flip[0]
+                     and any("`@memcpy` has 0 checker call(s)" in f for f in xa_gone))
+            xa_why = "clean %r flip %r gone %r" % (xa_clean[:1], xa_flip[:1], xa_gone[:1])
+        else:
+            xa_why = (r.stdout + r.stderr)[:200]
+        if not xa_ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % ("explore-assumptions", "ok" if xa_ok else "BAD", "the entry checkers' rows agree with the second reader, and a flipped row or a missing call fails by name"))
+        if not xa_ok:
+            print("      %s" % xa_why)
     # WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator on a planted floor whose
     # answer is known by reading it -- `@callee` assumes something of its caller; `@covered` is translated
     # and INLINES it; `@bare` has no section, so nothing covers its call; `@callee` is `internal`, so
@@ -726,10 +757,13 @@ def main():
     cl_spec = "(symbol @callee (requires (< a 10)) (ensures (= result a)))\n(symbol @covered (ensures (= result a)))\n"
     cl_want = ("1 sections have rows AND assume something of their caller. For 0 of them every caller is covered -- no\n"
                "untranslated floor caller, and the symbol is not exported; 1 have a floor caller no row covers; 0 are\n"
-               "EXPORTED, so emitted code can call them and nothing proves the assumption there.\n\n"
-               "| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |\n"
-               "|---|---|---|---|---|---|\n"
-               "| `@callee` | requires | -- | `@covered` | `@bare` | no |")
+               "EXPORTED, so emitted code can call them and nothing proves the assumption there. Under the explorer (1.5.7\n"
+               "step 5, D-302) 1 of the 1 hypotheses these sections state are EXECUTED at every call of every explored\n"
+               "schedule by a generated entry checker, untranslated floor callers and emitted code alike; the 0 it cannot\n"
+               "evaluate are listed by name below the table.\n\n"
+               "| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code | executed at every explored call |\n"
+               "|---|---|---|---|---|---|---|\n"
+               "| `@callee` | requires | -- | `@covered` | `@bare` | no | 1 of 1 |")
     cl_got = floor.callers_region(cl_floor, cl_spec)
     cl_doc = "x\n<!-- BEGIN floor-callers -->\n%s\n<!-- END floor-callers -->\ny\n"
     for name, okc, why in (

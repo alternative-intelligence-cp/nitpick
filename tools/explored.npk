@@ -59,7 +59,7 @@ func:main = int32(cstring[]:argv) {
             if (fc.is_error) { drop say("explore: runtime/npkrt.ll: not a path"); exit 1i32; }
             Result<string>:ftx = read_file(fc.value);
             if (ftx.is_error) { drop say("explore: runtime/npkrt.ll cannot be read"); exit 1i32; }
-            Explored:x = raw explore_transform(ftx.value);
+            Explored:x = raw explore_transform(ftx.value, raw spec_text_of(root));
             for (int64:i in 0i64...x.problems.count) { drop say(raw strlist_view(x.problems, i)); }
             if (x.problems.count > 0i64) { drop say(string_concat(int_to_string(x.problems.count), " finding(s)")); exit 1i32; }
             Result<NIL>:d = ensure_dir(dir);
@@ -68,12 +68,16 @@ func:main = int32(cstring[]:argv) {
             if (w1.is_error) { drop say("explore: npkrt.explore.ll could not be written"); exit 1i32; }
             Result<NIL>:w2 = write_text(raw path_join(dir, "sites.txt"), x.sites);
             if (w2.is_error) { drop say("explore: sites.txt could not be written"); exit 1i32; }
+            Result<NIL>:w3 = write_text(raw path_join(dir, "assumptions.txt"), x.assumptions);
+            if (w3.is_error) { drop say("explore: assumptions.txt could not be written"); exit 1i32; }
             string:m = string_concat("explore: the explored floor written to ", dir);
             m = string_concat(m, " -- ");
             m = string_concat(m, int_to_string(x.points));
             m = string_concat(m, " point(s), ");
             m = string_concat(m, int_to_string(x.routed));
-            m = string_concat(m, " routed call(s)");
+            m = string_concat(m, " routed call(s), ");
+            m = string_concat(m, int_to_string(x.checkers));
+            m = string_concat(m, " entry checker(s)");
             drop say(m);
             exit 0i32;
         }

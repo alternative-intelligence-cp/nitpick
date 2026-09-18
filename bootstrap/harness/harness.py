@@ -72,6 +72,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # harness does reaches it.
 
 RUNTIME_LL = os.path.join(ROOT, "runtime", "npkrt.ll")
+SPEC_PATH = os.path.join(ROOT, "runtime", "npkrt.spec")
 
 # --- THE SWITCH (D-203/D-205, 1.4.6) -----------------------------------------
 #
@@ -3799,6 +3800,20 @@ def _explored_objects(tmp, tools):
     fails = explore.check_totality(ft, xt) + explore.check_sites(xt, st)
     if fails:
         return None, None, fails, ""
+    # THE SPEC'S CALLER HYPOTHESES (step 5, D-302): the tool's assumptions.txt held to the second
+    # reader, and every checked symbol's checker called first thing at its entry
+    with open(SPEC_PATH, encoding="utf-8") as fh:
+        spec_text = fh.read()
+    try:
+        with open(os.path.join(xdir, "assumptions.txt"), encoding="utf-8") as fh:
+            at = fh.read()
+    except OSError as e:
+        return None, None, ["explore: the transformer wrote no assumptions.txt: %s" % e], ""
+    fails = explore.check_assumptions(ft, spec_text, xt, at)
+    if fails:
+        return None, None, fails, ""
+    facts = explore.assumption_facts(ft, spec_text)
+    d302, listed = explore.assumption_summary(facts)
     xfloor_o = os.path.join(xdir, "npkrt.explore.o")
     r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(xdir, "npkrt.explore.ll"), "-o", xfloor_o],
                        capture_output=True, text=True)
@@ -3807,7 +3822,8 @@ def _explored_objects(tmp, tools):
     n = explore.census(ft)
     points = sum(1 for l in xt.split("\n") if "call void @npkx_point(i32 " in l)
     summary = ("the explored floor: %d point(s) and %d routed call(s) over the floor's %d step line(s), no step escapes; "
-               "assembles under the pinned llc" % (points, n - points, n))
+               "assembles under the pinned llc; %s" % (points, n - points, n, d302))
+    _EXPLORED_LISTED[tmp] = listed
     # THE SHIM (step 1): hand-written IR under the floor's own belts, assembled
     shim = os.path.join(ROOT, "runtime", "explore", "npkx.ll")
     if not os.path.exists(shim):
@@ -3831,13 +3847,19 @@ def _explored_objects(tmp, tools):
     return xfloor_o, shim_o, [], summary + "; the shim under the floor's belts, its oracle's offsets the floor's, assembled"
 
 
+_EXPLORED_LISTED = {}
+
+
 def check_explore_totality(tmp, tools):
     """The whole-tree check's face of `explored_objects`: its findings, or the
-    `explore` line."""
+    `explore` line -- and, under it, every caller hypothesis the checkers
+    cannot evaluate, BY NAME (D-302: never skipped in silence)."""
     _, _, fails, summary = explored_objects(tmp, tools)
     if fails:
         return fails
     print("  %-11s %s" % ("explore", summary))
+    for l in _EXPLORED_LISTED.get(tmp, []):
+        print("  %-11s   listed, not checked: %s" % ("explore", l))
     return []
 
 
@@ -4014,10 +4036,18 @@ def run_explore_control(tmp, path, name, shim_o):
     patched, why = explore.apply_control(ft, ctl, name)
     if patched is None:
         return [why], 0
+    # the spec beside the floor: patched by a spec control, else the real one, so the entry checkers ride
+    with open(SPEC_PATH, encoding="utf-8") as fh:
+        spec_text = fh.read()
+    pspec, why = explore.apply_control(spec_text, ctl, name, "spec_subs")
+    if pspec is None:
+        return [why], 0
     croot = os.path.join(tmp, "explore_ctl", os.path.basename(path)[:-4].replace("-", "_"))
     os.makedirs(os.path.join(croot, "runtime"), exist_ok=True)
     with open(os.path.join(croot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:
         fh.write(patched)
+    with open(os.path.join(croot, "runtime", "npkrt.spec"), "w", encoding="utf-8") as fh:
+        fh.write(pspec)
     tool = os.path.join(tmp, "explored")
     cdir = os.path.join(croot, "out")
     r = subprocess.run([tool, croot, "--emit", cdir], capture_output=True, text=True, timeout=300)

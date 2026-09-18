@@ -220,23 +220,26 @@ def read_control(text, name="explore"):
     step wide that blind PCT cannot land on; the runners resolve each against
     the patched floor's sites.txt (exactly one `atomic` row, or the control is
     refused by name). (control, reason)."""
-    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "preempt": []}
+    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "spec_subs": [], "preempt": []}
     block = None
+    target = "subs"
     for raw in text.split("\n"):
         if raw.startswith(";"):
             continue
-        if raw == "old:":
-            ctl["subs"].append(([], []))
+        if raw in ("old:", "spec-old:"):
+            target = "subs" if raw == "old:" else "spec_subs"
+            ctl[target].append(([], []))
             block = 0
             continue
-        if raw == "new:":
-            if not ctl["subs"] or ctl["subs"][-1][1]:
-                return None, "%s: a `new:` with no `old:` before it" % name
+        if raw in ("new:", "spec-new:"):
+            want = "subs" if raw == "new:" else "spec_subs"
+            if want != target or not ctl[target] or ctl[target][-1][1]:
+                return None, "%s: a `%s` with no `%s` before it" % (name, raw, "old:" if raw == "new:" else "spec-old:")
             block = 1
             continue
         if block is not None and (raw.startswith("  ") or raw == ""):
             if raw:
-                ctl["subs"][-1][block].append(raw)
+                ctl[target][-1][block].append(raw)
             continue
         block = None
         if not raw.strip():
@@ -262,11 +265,14 @@ def read_control(text, name="explore"):
             return None, "%s: no `%s:`" % (name, key)
     if ctl["within"] < 1:
         return None, "%s: `within:` must be at least 1" % name
-    if not ctl["subs"]:
-        return None, "%s: no `old:`/`new:` pair" % name
+    if not ctl["subs"] and not ctl["spec_subs"]:
+        return None, "%s: no `old:`/`new:` pair and no `spec-old:`/`spec-new:` pair" % name
     for i, (old, new) in enumerate(ctl["subs"]):
         if not old or not new:
             return None, "%s: `old:` and `new:` must each hold at least one line (pair %d)" % (name, i + 1)
+    for i, (old, new) in enumerate(ctl["spec_subs"]):
+        if not old or not new:
+            return None, "%s: `spec-old:` and `spec-new:` must each hold at least one line (pair %d)" % (name, i + 1)
     if len(ctl["preempt"]) > 4:
         return None, "%s: at most four `preempt-at:` sites (the shim holds four)" % name
     v = ctl["verdict"]
@@ -279,17 +285,21 @@ def read_control(text, name="explore"):
     return ctl, ""
 
 
-def apply_control(floor_text, ctl, name="explore"):
-    """The floor with each pair's `old` lines replaced by its `new` lines, in
-    order -- each exactly one occurrence in the text as it stands, or the
-    control is refused by name."""
+def apply_control(floor_text, ctl, name="explore", which="subs"):
+    """The floor (`subs`) or the spec (`spec_subs`) with each pair's `old`
+    lines replaced by its `new` lines, in order -- each exactly one occurrence
+    in the text as it stands, or the control is refused by name. A SPEC
+    control (step 5, D-302) plants a FALSE caller hypothesis; its verdict is
+    the shim's `ASSUMPTION`."""
     text = floor_text
-    for i, (old_lines, new_lines) in enumerate(ctl["subs"]):
+    what = "runtime/npkrt.ll" if which == "subs" else "runtime/npkrt.spec"
+    key = "old" if which == "subs" else "spec-old"
+    for i, (old_lines, new_lines) in enumerate(ctl[which]):
         old = "\n".join(old_lines) + "\n"
         n = text.count(old)
         if n != 1:
-            return None, ("%s: explore-control-unmatched: the control's `old` lines (pair %d) occur %d time(s) in runtime/npkrt.ll, not once"
-                          % (name, i + 1, n))
+            return None, ("%s: explore-control-unmatched: the control's `%s` lines (pair %d) occur %d time(s) in %s, not once"
+                          % (name, key, i + 1, n, what))
         text = text.replace(old, "\n".join(new_lines) + "\n")
     return text, ""
 
@@ -327,3 +337,286 @@ def resolve_sites(ctl, sites_text, name="explore"):
             continue
         nums.append(int(hits[0][0]))
     return nums, fails
+
+
+# --- step 5: the spec's caller hypotheses, executed (D-302) -----------------------------
+#
+# `npkg/explore_req.npk` is the ONE generator of the entry checkers; this is its
+# counting second reader (X-9): it enumerates the same clauses and classifies each
+# by the same rules -- checked when every name is the entry state (a parameter or
+# an aggregate parameter's leaf, `exec`/`tls`, a global's address) and every form
+# is one of the entry vocabulary; listed otherwise -- and holds the tool's
+# `assumptions.txt` to that, line for line, and the explored text to one call of
+# each checker at its symbol's entry.
+
+_ENTRY_FORMS_VAL = ("+", "-", "*", "mod", "ite", "load8", "load16", "load32", "load64", "and64", "or64", "xor64", "s8", "s32", "s64")
+_ENTRY_FORMS_BOOL = ("and", "or", "not", "=>", "<", "<=", ">", ">=", "=")
+
+
+def _sx_text(x):
+    """The S-expression's canonical text: one space, no newlines."""
+    if isinstance(x, tuple):
+        return x[1] if x[0] == "atom" else '"%s"' % x[1]
+    return "(" + " ".join(_sx_text(i) for i in x) + ")"
+
+
+def _sx_is_numeral(x):
+    a = floor._atom(x)
+    return a is not None and a.isdigit()
+
+
+def _is_pow2(numeral):
+    v = int(numeral)
+    return 0 < v <= (1 << 64) and (v & (v - 1)) == 0
+
+
+def _unevaluable(x, names, want_bool):
+    """The reason `x` is not an entry-state expression, or None. `names` are the
+    names the checker can materialise; `want_bool` whether a proposition is expected."""
+    a = floor._atom(x)
+    if a is not None:
+        if want_bool:
+            if a in ("true", "false"):
+                return None
+            return "a bare name where a proposition was expected: %s" % a
+        if a.isdigit():
+            return None
+        if a in names:
+            return None
+        return "names `%s`, which is not the entry state" % a
+    if isinstance(x, tuple):
+        return "a string where %s was expected" % ("a proposition" if want_bool else "an integer")
+    if not x:
+        return "an empty %s" % ("proposition" if want_bool else "expression")
+    h = floor._atom(x[0])
+    n = len(x)
+    if want_bool:
+        if h in ("and", "or"):
+            if n < 2:
+                return "a form the checker cannot evaluate: %s" % _sx_text(x)
+            for i in x[1:]:
+                r = _unevaluable(i, names, True)
+                if r:
+                    return r
+            return None
+        if h == "not":
+            if n != 2:
+                return "a form the checker cannot evaluate: %s" % _sx_text(x)
+            return _unevaluable(x[1], names, True)
+        if h == "=>":
+            if n != 3:
+                return "a form the checker cannot evaluate: %s" % _sx_text(x)
+            return _unevaluable(x[1], names, True) or _unevaluable(x[2], names, True)
+        if h in ("<", "<=", ">", ">=", "="):
+            if n != 3:
+                return "a comparison of other than two operands: %s" % _sx_text(x)
+            return _unevaluable(x[1], names, False) or _unevaluable(x[2], names, False)
+        return "a form the checker cannot evaluate: %s" % _sx_text(x)
+    if h in ("+", "*"):
+        if n < 3:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        for i in x[1:]:
+            r = _unevaluable(i, names, False)
+            if r:
+                return r
+        return None
+    if h == "-":
+        if n == 2:
+            return _unevaluable(x[1], names, False)
+        if n != 3:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        return _unevaluable(x[1], names, False) or _unevaluable(x[2], names, False)
+    if h == "mod":
+        if n != 3:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        if not (_sx_is_numeral(x[2]) and _is_pow2(floor._atom(x[2]))):
+            return "a `mod` by other than a power of two: %s" % _sx_text(x)
+        return _unevaluable(x[1], names, False)
+    if h == "ite":
+        if n != 4:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        return _unevaluable(x[1], names, True) or _unevaluable(x[2], names, False) or _unevaluable(x[3], names, False)
+    if h in ("and64", "or64", "xor64"):
+        if n != 3:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        return _unevaluable(x[1], names, False) or _unevaluable(x[2], names, False)
+    if h in ("s8", "s32", "s64"):
+        if n != 2:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        return _unevaluable(x[1], names, False)
+    if h in ("load8", "load16", "load32", "load64"):
+        if n != 3:
+            return "a form the checker cannot evaluate: %s" % _sx_text(x)
+        if floor._atom(x[1]) != "mem":
+            return "reads a memory that is not the entry state: %s" % _sx_text(x)
+        return _unevaluable(x[2], names, False)
+    return "a form the checker cannot evaluate: %s" % _sx_text(x)
+
+
+def _range_ok(en):
+    if not isinstance(en, list):
+        return False
+    if len(en) == 2:
+        return True
+    return len(en) == 4 and floor._atom(en[2]) == "apart-when"
+
+
+def _range_facts(entries, first_view):
+    """The fact texts of `entries` (objects then views), `objects_facts`' order."""
+    out = []
+    texts = [_sx_text(e) for e in entries]
+    for i in range(len(entries)):
+        out.append("(in-space %s)" % texts[i])
+        kmax = i if i < first_view else first_view
+        for k in range(kmax):
+            out.append("(apart %s %s)" % (texts[i], texts[k]))
+    return out
+
+
+def assumption_facts(floor_text, spec_text):
+    """[(symbol, status, text, reason)] for every caller clause of every section
+    that has rows -- what `assumptions.txt` must say, line for line."""
+    headers, types = floor.define_headers(floor_text)
+    globals_ = set(m.group(1)[1:] for m in floor._GLOBAL_DECL_RE.finditer(floor_text))
+    for raw in floor_text.split("\n"):
+        gm = floor._GLOBAL_DECL_RE.match(floor.code_part(raw))
+        if gm:
+            globals_.add(gm.group(1)[1:])
+    out = []
+    for sym, clauses in floor.spec_sections(spec_text):
+        heads = [floor._atom(c[0]) for c in clauses if isinstance(c, list) and c]
+        if not floor._translated(heads):
+            continue
+        if not any(h in heads for h in ("requires", "objects", "views")):
+            continue
+        if sym not in headers:
+            continue
+        names = set(floor.spec_param_names(headers[sym], types)) | {"exec", "tls"} | globals_
+        objects = None
+        for c in clauses:
+            if isinstance(c, list) and c and floor._atom(c[0]) == "objects":
+                objects = c[1:]
+                break
+        for c in clauses:
+            if not isinstance(c, list) or not c:
+                continue
+            h = floor._atom(c[0])
+            if h == "requires":
+                text = _sx_text(c)
+                why = _unevaluable(c[1], names, True) if len(c) == 2 else "a `requires` of other than one proposition"
+                out.append((sym, "listed" if why else "checked", text, why or ""))
+            elif h in ("objects", "views"):
+                entries = list(objects or []) + c[1:] if h == "views" else c[1:]
+                first_view = len(objects or []) if h == "views" else len(entries)
+                why = None
+                for en in entries:
+                    if not _range_ok(en):
+                        why = "a range that is not `(lo len)` or `(lo len apart-when COND)`: %s" % _sx_text(en)
+                        break
+                    why = _unevaluable(en[0], names, False) or _unevaluable(en[1], names, False)
+                    if not why and len(en) == 4:
+                        why = _unevaluable(en[3], names, True)
+                    if why:
+                        break
+                facts = _range_facts(entries, first_view)
+                if h == "views":
+                    facts = facts[sum(1 + min(i, first_view) for i in range(first_view)):]
+                for text in facts:
+                    out.append((sym, "listed" if why else "checked", text, why or ""))
+    return out
+
+
+_LABEL_LINE = re.compile(r"^[A-Za-z_.$][\w.$-]*:$")
+
+
+def _code_keep_strings(raw):
+    """The line's code part with its comment cut and its quoted names KEPT."""
+    out, in_str = [], False
+    for ch in raw:
+        if ch == '"':
+            in_str = not in_str
+        elif ch == ";" and not in_str:
+            break
+        out.append(ch)
+    return "".join(out).strip()
+
+
+def check_assumptions(floor_text, spec_text, explored_text, assumptions_text, name="explore"):
+    """THE HYPOTHESES BELT (step 5): the tool's assumptions.txt says what this
+    reader says, line for line (symbol, status, text), and the explored text
+    calls each checked symbol's checker once, first thing at its entry."""
+    fails = []
+    want = [(s, st, tx) for (s, st, tx, _r) in assumption_facts(floor_text, spec_text)]
+    got = []
+    for l in assumptions_text.split("\n"):
+        if not l.strip():
+            continue
+        parts = l.split("\t")
+        if len(parts) != 4 or parts[1] not in ("checked", "listed"):
+            return ["%s-assumptions: assumptions.txt line is not `SYMBOL<TAB>checked|listed<TAB>TEXT<TAB>REASON`: %s" % (name, l[:120])]
+        got.append((parts[0], parts[1], parts[2]))
+    if got != want:
+        for i in range(max(len(got), len(want))):
+            g = got[i] if i < len(got) else None
+            w = want[i] if i < len(want) else None
+            if g != w:
+                fails.append("%s-assumptions: assumptions.txt line %d is %s where the second reader says %s" % (name, i + 1, g, w))
+                break
+    checked = []
+    for (s, st, _tx) in want:
+        if st == "checked" and s not in checked:
+            checked.append(s)
+    fn = None
+    entry_call = {}
+    calls_elsewhere = 0
+    defines = set()
+    first = False                         # the next instruction is the function's first
+    in_header = False                     # a define header continuing past its first line
+    for raw in explored_text.split("\n"):
+        code = _code_keep_strings(raw)    # the comment cut, the quoted names kept (`code_part` blanks them)
+        if in_header:
+            in_header = not code.endswith("{")
+            continue
+        if fn is None:
+            m = floor._DEFINE_RE.match(code)
+            if m:
+                fn = m.group(2).replace('"', "")
+                if fn.startswith("@npkx.req."):
+                    defines.add("@" + fn[len("@npkx.req."):])
+                first = True
+                in_header = not code.endswith("{")
+            continue
+        if code == "}":
+            fn = None
+            continue
+        if not code:
+            continue
+        if _LABEL_LINE.match(code):
+            continue
+        if code.startswith('call void @"npkx.req.'):
+            if first:
+                entry_call[fn] = entry_call.get(fn, 0) + 1
+            else:
+                calls_elsewhere += 1
+        first = False
+    for s in checked:
+        if entry_call.get(s, 0) != 1:
+            fails.append("%s-assumptions: `%s` has %d checker call(s) as its first instruction, not one" % (name, s, entry_call.get(s, 0)))
+        if s not in defines:
+            fails.append("%s-assumptions: no `@\"npkx.req.%s\"` is defined in the explored floor" % (name, s[1:]))
+    for s in entry_call:
+        if s not in checked:
+            fails.append("%s-assumptions: `%s` calls a checker and the second reader gives it no checked clause" % (name, s))
+    if calls_elsewhere:
+        fails.append("%s-assumptions: %d checker call(s) somewhere other than a function's first instruction" % (name, calls_elsewhere))
+    return fails
+
+
+def assumption_summary(facts):
+    """The stage's sentence: counts, and every listed clause by name."""
+    checked = sum(1 for f in facts if f[1] == "checked")
+    syms = sorted(set(f[0] for f in facts if f[1] == "checked"))
+    listed = [f for f in facts if f[1] == "listed"]
+    line = ("D-302: %d caller hypotheses checked at every call of %d symbol(s), %d listed by name"
+            % (checked, len(syms), len(listed)))
+    return line, ["%s %s -- %s" % (s, tx, r) for (s, _st, tx, r) in listed]

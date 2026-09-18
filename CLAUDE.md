@@ -1267,8 +1267,23 @@ could win the holder in that two-instruction window, and `failsafe` ran with
 the wrong error (seed 371 of `trap_one_failsafe`; 40 stress runs never reached
 it). A watcher parks now and the holder keeps the re-entry exit 70. The
 `trap-route` model, blind for want of an error code, gained one: `wrong-error`
-and `holder-parks`, each with a control. The floor's bytes moved. Steps 5–7:
-the spec's hypotheses executed, program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+and `holder-parks`, each with a control. The floor's bytes moved. **Step 5 LANDED
+2026-09-18: the spec's caller hypotheses EXECUTED (D-302)**: `npkg/explore_req.npk` writes one entry checker per section of
+`runtime/npkrt.spec` that has rows and a `requires`/`objects`/`views` clause —
+31 checkers, 236 of 240 hypotheses evaluated over the entry state in i128 at
+every call of every explored schedule, the 4 sorted-table `requires` that name
+the free symbol `j` LISTED BY NAME (the stage's output, TCB.md §4d's new
+column); a false one is the shim's verdict `ASSUMPTION <symbol>: <clause>`, and
+the SPEC control `unconditional-apartness.ctl` (X-18: `spec-old:`/`spec-new:`
+pairs) plants 1.5.6's clause that 1.5.6c found false by reading and sees it on
+`drop_string`'s 27th step. The D-303 sweep after it found a REAL RACE in both
+shims (X-19): the kernel clears a thread's `CHILD_CLEARTID` word after its last
+virtual step, and the joiner's read of the word decided a step count — a
+thread's end is now settled before anyone else steps (the clone's ctid word
+handed to `npkx_spawned`, the next baton holder waiting for the clear). Found
+on the way: the harness's `define_headers` read one line, so three multi-line
+defines had no header and `check_spec`'s free-symbol check skipped them in
+silence. Steps 6–7: program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving

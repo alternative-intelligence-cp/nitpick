@@ -62,11 +62,12 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 ;   4 addr (B_FUTEX: the word)         5 deadline (virtual ns; -1 none)
 ;   6 reason   7 exit_tid   8 blocked_seq   9 polled_at   10 pending_sig
 ;   11 last_site   12 exec (the executor at the block)   13 waitval   14 pad
+;   15 ctid (the CHILD_CLEARTID word the kernel clears at the thread's exit; X-19)
 ;
 ; states:  0 FREE  1 RUNNING  2 READY  3 B_FUTEX  4 B_EPOLL  5 ENDED
 ; reasons: 0 NONE  1 WOKEN  2 TIMEOUT  3 EXITWAIT  4 PROBE  5 SIGNAL
 
-%npkx.slot = type { i32, i32, i64, i64, i64, i64, i32, i32, i64, i64, i32, i32, i64, i32, i32 }
+%npkx.slot = type { i32, i32, i64, i64, i64, i64, i32, i32, i64, i64, i32, i32, i64, i32, i32, i64 }
 
 @npkx_slots = internal global [64 x %npkx.slot] zeroinitializer
 @npkx_nslots = internal global i32 0
@@ -89,6 +90,18 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 @npkx_nchange = internal global i32 0
 @npkx_ended_tids = internal global [64 x i64] zeroinitializer
 @npkx_nended = internal global i32 0
+; THE SETTLED END (step 5, X-19): a thread's exit clears its CHILD_CLEARTID
+; word in the KERNEL, after the thread's last virtual step, racing whoever runs
+; next -- `npk_thread_join` reads that word before it waits, so whether the
+; clear had landed decided a step count (`shared_arena_spawn`, seed 1: 784
+; steps or 787, either shim, under a full environment). The clone's ctid word
+; is handed to `npkx_spawned` beside the tid and kept per slot (field 15); an
+; ending thread queues (tid, word) here, and the NEXT thread to hold the baton
+; waits, really, until the kernel has cleared every queued word before it
+; steps. A thread's end is then one event of the virtual schedule.
+@npkx_pend_tid = internal global [64 x i64] zeroinitializer
+@npkx_pend_addr = internal global [64 x i64] zeroinitializer
+@npkx_npend = internal global i32 0
 @npkx_last_runner = internal global i32 -1
 @npkx_run_len = internal global i64 0
 @npkx_demote = internal global i64 1048576
@@ -146,16 +159,16 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 ; --- the slot fields, by (slot, field) ---------------------------------------
 ;
 ; A struct index must be a constant in a GEP, so a field is reached through
-; its byte offset in the slot (88 bytes), from this table in field order.
+; its byte offset in the slot (96 bytes), from this table in field order.
 
-@npkx_off = internal constant [15 x i64] [i64 0, i64 4, i64 8, i64 16, i64 24, i64 32, i64 40, i64 44, i64 48, i64 56, i64 64, i64 68, i64 72, i64 80, i64 84]
+@npkx_off = internal constant [16 x i64] [i64 0, i64 4, i64 8, i64 16, i64 24, i64 32, i64 40, i64 44, i64 48, i64 56, i64 64, i64 68, i64 72, i64 80, i64 84, i64 88]
 
 define internal ptr @npkx_f(i32 %t, i32 %k) {
 entry:
-  %op = getelementptr [15 x i64], ptr @npkx_off, i64 0, i32 %k
+  %op = getelementptr [16 x i64], ptr @npkx_off, i64 0, i32 %k
   %off = load i64, ptr %op
   %t64 = zext i32 %t to i64
-  %base = mul i64 %t64, 88
+  %base = mul i64 %t64, 96
   %at = add i64 %base, %off
   %p = getelementptr i8, ptr @npkx_slots, i64 %at
   ret ptr %p
@@ -533,6 +546,29 @@ define internal void @npkx_die(ptr %why, i64 %wlen) noreturn {
 entry:
   call void @npkx_put(ptr @npkx_s_pre, i64 6)
   call void @npkx_put(ptr %why, i64 %wlen)
+  call void @npkx_die_tail()
+  unreachable
+}
+
+; A FALSE CALLER HYPOTHESIS (step 5, D-302): the explored floor's generated
+; entry checkers (`@"npkx.req.<symbol>"`, written by the transformer from the
+; spec's own `requires`/`objects`/`views` clauses) call this with the clause's
+; text -- `<symbol>: <clause>` -- when it does not hold at a call. The verdict
+; is `ASSUMPTION <symbol>: <clause>`; the process ends as every verdict does.
+@npkx_s_assume = internal constant [11 x i8] c"ASSUMPTION "
+define void @npkx_assumption(ptr %msg, i64 %mlen) noreturn {
+entry:
+  store i32 1, ptr @npkx_dying
+  call void @npkx_put(ptr @npkx_s_pre, i64 6)
+  call void @npkx_put(ptr @npkx_s_assume, i64 11)
+  call void @npkx_put(ptr %msg, i64 %mlen)
+  call void @npkx_die_tail()
+  unreachable
+}
+
+; the rest of a verdict line and the slot dump, then exit_group(97)
+define internal void @npkx_die_tail() noreturn {
+entry:
   call void @npkx_put(ptr @npkx_s_seed, i64 6)
   %seed = load i64, ptr @npkx_seed
   call void @npkx_putn(i64 %seed)
@@ -1115,6 +1151,7 @@ ret:
 ; word nothing writes, a virtual wait with no deadline.
 define internal void @npkx_run_pending(i32 %me) {
 entry:
+  call void @npkx_settle_ended()
   %sg = call i32 @npkx_ld32(i32 %me, i32 10)
   %none = icmp eq i32 %sg, 0
   br i1 %none, label %ret, label %fire
@@ -1185,7 +1222,7 @@ go:
 }
 
 ; the parent waits for the child to register and hand the baton back
-define void @npkx_spawned(i64 %tid) {
+define void @npkx_spawned(i64 %tid, i64 %ctid) {
 entry:
   %dying = load i32, ptr @npkx_dying
   %d = icmp ne i32 %dying, 0
@@ -1197,7 +1234,7 @@ loop:
   %reg = load atomic i32, ptr @npkx_registered seq_cst, align 4
   %exp = load i32, ptr @npkx_expected
   %behind = icmp slt i32 %reg, %exp
-  br i1 %behind, label %wait, label %ret
+  br i1 %behind, label %wait, label %keep
 
 wait:
   %ra = ptrtoint ptr @npkx_registered to i64
@@ -1205,6 +1242,63 @@ wait:
   %expm1z = zext i32 %expm1 to i64
   %r = call i64 @npk_sys6(i64 202, i64 %ra, i64 128, i64 %expm1z, i64 0, i64 0, i64 0)
   br label %loop
+
+; the child's slot (registered by now) keeps its CHILD_CLEARTID word (X-19)
+keep:
+  %n = load i32, ptr @npkx_nslots
+  br label %kloop
+
+kloop:
+  %ki = phi i32 [ 0, %keep ], [ %ki1, %knext ]
+  %kdone = icmp sge i32 %ki, %n
+  br i1 %kdone, label %ret, label %kcheck
+
+kcheck:
+  %kt = call i64 @npkx_ld64(i32 %ki, i32 2)
+  %khit = icmp eq i64 %kt, %tid
+  br i1 %khit, label %kstore, label %knext
+
+kstore:
+  call void @npkx_st64(i32 %ki, i32 15, i64 %ctid)
+  br label %ret
+
+knext:
+  %ki1 = add i32 %ki, 1
+  br label %kloop
+
+ret:
+  ret void
+}
+
+; the kernel's clears of every ended thread's word, waited for (X-19): called
+; wherever a thread comes to hold the baton, before it steps
+define internal void @npkx_settle_ended() {
+entry:
+  %np = load i32, ptr @npkx_npend
+  %none = icmp eq i32 %np, 0
+  br i1 %none, label %ret, label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %next ]
+  %done = icmp sge i32 %i, %np
+  br i1 %done, label %clear, label %one
+
+one:
+  %tp = getelementptr [64 x i64], ptr @npkx_pend_tid, i64 0, i32 %i
+  %tid = load i64, ptr %tp
+  %ap = getelementptr [64 x i64], ptr @npkx_pend_addr, i64 0, i32 %i
+  %addr = load i64, ptr %ap
+  %tid32 = trunc i64 %tid to i32
+  call void @npkx_real_exit_wait(i64 %addr, i32 %tid32)
+  br label %next
+
+next:
+  %i1 = add i32 %i, 1
+  br label %loop
+
+clear:
+  store i32 0, ptr @npkx_npend
+  br label %ret
 
 ret:
   ret void
@@ -1256,12 +1350,30 @@ go:
   store i64 %tid, ptr %ep
   %ne1 = add i32 %ne, 1
   store i32 %ne1, ptr @npkx_nended
+  ; the word the kernel will clear, queued for the next holder of the baton (X-19)
+  %cw = call i64 @npkx_ld64(i32 %me, i32 15)
+  %nocw = icmp eq i64 %cw, 0
+  %np = load i32, ptr @npkx_npend
+  %pfull = icmp sge i32 %np, 64
+  %noq = or i1 %nocw, %pfull
+  br i1 %noq, label %queued, label %queue
+
+queue:
+  %qtp = getelementptr [64 x i64], ptr @npkx_pend_tid, i64 0, i32 %np
+  store i64 %tid, ptr %qtp
+  %qap = getelementptr [64 x i64], ptr @npkx_pend_addr, i64 0, i32 %np
+  store i64 %cw, ptr %qap
+  %np1 = add i32 %np, 1
+  store i32 %np1, ptr @npkx_npend
+  br label %queued
+
+queued:
   %tid32 = trunc i64 %tid to i32
   %n = load i32, ptr @npkx_nslots
   br label %loop
 
 loop:
-  %i = phi i32 [ 0, %go ], [ %i1, %next ]
+  %i = phi i32 [ 0, %queued ], [ %i1, %next ]
   %done = icmp sge i32 %i, %n
   br i1 %done, label %leave, label %check
 

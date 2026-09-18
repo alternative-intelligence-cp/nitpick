@@ -56,6 +56,7 @@ struct slot {
     i32 pending_sig;
     u64 exec;
     u32 waitval;
+    u64 ctid;       /* the CHILD_CLEARTID word the kernel clears at the thread's exit (X-19) */
 };
 
 static struct slot S[MAXT];
@@ -141,8 +142,13 @@ static void wait_grant(i32 me) {
 }
 static void grant(i32 t) { S[t].grant = 1; sc6(SYS_futex, (i64)&S[t].grant, 129 /* WAKE|PRIVATE */, 1, 0, 0, 0); }
 
-static void die(const char *why) {
-    put("npkx: "); put(why); put(" seed="); putn(seed); put(" steps="); putn(steps); put("\n");
+static void die_tail(void);
+static void die(const char *why) { put("npkx: "); put(why); die_tail(); }
+/* A FALSE CALLER HYPOTHESIS (1.5.7 step 5, D-302, amended into the reference the same day): the explored floor's
+   generated entry checkers call this with `<symbol>: <clause>` when a spec clause does not hold at a call. */
+void npkx_assumption(const char *msg, i64 len) { dying = 1; put("npkx: ASSUMPTION "); sc6(SYS_write, 2, (i64)msg, len, 0, 0, 0); die_tail(); }
+static void die_tail(void) {
+    put(" seed="); putn(seed); put(" steps="); putn(steps); put("\n");
     for (i32 i = 0; i < nslots; i++) {
         put("  slot "); putn((u64)i); put(" state="); putn((u64)S[i].state); put(" addr="); putn(S[i].addr);
         put(" deadline="); putn((u64)S[i].deadline); put(" prio="); putn(S[i].prio); put(" last="); putn((u64)(u32)last_site[i]); put(" pend="); putn((u64)S[i].pending_sig); put("\n");
@@ -216,7 +222,9 @@ static void resched(i32 me) {
     }
 }
 
+static void settle_ended(void);
 static void run_pending(i32 me) {
+    settle_ended();
     if (S[me].pending_sig) { i32 sg = S[me].pending_sig; S[me].pending_sig = 0; S[me].state = RUNNING; if (sig_handler[sg]) sig_handler[sg](sg, 0, 0); }
 }
 
@@ -281,9 +289,17 @@ void npkx_point(i32 site) {
 
 void npkx_prespawn(void) { if (!inited) init(); (void)self(); expected = registered + 1; }
 
-void npkx_spawned(i64 tid) {
+/* THE SETTLED END (1.5.7 step 5, X-19, amended into the reference the same day): the kernel clears a thread's
+   CHILD_CLEARTID word after its last virtual step, racing whoever runs next, and npk_thread_join reads that word
+   before it waits -- a step count depended on the race. The clone's ctid word is kept per slot; an ending thread
+   queues it, and the next holder of the baton waits, really, until the kernel has cleared it. */
+static i64 pend_tid[MAXT]; static u64 pend_addr[MAXT]; static i32 npend;
+static void real_exit_wait(u64 addr, u32 tid);
+static void settle_ended(void) { for (i32 i = 0; i < npend; i++) real_exit_wait(pend_addr[i], (u32)pend_tid[i]); npend = 0; }
+void npkx_spawned(i64 tid, i64 ctid) {
     if (dying || tid <= 0) return;
     while (registered < expected) sc6(SYS_futex, (i64)&registered, 128, (i64)(expected - 1), 0, 0, 0);
+    for (i32 t = 0; t < nslots; t++) if (S[t].tid == tid) { S[t].ctid = (u64)ctid; break; }
 }
 
 void npkx_begin(void) {
@@ -305,6 +321,7 @@ void npkx_end(void) {
     i64 tid = S[me].tid;
     S[me].state = ENDED;
     ended_tids[nended++] = tid;
+    if (S[me].ctid && npend < MAXT) { pend_tid[npend] = tid; pend_addr[npend] = S[me].ctid; npend++; }   /* X-19 */
     for (i32 t = 0; t < nslots; t++)
         if (S[t].state == B_FUTEX && *(volatile u32 *)S[t].addr == (u32)tid) { S[t].state = READY; S[t].reason = R_EXITWAIT; S[t].exit_tid = (i32)tid; }
     resched(-1);

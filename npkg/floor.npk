@@ -22,6 +22,7 @@ use "./floor_kernel.npk".*;                  // the kernel-effect table, GENERAT
 use "./floor_model.npk".*;
 use "./floor_explore.npk".*;                 // the models' second reading (1.5.6b step 4d, D-295): TCB's numbers
 use "./floor_shared.npk".*;                  // `floor_calls`, the harness's `calls_of` (1.5.6c step 3: TCB's callers table)
+use "./explore_req.npk".*;                   // `req_clauses`: the entry checkers' classification (1.5.7 step 5: TCB's D-302 column)
 use "../src/backend/smt/smt_kinds.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;
 
@@ -728,6 +729,7 @@ func:callers_names = string(List<string>:xs) never fails {
 
 pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
     List<string>:syms = raw spec_symbols(s);
+    List<ReqClause>:clauses = raw req_clauses(ft, s);        // the entry checkers' classification (step 5)
     string:table = "";
     int64:total = 0i64;
     int64:n_open = 0i64;
@@ -766,6 +768,14 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
         if (unproved.count > 0i64) { n_open = n_open + 1i64; }
         if (exported) { n_exp = n_exp + 1i64; }
         if ((unproved.count == 0i64) && (!exported)) { n_closed = n_closed + 1i64; }
+        // the last column (1.5.7 step 5, D-302): the section's hypotheses the entry checker executes, of those it states
+        int64:ex_c = 0i64;
+        int64:ex_n = 0i64;
+        for (int64:q in 0i64...clauses.count) {
+            if (!(raw text_eq(raw strlist_view_of(clauses.items[q].symbol), sym))) { continue; }
+            ex_n = ex_n + 1i64;
+            if (raw text_eq(raw strlist_view_of(clauses.items[q].status), "checked")) { ex_c = ex_c + 1i64; }
+        }
         table = string_concat(table, "\n| `");
         table = string_concat(table, sym);
         table = string_concat(table, "` | ");
@@ -776,7 +786,16 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
         if (summary) { table = string_concat(table, raw callers_names(none)); } else { table = string_concat(table, raw callers_names(covered)); }
         table = string_concat(table, " | ");
         table = string_concat(table, raw callers_names(unproved));
-        if (exported) { table = string_concat(table, " | yes |"); } else { table = string_concat(table, " | no |"); }
+        if (exported) { table = string_concat(table, " | yes | "); } else { table = string_concat(table, " | no | "); }
+        table = string_concat(table, int_to_string(ex_c));
+        table = string_concat(table, " of ");
+        table = string_concat(table, int_to_string(ex_n));
+        table = string_concat(table, " |");
+    }
+    int64:n_checked = 0i64;
+    int64:n_listed = 0i64;
+    for (int64:q2 in 0i64...clauses.count) {
+        if (raw text_eq(raw strlist_view_of(clauses.items[q2].status), "checked")) { n_checked = n_checked + 1i64; } else { n_listed = n_listed + 1i64; }
     }
     string:out = string_concat(int_to_string(total), " sections have rows AND assume something of their caller. For ");
     out = string_concat(out, int_to_string(n_closed));
@@ -784,9 +803,29 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
     out = string_concat(out, int_to_string(n_open));
     out = string_concat(out, " have a floor caller no row covers; ");
     out = string_concat(out, int_to_string(n_exp));
-    out = string_concat(out, " are\nEXPORTED, so emitted code can call them and nothing proves the assumption there.\n\n");
-    out = string_concat(out, "| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code |\n|---|---|---|---|---|---|");
+    out = string_concat(out, " are\nEXPORTED, so emitted code can call them and nothing proves the assumption there. Under the explorer (1.5.7\nstep 5, D-302) ");
+    out = string_concat(out, int_to_string(n_checked));
+    out = string_concat(out, " of the ");
+    out = string_concat(out, int_to_string(clauses.count));
+    out = string_concat(out, " hypotheses these sections state are EXECUTED at every call of every explored\nschedule by a generated entry checker, untranslated floor callers and emitted code alike; the ");
+    out = string_concat(out, int_to_string(n_listed));
+    out = string_concat(out, " it cannot\nevaluate are listed by name below the table.\n\n");
+    out = string_concat(out, "| symbol | assumes | a row at the call | inlined into | NOT PROVED: floor callers | NOT PROVED: emitted code | executed at every explored call |\n|---|---|---|---|---|---|---|");
     out = string_concat(out, table);
+    if (n_listed > 0i64) {
+        out = string_concat(out, "\n\nListed, not checked -- a clause the entry checker cannot evaluate over the entry state:");
+        bool:first_l = true;
+        for (int64:q3 in 0i64...clauses.count) {
+            if (raw text_eq(raw strlist_view_of(clauses.items[q3].status), "checked")) { continue; }
+            if (first_l) { out = string_concat(out, "\n"); first_l = false; } else { out = string_concat(out, "\n"); }
+            out = string_concat(out, "- `");
+            out = string_concat(out, raw strlist_view_of(clauses.items[q3].symbol));
+            out = string_concat(out, "`: `");
+            out = string_concat(out, raw strlist_view_of(clauses.items[q3].text));
+            out = string_concat(out, "` -- ");
+            out = string_concat(out, raw strlist_view_of(clauses.items[q3].reason));
+        }
+    }
     pass out;
 };
 

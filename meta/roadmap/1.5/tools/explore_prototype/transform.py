@@ -7,7 +7,7 @@ hold to a literal): the floor with a scheduling point before every synchronizati
     virtualizes the blocking numbers)
   - every atomic step line (`atomicrmw`, `cmpxchg`, `fence`, `load atomic`, `store atomic`) is preceded by
     `call void @npkx_point(i32 SITE)`
-  - thread lifecycle: `@npkx_prespawn()` before and `@npkx_spawned(i64 tid)` after the clone call;
+  - thread lifecycle: `@npkx_prespawn()` before and `@npkx_spawned(i64 tid, i64 ctid)` after the clone call (X-19: the CHILD_CLEARTID word beside the tid);
     `@npkx_begin()` first in `@npk_thread_entry`; `@npkx_end()` before its `ret`
   - `@npkx_trap()` first in `@npk_trap`: from there on the shim passes everything through
 
@@ -90,12 +90,16 @@ while i < len(lines):
         reg = re.match(r'^\s*(%[\w.]+)\s*=', code).group(1)
         out.append("  call void @npkx_prespawn()")
         # the statement may continue on following lines: copy through the line that closes it
+        whole = ""
         while True:
             out.append(lines[i])
+            whole += code_part(lines[i])
             if code_part(lines[i]).rstrip().endswith(")"):
                 break
             i += 1
-        out.append("  call void @npkx_spawned(i64 %s)" % reg)
+        # X-19 (1.5.7 step 5): the clone's third argument, the CHILD_CLEARTID word, handed beside the tid
+        ctid = [a.strip() for a in whole[whole.index("(") + 1:whole.rindex(")")].split(",")][2]
+        out.append("  call void @npkx_spawned(i64 %s, %s)" % (reg, ctid))
         i += 1
         continue
     if "@npk_sys6(" in code and "call" in code:
@@ -116,7 +120,7 @@ while i < len(lines):
 out.append("")
 out.append("; --- the explorer's shim (PROTOTYPE) ---")
 for d in ("declare void @npkx_point(i32)", "declare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)",
-          "declare void @npkx_prespawn()", "declare void @npkx_spawned(i64)", "declare void @npkx_begin()",
+          "declare void @npkx_prespawn()", "declare void @npkx_spawned(i64, i64)", "declare void @npkx_begin()",
           "declare void @npkx_end()", "declare void @npkx_trap()", "declare void @npkx_chk_small_free(i64, ptr)",
           "declare void @npkx_chk_rq_push(ptr)"):
     out.append(d)

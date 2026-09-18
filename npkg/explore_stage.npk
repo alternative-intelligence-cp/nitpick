@@ -29,6 +29,7 @@ use "./build.npk".*;
 use "./irscan.npk".*;
 use "./floor_stack.npk".*;
 use "./explore.npk".*;
+use "./explore_req.npk".*;                   // explore_assumptions, the D-302 belt (1.5.7 step 5)
 
 // THE MARKER BELT (D-299): a `// stress:` program says whether it is explored;
 // the finding when it says neither, else nothing.
@@ -42,10 +43,10 @@ pub func:explore_marker_finding = List<string>(Expect->:exp, string:name) never 
 
 // The explored floor and the shim, built into `build/explore/`: the two
 // objects every unit links against. `findings` names what did not build.
-pub struct:ExploredObjects = { string:xfloor_o; string:shim_o; List<string>:findings; };
+pub struct:ExploredObjects = { string:xfloor_o; string:shim_o; string:assumptions; int64:checkers; List<string>:findings; };
 
 pub async func:explored_objects = ExploredObjects(Ctx->:c) {
-    ExploredObjects:x = ExploredObjects{ xfloor_o: "", shim_o: "", findings: raw list_init::<string>(1i64) };
+    ExploredObjects:x = ExploredObjects{ xfloor_o: "", shim_o: "", assumptions: "", checkers: 0i64, findings: raw list_init::<string>(1i64) };
     string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
     string:xdir = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "explore");
     Result<NIL>:d = ensure_dir(xdir);
@@ -55,12 +56,20 @@ pub async func:explored_objects = ExploredObjects(Ctx->:c) {
     if (fc.is_error) { drop strlist_push(@x.findings, "explore: runtime/npkrt.ll: not a path"); pass x; }
     Result<string>:ftx = read_file(fc.value);
     if (ftx.is_error) { drop strlist_push(@x.findings, "explore: runtime/npkrt.ll cannot be read"); pass x; }
-    Explored:xf = raw explore_transform(ftx.value);
+    string:spec = raw spec_text_of(root);
+    if (spec.len == 0i64) { drop strlist_push(@x.findings, "explore: runtime/npkrt.spec is missing -- the entry checkers have no source (D-302)"); pass x; }
+    Explored:xf = raw explore_transform(ftx.value, spec);
     for (int64:i in 0i64...xf.problems.count) { drop strlist_push(@x.findings, raw strlist_view(xf.problems, i)); }
     if (x.findings.count > 0i64) { pass x; }
     List<string>:tot = raw explore_totality(ftx.value, xf.text);
     for (int64:j in 0i64...tot.count) { drop strlist_push(@x.findings, raw strlist_view(tot, j)); }
     if (x.findings.count > 0i64) { pass x; }
+    // THE SPEC'S CALLER HYPOTHESES (step 5, D-302): the counting belt, then the rows kept for the stage's sentence
+    List<string>:asf = raw explore_assumptions(spec, xf.text, xf.assumptions, "explore");
+    for (int64:j3 in 0i64...asf.count) { drop strlist_push(@x.findings, raw strlist_view(asf, j3)); }
+    if (x.findings.count > 0i64) { pass x; }
+    x.assumptions = string_concat(xf.assumptions, "");
+    x.checkers = xf.checkers;
     string:xll = raw path_join(xdir, "npkrt.explore.ll");
     Result<cstring>:xc = to_cstring(xll);
     if (xc.is_error) { fail xc.err; }
@@ -373,6 +382,14 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
         drop list_push(@out.findings, string_concat(pt.problem, ""));
         pass out;
     }
+    // the spec beside the floor: patched by a spec control, else the real one, so the entry checkers ride
+    string:spec0 = raw spec_text_of(root);
+    if (spec0.len == 0i64) { drop list_push(@out.findings, string_concat(name, ": runtime/npkrt.spec is missing (D-302)")); pass out; }
+    Patched:ps = raw apply_spec_control(spec0, @ctl, name);
+    if (ps.problem.len > 0i64) {
+        drop list_push(@out.findings, string_concat(ps.problem, ""));
+        pass out;
+    }
     string:cname = raw text_file_name(path);
     string:stem = raw text_replace_byte(raw text_slice(cname, 0i64, cname.len - 4i64), 45u8, 95u8);
     string:xdir0 = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "explore");
@@ -381,7 +398,7 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
     string:cdir = raw path_join(xdir0, string_concat("ctl_", stem));
     Result<NIL>:d = ensure_dir(cdir);
     if (d.is_error) { fail d.err; }
-    Explored:xf = raw explore_transform(pt.text);
+    Explored:xf = raw explore_transform(pt.text, ps.text);
     for (int64:i in 0i64...xf.problems.count) {
         drop list_push(@out.findings, string_concat(string_concat(name, ": the transformer refused the patched floor: "), raw strlist_view(xf.problems, i)));
     }

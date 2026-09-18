@@ -388,6 +388,15 @@ pub func:text_replace_all = string(string:s, string:from, string:to) never fails
     pass out;
 };
 
+// `s.replace(from, to, 1)`: the FIRST occurrence only; a copy when absent.
+pub func:text_replace_first_of = string(string:s, string:from, string:to) never fails {
+    if (from.len == 0i64) { pass (string_concat(s, "")); }
+    int64:p = raw text_index_of(s, from);
+    if (p < 0i64) { pass (string_concat(s, "")); }
+    string:out = string_concat(raw slice_proven(s, 0i64, p), to);
+    pass (string_concat(out, raw slice_proven(s, p + from.len, s.len)));
+};
+
 // `"%-Ns"` and `"%Nd"`: padded with spaces to width `n`, never truncated.
 pub func:text_pad_right = string(string:s, int64:n) never fails {
     string:out = string_concat(s, "");
