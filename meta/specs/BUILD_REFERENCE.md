@@ -93,7 +93,13 @@ nofile = 1024                    # the soft RLIMIT_NOFILE both runners stand und
   (obligation, solver build, budget), never of the machine. The pinned binary is
   the workbench's own build of the tagged release (D-233's doctrine for every
   engine); a different build is a different pin and re-records the obligation
-  file with it.
+  file with it. The one wall-clock bound that exists is the runners' own HANG
+  NET (P-13; D-297): a z3 process over a file runs for at most `120 +
+  10·checks + 60·B` seconds, B the file's rows the committed manifest records
+  `budget` (every row, with no manifest to trust — `--record`, a verify test,
+  a planted self-check case), and a solver killed at it FAILS the run by name,
+  never records a verdict, and is read as a wedged solver or a file the
+  manifest does not justify.
 - **There is no `edition` key** (D-077). One language; keeping incompatible
   versions alive would multiply every verification obligation by the number of
   editions.

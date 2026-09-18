@@ -18849,3 +18849,65 @@ builtin call can mean something else, and a reader or a prover of
 > called through its receiver in both call spellings. Writing that test found
 > three defects in the function-value corner that have nothing to do with
 > names (DEF-54, DEF-55, DEF-56: OPEN_DECISIONS §2f), fixed at step 4c.
+
+## D-297 — The solver's hang net counts the rows the committed manifest records `budget`: `120 + 10·checks + 60·B` seconds per file, both runners — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-77)**
+
+P-13 (1.5.0) made the wall-clock deadline of every z3 process a HANG NET and
+never a verdict: a solver killed at its net fails the run by name, and
+D-218.2's law — a verdict is a function of (obligation, solver build,
+budget), never of the machine — is kept by construction, since a kill cannot
+become a row. The net was sized as if a row cost ten seconds, `120 +
+10·checks` per file. A row the manifest records `budget` costs the WHOLE
+rlimit by definition (about 33 s on this machine under the profile), so a
+file whose rows are mostly residue stands near its net on every run:
+measured at 1.5.6c step 0 in the runners' own mode (one process over the
+whole file, push/pop, the profile, four harnesses beside it),
+`npk_small_free` — six of its thirteen rows `budget` — took 194–203 s of its
+250, **81% of the net**; the next file stood at 20% (`npk_hs_put_dec`, 69 s
+of 350), every other under 10%. It had passed every run; a machine a quarter
+slower, or a fifth and sixth concurrent harness (D-228's measured width is
+six), trips it — a red run that is no verdict, which R5 answers with "re-run
+alone" and which an instrument should not produce. 1.5.6c made its own step
+fit the net (`apart-when`, its M-4) rather than the net fit the step, and
+raised the margin on its own as S-77. **The decision.** The net learns what
+the committed manifest already says: each file runs under `120 + 10·checks +
+60·B` seconds, B the number of that file's rows the manifest the run is held
+to records as `budget` — `nitpick.obligations` for the compiler's leg,
+`runtime/npkrt.obligations` for the floor's, matched row for row by (hash,
+kind, symbol) as the manifests' own comparison keys them. A run with no
+manifest to trust — a `--record` run, a verify test held to its own
+expectations, a planted self-check case — takes the larger bound for every
+row, B = checks. The tier-2 twin's net counts the twin's rows recorded
+`budget` (a row the twin discharged is recorded `real discharged` and burned
+no budget there); a model's control, one `(check-sat)` that must answer
+`sat`, runs under the formula's floor for one row. One formula in each
+runner, and the two self-checks hold it to one planted text and two
+literals. It STAYS a hang net: no verdict can move with the bound (the net
+never was one); a wedged solver — S-71's Diophantine pop ran 22 minutes and
+more — is still caught, six minutes later at worst for the floor's largest
+file; and the failure line names the net the solver was killed at.
+**Alternatives costed:** leave it and rely on R5 — declined: a flake-shaped
+red in a safety instrument trains its readers to re-run rather than read; a
+flat raise (`600 + …`) — declined: a bound nothing justifies is the next
+number nobody can defend, where a bound the manifest justifies moves only
+when a verdict does; per-machine calibration — declined by D-218.2's law
+(the machine must not enter). Not a language question; an instrument's
+bound, which is why it was asked rather than taken.
+
+> **LANDED 2026-09-17 as its own landing before 1.5.7 step 0** (the plan's
+> "before step 0"; `meta/roadmap/1.5/1.5.7.md`, landing with that step).
+> The harness: `hang_net`, `budget_rows_of`, `file_budget` and
+> `z3_verdicts`'s `budget` parameter — `check_verify_compiler` and
+> `check_verify_floor` read their manifest BEFORE the solver runs (a missing
+> manifest fails by the same sentence, earlier); `check_verify_program` and
+> the self-check pass none. `npkg/verify.npk`: `HangNet`, `hang_net_secs`,
+> `net_key`, `net_untrusted`, `net_of_manifest`, `file_budget` and
+> `z3_decide`'s `net` parameter — `verify_run` and `floor_leg` parse their
+> manifest once, before the solver (D-004 rule 3 put the parsed manifest at
+> the net's own scope); the test stage and the self-check pass the untrusted
+> net. Self-check cases `hang-net` (210 s) and `hang-net-untrusted` (330 s)
+> in both runners from one planted text. At this tree the floor's largest
+> file, `npk_small_free`, is decided under a net of 610 s where it was 250
+> (13 rows, 6 `budget`); `npk_int_to_string` under 260 where it was 200 (8
+> rows, 1); every other file's net is unchanged, since no other file holds a
+> `budget` row. No verdict moved, no manifest moved, no ladder row moved.

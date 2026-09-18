@@ -1035,7 +1035,10 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     Result<List<VFile>>:files_r = read_index(obl);
     if (files_r.is_error) { drop strlist_push(@fl, string_concat(name, ": index.txt could not be read")); pass fl; }
     List<VFile>:files = move(files_r.value);
-    Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, name, @fl);
+    // a verify test is held to its own expectations, not to a manifest: no
+    // manifest to trust, so every row takes the hang net's larger bound (D-297)
+    HangNet:net = raw net_untrusted();
+    Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, name, @fl, @net);
     if (zr.is_error) { fail zr.err; }
     if (fl.count > 0i64) { pass fl; }
     // the module's counts, exactly (D-237's shape)

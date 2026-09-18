@@ -609,6 +609,34 @@ def main():
         print("  %-26s %-4s  %s" % ("z3-restored", "ok",
                                     "the pinned z3 that is installed must pass"))
 
+    # THE HANG NET KNOWS THE MANIFEST'S BUDGET ROWS (P-13; D-297, S-77): a file
+    # of three rows, one of them recorded `budget` in the manifest the run is
+    # held to, runs under 120 + 10*3 + 60*1 = 210 s; with no manifest to trust
+    # every row takes the larger bound, 120 + 10*3 + 60*3 = 330 s. One planted
+    # text and the same two literals in npkg's self-check (`hang-net`,
+    # `hang-net-untrusted`): a net that drifts between the runners is caught
+    # here, since a solver killed at one runner's net and not the other's is
+    # a red run only one of them reports.
+    HN_MANIFEST = ("# nitpick.obligations v1\n# z3 4.16.0 sha256 " + "0" * 64 + "\n# options rlimit=1\n"
+                   + "a" * 64 + " div-zero int discharged elided @npk_m_f\n"
+                   + "b" * 64 + " div-min int budget retained @npk_m_f\n"
+                   + "c" * 64 + " div-zero int open retained @npk_m_f\n")
+    hn_keys = [("a" * 64, "div-zero", "@npk_m_f"), ("b" * 64, "div-min", "@npk_m_f"),
+               ("c" * 64, "div-zero", "@npk_m_f")]
+    hn_rows, hn_why = harness.manifest_rows(HN_MANIFEST)
+    hn_trusted = (None if hn_rows is None else
+                  harness.hang_net(3, harness.file_budget(hn_keys, harness.budget_rows_of(hn_rows))))
+    hn_untrusted = harness.hang_net(3, harness.file_budget(hn_keys, harness.budget_rows_of(None)))
+    for name, got, want, why in (
+            ("hang-net", hn_trusted, 210, "a file of three rows, one recorded `budget`, runs under 120 + 10*3 + 60*1 s"),
+            ("hang-net-untrusted", hn_untrusted, 330, "with no manifest to trust every row takes the larger bound: 120 + 10*3 + 60*3 s")):
+        ok = got == want
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the net is %r, not %d%s" % (got, want, "" if hn_rows is not None else " (the planted manifest did not read: %s)" % hn_why))
+
     # THE VERIFY STAGE REPORTS A WRONG VERDICT (P-22, 1.5.0): an opaque
     # divisor's obligation is `open`; a test that expects `discharged` must
     # fail, and the same program naming `open` must pass. Both need the pinned

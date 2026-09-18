@@ -468,6 +468,51 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         drop strlist_push(@report, raw case_line("z3-restored", true, "the pinned z3 that is installed must pass"));
     }
 
+    // THE HANG NET KNOWS THE MANIFEST'S BUDGET ROWS (P-13; D-297, S-77): a
+    // file of three rows, one of them recorded `budget` in the manifest the
+    // run is held to, runs under 120 + 10*3 + 60*1 = 210 s; with no manifest
+    // to trust every row takes the larger bound, 120 + 10*3 + 60*3 = 330 s.
+    // The harness's planted text and its two literals, byte for byte: a net
+    // that drifts between the runners is caught here.
+    string:hn_a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    string:hn_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    string:hn_c = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    string:hn_text = "# nitpick.obligations v1\n# z3 4.16.0 sha256 0000000000000000000000000000000000000000000000000000000000000000\n# options rlimit=1\n";
+    hn_text = string_concat(hn_text, hn_a);
+    hn_text = string_concat(hn_text, " div-zero int discharged elided @npk_m_f\n");
+    hn_text = string_concat(hn_text, hn_b);
+    hn_text = string_concat(hn_text, " div-min int budget retained @npk_m_f\n");
+    hn_text = string_concat(hn_text, hn_c);
+    hn_text = string_concat(hn_text, " div-zero int open retained @npk_m_f\n");
+    List<string>:hn_keys = raw list_init::<string>(3i64);
+    drop strlist_push(@hn_keys, raw net_key(hn_a, "div-zero", "@npk_m_f"));
+    drop strlist_push(@hn_keys, raw net_key(hn_b, "div-min", "@npk_m_f"));
+    drop strlist_push(@hn_keys, raw net_key(hn_c, "div-zero", "@npk_m_f"));
+    ObManifest:hn_man = raw man_parse(hn_text);
+    int64:hn_trusted = 0i64 - 1i64;
+    if (hn_man.ok) {
+        HangNet:hn_net = raw net_of_manifest(@hn_man);
+        hn_trusted = raw hang_net_secs(3i64, raw file_budget(hn_keys, @hn_net));
+    }
+    HangNet:hn_un = raw net_untrusted();
+    int64:hn_untrusted = raw hang_net_secs(3i64, raw file_budget(hn_keys, @hn_un));
+    bool:okh1 = (hn_trusted == 210i64);
+    if (!okh1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("hang-net", okh1, "a file of three rows, one recorded `budget`, runs under 120 + 10*3 + 60*1 s"));
+    if (!okh1) {
+        string:hw = string_concat("      the net is ", int_to_string(hn_trusted));
+        hw = string_concat(hw, ", not 210");
+        if (!hn_man.ok) { hw = string_concat(hw, string_concat(" (the planted manifest did not read: ", hn_man.problem)); }
+        drop strlist_push(@report, hw);
+    }
+    bool:okh2 = (hn_untrusted == 330i64);
+    if (!okh2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("hang-net-untrusted", okh2, "with no manifest to trust every row takes the larger bound: 120 + 10*3 + 60*3 s"));
+    if (!okh2) {
+        string:hw2 = string_concat("      the net is ", int_to_string(hn_untrusted));
+        drop strlist_push(@report, string_concat(hw2, ", not 330"));
+    }
+
     // THE VERIFY STAGE REPORTS A WRONG VERDICT (P-22, 1.5.0): the case set is
     // the harness's, byte for byte. Against the ARTIFACT (`c.npkc` is the
     // real compiler here, restored above), which knows `--obligations`; the
@@ -627,7 +672,8 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             Result<List<VFile>>:ffiles = read_index(fdir);
             if (ffiles.is_error) { fail ffiles.err; }
             List<string>:fzf = raw list_init::<string>(1i64);
-            Result<NIL>:fzr = await z3_decide(c, z3p, fdir, @frs, ffiles.value, fname, @fzf);
+            HangNet:fnet = raw net_untrusted();   // a planted case has no manifest to trust (D-297)
+            Result<NIL>:fzr = await z3_decide(c, z3p, fdir, @frs, ffiles.value, fname, @fzf, @fnet);
             if (fzr.is_error) { fail fzr.err; }
             for (int64:zi in 0i64...fzf.count) { drop strlist_push(@ffl, raw strlist_view(fzf, zi)); }
             if (fzf.count == 0i64) {

@@ -152,16 +152,80 @@ pub func:read_index = List<VFile>(string:dir) {
 
 // --- the solver ----------------------------------------------------------------------------
 
+// THE SOLVER'S HANG NET (P-13; D-297, S-77): `120 + 10*checks + 60*B` seconds
+// for a file of `checks` rows, B the rows of it the manifest the run is held
+// to records as `budget`. A `budget` row burns the whole rlimit BY DEFINITION
+// (about 33 s on this machine), so a net sized as if every row cost ten
+// seconds left `npk_small_free` (six such rows) at 81% of its bound -- a red
+// run that is no verdict on a machine a quarter slower. It stays a hang net:
+// a solver killed at its net is a build failure by name, never a row, and no
+// verdict can move with the bound. With no manifest to trust -- a `--record`
+// run, a verify test, a planted self-check case -- every row takes the
+// larger bound. The harness's `hang_net`, `budget_rows_of`, `file_budget`.
+pub struct:HangNet = {
+    bool:trusted;           // a committed manifest the run is held to
+    List<string>:budget;    // its rows recorded `budget`, as `<hash> <kind> <symbol>` keys
+};
+
+pub func:hang_net_secs = int64(int64:checks, int64:budget) never fails {
+    pass (120i64 + (10i64 * checks) + (60i64 * budget));
+};
+
+// A row's key, spelled from rows.txt's fields or a manifest row's.
+pub func:net_key = string(string:hash, string:kind, string:symbol) never fails {
+    string:k = string_concat(hash, " ");
+    k = string_concat(k, kind);
+    k = string_concat(k, " ");
+    pass (string_concat(k, symbol));
+};
+
+// No manifest to trust: every row of every file takes the larger bound.
+pub func:net_untrusted = HangNet() never fails {
+    pass HangNet{ trusted: false, budget: raw list_init::<string>(1i64) };
+};
+
+// The rows a committed manifest records `budget`, keyed as rows.txt spells them.
+pub func:net_of_manifest = HangNet(ObManifest->:m) never fails {
+    HangNet:n = HangNet{ trusted: true, budget: raw list_init::<string>(8i64) };
+    for (int64:i in 0i64...m.rows.count) {
+        if (m.rows.items[i].verdict != (raw OV_BUDGET())) { continue; }
+        drop strlist_push(@n.budget, raw net_key(
+            string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len),
+            raw ok_name(m.rows.items[i].kind),
+            string_from_bytes(m.rows.items[i].symbol.ptr, m.rows.items[i].symbol.len)));
+    }
+    pass n;
+};
+
+// How many of a file's encoded rows -- `keys` -- the trusted manifest records
+// `budget`; every one of them when there is no manifest to trust.
+pub func:file_budget = int64(List<string>:keys, HangNet->:net) never fails {
+    if (!net.trusted) { pass keys.count; }
+    int64:b = 0i64;
+    for (int64:i in 0i64...keys.count) {
+        if (raw strlist_contains(net.budget, raw strlist_view(keys, i))) { b = b + 1i64; }
+    }
+    pass b;
+};
+
 // z3 over every file of `dir`; the rows' verdicts filled; the failures, by name.
+// `net`: the hang net's knowledge of the manifest the run is held to (D-297).
 pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows,
-                               List<VFile>:files, string:name, List<string>->:fl) {
+                               List<VFile>:files, string:name, List<string>->:fl, HangNet->:net) {
     for (int64:fi in 0i64...files.count) {
         string:fno = string_from_bytes(files.items[fi].fno.ptr, files.items[fi].fno.len);
         int64:checks = files.items[fi].checks;
         int64:enc = 0i64;
+        List<string>:keys = raw list_init::<string>(checks + 1i64);
         for (int64:ri in 0i64...rows.count) {
             if (raw text_eq(string_from_bytes(rows.items[ri].fno.ptr, rows.items[ri].fno.len), fno)) {
-                if (rows.items[ri].encoded) { enc = enc + 1i64; }
+                if (rows.items[ri].encoded) {
+                    enc = enc + 1i64;
+                    drop strlist_push(@keys, raw net_key(
+                        string_from_bytes(rows.items[ri].hash.ptr, rows.items[ri].hash.len),
+                        string_from_bytes(rows.items[ri].kind.ptr, rows.items[ri].kind.len),
+                        string_from_bytes(rows.items[ri].symbol.ptr, rows.items[ri].symbol.len)));
+                }
             }
         }
         if (enc != checks) {
@@ -179,11 +243,14 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
         List<string>:args = raw strlist_clone(c.m.z3_options);
         drop strlist_push(@args, "-smt2");
         drop strlist_push(@args, raw path_join(dir, string_concat(fno, ".smt2")));
-        Result<Run>:r = await run_argv(z3, args, c.t.env, raw duration_secs(120i64 + (10i64 * checks)));
+        int64:secs = raw hang_net_secs(checks, raw file_budget(keys, net));
+        Result<Run>:r = await run_argv(z3, args, c.t.env, raw duration_secs(secs));
         if (r.is_error) { fail r.err; }
         Run:run = move(r.value);
         if (run.timed_out) {
-            string:m1 = string_concat(name, ": z3 exceeded the wall-clock net on ");
+            string:m1 = string_concat(name, ": z3 exceeded the wall-clock net of ");
+            m1 = string_concat(m1, int_to_string(secs));
+            m1 = string_concat(m1, " s on ");
             m1 = string_concat(m1, fno);
             m1 = string_concat(m1, " -- not a verdict: a wedged solver is a build failure, never a `budget` row (P-13)");
             drop list_push(fl, move(m1));
@@ -252,8 +319,12 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
                 drop list_push(fl, string_concat(name, ": index.t2.txt lists a different number of ordinals than its count"));
                 pass NIL;
             }
-            // the rows named, by (file, k); any budget among them?
+            // the rows named, by (file, k); any budget among them? -- and the
+            // twin's net counts the twin's rows the manifest records `budget`
+            // (a row the twin discharged is recorded `real` discharged and did
+            // not burn its budget there)
             List<int64>:idx = raw list_init::<int64>(4i64);
+            List<string>:keys2 = raw list_init::<string>(cnt.value + 1i64);
             bool:any_budget = false;
             for (int64:ki in 0i64...kts.count) {
                 Result<int64>:kv = text_int(raw strlist_view(kts, ki));
@@ -263,17 +334,27 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
                     if ((rows.items[ri].k == kv.value) && (raw text_eq(string_from_bytes(rows.items[ri].fno.ptr, rows.items[ri].fno.len), fno2))) { found = ri; }
                 }
                 drop list_push(@idx, found);
-                if (found >= 0i64) { if (rows.items[found].verdict == (raw OV_BUDGET())) { any_budget = true; } }
+                if (found >= 0i64) {
+                    if (rows.items[found].verdict == (raw OV_BUDGET())) { any_budget = true; }
+                    drop strlist_push(@keys2, raw net_key(
+                        string_from_bytes(rows.items[found].hash.ptr, rows.items[found].hash.len),
+                        string_from_bytes(rows.items[found].kind.ptr, rows.items[found].kind.len),
+                        string_from_bytes(rows.items[found].symbol.ptr, rows.items[found].symbol.len)));
+                }
             }
             if (!any_budget) { continue; }
             List<string>:args2 = raw strlist_clone(c.m.z3_options);
             drop strlist_push(@args2, "-smt2");
             drop strlist_push(@args2, raw path_join(dir, string_concat(fno2, ".t2.smt2")));
-            Result<Run>:r2 = await run_argv(z3, args2, c.t.env, raw duration_secs(120i64 + (10i64 * cnt.value)));
+            int64:secs2 = raw hang_net_secs(cnt.value, raw file_budget(keys2, net));
+            Result<Run>:r2 = await run_argv(z3, args2, c.t.env, raw duration_secs(secs2));
             if (r2.is_error) { fail r2.err; }
             Run:run2 = move(r2.value);
             if (run2.timed_out) {
-                drop list_push(fl, string_concat(name, ": z3 exceeded the wall-clock net on a tier-2 twin -- not a verdict (P-13)"));
+                string:m4 = string_concat(name, ": z3 exceeded the wall-clock net of ");
+                m4 = string_concat(m4, int_to_string(secs2));
+                m4 = string_concat(m4, " s on a tier-2 twin -- not a verdict (P-13)");
+                drop list_push(fl, move(m4));
                 pass NIL;
             }
             List<string>:ans2 = raw text_lines(run2.x.out);
@@ -733,29 +814,44 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     if (files_r.is_error) { pass (raw step_bad("the obligation directory could not be read (index.txt)")); }
     List<VFile>:files = move(files_r.value);
 
-    // 2. z3, one process per function file
-    List<string>:zf = raw list_init::<string>(1i64);
-    Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, "verify", @zf);
-    if (zr.is_error) { fail zr.err; }
-    if (zf.count > 0i64) { pass (raw step_bad(raw strlist_view(zf, 0i64))); }
-    string:run_text = raw manifest_of(c, rows);
-
-    // 3. the committed manifest
+    // 2. the committed manifest, read BEFORE the solver runs: the hang net of
+    //    each file counts the rows it records `budget` (D-297); a `--record`
+    //    run has none to trust and every row takes the larger bound
     string:committed = raw in_root(c, "nitpick.obligations");
     Result<cstring>:cc = to_cstring(committed);
     if (cc.is_error) { pass (raw step_bad("nitpick.obligations: not a path")); }
-    if (record) {
-        Result<NIL>:w = write_file(cc.value, run_text);
-        if (w.is_error) { pass (raw step_bad("nitpick.obligations could not be written")); }
-        drop say(raw stage_text("recorded", "nitpick.obligations written from this run (--record): commit it with the change that moved it"));
-    } else {
+    string:ctext = "";
+    if (!record) {
         if (!(path_exists(cc.value))) {
             pass (raw step_bad("nitpick.obligations is not committed -- the verified build is governed by the manifest and nothing writes it implicitly (P-9); run `npkg verify --record` and commit the file"));
         }
         Result<string>:ct = read_file(cc.value);
         if (ct.is_error) { pass (raw step_bad("nitpick.obligations cannot be read")); }
-        ObManifest:cman = raw man_parse(ct.value);
+        ctext = move(ct.value);
+    }
+    // parsed once, at the scope of the net that reads it (D-004 rule 3: the
+    // net is built from a borrow of it); under `--record` the empty text
+    // parses as not ok and is never asked
+    ObManifest:cman = raw man_parse(ctext);
+    HangNet:net = raw net_untrusted();
+    if (!record) {
         if (!cman.ok) { pass (raw step_bad(string_concat("nitpick.obligations: ", cman.problem))); }
+        net = raw net_of_manifest(@cman);
+    }
+
+    // 3. z3, one process per function file
+    List<string>:zf = raw list_init::<string>(1i64);
+    Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, "verify", @zf, @net);
+    if (zr.is_error) { fail zr.err; }
+    if (zf.count > 0i64) { pass (raw step_bad(raw strlist_view(zf, 0i64))); }
+    string:run_text = raw manifest_of(c, rows);
+
+    // 4. the comparison, or the record
+    if (record) {
+        Result<NIL>:w = write_file(cc.value, run_text);
+        if (w.is_error) { pass (raw step_bad("nitpick.obligations could not be written")); }
+        drop say(raw stage_text("recorded", "nitpick.obligations written from this run (--record): commit it with the change that moved it"));
+    } else {
         ObManifest:rman = raw man_parse(run_text);
         if (!rman.ok) { pass (raw step_bad(string_concat("this run's manifest does not read back: ", rman.problem))); }
         string:diff = raw manifest_compare(move(cman), move(rman));
@@ -764,12 +860,12 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
             m = string_concat(m, diff);
             pass (raw step_bad(m));
         }
-        if (!(raw text_eq(ct.value, run_text))) {
+        if (!(raw text_eq(ctext, run_text))) {
             pass (raw step_bad("nitpick.obligations carries the same rows as this run but different bytes -- the header (the pinned z3, the profile) or the row order moved; re-record it"));
         }
     }
 
-    // 4. the VERIFIED build
+    // 5. the VERIFIED build
     string:vll = raw path_join(vdir, "npkc.v.ll");
     List<string>:a2 = raw list_init::<string>(8i64);
     drop strlist_push(@a2, entry);
@@ -822,7 +918,7 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     Step:st2 = move(l2.value);
     if (!st2.ok) { pass (raw step_bad(string_concat("the verified compiler failed to link: ", raw text_head(raw text_trim(st2.text), 160i64)))); }
 
-    // 5. the verified fixpoint (D-202 over the verified build)
+    // 6. the verified fixpoint (D-202 over the verified build)
     string:s2ll = raw path_join(vdir, "stage2.v.ll");
     List<string>:a3 = raw list_init::<string>(6i64);
     drop strlist_push(@a3, entry);
@@ -855,7 +951,7 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     line = string_concat(line, "; nitpick.obligations matches; the verified compiler rebuilds itself byte-identically");
     drop say(raw stage_text("verify", line));
 
-    // 6. THE FLOOR'S LEG (1.5.6 step 3, D-288)
+    // 7. THE FLOOR'S LEG (1.5.6 step 3, D-288)
     Result<Step>:fs = await floor_leg(c, z3, vdir, record, explain);
     if (fs.is_error) { fail fs.err; }
     Step:fst = move(fs.value);
@@ -963,8 +1059,32 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     Result<List<VFile>>:files_r = read_index(fdir);
     if (files_r.is_error) { pass (raw step_bad("the floor's obligation directory could not be read (index.txt)")); }
     List<VFile>:files = move(files_r.value);
+    // the committed manifest, read BEFORE the solver runs: the hang net of
+    // each file counts the rows it records `budget` (D-297) -- the floor's
+    // seven residue rows are where the net's margin was thinnest; a
+    // `--record` run has none to trust and every row takes the larger bound
+    string:committed = raw path_join(root, "runtime/npkrt.obligations");
+    Result<cstring>:cc = to_cstring(committed);
+    if (cc.is_error) { pass (raw step_bad("runtime/npkrt.obligations: not a path")); }
+    string:ctext = "";
+    if (!record) {
+        if (!(path_exists(cc.value))) {
+            pass (raw step_bad("runtime/npkrt.obligations is not committed -- the floor's rows are governed by their manifest and nothing writes it implicitly (D-288); run `npkg verify --record` and commit the file"));
+        }
+        Result<string>:ct = read_file(cc.value);
+        if (ct.is_error) { pass (raw step_bad("runtime/npkrt.obligations cannot be read")); }
+        ctext = move(ct.value);
+    }
+    // parsed once, at the scope of the net that reads it (D-004 rule 3);
+    // under `--record` the empty text parses as not ok and is never asked
+    ObManifest:cman = raw man_parse_named(ctext, true);
+    HangNet:net = raw net_untrusted();
+    if (!record) {
+        if (!cman.ok) { pass (raw step_bad(string_concat("runtime/npkrt.obligations: ", cman.problem))); }
+        net = raw net_of_manifest(@cman);
+    }
     List<string>:zf = raw list_init::<string>(1i64);
-    Result<NIL>:zr = await z3_decide(c, z3, fdir, @rows, files, "floor", @zf);
+    Result<NIL>:zr = await z3_decide(c, z3, fdir, @rows, files, "floor", @zf, @net);
     if (zr.is_error) { fail zr.err; }
     if (zf.count > 0i64) { pass (raw step_bad(raw strlist_view(zf, 0i64))); }
     List<string>:vf = raw floor_verdict_failures(rows);
@@ -975,21 +1095,11 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     if (cf.is_error) { fail cf.err; }
     if (cf.value.count > 0i64) { pass (raw step_bad(raw strlist_view(cf.value, 0i64))); }
     string:run_text = raw manifest_of(c, rows);
-    string:committed = raw path_join(root, "runtime/npkrt.obligations");
-    Result<cstring>:cc = to_cstring(committed);
-    if (cc.is_error) { pass (raw step_bad("runtime/npkrt.obligations: not a path")); }
     if (record) {
         Result<NIL>:w = write_file(cc.value, run_text);
         if (w.is_error) { pass (raw step_bad("runtime/npkrt.obligations could not be written")); }
         drop say(raw stage_text("recorded", "runtime/npkrt.obligations written from this run (--record): commit it with the change that moved it"));
     } else {
-        if (!(path_exists(cc.value))) {
-            pass (raw step_bad("runtime/npkrt.obligations is not committed -- the floor's rows are governed by their manifest and nothing writes it implicitly (D-288); run `npkg verify --record` and commit the file"));
-        }
-        Result<string>:ct = read_file(cc.value);
-        if (ct.is_error) { pass (raw step_bad("runtime/npkrt.obligations cannot be read")); }
-        ObManifest:cman = raw man_parse_named(ct.value, true);
-        if (!cman.ok) { pass (raw step_bad(string_concat("runtime/npkrt.obligations: ", cman.problem))); }
         ObManifest:rman = raw man_parse_named(run_text, true);
         if (!rman.ok) { pass (raw step_bad(string_concat("this run's floor manifest does not read back: ", rman.problem))); }
         string:diff = raw manifest_compare(move(cman), move(rman));
@@ -998,7 +1108,7 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
             m = string_concat(m, diff);
             pass (raw step_bad(m));
         }
-        if (!(raw text_eq(ct.value, run_text))) {
+        if (!(raw text_eq(ctext, run_text))) {
             pass (raw step_bad("runtime/npkrt.obligations carries the same rows as this run but different bytes -- the header (the pinned z3, the profile) or the row order moved; re-record it"));
         }
     }

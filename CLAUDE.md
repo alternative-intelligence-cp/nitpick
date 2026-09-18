@@ -1191,8 +1191,12 @@ six named invariants. Step 3: TCB.md §4d GENERATED in both runners — per
 section, the callers a row covers and the callers nothing does (31 sections: 2
 covered, 18 with an unproved floor caller, 15 exported) — with §5's sixteenth
 acceptance. No verdict moved (25 hashes over two symbols), no floor byte, no
-ladder row. **S-77 is OPEN (the user's):** the solver's hang net leaves
-`npk_small_free` at 81% of its bound.
+ladder row. **S-77 — the solver's hang net leaving `npk_small_free` at 81% of
+its bound — was settled as D-297 and LANDED 2026-09-17 as the s8 seat's first
+landing, before 1.5.7 step 0:** the net is `120 + 10·checks + 60·B` seconds per
+file in both runners, B the file's rows the committed manifest records `budget`
+(B = checks with no manifest to trust); `npk_small_free` is decided under 610 s
+where it was 250, and nothing else moved.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): TWO subcycles.** 1.5.7 is D-212's
@@ -1722,9 +1726,13 @@ that carried them retired at the cycle close):
   (`/usr/bin/time -f %es z3 smt.random_seed=0 sat.random_seed=0
   rlimit=20000000 lp.dio=false -smt2 FILE`). A row split out of its file, or a
   cost in rlimit alone, measured a spelling as free that took its file from
-  202 s to 357 s — past the hang net (`120 + 10·checks` seconds per file,
-  P-13), which is a red run and no verdict. `npk_small_free` stands at 81% of
-  that net on this machine (S-77, open).
+  202 s to 357 s — past the hang net (P-13; since D-297 `120 + 10·checks +
+  60·B` seconds per file, B the file's rows the committed manifest records
+  `budget`, and B = checks with no manifest to trust), which is a red run and
+  no verdict. `npk_small_free` stood at 81% of the flat net (S-77) and stands
+  at a third of its 610 s; a red on the net names the net and is READ, not
+  re-run — the solver wedged (S-71's class) or the file is one the manifest
+  does not justify.
 
 ### Reserved words that read like ordinary names
 

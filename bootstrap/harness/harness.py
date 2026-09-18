@@ -3110,12 +3110,46 @@ BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-exit"))
 
 
-def z3_verdicts(obl_dir, name):
+def hang_net(checks, budget):
+    """THE SOLVER'S HANG NET (P-13; D-297, S-77): the seconds one z3 process
+    over a file of `checks` rows may run, `budget` of them rows the manifest
+    the run is held to records as `budget`. A `budget` row burns the whole
+    rlimit BY DEFINITION (about 33 s on this machine), so a net sized as if
+    every row cost ten seconds left `npk_small_free` (six such rows) at 81% of
+    its bound -- a red run that is no verdict, on a machine a quarter slower.
+    It stays a hang net: a solver killed at its net is a build failure by
+    name, never a row, and no verdict can move with the bound."""
+    return 120 + 10 * checks + 60 * budget
+
+
+def budget_rows_of(committed):
+    """The (hash, kind, symbol) keys a committed manifest (`manifest_rows`'s
+    set) records as `budget`; None when there is no manifest to trust -- a
+    `--record` run, a verify test, a planted self-check case -- and then every
+    row of every file takes the larger bound (`file_budget`)."""
+    if committed is None:
+        return None
+    return frozenset((h, k, sym) for (h, k, v, sym) in committed if v == "budget")
+
+
+def file_budget(keys, budget):
+    """How many of a file's encoded rows -- `keys`, their (hash, kind, symbol)
+    -- the trusted manifest records as `budget`; every one of them when there
+    is no manifest to trust (`budget` is None)."""
+    if budget is None:
+        return len(keys)
+    return sum(1 for key in keys if key in budget)
+
+
+def z3_verdicts(obl_dir, name, budget=None):
     """Every function file under the profile, one process each; the rows of
     rows.txt with their verdicts -- [(fno, k, kind, hash, verdict, sym, site,
     role, group, traps, tier)] (the four after `site` 1.5.3 step 2's, L-13; the tier 1.5.4b step 3's, D-281) -- or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
     exactly N answer lines for N encoded rows, anything else fails the run by
-    name. The wall-clock net (P-13) is a hang net and never a verdict."""
+    name. The wall-clock net (P-13) is a hang net and never a verdict: each
+    file's is `hang_net(checks, B)`, B the file's rows `budget` -- the set
+    `budget_rows_of` built from the manifest the run is held to, or None for
+    the larger bound (D-297)."""
     z3 = shutil.which("z3")
     if not z3:
         return None, ["%s: z3 is not on PATH (the pin check should have said so)" % name]
@@ -3137,12 +3171,13 @@ def z3_verdicts(obl_dir, name):
             return None, ["%s: index.txt says %s has %d checks, rows.txt lists %d encoded rows" % (name, fno, checks, len(enc))]
         if checks == 0:
             continue
+        net = hang_net(checks, file_budget([(r[3], r[2], r[5]) for r in enc], budget))
         try:
             r = subprocess.run([z3] + Z3_OPTIONS + ["-smt2", os.path.join(obl_dir, fno + ".smt2")],
-                               capture_output=True, text=True, timeout=120 + 10 * checks)
+                               capture_output=True, text=True, timeout=net)
         except subprocess.TimeoutExpired:
-            return None, ["%s: z3 exceeded the wall-clock net on %s (%s) -- not a verdict: a "
-                          "wedged solver is a build failure, never a `budget` row (P-13)" % (name, fno, sym)]
+            return None, ["%s: z3 exceeded the wall-clock net of %d s on %s (%s) -- not a verdict: a "
+                          "wedged solver is a build failure, never a `budget` row (P-13)" % (name, net, fno, sym)]
         ans = [l for l in r.stdout.splitlines() if l.strip()]
         bad = [l for l in ans if l not in VERDICT_OF_ANSWER]
         if bad:
@@ -3156,6 +3191,7 @@ def z3_verdicts(obl_dir, name):
     # profile; `unsat` discharges it and its tier reads `real`. A `sat` at
     # tier 1 is a countermodel in the real semantics and is never retried.
     tier2 = set()
+    key_of = {(r[0], r[1]): (r[3], r[2], r[5]) for r in rows}
     t2path = os.path.join(obl_dir, "index.t2.txt")
     if os.path.exists(t2path):
         for line in open(t2path, encoding="utf-8"):
@@ -3169,11 +3205,15 @@ def z3_verdicts(obl_dir, name):
                 return None, ["%s: index.t2.txt lists %d ordinals for a count of %d (%s)" % (name, len(ks), count, fno)]
             if not any(verdict.get((fno, k)) == "budget" for k in ks):
                 continue
+            # the twin's net counts the twin's rows the manifest records
+            # `budget` -- a row the twin discharged is recorded `real`
+            # discharged and did not burn its budget there
+            net = hang_net(count, file_budget([key_of[(fno, k)] for k in ks if (fno, k) in key_of], budget))
             try:
                 r = subprocess.run([z3] + Z3_OPTIONS + ["-smt2", os.path.join(obl_dir, fno + ".t2.smt2")],
-                                   capture_output=True, text=True, timeout=120 + 10 * count)
+                                   capture_output=True, text=True, timeout=net)
             except subprocess.TimeoutExpired:
-                return None, ["%s: z3 exceeded the wall-clock net on the tier-2 twin %s -- not a verdict (P-13)" % (name, fno)]
+                return None, ["%s: z3 exceeded the wall-clock net of %d s on the tier-2 twin %s -- not a verdict (P-13)" % (name, net, fno)]
             ans = [l for l in r.stdout.splitlines() if l.strip()]
             bad = [l for l in ans if l not in VERDICT_OF_ANSWER]
             if bad:
@@ -3517,10 +3557,8 @@ def check_verify_compiler(tmp, stage1_ir):
     with open(os.path.join(vdir, "plain.ll"), "rb") as fh:
         if fh.read() != stage1_ir:
             return ["verify: the --obligations emission of the compiler differs from stage 1's -- the walk touched the writer (P-3)"]
-    full, f2 = z3_verdicts(obl, "verify")
-    if f2:
-        return f2
-    run_text = manifest_text(full)
+    # the committed manifest is read BEFORE the solver runs: the hang net of
+    # each file counts the rows it records `budget` (D-297)
     committed = os.path.join(ROOT, "nitpick.obligations")
     if not os.path.exists(committed):
         return ["verify: nitpick.obligations is not committed -- the verified build is governed by the manifest "
@@ -3530,6 +3568,10 @@ def check_verify_compiler(tmp, stage1_ir):
     crows, why = manifest_rows(ctext)
     if crows is None:
         return ["verify: nitpick.obligations cannot be read: %s" % why]
+    full, f2 = z3_verdicts(obl, "verify", budget_rows_of(crows))
+    if f2:
+        return f2
+    run_text = manifest_text(full)
     rrows, _ = manifest_rows(run_text)
     if crows != rrows:
         return ["verify: this run's obligations differ from nitpick.obligations (D-040: a build that would differ "
@@ -3637,16 +3679,9 @@ def check_verify_floor(tmp, tools):
         return ["floor: the writer did not terminate"]
     if r.returncode != 0:
         return ["floor: the writer refused: %s" % (r.stdout + r.stderr).strip()[:800]]
-    full, f2 = z3_verdicts(fdir, "floor")
-    if f2:
-        return f2
-    fails = floor_verdict_failures(full)
-    if fails:
-        return fails
-    fails = floor_controls(fdir)
-    if fails:
-        return fails
-    run_text = manifest_text(full)
+    # the committed manifest is read BEFORE the solver runs: the hang net of
+    # each file counts the rows it records `budget` (D-297) -- the floor's
+    # seven residue rows are where the net's margin was thinnest
     committed = os.path.join(ROOT, "runtime", "npkrt.obligations")
     if not os.path.exists(committed):
         return ["floor: runtime/npkrt.obligations is not committed -- the floor's rows are governed by their manifest "
@@ -3656,6 +3691,16 @@ def check_verify_floor(tmp, tools):
     crows, why = manifest_rows(ctext, floor=True)
     if crows is None:
         return ["floor: runtime/npkrt.obligations cannot be read: %s" % why]
+    full, f2 = z3_verdicts(fdir, "floor", budget_rows_of(crows))
+    if f2:
+        return f2
+    fails = floor_verdict_failures(full)
+    if fails:
+        return fails
+    fails = floor_controls(fdir)
+    if fails:
+        return fails
+    run_text = manifest_text(full)
     rrows, why2 = manifest_rows(run_text, floor=True)
     if rrows is None:
         return ["floor: this run's floor manifest does not read back: %s" % why2]
@@ -3698,10 +3743,12 @@ def floor_controls(fdir):
         if len(f) != 4:
             return ["floor: a controls.txt line is not `cNNNN model:NAME CONTROL BAD`"]
         try:
+            # one `(check-sat)` that must answer `sat`: a control is never a
+            # `budget` row, so its net is the formula's floor for one row
             r = subprocess.run([z3] + Z3_OPTIONS + ["-smt2", os.path.join(fdir, f[0] + ".smt2")],
-                               capture_output=True, text=True, timeout=130)
+                               capture_output=True, text=True, timeout=hang_net(1, 0))
         except subprocess.TimeoutExpired:
-            return ["floor: z3 exceeded the wall-clock net on the control %s of %s -- not a verdict: a wedged solver is a build failure (P-13)" % (f[2], f[1])]
+            return ["floor: z3 exceeded the wall-clock net of %d s on the control %s of %s -- not a verdict: a wedged solver is a build failure (P-13)" % (hang_net(1, 0), f[2], f[1])]
         a = r.stdout.strip()
         if a != "sat":
             fails.append("floor: the control %s of %s does not reach bad:%s (z3 said %r, not `sat`): a model blind to what it claims to see (floor-control-blind)" % (f[2], f[1], f[3], a[:40]))

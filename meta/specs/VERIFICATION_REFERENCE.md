@@ -1016,6 +1016,28 @@ holds compute in floats or vectors.
 > with a system code (`?! DivByZero`) no longer reads as a guard (DEF-36),
 > and both runners' self-checks hold the pair.
 
+> **[Before 1.5.7 step 0 (2026-09-17), D-297 (S-77).]** THE HANG NET. Every
+> z3 process a runner spawns runs under a wall-clock net that is a HANG NET
+> and never a verdict (P-13, 1.5.0): a solver killed at it fails the run by
+> name — "z3 exceeded the wall-clock net of N s on F" — and no kill can
+> become a row, so a verdict stays a function of (obligation, solver build,
+> budget) and never of the machine (D-218.2). The net per file is `120 +
+> 10·checks + 60·B` seconds, B the number of the file's rows the manifest
+> the run is held to records `budget` — `nitpick.obligations` for the
+> compiler's leg, `runtime/npkrt.obligations` for the floor's, matched by
+> hash, kind and symbol — because a `budget` row burns the whole rlimit by
+> definition (about 33 s under the profile on the workbench's machine) and
+> the flat `120 + 10·checks` left the floor's `npk_small_free` at 81% of its
+> bound on every run. A run with no manifest to trust — `--record`, a verify
+> test held to its own `expect-obligation:` lines, a planted self-check case
+> — takes the larger bound for every row (B = checks); a tier-2 twin counts
+> its own rows so recorded; a model's control (one `(check-sat)` that must
+> answer `sat`) keeps the one-row floor, 130 s. Both runners compute it from
+> one formula each, and both self-checks hold the formula to one planted
+> text (`hang-net`, `hang-net-untrusted`). A red on the net is a build
+> failure to READ, never a flake to re-run: the solver it names either
+> wedged (S-71's class) or met a file the manifest does not justify.
+
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot
 prove it, the check stays and runs at runtime. Proof can only ever remove
