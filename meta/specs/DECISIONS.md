@@ -18911,3 +18911,166 @@ bound, which is why it was asked rather than taken.
 > (13 rows, 6 `budget`); `npk_int_to_string` under 260 where it was 200 (8
 > rows, 1); every other file's net is unchanged, since no other file holds a
 > `budget` row. No verdict moved, no manifest moved, no ladder row moved.
+
+## D-298 — The schedule explorer's shim is hand-written LLVM IR in `runtime/explore/`, test infrastructure linked into explored test binaries only — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-78)**
+
+D-212 ratified r6's recipe for the concurrency evidence `// stress:` cannot
+give: a mocked-primitive build of the runtime under a centralized, seeded
+scheduler, a virtualized reactor, and replay by seed. 1.5.7's planning
+measured the seam with a throw-away prototype (a C shim, clang-built,
+outside every gate; kept by D-303): a TEXT TRANSFORM of the real floor — a
+scheduling point before each of its 78 atomic step lines, each of its 63
+`@npk_sys6(` calls routed to the shim, the thread lifecycle hooked — with
+real clone'd threads under a baton, virtual futex queues, a virtual clock
+and `epoll_pwait` as a poll; 35 of the 44 `// stress:` programs explored
+correctly, exact replay by seed, a schedule some 45× cheaper than a stress
+run. The shim that stays needs what a Nitpick program cannot have: mutable
+module state (D-211 gives a program `const`/`fixed` only), and code that
+runs INSIDE the floor's critical sections — under the heap mutex, inside the
+scheduler's park — which may not allocate, trap or call the floor, and must
+not itself be transformed. **The decision.** The shim is hand-written LLVM
+IR, `runtime/explore/npkx.ll`, D-203's permanent form for exactly this kind
+of code. It is TEST INFRASTRUCTURE: linked into explored test binaries only,
+never into anything the artifact is, and it stands under the floor's own
+belts (the `undef` ban, D-173 and the stack rule, the zero-dependency scan).
+The explored floor is GENERATED from the real one at test time by the one
+transformer (`npkg/explore.npk`; 1.5.7's X-1 — a transform, never a second
+floor, so every instruction the artifact runs is the instruction explored),
+and the floor's bytes do not move. **Alternative costed:** keep exploration
+out of the tree until it can be Nitpick — declined: the language will not
+gain mutable module state for a test harness's sake (D-211 is a safety
+decision), and D-212's evidence would wait on a change nobody wants.
+
+> Lands across **1.5.7** (`meta/roadmap/1.5/1.5.7.md`): the transformer and
+> its totality belt at step 0, the shim at step 1.
+
+## D-299 — A concurrency test says whether it is explored: `// explore: N` or `// explore: no <reason>`, and a belt holds every `// stress:` program to one or the other — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-79)**
+
+Nine of the 44 `// stress:` programs cannot be explored: they spawn real
+child processes (the driver programs, `extern_c_driver`, `extern_stub`,
+`proc_tool`), and a virtual clock cannot share a real child's real time.
+"Every `// stress:` program is explored" implicitly would put those nine in
+a skip list inside a runner — the next stale list, and a silent one. **The
+decision.** A program opts IN with `// explore: N` (N seeds; an optional
+`d=…` for PCT's depth) or OUT with `// explore: no <reason>`, in the file,
+where the reason is read beside the program; a belt in both runners,
+`explore-unmarked`, makes a `// stress:` program that says neither a red
+run by name. A seed that ever found a defect is committed beside the marker
+as `// explore-seed: S` and runs first, forever (X-11: a schedule that found
+a defect once is the cheapest regression test the project will ever own).
+The explorer COMPLEMENTS `// stress:` (D-212's words, X-12): stress runs the
+real clock, the real kernel scheduler and weak memory on real cores; the
+explorer runs the interleavings stress never reaches. Neither marker implies
+the other's removal.
+
+> Lands at **1.5.7** step 1 (the markers on every `// stress:` program, the
+> belt, the `explore` stage in `nitpick.toml`'s `[[test]]` table, D-238).
+
+## D-300 — 1,000 seeds per explored unit per run — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-80)**
+
+PCT's guarantee is per RUN — at least `1/(n·k^(d−1))` for a depth-d bug over
+n threads and k steps (r6) — so seeds compound coverage and the number is a
+choice about cost against coverage. MEASURED with the prototype: the 35
+explorable programs × 1,000 seeds = 35,000 schedules, all correct, both
+oracles silent, in 298 s with four harnesses running beside it (about five
+minutes per runner); 100 seeds take about 30 s. **The decision.** 1,000
+seeds per unit per run, written on every marker at step 1; the stage prints
+PCT's bound per unit from its measured n and k (X-8), so what the seeds do
+and do not reach is said, not implied. Per-run cost is not the constraint on
+this project (the standing rule: quality over quantity, no schedule
+pressure); coverage of the interleavings stress never reaches is. A unit's
+marker may say more; none says fewer without a reason beside it.
+
+> Lands at **1.5.7** step 1.
+
+## D-301 — `LOST-WAKE` and `LOST-FUTEX-WAKE` are red runs even when the exit code is right — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-81)**
+
+Every wait in this runtime carries a deadline (D-071), so a lost wakeup
+degrades to LATENESS: an executor that misses its wake sleeps until the next
+deadline and the program still exits right, late — and virtual time hides
+the lateness completely. MEASURED with the prototype, the absorbed
+notification planted (`npk_ch_wake_one` stamps the task due and never
+rouses its executor — r6's tokio#2057): `nested_wait` fails on 100 of 100
+seeds under the oracle, 0 of 100 by exit code, and 0 of 10 stress runs
+(every run exits right, 1.5 s late); on the clean floor the oracles are
+silent over 35 programs × 100 seeds. **The decision.** Two quiescence
+oracles are verdicts, and a verdict is a red run by name whatever the exit
+code: **`LOST-WAKE`** — before virtual time may jump, no blocked thread's
+executor holds, on its sleeper list, a frame stamped due (the models'
+`wake-before-sleep`, `absorbed-notification` and `spent-marker`, read off
+the REAL executor state through three offsets of `%npk.exec`/`%npk.hdr`
+that a belt holds to the floor's struct types); **`LOST-FUTEX-WAKE`** — at
+quiescence no virtual waiter's word differs from the value it waited on
+(every futex protocol of the floor is "wait while the word is v; whoever
+changes it wakes"). Beside them `DEADLOCK` and `STEP-BUDGET`, and the
+program's own exit against its `// expect-exit:`. Each verdict prints the
+seed, every slot's state and the replay line. **Alternative costed:** report
+without failing — declined: a report nobody must read is the lateness
+itself, invisible again.
+
+> Lands at **1.5.7** step 3 (the oracles and the control mechanism).
+
+## D-302 — The floor spec's caller hypotheses are EXECUTED at every call of every explored schedule, inside 1.5.7 — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-82)**
+
+1.5.6c found that a section's `requires`, `(objects …)` and `(views …)` are
+hypotheses of its rows and that nothing checks the callers no row covers —
+TCB.md §4d's two "NOT PROVED" columns (18 sections with an untranslated
+floor caller, 15 exported) — and its sixteenth acceptance says so. Two of
+those hypotheses had been FALSE for a legal caller, found by reading. The
+prototype measured what executing them would have found: a checker at
+`npk_small_free`'s entry over 35 programs, one schedule each, ran 5,276
+times, and 1.5.6's unconditional apartness clause was false on 5,276 of
+5,276 calls where 1.5.6c's `apart-when` clause was false on none;
+`npk_rq_push`'s three-way apartness held on 1,424 of 1,424. Reading found
+that clause after a year; a checker finds it in the first millisecond of any
+program that frees a small block. **The decision.** For every section that
+has rows and a caller assumption, the transformer emits at the symbol's
+entry in the explored floor a call of a GENERATED checker
+(`@"npkx.req.<symbol>"`, IR text written from the spec's own S-expressions):
+each `requires` with no free symbol, each range's address-space bound, and
+each pair fact of `(objects …)`/`(views …)` with `apart-when`'s condition
+and the null/empty rule exactly as `objects_facts` states them, evaluated
+over the ENTRY state in the spec's mathematical integers (i128; a load below
+the null page reads as 0, the spec's own convention that a null range is no
+object). A false one is the verdict `ASSUMPTION <symbol>: <clause>`. A
+clause the generator cannot evaluate (a free symbol — `npk_small_free`'s
+sorted-table `requires`) is LISTED BY NAME in the stage's output and in
+TCB.md, never skipped in silence. This is inside 1.5.7 (step 5), not a
+subcycle after it: it is where 1.5.6c's sixteenth acceptance gets its test,
+for untranslated floor callers and emitted code alike.
+
+> Lands at **1.5.7** step 5.
+
+## D-303 — The planning prototype's C shim stays in the tree OUTSIDE every gate, as the IR shim's behavioural reference — **SETTLED (user decision, 2026-09-17, on his stated condition: "The only thing i'm not positive about is the C shim you mentioned. What exactly is it's purpose? If it's just an extra layer of verification for us that doesn't get shipped then i don't see a problem with it."; S-83)**
+
+The shim is hand-written IR (D-298), ported by hand from the ~375-line C
+prototype that measured the design. A port nothing holds to its original is
+a REVIEW; the prototype, kept, makes it a MEASUREMENT: at step 1 the IR shim
+is held to it SCHEDULE HASH FOR SCHEDULE HASH over the explored units — the
+same seed, the same step count, the same hash — and afterwards it is the
+reference any later change to the shim is measured against. **The
+decision.** The prototype lives at `meta/roadmap/1.5/tools/explore_prototype/`
+(`transform.py`, `npkx.c`, `build.sh`, `sweep.sh`, a README saying what it
+is and that nothing builds it into anything), beside `model_bfs.py`. It is
+built by no gate, linked into nothing, run by neither runner, and outside
+the artifact and the trusted computing base: the zero-dependency rule
+governs what SHIPS, and this ships nowhere — the standing of
+`tests/backend/fixtures/*.c`, the reference drivers of 1.1.13c (D-149: test
+tooling outside the TCB). The harness never invokes a C compiler for it.
+The user's question was its purpose; the answer — a reference oracle for the
+hand-written IR, a measurement tool, never linked into anything the artifact
+is — is exactly his condition, "doesn't get shipped". **Alternative
+costed:** no C file in the repository at all, the IR shim validated by the
+units and the negative controls alone — stated plainly when asked, and
+declined by his answer: the controls prove the shim finds what is planted,
+not that it schedules as the measured design did.
+
+> Lands at **1.5.7** step 0 (the copy, with its header); the hash-for-hash
+> measurement at step 1.
+>
+> **LANDED at 1.5.7 step 0 (2026-09-18).** The four files copied under
+> `meta/roadmap/1.5/tools/explore_prototype/` with their headers amended
+> (each says it is kept by this decision and superseded where it is) and a
+> README; nothing under `src/`, `runtime/`, `lib/`, `npkg/` or `tools/`
+> references the directory, and the one transformer (`npkg/explore.npk`)
+> reproduces `transform.py`'s 141 sites number for number over the floor.

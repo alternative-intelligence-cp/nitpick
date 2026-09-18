@@ -41,6 +41,7 @@ use "./suites.npk".*;
 use "./irscan.npk".*;
 use "./elf.npk".*;
 use "./verify.npk".*;                          // elided_ir_checks, VRow (the bypass cases)
+use "./explore.npk".*;                         // the explored floor's transformer and belt (1.5.7 step 0)
 use "../src/backend/smt/smt_kinds.npk".*;      // OV_OPEN / OV_DISCHARGED
 use "./floor_shared.npk".*;                    // the shared-state belt's cases
 use "./floor_stack.npk".*;                     // the stack rule's cases (1.5.6b)
@@ -742,6 +743,44 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!okfu) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("floor-unspecified", okfu, "a section with no claim and no residue sentence must fail"));
     if (!okfu) { drop strlist_push(@report, "      the spec belt accepted it; it should not have"); }
+
+    // THE EXPLORED FLOOR (1.5.7 step 0; X-1, X-9): the ONE transformer's output
+    // over a planted floor is a LITERAL -- every atomic step line gets its
+    // point, the `@npk_sys6(` call is routed, the trampoline's own body and
+    // the `module asm` line are left alone, the lifecycle hooks land around the
+    // clone call and inside `@npk_thread_entry`, the declares are appended --
+    // and the site map beside it; then the counting belt: the literal with one
+    // point deleted must fail by name, the literal itself must pass. The
+    // harness holds the tool it builds from the same module to the SAME three
+    // texts, so a transformer or a belt that drifts fails in both runners.
+    string:xp_floor = "module asm \".globl npk_clone_raw\"\ndefine i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,\n                     i64 %a4, i64 %a5, i64 %a6) {\n  ret i64 0\n}\ndefine void @npk_lock(ptr %w) {\nentry:\n  %c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst   ; a step\n  %v = load atomic i32, ptr %w seq_cst, align 4\n  fence seq_cst\n  %s = call i64 @npk_sys6(i64 202, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n  ret void\n}\ndefine void @npk_thread_entry(i64 %tlsi) {\nentry:\n  store atomic i32 1, ptr null seq_cst, align 4\n  ret void\n}\ndefine i64 @npk_thread_start(i64 %sp) {\nentry:\n  %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 0, i64 0,\n                               ptr @npk_thread_entry, i64 0)\n  ret i64 %r\n}\ndeclare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)\n";
+    string:xp_expected = "module asm \".globl npk_clone_raw\"\ndefine i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,\n                     i64 %a4, i64 %a5, i64 %a6) {\n  ret i64 0\n}\ndefine void @npk_lock(ptr %w) {\nentry:\n  call void @npkx_point(i32 0)\n  %c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst   ; a step\n  call void @npkx_point(i32 1)\n  %v = load atomic i32, ptr %w seq_cst, align 4\n  call void @npkx_point(i32 2)\n  fence seq_cst\n  %s = call i64 @npkx_sys6(i64 202, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n  ret void\n}\ndefine void @npk_thread_entry(i64 %tlsi) {\nentry:\n  call void @npkx_begin()\n  call void @npkx_point(i32 4)\n  store atomic i32 1, ptr null seq_cst, align 4\n  call void @npkx_end()\n  ret void\n}\ndefine i64 @npk_thread_start(i64 %sp) {\nentry:\n  call void @npkx_prespawn()\n  %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 0, i64 0,\n                               ptr @npk_thread_entry, i64 0)\n  call void @npkx_spawned(i64 %r)\n  ret i64 %r\n}\ndeclare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)\n\n; --- the explorer's shim (runtime/explore/npkx.ll; 1.5.7) ---\ndeclare void @npkx_point(i32)\ndeclare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)\ndeclare void @npkx_prespawn()\ndeclare void @npkx_spawned(i64)\ndeclare void @npkx_begin()\ndeclare void @npkx_end()\n";
+    string:xp_sites = "0\t@npk_lock\tatomic\t%c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst\n1\t@npk_lock\tatomic\t%v = load atomic i32, ptr %w seq_cst, align 4\n2\t@npk_lock\tatomic\tfence seq_cst\n3\t@npk_lock\tsys6\t%s = call i64 @npk_sys6(i64 202, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n4\t@npk_thread_entry\tatomic\tstore atomic i32 1, ptr null seq_cst, align 4\n";
+    Explored:xp = raw explore_transform(xp_floor);
+    bool:okx = (xp.problems.count == 0i64) && (raw text_eq(xp.text, xp_expected)) && (raw text_eq(xp.sites, xp_sites));
+    if (!okx) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-transform", okx, "the transformer's output over a planted floor is the literal, text and sites"));
+    if (!okx) {
+        if (xp.problems.count > 0i64) { drop strlist_push(@report, string_concat("      the transformer refused: ", raw strlist_view(xp.problems, 0i64))); }
+        else {
+            string:xw = "      the text ";
+            if (raw text_eq(xp.text, xp_expected)) { xw = string_concat(xw, "matches the literal"); } else { xw = string_concat(xw, "differs from the literal"); }
+            if (raw text_eq(xp.sites, xp_sites)) { xw = string_concat(xw, ", the sites match"); } else { xw = string_concat(xw, ", the sites differ"); }
+            drop strlist_push(@report, xw);
+        }
+    }
+    string:xp_escaped = raw text_replace_all(xp_expected, "  call void @npkx_point(i32 2)\n", "");
+    List<string>:xe = raw explore_totality(xp_floor, xp_escaped);
+    bool:okxe = false;
+    for (int64:xi in 0i64...xe.count) { if (raw text_starts_with(raw strlist_view(xe, xi), "explore-step-escapes")) { okxe = true; } }
+    if (!okxe) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-step-escapes", okxe, "an atomic step with no point before it must fail the counting belt by name"));
+    if (!okxe) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+    List<string>:xc = raw explore_totality(xp_floor, xp_expected);
+    bool:okxc = (xc.count == 0i64);
+    if (!okxc) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-step-escapes-control", okxc, "the transformer's own output must pass the counting belt"));
+    if (!okxc) { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(xc, 0i64))); }
     // WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator
     // on a planted floor whose answer is known by reading it -- `@callee`
     // assumes something of its caller; `@covered` is translated and INLINES it;

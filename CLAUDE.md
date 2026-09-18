@@ -1199,8 +1199,22 @@ file in both runners, B the file's rows the committed manifest records `budget`
 where it was 250, and nothing else moved.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): TWO subcycles.** 1.5.7 is D-212's
-schedule-exploration harness, not yet planned. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+throughout): TWO subcycles.** **1.5.7 (D-212's schedule-exploration harness) IS
+UNDERWAY** — planned and measured by s7 with a throw-away prototype, approved
+by the user 2026-09-17 in one sentence (S-77…S-83 → D-297…D-303), and its
+**step 0 LANDED 2026-09-18** (`meta/roadmap/1.5/1.5.7.md`): the ONE
+transformer (`npkg/explore.npk`; `tools/explored.npk` is the harness's
+snapshot-built entry — a program cannot hold two modules named `explore`) puts
+a scheduling point before each of the floor's 78 atomic step lines and routes
+each of its 63 `@npk_sys6(` calls to the shim, and the TOTALITY BELT
+(`explore-step-escapes`) counts in both runners — the harness has no
+transformer of its own, by design (X-9: the property is an equality of two
+counts); both self-checks hold the transformer's output to one literal over a
+planted floor; the planning prototype's C shim is kept OUTSIDE every gate as
+the IR shim's behavioural reference (D-303). Steps 1–7: the hand-written IR
+shim and the `explore` stage, virtual signals, the quiescence oracles and the
+controls, the nineteen model controls walked, the spec's hypotheses executed,
+program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving

@@ -1,0 +1,111 @@
+// explored -- the EXPLORED FLOOR's writer and its totality belt, as one
+// program the harness builds with the snapshot (1.5.7 step 0; D-212, X-1,
+// X-9). `explored <manifest root> --emit DIR` transforms `runtime/npkrt.ll`
+// under the root through the ONE transformer (`npkg/explore.npk`) and writes
+// `DIR/npkrt.explore.ll` and `DIR/sites.txt`, exiting 0; with no `--emit` it
+// runs the totality belt over the real floor through the real transform and
+// exits 0 when it holds, 1 with every finding on stdout, 2 for a bad
+// invocation. `npkg verify` runs the same belt through the same module; the
+// harness's Python twin counts in `bootstrap/harness/explore.py` over this
+// tool's output -- ONE transformer, two counting readers. (The plan named
+// this file `tools/explore.npk`; a program cannot hold two modules named
+// `explore`, and the transformer's module keeps the name.)
+mod:explored;
+
+use "../src/frontend/paths.npk".*;
+use "../lib/nio.npk".*;
+use "../lib/nfs.npk".*;
+use "../npkg/text.npk".*;
+use "../npkg/explore.npk".*;
+
+func:say = NIL(string:s) never fails {
+    string:ln = string_concat(s, "\n");
+    Result<NIL>:r = nio_write_all(raw nio_stdout_fd(), ln.ptr =>! wild int8->, ln.len);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// `abs` exists as a directory afterwards (build.npk's `ensure_dir`, repeated
+// here as `npkg/floor.npk` repeats it: a snapshot-built tool needs nothing of
+// the runner's build layer).
+func:ensure_dir = NIL(string:abs) {
+    Path:parent = relay path_parse(raw path_dirname(abs));
+    fd:d = relay dir_open(parent);
+    Result<NIL>:mk = mkdir_at(d, raw text_file_name(abs));
+    Result<NIL>:cl = close(d);
+    if (mk.is_error) { if (mk.err != Exists) { fail mk.err; } }
+    if (cl.is_error) { fail cl.err; }
+    pass NIL;
+};
+
+func:write_text = NIL(string:path, string:text) {
+    Result<cstring>:pc = to_cstring(path);
+    if (pc.is_error) { fail pc.err; }
+    Result<NIL>:w = write_file(pc.value, text);
+    if (w.is_error) { fail w.err; }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        drop say("usage: explored <manifest root> [--emit DIR]");
+        exit 2i32;
+    }
+    string:root = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    if (argv.len >= 4i64) {
+        if (raw text_eq(string_from_bytes(argv[2i64].ptr, argv[2i64].len), "--emit")) {
+            string:dir = string_from_bytes(argv[3i64].ptr, argv[3i64].len);
+            Result<cstring>:fc = to_cstring(string_concat(root, "/runtime/npkrt.ll"));
+            if (fc.is_error) { drop say("explore: runtime/npkrt.ll: not a path"); exit 1i32; }
+            Result<string>:ftx = read_file(fc.value);
+            if (ftx.is_error) { drop say("explore: runtime/npkrt.ll cannot be read"); exit 1i32; }
+            Explored:x = raw explore_transform(ftx.value);
+            for (int64:i in 0i64...x.problems.count) { drop say(raw strlist_view(x.problems, i)); }
+            if (x.problems.count > 0i64) { drop say(string_concat(int_to_string(x.problems.count), " finding(s)")); exit 1i32; }
+            Result<NIL>:d = ensure_dir(dir);
+            if (d.is_error) { drop say("explore: the output directory could not be created"); exit 1i32; }
+            Result<NIL>:w1 = write_text(raw path_join(dir, "npkrt.explore.ll"), x.text);
+            if (w1.is_error) { drop say("explore: npkrt.explore.ll could not be written"); exit 1i32; }
+            Result<NIL>:w2 = write_text(raw path_join(dir, "sites.txt"), x.sites);
+            if (w2.is_error) { drop say("explore: sites.txt could not be written"); exit 1i32; }
+            string:m = string_concat("explore: the explored floor written to ", dir);
+            m = string_concat(m, " -- ");
+            m = string_concat(m, int_to_string(x.points));
+            m = string_concat(m, " point(s), ");
+            m = string_concat(m, int_to_string(x.routed));
+            m = string_concat(m, " routed call(s)");
+            drop say(m);
+            exit 0i32;
+        }
+    }
+    List<string>:fl = raw explore_totality_current(root);
+    for (int64:j in 0i64...fl.count) { drop say(raw strlist_view(fl, j)); }
+    if (fl.count > 0i64) {
+        drop say(string_concat(int_to_string(fl.count), " finding(s)"));
+        exit 1i32;
+    }
+    drop say("explore: every step of the floor is accounted for in the explored floor (explore-step-escapes holds)");
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)        { exit 3i32; },
+        (DivOverflow)      { exit 3i32; },
+        (HeapBadRequest)   { exit 3i32; },
+        (HeapOom)          { exit 3i32; },
+        (IntOverflow)      { exit 3i32; },
+        (OutOfBounds)      { exit 3i32; },
+        (ShiftRange)       { exit 3i32; },
+        (Unreachable)      { exit 3i32; },
+        (WildLeak)         { exit 3i32; },
+        (ETextInt)         { exit 3i32; },
+        (intern.BoundsId)  { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (nfs.EFsPath)      { exit 3i32; },
+        (nfs.EFsRecord)    { exit 3i32; },
+        (nfs.EFsIndex)     { exit 3i32; },
+        (*)                { exit 3i32; }
+    }
+    exit 3i32;
+};

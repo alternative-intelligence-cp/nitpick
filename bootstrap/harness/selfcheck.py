@@ -467,6 +467,118 @@ def main():
         bad += 1
     print("  %-26s %-4s  %s" % ("floor-unspecified", "ok" if okfu else "BAD",
                                 "a section with no claim and no residue sentence must fail"))
+
+    # THE EXPLORED FLOOR (1.5.7 step 0; X-1, X-9): the ONE transformer's output
+    # over a planted floor is a LITERAL -- every atomic step line gets its
+    # point, the `@npk_sys6(` call is routed, the trampoline's own body and the
+    # `module asm` line are left alone, the lifecycle hooks land around the
+    # clone call and inside `@npk_thread_entry`, the declares are appended --
+    # and the site map beside it; then the counting belt: the literal with one
+    # point deleted must fail by name, the literal itself must pass. npkg's
+    # self-check holds its transformer and its belt to the SAME three texts.
+    import explore
+    xp_floor = ("module asm \".globl npk_clone_raw\"\n"
+                "define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,\n"
+                "                     i64 %a4, i64 %a5, i64 %a6) {\n"
+                "  ret i64 0\n}\n"
+                "define void @npk_lock(ptr %w) {\nentry:\n"
+                "  %c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst   ; a step\n"
+                "  %v = load atomic i32, ptr %w seq_cst, align 4\n"
+                "  fence seq_cst\n"
+                "  %s = call i64 @npk_sys6(i64 202, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n"
+                "  ret void\n}\n"
+                "define void @npk_thread_entry(i64 %tlsi) {\nentry:\n"
+                "  store atomic i32 1, ptr null seq_cst, align 4\n"
+                "  ret void\n}\n"
+                "define i64 @npk_thread_start(i64 %sp) {\nentry:\n"
+                "  %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 0, i64 0,\n"
+                "                               ptr @npk_thread_entry, i64 0)\n"
+                "  ret i64 %r\n}\n"
+                "declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)\n")
+    xp_expected = ("module asm \".globl npk_clone_raw\"\n"
+                   "define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,\n"
+                   "                     i64 %a4, i64 %a5, i64 %a6) {\n"
+                   "  ret i64 0\n}\n"
+                   "define void @npk_lock(ptr %w) {\nentry:\n"
+                   "  call void @npkx_point(i32 0)\n"
+                   "  %c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst   ; a step\n"
+                   "  call void @npkx_point(i32 1)\n"
+                   "  %v = load atomic i32, ptr %w seq_cst, align 4\n"
+                   "  call void @npkx_point(i32 2)\n"
+                   "  fence seq_cst\n"
+                   "  %s = call i64 @npkx_sys6(i64 202, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n"
+                   "  ret void\n}\n"
+                   "define void @npk_thread_entry(i64 %tlsi) {\nentry:\n"
+                   "  call void @npkx_begin()\n"
+                   "  call void @npkx_point(i32 4)\n"
+                   "  store atomic i32 1, ptr null seq_cst, align 4\n"
+                   "  call void @npkx_end()\n"
+                   "  ret void\n}\n"
+                   "define i64 @npk_thread_start(i64 %sp) {\nentry:\n"
+                   "  call void @npkx_prespawn()\n"
+                   "  %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 0, i64 0,\n"
+                   "                               ptr @npk_thread_entry, i64 0)\n"
+                   "  call void @npkx_spawned(i64 %r)\n"
+                   "  ret i64 %r\n}\n"
+                   "declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)\n"
+                   "\n"
+                   "; --- the explorer's shim (runtime/explore/npkx.ll; 1.5.7) ---\n"
+                   "declare void @npkx_point(i32)\n"
+                   "declare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)\n"
+                   "declare void @npkx_prespawn()\n"
+                   "declare void @npkx_spawned(i64)\n"
+                   "declare void @npkx_begin()\n"
+                   "declare void @npkx_end()\n")
+    xp_sites = ("0\t@npk_lock\tatomic\t%c = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst\n"
+                "1\t@npk_lock\tatomic\t%v = load atomic i32, ptr %w seq_cst, align 4\n"
+                "2\t@npk_lock\tatomic\tfence seq_cst\n"
+                "3\t@npk_lock\tsys6\t%s = call i64 @npk_sys6(i64 202, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n"
+                "4\t@npk_thread_entry\tatomic\tstore atomic i32 1, ptr null seq_cst, align 4\n")
+    xp_escaped = xp_expected.replace("  call void @npkx_point(i32 2)\n", "", 1)
+    xtool = harness.build_tool(tmp, tools, os.path.join(ROOT, "tools", "explored.npk"), "explored")
+    if not xtool or not os.path.exists(str(xtool)):
+        bad += 1
+        print("  %-26s %-4s  %s" % ("explore-transform", "BAD", "tools/explored.npk did not build: %s" % xtool))
+    else:
+        xroot = os.path.join(tmp, "explore_transform")
+        os.makedirs(os.path.join(xroot, "runtime"), exist_ok=True)
+        with open(os.path.join(xroot, "runtime", "npkrt.ll"), "w", encoding="utf-8") as fh:
+            fh.write(xp_floor)
+        xdir = os.path.join(xroot, "out")
+        r = subprocess.run([xtool, xroot, "--emit", xdir], capture_output=True, text=True, timeout=300)
+        got_text = got_sites = None
+        if r.returncode == 0:
+            with open(os.path.join(xdir, "npkrt.explore.ll"), encoding="utf-8") as fh:
+                got_text = fh.read()
+            with open(os.path.join(xdir, "sites.txt"), encoding="utf-8") as fh:
+                got_sites = fh.read()
+        okx = got_text == xp_expected and got_sites == xp_sites
+        if not okx:
+            bad += 1
+        print("  %-26s %-4s  %s" % ("explore-transform", "ok" if okx else "BAD",
+                                    "the transformer's output over a planted floor is the literal, text and sites"))
+        if not okx:
+            if r.returncode != 0:
+                print("      the transformer refused: %s" % (r.stdout + r.stderr).strip()[:300])
+            else:
+                print("      the text %s the literal, the sites %s" % ("matches" if got_text == xp_expected else "differs from",
+                                                                      "match" if got_sites == xp_sites else "differ"))
+    for name, text, must_fail, why in (
+            ("explore-step-escapes", xp_escaped, True,
+             "an atomic step with no point before it must fail the counting belt by name"),
+            ("explore-step-escapes-control", xp_expected, False,
+             "the transformer's own output must pass the counting belt")):
+        fails = explore.check_totality(xp_floor, text)
+        if not must_fail:
+            fails += explore.check_sites(text, xp_sites)
+        ok = (bool(fails) == must_fail)
+        if ok and must_fail:
+            ok = "explore-step-escapes" in fails[0]
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0][:300])
     # WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator on a planted floor whose
     # answer is known by reading it -- `@callee` assumes something of its caller; `@covered` is translated
     # and INLINES it; `@bare` has no section, so nothing covers its call; `@callee` is `internal`, so

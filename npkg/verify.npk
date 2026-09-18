@@ -42,6 +42,7 @@ use "./elf.npk".*;
 use "./floor_shared.npk".*;
 use "./floor_stack.npk".*;
 use "./floor_explore.npk".*;
+use "./explore.npk".*;                       // the explored floor's totality belt (1.5.7 step 0)
 use "./floor_ir.npk".*;
 use "./floor_spec.npk".*;
 use "./floor.npk".*;
@@ -777,7 +778,10 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     // the models' second reading (1.5.6b step 4d, D-295): explicit-state search, no bound and no solver
     List<string>:fx = raw floor_models_explicit(string_from_bytes(c.m.root.ptr, c.m.root.len));
     if (fx.count > 0i64) { pass (raw step_bad(raw strlist_view(fx, 0i64))); }
-    drop say(raw stage_text("floor", "the shared-state classification holds (D-290), every alloca is defined in its entry block (1.5.6b), and no model reaches a bad state anywhere (D-295)"));
+    // the explored floor (1.5.7 step 0, X-9): the real floor through the one transformer, every step accounted for
+    List<string>:fe = raw explore_totality_current(string_from_bytes(c.m.root.ptr, c.m.root.len));
+    if (fe.count > 0i64) { pass (raw step_bad(raw strlist_view(fe, 0i64))); }
+    drop say(raw stage_text("floor", "the shared-state classification holds (D-290), every alloca is defined in its entry block (1.5.6b), no model reaches a bad state anywhere (D-295), and no step of the floor escapes its explored transform (1.5.7)"));
     if (!c.m.z3) { pass (raw step_bad("nitpick.toml: [verify] z3 is not true -- this project declares no z3 verification, and a verify that pretended otherwise would be a green light nobody earned (D-068)")); }
     Result<string>:z3r = which("z3");
     if (z3r.is_error) { pass (raw step_bad("npkg verify: PATH cannot be read")); }
@@ -1048,6 +1052,8 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     if (sk.count > 0i64) { pass (raw step_bad(raw strlist_view(sk, 0i64))); }
     List<string>:sx = raw floor_models_explicit(root);
     if (sx.count > 0i64) { pass (raw step_bad(raw strlist_view(sx, 0i64))); }
+    List<string>:se = raw explore_totality_current(root);
+    if (se.count > 0i64) { pass (raw step_bad(raw strlist_view(se, 0i64))); }
     List<string>:bl = raw floor_belts(c, @inp);
     if (bl.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(bl, 0i64), ""))); }
     string:fdir = raw path_join(vdir, "floor");

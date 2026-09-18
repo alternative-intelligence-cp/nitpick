@@ -1,0 +1,318 @@
+// explore -- THE EXPLORED FLOOR IS THE REAL FLOOR, TRANSFORMED (1.5.7 step 0;
+// D-212, X-1, X-9 in meta/roadmap/1.5/1.5.7.md).
+//
+// The schedule explorer runs every synchronization step of the runtime under
+// a seeded scheduler (r6's recipe, D-212). A mock floor that re-implemented the
+// primitives would explore the mock; so the explored floor is GENERATED from
+// `runtime/npkrt.ll` at test time by a text transform that adds calls and
+// renames one callee, and every instruction the artifact runs is the
+// instruction explored. Text in, text out:
+//
+//   - before every ATOMIC STEP LINE (`atomicrmw`, `cmpxchg`, `fence`,
+//     `load atomic`, `store atomic` -- `line_is_step`'s own definition, the
+//     model belt's census) `call void @npkx_point(i32 SITE)`;
+//   - every `@npk_sys6(` CALL becomes `@npkx_sys6(` (same signature: the shim
+//     takes the scheduling point itself and virtualizes what blocks);
+//   - the thread lifecycle: `@npkx_prespawn()` before and `@npkx_spawned(i64
+//     %r)` after the `@npk_clone_raw(` call (a statement that may span lines),
+//     `@npkx_begin()` first in `@npk_thread_entry`, `@npkx_end()` before its
+//     `ret`;
+//   - `module asm`, `@npk_sys6`'s own body and every declaration are left
+//     alone; the shim's declares are appended.
+//
+// THE TOTALITY BELT (`explore_totality`, both runners -- the harness's twin
+// counts in `bootstrap/harness/explore.py` over THIS transformer's output):
+// the number of step lines in the floor equals the number of points plus
+// routed calls in the transformed text, and no step line of the output lacks
+// its point (`explore-step-escapes`, by name). ONE transformer, as the floor
+// has one translator; the belt is the second reader, and it is a count.
+//
+// The transform preserves every other line byte for byte. `sites` is one
+// line per site, `N<TAB>function<TAB>kind<TAB>text`, the shim's map from a
+// point's number to the instruction it precedes.
+
+mod:explore;
+
+use "./text.npk".*;
+use "./floor_ir.npk".*;                        // floor_code_part: the line without its comment
+use "./floor_model.npk".*;                     // line_is_step: the census's own definition
+use "../src/backend/smt/smt_writer.npk".*;     // SmtBuf: one allocation for the joined text
+
+pub struct:Explored = {
+    string:text;             // the transformed floor
+    string:sites;            // sites.txt
+    int64:points;            // `@npkx_point` calls inserted -- the atomic step lines
+    int64:routed;            // `@npk_sys6(` calls routed to `@npkx_sys6(`
+    List<string>:problems;   // what the transform could not do, by name
+};
+
+// The raw lines of a text, byte for byte -- no `\r` handling: the floor has
+// none, and a transform that dropped one would not be a transform.
+func:raw_lines = List<string>(string:s) never fails {
+    List<string>:out = raw list_init::<string>(8192i64);
+    int64:start = 0i64;
+    for (int64:i in 0i64...s.len) {
+        if (s.ptr[i] == 10u8) {
+            drop strlist_push(@out, raw text_slice(s, start, i));
+            start = i + 1i64;
+        }
+    }
+    if (start < s.len) { drop strlist_push(@out, raw text_slice(s, start, s.len)); }
+    pass out;
+};
+
+// `define ... @name(` -- the symbol a define line introduces; "" otherwise.
+func:define_symbol = string(string:code) never fails {
+    if (!(raw text_starts_with(code, "define "))) { pass ""; }
+    int64:at = raw text_find_byte(code, 64u8, 0i64);        // '@'
+    if (at < 0i64) { pass ""; }
+    int64:stop = at;
+    while (stop < code.len) {
+        uint8:c = code.ptr[stop];
+        if ((c == 40u8) || (c == 32u8)) { break; }             // '(' or ' '
+        stop = stop + 1i64;
+    }
+    pass (raw text_slice(code, at, stop));
+};
+
+// `%r = call ...` -- the register a call line defines; "" when it defines none.
+func:defined_register = string(string:code) never fails {
+    if (code.len == 0i64) { pass ""; }
+    if (code.ptr[0i64] != 37u8) { pass ""; }                   // '%'
+    int64:eq = raw text_index_of(code, " =");
+    if (eq < 0i64) { pass ""; }
+    pass (raw text_slice(code, 0i64, eq));
+};
+
+// An atomic step line: the census's definition minus the syscall trampoline.
+pub func:line_is_atomic_step = bool(string:code) never fails {
+    if (raw text_contains(code, "@npk_sys6(")) { pass false; }
+    pass (raw line_is_step(code));
+};
+
+// A routed call: `@npk_sys6(` called, not defined.
+pub func:line_is_sys6_call = bool(string:code) never fails {
+    if (!(raw text_contains(code, "@npk_sys6("))) { pass false; }
+    if (raw text_starts_with(code, "define ")) { pass false; }
+    if (raw text_starts_with(code, "declare ")) { pass false; }
+    pass (raw text_contains(code, "call "));
+};
+
+func:site_row = string(int64:n, string:fn, string:kind, string:code) never fails {
+    string:s = string_concat(int_to_string(n), "\t");
+    s = string_concat(s, fn);
+    s = string_concat(s, "\t");
+    s = string_concat(s, kind);
+    s = string_concat(s, "\t");
+    pass (string_concat(s, raw text_head(code, 80i64)));
+};
+
+// The transform. `floor` is `runtime/npkrt.ll`'s text.
+pub func:explore_transform = Explored(string:floor) never fails {
+    List<string>:lines = raw raw_lines(floor);
+    SmtBuf:out = raw smtbuf_init();
+    SmtBuf:sites = raw smtbuf_init();
+    List<string>:problems = raw list_init::<string>(2i64);
+    int64:points = 0i64;
+    int64:routed = 0i64;
+    int64:nsite = 0i64;
+    bool:saw_entry = false;
+    bool:saw_begin = false;
+    bool:saw_end = false;
+    bool:saw_clone = false;
+    string:fn = "";
+    int64:i = 0i64;
+    while (i < lines.count) {
+        string:line = raw strlist_view(lines, i);
+        string:code = raw floor_code_part(line);
+        string:sym = raw define_symbol(code);
+        if (sym.len > 0i64) {
+            fn = string_concat(sym, "");
+            if (raw text_eq(fn, "@npk_thread_entry")) { saw_entry = true; }
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        if ((fn.len == 0i64) || (raw text_starts_with(code, "module asm"))) {
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        if (raw text_eq(code, "}")) {
+            fn = "";
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        // the lifecycle hooks of the thread's own entry
+        if (raw text_eq(fn, "@npk_thread_entry")) {
+            if (raw text_eq(code, "entry:")) {
+                drop smtbuf_line(@out, line);
+                drop smtbuf_line(@out, "  call void @npkx_begin()");
+                saw_begin = true;
+                i = i + 1i64;
+                continue;
+            }
+            if (raw text_starts_with(code, "ret ")) {
+                drop smtbuf_line(@out, "  call void @npkx_end()");
+                drop smtbuf_line(@out, line);
+                saw_end = true;
+                i = i + 1i64;
+                continue;
+            }
+        }
+        // the trampoline's own body is the one thing the shim must not intercept
+        if (raw text_eq(fn, "@npk_sys6")) {
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        // the clone call: a statement that may continue on following lines
+        if ((raw text_contains(code, "@npk_clone_raw(")) && (raw text_contains(code, "call "))) {
+            string:reg = raw defined_register(code);
+            if (reg.len == 0i64) {
+                drop strlist_push(@problems, "explore: the `@npk_clone_raw` call defines no register the shim could be handed");
+            }
+            saw_clone = true;
+            drop smtbuf_line(@out, "  call void @npkx_prespawn()");
+            while (true) {
+                string:part = raw strlist_view(lines, i);
+                drop smtbuf_line(@out, part);
+                if (raw text_ends_with(raw floor_code_part(part), ")")) { break; }
+                i = i + 1i64;
+                if (i >= lines.count) { break; }
+            }
+            string:sp = string_concat("  call void @npkx_spawned(i64 ", reg);
+            drop smtbuf_line(@out, string_concat(sp, ")"));
+            i = i + 1i64;
+            continue;
+        }
+        if (raw line_is_sys6_call(code)) {
+            drop smtbuf_line(@sites, raw site_row(nsite, fn, "sys6", code));
+            nsite = nsite + 1i64;
+            routed = routed + 1i64;
+            drop smtbuf_line(@out, raw text_replace_first(line, "@npk_sys6(", "@npkx_sys6("));
+            i = i + 1i64;
+            continue;
+        }
+        if (raw line_is_atomic_step(code)) {
+            drop smtbuf_line(@sites, raw site_row(nsite, fn, "atomic", code));
+            string:pt = string_concat("  call void @npkx_point(i32 ", int_to_string(nsite));
+            drop smtbuf_line(@out, string_concat(pt, ")"));
+            nsite = nsite + 1i64;
+            points = points + 1i64;
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        drop smtbuf_line(@out, line);
+        i = i + 1i64;
+    }
+    if (!saw_entry) { drop strlist_push(@problems, "explore: the floor defines no `@npk_thread_entry` -- the lifecycle hooks have no anchor"); }
+    if (saw_entry && (!saw_begin)) { drop strlist_push(@problems, "explore: `@npk_thread_entry` has no `entry:` label -- `@npkx_begin` has no anchor"); }
+    if (saw_entry && (!saw_end)) { drop strlist_push(@problems, "explore: `@npk_thread_entry` has no `ret` -- `@npkx_end` has no anchor"); }
+    if (!saw_clone) { drop strlist_push(@problems, "explore: the floor calls no `@npk_clone_raw` -- the spawn hooks have no anchor"); }
+    drop smtbuf_line(@out, "");
+    drop smtbuf_line(@out, "; --- the explorer's shim (runtime/explore/npkx.ll; 1.5.7) ---");
+    drop smtbuf_line(@out, "declare void @npkx_point(i32)");
+    drop smtbuf_line(@out, "declare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)");
+    drop smtbuf_line(@out, "declare void @npkx_prespawn()");
+    drop smtbuf_line(@out, "declare void @npkx_spawned(i64)");
+    drop smtbuf_line(@out, "declare void @npkx_begin()");
+    drop smtbuf_line(@out, "declare void @npkx_end()");
+    pass Explored{ text: raw smtbuf_text(move(out)), sites: raw smtbuf_text(move(sites)),
+                   points: points, routed: routed, problems: move(problems) };
+};
+
+// The first occurrence of `what` in `line` replaced by `repl`; the line itself when absent.
+func:text_replace_first = string(string:line, string:what, string:repl) never fails {
+    int64:at = raw text_index_of(line, what);
+    if (at < 0i64) { pass (string_concat(line, "")); }
+    string:s = string_concat(raw text_slice(line, 0i64, at), repl);
+    pass (string_concat(s, raw text_slice(line, at + what.len, line.len)));
+};
+
+// THE CENSUS: the step lines of a floor text, inside its defines' bodies.
+pub func:explore_census = int64(string:floor) never fails {
+    List<string>:lines = raw raw_lines(floor);
+    int64:n = 0i64;
+    string:fn = "";
+    for (int64:i in 0i64...lines.count) {
+        string:code = raw floor_code_part(raw strlist_view(lines, i));
+        string:sym = raw define_symbol(code);
+        if (sym.len > 0i64) { fn = string_concat(sym, ""); continue; }
+        if (fn.len == 0i64) { continue; }
+        if (raw text_eq(code, "}")) { fn = ""; continue; }
+        if (raw line_is_step(code)) { n = n + 1i64; }
+    }
+    pass n;
+};
+
+// THE TOTALITY BELT over a floor and its explored text: every step accounted
+// for, by count and by position. The findings, by name; none when it holds.
+pub func:explore_totality = List<string>(string:floor, string:explored) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    int64:census = raw explore_census(floor);
+    List<string>:lines = raw raw_lines(explored);
+    int64:points = 0i64;
+    int64:routed = 0i64;
+    int64:escapes = 0i64;
+    string:fn = "";
+    string:prev = "";
+    for (int64:i in 0i64...lines.count) {
+        string:code = raw floor_code_part(raw strlist_view(lines, i));
+        string:sym = raw define_symbol(code);
+        if (sym.len > 0i64) { fn = string_concat(sym, ""); prev = ""; continue; }
+        if (fn.len == 0i64) { continue; }
+        if (raw text_eq(code, "}")) { fn = ""; prev = ""; continue; }
+        if (raw text_starts_with(code, "call void @npkx_point(i32 ")) {
+            // the points are numbered by their sites: the k-th point's number is a site's
+            points = points + 1i64;
+            prev = string_concat(code, "");
+            continue;
+        }
+        if ((raw text_contains(code, "@npkx_sys6(")) && (raw text_contains(code, "call "))) {
+            routed = routed + 1i64;
+            prev = string_concat(code, "");
+            continue;
+        }
+        if (raw line_is_sys6_call(code)) {
+            escapes = escapes + 1i64;
+            string:w = string_concat("explore-step-escapes: a `@npk_sys6(` call the transform did not route, in ", fn);
+            w = string_concat(w, ": ");
+            drop strlist_push(@fl, string_concat(w, raw text_head(code, 100i64)));
+        }
+        if (raw line_is_atomic_step(code)) {
+            if (!(raw text_starts_with(prev, "call void @npkx_point(i32 "))) {
+                escapes = escapes + 1i64;
+                string:w2 = string_concat("explore-step-escapes: an atomic step with no scheduling point before it, in ", fn);
+                w2 = string_concat(w2, ": ");
+                drop strlist_push(@fl, string_concat(w2, raw text_head(code, 100i64)));
+            }
+        }
+        prev = string_concat(code, "");
+    }
+    if ((points + routed) != census) {
+        string:m = string_concat("explore-step-escapes: the floor holds ", int_to_string(census));
+        m = string_concat(m, " step line(s) and the explored floor ");
+        m = string_concat(m, int_to_string(points));
+        m = string_concat(m, " point(s) plus ");
+        m = string_concat(m, int_to_string(routed));
+        m = string_concat(m, " routed call(s) -- a step escaped the transform, or a point precedes no step");
+        drop strlist_push(@fl, m);
+    }
+    pass fl;
+};
+
+// The belt over the tree: the real floor through the real transform.
+pub func:explore_totality_current = List<string>(string:root) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    Result<cstring>:fc = to_cstring(string_concat(root, "/runtime/npkrt.ll"));
+    if (fc.is_error) { drop strlist_push(@fl, "explore: runtime/npkrt.ll: not a path"); pass fl; }
+    Result<string>:ftx = read_file(fc.value);
+    if (ftx.is_error) { drop strlist_push(@fl, "explore: runtime/npkrt.ll cannot be read"); pass fl; }
+    Explored:x = raw explore_transform(ftx.value);
+    for (int64:i in 0i64...x.problems.count) { drop strlist_push(@fl, raw strlist_view(x.problems, i)); }
+    if (fl.count > 0i64) { pass fl; }
+    pass (raw explore_totality(ftx.value, x.text));
+};

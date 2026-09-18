@@ -3726,6 +3726,52 @@ def check_verify_floor(tmp, tools):
     return []
 
 
+def check_explore_totality(tmp, tools):
+    """THE EXPLORED FLOOR'S TOTALITY (1.5.7 step 0; D-212, X-1, X-9): the
+    schedule explorer runs the REAL floor transformed -- a scheduling point
+    before every atomic step line, every `@npk_sys6(` call routed to the shim
+    -- by the ONE transformer (`npkg/explore.npk`, built into
+    `tools/explored.npk` with the snapshot). This runner writes no transform;
+    it COUNTS: the floor's step lines by the model belt's definition against
+    the output's points plus routed calls, every atomic step of the output
+    with its point before it, the site map in step with the text
+    (`explore.check_totality`, `check_sites` -- `explore-step-escapes` by
+    name), and the explored floor assembled by the pinned `llc`. `npkg verify`
+    runs the same count through the same module."""
+    import explore
+    tool = build_tool(tmp, tools, os.path.join(ROOT, "tools", "explored.npk"), "explored")
+    if not tool or not os.path.exists(str(tool)):
+        return ["explore: tools/explored.npk did not build: %s" % tool]
+    xdir = os.path.join(tmp, "explore")
+    try:
+        r = subprocess.run([tool, ROOT, "--emit", xdir], capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return ["explore: the transformer did not terminate"]
+    if r.returncode != 0:
+        return ["explore: the transformer refused: %s" % (r.stdout + r.stderr).strip()[:400]]
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        ft = fh.read()
+    try:
+        with open(os.path.join(xdir, "npkrt.explore.ll"), encoding="utf-8") as fh:
+            xt = fh.read()
+        with open(os.path.join(xdir, "sites.txt"), encoding="utf-8") as fh:
+            st = fh.read()
+    except OSError as e:
+        return ["explore: the transformer's output is unreadable: %s" % e]
+    fails = explore.check_totality(ft, xt) + explore.check_sites(xt, st)
+    if fails:
+        return fails
+    r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(xdir, "npkrt.explore.ll"), "-o", os.path.join(xdir, "npkrt.explore.o")],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["explore: llc rejected the explored floor: %s" % r.stderr.strip()[:160]]
+    n = explore.census(ft)
+    points = sum(1 for l in xt.split("\n") if "call void @npkx_point(i32 " in l)
+    print("  %-11s the explored floor: %d point(s) and %d routed call(s) over the floor's %d step line(s), no step escapes; assembles under the pinned llc"
+          % ("explore", points, n - points, n))
+    return []
+
+
 def floor_controls(fdir):
     """THE CONTROLS (1.5.6 step 5, D-289 §2.7): every line of controls.txt
     (`cNNNN\tmodel:NAME\tCONTROL\tBAD`) is a file that must answer `sat` --
@@ -4972,6 +5018,13 @@ def main(argv):
             # under the same profile and held to their own manifest.
             if Z3_ENABLED:
                 failures += check_verify_floor(tmp, tools)
+
+        # --- THE EXPLORED FLOOR (1.5.7 step 0; D-212) ---------------------
+        #
+        # The real floor transformed by the one transformer, counted here:
+        # no step escapes, and the result assembles. Independent of the
+        # fixpoint and of the solver; the tool is built with the snapshot.
+        failures += check_explore_totality(tmp, tools)
 
         # --- PARITY WITH `npkg test` (1.4.8, D-206 §5) --------------------
         #
