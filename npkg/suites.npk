@@ -42,6 +42,7 @@ use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./irscan.npk".*;
 use "./verify.npk".*;
+use "./explore_stage.npk".*;                 // the explore stage's pieces (1.5.7 step 1)
 use "../src/backend/smt/smt_kinds.npk".*;
 
 // --- discovery ---------------------------------------------------------------------
@@ -870,6 +871,72 @@ async func:run_program = NIL(Ctx->:c, int64:t) {
     drop strset_free(@skip);
     drop say(raw stage_line(tname, count, "real-backend program(s)"));
     drop say(raw stage_text("opt-O2", "every program re-run through opt -O2 + llc -O2, same exit required"));
+    pass NIL;
+};
+
+// `explore` (1.5.7 step 1; D-212, D-298...D-301): every `// stress:` program
+// under the entry's paths says whether it is explored (D-299); the marked ones
+// run under the explorer, N seeds each (D-300) -- the harness's `stage_explore`,
+// unit for unit and message for message.
+async func:run_explore = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    StrSet:skip = raw imported_by_others(paths);
+    ExploredObjects:xo = relay await explored_objects(c);
+    if (xo.findings.count > 0i64) {
+        drop record(c, tname, "runtime/explore/npkx.ll", xo.findings);
+        drop strset_free(@skip);
+        pass NIL;
+    }
+    int64:n = 0i64;
+    int64:n_no = 0i64;
+    for (int64:k in 0i64...paths.count) {
+        string:p2 = raw strlist_view(paths, k);
+        if (raw strset_has(skip, p2)) { continue; }
+        string:text = relay read_text(p2);
+        Expect:exp = raw expect_read(text);
+        string:name = raw rel_to_root(c, p2);
+        if ((exp.explore < 0i64) && (exp.explore_no.len == 0i64)) {
+            List<string>:mf = raw explore_marker_finding(@exp, name);
+            if (mf.count > 0i64) { drop record(c, tname, name, mf); }
+            continue;
+        }
+        if (exp.explore_no.len > 0i64) {
+            string:why = string_concat(name, ": not explored -- ");
+            drop say(raw stage_text("explore", string_concat(why, exp.explore_no)));
+            List<string>:none = raw list_init::<string>(1i64);
+            drop record(c, tname, name, none);
+            n_no = n_no + 1i64;
+            continue;
+        }
+        XMeasured:m = relay await check_explored_program(c, p2, name, @exp, xo.xfloor_o, xo.shim_o);
+        drop record(c, tname, name, m.findings);
+        if (m.ran) {
+            string:line = string_concat(name, ": ");
+            line = string_concat(line, int_to_string(m.threads));
+            line = string_concat(line, " thread(s), k=");
+            line = string_concat(line, int_to_string(m.k));
+            line = string_concat(line, ", d=");
+            line = string_concat(line, int_to_string(m.depth));
+            line = string_concat(line, ", ");
+            line = string_concat(line, int_to_string(m.seeds));
+            line = string_concat(line, " seed(s) -- PCT's per-run bound for a depth-");
+            line = string_concat(line, int_to_string(m.depth));
+            line = string_concat(line, " bug: 1/(");
+            line = string_concat(line, int_to_string(m.threads));
+            line = string_concat(line, "*");
+            line = string_concat(line, int_to_string(m.k));
+            line = string_concat(line, "^");
+            line = string_concat(line, int_to_string(m.depth - 1i64));
+            drop say(raw stage_text("explore", string_concat(line, ")")));
+        }
+        n = n + 1i64;
+    }
+    drop strset_free(@skip);
+    string:sum = string_concat(int_to_string(n), " program(s) explored under the shim's PCT scheduler, ");
+    sum = string_concat(sum, int_to_string(n_no));
+    sum = string_concat(sum, " marked not explored with a reason; the first seed of each replayed to the same schedule hash");
+    drop say(raw stage_text(tname, sum));
     pass NIL;
 };
 
@@ -1827,6 +1894,11 @@ pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
         if (raw text_eq(stage, "cost")) {
             Result<NIL>:r9 = await run_cost(c, t);
             if (r9.is_error) { fail r9.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "explore")) {
+            Result<NIL>:r10 = await run_explore(c, t);
+            if (r10.is_error) { fail r10.err; }
             continue;
         }
     }

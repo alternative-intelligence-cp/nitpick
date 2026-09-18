@@ -579,6 +579,37 @@ def main():
         print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
         if not ok:
             print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0][:300])
+    # THE MARKER BELT (1.5.7 step 1; D-299): a `// stress:` program says whether it
+    # is explored. Three planted headers through the real reader: unmarked fails
+    # by name, `explore: no <reason>` and `explore: N d=4` pass and read as
+    # written. npkg's self-check holds its reader to the same three texts.
+    xm_dir = os.path.join(tmp, "explore_markers")
+    os.makedirs(xm_dir, exist_ok=True)
+    for name, head, must_fail, want, why in (
+            ("explore-unmarked", "// expect-exit: 0\n// stress: 40\n", True, None,
+             "a `// stress:` program with no explore marker must fail by name"),
+            ("explore-marked-no", "// expect-exit: 0\n// stress: 40\n// explore: no a reason\n", False, ("no", "a reason"),
+             "`// explore: no <reason>` reads as excluded, with its reason"),
+            ("explore-marked-n", "// expect-exit: 0\n// stress: 40\n// explore: 7 d=4\n// explore-seed: 3\n", False, (7, 4, [3]),
+             "`// explore: N d=D` and `// explore-seed: S` read as written")):
+        xm_path = os.path.join(xm_dir, name.replace("-", "_") + ".npk")
+        with open(xm_path, "w", encoding="utf-8") as fh:
+            fh.write(head + "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n")
+        xe = harness.read_expectations(xm_path)
+        fails = harness.explore_marker_finding(xe, name)
+        ok = (bool(fails) == must_fail)
+        if ok and must_fail:
+            ok = "explore-unmarked" in fails[0]
+        if ok and want == ("no", "a reason"):
+            ok = xe.explore is None and xe.explore_no == "a reason"
+        if ok and want == (7, 4, [3]):
+            ok = xe.explore == 7 and xe.explore_depth == 4 and xe.explore_first == [3] and xe.explore_no == ""
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the marker belt said %r; explore=%r no=%r depth=%r first=%r"
+                  % (fails, xe.explore, xe.explore_no, xe.explore_depth, xe.explore_first))
     # WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator on a planted floor whose
     # answer is known by reading it -- `@callee` assumes something of its caller; `@covered` is translated
     # and INLINES it; `@bare` has no section, so nothing covers its call; `@callee` is `internal`, so

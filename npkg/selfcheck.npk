@@ -42,6 +42,7 @@ use "./irscan.npk".*;
 use "./elf.npk".*;
 use "./verify.npk".*;                          // elided_ir_checks, VRow (the bypass cases)
 use "./explore.npk".*;                         // the explored floor's transformer and belt (1.5.7 step 0)
+use "./explore_stage.npk".*;                   // the marker belt (1.5.7 step 1)
 use "../src/backend/smt/smt_kinds.npk".*;      // OV_OPEN / OV_DISCHARGED
 use "./floor_shared.npk".*;                    // the shared-state belt's cases
 use "./floor_stack.npk".*;                     // the stack rule's cases (1.5.6b)
@@ -781,6 +782,38 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!okxc) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("explore-step-escapes-control", okxc, "the transformer's own output must pass the counting belt"));
     if (!okxc) { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(xc, 0i64))); }
+    // THE MARKER BELT (1.5.7 step 1; D-299): a `// stress:` program says whether
+    // it is explored. The harness's three planted headers through the real
+    // reader: unmarked fails by name, `explore: no <reason>` and `explore: N d=D`
+    // pass and read as written.
+    string:xm_tail = "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n";
+    Expect:xm1 = raw expect_read(string_concat("// expect-exit: 0\n// stress: 40\n", xm_tail));
+    List<string>:xmf1 = raw explore_marker_finding(@xm1, "explore-unmarked");
+    bool:okm1 = false;
+    if (xmf1.count > 0i64) { okm1 = raw text_contains(raw strlist_view(xmf1, 0i64), "explore-unmarked"); }
+    if (!okm1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-unmarked", okm1, "a `// stress:` program with no explore marker must fail by name"));
+    if (!okm1) { drop strlist_push(@report, "      the marker belt accepted it; it should not have"); }
+    Expect:xm2 = raw expect_read(string_concat("// expect-exit: 0\n// stress: 40\n// explore: no a reason\n", xm_tail));
+    List<string>:xmf2 = raw explore_marker_finding(@xm2, "explore-marked-no");
+    bool:okm2 = (xmf2.count == 0i64) && (xm2.explore < 0i64) && (raw text_eq(xm2.explore_no, "a reason"));
+    if (!okm2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-marked-no", okm2, "`// explore: no <reason>` reads as excluded, with its reason"));
+    if (!okm2) { drop strlist_push(@report, string_concat("      the reader said no=", xm2.explore_no)); }
+    Expect:xm3 = raw expect_read(string_concat("// expect-exit: 0\n// stress: 40\n// explore: 7 d=4\n// explore-seed: 3\n", xm_tail));
+    List<string>:xmf3 = raw explore_marker_finding(@xm3, "explore-marked-n");
+    bool:okm3 = (xmf3.count == 0i64) && (xm3.explore == 7i64) && (xm3.explore_depth == 4i64) && (xm3.explore_no.len == 0i64)
+                && (xm3.explore_first.count == 1i64);
+    if (okm3) { okm3 = (xm3.explore_first.items[0i64] == 3i64); }
+    if (!okm3) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-marked-n", okm3, "`// explore: N d=D` and `// explore-seed: S` read as written"));
+    if (!okm3) {
+        string:xw3 = string_concat("      the reader said explore=", int_to_string(xm3.explore));
+        xw3 = string_concat(xw3, " depth=");
+        xw3 = string_concat(xw3, int_to_string(xm3.explore_depth));
+        xw3 = string_concat(xw3, " first=");
+        drop strlist_push(@report, string_concat(xw3, int_to_string(xm3.explore_first.count)));
+    }
     // WHO KEEPS A SECTION'S ASSUMPTIONS (1.5.6c step 3): TCB.md SS4d's generator
     // on a planted floor whose answer is known by reading it -- `@callee`
     // assumes something of its caller; `@covered` is translated and INLINES it;

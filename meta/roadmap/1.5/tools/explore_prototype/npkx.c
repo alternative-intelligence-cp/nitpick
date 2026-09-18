@@ -1,7 +1,5 @@
-/* PROTOTYPE shim for 1.5.7's planning -- outside every gate, never linked into anything that ships, built by no
- * runner. Kept in the tree by D-303 as the BEHAVIOURAL REFERENCE the hand-written IR shim (runtime/explore/npkx.ll,
- * D-298) is held to schedule hash for schedule hash; see README.md beside it. (The zero-dependency rule governs the
- * artifact; this exists to MEASURE.)
+/* PROTOTYPE shim for 1.5.7's planning -- outside every gate, never committed, never linked into anything that ships.
+ * (The zero-dependency rule governs the artifact; the real shim is hand-written IR or Nitpick. This exists to MEASURE.)
  *
  * One thread runs at a time (the baton). Every synchronization step of the transformed floor calls in here first;
  * the scheduler (PCT, or a uniform random walk) decides who takes the next step. futex WAIT/WAKE, epoll_pwait and
@@ -38,6 +36,7 @@ static inline i64 sc6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
 #define SYS_exit_group 231
 #define SYS_epoll_pwait 281
 #define SYS_exit 60
+#define SYS_munmap 11
 
 #define MAXT 64
 enum { FREE = 0, RUNNING, READY, B_FUTEX, B_EPOLL, ENDED };
@@ -76,6 +75,7 @@ static i64 ended_tids[MAXT];
 static void (*sig_handler[65])(i32, void *, void *);
 extern void *npk_exec(void);
 static i32 oracle = 1;
+static u64 map_next = 17592186044416UL;   /* 16 TiB: below every randomized mapping, above the static image */
 static i32 nended;
 
 static u64 next_rand(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng; }
@@ -330,6 +330,22 @@ i64 npkx_sys6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
         return -3;   /* ESRCH */
     }
     if (n == SYS_clock_gettime) { i64 *ts = (i64 *)b; vnow += 1000; ts[0] = vnow / 1000000000L; ts[1] = vnow % 1000000000L; return 0; }
+    /* THE VIRTUAL ADDRESS SPACE (1.5.7 step 1's finding, amended into the reference the same day): the floor's
+     * control flow depends on the addresses the kernel hands out (`npk_chunk_new` over-maps and trims, and whether
+     * its pre-trim munmap happens depends on the alignment of mmap's answer), so a step count that includes syscalls
+     * depended on an address and two runs of one seed differed by one step under load. An anonymous private mapping
+     * with no hint is placed at a bump pointer, 64 KiB-aligned, with MAP_FIXED_NOREPLACE; a collision moves the
+     * pointer by 1 GiB and retries. Hinted, fixed or file-backed mappings pass through. */
+    if (n == 9 && a == 0 && (d & 0x20) && !(d & 0x10)) {
+        for (i32 tries = 0; tries < 64; tries++) {
+            i64 hint = (i64)map_next;
+            i64 r = sc6(n, hint, b, c, d | 0x100000, e, f);
+            if (r == hint) { map_next = ((u64)hint + (u64)b + 65535UL) & ~65535UL; return r; }
+            if ((u64)r <= (u64)-4096L) sc6(SYS_munmap, r, b, 0, 0, 0, 0);
+            map_next = (u64)hint + (1UL << 30);
+        }
+        die("MMAP (no deterministic address)");
+    }
     if (n == SYS_futex) {
         i32 op = (i32)(b & 0x7f);
         if (op == 0 || op == 9) {                       /* WAIT, WAIT_BITSET (absolute deadline) */

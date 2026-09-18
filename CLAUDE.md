@@ -1211,8 +1211,20 @@ each of its 63 `@npk_sys6(` calls to the shim, and the TOTALITY BELT
 transformer of its own, by design (X-9: the property is an equality of two
 counts); both self-checks hold the transformer's output to one literal over a
 planted floor; the planning prototype's C shim is kept OUTSIDE every gate as
-the IR shim's behavioural reference (D-303). Steps 1–7: the hand-written IR
-shim and the `explore` stage, virtual signals, the quiescence oracles and the
+the IR shim's behavioural reference (D-303). **Step 1 LANDED 2026-09-18**:
+`runtime/explore/npkx.ll`, the shim in hand-written IR (the baton, virtual
+futex/epoll/clock, PCT with ordered bands and the fairness bound, exact
+replay by seed), held to the C reference SCHEDULE HASH FOR SCHEDULE HASH on
+all 30 signal-free programs × 20 seeds under a twelve-process load
+(`meta/roadmap/1.5/tools/explore_prototype/hashcmp.sh`) — and the port found
+X-13: the floor's `mmap` trims made a step count depend on an ADDRESS, so
+both shims now place anonymous mappings at a 64 KiB-aligned bump pointer
+with `MAP_FIXED_NOREPLACE`; the `explore` stage in both runners (a
+`[[test]]` entry: per unit the measuring run, 1,000 seeds, the first seed
+replayed to the same hash, PCT's bound printed); `// explore: 1000` on 30
+`// stress:` programs, `// explore: no <reason>` on 14 (ten real-child, four
+trap-route until step 2), the marker belt `explore-unmarked` in both
+runners. Steps 2–7: virtual signals, the quiescence oracles and the
 controls, the nineteen model controls walked, the spec's hypotheses executed,
 program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in

@@ -208,6 +208,15 @@ class Expect:
         # sleeping, which the sleeper-push then erased. Neither reproduced in
         # fewer than about twenty runs, and both are gone from 200.
         self.stress = 1
+        # WHETHER IT IS EXPLORED (1.5.7, D-299/D-300): `// explore: N [d=D]` runs it
+        # under N seeds of the schedule explorer (PCT depth D, 3 by default);
+        # `// explore: no <reason>` excludes it with the reason beside the program;
+        # a `// stress:` program marked neither is a red run by name. A
+        # `// explore-seed: S` is a seed that once found a defect: run first, forever.
+        self.explore = None
+        self.explore_depth = 3
+        self.explore_no = ""
+        self.explore_first = []
 
     @property
     def expects_failure(self):
@@ -254,6 +263,18 @@ def read_expectations(path):
                 e.stress = int(body.split(":", 1)[1].strip())
             elif body.startswith("argv:"):
                 e.argv = body.split(":", 1)[1].split()
+            elif body.startswith("explore-seed:"):
+                e.explore_first.append(int(body.split(":", 1)[1].strip()))
+            elif body.startswith("explore:"):
+                rest = body.split(":", 1)[1].strip()
+                if rest == "no" or rest.startswith("no "):
+                    e.explore_no = rest[2:].strip() or "(no reason given)"
+                else:
+                    parts = rest.split()
+                    e.explore = int(parts[0])
+                    for tok in parts[1:]:
+                        if tok.startswith("d="):
+                            e.explore_depth = int(tok[2:])
             elif body.startswith("expect-obligation:"):
                 # THE `verify` STAGE'S ROW (1.5.0, P-22): `KIND VERDICT N`, or
                 # `none` -- the (kind, verdict) counts over the test's own
@@ -2666,7 +2687,7 @@ def check_verify_pin():
 # the suite and what it must say. `compile` is the default and the only stage
 # with a `kind`. Both runners carry this list and refuse anything outside it.
 STAGES = ("compile", "parse", "resolve", "check", "accept", "object", "fixture",
-          "program", "runtime", "verify", "cost")
+          "program", "runtime", "verify", "cost", "explore")
 TEST_KEYS = ("name", "stage", "kind", "path", "paths", "recursive")
 
 
@@ -3726,29 +3747,46 @@ def check_verify_floor(tmp, tools):
     return []
 
 
-def check_explore_totality(tmp, tools):
-    """THE EXPLORED FLOOR'S TOTALITY (1.5.7 step 0; D-212, X-1, X-9): the
-    schedule explorer runs the REAL floor transformed -- a scheduling point
-    before every atomic step line, every `@npk_sys6(` call routed to the shim
-    -- by the ONE transformer (`npkg/explore.npk`, built into
-    `tools/explored.npk` with the snapshot). This runner writes no transform;
-    it COUNTS: the floor's step lines by the model belt's definition against
-    the output's points plus routed calls, every atomic step of the output
-    with its point before it, the site map in step with the text
-    (`explore.check_totality`, `check_sites` -- `explore-step-escapes` by
-    name), and the explored floor assembled by the pinned `llc`. `npkg verify`
-    runs the same count through the same module."""
+# The explored floor and the shim are built ONCE per run and shared by the
+# totality check and the `explore` stage: (xfloor_o, shim_o, fails, summary).
+_EXPLORED = {}
+
+
+def explored_objects(tmp, tools):
+    """THE EXPLORED FLOOR'S TOTALITY (1.5.7 step 0; D-212, X-1, X-9) and the
+    SHIM under the floor's belts (step 1; D-298). The schedule explorer runs
+    the REAL floor transformed -- a scheduling point before every atomic step
+    line, every `@npk_sys6(` call routed to the shim -- by the ONE transformer
+    (`npkg/explore.npk`, built into `tools/explored.npk` with the snapshot).
+    This runner writes no transform; it COUNTS: the floor's step lines by the
+    model belt's definition against the output's points plus routed calls,
+    every atomic step of the output with its point before it, the site map in
+    step with the text (`explore.check_totality`, `check_sites` --
+    `explore-step-escapes` by name), and the explored floor assembled by the
+    pinned `llc`. The shim, `runtime/explore/npkx.ll` (hand-written IR), is
+    held to the `undef` ban, D-173's hoisted allocas, the stack rule and the
+    zero-dependency scan, then assembled. `npkg verify` runs the same count
+    through the same module; `npkg test` builds the same two objects."""
+    if tmp in _EXPLORED:
+        return _EXPLORED[tmp]
+    result = _explored_objects(tmp, tools)
+    _EXPLORED[tmp] = result
+    return result
+
+
+def _explored_objects(tmp, tools):
     import explore
+    import floor
     tool = build_tool(tmp, tools, os.path.join(ROOT, "tools", "explored.npk"), "explored")
     if not tool or not os.path.exists(str(tool)):
-        return ["explore: tools/explored.npk did not build: %s" % tool]
+        return None, None, ["explore: tools/explored.npk did not build: %s" % tool], ""
     xdir = os.path.join(tmp, "explore")
     try:
         r = subprocess.run([tool, ROOT, "--emit", xdir], capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
-        return ["explore: the transformer did not terminate"]
+        return None, None, ["explore: the transformer did not terminate"], ""
     if r.returncode != 0:
-        return ["explore: the transformer refused: %s" % (r.stdout + r.stderr).strip()[:400]]
+        return None, None, ["explore: the transformer refused: %s" % (r.stdout + r.stderr).strip()[:400]], ""
     with open(RUNTIME_LL, encoding="utf-8") as fh:
         ft = fh.read()
     try:
@@ -3757,19 +3795,178 @@ def check_explore_totality(tmp, tools):
         with open(os.path.join(xdir, "sites.txt"), encoding="utf-8") as fh:
             st = fh.read()
     except OSError as e:
-        return ["explore: the transformer's output is unreadable: %s" % e]
+        return None, None, ["explore: the transformer's output is unreadable: %s" % e], ""
     fails = explore.check_totality(ft, xt) + explore.check_sites(xt, st)
     if fails:
-        return fails
-    r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(xdir, "npkrt.explore.ll"), "-o", os.path.join(xdir, "npkrt.explore.o")],
+        return None, None, fails, ""
+    xfloor_o = os.path.join(xdir, "npkrt.explore.o")
+    r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(xdir, "npkrt.explore.ll"), "-o", xfloor_o],
                        capture_output=True, text=True)
     if r.returncode != 0:
-        return ["explore: llc rejected the explored floor: %s" % r.stderr.strip()[:160]]
+        return None, None, ["explore: llc rejected the explored floor: %s" % r.stderr.strip()[:160]], ""
     n = explore.census(ft)
     points = sum(1 for l in xt.split("\n") if "call void @npkx_point(i32 " in l)
-    print("  %-11s the explored floor: %d point(s) and %d routed call(s) over the floor's %d step line(s), no step escapes; assembles under the pinned llc"
-          % ("explore", points, n - points, n))
+    summary = ("the explored floor: %d point(s) and %d routed call(s) over the floor's %d step line(s), no step escapes; "
+               "assembles under the pinned llc" % (points, n - points, n))
+    # THE SHIM (step 1): hand-written IR under the floor's own belts, assembled
+    shim = os.path.join(ROOT, "runtime", "explore", "npkx.ll")
+    if not os.path.exists(shim):
+        return None, None, ["explore: runtime/explore/npkx.ll is missing -- the shim is part of the tree (D-298)"], ""
+    with open(shim, encoding="utf-8") as fh:
+        sh = fh.read()
+    fails = check_no_undef(sh, "runtime/explore/npkx.ll") + check_allocas_hoisted(sh, "runtime/explore/npkx.ll") \
+        + floor.check_stack(sh, "explore")
+    if fails:
+        return None, None, fails, ""
+    shim_o = os.path.join(xdir, "npkx.o")
+    r = subprocess.run(["llc"] + LLC_FLAGS + [shim, "-o", shim_o], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, None, ["explore: llc rejected the shim: %s" % r.stderr.strip()[:160]], ""
+    fails = check_zero_dependency(shim_o, runtime_allowlist(), "runtime/explore/npkx.o")
+    if fails:
+        return None, None, fails, ""
+    return xfloor_o, shim_o, [], summary + "; the shim under the floor's belts, assembled"
+
+
+def check_explore_totality(tmp, tools):
+    """The whole-tree check's face of `explored_objects`: its findings, or the
+    `explore` line."""
+    _, _, fails, summary = explored_objects(tmp, tools)
+    if fails:
+        return fails
+    print("  %-11s %s" % ("explore", summary))
     return []
+
+
+# --- THE EXPLORE STAGE (1.5.7 step 1; D-212, D-298...D-301) ----------------------
+#
+# A program marked `// explore: N` is compiled by the real backend, linked
+# against the EXPLORED floor and the shim (`explored_objects`), and run under N
+# seeds of the shim's PCT scheduler; every run is held to the program's
+# `expect-exit:` and to NO VERDICT of the shim (DEADLOCK, STEP BUDGET, MMAP;
+# the quiescence oracles from step 3). A measuring run first (seed 0, depth 1:
+# no change points) gives k, the schedule's length, so the seeded runs' change
+# points fall inside it (X-5). The first seed runs TWICE and its two schedule
+# hashes must agree -- nondeterminism in the explored build is a defect of the
+# instrument (`explore-replay-differs`, X-7). A `// explore-seed: S` runs first,
+# forever (X-11). A program marked `// explore: no <reason>` is recorded with
+# its reason and not run; a `// stress:` program marked neither is a red run by
+# name (`explore-unmarked`, D-299). The stage prints PCT's per-run bound for
+# each unit from its measured thread count and k (X-8). `npkg test` runs the
+# same stage, unit for unit, message for message.
+
+_NPKX_VERDICT = re.compile(r"^npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST[A-Z -]*|ASSUMPTION)", re.M)
+_NPKX_TRACE = re.compile(r"^npkx: +seed=(\d+) steps=(\d+) hash=(\d+)(?: vnow=(\d+))?(?: threads=(\d+))?", re.M)
+
+
+def explored_env(seed, k, depth):
+    """The explored binary's WHOLE environment: the shim reads it from
+    /proc/self/environ, first match wins, so nothing of ours rides along."""
+    return {"NPKX_SEED": str(seed), "NPKX_K": str(k), "NPKX_D": str(depth), "NPKX_TRACE": "1"}
+
+
+def explore_marker_finding(exp, name):
+    """THE MARKER BELT (D-299): a `// stress:` program says whether it is
+    explored; the finding when it says neither, else nothing."""
+    if exp.explore is None and not exp.explore_no and exp.stress > 1:
+        return ["%s: explore-unmarked: a `// stress:` program says `// explore: N` or `// explore: no <reason>` (D-299)" % name]
+    return []
+
+
+def run_explored(base, seed, k, depth, exp, name):
+    """One seeded run: (fails, steps, hash, threads). A verdict of the shim, a
+    wrong exit, a hang or a missing trace line are failures carrying the
+    replay line."""
+    replay = "NPKX_SEED=%d NPKX_K=%d NPKX_D=%d NPKX_TRACE=1 %s < /dev/null" % (seed, k, depth, base)
+    try:
+        r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL,
+                           env=explored_env(seed, k, depth))
+    except subprocess.TimeoutExpired:
+        return (["%s: explore-hung: seed %d ran for 60 s of REAL time -- a thread spinning without reading the "
+                 "clock or blocking (replay: %s)" % (name, seed, replay)], 0, "", 0)
+    err = r.stderr.decode("utf-8", "replace")
+    m = _NPKX_VERDICT.search(err)
+    if m:
+        return (["%s: explore verdict %s at seed %d (replay: %s):\n%s"
+                 % (name, m.group(1), seed, replay, err.strip()[:800])], 0, "", 0)
+    got = r.returncode
+    if got != exp.exit:
+        return (["%s: exited %d under the explorer at seed %d, expected %d (replay: %s)"
+                 % (name, got, seed, exp.exit, replay)], 0, "", 0)
+    t = _NPKX_TRACE.search(err)
+    if not t:
+        return ["%s: no schedule trace from the shim at seed %d (replay: %s)" % (name, seed, replay)], 0, "", 0
+    return [], int(t.group(2)), t.group(3), int(t.group(5) or 0)
+
+
+def check_explored_program(binary, path, name, exp, tmp, xfloor_o, shim_o):
+    """One unit of the stage: (fails, (threads, k, depth, seeds) or None)."""
+    base = os.path.join(tmp, "xprog_" + os.path.basename(path).replace(".", "_"))
+    fails = emit_and_object(binary, path, name, base, runtime_allowlist())
+    if fails:
+        return fails, None
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o", xfloor_o, shim_o],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["%s: link against the explored floor failed: %s" % (name, r.stderr.strip()[:140])], None
+    depth = exp.explore_depth
+    # the measuring run: seed 0, no change points -- k is the schedule's length
+    fails, k, _, threads = run_explored(base, 0, 2000, 1, exp, name)
+    if fails:
+        return fails, None
+    k = max(k, 1)
+    seeds = list(exp.explore_first) + [s for s in range(1, exp.explore + 1) if s not in exp.explore_first]
+    hashes = {}
+    for s in seeds:
+        fails, _, h, _ = run_explored(base, s, k, depth, exp, name)
+        if fails:
+            return fails, None
+        hashes[s] = h
+    # THE REPLAY BELT (X-7): the first seed again, the same hash
+    first = seeds[0]
+    fails, _, h, _ = run_explored(base, first, k, depth, exp, name)
+    if fails:
+        return fails, None
+    if h != hashes[first]:
+        return (["%s: explore-replay-differs: seed %d gave two schedule hashes (%s, %s) -- nondeterminism in the "
+                 "explored build is a defect of the instrument" % (name, first, hashes[first], h)], None)
+    return [], (threads, k, depth, len(seeds))
+
+
+def stage_explore(t, s):
+    """Every `// stress:` program says whether it is explored (D-299); the
+    marked ones run under the explorer, N seeds each (D-300)."""
+    paths = files_of(t)
+    skip = imported_by_others(paths)
+    xfloor_o, shim_o, fails, _ = explored_objects(s.tmp, s.tools)
+    if fails:
+        s.failures += record_verdict(t["name"], "runtime/explore/npkx.ll", fails)
+        return
+    n = n_no = 0
+    for p in paths:
+        if os.path.abspath(p) in skip:
+            continue
+        exp = read_expectations(p)
+        name = os.path.relpath(p, ROOT)
+        if exp.explore is None and not exp.explore_no:
+            fails = explore_marker_finding(exp, name)
+            if fails:
+                s.failures += record_verdict(t["name"], name, fails)
+            continue
+        if exp.explore_no:
+            print("  %-11s %s: not explored -- %s" % ("explore", name, exp.explore_no))
+            s.failures += record_verdict(t["name"], name, [])
+            n_no += 1
+            continue
+        fails, measured = check_explored_program(COMPILER, p, name, exp, s.tmp, xfloor_o, shim_o)
+        s.failures += record_verdict(t["name"], name, fails)
+        if measured:
+            threads, k, depth, seeds = measured
+            print("  %-11s %s: %d thread(s), k=%d, d=%d, %d seed(s) -- PCT's per-run bound for a depth-%d bug: 1/(%d*%d^%d)"
+                  % ("explore", name, threads, k, depth, seeds, depth, threads, k, depth - 1))
+        n += 1
+    print("  %-11s %d program(s) explored under the shim's PCT scheduler, %d marked not explored with a reason; "
+          "the first seed of each replayed to the same schedule hash" % (t["name"], n, n_no))
 
 
 def floor_controls(fdir):
@@ -4335,6 +4532,8 @@ def run_stage(t, s, only):
         stage_verify(t, s)
     elif stage == "cost":
         stage_cost(t, s)
+    elif stage == "explore":
+        stage_explore(t, s)
     else:
         # load_targets refused everything else before any test ran.
         raise AssertionError("unknown stage reached run_stage: %s" % stage)

@@ -1,0 +1,321 @@
+// explore_stage -- THE EXPLORE STAGE's pieces (1.5.7 step 1; D-212, D-298...D-301):
+// the harness's `stage_explore`, unit for unit and message for message, so the
+// parity stage can diff the two runners' verdicts.
+//
+// A program marked `// explore: N` is compiled by the real backend, linked
+// against the EXPLORED floor (`runtime/npkrt.ll` through the one transformer,
+// `npkg/explore.npk`, assembled) and the shim (`runtime/explore/npkx.ll`,
+// hand-written IR under the floor's own belts, assembled), and run under N
+// seeds of the shim's PCT scheduler; every run is held to the program's
+// `expect-exit:` and to NO VERDICT of the shim (DEADLOCK, STEP BUDGET, MMAP;
+// the quiescence oracles from step 3). A measuring run first (seed 0, depth
+// 1: no change points) gives k, the schedule's length, so the seeded runs'
+// change points fall inside it (X-5). The first seed runs TWICE and its two
+// schedule hashes must agree -- nondeterminism in the explored build is a
+// defect of the instrument (`explore-replay-differs`, X-7). A `// explore-seed:
+// S` runs first, forever (X-11). A program marked `// explore: no <reason>` is
+// recorded with its reason and not run; a `// stress:` program marked neither
+// is a red run by name (`explore-unmarked`, D-299).
+
+mod:explore_stage;
+
+use "../src/frontend/paths.npk".*;
+use "../lib/nfs.npk".*;
+use "../lib/nproc.npk".*;
+use "./text.npk".*;
+use "./expect.npk".*;
+use "./toolchain.npk".*;
+use "./build.npk".*;
+use "./irscan.npk".*;
+use "./floor_stack.npk".*;
+use "./explore.npk".*;
+
+// THE MARKER BELT (D-299): a `// stress:` program says whether it is explored;
+// the finding when it says neither, else nothing.
+pub func:explore_marker_finding = List<string>(Expect->:exp, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    if ((exp.explore < 0i64) && (exp.explore_no.len == 0i64) && (exp.stress > 1i64)) {
+        drop strlist_push(@fl, string_concat(name, ": explore-unmarked: a `// stress:` program says `// explore: N` or `// explore: no <reason>` (D-299)"));
+    }
+    pass fl;
+};
+
+// The explored floor and the shim, built into `build/explore/`: the two
+// objects every unit links against. `findings` names what did not build.
+pub struct:ExploredObjects = { string:xfloor_o; string:shim_o; List<string>:findings; };
+
+pub async func:explored_objects = ExploredObjects(Ctx->:c) {
+    ExploredObjects:x = ExploredObjects{ xfloor_o: "", shim_o: "", findings: raw list_init::<string>(1i64) };
+    string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
+    string:xdir = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "explore");
+    Result<NIL>:d = ensure_dir(xdir);
+    if (d.is_error) { drop strlist_push(@x.findings, "explore: build/explore could not be created"); pass x; }
+    // the explored floor: the transformer's output, counted by the belt, assembled
+    Result<cstring>:fc = to_cstring(string_concat(root, "/runtime/npkrt.ll"));
+    if (fc.is_error) { drop strlist_push(@x.findings, "explore: runtime/npkrt.ll: not a path"); pass x; }
+    Result<string>:ftx = read_file(fc.value);
+    if (ftx.is_error) { drop strlist_push(@x.findings, "explore: runtime/npkrt.ll cannot be read"); pass x; }
+    Explored:xf = raw explore_transform(ftx.value);
+    for (int64:i in 0i64...xf.problems.count) { drop strlist_push(@x.findings, raw strlist_view(xf.problems, i)); }
+    if (x.findings.count > 0i64) { pass x; }
+    List<string>:tot = raw explore_totality(ftx.value, xf.text);
+    for (int64:j in 0i64...tot.count) { drop strlist_push(@x.findings, raw strlist_view(tot, j)); }
+    if (x.findings.count > 0i64) { pass x; }
+    string:xll = raw path_join(xdir, "npkrt.explore.ll");
+    Result<cstring>:xc = to_cstring(xll);
+    if (xc.is_error) { fail xc.err; }
+    Result<NIL>:w1 = write_file(xc.value, xf.text);
+    if (w1.is_error) { fail w1.err; }
+    string:xo = raw path_join(xdir, "npkrt.explore.o");
+    Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, xll, xo);
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) {
+        drop strlist_push(@x.findings, string_concat("explore: llc rejected the explored floor: ", raw text_head(raw text_trim(st1.text), 160i64)));
+        pass x;
+    }
+    // THE SHIM (D-298): hand-written IR under the floor's own belts, assembled
+    string:shim = string_concat(root, "/runtime/explore/npkx.ll");
+    Result<cstring>:sc = to_cstring(shim);
+    if (sc.is_error) { fail sc.err; }
+    if (!(path_exists(sc.value))) {
+        drop strlist_push(@x.findings, "explore: runtime/explore/npkx.ll is missing -- the shim is part of the tree (D-298)");
+        pass x;
+    }
+    Result<string>:stx = read_file(sc.value);
+    if (stx.is_error) { drop strlist_push(@x.findings, "explore: runtime/explore/npkx.ll cannot be read"); pass x; }
+    List<string>:nu = raw ir_no_undef(stx.value, "runtime/explore/npkx.ll");
+    for (int64:k1 in 0i64...nu.count) { drop strlist_push(@x.findings, raw strlist_view(nu, k1)); }
+    List<string>:ho = raw ir_allocas_hoisted(stx.value, "runtime/explore/npkx.ll");
+    for (int64:k2 in 0i64...ho.count) { drop strlist_push(@x.findings, raw strlist_view(ho, k2)); }
+    List<string>:sk = raw floor_stack_check(stx.value, "explore");
+    for (int64:k3 in 0i64...sk.count) { drop strlist_push(@x.findings, raw strlist_view(sk, k3)); }
+    if (x.findings.count > 0i64) { pass x; }
+    string:so = raw path_join(xdir, "npkx.o");
+    Result<Step>:s2 = await llc_obj(c, c.m.llc_flags, shim, so);
+    if (s2.is_error) { fail s2.err; }
+    Step:st2 = move(s2.value);
+    if (!st2.ok) {
+        drop strlist_push(@x.findings, string_concat("explore: llc rejected the shim: ", raw text_head(raw text_trim(st2.text), 160i64)));
+        pass x;
+    }
+    List<string>:zd = raw zero_dep(c, so, c.allow, "runtime/explore/npkx.o");
+    for (int64:k4 in 0i64...zd.count) { drop strlist_push(@x.findings, raw strlist_view(zd, k4)); }
+    if (x.findings.count > 0i64) { pass x; }
+    x.xfloor_o = move(xo);
+    x.shim_o = move(so);
+    pass x;
+};
+
+// The explored binary's WHOLE environment: the shim reads /proc/self/environ,
+// first match wins, so nothing of ours rides along.
+func:explored_env = ProcArgs(int64:seed, int64:k, int64:depth) {
+    ProcArgs:e = raw args_init();
+    Result<NIL>:r1 = args_push(@e, string_concat("NPKX_SEED=", int_to_string(seed)));
+    if (r1.is_error) { drop args_free(@e); fail r1.err; }
+    Result<NIL>:r2 = args_push(@e, string_concat("NPKX_K=", int_to_string(k)));
+    if (r2.is_error) { drop args_free(@e); fail r2.err; }
+    Result<NIL>:r3 = args_push(@e, string_concat("NPKX_D=", int_to_string(depth)));
+    if (r3.is_error) { drop args_free(@e); fail r3.err; }
+    Result<NIL>:r4 = args_push(@e, "NPKX_TRACE=1");
+    if (r4.is_error) { drop args_free(@e); fail r4.err; }
+    pass e;
+};
+
+// The shim's verdict word on a line `npkx: WORD ...`, or "".
+func:npkx_verdict = string(string:err) never fails {
+    List<string>:lines = raw text_lines(err);
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (!(raw text_starts_with(ln, "npkx: "))) { continue; }
+        string:rest = raw text_slice(ln, 6i64, ln.len);
+        if (raw text_starts_with(rest, "DEADLOCK"))    { pass "DEADLOCK"; }
+        if (raw text_starts_with(rest, "STEP BUDGET")) { pass "STEP BUDGET"; }
+        if (raw text_starts_with(rest, "MMAP"))        { pass "MMAP"; }
+        if (raw text_starts_with(rest, "LOST")) {
+            // the whole word: `LOST-WAKE` or `LOST-FUTEX-WAKE`, up to the space
+            int64:sp = raw text_find_byte(rest, 32u8, 0i64);
+            if (sp < 0i64) { pass (string_concat(rest, "")); }
+            pass (raw text_slice(rest, 0i64, sp));
+        }
+        if (raw text_starts_with(rest, "ASSUMPTION"))  { pass "ASSUMPTION"; }
+    }
+    pass "";
+};
+
+// The digits after `KEY` on the trace line (`npkx: seed=... steps=... hash=...`),
+// as TEXT: a hash is a 64-bit word, and a number the language would trap on.
+func:npkx_field = string(string:err, string:key) never fails {
+    List<string>:lines = raw text_lines(err);
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (!(raw text_starts_with(ln, "npkx: "))) { continue; }
+        if (!(raw text_contains(ln, " seed="))) { continue; }
+        int64:at = raw text_index_of(ln, key);
+        if (at < 0i64) { pass ""; }
+        int64:p = at + key.len;
+        int64:stop = p;
+        while (stop < ln.len) {
+            uint8:ch = ln.ptr[stop];
+            if ((ch < 48u8) || (ch > 57u8)) { break; }
+            stop = stop + 1i64;
+        }
+        pass (raw text_slice(ln, p, stop));
+    }
+    pass "";
+};
+
+// A field that is a small count (steps, threads) as a number; -1 when absent.
+func:npkx_count = int64(string:err, string:key) never fails {
+    string:s = raw npkx_field(err, key);
+    if (s.len == 0i64) { pass (0i64 - 1i64); }
+    if (s.len > 15i64) { pass (0i64 - 1i64); }
+    int64:v = 0i64;
+    for (int64:i in 0i64...s.len) { v = (v * 10i64) + ((s.ptr[i] - 48u8) => int64); }
+    pass v;
+};
+
+pub struct:SeedRun = { List<string>:findings; int64:steps; string:hash; int64:threads; };
+
+// One seeded run: a verdict of the shim, a wrong exit, a hang or a missing
+// trace line are failures carrying the replay line.
+pub async func:run_explored = SeedRun(Ctx->:c, string:exe, int64:seed, int64:k, int64:depth, int64:want, string:name) {
+    SeedRun:x = SeedRun{ findings: raw list_init::<string>(1i64), steps: 0i64, hash: "", threads: 0i64 };
+    string:replay = string_concat("NPKX_SEED=", int_to_string(seed));
+    replay = string_concat(replay, " NPKX_K=");
+    replay = string_concat(replay, int_to_string(k));
+    replay = string_concat(replay, " NPKX_D=");
+    replay = string_concat(replay, int_to_string(depth));
+    replay = string_concat(replay, " NPKX_TRACE=1 ");
+    replay = string_concat(replay, exe);
+    replay = string_concat(replay, " < /dev/null");
+    ProcArgs:env = relay explored_env(seed, k, depth);
+    List<string>:noargs = raw list_init::<string>(1i64);
+    Result<Run>:r = await run_argv(exe, noargs, env, raw duration_secs(60i64));
+    drop args_free(@env);
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) {
+        string:m0 = string_concat(name, ": explore-hung: seed ");
+        m0 = string_concat(m0, int_to_string(seed));
+        m0 = string_concat(m0, " ran for 60 s of REAL time -- a thread spinning without reading the clock or blocking (replay: ");
+        m0 = string_concat(m0, replay);
+        drop list_push(@x.findings, string_concat(m0, ")"));
+        pass x;
+    }
+    string:verdict = raw npkx_verdict(run.x.err);
+    if (verdict.len > 0i64) {
+        string:m1 = string_concat(name, ": explore verdict ");
+        m1 = string_concat(m1, verdict);
+        m1 = string_concat(m1, " at seed ");
+        m1 = string_concat(m1, int_to_string(seed));
+        m1 = string_concat(m1, " (replay: ");
+        m1 = string_concat(m1, replay);
+        m1 = string_concat(m1, "):\n");
+        drop list_push(@x.findings, string_concat(m1, raw text_head(raw text_trim(run.x.err), 800i64)));
+        pass x;
+    }
+    int64:got = run.x.status;
+    if (!run.x.exited) { got = 0i64 - run.x.signal; }
+    if (got != want) {
+        string:m2 = string_concat(name, ": exited ");
+        m2 = string_concat(m2, int_to_string(got));
+        m2 = string_concat(m2, " under the explorer at seed ");
+        m2 = string_concat(m2, int_to_string(seed));
+        m2 = string_concat(m2, ", expected ");
+        m2 = string_concat(m2, int_to_string(want));
+        m2 = string_concat(m2, " (replay: ");
+        m2 = string_concat(m2, replay);
+        drop list_push(@x.findings, string_concat(m2, ")"));
+        pass x;
+    }
+    int64:steps = raw npkx_count(run.x.err, "steps=");
+    string:hash = raw npkx_field(run.x.err, "hash=");
+    if ((steps < 0i64) || (hash.len == 0i64)) {
+        string:m3 = string_concat(name, ": no schedule trace from the shim at seed ");
+        m3 = string_concat(m3, int_to_string(seed));
+        m3 = string_concat(m3, " (replay: ");
+        m3 = string_concat(m3, replay);
+        drop list_push(@x.findings, string_concat(m3, ")"));
+        pass x;
+    }
+    x.steps = steps;
+    x.hash = move(hash);
+    int64:th = raw npkx_count(run.x.err, "threads=");
+    if (th > 0i64) { x.threads = th; }
+    pass x;
+};
+
+// The seeds a unit runs, in order: `// explore-seed: S` first, then 1..N without them.
+pub func:explore_seeds = List<int64>(Expect->:exp) never fails {
+    List<int64>:seeds = raw list_init::<int64>(exp.explore + 2i64);
+    for (int64:i in 0i64...exp.explore_first.count) { drop list_push(@seeds, exp.explore_first.items[i]); }
+    for (int64:s in 1i64..exp.explore) {
+        bool:named = false;
+        for (int64:j in 0i64...exp.explore_first.count) { if (exp.explore_first.items[j] == s) { named = true; } }
+        if (!named) { drop list_push(@seeds, s); }
+    }
+    pass seeds;
+};
+
+pub struct:XMeasured = { List<string>:findings; bool:ran; int64:threads; int64:k; int64:depth; int64:seeds; };
+
+// One unit of the stage: compile, link against the explored floor and the
+// shim, the measuring run, the seeds, the replay belt.
+pub async func:check_explored_program = XMeasured(Ctx->:c, string:path, string:name, Expect->:exp,
+                                                 string:xfloor_o, string:shim_o) {
+    XMeasured:m = XMeasured{ findings: raw list_init::<string>(1i64), ran: false, threads: 0i64, k: 0i64, depth: exp.explore_depth, seeds: 0i64 };
+    string:fname = raw text_file_name(path);
+    string:base = raw path_join(raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "explore"),
+                                string_concat("xprog_", raw text_replace_byte(fname, 46u8, 95u8)));
+    List<string>:fl = relay await emit_and_object(c, string_from_bytes(c.npkc.ptr, c.npkc.len), path, name, base, c.allow);
+    if (fl.count > 0i64) { m.findings = move(fl); pass m; }
+    List<string>:args = raw strlist_clone(c.m.lld_flags);
+    drop strlist_push(@args, "-o");
+    drop strlist_push(@args, base);
+    drop strlist_push(@args, string_concat(base, ".o"));
+    drop strlist_push(@args, xfloor_o);
+    drop strlist_push(@args, shim_o);
+    Result<Step>:ls = await tool_step(c, string_from_bytes(c.t.lld.ptr, c.t.lld.len), args, raw duration_secs(600i64));
+    if (ls.is_error) { fail ls.err; }
+    Step:lst = move(ls.value);
+    if (!lst.ok) {
+        string:m0 = string_concat(name, ": link against the explored floor failed: ");
+        m0 = string_concat(m0, raw text_head(raw text_trim(lst.text), 140i64));
+        drop list_push(@m.findings, move(m0));
+        pass m;
+    }
+    // the measuring run: seed 0, no change points -- k is the schedule's length
+    SeedRun:r0 = relay await run_explored(c, base, 0i64, 2000i64, 1i64, exp.exit_code, name);
+    if (r0.findings.count > 0i64) { m.findings = move(r0.findings); pass m; }
+    int64:k = r0.steps;
+    if (k < 1i64) { k = 1i64; }
+    m.threads = r0.threads;
+    m.k = k;
+    List<int64>:seeds = raw explore_seeds(exp);
+    m.seeds = seeds.count;
+    string:first_hash = "";
+    for (int64:i in 0i64...seeds.count) {
+        SeedRun:rs = relay await run_explored(c, base, seeds.items[i], k, exp.explore_depth, exp.exit_code, name);
+        if (rs.findings.count > 0i64) { m.findings = move(rs.findings); pass m; }
+        if (i == 0i64) { first_hash = move(rs.hash); }
+    }
+    // THE REPLAY BELT (X-7): the first seed again, the same hash
+    if (seeds.count > 0i64) {
+        SeedRun:rr = relay await run_explored(c, base, seeds.items[0i64], k, exp.explore_depth, exp.exit_code, name);
+        if (rr.findings.count > 0i64) { m.findings = move(rr.findings); pass m; }
+        if (!(raw text_eq(rr.hash, first_hash))) {
+            string:m1 = string_concat(name, ": explore-replay-differs: seed ");
+            m1 = string_concat(m1, int_to_string(seeds.items[0i64]));
+            m1 = string_concat(m1, " gave two schedule hashes (");
+            m1 = string_concat(m1, first_hash);
+            m1 = string_concat(m1, ", ");
+            m1 = string_concat(m1, rr.hash);
+            m1 = string_concat(m1, ") -- nondeterminism in the explored build is a defect of the instrument");
+            drop list_push(@m.findings, move(m1));
+            pass m;
+        }
+    }
+    m.ran = true;
+    pass m;
+};

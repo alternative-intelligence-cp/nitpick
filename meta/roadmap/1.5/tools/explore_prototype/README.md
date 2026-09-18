@@ -27,6 +27,14 @@ and this ships nowhere — the same standing as `tests/backend/fixtures/*.c`, th
 layer of verification for us that doesn't get shipped then i don't see a problem with it." Nothing under `src/`,
 `runtime/`, `lib/`, `npkg/` or `tools/` references this directory.
 
+**Amended once, at 1.5.7 step 1, and recorded here.** The port of this shim to IR found that the C did not replay
+exactly under machine load: `npk_chunk_new` over-maps and trims, and whether its pre-trim `munmap` happens depends
+on the alignment of `mmap`'s answer, so a step count -- and with it every PCT change point and the schedule hash --
+depended on an ADDRESS. The plan's "exact replay" had been measured on one program whose mappings happened to
+align. Both shims now place an anonymous mapping with no hint at a bump pointer (16 TiB, 64 KiB-aligned) with
+`MAP_FIXED_NOREPLACE` (X-13 in the plan); the amendment is the one block marked in `npkx.c`. `hashcmp.sh` beside
+it is the measurement the IR shim is held to.
+
 **Running it by hand** (a measurement, never a verdict):
 
 ```

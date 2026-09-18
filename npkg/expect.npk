@@ -17,6 +17,9 @@
 //   expect-obligation: KIND VERDICT N   a `verify` test's row (1.5.0, P-22): the
 //                            (kind, verdict) counts over the test's own module
 //                            must EQUAL the set named; `none` says there are none
+//   explore: N [d=D]         run under N seeds of the schedule explorer (1.5.7, D-299/D-300)
+//   explore: no REASON       not explored, with the reason beside the program
+//   explore-seed: S          a seed that once found a defect: run first, forever (X-11)
 //
 // A number the reader cannot read marks the expectations unreadable, with
 // the line: the test is then a failing test, never a silently defaulted one.
@@ -46,6 +49,15 @@ pub struct:Expect = {
     bool:no_parse_error;
     List<ObExpect>:obligations;   // `expect-obligation:` rows (the verify stage)
     bool:obligations_none;        // `expect-obligation: none`
+    // WHETHER IT IS EXPLORED (1.5.7, D-299/D-300): `explore: N [d=D]` runs it
+    // under N seeds of the schedule explorer (PCT depth D, 3 by default);
+    // `explore: no <reason>` excludes it with the reason beside the program; a
+    // `stress:` program marked neither is a red run by name. An `explore-seed: S`
+    // is a seed that once found a defect: run first, forever.
+    int64:explore;                // -1: unmarked
+    int64:explore_depth;
+    string:explore_no;
+    List<int64>:explore_first;
     bool:ok;
     int64:bad_line;
     // AN `expect-exit` NO RUN CAN PRODUCE (1.5.1b step 5, the workbench's
@@ -97,6 +109,8 @@ pub func:expect_read = Expect(string:text) never fails {
                        no_parse_error: false,
                        obligations: raw list_init::<ObExpect>(2i64),
                        obligations_none: false,
+                       explore: 0i64 - 1i64, explore_depth: 3i64, explore_no: "",
+                       explore_first: raw list_init::<int64>(1i64),
                        ok: true, bad_line: 0i64, bad_exit: 0i64 };
     List<string>:lines = raw text_lines(text);
     for (int64:li in 0i64...lines.count) {
@@ -150,6 +164,35 @@ pub func:expect_read = Expect(string:text) never fails {
         }
         if (raw text_starts_with(body, "expect-no-parse-error")) {
             e.no_parse_error = true;
+            continue;
+        }
+        if (raw text_starts_with(body, "explore-seed:")) {
+            Result<int64>:sd = text_int(raw after_colon(body));
+            if (sd.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            drop list_push(@e.explore_first, sd.value);
+            continue;
+        }
+        if (raw text_starts_with(body, "explore:")) {
+            string:xrest = raw after_colon(body);
+            if ((raw text_eq(xrest, "no")) || (raw text_starts_with(xrest, "no "))) {
+                string:why = raw text_trim(raw text_slice(xrest, 2i64, xrest.len));
+                if (why.len == 0i64) { why = "(no reason given)"; }
+                e.explore_no = move(why);
+                continue;
+            }
+            List<string>:xparts = raw text_split_ws(xrest);
+            if (xparts.count == 0i64) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            Result<int64>:ns = text_int(raw strlist_view(xparts, 0i64));
+            if (ns.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            e.explore = ns.value;
+            for (int64:pi in 1i64...xparts.count) {
+                string:tok = raw strlist_view(xparts, pi);
+                if (raw text_starts_with(tok, "d=")) {
+                    Result<int64>:dv = text_int(raw text_slice(tok, 2i64, tok.len));
+                    if (dv.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+                    e.explore_depth = dv.value;
+                }
+            }
             continue;
         }
         if (raw text_starts_with(body, "expect-obligation:")) {

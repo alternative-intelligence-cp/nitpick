@@ -209,6 +209,21 @@ name = "runtime"
 stage = "runtime"
 path = "runtime/tests"
 
+# THE EXPLORE STAGE (1.5.7; D-212, D-298...D-301): every `// stress:` program
+# under tests/backend/programs says whether it is explored -- `// explore: N`
+# or `// explore: no <reason>` (D-299) -- and the marked ones are compiled by the
+# real backend, linked against the EXPLORED floor (runtime/npkrt.ll transformed
+# by npkg/explore.npk: a scheduling point before every atomic step, every
+# syscall routed) and the hand-written IR shim (runtime/explore/npkx.ll), and
+# run under N seeds of the shim's PCT scheduler: every run held to the
+# program's exit and to no verdict of the shim, the first seed replayed to the
+# same schedule hash. It complements `// stress:` (D-212); neither marker
+# implies the other's removal.
+[[test]]
+name = "explore"
+stage = "explore"
+path = "tests/backend/programs"
+
 # THE VERIFICATION LEG'S PROGRAMS (1.5.0, D-218; the plan is
 # meta/roadmap/1.5/1.5.0.md, P-22): each is compiled with `--obligations`,
 # its D-218 rows decided by the pinned z3 under the pinned profile, the
