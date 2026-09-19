@@ -3961,6 +3961,39 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
 
 };
 
+// A CONSTANT `+ - *` OR NEGATION THAT CANNOT HOLD ITS VALUE (D-310, K-8; 1.5.8b
+// step 2): at a plain integer operation of type `t`, both operands are FOLDED
+// (TYPE-076's reach is the folder's: literals, negated literals, `fixed`
+// constants, `comptime` values) and the exact result computed at `t` -- the
+// node's own type, which is how an unsuffixed pair (`int8:x = 100 + 100;`)
+// meets its width, since the folder alone sees none there. A certain overflow
+// is TYPE-076 at the node, in the folder's own words: when an operand's fold
+// already reported (a nested overflow, a division by zero), nothing more is
+// said (D-240). `lhs` none means negation, `0 - rhs`.
+pub func:check_const_overflow = NIL(ExprTyper->:e, ExprNode:n, TokenKind:op, int32:t,
+                                    ExprId:lhs, ExprId:rhs) never fails {
+    if (t == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, t)) { pass NIL; }
+    if (!(raw type_is_integer(e.types, t))) { pass NIL; }
+    TypeResolver:r = raw etyper_resolver(e);
+    int64:a = 0i64;
+    bool:unary = raw expr_is_none(lhs);
+    if (!unary) {
+        ConstVal:av = raw fold_const(@r, lhs, e.scope);
+        if (raw fold_gave_up(@r)) { pass NIL; }
+        if (av.kind != (raw CV_INT())) { pass NIL; }
+        a = av.num;
+    }
+    ConstVal:bv = raw fold_const(@r, rhs, e.scope);
+    if (raw fold_gave_up(@r)) { pass NIL; }
+    if (bv.kind != (raw CV_INT())) { pass NIL; }
+    Exact64:x = raw fold_exact(@r, op, a, bv.num, t);
+    if (x.verdict != (raw EX_OVER())) { pass NIL; }
+    discard(raw te_error(e, raw TYPE_CONST_OVERFLOW(),
+        raw const_overflow_msg(e.types, e.interns, op, unary, t), n.span));
+    pass NIL;
+};
+
 func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     TokenKind:op = raw expr_op(n);
 
@@ -4033,10 +4066,20 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 pass (e.types.t_string);
             }
         }
-        pass (raw type_arithmetic(e, n.span, lt, rt));
+        int32:pt = raw type_arithmetic(e, n.span, lt, rt);
+        drop check_const_overflow(e, n, op, pt, raw expr_lhs(n), raw expr_rhs(n));
+        pass pt;
     }
-    if (op == TokenKind.OpMinus)   { pass (raw type_arithmetic(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpStar)    { pass (raw type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpMinus) {
+        int32:mt = raw type_arithmetic(e, n.span, lt, rt);
+        drop check_const_overflow(e, n, op, mt, raw expr_lhs(n), raw expr_rhs(n));
+        pass mt;
+    }
+    if (op == TokenKind.OpStar) {
+        int32:st2 = raw type_arithmetic(e, n.span, lt, rt);
+        drop check_const_overflow(e, n, op, st2, raw expr_lhs(n), raw expr_rhs(n));
+        pass st2;
+    }
     if (op == TokenKind.OpSlash)   { pass (raw type_arithmetic(e, n.span, lt, rt)); }
     if (op == TokenKind.OpPercent) { pass (raw type_arithmetic(e, n.span, lt, rt)); }
 
@@ -4116,6 +4159,9 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m2), n.span));
             }
         }
+        // `-(-128i8)` IS 128, WHICH `int8` CANNOT HOLD (D-310, TYPE-076): a
+        // constant operand's negation is computed exactly at the width.
+        drop check_const_overflow(e, n, op, t, raw expr_none(), raw expr_operand(n));
         pass t;
     }
     if (op == TokenKind.OpTilde) {

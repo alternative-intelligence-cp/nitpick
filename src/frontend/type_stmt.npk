@@ -2266,6 +2266,10 @@ func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) never fails {
     if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
     TypeResolver:cr = raw etyper_resolver(e);
     ConstVal:cv = raw fold_const(@cr, eid, e.scope);
+    // A FOLD THAT ALREADY SAID WHAT WENT WRONG -- a constant overflow (D-310),
+    // a division by zero -- is not also "not a constant" (D-240: one mistake,
+    // one report; the specific sentence is the useful one).
+    if (raw fold_gave_up(@cr)) { pass true; }
     pass (raw cv_folded(cv));
 };
 

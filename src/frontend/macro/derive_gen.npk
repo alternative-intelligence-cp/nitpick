@@ -198,13 +198,11 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 // It is also readable. `--emit-derived` is a thing a driver can offer later, and
 // what it would print is exactly what is built here.
 
-func:PRIME_TEXT = string() never fails { pass "100000001B3hexu64"; };
-// The FNV-1a 64 offset basis is 0xCBF29CE484222325 = 14695981039346656037,
-// which is ABOVE the 64-bit literal envelope (D-148): values past 2^63-1 are
-// constructed, not spelled. 2^64 - 14695981039346656037 = 3750763034362895579,
-// and unsigned subtraction wraps by definition (D-037), so this difference IS
-// the basis, bit for bit.
-func:BASIS_TEXT = string() never fails { pass "(0u64 - 3750763034362895579u64)"; };
+// (The FNV-1a constants lived here as source text until 1.5.8b step 2, used by
+// nothing: the derived `Hash` combines through the prelude's `fnv_mix` and
+// `fnv_offset`, whose basis is built with bit operations (D-311). The basis
+// text here was `0u64 - 3750763034362895579u64` -- D-037's wrap, which D-210
+// replaced with a trap and D-310 refuses as a constant.)
 
 // IS THIS FIELD'S SPELLED TYPE `simd<…>`? Derive runs before collection,
 // so the TYPE TABLE does not exist yet — but the field's own type NODE

@@ -1,0 +1,28 @@
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 21
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 22
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 24
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 25
+//
+// A CONSTANT DIVISION THE RUN TIME WOULD TRAP IS REFUSED WHERE IT IS FOLDED
+// (1.5.8b step 2; DEF-80). The signed minimum over -1 has no quotient in its
+// type, and the run time traps it for both `/` and `%` (`DivOverflow`, D-007),
+// so a constant one is refused as a constant division by zero always was --
+// the folder computed it in the compiler's own 64-bit arithmetic until this
+// step, which for `int64` TRAPPED THE COMPILER (exit 3) and for a narrower
+// width folded a quotient the type cannot hold. A computed divisor keeps its
+// run-time guards.
+mod:constant_division;
+
+fixed int8:MIN8 = -127i8 - 1i8;
+fixed int8:Q8 = MIN8 / -1i8;
+fixed int8:R8 = MIN8 % -1i8;
+fixed int64:MIN64 = -9223372036854775807i64 - 1i64;
+fixed int64:Q64 = MIN64 / -1i64;
+fixed int32:Z = 7i32 / 0i32;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

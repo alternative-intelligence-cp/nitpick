@@ -19572,6 +19572,47 @@ check that always fires is not a check.
 Lands at 1.5.8b step 2. The library listener is told before it lands, since a
 new refusal can reject existing code.
 
+*[2026-09-19, 1.5.8b step 2 — LANDED.]*
+- **The folder computes `+ - *` and negation exactly at the operation's width.**
+  - A `uint64` is held as its bit pattern and computed unsigned.
+  - Every step is guarded before it is taken (CERT's shapes; no `MIN / -1` is
+    ever computed), so the compiler's own arithmetic, itself trapping under
+    D-210, cannot overflow while it checks a program's.
+  - A width past 64 bits folds inside the 64-bit window only, and a result
+    beyond it declines, keeping the run-time guard.
+- **TYPE-076 has two reporters, one sentence** (`const_overflow_msg`):
+  - the folder, where the operation's type is written;
+  - the checker's `check_const_overflow`, which folds the OPERANDS of every
+    plain integer `+ - *` and negation and computes at the NODE's type. That is
+    how an unsuffixed pair meets the width its context gives it
+    (`int8:x = 100 + 100;`).
+
+  Identical code, span and message collapse to one report (D-240). A `fixed`
+  initialiser whose fold already reported is not also "not a constant"
+  (`is_const_initialiser` asks `fold_gave_up`).
+- **The emitter** (`emit_const_fold`, DEF-70) writes a folded `+ - *` or
+  negation as its constant, where the value fits the node's plain integer type.
+  The fold asks the node, never an operand's emitted text.
+  - Census, the compiler's own emission: all 85 constant checked operations
+    gone (the 84 negated literals and one pair).
+  - `IntOverflow` guards 2,248 → 2,187, net of the 25 guarded operations step
+    2's own folder code adds.
+  - `ir_expr.npk` pins `2 * 8` as `i64 16` and `-1` as `-1`, with no
+    instruction.
+- **Found with it, fixed in the same step (DEF-80):** the folder's OTHER
+  operations were not the machine's either.
+  - A wide shift by 64 or more trapped the compiler itself (`1u256 << 200u256`,
+    reached the day the checker began folding operands).
+  - A narrow `<<` kept the bits past its width.
+  - `~` of a narrow unsigned value was unmasked.
+  - A `uint64` divided, took remainders, shifted right and compared SIGNED.
+  - `MIN / -1` and `MIN % -1` trapped the compiler.
+  - A cast read a `uint64` bit pattern as another type's value.
+
+  Each is the machine's answer now, and a constant `MIN / -1` is refused as a
+  constant division by zero is (TYPE-004). `constant_fold.npk` holds each folded
+  value to the same operation at run time.
+
 ## D-311 — `uint64`'s upper half is constructed with bit operations, which never overflow; D-148's example becomes `~0u64` — **SETTLED (user decision, 2026-09-19: "that all sounds fine and now I do remember it. I think that means your recommendation is a go from me."; S-91)**
 
 Found the day D-310 was ratified, by the library workbench (`nitpick-libs_s4`)
@@ -19606,6 +19647,20 @@ such sites; this tree holds none in code.
   a name the libraries already define for themselves.
 
 Lands at 1.5.8b step 2, with D-310. The library listener has the spelling.
+
+*[2026-09-19, 1.5.8b step 2 — LANDED.]*
+- `~0u64` and `(1u64 << 63u64) | 04BF29CE484222325hexu64` fold and run
+  identically (`constant_fold.npk`), and `0u64 - 1u64` is TYPE-076 in a `fixed`
+  initialiser and anywhere else (`constant_overflow.npk`).
+- `derive_gen.npk`'s `BASIS_TEXT` spelled the basis as `0u64 - 3750763034362895579u64`
+  and was used by nothing; it is removed.
+- **Found writing the test:** the prelude's `fnv_offset` comment named the
+  textbook basis `0xcbf29ce484222325`, while the constant it builds is the
+  ecosystem's `0xCBF5DAE484222325`. The two differ, and D-190 made that choice
+  deliberately: one basis for every derived identity. The constant was right
+  and the text was stale, so the comment is corrected; the test holds
+  `fnv_offset()` to D-190's value built with bit operations.
+- **The library listener's two `0u64 - 1u64` sites become `~0u64`.**
 
 ## D-312 — The wrapping family `+% -% *%`: arithmetic modulo 2^N, spelled at the site — **SETTLED (user decision, 2026-09-19: "I agree. the % family makes the most sense to me too as it's actually describing what will happen, not just a nifty shorthand way of doing a thing. It goes right along with the 'blueprint philosphy' we have with the other operators. ... so to me your proposal fits right in. lets roll with it."; S-92)**
 

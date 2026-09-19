@@ -1677,6 +1677,11 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 
 func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     TokenKind:op = raw expr_op(n);
+    // `-5i32` IS THE CONSTANT -5 (DEF-70), not a checked `sub 0, 5`.
+    if (op == TokenKind.OpMinus) {
+        ConstEmit:ue = raw emit_const_fold(x, id);
+        if (ue.ok) { pass (move(ue.v)); }
+    }
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
 
@@ -2831,11 +2836,46 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
     pass (raw iv(string_concat(lhs.ll, ""), move(r), lhs.type_id));
 };
 
+// A CONSTANT `+ - *` OR NEGATION IS ITS VALUE (D-310; 1.5.8b step 2; DEF-70):
+// where the folder evaluates the NODE -- never an operand's emitted text -- and
+// the value fits the node's plain integer type, the constant is emitted: no
+// `with.overflow` intrinsic, no guard, no row. The checker refused every such
+// operation that does not fit (TYPE-076), and one that somehow reached here
+// unfolded keeps its checked lowering. Until this step a negated literal was a
+// checked `sub 0, k` that could never fire -- 84 of them in the compiler's own
+// emission. `ok` false: not folded here.
+pub struct:ConstEmit = { bool:ok; IrVal:v; };
+
+func:emit_const_fold = ConstEmit(ExprEmitter->:x, ExprId:id) never fails {
+    ConstEmit:no = ConstEmit{ ok: false, v: raw iv_broken(raw span_none()) };
+    int32:nt = raw exprtypes_get(x.et, id);
+    if (nt == 0i32) { pass (move(no)); }
+    if (!(raw type_is_integer(x.fe.ctx.types, nt))) { pass (move(no)); }
+    if ((raw type_int_bits(x.fe.ctx.types, nt)) > 64i32) { pass (move(no)); }
+    ConstVal:cv = raw fold_const(x.tr, id, x.scope);
+    if (cv.kind != (raw CV_INT())) { pass (move(no)); }
+    if (!(raw fold_value_fits(cv.num, raw fold_width(x.tr, cv.type_id), raw fold_width(x.tr, nt)))) {
+        pass (move(no));
+    }
+    LlType:ll = raw ll_type(x.fe.ctx, nt);
+    if (!(raw ll_is_ok(ll))) { pass (move(no)); }
+    ConstEmit:yes = ConstEmit{ ok: true, v: raw iv(move(ll.text), int_to_string(cv.num), nt) };
+    pass (move(yes));
+};
+
 func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     TokenKind:op = raw expr_op(n);
 
     if (op == TokenKind.OpAndAnd) { pass (raw emit_shortcircuit(x, n, true)); }
     if (op == TokenKind.OpOrOr)   { pass (raw emit_shortcircuit(x, n, false)); }
+
+    bool:cfold = (op == TokenKind.OpPlus);
+    if (op == TokenKind.OpMinus) { cfold = true; }
+    if (op == TokenKind.OpStar)  { cfold = true; }
+    if (cfold) {
+        ConstEmit:ce = raw emit_const_fold(x, id);
+        if (ce.ok) { pass (move(ce.v)); }
+    }
 
     // AN `Optional` COMPARES AGAINST `NIL` BY ITS TAG (D-099, 1.0.7) — `a == NIL`
     // and `NIL != a` are THE test, in either order. The sentinel side is never

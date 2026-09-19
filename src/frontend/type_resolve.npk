@@ -855,6 +855,183 @@ func:flow_ret = FoldFlow(move ConstVal:v) never fails {
     pass f;
 };
 
+// --- EXACT CONSTANT ARITHMETIC (D-310, K-7; 1.5.8b step 2; DEF-71) -----------------
+//
+// THE FOLDER'S `+ - *` AND NEGATION ARE THE LANGUAGE'S, AT THE OPERATION'S WIDTH:
+// D-210 traps a plain integer's overflow at run time, so a constant expression
+// whose exact value does not fit its type is refused at compile time
+// (TYPE-076), never wrapped -- until 1.5.8b the folder computed in raw 64-bit
+// arithmetic, so `fixed uint64:B = 0u64 - 1u64` folded to 2^64-1 while the same
+// subtraction at run time trapped (DEF-71). AND THE FOLDER NEVER TRAPS: every
+// step below is guarded before it is taken, so the compiler's own arithmetic
+// (itself trapping under D-210) cannot overflow while it checks a program's.
+//
+// A `uint64` value is held in `ConstVal.num` as its BIT PATTERN (a value above
+// 2^63-1 is negative there) and computed as unsigned; every narrower width holds
+// its value exactly. A width past 64 folds only inside the 64-bit window -- a
+// result outside it is not representable in a `ConstVal`, so the fold DECLINES
+// (EX_UNKNOWN) and the run-time guard stays: safe, never a wrong value.
+
+pub func:EX_FITS = int32() never fails    { pass 0i32; };   // exact, and in the type's range
+pub func:EX_OVER = int32() never fails    { pass 1i32; };   // certainly outside the type's range
+pub func:EX_UNKNOWN = int32() never fails { pass 2i32; };   // not representable here: decline
+
+pub struct:Exact64 = { int32:verdict; int64:v; };
+
+func:ex_over = Exact64() never fails { Exact64:x = Exact64{ verdict: raw EX_OVER(), v: 0i64 }; pass x; };
+func:ex_unknown = Exact64() never fails { Exact64:x = Exact64{ verdict: raw EX_UNKNOWN(), v: 0i64 }; pass x; };
+func:ex_fits = Exact64(int64:v) never fails { Exact64:x = Exact64{ verdict: raw EX_FITS(), v: v }; pass x; };
+
+// `a op b` in signed 64-bit arithmetic, EX_OVER where it would overflow -- each
+// test taken on values that cannot overflow themselves (CERT INT32-C's shapes;
+// no `MIN / -1` is ever computed).
+func:exact_s64 = Exact64(TokenKind:op, int64:a, int64:b) never fails {
+    int64:mx = 9223372036854775807i64;
+    int64:mn = (0i64 - mx) - 1i64;
+    if (op == TokenKind.OpPlus) {
+        if ((b > 0i64) && (a > (mx - b))) { pass (raw ex_over()); }
+        if ((b < 0i64) && (a < (mn - b))) { pass (raw ex_over()); }
+        pass (raw ex_fits(a + b));
+    }
+    if (op == TokenKind.OpMinus) {
+        if ((b < 0i64) && (a > (mx + b))) { pass (raw ex_over()); }
+        if ((b > 0i64) && (a < (mn + b))) { pass (raw ex_over()); }
+        pass (raw ex_fits(a - b));
+    }
+    if (op == TokenKind.OpStar) {
+        if ((a == 0i64) || (b == 0i64)) { pass (raw ex_fits(0i64)); }
+        if (a > 0i64) {
+            if (b > 0i64) { if (a > (mx / b)) { pass (raw ex_over()); } }
+            else          { if (b < (mn / a)) { pass (raw ex_over()); } }
+        } else {
+            if (b > 0i64) { if (a < (mn / b)) { pass (raw ex_over()); } }
+            else          { if (b < (mx / a)) { pass (raw ex_over()); } }
+        }
+        pass (raw ex_fits(a * b));
+    }
+    pass (raw ex_unknown());
+};
+
+// `a op b` on two `uint64` BIT PATTERNS, EX_OVER where the unsigned result falls
+// outside `0..2^64-1`.
+func:exact_u64 = Exact64(TokenKind:op, int64:a, int64:b) never fails {
+    uint64:ua = a =>! uint64;
+    uint64:ub = b =>! uint64;
+    uint64:umx = ~0u64;
+    if (op == TokenKind.OpPlus) {
+        if (ua > (umx - ub)) { pass (raw ex_over()); }
+        pass (raw ex_fits((ua + ub) =>! int64));
+    }
+    if (op == TokenKind.OpMinus) {
+        if (ua < ub) { pass (raw ex_over()); }
+        pass (raw ex_fits((ua - ub) =>! int64));
+    }
+    if (op == TokenKind.OpStar) {
+        if (ub != 0u64) { if (ua > (umx / ub)) { pass (raw ex_over()); } }
+        pass (raw ex_fits((ua * ub) =>! int64));
+    }
+    pass (raw ex_unknown());
+};
+
+// THE EXACT `a op b` AT TYPE `ty` (`+`, `-`, `*`; negation is `0 - v`). `ty` 0 is
+// an unsuffixed pair, whose width its site supplies later: computed in the signed
+// 64-bit window, declining outside it. A type wider than 64 bits: the same
+// window, where a result outside it is UNKNOWN (it may fit the wide type) and a
+// negative result of an unsigned one is certainly OVER.
+pub func:fold_exact = Exact64(TypeResolver->:r, TokenKind:op, int64:a, int64:b,
+                              int32:ty) never fails {
+    if (ty == 0i32) {
+        Exact64:x0 = raw exact_s64(op, a, b);
+        if (x0.verdict == (raw EX_OVER())) { pass (raw ex_unknown()); }
+        pass x0;
+    }
+    if (!(raw type_is_integer(r.types, ty))) { pass (raw ex_unknown()); }
+    int32:bits = raw type_int_bits(r.types, ty);
+    bool:signed = raw type_is_signed(r.types, ty);
+    if (bits > 64i32) {
+        Exact64:xw = raw exact_s64(op, a, b);
+        if (xw.verdict != (raw EX_FITS())) { pass (raw ex_unknown()); }
+        if ((!signed) && (xw.v < 0i64)) { pass (raw ex_over()); }
+        pass xw;
+    }
+    if ((bits == 64i32) && (!signed)) { pass (raw exact_u64(op, a, b)); }
+    Exact64:x = raw exact_s64(op, a, b);
+    if (x.verdict != (raw EX_FITS())) { pass x; }
+    if (bits == 64i32) { pass x; }
+    int64:lo = 0i64;
+    int64:hi = (1i64 << (bits => int64)) - 1i64;
+    if (signed) {
+        hi = (1i64 << ((bits - 1i32) => int64)) - 1i64;
+        lo = (0i64 - hi) - 1i64;
+    }
+    if ((x.v < lo) || (x.v > hi)) { pass (raw ex_over()); }
+    pass x;
+};
+
+// THE ONE SENTENCE, from the folder and the checker alike (D-240: the two reach
+// the same node, and identical code, span and message collapse to one report).
+pub func:const_overflow_msg = string(TypeTable->:types, InternTable->:interns,
+                                     TokenKind:op, bool:unary, int32:ty) never fails {
+    string:what = "`*`";
+    if (op == TokenKind.OpPlus)  { what = "`+`"; }
+    if (op == TokenKind.OpMinus) { what = "`-`"; }
+    if (unary) { what = "negation"; }
+    string:m1 = string_concat("this constant ", what);
+    string:m2 = string_concat(m1, "'s exact value does not fit `");
+    string:m3 = string_concat(m2, raw type_display(types, interns, ty));
+    pass (string_concat(m3, "` (D-310): the run time would trap it (D-210), so the compiler refuses it here rather than fold a wrapped value -- write the value in range, or build a wide constant with bit operations (`~0u64`, `(1u64 << 63u64) | k`, D-311)"));
+};
+
+// THE WIDTH A FOLDED VALUE IS HELD AT (K-7): `bits` 0 for an unsuffixed value (the
+// signed 64-bit window, its width its site's), a flag family's 32-bit unsigned
+// word (D-230), an integer's own bits otherwise.
+pub struct:FoldWidth = { int32:bits; bool:signed; };
+
+pub func:fold_width = FoldWidth(TypeResolver->:r, int32:ty) never fails {
+    FoldWidth:none = FoldWidth{ bits: 0i32, signed: true };
+    if (ty == 0i32) { pass none; }
+    if ((raw type_kind(r.types, ty)) == (raw TY_FLAGS())) {
+        FoldWidth:fw = FoldWidth{ bits: 32i32, signed: false };
+        pass fw;
+    }
+    if (!(raw type_is_integer(r.types, ty))) { pass none; }
+    FoldWidth:w = FoldWidth{ bits: raw type_int_bits(r.types, ty), signed: raw type_is_signed(r.types, ty) };
+    pass w;
+};
+
+// IS THIS WIDTH `uint64`, whose values past 2^63-1 are held as their bit pattern?
+func:fw_is_u64 = bool(FoldWidth:w) never fails {
+    pass ((w.bits == 64i32) && (!w.signed));
+};
+
+// A RAW 64-BIT RESULT BROUGHT TO A WIDTH OF AT MOST 64: its low `bits`, sign-
+// extended for a signed width -- the machine's answer for `<<` and `~`, which
+// lose bits by definition and never trap (DEF-80: `1i8 << 7i8` folded to 128,
+// which no `int8` holds; the machine's answer is -128).
+func:fold_to_width = int64(int64:v, FoldWidth:w) never fails {
+    if ((w.bits == 0i32) || (w.bits >= 64i32)) { pass v; }
+    int64:sh = 64i64 - (w.bits => int64);
+    if (w.signed) { pass ((v << sh) >> sh); }
+    pass (v & ((1i64 << (w.bits => int64)) - 1i64));
+};
+
+// DOES THE EXACT VALUE `v` (held as `from` holds it) FIT WIDTH `to`? A `uint64`
+// value past 2^63-1 fits only a `uint64`; any other value is exact in the window.
+pub func:fold_value_fits = bool(int64:v, FoldWidth:from, FoldWidth:to) never fails {
+    if ((raw fw_is_u64(from)) && (v < 0i64)) { pass (raw fw_is_u64(to)); }
+    if (to.bits == 0i32) { pass true; }
+    if (to.bits >= 64i32) {
+        if (to.signed) { pass true; }
+        pass (v >= 0i64);
+    }
+    if (!(to.signed)) {
+        if (v < 0i64) { pass false; }
+        pass (v <= ((1i64 << (to.bits => int64)) - 1i64));
+    }
+    int64:hi = (1i64 << ((to.bits - 1i32) => int64)) - 1i64;
+    pass ((v >= ((0i64 - hi) - 1i64)) && (v <= hi));
+};
+
 pub func:fold_const = ConstVal(TypeResolver->:r, ExprId:id, int32:scope) never fails {
     r.fold_blown = false;
     r.fold_depth = 0i32;
@@ -944,6 +1121,13 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
         if (!(raw cv_is_int(v))) { pass (raw cv_none()); }
         int32:target = raw resolve_type(r, raw expr_cast_type(e), scope);
         if (!(raw type_is_integer(r.types, target))) { pass (raw cv_none()); }
+        // THE VALUE, NOT ITS REPRESENTATION (DEF-80): a `uint64` past 2^63-1 is
+        // held as its bit pattern, which read as another type's value is a
+        // different number -- it folds only to a `uint64`; a value the target
+        // cannot hold declines (the cast rules refuse a narrowing `=>`).
+        if (!(raw fold_value_fits(v.num, raw fold_width(r, v.type_id), raw fold_width(r, target)))) {
+            pass (raw cv_none());
+        }
         pass (raw cv_int(target, v.num));
     }
 
@@ -1001,11 +1185,25 @@ func:fold_unary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
 
     if (op == TokenKind.OpMinus) {
         if (v.kind != (raw CV_INT())) { pass (raw cv_none()); }
-        pass (raw cv_int(v.type_id, 0i64 - v.num));
+        // EXACT AT THE WIDTH (D-310): `-(-128i8)` is 128, which `int8` cannot
+        // hold, and `-1u8` has no unsigned value -- each refused, never wrapped.
+        Exact64:nx = raw fold_exact(r, TokenKind.OpMinus, 0i64, v.num, v.type_id);
+        if (nx.verdict == (raw EX_OVER())) {
+            drop fold_reported(r, raw TYPE_CONST_OVERFLOW(),
+                raw const_overflow_msg(r.types, r.interns, TokenKind.OpMinus, true, v.type_id),
+                e.span);
+            pass (raw cv_none());
+        }
+        if (nx.verdict != (raw EX_FITS())) { pass (raw cv_none()); }
+        pass (raw cv_int(v.type_id, nx.v));
     }
     if (op == TokenKind.OpTilde) {
         if (v.kind != (raw CV_INT())) { pass (raw cv_none()); }
-        pass (raw cv_int(v.type_id, ~v.num));
+        // AT THE WIDTH (DEF-80): `~5u8` is 250, not -6. An unsigned complement
+        // wider than 64 bits is past the window: decline.
+        FoldWidth:tw = raw fold_width(r, v.type_id);
+        if ((tw.bits > 64i32) && (!(tw.signed))) { pass (raw cv_none()); }
+        pass (raw cv_int(v.type_id, raw fold_to_width(~v.num, tw)));
     }
     if (op == TokenKind.OpBang) {
         if (v.kind != (raw CV_BOOL())) { pass (raw cv_none()); }
@@ -1067,9 +1265,22 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
     if (rr.kind != (raw CV_INT())) { pass (raw cv_none()); }
     int32:ty = raw fold_join_type(l.type_id, rr.type_id);
 
-    if (op == TokenKind.OpPlus)  { pass (raw cv_int(ty, l.num + rr.num)); }
-    if (op == TokenKind.OpMinus) { pass (raw cv_int(ty, l.num - rr.num)); }
-    if (op == TokenKind.OpStar)  { pass (raw cv_int(ty, l.num * rr.num)); }
+    // `+ - *` EXACTLY AT THE OPERATION'S WIDTH (D-310, K-7; DEF-71): a result the
+    // type cannot hold is TYPE-076, reported once and folded to nothing; one this
+    // window cannot represent declines, and the run-time guard stays.
+    bool:arith = (op == TokenKind.OpPlus);
+    if (op == TokenKind.OpMinus) { arith = true; }
+    if (op == TokenKind.OpStar)  { arith = true; }
+    if (arith) {
+        Exact64:bx = raw fold_exact(r, op, l.num, rr.num, ty);
+        if (bx.verdict == (raw EX_OVER())) {
+            drop fold_reported(r, raw TYPE_CONST_OVERFLOW(),
+                raw const_overflow_msg(r.types, r.interns, op, false, ty), e.span);
+            pass (raw cv_none());
+        }
+        if (bx.verdict != (raw EX_FITS())) { pass (raw cv_none()); }
+        pass (raw cv_int(ty, bx.v));
+    }
 
     // DIVISION BY ZERO DOES NOT FOLD TO ANYTHING. Returning zero would be the
     // silent wrong value this whole mechanism exists to avoid, and the site's own
@@ -1081,7 +1292,6 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
                 "this constant expression divides by zero", e.span);
             pass (raw cv_none());
         }
-        pass (raw cv_int(ty, l.num / rr.num));
     }
     if (op == TokenKind.OpPercent) {
         if (rr.num == 0i64) {
@@ -1089,6 +1299,38 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
                 "this constant expression takes a remainder by zero", e.span);
             pass (raw cv_none());
         }
+    }
+    if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
+        FoldWidth:dw = raw fold_width(r, ty);
+        // A `uint64` DIVIDES UNSIGNED (DEF-80): its bit patterns past 2^63-1
+        // read as negative, and a signed division of them is another number.
+        if (raw fw_is_u64(dw)) {
+            uint64:dua = l.num =>! uint64;
+            uint64:dub = rr.num =>! uint64;
+            if (op == TokenKind.OpSlash) { pass (raw cv_int(ty, (dua / dub) =>! int64)); }
+            pass (raw cv_int(ty, (dua % dub) =>! int64));
+        }
+        // THE SIGNED MINIMUM OVER -1 (D-007): its quotient does not fit, and the
+        // run time traps `DivOverflow` for both `/` and `%` -- refused as the
+        // division by zero is, where the width's minimum is representable; the
+        // window's own minimum over a wider or unsuffixed type declines. Never
+        // computed here: `MIN / -1` would trap the compiler itself (DEF-80).
+        if (rr.num == (0i64 - 1i64)) {
+            int64:wmx = 9223372036854775807i64;
+            int64:wmin = (0i64 - wmx) - 1i64;
+            if ((dw.bits > 0i32) && (dw.bits < 64i32) && dw.signed) {
+                wmin = 0i64 - (1i64 << ((dw.bits - 1i32) => int64));
+            }
+            if (l.num == wmin) {
+                if ((dw.bits > 0i32) && (dw.bits <= 64i32) && dw.signed) {
+                    drop fold_reported(r, raw TYPE_NOT_CONSTANT(),
+                        "this constant division overflows: the signed minimum over -1 has no quotient in its type, and the run time traps it (`DivOverflow`, D-007)",
+                        e.span);
+                }
+                pass (raw cv_none());
+            }
+        }
+        if (op == TokenKind.OpSlash) { pass (raw cv_int(ty, l.num / rr.num)); }
         pass (raw cv_int(ty, l.num % rr.num));
     }
 
@@ -1105,19 +1347,53 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
     // and the folder agrees with it and with the run-time guard (DEF-29's
     // lesson: every evaluator of one operation says the same thing).
     if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+        FoldWidth:shw = raw fold_width(r, ty);
         int64:sw = 64i64;
-        if (ty != 0i32) {
-            int32:tb = raw type_int_bits(r.types, ty);
-            if (tb > 0i32) { sw = tb => int64; }
-        }
+        if (shw.bits > 0i32) { sw = shw.bits => int64; }
         if (rr.num < 0i64) { pass (raw cv_none()); }
         if (rr.num >= sw) { pass (raw cv_none()); }
-        if (op == TokenKind.OpShl) { pass (raw cv_int(ty, l.num << rr.num)); }
+        // A WIDER-THAN-64 SHIFT FOLDS ONLY INSIDE THE WINDOW, EXACTLY (DEF-80):
+        // the amount is bounded by the TYPE's width, and an `int64` shifted by
+        // 64 or more traps `ShiftRange` in the compiler itself -- which is how
+        // `1u256 << 200u256` first surfaced. Past the window: decline.
+        if (shw.bits > 64i32) {
+            if (op == TokenKind.OpShl) {
+                if (l.num == 0i64) { pass (raw cv_int(ty, 0i64)); }
+                if (rr.num >= 63i64) { pass (raw cv_none()); }
+                int64:wsh = l.num << rr.num;
+                if ((wsh >> rr.num) != l.num) { pass (raw cv_none()); }
+                if ((!(shw.signed)) && (wsh < 0i64)) { pass (raw cv_none()); }
+                pass (raw cv_int(ty, wsh));
+            }
+            if (rr.num >= 64i64) {
+                if (l.num < 0i64) { pass (raw cv_int(ty, 0i64 - 1i64)); }
+                pass (raw cv_int(ty, 0i64));
+            }
+            pass (raw cv_int(ty, l.num >> rr.num));
+        }
+        // `<<` LOSES THE BITS PAST THE WIDTH, as the machine does; `>>` is
+        // logical on a `uint64` bit pattern and arithmetic on every other value
+        // (a narrow unsigned value is non-negative, so the two agree there).
+        if (op == TokenKind.OpShl) { pass (raw cv_int(ty, raw fold_to_width(l.num << rr.num, shw))); }
+        if (raw fw_is_u64(shw)) {
+            pass (raw cv_int(ty, ((l.num =>! uint64) >> (rr.num =>! uint64)) =>! int64));
+        }
         pass (raw cv_int(ty, l.num >> rr.num));
     }
 
     if (op == TokenKind.OpEqEq)   { pass (raw cv_bool(r.types.t_bool, l.num == rr.num)); }
     if (op == TokenKind.OpNotEq)  { pass (raw cv_bool(r.types.t_bool, l.num != rr.num)); }
+    // A `uint64` ORDERS UNSIGNED (DEF-80): its bit patterns past 2^63-1 read as
+    // negative, and `~0u64 > 1u64` folded false.
+    if (raw fw_is_u64(raw fold_width(r, ty))) {
+        uint64:cua = l.num =>! uint64;
+        uint64:cub = rr.num =>! uint64;
+        if (op == TokenKind.OpLt)   { pass (raw cv_bool(r.types.t_bool, cua < cub)); }
+        if (op == TokenKind.OpLtEq) { pass (raw cv_bool(r.types.t_bool, cua <= cub)); }
+        if (op == TokenKind.OpGt)   { pass (raw cv_bool(r.types.t_bool, cua > cub)); }
+        if (op == TokenKind.OpGtEq) { pass (raw cv_bool(r.types.t_bool, cua >= cub)); }
+        pass (raw cv_none());
+    }
     if (op == TokenKind.OpLt)     { pass (raw cv_bool(r.types.t_bool, l.num < rr.num)); }
     if (op == TokenKind.OpLtEq)   { pass (raw cv_bool(r.types.t_bool, l.num <= rr.num)); }
     if (op == TokenKind.OpGt)     { pass (raw cv_bool(r.types.t_bool, l.num > rr.num)); }

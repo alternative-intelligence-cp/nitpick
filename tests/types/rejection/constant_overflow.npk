@@ -1,0 +1,55 @@
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 34
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 38
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 41
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 42
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 43
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 44
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 45
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 46
+// expect-error: NITPICK-TYPE-076
+// expect-error-at: 48
+//
+// A CONSTANT `+ - *` OR NEGATION WHOSE EXACT VALUE DOES NOT FIT ITS TYPE IS
+// REFUSED (D-310, S-90; 1.5.8b step 2; DEF-71). The run time traps the same
+// operation (D-210), so the compiler refuses a certain overflow where it is
+// written rather than folding a wrapped value -- until this step the folder
+// computed in raw 64-bit arithmetic, so `fixed uint64:B = 0u64 - 1u64` folded
+// to 2^64-1 while the same subtraction at run time trapped. TYPE-076's reach is
+// the folder's (K-8): literals, negated literals, `fixed` constants,
+// `comptime` values -- and an unsuffixed pair meets the width its context
+// gives it. A width past 64 bits folds only inside the 64-bit window, and a
+// result outside it DECLINES: the run-time guard stays, and the program is
+// accepted. A wide constant is built with bit operations (D-311).
+mod:constant_overflow;
+
+fixed int8:TOP = 127i8;
+fixed uint64:WRAPPED = 0u64 - 1u64;
+fixed uint64:ALL_ONES = ~0u64;
+fixed uint64:BASIS = (1u64 << 63u64) | 04BF29CE484222325hexu64;
+
+comptime func:sq = int64(int64:x) never fails { pass (x * x); };
+
+func:cases = int64() never fails {
+    int8:a = 127i8 + 1i8;
+    int8:b = TOP + 1i8;
+    int8:c = 100 + 100;
+    int32:d = 2147483647i32 + 1i32;
+    int32:e2 = 0i32 - (1i32 << 31i32);
+    int32:f = -(1i32 << 31i32);
+    int64:g = comptime(sq(3037000500i64));
+    uint8:h = 0u8 - 1u8;
+    int128:wide = 9223372036854775807i128 + 1i128;
+    int64:k = (a + b + c) => int64;
+    pass (k + (d => int64) + (e2 => int64) + (f => int64) + g + (h => int64) + ((wide >> 64i128) =>! int64) + ((WRAPPED + ALL_ONES + BASIS) =>! int64));
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

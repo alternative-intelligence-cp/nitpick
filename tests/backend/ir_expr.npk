@@ -184,6 +184,13 @@ func:main = int32(cstring[]:_~argv) {
     // used the ternary and 0.7.7 classified the ternary.
     ExprId:none_e = raw expr_none();
 
+    // A CONSTANT `*` AND A NEGATED LITERAL (D-310, DEF-70; 1.5.8b step 2).
+    ExprId:k2 = raw lit(@ast, 2i64);
+    ExprId:k8 = raw lit(@ast, 8i64);
+    ExprId:k16 = raw bin(@ast, TokenKind.OpStar, k2, k8);
+    ExprId:k1 = raw lit(@ast, 1i64);
+    ExprId:kneg = raw un(@ast, TokenKind.OpMinus, k1);
+
     // --- PHASE 2: the types the checker would have recorded -------------------
     ExprTypes:ets = raw exprtypes_for(@ast);
     drop exprtypes_set(@ets, ax, i32t);   drop exprtypes_set(@ets, ay, i32t);
@@ -203,6 +210,9 @@ func:main = int32(cstring[]:_~argv) {
     drop exprtypes_set(@ets, f_call, ri32);
     drop exprtypes_set(@ets, raw_f, i32t);
     drop exprtypes_set(@ets, relay_n, i32t);
+    drop exprtypes_set(@ets, k2, i64t);   drop exprtypes_set(@ets, k8, i64t);
+    drop exprtypes_set(@ets, k16, i64t);
+    drop exprtypes_set(@ets, k1, i32t);   drop exprtypes_set(@ets, kneg, i32t);
 
     StrTable:st = raw strtab_init();
 
@@ -347,6 +357,29 @@ func:main = int32(cstring[]:_~argv) {
     // A kind nobody classified FAILS CLOSED, never guesses.
     IrVal:vt = raw emit_expr(@x7, none_e);
     if (vt.state != (raw LL_BROKEN()))                       { exit 85i32; }
+
+    // --- A CONSTANT IS ITS VALUE (D-310; 1.5.8b step 2; DEF-70) ------------------
+    // `2 * 8` at `int64` is the constant 16, and `-1` at `int32` the constant -1:
+    // no `with.overflow` intrinsic, no guard, no instruction at all -- the value
+    // the folder computed exactly at the width, where a checked `mul`/`sub 0`
+    // that could never fire was emitted until this step.
+    IrWriter:w9 = raw irw_to_buffer();
+    FnEmitter:f9 = raw fnem_init(@w9, @c);
+    ExprEmitter:x9 = raw exprem_init(@f9, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
+    discard(raw fnem_begin(@f9, "folds", 0i32, i64t, false));
+    drop fnem_open(@f9);
+    IrVal:vk = raw emit_expr(@x9, k16);
+    if (!(raw iv_is_ok(vk)))                                 { exit 86i32; }
+    if (!(raw string_eq(vk.ll, "i64")))                      { exit 87i32; }
+    if (!(raw string_eq(vk.ref, "16")))                      { exit 88i32; }
+    IrVal:vkn = raw emit_expr(@x9, kneg);
+    if (!(raw iv_is_ok(vkn)))                                { exit 89i32; }
+    if (!(raw string_eq(vkn.ref, "-1")))                     { exit 90i32; }
+    drop fnem_ret_pass(@f9, vk.ref);
+    drop fnem_ret_done(@f9);
+    drop fnem_close(@f9, true);
+    if (!(raw string_eq(raw irw_text(@w9),
+        "define { i64, i32 } @npk_folds() \"split-stack\" {\nentry:\n  %t0 = insertvalue { i64, i32 } zeroinitializer, i64 16, 0\n  %t1 = insertvalue { i64, i32 } %t0, i32 0, 1\n  ret { i64, i32 } %t1\n}\n\n"))) { exit 91i32; }
 
     wild_release_all();
     exit 0i32;

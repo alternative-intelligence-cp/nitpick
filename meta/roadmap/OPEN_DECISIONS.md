@@ -1548,9 +1548,9 @@ another thread has passed the same site, or until nothing else can run. DEF-57's
 without a seed and decided on every run. Step 2c also settles X-11 for every kept seed: each claims its defect
 through a control that plants it, or it claims nothing.
 
-**DEF-70 — OPEN, scheduled as 1.5.8b step 2 (D-310): A NEGATED LITERAL IS EMITTED AS A CHECKED SUBTRACTION.** (found 2026-09-19 by `nitpick-compiler_s11`, reconciling a prototype's `overflow` rows with the emission's guards.) `-1i32` lowers to `llvm.ssub.with.overflow.i32(i32 0, i32 1)` and a trap branch, because every integer negation routes through `emit_arith_value` as `0 - x` (D-210 §1's rule, right for a variable). The compiler's own emission holds 84 such guards, and 85 with both operands constant. They are checks that can never fire, each inflating the guard count the verified build's belts must match. D-310 folds a constant pair, and a negated literal never overflows (a width's minimum has no positive literal, D-148).
+**DEF-70 — FIXED at 1.5.8b step 2 (D-310; 2026-09-19): A NEGATED LITERAL IS EMITTED AS A CHECKED SUBTRACTION.** (found 2026-09-19 by `nitpick-compiler_s11`, reconciling a prototype's `overflow` rows with the emission's guards.) `-1i32` lowers to `llvm.ssub.with.overflow.i32(i32 0, i32 1)` and a trap branch, because every integer negation routes through `emit_arith_value` as `0 - x` (D-210 §1's rule, right for a variable). The compiler's own emission holds 84 such guards, and 85 with both operands constant. They are checks that can never fire, each inflating the guard count the verified build's belts must match. D-310 folds a constant pair, and a negated literal never overflows (a width's minimum has no positive literal, D-148).
 
-**DEF-71 — OPEN, scheduled as 1.5.8b step 2 (D-311): THE CONSTANT FOLDER WRAPS WHERE THE RUN TIME TRAPS.** (found 2026-09-19 by the library workbench, `nitpick-libs_s4`, measuring D-310's reach, and verified by `nitpick-compiler_s11`.) `fixed uint64:B = 0u64 - 1u64;` folds to 2^64−1, and the same subtraction at run time traps `IntOverflow`. One expression has had two meanings since D-210 landed at 1.4.2b: the folder kept D-037's wrap. D-148 prescribes that very spelling for `uint64`'s maximum, and so does LEXICAL_REFERENCE §6.2. Measured with a probe on 1.5.8 step 4's tree: `~0u64` equals the folded value, and the run-time subtraction exits 93. The folder obeys D-210 from step 2, with the refusal TYPE-076, and the maximum is `~0u64` (D-311).
+**DEF-71 — FIXED at 1.5.8b step 2 (D-311; 2026-09-19): THE CONSTANT FOLDER WRAPS WHERE THE RUN TIME TRAPS.** (found 2026-09-19 by the library workbench, `nitpick-libs_s4`, measuring D-310's reach, and verified by `nitpick-compiler_s11`.) `fixed uint64:B = 0u64 - 1u64;` folds to 2^64−1, and the same subtraction at run time traps `IntOverflow`. One expression has had two meanings since D-210 landed at 1.4.2b: the folder kept D-037's wrap. D-148 prescribes that very spelling for `uint64`'s maximum, and so does LEXICAL_REFERENCE §6.2. Measured with a probe on 1.5.8 step 4's tree: `~0u64` equals the folded value, and the run-time subtraction exits 93. The folder obeys D-210 from step 2, with the refusal TYPE-076, and the maximum is `~0u64` (D-311).
 
 **DEF-72 — FIXED at 1.5.8b step 1 (D-313; 2026-09-19): A COMPILER-KNOWN CONTAINER'S HEADER IS WRITABLE BY ANY PROGRAM.** (found 2026-09-19 by an Explore survey for D-308's length facts, CONFIRMED by `nitpick-compiler_s11`.) `.ptr`, `.len` and `.cap` of `string`, `cstring`, a slice and `buffer` are typed as assignable places (`type_members.npk`), accepted by `require_place`, and stored through a GEP by the emitter. Probe: `string:s = string_concat("abc", "def"); s.len = 4096i64;` then `string_slice(s, 4000i64, 4096i64)` SUCCEEDS, reading 96 bytes past a 6-byte block. No test exercised it. `string_from_bytes` (BUILTIN_REFERENCE says it "traps on misuse") checks nothing, and `#wild_slice`'s "legal only in `wild` context" is enforced nowhere (both are D-308 step 6's length checks).
 
@@ -1614,6 +1614,30 @@ by `l[i]`'s bounds check, on the first build of the swept compiler.)
   skips, and so it was never noticed.
 - The stage-2 compiler trapped `OutOfBounds` in `ast_init` on its first run.
   The NONE node is pushed now.
+
+**DEF-80 — FIXED at 1.5.8b step 2 (K-7): THE CONSTANT FOLDER'S OPERATIONS WERE
+NOT THE MACHINE'S.** (found 2026-09-19 by `nitpick-compiler_s11`. The first
+build of D-310's checker folded the operands of every `+ - *`, and the
+compiler trapped `ShiftRange` inside its own folder on a prelude expression
+`1u256 << … `; reading the folder beside it found the rest.)
+
+`fold_binary`/`fold_unary` computed in raw `int64` whatever the type:
+- a shift of a type wider than 64 bits bounded its amount by the TYPE's width
+  and shifted an `int64`, trapping the compiler at an amount of 64 or more;
+- a narrow `<<` kept the bits past the width (`1i8 << 7i8` folded to 128, the
+  machine's answer −128);
+- `~` of a narrow unsigned value was unmasked (`~5u8` folded to −6);
+- a `uint64` bit pattern past 2^63−1 was divided, reduced, shifted right and
+  compared SIGNED;
+- `MIN / -1` and `MIN % -1` were computed, trapping the compiler for `int64`
+  and folding an unrepresentable quotient for a narrower width;
+- a cast folded a `uint64` bit pattern as another type's value.
+
+Each is now the machine's answer at the width. A constant `MIN / -1` or
+`MIN % -1` is TYPE-004, as a constant division by zero is. A result beyond the
+64-bit window declines. `tests/backend/programs/constant_fold.npk` holds each
+folded value to the same operation computed at run time, and
+`tests/types/rejection/constant_division.npk` holds the refusals.
 
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 

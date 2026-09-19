@@ -1,0 +1,78 @@
+// THE FOLDER'S ANSWER IS THE RUN TIME'S (D-310, D-311; 1.5.8b step 2; DEF-70,
+// DEF-71, DEF-80). Each `fixed` constant below is folded at compile time and
+// compared with the same operation computed at run time on an operand the
+// folder cannot see (an identity function): the two evaluators must agree,
+// value for value. `-1i32` and `2i64 * 8i64` are emitted as their constants
+// (the emitter unit test `ir_expr.npk` pins the bytes: no `with.overflow`).
+// `~0u64` and `(1u64 << 63u64) | 04BF29CE484222325hexu64` are D-311's
+// spellings of the values past 2^63-1 that `0u64 - k` spelled by wrapping --
+// the second the textbook FNV-1a offset basis D-148's example spelled so. The
+// prelude's `fnv_offset` is the ECOSYSTEM's basis, 0xCBF5DAE484222325 (D-190:
+// deliberately not the textbook one), and must equal that constant built the
+// same way. And the width semantics the folder had wrong until this
+// step (DEF-80): a narrow `<<` loses the bits past its width (`1i8 << 7i8` is
+// -128, not 128), `~5u8` is 250, a `uint64` divides, remainders, shifts right
+// and orders UNSIGNED, and a wide shift inside the 64-bit window is exact.
+// Each case its own exit.
+mod:constant_fold;
+
+fixed int32:NEG = -1i32;
+fixed int64:PROD = 2i64 * 8i64;
+fixed uint64:ONES = ~0u64;
+fixed uint64:BASIS = (1u64 << 63u64) | 04BF29CE484222325hexu64;
+fixed uint64:NPK_BASIS = (1u64 << 63u64) | 04BF5DAE484222325hexu64;
+fixed int8:SHL8 = 1i8 << 7i8;
+fixed uint8:NOT5 = ~5u8;
+fixed uint64:QUO = ~0u64 / 3u64;
+fixed uint64:REM = ~0u64 % 10u64;
+fixed uint64:SHR = ~0u64 >> 60u64;
+fixed bool:GT = ~0u64 > 1u64;
+fixed int64:SHRS = -16i64 >> 2i64;
+fixed int128:WIDE = 1i128 << 40i128;
+
+func:id8 = int8(int8:v) never fails { pass v; };
+func:id32 = int32(int32:v) never fails { pass v; };
+func:id64 = int64(int64:v) never fails { pass v; };
+func:idu8 = uint8(uint8:v) never fails { pass v; };
+func:idu64 = uint64(uint64:v) never fails { pass v; };
+func:id128 = int128(int128:v) never fails { pass v; };
+
+func:main = int32(cstring[]:_~argv) {
+    if (NEG != (0i32 - (raw id32(1i32))))                                  { exit 10i32; }
+    if (PROD != ((raw id64(2i64)) * 8i64))                                  { exit 11i32; }
+    if (ONES != ~(raw idu64(0u64)))                                         { exit 12i32; }
+    if (BASIS != ((1u64 << 63u64) | (raw idu64(04BF29CE484222325hexu64))))  { exit 13i32; }
+    if (NPK_BASIS != (raw fnv_offset()))                                    { exit 14i32; }
+    if (BASIS == NPK_BASIS)                                                 { exit 29i32; }
+    if (SHL8 != ((raw id8(1i8)) << 7i8))                                    { exit 15i32; }
+    if (SHL8 >= 0i8)                                                        { exit 16i32; }
+    if (NOT5 != ~(raw idu8(5u8)))                                           { exit 17i32; }
+    if (NOT5 != 250u8)                                                      { exit 18i32; }
+    if (QUO != ((raw idu64(~0u64)) / 3u64))                                 { exit 19i32; }
+    if (REM != ((raw idu64(~0u64)) % 10u64))                                { exit 20i32; }
+    if (REM != 5u64)                                                        { exit 21i32; }
+    if (SHR != ((raw idu64(~0u64)) >> 60u64))                               { exit 22i32; }
+    if (SHR != 15u64)                                                       { exit 23i32; }
+    if (!GT)                                                                { exit 24i32; }
+    if (GT != ((raw idu64(~0u64)) > 1u64))                                  { exit 25i32; }
+    if (SHRS != ((raw id64(-16i64)) >> 2i64))                               { exit 26i32; }
+    if (SHRS != -4i64)                                                      { exit 27i32; }
+    if (WIDE != ((raw id128(1i128)) << 40i128))                             { exit 28i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 93i32; },
+        (DivByZero)        { exit 92i32; },
+        (DivOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 97i32; },
+        (HeapOom)          { exit 97i32; },
+        (HeapBadRequest)   { exit 97i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 90i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 9i32;
+};

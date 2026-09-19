@@ -445,8 +445,12 @@ impl:flt32:ToString = { func:to_string = string(flt32:self) never fails {
 
 // FNV-1a, THE DERIVED HASH (D-123). The combiner is specified so a derived hash
 // is the same across builds -- a verified compiler cannot have one that drifts.
-// The offset basis (0xcbf29ce484222325) is past the 64-bit literal envelope, so it
-// is built from its two words; the prime fits.
+// THE OFFSET BASIS IS THE ECOSYSTEM'S, 0xCBF5DAE484222325 (D-190): one constant
+// for every derived identity -- D-179's error codes, the `extern` interface hash
+// and this -- and deliberately NOT the textbook 0xcbf29ce484222325, which this
+// comment claimed until 1.5.8b step 2 (the constant was right; the text was
+// stale). It is past the 64-bit literal envelope, so it is built from its two
+// words, 0xCBF5DAE4 = 3421887204 and 0x84222325 = 2216829733; the prime fits.
 pub func:fnv_offset = uint64() never fails { pass ((3421887204u64 << 32u64) | 2216829733u64); };
 // FNV's multiply is DELIBERATELY MODULAR — the mixing IS the wraparound — so
 // since D-210 it is spelled the way deliberate modularity is spelled: widen,

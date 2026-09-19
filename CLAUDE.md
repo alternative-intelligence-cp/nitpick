@@ -1236,7 +1236,14 @@ operations `list_pop`/`list_truncate`/`list_clear`/`list_insert`/
 `list_remove`/`list_swap_remove` are how a list changes; 2,011 element accesses
 swept, the compiler's own `OutOfBounds` guards 13 → 765, and the new check
 found DEF-79 on its first run (the NONE declaration stored past `count` since
-1.4.7). A bridging snapshot refresh carries it. The old 1.5.8 was PLANNED 2026-09-18 by
+1.4.7). A bridging snapshot refresh carries it. **Step 2 LANDED 2026-09-19**:
+a constant `+ - *` or negation is computed exactly at its width and refused
+when it does not fit (TYPE-076, D-310; `0u64 - 1u64` among them — D-311's
+`~0u64` and `(1u64 << 63u64) | k` build the upper half), emitted as its
+constant when it fits (DEF-70: all 85 constant checked operations gone), and
+the folder's every other operation is now the machine's (DEF-80: a wide shift
+trapped the compiler, a narrow `<<` and `~` were not truncated, `uint64`
+divided and compared signed). The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
@@ -2005,6 +2012,14 @@ that carried them retired at the cycle close):
   TYPE-082, since it would index the POINTER. Assigning over an owning element
   drops the old value (a managed array's rule), and `list_clear`/
   `list_truncate` drop what they remove where a bare `count` write leaked it.
+- **A constant means what the run time means** (D-310, D-311; 1.5.8b step 2):
+  a `+ - *` or negation of constants that does not fit its type is TYPE-076
+  where it is written, `0u64 - 1u64` included — spell a `uint64` past 2^63−1
+  with bit operations (`~0u64`, `(1u64 << 63u64) | k`). A fitting one is
+  emitted as the constant, no guard. The ecosystem's FNV basis is
+  `0xCBF5DAE484222325` ON PURPOSE (D-190), not the textbook `0xcbf29ce4…` —
+  a comment claiming otherwise was stale, and changing the constant would move
+  every error code and interface hash.
 - **`sealed`/`hidden` draw the private-member line** (D-313, D-314; 1.5.8b
   step 1): code outside the module that declares the struct may read a sealed
   field and may not write it (every write form — an assignment through any

@@ -455,6 +455,14 @@ pub func:TYPE_HIDDEN_FIELD = string() never fails { pass "NITPICK-TYPE-080"; };
 // distinct from its user -- or both on one field, where they contradict (sealed
 // is read everywhere, hidden nowhere outside).
 pub func:TYPE_FIELD_QUAL = string() never fails { pass "NITPICK-TYPE-081"; };
+// A CONSTANT `+ - *` OR NEGATION WHOSE EXACT VALUE DOES NOT FIT ITS TYPE (D-310,
+// S-90; 1.5.8b step 2; DEF-71). Its reach is the folder's (K-8): literals,
+// negated literals, `fixed` constants, `comptime` values. The run time traps the
+// same operation (D-210), so a certain overflow is refused where it is written
+// -- until 1.5.8b the folder computed in raw 64-bit arithmetic and wrapped
+// (`0u64 - 1u64` folded to 2^64-1). A wide constant is built with bit
+// operations (D-311): `~0u64`, `(1u64 << 63u64) | k`.
+pub func:TYPE_CONST_OVERFLOW = string() never fails { pass "NITPICK-TYPE-076"; };
 // AN INDEX ON A POINTER WHOSE POINTEE IS ITSELF INDEXED (1.5.8b step 1b;
 // D-098's rule applied to `[]`): `p[i]` on an `int64[8]->`, a `T[]->` or a
 // `List<T>->` reads as pointer arithmetic -- the i-th array, slice or list in

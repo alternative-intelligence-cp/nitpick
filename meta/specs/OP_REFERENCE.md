@@ -126,6 +126,27 @@ result at all.
 > scalar does since 1.5.4e (D-284); it had wrapped, measured at 1.5.4b
 > (DEF-38).
 
+**A constant expression means what the run time means (D-310, D-311; 1.5.8b
+step 2).**
+- An integer `+ - *` or negation whose operands the compiler folds (literals,
+  negated literals, `fixed` constants, `comptime` values) is computed EXACTLY
+  at its type.
+- **A value that does not fit is `NITPICK-TYPE-076`**, a certain overflow
+  refused where it is written. An unsuffixed pair takes its width from the
+  context, so `int8:x = 100 + 100;` is refused too.
+- **A value that fits is emitted as the constant**, with no guard. `-1i32` is
+  the constant −1 and not a checked `sub 0, 1`.
+- A width past 64 bits folds inside the 64-bit window only; a result beyond it
+  declines, and the run-time guard stays.
+- Every other operation the folder evaluates is also the machine's answer:
+  - `<<` loses the bits past its width (`1i8 << 7i8` is −128);
+  - `~5u8` is 250;
+  - a `uint64` divides, takes remainders, shifts right and orders UNSIGNED;
+  - a constant `MIN / −1` or `MIN % −1` is refused as a constant division by
+    zero is (TYPE-004), since the run time traps `DivOverflow`.
+- `uint64` values past 2^63−1 are built with bit operations, which never
+  overflow: `~0u64`, `(1u64 << 63u64) | k`.
+
 ERR is **absorbing and overrides identities**: `ERR * 0` is `ERR`, not `0`; so is
 `ERR - ERR`. Once a value is ERR, no arithmetic yields a non-ERR result from it.
 Only an explicit check (`is_err`) or a fallback (`?`) leaves the state.
