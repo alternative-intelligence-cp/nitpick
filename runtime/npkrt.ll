@@ -316,6 +316,54 @@ done:
   ret void
 }
 
+; THE STANDARD DESCRIPTORS ARE OPEN (DEF-69, 1.5.8 step 3c). A process started
+; with 0, 1 or 2 closed hands that number to the next descriptor anything
+; creates: a data file opened next becomes descriptor 2 and receives every
+; write meant for stderr -- measured: the floor's own `heap:` line (and the
+; trap route's diagnostic) landing inside a program's file -- and the first
+; epoll set the reactor makes becomes descriptor 0. So each of the three that
+; is closed is opened onto /dev/null here, before anything can create a
+; descriptor. `fcntl(fd, F_GETFD)` answers the descriptor's flags when it is
+; open and EBADF when it is not; `openat` then returns the LOWEST free number,
+; which is `fd` itself because every lower one is open by now (it was, or this
+; loop opened it). Read-write, and without O_CLOEXEC: the three are inherited,
+; as the standard descriptors always are. Any other answer -- /dev/null
+; missing or refused, a descriptor table with no room for three -- is a floor
+; that cannot keep its own promise: the integrity code, at startup, before
+; `main` has run a line (D-061's posture; glibc aborts the process here).
+@npk_devnull = internal constant [10 x i8] c"/dev/null\00"
+
+define internal void @npk_std_fds() {
+entry:
+  br label %loop
+loop:
+  %fd = phi i64 [ 0, %entry ], [ %fd1, %next ]
+  %done = icmp sge i64 %fd, 3
+  br i1 %done, label %out, label %probe
+probe:
+  ; fcntl(fd, F_GETFD)
+  %g = call i64 @npk_sys6(i64 72, i64 %fd, i64 1, i64 0, i64 0, i64 0, i64 0)
+  %isopen = icmp sge i64 %g, 0
+  br i1 %isopen, label %next, label %which
+which:
+  %closed = icmp eq i64 %g, -9
+  br i1 %closed, label %reopen, label %bad
+reopen:
+  ; openat(AT_FDCWD, "/dev/null", O_RDWR, 0)
+  %p = ptrtoint ptr @npk_devnull to i64
+  %o = call i64 @npk_sys6(i64 257, i64 -100, i64 %p, i64 2, i64 0, i64 0, i64 0)
+  %same = icmp eq i64 %o, %fd
+  br i1 %same, label %next, label %bad
+next:
+  %fd1 = add i64 %fd, 1
+  br label %loop
+bad:
+  call void @npk_trap(i32 -4102)
+  unreachable
+out:
+  ret void
+}
+
 define internal void @npk_start(i64 %sp) noreturn {
 entry:
   %act = alloca [4 x i64], align 16
@@ -328,6 +376,9 @@ entry:
   ; the executor's TLS block first: every allocation, trap and error chain
   ; below reaches its executor through `%fs:8` (D-181).
   call void @npk_tls_boot()
+  ; the three standard descriptors, before anything can create one (DEF-69);
+  ; after the TLS block, because a refusal here takes the trap route
+  call void @npk_std_fds()
   ; THE MAIN THREAD'S STACK IS THE FLOOR'S (D-305, 1.5.8 step 2): 8 MiB behind
   ; a guard, a signal stack and a 64 KiB reserve, the limit word in the TLS
   ; block -- the budget is the program's, never the shell's `ulimit` (the
@@ -475,7 +526,8 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; epoll set is closed by the join (below). The main thread keeps its own
 ; raw-mapped block and executor (npk_tls_boot), and its slot is never retired.
 @npk_tls_pool = internal global [64 x %npk.tls] zeroinitializer
-@npk_exec_pool = internal global [64 x %npk.exec] zeroinitializer
+; (@npk_exec_pool is defined after %npk.exec, below: a static initializer
+; needs its type's body)
 @npk_stopped = internal global i32 0        ; threads parked in the stop handler
 @npk_stop_word = internal global i32 0      ; the handler's futex word: written by nobody
 @npk_pid = internal global i64 0            ; recorded once at boot (getpid)
@@ -513,8 +565,13 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;   0 rq_head | 1 rq_tail | 2 sl_head | 3 park_at | 4 park_pending
 ;   5 park_word | 6 join_ns | 7 grace_ns | 8 chain[8] | 9 chain_n
 ;   10 windup_seen | 11 epfd | 12 evfd     (B-3a, 1.1.12a: the reactor --
-;   both 0 until the first io_ready; 0 is a safe sentinel because fd 0 is
-;   stdin and the kernel never hands it out again while it is open)
+;   both -1 until the first io_ready. -1 because no descriptor is negative.
+;   Until 1.5.8 step 3c the sentinel was 0, "safe because fd 0 is stdin and
+;   the kernel never hands it out again while it is open" -- and nothing kept
+;   it open: a process started with its stdin closed, or a program that
+;   closes descriptor 0, gets an epoll set numbered 0, which every reader
+;   took for "no reactor" (DEF-69: a second set created and the first
+;   leaked, and the idle wait a futex wait nothing I/O-ready wakes).)
 ;   13 cur_task -- THE FRAME npk_step IS RUNNING (1.1.12a). Awaits drive
 ;   child coroutines inline, so the frame a nested wait sits in is NOT the
 ;   frame the sweep sleeps and wakes -- the task root is. Every waiter
@@ -530,7 +587,83 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; where its executor is created.
 @npk_main_exec = internal global %npk.exec { ptr null, ptr null, ptr null,
     i64 0, i32 0, i32 0, i64 5000000000, i64 250000000,
-    [8 x i32] zeroinitializer, i32 0, i32 0, i32 0, i32 0, ptr null }
+    [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null }
+
+; THE EXECUTOR POOL (DEF-66, 1.5.8 step 3b): entry i is the executor of the
+; spawned thread in registry slot i (the pools' paragraph, above).
+; EVERY EXECUTOR ENTRY'S TWO REACTOR WORDS START AT -1, "none" (DEF-69,
+; 1.5.8 step 3c): `zeroinitializer` would say 0, a descriptor's number. The
+; value is STATIC -- sixty-four identical entries, every other word 0 -- and
+; not a loop at startup, because the eventfd word is atomic everywhere
+; (D-290) and sixty-four atomic stores before `main` would be sixty-four
+; counted steps in every explored run, moving every schedule (DEF-67's
+; cause). A rebirth writes every word but these two (npk_thread_start).
+@npk_exec_pool = internal global [64 x %npk.exec] [
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null },
+    %npk.exec { ptr null, ptr null, ptr null, i64 0, i32 0, i32 0, i64 0, i64 0, [8 x i32] zeroinitializer, i32 0, i32 0, i32 -1, i32 -1, ptr null }
+  ]
 
 ; THE CURRENT THREAD'S EXECUTOR. One accessor, so the thread-local move is
 ; one edit rather than forty: 1.1.9c makes this read `%fs:8`, which
@@ -851,7 +984,7 @@ rouse:
   ; (B-3a, 1.1.12a): an epoll_pwait sleeper hears no futex.
   %evp = getelementptr %npk.exec, ptr %ow, i32 0, i32 12
   %evfd = load atomic i32, ptr %evp acquire, align 4
-  %noev = icmp eq i32 %evfd, 0
+  %noev = icmp slt i32 %evfd, 0
   br i1 %noev, label %done, label %ping
 ping:
   %onep = ptrtoint ptr %one to i64
@@ -2054,8 +2187,9 @@ reborn:
   ; else reads them. The park word is written atomically, because a waker of
   ; an EARLIER thread in this slot may still set it: its set after this store
   ; is a spurious wake, and no waker of THIS thread exists before the publish.
-  ; The epoll descriptor (11) is the join's to close: it left 0 here. The
-  ; eventfd (12) is KEPT, so a stale rouse lands on the eventfd it meant.
+  ; The epoll descriptor (11) is the join's to close: it left -1 here (an
+  ; entry no thread has used holds the initializer's -1). The eventfd (12) is
+  ; KEPT, so a stale rouse lands on the eventfd it meant.
   %ex = getelementptr [64 x %npk.exec], ptr @npk_exec_pool, i64 0, i64 %slot
   %e0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 0
   store ptr null, ptr %e0
@@ -2276,12 +2410,13 @@ done:
   %tx = load ptr, ptr %txp
   %epp = getelementptr %npk.exec, ptr %tx, i32 0, i32 11
   %ep = load i32, ptr %epp
-  %hasep = icmp ne i32 %ep, 0
+  ; -1 is "none" (DEF-69, 1.5.8 step 3c); 0 is a descriptor like any other
+  %hasep = icmp sge i32 %ep, 0
   br i1 %hasep, label %closeep, label %retire
 closeep:
   %epl = sext i32 %ep to i64
   %cr = call i64 @npk_sys6(i64 3, i64 %epl, i64 0, i64 0, i64 0, i64 0, i64 0)
-  store i32 0, ptr %epp
+  store i32 -1, ptr %epp
   br label %retire
 retire:
   ; the slot is free (D-291), and its pool entries the next thread's
@@ -3004,7 +3139,7 @@ rouse:
   ; and the reactor's eventfd, for an epoll_pwait sleeper (B-3a)
   %evpw = getelementptr %npk.exec, ptr %ow, i32 0, i32 12
   %evfdw = load atomic i32, ptr %evpw acquire, align 4
-  %noevw = icmp eq i32 %evfdw, 0
+  %noevw = icmp slt i32 %evfdw, 0
   br i1 %noevw, label %next, label %pingw
 pingw:
   %onepw = ptrtoint ptr %onew to i64
@@ -3139,7 +3274,7 @@ entry:
   ; still reaches it, because every rouse futex-wakes before it pings.
   %epa = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
   %epfda = load i32, ptr %epa
-  %armed = icmp ne i32 %epfda, 0
+  %armed = icmp sge i32 %epfda, 0
   br i1 %armed, label %epoll, label %futex
 futex:
   %p_npk_park_word = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
@@ -3237,7 +3372,9 @@ entry:
   %fr = load ptr, ptr %ctp0
   %epp = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
   %epfd0 = load i32, ptr %epp
-  %have = icmp ne i32 %epfd0, 0
+  ; -1 is "no reactor yet" (DEF-69, 1.5.8 step 3c): an epoll set may be
+  ; descriptor 0 when the program has closed its stdin
+  %have = icmp sge i32 %epfd0, 0
   br i1 %have, label %arm, label %create
 create:
   ; epoll_create1(EPOLL_CLOEXEC)
@@ -3250,7 +3387,7 @@ haveev:
   ; set. The eventfd is made once per pool entry, and rides every set.
   %evp = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
   %evk = load atomic i32, ptr %evp monotonic, align 4
-  %kept = icmp ne i32 %evk, 0
+  %kept = icmp sge i32 %evk, 0
   br i1 %kept, label %usekept, label %mkev
 usekept:
   %evk64 = sext i32 %evk to i64
@@ -3262,8 +3399,8 @@ mkev:
   br i1 %evbad, label %trap, label %newev
 newev:
   %ev32 = trunc i64 %ev2 to i32
-  ; RELEASE: a rouser that sees evfd nonzero must also see the descriptor
-  ; it names fully created; rousers load it acquire.
+  ; RELEASE: a rouser that sees evfd non-negative must also see the
+  ; descriptor it names fully created; rousers load it acquire.
   store atomic i32 %ev32, ptr %evp release, align 4
   br label %addev
 addev:
@@ -3342,7 +3479,7 @@ entry:
   %ex = call ptr @npk_exec()
   %epp = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
   %epfd = load i32, ptr %epp
-  %none = icmp eq i32 %epfd, 0
+  %none = icmp slt i32 %epfd, 0
   br i1 %none, label %out, label %del
 del:
   %epl = sext i32 %epfd to i64

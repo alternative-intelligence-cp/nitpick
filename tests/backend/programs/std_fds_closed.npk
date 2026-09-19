@@ -1,0 +1,102 @@
+// expect-exit: 0
+//
+// A PROGRAM STARTED WITH STDERR CLOSED KEEPS ITS DATA CLEAN (DEF-69, 1.5.8
+// step 3c). Descriptor numbers are the kernel's lowest free ones, so in a
+// process started with 2 closed, the next descriptor anything creates IS 2,
+// and every write meant for stderr lands in it. The floor now opens
+// /dev/null onto any of 0, 1, 2 that is closed, before anything can create a
+// descriptor.
+//
+// This program is its own parent. The parent makes a memfd and forks, and the
+// child closes 2 and re-executes this binary. The fresh process opens the
+// memfd through /proc/self/fd -- on the floor before this step, that open was
+// descriptor 2 -- writes one byte of data into it, and writes a diagnostic to
+// stderr. The parent reads the memfd back: `D` alone is clean. `Ddiag` was
+// the corruption (exit 7).
+mod:std_fds_closed;
+error:EFork;
+error:EMem;
+
+// a NUL-terminated copy of `s` in `wild` memory: a pointer `sys` can pass
+func:cbytes = wild int8->(string:s) never fails {
+    wild int8->:b = alloc(s.len + 1i64);
+    for (int64:i in 0i64...s.len) { b[i] = s.ptr[i] =>! int8; }
+    b[s.len] = 0i8;
+    pass b;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len == 3i64) {
+        // THE CHILD, re-executed with descriptor 2 closed
+        Result<fd>:f = open(argv[2i64], (O_WRONLY => int32) => int64, (S_NONE => int32) => int64);
+        if (f.is_error) { exit 30i32; }
+        wild int8->:b = alloc(8i64);
+        <-b = 68i8;                                           // 'D': the data
+        discard(sys(1i64, f.value => int64, b, 1i64) ?| 0i64);
+        wild int8->:d = alloc(8i64);
+        d[0i64] = 100i8; d[1i64] = 105i8; d[2i64] = 97i8; d[3i64] = 103i8;   // "diag"
+        discard(sys(1i64, 2i64, d, 4i64) ?| 0i64);           // meant for stderr
+        dalloc(b);
+        dalloc(d);
+        exit 0i32;
+    }
+    // THE PARENT: everything the child needs is made BEFORE the fork, which
+    // leaves a child that may not allocate
+    wild int8->:name = raw cbytes("npk-std-fds");
+    int64:m = sys(319i64, name, 0i64) ?! EMem;                 // memfd_create, inherited across exec
+    wild int8->:exe_b = raw cbytes("/proc/self/exe");
+    // argv: an array of NUL-terminated byte strings' addresses, then NULL (a
+    // `cstring` is a pointer AND a length, so an array of them is not one)
+    wild int8->:mode_b = raw cbytes("c");
+    wild int8->:path_b = raw cbytes(string_concat("/proc/self/fd/", int_to_string(m)));
+    wild int8->->:av = alloc(32i64) =>! wild int8->->;
+    av[0i64] = exe_b;
+    av[1i64] = mode_b;
+    av[2i64] = path_b;
+    wild int64->:avw = av =>! wild int64->;
+    avw[3i64] = 0i64;                                          // argv's NULL
+    wild int64->:ev = alloc(8i64) =>! wild int64->;
+    ev[0i64] = 0i64;                                           // an empty environment
+    int64:kid = sys(57i64) ?! EFork;                           // fork
+    if (kid == 0i64) {
+        discard(sys(3i64, 2i64) ?| 0i64);                      // close stderr
+        discard(sys(59i64, exe_b, av, ev) ?| 0i64);            // execve: returns only on failure
+        exit 31i32;
+    }
+    wild int8->:st = alloc(8i64);
+    discard(sys(61i64, kid, st, 0i64, 0i64) ?! EFork);         // wait4
+    wild int32->:sti = st =>! wild int32->;
+    int32:status = sti[0i64];
+    if (status != 0i32) { exit 40i32; }                        // the child exited 0 (0 << 8)
+    wild int8->:buf = alloc(64i64);
+    int64:n = sys(17i64, m, buf, 64i64, 0i64) ?! EMem;         // pread from 0
+    if (n != 1i64) { exit 7i32; }                              // more than the data: the corruption
+    if (buf[0i64] != 68i8) { exit 8i32; }
+    discard(sys(3i64, m) ?| 0i64);
+    dalloc(buf);
+    dalloc(st);
+    dalloc(ev);
+    dalloc(av);
+    dalloc(path_b);
+    dalloc(mode_b);
+    dalloc(exe_b);
+    dalloc(name);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EFork)            { exit 81i32; },
+        (EMem)             { exit 82i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

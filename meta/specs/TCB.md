@@ -270,6 +270,7 @@ missing from the numbers and from the rows that reach them.
 | `@npk_stack_map` | syscall | boundary (one stack of the floor's shape (D-305, 1.5.8 step 2): `usable` bytes behind a PROT_NONE guard page -- with a signal stack and a second guard when `sig` is not 0 -- and the 64 KiB reserve below the limit word, one anonymous mapping through npk_hmap, each guard by mprotect (a guard that cannot be set traps -4102); the five words { base, length, signal stack, limit, top } written to `out`) |
 | `@npk_start_main` | syscall | boundary (startup's remainder on the floor's stack (D-305 (3)): argv as npk_start measured it, `main` -- the first emitted function the main thread runs, whose prologue reads the limit word npk_start wrote -- and npk_exit with its answer; never returns) |
 | `@npk_start` | asm | trusted (inline asm) |
+| `@npk_std_fds` | syscall | boundary (THE STANDARD DESCRIPTORS ARE OPEN (DEF-69, 1.5.8 step 3c): for each of 0, 1, 2 in turn, fcntl(fd, F_GETFD); an open one is left as it is, and a closed one (EBADF) is opened onto /dev/null by openat(AT_FDCWD, `/dev/null`, O_RDWR, 0) -- read-write and inherited, as the three are -- which returns the lowest free number, that one, because every lower one is open by then; any other answer (a failed probe other than EBADF, /dev/null missing or refused, a descriptor table with no room) traps -4102 before `main` runs. So no descriptor the program or the floor creates is ever 0, 1 or 2 unless the program closed one of them itself) |
 | `@npk_step` | atomic | modelled (park-unpark, reactor-io, trap-route) |
 | `@npk_stop_handler` | atomic | modelled (trap-route) |
 | `@npk_stop_others` | atomic | boundary (signals every other registered thread (tgkill) and waits, under the executor's join deadline, for each to park in the stop handler; a thread the kernel did not interrupt in time is proceeded past (TCB.md SS5 item 6); it writes no memory of its own -- the count it waits on is the handlers' atomic word); modelled (trap-route) |
@@ -318,7 +319,7 @@ document moving is a stale claim about the one boundary the kernel is
 trusted across.
 
 <!-- BEGIN floor-syscalls -->
-The floor issues 29 syscall numbers, and no others: **0** read, **1** write, **3** close, **9** mmap, **10** mprotect, **11** munmap, **13** rt_sigaction, **15** rt_sigreturn, **39** getpid, **56** clone, **59** execve, **60** exit, **110** getppid, **131** sigaltstack, **157** prctl, **158** arch_prctl, **202** futex, **204** sched_getaffinity, **228** clock_gettime, **231** exit_group, **233** epoll_ctl, **234** tgkill, **257** openat, **281** epoll_pwait, **290** eventfd2, **291** epoll_create1, **292** dup3, **318** getrandom, **424** pidfd_send_signal. Each has one row in the
+The floor issues 30 syscall numbers, and no others: **0** read, **1** write, **3** close, **9** mmap, **10** mprotect, **11** munmap, **13** rt_sigaction, **15** rt_sigreturn, **39** getpid, **56** clone, **59** execve, **60** exit, **72** fcntl, **110** getppid, **131** sigaltstack, **157** prctl, **158** arch_prctl, **202** futex, **204** sched_getaffinity, **228** clock_gettime, **231** exit_group, **233** epoll_ctl, **234** tgkill, **257** openat, **281** epoll_pwait, **290** eventfd2, **291** epoll_create1, **292** dup3, **318** getrandom, **424** pidfd_send_signal. Each has one row in the
 kernel-effect table -- the `kernel-effects` region of VERIFICATION_REFERENCE §9.2, generated
 into `npkg/floor_kernel.npk` -- saying what it does to memory and to the result, and the
 belt holds that sentence: a number without a row, or a call site whose option the row does
@@ -331,9 +332,10 @@ not speak for, is a finding. The rows that WRITE memory are held to the running 
 | `@npk_sigreturn` | asm | 15 rt_sigreturn | 15 rt_sigreturn |
 | `@__morestack` | asm | -- | the trap route only |
 | `@__morestack_non_split` | asm | -- | the trap route only |
-| `@_start` | asm | -- | 9 mmap, 10 mprotect, 13 rt_sigaction, 39 getpid, 131 sigaltstack, 158 arch_prctl, and the trap route |
+| `@_start` | asm | -- | 9 mmap, 10 mprotect, 13 rt_sigaction, 39 getpid, 72 fcntl, 131 sigaltstack, 158 arch_prctl, 257 openat, and the trap route |
 | `@npk_cstr_slice` | syscall | -- | 9 mmap, and the trap route |
-| `@npk_start` | asm | 13 rt_sigaction | 9 mmap, 10 mprotect, 13 rt_sigaction, 39 getpid, 131 sigaltstack, 158 arch_prctl, and the trap route |
+| `@npk_std_fds` | syscall | 72 fcntl, 257 openat | 72 fcntl, 257 openat, and the trap route |
+| `@npk_start` | asm | 13 rt_sigaction | 9 mmap, 10 mprotect, 13 rt_sigaction, 39 getpid, 72 fcntl, 131 sigaltstack, 158 arch_prctl, 257 openat, and the trap route |
 | `@npk_start_main` | syscall | -- | 1 write, 202 futex, 231 exit_group, and the trap route |
 | `@npk_tls_boot` | syscall | 39 getpid, 158 arch_prctl | 9 mmap, 39 getpid, 158 arch_prctl, and the trap route |
 | `@npk_mx_lock` | atomic | 202 futex | 202 futex |

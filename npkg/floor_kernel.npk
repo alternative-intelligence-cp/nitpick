@@ -24,6 +24,7 @@ pub func:ke_effect = int64(int64:nr) never fails {
     if (nr == 56i64) { pass 5i64; }
     if (nr == 59i64) { pass 5i64; }
     if (nr == 60i64) { pass 2i64; }
+    if (nr == 72i64) { pass 0i64; }
     if (nr == 110i64) { pass 0i64; }
     if (nr == 131i64) { pass 1i64; }
     if (nr == 157i64) { pass 0i64; }
@@ -81,6 +82,7 @@ pub func:ke_bound_arg = int64(int64:nr) never fails {
 // The 1-based argument the row's effect DEPENDS on; 0 when it depends on none.
 pub func:ke_option_arg = int64(int64:nr) never fails {
     if (nr == 9i64) { pass 4i64; }
+    if (nr == 72i64) { pass 2i64; }
     if (nr == 157i64) { pass 1i64; }
     if (nr == 158i64) { pass 1i64; }
     if (nr == 202i64) { pass 2i64; }
@@ -91,6 +93,7 @@ pub func:ke_option_arg = int64(int64:nr) never fails {
 // Does the row speak for this value of its option argument? (true where there is no option)
 pub func:ke_option_ok = bool(int64:nr, int64:v) never fails {
     if (nr == 9i64) { pass ((v == 34i64)); }
+    if (nr == 72i64) { pass ((v == 1i64)); }
     if (nr == 157i64) { pass ((v == 1i64) || (v == 38i64)); }
     if (nr == 158i64) { pass ((v == 4098i64)); }
     if (nr == 202i64) { pass ((v == 9i64) || (v == 128i64) || (v == 129i64) || (v == 137i64)); }
@@ -112,6 +115,7 @@ pub func:ke_name = string(int64:nr) never fails {
     if (nr == 56i64) { pass "clone"; }
     if (nr == 59i64) { pass "execve"; }
     if (nr == 60i64) { pass "exit"; }
+    if (nr == 72i64) { pass "fcntl"; }
     if (nr == 110i64) { pass "getppid"; }
     if (nr == 131i64) { pass "sigaltstack"; }
     if (nr == 157i64) { pass "prctl"; }
@@ -133,7 +137,7 @@ pub func:ke_name = string(int64:nr) never fails {
 };
 
 // The rows, for a walk: how many, and the i-th row's number (ascending).
-pub func:ke_count = int64() never fails { pass 29i64; };
+pub func:ke_count = int64() never fails { pass 30i64; };
 pub func:ke_nr = int64(int64:i) never fails {
     if (i == 0i64) { pass 0i64; }
     if (i == 1i64) { pass 1i64; }
@@ -147,22 +151,23 @@ pub func:ke_nr = int64(int64:i) never fails {
     if (i == 9i64) { pass 56i64; }
     if (i == 10i64) { pass 59i64; }
     if (i == 11i64) { pass 60i64; }
-    if (i == 12i64) { pass 110i64; }
-    if (i == 13i64) { pass 131i64; }
-    if (i == 14i64) { pass 157i64; }
-    if (i == 15i64) { pass 158i64; }
-    if (i == 16i64) { pass 202i64; }
-    if (i == 17i64) { pass 204i64; }
-    if (i == 18i64) { pass 228i64; }
-    if (i == 19i64) { pass 231i64; }
-    if (i == 20i64) { pass 233i64; }
-    if (i == 21i64) { pass 234i64; }
-    if (i == 22i64) { pass 257i64; }
-    if (i == 23i64) { pass 281i64; }
-    if (i == 24i64) { pass 290i64; }
-    if (i == 25i64) { pass 291i64; }
-    if (i == 26i64) { pass 292i64; }
-    if (i == 27i64) { pass 318i64; }
-    if (i == 28i64) { pass 424i64; }
+    if (i == 12i64) { pass 72i64; }
+    if (i == 13i64) { pass 110i64; }
+    if (i == 14i64) { pass 131i64; }
+    if (i == 15i64) { pass 157i64; }
+    if (i == 16i64) { pass 158i64; }
+    if (i == 17i64) { pass 202i64; }
+    if (i == 18i64) { pass 204i64; }
+    if (i == 19i64) { pass 228i64; }
+    if (i == 20i64) { pass 231i64; }
+    if (i == 21i64) { pass 233i64; }
+    if (i == 22i64) { pass 234i64; }
+    if (i == 23i64) { pass 257i64; }
+    if (i == 24i64) { pass 281i64; }
+    if (i == 25i64) { pass 290i64; }
+    if (i == 26i64) { pass 291i64; }
+    if (i == 27i64) { pass 292i64; }
+    if (i == 28i64) { pass 318i64; }
+    if (i == 29i64) { pass 424i64; }
     pass (0i64 - 1i64);
 };

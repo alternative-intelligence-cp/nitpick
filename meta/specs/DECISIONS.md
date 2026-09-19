@@ -13355,6 +13355,20 @@ categorically larger than epoll's (nothing here outlives the wait), and a
 second reactor is a second thing to verify. If it ever lands it is a new
 decision with its own verification, behind the same `suspend_io` interface.
 
+*[2026-09-19, 1.5.8 steps 3b and 3c — two sentences of **Arming** held for
+less than they said. "0 = unarmed, safe because fd 0 is stdin" was FALSE: nothing
+kept stdin open, so a process started with it closed, or a program that closes
+it, made its first epoll set descriptor 0, and every reader took the set for
+"unarmed" (DEF-69: a second set per registration, a thread's set never closed
+by its join, and an idle wait on the futex that readiness never ends). Since
+step 3c, "none" is −1 in both words at every site, and the floor opens
+`/dev/null` onto any of 0, 1 and 2 that is closed at startup. "From then on
+that executor's idle wait is `epoll_pwait` forever" holds per THREAD since step
+3b: a spawned thread's executor is a pool entry reborn for each thread in its
+registry slot, the join closes the thread's epoll set, and a reborn executor is
+unarmed until its own first registration, keeping only the eventfd (DEF-66).
+The mechanism is otherwise as decided.]*
+
 ## D-185 — Owned descriptors, `Path`, and the byte streams — **SETTLED at 1.1.12b**
 
 **`OwnedFd` (TY 39)** is the owning descriptor: the value is the kernel's

@@ -1480,7 +1480,7 @@ pooled executor and are reused rather than closed. The arguments go into `runtim
 classification rows and the pools' reuse into the models the waker and the stop walk already have, before the step
 lands.
 
-**DEF-69 — OPEN, scheduled as 1.5.8 step 3c: A STANDARD DESCRIPTOR CLOSED AT STARTUP.** (found 2026-09-19 by
+**DEF-69 — FIXED at 1.5.8 step 3c (2026-09-19): A STANDARD DESCRIPTOR CLOSED AT STARTUP.** (found 2026-09-19 by
 `nitpick-compiler_s11`, reading the reactor for step 3b.) Descriptor numbers 0, 1 and 2 are the kernel's lowest,
 and a process started with one of them closed hands that number to the next descriptor anything creates. Two faces,
 both measured on step 3b's floor:
@@ -1497,6 +1497,21 @@ opens `/dev/null` onto any that is closed. The kernel gives the lowest free numb
 other answer traps −4102. And the reactor's "absent" becomes −1 at every site, since a program may still close its
 own stdin later: the main executor, the pool entries (at boot, before any thread), the six readers, and the join's
 store.
+
+**Fixed as planned, with one change of means.** `npk_std_fds` runs right after `npk_tls_boot` (a refusal takes the
+trap route, which reads the TLS block). The main executor's initializer and every reader and writer of the two
+reactor words use −1 for "none": the join tests `>= 0` and stores −1, `npk_io_register` tests `>= 0` for the set and
+for the kept eventfd, `npk_park_sleep` is armed when the set's word is `>= 0`, and the two rousers and
+`npk_io_unwatch` skip when their word is negative. **The pool entries get their −1 from a STATIC initializer, not
+from a loop at boot**, which is what this entry said. The eventfd word is atomic everywhere (D-290), and 64 atomic
+stores before `main` would be 64 counted steps in every explored run, moving every schedule — DEF-67's cause. The
+initializer is sixty-four identical entries (every other word 0), and needs no step. The kernel-effect table gained
+`72 fcntl`, held to `F_GETFD` by its option set. Measured, each test against step 3b's floor by hand:
+`std_fds_closed` (the program re-executes itself with stderr closed) exits 7 there, the data file holding the
+diagnostic, and 0 here. `reactor_fd_zero` (the program closes its own stdin) exits 10 there — the join left the
+thread's epoll set, descriptor 0, open. A variant without that case exits 14 there — the second wait made a second
+set. The test against this floor with only `npk_park_sleep`'s test reverted exits 82 after exactly one second: a
+ready pipe was answered at its deadline, because the idle wait on a set that is descriptor 0 was the futex's.
 
 **DEF-68 — FIXED at 1.5.8 step 3 (2026-09-19): A WRITE TO A PIPE WITH NO READER KILLED THE PROCESS, WITH NO
 `failsafe`.** (found 2026-09-19 by `nitpick-compiler_s11`, writing TCB.md §5's list of what D-307 leaves

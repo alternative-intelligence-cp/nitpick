@@ -1376,6 +1376,7 @@ the same region. One row per number the floor issues:
 | 56 | `clone` | — | asm | — | — | — |
 | 59 | `execve` | — | asm | — | — | — |
 | 60 | `exit` | — | ends | — | — | — |
+| 72 | `fcntl` | arg2 in 1 | none | — | — | — |
 | 110 | `getppid` | — | none | — | — | — |
 | 131 | `sigaltstack` | — | writes | arg2 | 24 | — |
 | 157 | `prctl` | arg1 in 1 38 | none | — | — | — |
@@ -1399,7 +1400,10 @@ The option sets are the floor's own: `mmap` flags 34 (`MAP_PRIVATE |
 MAP_ANONYMOUS`, never `MAP_FIXED`), `prctl` 1 and 38 (`PR_SET_PDEATHSIG`,
 `PR_SET_NO_NEW_PRIVS`), `arch_prctl` 4098 (`ARCH_SET_FS`), `futex` 9, 128,
 129, 137 (wait-bitset, and wait, wake and wait-bitset under
-`FUTEX_PRIVATE_FLAG`), `epoll_ctl` 1, 2, 3 (add, delete, modify).
+`FUTEX_PRIVATE_FLAG`), `epoll_ctl` 1, 2, 3 (add, delete, modify), `fcntl` 1
+(`F_GETFD`, startup's probe of the three standard descriptors, DEF-69 --
+it takes no address, and the option set is what keeps it so: `F_GETLK` and
+its kin write a `struct flock`).
 
 **The write-region rows are HELD TO THE RUNNING KERNEL, not accepted**
 (1.5.6b). `tests/backend/programs/kernel_effects.npk` — an ordinary program,
