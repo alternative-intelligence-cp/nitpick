@@ -1210,7 +1210,7 @@ than a page — 151 of the compiler's own). The user ratified S-84…S-87 in one
 sentence ("go with all four") as D-304 (`decreases`/`unbounded`), D-305 (the
 split-stack prologue on every emitted function, `StackExhausted`), D-306
 (`CastRange`) and D-307 (`MachineFault`, the last net).** **Landed so far
-(2026-09-19): steps 0, 1, 1b, 2, 2b and 2c.** A float's `=>!` cast to an integer
+(2026-09-19): steps 0, 1, 1b, 2, 2b, 2c and 3.** A float's `=>!` cast to an integer
 traps `CastRange` (armed where one exists). A joined thread's stack is
 unmapped. **Every function the compiler emits checks its frame against the
 thread's limit word at `%fs:0x70` (`"split-stack"`, one text: `ll_fn_open`),
@@ -1222,8 +1222,14 @@ they fit (1,712 of 16,384 bytes). The builder keeps no prologues of its own
 until step 4's refresh. The syscall census reads `module asm` (2b, DEF-64), and the
 explorer can HOLD a thread at a site until another passes it (`hold-at:`, 2c,
 DEF-67): a kept seed goes stale when a step is added before its window, so
-DEF-57's regression is now a held control, `frozen-traps.ctl`. The plan's
-execution record says what each step found.
+DEF-57's regression is now a held control, `frozen-traps.ctl`. **The last
+net (step 3, D-307):** SIGSEGV, SIGBUS, SIGILL and SIGFPE enter the trap route
+as `MachineFault` (armed in every program) on the thread's signal stack, with
+SA_NODEFER so that a fault inside a fault's `failsafe` exits 70. SIGPIPE is
+caught, so a write to a pipe with no reader answers EPIPE (DEF-68: it killed
+the process, exit 141). A program faults the CPU only through JIT code
+(`wildx`), which is how the tests do it. The plan's execution record says what
+each step found.
 **1.5.7 (D-212's schedule-exploration harness) IS COMPLETE (2026-09-18;
 `meta/roadmap/1.5/1.5.7.md`; eight landings, steps 0–7, each a cumulative
 prefix under a full harness, D-228; seats s8 then s10)**: the REAL floor and

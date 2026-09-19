@@ -886,6 +886,7 @@
 (symbol @npk_heap_badreq (ensures-trap true))
 (symbol @npk_raise (ensures-trap true))
 (symbol @npk_stack_exhausted (ensures-trap true))
+(symbol @npk_fault_handler (ensures-trap true))
 (symbol @npk_stack_foreign (ensures-trap true))
 
 (symbol @npk_stop_others
@@ -1192,7 +1193,7 @@
 
 ; the threads, the process, the executor loop
 (symbol @npk_start
-  (boundary "the process entry, called by _start with the initial stack pointer: the main thread's TLS block and executor booted (npk_tls_boot); the main thread's stack and the failsafe stack mapped in the floor's shape (npk_stack_map), the main thread's limit word and signal stack written and the signal stack registered (npk_sigstack_on) (D-305, 1.5.8 step 2); SIGUSR1 armed for the stop signal over the kernel's own sigaction shape, on the signal stack (D-291, D-305 (4)); argv and envp measured on the kernel's stack; then the switch to the floor's stack (npk_switch_stack, assembly) and npk_start_main -- the path never returns"))
+  (boundary "the process entry, called by _start with the initial stack pointer: the main thread's TLS block and executor booted (npk_tls_boot); the main thread's stack and the failsafe stack mapped in the floor's shape (npk_stack_map), the main thread's limit word and signal stack written and the signal stack registered (npk_sigstack_on) (D-305, 1.5.8 step 2); SIGUSR1 armed for the stop signal over the kernel's own sigaction shape, on the signal stack (D-291, D-305 (4)); the four fault signals armed (npk_fault_arm, D-307); argv and envp measured on the kernel's stack; then the switch to the floor's stack (npk_switch_stack, assembly) and npk_start_main -- the path never returns"))
 (symbol @npk_tls_boot
   (boundary "the main thread's TLS block and executor from raw anonymous mappings -- INTERNAL, not npk_alloc, so the runtime's own storage is never a leak at a clean exit (D-151) -- and %fs set by arch_prctl to the block"))
 (symbol @npk_thread_entry
@@ -1201,6 +1202,8 @@
   (boundary "exit(60) of the calling thread alone: the kernel clears and wakes the CLONE_CHILD_CLEARTID word the joiner waits on (a shared wake, 1.4.4); the path never returns"))
 (symbol @npk_stack_map
   (boundary "one stack of the floor's shape (D-305, 1.5.8 step 2): `usable` bytes behind a PROT_NONE guard page -- with a signal stack and a second guard when `sig` is not 0 -- and the 64 KiB reserve below the limit word, one anonymous mapping through npk_hmap, each guard by mprotect (a guard that cannot be set traps -4102); the five words { base, length, signal stack, limit, top } written to `out`"))
+(symbol @npk_fault_arm
+  (boundary "THE LAST NET (D-307, 1.5.8 step 3): rt_sigaction for SIGSEGV, SIGBUS, SIGILL and SIGFPE -> npk_fault_handler, with SA_SIGINFO | SA_ONSTACK | SA_RESTORER | SA_NODEFER over the kernel's own sigaction shape and npk_sigreturn as the restorer, and for SIGPIPE -> npk_pipe_handler, which returns, with SA_RESTORER | SA_ONSTACK | SA_RESTART (DEF-68: a write to a pipe with no reader answers EPIPE instead of killing the process; a handler, not SIG_IGN, because an ignored disposition survives execve into every child); the old actions not read; a refusal traps -4102 at startup. What the kernel then promises -- that a synchronous fault in a thread is delivered to that thread, on its registered signal stack, with the signal unblocked because the action says NODEFER -- is the boundary: TCB.md SS5 accepts it by name"))
 (symbol @npk_sigstack_on
   (boundary "sigaltstack(&{ base, 0, 64 KiB }, NULL) for the calling thread (D-305 (4)); the kernel refuses a stack below the machine's minimum signal frame with ENOMEM, and that refusal traps -4102 at the thread's start -- the assumption that 64 KiB holds this machine's signal frame, checked where it is made"))
 (symbol @npk_start_main

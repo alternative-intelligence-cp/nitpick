@@ -1480,6 +1480,19 @@ pooled executor and are reused rather than closed. The arguments go into `runtim
 classification rows and the pools' reuse into the models the waker and the stop walk already have, before the step
 lands.
 
+**DEF-68 — FIXED at 1.5.8 step 3 (2026-09-19): A WRITE TO A PIPE WITH NO READER KILLED THE PROCESS, WITH NO
+`failsafe`.** (found 2026-09-19 by `nitpick-compiler_s11`, writing TCB.md §5's list of what D-307 leaves
+uncontrolled.) The kernel raises SIGPIPE in a thread that writes to a pipe or socket whose read end is closed, and
+SIGPIPE's default action terminates the process. The floor installed no action for it, so any program whose output
+was piped into a reader that exits early (`prog | head`) died uncontrolled. Measured: a program writing 4 KiB blocks
+to stdout, piped into `true`, exited 141 (128 + SIGPIPE). The Bridge had avoided it only on its own sockets, with
+`MSG_NOSIGNAL` and a comment naming it "the exact event this architecture exists to prevent"; the floor's `write`
+had nothing. The fix is one more action in `npk_fault_arm`: SIGPIPE → `npk_pipe_handler`, which returns (SA_RESTORER
+| SA_ONSTACK | SA_RESTART), so the write answers EPIPE as a value. It is a handler rather than SIG_IGN because an
+ignored disposition survives `execve` into every child the floor spawns (drivers, tools) and a caught one resets to
+the default. `sigpipe_epipe.npk` makes a pipe, closes its read end and writes: 32 (EPIPE) on the fixed floor, 141 on
+the floor before; the shell-pipe probe exits 3 (its own answer to the error) where it exited 141.
+
 **DEF-67 — FIXED at 1.5.8 step 2c (2026-09-19): the explorer HOLDS. `hold-at:` sites (`NPKX_HOLD1..4`) hold the first thread to arrive until another passes the same site, or until nothing else can step. It is in both shims (held to each other hash for hash, 40 held runs), both runners' control readers and a self-check case in each. DEF-57's window is `frozen-traps.ctl`: 72 on 100 of 100 seeds with the pre-fix block planted and held; 41 on 100 of 100 blind; and on the FIXED floor, held, 41 on 100 of 100, the real floor's own evidence that the fix holds with the window open. A kept seed now claims nothing (VERIFICATION_REFERENCE §10).** ~~OPEN, scheduled as 1.5.8 step 2c: A KEPT SEED WENT STALE AND NOTHING SAID SO.~~ (found 2026-09-19 by
 `nitpick-compiler_s11`, executing 1.5.8 step 2's K-11.) X-11 keeps a seed that found a defect (`// explore-seed:
 S`) and runs it first on every run: "a schedule that found a defect once is the cheapest regression test the

@@ -179,6 +179,8 @@ missing from the numbers and from the rows that reach them.
 | `@npk_exec` | asm | trusted (inline asm) |
 | `@npk_exit` | atomic | boundary (the controlled shutdown (D-013/D-014, D-151): a successful exit with live wild storage or a live driver routes to failsafe, a non-holder's exit during a failsafe parks, the heap-stats line is written, and the process ends by exit_group -- the path never returns); modelled (trap-route) |
 | `@npk_failsafe_on_stack` | asm | trusted (inline asm) |
+| `@npk_fault_arm` | syscall | boundary (THE LAST NET (D-307, 1.5.8 step 3): rt_sigaction for SIGSEGV, SIGBUS, SIGILL and SIGFPE -> npk_fault_handler, with SA_SIGINFO | SA_ONSTACK | SA_RESTORER | SA_NODEFER over the kernel's own sigaction shape and npk_sigreturn as the restorer, and for SIGPIPE -> npk_pipe_handler, which returns, with SA_RESTORER | SA_ONSTACK | SA_RESTART (DEF-68: a write to a pipe with no reader answers EPIPE instead of killing the process; a handler, not SIG_IGN, because an ignored disposition survives execve into every child); the old actions not read; a refusal traps -4102 at startup. What the kernel then promises -- that a synchronous fault in a thread is delivered to that thread, on its registered signal stack, with the signal unblocked because the action says NODEFER -- is the boundary: TCB.md SS5 accepts it by name) |
+| `@npk_fault_handler` | syscall | specified (2 discharged, 0 residue); modelled (trap-route) |
 | `@npk_frame_alloc` | syscall | boundary (a coroutine frame of size bytes at align (at or below the heap's sixteen): the exact-size bucket's free list first (the common steady state), else a bump from the current chunk, else a dedicated heap block whose header carries the dedicated bit; the header stamped frame-live) |
 | `@npk_frame_bucket` | pure | specified (5 discharged, 0 residue) |
 | `@npk_frame_drain` | pure | specified (4 discharged, 0 residue) |
@@ -235,6 +237,7 @@ missing from the numbers and from the rows that reach them.
 | `@npk_park_take` | syscall | specified (4 discharged, 0 residue); modelled (park-unpark, trap-route) |
 | `@npk_park_until` | syscall | specified (3 discharged, 0 residue); modelled (park-unpark, trap-route) |
 | `@npk_path_exists` | syscall | specified (3 discharged, 0 residue) |
+| `@npk_pipe_handler` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_raise` | syscall | specified (2 discharged, 0 residue) |
 | `@npk_ralloc` | syscall | boundary (a block of n bytes holding the old block's bytes up to the smaller size, the old block's role (wild or managed) kept and the old block freed; ralloc(p, 0) is HeapBadRequest (D-150); during a failsafe a fresh region block with the old bytes copied by the header's size and the old block left (D-292)) |
 | `@npk_read_file` | syscall | specified (9 discharged, 0 residue); residue (the bytes the kernel wrote are opaque (the kernel-effect table says only where), so the buffer's contents are not claimed; the growth's copy is memcpy's row in its own file) |
@@ -359,6 +362,8 @@ not speak for, is a finding. The rows that WRITE memory are held to the running 
 | `@npk_ch_try_recv` | atomic | -- | 1 write, 202 futex |
 | `@npk_stack_map` | syscall | 10 mprotect | 9 mmap, 10 mprotect, and the trap route |
 | `@npk_sigstack_on` | syscall | 131 sigaltstack | 131 sigaltstack, and the trap route |
+| `@npk_fault_arm` | syscall | 13 rt_sigaction | 13 rt_sigaction, and the trap route |
+| `@npk_fault_handler` | syscall | -- | the trap route only |
 | `@npk_stack_exhausted` | syscall | -- | the trap route only |
 | `@npk_stack_foreign` | syscall | -- | the trap route only |
 | `@npk_thread_start` | asm | -- | 9 mmap, 10 mprotect, 11 munmap, 56 clone, 60 exit, 202 futex, 318 getrandom, and the trap route |
@@ -471,7 +476,7 @@ further), and exhaustively, by explicit-state search over its whole reachable sp
 below, inside its bounds or outside them. LIVENESS is not claimed at all -- that a due
 task is eventually run, and that the shared arena's walker stops spinning, need a
 fairness assumption neither reading can state.
-The models, each with its bounds and its reachable states (and how many of them the bounds reach): `channel-table` (K 12, D 6; 151 states, 141 inside), `driver-registry` (K 10, D 5; 414 states, 398 inside), `futex-mutex` (K 11, D 6; 350 states, 350 inside), `park-unpark` (K 14, D 5; 358 states, 314 inside), `reactor-io` (K 16, D 7; 68 states, 68 inside), `shared-arena` (K 12, D 5; 1086 states, 1086 inside), `trap-route` (K 14, D 6; 201 states, 201 inside).
+The models, each with its bounds and its reachable states (and how many of them the bounds reach): `channel-table` (K 12, D 6; 151 states, 141 inside), `driver-registry` (K 10, D 5; 414 states, 398 inside), `futex-mutex` (K 11, D 6; 350 states, 350 inside), `park-unpark` (K 14, D 5; 358 states, 314 inside), `reactor-io` (K 16, D 7; 68 states, 68 inside), `shared-arena` (K 12, D 5; 1086 states, 1086 inside), `trap-route` (K 14, D 6; 852 states, 852 inside).
 <!-- END floor-residue -->
 
 ## 4d. Who keeps a section's assumptions (1.5.6c step 3; leads E-1 and E-2)
@@ -743,6 +748,33 @@ Listed, not checked -- a clause the entry checker cannot evaluate over the entry
     is outside this argument; and that the assembly the switches are written in
     (`npk_switch_stack`, `npk_fs_switch_call`, `__morestack`) does what its
     comments say -- it runs, and is no point of the explorer (item 17).
+19. That the kernel delivers a machine fault as it promises, and what still
+    stops a program with no `failsafe` (D-307, 1.5.8 step 3). SIGSEGV, SIGBUS,
+    SIGILL and SIGFPE -- a fault the language could not prevent: JIT code
+    (`wildx`), a floor defect, the hardware -- enter the trap route as
+    `MachineFault` through `npk_fault_handler`, on the faulting thread's signal
+    stack, and a fault inside the route (a `failsafe` that faults) meets the
+    holder's re-entry exit 70 because the actions say SA_NODEFER (measured: a
+    fault inside a fault's `failsafe` exits 70, and 132 -- the kernel's kill --
+    on a floor whose actions lack the flag). What a reader accepts: that the
+    kernel delivers a synchronous fault to the thread that raised it, on its
+    registered signal stack, unblocked because the action says NODEFER; and
+    that what follows stays UNCONTROLLED, by name. A fault before
+    `npk_fault_arm` has run (the first instructions of `npk_start`: its TLS
+    boot, the two stack mappings, the signal stack, SIGUSR1's action). A fault
+    whose own delivery fails: a signal stack that is itself unusable, which the
+    kernel answers by killing the process. SIGKILL and SIGSTOP, which no
+    process can catch, and the kernel's out-of-memory killer. Every other
+    signal another process can send (SIGTERM, SIGINT, SIGHUP and the rest keep
+    their default actions, most of which end the process) -- except SIGPIPE,
+    which the floor catches with a handler that returns, so a write to a pipe
+    with no reader answers EPIPE as a value where it killed the process
+    (DEF-68, found writing this item: a program piped into `head` died with
+    exit 141). A hardware
+    error the kernel does not turn into one of the four signals. And the
+    kernel's own faults. The explorer's shim is not reentrant, so a fault
+    inside the shim's own code is reported as the shim's defect (`SHIM FAULT`,
+    exit 97; K-13), never explored as a trap.
 
 Nothing else is trusted. In particular nothing in `src/`, `lib/` or the prelude
 is exempt from the checks that bind a user program (D-205's switch put the

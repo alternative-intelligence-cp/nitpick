@@ -1,0 +1,44 @@
+// expect-exit: 61
+//
+// SIGFPE TAKES THE SAME ROUTE (D-307, 1.5.8 step 3): a Nitpick division is
+// guarded (`DivByZero`), a JIT's is not. `xor ecx, ecx; xor edx, edx; mov
+// eax, 1; div ecx; ret` divides by zero in a `wildx` page, and the divide
+// error is delivered to `npk_fault_handler` as `MachineFault`.
+mod:machine_fault_fpe;
+
+func:main = int32(cstring[]:_~argv) {
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
+    // xor ecx, ecx = 31 C9 ; xor edx, edx = 31 D2 ; mov eax, 1 = B8 01 00 00 00 ; div ecx = F7 F1 ; ret = C3
+    page[0i64] = 49u8;
+    page[1i64] = 201u8;
+    page[2i64] = 49u8;
+    page[3i64] = 210u8;
+    page[4i64] = 184u8;
+    page[5i64] = 1u8;
+    page[6i64] = 0u8;
+    page[7i64] = 0u8;
+    page[8i64] = 0u8;
+    page[9i64] = 247u8;
+    page[10i64] = 241u8;
+    page[11i64] = 195u8;
+    wildx_seal(page);
+    int64:r = wildx_call(page, 0i64);
+    wildx_free(page);
+    exit (r =>! int32) + 1i32;                        // never reached
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (MachineFault)     { exit 61i32; },
+        (DeadlineExceeded) { exit 91i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

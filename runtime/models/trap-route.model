@@ -31,13 +31,27 @@
 ; the one case the fix must not lose -- the holder's own `failsafe` driving
 ; the executor (no program can: `failsafe` is never `async`, TYPE-043) takes
 ; the re-entry exit 70, where a plain park would end nothing.
+;
+; THE LAST NET (D-307, 1.5.8 step 3): a machine fault -- SIGSEGV, SIGBUS,
+; SIGILL, SIGFPE, from JIT code, a floor defect or the hardware -- is an
+; ASYNCHRONOUS entry into npk_trap, which the `trap` step (a task's own trap,
+; from pc 7) cannot express: it can happen wherever the thread runs code the
+; machine can fault in -- its executor (0), a task (7), the winner's stop
+; walk (2), `failsafe` (3) -- and the kernel delivers it on the thread's
+; signal stack to npk_fault_handler, which enters the route with the fault's
+; own code. `fa`/`fb`: the thread is inside a fault handler, which never
+; returns. The action says SA_NODEFER, so a fault there is delivered again
+; and meets the holder's re-entry exit 70 or a loser's park. Without NODEFER
+; the kernel finds the fault signal blocked, resets it to its default action
+; and kills the process with no `failsafe`: `killed`, the bad predicate
+; `uncontrolled` and the control `no-nodefer`.
 
 (model trap-route
   (of "the trap route's whole-program stop: cmpxchg arbitration of the failsafe holder, the stop signal to every other thread, and the failsafe region's allocator")
   (state (apc 0 7) (bpc 0 7) (holder 0 2) (sa 0 2) (sb 0 2) (frozen 0 1) (fs_a 0 1) (fs_b 0 1) (steps_after 0 20) (exited_by 0 2)
-         (stop_sent 0 1) (mx 0 2) (blocked 0 1) (ca 0 2) (cb 0 2))
+         (stop_sent 0 1) (mx 0 2) (blocked 0 1) (ca 0 2) (cb 0 2) (fa 0 1) (fb 0 1) (killed 0 1))
   (init (and (= apc 0) (= bpc 0) (= holder 0) (= sa 0) (= sb 0) (= frozen 0) (= fs_a 0) (= fs_b 0) (= steps_after 0) (= exited_by 0)
-             (= stop_sent 0) (= mx 0) (= blocked 0) (= ca 0) (= cb 0)))
+             (= stop_sent 0) (= mx 0) (= blocked 0) (= ca 0) (= cb 0) (= fa 0) (= fb 0) (= killed 0)))
   (thread a
     ; npk_step: the flag clear, a task resumed
     (step resume  (ir @npk_step entry go run spend resume) (ir @npk_frozen_get entry)
@@ -65,6 +79,10 @@
     ; the trap: the flag set, then the arbitration, with the fault's own code
     (step trap    (ir @npk_trap entry)
                   (guard (= apc 7)) (next (apc 1) (frozen 1) (ca 1)))
+    ; a MACHINE FAULT (D-307): delivered on the signal stack wherever the thread
+    ; runs code, entering the route through npk_fault_handler with its own code
+    (step fault   (ir @npk_fault_handler entry)
+                  (guard (or (= apc 0) (= apc 7) (= apc 2) (= apc 3))) (next (apc 1) (frozen 1) (ca 1) (fa 1)))
     ; the holder read (the cmpxchg re-reads it atomically: harmless here, the old route's first half)
     (step read    (ir @npk_trap entry)
                   (guard (= apc 1)) (next (sa holder)))
@@ -111,6 +129,8 @@
                   (guard (and (= bpc 7) (= mx 2))) (next (mx 0)))
     (step trap    (ir @npk_trap entry)
                   (guard (= bpc 7)) (next (bpc 1) (frozen 1) (cb 1)))
+    (step fault   (ir @npk_fault_handler entry)
+                  (guard (or (= bpc 0) (= bpc 7) (= bpc 2) (= bpc 3))) (next (bpc 1) (frozen 1) (cb 1) (fb 1)))
     (step read    (ir @npk_trap entry)
                   (guard (= bpc 1)) (next (sb holder)))
     (step win     (ir @npk_trap run)
@@ -141,6 +161,8 @@
   (bad wrong-error (or (and (= fs_a 1) (= ca 2)) (and (= fs_b 1) (= cb 2))))
   ; the holder parked: nothing is left to end the process
   (bad holder-parks (or (and (= holder 1) (= apc 5)) (and (= holder 2) (= bpc 5))))
+  ; D-307: the kernel killed the process -- a stop with no `failsafe`
+  (bad uncontrolled (= killed 1))
   (depth 14) (preempt 6)
   ; the pre-step-1 arbitration: the holder read in one step, written in the next, the winner straight into failsafe, no stop
   (control old-arbitration two-failsafes
@@ -162,4 +184,9 @@
     (replace b frozen (guard (and (= bpc 0) (= frozen 1))) (next (bpc 1) (cb 2))))
   ; the fix as first proposed: EVERY executor that sees the flag parks, the holder included
   (control frozen-parks-holder holder-parks
-    (replace a refrozen (guard (and (= apc 3) (= frozen 1) (= holder 1))) (next (apc 5)))))
+    (replace a refrozen (guard (and (= apc 3) (= frozen 1) (= holder 1))) (next (apc 5))))
+  ; the fault actions without SA_NODEFER: a second fault in a thread already inside its fault
+  ; handler (which never returns) finds the signal blocked, and the kernel kills the process
+  (control no-nodefer uncontrolled
+    (replace a fault (guard (or (= apc 0) (= apc 7) (= apc 2) (= apc 3)))
+             (next (apc (ite (= fa 1) 4 1)) (frozen 1) (ca 1) (fa 1) (killed (ite (= fa 1) 1 killed))))))

@@ -721,12 +721,16 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     // The floor is unconditional: allocation and the exit-time checks are in
     // every program -- and, since D-305 (1.5.8 step 2), the stack check: every
     // function the compiler emits compares its frame against the thread's
-    // limit, so every program can exhaust its stack in a controlled way.
+    // limit, so every program can exhaust its stack in a controlled way --
+    // and, since D-307 (1.5.8 step 3), the last net: a fault the language
+    // could not prevent (JIT code, a floor defect, the hardware) enters the
+    // trap route as `MachineFault` in every program.
     drop reach_add_system(x, "Unreachable");
     drop reach_add_system(x, "HeapOom");
     drop reach_add_system(x, "HeapBadRequest");
     drop reach_add_system(x, "WildLeak");
     drop reach_add_system(x, "StackExhausted");
+    drop reach_add_system(x, "MachineFault");
     if (x.saw_div)      { drop reach_add_system(x, "DivByZero");
                           drop reach_add_system(x, "DivOverflow"); }
     if (x.saw_ovf)      { drop reach_add_system(x, "IntOverflow"); }

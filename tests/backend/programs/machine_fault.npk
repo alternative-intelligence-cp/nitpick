@@ -1,0 +1,46 @@
+// expect-exit: 61
+//
+// A MACHINE FAULT IS A CONTROLLED TRAP (D-307, 1.5.8 step 3). A Nitpick
+// program cannot fault the CPU through its own code: an address becomes a
+// number only at the `sys` trampoline, never the reverse, divisions are
+// guarded, the stack is checked. Its JIT can. This one writes `mov byte ptr
+// [0], 0; ret` into a `wildx` page, seals it and calls it: SIGSEGV. The
+// kernel delivers it on the thread's signal stack to the floor's
+// `npk_fault_handler`, which enters the trap route as `MachineFault`, and
+// `failsafe` answers 61. Until this step it was a SIGSEGV with no `failsafe`.
+mod:machine_fault;
+
+func:main = int32(cstring[]:_~argv) {
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
+    // mov byte ptr [0x0], 0  =  C6 04 25 00 00 00 00 00
+    page[0i64] = 198u8;
+    page[1i64] = 4u8;
+    page[2i64] = 37u8;
+    page[3i64] = 0u8;
+    page[4i64] = 0u8;
+    page[5i64] = 0u8;
+    page[6i64] = 0u8;
+    page[7i64] = 0u8;
+    // ret  =  C3
+    page[8i64] = 195u8;
+    wildx_seal(page);
+    int64:r = wildx_call(page, 0i64);
+    wildx_free(page);
+    exit (r =>! int32) + 1i32;                        // never reached: the store faults
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (MachineFault)     { exit 61i32; },
+        (DeadlineExceeded) { exit 91i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

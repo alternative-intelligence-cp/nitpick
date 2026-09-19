@@ -3900,7 +3900,7 @@ def check_explore_totality(tmp, tools):
 # each unit from its measured thread count and k (X-8). `npkg test` runs the
 # same stage, unit for unit, message for message.
 
-_NPKX_VERDICT = re.compile(r"^npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST-[A-Z-]+|ASSUMPTION)", re.M)
+_NPKX_VERDICT = re.compile(r"^npkx: (DEADLOCK|STEP BUDGET|MMAP|LOST-[A-Z-]+|ASSUMPTION|SHIM FAULT)", re.M)
 _NPKX_STEPS = re.compile(r"^npkx: .*\bseed=\d+ steps=(\d+)", re.M)
 _NPKX_TRACE = re.compile(r"^npkx: +seed=(\d+) steps=(\d+) hash=(\d+)(?: vnow=(\d+))?(?: vrun=(\d+))?(?: threads=(\d+))?", re.M)
 

@@ -1800,7 +1800,17 @@ virtual clock: +1 µs per read, and a jump to the earliest deadline when nobody
 can step. Signals are virtual (step 2): `rt_sigaction` is remembered, `tgkill`
 marks the target and makes a blocked one runnable, and the handler runs in the
 target's own context at its next grant, so the trap route's stop walk is
-explored like anything else. The address space is virtual (X-13): an anonymous
+explored like anything else. A MACHINE FAULT is real (1.5.8 step 3, D-307):
+`rt_sigaction` passes through to the kernel as well as being remembered, so the
+four fault signals' actions are installed for real; a fault in program or JIT
+code is delivered by the kernel to the floor's handler on the thread's signal
+stack, and the trap route it enters is explored like any trap's
+(`machine_fault_thread`, explored). The shim itself is not reentrant (K-13):
+every entry the floor calls at an arbitrary point, a point or a routed syscall,
+raises a per-thread mark while the shim's own code runs and lowers it before
+any floor code runs inside the shim. An entry that finds its thread's mark
+raised was reached from a fault inside the shim, and is reported as the shim's
+defect. The address space is virtual (X-13): an anonymous
 private mapping with no hint is placed at a 64 KiB-aligned bump pointer with
 `MAP_FIXED_NOREPLACE`, because the floor's chunk trim made a step count depend
 on an ADDRESS. A thread's end is settled before anyone else steps (X-19): the
@@ -1826,8 +1836,9 @@ could not.
 `expect-exit:`, and when the shim reports `DEADLOCK` (nobody can step and no
 deadline is pending), `STEP BUDGET`, `MMAP`, `LOST-FUTEX-WAKE` (at quiescence, a
 virtual waiter's word no longer holds the value it waited on), `LOST-WAKE` (at
-quiescence, a blocked thread's executor holds a frame stamped due) or
-`ASSUMPTION <symbol>: <clause>`. The last is a caller hypothesis of the floor's
+quiescence, a blocked thread's executor holds a frame stamped due),
+`SHIM FAULT` (the shim entered from its own code: a fault inside the shim, K-13)
+or `ASSUMPTION <symbol>: <clause>`. The last is a caller hypothesis of the floor's
 spec found false at a call: the transformer writes one ENTRY CHECKER per section
 of `runtime/npkrt.spec` that has rows and a `requires`/`objects`/`views` clause,
 and 236 of the 240 hypotheses are evaluated at every call of every explored

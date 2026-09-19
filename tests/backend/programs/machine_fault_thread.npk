@@ -1,0 +1,56 @@
+// expect-exit: 61
+// stress: 40
+// explore: 1000
+//
+// A FAULT ON A SPAWNED THREAD STOPS THE WHOLE PROGRAM (D-307, D-291; 1.5.8
+// step 3). The thread writes `mov byte ptr [0], 0; ret` into a `wildx` page
+// and calls it; the kernel delivers SIGSEGV on THAT thread's signal stack --
+// registered by the thread itself at its entry (D-305 (4)) -- and it enters
+// the trap route as `MachineFault`. It wins the failsafe holder, stops the
+// main thread (spinning in its task), and `failsafe` answers 61. Explored as
+// well as stressed: a real fault under the shim is real (its action is
+// installed with the kernel as well as remembered), and the stop that follows
+// it is explored like any other trap's.
+mod:machine_fault_thread;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+thread async func:faulter = NIL(int32:_~v) joins JOIN_5S {
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
+    // mov byte ptr [0x0], 0  =  C6 04 25 00 00 00 00 00 ; ret = C3
+    page[0i64] = 198u8;
+    page[1i64] = 4u8;
+    page[2i64] = 37u8;
+    page[3i64] = 0u8;
+    page[4i64] = 0u8;
+    page[5i64] = 0u8;
+    page[6i64] = 0u8;
+    page[7i64] = 0u8;
+    page[8i64] = 195u8;
+    wildx_seal(page);
+    discard(wildx_call(page, 0i64));
+    wildx_free(page);
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    drop faulter(1i32);
+    int64:t0 = mono_now();
+    while ((mono_now() - t0) < 400000000i64) { }     // the stop parks this loop
+    exit 0i32;                                        // never reached: the fault stops the program
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (MachineFault)     { exit 61i32; },
+        (DeadlineExceeded) { exit 91i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

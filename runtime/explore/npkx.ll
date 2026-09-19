@@ -74,7 +74,8 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 ;   0 grant (i32, atomic: the baton)   1 state   2 tid   3 prio (unsigned)
 ;   4 addr (B_FUTEX: the word)         5 deadline (virtual ns; -1 none)
 ;   6 reason   7 exit_tid   8 blocked_seq   9 polled_at   10 pending_sig
-;   11 last_site   12 exec (the executor at the block)   13 waitval   14 pad
+;   11 last_site   12 exec (the executor at the block)   13 waitval
+;   14 in_shim (1.5.8 step 3, K-13: this thread is running the shim's own code)
 ;   15 ctid (the CHILD_CLEARTID word the kernel clears at the thread's exit; X-19)
 ;
 ; states:  0 FREE  1 RUNNING  2 READY  3 B_FUTEX  4 B_EPOLL  5 ENDED  6 HELD (1.5.8 step 2c)
@@ -183,6 +184,7 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 @npkx_s_pend = internal constant [6 x i8] c" pend="
 @npkx_s_deadlock = internal constant [8 x i8] c"DEADLOCK"
 @npkx_s_budget = internal constant [23 x i8] c"STEP BUDGET (livelock?)"
+@npkx_s_shimfault = internal constant [72 x i8] c"SHIM FAULT (the shim entered from its own code: a fault inside the shim)"
 @npkx_s_mmap = internal constant [34 x i8] c"MMAP (no deterministic address)   "
 @npkx_map_next = internal global i64 17592186044416
 ; the virtual signals (step 2): the handler `rt_sigaction` installed, per signal number
@@ -1211,7 +1213,10 @@ fire:
   br i1 %noh, label %ret, label %handle
 
 handle:
+  ; the handler is the FLOOR's code: its points are entries, not a re-entry (K-13)
+  call void @npkx_st32(i32 %me, i32 14, i32 0)
   call void %h(i32 %sg, ptr null, ptr null)
+  call void @npkx_st32(i32 %me, i32 14, i32 1)
   br label %ret
 
 ret:
@@ -1220,7 +1225,59 @@ ret:
 
 ; --- the hooks the transformed floor calls -----------------------------------
 
+; THE SHIM IS NOT REENTRANT (1.5.8 step 3, K-13). A real fault is real
+; under the explorer: its action is installed with the kernel (rt_sigaction
+; passes through as well as being remembered), and the fault handler enters
+; the explored trap route, whose steps call in here. A fault in PROGRAM or
+; FLOOR code arrives with this thread's mark down and is explored like any
+; trap. A fault in the SHIM's own code would re-enter the scheduler with its
+; state half-updated, so every entry the floor's code calls at an arbitrary
+; point raises the mark while the shim runs and lowers it before any floor
+; code runs inside it (a virtual signal's handler, `npkx_run_pending`); an
+; entry that finds its own thread's mark raised is the shim's defect, reported
+; by name and exit 97 like every verdict.
+define internal i32 @npkx_enter() {
+entry:
+  %in = load i32, ptr @npkx_inited
+  %uninit = icmp eq i32 %in, 0
+  br i1 %uninit, label %init, label %mark
+
+init:
+  call void @npkx_init()
+  br label %mark
+
+mark:
+  %me = call i32 @npkx_self()
+  %m = call i32 @npkx_ld32(i32 %me, i32 14)
+  %reentered = icmp ne i32 %m, 0
+  br i1 %reentered, label %fault, label %raise
+
+fault:
+  call void @npkx_die(ptr @npkx_s_shimfault, i64 72)
+  unreachable
+
+raise:
+  call void @npkx_st32(i32 %me, i32 14, i32 1)
+  ret i32 %me
+}
+
 define void @npkx_point(i32 %site) {
+entry:
+  %dying = load i32, ptr @npkx_dying
+  %d = icmp ne i32 %dying, 0
+  br i1 %d, label %ret, label %guard
+
+guard:
+  %me = call i32 @npkx_enter()
+  call void @npkx_point_body(i32 %site)
+  call void @npkx_st32(i32 %me, i32 14, i32 0)
+  br label %ret
+
+ret:
+  ret void
+}
+
+define internal void @npkx_point_body(i32 %site) {
 entry:
   %dying = load i32, ptr @npkx_dying
   %d = icmp ne i32 %dying, 0
@@ -1607,7 +1664,28 @@ ret:
   ret void
 }
 
+; a routed syscall, guarded as a point is (K-13); `exit_group` ends the
+; process and a dying shim passes everything through, so neither is marked
 define i64 @npkx_sys6(i64 %n, i64 %a, i64 %b, i64 %c, i64 %d, i64 %e, i64 %f) {
+entry:
+  %dying = load i32, ptr @npkx_dying
+  %dy = icmp ne i32 %dying, 0
+  %isexitgroup = icmp eq i64 %n, 231
+  %plain = or i1 %dy, %isexitgroup
+  br i1 %plain, label %unguarded, label %guard
+
+unguarded:
+  %r0 = call i64 @npkx_sys6_body(i64 %n, i64 %a, i64 %b, i64 %c, i64 %d, i64 %e, i64 %f)
+  ret i64 %r0
+
+guard:
+  %me = call i32 @npkx_enter()
+  %r1 = call i64 @npkx_sys6_body(i64 %n, i64 %a, i64 %b, i64 %c, i64 %d, i64 %e, i64 %f)
+  call void @npkx_st32(i32 %me, i32 14, i32 0)
+  ret i64 %r1
+}
+
+define internal i64 @npkx_sys6_body(i64 %n, i64 %a, i64 %b, i64 %c, i64 %d, i64 %e, i64 %f) {
 entry:
   %dying = load i32, ptr @npkx_dying
   %dy = icmp ne i32 %dying, 0

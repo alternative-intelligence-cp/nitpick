@@ -964,11 +964,11 @@ def main():
     real_cls = harness._floor_classes()
     counts = (len(real_fns), sum(1 for v in real_cls.values() if v == "asm"), sum(1 for v in real_cls.values() if v == "atomic"),
               sum(1 for v in real_cls.values() if v == "syscall"), sum(1 for v in real_cls.values() if v == "pure"))
-    okfp = counts == (181, 6, 41, 92, 42)
+    okfp = counts == (184, 6, 41, 94, 43)
     if not okfp:
         bad += 1
     print("  %-26s %-4s  %s" % ("floor-parse", "ok" if okfp else "BAD",
-                                "the committed floor parses to 181 defines: 6 asm, 41 atomic, 92 syscall, 42 pure"))
+                                "the committed floor parses to 184 defines: 6 asm, 41 atomic, 94 syscall, 43 pure"))
     if not okfp:
         print("      the floor parsed to %d defines: %d asm, %d atomic, %d syscall, %d pure" % counts)
 

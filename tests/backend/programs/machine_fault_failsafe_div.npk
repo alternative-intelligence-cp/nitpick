@@ -1,0 +1,38 @@
+// expect-exit: 70
+//
+// A FAULT INSIDE `failsafe` IS STILL CONTROLLED (D-307, D-291; 1.5.8 step 3).
+// A division by zero enters `failsafe`, and `failsafe` itself faults: `ud2`
+// in a `wildx` page. The fault is this thread's first signal, so it is
+// delivered whatever the action's flags say; the handler enters the route
+// again, and the holder's re-entry exits 70 -- the one uncatchable stop,
+// never a SIGILL. (`machine_fault_failsafe` is the case SA_NODEFER decides:
+// a fault first, then a second one inside the first one's `failsafe`.)
+mod:machine_fault_failsafe_div;
+
+func:main = int32(cstring[]:argv) {
+    int32:zero = (argv.len =>! int32) - 1i32;
+    int32:q = 10i32 / zero;                           // DivByZero: into failsafe
+    exit q;
+};
+
+func:failsafe = int32(Error:e) {
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
+    page[0i64] = 15u8;                                // ud2  =  0F 0B
+    page[1i64] = 11u8;
+    wildx_seal(page);
+    discard(wildx_call(page, 0i64));                  // faults: the re-entry exits 70
+    pick (e) {
+        (DivByZero)        { exit 41i32; },
+        (DivOverflow)      { exit 42i32; },
+        (MachineFault)     { exit 61i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

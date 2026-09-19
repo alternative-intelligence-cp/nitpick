@@ -1,0 +1,46 @@
+// expect-exit: 70
+//
+// A SECOND FAULT, INSIDE THE FIRST ONE'S `failsafe`, IS STILL CONTROLLED
+// (D-307, D-291; 1.5.8 step 3). `main` executes `ud2` from a `wildx` page:
+// SIGILL, delivered to `npk_fault_handler`, which enters the trap route and
+// never returns -- so `failsafe` runs INSIDE that handler. `failsafe` then
+// executes `ud2` itself. The fault actions say SA_NODEFER, so the second
+// SIGILL is delivered like the first, the handler enters the route again, and
+// the holder's re-entry exits 70. Without NODEFER the kernel finds SIGILL
+// blocked (a handler's own signal is blocked while it runs), resets it to its
+// default action and kills the process -- 132, with no `failsafe` -- which is
+// what this program measures, linked against a floor whose actions lack the
+// flag (the model's `no-nodefer` control, made real).
+mod:machine_fault_failsafe;
+
+// `ud2` in a fresh `wildx` page, called: the invalid-opcode fault
+func:fault_now = int64() never fails {
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
+    page[0i64] = 15u8;                                // ud2  =  0F 0B
+    page[1i64] = 11u8;
+    wildx_seal(page);
+    int64:r = wildx_call(page, 0i64);
+    wildx_free(page);
+    pass r;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:r = raw fault_now();                        // the first fault: into failsafe
+    exit (r =>! int32) + 1i32;
+};
+
+func:failsafe = int32(Error:e) {
+    discard(raw fault_now());                         // the second fault: the re-entry exits 70
+    pick (e) {
+        (MachineFault)     { exit 61i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

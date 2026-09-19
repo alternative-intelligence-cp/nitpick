@@ -62,6 +62,7 @@ struct slot {
     u64 exec;
     u32 waitval;
     u64 ctid;       /* the CHILD_CLEARTID word the kernel clears at the thread's exit (X-19) */
+    i32 in_shim;    /* 1.5.8 step 3, K-13: this thread is running the shim's own code */
 };
 
 static struct slot S[MAXT];
@@ -247,7 +248,20 @@ static void resched(i32 me) {
 static void settle_ended(void);
 static void run_pending(i32 me) {
     settle_ended();
-    if (S[me].pending_sig) { i32 sg = S[me].pending_sig; S[me].pending_sig = 0; S[me].state = RUNNING; if (sig_handler[sg]) sig_handler[sg](sg, 0, 0); }
+    /* the handler is the FLOOR's code: its points are entries, not a re-entry (K-13) */
+    if (S[me].pending_sig) { i32 sg = S[me].pending_sig; S[me].pending_sig = 0; S[me].state = RUNNING;
+                             if (sig_handler[sg]) { S[me].in_shim = 0; sig_handler[sg](sg, 0, 0); S[me].in_shim = 1; } }
+}
+
+/* THE SHIM IS NOT REENTRANT (1.5.8 step 3, K-13, amended into the reference the same day): a real fault is real under the
+   explorer, and the fault handler enters the explored trap route, whose steps call in here. A fault in program or floor
+   code arrives with the thread's mark down; one in the shim's own code finds it raised, and is the shim's defect. */
+static i32 shim_enter(void) {
+    if (!inited) init();
+    i32 me = self();
+    if (S[me].in_shim) die("SHIM FAULT (the shim entered from its own code: a fault inside the shim)");
+    S[me].in_shim = 1;
+    return me;
 }
 
 /* FAIRNESS: strict priorities starve everyone behind a thread that never blocks (a loop "until another thread
@@ -298,7 +312,15 @@ void npkx_chk_rq_push(u64 f) {
 
 void npkx_trap(void) { /* the trap route is explored like everything else (virtual signals) */ }
 
+static void point_body(i32 site);
 void npkx_point(i32 site) {
+    if (dying) return;
+    i32 me = shim_enter();
+    point_body(site);
+    S[me].in_shim = 0;
+}
+
+static void point_body(i32 site) {
     if (dying) return;
     if (!inited) init();
     i32 me = self();
@@ -361,7 +383,17 @@ static void real_exit_wait(u64 addr, u32 tid) {
     while (*(volatile u32 *)addr == tid) sc6(SYS_futex, (i64)addr, 0 /* WAIT, shared: the kernel's CLEARTID wake is */, (i64)tid, (i64)&ts, 0, 0);
 }
 
+static i64 sys6_body(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f);
+/* a routed syscall, guarded as a point is (K-13); exit_group ends the process and a dying shim passes everything through */
 i64 npkx_sys6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
+    if (dying || n == SYS_exit_group) return sys6_body(n, a, b, c, d, e, f);
+    i32 me = shim_enter();
+    i64 r = sys6_body(n, a, b, c, d, e, f);
+    S[me].in_shim = 0;
+    return r;
+}
+
+static i64 sys6_body(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
     if (dying) return sc6(n, a, b, c, d, e, f);
     if (!inited) init();
     if (n == SYS_exit_group) {

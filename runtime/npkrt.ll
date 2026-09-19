@@ -383,6 +383,8 @@ nosig:
   call void @npk_trap(i32 -4102)
   unreachable
 go:
+  ; THE LAST NET (D-307, 1.5.8 step 3): the four fault signals' actions
+  call void @npk_fault_arm()
   %spp = inttoptr i64 %sp to ptr
   %argc = load i64, ptr %spp
   %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
@@ -1901,6 +1903,81 @@ fail:
   unreachable
 ok:
   ret void
+}
+
+; THE LAST NET (D-307, 1.5.8 step 3): SIGSEGV (11), SIGBUS (7), SIGILL (4) and
+; SIGFPE (8) -- and SIGPIPE (13), below -- a fault the language could not
+; prevent: JIT code (`wildx`), a
+; floor defect, the hardware -- enter the trap route as `MachineFault`, on the
+; faulting thread's signal stack (registered by the thread itself, D-305 (4)).
+; SA_SIGINFO | SA_ONSTACK | SA_RESTORER | SA_NODEFER (0x4C000004): NODEFER so
+; that a fault INSIDE the route -- a `failsafe` that faults -- enters it again
+; and meets the holder's re-entry exit 70 (D-291). A fault signal the kernel
+; finds blocked is not queued: the kernel resets it to its default action and
+; kills the process, with no `failsafe` at all. A refusal here is a floor that
+; cannot catch a fault, which is not a floor: the integrity code.
+define internal void @npk_fault_arm() {
+entry:
+  %act = alloca [4 x i64], align 16
+  ; the stack rule (1.5.6b): the four words defined here, by stores
+  %h = ptrtoint ptr @npk_fault_handler to i64
+  %a0 = getelementptr [4 x i64], ptr %act, i64 0, i64 0
+  store i64 %h, ptr %a0
+  %a1 = getelementptr [4 x i64], ptr %act, i64 0, i64 1
+  store i64 1275068420, ptr %a1
+  %a2 = getelementptr [4 x i64], ptr %act, i64 0, i64 2
+  %rs = ptrtoint ptr @npk_sigreturn to i64
+  store i64 %rs, ptr %a2
+  %a3 = getelementptr [4 x i64], ptr %act, i64 0, i64 3
+  store i64 0, ptr %a3
+  %ap = ptrtoint ptr %act to i64
+  ; rt_sigaction(SIG, &act, NULL, 8), for each of the four
+  %r1 = call i64 @npk_sys6(i64 13, i64 11, i64 %ap, i64 0, i64 8, i64 0, i64 0)
+  %r2 = call i64 @npk_sys6(i64 13, i64 7, i64 %ap, i64 0, i64 8, i64 0, i64 0)
+  %r3 = call i64 @npk_sys6(i64 13, i64 4, i64 %ap, i64 0, i64 8, i64 0, i64 0)
+  %r4 = call i64 @npk_sys6(i64 13, i64 8, i64 %ap, i64 0, i64 8, i64 0, i64 0)
+  ; SIGPIPE (13; DEF-68, 1.5.8 step 3): a write to a pipe or socket whose reader
+  ; is gone raises it in the writer, and its default action KILLS the process
+  ; with no `failsafe` -- `prog | head` was enough. A handler that returns
+  ; turns it into the value it always was: the write answers EPIPE. A HANDLER,
+  ; not SIG_IGN: an ignored disposition survives execve into every child the
+  ; floor spawns, a caught one resets to the default. SA_RESTORER | SA_ONSTACK
+  ; | SA_RESTART (0x1C000000).
+  %hp = ptrtoint ptr @npk_pipe_handler to i64
+  store i64 %hp, ptr %a0
+  store i64 469762048, ptr %a1
+  %r5 = call i64 @npk_sys6(i64 13, i64 13, i64 %ap, i64 0, i64 8, i64 0, i64 0)
+  %o1 = or i64 %r1, %r2
+  %o2 = or i64 %r3, %r4
+  %o3 = or i64 %o1, %o2
+  %o = or i64 %o3, %r5
+  %bad = icmp ne i64 %o, 0
+  br i1 %bad, label %refused, label %ok
+refused:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+ok:
+  ret void
+}
+
+; SIGPIPE's handler (DEF-68): nothing to do -- the write that raised it
+; answers EPIPE, and the program handles the error as the value it is.
+define internal void @npk_pipe_handler(i32 %sig, ptr %info, ptr %uc) {
+entry:
+  ret void
+}
+
+; `MachineFault`'s landing (D-307): the kernel delivered a fault signal on
+; this thread's signal stack. The kernel's three arguments (the signal, the
+; siginfo, the context) are unread: the trap route's code is the same for
+; every fault, and no site names it (the fault is the machine's, not a source
+; construct's).
+define internal void @npk_fault_handler(i32 %sig, ptr %info, ptr %uc) noreturn {
+entry:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4120)
+  unreachable
 }
 
 ; `__morestack`'s landing (D-305): the stack is exhausted -- the trap route,

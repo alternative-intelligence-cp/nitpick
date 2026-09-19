@@ -71,6 +71,13 @@ jump. A directed site cannot reverse two arrivals at one place, and a hold does.
 between a trapper's frozen store and its claim, went stale as a kept seed when step 2 moved every schedule; it is
 now `frozen-traps.ctl`, held at the claim. The block is marked in `npkx.c`, and the sweep was re-run after it.
 
+**Amended a sixth time, at 1.5.8 step 3 (D-307, K-13).** A real machine fault is real under both shims (their
+`rt_sigaction` passes through as well as being remembered), and its handler enters the explored trap route, whose
+steps call in here. The shim is not reentrant, so `npkx_point` and `npkx_sys6` guard their bodies with a per-thread
+mark (`in_shim`): raised while the shim's own code runs, lowered around a virtual signal's handler. An entry that
+finds its own thread's mark raised is the verdict `SHIM FAULT` (exit 97), and `hashcmp.sh` reads that word too. The
+sweep after it: 40 of 40 explorable programs agree, `machine_fault_thread` the fortieth.
+
 **Running it by hand** (a measurement, never a verdict):
 
 ```

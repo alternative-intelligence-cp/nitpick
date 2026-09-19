@@ -1,0 +1,46 @@
+// expect-exit: 32
+//
+// A WRITE TO A PIPE WITH NO READER IS AN ERROR VALUE, NEVER A KILL (DEF-68,
+// 1.5.8 step 3). The kernel raises SIGPIPE in a thread that writes to a pipe
+// or socket whose read end is closed, and SIGPIPE's default action terminates
+// the process with no `failsafe` -- a Nitpick program whose output was piped
+// into `head` died that way (exit 141). The floor now catches SIGPIPE with a
+// handler that returns, so the write answers EPIPE and the program handles it
+// as the value it is. This program makes a pipe, closes the read end, and
+// writes: the write's answer is -32 (EPIPE), and the program exits 32.
+mod:sigpipe_epipe;
+error:EPipe;
+
+func:main = int32(cstring[]:_~argv) {
+    // pipe2(&fds, 0): the read end and the write end
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 0i64) ?! EPipe);
+    wild int32->:fdi = fds =>! wild int32->;
+    int64:rd = fdi[0i64] => int64;
+    int64:wr = fdi[1i64] => int64;
+    discard(sys(3i64, rd) ?! EPipe);                 // no reader is left
+    wild int8->:b = alloc(16i64);
+    b[0i64] = 120i8;
+    int64:w = sys(1i64, wr, b, 1i64) ?| (0i64 - 1i64);
+    if (w >= 0i64) { exit 1i32; }                    // a write with no reader cannot succeed
+    // `?|` gave -1 for the error; the errno itself, through the long form
+    Result<int64>:r = sys(1i64, wr, b, 1i64);
+    if (!r.is_error) { exit 2i32; }
+    exit 32i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EPipe)            { exit 90i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};

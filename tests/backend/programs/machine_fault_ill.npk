@@ -1,0 +1,33 @@
+// expect-exit: 61
+//
+// SIGILL TAKES THE SAME ROUTE (D-307, 1.5.8 step 3): `ud2` written into a
+// `wildx` page and called -- the invalid-opcode fault a JIT's own bug would
+// raise -- is delivered to `npk_fault_handler` and becomes `MachineFault`.
+mod:machine_fault_ill;
+
+func:main = int32(cstring[]:_~argv) {
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
+    // ud2  =  0F 0B
+    page[0i64] = 15u8;
+    page[1i64] = 11u8;
+    wildx_seal(page);
+    int64:r = wildx_call(page, 0i64);
+    wildx_free(page);
+    exit (r =>! int32) + 1i32;                        // never reached
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (MachineFault)     { exit 61i32; },
+        (DeadlineExceeded) { exit 91i32; },
+        (HeapBadRequest)   { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 99i32;
+};
