@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has TWO subcycles left — 1.5.7 (the schedule-exploration harness) and 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.6c have landed, the floor itself is specified, modelled, its models read twice and its spec's caller assumptions written down, and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has ONE subcycle left — 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.7 have landed, the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -1199,8 +1199,16 @@ file in both runners, B the file's rows the committed manifest records `budget`
 where it was 250, and nothing else moved.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): TWO subcycles.** **1.5.7 (D-212's schedule-exploration harness) IS
-UNDERWAY** — planned and measured by s7 with a throw-away prototype, approved
+throughout): ONE subcycle, 1.5.8, since 1.5.7's close (2026-09-18).**
+**1.5.7 (D-212's schedule-exploration harness) IS COMPLETE (2026-09-18;
+`meta/roadmap/1.5/1.5.7.md`; eight landings, steps 0–7, each a cumulative
+prefix under a full harness, D-228; seats s8 then s10)**: the REAL floor and
+each concurrency test's own IR transformed, every synchronization step a
+point of a seeded PCT schedule, the blocking syscalls virtual, quiescence
+oracles, the spec's caller hypotheses executed, fourteen negative controls,
+and the explorer's first floor find, DEF-57 (VERIFICATION_REFERENCE §10 is
+the whole of it; TCB.md §5's seventeenth acceptance says what it does not
+cover). The record, step by step: planned and measured by s7 with a throw-away prototype, approved
 by the user 2026-09-17 in one sentence (S-77…S-83 → D-297…D-303), and its
 **step 0 LANDED 2026-09-18** (`meta/roadmap/1.5/1.5.7.md`): the ONE
 transformer (`npkg/explore.npk`; `tools/explored.npk` is the harness's
@@ -1295,7 +1303,12 @@ in seven programs that had run as real syscalls with no point before them.
 over `wild` storage, and the PROGRAM control `atomic-lost-update.ctl`
 (`program-old:`/`program-new:` pairs over the named program's SOURCE) splits
 its `fetch_add` into a `load` and a `store`. Found at seed 1 (55 of 100);
-without the program's points, 0 of 100. Step 7: the docs and the close. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+without the program's points, 0 of 100. **Step 7 LANDED 2026-09-18: the docs and the
+close** — VERIFICATION_REFERENCE §10 (the explorer, whole), TCB.md (the explorer
+among the standing instruments; §5's thirteenth and sixteenth acceptances
+narrowed by dated notes; a seventeenth for what it does not cover: weak memory,
+real-child programs, the trampoline, schedules beyond the seeds, liveness), the
+landing notes of D-212 and D-298…D-303, E-3's instrument half closed. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving
@@ -1828,6 +1841,33 @@ that carried them retired at the cycle close):
   at a third of its 610 s; a red on the net names the net and is READ, not
   re-run — the solver wedged (S-71's class) or the file is one the manifest
   does not justify.
+
+- **A concurrency test is EXPLORED as well as stressed** (D-299, 1.5.7): every
+  `// stress:` program says `// explore: N` or `// explore: no <reason>`
+  (`explore-unmarked` otherwise), and a seed that once failed is kept as
+  `// explore-seed: S`, run first forever. An explored failure prints its
+  replay line; run it by hand under a BARE environment (`env -i NPKX_SEED=…
+  NPKX_K=… NPKX_D=… NPKX_TRACE=1 ./prog < /dev/null` — the shim reads
+  /proc/self/environ, first match wins), and `NPKX_TRACE=2` prints every step
+  as `thread site` for diffing two schedules. After ANY change to the floor,
+  the shim or the transformer, run D-303's alternating sweep
+  (`meta/roadmap/1.5/tools/explore_prototype/hashcmp.sh`, the harness-built
+  tool in OUT): it found X-13 and X-19, where the replay belt could not.
+- **A control proves sight of its OWN defect only when the schedule that finds
+  it goes through that defect** (DEF-57, 1.5.7 step 4): two directed controls
+  had reached their verdicts through DEF-57's window, and went blind when it
+  was fixed. Read a control's ROUTE, not only its verdict. A directed site
+  cannot reorder two arrivals at ONE place: the later arrival is demoted below
+  the earlier.
+- **An executor that sees `@npk_frozen` is watching a trap, not making one**
+  (DEF-57): it parks, as D-291's losers do, and only the failsafe holder
+  re-enters (exit 70). Only a real fault may enter `npk_trap`; a watcher that
+  did could win the holder, and `failsafe` then ran with the wrong error.
+- **An `atomic<T>` cannot cross a spawn** (D-180 sanctions the locks and
+  `shared_arena` only): threads share an atomic through `wild` storage and
+  `atomic_from_ptr` (the Bridge's shape; `atomic_threads.npk`). A program's
+  own atomic and `sys` steps are points of the explored schedule since 1.5.7
+  step 6, their sites numbered from 1,000,000.
 
 ### Reserved words that read like ordinary names
 

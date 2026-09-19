@@ -14953,6 +14953,21 @@ of any discovered schedule. Complements — never replaces — `// stress:`
 channel), never the whole executor; BPOR-style preemption bounds if a
 model spins.
 
+> **LANDED at 1.5.7 (2026-09-18), steps 0–7** (`meta/roadmap/1.5/1.5.7.md`;
+> VERIFICATION_REFERENCE §10). The "mocked-primitive build" is realized as
+> the REAL floor transformed (X-1: a mock would explore the mock), with every
+> atomic step and syscall a scheduling point and only what blocks virtualized
+> by a hand-written IR shim (D-298): futex, epoll (the reactor, synthetic
+> readiness by a zero-timeout poll), the clock, signals and the address
+> space. The scheduler is PCT with ordered bands and a jittered fairness
+> bound, every schedule replays from its seed, quiescence oracles see a lost
+> wakeup (D-301), the spec's caller hypotheses are executed (D-302), each
+> program's own IR is transformed too (step 6), and the models' controls were
+> walked against the floor. It complements `// stress:` (D-299 holds every
+> stress program to a marker). Its first floor find was DEF-57 (step 4): a
+> failsafe that could run with the wrong error, in a two-instruction window
+> forty stress runs never reached.
+
 ## D-213 — the file-safety riders in `lib/nfs.npk` — **SETTLED (coverage-audit batch, user-ratified)**
 
 Closes G-2/G-3/G-4 as riders on D-206's 1.4.8: **path containment** —
@@ -18955,6 +18970,15 @@ decision), and D-212's evidence would wait on a change nobody wants.
 
 > Lands across **1.5.7** (`meta/roadmap/1.5/1.5.7.md`): the transformer and
 > its totality belt at step 0, the shim at step 1.
+>
+> **LANDED across 1.5.7 (2026-09-18).** The transformer and its belt at step
+> 0, the shim at step 1, virtual signals at step 2, the oracles at step 3,
+> three amendments at step 4 (X-14, X-15, X-16), the settled end at step 5
+> (X-19), and the program mode at step 6 (X-20: each unit's own IR through the
+> same transformer). The explorer itself moved no floor byte. The floor's bytes
+> moved once during 1.5.7, by the fix of DEF-57, a floor defect the explorer
+> FOUND (step 4), which is the "floor's bytes do not move" above read
+> correctly: the instrument never needed a floor change.
 
 ## D-299 — A concurrency test says whether it is explored: `// explore: N` or `// explore: no <reason>`, and a belt holds every `// stress:` program to one or the other — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-79)**
 
@@ -18977,6 +19001,12 @@ the other's removal.
 
 > Lands at **1.5.7** step 1 (the markers on every `// stress:` program, the
 > belt, the `explore` stage in `nitpick.toml`'s `[[test]]` table, D-238).
+>
+> **LANDED at 1.5.7 step 1 (2026-09-18)**, the belt `explore-unmarked` in both
+> runners. At the close: 39 programs `// explore: N`, 10 `// explore: no
+> <reason>` (nine with real child processes, and `driver_spawn_fail`, which
+> forks one); `trap_one_failsafe` also keeps `// explore-seed: 371`, DEF-57's
+> schedule (X-11).
 
 ## D-300 — 1,000 seeds per explored unit per run — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-80)**
 
@@ -18994,6 +19024,9 @@ pressure); coverage of the interleavings stress never reaches is. A unit's
 marker may say more; none says fewer without a reason beside it.
 
 > Lands at **1.5.7** step 1.
+>
+> **LANDED at 1.5.7 step 1 (2026-09-18).** Every explored unit runs 1,000
+> seeds per run, its first seed replayed to the same schedule hash (X-7).
 
 ## D-301 — `LOST-WAKE` and `LOST-FUTEX-WAKE` are red runs even when the exit code is right — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-81)**
 
@@ -19021,6 +19054,12 @@ without failing — declined: a report nobody must read is the lateness
 itself, invisible again.
 
 > Lands at **1.5.7** step 3 (the oracles and the control mechanism).
+>
+> **LANDED at 1.5.7 step 3 (2026-09-18).** `LOST-WAKE` and `LOST-FUTEX-WAKE`
+> are red in every explored run, and their offsets are held to the floor's
+> types (`explore-oracle-offsets`). At step 4 the lateness verdict `late N`
+> joined the controls for a mark that is overwritten rather than left unread,
+> which no stamp oracle can see (X-17).
 
 ## D-302 — The floor spec's caller hypotheses are EXECUTED at every call of every explored schedule, inside 1.5.7 — **SETTLED (user decision, 2026-09-17: "so, I think i am good with all your recommendations"; S-82)**
 
@@ -19052,6 +19091,13 @@ subcycle after it: it is where 1.5.6c's sixteenth acceptance gets its test,
 for untranslated floor callers and emitted code alike.
 
 > Lands at **1.5.7** step 5.
+>
+> **LANDED at 1.5.7 step 5 (2026-09-18).** One generated entry checker per
+> section: 236 of 240 hypotheses checked at every call of every explored
+> schedule, and 4 LISTED by name (each names a free symbol `j`). The spec
+> control `unconditional-apartness` finds 1.5.6's false clause on
+> `drop_string`'s 27th step. TCB.md §5's sixteenth acceptance is narrowed to
+> the four and to what the explorer does not run (the seventeenth).
 
 ## D-303 — The planning prototype's C shim stays in the tree OUTSIDE every gate, as the IR shim's behavioural reference — **SETTLED (user decision, 2026-09-17, on his stated condition: "The only thing i'm not positive about is the C shim you mentioned. What exactly is it's purpose? If it's just an extra layer of verification for us that doesn't get shipped then i don't see a problem with it."; S-83)**
 
@@ -19086,3 +19132,12 @@ not that it schedules as the measured design did.
 > README; nothing under `src/`, `runtime/`, `lib/`, `npkg/` or `tools/`
 > references the directory, and the one transformer (`npkg/explore.npk`)
 > reproduces `transform.py`'s 141 sites number for number over the floor.
+>
+> **THE REFERENCE HELD THROUGH 1.5.7 (2026-09-18).** Hash for hash with the IR
+> shim after every step that touched either shim or the transformer: 30 of 30
+> signal-free programs at step 1, 34 of 34 with virtual signals at step 2, 38 of
+> 38 after step 4's three amendments, 38 of 38 after step 5's settled end, and
+> 39 of 39 after step 6, which transforms each program's own IR for both shims
+> through the harness-built tool. The alternating sweep, not the replay belt,
+> found X-13 and X-19: that is the reference's value. `driver_spawn_fail` forks
+> a real child and is the stated exception.

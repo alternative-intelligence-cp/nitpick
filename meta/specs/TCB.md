@@ -39,7 +39,12 @@ build too.
 The harness's standing instruments are TESTS on the boundaries the legs do
 not prove: the `selfhost` fixpoint, the `repro` reproducibility legs, the
 opt-O2 re-run of every program, the `absent-fact` flip, the parity of two
-runners, the `undef` ban.
+runners, the `undef` ban -- and, since 1.5.7, the SCHEDULE EXPLORER
+(VERIFICATION_REFERENCE §10): the real floor and each program's own IR,
+transformed, run under a seeded scheduler that chooses every interleaving,
+1,000 seeds per concurrency test, with quiescence oracles that see a lost
+wakeup an exit code cannot, and the spec's caller hypotheses executed at every
+call. Its first floor find was DEF-57.
 
 ## 3. Trusted components, enumerated
 
@@ -619,7 +624,14 @@ Listed, not checked -- a clause the entry checker cannot evaluate over the entry
     and syscall is NAMED by some step, not that a step means what its block
     does -- 1.5.6b step 2 found a deviation, a missing step and a gap by
     reading one model against its code; 1.5.7's explorer drives the real
-    blocks); that the controls, each of which removes a guarding step and
+    blocks -- *[2026-09-18, 1.5.7: it does. Every atomic step and syscall of
+    the floor is a scheduling point of every explored schedule, and the
+    nineteen model controls were walked against the floor itself, eleven
+    becoming explorer controls. It also found where a model said too little:
+    `trap-route` had no error code, so DEF-57 -- a failsafe running with the
+    wrong error -- satisfied every predicate it had. The model now carries the
+    codes, and the correspondence of a step's MEANING to its block is still
+    not proven, only exercised]*); that the controls, each of which removes a guarding step and
     must reach its bad state within the bounds, show the predicates are not
     vacuous; and that LIVENESS is not claimed at all -- that a due task is
     eventually run, and that the shared arena's walker stops spinning, need
@@ -659,6 +671,29 @@ Listed, not checked -- a clause the entry checker cannot evaluate over the entry
     was on. They were found by reading. What would TEST the rest rather than
     argue it is 1.5.7's explorer carrying these invariants as executable
     assertions in its floor; until it does, this item is what a reader accepts.
+    *[2026-09-18, 1.5.7 step 5 (D-302): it does, for 236 of the 240: each
+    section's hypotheses are an entry checker the explored floor calls at
+    every call of every explored schedule, and a false one is the verdict
+    `ASSUMPTION` (the spec control `unconditional-apartness` plants 1.5.6's
+    false clause back and is found on `drop_string`'s 27th step). What a
+    reader still accepts: the four hypotheses the checkers LIST by name (§4d;
+    each names a free symbol), and every caller in a schedule or a program the
+    explorer does not run (item 17).]*
+
+17. That what the schedule explorer ran is what was tested, and nothing
+    more (1.5.7; VERIFICATION_REFERENCE §10). WEAK MEMORY is not explored:
+    the baton serializes, so every atomic step runs as sequentially
+    consistent, and an ordering bug in a release/acquire pair is invisible
+    to it (D-290's shared-state belt and the models are what speak to that;
+    `// stress:` runs weak memory on real cores and catches what it catches).
+    Programs with REAL CHILD PROCESSES are not explored (a virtual clock
+    cannot share a child's real time): each says `// explore: no <reason>`,
+    a belt holds every `// stress:` program to a marker, and the stage prints
+    the list with the reasons on every run -- ten at 1.5.7's close. The clone
+    trampoline and the asm bottom run, but are not points. SCHEDULES BEYOND
+    THE SEEDS are not claimed: PCT's guarantee is a probability per run,
+    1/(n·k^(d−1)) for a depth-d bug, printed per unit, never a proof. And
+    LIVENESS is not claimed here either.
 
 Nothing else is trusted. In particular nothing in `src/`, `lib/` or the prelude
 is exempt from the checks that bind a user program (D-205's switch put the

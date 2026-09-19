@@ -1738,3 +1738,138 @@ Expressions are validated whole and up front, in one order in both twins (an
 evaluation short-circuits; a validation does not), and every arithmetic operand
 is held under 2^31 in magnitude so that the Nitpick twin's plain integers, which
 trap on overflow, and Python's, which do not, cannot disagree.
+
+## 10. The schedule explorer (D-212, D-298…D-303; landed 1.5.7, 2026-09-18)
+
+A proof decides what a model says, and a protocol model says what its author
+wrote (§9.4). A stress run executes the real code, but under the kernel's
+scheduler, which reaches a narrow interleaving by luck: `// stress: 40` ran
+`trap_one_failsafe` forty times and never reached the two-instruction window of
+DEF-57. The explorer runs the REAL code under a scheduler that CHOOSES the
+interleaving, one synchronization step at a time, from a seed, so every
+schedule it tries can be replayed exactly. It complements `// stress:` and
+never replaces it (X-12): stress runs real time, the real kernel scheduler and
+weak memory on real cores, and the explorer runs the interleavings stress
+never reaches.
+
+**The explored build is the real one, transformed (X-1, X-9, X-20).** One
+transformer (`npkg/explore.npk`, built into `tools/explored.npk` for the
+harness and linked into `npkg`) rewrites text: a `call void @npkx_point(i32
+SITE)` before every atomic step line (`atomicrmw`, `cmpxchg`, `fence`, `load
+atomic`, `store atomic`, the models' census, §9.4), every `@npk_sys6(` call
+routed to `@npkx_sys6(`, the thread lifecycle hooked around the clone and
+inside `@npk_thread_entry`, and every other line byte for byte. It rewrites the
+FLOOR once per run (142 step lines at 1.5.7's close: 79 atomic, 63 syscalls)
+and every explored unit's OWN IR (the program mode, step 6), because
+`atomic<T>` and `atomic_from_ptr` lower inline and the `sys` builtin calls the
+trampoline from the program. A program's sites are numbered from 1,000,000,
+beyond the floor's and beyond a syscall's identity (`n | 2^31`), so one
+schedule hash reads both modules without ambiguity. The shim's module is
+never transformed. THE TOTALITY BELT, in both runners: the step lines of the
+source equal the points plus the routed calls of the output, and every atomic
+step of the output has its point immediately before it
+(`explore-step-escapes`, by name, for the floor and for each program). It is
+the second reader of the transform, and a count.
+
+**The shim is hand-written IR (D-298; `runtime/explore/npkx.ll`), linked into
+explored test binaries only, under the floor's own belts.** One thread holds the
+BATON, and every other sits in a real private futex wait on its slot's grant
+word. What would block is virtual. A futex WAIT blocks virtually while the word
+holds the expected value, a WAKE releases the longest-blocked first, and a wait
+whose absolute deadline has already passed returns `ETIMEDOUT` at once, as the
+kernel does (X-14). `epoll_pwait` is a real poll with a zero timeout under the
+baton, re-probed only after another thread has stepped. `clock_gettime` is a
+virtual clock: +1 µs per read, and a jump to the earliest deadline when nobody
+can step. Signals are virtual (step 2): `rt_sigaction` is remembered, `tgkill`
+marks the target and makes a blocked one runnable, and the handler runs in the
+target's own context at its next grant, so the trap route's stop walk is
+explored like anything else. The address space is virtual (X-13): an anonymous
+private mapping with no hint is placed at a 64 KiB-aligned bump pointer with
+`MAP_FIXED_NOREPLACE`, because the floor's chunk trim made a step count depend
+on an ADDRESS. A thread's end is settled before anyone else steps (X-19): the
+kernel's clear of the `CHILD_CLEARTID` word is waited for, because the joiner
+reads that word. Everything else is the real syscall, after a point.
+
+**The scheduler is PCT with a fairness rule.** A seed-0, depth-1 run measures
+the schedule's length k. Each seeded run then assigns random priorities and
+d − 1 change points (d = 3 unless `// explore: N d=D` says otherwise), and
+always runs the highest-priority thread that can step. The bands are ORDERED:
+initial above change-point above demotion, each demotion below every earlier
+one. A thread that has run 4,096 consecutive steps while another could step is
+demoted, the bound jittered by 0 to 63 steps from the seed's own stream (X-16:
+a fixed bound resonated with a periodic thread). PCT's guarantee is a
+probability per run, 1/(n·k^(d−1)) for a depth-d bug in a program of n threads,
+and the stage prints it per unit from the measured n and k. The same seed gives
+the same schedule: the stage runs a unit's first seed twice and requires one
+schedule hash (`explore-replay-differs`, X-7). D-303's alternating sweep is the
+stronger test of determinism, since it found X-13 and X-19 where the replay belt
+could not.
+
+**The verdicts (D-301, D-302).** A run is red when the program's exit is not its
+`expect-exit:`, and when the shim reports `DEADLOCK` (nobody can step and no
+deadline is pending), `STEP BUDGET`, `MMAP`, `LOST-FUTEX-WAKE` (at quiescence, a
+virtual waiter's word no longer holds the value it waited on), `LOST-WAKE` (at
+quiescence, a blocked thread's executor holds a frame stamped due) or
+`ASSUMPTION <symbol>: <clause>`. The last is a caller hypothesis of the floor's
+spec found false at a call: the transformer writes one ENTRY CHECKER per section
+of `runtime/npkrt.spec` that has rows and a `requires`/`objects`/`views` clause,
+and 236 of the 240 hypotheses are evaluated at every call of every explored
+schedule; the 4 that name a free symbol are listed by name (TCB.md §4d). The
+two quiescence oracles are red even when the exit code is right, because every
+wait in this runtime has a deadline (D-071): a lost wakeup degrades to
+LATENESS, which an exit code cannot see and virtual time hides completely.
+
+**The units (D-299, D-300, X-11).** Every `// stress:` program says
+`// explore: N` (1,000 seeds per run) or `// explore: no <reason>`, and a
+program that says neither is `explore-unmarked`, red by name. A seed that once
+found a defect is kept as `// explore-seed: S` and runs first, forever:
+`trap_one_failsafe` keeps 371, DEF-57's schedule. At 1.5.7's close, 39 programs
+are explored and 10 are marked `no`: nine spawn real child processes (a virtual
+clock cannot share a real child's real time), and `driver_spawn_fail` forks one.
+
+**The negative controls (X-10, X-15, X-17, X-18, X-21; `runtime/explore/controls/`).**
+An instrument that claims to find a defect proves nothing until it is shown
+finding one. A control plants a defect by exact text substitution, and each
+`old` block must occur exactly once. It can plant in the floor (`old:`/`new:`),
+in the spec (`spec-old:`/`spec-new:`: a false caller hypothesis, verdict
+`ASSUMPTION`) or in the named program's source (`program-old:`/`program-new:`).
+It names the verdict the explorer must reach within N seeds: a word of the
+shim, `wrong-exit`, `exit N`, or `late N` (the virtual run time at exit, the
+lens for a mark that was overwritten rather than left unread). A DIRECTED
+control names up to four atomic sites at which each arriving thread is demoted
+below every other: a change point at a place, for a window one step wide that
+blind PCT cannot land on. A directed site cannot REORDER two arrivals at the
+same place, since the later one is demoted below the earlier. A control the
+explorer never reaches is `explore-control-blind`, red by name, the models'
+rule (§9.4) applied to the explorer. There are fourteen at 1.5.7's close. The
+nineteen controls of the models were walked at step 4 and measured against the
+floor: eleven became `.ctl`s, five were found not to be floor bugs, one is not
+observable and two are not explorable, each with its measurement in the
+directory's README (DEF-57 then added two controls to `trap-route` for the error code the model had lacked; both are the model's). The lesson of DEF-57 is the instrument's own: two of those
+directed controls had reached their verdicts THROUGH DEF-57's window, not through
+the defect they planted. A control proves sight of its OWN defect only when the
+schedule that finds it goes through that defect.
+
+**The reference (D-303).** The planning prototype's C shim is kept outside
+every gate, under `meta/roadmap/1.5/tools/explore_prototype/`, as the IR shim's
+behavioural reference. `hashcmp.sh` runs both shims alternately on every
+explorable program and requires the same exit, step count, schedule hash and
+verdict word per seed. At 1.5.7's close all 39 agree on 20 seeds each;
+`driver_spawn_fail` is the real-child exception.
+
+**What it found.** The explorer's first floor defect was DEF-57, at step 4:
+`npk_step`'s `frozen:` block answered the trap flag by trapping `Unreachable`
+itself, and could win the failsafe holder in the window between a trapper's
+frozen store and its claim, so `failsafe` ran with the wrong error. The
+`trap-route` model had no error code and could not see it. The instrument's
+own defects found on the way were X-13, X-14, X-16 and X-19, each fixed in both
+shims.
+
+**What it does not claim.** WEAK MEMORY: the baton serializes, so every atomic
+is explored as sequentially consistent, and an ordering bug in a
+release/acquire pair is invisible here; D-290's shared-state belt and the
+models speak to it. Programs with REAL CHILD PROCESSES: the ten `explore: no`
+programs, each with its reason, printed by the stage on every run. The clone
+trampoline and the asm bottom. Schedules beyond the seeds: PCT's per-run
+bound is a probability, not a proof. LIVENESS: that a due task eventually runs
+is not claimed. TCB.md §5 carries these as acceptances.
