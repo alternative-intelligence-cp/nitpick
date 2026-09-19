@@ -3905,13 +3905,16 @@ _NPKX_STEPS = re.compile(r"^npkx: .*\bseed=\d+ steps=(\d+)", re.M)
 _NPKX_TRACE = re.compile(r"^npkx: +seed=(\d+) steps=(\d+) hash=(\d+)(?: vnow=(\d+))?(?: vrun=(\d+))?(?: threads=(\d+))?", re.M)
 
 
-def explored_env(seed, k, depth, preempt=()):
+def explored_env(seed, k, depth, preempt=(), hold=()):
     """The explored binary's WHOLE environment: the shim reads it from
     /proc/self/environ, first match wins, so nothing of ours rides along.
-    `preempt` are a directed control's site numbers (X-15), NPKX_PREEMPT1..4."""
+    `preempt` are a directed control's site numbers (X-15), NPKX_PREEMPT1..4;
+    `hold` a held control's (1.5.8 step 2c), NPKX_HOLD1..4."""
     env = {"NPKX_SEED": str(seed), "NPKX_K": str(k), "NPKX_D": str(depth), "NPKX_TRACE": "1"}
     for i, site in enumerate(preempt):
         env["NPKX_PREEMPT%d" % (i + 1)] = str(site)
+    for i, site in enumerate(hold):
+        env["NPKX_HOLD%d" % (i + 1)] = str(site)
     return env
 
 
@@ -4119,7 +4122,10 @@ def run_explore_control(tmp, path, name, shim_o):
     if fails:
         return fails, 0
     with open(os.path.join(cdir, "sites.txt"), encoding="utf-8") as fh:
-        preempt, fails = explore.resolve_sites(ctl, fh.read(), name)
+        sites_text = fh.read()
+    preempt, fails = explore.resolve_sites(ctl, sites_text, name)
+    hold, fails2 = explore.resolve_sites(ctl, sites_text, name, "hold-at")
+    fails += fails2
     if fails:
         return fails, 0
     cfloor_o = os.path.join(cdir, "npkrt.explore.o")
@@ -4155,7 +4161,7 @@ def run_explore_control(tmp, path, name, shim_o):
     # counted, but its line carries the steps too (`npkx: WORD (...) seed=0 steps=N`): the planted defect
     # may fire on the unperturbed schedule, and the measurement is the steps it took to get there.
     try:
-        r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(0, 2000, 1, preempt))
+        r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(0, 2000, 1, preempt, hold))
     except subprocess.TimeoutExpired:
         return ["%s: the measuring run (seed 0) hung" % name], 0
     tm = _NPKX_STEPS.search(r.stderr.decode("utf-8", "replace"))
@@ -4165,7 +4171,7 @@ def run_explore_control(tmp, path, name, shim_o):
     seen = []
     for seed in range(1, ctl["within"] + 1):
         try:
-            r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(seed, k, 3, preempt))
+            r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(seed, k, 3, preempt, hold))
         except subprocess.TimeoutExpired:
             seen.append("seed %d: hung" % seed)
             continue
@@ -4177,9 +4183,10 @@ def run_explore_control(tmp, path, name, shim_o):
         if explore.control_verdict_met(ctl, exp, r.returncode, word, vrun):
             return [], seed
         seen.append("seed %d: %s" % (seed, word or "exit %d, vrun %d" % (r.returncode, vrun)))
-    return ["%s: explore-control-blind: the explorer did not reach %s within %d seed(s) of the planted defect (k %d%s; %s) -- an instrument "
+    return ["%s: explore-control-blind: the explorer did not reach %s within %d seed(s) of the planted defect (k %d%s%s; %s) -- an instrument "
             "blind to what it claims to see" % (name, ctl["verdict"], ctl["within"], k,
-                                                 ", directed at %s" % ",".join(str(s) for s in preempt) if preempt else "", ", ".join(seen[:6]))], 0
+                                                 ", directed at %s" % ",".join(str(s) for s in preempt) if preempt else "",
+                                                 ", held at %s" % ",".join(str(s) for s in hold) if hold else "", ", ".join(seen[:6]))], 0
 
 
 def floor_controls(fdir):

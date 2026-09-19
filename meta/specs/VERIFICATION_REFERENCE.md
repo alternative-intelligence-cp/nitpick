@@ -1840,7 +1840,14 @@ LATENESS, which an exit code cannot see and virtual time hides completely.
 `// explore: N` (1,000 seeds per run) or `// explore: no <reason>`, and a
 program that says neither is `explore-unmarked`, red by name. A seed that once
 found a defect is kept as `// explore-seed: S` and runs first, forever:
-`trap_one_failsafe` keeps 371, DEF-57's schedule. At 1.5.7's close, 39 programs
+`trap_one_failsafe` keeps 371, DEF-57's schedule. *[1.5.8 step 2c (DEF-67): a
+kept seed is a SCHEDULE only until a step is added before its window. Seed 371
+stopped being DEF-57's schedule when 1.5.8 step 2 gave each thread one more
+routed step, and no run could notice, because a kept seed is replayed on the
+fixed floor and never checked to still reach anything. A kept seed now claims
+nothing. A window a seed once reached is held by a control that plants the
+defect and is decided on every run; DEF-57's is `frozen-traps.ctl`, a HELD
+control (below).]* At 1.5.7's close, 39 programs
 are explored and 10 are marked `no`: nine spawn real child processes (a virtual
 clock cannot share a real child's real time), and `driver_spawn_fail` forks one.
 
@@ -1856,7 +1863,16 @@ lens for a mark that was overwritten rather than left unread). A DIRECTED
 control names up to four atomic sites at which each arriving thread is demoted
 below every other: a change point at a place, for a window one step wide that
 blind PCT cannot land on. A directed site cannot REORDER two arrivals at the
-same place, since the later one is demoted below the earlier. A control the
+same place, since the later one is demoted below the earlier. A HELD control
+(1.5.8 step 2c; DEF-67) can. It names up to four atomic sites (`hold-at:`,
+`NPKX_HOLD1..4`). The FIRST thread to arrive at one is held and not scheduled
+until another thread arrives at the same site; that thread PASSES, keeping the
+baton through the site's instruction, and only then may the held one run. A
+held thread is also released when nothing else can step, before virtual time
+may jump, so a hold never deadlocks a program that would not deadlock without
+it. DEF-57's window — one point between a trapper's frozen store and its claim,
+with both parties' next step the same claim — is `frozen-traps.ctl`, held at
+the claim. A control the
 explorer never reaches is `explore-control-blind`, red by name, the models'
 rule (§9.4) applied to the explorer. There are fourteen at 1.5.7's close. The
 nineteen controls of the models were walked at step 4 and measured against the

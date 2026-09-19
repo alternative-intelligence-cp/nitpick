@@ -818,6 +818,26 @@ def main():
     print("  %-26s %-4s  %s" % ("explore-control-sites", "ok" if okc7 else "BAD", "a directed site resolves to one atomic row of sites.txt, or is refused by name"))
     if not okc7:
         print("      got %r %r %r" % (xc_dnums, xc_dfails, xc_bad2))
+    # THE HELD SITES (1.5.8 step 2c; DEF-67), the same way: a `hold-at:` naming one atomic row
+    # resolves to its number beside a `preempt-at:` naming another; one naming a `sys6` row is
+    # refused by name, naming the directive; a fifth `hold-at:` is refused by the grammar.
+    # `npkg/selfcheck.npk` carries the same case over the same texts.
+    xc_hctl, xc_hwhy = explore.read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %v = load atomic i32\n"
+                                           "hold-at: @npk_lock %c = cmpxchg\nold:\n  a\nnew:\n  b\n", "planted")
+    xc_hnums, xc_hfails = explore.resolve_sites(xc_hctl, xp_sites, "planted", "hold-at") if xc_hctl else ([], [xc_hwhy])
+    xc_hpre, _ = explore.resolve_sites(xc_hctl, xp_sites, "planted") if xc_hctl else ([], [])
+    xc_hkind = explore.resolve_sites(explore.read_control("program: p\nverdict: D\nwithin: 1\nhold-at: @npk_lock %s = call i64 @npk_sys6\n"
+                                                          "old:\n  a\nnew:\n  b\n", "planted")[0], xp_sites, "planted", "hold-at")[1]
+    xc_hfive = explore.read_control("program: p\nverdict: D\nwithin: 1\n" + "hold-at: @npk_lock %c = cmpxchg\n" * 5
+                                    + "old:\n  a\nnew:\n  b\n", "planted")
+    okc8 = (xc_hnums == [0] and not xc_hfails and xc_hpre == [1]
+            and len(xc_hkind) == 1 and "explore-control-site-kind" in xc_hkind[0] and "`hold-at:" in xc_hkind[0]
+            and xc_hfive[0] is None and "at most four `hold-at:`" in xc_hfive[1])
+    if not okc8:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-holds", "ok" if okc8 else "BAD", "a held site resolves to one atomic row, or is refused by name; five are refused"))
+    if not okc8:
+        print("      got %r %r %r %r %r" % (xc_hnums, xc_hfails, xc_hpre, xc_hkind, xc_hfive))
     if xtool and os.path.exists(str(xtool)) and harness.COMPILER and os.path.exists(str(harness.COMPILER)):
         xc_shim_o = os.path.join(tmp, "npkx_selfcheck.o")
         r = subprocess.run(["llc"] + harness.LLC_FLAGS + [os.path.join(ROOT, "runtime", "explore", "npkx.ll"), "-o", xc_shim_o], capture_output=True, text=True)

@@ -44,7 +44,7 @@ static inline i64 sc6(i64 n, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
 #define SYS_munmap 11
 
 #define MAXT 64
-enum { FREE = 0, RUNNING, READY, B_FUTEX, B_EPOLL, ENDED };
+enum { FREE = 0, RUNNING, READY, B_FUTEX, B_EPOLL, ENDED, HELD };   /* HELD: 1.5.8 step 2c */
 enum { R_NONE = 0, R_WOKEN, R_TIMEOUT, R_EXITWAIT, R_PROBE, R_SIGNAL };
 
 struct slot {
@@ -78,6 +78,8 @@ static i32 last_site[MAXT];
 static u64 change[16];
 static i32 nchange;
 static i64 preempt_at[4];
+static i64 hold_at[4];                       /* HELD SITES (1.5.8 step 2c, DEF-67): -1 none */
+static i32 held_by[4] = {-1, -1, -1, -1};    /* the slot held at each, -1 none */
 static i64 ended_tids[MAXT];
 static void (*sig_handler[65])(i32, void *, void *);
 extern void *npk_exec(void);
@@ -124,6 +126,14 @@ static void init(void) {
     preempt_at[1] = (i64)env_u64(buf, len, "NPKX_PREEMPT2", (u64)-1);
     preempt_at[2] = (i64)env_u64(buf, len, "NPKX_PREEMPT3", (u64)-1);
     preempt_at[3] = (i64)env_u64(buf, len, "NPKX_PREEMPT4", (u64)-1);
+    /* HELD SITES (1.5.8 step 2c, DEF-67, amended into the reference the same day): up to four atomic sites at which the
+       FIRST arrival is held -- not scheduled -- until another thread arrives there and passes, keeping the baton
+       through the site's instruction; a held thread is also released when nothing else can step, before virtual time
+       may jump. A directed site demotes each arrival below the last and cannot reverse two arrivals at one place. */
+    hold_at[0] = (i64)env_u64(buf, len, "NPKX_HOLD1", (u64)-1);
+    hold_at[1] = (i64)env_u64(buf, len, "NPKX_HOLD2", (u64)-1);
+    hold_at[2] = (i64)env_u64(buf, len, "NPKX_HOLD3", (u64)-1);
+    hold_at[3] = (i64)env_u64(buf, len, "NPKX_HOLD4", (u64)-1);
     rng = seed * 0x9E3779B97F4A7C15UL + 0x1234567;
     if (!rng) rng = 1;
     for (i32 i = 0; i < 8; i++) next_rand();
@@ -206,10 +216,17 @@ static i32 advance(void) {
     return best;
 }
 
+/* nobody can step: a held thread is released first (1.5.8 step 2c), the lowest held site first */
+static i32 release_held(void) {
+    for (i32 i = 0; i < 4; i++) if (held_by[i] >= 0) { i32 t = held_by[i]; S[t].state = READY; held_by[i] = -1; return t; }
+    return -1;
+}
+
 /* give the baton away (or keep it). `me` < 0: the caller is leaving for good and does not wait. */
 static void resched(i32 me) {
     for (;;) {
         i32 next = pick();
+        if (next < 0) next = release_held();
         if (next < 0) next = advance();
         if (next < 0) {
             i32 live = 0;
@@ -286,6 +303,11 @@ void npkx_point(i32 site) {
     if (!inited) init();
     i32 me = self();
     count_step(me, (u64)(u32)site);
+    for (i32 i = 0; i < 4; i++) if (hold_at[i] == (i64)(u32)site) {   /* a held site (1.5.8 step 2c) */
+        if (held_by[i] < 0) { held_by[i] = me; S[me].state = HELD; resched(me); S[me].state = RUNNING; run_pending(me); return; }
+        S[held_by[i]].state = READY; held_by[i] = -1;   /* the pass: this thread keeps the baton through the instruction */
+        return;
+    }
     S[me].state = READY;
     resched(me);
     S[me].state = RUNNING;

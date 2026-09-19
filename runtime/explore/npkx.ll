@@ -77,7 +77,7 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 ;   11 last_site   12 exec (the executor at the block)   13 waitval   14 pad
 ;   15 ctid (the CHILD_CLEARTID word the kernel clears at the thread's exit; X-19)
 ;
-; states:  0 FREE  1 RUNNING  2 READY  3 B_FUTEX  4 B_EPOLL  5 ENDED
+; states:  0 FREE  1 RUNNING  2 READY  3 B_FUTEX  4 B_EPOLL  5 ENDED  6 HELD (1.5.8 step 2c)
 ; reasons: 0 NONE  1 WOKEN  2 TIMEOUT  3 EXITWAIT  4 PROBE  5 SIGNAL
 
 %npkx.slot = type { i32, i32, i64, i64, i64, i64, i32, i32, i64, i64, i32, i32, i64, i32, i32, i64 }
@@ -134,6 +134,25 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 @npkx_key_p3 = internal constant [13 x i8] c"NPKX_PREEMPT3"
 @npkx_key_p4 = internal constant [13 x i8] c"NPKX_PREEMPT4"
 @npkx_preempt = internal global [4 x i64] [i64 -1, i64 -1, i64 -1, i64 -1]
+; HELD SITES (1.5.8 step 2c; DEF-67): up to four atomic sites at which the
+; FIRST thread to arrive is HELD -- not scheduled -- until another thread
+; arrives at the same site and passes it, keeping the baton through that
+; site's instruction. The held one is released then, and runs no earlier
+; than the passer's next point. A directed site (above) cannot do this: it
+; demotes each arrival below the last, so two arrivals at one place keep
+; their order. A hold reverses them. That is a window one point wide between
+; a trapper's frozen store and its claim of the failsafe holder (DEF-57),
+; which 60,000 blind seeds did not reach once the stack moved every
+; schedule. A held thread is also released when nothing else can step,
+; before virtual time may jump, so a hold never deadlocks what would not
+; deadlock without it. A control names them (`hold-at:`); the unit stage
+; never sets them. -1: none. `npkx_held` is the slot held at each, -1 none.
+@npkx_key_h1 = internal constant [10 x i8] c"NPKX_HOLD1"
+@npkx_key_h2 = internal constant [10 x i8] c"NPKX_HOLD2"
+@npkx_key_h3 = internal constant [10 x i8] c"NPKX_HOLD3"
+@npkx_key_h4 = internal constant [10 x i8] c"NPKX_HOLD4"
+@npkx_hold = internal global [4 x i64] [i64 -1, i64 -1, i64 -1, i64 -1]
+@npkx_held = internal global [4 x i32] [i32 -1, i32 -1, i32 -1, i32 -1]
 ; THE FAIRNESS BOUND IS JITTERED (step 4, X-16): a thread that has run 4096
 ; consecutive steps yields to another that can run -- after a further 0..63
 ; steps drawn from the seed's stream when it reaches the bound. A FIXED bound
@@ -420,6 +439,14 @@ entry:
   store i64 %p3, ptr getelementptr ([4 x i64], ptr @npkx_preempt, i64 0, i64 2)
   %p4 = call i64 @npkx_env_u64(ptr @npkx_key_p4, i64 13, i64 -1)
   store i64 %p4, ptr getelementptr ([4 x i64], ptr @npkx_preempt, i64 0, i64 3)
+  %h1 = call i64 @npkx_env_u64(ptr @npkx_key_h1, i64 10, i64 -1)
+  store i64 %h1, ptr getelementptr ([4 x i64], ptr @npkx_hold, i64 0, i64 0)
+  %h2 = call i64 @npkx_env_u64(ptr @npkx_key_h2, i64 10, i64 -1)
+  store i64 %h2, ptr getelementptr ([4 x i64], ptr @npkx_hold, i64 0, i64 1)
+  %h3 = call i64 @npkx_env_u64(ptr @npkx_key_h3, i64 10, i64 -1)
+  store i64 %h3, ptr getelementptr ([4 x i64], ptr @npkx_hold, i64 0, i64 2)
+  %h4 = call i64 @npkx_env_u64(ptr @npkx_key_h4, i64 10, i64 -1)
+  store i64 %h4, ptr getelementptr ([4 x i64], ptr @npkx_hold, i64 0, i64 3)
   ; rng = seed * 0x9E3779B97F4A7C15 + 0x1234567, never 0
   %m = mul i64 %seed, -7046029254386353131
   %r = add i64 %m, 19088743
@@ -933,7 +960,13 @@ define internal void @npkx_resched(i32 %me) {
 entry:
   %next0 = call i32 @npkx_pick()
   %nonext = icmp slt i32 %next0, 0
-  br i1 %nonext, label %adv, label %have
+  br i1 %nonext, label %unhold, label %have
+
+; nobody can step: a held thread goes first (1.5.8 step 2c), then virtual time
+unhold:
+  %nexth = call i32 @npkx_release_held()
+  %noheld = icmp slt i32 %nexth, 0
+  br i1 %noheld, label %adv, label %have
 
 adv:
   %next1 = call i32 @npkx_advance()
@@ -968,7 +1001,7 @@ deadlock:
   unreachable
 
 have:
-  %next = phi i32 [ %next0, %entry ], [ %next1, %adv ]
+  %next = phi i32 [ %next0, %entry ], [ %nexth, %unhold ], [ %next1, %adv ]
   %nst = call i32 @npkx_ld32(i32 %next, i32 1)
   %isep = icmp eq i32 %nst, 4
   br i1 %isep, label %probe, label %handoff
@@ -1206,6 +1239,47 @@ step:
   %me = call i32 @npkx_self()
   %sz = zext i32 %site to i64
   call void @npkx_count_step(i32 %me, i64 %sz)
+  br label %hloop
+
+; a held site (1.5.8 step 2c): the first arrival is held, the next one passes
+hloop:
+  %hi = phi i32 [ 0, %step ], [ %hi1, %hnext ]
+  %hdone = icmp sge i32 %hi, 4
+  br i1 %hdone, label %normal, label %hcheck
+
+hcheck:
+  %hsp = getelementptr [4 x i64], ptr @npkx_hold, i64 0, i32 %hi
+  %hsite = load i64, ptr %hsp
+  %hhit = icmp eq i64 %hsite, %sz
+  br i1 %hhit, label %hfound, label %hnext
+
+hnext:
+  %hi1 = add i32 %hi, 1
+  br label %hloop
+
+hfound:
+  %hbp = getelementptr [4 x i32], ptr @npkx_held, i64 0, i32 %hi
+  %hby = load i32, ptr %hbp
+  %hfree = icmp slt i32 %hby, 0
+  br i1 %hfree, label %hold, label %pass
+
+; the first arrival: held -- not eligible -- until released
+hold:
+  store i32 %me, ptr %hbp
+  call void @npkx_st32(i32 %me, i32 1, i32 6)
+  call void @npkx_resched(i32 %me)
+  call void @npkx_st32(i32 %me, i32 1, i32 1)
+  call void @npkx_run_pending(i32 %me)
+  br label %ret
+
+; the next arrival passes: the held one is released, and this thread keeps
+; the baton through the site's instruction, so it runs first
+pass:
+  call void @npkx_st32(i32 %hby, i32 1, i32 2)
+  store i32 -1, ptr %hbp
+  br label %ret
+
+normal:
   call void @npkx_st32(i32 %me, i32 1, i32 2)
   call void @npkx_resched(i32 %me)
   call void @npkx_st32(i32 %me, i32 1, i32 1)
@@ -1214,6 +1288,38 @@ step:
 
 ret:
   ret void
+}
+
+; A held thread is released when nothing else can step (1.5.8 step 2c):
+; before virtual time may jump, so a hold never deadlocks a program that
+; would not deadlock without it. The lowest held site first. The released
+; slot, or -1 when none is held.
+define internal i32 @npkx_release_held() {
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %next ]
+  %done = icmp sge i32 %i, 4
+  br i1 %done, label %none, label %check
+
+check:
+  %bp = getelementptr [4 x i32], ptr @npkx_held, i64 0, i32 %i
+  %by = load i32, ptr %bp
+  %isheld = icmp sge i32 %by, 0
+  br i1 %isheld, label %release, label %next
+
+next:
+  %i1 = add i32 %i, 1
+  br label %loop
+
+release:
+  call void @npkx_st32(i32 %by, i32 1, i32 2)
+  store i32 -1, ptr %bp
+  ret i32 %by
+
+none:
+  ret i32 -1
 }
 
 define void @npkx_prespawn() {

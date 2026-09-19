@@ -17,6 +17,7 @@ program: tests/backend/programs/<name>.npk       the program run against the pat
 verdict: <word>                                  what must appear (below)
 within: N                                        seeds 1..N, the first that meets the verdict ends the run
 preempt-at: @function <instruction text prefix>  0..4 lines: a DIRECTED control (below)
+hold-at: @function <instruction text prefix>     0..4 lines: a HELD control (1.5.8 step 2c; the DEF-57 section)
 old:                                             one or more pairs; each line indented by two spaces
   <lines of runtime/npkrt.ll, exactly once>
 new:
@@ -66,6 +67,13 @@ scheduling point wide inside runs of 100,000 steps; blind PCT's bound there is 1
 seed, and 0 of 100 seeds found any of them, so they are directed. A directed site takes effect BEFORE
 the named instruction (the scheduling point precedes the step), so a control names the first step AFTER
 its window — the reserve, not the capacity read; the stop walk's first read, not the claim.
+
+A **held** control (1.5.8 step 2c; DEF-67) names up to four atomic sites the same way, `hold-at: @function
+<prefix>`. The FIRST thread to arrive at one is held and not scheduled. Another thread that arrives at the same
+site PASSES: it releases the held one and keeps the baton through the site's instruction, so the later arrival
+runs first. When nothing else can step, a held thread is released before virtual time may jump. A held control
+also measures SIGHT, for the one shape a directed site cannot reach: two arrivals at one place, where demotion
+keeps their order. `frozen-traps.ctl` is the first (the DEF-57 section).
 
 ## The program control (step 6, 2026-09-18)
 
@@ -247,6 +255,28 @@ never checked to still reach anything. The limit above — a directed site canno
 place — is lifted at 1.5.8 step 2c by a HOLD directive: the first thread to arrive at the named site waits until
 another thread has passed the same site. DEF-57's window then becomes a `.ctl` that the harness decides on every
 run, found without a seed.]*
+
+*[2026-09-19, 1.5.8 step 2c (DEF-67): `frozen-traps` IS NOW A `.ctl`, and a HELD one.* Step 2 of 1.5.8 went
+stale as described in the note above. The limit this section stated — a directed site cannot reorder two arrivals
+at one place — is lifted by a new kind of control. `hold-at:` names up to four atomic sites, resolved as
+`preempt-at:` is. The FIRST thread to arrive at one is held and not scheduled until another thread arrives at the
+same site and passes it, keeping the baton through the site's instruction. A held thread is also released when
+nothing else can step, before virtual time may jump. `frozen-traps.ctl` plants the pre-fix block as a one-line
+branch (every executor that sees the flag traps `Unreachable`) and holds the claim, `@npk_trap %cx = cmpxchg ptr
+@npk_in_failsafe`: whichever trapper claims first waits there with its frozen store published, and every executor
+that starts a step meanwhile reads the flag, traps and claims first. Measured on 1.5.8 step 2c's floor, 100
+seeds each through the harness's own code path:
+
+| floor | the hold | exits |
+|---|---|---|
+| the pre-fix block planted | held at the claim | 72 on 100 of 100, from seed 1 |
+| the pre-fix block planted | blind | 41 on 100 of 100 (and on seeds 1..60,000, step 2) |
+| the fixed floor | held at the claim | 41 on 100 of 100 |
+| the fixed floor | blind | 41 on 100 of 100 |
+
+The third row is the real floor's own evidence for DEF-57's fix, which the model's rows had carried alone: with
+the window held open on every seed, the watcher parks and `failsafe` runs with the trapper's `DivByZero`. The
+model's `frozen-traps` control still stands beside it, decided by both readings.]*
 
 **`trap-route` / `frozen-parks-holder`** — the fix as first proposed at the hand-off: EVERY executor that
 sees the flag parks, the holder included. `holder-parks` is reached at depth 6 in the model (the holder's own

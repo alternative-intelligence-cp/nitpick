@@ -1480,7 +1480,7 @@ pooled executor and are reused rather than closed. The arguments go into `runtim
 classification rows and the pools' reuse into the models the waker and the stop walk already have, before the step
 lands.
 
-**DEF-67 — OPEN, scheduled as 1.5.8 step 2c: A KEPT SEED WENT STALE AND NOTHING SAID SO.** (found 2026-09-19 by
+**DEF-67 — FIXED at 1.5.8 step 2c (2026-09-19): the explorer HOLDS. `hold-at:` sites (`NPKX_HOLD1..4`) hold the first thread to arrive until another passes the same site, or until nothing else can step. It is in both shims (held to each other hash for hash, 40 held runs), both runners' control readers and a self-check case in each. DEF-57's window is `frozen-traps.ctl`: 72 on 100 of 100 seeds with the pre-fix block planted and held; 41 on 100 of 100 blind; and on the FIXED floor, held, 41 on 100 of 100, the real floor's own evidence that the fix holds with the window open. A kept seed now claims nothing (VERIFICATION_REFERENCE §10).** ~~OPEN, scheduled as 1.5.8 step 2c: A KEPT SEED WENT STALE AND NOTHING SAID SO.~~ (found 2026-09-19 by
 `nitpick-compiler_s11`, executing 1.5.8 step 2's K-11.) X-11 keeps a seed that found a defect (`// explore-seed:
 S`) and runs it first on every run: "a schedule that found a defect once is the cheapest regression test the
 project will ever own". That works only while the seed still names that schedule. Step 2 added one routed

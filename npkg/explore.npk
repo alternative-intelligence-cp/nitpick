@@ -799,23 +799,27 @@ pub func:check_oracle_offsets = List<string>(string:floor, string:shim, string:n
 // `prog_after` for a PROGRAM control's `program-old:`/`program-new:` pairs
 // (step 6, X-21: a defect planted in the named program's SOURCE, compiled from
 // the control's build directory); `preempt` one `@function <prefix>` value per
-// `preempt-at:` line.
+// `preempt-at:` line; `hold` one per `hold-at:` line (1.5.8 step 2c, DEF-67:
+// the FIRST thread to arrive there is held until another passes the same site,
+// so two arrivals at one place are REVERSED -- what a directed site cannot do).
 pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after;
                        List<string>:spec_before; List<string>:spec_after; List<string>:prog_before; List<string>:prog_after;
-                       List<string>:preempt; };
+                       List<string>:preempt; List<string>:hold; };
 
 func:control_bad = Control(string:problem) never fails {
     pass Control{ ok: false, problem: raw text_copy(problem), program: "", verdict: "", within: 0i64,
                   before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64),
                   spec_before: raw list_init::<string>(1i64), spec_after: raw list_init::<string>(1i64),
-                  prog_before: raw list_init::<string>(1i64), prog_after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64) };
+                  prog_before: raw list_init::<string>(1i64), prog_after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64),
+                  hold: raw list_init::<string>(1i64) };
 };
 
 pub func:read_control = Control(string:text, string:name) never fails {
     Control:c = Control{ ok: true, problem: "", program: "", verdict: "", within: 0i64,
                          before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64),
                          spec_before: raw list_init::<string>(2i64), spec_after: raw list_init::<string>(2i64),
-                         prog_before: raw list_init::<string>(2i64), prog_after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64) };
+                         prog_before: raw list_init::<string>(2i64), prog_after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64),
+                         hold: raw list_init::<string>(2i64) };
     List<string>:lines = raw raw_lines(text);
     int64:block = 0i64;                                             // 0 none, 1 old, 2 new
     bool:open = false;                                              // a pair is being read
@@ -869,11 +873,17 @@ pub func:read_control = Control(string:text, string:name) never fails {
         }
         if (raw text_eq(key, "program")) { c.program = move(val); continue; }
         if (raw text_eq(key, "verdict")) { c.verdict = move(val); continue; }
-        if (raw text_eq(key, "preempt-at")) {
+        if ((raw text_eq(key, "preempt-at")) || (raw text_eq(key, "hold-at"))) {
             int64:sp = raw text_find_byte(val, 32u8, 0i64);
             bool:shaped = (val.len > 1i64) && (val.ptr[0i64] == 64u8) && (sp > 1i64) && ((raw text_trim(raw text_slice(val, sp + 1i64, val.len))).len > 0i64);
-            if (!shaped) { pass (raw control_bad(string_concat(string_concat(name, ": `preempt-at:` is `@function <instruction text prefix>`: "), val))); }
-            drop list_push(@c.preempt, move(val));
+            if (!shaped) {
+                string:bm = string_concat(name, ": `");
+                bm = string_concat(bm, key);
+                bm = string_concat(bm, ":` is `@function <instruction text prefix>`: ");
+                pass (raw control_bad(string_concat(bm, val)));
+            }
+            if (raw text_eq(key, "preempt-at")) { drop list_push(@c.preempt, move(val)); }
+            else { drop list_push(@c.hold, move(val)); }
             continue;
         }
         pass (raw control_bad(string_concat(string_concat(name, ": a line the control grammar does not know: "), raw text_head(ln, 80i64))));
@@ -909,6 +919,7 @@ pub func:read_control = Control(string:text, string:name) never fails {
         }
     }
     if (c.preempt.count > 4i64) { pass (raw control_bad(string_concat(name, ": at most four `preempt-at:` sites (the shim holds four)"))); }
+    if (c.hold.count > 4i64) { pass (raw control_bad(string_concat(name, ": at most four `hold-at:` sites (the shim holds four)"))); }
     if (raw text_starts_with(c.verdict, "exit ")) {
         Result<int64>:e = text_int(raw text_trim(raw text_slice(c.verdict, 5i64, c.verdict.len)));
         if (e.is_error) { pass (raw control_bad(string_concat(string_concat(name, ": `verdict: exit N` needs a number: "), c.verdict))); }
@@ -1032,10 +1043,20 @@ pub func:control_verdict_met = bool(Control->:c, int64:expected_exit, int64:code
 pub struct:Sites = { List<int64>:numbers; List<string>:findings; };
 
 pub func:resolve_sites = Sites(Control->:c, string:sites, string:name) never fails {
+    pass (raw resolve_sites_of(c.preempt, "preempt-at", sites, name));
+};
+
+// THE HELD SITES' NUMBERS (1.5.8 step 2c; DEF-67): each `hold-at:`, resolved as
+// a directed site is -- exactly one atomic row.
+pub func:resolve_holds = Sites(Control->:c, string:sites, string:name) never fails {
+    pass (raw resolve_sites_of(c.hold, "hold-at", sites, name));
+};
+
+func:resolve_sites_of = Sites(List<string>:wants, string:directive, string:sites, string:name) never fails {
     Sites:out = Sites{ numbers: raw list_init::<int64>(4i64), findings: raw list_init::<string>(1i64) };
     List<string>:rows = raw raw_lines(sites);
-    for (int64:p in 0i64...c.preempt.count) {
-        string:want = raw strlist_view(c.preempt, p);
+    for (int64:p in 0i64...wants.count) {
+        string:want = raw strlist_view(wants, p);
         int64:sp = raw text_find_byte(want, 32u8, 0i64);
         string:fn = raw text_slice(want, 0i64, sp);
         string:prefix = raw text_trim(raw text_slice(want, sp + 1i64, want.len));
@@ -1060,7 +1081,9 @@ pub func:resolve_sites = Sites(Control->:c, string:sites, string:name) never fai
             hit_kind = raw text_slice(row, t2 + 1i64, t3);
         }
         if (hits != 1i64) {
-            string:m = string_concat(name, ": explore-control-site-unmatched: `preempt-at: ");
+            string:m = string_concat(name, ": explore-control-site-unmatched: `");
+            m = string_concat(m, directive);
+            m = string_concat(m, ": ");
             m = string_concat(m, want);
             m = string_concat(m, "` names ");
             m = string_concat(m, int_to_string(hits));
@@ -1069,7 +1092,9 @@ pub func:resolve_sites = Sites(Control->:c, string:sites, string:name) never fai
             continue;
         }
         if (!(raw text_eq(hit_kind, "atomic"))) {
-            string:m2 = string_concat(name, ": explore-control-site-kind: `preempt-at: ");
+            string:m2 = string_concat(name, ": explore-control-site-kind: `");
+            m2 = string_concat(m2, directive);
+            m2 = string_concat(m2, ": ");
             m2 = string_concat(m2, want);
             m2 = string_concat(m2, "` is a `");
             m2 = string_concat(m2, hit_kind);

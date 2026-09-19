@@ -61,6 +61,16 @@ refusing by name without it. Both shims then see the same points; `transform.py`
 (a unit built by hand with `build.sh` has no program points, which is right for a floor-only measurement and
 wrong for a program with atomics of its own).
 
+**Amended at 1.5.8 step 2 (D-305) and a fifth time at step 2c (DEF-67).** Step 2: the reference carries the two
+split-stack notes the floor and the IR shim carry. The explored program's functions check their stack and call in
+here, and without the notes ld.lld would rewrite each caller onto the slow path or refuse the link. Step 2c: the
+HELD sites (`NPKX_HOLD1..4`). The first thread to arrive at one is held, in the new state `HELD`, which `pick`
+never selects. Another thread arriving at the same site PASSES: it releases the held one and keeps the baton
+through the site's instruction. When nothing else can step, the held thread is released before virtual time may
+jump. A directed site cannot reverse two arrivals at one place, and a hold does. DEF-57's window, one point wide
+between a trapper's frozen store and its claim, went stale as a kept seed when step 2 moved every schedule; it is
+now `frozen-traps.ctl`, held at the claim. The block is marked in `npkx.c`, and the sweep was re-run after it.
+
 **Running it by hand** (a measurement, never a verdict):
 
 ```

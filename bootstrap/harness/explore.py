@@ -279,8 +279,13 @@ def read_control(text, name="explore"):
     demoted below every other -- a change point at a place, for a window one
     step wide that blind PCT cannot land on; the runners resolve each against
     the patched floor's sites.txt (exactly one `atomic` row, or the control is
-    refused by name). (control, reason)."""
-    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "spec_subs": [], "prog_subs": [], "preempt": []}
+    refused by name). A HELD control (1.5.8 step 2c; DEF-67) adds up to four
+    `hold-at: @function <instruction text prefix>` lines, resolved the same
+    way: the FIRST thread to arrive there is held until another thread passes
+    the same site, so two arrivals at one place are REVERSED -- what a directed
+    site cannot do, since it demotes each arrival below the last.
+    (control, reason)."""
+    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "spec_subs": [], "prog_subs": [], "preempt": [], "hold": []}
     block = None
     target = "subs"
     # the three pair kinds: the floor's `old:`/`new:`, a SPEC control's (step 5, X-18) and a PROGRAM
@@ -317,11 +322,11 @@ def read_control(text, name="explore"):
                 return None, "%s: `within:` is not a number: %r" % (name, val)
         elif key in ("program", "verdict"):
             ctl[key] = val
-        elif key == "preempt-at":
+        elif key in ("preempt-at", "hold-at"):
             fn, _, prefix = val.partition(" ")
             if not fn.startswith("@") or not prefix.strip():
-                return None, "%s: `preempt-at:` is `@function <instruction text prefix>`: %r" % (name, val)
-            ctl["preempt"].append((fn, prefix.strip()))
+                return None, "%s: `%s:` is `@function <instruction text prefix>`: %r" % (name, key, val)
+            ctl["preempt" if key == "preempt-at" else "hold"].append((fn, prefix.strip()))
         else:
             return None, "%s: a line the control grammar does not know: %r" % (name, raw[:80])
     for key in ("program", "verdict"):
@@ -342,6 +347,8 @@ def read_control(text, name="explore"):
             return None, "%s: `program-old:` and `program-new:` must each hold at least one line (pair %d)" % (name, i + 1)
     if len(ctl["preempt"]) > 4:
         return None, "%s: at most four `preempt-at:` sites (the shim holds four)" % name
+    if len(ctl["hold"]) > 4:
+        return None, "%s: at most four `hold-at:` sites (the shim holds four)" % name
     v = ctl["verdict"]
     for form in ("exit ", "late "):
         if v.startswith(form):
@@ -386,22 +393,23 @@ def control_verdict_met(ctl, exp, returncode, shim_verdict, vrun=0):
     return shim_verdict == v
 
 
-def resolve_sites(ctl, sites_text, name="explore"):
-    """The directed sites' numbers (X-15): each `preempt-at:` against the
-    patched floor's sites.txt -- exactly one row of that function whose text
+def resolve_sites(ctl, sites_text, name="explore", directive="preempt-at"):
+    """The directed sites' numbers (X-15): each `preempt-at:` -- or, with
+    `directive="hold-at"`, each held site (1.5.8 step 2c) -- against the
+    patched floor's sites.txt: exactly one row of that function whose text
     starts with the prefix, and an `atomic` one (a `sys6` site is a routed
     call, not a point the shim can hold). (numbers, fails)."""
     rows = [l.split("\t") for l in sites_text.split("\n") if l.strip()]
     nums, fails = [], []
-    for fn, prefix in ctl["preempt"]:
+    for fn, prefix in ctl["preempt" if directive == "preempt-at" else "hold"]:
         hits = [r for r in rows if len(r) == 4 and r[1] == fn and r[3].startswith(prefix)]
         if len(hits) != 1:
-            fails.append("%s: explore-control-site-unmatched: `preempt-at: %s %s` names %d site(s) of the explored floor, not one"
-                         % (name, fn, prefix, len(hits)))
+            fails.append("%s: explore-control-site-unmatched: `%s: %s %s` names %d site(s) of the explored floor, not one"
+                         % (name, directive, fn, prefix, len(hits)))
             continue
         if hits[0][2] != "atomic":
-            fails.append("%s: explore-control-site-kind: `preempt-at: %s %s` is a `%s` site; only an atomic step can be a directed site"
-                         % (name, fn, prefix, hits[0][2]))
+            fails.append("%s: explore-control-site-kind: `%s: %s %s` is a `%s` site; only an atomic step can be a directed site"
+                         % (name, directive, fn, prefix, hits[0][2]))
             continue
         nums.append(int(hits[0][0]))
     return nums, fails

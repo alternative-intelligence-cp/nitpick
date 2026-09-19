@@ -1051,6 +1051,25 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     }
     if (!okc7) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("explore-control-sites", okc7, "a directed site resolves to one atomic row of sites.txt, or is refused by name"));
+    // THE HELD SITES (1.5.8 step 2c; DEF-67), the same way: a `hold-at:` naming one atomic
+    // row resolves to its number beside a `preempt-at:` naming another; one naming a `sys6`
+    // row is refused by name, naming the directive; a fifth `hold-at:` is refused by the
+    // grammar. The harness's case, the same texts.
+    Control:xc_h = raw read_control("program: p\nverdict: D\nwithin: 1\npreempt-at: @npk_lock %v = load atomic i32\nhold-at: @npk_lock %c = cmpxchg\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_hk = raw read_control("program: p\nverdict: D\nwithin: 1\nhold-at: @npk_lock %s = call i64 @npk_sys6\nold:\n  a\nnew:\n  b\n", "planted");
+    Control:xc_h5 = raw read_control("program: p\nverdict: D\nwithin: 1\nhold-at: @npk_lock %c = cmpxchg\nhold-at: @npk_lock %c = cmpxchg\nhold-at: @npk_lock %c = cmpxchg\nhold-at: @npk_lock %c = cmpxchg\nhold-at: @npk_lock %c = cmpxchg\nold:\n  a\nnew:\n  b\n", "planted");
+    bool:okc8 = xc_h.ok && xc_hk.ok && (!xc_h5.ok) && (raw text_contains(xc_h5.problem, "at most four `hold-at:`"));
+    if (okc8) {
+        Sites:xh0 = raw resolve_holds(@xc_h, xp_sites, "planted");
+        Sites:xh1 = raw resolve_sites(@xc_h, xp_sites, "planted");
+        Sites:xh2 = raw resolve_holds(@xc_hk, xp_sites, "planted");
+        okc8 = (xh0.findings.count == 0i64) && (xh0.numbers.count == 1i64) && (xh0.numbers.items[0i64] == 0i64)
+            && (xh1.findings.count == 0i64) && (xh1.numbers.count == 1i64) && (xh1.numbers.items[0i64] == 1i64)
+            && (xh2.findings.count == 1i64) && (raw text_contains(raw strlist_view(xh2.findings, 0i64), "explore-control-site-kind"))
+            && (raw text_contains(raw strlist_view(xh2.findings, 0i64), "`hold-at:"));
+    }
+    if (!okc8) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-holds", okc8, "a held site resolves to one atomic row, or is refused by name; five are refused"));
     string:xc_shim_o = raw path_join(dir, "npkx_selfcheck.o");
     Result<Step>:xcs = await llc_obj(c, c.m.llc_flags, string_concat(xo_root, "/runtime/explore/npkx.ll"), xc_shim_o);
     if (xcs.is_error) { fail xcs.err; }
