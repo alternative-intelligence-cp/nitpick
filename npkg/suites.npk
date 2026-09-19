@@ -895,6 +895,13 @@ async func:run_explore = NIL(Ctx->:c, int64:t) {
         if (si == 0i64) { drop say(raw stage_text("explore", raw strlist_view(sm, si))); }
         else { drop say(raw stage_text("explore", string_concat("  listed, not checked: ", raw strlist_view(sm, si)))); }
     }
+    // DEF-64 (1.5.8 step 2b): the `module asm` syscalls that run unrouted, each stated with its reason
+    string:uh = int_to_string(xo.unrouted.count);
+    uh = string_concat(uh, " `module asm` syscall(s) run unrouted, each stated with its reason in runtime/explore/unrouted.txt (DEF-64)");
+    drop say(raw stage_text("explore", uh));
+    for (int64:ui in 0i64...xo.unrouted.count) {
+        drop say(raw stage_text("explore", string_concat("  unrouted, by statement: ", raw strlist_view(xo.unrouted, ui))));
+    }
     int64:n = 0i64;
     int64:n_no = 0i64;
     for (int64:k in 0i64...paths.count) {

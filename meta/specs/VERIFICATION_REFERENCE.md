@@ -1344,6 +1344,11 @@ the same region. One row per number the floor issues:
   (the path ends: a trap site with the status), `asm` (issued only by a
   symbol the translator never reads — inline asm — so no effect is modelled
   and none is needed; the row exists so that EVERY issued number has one).
+  Since 1.5.8 step 2b (DEF-64) "issued" includes a `module asm` symbol's own
+  syscalls. The census reads a `syscall` there from the `mov $N, %eax`
+  immediately before it, and nothing else (`floor-asm-syscall-unread`
+  otherwise), so `rt_sigreturn` (15) and the trampoline's `exit` (60) are
+  issued numbers like any other.
 - **buffer**, **length** — for `writes`: the argument holding the address,
   and `result`, `result*12` or a numeral. ONE RULE conditions every write and
   so no row carries its own: **an error answer writes nothing, and a NULL
@@ -1771,7 +1776,17 @@ never transformed. THE TOTALITY BELT, in both runners: the step lines of the
 source equal the points plus the routed calls of the output, and every atomic
 step of the output has its point immediately before it
 (`explore-step-escapes`, by name, for the floor and for each program). It is
-the second reader of the transform, and a count.
+the second reader of the transform, and a count. **What no point can precede
+is STATED (1.5.8 step 2b; DEF-64).** A syscall written in a `module asm`
+block is neither a step line nor a routed call: the transformer rewrites IR,
+and assembly is not IR. Such a syscall runs for real with no point before it.
+These are the clone trampoline's `clone` (56) and the child's `exit` (60),
+and the stop handler's restorer `rt_sigreturn` (15), which is never executed.
+`runtime/explore/unrouted.txt` states each one — `@SYMBOL NUMBER` and the
+reason the explored build stays sound — and both runners hold the file to
+the floor's `module asm` census exactly (`explore-asm-unlisted`,
+`explore-asm-stale`, `explore-asm-malformed`, by name). The stage prints the
+list on every run.
 
 **The shim is hand-written IR (D-298; `runtime/explore/npkx.ll`), linked into
 explored test binaries only, under the floor's own belts.** One thread holds the

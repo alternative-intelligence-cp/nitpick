@@ -122,6 +122,62 @@ def check_sites(explored_text, sites_text, name="explore", base=0):
 # --- step 3: the oracle's offsets and the controls ------------------------------------
 
 
+def read_unrouted(text, name="explore"):
+    """`runtime/explore/unrouted.txt` (1.5.8 step 2b; DEF-64): one line per
+    syscall a `module asm` symbol of the floor issues -- `@SYMBOL NUMBER` and
+    the reason the explored build is sound with it running for real, with no
+    scheduling point before it and no route to the shim (the transformer
+    rewrites IR, and assembly is not IR). Comment lines begin with `;`.
+    ({(symbol, number): reason}, findings)."""
+    out = {}
+    fails = []
+    for i, raw in enumerate(text.split("\n")):
+        l = raw.strip()
+        if not l or l.startswith(";"):
+            continue
+        m = re.match(r"^(@[A-Za-z_.$][\w.$]*)\s+(\d{1,9})\s+(\S.*)$", l)
+        if not m:
+            fails.append("%s: explore-asm-malformed: runtime/explore/unrouted.txt line %d is not `@SYMBOL NUMBER reason`"
+                         % (name, i + 1))
+            continue
+        key = (m.group(1), int(m.group(2)))
+        if key in out:
+            fails.append("%s: explore-asm-malformed: runtime/explore/unrouted.txt states `%s %d` twice" % (name, key[0], key[1]))
+            continue
+        out[key] = m.group(3)
+    return out, fails
+
+
+def check_unrouted(floor_text, unrouted_text, name="explore"):
+    """THE SYSCALLS NO POINT CAN PRECEDE (1.5.8 step 2b; DEF-64): every syscall
+    the floor's `module asm` census reads (`floor.asm_symbols`) is STATED in
+    runtime/explore/unrouted.txt with the reason it may run unscheduled, and
+    the file states nothing the census does not find: `explore-asm-unlisted`
+    and `explore-asm-stale` by name. Until this step the totality belt's "no
+    step escapes" counted `npk_sys6` calls and atomics in `define` bodies
+    alone, and the clone trampoline's `clone` and `exit` and the stop handler's
+    restorer ran in every explored build with nothing saying so.
+    `npkg/explore.npk`'s `explore_unrouted` is the twin. (findings, [(symbol,
+    number)] in the census's order)."""
+    stated, fails = read_unrouted(unrouted_text, name)
+    found = []
+    for s in floor.asm_symbols(floor_text):
+        for n in s.sys:
+            if n is not None and (s.name, n) not in found:
+                found.append((s.name, n))
+    for key in found:
+        if key not in stated:
+            fails.append("%s: explore-asm-unlisted: `%s` issues syscall %d (%s) in `module asm`, which no scheduling "
+                         "point can precede and no transform can route -- state in runtime/explore/unrouted.txt why "
+                         "the explored build is sound with it running for real (DEF-64)"
+                         % (name, key[0], key[1], floor.SYSCALL_NAMES.get(key[1], "?")))
+    for key in stated:
+        if key not in found:
+            fails.append("%s: explore-asm-stale: runtime/explore/unrouted.txt states `%s %d`, which the floor's "
+                         "`module asm` census does not find -- remove the line" % (name, key[0], key[1]))
+    return fails, found
+
+
 _TYPE_RE = re.compile(r"^(%[\w.]+) = type (\{.*\})\s*$", re.M)
 _SHIM_OFF_RE = re.compile(r"^@npkx_off_(sl_head|qnext|wake_at) = internal constant i64 (\d+)\s*$", re.M)
 

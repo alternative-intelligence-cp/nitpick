@@ -362,6 +362,53 @@ def main():
         if not ok:
             print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0])
 
+    # THE `module asm` CENSUS (1.5.8 step 2b; DEF-64): a syscall written in assembly is a
+    # syscall site like any other -- a number without a kernel-effect row fails by name, a
+    # `syscall` whose number is not loaded by the instruction right before it fails by name, a
+    # `module asm` line the census cannot read fails by name, and a readable one with a row
+    # passes. Then the explorer's half: a census syscall the unrouted list does not state fails,
+    # a stated one the census does not find fails, and the list that states exactly the census
+    # passes. `npkg/selfcheck.npk` carries the same seven by name, over the same texts.
+    import explore
+    asm_row = ('module asm ".globl f_raw"\nmodule asm "f_raw:"\nmodule asm "  movl $12, %eax"\n'
+               'module asm "  syscall"\nmodule asm "  retq"\n')
+    asm_unread = ('module asm ".globl f_raw"\nmodule asm "f_raw:"\nmodule asm "  movl $15, %eax"\n'
+                  'module asm "  xorl %edi, %edi"\nmodule asm "  syscall"\nmodule asm "  retq"\n')
+    asm_line = ('module asm ".globl f_raw" junk\nmodule asm "f_raw:"\nmodule asm "  movl $15, %eax"\n'
+                'module asm "  syscall"\nmodule asm "  retq"\n')
+    asm_ok = ('module asm ".globl f_raw"\nmodule asm "f_raw:"\nmodule asm "  movl $15, %eax"   ; the number\n'
+              'module asm "  syscall"\nmodule asm "  retq"\n')
+    for name, text, must_fail, finding, why in (
+            ("floor-asm-syscall-row", asm_row, True, "floor-syscall-row",
+             "a `module asm` syscall with no kernel-effect row (12) must fail: the census reads assembly"),
+            ("floor-asm-syscall-unread", asm_unread, True, "floor-asm-syscall-unread",
+             "a `module asm` syscall whose number is not loaded right before it must fail by name"),
+            ("floor-asm-line-unread", asm_line, True, "floor-asm-line-unread",
+             "a `module asm` line the census cannot read must fail by name, never end its run in silence"),
+            ("floor-asm-control", asm_ok, False, "floor-",
+             "a readable `module asm` syscall with a row (15) must pass")):
+        fails = [f for f in floor.check_syscall_names(text) if finding in f]
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0])
+    for name, listed, must_fail, finding, why in (
+            ("explore-asm-unlisted", "; nothing stated\n", True, "explore-asm-unlisted",
+             "a `module asm` syscall the unrouted list does not state must fail by name"),
+            ("explore-asm-stale", "@f_raw 15 the reason\n@g_raw 12 a line the census does not find\n", True,
+             "explore-asm-stale", "a stated syscall the census does not find must fail by name"),
+            ("explore-asm-control", "@f_raw 15 the reason\n", False, "explore-",
+             "the list that states exactly the census must pass")):
+        fails = [f for f in explore.check_unrouted(asm_ok, listed)[0] if finding in f]
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0])
+
     # THE MODELS' SECOND READING (1.5.6b step 4d; D-295): the explicit-state search over a
     # model's whole reachable space. A bad state reachable fails by name and the safe model
     # passes; a control whose bad state is reachable nowhere fails and the seeing one passes;

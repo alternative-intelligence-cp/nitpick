@@ -98,15 +98,24 @@ this column existed, so a reader can tell the specified from the pending.
 The `asm` class means inline assembly in the body OR a call of a symbol
 `module asm` defines (`npk_thread_start` rides `npk_clone_raw`), over the
 code of each body — a comment that said `asm` classified `npk_clone_exec`
-until step 3 held the two runners' classifiers to one answer.
+until step 3 held the two runners' classifiers to one answer. Since 1.5.8
+step 2b (DEF-64) the table also lists every symbol a `module asm` block
+defines, as `trusted (module asm)`. These are the assembler's input: no
+translator reads them and no transform rewrites them. The syscall table
+below counts their syscalls as well; until that step no census saw them,
+and `rt_sigreturn` and the clone trampoline's `clone` and `exit` were
+missing from the numbers and from the rows that reach them.
 
 <!-- BEGIN floor-table -->
 | symbol | class | disposition |
 |---|---|---|
 | `@__divti3` | pure | specified (3 discharged, 0 residue) |
 | `@__modti3` | pure | specified (4 discharged, 0 residue) |
+| `@__morestack_non_split` | asm | trusted (module asm) |
+| `@__morestack` | asm | trusted (module asm) |
 | `@__udivti3` | pure | specified (2 discharged, 0 residue) |
 | `@__umodti3` | pure | specified (3 discharged, 0 residue) |
+| `@_start` | asm | trusted (module asm) |
 | `@fmod` | pure | specified (7 discharged, 0 residue); residue (the reduction's result is not decided under the profile: |result| < |b| on the finite path is unknown with the loops unwound 2 and 8 times (z3's floating-point theory bit-blasts every fmul and fsub of the chain; measured 2026-09-11); the special values are rows) |
 | `@fmodf` | pure | specified (7 discharged, 0 residue); residue (as fmod's: the reduction's result is not decided under the profile (unknown with the loops unwound 2 and 8 times, measured 2026-09-11); the special values are rows) |
 | `@memcpy` | pure | specified (5 discharged, 0 residue) |
@@ -155,6 +164,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_chunk_guard_check` | syscall | specified (2 discharged, 0 residue) |
 | `@npk_chunk_new` | syscall | boundary (a fresh 64 KiB-aligned chunk for class ci: a 128 KiB anonymous mapping trimmed to the aligned 64 KiB (the surplus unmapped), its header (the guard word, the class, the slot and free counts, the hint, the list links, the watermark) and its bitmap written, the chunk registered in the sorted chunk table) |
 | `@npk_clone_exec` | atomic | modelled (driver-registry) |
+| `@npk_clone_raw` | asm | trusted (module asm) |
 | `@npk_close` | syscall | specified (3 discharged, 0 residue) |
 | `@npk_cstr_slice` | syscall | boundary (the bytes of a NUL-terminated string the kernel wrote (argv, envp) as {ptr, len}: a strlen over the kernel's memory, the bytes themselves never copied) |
 | `@npk_cv_begin` | syscall | boundary (the CondVar wait's entry: the frame linked on the cv's waiter list under the cv's futex, the guard's mutex released (the ordinary guard release), the frame due at the caller's absolute deadline -- the park itself is the executor's) |
@@ -177,6 +187,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_frame_free` | syscall | boundary (returns a frame: a null or misaligned pointer, or a header that does not validate as frame-live, is HeapBadRequest; a dedicated block goes back to the heap whole, a bucketed one is stamped frame-free and pushed on its size bucket's list, a new bucket appended (the parallel arrays grown by ralloc) when its size has none) |
 | `@npk_frozen_get` | atomic | specified (2 discharged, 0 residue); modelled (trap-route) |
 | `@npk_fs_alloc` | syscall | boundary (a block of n bytes at the requested alignment bumped from the one-mebibyte failsafe region with the heap's [ size | 0 ] header before it, single-threaded by construction since every other thread is parked before failsafe runs (D-291); exhaustion is HeapOom inside failsafe, the re-entry rule's exit 70 (D-292)); modelled (trap-route) |
+| `@npk_fs_switch_call` | asm | trusted (module asm) |
 | `@npk_guard_release` | syscall | boundary (releases an exclusive hold: the state word to free and a wake by the cell's kind (a mutex wakes one waiter, an rwlock's writer release wakes all -- a crowd of readers may proceed together)) |
 | `@npk_hardware_concurrency` | syscall | specified (6 discharged, 0 residue) |
 | `@npk_heap_bad` | syscall | specified (2 discharged, 0 residue) |
@@ -241,6 +252,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_sarena_destroy` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sarena_make` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_sarena_slot` | atomic | modelled (shared-arena) |
+| `@npk_sigreturn` | asm | trusted (module asm) |
 | `@npk_sigstack_on` | syscall | boundary (sigaltstack(&{ base, 0, 64 KiB }, NULL) for the calling thread (D-305 (4)); the kernel refuses a stack below the machine's minimum signal frame with ENOMEM, and that refusal traps -4102 at the thread's start -- the assumption that 64 KiB holds this machine's signal frame, checked where it is made) |
 | `@npk_sl_earliest` | atomic | modelled (park-unpark) |
 | `@npk_sl_push` | atomic | modelled (park-unpark, reactor-io) |
@@ -260,6 +272,7 @@ until step 3 held the two runners' classifiers to one answer.
 | `@npk_string_equals` | pure | specified (6 discharged, 0 residue) |
 | `@npk_string_from_bytes` | pure | specified (4 discharged, 0 residue) |
 | `@npk_string_slice` | syscall | specified (10 discharged, 0 residue) |
+| `@npk_switch_stack` | asm | trusted (module asm) |
 | `@npk_sys6` | asm | trusted (inline asm) |
 | `@npk_task_done` | atomic | specified (2 discharged, 0 residue); modelled (park-unpark) |
 | `@npk_thread_entry` | syscall | boundary (a spawned thread's first ordinary code, reached by the clone trampoline's real call (a child that continued in IR would read the parent's spilled stack): its signal stack registered first (npk_sigstack_on, from the TLS block's word the parent wrote; D-305 (4)), its TLS and executor booted from the trampoline's block, the task run to completion, the thread ended through npk_thread_exit) |
@@ -300,7 +313,7 @@ document moving is a stale claim about the one boundary the kernel is
 trusted across.
 
 <!-- BEGIN floor-syscalls -->
-The floor issues 28 syscall numbers, and no others: **0** read, **1** write, **3** close, **9** mmap, **10** mprotect, **11** munmap, **13** rt_sigaction, **39** getpid, **56** clone, **59** execve, **60** exit, **110** getppid, **131** sigaltstack, **157** prctl, **158** arch_prctl, **202** futex, **204** sched_getaffinity, **228** clock_gettime, **231** exit_group, **233** epoll_ctl, **234** tgkill, **257** openat, **281** epoll_pwait, **290** eventfd2, **291** epoll_create1, **292** dup3, **318** getrandom, **424** pidfd_send_signal. Each has one row in the
+The floor issues 29 syscall numbers, and no others: **0** read, **1** write, **3** close, **9** mmap, **10** mprotect, **11** munmap, **13** rt_sigaction, **15** rt_sigreturn, **39** getpid, **56** clone, **59** execve, **60** exit, **110** getppid, **131** sigaltstack, **157** prctl, **158** arch_prctl, **202** futex, **204** sched_getaffinity, **228** clock_gettime, **231** exit_group, **233** epoll_ctl, **234** tgkill, **257** openat, **281** epoll_pwait, **290** eventfd2, **291** epoll_create1, **292** dup3, **318** getrandom, **424** pidfd_send_signal. Each has one row in the
 kernel-effect table -- the `kernel-effects` region of VERIFICATION_REFERENCE §9.2, generated
 into `npkg/floor_kernel.npk` -- saying what it does to memory and to the result, and the
 belt holds that sentence: a number without a row, or a call site whose option the row does
@@ -309,6 +322,11 @@ not speak for, is a finding. The rows that WRITE memory are held to the running 
 
 | symbol | class | issues | reaches |
 |---|---|---|---|
+| `@npk_clone_raw` | asm | 56 clone, 60 exit | 56 clone, 60 exit |
+| `@npk_sigreturn` | asm | 15 rt_sigreturn | 15 rt_sigreturn |
+| `@__morestack` | asm | -- | the trap route only |
+| `@__morestack_non_split` | asm | -- | the trap route only |
+| `@_start` | asm | -- | 9 mmap, 10 mprotect, 13 rt_sigaction, 39 getpid, 131 sigaltstack, 158 arch_prctl, and the trap route |
 | `@npk_cstr_slice` | syscall | -- | 9 mmap, and the trap route |
 | `@npk_start` | asm | 13 rt_sigaction | 9 mmap, 10 mprotect, 13 rt_sigaction, 39 getpid, 131 sigaltstack, 158 arch_prctl, and the trap route |
 | `@npk_start_main` | syscall | -- | 1 write, 202 futex, 231 exit_group, and the trap route |
@@ -343,7 +361,7 @@ not speak for, is a finding. The rows that WRITE memory are held to the running 
 | `@npk_sigstack_on` | syscall | 131 sigaltstack | 131 sigaltstack, and the trap route |
 | `@npk_stack_exhausted` | syscall | -- | the trap route only |
 | `@npk_stack_foreign` | syscall | -- | the trap route only |
-| `@npk_thread_start` | asm | -- | 9 mmap, 10 mprotect, 11 munmap, 202 futex, 318 getrandom, and the trap route |
+| `@npk_thread_start` | asm | -- | 9 mmap, 10 mprotect, 11 munmap, 56 clone, 60 exit, 202 futex, 318 getrandom, and the trap route |
 | `@npk_thread_entry` | syscall | -- | 0 read, 131 sigaltstack, 202 futex, 228 clock_gettime, 281 epoll_pwait, and the trap route |
 | `@npk_thread_exit` | syscall | 60 exit | 60 exit |
 | `@npk_thread_join` | atomic | 202 futex | 11 munmap, 202 futex, 228 clock_gettime, and the trap route |

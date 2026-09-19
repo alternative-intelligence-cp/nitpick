@@ -1444,7 +1444,7 @@ the same survey.) `npkg/floor_smt.npk:3252-3254` maps `@npk_heap_bad`, `@npk_hea
 `trap_code` yet, so no verdict rests on the table — a latent wrong fact in an instrument, corrected before a clause
 can rest on it.
 
-**DEF-64 — OPEN, fixed at 1.5.8 step 2b (split from step 2 on 2026-09-19 so the stack check could meet its harness sooner): THE FLOOR'S SYSCALL CENSUS COULD NOT SEE `module asm`.** (found 2026-09-18
+**DEF-64 — FIXED at 1.5.8 step 2b (2026-09-19): the census reads `module asm` in both runners. A syscall's number comes from the `mov $N, %eax` immediately before it (`floor-asm-syscall-unread` otherwise); a `module asm` line the census cannot read is `floor-asm-line-unread`. TCB.md's membership table lists the seven `module asm` symbols, `trusted (module asm)`. Its syscall table counts 29 numbers, `rt_sigreturn` among them, with rows for `npk_clone_raw`, `npk_sigreturn`, `__morestack`, `__morestack_non_split` and `_start`, and `npk_thread_start` reaches `clone` and `exit`, which it always did. The explorer states each one it cannot route in `runtime/explore/unrouted.txt`, held to the census (`explore-asm-unlisted`/`-stale`/`-malformed`). Seven self-check cases in each runner.** ~~OPEN, fixed at 1.5.8 step 2b (split from step 2 on 2026-09-19 so the stack check could meet its harness sooner): THE FLOOR'S SYSCALL CENSUS COULD NOT SEE `module asm`.~~ (found 2026-09-18
 by the explorer survey of 1.5.8's planning.) The kernel-effect table, TCB.md §4b's syscall boundary and the
 explorer's transform all read `call i64 @npk_sys6(i64 N` in function bodies; a syscall written in a `module asm`
 block is invisible to all three. One already is: `rt_sigreturn` (15), the SIGUSR1 handler's restorer (D-291) — no

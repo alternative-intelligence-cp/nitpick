@@ -575,6 +575,15 @@ pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:r
         ln = string_concat(ln, " |");
         drop strlist_push(@keyed, ln);
     }
+    // every `module asm` symbol with a body (1.5.8 step 2b; DEF-64): the
+    // assembler's input, which no translator and no transform reads
+    for (int64:a in 0i64...ft.asm_bodies.count) {
+        string:an = raw strlist_view_of(ft.asm_bodies.items[a].name);
+        if ((raw floor_fn_index(ft, an)) >= 0i64) { continue; }
+        string:la = string_concat("| `", an);
+        la = string_concat(la, "` | asm | trusted (module asm) |");
+        drop strlist_push(@keyed, la);
+    }
     pass (raw strlist_sorted(keyed));
 };
 
@@ -894,9 +903,49 @@ func:is_trap_entry = bool(string:name) never fails {
     pass false;
 };
 
-// The syscall numbers `fi` issues directly, in ascending order.
+// THE SYSCALL CENSUS'S NODES (1.5.8 step 2b; DEF-64): every define, then every
+// `module asm` symbol with a body -- node `fi` below `ft.fns.count` is a define,
+// at or above it the asm body `fi - ft.fns.count`. `floor.py`'s
+// `_syscall_graph`, whose order is the same: the asm symbols first in the
+// table's rows (the floor writes them above every define).
+func:sys_node_count = int64(FloorText->:ft) never fails {
+    pass (ft.fns.count + ft.asm_bodies.count);
+};
+
+func:sys_node_name = string(FloorText->:ft, int64:fi) never fails {
+    if (fi < ft.fns.count) { pass (raw strlist_view_of(ft.fns.items[fi].name)); }
+    pass (raw strlist_view_of(ft.asm_bodies.items[fi - ft.fns.count].name));
+};
+
+func:sys_node_index = int64(FloorText->:ft, string:name) never fails {
+    int64:fi = raw floor_fn_index(ft, name);
+    if (fi >= 0i64) { pass fi; }
+    for (int64:k in 0i64...ft.asm_bodies.count) {
+        if (raw text_eq(raw strlist_view_of(ft.asm_bodies.items[k].name), name)) { pass (ft.fns.count + k); }
+    }
+    pass (0i64 - 1i64);
+};
+
+// The syscall numbers node `fi` issues directly, in ascending order: a define's
+// `npk_sys6(NR, ...)` calls, an asm body's read `syscall`s.
 pub func:floor_direct_syscalls = List<int64>(FloorText->:ft, int64:fi) never fails {
     List<int64>:out = raw list_init::<int64>(4i64);
+    if (fi >= ft.fns.count) {
+        int64:ai = fi - ft.fns.count;
+        for (int64:s in 0i64...ft.asm_bodies.items[ai].sys.count) {
+            if (!(ft.asm_bodies.items[ai].read.items[s])) { continue; }
+            int64:nr = ft.asm_bodies.items[ai].sys.items[s];
+            bool:had = false;
+            for (int64:h in 0i64...out.count) { if (out.items[h] == nr) { had = true; } }
+            if (!had) { drop list_push(@out, nr); }
+        }
+        for (int64:x in 0i64...out.count) {
+            for (int64:y in (x + 1i64)...out.count) {
+                if (out.items[y] < out.items[x]) { int64:tmp = out.items[x]; out.items[x] = out.items[y]; out.items[y] = tmp; }
+            }
+        }
+        pass out;
+    }
     for (int64:b in 0i64...ft.fns.items[fi].blocks.count) {
         for (int64:l in 0i64...ft.fns.items[fi].blocks.items[b].lines.count) {
             string:ln = raw strlist_view(ft.fns.items[fi].blocks.items[b].lines, l);
@@ -925,6 +974,17 @@ pub func:floor_direct_syscalls = List<int64>(FloorText->:ft, int64:fi) never fai
 // The defines `fi` calls, by index.
 func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
     List<int64>:out = raw list_init::<int64>(4i64);
+    if (fi >= ft.fns.count) {
+        int64:ai = fi - ft.fns.count;
+        for (int64:c in 0i64...ft.asm_bodies.items[ai].calls.count) {
+            int64:ni = raw sys_node_index(ft, raw strlist_view(ft.asm_bodies.items[ai].calls, c));
+            if (ni < 0i64) { continue; }
+            bool:had = false;
+            for (int64:h in 0i64...out.count) { if (out.items[h] == ni) { had = true; } }
+            if (!had) { drop list_push(@out, ni); }
+        }
+        pass out;
+    }
     for (int64:b in 0i64...ft.fns.items[fi].blocks.count) {
         for (int64:l in 0i64...ft.fns.items[fi].blocks.items[b].lines.count) {
             string:ln = raw strlist_view(ft.fns.items[fi].blocks.items[b].lines, l);
@@ -933,7 +993,7 @@ func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
             if (at < 0i64) { continue; }
             int64:e = at;
             while ((e < ln.len) && (ln.ptr[e] != 40u8) && (ln.ptr[e] != 32u8)) { e = e + 1i64; }
-            int64:ci = raw floor_fn_index(ft, raw text_slice(ln, at, e));
+            int64:ci = raw sys_node_index(ft, raw text_slice(ln, at, e));
             if (ci < 0i64) { continue; }
             bool:have = false;
             for (int64:i in 0i64...out.count) { if (out.items[i] == ci) { have = true; } }
@@ -948,8 +1008,8 @@ func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
 pub func:floor_reach_syscalls = List<int64>(FloorText->:ft, int64:fi, bool->:traps) never fails {
     List<int64>:out = raw list_init::<int64>(8i64);
     List<int64>:work = raw list_init::<int64>(8i64);
-    List<bool>:seen = raw list_init::<bool>(ft.fns.count + 1i64);
-    for (int64:i in 0i64...ft.fns.count) { drop list_push(@seen, false); }
+    List<bool>:seen = raw list_init::<bool>((raw sys_node_count(ft)) + 1i64);
+    for (int64:i in 0i64...(raw sys_node_count(ft))) { drop list_push(@seen, false); }
     drop list_push(@work, fi);
     seen.items[fi] = true;
     <-traps = false;
@@ -965,13 +1025,13 @@ pub func:floor_reach_syscalls = List<int64>(FloorText->:ft, int64:fi, bool->:tra
         List<int64>:cs = raw floor_callees(ft, cur);
         for (int64:c in 0i64...cs.count) {
             int64:ci = cs.items[c];
-            if (raw is_trap_entry(raw strlist_view_of(ft.fns.items[ci].name))) { <-traps = true; continue; }
+            if (raw is_trap_entry(raw sys_node_name(ft, ci))) { <-traps = true; continue; }
             if (seen.items[ci]) { continue; }
             seen.items[ci] = true;
             drop list_push(@work, ci);
         }
     }
-    if (raw is_trap_entry(raw strlist_view_of(ft.fns.items[fi].name))) { <-traps = false; }
+    if (raw is_trap_entry(raw sys_node_name(ft, fi))) { <-traps = false; }
     for (int64:i3 in 0i64...out.count) {
         for (int64:j in (i3 + 1i64)...out.count) {
             if (out.items[j] < out.items[i3]) { int64:t = out.items[i3]; out.items[i3] = out.items[j]; out.items[j] = t; }
@@ -997,7 +1057,11 @@ func:syscall_list_text = string(List<int64>:ns) never fails {
 pub func:tcb_syscall_rows = List<string>(FloorText->:ft) never fails {
     List<string>:cls = raw floor_classes(ft);
     List<string>:out = raw list_init::<string>(64i64);
-    for (int64:i in 0i64...ft.fns.count) {
+    // the `module asm` symbols first, then the defines: the floor's own order
+    // (1.5.8 step 2b; DEF-64 -- `floor.py`'s `_syscall_graph`)
+    for (int64:oi in 0i64...(raw sys_node_count(ft))) {
+        int64:i = oi + ft.fns.count;
+        if (i >= (raw sys_node_count(ft))) { i = i - (raw sys_node_count(ft)); }
         bool:traps = false;
         List<int64>:reach = raw floor_reach_syscalls(ft, i, @traps);
         if ((reach.count == 0i64) && (!traps)) { continue; }
@@ -1007,9 +1071,10 @@ pub func:tcb_syscall_rows = List<string>(FloorText->:ft) never fails {
             if (reach.count == 0i64) { rt = "the trap route only"; }
             else { rt = string_concat(rt, ", and the trap route"); }
         }
-        string:ln = string_concat("| `", raw strlist_view_of(ft.fns.items[i].name));
+        string:ln = string_concat("| `", raw sys_node_name(ft, i));
         ln = string_concat(ln, "` | ");
-        ln = string_concat(ln, raw strlist_view(cls, i));
+        if (i >= ft.fns.count) { ln = string_concat(ln, "asm"); }
+        else { ln = string_concat(ln, raw strlist_view(cls, i)); }
         ln = string_concat(ln, " | ");
         ln = string_concat(ln, raw syscall_list_text(direct));
         ln = string_concat(ln, " | ");
@@ -1031,8 +1096,43 @@ pub func:tcb_syscall_rows = List<string>(FloorText->:ft) never fails {
 // the twin, finding for finding.
 // Every number the floor issues has a row, and every `npk_sys6` site's option is one its row
 // speaks for: the findings by name (`floor-syscall-row`, `floor-syscall-option`).
+// THE `module asm` CENSUS'S OWN FINDINGS (1.5.8 step 2b; DEF-64): every
+// `module asm` line is one the census reads (`floor-asm-line-unread`, by line),
+// and every `syscall` in a `module asm` symbol has a number the census can read
+// (`floor-asm-syscall-unread`, by symbol). `floor.py`'s `check_asm_census`,
+// finding for finding.
+pub func:floor_asm_census_findings = List<string>(FloorText->:ft) never fails {
+    List<string>:fl = raw list_init::<string>(2i64);
+    for (int64:i in 0i64...ft.asm_unread_lines.count) {
+        string:w = string_concat("floor: floor-asm-line-unread: line ", int_to_string(ft.asm_unread_lines.items[i]));
+        w = string_concat(w, " is `module asm` but not `module asm \"TEXT\"` followed by nothing or a `;` comment -- the census could not read the symbol it belongs to (DEF-64)");
+        drop strlist_push(@fl, w);
+    }
+    for (int64:a in 0i64...ft.asm_bodies.count) {
+        for (int64:s in 0i64...ft.asm_bodies.items[a].read.count) {
+            if (ft.asm_bodies.items[a].read.items[s]) { continue; }
+            string:w2 = string_concat("floor: floor-asm-syscall-unread: `", raw strlist_view_of(ft.asm_bodies.items[a].name));
+            w2 = string_concat(w2, "`'s syscall #");
+            w2 = string_concat(w2, int_to_string(s + 1i64));
+            w2 = string_concat(w2, " has no `mov $N, %eax` immediately before it -- the census reads a `module asm` syscall's number from that instruction alone, never from a register it would have to trace (DEF-64); load the number right before the `syscall`");
+            drop strlist_push(@fl, w2);
+        }
+    }
+    pass fl;
+};
+
 pub func:floor_syscall_sites = List<string>(FloorText->:ft) never fails {
-    List<string>:fl = raw list_init::<string>(4i64);
+    List<string>:fl = raw floor_asm_census_findings(ft);
+    // a `module asm` symbol's numbers need their rows too (1.5.8 step 2b; DEF-64)
+    for (int64:ai in 0i64...ft.asm_bodies.count) {
+        List<int64>:da = raw floor_direct_syscalls(ft, ft.fns.count + ai);
+        for (int64:ak in 0i64...da.count) {
+            if ((raw ke_effect(da.items[ak])) != 4i64) { continue; }
+            string:wa = string_concat("floor: floor-syscall-row: runtime/npkrt.ll issues syscall ", int_to_string(da.items[ak]));
+            wa = string_concat(wa, ", which the kernel-effect table has no row for -- give it one in VERIFICATION_REFERENCE SS9.2's `kernel-effects` region and regenerate");
+            drop strlist_push(@fl, wa);
+        }
+    }
     for (int64:i in 0i64...ft.fns.count) {
         List<int64>:d = raw floor_direct_syscalls(ft, i);
         for (int64:k in 0i64...d.count) {

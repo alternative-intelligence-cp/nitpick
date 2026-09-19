@@ -1,0 +1,17 @@
+; THE SYSCALLS NO SCHEDULING POINT CAN PRECEDE (1.5.8 step 2b; DEF-64).
+;
+; The explored build is the real floor transformed (D-212, X-1): a point before
+; every atomic step and every `@npk_sys6(` call routed to the shim. A syscall
+; written in a `module asm` block is neither -- the transformer rewrites IR, and
+; assembly is not IR -- so it runs for real, with no point before it. Until
+; 1.5.8 step 2b no reader of the floor saw these at all. The census now reads
+; them (`floor.py`'s `asm_symbols`, `npkg/floor_ir.npk`'s twin), and this file
+; STATES each one with the reason the explored build stays sound. Both runners
+; hold the file to the census exactly: a syscall the census finds that no line
+; states is `explore-asm-unlisted`, and a line the census does not find is
+; `explore-asm-stale`.
+;
+; One line each: the symbol, the syscall number, and the reason.
+@npk_clone_raw 56 the spawn: the transformer brackets the IR call of `@npk_clone_raw` with `npkx_prespawn` and `npkx_spawned` (the clone's result and its CHILD_CLEARTID word, X-19), so the shim learns of the child on the parent's side; the child runs only the trampoline's register moves before `npkx_begin`, the first instruction of `npk_thread_entry`, and touches no shared word before it
+@npk_clone_raw 60 a thread's end, on the child's path after `npk_thread_entry` has returned through `npkx_end`: the virtual schedule has already ended the thread, the kernel then clears its CHILD_CLEARTID word, and the shim's next holder waits for exactly that clear before it runs (X-19's settled end)
+@npk_sigreturn 15 never executed: SIGUSR1's action names this restorer only because x86-64 delivers no signal to an action without one, and the stop handler never returns (D-291)

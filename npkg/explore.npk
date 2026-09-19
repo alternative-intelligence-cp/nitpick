@@ -36,6 +36,7 @@ mod:explore;
 
 use "./text.npk".*;
 use "./floor_ir.npk".*;                        // floor_code_part: the line without its comment; floor_parse for the checkers
+use "./floor_kernel.npk".*;                    // ke_name: a syscall's name in the unrouted belt's finding (1.5.8 step 2b)
 use "./floor_model.npk".*;                     // line_is_step: the census's own definition
 use "./explore_req.npk".*;                     // the spec's caller hypotheses as checkers (step 5, D-302)
 use "../src/backend/smt/smt_writer.npk".*;     // SmtBuf: one allocation for the joined text
@@ -424,6 +425,132 @@ pub func:explore_census = int64(string:floor) never fails {
 
 // THE TOTALITY BELT over a floor and its explored text: every step accounted
 // for, by count and by position. The findings, by name; none when it holds.
+// THE SYSCALLS NO POINT CAN PRECEDE (1.5.8 step 2b; DEF-64): every syscall the
+// floor's `module asm` census reads (`floor_parse`'s `asm_bodies`) is STATED in
+// runtime/explore/unrouted.txt -- `@SYMBOL NUMBER reason`, `;` comments -- with
+// the reason it may run unscheduled, and the file states nothing the census does
+// not find: `explore-asm-unlisted` and `explore-asm-stale` by name, a line that
+// is not `@SYMBOL NUMBER reason` or a pair stated twice `explore-asm-malformed`.
+// Until this step the totality belt's "no step escapes" counted `npk_sys6`
+// calls and atomics in `define` bodies alone. The harness's `check_unrouted`,
+// finding for finding. `pairs` is `@SYMBOL NUMBER NAME` per census syscall, in
+// the census's order, for the stage's lines.
+pub struct:Unrouted = { List<string>:findings; List<string>:pairs; };
+
+// `@SYMBOL NUMBER reason`: the symbol and the number (one to nine digits), `ok`.
+func:unrouted_line = string(string:l, int64->:nr, bool->:ok) never fails {
+    <-ok = false;
+    <-nr = 0i64;
+    if ((l.len == 0i64) || (l.ptr[0i64] != 64u8)) { pass ""; }
+    int64:i = 1i64;
+    while ((i < l.len) && (!(raw text_is_ws(l.ptr[i])))) { i = i + 1i64; }
+    string:name = raw text_slice(l, 1i64, i);
+    if (!(raw asm_is_name(name))) { pass ""; }
+    int64:w1 = i;
+    while ((i < l.len) && (raw text_is_ws(l.ptr[i]))) { i = i + 1i64; }
+    if (i == w1) { pass ""; }
+    int64:ds = i;
+    int64:v = 0i64;
+    while ((i < l.len) && ((i - ds) < 10i64) && (l.ptr[i] >= 48u8) && (l.ptr[i] <= 57u8)) {
+        v = (v * 10i64) + ((l.ptr[i] - 48u8) => int64);
+        i = i + 1i64;
+    }
+    if (((i - ds) == 0i64) || ((i - ds) > 9i64)) { pass ""; }
+    int64:w2 = i;
+    while ((i < l.len) && (raw text_is_ws(l.ptr[i]))) { i = i + 1i64; }
+    if ((i == w2) || (i >= l.len)) { pass ""; }
+    <-nr = v;
+    <-ok = true;
+    pass (string_concat("@", name));
+};
+
+pub func:explore_unrouted = Unrouted(string:floor, string:unrouted, string:name) never fails {
+    Unrouted:u = Unrouted{ findings: raw list_init::<string>(2i64), pairs: raw list_init::<string>(4i64) };
+    List<string>:st_sym = raw list_init::<string>(4i64);
+    List<int64>:st_nr = raw list_init::<int64>(4i64);
+    List<string>:lines = raw text_lines(unrouted);
+    for (int64:li in 0i64...lines.count) {
+        string:l = raw text_trim(raw strlist_view(lines, li));
+        if ((l.len == 0i64) || (l.ptr[0i64] == 59u8)) { continue; }
+        int64:nr = 0i64;
+        bool:ok = false;
+        string:sym = raw unrouted_line(l, @nr, @ok);
+        if (!ok) {
+            string:w = string_concat(name, ": explore-asm-malformed: runtime/explore/unrouted.txt line ");
+            w = string_concat(w, int_to_string(li + 1i64));
+            w = string_concat(w, " is not `@SYMBOL NUMBER reason`");
+            drop strlist_push(@u.findings, w);
+            continue;
+        }
+        bool:twice = false;
+        for (int64:k in 0i64...st_sym.count) {
+            if ((raw text_eq(raw strlist_view(st_sym, k), sym)) && (st_nr.items[k] == nr)) { twice = true; }
+        }
+        if (twice) {
+            string:w2 = string_concat(name, ": explore-asm-malformed: runtime/explore/unrouted.txt states `");
+            w2 = string_concat(w2, sym);
+            w2 = string_concat(w2, " ");
+            w2 = string_concat(w2, int_to_string(nr));
+            w2 = string_concat(w2, "` twice");
+            drop strlist_push(@u.findings, w2);
+            continue;
+        }
+        drop strlist_push(@st_sym, sym);
+        drop list_push(@st_nr, nr);
+    }
+    FloorText:ft = raw floor_parse(floor);
+    List<string>:f_sym = raw list_init::<string>(4i64);
+    List<int64>:f_nr = raw list_init::<int64>(4i64);
+    for (int64:a in 0i64...ft.asm_bodies.count) {
+        for (int64:s in 0i64...ft.asm_bodies.items[a].sys.count) {
+            if (!(ft.asm_bodies.items[a].read.items[s])) { continue; }
+            string:fs = raw strlist_view_of(ft.asm_bodies.items[a].name);
+            int64:fn2 = ft.asm_bodies.items[a].sys.items[s];
+            bool:had = false;
+            for (int64:h in 0i64...f_sym.count) {
+                if ((raw text_eq(raw strlist_view(f_sym, h), fs)) && (f_nr.items[h] == fn2)) { had = true; }
+            }
+            if (had) { continue; }
+            drop strlist_push(@f_sym, fs);
+            drop list_push(@f_nr, fn2);
+        }
+    }
+    for (int64:i in 0i64...f_sym.count) {
+        string:ps = string_concat(raw strlist_view(f_sym, i), " ");
+        ps = string_concat(ps, int_to_string(f_nr.items[i]));
+        ps = string_concat(ps, " ");
+        ps = string_concat(ps, raw ke_name(f_nr.items[i]));
+        drop strlist_push(@u.pairs, ps);
+        bool:stated = false;
+        for (int64:k2 in 0i64...st_sym.count) {
+            if ((raw text_eq(raw strlist_view(st_sym, k2), raw strlist_view(f_sym, i))) && (st_nr.items[k2] == f_nr.items[i])) { stated = true; }
+        }
+        if (stated) { continue; }
+        string:w3 = string_concat(name, ": explore-asm-unlisted: `");
+        w3 = string_concat(w3, raw strlist_view(f_sym, i));
+        w3 = string_concat(w3, "` issues syscall ");
+        w3 = string_concat(w3, int_to_string(f_nr.items[i]));
+        w3 = string_concat(w3, " (");
+        w3 = string_concat(w3, raw ke_name(f_nr.items[i]));
+        w3 = string_concat(w3, ") in `module asm`, which no scheduling point can precede and no transform can route -- state in runtime/explore/unrouted.txt why the explored build is sound with it running for real (DEF-64)");
+        drop strlist_push(@u.findings, w3);
+    }
+    for (int64:j in 0i64...st_sym.count) {
+        bool:found = false;
+        for (int64:k3 in 0i64...f_sym.count) {
+            if ((raw text_eq(raw strlist_view(f_sym, k3), raw strlist_view(st_sym, j))) && (f_nr.items[k3] == st_nr.items[j])) { found = true; }
+        }
+        if (found) { continue; }
+        string:w4 = string_concat(name, ": explore-asm-stale: runtime/explore/unrouted.txt states `");
+        w4 = string_concat(w4, raw strlist_view(st_sym, j));
+        w4 = string_concat(w4, " ");
+        w4 = string_concat(w4, int_to_string(st_nr.items[j]));
+        w4 = string_concat(w4, "`, which the floor's `module asm` census does not find -- remove the line");
+        drop strlist_push(@u.findings, w4);
+    }
+    pass u;
+};
+
 pub func:explore_totality = List<string>(string:floor, string:explored) never fails {
     pass (raw explore_totality_of("floor", floor, explored));
 };

@@ -55,6 +55,20 @@ pub struct:FloorText = {
     List<string>:type_names;  // the named struct types, `%npk.hdr` (1.5.6 step 3)
     List<string>:type_texts;  // their bodies, `{ ptr, i32, ... }`
     List<string>:asm_syms;    // the symbols `module asm ".globl X"` defines, as `@X` (1.5.6 step 3)
+    List<FAsm>:asm_bodies;    // the `module asm` census (1.5.8 step 2b; DEF-64): every symbol with a body, in file order
+    List<int64>:asm_unread_lines; // the 1-based numbers of `module asm` lines the census cannot read
+};
+
+// One symbol a `module asm` block defines with a body (1.5.8 step 2b; DEF-64):
+// its syscalls in order -- `read` false where the census cannot read the
+// number -- its direct callees (`@Y`, a `call`/`jmp` to a named symbol), and
+// whether it makes an indirect call. `floor.py`'s `AsmSym`, field for field.
+pub struct:FAsm = {
+    string:name;
+    List<int64>:sys;
+    List<bool>:read;
+    List<string>:calls;
+    bool:indirect;
 };
 
 // The line's code part: the comment cut, string contents blanked (the
@@ -241,7 +255,8 @@ pub func:floor_parse = FloorText(string:text) never fails {
                               globals: raw list_init::<string>(64i64), global_tys: raw list_init::<string>(64i64),
                               global_inits: raw list_init::<string>(64i64),
                               type_names: raw list_init::<string>(4i64), type_texts: raw list_init::<string>(4i64),
-                              asm_syms: raw list_init::<string>(4i64) };
+                              asm_syms: raw list_init::<string>(4i64),
+                              asm_bodies: raw list_init::<FAsm>(8i64), asm_unread_lines: raw list_init::<int64>(1i64) };
     List<string>:raw_lines = raw text_lines(text);
     bool:in_fn = false;
     FFn:cur = raw ffn_empty();
@@ -338,7 +353,151 @@ pub func:floor_parse = FloorText(string:text) never fails {
         FGep:g2 = raw gep_of(line);
         if (g2.reg.len > 0i64) { drop list_push(@cur.geps, move(g2)); }
     }
+    drop floor_asm_census(@ft, raw_lines);
     pass ft;
+};
+
+// --- THE `module asm` CENSUS (1.5.8 step 2b; DEF-64) -------------------------------------
+//
+// Until this step the syscall census, TCB.md SS4b and the explorer's transform
+// read only `call i64 @npk_sys6(i64 N` in `define` bodies, so a syscall written
+// in a `module asm` block -- `rt_sigreturn` (15), the clone trampoline's `clone`
+// (56) and the child's `exit` (60) -- was invisible to all three. A symbol is a
+// `.globl X` whose `X:` label follows in the same RUN of consecutive `module
+// asm` lines; a local label continues it, a directive (`.section`, `.previous`)
+// is not an instruction, and a line that is not `module asm` ends the run. A
+// `syscall`'s number is read from the instruction IMMEDIATELY before it --
+// `mov $N, %eax` (or `%rax`), N one to nine digits, no label between -- and from
+// nothing else, so the census never traces what a register holds. `floor.py`'s
+// `asm_symbols`, rule for rule.
+
+// `module asm "TEXT"` followed by nothing or a `;` comment: TEXT (a quote inside
+// `module asm` is always escaped, so TEXT runs to the next quote), and `ok`.
+func:asm_line_text = string(string:rawl, bool->:ok) never fails {
+    <-ok = false;
+    if (!(raw text_starts_with(rawl, "module asm \""))) { pass ""; }
+    int64:e = raw text_find_byte(rawl, 34u8, 12i64);
+    if (e < 0i64) { pass ""; }
+    string:rest = raw text_trim(raw text_slice(rawl, e + 1i64, rawl.len));
+    if ((rest.len > 0i64) && (rest.ptr[0i64] != 59u8)) { pass ""; }
+    <-ok = true;
+    pass (raw text_slice(rawl, 12i64, e));
+};
+
+// `mov`/`movl`/`movq`, whitespace, `$N`, a comma, `%eax` or `%rax`: N (one to
+// nine digits), else -1.
+func:asm_mov_nr = int64(string:a) never fails {
+    int64:i = 0i64;
+    if (raw text_starts_with(a, "movl")) { i = 4i64; }
+    else {
+        if (raw text_starts_with(a, "movq")) { i = 4i64; }
+        else {
+            if (!(raw text_starts_with(a, "mov"))) { pass (0i64 - 1i64); }
+            i = 3i64;
+        }
+    }
+    int64:ws = i;
+    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) { i = i + 1i64; }
+    if (i == ws) { pass (0i64 - 1i64); }
+    if ((i >= a.len) || (a.ptr[i] != 36u8)) { pass (0i64 - 1i64); }
+    i = i + 1i64;
+    int64:ds = i;
+    int64:v = 0i64;
+    while ((i < a.len) && ((i - ds) < 10i64) && (a.ptr[i] >= 48u8) && (a.ptr[i] <= 57u8)) {
+        v = (v * 10i64) + ((a.ptr[i] - 48u8) => int64);
+        i = i + 1i64;
+    }
+    if (((i - ds) == 0i64) || ((i - ds) > 9i64)) { pass (0i64 - 1i64); }
+    if ((i >= a.len) || (a.ptr[i] != 44u8)) { pass (0i64 - 1i64); }
+    i = i + 1i64;
+    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) { i = i + 1i64; }
+    string:reg = raw text_slice(a, i, a.len);
+    if ((raw text_eq(reg, "%eax")) || (raw text_eq(reg, "%rax"))) { pass v; }
+    pass (0i64 - 1i64);
+};
+
+// `call`/`callq`/`jmp`/`jmpq` and whitespace: the operand after it, else "".
+func:asm_call_operand = string(string:a) never fails {
+    int64:i = 0i64;
+    if (raw text_starts_with(a, "callq")) { i = 5i64; }
+    else {
+        if (raw text_starts_with(a, "call")) { i = 4i64; }
+        else {
+            if (raw text_starts_with(a, "jmpq")) { i = 4i64; }
+            else {
+                if (!(raw text_starts_with(a, "jmp"))) { pass ""; }
+                i = 3i64;
+            }
+        }
+    }
+    int64:ws = i;
+    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) { i = i + 1i64; }
+    if (i == ws) { pass ""; }
+    pass (raw text_slice(a, i, a.len));
+};
+
+// A symbol name as the assembler spells one: `[A-Za-z_.$][A-Za-z0-9_.$]*`.
+pub func:asm_is_name = bool(string:s) never fails {
+    if (s.len == 0i64) { pass false; }
+    for (int64:i in 0i64...s.len) {
+        uint8:c = s.ptr[i];
+        bool:alpha = ((c >= 65u8) && (c <= 90u8)) || ((c >= 97u8) && (c <= 122u8)) || (c == 95u8) || (c == 46u8) || (c == 36u8);
+        bool:digit = (c >= 48u8) && (c <= 57u8);
+        if (alpha) { continue; }
+        if (digit && (i > 0i64)) { continue; }
+        pass false;
+    }
+    pass true;
+};
+
+func:floor_asm_census = NIL(FloorText->:ft, List<string>:lines) never fails {
+    List<string>:globs = raw list_init::<string>(8i64);
+    bool:open = false;
+    int64:prev = 0i64 - 1i64;
+    for (int64:li in 0i64...lines.count) {
+        string:rawl = raw strlist_view(lines, li);
+        bool:ok = false;
+        string:inner = raw asm_line_text(rawl, @ok);
+        if (!ok) {
+            if (raw text_starts_with(rawl, "module asm")) { drop list_push(@ft.asm_unread_lines, li + 1i64); }
+            open = false;
+            prev = 0i64 - 1i64;
+            continue;
+        }
+        string:a = raw text_trim(inner);
+        if (raw text_starts_with(a, ".globl ")) {
+            drop strlist_push(@globs, raw text_trim(raw text_slice(a, 7i64, a.len)));
+            continue;
+        }
+        if ((a.len == 0i64) || (a.ptr[0i64] == 46u8)) { continue; }
+        if (a.ptr[a.len - 1i64] == 58u8) {
+            string:label = raw text_slice(a, 0i64, a.len - 1i64);
+            if (raw strlist_contains(globs, label)) {
+                FAsm:s = FAsm{ name: string_concat("@", label), sys: raw list_init::<int64>(2i64),
+                               read: raw list_init::<bool>(2i64), calls: raw list_init::<string>(2i64), indirect: false };
+                drop list_push(@ft.asm_bodies, move(s));
+                open = true;
+            }
+            prev = 0i64 - 1i64;
+            continue;
+        }
+        if (!open) { continue; }
+        int64:k = ft.asm_bodies.count - 1i64;
+        int64:mv = raw asm_mov_nr(a);
+        if (mv >= 0i64) { prev = mv; continue; }
+        if (raw text_eq(a, "syscall")) {
+            drop list_push(@ft.asm_bodies.items[k].sys, prev);
+            drop list_push(@ft.asm_bodies.items[k].read, prev >= 0i64);
+            prev = 0i64 - 1i64;
+            continue;
+        }
+        prev = 0i64 - 1i64;
+        string:op = raw asm_call_operand(a);
+        if (op.len == 0i64) { continue; }
+        if (op.ptr[0i64] == 42u8) { ft.asm_bodies.items[k].indirect = true; continue; }
+        if (raw asm_is_name(op)) { drop strlist_push(@ft.asm_bodies.items[k].calls, string_concat("@", op)); }
+    }
+    pass NIL;
 };
 
 // The successors of every block from its last line's `br` (or `switch`).

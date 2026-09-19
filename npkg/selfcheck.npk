@@ -383,6 +383,85 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         }
     }
 
+    // THE `module asm` CENSUS (1.5.8 step 2b; DEF-64): a syscall written in assembly is a
+    // syscall site like any other -- a number without a kernel-effect row fails by name, a
+    // `syscall` whose number is not loaded by the instruction right before it fails by name, a
+    // `module asm` line the census cannot read fails by name, and a readable one with a row
+    // passes; then the explorer's half -- a census syscall the unrouted list does not state
+    // fails, a stated one the census does not find fails, the list that states exactly the
+    // census passes. The harness's seven cases, the same texts byte for byte.
+    string:asm_row = "module asm \".globl f_raw\"\nmodule asm \"f_raw:\"\nmodule asm \"  movl $12, %eax\"\nmodule asm \"  syscall\"\nmodule asm \"  retq\"\n";
+    string:asm_unread = "module asm \".globl f_raw\"\nmodule asm \"f_raw:\"\nmodule asm \"  movl $15, %eax\"\nmodule asm \"  xorl %edi, %edi\"\nmodule asm \"  syscall\"\nmodule asm \"  retq\"\n";
+    string:asm_line = "module asm \".globl f_raw\" junk\nmodule asm \"f_raw:\"\nmodule asm \"  movl $15, %eax\"\nmodule asm \"  syscall\"\nmodule asm \"  retq\"\n";
+    string:asm_ok = "module asm \".globl f_raw\"\nmodule asm \"f_raw:\"\nmodule asm \"  movl $15, %eax\"   ; the number\nmodule asm \"  syscall\"\nmodule asm \"  retq\"\n";
+    for (int64:ai in 0i64...4i64) {
+        string:aname = "floor-asm-syscall-row";
+        string:atext = raw text_copy(asm_row);
+        bool:amust = true;
+        string:afind = "floor-syscall-row";
+        string:awhy = "a `module asm` syscall with no kernel-effect row (12) must fail: the census reads assembly";
+        if (ai == 1i64) {
+            aname = "floor-asm-syscall-unread";
+            atext = raw text_copy(asm_unread);
+            afind = "floor-asm-syscall-unread";
+            awhy = "a `module asm` syscall whose number is not loaded right before it must fail by name";
+        }
+        if (ai == 2i64) {
+            aname = "floor-asm-line-unread";
+            atext = raw text_copy(asm_line);
+            afind = "floor-asm-line-unread";
+            awhy = "a `module asm` line the census cannot read must fail by name, never end its run in silence";
+        }
+        if (ai == 3i64) {
+            aname = "floor-asm-control";
+            atext = raw text_copy(asm_ok);
+            amust = false;
+            afind = "floor-";
+            awhy = "a readable `module asm` syscall with a row (15) must pass";
+        }
+        FloorText:aft = raw floor_parse(atext);
+        List<string>:aall = raw floor_syscall_sites(@aft);
+        int64:ahits = 0i64;
+        for (int64:aj in 0i64...aall.count) { if (raw text_contains(raw strlist_view(aall, aj), afind)) { ahits = ahits + 1i64; } }
+        bool:aok = ((ahits > 0i64) == amust);
+        if (!aok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(aname, aok, awhy));
+        if (!aok) {
+            if (amust) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(aall, 0i64))); }
+        }
+    }
+    for (int64:ui in 0i64...3i64) {
+        string:uname = "explore-asm-unlisted";
+        string:ulist = "; nothing stated\n";
+        bool:umust = true;
+        string:ufind = "explore-asm-unlisted";
+        string:uwhy = "a `module asm` syscall the unrouted list does not state must fail by name";
+        if (ui == 1i64) {
+            uname = "explore-asm-stale";
+            ulist = "@f_raw 15 the reason\n@g_raw 12 a line the census does not find\n";
+            ufind = "explore-asm-stale";
+            uwhy = "a stated syscall the census does not find must fail by name";
+        }
+        if (ui == 2i64) {
+            uname = "explore-asm-control";
+            ulist = "@f_raw 15 the reason\n";
+            umust = false;
+            ufind = "explore-";
+            uwhy = "the list that states exactly the census must pass";
+        }
+        Unrouted:uu = raw explore_unrouted(asm_ok, ulist, "explore");
+        int64:uhits = 0i64;
+        for (int64:uj in 0i64...uu.findings.count) { if (raw text_contains(raw strlist_view(uu.findings, uj), ufind)) { uhits = uhits + 1i64; } }
+        bool:uok = ((uhits > 0i64) == umust);
+        if (!uok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(uname, uok, uwhy));
+        if (!uok) {
+            if (umust) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(uu.findings, 0i64))); }
+        }
+    }
+
     // THE MODELS' SECOND READING (1.5.6b step 4d; D-295): the explicit-state search over a
     // model's whole reachable space. A bad state reachable fails by name and the safe model
     // passes; a control whose bad state is reachable nowhere fails and the seeing one passes;

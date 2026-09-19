@@ -1546,13 +1546,120 @@ class _Names(dict):
 SYSCALL_NAMES = _Names()
 
 
-def syscall_map(floor_text):
-    """Per define: the syscall numbers it issues DIRECTLY (`npk_sys6(NR, …)`)
-    and the numbers it can reach transitively through the call graph. The
-    walk is `_floor_classes`'s, over code lines only."""
-    fns, order = parse_floor(floor_text)
+# `module asm "TEXT"`, then nothing or a `;` comment: TEXT runs to the next
+# quote, since a quote inside `module asm` is always escaped (`\22`)
+_ASM_LINE_RE = re.compile(r'^module asm "([^"]*)"\s*(?:;.*)?$')
+_ASM_MOV_NR_RE = re.compile(r'^mov[lq]?\s+\$(\d{1,9}),\s*%(?:eax|rax)$')
+_ASM_CALL_RE = re.compile(r'^(?:call|jmp)q?\s+([A-Za-z_.$][\w.$]*)$')
+
+
+class AsmSym:
+    """One symbol a `module asm` block defines with a body: `name` (`@X`), its
+    syscalls in order -- the number, or None where the census cannot read one
+    -- its direct callees (`@Y`, a `call`/`jmp` to a named symbol), and whether
+    it makes an indirect call."""
+    def __init__(self, name):
+        self.name = name
+        self.sys = []
+        self.calls = []
+        self.indirect = False
+
+
+def asm_symbols(floor_text):
+    """THE `module asm` CENSUS (1.5.8 step 2b; DEF-64). Until this step the
+    syscall census, TCB.md SS4b and the explorer's transform read only
+    `call i64 @npk_sys6(i64 N` in `define` bodies, so a syscall written in a
+    `module asm` block -- `rt_sigreturn` (15), and the clone trampoline's
+    `clone` (56) and the child's `exit` (60) -- was invisible to all three.
+    A symbol is a `.globl X` whose `X:` label follows in the same RUN of
+    consecutive `module asm` lines; a local label (`1:`) continues it, a
+    directive (`.section`, `.previous`) is not an instruction, and a line that
+    is not `module asm` ends the run. A `syscall`'s number is read from the
+    instruction IMMEDIATELY before it -- `mov $N, %eax` (or `%rax`), no label
+    between -- and from nothing else: a number loaded earlier, computed, or
+    reaching the `syscall` through a label is None, which
+    `check_asm_census` refuses by name (`floor-asm-syscall-unread`), so the
+    census never has to guess what a register holds. `npkg/floor_ir.npk`'s
+    `floor_asm_bodies` is the twin, rule for rule."""
+    globs = set()
+    out = []
+    cur = None
+    prev_nr = None
+    for raw in floor_text.split("\n"):
+        m = _ASM_LINE_RE.match(raw)
+        if not m:
+            cur = None
+            prev_nr = None
+            continue
+        a = m.group(1).strip()
+        if a.startswith(".globl "):
+            globs.add(a[len(".globl "):].strip())
+            continue
+        if a.startswith(".") or not a:
+            continue
+        if a.endswith(":"):
+            label = a[:-1]
+            if label in globs:
+                cur = AsmSym("@" + label)
+                out.append(cur)
+            prev_nr = None
+            continue
+        if cur is None:
+            continue
+        mm = _ASM_MOV_NR_RE.match(a)
+        if mm:
+            prev_nr = int(mm.group(1))
+            continue
+        if a == "syscall":
+            cur.sys.append(prev_nr)
+            prev_nr = None
+            continue
+        prev_nr = None
+        if re.match(r'^(?:call|jmp)q?\s+\*', a):
+            cur.indirect = True
+            continue
+        cm = _ASM_CALL_RE.match(a)
+        if cm:
+            cur.calls.append("@" + cm.group(1))
+    return out
+
+
+def check_asm_census(floor_text):
+    """Every `module asm` line is one the census reads (`floor-asm-line-unread`
+    by line), and every `syscall` in a `module asm` symbol has a number the
+    census can read (`floor-asm-syscall-unread` by symbol)."""
+    fails = []
+    # a `module asm` line the census cannot read would end its run in silence
+    for i, raw in enumerate(floor_text.split("\n")):
+        if raw.startswith("module asm") and not _ASM_LINE_RE.match(raw):
+            fails.append("floor: floor-asm-line-unread: line %d is `module asm` but not `module asm \"TEXT\"` "
+                         "followed by nothing or a `;` comment -- the census could not read the symbol it belongs to "
+                         "(DEF-64)" % (i + 1))
+    for s in asm_symbols(floor_text):
+        for i, n in enumerate(s.sys):
+            if n is None:
+                fails.append("floor: floor-asm-syscall-unread: `%s`'s syscall #%d has no `mov $N, %%eax` immediately before "
+                             "it -- the census reads a `module asm` syscall's number from that instruction alone, never "
+                             "from a register it would have to trace (DEF-64); load the number right before the `syscall`"
+                             % (s.name, i + 1))
+    return fails
+
+
+def _syscall_graph(floor_text, fns, order):
+    """The syscall census's graph (1.5.8 step 2b; DEF-64): every `define` and
+    every `module asm` symbol a node, in the floor's text order -- the asm
+    symbols first, since the floor writes them above every define; a node's
+    DIRECT numbers (`npk_sys6(NR, ...)` in a define, a read `syscall` in an asm
+    symbol); an edge per direct call to another node, asm symbols included,
+    so `npk_thread_start` reaches `npk_clone_raw`'s `clone` and `exit`.
+    (direct, graph, order)."""
+    asm = asm_symbols(floor_text)
+    names = set(fns) | {s.name for s in asm}
     direct = {}
     graph = {}
+    for s in asm:
+        direct[s.name] = {n for n in s.sys if n is not None}
+        graph[s.name] = {c for c in s.calls if c in names}
     for name, fn in fns.items():
         nrs = set()
         callees = set()
@@ -1561,10 +1668,20 @@ def syscall_map(floor_text):
                 for m in re.finditer(r"call i64 @npk_sys6\(i64 (-?\d+)", line):
                     nrs.add(int(m.group(1)))
                 for m in re.finditer(r"call[^@\n]*(@[\w.$-]+)", line):
-                    if m.group(1) in fns:
+                    if m.group(1) in names:
                         callees.add(m.group(1))
         direct[name] = nrs
         graph[name] = callees
+    return direct, graph, [s.name for s in asm] + list(order)
+
+
+def syscall_map(floor_text):
+    """Per define and per `module asm` symbol (1.5.8 step 2b; DEF-64): the
+    syscall numbers it issues DIRECTLY (`npk_sys6(NR, …)`, or a read `syscall`
+    in assembly) and the numbers it can reach transitively through the call
+    graph. The walk is `_floor_classes`'s, over code lines only."""
+    fns, order = parse_floor(floor_text)
+    direct, graph, order = _syscall_graph(floor_text, fns, order)
     trans = {}
 
     def walk(n, seen):
@@ -1575,7 +1692,7 @@ def syscall_map(floor_text):
         for c in graph[n]:
             out |= walk(c, seen)
         return out
-    for name in fns:
+    for name in order:
         trans[name] = walk(name, set())
     return order, direct, trans
 
@@ -1594,6 +1711,7 @@ def syscall_rows(floor_text, classes):
     trap. A symbol that reaches none of either is not a row."""
     order, direct, trans = syscall_map(floor_text)
     own, traps = syscall_map_own(floor_text)
+    asm = {s.name for s in asm_symbols(floor_text)}
     def fmt(s):
         return ", ".join("%d %s" % (n, SYSCALL_NAMES.get(n, "?")) for n in sorted(s)) or "--"
     rows = []
@@ -1606,7 +1724,8 @@ def syscall_rows(floor_text, classes):
         reach = fmt(own[name])
         if traps[name]:
             reach = (reach + ", and the trap route") if own[name] else "the trap route only"
-        rows.append("| `%s` | %s | %s | %s |" % (name, classes.get(name, "?"), fmt(direct[name]), reach))
+        cls = "asm" if name in asm else classes.get(name, "?")
+        rows.append("| `%s` | %s | %s | %s |" % (name, cls, fmt(direct[name]), reach))
     return rows
 
 
@@ -1614,20 +1733,7 @@ def syscall_map_own(floor_text):
     """Per define: the numbers it reaches WITHOUT passing through a trap
     entry, and whether it can reach one."""
     fns, order = parse_floor(floor_text)
-    direct = {}
-    graph = {}
-    for name, fn in fns.items():
-        nrs = set()
-        callees = set()
-        for b in fn.blocks:
-            for line in b.lines:
-                for m in re.finditer(r"call i64 @npk_sys6\(i64 (-?\d+)", line):
-                    nrs.add(int(m.group(1)))
-                for m in re.finditer(r"call[^@\n]*(@[\w.$-]+)", line):
-                    if m.group(1) in fns:
-                        callees.add(m.group(1))
-        direct[name] = nrs
-        graph[name] = callees
+    direct, graph, order = _syscall_graph(floor_text, fns, order)
     own = {}
     traps = {}
 
@@ -1645,7 +1751,7 @@ def syscall_map_own(floor_text):
             out |= sub
             hit = hit or subhit
         return out, hit
-    for name in fns:
+    for name in order:
         o, h = walk(name, set())
         own[name] = o
         traps[name] = h and name not in TRAP_ENTRIES
@@ -1679,7 +1785,8 @@ def check_syscall_names(floor_text):
     rows = kernel_effects()
     _, direct, _ = syscall_map(floor_text)
     used = sorted({n for s in direct.values() for n in s})
-    fails = ["floor: floor-syscall-row: runtime/npkrt.ll issues syscall %d, which the kernel-effect table has no row "
+    fails = check_asm_census(floor_text)
+    fails += ["floor: floor-syscall-row: runtime/npkrt.ll issues syscall %d, which the kernel-effect table has no row "
              "for -- give it one in VERIFICATION_REFERENCE SS9.2's `kernel-effects` region and regenerate" % n
              for n in used if n not in rows]
     fns, order = parse_floor(floor_text)
@@ -1866,14 +1973,21 @@ def model_facts_all(root):
     return out
 
 
-def tcb_rows(spec_text, classes, manifest_text, models=()):
-    """TCB.md's floor-table rows, sorted: the table's `| symbol | class | disposition |` lines."""
+def tcb_rows(spec_text, classes, manifest_text, models=(), asm_names=()):
+    """TCB.md's floor-table rows, sorted: the table's `| symbol | class |
+    disposition |` lines -- every define, and (1.5.8 step 2b; DEF-64) every
+    symbol a `module asm` block defines with a body, `asm` and `trusted
+    (module asm)`: the assembler's input, which no translator and no transform
+    reads (`asm_symbols` names them)."""
     sections = spec_sections(spec_text)
     rows = manifest_rows_of(manifest_text) if manifest_text else []
-    return sorted("| `%s` | %s | %s |" % (sym, cls, disposition(sections, sym, cls, rows, models))
-                  for sym, cls in classes.items())
+    out = ["| `%s` | %s | %s |" % (sym, cls, disposition(sections, sym, cls, rows, models))
+           for sym, cls in classes.items()]
+    out += ["| `%s` | asm | trusted (module asm) |" % sym for sym in asm_names if sym not in classes]
+    return sorted(out)
 
 
-def tcb_region(spec_text, classes, manifest_text, models=()):
+def tcb_region(spec_text, classes, manifest_text, models=(), asm_names=()):
     """The whole marked region's body, header row included."""
-    return "\n".join(["| symbol | class | disposition |", "|---|---|---|"] + tcb_rows(spec_text, classes, manifest_text, models))
+    return "\n".join(["| symbol | class | disposition |", "|---|---|---|"]
+                     + tcb_rows(spec_text, classes, manifest_text, models, asm_names))

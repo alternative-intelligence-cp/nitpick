@@ -43,10 +43,12 @@ pub func:explore_marker_finding = List<string>(Expect->:exp, string:name) never 
 
 // The explored floor and the shim, built into `build/explore/`: the two
 // objects every unit links against. `findings` names what did not build.
-pub struct:ExploredObjects = { string:xfloor_o; string:shim_o; string:assumptions; int64:checkers; List<string>:findings; };
+pub struct:ExploredObjects = { string:xfloor_o; string:shim_o; string:assumptions; int64:checkers; List<string>:findings;
+                               List<string>:unrouted; };
 
 pub async func:explored_objects = ExploredObjects(Ctx->:c) {
-    ExploredObjects:x = ExploredObjects{ xfloor_o: "", shim_o: "", assumptions: "", checkers: 0i64, findings: raw list_init::<string>(1i64) };
+    ExploredObjects:x = ExploredObjects{ xfloor_o: "", shim_o: "", assumptions: "", checkers: 0i64, findings: raw list_init::<string>(1i64),
+                                         unrouted: raw list_init::<string>(4i64) };
     string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
     string:xdir = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "explore");
     Result<NIL>:d = ensure_dir(xdir);
@@ -68,6 +70,20 @@ pub async func:explored_objects = ExploredObjects(Ctx->:c) {
     List<string>:asf = raw explore_assumptions(spec, xf.text, xf.assumptions, "explore");
     for (int64:j3 in 0i64...asf.count) { drop strlist_push(@x.findings, raw strlist_view(asf, j3)); }
     if (x.findings.count > 0i64) { pass x; }
+    // THE SYSCALLS NO POINT CAN PRECEDE (1.5.8 step 2b; DEF-64): every `module asm`
+    // syscall the census reads is stated, with its reason, in runtime/explore/unrouted.txt
+    Result<cstring>:uc = to_cstring(string_concat(root, "/runtime/explore/unrouted.txt"));
+    if (uc.is_error) { drop strlist_push(@x.findings, "explore: runtime/explore/unrouted.txt: not a path"); pass x; }
+    if (!(path_exists(uc.value))) {
+        drop strlist_push(@x.findings, "explore: runtime/explore/unrouted.txt is missing -- the floor's `module asm` syscalls must each be stated (DEF-64)");
+        pass x;
+    }
+    Result<string>:utx = read_file(uc.value);
+    if (utx.is_error) { drop strlist_push(@x.findings, "explore: runtime/explore/unrouted.txt cannot be read"); pass x; }
+    Unrouted:un = raw explore_unrouted(ftx.value, utx.value, "explore");
+    for (int64:j4 in 0i64...un.findings.count) { drop strlist_push(@x.findings, raw strlist_view(un.findings, j4)); }
+    if (x.findings.count > 0i64) { pass x; }
+    x.unrouted = move(un.pairs);
     x.assumptions = string_concat(xf.assumptions, "");
     x.checkers = xf.checkers;
     string:xll = raw path_join(xdir, "npkrt.explore.ll");

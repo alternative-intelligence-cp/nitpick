@@ -33,7 +33,8 @@ def main(argv):
     man_text = open(man, encoding="utf-8").read() if os.path.exists(man) else ""
     classes = harness._floor_classes()
     floor_ll = open(harness.RUNTIME_LL, encoding="utf-8").read()
-    region = floor.tcb_region(spec_text, classes, man_text, floor.read_models(ROOT))
+    region = floor.tcb_region(spec_text, classes, man_text, floor.read_models(ROOT),
+                              [s.name for s in floor.asm_symbols(open(harness.RUNTIME_LL, encoding="utf-8").read())])
     sysregion = floor.syscalls_region(floor_ll, classes)
     resregion = floor.residue_region(spec_text, man_text, floor.read_models(ROOT), floor.model_facts_all(ROOT))
     callregion = floor.callers_region(floor_ll, spec_text)

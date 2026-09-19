@@ -3814,6 +3814,16 @@ def _explored_objects(tmp, tools):
     fails = explore.check_assumptions(ft, spec_text, xt, at)
     if fails:
         return None, None, fails, ""
+    # THE SYSCALLS NO POINT CAN PRECEDE (1.5.8 step 2b; DEF-64): every `module asm`
+    # syscall the census reads is stated, with its reason, in runtime/explore/unrouted.txt
+    upath = os.path.join(ROOT, "runtime", "explore", "unrouted.txt")
+    if not os.path.exists(upath):
+        return None, None, ["explore: runtime/explore/unrouted.txt is missing -- the floor's `module asm` syscalls "
+                            "must each be stated (DEF-64)"], ""
+    with open(upath, encoding="utf-8") as fh:
+        fails, unrouted = explore.check_unrouted(ft, fh.read())
+    if fails:
+        return None, None, fails, ""
     facts = explore.assumption_facts(ft, spec_text)
     d302, listed = explore.assumption_summary(facts)
     xfloor_o = os.path.join(xdir, "npkrt.explore.o")
@@ -3826,6 +3836,7 @@ def _explored_objects(tmp, tools):
     summary = ("the explored floor: %d point(s) and %d routed call(s) over the floor's %d step line(s), no step escapes; "
                "assembles under the pinned llc; %s" % (points, n - points, n, d302))
     _EXPLORED_LISTED[tmp] = listed
+    _EXPLORED_UNROUTED[tmp] = unrouted
     # THE SHIM (step 1): hand-written IR under the floor's own belts, assembled
     shim = os.path.join(ROOT, "runtime", "explore", "npkx.ll")
     if not os.path.exists(shim):
@@ -3850,6 +3861,7 @@ def _explored_objects(tmp, tools):
 
 
 _EXPLORED_LISTED = {}
+_EXPLORED_UNROUTED = {}
 
 
 def check_explore_totality(tmp, tools):
@@ -3862,6 +3874,12 @@ def check_explore_totality(tmp, tools):
     print("  %-11s %s" % ("explore", summary))
     for l in _EXPLORED_LISTED.get(tmp, []):
         print("  %-11s   listed, not checked: %s" % ("explore", l))
+    import floor
+    un = _EXPLORED_UNROUTED.get(tmp, [])
+    print("  %-11s %d `module asm` syscall(s) run unrouted, each stated with its reason in runtime/explore/unrouted.txt (DEF-64)"
+          % ("explore", len(un)))
+    for sym, n in un:
+        print("  %-11s   unrouted, by statement: %s %d %s" % ("explore", sym, n, floor.SYSCALL_NAMES.get(n, "?")))
     return []
 
 
@@ -4421,7 +4439,9 @@ def check_tcb_floor_current():
     spec_text = open(spec_path, encoding="utf-8").read() if os.path.exists(spec_path) else ""
     man_path = os.path.join(ROOT, "runtime", "npkrt.obligations")
     man_text = open(man_path, encoding="utf-8").read() if os.path.exists(man_path) else ""
-    want = floor.tcb_rows(spec_text, _floor_classes(), man_text, floor.read_models(ROOT))
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        asm_names = [s.name for s in floor.asm_symbols(fh.read())]
+    want = floor.tcb_rows(spec_text, _floor_classes(), man_text, floor.read_models(ROOT), asm_names)
     fails = []
     for row in sorted(set(want) - set(have))[:10]:
         fails.append("tcb-floor: TCB.md's table lacks the row: %s" % row)
