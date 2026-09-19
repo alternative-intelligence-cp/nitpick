@@ -19,11 +19,13 @@ pub func:ke_effect = int64(int64:nr) never fails {
     if (nr == 10i64) { pass 0i64; }
     if (nr == 11i64) { pass 0i64; }
     if (nr == 13i64) { pass 1i64; }
+    if (nr == 15i64) { pass 5i64; }
     if (nr == 39i64) { pass 0i64; }
     if (nr == 56i64) { pass 5i64; }
     if (nr == 59i64) { pass 5i64; }
     if (nr == 60i64) { pass 2i64; }
     if (nr == 110i64) { pass 0i64; }
+    if (nr == 131i64) { pass 1i64; }
     if (nr == 157i64) { pass 0i64; }
     if (nr == 158i64) { pass 0i64; }
     if (nr == 202i64) { pass 0i64; }
@@ -46,6 +48,7 @@ pub func:ke_effect = int64(int64:nr) never fails {
 pub func:ke_buf_arg = int64(int64:nr) never fails {
     if (nr == 0i64) { pass 2i64; }
     if (nr == 13i64) { pass 3i64; }
+    if (nr == 131i64) { pass 2i64; }
     if (nr == 204i64) { pass 3i64; }
     if (nr == 228i64) { pass 2i64; }
     if (nr == 281i64) { pass 2i64; }
@@ -57,6 +60,7 @@ pub func:ke_buf_arg = int64(int64:nr) never fails {
 pub func:ke_len = string(int64:nr) never fails {
     if (nr == 0i64) { pass "result"; }
     if (nr == 13i64) { pass "32"; }
+    if (nr == 131i64) { pass "24"; }
     if (nr == 204i64) { pass "result"; }
     if (nr == 228i64) { pass "16"; }
     if (nr == 281i64) { pass "result12"; }
@@ -103,11 +107,13 @@ pub func:ke_name = string(int64:nr) never fails {
     if (nr == 10i64) { pass "mprotect"; }
     if (nr == 11i64) { pass "munmap"; }
     if (nr == 13i64) { pass "rt_sigaction"; }
+    if (nr == 15i64) { pass "rt_sigreturn"; }
     if (nr == 39i64) { pass "getpid"; }
     if (nr == 56i64) { pass "clone"; }
     if (nr == 59i64) { pass "execve"; }
     if (nr == 60i64) { pass "exit"; }
     if (nr == 110i64) { pass "getppid"; }
+    if (nr == 131i64) { pass "sigaltstack"; }
     if (nr == 157i64) { pass "prctl"; }
     if (nr == 158i64) { pass "arch_prctl"; }
     if (nr == 202i64) { pass "futex"; }
@@ -127,7 +133,7 @@ pub func:ke_name = string(int64:nr) never fails {
 };
 
 // The rows, for a walk: how many, and the i-th row's number (ascending).
-pub func:ke_count = int64() never fails { pass 27i64; };
+pub func:ke_count = int64() never fails { pass 29i64; };
 pub func:ke_nr = int64(int64:i) never fails {
     if (i == 0i64) { pass 0i64; }
     if (i == 1i64) { pass 1i64; }
@@ -136,25 +142,27 @@ pub func:ke_nr = int64(int64:i) never fails {
     if (i == 4i64) { pass 10i64; }
     if (i == 5i64) { pass 11i64; }
     if (i == 6i64) { pass 13i64; }
-    if (i == 7i64) { pass 39i64; }
-    if (i == 8i64) { pass 56i64; }
-    if (i == 9i64) { pass 59i64; }
-    if (i == 10i64) { pass 60i64; }
-    if (i == 11i64) { pass 110i64; }
-    if (i == 12i64) { pass 157i64; }
-    if (i == 13i64) { pass 158i64; }
-    if (i == 14i64) { pass 202i64; }
-    if (i == 15i64) { pass 204i64; }
-    if (i == 16i64) { pass 228i64; }
-    if (i == 17i64) { pass 231i64; }
-    if (i == 18i64) { pass 233i64; }
-    if (i == 19i64) { pass 234i64; }
-    if (i == 20i64) { pass 257i64; }
-    if (i == 21i64) { pass 281i64; }
-    if (i == 22i64) { pass 290i64; }
-    if (i == 23i64) { pass 291i64; }
-    if (i == 24i64) { pass 292i64; }
-    if (i == 25i64) { pass 318i64; }
-    if (i == 26i64) { pass 424i64; }
+    if (i == 7i64) { pass 15i64; }
+    if (i == 8i64) { pass 39i64; }
+    if (i == 9i64) { pass 56i64; }
+    if (i == 10i64) { pass 59i64; }
+    if (i == 11i64) { pass 60i64; }
+    if (i == 12i64) { pass 110i64; }
+    if (i == 13i64) { pass 131i64; }
+    if (i == 14i64) { pass 157i64; }
+    if (i == 15i64) { pass 158i64; }
+    if (i == 16i64) { pass 202i64; }
+    if (i == 17i64) { pass 204i64; }
+    if (i == 18i64) { pass 228i64; }
+    if (i == 19i64) { pass 231i64; }
+    if (i == 20i64) { pass 233i64; }
+    if (i == 21i64) { pass 234i64; }
+    if (i == 22i64) { pass 257i64; }
+    if (i == 23i64) { pass 281i64; }
+    if (i == 24i64) { pass 290i64; }
+    if (i == 25i64) { pass 291i64; }
+    if (i == 26i64) { pass 292i64; }
+    if (i == 27i64) { pass 318i64; }
+    if (i == 28i64) { pass 424i64; }
     pass (0i64 - 1i64);
 };

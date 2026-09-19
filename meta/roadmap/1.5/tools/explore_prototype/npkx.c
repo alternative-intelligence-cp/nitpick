@@ -8,6 +8,11 @@
  * env: NPKX_SEED (u64, default 1)  NPKX_POLICY (0 = PCT, 1 = random walk)  NPKX_D (PCT depth, default 3)
  *      NPKX_K (PCT step estimate, default 2000)  NPKX_TRACE (1: print steps and the schedule's hash at exit)
  */
+/* SPLIT-STACK AWARE, AS THE FLOOR AND THE IR SHIM ARE (D-305, 1.5.8 step 2): the explored program's functions carry
+ * LLVM's split-stack prologue and call in here; without these two notes ld.lld rewrites those callers onto the slow path
+ * (a trap: `__morestack` is the trap route) or refuses the link. */
+__asm__(".section .note.GNU-split-stack,\"\",@progbits\n.previous\n"
+        ".section .note.GNU-no-split-stack,\"\",@progbits\n.previous\n");
 typedef unsigned long u64;
 typedef long i64;
 typedef unsigned int u32;

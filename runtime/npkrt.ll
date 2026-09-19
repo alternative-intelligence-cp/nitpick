@@ -35,13 +35,22 @@ target triple = "x86_64-unknown-linux-gnu"
 ;
 ; The child's trampoline block, which `%fs` points at:
 ;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word | 5 pad
-;   | 6 map base | 7 map length ]
+;   | 6 map base | 7 map length | 8 signal stack | 9 reserved | 10 LIMIT ]
 ; 6 and 7 (DEF-65, 1.5.8 step 1b): a spawned thread's stack mapping, written
 ; before the clone and released by the join once the kernel has cleared the
 ; tid word -- until then no join ever unmapped a thread's stack, and every
 ; spawned thread leaked its 2 MiB mapping and every page it touched. Zero for
-; the main thread, whose stack is the kernel's and which nothing joins.
-%npk.tls = type { ptr, ptr, ptr, ptr, i32, i32, i64, i64 }
+; the main thread, whose stack is the floor's for the process's life and
+; which nothing joins.
+; 8 (D-305, 1.5.8 step 2): the thread's signal stack, registered by the
+; thread itself -- the main thread in npk_start, a spawned one first thing in
+; npk_thread_entry.
+; 10 (D-305): THE STACK LIMIT, at byte 0x70 -- the word LLVM's split-stack
+; prologue compares against (the x86-64 convention); 9 pads to it. Every
+; function the compiler emits checks its frame against this word before it
+; allocates it, and the floor's `__morestack` is the trap route's
+; `StackExhausted`.
+%npk.tls = type { ptr, ptr, ptr, ptr, i32, i32, i64, i64, i64, [6 x i64], i64 }
 
 ; THE CLONE TRAMPOLINE (D-181). In assembly for one reason: after the
 ; syscall the child runs on a DIFFERENT STACK, so it may not return into
@@ -82,6 +91,81 @@ module asm ".globl npk_sigreturn"
 module asm "npk_sigreturn:"
 module asm "  movl $15, %eax"
 module asm "  syscall"
+
+; THE FLOOR IS SPLIT-STACK-AWARE, AND PROVES IT (D-305, 1.5.8 step 2). Every
+; function the compiler emits carries LLVM's `"split-stack"` prologue; ld.lld
+; REWRITES any such function that calls into an object without this note so
+; that it takes the slow path on EVERY call (gccgo's segmented-stack protocol,
+; measured: the compare becomes `stc`) -- which a trapping `__morestack` could
+; not serve. The note is a claim: the floor's own frames, which never check,
+; fit in the reserve every limit word leaves below it, and the
+; `floor-stack-reserve` belt in both runners holds the claim.
+module asm ".section .note.GNU-split-stack,\22\22,@progbits"
+module asm ".previous"
+; ...AND THE FLOOR'S OWN FUNCTIONS DO NOT CHECK: `.note.GNU-no-split-stack`
+; (gcc's own pairing for an object holding `no_split_stack` code). Without it
+; ld.lld tries to rewrite a FLOOR function's prologue whenever it calls into
+; an object without the split-stack note -- the snapshot-built builder and
+; tools until a refresh carries the attribute -- finds no prologue, and
+; refuses the link (measured: "npk_start_main (with -fsplit-stack) calls main
+; (without -fsplit-stack), but couldn't adjust its prologue").
+module asm ".section .note.GNU-no-split-stack,\22\22,@progbits"
+module asm ".previous"
+
+; THE STACK IS EXHAUSTED (D-305): the prologue of an emitted function found
+; its frame would pass the thread's limit word and called here, BEFORE
+; allocating the frame. The stack pointer is still above the reserve's
+; bottom, which is where the trap route runs; aligned for the call, never
+; returns.
+module asm ".globl __morestack"
+module asm "__morestack:"
+module asm "  andq $-16, %rsp"
+module asm "  callq npk_stack_exhausted"
+module asm "  hlt"
+
+; REACHABLE ONLY THROUGH ld.lld'S CROSS-SPLIT REWRITE, which the note above
+; rules out and the closed-world link (D-206) cannot admit: a floor defect,
+; not a program's, so the integrity code.
+module asm ".globl __morestack_non_split"
+module asm "__morestack_non_split:"
+module asm "  andq $-16, %rsp"
+module asm "  callq npk_stack_foreign"
+module asm "  hlt"
+
+; THE MAIN THREAD'S STACK SWITCH (D-305): npk_start ends here, on the
+; kernel's stack, and startup continues on the floor's. rdi = the new stack's
+; top (16-aligned: the mapping is page-aligned and every part of it a
+; multiple of 16), rsi = the function to call, which never returns.
+module asm ".globl npk_switch_stack"
+module asm "npk_switch_stack:"
+module asm "  movq %rdi, %rsp"
+module asm "  xorl %ebp, %ebp"
+module asm "  callq *%rsi"
+module asm "  hlt"
+
+; `failsafe` ON A STACK OF ITS OWN (D-305 (5)): edi = the code. The frame
+; pointer and the thread's limit word are saved on the trapping stack, the
+; stack pointer and the limit word become the failsafe stack's, `failsafe`
+; runs, and both are restored for the route's end. An overflow INSIDE
+; `failsafe` meets the failsafe stack's limit, reaches `__morestack`, and the
+; holder's re-entry exits 70 (D-291).
+module asm ".globl npk_fs_switch_call"
+module asm "npk_fs_switch_call:"
+module asm "  pushq %rbp"
+module asm "  movq %rsp, %rbp"
+module asm "  pushq %rbx"
+module asm "  pushq %r12"
+module asm "  movq %fs:0x70, %rbx"
+module asm "  movq npk_fs_stack_top(%rip), %rsp"
+module asm "  movq npk_fs_stack_limit(%rip), %r12"
+module asm "  movq %r12, %fs:0x70"
+module asm "  callq npk_failsafe"
+module asm "  movq %rbx, %fs:0x70"
+module asm "  leaq -16(%rbp), %rsp"
+module asm "  popq %r12"
+module asm "  popq %rbx"
+module asm "  popq %rbp"
+module asm "  retq"
 
 module asm ".globl _start"
 module asm "_start:"
@@ -235,9 +319,44 @@ done:
 define internal void @npk_start(i64 %sp) noreturn {
 entry:
   %act = alloca [4 x i64], align 16
+  %stk = alloca [5 x i64], align 16
+  %fsk = alloca [5 x i64], align 16
+  ; the stack rule (1.5.6b): every word defined here; npk_stack_map writes all
+  ; five of each before anything reads them
+  call void @llvm.memset.p0.i64(ptr %stk, i8 0, i64 40, i1 false)
+  call void @llvm.memset.p0.i64(ptr %fsk, i8 0, i64 40, i1 false)
   ; the executor's TLS block first: every allocation, trap and error chain
   ; below reaches its executor through `%fs:8` (D-181).
   call void @npk_tls_boot()
+  ; THE MAIN THREAD'S STACK IS THE FLOOR'S (D-305, 1.5.8 step 2): 8 MiB behind
+  ; a guard, a signal stack and a 64 KiB reserve, the limit word in the TLS
+  ; block -- the budget is the program's, never the shell's `ulimit` (the
+  ; compiler compiling itself needed 2 to 4 MiB of the kernel's stack and
+  ; died of SIGSEGV below that, DEF-59). The switch is the last thing this
+  ; function does.
+  %msz = load i64, ptr @npk_main_stack_bytes
+  %sgz = load i64, ptr @npk_sigstack_bytes
+  call void @npk_stack_map(i64 %msz, i64 %sgz, ptr %stk)
+  %tls0 = call ptr @npk_tls_self()
+  %mlim_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 3
+  %mlim = load i64, ptr %mlim_p
+  %tlim = getelementptr %npk.tls, ptr %tls0, i32 0, i32 10
+  store i64 %mlim, ptr %tlim
+  %msig_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 2
+  %msig = load i64, ptr %msig_p
+  %tsig = getelementptr %npk.tls, ptr %tls0, i32 0, i32 8
+  store i64 %msig, ptr %tsig
+  call void @npk_sigstack_on(i64 %msig)
+  ; THE FAILSAFE STACK (D-305 (5)): mapped now, because the trap route
+  ; allocates nothing (D-153's rule).
+  %fsz = load i64, ptr @npk_fs_stack_bytes
+  call void @npk_stack_map(i64 %fsz, i64 0, ptr %fsk)
+  %ftop_p = getelementptr [5 x i64], ptr %fsk, i64 0, i64 4
+  %ftop = load i64, ptr %ftop_p
+  store i64 %ftop, ptr @npk_fs_stack_top
+  %flim_p = getelementptr [5 x i64], ptr %fsk, i64 0, i64 3
+  %flim = load i64, ptr %flim_p
+  store i64 %flim, ptr @npk_fs_stack_limit
   ; THE STOP SIGNAL'S ACTION (D-291): SIGUSR1 -> npk_stop_handler, over the
   ; kernel's own 32-byte { handler, flags, restorer, mask } with SA_RESTORER
   ; and the restorer stub the kernel demands before it delivers; a refusal
@@ -246,7 +365,10 @@ entry:
   %a0 = getelementptr [4 x i64], ptr %act, i64 0, i64 0
   store i64 %h, ptr %a0
   %a1 = getelementptr [4 x i64], ptr %act, i64 0, i64 1
-  store i64 67108864, ptr %a1
+  ; SA_RESTORER | SA_ONSTACK (D-305 (4)): the stop handler runs on the
+  ; thread's signal stack, so the kernel's signal frame -- whose size is the
+  ; machine's -- never lands in the reserve below a limit word.
+  store i64 201326592, ptr %a1
   %a2 = getelementptr [4 x i64], ptr %act, i64 0, i64 2
   %rs = ptrtoint ptr @npk_sigreturn to i64
   store i64 %rs, ptr %a2
@@ -271,6 +393,21 @@ go:
   %env = call { ptr, i64 } @npk_cstr_slice(ptr %envpp)
   store { ptr, i64 } %env, ptr @npk_environ_slice
   call void @npk_hs_arm(ptr %envpp)
+  store { ptr, i64 } %argv, ptr @npk_argv_slice
+  ; THE SWITCH (D-305): argv and envp stay where the kernel put them; startup
+  ; continues on the floor's stack and never comes back.
+  %mtop_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 4
+  %mtop = load i64, ptr %mtop_p
+  call void @npk_switch_stack(i64 %mtop, ptr @npk_start_main)
+  unreachable
+}
+
+; STARTUP ON THE FLOOR'S STACK (D-305): `main`, then the exit. `main` is the
+; first emitted function the main thread runs, and its prologue reads the
+; limit word npk_start wrote.
+define internal void @npk_start_main() noreturn {
+entry:
+  %argv = load { ptr, i64 }, ptr @npk_argv_slice
   %rc = call i32 @main({ ptr, i64 } %argv)
   call void @npk_exit(i32 %rc)
   unreachable
@@ -1669,6 +1806,121 @@ stale:
 ; aspirational: nothing has to be named to be joined.
 @npk_thread_stack_bytes = internal constant i64 2097152
 
+; THE STACKS' SHAPE (D-305, 1.5.8 step 2). Every stack is the floor's: one
+; mapping, lowest address first -- a PROT_NONE guard page; for a thread, a
+; signal stack and a second guard; the RESERVE, below the limit word; the
+; usable stack. 8 MiB for the main thread (2 to 4 times what the compiler
+; needs to compile itself), 2 MiB for a spawned one (as before), 1 MiB for
+; `failsafe`'s own (D-292's region is that size), 64 KiB for each signal
+; stack and each reserve -- sixty times the floor's deepest chain of frames,
+; which the `floor-stack-reserve` belt holds below a quarter of it.
+@npk_main_stack_bytes = internal constant i64 8388608
+@npk_fs_stack_bytes = internal constant i64 1048576
+@npk_sigstack_bytes = internal constant i64 65536
+@npk_stack_reserve = internal constant i64 65536
+; the failsafe stack's top and limit, written once by npk_start before any
+; thread exists and read by the holder's switch (npk_fs_switch_call); 0 until
+; then, when a trap runs `failsafe` where it stands (npk_failsafe_on_stack)
+@npk_fs_stack_top = internal global i64 0
+@npk_fs_stack_limit = internal global i64 0
+; argv, measured on the kernel's stack and read on the floor's
+@npk_argv_slice = internal global { ptr, i64 } zeroinitializer
+
+declare void @npk_switch_stack(i64, ptr)
+declare i32 @npk_fs_switch_call(i32)
+
+; ONE STACK OF THE FLOOR'S (D-305): maps `usable` bytes behind a guard page,
+; with a signal stack of `sig` bytes and a second guard when `sig` is not 0,
+; and the reserve below the limit word; writes { base, length, signal stack,
+; limit, top } to `out`. A guard that cannot be set is fatal, as it always was
+; for a thread's: a stack without its guard turns an overflow of unchecked
+; code into silent corruption of whatever lies below.
+define internal void @npk_stack_map(i64 %usable, i64 %sig, ptr %out) {
+entry:
+  %res = load i64, ptr @npk_stack_reserve
+  %hassig = icmp ne i64 %sig, 0
+  %g2 = select i1 %hassig, i64 4096, i64 0
+  %a = add i64 4096, %sig
+  %b = add i64 %a, %g2
+  %c = add i64 %b, %res
+  %len = add i64 %c, %usable
+  %base = call i64 @npk_hmap(i64 %len)
+  %m1 = call i64 @npk_sys6(i64 10, i64 %base, i64 4096, i64 0, i64 0, i64 0, i64 0)
+  %bad1 = icmp ne i64 %m1, 0
+  br i1 %bad1, label %noguard, label %second
+second:
+  br i1 %hassig, label %guard2, label %done
+guard2:
+  %g2at = add i64 %base, %a
+  %m2 = call i64 @npk_sys6(i64 10, i64 %g2at, i64 4096, i64 0, i64 0, i64 0, i64 0)
+  %bad2 = icmp ne i64 %m2, 0
+  br i1 %bad2, label %noguard, label %done
+done:
+  %sigbase = add i64 %base, 4096
+  %sigv = select i1 %hassig, i64 %sigbase, i64 0
+  %limit = add i64 %base, %c
+  %top = add i64 %base, %len
+  %o0 = getelementptr [5 x i64], ptr %out, i64 0, i64 0
+  store i64 %base, ptr %o0
+  %o1 = getelementptr [5 x i64], ptr %out, i64 0, i64 1
+  store i64 %len, ptr %o1
+  %o2 = getelementptr [5 x i64], ptr %out, i64 0, i64 2
+  store i64 %sigv, ptr %o2
+  %o3 = getelementptr [5 x i64], ptr %out, i64 0, i64 3
+  store i64 %limit, ptr %o3
+  %o4 = getelementptr [5 x i64], ptr %out, i64 0, i64 4
+  store i64 %top, ptr %o4
+  ret void
+noguard:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+}
+
+; THIS THREAD'S SIGNAL STACK (D-305 (4)): sigaltstack(&{ base, 0, 64 KiB },
+; NULL). Below the machine's minimum signal frame the kernel answers ENOMEM,
+; and that is a startup trap: the assumption that 64 KiB holds this machine's
+; signal frame is CHECKED on every machine that runs a program (1.5.8's K-10).
+define internal void @npk_sigstack_on(i64 %base) {
+entry:
+  %ss = alloca [3 x i64], align 16
+  %sz = load i64, ptr @npk_sigstack_bytes
+  %s0 = getelementptr [3 x i64], ptr %ss, i64 0, i64 0
+  store i64 %base, ptr %s0
+  %s1 = getelementptr [3 x i64], ptr %ss, i64 0, i64 1
+  store i64 0, ptr %s1
+  %s2 = getelementptr [3 x i64], ptr %ss, i64 0, i64 2
+  store i64 %sz, ptr %s2
+  %p = ptrtoint ptr %ss to i64
+  %r = call i64 @npk_sys6(i64 131, i64 %p, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp ne i64 %r, 0
+  br i1 %bad, label %fail, label %ok
+fail:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+ok:
+  ret void
+}
+
+; `__morestack`'s landing (D-305): the stack is exhausted -- the trap route,
+; with no site (the check is the prologue's, not a source construct's).
+define void @npk_stack_exhausted() noreturn {
+entry:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4118)
+  unreachable
+}
+
+; `__morestack_non_split`'s landing: an object without the split-stack note
+; was linked, which the closed-world link cannot do -- the integrity code.
+define void @npk_stack_foreign() noreturn {
+entry:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+}
+
 ; The child's trampoline arguments, handed over in its own TLS block so no
 ; shared state is read after the clone returns.
 ;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word | 5 pad
@@ -1676,25 +1928,25 @@ stale:
 
 define ptr @npk_thread_start(ptr %root, ptr %resume, i64 %join_ns) {
 entry:
-  ; stack: guard page + 2 MiB in one mapping, the three-region shape `wildx`
-  ; already uses.
+  ; THE THREAD'S STACK IS THE FLOOR'S SHAPE (D-305, 1.5.8 step 2): guard,
+  ; signal stack, guard, reserve, 2 MiB -- one mapping, which the join
+  ; releases (DEF-65). A guard that cannot be set is fatal inside
+  ; npk_stack_map, as it always was here.
+  %stk = alloca [5 x i64], align 16
+  call void @llvm.memset.p0.i64(ptr %stk, i8 0, i64 40, i1 false)
   %sz = load i64, ptr @npk_thread_stack_bytes
-  %tot = add i64 %sz, 4096
-  %bi = call i64 @npk_hmap(i64 %tot)
-  %stack_lo = add i64 %bi, 4096
-  ; the guard page is made PROT_NONE, and a FAILURE THERE IS FATAL: a stack
-  ; without its guard turns an overflow into silent corruption of whatever
-  ; the allocator put below it, which is the class this runtime exists to
-  ; refuse.
-  %mp = call i64 @npk_sys6(i64 10, i64 %bi, i64 4096, i64 0, i64 0, i64 0, i64 0)
-  %mpbad = icmp ne i64 %mp, 0
-  br i1 %mpbad, label %noguard, label %guarded
-noguard:
-  call void @npk_chain_reset(i32 0)
-  call void @npk_trap(i32 -4102)
-  unreachable
-guarded:
-  %sp = add i64 %stack_lo, %sz
+  %sgz = load i64, ptr @npk_sigstack_bytes
+  call void @npk_stack_map(i64 %sz, i64 %sgz, ptr %stk)
+  %bi_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 0
+  %bi = load i64, ptr %bi_p
+  %tot_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 1
+  %tot = load i64, ptr %tot_p
+  %csig_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 2
+  %csig = load i64, ptr %csig_p
+  %clim_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 3
+  %clim = load i64, ptr %clim_p
+  %sp_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 4
+  %sp = load i64, ptr %sp_p
 
   ; the child's executor and its TLS block. The executor carries the join
   ; deadline the `joins` clause stated (D-083: fixed where the executor is
@@ -1738,6 +1990,13 @@ guarded:
   store i64 %bi, ptr %t_mb
   %t_ml = getelementptr %npk.tls, ptr %tls, i32 0, i32 7
   store i64 %tot, ptr %t_ml
+  ; THE CHILD'S SIGNAL STACK AND STACK LIMIT (D-305), born before the clone:
+  ; the child's first emitted instruction may be a prologue reading `%fs:0x70`,
+  ; and `%fs` is set by the clone itself (CLONE_SETTLS).
+  %t_sig = getelementptr %npk.tls, ptr %tls, i32 0, i32 8
+  store i64 %csig, ptr %t_sig
+  %t_lim = getelementptr %npk.tls, ptr %tls, i32 0, i32 10
+  store i64 %clim, ptr %t_lim
 
   ; 0x3d0f00 = CLONE_VM 0x100 | FS 0x200 | FILES 0x400 | SIGHAND 0x800
   ;          | THREAD 0x10000 | SYSVSEM 0x40000 | SETTLS 0x80000
@@ -1782,6 +2041,11 @@ ok:
 define void @npk_thread_entry(i64 %tlsi) {
 entry:
   %tls = inttoptr i64 %tlsi to ptr
+  ; the thread's signal stack, registered by the thread itself (D-305 (4)):
+  ; a signal stack is per-thread kernel state
+  %sgp = getelementptr %npk.tls, ptr %tls, i32 0, i32 8
+  %sg = load i64, ptr %sgp
+  call void @npk_sigstack_on(i64 %sg)
   %rp = getelementptr %npk.tls, ptr %tls, i32 0, i32 2
   %root = load ptr, ptr %rp
   call void @npk_rq_push(ptr %root)
@@ -3344,11 +3608,30 @@ run:
   ; failsafe is the hazard class the architecture exists for. SIGKILL via
   ; pidfd only; reaping and cleanup are nobody's business on this path.
   call void @npk_driver_kill_all()
-  %r = call i32 @npk_failsafe(i32 %code)
+  ; `failsafe` ON ITS OWN STACK (D-305 (5)), one call below this function so
+  ; that the switch's assembly is never this function's.
+  %r = call i32 @npk_failsafe_on_stack(i32 %code)
   %bad = icmp sle i32 %r, 0
   %code2 = select i1 %bad, i32 70, i32 %r
   call void @npk_exit(i32 %code2)
   unreachable
+}
+
+; THE SWITCH TO THE FAILSAFE STACK (D-305 (5)): the holder's `failsafe` runs
+; on the stack npk_start mapped for it, its limit word the failsafe stack's.
+; Before npk_start has mapped it (a trap during boot) `failsafe` runs where it
+; stands.
+define internal i32 @npk_failsafe_on_stack(i32 %code) {
+entry:
+  %top = load i64, ptr @npk_fs_stack_top
+  %none = icmp eq i64 %top, 0
+  br i1 %none, label %here, label %switch
+here:
+  %r0 = call i32 @npk_failsafe(i32 %code)
+  ret i32 %r0
+switch:
+  %r1 = call i32 @npk_fs_switch_call(i32 %code)
+  ret i32 %r1
 }
 
 ; A PROGRAM'S RAISE (D-285, 1.5.4e step 1): `?!` and `!!!` enter here with

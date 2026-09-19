@@ -1,0 +1,52 @@
+// expect-exit: 60
+//
+// A FRAME LARGER THAN THE GUARD CANNOT JUMP IT (D-305, 1.5.8 step 2; DEF-60).
+// Each level of this recursion holds a 64 KiB array, sixteen times a thread
+// stack's guard page. Before this step an overflow here moved the stack
+// pointer PAST the one guard page and the array's zeroing wrote into whatever
+// mapping lay below -- silent corruption. Now the prologue compares the WHOLE
+// frame against the limit before it allocates it: `StackExhausted`, 60.
+mod:stack_bigframe_thread;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+// The array is filled through `$$m`, D-004's way to fill an unassigned one --
+// from index 0, the frame's LOWEST address, which is the first word an
+// overflowing frame would have written past the guard.
+func:fill = NIL(int64[8192]->:b, int64:v) never fails {
+    for (int64:i in 0i64...8192i64) { (<-b)[i] = v; }
+    pass NIL;
+};
+
+func:big = int64(int64:n) never fails {
+    int64[8192]:buf;
+    drop fill($$m buf, n);
+    if (n == 0i64) { pass 0i64; }
+    pass ((raw big(n - 1i64)) + buf[(n & 8191i64)]);
+};
+
+thread async func:runaway = NIL(int64:n) joins JOIN_5S {
+    int64:r = raw big(n * 1000000i64);
+    if (r == 0i64) { pass NIL; }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    drop runaway(argv.len);
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted)   { exit 60i32; },
+        (DeadlineExceeded) { exit 62i32; },
+        (OutOfBounds)      { exit 63i32; },
+        (IntOverflow)      { exit 93i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (MachineFault)     { exit 61i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

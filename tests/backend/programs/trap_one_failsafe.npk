@@ -23,6 +23,18 @@
 // and trapped `Unreachable` ITSELF -- and won. `failsafe` ran with the wrong
 // error. `Unreachable` has its own exit here, 72, so the schedule names that
 // failure if it ever returns; 40 stress runs never reached it.
+//
+// [2026-09-19, 1.5.8 step 2 (D-305; the plan's K-11): SEED 371 NO LONGER IS
+// DEF-57's SCHEDULE. Each thread now registers its signal stack through one
+// routed `sigaltstack`, so every schedule moved (k 106,239 -> 106,242). With
+// the pre-fix `frozen:` block planted, seed 371 exits 41, and so do the other
+// 60,000 seeds 1..60,000 at this k. The window is one point wide. `late` traps
+// after about 500 steps, under the 4,096-step fairness bound, so only PCT's two
+// change points in 106k steps can land on it. X-11's premise, that a seed is a
+// schedule, holds only until a step is added before the window. The line stays
+// so the record stays readable; the regression moves to a `.ctl` that HOLDS the
+// trapper at its claim until the watcher passes it, which is independent of the
+// step count (1.5.8 step 2c).]
 mod:trap_one_failsafe;
 error:EPipe;
 fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };

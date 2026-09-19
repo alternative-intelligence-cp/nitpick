@@ -590,6 +590,103 @@ def ir_type_bytes(ty):
     raise ValueError("an alloca of a type the stack rule does not size: %s" % ty)
 
 
+# THE FLOOR'S STACK RESERVE (D-305, 1.5.8 step 2). Every function the compiler
+# emits carries LLVM's split-stack prologue and checks its frame against the
+# thread's limit word; the floor's own functions never do, and the floor object
+# says so to the linker (`.note.GNU-split-stack` beside `.note.GNU-no-split-
+# stack`). What makes that honest is this belt: the floor runs BELOW the limit
+# word only inside the reserve the limit leaves (`@npk_stack_reserve`), so its
+# deepest chain of frames -- each frame as the pinned `llc` lays it out
+# (`-stack-size-section`), plus the return address, along the floor's own
+# direct calls -- must fit in a QUARTER of the reserve with the emitted leaf's
+# slack (LLVM skips the check for a leaf of at most 256 bytes; 128 of red zone).
+# The one cycle the floor may hold is the trap route's re-entry (a trap inside
+# the route enters `npk_trap` again, and the holder's re-entry exits): its
+# back edges are cut and `npk_trap`'s own chain added once. Any other cycle is
+# a floor that recurses, and fails by name. A chain that reaches a call
+# through a pointer stops there: an emitted resume function checks its own
+# frame, and JIT code is `wildx`'s. `npkg/floor_stack.npk` is the twin.
+RESERVE_SLACK = 256 + 128
+
+
+def reserve_of(floor_text):
+    m = re.search(r'^@npk_stack_reserve = internal constant i64 (\d+)$', floor_text, re.M)
+    return int(m.group(1)) if m else None
+
+
+def reserve_measure(floor_text, sizes, name="floor"):
+    """(failures, deepest chain in bytes, its path, npk_trap's chain, the total
+    with the slack, the reserve); `sizes` maps a floor function to its frame
+    in bytes (`-stack-size-section`)."""
+    try:
+        fns, order = parse_floor(floor_text)
+    except ValueError as e:
+        return ["%s: %s" % (name, e)], 0, [], 0, 0, 0
+    reserve = reserve_of(floor_text)
+    if reserve is None:
+        return ["%s: floor-stack-reserve: the floor declares no `@npk_stack_reserve`" % name], 0, [], 0, 0, 0
+    missing = [f for f in order if f.lstrip("@") not in sizes]
+    if missing:
+        return ["%s: floor-stack-reserve: no frame size for %s" % (name, ", ".join(missing[:5]))], 0, [], 0, 0, reserve
+    callees = {f: [] for f in order}
+    for f in order:
+        for (_b, _i, g) in calls_of(fns[f]):
+            if g in fns and g not in callees[f]:
+                callees[f].append(g)
+    # cut the back edges by a depth-first walk in the floor's own order; only
+    # a cycle through npk_trap is the floor's
+    fails = []
+    back = set()
+    state = {}
+    def walk(f, stack):
+        state[f] = 1
+        stack.append(f)
+        for g in callees[f]:
+            if state.get(g) == 1:
+                back.add((f, g))
+                if g != "@npk_trap":
+                    cyc = stack[stack.index(g):] + [g]
+                    fails.append("%s: floor-stack-reserve: the floor recurses: %s" % (name, " -> ".join(cyc)))
+            elif g not in state:
+                walk(g, stack)
+        stack.pop()
+        state[f] = 2
+    for f in order:
+        if f not in state:
+            walk(f, [])
+    if fails:
+        return fails, 0, [], 0, 0, reserve
+    memo = {}
+    def depth(f):
+        if f in memo:
+            return memo[f]
+        best, via = 0, []
+        for g in callees[f]:
+            if (f, g) in back:
+                continue
+            d, p = depth(g)
+            if d > best:
+                best, via = d, p
+        memo[f] = (sizes[f.lstrip("@")] + 8 + best, [f] + via)
+        return memo[f]
+    worst, path = 0, []
+    for f in order:
+        d, p = depth(f)
+        if d > worst:
+            worst, path = d, p
+    trap = depth("@npk_trap")[0] if "@npk_trap" in fns else 0
+    total = worst + trap + RESERVE_SLACK
+    if total * 4 > reserve:
+        fails.append("%s: floor-stack-reserve: the floor's deepest chain is %d bytes (%s), with one more pass of the "
+                     "trap route (%d) and the emitted leaf's slack (%d) %d -- over a quarter of the %d-byte reserve below "
+                     "every limit word (D-305)" % (name, worst, " -> ".join(path), trap, RESERVE_SLACK, total, reserve))
+    return fails, worst, path, trap, total, reserve
+
+
+def check_reserve(floor_text, sizes, name="floor"):
+    return reserve_measure(floor_text, sizes, name)[0]
+
+
 def check_stack(floor_text, name="floor"):
     """The rule over one floor text; the failures by name (`alloca-not-defined`)."""
     try:

@@ -1,0 +1,42 @@
+// expect-exit: 70
+//
+// AN OVERFLOW INSIDE `failsafe` IS STILL CONTROLLED (D-305 (5), D-291). A
+// division by zero enters `failsafe`, whose arm recurses without end: the
+// failsafe stack's limit word stops it, `__morestack` enters the trap route,
+// the holder is re-entering, and the process exits 70 -- the one uncatchable
+// stop, never a SIGSEGV.
+mod:stack_failsafe_overflow;
+
+// A recursion the optimiser cannot turn into a loop: each level passes the
+// address of its own local down, and the bottom reads through it.
+func:deep = int64(int64:n, int64->:prev) never fails {
+    if (n == 0i64) { pass (<-prev); }
+    int64:mine = n;
+    pass ((raw deep(n - 1i64, @mine)) + 1i64);
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:z = (argv.len =>! int32) - 1i32;
+    exit (10i32 / z);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) {
+            int64:x = 1i64;
+            int64:d = raw deep(1000000000000i64, @x);
+            if (d == 0i64) { exit 65i32; }
+            exit 66i32;
+        },
+        (DivOverflow)    { exit 67i32; },
+        (StackExhausted) { exit 60i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (MachineFault)   { exit 61i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

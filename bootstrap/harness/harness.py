@@ -4247,6 +4247,37 @@ def check_floor_stack_current():
         return floor.check_stack(fh.read(), "floor")
 
 
+def check_floor_reserve_current():
+    """THE FLOOR'S STACK RESERVE (D-305, 1.5.8 step 2): the floor object tells
+    the linker it is split-stack-aware while none of its functions checks its
+    frame, and this is the check that makes the note true -- the floor's
+    deepest chain of frames, as the pinned `llc` lays them out
+    (`-stack-size-section`, read back with `llvm-readobj --stack-sizes`), with
+    one more pass of the trap route and the emitted leaf's slack, within a
+    quarter of the reserve below every limit word. The rule is `floor.py`'s
+    `reserve_measure`; `npkg/floor_stack.npk` is the twin."""
+    import floor
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        ft = fh.read()
+    work = tempfile.mkdtemp(prefix="npk-reserve-")
+    obj = os.path.join(work, "npkrt.stacksizes.o")
+    try:
+        r = subprocess.run(["llc"] + LLC_FLAGS + ["-stack-size-section", RUNTIME_LL, "-o", obj],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            return ["floor-stack-reserve: llc -stack-size-section refused the floor: %s" % r.stderr.strip()[:300]]
+        r = subprocess.run(["llvm-readobj", "--stack-sizes", obj], capture_output=True, text=True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    sizes = {f: int(v, 16) for f, v in re.findall(r'Functions: \[(.*?)\]\s*\n\s*Size: 0x([0-9A-Fa-f]+)', r.stdout)}
+    fails, worst, path, trap, total, reserve = floor.reserve_measure(ft, sizes, "floor")
+    if not fails:
+        print("  reserve     the floor's deepest chain %d bytes (%s), +%d for one more pass of the trap route, +%d of "
+              "leaf slack: %d of a quarter of the %d-byte reserve (D-305)" % (
+                  worst, " -> ".join(p.lstrip("@") for p in path), trap, floor.RESERVE_SLACK, total, reserve))
+    return fails
+
+
 def check_floor_shared_current():
     """THE SHARED-STATE BELT (1.5.6 step 0, D-290): every word of the floor
     two threads can reach is atomic or ordered by a named edge, and
@@ -4918,6 +4949,7 @@ def main(argv):
         failures += check_tcb_floor_current()
         failures += check_floor_shared_current()
         failures += check_floor_stack_current()
+        failures += check_floor_reserve_current()
         failures += check_floor_models_current()
         failures += check_floor_models_explicit()
         failures += check_tcb_syscalls_current()

@@ -52,6 +52,19 @@
 
 target triple = "x86_64-unknown-linux-gnu"
 
+; SPLIT-STACK AWARE, AS THE FLOOR IS (D-305, 1.5.8 step 2): the program's own
+; functions carry LLVM's split-stack prologue and, since X-20, call in here
+; directly (`npkx_point`, `npkx_sys6`). Without the split-stack note ld.lld
+; would rewrite every such caller to take the slow path on EVERY call -- a
+; trap, since `__morestack` is the trap route; without the no-split-stack note
+; it would refuse the link wherever this module calls unchecked code. This
+; module's functions check nothing: the shim runs inside the floor's own
+; frames, within the reserve below every limit word.
+module asm ".section .note.GNU-split-stack,\22\22,@progbits"
+module asm ".previous"
+module asm ".section .note.GNU-no-split-stack,\22\22,@progbits"
+module asm ".previous"
+
 declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)
 declare ptr @npk_exec()
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)

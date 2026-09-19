@@ -1,0 +1,43 @@
+// expect-exit: 60
+//
+// `failsafe` RUNS ON A STACK OF ITS OWN (D-305 (5), 1.5.8 step 2). `main`
+// exhausts its stack; at the trap only the 64 KiB reserve is left below the
+// limit word -- and `failsafe` then recurses ten thousand levels deep (some
+// 480 KiB at `-O0`), which fits only because the holder switched to the 1 MiB
+// failsafe stack, its limit word the failsafe stack's. On the trapping stack
+// it would overflow at once and the re-entry rule would exit 70.
+mod:stack_failsafe_room;
+
+// A recursion the optimiser cannot turn into a loop: each level passes the
+// address of its own local down, and the bottom reads through it.
+func:deep = int64(int64:n, int64->:prev) never fails {
+    if (n == 0i64) { pass (<-prev); }
+    int64:mine = n;
+    pass ((raw deep(n - 1i64, @mine)) + 1i64);
+};
+
+func:main = int32(cstring[]:argv) {
+    int64:seed = argv.len;
+    int64:r = raw deep(1000000000000i64, @seed);
+    if (r == 0i64) { exit 3i32; }
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) {
+            int64:x = 1i64;
+            int64:d = raw deep(10000i64, @x);
+            if (d != 10001i64) { exit 64i32; }
+            exit 60i32;
+        },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (MachineFault)   { exit 61i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

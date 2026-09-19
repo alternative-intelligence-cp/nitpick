@@ -1366,11 +1366,13 @@ the same region. One row per number the floor issues:
 | 10 | `mprotect` | — | none | — | — | — |
 | 11 | `munmap` | — | none | — | — | — |
 | 13 | `rt_sigaction` | — | writes | arg3 | 32 | — |
+| 15 | `rt_sigreturn` | — | asm | — | — | — |
 | 39 | `getpid` | — | none | — | — | — |
 | 56 | `clone` | — | asm | — | — | — |
 | 59 | `execve` | — | asm | — | — | — |
 | 60 | `exit` | — | ends | — | — | — |
 | 110 | `getppid` | — | none | — | — | — |
+| 131 | `sigaltstack` | — | writes | arg2 | 24 | — |
 | 157 | `prctl` | arg1 in 1 38 | none | — | — | — |
 | 158 | `arch_prctl` | arg1 in 4098 | none | — | — | — |
 | 202 | `futex` | arg2 in 9 128 129 137 | none | — | — | — |

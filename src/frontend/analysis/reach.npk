@@ -719,11 +719,14 @@ func:reach_expr_window = NIL(Reach->:x, int32:start, int32:count,
 // After the walk: fold in the system family, find failsafe's pick, compare.
 pub func:reach_settle = NIL(Reach->:x) never fails {
     // The floor is unconditional: allocation and the exit-time checks are in
-    // every program.
+    // every program -- and, since D-305 (1.5.8 step 2), the stack check: every
+    // function the compiler emits compares its frame against the thread's
+    // limit, so every program can exhaust its stack in a controlled way.
     drop reach_add_system(x, "Unreachable");
     drop reach_add_system(x, "HeapOom");
     drop reach_add_system(x, "HeapBadRequest");
     drop reach_add_system(x, "WildLeak");
+    drop reach_add_system(x, "StackExhausted");
     if (x.saw_div)      { drop reach_add_system(x, "DivByZero");
                           drop reach_add_system(x, "DivOverflow"); }
     if (x.saw_ovf)      { drop reach_add_system(x, "IntOverflow"); }

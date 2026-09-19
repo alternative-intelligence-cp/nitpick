@@ -1230,6 +1230,20 @@ pub func:ll_zero = string(LlType:t) never fails {
     pass "zeroinitializer";
 };
 
+// EVERY FUNCTION THIS COMPILER EMITS CHECKS ITS STACK (D-305, 1.5.8 step 2):
+// LLVM's `"split-stack"` prologue compares the stack pointer, less the
+// function's EXACT frame size, against the thread's limit word at `%fs:0x70`
+// BEFORE the frame is allocated, and calls the floor's `__morestack` -- the
+// trap route's `StackExhausted` -- when it would pass it. One text, written
+// after every `define`'s parameter list, so no emitted function can be
+// without it (a frame larger than a thread's guard page stepped over the
+// guard into another mapping before this: DEF-60). The floor's own functions
+// never carry it; they run before `%fs` exists and on signal stacks, and the
+// floor object's `.note.GNU-split-stack` is a claim a belt holds.
+pub func:ll_fn_open = string() never fails {
+    pass ") \"split-stack\" {";
+};
+
 // A DECLARATION NOTED ONCE (D-284, 1.5.4e step 0): the vector emitter names
 // the intrinsic it calls; the program emitter writes every noted line after
 // the bodies. A repeat is a no-op, so the note costs the caller nothing.

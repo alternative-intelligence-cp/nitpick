@@ -126,6 +126,13 @@ controls for it; both are recorded in the last section.
 | trap-route | old-loser-exits | **`.ctl`**, directed | `wrong-exit` (exit 70 on every seed), `trap_two_threads`, 100 of 100 directed at the frozen store and the stop walk's first read, from seed 1; 0 of 100 blind — re-directed after DEF-57 (last section) |
 | trap-route | heap-mutex-in-failsafe | **`.ctl`** | `wrong-exit` (DEADLOCK), `failsafe_alloc`, 36 of 100 from seed 1 — 0 of 100 before X-16 |
 
+*[2026-09-19, 1.5.8 step 2 (D-305; the plan's K-11): the stack moved every explored schedule. Each thread now
+registers its signal stack through one routed `sigaltstack` (`trap_one_failsafe`: k 106,239 → 106,242). The
+fourteen `.ctl`s were re-run through the harness's own code path on that floor. Each was found inside its
+`within:`, first at: `drop-keep-path` 18 (was 5; within 150), `heap-mutex-in-failsafe` 5 (was 1; within 40),
+`index-read-then-write` 25 (was 24; within 150), and every other at seed 1. The table's rates are 1.5.7's
+measurements and were not re-measured.]*
+
 Four programs were written for the walk because no explored program had the shape a control needed,
 and each is now an explored program of the suite in its own right: `io_ready_declined` (a watch the
 kernel declines, `drop-duenow`), `shared_arena_race` (every slot re-read after both bumpers are done,
@@ -232,6 +239,14 @@ reads the flag, which is exactly where the fixed block differs, and it exits 41 
 `.ctl` pinned to that seed would go blind at the first unrelated change to the route's step count, which
 would be a red run that says nothing about DEF-57, so the model's control is the standing negative control:
 both of the model's readings decide it on every run.
+
+*[2026-09-19, 1.5.8 step 2: the kept seed went stale, as this paragraph foresaw of a pinned `.ctl`, and silently.
+The stack added one routed `sigaltstack` per thread (k 106,239 → 106,242). With the pre-fix block planted, seed
+371 exits 41, and so does every seed in 1..60,000. The unit's run could not say so, because a kept seed is run and
+never checked to still reach anything. The limit above — a directed site cannot reorder two arrivals at one
+place — is lifted at 1.5.8 step 2c by a HOLD directive: the first thread to arrive at the named site waits until
+another thread has passed the same site. DEF-57's window then becomes a `.ctl` that the harness decides on every
+run, found without a seed.]*
 
 **`trap-route` / `frozen-parks-holder`** — the fix as first proposed at the hand-off: EVERY executor that
 sees the flag parks, the holder included. `holder-parks` is reached at depth 6 in the model (the holder's own

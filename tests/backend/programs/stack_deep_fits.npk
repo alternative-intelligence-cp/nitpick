@@ -1,0 +1,36 @@
+// expect-exit: 0
+//
+// NO FALSE POSITIVE BELOW THE BUDGET (D-305, 1.5.8 step 2). 120,000 levels of
+// 48 bytes at `-O0` (16 after `opt -O2`) is some 5.8 MB of the main
+// thread's 8 MiB: every prologue compares, none trips, and the answer is
+// exact.
+mod:stack_deep_fits;
+
+// A recursion the optimiser cannot turn into a loop: each level passes the
+// address of its own local down, and the bottom reads through it.
+func:deep = int64(int64:n, int64->:prev) never fails {
+    if (n == 0i64) { pass (<-prev); }
+    int64:mine = n;
+    pass ((raw deep(n - 1i64, @mine)) + 1i64);
+};
+
+func:main = int32(cstring[]:argv) {
+    int64:seed = argv.len;
+    int64:r = raw deep(120000i64, @seed);
+    if (r != 120001i64) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 60i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (MachineFault)   { exit 61i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

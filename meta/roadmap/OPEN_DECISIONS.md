@@ -1407,14 +1407,14 @@ test of the running program found it and the harness's `-O2` leg could only have
 twisted families' ENTERING arms carry an ordered range guard since 1.3.2 ("the select keeps fptosi off poison");
 the plain integer's arm was never given the rule, and `smt_kinds.npk`'s header claimed "casts trap (D-148)".
 
-**DEF-59 — OPEN, fixed at 1.5.8 step 2 (D-305): A STACK OVERFLOW WAS AN UNCONTROLLED STOP.** (found 2026-09-18 on
+**DEF-59 — FIXED at 1.5.8 step 2 (2026-09-19; D-305): every emitted function carries LLVM's split-stack prologue, the floor's `__morestack` is `StackExhausted`, every thread's stack is the floor's (the main thread moved onto 8 MiB), `failsafe` runs on a stack of its own; `npkc` compiles itself under `ulimit -s 1024`, and `stack_exhausted.npk`, `stack_budget_own.npk` and `stack_failsafe_overflow.npk` exit 60, 0 and 70 where the previous compiler and floor died of SIGSEGV (139).** ~~OPEN~~ A STACK OVERFLOW WAS AN UNCONTROLLED STOP. (found 2026-09-18 on
 `e3bf48c` by `nitpick-compiler_s11`, planning 1.5.8.) The floor installs one signal action, SIGUSR1's (D-291), so a
 recursion deeper than its stack dies of SIGSEGV with the kernel's default action and no `failsafe` — the event the
 language's two exit paths exist to forbid. Measured on the compiler compiling itself: `ulimit -s 4096` succeeds,
 `ulimit -s 2048` exits 139. And the main thread's budget was the SHELL's: the same program stops at a different
 depth under a different `ulimit`.
 
-**DEF-60 — OPEN, fixed at 1.5.8 step 2 (D-305): A SPAWNED THREAD'S ONE GUARD PAGE COULD BE JUMPED.** (found
+**DEF-60 — FIXED at 1.5.8 step 2 (2026-09-19; D-305): the prologue compares the WHOLE frame against the limit before allocating it (`leaq -0x10028(%rsp), %r11; cmpq %fs:0x70, %r11` for `stack_bigframe_thread.npk`'s 64 KiB frame), so a frame larger than the guard traps `StackExhausted` instead of stepping over it.** ~~OPEN~~ A SPAWNED THREAD'S ONE GUARD PAGE COULD BE JUMPED. (found
 2026-09-18 on `e3bf48c` by `nitpick-compiler_s11`, planning 1.5.8.) `npk_thread_start` maps "guard page + 2 MiB";
 `llc -O0 -stack-size-section` over the compiler's own IR finds 151 frames larger than a page (the largest,
 `emit_expr_kind`, 120,904 bytes). An overflow that enters such a frame moves the stack pointer PAST the guard, and
@@ -1444,7 +1444,7 @@ the same survey.) `npkg/floor_smt.npk:3252-3254` maps `@npk_heap_bad`, `@npk_hea
 `trap_code` yet, so no verdict rests on the table — a latent wrong fact in an instrument, corrected before a clause
 can rest on it.
 
-**DEF-64 — OPEN, fixed at 1.5.8 step 2: THE FLOOR'S SYSCALL CENSUS COULD NOT SEE `module asm`.** (found 2026-09-18
+**DEF-64 — OPEN, fixed at 1.5.8 step 2b (split from step 2 on 2026-09-19 so the stack check could meet its harness sooner): THE FLOOR'S SYSCALL CENSUS COULD NOT SEE `module asm`.** (found 2026-09-18
 by the explorer survey of 1.5.8's planning.) The kernel-effect table, TCB.md §4b's syscall boundary and the
 explorer's transform all read `call i64 @npk_sys6(i64 N` in function bodies; a syscall written in a `module asm`
 block is invisible to all three. One already is: `rt_sigreturn` (15), the SIGUSR1 handler's restorer (D-291) — no
@@ -1479,6 +1479,21 @@ spurious wake, which the clear-then-recheck protocol already tolerates); the rea
 pooled executor and are reused rather than closed. The arguments go into `runtime/npkrt.spec` beside the
 classification rows and the pools' reuse into the models the waker and the stop walk already have, before the step
 lands.
+
+**DEF-67 — OPEN, scheduled as 1.5.8 step 2c: A KEPT SEED WENT STALE AND NOTHING SAID SO.** (found 2026-09-19 by
+`nitpick-compiler_s11`, executing 1.5.8 step 2's K-11.) X-11 keeps a seed that found a defect (`// explore-seed:
+S`) and runs it first on every run: "a schedule that found a defect once is the cheapest regression test the
+project will ever own". That works only while the seed still names that schedule. Step 2 added one routed
+`sigaltstack` per thread, which moved `trap_one_failsafe`'s k from 106,239 to 106,242. With DEF-57's pre-fix block
+planted, seed 371 now exits 41, and so do all of seeds 1..60,000. The unit's run was green throughout, because a
+kept seed is replayed on the fixed floor and never checked to still reach anything. Without K-11's by-hand
+re-search, DEF-57's only real-floor regression would have stopped testing its window with no signal. Re-searching
+is not the fix: the window is one point wide, about 1 in 150,000 blind seeds reach it, and every floor change that
+adds a step moves it again. Nor can a directed control (X-15) reach it, because both parties' next step is the
+same site. Step 2c gives the explorer a HOLD directive: the first thread to arrive at a named site waits until
+another thread has passed the same site, or until nothing else can run. DEF-57's window becomes a `.ctl` found
+without a seed and decided on every run. Step 2c also settles X-11 for every kept seed: each claims its defect
+through a control that plants it, or it claims nothing.
 
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 

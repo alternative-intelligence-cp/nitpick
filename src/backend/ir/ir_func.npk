@@ -512,7 +512,7 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     drop irw_raw(fe.w, raw cat5("define ", fe.ret_ll, " ", fe.sym,
-                                  raw cat3("(", params, ") {")));
+                                  raw cat3("(", params, raw ll_fn_open())));
     drop irw_label(fe.w, "entry");
     // The define line and `entry:` are in the module stream; from here allocas
     // and body buffer separately and splice back at close (1.0.9a).
@@ -693,7 +693,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     drop irw_raw(fe.w, raw cat5(raw frame_size_sym(fe.frame_ty),
                       " = internal constant i64 ptrtoint (ptr getelementptr (",
                       fe.frame_ty, ", ptr null, i32 1) to i64)", ""));
-    drop irw_raw(fe.w, raw cat4("define i8 ", fe.resume_sym, "(ptr %fr) {", ""));
+    drop irw_raw(fe.w, raw cat4("define i8 ", fe.resume_sym, "(ptr %fr", raw ll_fn_open()));
     drop irw_label(fe.w, "entry");
     drop irw_open_fn(fe.w);
 
@@ -899,7 +899,7 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     drop irw_begin_function(fe.w);
-    drop irw_raw(fe.w, raw cat3("define i32 @main(", params, ") {"));
+    drop irw_raw(fe.w, raw cat3("define i32 @main(", params, raw ll_fn_open()));
     drop irw_label(fe.w, "entry");
     string:fr = raw irw_temp(fe.w);
     // THE ROOT FRAME IS A STACK ALLOCA (D-224, as amended the same day). It was

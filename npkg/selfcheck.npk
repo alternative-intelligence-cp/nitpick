@@ -310,6 +310,43 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         }
     }
 
+    // THE FLOOR'S STACK RESERVE (D-305, 1.5.8 step 2; `reserve_measure`): a chain of frames
+    // over a quarter of the reserve must fail, and so must a floor that recurses other than
+    // through the trap route; the same chain under a 64 KiB reserve must pass. The sizes are
+    // planted (the real ones come from `llc -stack-size-section`). The harness's three cases,
+    // byte for byte.
+    string:rs_chain = "define void @f() {\nentry:\n  call void @g()\n  ret void\n}\ndefine void @g() {\nentry:\n  call void @h()\n  ret void\n}\ndefine void @h() {\nentry:\n  ret void\n}\n";
+    string:rs_cycle = "define void @f() {\nentry:\n  call void @g()\n  ret void\n}\ndefine void @g() {\nentry:\n  call void @f()\n  ret void\n}\n";
+    List<string>:rs_sizes = raw list_init::<string>(3i64);
+    drop strlist_push(@rs_sizes, "f 100");
+    drop strlist_push(@rs_sizes, "g 2000");
+    drop strlist_push(@rs_sizes, "h 100");
+    for (int64:ri in 0i64...3i64) {
+        string:rname = "reserve-over";
+        string:rtext = string_concat("@npk_stack_reserve = internal constant i64 4096\n", rs_chain);
+        bool:rmust_fail = true;
+        string:rwhy = "a chain of 2,224 bytes with the slack is over a quarter of a 4,096-byte reserve and must fail";
+        if (ri == 1i64) {
+            rname = "reserve-recurses";
+            rtext = string_concat("@npk_stack_reserve = internal constant i64 65536\n", rs_cycle);
+            rwhy = "a floor that recurses other than through the trap route must fail";
+        }
+        if (ri == 2i64) {
+            rname = "reserve-control";
+            rtext = string_concat("@npk_stack_reserve = internal constant i64 65536\n", rs_chain);
+            rmust_fail = false;
+            rwhy = "the same chain under a 65,536-byte reserve must pass";
+        }
+        Reserve:rres = raw reserve_measure(rtext, raw strlist_clone(rs_sizes), rname);
+        bool:rok = ((rres.findings.count > 0i64) == rmust_fail);
+        if (!rok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(rname, rok, rwhy));
+        if (!rok) {
+            if (rmust_fail) { drop strlist_push(@report, "      the belt accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(rres.findings, 0i64))); }
+        }
+    }
+
     // THE KERNEL-EFFECT TABLE'S BELT (1.5.6b step 1; D-288 as amended): a call site whose
     // option its row does not speak for fails by name, the row's own option passes, and a
     // number with no row fails. The harness's three cases, byte for byte.
@@ -1102,9 +1139,9 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         if (raw text_eq(cw, "syscall")) { n_sys = n_sys + 1i64; }
         if (raw text_eq(cw, "pure")) { n_pure = n_pure + 1i64; }
     }
-    bool:okfp = (real_ft.fns.count == 175i64) && (n_asm == 4i64) && (n_atomic == 41i64) && (n_sys == 88i64) && (n_pure == 42i64);
+    bool:okfp = (real_ft.fns.count == 181i64) && (n_asm == 6i64) && (n_atomic == 41i64) && (n_sys == 92i64) && (n_pure == 42i64);
     if (!okfp) { bad = bad + 1i64; }
-    drop strlist_push(@report, raw case_line("floor-parse", okfp, "the committed floor parses to 175 defines: 4 asm, 41 atomic, 88 syscall, 42 pure"));
+    drop strlist_push(@report, raw case_line("floor-parse", okfp, "the committed floor parses to 181 defines: 6 asm, 41 atomic, 92 syscall, 42 pure"));
     if (!okfp) {
         string:fpw = string_concat("      the floor parsed to ", int_to_string(real_ft.fns.count));
         fpw = string_concat(fpw, " defines: ");

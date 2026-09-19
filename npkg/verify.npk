@@ -1062,6 +1062,35 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     if (sb.count > 0i64) { pass (raw step_bad(raw strlist_view(sb, 0i64))); }
     List<string>:sk = raw floor_stack_current(root);
     if (sk.count > 0i64) { pass (raw step_bad(raw strlist_view(sk, 0i64))); }
+    // THE FLOOR'S STACK RESERVE (D-305, 1.5.8 step 2): the floor's frames as the
+    // pinned llc lays them out, read back from the object's `.stack_sizes`.
+    string:rsll = string_concat(root, "/runtime/npkrt.ll");
+    string:rso = string_concat(vdir, "/npkrt.stacksizes.o");
+    List<string>:rflags = raw strlist_clone(c.m.llc_flags);
+    drop strlist_push(@rflags, "-stack-size-section");
+    Result<Step>:rs = await llc_obj(c, rflags, rsll, rso);
+    if (rs.is_error) { pass (raw step_bad("floor-stack-reserve: llc -stack-size-section could not run over the floor")); }
+    if (!rs.value.ok) { pass (raw step_bad("floor-stack-reserve: llc -stack-size-section refused the floor")); }
+    Result<List<string>>:rsz = elf_stack_sizes(rso);
+    if (rsz.is_error) { pass (raw step_bad("floor-stack-reserve: the floor object's .stack_sizes could not be read")); }
+    Result<cstring>:rsc = to_cstring(rsll);
+    if (rsc.is_error) { pass (raw step_bad("floor-stack-reserve: runtime/npkrt.ll: not a path")); }
+    Result<string>:rst = read_file(rsc.value);
+    if (rst.is_error) { pass (raw step_bad("floor-stack-reserve: runtime/npkrt.ll cannot be read")); }
+    Reserve:rsv = raw reserve_measure(rst.value, rsz.value, "floor");
+    if (rsv.findings.count > 0i64) { pass (raw step_bad(raw strlist_view(rsv.findings, 0i64))); }
+    string:rline = "the floor's deepest chain ";
+    rline = string_concat(rline, int_to_string(rsv.worst));
+    rline = string_concat(rline, " bytes, +");
+    rline = string_concat(rline, int_to_string(rsv.trap));
+    rline = string_concat(rline, " for one more pass of the trap route, +");
+    rline = string_concat(rline, int_to_string(raw RESERVE_SLACK()));
+    rline = string_concat(rline, " of leaf slack: ");
+    rline = string_concat(rline, int_to_string(rsv.total));
+    rline = string_concat(rline, " of a quarter of the ");
+    rline = string_concat(rline, int_to_string(rsv.reserve));
+    rline = string_concat(rline, "-byte reserve (D-305)");
+    drop say(raw stage_text("reserve", rline));
     List<string>:sx = raw floor_models_explicit(root);
     if (sx.count > 0i64) { pass (raw step_bad(raw strlist_view(sx, 0i64))); }
     List<string>:se = raw explore_totality_current(root);

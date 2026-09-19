@@ -35,6 +35,7 @@ mod:floor_stack;
 
 use "./text.npk".*;
 use "./floor_ir.npk".*;
+use "./floor_shared.npk".*;   // floor_calls, for the reserve belt (1.5.8 step 2)
 
 // The bytes of `iN` or `ptr`; -1 for anything else. No division on purpose: a
 // belt adds no arm to the `failsafe` of every root that imports it.
@@ -271,4 +272,227 @@ pub func:floor_stack_current = List<string>(string:root) never fails {
     Result<string>:ftx = read_file(fc.value);
     if (ftx.is_error) { drop strlist_push(@fl, "floor: runtime/npkrt.ll cannot be read"); pass fl; }
     pass (raw floor_stack_check(ftx.value, "floor"));
+};
+
+// THE FLOOR'S STACK RESERVE (D-305, 1.5.8 step 2) -- `floor.py`'s
+// `reserve_measure`, finding for finding. Every function the compiler emits
+// carries LLVM's split-stack prologue and checks its frame against the
+// thread's limit word; the floor's own functions never do, and the floor
+// object says so to the linker (`.note.GNU-split-stack` beside
+// `.note.GNU-no-split-stack`). What makes the note honest is this belt: the
+// floor runs below a limit word only inside the reserve the limit leaves, so
+// its deepest chain of frames -- each frame as the pinned `llc` lays it out
+// (`-stack-size-section`, read by `elf_stack_sizes`), plus the return address,
+// along the floor's own direct calls -- must fit in a QUARTER of
+// `@npk_stack_reserve` with the emitted leaf's slack (LLVM skips the check for
+// a leaf of at most 256 bytes; 128 of red zone). The one cycle the floor may
+// hold is the trap route's re-entry: its back edges are cut and `npk_trap`'s
+// own chain is added once. Any other cycle is a floor that recurses.
+pub func:RESERVE_SLACK = int64() never fails { pass 384i64; };
+
+pub struct:Reserve = {
+    List<string>:findings;
+    int64:worst;
+    List<string>:path;
+    int64:trap;
+    int64:total;
+    int64:reserve;
+};
+
+struct:RGraph = {
+    List<string>:names;       // `@npk_x`, the floor's define order
+    List<int64>:frame;        // bytes, from `-stack-size-section`
+    List<int64>:cstart;       // each function's window into `cidx`
+    List<int64>:ccount;
+    List<int64>:cidx;         // its direct callees among the floor's functions, in call order, once each
+};
+
+func:rg_index = int64(RGraph->:g, string:name) never fails {
+    for (int64:i in 0i64...g.names.count) {
+        if (raw text_eq(raw strlist_view(g.names, i), name)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+func:rg_is_back = bool(List<int64>:bf, List<int64>:bt, int64:f, int64:t) never fails {
+    for (int64:i in 0i64...bf.count) {
+        if ((bf.items[i] == f) && (bt.items[i] == t)) { pass true; }
+    }
+    pass false;
+};
+
+// The depth-first walk that finds the back edges, in the floor's order; a
+// cycle not through `npk_trap` is a finding, rebuilt from the parents.
+func:rg_walk = NIL(RGraph->:g, int64:f, List<int64>->:state, List<int64>->:parent,
+                   List<int64>->:bf, List<int64>->:bt, List<string>->:found,
+                   string:name) never fails {
+    state.items[f] = 1i64;
+    int64:c0 = g.cstart.items[f];
+    for (int64:k in 0i64...g.ccount.items[f]) {
+        int64:t = g.cidx.items[c0 + k];
+        if (state.items[t] == 1i64) {
+            drop list_push(bf, f);
+            drop list_push(bt, t);
+            if (!(raw text_eq(raw strlist_view(g.names, t), "@npk_trap"))) {
+                List<int64>:up = raw list_init::<int64>(8i64);
+                int64:x = f;
+                while (true) {
+                    drop list_push(@up, x);
+                    if (x == t) { break; }
+                    if (parent.items[x] < 0i64) { break; }
+                    x = parent.items[x];
+                }
+                string:cyc = "";
+                int64:j = up.count - 1i64;
+                while (j >= 0i64) {
+                    cyc = string_concat(cyc, raw strlist_view(g.names, up.items[j]));
+                    cyc = string_concat(cyc, " -> ");
+                    j = j - 1i64;
+                }
+                cyc = string_concat(cyc, raw strlist_view(g.names, t));
+                string:m = string_concat(name, ": floor-stack-reserve: the floor recurses: ");
+                m = string_concat(m, cyc);
+                drop strlist_push(found, m);
+            }
+            continue;
+        }
+        if (state.items[t] == 0i64) {
+            parent.items[t] = f;
+            drop rg_walk(g, t, state, parent, bf, bt, found, name);
+        }
+    }
+    state.items[f] = 2i64;
+    pass NIL;
+};
+
+func:rg_depth = int64(RGraph->:g, int64:f, List<int64>->:bf, List<int64>->:bt,
+                      List<int64>->:memo, List<int64>->:via) never fails {
+    if (memo.items[f] >= 0i64) { pass memo.items[f]; }
+    int64:best = 0i64;
+    int64:bv = 0i64 - 1i64;
+    int64:c0 = g.cstart.items[f];
+    for (int64:k in 0i64...g.ccount.items[f]) {
+        int64:t = g.cidx.items[c0 + k];
+        if (raw rg_is_back(<-bf, <-bt, f, t)) { continue; }
+        int64:d = raw rg_depth(g, t, bf, bt, memo, via);
+        if (d > best) { best = d; bv = t; }
+    }
+    int64:mine = (g.frame.items[f] + 8i64) + best;
+    memo.items[f] = mine;
+    via.items[f] = bv;
+    pass mine;
+};
+
+func:reserve_empty = Reserve() never fails {
+    pass Reserve{ findings: raw list_init::<string>(2i64), worst: 0i64,
+                  path: raw list_init::<string>(2i64), trap: 0i64, total: 0i64, reserve: 0i64 };
+};
+
+// `sizes`: "name size" lines (`elf_stack_sizes`), the names without `@`.
+pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string:name) never fails {
+    Reserve:out = raw reserve_empty();
+    FloorText:ft = raw floor_parse(floor_text);
+    string:rtext = raw floor_global_init(@ft, "@npk_stack_reserve");
+    Result<int64>:rv = text_int(rtext);
+    if (rv.is_error) {
+        drop strlist_push(@out.findings, string_concat(name, ": floor-stack-reserve: the floor declares no `@npk_stack_reserve`"));
+        pass out;
+    }
+    out.reserve = rv.value;
+    RGraph:g = RGraph{ names: raw list_init::<string>(256i64), frame: raw list_init::<int64>(256i64),
+                       cstart: raw list_init::<int64>(256i64), ccount: raw list_init::<int64>(256i64),
+                       cidx: raw list_init::<int64>(1024i64) };
+    for (int64:i in 0i64...ft.fns.count) {
+        drop strlist_push(@g.names, ft.fns.items[i].name);
+        string:bare = raw text_slice(ft.fns.items[i].name, 1i64, ft.fns.items[i].name.len);
+        int64:fr = 0i64 - 1i64;
+        for (int64:k in 0i64...sizes.count) {
+            string:ln = raw strlist_view(sizes, k);
+            int64:sp = raw text_find_byte(ln, 32u8, 0i64);
+            if (sp < 0i64) { continue; }
+            if (raw text_eq(raw text_slice(ln, 0i64, sp), bare)) {
+                Result<int64>:sv = text_int(raw text_slice(ln, sp + 1i64, ln.len));
+                if (!sv.is_error) { fr = sv.value; }
+                break;
+            }
+        }
+        if (fr < 0i64) {
+            string:m = string_concat(name, ": floor-stack-reserve: no frame size for ");
+            m = string_concat(m, ft.fns.items[i].name);
+            drop strlist_push(@out.findings, m);
+            pass out;
+        }
+        drop list_push(@g.frame, fr);
+    }
+    for (int64:i2 in 0i64...ft.fns.count) {
+        drop list_push(@g.cstart, g.cidx.count);
+        int64:before = g.cidx.count;
+        List<FCall>:cl = raw floor_calls(@ft.fns.items[i2]);
+        for (int64:k2 in 0i64...cl.count) {
+            int64:t = raw rg_index(@g, cl.items[k2].callee);
+            if (t < 0i64) { continue; }
+            bool:seen = false;
+            for (int64:q in before...g.cidx.count) {
+                if (g.cidx.items[q] == t) { seen = true; }
+            }
+            if (!seen) { drop list_push(@g.cidx, t); }
+        }
+        drop list_push(@g.ccount, g.cidx.count - before);
+    }
+    int64:n = g.names.count;
+    List<int64>:state = raw list_init::<int64>(n);
+    List<int64>:parent = raw list_init::<int64>(n);
+    List<int64>:memo = raw list_init::<int64>(n);
+    List<int64>:via = raw list_init::<int64>(n);
+    for (int64:z in 0i64...n) {
+        drop list_push(@state, 0i64);
+        drop list_push(@parent, 0i64 - 1i64);
+        drop list_push(@memo, 0i64 - 1i64);
+        drop list_push(@via, 0i64 - 1i64);
+    }
+    List<int64>:bf = raw list_init::<int64>(4i64);
+    List<int64>:bt = raw list_init::<int64>(4i64);
+    for (int64:w in 0i64...n) {
+        if (state.items[w] == 0i64) { drop rg_walk(@g, w, @state, @parent, @bf, @bt, @out.findings, name); }
+    }
+    if (out.findings.count > 0i64) { pass out; }
+    int64:worst = 0i64;
+    int64:wf = 0i64 - 1i64;
+    for (int64:d in 0i64...n) {
+        int64:dv = raw rg_depth(@g, d, @bf, @bt, @memo, @via);
+        if (dv > worst) { worst = dv; wf = d; }
+    }
+    int64:x = wf;
+    while (x >= 0i64) {
+        drop strlist_push(@out.path, raw strlist_view(g.names, x));
+        x = via.items[x];
+    }
+    int64:ti = raw rg_index(@g, "@npk_trap");
+    int64:trap = 0i64;
+    if (ti >= 0i64) { trap = raw rg_depth(@g, ti, @bf, @bt, @memo, @via); }
+    out.worst = worst;
+    out.trap = trap;
+    out.total = (worst + trap) + (raw RESERVE_SLACK());
+    if ((out.total * 4i64) > out.reserve) {
+        string:pj = "";
+        for (int64:pi in 0i64...out.path.count) {
+            if (pi > 0i64) { pj = string_concat(pj, " -> "); }
+            pj = string_concat(pj, raw strlist_view(out.path, pi));
+        }
+        string:m2 = string_concat(name, ": floor-stack-reserve: the floor's deepest chain is ");
+        m2 = string_concat(m2, int_to_string(worst));
+        m2 = string_concat(m2, " bytes (");
+        m2 = string_concat(m2, pj);
+        m2 = string_concat(m2, "), with one more pass of the trap route (");
+        m2 = string_concat(m2, int_to_string(trap));
+        m2 = string_concat(m2, ") and the emitted leaf's slack (");
+        m2 = string_concat(m2, int_to_string(raw RESERVE_SLACK()));
+        m2 = string_concat(m2, ") ");
+        m2 = string_concat(m2, int_to_string(out.total));
+        m2 = string_concat(m2, " -- over a quarter of the ");
+        m2 = string_concat(m2, int_to_string(out.reserve));
+        m2 = string_concat(m2, "-byte reserve below every limit word (D-305)");
+        drop strlist_push(@out.findings, m2);
+    }
+    pass out;
 };

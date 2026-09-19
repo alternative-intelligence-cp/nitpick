@@ -107,6 +107,8 @@
   (word %npk.tls 4 stated "the join's futex word and the stop's target: written 0 by the creating thread before the clone -- or the pid, for the main thread at boot -- then by the kernel (PARENT_SETTID writes the tid, CHILD_CLEARTID zeroes it at exit), read by npk_thread_join with an atomic load, by the stop walk with an atomic load (D-291) and by the kernel's futex compare (DEF-48)")
   (word %npk.tls 6 born-before-publish)    ; map base: a spawned thread's stack mapping, written before the clone; read by the join once the kernel cleared the tid word (DEF-65) -- 0 for the main thread
   (word %npk.tls 7 born-before-publish)    ; map length: as 6
+  (word %npk.tls 8 born-before-publish)    ; signal stack: written before the clone (the main thread's by npk_start, before any thread exists); read by the thread itself at its entry (D-305, 1.5.8 step 2)
+  (word %npk.tls 10 stated "THE STACK LIMIT (D-305, 1.5.8 step 2), at byte 0x70: per-thread -- written by the thread's creator before the thread runs any emitted code (the parent before the clone; npk_start for the main thread, before `main`), read only by that thread's own emitted prologues (`cmp %fs:0x70`), and rewritten only by that thread's switch to the failsafe stack (npk_fs_switch_call, which restores it)")
 
   ; --- globals -----------------------------------------------------------------
   (word @npk_ch_tab publish ch-open-lock)  ; the table pointer: a release store under the open lock, acquire loads by readers
@@ -119,6 +121,9 @@
   (word @npk_in_failsafe atomic)           ; the failsafe holder: claimed by cmpxchg, read seq_cst (D-291)
   (word @npk_stopped atomic)               ; threads parked in the stop handler: atomicrmw by the handler, seq_cst reads by the winner's wait (D-291)
   (word @npk_pid once-before-threads "recorded at boot by getpid, read by the stop walk")
+  (word @npk_fs_stack_top once-before-threads "the failsafe stack's top (D-305 (5)): written once by npk_start before any thread exists, read by npk_failsafe_on_stack and by the holder's switch (npk_fs_switch_call); 0 before, when a trap runs `failsafe` where it stands")
+  (word @npk_fs_stack_limit once-before-threads "the failsafe stack's limit word: as @npk_fs_stack_top, read only by the holder's switch")
+  (word @npk_argv_slice once-before-threads "argv, measured by npk_start on the kernel's stack and read once by npk_start_main on the floor's (D-305 (3))")
   ; @npk_fs_region is reached only through address arithmetic (its address
   ; taken by npk_fs_alloc, never loaded or stored by name), so no access is
   ; listed; its bytes are the holder's alone, after every other thread is parked.
@@ -880,6 +885,8 @@
 (symbol @npk_heap_oom (ensures-trap true))
 (symbol @npk_heap_badreq (ensures-trap true))
 (symbol @npk_raise (ensures-trap true))
+(symbol @npk_stack_exhausted (ensures-trap true))
+(symbol @npk_stack_foreign (ensures-trap true))
 
 (symbol @npk_stop_others
   (summary)
@@ -1185,13 +1192,30 @@
 
 ; the threads, the process, the executor loop
 (symbol @npk_start
-  (boundary "the process entry, called by _start with the initial stack pointer: argv and envp measured, the main thread's TLS block and executor booted (npk_tls_boot), SIGUSR1 armed for the stop signal over the kernel's own sigaction shape (D-291), the driver registry cleared, main run to completion under the executor, then the exit sequence (npk_exit) -- the path never returns"))
+  (boundary "the process entry, called by _start with the initial stack pointer: the main thread's TLS block and executor booted (npk_tls_boot); the main thread's stack and the failsafe stack mapped in the floor's shape (npk_stack_map), the main thread's limit word and signal stack written and the signal stack registered (npk_sigstack_on) (D-305, 1.5.8 step 2); SIGUSR1 armed for the stop signal over the kernel's own sigaction shape, on the signal stack (D-291, D-305 (4)); argv and envp measured on the kernel's stack; then the switch to the floor's stack (npk_switch_stack, assembly) and npk_start_main -- the path never returns"))
 (symbol @npk_tls_boot
   (boundary "the main thread's TLS block and executor from raw anonymous mappings -- INTERNAL, not npk_alloc, so the runtime's own storage is never a leak at a clean exit (D-151) -- and %fs set by arch_prctl to the block"))
 (symbol @npk_thread_entry
-  (boundary "a spawned thread's first ordinary code, reached by the clone trampoline's real call (a child that continued in IR would read the parent's spilled stack): its TLS and executor booted from the trampoline's block, the task run to completion, the thread ended through npk_thread_exit"))
+  (boundary "a spawned thread's first ordinary code, reached by the clone trampoline's real call (a child that continued in IR would read the parent's spilled stack): its signal stack registered first (npk_sigstack_on, from the TLS block's word the parent wrote; D-305 (4)), its TLS and executor booted from the trampoline's block, the task run to completion, the thread ended through npk_thread_exit"))
 (symbol @npk_thread_exit
   (boundary "exit(60) of the calling thread alone: the kernel clears and wakes the CLONE_CHILD_CLEARTID word the joiner waits on (a shared wake, 1.4.4); the path never returns"))
+(symbol @npk_stack_map
+  (boundary "one stack of the floor's shape (D-305, 1.5.8 step 2): `usable` bytes behind a PROT_NONE guard page -- with a signal stack and a second guard when `sig` is not 0 -- and the 64 KiB reserve below the limit word, one anonymous mapping through npk_hmap, each guard by mprotect (a guard that cannot be set traps -4102); the five words { base, length, signal stack, limit, top } written to `out`"))
+(symbol @npk_sigstack_on
+  (boundary "sigaltstack(&{ base, 0, 64 KiB }, NULL) for the calling thread (D-305 (4)); the kernel refuses a stack below the machine's minimum signal frame with ENOMEM, and that refusal traps -4102 at the thread's start -- the assumption that 64 KiB holds this machine's signal frame, checked where it is made"))
+(symbol @npk_start_main
+  (boundary "startup's remainder on the floor's stack (D-305 (3)): argv as npk_start measured it, `main` -- the first emitted function the main thread runs, whose prologue reads the limit word npk_start wrote -- and npk_exit with its answer; never returns"))
+(symbol @npk_failsafe_on_stack
+  ; A SUMMARY, so npk_trap's rows assume this section at the call rather than
+  ; inline a body that is assembly -- and the frame is `objects`: `failsafe`
+  ; is the program's code and may write anything, so a caller may assume only
+  ; its own declared objects kept (npk_trap declares none: nothing about memory
+  ; is assumed across the call, exactly as across the direct call of the
+  ; program's `npk_failsafe` this replaced).
+  (summary)
+  (boundary "`failsafe` on a stack of its own (D-305 (5)): through npk_fs_switch_call -- assembly: the frame pointer and the thread's limit word saved, the stack pointer and the limit word the failsafe stack's, `failsafe` called, both restored -- once npk_start has mapped the failsafe stack; before that, `failsafe` where it stands")
+  (frame objects)
+  (ensures true))
 (symbol @npk_hardware_concurrency
   ; DEF-52 (1.5.6b): the mask is ZEROED before the kernel sees it, because the
   ; raw sched_getaffinity writes only `z` bytes of the 128 and nothing else

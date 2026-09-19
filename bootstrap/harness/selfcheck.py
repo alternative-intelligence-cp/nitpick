@@ -313,6 +313,35 @@ def main():
             else:
                 print("      the belt rejected it: %s" % fails[0])
 
+    # THE FLOOR'S STACK RESERVE (D-305, 1.5.8 step 2; `floor.reserve_measure`): a chain of
+    # frames over a quarter of the reserve must fail, and so must a floor that recurses other
+    # than through the trap route; the same chain under a 64 KiB reserve must pass. The sizes
+    # are planted (the real ones come from `llc -stack-size-section`). `npkg/selfcheck.npk`
+    # carries the same three cases by name, over the same texts and sizes.
+    rs_chain = ("define void @f() {\nentry:\n  call void @g()\n  ret void\n}\n"
+                "define void @g() {\nentry:\n  call void @h()\n  ret void\n}\n"
+                "define void @h() {\nentry:\n  ret void\n}\n")
+    rs_cycle = ("define void @f() {\nentry:\n  call void @g()\n  ret void\n}\n"
+                "define void @g() {\nentry:\n  call void @f()\n  ret void\n}\n")
+    rs_sizes = {"f": 100, "g": 2000, "h": 100}
+    for name, text, must_fail, why in (
+            ("reserve-over", "@npk_stack_reserve = internal constant i64 4096\n" + rs_chain, True,
+             "a chain of 2,224 bytes with the slack is over a quarter of a 4,096-byte reserve and must fail"),
+            ("reserve-recurses", "@npk_stack_reserve = internal constant i64 65536\n" + rs_cycle, True,
+             "a floor that recurses other than through the trap route must fail"),
+            ("reserve-control", "@npk_stack_reserve = internal constant i64 65536\n" + rs_chain, False,
+             "the same chain under a 65,536-byte reserve must pass")):
+        fails = floor.reserve_measure(text, rs_sizes, name)[0]
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      the belt accepted it; it should not have")
+            else:
+                print("      the belt rejected it: %s" % fails[0])
+
     # THE KERNEL-EFFECT TABLE'S BELT (1.5.6b step 1; D-288 as amended): a call site whose
     # option its row does not speak for fails by name -- `arch_prctl(ARCH_GET_FS)` WRITES user
     # memory where `ARCH_SET_FS` does not, and a row keyed by number alone would model either as
@@ -868,11 +897,11 @@ def main():
     real_cls = harness._floor_classes()
     counts = (len(real_fns), sum(1 for v in real_cls.values() if v == "asm"), sum(1 for v in real_cls.values() if v == "atomic"),
               sum(1 for v in real_cls.values() if v == "syscall"), sum(1 for v in real_cls.values() if v == "pure"))
-    okfp = counts == (175, 4, 41, 88, 42)
+    okfp = counts == (181, 6, 41, 92, 42)
     if not okfp:
         bad += 1
     print("  %-26s %-4s  %s" % ("floor-parse", "ok" if okfp else "BAD",
-                                "the committed floor parses to 175 defines: 4 asm, 41 atomic, 88 syscall, 42 pure"))
+                                "the committed floor parses to 181 defines: 6 asm, 41 atomic, 92 syscall, 42 pure"))
     if not okfp:
         print("      the floor parsed to %d defines: %d asm, %d atomic, %d syscall, %d pure" % counts)
 

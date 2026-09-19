@@ -277,7 +277,7 @@ pub func:emit_checked_entry = IrVal(ExprEmitter->:x, string:sym, List<int32>:pru
         args = raw cat3(args, x.fe.plls.items[i], string_concat(" ", an));
     }
     drop irw_raw(x.fe.w, raw cat5("define ", x.fe.ret_ll, " ", sym,
-                                    raw cat3("(", params, ") {")));
+                                    raw cat3("(", params, raw ll_fn_open())));
     drop irw_label(x.fe.w, "entry");
     for (int64:pi in 0i64...prules.count) {
         if (prules.items[pi] == 0i32) { continue; }

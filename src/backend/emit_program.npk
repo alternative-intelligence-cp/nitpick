@@ -425,7 +425,7 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
 
     drop irw_begin_function(x.fe.w);
     drop irw_raw(x.fe.w, raw cat5("define internal ", rll.text, " ", sym,
-                             raw cat3("(", params, ") {")));
+                             raw cat3("(", params, raw ll_fn_open())));
     drop irw_label(x.fe.w, "entry");
     if (!recv_ptr) {
         drop irw_line(x.fe.w, raw cat3("%r0 = load ", sll.text, ", ptr %d"));
@@ -1390,7 +1390,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     LlType:t = raw ll_type(c, dty);
     if (!(raw ll_is_ok(t))) { pass NIL; }
     string:sym = raw drop_fn_sym(c, dty);
-    drop irw_raw(w, raw cat4("define internal void ", sym, "(ptr %v) {", ""));
+    drop irw_raw(w, raw cat4("define internal void ", sym, "(ptr %v", raw ll_fn_open()));
     drop irw_raw(w, "entry:");
     int32:k = raw type_kind(c.types, dty);
 
@@ -1995,7 +1995,7 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     LlType:t = raw ll_type(c, dty);
     if (!(raw ll_is_ok(t))) { pass NIL; }
     drop irw_raw(w, raw cat4("define internal void ",
-                      raw vacant_fn_sym(c, dty), "(ptr %v) {", ""));
+                      raw vacant_fn_sym(c, dty), "(ptr %v", raw ll_fn_open()));
     drop irw_raw(w, "entry:");
     int32:k = raw type_kind(c.types, dty);
 
@@ -2240,7 +2240,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_newline(w);
     // the lookups
     string:cnt = int_to_string((n + 1i32) => int64);
-    drop irw_raw(w, "define internal i32 @npk_site_line(i32 %i) {");
+    drop irw_raw(w, string_concat("define internal i32 @npk_site_line(i32 %i", raw ll_fn_open()));
     drop irw_raw(w, "entry:");
     drop irw_raw(w, raw cat3("  %ok = icmp ult i32 %i, ", cnt, ""));
     drop irw_raw(w, "  br i1 %ok, label %in, label %out");
@@ -2253,7 +2253,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "  ret i32 0");
     drop irw_raw(w, "}");
     drop irw_blank(w);
-    drop irw_raw(w, "define internal { ptr, i64, i64 } @npk_site_path(i32 %i) {");
+    drop irw_raw(w, string_concat("define internal { ptr, i64, i64 } @npk_site_path(i32 %i", raw ll_fn_open()));
     drop irw_raw(w, "entry:");
     drop irw_raw(w, raw cat3("  %ok = icmp ult i32 %i, ", cnt, ""));
     drop irw_raw(w, "  br i1 %ok, label %in, label %out");

@@ -110,6 +110,139 @@ pub func:elf_undefined = List<string>(string:obj_path) {
     pass out;
 };
 
+// A section header's name, from the section-name string table.
+func:sec_name = string(string:s, int64:shoff, int64:shstr, int64:i) {
+    int64:sb = shoff + (shstr * 64i64);
+    int64:stroff = relay u64_at(s, sb + 24i64);
+    int64:strsize = relay u64_at(s, sb + 32i64);
+    int64:name = relay u32_at(s, shoff + (i * 64i64));
+    if (name >= strsize) { fail EElf; }
+    int64:at = stroff + name;
+    int64:stop = at;
+    while (true) {
+        if (stop >= (stroff + strsize)) { fail EElf; }
+        if ((relay byte_at(s, stop)) == 0i64) { break; }
+        stop = stop + 1i64;
+    }
+    pass (raw text_slice(s, at, stop));
+};
+
+// A NUL-terminated name out of a string table.
+func:str_at = string(string:s, int64:stroff, int64:strsize, int64:name) {
+    if (name >= strsize) { fail EElf; }
+    int64:at = stroff + name;
+    int64:stop = at;
+    while (true) {
+        if (stop >= (stroff + strsize)) { fail EElf; }
+        if ((relay byte_at(s, stop)) == 0i64) { break; }
+        stop = stop + 1i64;
+    }
+    pass (raw text_slice(s, at, stop));
+};
+
+// EVERY FUNCTION'S FRAME, AS `llc -stack-size-section` RECORDS IT (1.5.8 step
+// 2; D-305): one "name size" line per function, in the section's order. The
+// `.stack_sizes` section holds, per function, an eight-byte address -- zero in
+// a relocatable object, filled by a relocation in `.rela.stack_sizes` against
+// the text section's symbol with the function's offset as the addend -- and
+// the frame size as ULEB128. The function is the FUNC symbol of that section
+// at that offset. `floor-stack-reserve` reads it (npkg/floor_stack.npk); the
+// harness reads the same section through `llvm-readobj --stack-sizes`.
+pub func:elf_stack_sizes = List<string>(string:obj_path) {
+    List<string>:out = raw list_init::<string>(64i64);
+    Result<cstring>:cp = to_cstring(obj_path);
+    if (cp.is_error) { fail EElf; }
+    string:s = relay read_file(cp.value);
+    if ((relay byte_at(s, 0i64)) != 127i64) { fail EElf; }
+    if ((relay byte_at(s, 1i64)) != 69i64)  { fail EElf; }
+    if ((relay byte_at(s, 2i64)) != 76i64)  { fail EElf; }
+    if ((relay byte_at(s, 3i64)) != 70i64)  { fail EElf; }
+    if ((relay byte_at(s, 4i64)) != 2i64)   { fail EElf; }
+    if ((relay byte_at(s, 5i64)) != 1i64)   { fail EElf; }
+    int64:shoff = relay u64_at(s, 40i64);
+    int64:shentsize = relay u16_at(s, 58i64);
+    int64:shnum = relay u16_at(s, 60i64);
+    int64:shstr = relay u16_at(s, 62i64);
+    if (shentsize != 64i64) { fail EElf; }
+    if ((shnum == 0i64) || (shstr >= shnum)) { fail EElf; }
+    int64:ss_idx = 0i64 - 1i64;
+    int64:sym_idx = 0i64 - 1i64;
+    for (int64:i in 0i64...shnum) {
+        int64:kind = relay u32_at(s, (shoff + (i * 64i64)) + 4i64);
+        if (kind == 2i64) { sym_idx = i; }
+        if (kind == 1i64) {
+            string:nm = relay sec_name(s, shoff, shstr, i);
+            if (raw text_eq(nm, ".stack_sizes")) { ss_idx = i; }
+        }
+    }
+    if ((ss_idx < 0i64) || (sym_idx < 0i64)) { fail EElf; }
+    int64:rel_idx = 0i64 - 1i64;
+    for (int64:j in 0i64...shnum) {
+        int64:rb = shoff + (j * 64i64);
+        if ((relay u32_at(s, rb + 4i64)) == 4i64) {          // SHT_RELA
+            if ((relay u32_at(s, rb + 44i64)) == ss_idx) { rel_idx = j; }
+        }
+    }
+    if (rel_idx < 0i64) { fail EElf; }
+    int64:ssb = shoff + (ss_idx * 64i64);
+    int64:ssoff = relay u64_at(s, ssb + 24i64);
+    int64:sssize = relay u64_at(s, ssb + 32i64);
+    int64:yb = shoff + (sym_idx * 64i64);
+    int64:symoff = relay u64_at(s, yb + 24i64);
+    int64:symsize = relay u64_at(s, yb + 32i64);
+    int64:strlink = relay u32_at(s, yb + 40i64);
+    if (strlink >= shnum) { fail EElf; }
+    int64:tb = shoff + (strlink * 64i64);
+    int64:stroff = relay u64_at(s, tb + 24i64);
+    int64:strsize = relay u64_at(s, tb + 32i64);
+    if ((symsize % 24i64) != 0i64) { fail EElf; }
+    int64:nsyms = symsize / 24i64;
+    int64:rb2 = shoff + (rel_idx * 64i64);
+    int64:reloff = relay u64_at(s, rb2 + 24i64);
+    int64:relsize = relay u64_at(s, rb2 + 32i64);
+    if ((relsize % 24i64) != 0i64) { fail EElf; }
+    int64:nrel = relsize / 24i64;
+    for (int64:r in 0i64...nrel) {
+        int64:e = reloff + (r * 24i64);
+        int64:roff = relay u64_at(s, e);
+        int64:rsym = relay u32_at(s, e + 12i64);
+        int64:addend = relay u64_at(s, e + 16i64);
+        if (rsym >= nsyms) { fail EElf; }
+        int64:se = symoff + (rsym * 24i64);
+        int64:stype = (relay byte_at(s, se + 4i64)) & 15i64;
+        int64:sshndx = relay u16_at(s, se + 6i64);
+        int64:target = addend;
+        if (stype == 2i64) { target = (relay u64_at(s, se + 8i64)) + addend; }
+        // the FUNC symbol of the same section at that offset
+        string:fname = "";
+        for (int64:k in 0i64...nsyms) {
+            int64:fe = symoff + (k * 24i64);
+            if (((relay byte_at(s, fe + 4i64)) & 15i64) != 2i64) { continue; }
+            if ((relay u16_at(s, fe + 6i64)) != sshndx) { continue; }
+            if ((relay u64_at(s, fe + 8i64)) != target) { continue; }
+            fname = relay str_at(s, stroff, strsize, relay u32_at(s, fe));
+            break;
+        }
+        if (fname.len == 0i64) { fail EElf; }
+        // the size: ULEB128 after the eight-byte address
+        int64:at = (ssoff + roff) + 8i64;
+        if ((roff + 8i64) >= sssize) { fail EElf; }
+        int64:size = 0i64;
+        int64:mul = 1i64;
+        int64:n = 0i64;
+        while (true) {
+            int64:b = relay byte_at(s, at + n);
+            size = size + ((b & 127i64) * mul);
+            n = n + 1i64;
+            if (b < 128i64) { break; }
+            if (n >= 5i64) { fail EElf; }
+            mul = mul * 128i64;
+        }
+        drop strlist_push(@out, string_concat(string_concat(fname, " "), int_to_string(size)));
+    }
+    pass out;
+};
+
 // The functions `runtime/npkrt.ll` DEFINES, read off the IR text -- the
 // harness's `_npkrt_defines` shape: `define`, whitespace, an optional
 // `internal`, a return type, whitespace, `@name(` with a `\w+` name (a

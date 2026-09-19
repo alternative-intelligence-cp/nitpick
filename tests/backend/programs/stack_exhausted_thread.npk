@@ -1,0 +1,43 @@
+// expect-exit: 60
+//
+// THE SAME ON A SPAWNED THREAD (D-305): its limit word was written into its
+// TLS block by the parent before the clone, so the child's first emitted
+// prologue already reads it; the trap is the whole program's (D-291), and
+// `failsafe` answers 60.
+mod:stack_exhausted_thread;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+// A recursion the optimiser cannot turn into a loop: each level passes the
+// address of its own local down, and the bottom reads through it.
+func:deep = int64(int64:n, int64->:prev) never fails {
+    if (n == 0i64) { pass (<-prev); }
+    int64:mine = n;
+    pass ((raw deep(n - 1i64, @mine)) + 1i64);
+};
+
+thread async func:runaway = NIL(int64:n) joins JOIN_5S {
+    int64:seed = n;
+    int64:r = raw deep(1000000000000i64, @seed);
+    if (r == 0i64) { pass NIL; }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    drop runaway(argv.len);
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted)   { exit 60i32; },
+        (DeadlineExceeded) { exit 62i32; },
+        (IntOverflow)      { exit 93i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (MachineFault)     { exit 61i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
