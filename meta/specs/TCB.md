@@ -335,7 +335,7 @@ not speak for, is a finding. The rows that WRITE memory are held to the running 
 | `@npk_thread_start` | asm | 10 mprotect | 9 mmap, 10 mprotect, 11 munmap, 202 futex, 318 getrandom, and the trap route |
 | `@npk_thread_entry` | syscall | -- | 0 read, 202 futex, 228 clock_gettime, 281 epoll_pwait, and the trap route |
 | `@npk_thread_exit` | syscall | 60 exit | 60 exit |
-| `@npk_thread_join` | atomic | 202 futex | 202 futex, 228 clock_gettime, and the trap route |
+| `@npk_thread_join` | atomic | 202 futex | 11 munmap, 202 futex, 228 clock_gettime, and the trap route |
 | `@npk_hardware_concurrency` | syscall | 204 sched_getaffinity | 204 sched_getaffinity |
 | `@npk_clone_exec` | atomic | 56 clone, 59 execve, 110 getppid, 157 prctl, 231 exit_group, 292 dup3 | 56 clone, 59 execve, 110 getppid, 157 prctl, 231 exit_group, 292 dup3 |
 | `@npk_driver_retire` | atomic | -- | the trap route only |

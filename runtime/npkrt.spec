@@ -105,6 +105,8 @@
   (word %npk.tls 2 born-before-publish)    ; root: read by npk_thread_entry on the child, after the clone
   (word %npk.tls 3 born-before-publish)    ; resume
   (word %npk.tls 4 stated "the join's futex word and the stop's target: written 0 by the creating thread before the clone -- or the pid, for the main thread at boot -- then by the kernel (PARENT_SETTID writes the tid, CHILD_CLEARTID zeroes it at exit), read by npk_thread_join with an atomic load, by the stop walk with an atomic load (D-291) and by the kernel's futex compare (DEF-48)")
+  (word %npk.tls 6 born-before-publish)    ; map base: a spawned thread's stack mapping, written before the clone; read by the join once the kernel cleared the tid word (DEF-65) -- 0 for the main thread
+  (word %npk.tls 7 born-before-publish)    ; map length: as 6
 
   ; --- globals -----------------------------------------------------------------
   (word @npk_ch_tab publish ch-open-lock)  ; the table pointer: a release store under the open lock, acquire loads by readers

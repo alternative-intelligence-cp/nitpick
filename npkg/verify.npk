@@ -469,7 +469,7 @@ func:manifest_keys = List<string>(move ObManifest:m) never fails {
 // the three-way summary of the mismatch (D-040's table, P-9): rows only in
 // the committed file, only in this run (a moved verdict shows as one of
 // each). CONSUMES both: a borrow of either would taint the key lists.
-pub func:manifest_compare = string(move ObManifest:committed, move ObManifest:run) never fails {
+pub func:manifest_compare = string(move ObManifest:committed, move ObManifest:run, string:name) never fails {
     List<string>:a = raw manifest_keys(move(committed));
     List<string>:b = raw manifest_keys(move(run));
     List<string>:only_a = raw strlist_minus(a, b);
@@ -479,7 +479,11 @@ pub func:manifest_compare = string(move ObManifest:committed, move ObManifest:ru
     int64:shown = 0i64;
     for (int64:i in 0i64...only_a.count) {
         if (shown >= 10i64) { break; }
-        out = string_concat(out, "\n  only in nitpick.obligations: ");
+        // THE FILE COMPARED IS NAMED (1.5.8 step 1b): the floor leg's report
+        // said "only in nitpick.obligations" of `runtime/npkrt.obligations`.
+        out = string_concat(out, "\n  only in ");
+        out = string_concat(out, name);
+        out = string_concat(out, ": ");
         out = string_concat(out, raw strlist_view(only_a, i));
         shown = shown + 1i64;
     }
@@ -866,7 +870,7 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     } else {
         ObManifest:rman = raw man_parse(run_text);
         if (!rman.ok) { pass (raw step_bad(string_concat("this run's manifest does not read back: ", rman.problem))); }
-        string:diff = raw manifest_compare(move(cman), move(rman));
+        string:diff = raw manifest_compare(move(cman), move(rman), "nitpick.obligations");
         if (diff.len > 0i64) {
             string:m = "this run's obligations differ from nitpick.obligations (D-040: a build that would differ from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):";
             m = string_concat(m, diff);
@@ -1116,7 +1120,7 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     } else {
         ObManifest:rman = raw man_parse_named(run_text, true);
         if (!rman.ok) { pass (raw step_bad(string_concat("this run's floor manifest does not read back: ", rman.problem))); }
-        string:diff = raw manifest_compare(move(cman), move(rman));
+        string:diff = raw manifest_compare(move(cman), move(rman), "runtime/npkrt.obligations");
         if (diff.len > 0i64) {
             string:m = "this run's floor obligations differ from runtime/npkrt.obligations (D-040: a build that would differ from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):";
             m = string_concat(m, diff);

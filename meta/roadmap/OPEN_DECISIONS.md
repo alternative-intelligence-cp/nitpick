@@ -1451,6 +1451,35 @@ block is invisible to all three. One already is: `rt_sigreturn` (15), the SIGUSR
 kernel-effect row, not among §4b's "27 numbers". Step 2 adds `module asm` of its own (the `__morestack` stubs, the
 stack trampolines), so the census reads `module asm` from then on.
 
+**DEF-65 — FIXED at 1.5.8 step 1b (2026-09-19): the join releases a joined thread's stack mapping.** ~~OPEN~~
+(found 2026-09-19 by `nitpick-compiler_s11`, reading `npk_thread_start` and `npk_thread_join` to plan 1.5.8's stack
+step.) A JOINED THREAD'S STACK WAS NEVER RELEASED. `npk_thread_start` maps "guard page + 2 MiB" through `npk_hmap`
+and nothing ever unmapped it: every spawned thread kept its mapping and every page it touched until the process
+ended. Measured with a program that spawns and joins N threads in turn, each touching about 350 KB of its stack:
+maximum RSS 3,456 KB at N = 20 and 142,080 KB at N = 400 -- linear, never returned. D-073 removed `Thread.detach`
+because it "returns success and leaks a 2 MiB stack"; the join itself did the same, for every thread. The fix
+records the mapping's base and length in the thread's TLS block (fields 6 and 7, written before the clone) and the
+join unmaps it once the kernel has cleared the tid word -- from `mm_release` on, the thread runs no user code
+again. `thread_stack_release.npk` caps its own address space at 192 MiB and spawns and joins 300 threads: 0 on the
+fixed floor, `HeapOom` (92) linked against the previous one.
+
+**DEF-66 — OPEN, scheduled as 1.5.8 step 3b: A JOINED THREAD'S TLS BLOCK, EXECUTOR AND REACTOR DESCRIPTORS ARE
+NEVER RELEASED.** (found 2026-09-19 by `nitpick-compiler_s11`, designing DEF-65's fix.) Beside the stack, each
+spawned thread allocates a TLS block and an executor (`npk_alloc_internal`, never freed) and, once it has waited on
+I/O, an epoll descriptor and an eventfd its executor never closes -- about 150 bytes and two descriptors per
+thread, for the process's life. The descriptors are the functional hazard: under the runners' `nofile` of 1024 a
+program that spawns reactor-using threads in turn exhausts descriptors after some five hundred. Freeing them at
+the join is NOT safe as written: D-291's stop walk reads a published slot's TLS block without a lock (a walker
+that read the slot's state before the retire would read freed memory), and a channel waker that popped a frame
+before its task finished holds the owner executor's address past the thread's exit. The design the step carries:
+the TLS block and the executor come from static per-slot pools -- the thread registry's fixed 64 slots make them
+bounded -- reused with the slot, never freed, so a stale walker reads valid memory (at worst the next thread in the
+slot, which the walk should stop anyway) and a stale waker's writes land on a reused executor's atomic words (a
+spurious wake, which the clear-then-recheck protocol already tolerates); the reactor's two descriptors ride the
+pooled executor and are reused rather than closed. The arguments go into `runtime/npkrt.spec` beside the
+classification rows and the pools' reuse into the models the waker and the stop walk already have, before the step
+lands.
+
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 
 None of these was a known defect when it was recorded. They are the four places

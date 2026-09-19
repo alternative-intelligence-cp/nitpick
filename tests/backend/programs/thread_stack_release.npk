@@ -1,0 +1,63 @@
+// expect-exit: 0
+//
+// A JOINED THREAD'S STACK IS RELEASED (DEF-65, 1.5.8 step 1b). Until this the
+// join never unmapped a spawned thread's stack: every thread kept its 2 MiB
+// mapping and every page it touched until the process ended (measured: 3,456
+// KB of maximum RSS for 20 threads spawned and joined in turn, 142,080 KB for
+// 400). The program caps its OWN address space at 192 MiB (setrlimit
+// RLIMIT_AS) and then spawns and joins 300 threads one after another, each
+// touching part of its stack -- some 630 MiB of stacks in all. With the release
+// the address space is reused and the loop finishes; without it a thread's
+// mapping fails around the eightieth and the trap route ends the run through
+// `HeapOom` (92).
+mod:thread_stack_release;
+error:ELim;
+error:EDepth;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+func:touch = int64(int64:n) never fails {
+    if (n == 0i64) { pass 0i64; }
+    pass ((raw touch(n - 1i64)) + 1i64);
+};
+
+thread async func:worker = NIL(int32:_~v) joins JOIN_5S {
+    int64:d = raw touch(4000i64);
+    if (d != 4000i64) { fail EDepth; }
+    pass NIL;
+};
+
+async func:one = NIL(int32:i) {
+    drop worker(i);
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // struct rlimit { rlim_cur, rlim_max }: 192 MiB both ways, RLIMIT_AS = 9
+    wild int8->:buf = alloc(16i64);
+    wild int64->:rl = buf =>! wild int64->;
+    <-rl = 201326592i64;
+    <-(#ptr_add<int64>(rl, 1i64)) = 201326592i64;
+    discard(sys(160i64, 9i64, rl) ?! ELim);
+    dalloc(buf);
+    for (int32:i in 0i32...300i32) {
+        await one(i) ?| NIL;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ELim)             { exit 81i32; },
+        (EDepth)           { exit 82i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

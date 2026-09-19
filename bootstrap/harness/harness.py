@@ -3307,8 +3307,10 @@ def manifest_rows(text, floor=False):
     return out, None
 
 
-def manifest_diff(committed, run):
-    """The three-way summary a mismatch prints (D-040's table, P-9)."""
+def manifest_diff(committed, run, name="nitpick.obligations"):
+    """The three-way summary a mismatch prints (D-040's table, P-9). `name` is the
+    committed file compared (1.5.8 step 1b: the floor leg's report called
+    `runtime/npkrt.obligations` "nitpick.obligations")."""
     by_key = lambda s: {(h, k, sym): v for (h, k, v, sym) in s}
     c, r = by_key(committed), by_key(run)
     only_c = sorted(k for k in c if k not in r)
@@ -3316,7 +3318,7 @@ def manifest_diff(committed, run):
     moved = sorted((k, c[k], r[k]) for k in c if k in r and c[k] != r[k])
     out = []
     for h, k, sym in only_c[:10]:
-        out.append("  only in nitpick.obligations: %s %s %s" % (h[:16], k, sym))
+        out.append("  only in %s: %s %s %s" % (name, h[:16], k, sym))
     for h, k, sym in only_r[:10]:
         out.append("  only in this run:            %s %s %s" % (h[:16], k, sym))
     for (h, k, sym), a, b in moved[:10]:
@@ -3729,7 +3731,7 @@ def check_verify_floor(tmp, tools):
     if crows != rrows:
         return ["floor: this run's obligations differ from runtime/npkrt.obligations (D-040: a build that would differ "
                 "from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):\n"
-                + manifest_diff(crows, rrows)]
+                + manifest_diff(crows, rrows, "runtime/npkrt.obligations")]
     if ctext != run_text:
         return ["floor: runtime/npkrt.obligations carries the same rows as this run but different bytes -- the header "
                 "(the pinned z3, the profile) or the row order moved; re-record it"]

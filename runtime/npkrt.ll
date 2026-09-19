@@ -34,8 +34,14 @@ target triple = "x86_64-unknown-linux-gnu"
 ; TLS boot found by being the earliest user.
 ;
 ; The child's trampoline block, which `%fs` points at:
-;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word ]
-%npk.tls = type { ptr, ptr, ptr, ptr, i32 }
+;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word | 5 pad
+;   | 6 map base | 7 map length ]
+; 6 and 7 (DEF-65, 1.5.8 step 1b): a spawned thread's stack mapping, written
+; before the clone and released by the join once the kernel has cleared the
+; tid word -- until then no join ever unmapped a thread's stack, and every
+; spawned thread leaked its 2 MiB mapping and every page it touched. Zero for
+; the main thread, whose stack is the kernel's and which nothing joins.
+%npk.tls = type { ptr, ptr, ptr, ptr, i32, i32, i64, i64 }
 
 ; THE CLONE TRAMPOLINE (D-181). In assembly for one reason: after the
 ; syscall the child runs on a DIFFERENT STACK, so it may not return into
@@ -427,6 +433,10 @@ entry:
   store ptr null, ptr %root
   %res = getelementptr %npk.tls, ptr %tls, i32 0, i32 3
   store ptr null, ptr %res
+  %mbase = getelementptr %npk.tls, ptr %tls, i32 0, i32 6
+  store i64 0, ptr %mbase
+  %mlen = getelementptr %npk.tls, ptr %tls, i32 0, i32 7
+  store i64 0, ptr %mlen
   %tid = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
   ; THE MAIN THREAD'S TID IS THE PID (D-291): recorded once for tgkill, and
   ; written into main's own tid word so the stop walk can signal it as it
@@ -1661,7 +1671,8 @@ stale:
 
 ; The child's trampoline arguments, handed over in its own TLS block so no
 ; shared state is read after the clone returns.
-;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word ]
+;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word | 5 pad
+;   | 6 map base | 7 map length ]  (the join releases 6/7's mapping: DEF-65)
 
 define ptr @npk_thread_start(ptr %root, ptr %resume, i64 %join_ns) {
 entry:
@@ -1721,6 +1732,12 @@ guarded:
   store ptr %resume, ptr %t_res
   %t_tid = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
   store i32 0, ptr %t_tid
+  ; THE MAPPING THE JOIN RELEASES (DEF-65): its base and length, born before
+  ; the clone publishes the block.
+  %t_mb = getelementptr %npk.tls, ptr %tls, i32 0, i32 6
+  store i64 %bi, ptr %t_mb
+  %t_ml = getelementptr %npk.tls, ptr %tls, i32 0, i32 7
+  store i64 %tot, ptr %t_ml
 
   ; 0x3d0f00 = CLONE_VM 0x100 | FS 0x200 | FILES 0x400 | SIGHAND 0x800
   ;          | THREAD 0x10000 | SYSVSEM 0x40000 | SETTLS 0x80000
@@ -1840,6 +1857,21 @@ wait:
 done:
   ; the thread is gone: its registry slot is free (D-291)
   call void @npk_reg_retire(ptr %tls)
+  ; AND ITS STACK IS RELEASED (DEF-65, 1.5.8 step 1b). The kernel clears the
+  ; tid word in mm_release, on the thread's way out of the exit syscall: from
+  ; there the thread never runs user code again, so its stack -- the guard
+  ; and every page it touched -- is the joiner's to unmap, as glibc frees a
+  ; joined thread's stack. Nothing outside a thread points into its stack
+  ; (borrows never cross a spawn from the child's side, D-180), and the join
+  ; returns 0 exactly once per thread: the emitter's second call is on the
+  ; EXPIRED path only. Before this, every joined thread kept its mapping and
+  ; its touched pages until the process ended -- measured: 3,456 KB of
+  ; maximum RSS for 20 threads spawned and joined in turn, 142,080 KB for 400.
+  %mbp = getelementptr %npk.tls, ptr %tls, i32 0, i32 6
+  %mb = load i64, ptr %mbp
+  %mlp = getelementptr %npk.tls, ptr %tls, i32 0, i32 7
+  %ml = load i64, ptr %mlp
+  call void @npk_hunmap(i64 %mb, i64 %ml)
   ret i32 0
 expired:
   ret i32 1
