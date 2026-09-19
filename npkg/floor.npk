@@ -140,7 +140,9 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models,
             ln = string_concat(ln, raw strlist_view_of(f.rows[r].site));
             ln = string_concat(ln, "\tconform\t0\t0\t");
             ln = string_concat(ln, raw strlist_view_of(f.rows[r].tier));
-            ln = string_concat(ln, "\n");
+            // THE CLAUSE CONTEXT (DEF-81, 1.5.8b step 3): the twelfth field --
+            // a floor row's guard sits in no clause check.
+            ln = string_concat(ln, "\t0\n");
             rows = string_concat(rows, ln);
         }
     }
@@ -171,7 +173,7 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models,
             ml = string_concat(ml, raw strlist_view_of(mf.name));
             ml = string_concat(ml, "\t");
             ml = string_concat(ml, raw strlist_view(mf.row_sites, r2));
-            ml = string_concat(ml, "\tconform\t0\t0\tint\n");
+            ml = string_concat(ml, "\tconform\t0\t0\tint\t0\n");
             rows = string_concat(rows, ml);
         }
         for (int64:ci in 0i64...mf.ctl_names.count) {

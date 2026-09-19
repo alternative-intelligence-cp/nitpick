@@ -368,6 +368,10 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 > A guard inside a clause (a division in a `requires`) is the function's own
 > site, lowered once in the predicate; inside an `ensures` it is keyed under
 > the seam it is checked at, since the clause is lowered at every seam.
+> Inside an `invariant` it is keyed under the loop, and since 1.5.8b step 3
+> (DEF-81) it has a row in every context the head's one check runs in — the
+> entry, the back edge, each `continue` — and is elided only when every one
+> is discharged; a guard inside a check that is not emitted goes with it (§8).
 
 ### 3.1 The `Result<T>` Intercept
 
@@ -617,9 +621,9 @@ elide (D-219); the subcycle column says where its rows are produced.
 |---|---|---|---|
 | `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142); a `simd` division's any-lane guard is ONE row over the lanes' conjunction (D-282) | yes | 1.5.0 |
 | `div-min` | a signed division is not `INT_MIN / -1` (D-142); one row over the lanes for a signed-element `simd` (D-282) | yes | 1.5.0 |
-| `overflow` | a plain-integer `+ - *` stays in range (D-210) | yes | 1.5.8b |
-| `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8b |
-| `cast-range` | a float's `=>!` cast to an integer has an integer meaning (D-306): the value is not NaN or an infinity, and its truncation toward zero lies inside the target -- the two ordered compares before the conversion, `CastRange`; a `simd` cast's any-lane guard is one row over the lanes | yes | 1.5.8b |
+| `overflow` | a plain-integer `+ - *` or negation stays in range (D-210): the intrinsic's overflow bit at the guard's own site (K-9) -- a binary node's, a compound's target's, a negation's own node; ONE row over the lanes for a `simd` integer operation, and ONE with N-1 traps for an integer `.sum()`; a node the folder writes as its constant has no guard and no row (D-310) | yes | 1.5.8b step 3 |
+| `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8b step 5 (pending) |
+| `cast-range` | a float's `=>!` cast to an integer has an integer meaning (D-306): the value is not NaN or an infinity, and its truncation toward zero lies inside the target -- the two ordered compares before the conversion, `CastRange`; a `simd` cast's any-lane guard is one row over the lanes | yes | 1.5.8b step 5 (pending) |
 | `exhaustive` | a `pick` covers its domain (checker-discharged) | no | 1.5.4 |
 | `requires` | a callee's precondition holds at the call (D-221) | yes | 1.5.3 |
 | `ensures` | a body's postcondition holds at its return (D-221) | yes | 1.5.3 |
@@ -985,6 +989,20 @@ holds compute in floats or vectors.
 > hash. The v1 sketch below is superseded; its rule — divergence is
 > detectable and fatal, never silent — is unchanged.
 
+> **Only what the emission holds (1.5.8b step 3; D-262 carried to the
+> obligations).** `--obligations` writes a function's file and rows only when
+> the emitted module holds the function: its symbol is defined, or its
+> coroutine's resume is (D-177), or its checked entry's `.body` twin is
+> (D-252). A prelude function the trim dropped (D-262) is not in the artifact,
+> so its rows are no guard of it. The runners' belts had skipped them since
+> 1.5.2d, and the solver decided them for nothing. Measured at the step that
+> gave the prelude's arithmetic its `overflow` rows: a small verify program
+> emitted 14 functions and decided 168, 260 of its 267 seconds going to one
+> function (`flt_bits_shortest`) it never references. The files are
+> renumbered in order. A row's hash is its problem text, so no hash or verdict
+> moves, and the compiler's own manifest loses exactly the rows of the prelude
+> functions it does not reference.
+
 > **The elision word by ROLE since 1.5.3 (L-13):** the compiler's
 > `rows.txt` (`--obligations`) names each row's site (`space:index`), its
 > ROLE — `guard` (a check in the row's own function), `bypass` (a call-site
@@ -1047,6 +1065,53 @@ holds compute in floats or vectors.
 > text (`hang-net`, `hang-net-untrusted`). A red on the net is a build
 > failure to READ, never a flake to re-run: the solver it names either
 > wedged (S-71's class) or met a file the manifest does not justify.
+
+> **[1.5.8b step 3 (2026-09-19), DEF-81, D-309.]** A GUARD INSIDE A CLAUSE
+> CHECK. `rows.txt` has a twelfth field, the row's CLAUSE CONTEXT. It is 0,
+> or it names the loop statement or return seam whose check holds the row's
+> guard: a division, a shift or an `overflow` inside an `invariant` or an
+> `ensures` clause. The rules follow from where the check runs.
+>
+> - **A guard in a check exists only where the check is emitted.** When every
+>   row of the check is discharged (a seam's `ensures` row; a loop's entry,
+>   back-edge and `continue` rows), the check is not emitted, and the guards
+>   inside it go with it. Such a guard holds no trap and no assume. Its
+>   condition is proven by the check's own rows, which carry it as a conjunct
+>   (DEF-33).
+> - **A loop head's check runs at every visit.** So a guard inside the
+>   invariant has a row in every context the head is reached from: the entry,
+>   the back edge and each `continue`. All of them share one site, kind and
+>   clause context. The guard is elided only when every one of them is
+>   discharged.
+>
+> Until this step only the entry recorded those rows. The back edge and the
+> `continue`s were encoded quiet. A guard at the head was therefore elided
+> on the proof for its first visit alone. `inv_inner_guard.npk` holds the
+> case: at entry the divisor is 1, and on the back edge it has been
+> decremented. The plain build traps `DivByZero` (36). The verified build
+> divided by zero with no guard, a machine fault (98) at -O0 and
+> `InvariantViolated` (34) where -O2 had used the undefined division.
+>
+> A return seam's check runs in one context, its own. So a seam's inner rows
+> are decided exactly where the check runs. A discharged seam takes its inner
+> guards with it (`ens_inner_guard.npk`).
+>
+> THE BELTS COUNT GUARDS, NOT ROWS. A guard's rows share (symbol, kind,
+> clause context, group). A guard of an assume kind that is elided becomes
+> one `llvm.assume` per trap: 1 for most, N−1 for an integer `.sum()`, whose
+> fold steps are N−1 guards at one site. A retained guard keeps its traps.
+> Bypass call sites are keyed with their clause context too. Both
+> self-checks hold five cases. Two are the gone and kept seam. One is the
+> kept seam with its assume missing. The last two are the head kept by an
+> open back edge, and the defect's own shape: a head guard elided on the
+> entry's row, which must fail.
+>
+> THE TRAP CODES ARE COMPLETE. Every kind the catalogue (§7b) marks guarded
+> and producing rows has a code in both runners' trap tables, or is a
+> bypass kind (`limit-subsume`, whose guard is the callee's entry). A kind
+> the catalogue marks `pending` must appear in no row. `overflow` traps
+> `-4110`. `overflow` and `cast-range` elide into assumes, and the belts'
+> assume kinds had lacked `cast-range` since D-306 gave it a guard.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

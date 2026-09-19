@@ -97,13 +97,26 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
     }
     if (c.obl.elide.count > 0i64) {
         drop enc_mark_discharged(en, c.obl.elide);
+        // ONE GUARD, EVERY ROW OF IT (DEF-81, 1.5.8b step 3): a guard inside a
+        // loop's invariant runs at every visit of the head, and has a row per
+        // context it runs in -- the entry, the back edge, each `continue` --
+        // all at one (site, kind, space, clause context). It is elided only
+        // when EVERY such row is discharged and encoded; one discharged row
+        // was enough until then, and the entry's row decided them all.
         for (int64:oi in 0i64...en.obls.count) {
-            if (en.obls[oi].discharged && en.obls[oi].encoded) {
-                drop list_push(@c.el_sites, en.obls[oi].site);
-                drop list_push(@c.el_kinds, en.obls[oi].kind);
-                drop list_push(@c.el_spaces, en.obls[oi].space);
-                drop list_push(@c.el_ctxs, en.obls[oi].ctx);
+            if (!(en.obls[oi].discharged && en.obls[oi].encoded)) { continue; }
+            bool:all = true;
+            for (int64:oj in 0i64...en.obls.count) {
+                if ((en.obls[oj].site == en.obls[oi].site) && (en.obls[oj].kind == en.obls[oi].kind)
+                    && (en.obls[oj].space == en.obls[oi].space) && (en.obls[oj].ctx == en.obls[oi].ctx)) {
+                    if (!(en.obls[oj].discharged && en.obls[oj].encoded)) { all = false; }
+                }
             }
+            if (!all) { continue; }
+            drop list_push(@c.el_sites, en.obls[oi].site);
+            drop list_push(@c.el_kinds, en.obls[oi].kind);
+            drop list_push(@c.el_spaces, en.obls[oi].space);
+            drop list_push(@c.el_ctxs, en.obls[oi].ctx);
         }
     }
     if (!c.obl.want_files) { pass NIL; }
@@ -159,6 +172,11 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         // THE TIER (D-281, 1.5.4b step 3): the eleventh field.
         r = string_concat(r, "\t");
         r = string_concat(r, string_from_bytes(en.obls[oi3].tier.ptr, en.obls[oi3].tier.len));
+        // THE CLAUSE CONTEXT (DEF-81, 1.5.8b step 3): the twelfth field -- 0,
+        // or the loop statement or return seam whose clause check holds this
+        // row's guard. That guard exists only where its check is emitted.
+        r = string_concat(r, "\t");
+        r = string_concat(r, int_to_string(en.obls[oi3].ctx => int64));
         drop list_push(@c.obl.rows, move(r));
     }
     pass NIL;

@@ -1,0 +1,41 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 4
+//
+// THE LANE FORM AND THE `.sum()` FORM (D-282, D-284; 1.5.8b step 3): a `simd`
+// integer operation is ONE `overflow` row over every lane's range, because the
+// emitter's guard is one any-lane trap. An integer `.sum()` is ONE row whose
+// goal is every partial sum in range, carrying N-1 traps, because the scalar
+// core guards each fold step at that one site. Over known lanes both are
+// discharged, and the sum's three traps go with its row. Past `simd(n)` the
+// lanes are the caller's, so both rows are `open` and every trap stays.
+mod:overflow_lanes;
+
+func:lanes = int32(int32:n) never fails {
+    simd<int32, 4>:a = simd(1i32, 2i32, 3i32, 4i32);
+    simd<int32, 4>:b = a * simd(10i32);        // (10, 20, 30, 40)
+    int32:s = b.sum();                         // 100
+    simd<int32, 4>:c = b + simd(n);            // n = 1: (11, 21, 31, 41)
+    int32:t = c.sum();                         // 104
+    pass s + t;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit ((raw lanes(argv.len =>! int32)) - 204i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

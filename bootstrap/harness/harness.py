@@ -3126,10 +3126,16 @@ ROW_ROLES = ("guard", "bypass", "held", "conform")
 TRAP_OF_KIND = {"div-zero": "-4097", "div-min": "-4098", "limit": "-4111",
                 "requires": "-4112", "ensures": "-4113", "failsafe-post": "-4113",
                 "invariant": "-4114", "loop-step": "-4101", "shift-range": "-4115",
-                "err-exit": "-4100", "disjoint": "-4116"}
+                "err-exit": "-4100", "disjoint": "-4116",
+                # 1.5.8b step 3 (K-9, K-12): the `IntOverflow` guard's rows.
+                "overflow": "-4110"}
 BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
-ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-exit"))
+# `overflow` and `cast-range` (1.5.8b step 3; K-10, K-11): each elides into one
+# assume -- the second has since D-306, and this set lacked it, a gap in both
+# runners' belts that no row exposed while cast-range produced none.
+ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-exit",
+                          "overflow", "cast-range"))
 
 
 def hang_net(checks, budget):
@@ -3166,7 +3172,8 @@ def file_budget(keys, budget):
 def z3_verdicts(obl_dir, name, budget=None):
     """Every function file under the profile, one process each; the rows of
     rows.txt with their verdicts -- [(fno, k, kind, hash, verdict, sym, site,
-    role, group, traps, tier)] (the four after `site` 1.5.3 step 2's, L-13; the tier 1.5.4b step 3's, D-281) -- or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
+    role, group, traps, tier, ctx)] (the four after `site` 1.5.3 step 2's, L-13; the tier 1.5.4b step 3's, D-281;
+    the clause context 1.5.8b step 3's, DEF-81) -- or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
     exactly N answer lines for N encoded rows, anything else fails the run by
     name. The wall-clock net (P-13) is a hang net and never a verdict: each
     file's is `hang_net(checks, B)`, B the file's rows `budget` -- the set
@@ -3182,8 +3189,8 @@ def z3_verdicts(obl_dir, name, budget=None):
         return None, ["%s: the obligation directory is unreadable: %s" % (name, e)]
     verdict = {}
     for r in rows:
-        if len(r) != 11:
-            return None, ["%s: a rows.txt line is not `NNNN k kind hash encoded symbol space:site role group traps tier` (%d fields)" % (name, len(r))]
+        if len(r) != 12:
+            return None, ["%s: a rows.txt line is not `NNNN k kind hash encoded symbol space:site role group traps tier ctx` (%d fields)" % (name, len(r))]
         if r[7] not in ROW_ROLES:
             return None, ["%s: a rows.txt row names a role the runners do not know: %r" % (name, r[7])]
     for fno, sym, checks in idx:
@@ -3251,9 +3258,12 @@ def z3_verdicts(obl_dir, name, budget=None):
     # consumed, verdict `checker`.
     # THE TIER (D-281, 1.5.4b step 3): the encoder's word for the cone's
     # theory, the eleventh field, carried into the manifest's column.
-    for fno, k, kind, h, encoded, sym, site, role, group, traps, tier in rows:
+    # THE CLAUSE CONTEXT (DEF-81, 1.5.8b step 3): the twelfth field -- 0, or
+    # the loop statement or return seam whose clause check holds the row's
+    # guard.
+    for fno, k, kind, h, encoded, sym, site, role, group, traps, tier, ctx in rows:
         v = verdict[(fno, k)] if encoded == "1" else ("checker" if encoded == "c" else "unencoded")
-        full.append((fno, k, kind, h, v, sym, site, role, group, int(traps), "real" if (fno, k) in tier2 else tier))
+        full.append((fno, k, kind, h, v, sym, site, role, group, int(traps), "real" if (fno, k) in tier2 else tier, int(ctx)))
     return full, []
 
 
@@ -3360,8 +3370,8 @@ def _row_function_held(sym, defined):
 
 
 def elided_ir_checks(full, ir_text, name):
-    """The verified emission carries an `llvm.assume` per discharged SITE and
-    a trap per retained site of each guarded kind -- the cross-check that
+    """The verified emission carries an `llvm.assume` per elided GUARD (a
+    discharged row's traps) and a trap per retained site of each guarded kind -- the cross-check that
     makes the manifest an inventory of guards (P-12)."""
     fails = []
     # A ROW COUNTS ONLY FOR A FUNCTION THE EMISSION HOLDS (1.5.2d, D-262
@@ -3373,6 +3383,19 @@ def elided_ir_checks(full, ir_text, name):
     # before its quoted names are blanked.
     defined = set(_DEFINE_SYM_RE.findall(ir_text))
     full = [f for f in full if _row_function_held(f[5], defined)]
+    # A GUARD INSIDE A CLAUSE CHECK EXISTS ONLY WHERE THE CHECK IS EMITTED
+    # (DEF-81, 1.5.8b step 3): a row whose clause context is not 0 sits in the
+    # check of the loop head or return seam that statement is -- the same
+    # symbol's context-0 `guard` rows of kind `invariant` or `ensures` whose
+    # group is that statement. When every one of them is discharged the check
+    # is not emitted, and the guards inside it go with it: no trap, no assume,
+    # no bypass call.
+    check_elided = {}
+    for f in full:
+        if f[11] == 0 and f[7] == "guard" and f[2] in ("invariant", "ensures"):
+            ck = (f[5], int(f[8]))
+            check_elided[ck] = check_elided.get(ck, True) and f[4] == "discharged"
+    full = [f for f in full if f[11] == 0 or not check_elided.get((f[5], f[11]), False)]
     # THE SYMBOL TEXT FIRST: the bypass belt below counts a spelling inside
     # QUOTED symbol names, which the code-only text blanks (its first full run
     # counted nothing for that reason).
@@ -3380,10 +3403,22 @@ def elided_ir_checks(full, ir_text, name):
     # CODE ONLY: the compiler's own emission carries these very spellings as
     # STRING CONSTANTS (its source writes them), and a constant is not a site.
     ir_text = _ir_code_part_all(ir_text)
-    disch = sum(1 for f in full if f[4] == "discharged" and f[2] in ASSUME_KINDS)
+    # ONE ASSUME PER ELIDED GUARD (P-19, L-11): a guard's rows share (symbol,
+    # kind, clause context, group) -- one row for most guards, one per context
+    # a loop head's check runs in (DEF-81) -- and the guard is elided only when
+    # every one of them is discharged, its traps' branches becoming assumes: 1
+    # for most, N-1 for an integer `.sum()`'s fold steps at one site (1.5.8b
+    # step 3; until then this counted 1 a row, and no row carried more).
+    assume_groups = {}
+    for f in full:
+        if f[2] in ASSUME_KINDS:
+            ag = assume_groups.setdefault((f[5], f[2], f[11], f[8]), [True, 0])
+            ag[0] = ag[0] and f[4] == "discharged"
+            ag[1] = max(ag[1], f[9])
+    disch = sum(ag[1] for ag in assume_groups.values() if ag[0])
     got = len(re.findall(r"call void @llvm\.assume\(", ir_text))
     if got != disch:
-        fails.append("%s: the verified IR holds %d `llvm.assume` for %d discharged sites" % (name, got, disch))
+        fails.append("%s: the verified IR holds %d `llvm.assume` for %d elided guards (the discharged rows' traps)" % (name, got, disch))
     # THE TRAPS BY GROUP (1.5.3 step 2, L-13): the rows one guard shares -- a
     # loop's entry, preservation and `continue` rows, a function's entry
     # `requires` row -- carry one group and one trap count; the guard stays,
@@ -3394,12 +3429,12 @@ def elided_ir_checks(full, ir_text, name):
     for f in full:
         if f[7] != "guard" or f[2] not in TRAP_OF_KIND:
             continue
-        key = (f[5], TRAP_OF_KIND[f[2]], f[8])
+        key = (f[5], TRAP_OF_KIND[f[2]], f[11], f[8])
         g = groups.setdefault(key, [False, 0])
         g[0] = g[0] or (f[4] != "discharged")
         g[1] = max(g[1], f[9])
     for code in sorted(set(TRAP_OF_KIND.values())):
-        left = sum(g[1] for (sym, c, grp), g in groups.items() if c == code and g[0])
+        left = sum(g[1] for (sym, c, ctx, grp), g in groups.items() if c == code and g[0])
         traps = len(re.findall(r"@npk_trap\(i32 %s\)" % code, ir_text))
         if traps != left:
             kinds = "/".join(sorted(k for k, c in TRAP_OF_KIND.items() if c == code))
@@ -3418,7 +3453,7 @@ def elided_ir_checks(full, ir_text, name):
     sites = {}
     for f in full:
         if f[7] == "bypass" and f[2] in BYPASS_KINDS:
-            sites[(f[5], f[8])] = sites.get((f[5], f[8]), True) and f[4] == "discharged"
+            sites[(f[5], f[11], f[8])] = sites.get((f[5], f[11], f[8]), True) and f[4] == "discharged"
     subs = sum(1 for ok in sites.values() if ok)
     if bcalls != subs:
         fails.append("%s: the verified IR holds %d bypass calls for %d call sites whose bypass rows are all discharged" % (name, bcalls, subs))
@@ -3559,6 +3594,26 @@ def check_obligation_kinds_agree():
         fails.append("kinds-agree: the catalogue table lists `%s`, which `smt_kinds.npk` does not spell" % k)
     if code != set(Z3_KINDS):
         fails.append("kinds-agree: the harness's own Z3_KINDS differs from `smt_kinds.npk`")
+    # EVERY GUARDED KIND IS COUNTED (1.5.8b step 3; K-12): a guarded kind whose
+    # rows are produced needs a code in TRAP_OF_KIND or a place in BYPASS_KINDS
+    # (`limit-subsume`: its guard is the callee's entry, which the bypass belt
+    # counts), or no belt counts anything for it -- `overflow`, `bounds` and
+    # `cast-range` had no code, invisible to every instrument. A kind whose "rows from" cell says `pending` has no
+    # producer yet, and no committed manifest may hold a row of it. `npkg
+    # verify`'s `kinds_have_traps` is the twin.
+    table = re.findall(r"^\| `([a-z-]+)` \|.*\| (yes|no) \| ([^|]*)\|\s*$", m.group(1), re.M)
+    pending = set(k for k, g, frm in table if "pending" in frm)
+    for k, g, frm in table:
+        if g == "yes" and k not in pending and k not in TRAP_OF_KIND and k not in BYPASS_KINDS:
+            fails.append("kinds-agree: the catalogue marks `%s` guarded and producing rows, and TRAP_OF_KIND has no code for it and it is no bypass kind -- no belt would count it (K-12)" % k)
+    for mf in ("nitpick.obligations", os.path.join("runtime", "npkrt.obligations")):
+        try:
+            lines = open(os.path.join(ROOT, mf), encoding="utf-8").read().splitlines()
+        except OSError:
+            continue
+        held = set(l.split()[1] for l in lines if l and not l.startswith("#") and len(l.split()) > 1)
+        for k in sorted(pending & held):
+            fails.append("kinds-agree: the catalogue marks `%s` pending, and %s holds a row of it -- the producer landed and the catalogue did not say so" % (k, mf))
     return fails
 
 
@@ -3664,7 +3719,7 @@ def floor_verdict_failures(full):
     so is an `unroll-exact` row the profile did not discharge (the spec
     claims a bound exact; say `(unroll N)` without `exact` instead)."""
     fails = []
-    for fno, k, kind, h, v, sym, site, role, group, traps, tier in full:
+    for fno, k, kind, h, v, sym, site, role, group, traps, tier, ctx in full:
         if v == "open":
             fails.append("floor: %s: %s is refuted (a counterexample exists; either the floor does not meet its "
                          "specification or the specification is wrong; `npkg verify --explain` writes the model)" % (sym, site))
@@ -4075,6 +4130,18 @@ def stage_explore(t, s):
           % (t["name"], found))
 
 
+# THE CONTROL'S HANG NET (1.5.8b step 3, DEF-83): a seed that finds a
+# `wrong-exit` control's defect may spin to the shim's step budget BY DESIGN --
+# `link-without-cas.ctl` says "about 30 s" -- where every other seed takes
+# milliseconds. The per-seed net was 60 s, the unit explore stage's, and at
+# step 1b's first full harness, run beside eight solver batches and a second
+# harness, the finding seed (6; step 2's run found it there) passed the net
+# and read "hung": a red run that was no verdict. The net is a hang net, never
+# a verdict (P-13's rule), sized ten times the slowest designed seed. npkg's
+# `control_seed_net_secs` is the twin.
+CONTROL_SEED_NET = 300
+
+
 def run_explore_control(tmp, path, name, shim_o):
     """One control (`runtime/explore/controls/<name>.ctl`): the floor with each
     pair's `old` lines replaced by its `new` (exactly one occurrence each, in
@@ -4161,7 +4228,7 @@ def run_explore_control(tmp, path, name, shim_o):
     # counted, but its line carries the steps too (`npkx: WORD (...) seed=0 steps=N`): the planted defect
     # may fire on the unperturbed schedule, and the measurement is the steps it took to get there.
     try:
-        r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(0, 2000, 1, preempt, hold))
+        r = subprocess.run([base], capture_output=True, timeout=CONTROL_SEED_NET, stdin=subprocess.DEVNULL, env=explored_env(0, 2000, 1, preempt, hold))
     except subprocess.TimeoutExpired:
         return ["%s: the measuring run (seed 0) hung" % name], 0
     tm = _NPKX_STEPS.search(r.stderr.decode("utf-8", "replace"))
@@ -4171,7 +4238,7 @@ def run_explore_control(tmp, path, name, shim_o):
     seen = []
     for seed in range(1, ctl["within"] + 1):
         try:
-            r = subprocess.run([base], capture_output=True, timeout=60, stdin=subprocess.DEVNULL, env=explored_env(seed, k, 3, preempt, hold))
+            r = subprocess.run([base], capture_output=True, timeout=CONTROL_SEED_NET, stdin=subprocess.DEVNULL, env=explored_env(seed, k, 3, preempt, hold))
         except subprocess.TimeoutExpired:
             seen.append("seed %d: hung" % seed)
             continue

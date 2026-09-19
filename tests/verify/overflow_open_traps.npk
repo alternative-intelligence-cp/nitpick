@@ -1,0 +1,33 @@
+// expect-exit: 93
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 2
+//
+// AN `open` ROW KEEPS ITS GUARD, AND THE GUARD FIRES (D-309; 1.5.8b step 3):
+// `argv.len` is unbounded to the solver, so neither addition is proven and
+// both guards stay in the verified build. At run time `k` is the largest
+// `int32` and `k + 1` traps `IntOverflow` at -O0 and at -O2. The
+// subtraction after it is discharged: past the second guard, `j` is `k + 1`
+// in range, so `j - k` is 1.
+mod:overflow_open_traps;
+
+func:main = int32(cstring[]:argv) {
+    int32:k = (argv.len =>! int32) + 2147483646i32;   // 2147483647 at run time
+    int32:j = k + 1i32;                               // traps
+    exit (j - k);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

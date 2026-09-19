@@ -4,13 +4,16 @@
 // expect-obligation: shift-range discharged 1
 // expect-obligation: failsafe-post discharged 13
 // expect-obligation: exhaustive checker 1
+// expect-obligation: overflow open 2
 //
 // THE COMPOUND FORM'S ANY-LANE ROWS (D-284, DEF-39; 1.5.4e step 0): `v /=
 // simd(k)` and `v <<= simd(k)` record the same rows the expression forms
 // do -- at the target's site, the key the emitter elides under -- so under
 // the branch's bounds all three discharge and the verified build carries
 // three `llvm.assume` and no trap of theirs. The `.sum()` and `main`'s
-// subtraction keep their overflow guards (no row until 1.5.8).
+// subtraction keep their overflow guards. They had no row until 1.5.8b step 3,
+// and now each is an `open` row: past the branch the lanes are opaque, and
+// `scale`'s result is a call's.
 mod:simd_compound_rows;
 
 func:scale = int32(int32:k) never fails {

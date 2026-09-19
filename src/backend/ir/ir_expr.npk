@@ -1749,9 +1749,12 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         // precisely this shape, where compound assignment had quietly become a
         // second implementation of the operators.
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_INT())) {
+            // AT THE UNARY NODE'S OWN SITE (K-9, 1.5.8b step 3): the key its
+            // `overflow` row is recorded and elided under -- it was 0, a
+            // guard no row could name.
             pass (raw emit_arith_value(x, TokenKind.OpMinus, utid,
                       raw iv(string_concat(v.ll, ""), "0", utid), v,
-                      raw exprtypes_get(x.et, id), n.span, 0i32));
+                      raw exprtypes_get(x.et, id), n.span, id.index));
         }
         // A `simd` negates LANE-WISE and lands here: the vector's rule is its
         // element's, and D-194's guards are the ones its arithmetic carries.
@@ -2812,6 +2815,17 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
         string:obit = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(obit, " = extractvalue ", opty, " ",
                           string_concat(ocall, ", 1")));
+        // DISCHARGED (1.5.8b step 3; K-10, D-218.9): the `overflow` row at this
+        // site was proven, so the branch and the trap give way to
+        // `llvm.assume` of the negated overflow bit -- the intrinsic stays, and
+        // no `nsw` is written: the flag licenses deleting a guard, the assume
+        // states the fact the solver established.
+        if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_OVERFLOW())) {
+            string:ono = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(ono, " = xor i1 ", string_concat(obit, ", true")));
+            drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", ono, ")"));
+            pass (raw iv(string_concat(lhs.ll, ""), move(oval), lhs.type_id));
+        }
         string:otrap = raw irw_new_label(x.fe.w, "ovf.trap");
         string:ook = raw irw_new_label(x.fe.w, "ovf.ok");
         drop irw_line(x.fe.w, raw cat5("br i1 ", obit, ", label %", otrap,
@@ -2849,14 +2863,8 @@ pub struct:ConstEmit = { bool:ok; IrVal:v; };
 func:emit_const_fold = ConstEmit(ExprEmitter->:x, ExprId:id) never fails {
     ConstEmit:no = ConstEmit{ ok: false, v: raw iv_broken(raw span_none()) };
     int32:nt = raw exprtypes_get(x.et, id);
-    if (nt == 0i32) { pass (move(no)); }
-    if (!(raw type_is_integer(x.fe.ctx.types, nt))) { pass (move(no)); }
-    if ((raw type_int_bits(x.fe.ctx.types, nt)) > 64i32) { pass (move(no)); }
-    ConstVal:cv = raw fold_const(x.tr, id, x.scope);
+    ConstVal:cv = raw fold_node_constant(x.tr, id, x.scope, nt);
     if (cv.kind != (raw CV_INT())) { pass (move(no)); }
-    if (!(raw fold_value_fits(cv.num, raw fold_width(x.tr, cv.type_id), raw fold_width(x.tr, nt)))) {
-        pass (move(no));
-    }
     LlType:ll = raw ll_type(x.fe.ctx, nt);
     if (!(raw ll_is_ok(ll))) { pass (move(no)); }
     ConstEmit:yes = ConstEmit{ ok: true, v: raw iv(move(ll.text), int_to_string(cv.num), nt) };
@@ -5516,9 +5524,10 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, Span:at, TokenKind:op,
     // computes through the vector overflow intrinsic, its overflow lanes
     // folded to ONE any-lane test -- the D-007 guard's shape -- trapping
     // `IntOverflow` after the chain reset. A lane wrapped here where its
-    // scalar trapped, from 1.3.1 until now (DEF-38). No obligation row yet:
-    // the `overflow` rows are 1.5.8's, over the lane conjunction. The
-    // intrinsic is declared once per module, after the bodies.
+    // scalar trapped, from 1.3.1 until now (DEF-38). Its `overflow` row is
+    // ONE over the lanes' conjunction (1.5.8b step 3, D-282's shape), and a
+    // discharged row assumes the any-lane bit clear. The intrinsic is
+    // declared once per module, after the bodies.
     if (!isflt) {
         int32:vovf = raw ovf_family_of(op, signed);
         if (vovf >= 0i32) {
@@ -5545,6 +5554,12 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, Span:at, TokenKind:op,
             string:vany = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(vany, " = icmp ne i", lanestr, " ",
                               string_concat(vb, ", 0")));
+            if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_OVERFLOW())) {
+                string:vno = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(vno, " = xor i1 ", string_concat(vany, ", true")));
+                drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", vno, ")"));
+                pass (raw iv(string_concat(lhs.ll, ""), move(vv), lhs.type_id));
+            }
             string:vt_l = raw irw_new_label(x.fe.w, "vovf.trap");
             string:vo_l = raw irw_new_label(x.fe.w, "vovf.ok");
             drop irw_line(x.fe.w, raw cat5("br i1 ", vany, ", label %", vt_l,
@@ -9501,6 +9516,51 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     pass p;
 };
 
+// A PLACE FOR AN INDEX'S BASE (DEF-84, 1.5.8b step 3): the base's own address,
+// or -- when the base is rooted in a TEMPORARY (a call's result, a literal, a
+// cast: no name under its member and index steps) -- the value spilled to a
+// fresh slot of the entry block and read there. Until then an array, a vector
+// or a `List` returned by a call and indexed at once was admitted by the
+// checker and refused by the emitter as EMIT-002. The checker refuses every
+// write into a temporary (TYPE-024) and every address of one, so a spilled
+// base is only ever READ; an owning temporary stays registered for its
+// statement's drop (D-246), and the slot is a view of it that nothing drops.
+// No suspension falls between the spill and its reads: an `await` is the first
+// evaluation its statement performs (D-178, SUSPEND-002). A base rooted in a
+// NAME that has no address is a gap of the emitter's, and stays one by name.
+func:index_base_place = PlaceVal(ExprEmitter->:x, ExprId:bid) never fails {
+    PlaceVal:p = raw addr_of(x, bid);
+    if (p.state == (raw LL_OK())) { pass p; }
+    if (!(raw rooted_in_temporary(x, bid))) { pass p; }
+    IrVal:v = raw emit_expr(x, bid);
+    if (!(raw iv_is_ok(v))) { pass (raw pv_from_iv(move(v))); }
+    string:slot = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, slot, v.ll);
+    drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref, string_concat(", ptr ", slot)));
+    pass (raw pv(move(slot), v.type_id));
+};
+
+// Is the expression under every member access and index of `id` something
+// other than a name, a `$`, a dereference or a module path -- a value no
+// place holds?
+func:rooted_in_temporary = bool(ExprEmitter->:x, ExprId:id) never fails {
+    ExprId:cur = id;
+    for (int32:g in 0i32...256i32) {
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            if ((raw exprtypes_ns_decl(x.et, cur)) != 0i32) { pass false; }
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass false; }
+        if (n.kind == ExprKind.ExprIterationVarExpr) { pass false; }
+        if (n.kind == ExprKind.ExprDerefExpr) { pass false; }
+        pass true;
+    }
+    pass false;
+};
+
 func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(x.ast, id);
 
@@ -9605,6 +9665,22 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         int32:idx = 0i32 - 1i32;
         int32:fty = raw exprtypes_get(x.et, id);
+        // A `Result`'S STORED MEMBERS ARE PLACES (DEF-84, 1.5.8b step 3): `value`
+        // at slot 0 and `err` at slot 1 -- slot 0 when the success type is
+        // `NIL`, whose aggregate is `{ i32 }` -- the value path's own layout
+        // (D-069), so `r.value[i]` reaches the local's own payload. The checker
+        // admitted an index through `.value` and this arm had no case for it, so
+        // the emitter refused as EMIT-002. `.is_error` is derived and no place.
+        if (bkind == (raw TY_RESULT())) {
+            string:rfld = raw intern_get(x.interns, n.payload =>! int32);
+            int32:rin = raw type_elem(x.fe.ctx.types, btid);
+            bool:rnil = ((raw type_kind(x.fe.ctx.types, rin)) == (raw TY_NIL()));
+            if ((raw string_eq(rfld, "value")) && (!rnil)) { idx = 0i32; fty = rin; }
+            if (raw string_eq(rfld, "err")) {
+                idx = 1i32;
+                if (rnil) { idx = 0i32; }
+            }
+        }
         if (bkind == (raw TY_STRING()))  { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
         if (bkind == (raw TY_CSTRING())) { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
         if (bkind == (raw TY_SLICE()))   { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
@@ -9673,7 +9749,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             // The bound is the TYPE'S constant (D-070), and a dynamic index
             // still checks against it at run time (0.9.2) — a static bound
             // does not make the index static.
-            PlaceVal:base = raw addr_of(x, raw expr_lhs(n));
+            PlaceVal:base = raw index_base_place(x, raw expr_lhs(n));
             if (base.state != (raw LL_OK())) { pass base; }
             LlType:all = raw ll_type(x.fe.ctx, obj_tid);
             if (!(raw ll_is_ok(all))) { pass (raw pv_broken(n.span)); }
@@ -9694,7 +9770,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         // time, and a GEP through it (element addressing of vectors is
         // ordinary LLVM). Reads load it; `v[i] = x` stores through it.
         if (okind == (raw TY_SIMD())) {
-            PlaceVal:vbase = raw addr_of(x, raw expr_lhs(n));
+            PlaceVal:vbase = raw index_base_place(x, raw expr_lhs(n));
             if (vbase.state != (raw LL_OK())) { pass vbase; }
             LlType:vall = raw ll_type(x.fe.ctx, obj_tid);
             if (!(raw ll_is_ok(vall))) { pass (raw pv_broken(n.span)); }
@@ -9718,7 +9794,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         // `items[i]`.
         if (okind == (raw TY_STRUCT())) {
             if (raw type_is_list(x.tr, obj_tid)) {
-                PlaceVal:lbase = raw addr_of(x, raw expr_lhs(n));
+                PlaceVal:lbase = raw index_base_place(x, raw expr_lhs(n));
                 if (lbase.state != (raw LL_OK())) { pass lbase; }
                 LlType:lll = raw ll_type(x.fe.ctx, obj_tid);
                 if (!(raw ll_is_ok(lll))) { pass (raw pv_broken(n.span)); }

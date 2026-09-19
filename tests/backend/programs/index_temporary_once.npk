@@ -1,0 +1,38 @@
+// expect-exit: 0
+//
+// THE COST PROBE OF DEF-84's SPILL (1.5.8b step 3): an owning `List` returned
+// by a call and indexed at once is a temporary its statement drops (D-246);
+// the spill is a view of it that nothing drops. `tests/cost/index_temporary.toml`
+// holds this program's peak live heap to the one-statement program's, where a
+// temporary that outlived its statement would peak at thousands of times it.
+mod:index_temporary_once;
+
+func:mkl = List<int32>(int32:k) never fails {
+    List<int32>:l = raw list_init::<int32>(2i64);
+    drop list_push(@l, k);
+    drop list_push(@l, k);
+    pass l;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:acc = 0i32;
+    for (int32:i in 0i32...1i32) {
+        acc = acc + ((raw mkl(i))[1i64] - i);
+    }
+    exit acc;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

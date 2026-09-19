@@ -1243,7 +1243,27 @@ when it does not fit (TYPE-076, D-310; `0u64 - 1u64` among them — D-311's
 constant when it fits (DEF-70: all 85 constant checked operations gone), and
 the folder's every other operation is now the machine's (DEF-80: a wide shift
 trapped the compiler, a narrow `<<` and `~` were not truncated, `uint64`
-divided and compared signed). The old 1.5.8 was PLANNED 2026-09-18 by
+divided and compared signed). **Step 3 LANDED 2026-09-19**: every plain-integer
+`+ - *` and negation is an `overflow` row at its guard's site (one over a
+`simd` operation's lanes, one with N−1 traps for an integer `.sum()`), a
+discharged row's branch becomes one `llvm.assume`, and the compiler's own
+manifest is 2,439 rows — 1,273 discharged, 1,161 open, 0 budget, 0 unencoded.
+D-309's residue is measured and reported by shape (a bounded counter
+discharges; a length, an unbounded counter, a sum of two unknowns and the
+prelude's numeric cores stay), no bound was written into the tree to close a
+row, and the speed says the guards are free: removing 1,181 of the compiler's
+2,307 `IntOverflow` traps does not move a 70-second compile. **The obligation
+table now holds only what the emission holds** (D-262's rule carried to the
+rows: 145 prelude functions' rows left it, the 213 `err-exit` of 1.5.4b among
+them). Three defects were found on the way: **DEF-81**, a soundness hole — a
+guard inside a loop's invariant was elided on the proof for the head's FIRST
+visit, and the verified build divided by zero where the plain build trapped
+(rows per context now, `rows.txt`'s twelfth field, and the belts count guards);
+**DEF-84** — an index through a call's result or a `Result`'s `.value` was
+admitted by the checker and refused by the emitter (EMIT-002), for arrays since
+each arm was written; and **DEF-83** — an explorer control's finding seed,
+which spins to the step budget by design, could pass its 60-second net under
+load and read as a blind control (300 s now). The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
@@ -2020,6 +2040,30 @@ that carried them retired at the cycle close):
   `0xCBF5DAE484222325` ON PURPOSE (D-190), not the textbook `0xcbf29ce4…` —
   a comment claiming otherwise was stale, and changing the constant would move
   every error code and interface hash.
+- **Every plain `+ - *` and negation has an `overflow` row** (D-309; 1.5.8b
+  step 3): the guard's own site, one row over a `simd` operation's lanes, one
+  row with N−1 traps for an integer `.sum()`, none for a node the folder
+  writes as its constant. So new arithmetic in `src/`, `lib/` or the prelude
+  moves `nitpick.obligations` (`--record` in the same commit, D-040), and a
+  verify test names its own rows (`expect-obligation: overflow VERDICT N`):
+  read each against its line, never copy a count. An `open` row keeps its
+  guard, and D-309 writes no bound into the tree to close one. A proposition
+  includes its arithmetic's range (DEF-33), so `prove(d * d + 1 > 0)` is
+  `open` for an unbounded `d`.
+- **A guard inside a clause check has a row per context the check runs in**
+  (DEF-81, 1.5.8b step 3): a loop head's check runs at the entry, the back
+  edge and each `continue`, and its guards are elided only when every such
+  row is discharged; a guard inside a check that is not emitted is gone with
+  it. `rows.txt` has TWELVE fields (the twelfth the clause context), both
+  runners fail a malformed line by name (DEF-75), and both belts count
+  GUARDS: an assume per elided guard's trap, a trap per retained one. The
+  obligation table holds only functions the emission holds (D-262's rule,
+  carried to the rows).
+- **An explorer control's finding seed may spin for half a minute** (DEF-83,
+  1.5.8b step 3): a `wrong-exit` control found through the shim's step budget
+  runs to the budget by design, so a control seed's net is 300 s in both
+  runners where a unit seed's is 60. A red control that says `hung` is READ:
+  a finding seed killed by load reads exactly like a blind control.
 - **`sealed`/`hidden` draw the private-member line** (D-313, D-314; 1.5.8b
   step 1): code outside the module that declares the struct may read a sealed
   field and may not write it (every write form — an assignment through any

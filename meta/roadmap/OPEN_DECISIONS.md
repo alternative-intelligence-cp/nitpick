@@ -1639,6 +1639,101 @@ Each is now the machine's answer at the width. A constant `MIN / -1` or
 folded value to the same operation computed at run time, and
 `tests/types/rejection/constant_division.npk` holds the refusals.
 
+**DEF-75 — FIXED at 1.5.8b step 3: npkg's `read_rows` SKIPPED A `rows.txt` LINE IT
+COULD NOT READ.** (found 2026-09-19 at 1.5.8b's planning, reading the two
+runners side by side.) A line with the wrong field count or an unknown role was
+skipped in silence, where the harness's reader failed the run by name. So a row
+could vanish from one runner's belts and not the other's, and the parity stage
+compares verdicts, not the rows the belts read. `read_rows` fails with
+`ERowsMalformed` now, and a non-numeric group, trap count or clause context
+fails it too. Both self-checks hold three planted lines: a well-formed row, an
+eleven-field row and an unknown role.
+
+**DEF-81 — FIXED at 1.5.8b step 3: A GUARD INSIDE A LOOP'S INVARIANT WAS ELIDED
+ON ITS FIRST VISIT'S PROOF.** (found 2026-09-19 by `nitpick-compiler_s11`, by the
+belt that counts one assume per elided guard, which counted one fewer than
+`counted_exit.npk` held.) A soundness hole in the verified build, latent since
+1.5.3 lowered the head's check.
+- The check at a loop head is lowered once and runs at every visit: at entry,
+  after each iteration, after each `continue`.
+- A guard inside a clause (a division, a shift, and since step 3 an `overflow`)
+  had a row in the ENTRY's context alone. The back edge and the `continue`s were
+  encoded quiet, and the emitter elided the guard on that one row.
+- Probe (`tests/verify/inv_inner_guard.npk`): `while (n < 3) invariant 100 / d > 0
+  { d = d - 1; … }` with `d = 1` at entry. The entry's row is discharged and the
+  back edge's is not, so the check stays, but the guard inside it was elided.
+  The plain build traps `DivByZero` (36). The verified build divided by zero:
+  a machine fault (98) at -O0, and `InvariantViolated` (34) where -O2 had
+  exploited the undefined division.
+
+The fix:
+- The back-edge and `continue` encodings record the inner rows too, under the
+  loop's clause context.
+- The emitter elides a guard only when every row sharing its (site, kind, space,
+  clause context) is discharged.
+- `rows.txt` gains a twelfth field, the clause context, and both runners'
+  belts count GUARDS: an assume per elided guard, a trap per retained one. A
+  guard inside a check that is not emitted (every row of it discharged) counts
+  as neither, which a discharged `ensures` seam also needed
+  (`ens_inner_guard.npk`).
+- Both self-checks hold five cases, the defect's own shape among them.
+
+**DEF-82 — OPEN, owned by the compiler seat, scheduled for 1.5.8b step 5: A
+`defer` BODY'S GUARD IS EMITTED ONCE PER EXIT AND HAS ONE ROW.** (found 2026-09-19
+by `nitpick-compiler_s11`, reading the encoder beside DEF-81's fix.) The encoder
+walks a `defer` body once, with every name opaque. That is sound: the row holds
+at any exit. The emitter, though, writes the body at every exit of its scope.
+Probe: `defer { discard(n + 1i32); }` in a function with two exits emits two
+`IntOverflow` traps for one row. So the runners' belts would count one trap
+where there are two, and a verified build of such a function is a red run.
+It is never a silent pass: the belts fail closed. No function in the tree has a
+guard in a `defer` body today; its 33 are frees and unwatches. The fix direction
+is to count what the emitter does. The emitter already knows how many times it
+writes each `defer` body. The row's traps become the body's emission count, so
+the belts see the traps and assumes the build holds. That means writing a
+function's rows after its body is lowered, since the elision answers the
+lowering needs are computed before it. Step 5 adds the `bounds` rows, and an
+element write in a `defer` is the likeliest shape.
+
+**DEF-83 — FIXED at 1.5.8b step 3: AN EXPLORER CONTROL'S FINDING SEED COULD PASS
+ITS WALL-CLOCK NET.** (found 2026-09-19 by 1.5.8b step 1b's first full harness.)
+`link-without-cas.ctl` is found by a seed that spins to the shim's step budget,
+"about 30 s" by its own comment, where every other seed takes milliseconds. The
+per-seed net in both runners was 60 s, the unit explore stage's. With eight
+solver batches and a second harness running beside it, the finding seed (6;
+step 2's harness found the defect there) passed the net and read "hung". The
+control was reported blind: a red run that was no verdict. Both runners' control
+seeds now run under a 300-second net: a hang net, never a verdict, as P-13's
+solver net is, at ten times the slowest designed seed. Step 1b's harness was
+re-run on the same tree.
+
+**DEF-84 — FIXED at 1.5.8b step 3: AN INDEX THROUGH A VALUE NO PLACE HOLDS, OR
+THROUGH A `Result`'s `.value`, WAS ADMITTED BY THE CHECKER AND REFUSED BY THE
+EMITTER.** (found 2026-09-19 by `nitpick-compiler_s11`: npkg's own self-check,
+written for DEF-75, indexed `rr.value[0i64]` and the build stopped at
+NITPICK-EMIT-002.) The index arms took the base's ADDRESS. A call's result has
+none, and the member arm had no case for a `Result`. Four probes, each
+EMIT-002:
+- an array returned by a call and indexed;
+- an array in a `Result`'s `.value`;
+- a `List` in a `Result`'s `.value`;
+- a `List` returned by a call.
+
+The first two date from each arm's first version. The `List` shapes date from
+step 1b, whose `l[i]` goes through the same address. It was never a
+miscompile, since the emitter refused by name, but the checker must not admit
+what the emitter cannot lower. The fix:
+- A `Result`'s `value` and `err` are places, at the value path's own slots.
+- A base rooted in a temporary is spilled to an entry-block slot and read there.
+  The checker refuses every write into a temporary (TYPE-024), an owning
+  temporary stays its statement's to drop (D-246), and no `await` can fall
+  between the spill and its reads (D-178).
+- `tests/backend/programs/index_temporary.npk` covers every shape, inside a
+  coroutine and inside an `await`'s operand too.
+- `tests/cost/index_temporary.toml` holds the temporaries dropped. 50,000
+  statements peak at the one statement's 8 live bytes. A planted spill that
+  took the temporary peaked at 400,000, and the unit fails it.
+
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 
 None of these was a known defect when it was recorded. They are the four places

@@ -1,0 +1,12 @@
+# DEF-84 (1.5.8b step 3): an index through a value no place holds spills the
+# value to a slot and reads it there -- a view that nothing drops -- while an
+# owning temporary stays its statement's to drop (D-246). `index_temporary_churn`
+# indexes a fresh `List` returned by a call in each of 50,000 statements;
+# `index_temporary_once` does it once. Under NPK_HEAP_STATS the churn's peak must
+# stay within `bound` times the one statement's: a temporary the spill kept
+# alive past its statement would peak at tens of thousands of times it.
+kind    = "probe"
+program = "tests/backend/programs/index_temporary_churn.npk"
+against = "tests/backend/programs/index_temporary_once.npk"
+bound   = 2
+expect  = "pass"

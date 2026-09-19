@@ -15238,6 +15238,24 @@ in `meta/specs/TCB.md` (r8 Lesson 2).
 > are per-lane terms (D-282). The compiler's own set is 368 rows (329 `int`,
 > 11 `bv`, 28 `-`), decided in 3.9 s under the profile.
 
+
+*[2026-09-19, 1.5.8b step 3; DEF-81.]* **(9) elides a GUARD, and a guard has a row
+in every context it runs in.** The check at a loop's head is lowered once and
+runs at every visit. A guard inside its clause (a division, a shift, an
+`overflow`) had a row in the entry's context alone, and the emitter elided the
+guard on that row: a verified build divided by zero on the second visit where
+the plain build trapped `DivByZero` (`tests/verify/inv_inner_guard.npk`). The
+back edge and each `continue` now record the guard's rows too, under the
+loop's clause context. The emitter elides a guard only when EVERY row sharing
+its site, kind, space and clause context is discharged. A guard inside a check
+that is not emitted at all (every row of the check discharged) is gone with it
+and holds neither a trap nor an assume. `rows.txt` names each row's clause
+context in a twelfth field, so both runners' belts count guards rather than
+rows. And (8)'s identity holds as written: a row's hash is its problem text,
+and a hypothesis a new row adds after its site changes later rows' text. The
+compiler's `div-min` rows in three functions were identical problems that the
+manifest, a set, had held as one line each, and they are distinct lines now.
+
 ## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
 
 Elision is a property of the VERIFIED BUILD recorded in the manifest —
@@ -17339,6 +17357,16 @@ IR at `0dfddac`; the landing notice carries its after-value.
 > by the workbench meanwhile (DEF-21): the undefined-symbol allowlist is the
 > runtime's EXPORTS. `nitpick.obligations` never moved. The workbench's canary
 > reads about 50 KB after the landing.
+
+
+*[2026-09-19, 1.5.8b step 3.]* The rule reaches the obligations. `--obligations`
+writes a function's file and rows only when the emission holds the function
+(`obl_keep_held`, the runners' own "held" rule), because a prelude function the
+trim dropped is not in the artifact and its rows guard nothing. Step 3 gave the
+prelude's arithmetic its `overflow` rows, and a small verify program then
+decided 168 functions to emit 14: 260 of its 267 seconds went to one
+unreferenced function. No hash or verdict moves, and the compiler's own
+manifest drops exactly the rows of the prelude functions it does not reference.
 
 ## D-263 — the prelude's `List<T>` stores through the managed heap's untracked entry; D-151 keeps counting every `wild` block — **SETTLED (user decision, 2026-09-05: "i am fine with your recommendation"; OPEN_DECISIONS S-39; lands at 1.5.2e step 1)**
 
@@ -19543,6 +19571,27 @@ than to state the truth, is intent spelled for a tool. And a wrong bound traps
 `LimitViolated` where the program was correct.
 
 Lands at 1.5.8b step 3 (the residue measured) and its close (reported).
+
+
+*[LANDED 2026-09-19, 1.5.8b step 3.]* Every plain-integer `+ - *` and negation
+carries an `overflow` row at its guard's own site. The compiler's own manifest
+is 2,439 rows (2,198 distinct lines): **1,273 discharged, 1,161 open, 0 budget,
+0 unencoded**. Of the 2,217 `overflow` rows, 1,093 discharge and 1,124 stay,
+and the residue is what planning predicted, measured: a counter or an index
+the path conditions bound discharges (884 of the discharged), while a length or
+a field nothing bounds (200), an unbounded counter (278), a sum of two unknowns
+(300), the prelude's numeric cores (270), a doubling (46) and a product of two
+unknowns (30) stay. Not one bound was written into the tree to close a row.
+Every one that stays keeps its guard.
+
+The speed, measured and not gated: the verified build removes 1,181 of the
+compiler's own 2,307 `IntOverflow` traps and 184 KB of binary, and the wall
+clock does not move — 70.0 s against 70.6 s on a 70-second compile, inside the
+run-to-run spread. In instructions (callgrind, one compile of `src/npkc.npk`)
+the elided build is 631,634,446,879 against 632,818,358,986: the 1,181 guards
+cost 1,183,912,107 instructions, **0.19% of the compile**, about a million
+executions per site. A trapping guard is a predictable branch, and the residue
+D-309 leaves in place costs a fifth of a percent of the compiler's own work.
 
 ## D-310 — An integer `+ - *` or negation whose operands are compile-time constants is folded, and refused when its value does not fit (TYPE-076) — **SETTLED (user decision, 2026-09-19: "those recommendations sound fine to me as well. Lets ratify those too."; S-90)**
 

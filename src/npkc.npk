@@ -189,6 +189,9 @@ async func:main = int32(cstring[]:argv) {
     // the index and the row list, into `--obligations`' directory (created
     // if absent; an existing one is fine).
     if (obl_dir.len > 0i64) {
+        // ONLY WHAT THE EMISSION HOLDS (1.5.8b step 3; D-262's rule carried to
+        // the obligations): a function the trim dropped has no rows.
+        drop obl_keep_held(@obl, raw irw_text(@w));
         if (!(raw obl_write_dir(obl_dir, @obl))) {
             await diag_say("npkc: --obligations: the directory or a file in it could not be written") ?| NIL;
             exit 2i32;

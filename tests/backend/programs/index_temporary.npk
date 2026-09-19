@@ -1,0 +1,113 @@
+// expect-exit: 0
+//
+// AN INDEX THROUGH A VALUE NO PLACE HOLDS, AND THROUGH A `Result`'s `.value`
+// (DEF-84, 1.5.8b step 3). The checker admitted each shape below, and the
+// emitter refused it as EMIT-002: the index arms took the base's ADDRESS, and
+// a call's result has none, and the member arm had no case for a `Result`. An
+// array or a vector returned by a call was refused since each arm was
+// written, and a `List` since step 1b gave it `l[i]`. A base rooted in a
+// temporary is spilled to a slot and read there. The checker refuses every
+// write into one (TYPE-024), and an owning temporary is still dropped by its
+// statement (D-246), which `tests/cost/index_temporary.toml` holds. A
+// `Result`'s `.value` is a place of the local's own, so writing an element
+// through it lands in the local. Each case exits with its own code.
+mod:index_temporary;
+error:E1;
+
+struct:P = { int32:x; int32[2]:a; };
+
+func:mka = int32[4](int32:k) never fails {
+    int32[4]:a = [k, k + 1i32, k + 2i32, k + 3i32];
+    pass a;
+};
+
+func:mkl = List<int32>(int32:k) never fails {
+    List<int32>:l = raw list_init::<int32>(2i64);
+    drop list_push(@l, k);
+    drop list_push(@l, k * 2i32);
+    pass l;
+};
+
+func:mks = List<string>(int32:k) never fails {
+    List<string>:l = raw list_init::<string>(1i64);
+    drop list_push(@l, string_concat("abc", `&{k}`));
+    pass l;
+};
+
+func:mkp = P(int32:k) never fails {
+    pass P{ x: k, a: [k + 10i32, k + 20i32] };
+};
+
+func:mkv = simd<int32, 4>(int32:k) never fails {
+    simd<int32, 4>:v = simd(k, k + 5i32, k + 6i32, k + 7i32);
+    pass v;
+};
+
+func:mkla = List<int32[2]>(int32:k) never fails {
+    List<int32[2]>:l = raw list_init::<int32[2]>(1i64);
+    drop list_push(@l, [k, k + 100i32]);
+    pass l;
+};
+
+func:mkl_f = List<int32>(int32:k) {
+    List<int32>:l = raw list_init::<int32>(2i64);
+    drop list_push(@l, k);
+    pass l;
+};
+
+func:mka_f = int32[4](int32:k) {
+    int32[4]:a = [k, k, k, k];
+    pass a;
+};
+
+async func:twice = int32(int32:k) {
+    pass (k * 2i32);
+};
+
+// Inside a coroutine, and inside an `await`'s operand.
+async func:in_coroutine = int32(int32:k) {
+    int32:a = (raw mka(k))[2i64];                    // k + 2
+    int32:b = await twice((raw mkl(k))[1i64]) ?! E1;  // 2 * (2k)
+    pass (a + b);
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw mka(7i32))[1i64] != 8i32) { exit 1i32; }
+    if ((raw mkl(7i32))[1i64] != 14i32) { exit 2i32; }
+    if ((raw mkv(7i32))[2i64] != 13i32) { exit 3i32; }
+    if ((raw mkp(7i32)).a[1i64] != 27i32) { exit 4i32; }
+    if ((raw mkla(7i32))[0i64][1i64] != 107i32) { exit 5i32; }
+    if ((raw mks(7i32))[0i64].len != 4i64) { exit 6i32; }
+
+    Result<List<int32>>:rl = mkl_f(9i32);
+    if (rl.is_error) { exit 7i32; }
+    if (rl.value[0i64] != 9i32) { exit 8i32; }
+    rl.value[0i64] = 11i32;
+    if (rl.value[0i64] != 11i32) { exit 9i32; }
+
+    Result<int32[4]>:ra = mka_f(3i32);
+    if (ra.is_error) { exit 10i32; }
+    ra.value[2i64] = 30i32;
+    if ((ra.value[2i64] + ra.value[1i64]) != 33i32) { exit 11i32; }
+
+    int32:c = await in_coroutine(5i32) ?! E1;
+    if (c != 27i32) { exit 12i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 81i32; },
+        (IntOverflow)      { exit 93i32; },
+        (OutOfBounds)      { exit 94i32; },
+        (DeadlineExceeded) { exit 90i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 97i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

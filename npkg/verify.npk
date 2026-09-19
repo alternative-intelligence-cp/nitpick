@@ -48,6 +48,14 @@ use "./floor_spec.npk".*;
 use "./floor.npk".*;
 use "./floor_model.npk".*;
 
+// A `rows.txt` LINE THE RUNNERS CANNOT READ (1.5.8b step 3; DEF-75): not the
+// twelve-field row (the twelfth, the clause context, DEF-81's), a field that
+// is not the number it must be, or a role the
+// runners do not know. The harness failed the run on one by name from 1.5.3;
+// this reader skipped it in silence, so a row could vanish from one runner's
+// belts and not the other's.
+pub error:ERowsMalformed;
+
 // One row of rows.txt, with its verdict once decided.
 pub struct:VRow = {
     string:fno;
@@ -67,6 +75,9 @@ pub struct:VRow = {
     int64:group;
     int64:traps;
     string:tier;        // THE TIER (D-281, 1.5.4b step 3): the encoder's word for the cone's theory
+    // THE CLAUSE CONTEXT (DEF-81, 1.5.8b step 3): 0, or the loop statement or
+    // return seam whose clause check holds the row's guard.
+    int64:ctx;
 };
 
 // --- reading the compiler's files --------------------------------------------------------
@@ -85,17 +96,23 @@ func:split_commas = List<string>(string:line) never fails {
     pass out;
 };
 
-func:split_tabs = List<string>(string:line) never fails {
+// The fields of `line` between `sep` bytes (a tab for `rows.txt`, a `|` for
+// the catalogue's table).
+func:split_on = List<string>(string:line, uint8:sep) never fails {
     List<string>:out = raw list_init::<string>(6i64);
     int64:start = 0i64;
     for (int64:i in 0i64...line.len) {
-        if (line.ptr[i] == 9u8) {
+        if (line.ptr[i] == sep) {
             drop strlist_push(@out, raw text_slice(line, start, i));
             start = i + 1i64;
         }
     }
     drop strlist_push(@out, raw text_slice(line, start, line.len));
     pass out;
+};
+
+func:split_tabs = List<string>(string:line) never fails {
+    pass (raw split_on(line, 9u8));
 };
 
 pub func:read_rows = List<VRow>(string:dir) {
@@ -109,21 +126,24 @@ pub func:read_rows = List<VRow>(string:dir) {
         string:ln = raw strlist_view(lines, i);
         if (ln.len == 0i64) { continue; }
         List<string>:f = raw split_tabs(ln);
-        if (f.count != 11i64) { continue; }
+        if (f.count != 12i64) { fail ERowsMalformed; }
         Result<int64>:k = text_int(raw strlist_view(f, 1i64));
-        if (k.is_error) { continue; }
+        if (k.is_error) { fail ERowsMalformed; }
         Result<int64>:grp = text_int(raw strlist_view(f, 8i64));
-        if (grp.is_error) { continue; }
+        if (grp.is_error) { fail ERowsMalformed; }
         Result<int64>:trp = text_int(raw strlist_view(f, 9i64));
-        if (trp.is_error) { continue; }
-        if ((raw role_of_name(raw strlist_view(f, 7i64))) < 0i32) { continue; }
+        if (trp.is_error) { fail ERowsMalformed; }
+        Result<int64>:cx = text_int(raw strlist_view(f, 11i64));
+        if (cx.is_error) { fail ERowsMalformed; }
+        if ((raw role_of_name(raw strlist_view(f, 7i64))) < 0i32) { fail ERowsMalformed; }
         VRow:r = VRow{ fno: raw strlist_copy(f, 0i64), k: k.value,
                        kind: raw strlist_copy(f, 2i64), hash: raw strlist_copy(f, 3i64),
                        encoded: raw text_eq(raw strlist_view(f, 4i64), "1"),
                        symbol: raw strlist_copy(f, 5i64), verdict: 0i32,
                        checker: raw text_eq(raw strlist_view(f, 4i64), "c"),
                        site: raw strlist_copy(f, 6i64), role: raw strlist_copy(f, 7i64),
-                       group: grp.value, traps: trp.value, tier: raw strlist_copy(f, 10i64) };
+                       group: grp.value, traps: trp.value, tier: raw strlist_copy(f, 10i64),
+                       ctx: cx.value };
         drop list_push(@rows, move(r));
     }
     pass rows;
@@ -545,7 +565,19 @@ func:trap_of_kind = string(string:k) never fails {
     if (raw text_eq(k, "shift-range"))   { pass "-4115"; }
     if (raw text_eq(k, "err-exit"))      { pass "-4100"; }
     if (raw text_eq(k, "disjoint"))      { pass "-4116"; }
+    if (raw text_eq(k, "overflow"))      { pass "-4110"; }   // 1.5.8b step 3
     pass "";
+};
+
+// THE KINDS WHOSE `bypass` ROWS THE BYPASS BELT COUNTS (D-252, D-268): the
+// guard is the CALLEE's checked entry, so a discharged call names `.body`.
+// `limit-subsume` has no guard of its own at the site -- its rows are all
+// `bypass` -- and `requires` has both (the callee's `.req` trap, -4112).
+// The harness's `BYPASS_KINDS`, twinned.
+func:bypass_kind = bool(string:k) never fails {
+    if (raw text_eq(k, "limit-subsume")) { pass true; }
+    if (raw text_eq(k, "requires"))      { pass true; }
+    pass false;
 };
 
 // THE KINDS BEHIND ONE CODE, for the report -- DERIVED from `trap_of_kind`
@@ -561,6 +593,53 @@ func:kinds_of_trap = string(string:code) never fails {
     }
     if (out.len == 0i64) { pass "?"; }
     pass out;
+};
+
+// EVERY GUARDED KIND IS COUNTED (1.5.8b step 3; K-12): the catalogue's
+// marked table (VERIFICATION_REFERENCE §7b) says which kinds are guarded, and
+// a guarded kind whose rows are produced must have a code in `trap_of_kind`
+// or be a `bypass_kind` (`limit-subsume`: its guard is the callee's entry,
+// which the bypass belt counts), or no belt counts anything for it --
+// `overflow`, `bounds` and `cast-range` had no code, invisibly to every
+// instrument. A kind whose "rows from" cell says
+// `pending` has no producer yet and must appear in no row of this run. The
+// harness's `check_obligation_kinds_agree`, twinned.
+pub func:kinds_have_traps = List<string>(string:catalogue, List<VRow>:rows) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(catalogue);
+    bool:inside = false;
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (raw text_starts_with(ln, "<!-- BEGIN obligation-catalogue -->")) { inside = true; continue; }
+        if (raw text_starts_with(ln, "<!-- END obligation-catalogue -->")) { inside = false; continue; }
+        if (!inside) { continue; }
+        if (!(raw text_starts_with(ln, "| `"))) { continue; }
+        // `| `kind` | what | guard | rows from |` -- the cells by `|`
+        List<string>:cells = raw split_on(ln, 124u8);
+        if (cells.count < 5i64) { continue; }
+        string:kc = raw text_trim(raw strlist_view(cells, 1i64));
+        if (kc.len < 3i64) { continue; }
+        string:kind = string_concat(raw text_slice(kc, 1i64, kc.len - 1i64), "");
+        string:guard = raw text_trim(raw strlist_view(cells, cells.count - 3i64));
+        string:from = raw text_trim(raw strlist_view(cells, cells.count - 2i64));
+        bool:pending = raw text_contains(from, "pending");
+        if (raw text_eq(guard, "yes")) {
+            if ((!pending) && ((raw trap_of_kind(kind)).len == 0i64) && (!(raw bypass_kind(kind)))) {
+                string:m1 = string_concat("kinds-agree: the catalogue marks `", kind);
+                drop strlist_push(@fl, string_concat(m1, "` guarded and producing rows, and npkg's trap_of_kind has no code for it and it is no bypass kind -- no belt would count it (K-12)"));
+            }
+        }
+        if (pending) {
+            for (int64:r in 0i64...rows.count) {
+                if (raw text_eq(string_from_bytes(rows[r].kind.ptr, rows[r].kind.len), kind)) {
+                    string:m2 = string_concat("kinds-agree: the catalogue marks `", kind);
+                    drop strlist_push(@fl, string_concat(m2, "` pending, and this run holds a row of it -- the producer landed and the catalogue did not say so"));
+                    break;
+                }
+            }
+        }
+    }
+    pass fl;
 };
 
 // THE CODES THE BELT COUNTS ARE DERIVED (1.5.8 step 0, DEF-62): every
@@ -579,8 +658,9 @@ func:counted_trap_codes = List<string>() never fails {
     pass codes;
 };
 
-// An `llvm.assume` per discharged SITE, a trap per retained GROUP of each
-// guarded kind (P-12, L-13): the manifest is an inventory of guards.
+// An `llvm.assume` per elided GUARD (a discharged row's traps), a trap per
+// retained GROUP of each guarded kind (P-12, L-13): the manifest is an
+// inventory of guards.
 pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string:name) never fails {
     List<string>:fl = raw list_init::<string>(1i64);
     // A ROW COUNTS ONLY FOR A FUNCTION THE EMISSION HOLDS (1.5.2d, D-262 §1):
@@ -599,43 +679,115 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     // symbol names, which the code-only text blanks (its first full run
     // counted nothing for that reason).
     string:syms = raw ir_symbol_all(ir_text);
+    // A GUARD INSIDE A CLAUSE CHECK EXISTS ONLY WHERE THE CHECK IS EMITTED
+    // (DEF-81, 1.5.8b step 3): a row whose clause context is not 0 sits in the
+    // check of the loop head or return seam that statement is -- the same
+    // symbol's context-0 `guard` rows of kind `invariant` or `ensures` whose
+    // group is that statement. When every one of them is discharged the check
+    // is not emitted, and the guards inside it go with it: no trap, no
+    // assume, no bypass call. The harness's rule, byte for byte.
+    List<string>:csyms = raw list_init::<string>(8i64);
+    List<int64>:cgroups = raw list_init::<int64>(8i64);
+    List<bool>:cdone = raw list_init::<bool>(8i64);
+    for (int64:ci0 in 0i64...rows.count) {
+        if (rows[ci0].ctx != 0i64) { continue; }
+        string:crole = string_from_bytes(rows[ci0].role.ptr, rows[ci0].role.len);
+        if (!(raw text_eq(crole, "guard"))) { continue; }
+        string:ckind = string_from_bytes(rows[ci0].kind.ptr, rows[ci0].kind.len);
+        if (!((raw text_eq(ckind, "invariant")) || (raw text_eq(ckind, "ensures")))) { continue; }
+        string:csym = string_from_bytes(rows[ci0].symbol.ptr, rows[ci0].symbol.len);
+        if (!(raw row_function_held(defined, csym))) { continue; }
+        bool:cd = (rows[ci0].verdict == (raw OV_DISCHARGED()));
+        int64:cslot = 0i64 - 1i64;
+        for (int64:cj in 0i64...csyms.count) {
+            if ((raw text_eq(raw strlist_view(csyms, cj), csym)) && (cgroups[cj] == rows[ci0].group)) { cslot = cj; }
+        }
+        if (cslot < 0i64) {
+            drop strlist_push(@csyms, csym);
+            drop list_push(@cgroups, rows[ci0].group);
+            drop list_push(@cdone, cd);
+        } else {
+            if (!cd) { cdone[cslot] = false; }
+        }
+    }
     // THE TRAPS BY GROUP (1.5.3 step 2, L-13): the rows one guard shares -- a
     // loop's entry, preservation and `continue` rows, a function's entry
-    // `requires` row -- carry one group and one trap count; the guard stays,
-    // with every trap it holds, while ANY row of the group is retained. A
-    // `guard` row counts; a `bypass`, `held` or `conform` row keeps no trap
-    // of its own function's (the guard it names is the callee's). The
-    // harness's rule, byte for byte.
+    // `requires` row, a guard inside a loop head's check in every context the
+    // check runs in (DEF-81) -- carry one clause context, one group and one
+    // trap count; the guard stays, with every trap it holds, while ANY row of
+    // the group is retained. A `guard` row counts; a `bypass`, `held` or
+    // `conform` row keeps no trap of its own function's (the guard it names
+    // is the callee's). The harness's rule, byte for byte.
     List<string>:gsyms = raw list_init::<string>(16i64);
     List<string>:gcodes = raw list_init::<string>(16i64);
+    List<int64>:gctxs = raw list_init::<int64>(16i64);
     List<int64>:ggroups = raw list_init::<int64>(16i64);
     List<bool>:gret = raw list_init::<bool>(16i64);
     List<int64>:gtraps = raw list_init::<int64>(16i64);
     List<string>:ssyms = raw list_init::<string>(8i64);
+    List<int64>:sctxs = raw list_init::<int64>(8i64);
     List<int64>:sgroups = raw list_init::<int64>(8i64);
     List<bool>:sok = raw list_init::<bool>(8i64);
-    int64:disch = 0i64;
+    // ONE ASSUME PER ELIDED GUARD (P-19, L-11): a guard's rows share (symbol,
+    // kind, clause context, group) -- one row for most guards, one per context
+    // a loop head's check runs in (DEF-81) -- and the guard is elided only
+    // when every one of them is discharged, its traps' branches becoming
+    // assumes: 1 for most, N-1 for an integer `.sum()`'s fold steps at one
+    // site (1.5.8b step 3; until then this counted 1 a row, and no row carried
+    // more). A guard-less kind's discharge emits nothing, and a contract's
+    // discharge is the guard's removal alone (1.5.3 L-11).
+    List<string>:asyms = raw list_init::<string>(16i64);
+    List<string>:akinds = raw list_init::<string>(16i64);
+    List<int64>:actxs = raw list_init::<int64>(16i64);
+    List<int64>:agroups = raw list_init::<int64>(16i64);
+    List<bool>:aall = raw list_init::<bool>(16i64);
+    List<int64>:atraps = raw list_init::<int64>(16i64);
     for (int64:i in 0i64...rows.count) {
         string:sym = string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len);
         if (!(raw row_function_held(defined, sym))) { continue; }
+        // THE GUARDS OF AN ELIDED CHECK ARE GONE WITH IT (DEF-81).
+        if (rows[i].ctx != 0i64) {
+            bool:gone = false;
+            for (int64:cg in 0i64...csyms.count) {
+                if ((raw text_eq(raw strlist_view(csyms, cg), sym)) && (cgroups[cg] == rows[i].ctx) && cdone[cg]) { gone = true; }
+            }
+            if (gone) { continue; }
+        }
         bool:d = (rows[i].verdict == (raw OV_DISCHARGED()));
         string:k = string_from_bytes(rows[i].kind.ptr, rows[i].kind.len);
         string:role = string_from_bytes(rows[i].role.ptr, rows[i].role.len);
-        // ONE `llvm.assume` PER DISCHARGED ROW OF AN ASSUME KIND (P-19, L-11):
-        // a guard-less kind's discharge emits nothing, and a contract's
-        // discharge is the guard's removal alone (1.5.3 L-11).
-        if (d) {
-            bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit")) || (raw text_eq(k, "shift-range")) || (raw text_eq(k, "err-exit"));
-            if (assume_kind) { disch = disch + 1i64; }
+        // `overflow` and `cast-range` (1.5.8b step 3; K-10, K-11): each elides
+        // into assumes; the second did since D-306 and this list lacked it, a
+        // gap in both runners' belts.
+        bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit")) || (raw text_eq(k, "shift-range")) || (raw text_eq(k, "err-exit"))
+                           || (raw text_eq(k, "overflow")) || (raw text_eq(k, "cast-range"));
+        if (assume_kind) {
+            int64:aslot = 0i64 - 1i64;
+            for (int64:aj in 0i64...asyms.count) {
+                if ((raw text_eq(raw strlist_view(asyms, aj), sym)) && (raw text_eq(raw strlist_view(akinds, aj), k))
+                    && (actxs[aj] == rows[i].ctx) && (agroups[aj] == rows[i].group)) { aslot = aj; }
+            }
+            if (aslot < 0i64) {
+                drop strlist_push(@asyms, sym);
+                drop strlist_push(@akinds, k);
+                drop list_push(@actxs, rows[i].ctx);
+                drop list_push(@agroups, rows[i].group);
+                drop list_push(@aall, d);
+                drop list_push(@atraps, rows[i].traps);
+            } else {
+                if (!d) { aall[aslot] = false; }
+                if (rows[i].traps > atraps[aslot]) { atraps[aslot] = rows[i].traps; }
+            }
         }
         if (raw text_eq(role, "bypass")) {
-            if ((raw text_eq(k, "limit-subsume")) || (raw text_eq(k, "requires"))) {
+            if (raw bypass_kind(k)) {
                 int64:sslot = 0i64 - 1i64;
                 for (int64:sj in 0i64...ssyms.count) {
-                    if ((raw text_eq(raw strlist_view(ssyms, sj), sym)) && (sgroups[sj] == rows[i].group)) { sslot = sj; }
+                    if ((raw text_eq(raw strlist_view(ssyms, sj), sym)) && (sctxs[sj] == rows[i].ctx) && (sgroups[sj] == rows[i].group)) { sslot = sj; }
                 }
                 if (sslot < 0i64) {
                     drop strlist_push(@ssyms, sym);
+                    drop list_push(@sctxs, rows[i].ctx);
                     drop list_push(@sgroups, rows[i].group);
                     drop list_push(@sok, d);
                 } else {
@@ -649,11 +801,12 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         int64:slot = 0i64 - 1i64;
         for (int64:j in 0i64...gsyms.count) {
             if ((raw text_eq(raw strlist_view(gsyms, j), sym)) && (raw text_eq(raw strlist_view(gcodes, j), code))
-                && (ggroups[j] == rows[i].group)) { slot = j; }
+                && (gctxs[j] == rows[i].ctx) && (ggroups[j] == rows[i].group)) { slot = j; }
         }
         if (slot < 0i64) {
             drop strlist_push(@gsyms, sym);
             drop strlist_push(@gcodes, code);
+            drop list_push(@gctxs, rows[i].ctx);
             drop list_push(@ggroups, rows[i].group);
             drop list_push(@gret, !d);
             drop list_push(@gtraps, rows[i].traps);
@@ -662,13 +815,15 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
             if (rows[i].traps > gtraps[slot]) { gtraps[slot] = rows[i].traps; }
         }
     }
+    int64:disch = 0i64;
+    for (int64:ak in 0i64...asyms.count) { if (aall[ak]) { disch = disch + atraps[ak]; } }
     int64:assumes = raw count_of(ir, "call void @llvm.assume(");
     if (assumes != disch) {
         string:m = string_concat(name, ": the verified IR holds ");
         m = string_concat(m, int_to_string(assumes));
         m = string_concat(m, " `llvm.assume` for ");
         m = string_concat(m, int_to_string(disch));
-        m = string_concat(m, " discharged sites");
+        m = string_concat(m, " elided guards (the discharged rows' traps)");
         drop list_push(@fl, move(m));
     }
     List<string>:codes = raw counted_trap_codes();
@@ -824,8 +979,16 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
         pass (raw step_bad(string_concat("npkc refused [build] entry under --obligations: ", raw text_head(raw text_trim(run1.x.err), 300i64))));
     }
     Result<List<VRow>>:rows_r = read_rows(obl);
-    if (rows_r.is_error) { pass (raw step_bad("the obligation directory could not be read (rows.txt)")); }
+    if (rows_r.is_error) { pass (raw step_bad("the obligation directory could not be read (rows.txt), or a line of it is not the twelve-field row with a known role (DEF-75: a malformed row fails the run, as the harness's does)")); }
     List<VRow>:rows = move(rows_r.value);
+    // EVERY GUARDED KIND HAS A TRAP CODE (1.5.8b step 3; K-12), read against
+    // the one catalogue both runners read.
+    Result<cstring>:catc = to_cstring(raw in_root(c, "meta/specs/VERIFICATION_REFERENCE.md"));
+    if (catc.is_error) { pass (raw step_bad("meta/specs/VERIFICATION_REFERENCE.md: the path is not a C string")); }
+    Result<string>:catt = read_file(catc.value);
+    if (catt.is_error) { pass (raw step_bad("meta/specs/VERIFICATION_REFERENCE.md could not be read (the obligation catalogue, K-12)")); }
+    List<string>:kag = raw kinds_have_traps(catt.value, rows);
+    if (kag.count > 0i64) { pass (raw step_bad(raw strlist_view(kag, 0i64))); }
     Result<List<VFile>>:files_r = read_index(obl);
     if (files_r.is_error) { pass (raw step_bad("the obligation directory could not be read (index.txt)")); }
     List<VFile>:files = move(files_r.value);

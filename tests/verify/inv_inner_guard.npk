@@ -1,0 +1,49 @@
+// expect-exit: 36
+// expect-obligation: invariant discharged 1
+// expect-obligation: invariant open 1
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 1
+//
+// A GUARD INSIDE A LOOP HEAD'S CHECK RUNS AT EVERY VISIT (DEF-81, 1.5.8b step
+// 3). The head's check is lowered once, and it runs at entry and after every
+// iteration. The division inside the invariant therefore has a row in each
+// context: at entry `d` is 1, and on the back edge `d` has been decremented.
+// The entry row is discharged and the back edge's is `open`, so the guard
+// stays, and at run time the second visit divides by zero: `DivByZero` (36)
+// in the plain build and in the verified one. Until the fix only the entry
+// had a row, and its discharge elided the guard. The verified build then
+// divided by zero with no guard: a machine fault (98) at -O0, and an
+// `InvariantViolated` (34) where -O2 had used the undefined division.
+mod:inv_inner_guard;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = 1i32;
+    int32:n = 0i32;
+    while (n < 3i32) invariant 100i32 / d > 0i32 {
+        d = d - 1i32;
+        n = n + 1i32;
+    }
+    exit ((argv.len =>! int32) + 4i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,42 @@
+// expect-exit: 5
+// expect-obligation: ensures discharged 1
+// expect-obligation: ensures open 1
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 2
+//
+// A GUARD INSIDE A SEAM'S CHECK EXISTS ONLY WHERE THE CHECK IS EMITTED (DEF-81,
+// 1.5.8b step 3). The postcondition is checked at each return seam, and each
+// seam's `result + 1` is a guard with a row in that seam's context. At the
+// first seam `result` is 5, the `ensures` row is discharged, and the check is
+// not emitted: its inner guard goes with it, so the verified build holds
+// neither an assume nor a trap for it. At the second seam `result` is a
+// non-positive `x`: the `ensures` row is `open` and the check stays. There the
+// inner row is discharged, because `x + 1` cannot overflow for `x <= 0`, so
+// its guard is one `llvm.assume` inside the kept check. The runners' belts
+// count both.
+mod:ens_inner_guard;
+
+func:f = int32(int32:x) ensures result + 1i32 > 0i32 {
+    if (x > 0i32) { pass 5i32; }
+    pass x;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (f(argv.len =>! int32) ?! EnsuresViolated);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EnsuresViolated)   { exit 33i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

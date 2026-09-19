@@ -1129,7 +1129,7 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     List<string>:ptr1 = raw ir_prelude_trimmed(ptext.value, name);
     if (ptr1.count > 0i64) { pass ptr1; }
     Result<List<VRow>>:rows_r = read_rows(obl);
-    if (rows_r.is_error) { drop strlist_push(@fl, string_concat(name, ": rows.txt could not be read")); pass fl; }
+    if (rows_r.is_error) { drop strlist_push(@fl, string_concat(name, ": rows.txt could not be read, or a line of it is not the twelve-field row with a known role (DEF-75)")); pass fl; }
     List<VRow>:rows = move(rows_r.value);
     Result<List<VFile>>:files_r = read_index(obl);
     if (files_r.is_error) { drop strlist_push(@fl, string_concat(name, ": index.txt could not be read")); pass fl; }

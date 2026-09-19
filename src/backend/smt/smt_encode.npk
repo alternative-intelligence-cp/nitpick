@@ -917,6 +917,74 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
     pass NIL;
 };
 
+// THE `overflow` ROW (D-210, D-309; 1.5.8b step 3): at a plain-integer `+ - *`
+// or negation the emitter guards -- every one the folder does not write as its
+// constant (`fold_node_constant`) -- the goal is the result inside its width,
+// the guard's own condition, keyed at the guard's site (K-9). The fact is a
+// hypothesis after the site: every continuing path passed the intrinsic's
+// overflow bit; inside a proposition it is the proposition's (DEF-33). A result
+// the walk could not express leaves the row `unencoded`, and the guard stays.
+func:record_overflow = NIL(Encoder->:e, int32:ty, Term:t, int32:site, Span:at) never fails {
+    if (!(t.ok && (!t.is_bool))) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_OVERFLOW(), "", none, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    string:goal = raw smt_range_axiom(t.text, raw type_int_bits(e.types, ty),
+                                      raw type_is_signed(e.types, ty));
+    drop record(e, raw OK_OVERFLOW(), goal, t.syms, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, t.syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, t.syms);
+    pass NIL;
+};
+
+// The any-lane `overflow` row (D-284's guard, D-282's shape): ONE row over
+// every result lane's range, the emitter's one trap at the site. A lane the
+// walk could not express leaves the row `unencoded`.
+func:record_overflow_lanes = NIL(Encoder->:e, int32:elem, List<Term>:out, int32:site,
+                                 Span:at) never fails {
+    string:goal = "";
+    List<int32>:gs = raw list_init::<int32>(4i64);
+    bool:all_ok = (out.count > 0i64);
+    for (int64:i in 0i64...out.count) {
+        if (!(out[i].ok && (!out[i].is_bool))) { all_ok = false; }
+    }
+    if (!all_ok) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_OVERFLOW(), "", none, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    for (int64:j in 0i64...out.count) {
+        string:one = raw smt_range_axiom(out[j].text, raw type_int_bits(e.types, elem),
+                                         raw type_is_signed(e.types, elem));
+        if (goal.len == 0i64) { goal = move(one); } else { goal = raw smt_app2("and", goal, one); }
+        gs = raw syms_union(gs, out[j].syms);
+    }
+    drop record(e, raw OK_OVERFLOW(), goal, gs, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, gs); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, gs);
+    pass NIL;
+};
+
+// The lanes of `a op b` for an overflow row: each lane's term, opaque where
+// either side has none.
+func:overflow_out_lanes = List<Term>(Encoder->:e, TokenKind:op, int32:elem,
+                                     List<Term>:la, List<Term>:lb, Span:at) never fails {
+    List<Term>:out = raw list_init::<Term>(la.count + 1i64);
+    for (int64:i in 0i64...la.count) {
+        if (i < lb.count) {
+            drop list_push(@out, raw lane_binop(e, op, elem, la[i], lb[i], at));
+        } else {
+            drop list_push(@out, raw term_none());
+        }
+    }
+    pass out;
+};
+
 // A SHIFT BY A COMPUTED AMOUNT (D-277, 1.5.4b step 0): the `shift-range` row
 // is the guard's own condition, the amount inside `0..width-1`. A literal
 // amount records nothing (the checker held it in range and the emitter
@@ -2397,6 +2465,12 @@ func:enc_simd_binary = NIL(Encoder->:e, TokenKind:op, int32:vt, ExprId:id, ExprI
     if (((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) && (raw is_word(e, elem))) {
         drop record_shift_lanes(e, elem, lb, id.index, at);
     }
+    // `+ - *` ON INTEGER LANES: the any-lane `overflow` row over the result
+    // lanes (1.5.8b step 3), the emitter's one guard at the site.
+    bool:lov = ((op == TokenKind.OpPlus) || (op == TokenKind.OpMinus) || (op == TokenKind.OpStar));
+    if (lov && (raw is_int(e, elem))) {
+        drop record_overflow_lanes(e, elem, raw overflow_out_lanes(e, op, elem, la, lb, at), id.index, at);
+    }
     List<Term>:out = raw list_init::<Term>((n => int64) + 1i64);
     for (int32:i in 0i32...n) {
         if (((i => int64) < la.count) && ((i => int64) < lb.count)) {
@@ -2435,9 +2509,40 @@ func:enc_simd_cast = NIL(Encoder->:e, ExprId:operand, int32:st, int32:vt, int32:
 };
 
 // The reductions and the verdict collapses, in the emitter's order.
-func:enc_simd_method = Term(Encoder->:e, string:m, ExprId:recv, int32:rt, int32:ty) never fails {
+func:enc_simd_method = Term(Encoder->:e, string:m, ExprId:recv, int32:rt, int32:ty,
+                             int32:site, Span:at) never fails {
     int32:elem = raw type_elem(e.types, rt);
     List<Term>:l = raw lanes_of(e, recv, rt);
+    // AN INTEGER `.sum()` IS N-1 GUARDED `+` STEPS AT ONE SITE (D-284): ONE
+    // `overflow` row there whose goal is every partial sum in range, with
+    // N-1 traps (`record_at`'s traps field) -- `unencoded` where a lane has
+    // no term (1.5.8b step 3).
+    if ((raw string_eq(m, "sum")) && (raw is_int(e, elem)) && (l.count > 1i64)) {
+        bool:sok = true;
+        for (int64:sc in 0i64...l.count) { if (!(l[sc].ok && (!l[sc].is_bool))) { sok = false; } }
+        int32:straps = (l.count - 1i64) =>! int32;
+        if (!sok) {
+            List<int32>:snone = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_OVERFLOW(), "", snone, raw SITE_EXPR(), site, at, false,
+                           raw ROLE_GUARD(), site, straps);
+            if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        } else {
+            Term:sacc = raw term_copy(l[0i64]);
+            string:sgoal = "";
+            List<int32>:sgs = raw list_init::<int32>(4i64);
+            for (int64:si in 1i64...l.count) {
+                sacc = raw term_app2("+", sacc, l[si], false);
+                string:sone = raw smt_range_axiom(sacc.text, raw type_int_bits(e.types, elem),
+                                                  raw type_is_signed(e.types, elem));
+                if (sgoal.len == 0i64) { sgoal = move(sone); } else { sgoal = raw smt_app2("and", sgoal, sone); }
+                sgs = raw syms_union(sgs, sacc.syms);
+            }
+            drop record_at(e, raw OK_OVERFLOW(), sgoal, sgs, raw SITE_EXPR(), site, at, true,
+                           raw ROLE_GUARD(), site, straps);
+            if (e.in_prop > 0i32) { drop prop_fact(e, sgoal, sgs); }
+            if ((e.in_prop == 0i32) && (e.quiet == 0i32)) { drop hyp_push(e, sgoal, sgs); }
+        }
+    }
     if (l.count == 0i64) { pass (raw term_opaque(e, ty)); }
     for (int64:c in 0i64...l.count) { if (!l[c].ok) { pass (raw term_opaque(e, ty)); } }
     if ((raw string_eq(m, "any")) || (raw string_eq(m, "all"))) {
@@ -3339,7 +3444,8 @@ func:counter_advance = NIL(Encoder->:e, int32:kind, int32:name, Term:step, Term:
 // A LOOP (L-8, L-9): the ENTRY row -- kind `invariant`, SITE_STMT the loop
 // statement, the conjunction over the versions before any havoc, LOUD under
 // the loop's clause context (a guard inside a clause is the head's site,
-// lowered once) -- then the body's assigned names havoced, and inside the
+// lowered once, and run at every visit: the preservation and `continue`
+// encodings record its rows too, DEF-81) -- then the body's assigned names havoced, and inside the
 // body's region the invariant as a hypothesis over the havoced versions and,
 // for `while`/`when`, the condition too (both dominate only the body); at
 // the body's end the PRESERVATION row keyed at the body block, and one at
@@ -3428,9 +3534,19 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
         if ((ctr.kind == 2i32) || ((ctr.kind == 1i32) && ctr.ranged)) {
             drop counter_advance(e, ctr.kind, ctr.name, ctr.step, ctr.asc, dollar);
         }
-        e.quiet = e.quiet + 1i32;
+        // THE HEAD CHECK RUNS HERE TOO (DEF-81, 1.5.8b step 3): the check at
+        // the head is lowered once and runs at every visit, and this is the
+        // context of every visit after the first -- so a guard inside a
+        // clause records its row here as it does at the entry, under the
+        // same clause context, and the emitter elides it only when every
+        // one of its rows is discharged (`obl_finish`). This encoding was
+        // QUIET until then: the entry's row alone decided a guard that runs
+        // again with `$` advanced, and a verified build elided a division
+        // at the head on the proof for its first visit (`inv_inner_guard`).
+        int32:pctx = e.clause_ctx;
+        e.clause_ctx = sid.index;
         Term:gp = raw invariant_conj(e, inv, false);
-        e.quiet = e.quiet - 1i32;
+        e.clause_ctx = pctx;
         if (gp.ok) {
             drop record_at(e, raw OK_INVARIANT(), gp.text, gp.syms, raw SITE_STMT(), body.index, bs.span, true,
                            raw ROLE_GUARD(), sid.index, nc);
@@ -3535,6 +3651,14 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
                 List<Term>:slb2 = raw lanes_of(e, raw stmt_assigned(s), svt);
                 drop record_shift_lanes(e, selem, slb2, target.index, s.span);
             }
+            bool:sov = ((sbop == TokenKind.OpPlus) || (sbop == TokenKind.OpMinus) || (sbop == TokenKind.OpStar));
+            if (sov && (raw is_int(e, selem))) {
+                drop lanes_of_binding(e, sb, target.index);
+                List<Term>:sla3 = raw lanes_of(e, target, svt);
+                List<Term>:slb3 = raw lanes_of(e, raw stmt_assigned(s), svt);
+                drop record_overflow_lanes(e, selem, raw overflow_out_lanes(e, sbop, selem, sla3, slb3, s.span),
+                                           target.index, s.span);
+            }
             drop bind_lanes_assign(e, name, ExprId{ index: 0i32 });
             pass NIL;
         }
@@ -3576,6 +3700,23 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
         }
         if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", prior, rhs, false)); }
         else { drop bind_assign(e, name, raw term_app2("mod", prior, rhs, false)); }
+        pass NIL;
+    }
+    // `x += v`, `-=`, `*=` ON A PLAIN INTEGER: the term and the `overflow`
+    // row at the TARGET's site (K-9), the key the emitter guards under.
+    bool:ovc = ((op == TokenKind.OpPlusAssign) || (op == TokenKind.OpMinusAssign) || (op == TokenKind.OpStarAssign));
+    if (ovc && (raw is_int(e, lt))) {
+        Term:ct = raw term_none();
+        if (prior.ok && rhs.ok && (!prior.is_bool) && (!rhs.is_bool)) {
+            if (op == TokenKind.OpPlusAssign)  { ct = raw term_app2("+", prior, rhs, false); }
+            if (op == TokenKind.OpMinusAssign) { ct = raw term_app2("-", prior, rhs, false); }
+            if (op == TokenKind.OpStarAssign) {
+                if (!((raw term_is_numeral(prior)) || (raw term_is_numeral(rhs)))) { e.nonlinear = true; }
+                ct = raw term_app2("*", prior, rhs, false);
+            }
+        }
+        drop record_overflow(e, lt, ct, target.index, s.span);
+        drop bind_assign(e, name, move(ct));
         pass NIL;
     }
     if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
@@ -3815,14 +3956,29 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                 if (op == TokenKind.OpSlash) { pass (raw term_app2("div", a, b, false)); }
                 pass (raw term_app2("mod", a, b, false));
             }
+            // `+ - *`: the term, and the `overflow` row at the guard's site --
+            // none where the node is written as its constant (step 2, no guard).
+            bool:ovop = ((op == TokenKind.OpPlus) || (op == TokenKind.OpMinus) || (op == TokenKind.OpStar));
+            if (ovop) {
+                ConstVal:bcv = raw fold_node_constant(e.tr, id, e.scope, ty);
+                if (bcv.kind == (raw CV_INT())) {
+                    pass (raw term_lit(raw smt_int(bcv.num), false));
+                }
+                Term:bt = raw term_none();
+                if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
+                    if (op == TokenKind.OpPlus)  { bt = raw term_app2("+", a, b, false); }
+                    if (op == TokenKind.OpMinus) { bt = raw term_app2("-", a, b, false); }
+                    if (op == TokenKind.OpStar) {
+                        if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
+                        bt = raw term_app2("*", a, b, false);
+                    }
+                }
+                drop record_overflow(e, ty, bt, id.index, n.span);
+                if (!bt.ok) { pass (raw term_opaque(e, ty)); }
+                pass bt;
+            }
             if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
             if (a.is_bool || b.is_bool) { pass (raw term_opaque(e, ty)); }
-            if (op == TokenKind.OpPlus)  { pass (raw term_app2("+", a, b, false)); }
-            if (op == TokenKind.OpMinus) { pass (raw term_app2("-", a, b, false)); }
-            if (op == TokenKind.OpStar) {
-                if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
-                pass (raw term_app2("*", a, b, false));
-            }
             if (op == TokenKind.OpLt)    { pass (raw term_app2("<", a, b, true)); }
             if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", a, b, true)); }
             if (op == TokenKind.OpGt)    { pass (raw term_app2(">", a, b, true)); }
@@ -3860,10 +4016,19 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprUnaryExpr) {
         TokenKind:uop = raw expr_op(n);
         Term:o = raw enc_expr(e, raw expr_operand(n));
-        if (!o.ok) { pass (raw term_opaque(e, ty)); }
-        if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty)) && (!o.is_bool)) {
-            pass (raw term_app2("-", raw term_lit("0", false), o, false));
+        // AN INTEGER NEGATION IS `0 - x` AND ITS GUARD'S ROW (1.5.8b step 3),
+        // at the unary node's own site (K-9) -- none where it is written as its
+        // constant, `unencoded` where the operand has no term.
+        if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty))) {
+            ConstVal:ucv = raw fold_node_constant(e.tr, id, e.scope, ty);
+            if (ucv.kind == (raw CV_INT())) { pass (raw term_lit(raw smt_int(ucv.num), false)); }
+            Term:ut = raw term_none();
+            if (o.ok && (!o.is_bool)) { ut = raw term_app2("-", raw term_lit("0", false), o, false); }
+            drop record_overflow(e, ty, ut, id.index, n.span);
+            if (!ut.ok) { pass (raw term_opaque(e, ty)); }
+            pass ut;
         }
+        if (!o.ok) { pass (raw term_opaque(e, ty)); }
         // A float negation is `fneg` (D-143): `fp.neg`, exact.
         if ((uop == TokenKind.OpMinus) && (raw is_float(e, ty)) && (!o.is_bool)) {
             pass (raw fp_make(e, "neg", ty, o.text, "", raw smt_app1("fp.neg", o.text), o.syms));
@@ -3997,7 +4162,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             string:mname = raw intern_get(e.interns, n.payload =>! int32);
             if (raw simd_own_method(mname)) {
                 Term:mrecv = raw enc_expr(e, ExprId{ index: n.a });
-                pass (raw enc_simd_method(e, mname, ExprId{ index: n.a }, mrt, ty));
+                pass (raw enc_simd_method(e, mname, ExprId{ index: n.a }, mrt, ty, id.index, n.span));
             }
         }
     }
@@ -4878,6 +5043,34 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                     drop record_division_lanes(e, raw type_elem(e.types, pt), pla, plb, target.index, s.span);
                 }
             }
+            // A COMPOUND `+= -= *=` THROUGH A FIELD OR ELEMENT (1.5.8b step 3):
+            // the guard's `overflow` row at the target's site, over an opaque
+            // current value (the place has no symbol here) -- the any-lane row
+            // for a `simd` place.
+            bool:fov = ((op == TokenKind.OpPlusAssign) || (op == TokenKind.OpMinusAssign) || (op == TokenKind.OpStarAssign));
+            if (fov) {
+                int32:pt3 = raw ty_of(e, target);
+                TokenKind:fbop = raw arith_base(op);
+                if (raw is_int(e, pt3)) {
+                    Term:fcur = raw term_opaque(e, pt3);
+                    Term:ft = raw term_none();
+                    if (rhs.ok && (!rhs.is_bool)) {
+                        if (fbop == TokenKind.OpPlus)  { ft = raw term_app2("+", fcur, rhs, false); }
+                        if (fbop == TokenKind.OpMinus) { ft = raw term_app2("-", fcur, rhs, false); }
+                        if (fbop == TokenKind.OpStar)  { e.nonlinear = true; ft = raw term_app2("*", fcur, rhs, false); }
+                    }
+                    drop record_overflow(e, pt3, ft, target.index, s.span);
+                }
+                if (raw is_simd(e, pt3)) {
+                    int32:felem = raw type_elem(e.types, pt3);
+                    if (raw is_int(e, felem)) {
+                        List<Term>:fla = raw lanes_of(e, target, pt3);
+                        List<Term>:flb = raw lanes_of(e, raw stmt_assigned(s), pt3);
+                        drop record_overflow_lanes(e, felem, raw overflow_out_lanes(e, fbop, felem, fla, flb, s.span),
+                                                   target.index, s.span);
+                    }
+                }
+            }
             // A COMPOUND SHIFT THROUGH A FIELD OR ELEMENT (DEF-41, 1.5.4e step
             // 0): the emitter has guarded `s.f <<= n` since D-277 and this
             // branch recorded no row for it, so a verified build carried a
@@ -5247,9 +5440,12 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                     drop counter_advance(e, ck, e.loop_cname[fr], raw term_copy(e.loop_cstep[fr]),
                                          raw term_copy(e.loop_casc[fr]), e.loop_cdollar[fr]);
                 }
-                e.quiet = e.quiet + 1i32;
+                // A VISIT OF THE HEAD, LOUD (DEF-81): its guards' rows too,
+                // under the re-entered loop's clause context.
+                int32:cctx = e.clause_ctx;
+                e.clause_ctx = e.loop_sids[fr];
                 Term:cg = raw invariant_conj(e, civ, false);
-                e.quiet = e.quiet - 1i32;
+                e.clause_ctx = cctx;
                 if (cg.ok) {
                     drop record_at(e, raw OK_INVARIANT(), cg.text, cg.syms, raw SITE_STMT(), sid.index, s.span, true,
                                    raw ROLE_GUARD(), e.loop_sids[fr], cnc);

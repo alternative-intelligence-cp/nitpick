@@ -1099,13 +1099,13 @@ def main():
             "        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n"
             "        (StackExhausted) { exit 9i32; },\n        (MachineFault) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
     for name, head, body, must_fail, why in (
-            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
              VDIV + VFS, True, "a verify test expecting `discharged` for an opaque divisor must fail"),
-            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
              VDIV + VFS, False, "a verify test naming its rows exactly must pass"),
-            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 11\n// expect-obligation: exhaustive checker 1\n",
+            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 11\n// expect-obligation: exhaustive checker 1\n",
              VLIM + VLFS, True, "a verify test expecting `discharged` for a limited parameter's entry must fail"),
-            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 11\n// expect-obligation: exhaustive checker 1\n",
+            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 11\n// expect-obligation: exhaustive checker 1\n",
              VLIM + VLFS, False, "a verify test naming a limit's rows exactly must pass"),
             # AN UNPROVEN `prove` REFUSES THE VERIFIED BUILD (1.5.4 step 4, L-21;
             # S-45): a unit whose `prove` is `open` and names no error must
@@ -1113,11 +1113,11 @@ def main():
             # NITPICK-VERIFY-001 passes -- the refusal is the expectation. And
             # a `checker` row is read as one: an `exhaustive` row named
             # `discharged` must fail. The texts are npkg's, byte for byte.
-            ("prove-open", "// expect-obligation: prove open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("prove-open", "// expect-obligation: prove open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
              VPROVE + VFS, True, "a verify unit whose `prove` is open and names no refusal must fail"),
-            ("prove-open-named", "// expect-error: NITPICK-VERIFY-001\n// expect-obligation: prove open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("prove-open-named", "// expect-error: NITPICK-VERIFY-001\n// expect-obligation: prove open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
              VPROVE + VFS, False, "a verify unit naming the verified build's refusal of its open `prove` must pass"),
-            ("checker-row", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive discharged 1\n",
+            ("checker-row", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive discharged 1\n",
              VDIV + VFS, True, "a verify test naming a `checker` row `discharged` must fail")):
         # THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005), so the
         # hyphen in the case name becomes an underscore in both.
@@ -1224,8 +1224,8 @@ def main():
               '  %r = tail call i32 @"npk.m.f.body"(i32 %a0)\n  ret i32 %r\n}\n'
               'define i32 @main() {\nentry:\n')
     B_TAIL = "  ret i32 %v\n}\n"
-    B_ROWS = [("0001", "1", "limit", "h1", "open", '@"npk.m.f"', "2:5", "guard", "5", 1),
-              ("0002", "1", "limit-subsume", "h2", "discharged", "@main", "0:9", "bypass", "9", 0)]
+    B_ROWS = [("0001", "1", "limit", "h1", "open", '@"npk.m.f"', "2:5", "guard", "5", 1, "int", 0),
+              ("0002", "1", "limit-subsume", "h2", "discharged", "@main", "0:9", "bypass", "9", 0, "int", 0)]
     for name, mid, must_fail, why in (
             ("bypass-counted", '  %v = call i32 @"npk.m.f.body"(i32 3) ; prose may spell @"x.body"( too\n', False,
              "a direct call naming the body, counted through the quotes, must pass"),
@@ -1270,19 +1270,19 @@ def main():
             '  %e = icmp sgt i32 %v, 0\n  br i1 %e, label %eok, label %ebad\nebad:\n'
             '  call void @npk_chain_reset(i32 3)\n  call void @npk_trap(i32 -4113)\n  unreachable\neok:\n'
             '  ret i32 %v\n}\n')
-    C_ENTRY = ("0001", "1", "requires", "h1", "open", '@"npk.m.g"', "2:7", "guard", "7", 2)
-    C_SEAM = ("0002", "1", "ensures", "h2", "open", "@main", "1:11", "guard", "11", 1)
-    C_HELD = ("0002", "2", "requires", "h3", "discharged", "@main", "0:13", "held", "13", 0)
+    C_ENTRY = ("0001", "1", "requires", "h1", "open", '@"npk.m.g"', "2:7", "guard", "7", 2, "int", 0)
+    C_SEAM = ("0002", "1", "ensures", "h2", "open", "@main", "1:11", "guard", "11", 1, "int", 0)
+    C_HELD = ("0002", "2", "requires", "h3", "discharged", "@main", "0:13", "held", "13", 0, "int", 0)
     for name, rows, must_fail, why in (
             ("contract-traps", [C_ENTRY, C_SEAM, C_HELD], False,
              "two `-4112` traps for a retained two-clause entry row and one `-4113` for a retained seam must pass"),
-            ("contract-traps-missing", [("0001", "1", "requires", "h1", "open", '@"npk.m.g"', "2:7", "guard", "7", 1), C_SEAM, C_HELD], True,
+            ("contract-traps-missing", [("0001", "1", "requires", "h1", "open", '@"npk.m.g"', "2:7", "guard", "7", 1, "int", 0), C_SEAM, C_HELD], True,
              "a retained entry row counting one clause against a two-trap predicate must fail"),
             ("held-not-bypassed", [C_ENTRY, C_SEAM, C_HELD], False,
              "a discharged `held` row whose call names the entry must pass (nothing bypasses a held row)"),
             ("bypass-needs-all", [C_ENTRY, C_SEAM,
-                                  ("0002", "2", "limit-subsume", "h3", "discharged", "@main", "0:13", "bypass", "13", 0),
-                                  ("0002", "3", "requires", "h4", "open", "@main", "0:13", "bypass", "13", 0)], True,
+                                  ("0002", "2", "limit-subsume", "h3", "discharged", "@main", "0:13", "bypass", "13", 0, "int", 0),
+                                  ("0002", "3", "requires", "h4", "open", "@main", "0:13", "bypass", "13", 0, "int", 0)], True,
              "a call whose bypass rows are not all discharged, named by a `.body` call, must fail")):
         text = C_IR
         if name == "bypass-needs-all":
@@ -1297,6 +1297,91 @@ def main():
                 print("      elided_ir_checks accepted it; it should not have")
             else:
                 print("      elided_ir_checks rejected it: %s" % fails[0])
+
+    # A GUARD INSIDE A CLAUSE CHECK (DEF-81, 1.5.8b step 3): it exists only
+    # where its check is emitted, and a loop head's check runs at every visit,
+    # so its guard has a row per context and is elided only when every one is
+    # discharged. A discharged seam takes its inner guard with it; an open
+    # seam keeps its check, and the inner guard's discharged row is its
+    # assume; a head whose back edge is open keeps its check, and an inner
+    # guard whose back-edge row is open keeps its trap -- the verified build
+    # that elided it on its first visit's proof (the defect's own shape) must
+    # fail. The texts are npkg's, byte for byte.
+    D_SEAM_D = ("0001", "1", "ensures", "h1", "discharged", "@main", "1:11", "guard", "11", 1, "int", 0)
+    D_SEAM_O = ("0001", "1", "ensures", "h1", "open", "@main", "1:11", "guard", "11", 1, "int", 0)
+    D_INNER = ("0001", "2", "overflow", "h2", "discharged", "@main", "0:20", "guard", "20", 1, "int", 11)
+    D_HEAD = [("0001", "1", "invariant", "h3", "discharged", "@main", "1:30", "guard", "30", 1, "int", 0),
+              ("0001", "2", "invariant", "h4", "open", "@main", "1:31", "guard", "30", 1, "int", 0),
+              ("0001", "3", "overflow", "h5", "discharged", "@main", "0:40", "guard", "40", 1, "int", 30),
+              ("0001", "4", "overflow", "h6", "open", "@main", "0:40", "guard", "40", 1, "int", 30)]
+    D_NONE = "define i32 @main() {\nentry:\n  ret i32 0\n}\n"
+    D_SEAM_IR = ("define i32 @main() {\nentry:\n  %o = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 1, i32 2)\n"
+                 "  %b = extractvalue { i32, i1 } %o, 1\n  %n = xor i1 %b, true\n  call void @llvm.assume(i1 %n)\n"
+                 "  %v = extractvalue { i32, i1 } %o, 0\n  %e = icmp sgt i32 %v, 0\n  br i1 %e, label %eok, label %ebad\n"
+                 "ebad:\n  call void @npk_chain_reset(i32 3)\n  call void @npk_trap(i32 -4113)\n  unreachable\neok:\n"
+                 "  ret i32 %v\n}\n")
+    D_HEAD_IR = ("define i32 @main() {\nentry:\n  %o = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 1, i32 2)\n"
+                 "  %b = extractvalue { i32, i1 } %o, 1\n  br i1 %b, label %ovf, label %ook\novf:\n"
+                 "  call void @npk_trap(i32 -4110)\n  unreachable\nook:\n  %v = extractvalue { i32, i1 } %o, 0\n"
+                 "  %e = icmp sgt i32 %v, 0\n  br i1 %e, label %iok, label %ibad\nibad:\n"
+                 "  call void @npk_chain_reset(i32 3)\n  call void @npk_trap(i32 -4114)\n  unreachable\niok:\n"
+                 "  ret i32 %v\n}\n")
+    D_HEAD_WRONG = D_HEAD_IR.replace("  br i1 %b, label %ovf, label %ook\novf:\n  call void @npk_trap(i32 -4110)\n  unreachable\nook:\n",
+                                     "  %n = xor i1 %b, true\n  call void @llvm.assume(i1 %n)\n")
+    for name, rows, text, must_fail, why in (
+            ("clause-guard-gone", [D_SEAM_D, D_INNER], D_NONE, False,
+             "a discharged seam's check is not emitted, and its inner guard with it: no assume, no trap must pass"),
+            ("clause-guard-kept", [D_SEAM_O, D_INNER], D_SEAM_IR, False,
+             "an open seam keeps its check, and its inner guard's discharged row is one assume: must pass"),
+            ("clause-guard-kept-missing", [D_SEAM_O, D_INNER], D_SEAM_IR.replace("  %n = xor i1 %b, true\n  call void @llvm.assume(i1 %n)\n", ""), True,
+             "an open seam's check with its inner guard's assume missing must fail"),
+            ("head-guard-every-visit", D_HEAD, D_HEAD_IR, False,
+             "a head whose back edge is open keeps its check, and a guard with an open back-edge row its trap: must pass"),
+            ("head-guard-first-visit", D_HEAD, D_HEAD_WRONG, True,
+             "the head's guard elided on its first visit's row alone (DEF-81's shape) must fail")):
+        fails = harness.elided_ir_checks(rows, text, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      elided_ir_checks accepted it; it should not have")
+            else:
+                print("      elided_ir_checks rejected it: %s" % fails[0])
+
+    # A `rows.txt` LINE THE RUNNERS CANNOT READ FAILS THE RUN (DEF-75, 1.5.8b
+    # step 3): npkg's reader skipped one in silence until then, where this one
+    # failed by name, so a row could vanish from one runner's belts and not the
+    # other's. One case each way, and the shape before the twelfth field (the
+    # clause context, DEF-81) among the refused. The lines are npkg's, byte for
+    # byte; this runner also decides the well-formed file's one row.
+    for name, line, must_fail, why in (
+            ("rows-wellformed", "0001\t1\toverflow\th1\t1\t@main\t0:5\tguard\t5\t1\tint\t0", False,
+             "a twelve-field row naming a known role must be read"),
+            ("rows-eleven-fields", "0001\t1\toverflow\th1\t1\t@main\t0:5\tguard\t5\t1\tint", True,
+             "an eleven-field row (the shape before the clause context) must fail by name"),
+            ("rows-role-unknown", "0001\t1\toverflow\th1\t1\t@main\t0:5\tguardx\t5\t1\tint\t0", True,
+             "a row naming a role the runners do not know must fail by name")):
+        rdir = os.path.join(tmp, "rows_" + name.replace("-", "_"))
+        os.makedirs(rdir, exist_ok=True)
+        with open(os.path.join(rdir, "index.txt"), "w", encoding="utf-8") as fh:
+            fh.write("0001\t@main\t1\n")
+        with open(os.path.join(rdir, "rows.txt"), "w", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        with open(os.path.join(rdir, "0001.smt2"), "w", encoding="utf-8") as fh:
+            fh.write("; @main\n; o1 overflow h1 1:1\n; checks 1\n(set-logic ALL)\n(push)\n(assert (not true))\n(check-sat)\n(pop)\n")
+        full, fails = harness.z3_verdicts(rdir, name)
+        ok = (bool(fails) == must_fail)
+        if ok and not must_fail:
+            ok = len(full) == 1 and full[0][4] == "discharged" and full[0][11] == 0
+        if ok and must_fail:
+            ok = "rows.txt" in fails[0]
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      z3_verdicts said: %s" % (fails[0] if fails else full))
 
     shutil.rmtree(tmp, ignore_errors=True)
     if bad:

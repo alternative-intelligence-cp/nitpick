@@ -3,12 +3,19 @@
 // expect-obligation: div-min discharged 2
 // expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
+// expect-obligation: overflow budget 1
+// expect-obligation: overflow discharged 1
 //
 // THE Int FORMS (D-279): a shift by a LITERAL is arithmetic -- `1 << 3` is
 // `(mod (* 1 8) 2^32)` re-signed, `m >> 2` is `(div m 4)` -- so no crossing
 // is taken and both divisors discharge at a few hundred rlimit; `| 1` on the
 // second is the crossing at 32 bits. Both literal amounts are the checker's
 // (no `shift-range` row).
+//
+// The two `overflow` rows (1.5.8b step 3) both need `b`'s bound, and `b` is
+// a division by a word that went through the crossing. z3 proves `a + b` in
+// range within the rlimit. It does not prove the `- 6` after it, although the
+// query is the same shape. That row is `budget`, and its guard stays (D-309).
 mod:divz_shift_lit;
 
 func:main = int32(cstring[]:argv) {

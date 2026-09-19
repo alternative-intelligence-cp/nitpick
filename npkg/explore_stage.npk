@@ -430,6 +430,17 @@ pub async func:check_explored_program = XMeasured(Ctx->:c, string:path, string:n
 // `run_explore_control`, message for message.
 pub struct:CtlRun = { List<string>:findings; int64:seed; };
 
+// THE CONTROL'S HANG NET (1.5.8b step 3, DEF-83): a seed that finds a
+// `wrong-exit` control's defect may spin to the shim's step budget BY DESIGN
+// -- `link-without-cas.ctl` says "about 30 s" -- where every other seed takes
+// milliseconds. The per-seed net was 60 s, the unit explore stage's, and at
+// step 1b's first full harness, run beside eight solver batches and a second
+// harness, the finding seed (6; step 2's run found it there) passed the net
+// and read "hung": a red run that was no verdict. The net is a hang net, never
+// a verdict (P-13's rule), sized ten times the slowest designed seed. The
+// harness's `CONTROL_SEED_NET` is the twin.
+func:control_seed_net_secs = int64() never fails { pass 300i64; };
+
 pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, string:shim_o) {
     CtlRun:out = CtlRun{ findings: raw list_init::<string>(1i64), seed: 0i64 };
     Result<cstring>:tc = to_cstring(path);
@@ -552,7 +563,7 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
     int64:hs4 = raw site_or_none(@holds, 3i64);
     ProcArgs:menv = relay explored_env(0i64, 2000i64, 1i64, ds1, ds2, ds3, ds4, hs1, hs2, hs3, hs4);
     List<string>:mnoargs = raw list_init::<string>(1i64);
-    Result<Run>:mr = await run_argv(base, mnoargs, menv, raw duration_secs(60i64));
+    Result<Run>:mr = await run_argv(base, mnoargs, menv, raw duration_secs(raw control_seed_net_secs()));
     drop args_free(@menv);
     if (mr.is_error) { fail mr.err; }
     Run:mrun = move(mr.value);
@@ -571,7 +582,7 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
     for (int64:seed in 1i64..ctl.within) {
         ProcArgs:env = relay explored_env(seed, k, 3i64, ds1, ds2, ds3, ds4, hs1, hs2, hs3, hs4);
         List<string>:noargs = raw list_init::<string>(1i64);
-        Result<Run>:r = await run_argv(base, noargs, env, raw duration_secs(60i64));
+        Result<Run>:r = await run_argv(base, noargs, env, raw duration_secs(raw control_seed_net_secs()));
         drop args_free(@env);
         if (r.is_error) { fail r.err; }
         Run:run = move(r.value);

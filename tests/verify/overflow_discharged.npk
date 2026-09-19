@@ -1,0 +1,35 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 3
+//
+// A DISCHARGED `overflow` ROW'S GUARD IS GONE (D-309, D-218.9; 1.5.8b step 3):
+// inside the branch's bounds each `+ - *` is proven in range, so the
+// verified build turns each guard's branch into one `llvm.assume` over the
+// negated overflow bit and holds no `IntOverflow` trap of its own. The
+// runners' belt counts both (an assume per discharged row, a -4110 trap per
+// retained one). The intrinsic stays, and the assume is what it computes.
+mod:overflow_discharged;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = argv.len =>! int32;
+    if ((d < 0i32) || (d > 1000i32)) { exit 7i32; }
+    int32:x = d + 5i32;          // d in 0..1000
+    int32:y = x * 3i32;          // x in 5..1005
+    int32:z = y - 18i32;         // y in 15..3015
+    exit z;                      // d = 1: x = 6, y = 18, z = 0
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

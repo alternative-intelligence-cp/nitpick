@@ -1,0 +1,41 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 3
+//
+// THE COMPOUND FORMS (D-210; 1.5.8b step 3): `x op= v` is the guard of
+// `x op v` at the TARGET's site, the key the emitter elides under. On a local
+// the current value is the local's latest version, so inside the branch's
+// bounds `+=`, `*=` and `-=` are all discharged. On a field the current
+// value is opaque to the encoder, so `a.n += 1` is `open` and its guard
+// stays.
+mod:overflow_compound;
+
+struct:Acc = { int32:n; };
+
+func:main = int32(cstring[]:argv) {
+    int32:k = argv.len =>! int32;
+    if ((k < 0i32) || (k > 10i32)) { exit 7i32; }
+    int32:x = k;
+    x += 5i32;                   // k in 0..10
+    x *= 2i32;                   // x in 5..15
+    x -= 12i32;                  // x in 10..30
+    Acc:a = Acc{ n: k };
+    a.n += 1i32;
+    exit (x + a.n - 2i32);       // k = 1: x = 0, a.n = 2
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

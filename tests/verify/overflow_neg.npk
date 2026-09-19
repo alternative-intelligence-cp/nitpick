@@ -1,0 +1,40 @@
+// expect-exit: 93
+// expect-obligation: failsafe-post discharged 9
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 5
+//
+// NEGATION (D-210, DEF-70; 1.5.8b step 3): `-x` overflows at one value, the
+// smallest, and its row is at the unary node's own site. Under `bounded`'s
+// branch the row is discharged. A negated constant is the folder's (D-310):
+// `-(5 * 3)` is written as -15 with no guard and no row. `main`'s `-m` is
+// `open`, and at run time `m` is the smallest `int32`, so the guard the row
+// keeps traps `IntOverflow`.
+mod:overflow_neg;
+
+func:bounded = int32(int32:x) never fails {
+    if ((x < 0i32) || (x > 100i32)) { pass 0i32; }
+    pass -x;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:c = -(5i32 * 3i32);
+    int32:b = raw bounded(argv.len =>! int32);                  // -1
+    int32:m = (argv.len =>! int32) - 2i32 - 2147483647i32;      // the smallest int32 at run time
+    int32:n = -m;                                               // traps
+    exit (n + b + c);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

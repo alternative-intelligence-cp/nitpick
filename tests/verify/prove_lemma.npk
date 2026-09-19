@@ -4,17 +4,28 @@
 // expect-obligation: div-min discharged 1
 // expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 1
 //
 // A DISCHARGED `prove` IS KNOWLEDGE AFTER ITS SITE (S-48, 1.5.4 step 4): the
 // claim `d * d + 1 > 0` is nonlinear for the encoder's fragment only in the
 // sense that z3 must prove it (QF_NIA), and once proven it is a hypothesis
 // -- the division `100 / (d * d + 1)` after it discharges THROUGH the
 // proof outline rather than by a second nonlinear query of its own.
+//
+// THE BOUND IS PART OF THE CLAIM (1.5.8b step 3). A proposition holds only
+// where its evaluation does not trap (DEF-33), and `d * d` and `+ 1` have
+// carried the `IntOverflow` guard's condition since the `overflow` rows
+// landed. So over an unbounded `d` the claim is false: at `d = 50000`,
+// `d * d` overflows. This file proved it for every `d` until then, because the
+// encoder read `*` as the integers' product. The branch bounds `d`, and the
+// claim is total inside it.
 mod:prove_lemma;
 error:E9;
 
 func:main = int32(cstring[]:argv) {
     int32:d = (argv.len =>! int32) - 1i32;
+    if ((d > 1000i32) || (d < -1000i32)) { exit 7i32; }
     prove(d * d + 1i32 > 0i32);
     int32:q = 100i32 / (d * d + 1i32);
     exit (q - 100i32);

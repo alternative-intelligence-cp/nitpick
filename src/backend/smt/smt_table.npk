@@ -5,17 +5,24 @@
 //
 //   <dir>/NNNN.smt2   one per function with obligations, in emission order
 //   <dir>/index.txt   NNNN<TAB>symbol<TAB>checks
-//   <dir>/rows.txt    NNNN<TAB>k<TAB>kind<TAB>hash<TAB>encoded<TAB>symbol<TAB>space:site<TAB>role<TAB>group<TAB>traps
+//   <dir>/rows.txt    NNNN<TAB>k<TAB>kind<TAB>hash<TAB>encoded<TAB>symbol<TAB>space:site<TAB>role<TAB>group<TAB>traps<TAB>tier<TAB>ctx
 //
 // `encoded` is `1` for a row with a `(check-sat)`, `0` for an `unencoded`
 // row, and `c` for a row THE FRONTEND DECIDED (1.5.4 step 4, L-20): an
 // `exhaustive` row at a `pick` (the 0.5 analysis refused every uncovered
 // one), an `assert-static` row (the fold) -- no query, verdict `checker`.
 //
-// The last four (1.5.3 step 2, L-13): the site's id space and index, the
+// The next four (1.5.3 step 2, L-13): the site's id space and index, the
 // row's role (`guard`, `bypass`, `held`, `conform`), the group of rows one
 // guard shares, and the traps that guard keeps while any row of the group is
-// retained -- what the runners' belts count by.
+// retained -- what the runners' belts count by. The eleventh (1.5.4b step 3,
+// D-281) is the theory tier the row was decided in (`int`, `bv`, `fp`, `real`,
+// `-`); this header named ten fields until 1.5.8b step 3, while both runners
+// read eleven. The twelfth (DEF-81, 1.5.8b step 3) is the row's CLAUSE
+// CONTEXT: 0, or the loop statement or return seam whose clause check holds
+// the row's guard -- a guard that exists only where that check is emitted,
+// and one with a row per context the check runs in (a loop head's entry,
+// back edge and `continue`s), elided only when every such row is discharged.
 //
 // `k` is the obligation's 1-based index within its function (the file's
 // `o<k>` comment), and the runner maps the file's answers to its encoded
@@ -24,6 +31,7 @@
 mod:smt_table;
 
 use "../../frontend/diagnostics.npk".*;   // Sink (1.5.1b step 3)
+use "../../frontend/intern.npk".*;        // string_eq (1.5.8b step 3: the held filter)
 
 pub struct:ObTable = {
     bool:want_files;         // --obligations DIR was given
@@ -88,6 +96,148 @@ pub func:obl_index_text = string(ObTable->:t) never fails {
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));
+};
+
+// --- THE TABLE KEEPS ONLY WHAT THE EMISSION HOLDS (1.5.8b step 3) ------------------
+//
+// D-262's rule carried from the IR to the obligations: a function the trim
+// dropped from the module (`irw_trim_items`) is not in the artifact, so its rows
+// are no guard of it. The runners' belts already skipped them -- a row counts
+// only for a function the emission holds (1.5.2d) -- and the solver decided them
+// for nothing. Measured when step 3 gave the prelude's arithmetic its `overflow`
+// rows: a small verify program emitted 14 functions and decided 168, 260 of its
+// 267 seconds in one function (`flt_bits_shortest`) it never references. A file
+// is kept when its symbol is defined, or its coroutine's resume is (D-177), or
+// its checked entry's `.body` twin is (D-252) -- the runners' own rule. Files
+// are renumbered in order; a row's hash is its problem text, so no hash or
+// verdict moves.
+
+// The symbols the text defines, one per `define` line.
+func:ir_define_syms = List<string>(string:ir) never fails {
+    List<string>:out = raw list_init::<string>(256i64);
+    int64:i = 0i64;
+    while (i < ir.len) {
+        int64:e = i;
+        while ((e < ir.len) && (ir.ptr[e] != 10u8)) { e = e + 1i64; }
+        bool:isdef = ((e - i) > 7i64) && (ir.ptr[i] == 100u8) && (ir.ptr[i + 1i64] == 101u8)
+                     && (ir.ptr[i + 2i64] == 102u8) && (ir.ptr[i + 3i64] == 105u8)
+                     && (ir.ptr[i + 4i64] == 110u8) && (ir.ptr[i + 5i64] == 101u8)
+                     && (ir.ptr[i + 6i64] == 32u8);
+        if (isdef) {
+            int64:a = i;
+            while ((a < e) && (ir.ptr[a] != 64u8)) { a = a + 1i64; }
+            if (a < e) {
+                int64:b = a + 1i64;
+                if ((b < e) && (ir.ptr[b] == 34u8)) {
+                    b = b + 1i64;
+                    while ((b < e) && (ir.ptr[b] != 34u8)) { b = b + 1i64; }
+                    if (b < e) { b = b + 1i64; }
+                } else {
+                    while ((b < e) && (ir.ptr[b] != 40u8)) { b = b + 1i64; }
+                }
+                drop list_push(@out, string_slice(ir, a, b) ?| "");
+            }
+        }
+        i = e + 1i64;
+    }
+    pass out;
+};
+
+func:strs_have = bool(List<string>:l, string:s) never fails {
+    for (int64:i in 0i64...l.count) {
+        if (raw string_eq(string_from_bytes(l[i].ptr, l[i].len), s)) { pass true; }
+    }
+    pass false;
+};
+
+// Does the emission hold the function `sym` names?
+func:sym_held = bool(List<string>:defs, string:sym) never fails {
+    if (raw strs_have(defs, sym)) { pass true; }
+    if ((sym.len > 7i64) && (raw string_eq(string_slice(sym, 0i64, 6i64) ?| "", "@\"npk."))) {
+        string:rest = string_slice(sym, 6i64, sym.len) ?| "";
+        if (raw strs_have(defs, string_concat("@\"npk.resume.", rest))) { pass true; }
+        string:head = string_slice(sym, 0i64, sym.len - 1i64) ?| "";
+        if (raw strs_have(defs, string_concat(head, ".body\""))) { pass true; }
+    }
+    pass false;
+};
+
+pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
+    List<string>:defs = raw ir_define_syms(ir);
+    List<string>:olds = raw list_init::<string>(t.files.count + 1i64);
+    List<string>:news = raw list_init::<string>(t.files.count + 1i64);
+    List<string>:files = raw list_init::<string>(t.files.count + 1i64);
+    List<string>:fsyms = raw list_init::<string>(t.files.count + 1i64);
+    List<int64>:fchecks = raw list_init::<int64>(t.files.count + 1i64);
+    for (int64:i in 0i64...t.files.count) {
+        string:sym = string_from_bytes(t.file_syms[i].ptr, t.file_syms[i].len);
+        if (!(raw sym_held(defs, sym))) { continue; }
+        drop list_push(@olds, raw file_number(i + 1i64));
+        drop list_push(@news, raw file_number(files.count + 1i64));
+        drop list_push(@files, move(t.files[i]));
+        drop list_push(@fsyms, move(t.file_syms[i]));
+        drop list_push(@fchecks, t.file_checks[i]);
+    }
+    // a line `NNNN<TAB>...`: renumbered when its file is kept, dropped when not
+    List<string>:rows = raw list_init::<string>(t.rows.count + 1i64);
+    t.encoded_rows = 0i64;
+    t.unencoded_rows = 0i64;
+    t.checker_rows = 0i64;
+    for (int64:r in 0i64...t.rows.count) {
+        string:ln = string_from_bytes(t.rows[r].ptr, t.rows[r].len);
+        if (ln.len < 5i64) { continue; }
+        string:fno = string_slice(ln, 0i64, 4i64) ?| "";
+        for (int64:k in 0i64...olds.count) {
+            if (raw string_eq(string_from_bytes(olds[k].ptr, olds[k].len), fno)) {
+                string:nl = string_concat(string_from_bytes(news[k].ptr, news[k].len),
+                                          string_slice(ln, 4i64, ln.len) ?| "");
+                // the fifth field is `encoded`: 1, 0 or c
+                int64:tabs = 0i64;
+                int64:p = 0i64;
+                while ((p < nl.len) && (tabs < 4i64)) { if (nl.ptr[p] == 9u8) { tabs = tabs + 1i64; } p = p + 1i64; }
+                if (p < nl.len) {
+                    if (nl.ptr[p] == 49u8) { t.encoded_rows = t.encoded_rows + 1i64; }
+                    if (nl.ptr[p] == 48u8) { t.unencoded_rows = t.unencoded_rows + 1i64; }
+                    if (nl.ptr[p] == 99u8) { t.checker_rows = t.checker_rows + 1i64; }
+                }
+                drop list_push(@rows, move(nl));
+                break;
+            }
+        }
+    }
+    List<string>:t2n = raw list_init::<string>(t.t2_names.count + 1i64);
+    List<string>:t2t = raw list_init::<string>(t.t2_names.count + 1i64);
+    for (int64:j in 0i64...t.t2_names.count) {
+        string:tname = string_from_bytes(t.t2_names[j].ptr, t.t2_names[j].len);
+        for (int64:k2 in 0i64...olds.count) {
+            if (raw string_eq(string_from_bytes(olds[k2].ptr, olds[k2].len), tname)) {
+                drop list_push(@t2n, string_concat(string_from_bytes(news[k2].ptr, news[k2].len), ""));
+                drop list_push(@t2t, move(t.t2_texts[j]));
+                break;
+            }
+        }
+    }
+    List<string>:t2i = raw list_init::<string>(t.t2_index.count + 1i64);
+    for (int64:m in 0i64...t.t2_index.count) {
+        string:il = string_from_bytes(t.t2_index[m].ptr, t.t2_index[m].len);
+        if (il.len < 5i64) { continue; }
+        string:ifno = string_slice(il, 0i64, 4i64) ?| "";
+        for (int64:k3 in 0i64...olds.count) {
+            if (raw string_eq(string_from_bytes(olds[k3].ptr, olds[k3].len), ifno)) {
+                drop list_push(@t2i, string_concat(string_from_bytes(news[k3].ptr, news[k3].len),
+                                                   string_slice(il, 4i64, il.len) ?| ""));
+                break;
+            }
+        }
+    }
+    t.files = move(files);
+    t.file_syms = move(fsyms);
+    t.file_checks = move(fchecks);
+    t.rows = move(rows);
+    t.t2_names = move(t2n);
+    t.t2_texts = move(t2t);
+    t.t2_index = move(t2i);
+    pass NIL;
 };
 
 pub func:obl_t2_index_text = string(ObTable->:t) never fails {
