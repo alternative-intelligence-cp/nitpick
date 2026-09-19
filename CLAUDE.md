@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 314 decisions, D-001 through D-314 (this sentence said 240 from 1.4.8c until 1.5.8b's planning). The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -1200,9 +1200,21 @@ where it was 250, and nothing else moved.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
-`overflow`, `bounds` and `cast-range` rows (planned execution-grade next),
-1.5.8c, `decreases`/`unbounded` with the `terminate` and `stack-depth` rows,
-and 1.5.8d, the cycle's close. The old 1.5.8 was PLANNED 2026-09-18 by
+`overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
+(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c, `decreases`/`unbounded` with the
+`terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
+planning measured first, and the user settled SEVEN questions the day each was
+asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
+overflow rows nothing proves stay guarded, measured and reported (D-309). A
+certain constant overflow is refused (TYPE-076, D-310). `uint64`'s upper half
+is built with bit operations, `~0u64` (D-311). The wrapping family `+% -% *%`
+was the user's own question (D-312). And planning found THREE memory-safety
+holes, each confirmed by a probe: a string's `.len` writable (DEF-72), the
+prelude `List`'s `cap` writable (DEF-73), and `List` elements reached by
+unchecked raw-pointer indexing everywhere (DEF-74). The user settled the field
+qualifiers `sealed` (read anywhere, written only by the declaring module;
+D-313) and `hidden` (neither; D-314), with `List` indexed `l[i]` and checked.
+They land first, before any row. The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison

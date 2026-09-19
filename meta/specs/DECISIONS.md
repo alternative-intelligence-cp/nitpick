@@ -10290,6 +10290,8 @@ The repairs:
 `tests/frontend/lexer_numeric.npk` locks the exact guard on the basis
 constant that used to wrap.
 
+*[2026-09-19, D-310 and D-311 (1.5.8b's planning). The one-subtraction spelling above is exact only under D-037's wrap, and D-210 replaced that wrap with a trap for plain integers. The constant folder kept wrapping, so `0u64 - 1u64` meant 2^64−1 in a `fixed` initialiser and a trap at run time (DEF-71). From 1.5.8b step 2 it is refused (NITPICK-TYPE-076). `uint64`'s upper half is constructed with bit operations: `~0u64` is the maximum, and `(1u64 << 63u64) | k` gives any value above 2^63−1. From 1.5.8b step 4, `0u64 -% 1u64` works too, the wrap marked at the site (D-312). The rule of this decision, "constructed, not spelled", stands.]*
+
 ## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED; D-163 reuses the retired `never fails`**: a driver method may always fail, so `raw`/`drop` are never licensed on a driver call (falls out of D-163 rules 3–4), and when the Bridge lands (1.1) `VerifyNeverFails` becomes the one node for the one word**
 
 Post-0.9, at the user's direction. Generalizes D-055; supersedes the contract
@@ -14949,6 +14951,8 @@ mixers ride `tbb`/wide arithmetic already).
 > overflow intrinsics, any-lane; the family had wrapped since 1.3.1
 > (DEF-38, measured at 1.5.4b's close).
 
+> **[2026-09-19, D-312 (1.5.8b's planning).]** §3's operator question was asked and settled. The user raised it himself, for Nikola's hot paths and the library workbench's FNV-1a and splitmix64 loops. The answer is the wrapping family `+% -% *%` ("add, subtract, multiply modulo 2^N"), with compound forms. It has no guard and no row, and it is refused outside the plain integers and their `simd` lanes (TYPE-078). The default stays the safe side. Widen, compute and truncate with `=>!` remains legal.
+
 ## D-211 — module bindings are `const`/`fixed` only — **SETTLED (coverage-audit batch, user-ratified)**
 
 Closes G-7, the audit's second code-verified finding: a PLAIN module
@@ -19421,3 +19425,353 @@ inside a fault exits 70, and 132 (the kernel's kill) on a floor whose actions
 lack the flag. The schedule explorer's shim is not reentrant, so a fault
 inside the shim's own code is the verdict `SHIM FAULT` (exit 97, K-13), never
 an explored trap. TCB.md §5, item 19, names what stays uncontrolled.]*
+
+## D-308 — A struct field may carry `limit<Rules>`: a rule about that one field, checked at every write to it and a fact at every read; the built-in lengths' bound is PROVEN where every length is made — **SETTLED (user decision, 2026-09-19: "as far as the limit thing, I am in agreement with your recommendation. It sounds like it extends limit into an even more capable construct than the one I originally imagined. Lets ratify that."; S-88)**
+
+Found at 1.5.8b's planning, by a throw-away prototype that wrote an `overflow`
+row at every plain-integer `+ - *` of the compiler's own source. To the solver a
+field read is an opaque term, so a row over `l.count + 1` or `s.len - 1` cannot
+be decided however the program is written. And D-220's `limit<Rules>` binds a
+local, a parameter or a refinement, never a field. Of the 2,343 rows, 1,158
+discharge with the facts the encoder has (49%). ASSUMING every `.len`, `.count`
+and `.cap` lies in [0, 2^48] discharges 167 more. But an elision resting on an
+unproven fact removes a guard that might fire, so the fact must be stated in
+the source and checked.
+
+**The decision.**
+
+1. A struct field declaration may carry `limit<R>`: `limit<Len> int64:count;`.
+   The rule's subject is the field's type by identity (TYPE-059, as for a
+   binding). Its clauses mention `$` alone, so the rule is about that one
+   field.
+2. **The write points of a limited field** are:
+   - a struct literal, for its value for the field;
+   - an assignment to the field through any path, directly (`s.f = v`) or
+     through a pointer (`p.f = v`);
+   - a compound assignment (`s.f += v`).
+   The check runs after the write, in every build, and traps `LimitViolated`
+   (4111) on a false verdict (D-220's rule). The verified build elides it where
+   the write's `limit` row discharges (D-219).
+3. **Every read of the field is a fact**: the rule over the read's term is a
+   hypothesis for every later row (D-251's reading, extended from a binding to
+   a field).
+4. **A limited field has no address.** `@s.f`, `$$m`/`$$i` of it and a
+   pointer-receiver call on it refuse (TYPE-063, extended), because a write
+   through an alias is one no write point sees. A write through `wild` storage
+   is the author's opt-out, as it is for every checked property.
+5. **The rule must hold of the field's vacant value** (D-225). A
+   declared-uninitialised aggregate holds it, and a move out of the field
+   leaves it (S-26). A rule the vacant value does not satisfy is refused at the
+   field's declaration, NITPICK-TYPE-077.
+6. The prelude's `List<T>` declares its `count` and `cap` limited to
+   `[0, CEILING]`.
+7. **The built-in lengths are a fact at every read.** A string's, an array's,
+   a slice's and a buffer's `.len` lies in `[0, CEILING]`. The fact is PROVEN
+   where every length is made, never assumed:
+   - The floor's allocator refuses a request above CEILING bytes. Its spec
+     promises it, and the promise is decided with the floor's rows.
+   - Every primitive that makes a length without an allocation checks that
+     length against the same bound. That covers `string_from_bytes`, the
+     explicit view maker (D-186), and whatever else the plan enumerates by
+     measurement.
+   CEILING is 2^47, the x86-64 user address space: no block can be larger.
+   The floor promises only `n < 2^63` today, which bounds no `len + 1`.
+   No program can write a header: D-313 seals them, and that sealing is what
+   makes this fact sound. Before it, `s.len = 4096` compiled (DEF-72).
+
+**Alternatives declined.**
+- A compiler-known axiom for lengths and for `List`'s fields. It would be
+  unsound for the fields, which any program can write (`l.count = -5`
+  compiles today).
+- No length fact at all. It gives about 49% of the rows instead of about
+  57%, and no way for an author to state a data structure's invariant once.
+- Struct-wide RELATIONAL rules (`$.count <= $.cap`). A write to one field
+  would re-check a rule over the others, so a two-field update passes
+  through a state the rule refuses. That is the known type-invariant
+  problem, and single-field rules do not have it.
+
+Lands at 1.5.8b step 6.
+
+## D-309 — The overflow rows nothing proves keep their guards; no bound is written into the tree for a count's sake — **SETTLED (user decision, 2026-09-19: "those recommendations sound fine to me as well. Lets ratify those too."; S-89)**
+
+D-210 §4 reads "1.5 proves the traps away". Measured at 1.5.8b's planning, the
+compiler's own overflow rows split three ways:
+- 1,158 of 2,343 discharge with the facts the encoder has today;
+- a length fact adds about 167 (D-308);
+- the rest are counters with no stated bound, products and doublings, and the
+  prelude's numeric cores.
+
+**The decision.** 1.5.8b writes no bound into `src/`, the prelude or `lib/` to
+raise the proven share.
+- A bound goes in only where it is the truth and says something to a reader:
+  a `limit` on a local or a field, or a wider counter.
+- Every row nothing discharges keeps its guard, which is sound and costs one
+  predictable branch.
+- The residue is reported per function: the manifest records every row that
+  stays open.
+- The compiler's speed is measured with and without the elided checks, so
+  what the remaining checks cost is a number.
+
+So "proves the traps away" means this: every trap that can be proven away is,
+and every one that stays is accounted for.
+
+**Alternatives declined.** A sweep adding `limit`s through `src/` to maximise
+the proven share. 1.5.8c's `decreases` sweep has that shape, but there the
+clause is REQUIRED (D-304). Here a bound written to satisfy the prover, rather
+than to state the truth, is intent spelled for a tool. And a wrong bound traps
+`LimitViolated` where the program was correct.
+
+Lands at 1.5.8b step 3 (the residue measured) and its close (reported).
+
+## D-310 — An integer `+ - *` or negation whose operands are compile-time constants is folded, and refused when its value does not fit (TYPE-076) — **SETTLED (user decision, 2026-09-19: "those recommendations sound fine to me as well. Lets ratify those too."; S-90)**
+
+Found at 1.5.8b's planning (DEF-70). A negated integer literal (`-1i32`) lowers
+to `llvm.ssub.with.overflow(i32 0, i32 1)` and a trap branch. The compiler's
+own emission holds 84 such guards, and 85 with both operands constant. Each is
+a check that can never fire, and would carry an obligation row that says
+nothing.
+
+**The decision.**
+
+1. An integer `+ - *` or unary negation whose operands are both compile-time
+   constants is FOLDED. The operands are what the resolver's constant folder
+   evaluates: literals, negated literals and `fixed` constants, the same
+   folder TYPE-070 uses. The emitter writes the value, with no intrinsic, no
+   guard and no row.
+2. When the folded value does not fit the operation's width, the program is
+   refused at compile time with NITPICK-TYPE-076, at the operation. A trap that
+   is certain is a program error the compiler can name, as D-277 refused a
+   known out-of-range shift amount (TYPE-070).
+3. A negated literal never overflows: a width's minimum cannot be written as a
+   positive literal of that width (D-148).
+
+**Alternatives declined.** Keeping the run-time trap for a certain overflow. A
+check that always fires is not a check.
+
+Lands at 1.5.8b step 2. The library listener is told before it lands, since a
+new refusal can reject existing code.
+
+## D-311 — `uint64`'s upper half is constructed with bit operations, which never overflow; D-148's example becomes `~0u64` — **SETTLED (user decision, 2026-09-19: "that all sounds fine and now I do remember it. I think that means your recommendation is a go from me."; S-91)**
+
+Found the day D-310 was ratified, by the library workbench (`nitpick-libs_s4`)
+measuring D-310's reach across its trees. D-148 (0.9.9) says `uint64` values
+above 2^63−1 have no literal and are CONSTRUCTED. Its prescribed construction is
+`0u64 - 1u64`, "exact by D-037's defined wrap", and LEXICAL_REFERENCE repeats
+it. D-210 later replaced D-037's wrap with a trap for plain integers, but the
+constant folder was never updated (DEF-71). Measured on 1.5.8 step 4's tree:
+- `fixed uint64:B = 0u64 - 1u64;` folds to 2^64−1;
+- the same subtraction at run time traps `IntOverflow`.
+
+That is one expression with two meanings. Under D-310 it is `NITPICK-TYPE-076`
+everywhere, so the prescribed spelling is refused. The library trees hold two
+such sites; this tree holds none in code.
+
+**The decision.**
+1. The constant folder obeys D-210 exactly as the run time does. DEF-71 is
+   fixed with D-310's step.
+2. `uint64`'s upper half is constructed with BIT operations, which never
+   overflow (D-210 §1): `~0u64` is the maximum, and `(1u64 << 63u64) | k`
+   reaches any value above 2^63−1. Both are measured at compile time and at run
+   time.
+3. D-148's rule, "constructed, not spelled", stands. Its example gets a dated
+   note, and LEXICAL_REFERENCE's sentence follows.
+
+**Alternatives declined.**
+- Exempting `fixed` initialisers from D-310: one expression would have two
+  meanings by context.
+- Widening the unsigned literal envelope: D-148's own reason still holds, and
+  the bit spelling already exists.
+- Prelude-named maxima (`UINT64_MAX`): a second spelling of the same value, and
+  a name the libraries already define for themselves.
+
+Lands at 1.5.8b step 2, with D-310. The library listener has the spelling.
+
+## D-312 — The wrapping family `+% -% *%`: arithmetic modulo 2^N, spelled at the site — **SETTLED (user decision, 2026-09-19: "I agree. the % family makes the most sense to me too as it's actually describing what will happen, not just a nifty shorthand way of doing a thing. It goes right along with the 'blueprint philosphy' we have with the other operators. ... so to me your proposal fits right in. lets roll with it."; S-92)**
+
+D-210 §3 settled that deliberate modular arithmetic has no dedicated spelling:
+widen, compute, truncate with `=>!`. It added that "if a hot-path consumer
+emerges, an operator-spelling question goes to the user then". The user asked
+for that question, and gave the reason in his own words: Nikola will need "to
+squeeze out every possible bit of performance", Nikola work waits for a stable
+compiler, and anything that goes into the language must land "before I begin
+Nikola work and in time to go through all the verification stuff". The library
+workbench measured the consumers in sight:
+- FNV-1a 64 per byte, for the posix utilities' hash tables and regex's
+  lazy-DFA cache;
+- splitmix64's add and multiply steps.
+
+For both, widen-compute-truncate is heavy in the inner loop.
+
+**The decision.**
+1. Three binary operators: `+%`, `-%` and `*%`, read "add, subtract, multiply
+   modulo 2^N". Each has a compound form: `+%=`, `-%=`, `*%=`. They sit at
+   the precedence of `+`, `-` and `*`. The `%` suffix is a family, as the dot
+   prefix is for `..`, `...`, `..*` and `..^`. The glyph DESCRIBES what
+   happens (the blueprint rule): the operation, then modulo.
+2. They apply to plain integers, signed and unsigned (a signed operation wraps
+   in two's complement), and lane by lane to an integer `simd`. Every other
+   numeric kind refuses them with NITPICK-TYPE-078:
+   - `tbb`, where a wrap would launder the ERR sentinel;
+   - `tfp`, the ternary kinds, `frac`, `dim256` and `complex`;
+   - floats, whose rules are IEEE's.
+3. There is no unary form (`0 -% x` is the spelling) and no wrapping division.
+   D-007's division guards and D-277's shift-amount guard stay.
+4. **No guard, no row.** The emitter writes the plain LLVM `add`, `sub` or `mul`
+   with no flags: overflow is defined wrapping there, and nothing traps. REACH
+   arms nothing for them. The encoder models the result exactly as `mod 2^N`
+   (two's complement for a signed width), so rows after the site know the
+   value.
+5. The constant folder folds them with the wrap, so they are never TYPE-076
+   (D-310). `0u64 -% 1u64` is an explicit, legal spelling of `uint64`'s
+   maximum, beside D-311's `~0u64`: D-148's old recipe, with the wrap now marked
+   at the site.
+6. The default stays the safe side (D-210): `+ - *` trap on overflow. The `%`
+   family is the explicit, greppable opt-out, one of the TOS spellings with
+   `wild`, `=>!` and `raw`.
+
+**Alternatives declined.**
+- Swift's `&+`: in Nitpick `&` means bitwise AND, so the glyph would describe
+  nothing.
+- `+!`: `!` already means logical not, "trap" in `?!` and "unchecked" in `=>!`.
+  A fourth reading dilutes the danger mark.
+- Methods (`wrapping_add(a, b)`): heavy in exactly the loops that need the
+  operator.
+- A wrapping TYPE family (Ada's modular types; the shape of D-037): every
+  walker, cast, literal rule and impl would grow. And `+` would take its
+  meaning from how the operands were declared, not from the line being read.
+
+Lands at 1.5.8b step 4, after the `overflow` rows exist (step 3), so "no
+guard, no row" is tested against them.
+
+## D-313 — A struct field may be `sealed`: readable everywhere, written only by code in its struct's declaring module; the compiler-known containers' headers are sealed by definition — **SETTLED (user decision, 2026-09-19: "Lets go with A. As far as keyword, I think sealed is fine. ... i'd rather overlap some than come up with some word that doesn't accurately represent what is happening. ... We don't have classes so someone coming from OOP would not meet the opportunity where the 'usual' meaning for them would even show up and so seeing it will hopefully make them look into what it does."; S-93)**
+
+Found at 1.5.8b's planning, while working out what D-308's length facts rest on.
+Nitpick had NO field visibility: any code holding a struct could read and write
+every field. Two confirmed memory-safety holes followed from that:
+- **DEF-72.** A string's, slice's or buffer's `.ptr`, `.len` and `.cap` are
+  assignable. The probe set `s.len = 4096` on a 6-byte string, and
+  `string_slice(s, 4000, 4096)` then succeeded: a 96-byte out-of-bounds heap
+  read.
+- **DEF-73.** The prelude's `List<T>` fields are assignable, and nothing ties
+  `count <= cap <= the block`. The probe set `a.cap = 100` on a one-element
+  list, and forty pushes ran past its block and overwrote another list's
+  element: silent heap corruption.
+
+Either one also makes D-308's facts unsound, because the prover would trust a
+length the program can scribble on.
+
+**The decision.**
+
+1. `sealed` is a field qualifier (a new keyword). A sealed field is READ
+   anywhere and WRITTEN only by code in the module that declares its struct.
+2. Every write form counts:
+   - an assignment, directly or through a pointer;
+   - a compound assignment;
+   - a struct literal, which sets every field, so a struct with a sealed field
+     is built only inside its module, by that module's functions;
+   - a move or `pass` out of the field, which leaves the vacant value;
+   - a write-capable address of it: `@`, `$$m`, or a `Self->` receiver call.
+
+   A `$$i` claim reads and is allowed.
+3. A write to a sealed field from outside its module is refused with
+   NITPICK-TYPE-079.
+4. **The compiler-known containers' headers are sealed by definition.** That
+   covers `ptr`, `len` and `cap` of `string`, `cstring`, a slice and `buffer`.
+   No module declares them, so no program writes them. The compiler and the
+   floor are what make them. A view is made only through the primitives
+   (`string_from_bytes`, `#wild_slice`), whose lengths D-308 bounds. This
+   closes DEF-72.
+5. **The prelude's `List<T>` declares `items`, `count` and `cap` sealed**
+   (DEF-73). The prelude gains the checked operations that programs used the
+   fields for, such as truncation. `src/`'s direct writes, about 150 by text,
+   move to them. That needs a bridging snapshot refresh, the 1.5.1b step 5b
+   procedure, because the builder's prelude lacks the new functions until the
+   refresh.
+6. **Sealing composes with D-308.** A sealed field may also be limited: its
+   rule is checked at the module's writes and is a fact at every read
+   anywhere. A multi-field invariant, such as `count <= cap`, is kept by the
+   one module that can write the fields, where contracts on its functions can
+   state and prove it.
+
+**The keyword.** `sealed`, as in a sealed display case: everyone can look, and
+only the maker opens it. C# and Kotlin use it for a class nobody may extend,
+and Java's `protected` has a class meaning too. The user accepted the overlap
+because the word describes what happens, and because Nitpick has no classes,
+so that meaning cannot arise here.
+
+**Alternatives declined.**
+- Special-casing the compiler-known containers alone. User types, Nikola's
+  among them, would keep no way to protect an invariant over several fields.
+- Run-time validation only, with headers checked against the real allocation.
+  It detects corruption after the write, and leaves the prover's facts
+  unsound.
+- Rust-style private fields, unreadable as well as unwritable from outside.
+  Reading is harmless and useful (`.len` everywhere), and hiding it would push
+  every read through a function.
+
+Lands at 1.5.8b step 1, before every row: live memory-safety holes come first.
+
+## D-314 — A struct field may be `hidden`: neither read nor written outside its struct's declaring module; `List<T>` is indexed `l[i]`, bounds-checked against `count` — **SETTLED (user decision, 2026-09-19: "hidden sounds fine to me. it says what it does. i like it"; S-94)**
+
+Found at 1.5.8b's planning, designing the prelude side of D-313 (DEF-74). The
+prelude `List<T>` offers `list_init`, `list_reserve` and `list_push` and nothing
+else. So every program reads and writes elements through the raw pointer
+field, `l.items[i]`: unchecked wild-pointer indexing, legal in any module, with
+no opt-out spelled at the site. The probe wrote five elements past a
+one-element list, into another list's data (exit 3).
+
+There are about 1,700 such sites:
+- `src/`: 665;
+- `npkg/`: 1,011;
+- `tests/`: 22.
+
+The library workbench's 103 sites are all inside their own declaring modules;
+every library consumer already goes through `vec_get`/`vec_set`. D-313's
+`sealed` does not close this hole: a sealed field is readable, and reading the
+raw pointer is exactly the danger.
+
+**The decision.**
+
+1. `hidden` is a field qualifier (a new keyword). A hidden field is neither
+   read nor written outside the module that declares its struct. D-313's write
+   forms count, and so do reads: a load, a copy out, a `$$i` claim, a field a
+   struct pattern binds. A hidden field touched from outside is refused with
+   NITPICK-TYPE-080. So there are two levels: `sealed` (look, don't touch) and
+   `hidden` (neither).
+2. **`List<T>` is indexed `l[i]`, like a slice.** The element place can be read,
+   written and claimed (`$$i`, `$$m`), bounds-checked against `count` with the
+   slice's guard (`OutOfBounds`, −4099) and the slice's `bounds` row. A loop
+   over `0...l.count` is therefore proven, and its guard elided, by the
+   verified build (D-219). The element's address comes from `items` inside the
+   compiler's own lowering of a compiler-known container (D-247).
+3. **The prelude's `List<T>` declares `items` hidden, and `count` and `cap`
+   sealed** (D-313). The prelude gains checked operations for the rest, shaped
+   by the library workbench's measured `Vec` API:
+   - `list_pop`;
+   - `list_truncate`;
+   - `list_clear`;
+   - `list_insert`;
+   - `list_remove` (order-preserving);
+   - `list_swap_remove`.
+
+   `l[i]` serves for get and set.
+4. **Every `.items[i]` outside the prelude becomes `l[i]`.** The change is
+   mechanical, under the bridging refresh D-313 already needs: the builder must
+   understand `List` indexing and the new prelude functions before `src/` uses
+   them (D-205).
+
+**The keyword** is the user's: "it says what it does". It pairs with
+`sealed`: one field you can see and not touch, and one you cannot see.
+
+**Alternatives declined.**
+- A prelude-only special case for `List`'s pointer with no general qualifier.
+  User types, Nikola's containers among them, could not hide their own raw
+  pointers.
+- Requiring a `wild` acknowledgement at every raw-pointer index in the
+  language. It is a much larger rule, and `List`'s users would still handle a
+  raw pointer.
+- `private` as the keyword. It is familiar, but it carries other languages'
+  class-scoped meanings, and `hidden` says what happens.
+
+Lands at 1.5.8b step 1, with D-313: live memory-safety holes first.
+

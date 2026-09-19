@@ -304,6 +304,14 @@ TypeSuffix     ::= "u8" | "u16" | "u32" | "u64" | "u128"
 > width's most negative value in decimal (spell it in a balanced base:
 > `0b4bni8` is −128), and the wide integers. One rule for every extreme.
 >
+> *[2026-09-19, D-311 and D-310.] `0u64 - 1u64` relied on D-037's wrap, which
+> D-210 replaced with a trap for plain integers. The constant folder kept the
+> wrap (DEF-71), and from 1.5.8b step 2 the spelling is refused
+> (NITPICK-TYPE-076). `uint64`'s upper half is constructed with bit operations,
+> which never overflow: `~0u64` is the maximum, and `(1u64 << 63u64) | k` gives
+> any value above 2⁶³−1 (a digit-first hex `k` such as `04BF29CE484222325hexu64`).
+> From 1.5.8b step 4, `0u64 -% 1u64` also works, with the wrap marked (D-312).*
+>
 > **D-147 — the leading-digit rule.** The token class is decided by the first
 > character alone: a literal begins `0`–`9`, an identifier never does. `FFhex`,
 > `an`, `ban`, `tt` are ordinary identifiers; the values they used to spell are
