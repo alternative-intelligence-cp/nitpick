@@ -464,6 +464,18 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; PARENT_SETTID wrote. Fixed capacity is the point (D-055's posture): the
 ; 65th thread refuses at its start.
 @npk_thread_reg = internal global [128 x i64] zeroinitializer
+; THE POOLS (DEF-66, 1.5.8 step 3b): slot i's spawned thread takes entry i of
+; each -- its trampoline block and its executor -- and they are never freed.
+; A stop walk that read a slot's block before the slot was retired, and a
+; waker still holding an executor's address after its thread ended, read
+; memory that exists: at worst the next thread in the slot, which the walk
+; should stop anyway, and a spurious wake, which the clear-then-recheck
+; protocol tolerates. The executor's eventfd stays open with the entry (at
+; most 64 ever), so a stale rouse always lands on the eventfd it meant; the
+; epoll set is closed by the join (below). The main thread keeps its own
+; raw-mapped block and executor (npk_tls_boot), and its slot is never retired.
+@npk_tls_pool = internal global [64 x %npk.tls] zeroinitializer
+@npk_exec_pool = internal global [64 x %npk.exec] zeroinitializer
 @npk_stopped = internal global i32 0        ; threads parked in the stop handler
 @npk_stop_word = internal global i32 0      ; the handler's futex word: written by nobody
 @npk_pid = internal global i64 0            ; recorded once at boot (getpid)
@@ -2025,19 +2037,51 @@ entry:
   %sp_p = getelementptr [5 x i64], ptr %stk, i64 0, i64 4
   %sp = load i64, ptr %sp_p
 
-  ; the child's executor and its TLS block. The executor carries the join
-  ; deadline the `joins` clause stated (D-083: fixed where the executor is
-  ; created) and the same wind-up grace every executor uses.
-  ; ZEROED, not merely allocated: an executor's queue heads must start empty,
-  ; and `npk_alloc` hands back whatever the slab held. The first thread this
-  ; runtime ever started appended its root task to a garbage tail pointer.
-  %ex = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.exec, ptr null, i32 1) to i64))
-  call void @npk_zero(ptr %ex, i64 ptrtoint (ptr getelementptr (%npk.exec, ptr null, i32 1) to i64))
+  ; THE SLOT FIRST (DEF-66, 1.5.8 step 3b): it names the pool entries this
+  ; thread is born into -- its executor and its trampoline block, entry `slot`
+  ; of each, never freed. A full registry refuses the thread as a failed clone
+  ; does.
+  %slot = call i64 @npk_reg_reserve()
+  %nofree = icmp slt i64 %slot, 0
+  br i1 %nofree, label %bad, label %reborn
+reborn:
+  ; THE EXECUTOR, REBORN. It carries the join deadline the `joins` clause
+  ; stated (D-083: fixed where the executor is created) and the same wind-up
+  ; grace every executor uses. Every word is written, since the entry may hold
+  ; an earlier thread's (`npk_alloc` hands back whatever the slab held, and the
+  ; first thread this runtime ever started appended its root task to a garbage
+  ; tail pointer). The owner-only words are written plainly, because nobody
+  ; else reads them. The park word is written atomically, because a waker of
+  ; an EARLIER thread in this slot may still set it: its set after this store
+  ; is a spurious wake, and no waker of THIS thread exists before the publish.
+  ; The epoll descriptor (11) is the join's to close: it left 0 here. The
+  ; eventfd (12) is KEPT, so a stale rouse lands on the eventfd it meant.
+  %ex = getelementptr [64 x %npk.exec], ptr @npk_exec_pool, i64 0, i64 %slot
+  %e0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 0
+  store ptr null, ptr %e0
+  %e1 = getelementptr %npk.exec, ptr %ex, i32 0, i32 1
+  store ptr null, ptr %e1
+  %e2 = getelementptr %npk.exec, ptr %ex, i32 0, i32 2
+  store ptr null, ptr %e2
+  %e3 = getelementptr %npk.exec, ptr %ex, i32 0, i32 3
+  store i64 0, ptr %e3
+  %e4 = getelementptr %npk.exec, ptr %ex, i32 0, i32 4
+  store i32 0, ptr %e4
+  %e5 = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
+  store atomic i32 0, ptr %e5 seq_cst, align 4
   %jn = getelementptr %npk.exec, ptr %ex, i32 0, i32 6
   store i64 %join_ns, ptr %jn
   %gr = getelementptr %npk.exec, ptr %ex, i32 0, i32 7
   %mg = call i64 @npk_windup_grace()
   store i64 %mg, ptr %gr
+  %e8 = getelementptr %npk.exec, ptr %ex, i32 0, i32 8
+  store [8 x i32] zeroinitializer, ptr %e8
+  %e9 = getelementptr %npk.exec, ptr %ex, i32 0, i32 9
+  store i32 0, ptr %e9
+  %e10 = getelementptr %npk.exec, ptr %ex, i32 0, i32 10
+  store i32 0, ptr %e10
+  %e13 = getelementptr %npk.exec, ptr %ex, i32 0, i32 13
+  store ptr null, ptr %e13
 
   ; THE ROOT'S OWNER IS THIS EXECUTOR (DEF-49, 1.5.6 step 0). The frame was
   ; born on the spawning thread and stamped with THAT thread's executor
@@ -2050,7 +2094,10 @@ entry:
   %rown = getelementptr %npk.hdr, ptr %root, i32 0, i32 11
   store ptr %ex, ptr %rown
 
-  %tls = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.tls, ptr null, i32 1) to i64))
+  ; THE TRAMPOLINE BLOCK, REBORN: every field written; the tid word
+  ; atomically, because a stop walk that read this slot's pointer before the
+  ; slot was retired may read it (a zero there is a skipped slot).
+  %tls = getelementptr [64 x %npk.tls], ptr @npk_tls_pool, i64 0, i64 %slot
   %t_self = getelementptr %npk.tls, ptr %tls, i32 0, i32 0
   store ptr %tls, ptr %t_self
   %t_exec = getelementptr %npk.tls, ptr %tls, i32 0, i32 1
@@ -2060,7 +2107,9 @@ entry:
   %t_res = getelementptr %npk.tls, ptr %tls, i32 0, i32 3
   store ptr %resume, ptr %t_res
   %t_tid = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
-  store i32 0, ptr %t_tid
+  store atomic i32 0, ptr %t_tid monotonic, align 4
+  %t_pad = getelementptr %npk.tls, ptr %tls, i32 0, i32 5
+  store i32 0, ptr %t_pad
   ; THE MAPPING THE JOIN RELEASES (DEF-65): its base and length, born before
   ; the clone publishes the block.
   %t_mb = getelementptr %npk.tls, ptr %tls, i32 0, i32 6
@@ -2072,6 +2121,8 @@ entry:
   ; and `%fs` is set by the clone itself (CLONE_SETTLS).
   %t_sig = getelementptr %npk.tls, ptr %tls, i32 0, i32 8
   store i64 %csig, ptr %t_sig
+  %t_rsv = getelementptr %npk.tls, ptr %tls, i32 0, i32 9
+  store [6 x i64] zeroinitializer, ptr %t_rsv
   %t_lim = getelementptr %npk.tls, ptr %tls, i32 0, i32 10
   store i64 %clim, ptr %t_lim
 
@@ -2087,13 +2138,11 @@ entry:
   ;
   ; Written as one literal with its bits named — a clone flag word off by a
   ; bit is a thread that shares the wrong thing.
-  ; THE REGISTRY SLOT, CLAIMED AND PUBLISHED BEFORE THE CLONE (D-291): a
-  ; trap on any thread from here on can signal this thread once its tid word
-  ; is written -- by PARENT_SETTID, during the clone itself. A full registry
-  ; refuses the thread as a failed clone does.
-  %slot = call i64 @npk_reg_claim(ptr %tls)
-  %nofree = icmp slt i64 %slot, 0
-  br i1 %nofree, label %bad, label %spawn
+  ; THE REGISTRY SLOT, PUBLISHED BEFORE THE CLONE (D-291): a trap on any
+  ; thread from here on can signal this thread once its tid word is written
+  ; -- by PARENT_SETTID, during the clone itself.
+  call void @npk_reg_publish(i64 %slot, ptr %tls)
+  br label %spawn
 spawn:
   %tlsi = ptrtoint ptr %tls to i64
   %ctid = ptrtoint ptr %t_tid to i64
@@ -2196,9 +2245,13 @@ wait:
                            i64 0, i64 -1)
   br label %loop
 done:
-  ; the thread is gone: its registry slot is free (D-291)
-  call void @npk_reg_retire(ptr %tls)
-  ; AND ITS STACK IS RELEASED (DEF-65, 1.5.8 step 1b). The kernel clears the
+  ; THE THREAD IS GONE. What only it owned is released here, and ITS SLOT IS
+  ; RETIRED LAST (DEF-66, 1.5.8 step 3b): a retired slot's pool entries are
+  ; the next thread's to be reborn into, so the mapping's base and length and
+  ; the executor's epoll descriptor are read and released while the slot is
+  ; still this thread's. (1.5.8 step 1b retired first and read the mapping
+  ; after, which the pools would have made the next thread's.)
+  ; ITS STACK IS RELEASED (DEF-65, 1.5.8 step 1b). The kernel clears the
   ; tid word in mm_release, on the thread's way out of the exit syscall: from
   ; there the thread never runs user code again, so its stack -- the guard
   ; and every page it touched -- is the joiner's to unmap, as glibc frees a
@@ -2213,6 +2266,26 @@ done:
   %mlp = getelementptr %npk.tls, ptr %tls, i32 0, i32 7
   %ml = load i64, ptr %mlp
   call void @npk_hunmap(i64 %mb, i64 %ml)
+  ; ITS EPOLL SET IS CLOSED (DEF-66). The descriptor is the owner's alone, and
+  ; the owner has run its last instruction; closing it removes every one-shot
+  ; registration a wait that expired left armed (each carries its frame's
+  ; address). The eventfd stays open with the pooled executor: a stale waker
+  ; may still write to it, and a closed descriptor's number is the next
+  ; `open`'s.
+  %txp = getelementptr %npk.tls, ptr %tls, i32 0, i32 1
+  %tx = load ptr, ptr %txp
+  %epp = getelementptr %npk.exec, ptr %tx, i32 0, i32 11
+  %ep = load i32, ptr %epp
+  %hasep = icmp ne i32 %ep, 0
+  br i1 %hasep, label %closeep, label %retire
+closeep:
+  %epl = sext i32 %ep to i64
+  %cr = call i64 @npk_sys6(i64 3, i64 %epl, i64 0, i64 0, i64 0, i64 0, i64 0)
+  store i32 0, ptr %epp
+  br label %retire
+retire:
+  ; the slot is free (D-291), and its pool entries the next thread's
+  call void @npk_reg_retire(ptr %tls)
   ret i32 0
 expired:
   ret i32 1
@@ -3058,7 +3131,15 @@ entry:
   ; this wait leaves the eventfd readable, and the wait returns immediately.
   %evp0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
   %evfd0 = load atomic i32, ptr %evp0 monotonic, align 4   ; the owner's own read of an atomic word (D-290)
-  %armed = icmp ne i32 %evfd0, 0
+  ; ARMED IS "THIS THREAD HAS AN EPOLL SET", NOT "THIS EXECUTOR HAS AN
+  ; EVENTFD" (DEF-66, 1.5.8 step 3b). A pooled executor keeps its eventfd
+  ; across the threads reborn into its slot, while the join closes each
+  ; thread's epoll set, so a reborn thread that has registered no descriptor
+  ; yet has the one and not the other. Its idle wait is the futex; a rouse
+  ; still reaches it, because every rouse futex-wakes before it pings.
+  %epa = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
+  %epfda = load i32, ptr %epa
+  %armed = icmp ne i32 %epfda, 0
   br i1 %armed, label %epoll, label %futex
 futex:
   %p_npk_park_word = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
@@ -3162,25 +3243,38 @@ create:
   ; epoll_create1(EPOLL_CLOEXEC)
   %ep = call i64 @npk_sys6(i64 291, i64 524288, i64 0, i64 0, i64 0, i64 0, i64 0)
   %epbad = icmp slt i64 %ep, 0
-  br i1 %epbad, label %trap, label %mkev
+  br i1 %epbad, label %trap, label %haveev
+haveev:
+  ; A POOLED EXECUTOR KEEPS ITS EVENTFD (DEF-66, 1.5.8 step 3b): an earlier
+  ; thread in this slot made it, and the join closed only that thread's epoll
+  ; set. The eventfd is made once per pool entry, and rides every set.
+  %evp = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
+  %evk = load atomic i32, ptr %evp monotonic, align 4
+  %kept = icmp ne i32 %evk, 0
+  br i1 %kept, label %usekept, label %mkev
+usekept:
+  %evk64 = sext i32 %evk to i64
+  br label %addev
 mkev:
   ; eventfd2(0, EFD_CLOEXEC|EFD_NONBLOCK)
   %ev2 = call i64 @npk_sys6(i64 290, i64 0, i64 526336, i64 0, i64 0, i64 0, i64 0)
   %evbad = icmp slt i64 %ev2, 0
-  br i1 %evbad, label %trap, label %addev
-addev:
-  %ep32 = trunc i64 %ep to i32
-  store i32 %ep32, ptr %epp
-  %evp = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
+  br i1 %evbad, label %trap, label %newev
+newev:
   %ev32 = trunc i64 %ev2 to i32
   ; RELEASE: a rouser that sees evfd nonzero must also see the descriptor
   ; it names fully created; rousers load it acquire.
   store atomic i32 %ev32, ptr %evp release, align 4
+  br label %addev
+addev:
+  %evd = phi i64 [ %evk64, %usekept ], [ %ev2, %newev ]
+  %ep32 = trunc i64 %ep to i32
+  store i32 %ep32, ptr %epp
   ; the eventfd rides the set with data 0 — the drain marker (the cell is
   ; the entry block's)
   %eevp = ptrtoint ptr %eev to i64
   ; epoll_ctl(epfd, ADD, evfd, &ev)
-  %ar = call i64 @npk_sys6(i64 233, i64 %ep, i64 1, i64 %ev2, i64 %eevp, i64 0, i64 0)
+  %ar = call i64 @npk_sys6(i64 233, i64 %ep, i64 1, i64 %evd, i64 %eevp, i64 0, i64 0)
   %arbad = icmp slt i64 %ar, 0
   br i1 %arbad, label %trap, label %arm
 trap:
@@ -3392,8 +3486,10 @@ entry:
   unreachable
 }
 
-; Claim a registry slot for `tls` and publish it: the slot, or -1 when full.
-define internal i64 @npk_reg_claim(ptr %tls) {
+; RESERVE a registry slot: 0 -> 1 by cmpxchg, the slot or -1 when full
+; (DEF-66, 1.5.8 step 3b: split from the claim so that a spawned thread's
+; slot names its pool entries before anything is written to them).
+define internal i64 @npk_reg_reserve() {
 entry:
   br label %scan
 scan:
@@ -3410,14 +3506,38 @@ miss:
   %inx = add i64 %i, 1
   br label %scan
 claimed:
+  ret i64 %i
+none:
+  ret i64 -1
+}
+
+; PUBLISH a reserved slot for `tls`: the pointer word, then 2 (release,
+; pairing with the walkers' acquire). The pointer word is ATOMIC (monotonic):
+; with the pools a stale walker's read of it may meet the next incarnation's
+; write of the same value.
+define internal void @npk_reg_publish(i64 %slot, ptr %tls) {
+entry:
+  %si = mul i64 %slot, 2
+  %sp = getelementptr i64, ptr @npk_thread_reg, i64 %si
   %ti = add i64 %si, 1
   %tp = getelementptr i64, ptr @npk_thread_reg, i64 %ti
   %tv = ptrtoint ptr %tls to i64
-  store i64 %tv, ptr %tp
-  ; PUBLISH (release pairs with the walkers' acquire): from here a trap on
-  ; any thread finds this slot, before the thread exists
+  store atomic i64 %tv, ptr %tp monotonic, align 8
+  ; from here a trap on any thread finds this slot, before the thread exists
   store atomic i64 2, ptr %sp release, align 8
-  ret i64 %i
+  ret void
+}
+
+; Claim a registry slot for `tls` and publish it (the main thread's boot):
+; the slot, or -1 when full.
+define internal i64 @npk_reg_claim(ptr %tls) {
+entry:
+  %s = call i64 @npk_reg_reserve()
+  %full = icmp slt i64 %s, 0
+  br i1 %full, label %none, label %pub
+pub:
+  call void @npk_reg_publish(i64 %s, ptr %tls)
+  ret i64 %s
 none:
   ret i64 -1
 }
@@ -3440,7 +3560,7 @@ look:
 cmp:
   %ti = add i64 %si, 1
   %tp = getelementptr i64, ptr @npk_thread_reg, i64 %ti
-  %v = load i64, ptr %tp
+  %v = load atomic i64, ptr %tp monotonic, align 8
   %hit = icmp eq i64 %v, %tv
   br i1 %hit, label %clear, label %next
 clear:
@@ -3486,7 +3606,7 @@ look:
 who:
   %ti = add i64 %si, 1
   %tp = getelementptr i64, ptr @npk_thread_reg, i64 %ti
-  %tv = load i64, ptr %tp
+  %tv = load atomic i64, ptr %tp monotonic, align 8
   %me = icmp eq i64 %tv, %selfv
   br i1 %me, label %next, label %sig
 sig:

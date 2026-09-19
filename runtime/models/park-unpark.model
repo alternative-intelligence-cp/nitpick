@@ -21,6 +21,18 @@
 ; which drains the eventfd; the waker pings the eventfd only when it finds
 ; the executor armed, so the park word's re-check before the epoll wait is
 ; what catches a rouse that came before the arming.
+;
+; THE POOLS (DEF-66, 1.5.8 step 3b, 2026-09-19): an executor is a pool entry
+; reborn for each thread in its registry slot. Its eventfd is KEPT across the
+; rebirths and each thread's epoll set is closed by that thread's join, so
+; `ev` -- "armed", the idle wait is the epoll wait -- is the epoll SET's
+; existence (npk_park_sleep reads the epoll word; the first cut read the
+; eventfd's and spun a reborn thread through epoll_pwait(0), 260 calls in
+; 20 ms, traced). A rouse pings whatever eventfd the executor has, so the
+; floor can ping an eventfd no epoll set holds. That count is drained by the
+; next armed wait, which returns at once: more wakes in the floor than in
+; this model, the sound direction for its four predicates, and every rouse
+; futex-wakes before it pings, so no sleeper misses one.
 
 (model park-unpark
   (of "the park/unpark protocol: a task parking through sl_push against a channel waker's stamp-and-rouse, the second sweep, the futex and eventfd rules")
@@ -46,7 +58,7 @@
                         (rq (ite (and (= sl 1) (= wa 1)) 1 rq))
                         (sl (ite (and (= sl 1) (= wa 1)) 0 sl))))
     ; the reactor armed before the wait: from here the wait is the epoll wait
-    (step arm     (ir @npk_io_register entry create mkev addev trap arm mod ck1 duenow out)
+    (step arm     (ir @npk_io_register entry create haveev usekept mkev newev addev trap arm mod ck1 duenow out)
                   (guard (and (= epc 6) (= ev 0) (= parked 0))) (next (ev 1)))
     ; the futex wait: the in-kernel check of the word against 0
     (step wait    (ir @npk_park_sleep entry futex)

@@ -1463,8 +1463,8 @@ join unmaps it once the kernel has cleared the tid word -- from `mm_release` on,
 again. `thread_stack_release.npk` caps its own address space at 192 MiB and spawns and joins 300 threads: 0 on the
 fixed floor, `HeapOom` (92) linked against the previous one.
 
-**DEF-66 — OPEN, scheduled as 1.5.8 step 3b: A JOINED THREAD'S TLS BLOCK, EXECUTOR AND REACTOR DESCRIPTORS ARE
-NEVER RELEASED.** (found 2026-09-19 by `nitpick-compiler_s11`, designing DEF-65's fix.) Beside the stack, each
+**DEF-66 — FIXED at 1.5.8 step 3b (2026-09-19): per-slot pools.** Each registry slot has one trampoline block and one executor, reborn for every thread in the slot and never freed. The slot is reserved first. The join unmaps the stack and closes the thread's epoll set BEFORE it retires the slot, and the eventfd stays with the pool entry, at most 64 ever. Measured: 700 reactor-using threads spawned and joined in turn exit 0 under the runners' 1,024 descriptors, where 510 died with `Unreachable`; 1,600 threads peak at 104 bytes of live heap, where they peaked at 371,304 (`tests/cost/threads.toml`). ~~OPEN, scheduled as 1.5.8 step 3b: A JOINED THREAD'S TLS BLOCK, EXECUTOR AND REACTOR DESCRIPTORS ARE
+NEVER RELEASED.~~ (found 2026-09-19 by `nitpick-compiler_s11`, designing DEF-65's fix.) Beside the stack, each
 spawned thread allocates a TLS block and an executor (`npk_alloc_internal`, never freed) and, once it has waited on
 I/O, an epoll descriptor and an eventfd its executor never closes -- about 150 bytes and two descriptors per
 thread, for the process's life. The descriptors are the functional hazard: under the runners' `nofile` of 1024 a
@@ -1479,6 +1479,24 @@ spurious wake, which the clear-then-recheck protocol already tolerates); the rea
 pooled executor and are reused rather than closed. The arguments go into `runtime/npkrt.spec` beside the
 classification rows and the pools' reuse into the models the waker and the stop walk already have, before the step
 lands.
+
+**DEF-69 — OPEN, scheduled as 1.5.8 step 3c: A STANDARD DESCRIPTOR CLOSED AT STARTUP.** (found 2026-09-19 by
+`nitpick-compiler_s11`, reading the reactor for step 3b.) Descriptor numbers 0, 1 and 2 are the kernel's lowest,
+and a process started with one of them closed hands that number to the next descriptor anything creates. Two faces,
+both measured on step 3b's floor:
+- **Data corruption.** A program started with stderr closed (`2>&-`) that creates a data file gets descriptor 2
+  for it. Everything meant for stderr then lands in the file. Measured: the file held the program's one byte `D`
+  followed by the floor's `heap: allocated=8 peak_live=8 count=1` line (`NPK_HEAP_STATS`). A program's own
+  `std_err()` writes do the same.
+- **The reactor's sentinel.** The executor reads epoll descriptor 0 and eventfd 0 as "not created", and 0 is a real
+  descriptor when stdin is closed. Traced: `epoll_create1` = 0, the eventfd added to it, then at the next
+  registration a SECOND `epoll_create1` = 4. The first set leaks, with the eventfd still in it.
+
+The fix: at startup, before anything creates a descriptor, `npk_start` checks 0, 1 and 2 (`fcntl` F_GETFD) and
+opens `/dev/null` onto any that is closed. The kernel gives the lowest free number, which is the one checked; any
+other answer traps −4102. And the reactor's "absent" becomes −1 at every site, since a program may still close its
+own stdin later: the main executor, the pool entries (at boot, before any thread), the six readers, and the join's
+store.
 
 **DEF-68 — FIXED at 1.5.8 step 3 (2026-09-19): A WRITE TO A PIPE WITH NO READER KILLED THE PROCESS, WITH NO
 `failsafe`.** (found 2026-09-19 by `nitpick-compiler_s11`, writing TCB.md §5's list of what D-307 leaves

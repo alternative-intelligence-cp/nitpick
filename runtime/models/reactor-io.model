@@ -1,6 +1,7 @@
 ; reactor-io -- the reactor's I/O wake path (1.5.6b step 2; lead E-3 of
 ; OPEN_DECISIONS SS2g). `park-unpark` NAMES this path's blocks -- its `arm`
-; step lists all ten blocks of `npk_io_register` for one bit, and its
+; step lists all thirteen blocks of `npk_io_register` (ten until 1.5.8 step 3b
+; split the reactor's creation around a kept eventfd) for one bit, and its
 ; `epwait` step lists `npk_park_sleep`'s `due` block -- and MODELS none of it:
 ; it has no variable for a descriptor's readiness, so no predicate of it can
 ; speak about an event, a one-shot, or the frame an event's payload points at.
@@ -45,7 +46,7 @@
   (state (tpc 0 5) (reg 0 2) (ready 0 1) (wa 0 2) (alive 0 1) (parked 0 1) (evt 0 1) (expired 0 1) (uaf 0 1) (declined 0 1))
   (init (and (= tpc 0) (= reg 0) (= ready 0) (= wa 0) (= alive 1) (= parked 0) (= evt 0) (= expired 0) (= uaf 0) (= declined 0)))
   (thread executor
-    (step register (ir @npk_io_register entry create mkev addev arm mod ck1 out)
+    (step register (ir @npk_io_register entry create haveev usekept mkev newev addev arm mod ck1 out)
                    (guard (and (= tpc 0) (= evt 0)))
                    (next (tpc 1) (reg 1)))
     (step declined (ir @npk_io_register entry arm mod ck1 duenow out)

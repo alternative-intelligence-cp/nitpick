@@ -1,0 +1,40 @@
+// expect-exit: 0
+//
+// DEF-66 (1.5.8 step 3b), measured by `tests/cost/threads.toml`: this program
+// spawns and joins 1600 thread(s) in turn, each doing nothing. Until the pools,
+// every thread's 120-byte trampoline block and its executor were allocated
+// and never freed, so the allocator's peak grew by about 232 bytes a thread
+// (NPK_HEAP_STATS: 394,504 at 1,600 threads). Now each registry slot has one
+// block and one executor, reborn for the next thread in the slot, and the
+// peak is the same at one thread and at 1,600.
+mod:thread_churn;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:nothing = NIL(int32:_~v) joins JOIN_2S {
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:i = 0i32;
+    while (i < 1600i32) {
+        drop nothing(1i32);                           // joined at the end of each pass
+        i = i + 1i32;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 96i32; },
+        (IntOverflow)      { exit 97i32; },
+        (OutOfBounds)      { exit 97i32; },
+        (Unreachable)      { exit 98i32; },
+        (WildLeak)         { exit 99i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
+        (*)                { exit 100i32; }
+    }
+    exit 101i32;
+};

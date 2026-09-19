@@ -243,7 +243,9 @@ missing from the numbers and from the rows that reach them.
 | `@npk_read_file` | syscall | specified (9 discharged, 0 residue); residue (the bytes the kernel wrote are opaque (the kernel-effect table says only where), so the buffer's contents are not claimed; the growth's copy is memcpy's row in its own file) |
 | `@npk_read_stdin` | syscall | specified (7 discharged, 0 residue); residue (as npk_read_file's: the kernel's bytes are opaque) |
 | `@npk_read` | syscall | specified (5 discharged, 0 residue) |
-| `@npk_reg_claim` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_reg_claim` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_reg_publish` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
+| `@npk_reg_reserve` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_reg_retire` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_rq_pop` | syscall | specified (4 discharged, 0 residue) |
 | `@npk_rq_push` | syscall | specified (5 discharged, 0 residue) |
@@ -366,10 +368,10 @@ not speak for, is a finding. The rows that WRITE memory are held to the running 
 | `@npk_fault_handler` | syscall | -- | the trap route only |
 | `@npk_stack_exhausted` | syscall | -- | the trap route only |
 | `@npk_stack_foreign` | syscall | -- | the trap route only |
-| `@npk_thread_start` | asm | -- | 9 mmap, 10 mprotect, 11 munmap, 56 clone, 60 exit, 202 futex, 318 getrandom, and the trap route |
+| `@npk_thread_start` | asm | -- | 9 mmap, 10 mprotect, 56 clone, 60 exit, and the trap route |
 | `@npk_thread_entry` | syscall | -- | 0 read, 131 sigaltstack, 202 futex, 228 clock_gettime, 281 epoll_pwait, and the trap route |
 | `@npk_thread_exit` | syscall | 60 exit | 60 exit |
-| `@npk_thread_join` | atomic | 202 futex | 11 munmap, 202 futex, 228 clock_gettime, and the trap route |
+| `@npk_thread_join` | atomic | 3 close, 202 futex | 3 close, 11 munmap, 202 futex, 228 clock_gettime, and the trap route |
 | `@npk_hardware_concurrency` | syscall | 204 sched_getaffinity | 204 sched_getaffinity |
 | `@npk_clone_exec` | atomic | 56 clone, 59 execve, 110 getppid, 157 prctl, 231 exit_group, 292 dup3 | 56 clone, 59 execve, 110 getppid, 157 prctl, 231 exit_group, 292 dup3 |
 | `@npk_driver_retire` | atomic | -- | the trap route only |
@@ -509,7 +511,7 @@ evaluate are listed by name below the table.
 |---|---|---|---|---|---|---|
 | `@memcpy` | requires | -- | `@npk_to_cstring` `@npk_read_file` `@npk_read_stdin` `@memmove` `@npk_string_concat` | `@npk_ch_open` `@npk_ch_reclaim` `@npk_ch_recv_wait` `@npk_ch_send_wait` `@npk_ch_try_send` `@npk_ch_try_recv` `@npk_ralloc` | yes | 3 of 3 |
 | `@memset` | requires | -- | -- | `@npk_buffer_new` | yes | 1 of 1 |
-| `@npk_zero` | requires | -- | -- | `@npk_ch_open` `@npk_thread_start` | no | 1 of 1 |
+| `@npk_zero` | requires | -- | -- | `@npk_ch_open` | no | 1 of 1 |
 | `@npk_string_equals` | requires | -- | -- | -- | yes | 2 of 2 |
 | `@memmove` | requires | -- | -- | -- | yes | 2 of 2 |
 | `@npk_rq_push` | requires objects | -- | -- | `@npk_thread_entry` `@npk_sl_wake_due` | yes | 7 of 7 |

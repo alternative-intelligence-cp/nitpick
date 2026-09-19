@@ -71,20 +71,20 @@
   (word %npk.hdr 11 born-before-publish)   ; owner: stamped at birth; a thread's root re-stamped by npk_thread_start before the clone (DEF-49)
 
   ; --- %npk.exec: one executor per thread ---------------------------------------
-  (word %npk.exec 0 owner-only)            ; rq_head
-  (word %npk.exec 1 owner-only)            ; rq_tail
-  (word %npk.exec 2 owner-only)            ; sl_head
-  (word %npk.exec 3 owner-only)            ; park_at
-  (word %npk.exec 4 owner-only)            ; park_pending
-  (word %npk.exec 5 atomic)                ; park_word: the futex word wakers set (seq_cst)
+  (word %npk.exec 0 owner-only)            ; rq_head -- reborn (written) by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 1 owner-only)            ; rq_tail -- reborn (written) by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 2 owner-only)            ; sl_head -- reborn (written) by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 3 owner-only)            ; park_at -- reborn (written) by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 4 owner-only)            ; park_pending -- reborn (written) by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 5 atomic)                ; park_word: the futex word wakers set (seq_cst); reborn by an atomic store of 0 before the publish (DEF-66): a stale waker's set after it is a spurious wake
   (word %npk.exec 6 born-before-publish)   ; join_ns: written by npk_thread_start before the clone
   (word %npk.exec 7 born-before-publish)   ; grace_ns: likewise
-  (word %npk.exec 8 owner-only)            ; chain
-  (word %npk.exec 9 owner-only)            ; chain_n
-  (word %npk.exec 10 owner-only)           ; windup_seen
-  (word %npk.exec 11 owner-only)           ; epfd: created and read by the owner
-  (word %npk.exec 12 atomic)               ; evfd: a release store at creation, acquire loads by rousers, the owner's own read monotonic
-  (word %npk.exec 13 owner-only)           ; cur_task
+  (word %npk.exec 8 owner-only)            ; chain -- reborn by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 9 owner-only)            ; chain_n -- reborn by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 10 owner-only)           ; windup_seen -- reborn by npk_thread_start before the publish (DEF-66), then the owner's alone
+  (word %npk.exec 11 stated "epfd: created and read by the owner; CLOSED and zeroed by the joiner once the kernel has cleared the tid word -- the owner's last act, after which it runs no user code -- and BEFORE the slot is retired, so the next thread reborn into the pool entry finds 0 (DEF-66, 1.5.8 step 3b); a stale waker never reads it")
+  (word %npk.exec 12 atomic)               ; evfd: a release store at creation, acquire loads by rousers, the owner's own reads monotonic; KEPT across rebirths of the pool entry (DEF-66), so a stale rouse lands on the eventfd it meant
+  (word %npk.exec 13 owner-only)           ; cur_task -- reborn by npk_thread_start before the publish (DEF-66), then the owner's alone
 
   ; --- %npk.chan: a channel, under its own futex mutex --------------------------
   (word %npk.chan 0 lock chan.lock)        ; buf
@@ -104,10 +104,12 @@
   (word %npk.tls 1 born-before-publish)    ; exec
   (word %npk.tls 2 born-before-publish)    ; root: read by npk_thread_entry on the child, after the clone
   (word %npk.tls 3 born-before-publish)    ; resume
-  (word %npk.tls 4 stated "the join's futex word and the stop's target: written 0 by the creating thread before the clone -- or the pid, for the main thread at boot -- then by the kernel (PARENT_SETTID writes the tid, CHILD_CLEARTID zeroes it at exit), read by npk_thread_join with an atomic load, by the stop walk with an atomic load (D-291) and by the kernel's futex compare (DEF-48)")
+  (word %npk.tls 4 stated "the join's futex word and the stop's target: written 0 by the creating thread before the clone -- or the pid, for the main thread at boot -- then by the kernel (PARENT_SETTID writes the tid, CHILD_CLEARTID zeroes it at exit), read by npk_thread_join with an atomic load, by the stop walk with an atomic load (D-291) and by the kernel's futex compare (DEF-48). A spawned thread's block is a POOL ENTRY reborn for each thread in its slot (DEF-66, 1.5.8 step 3b), so the creating thread's 0 is an ATOMIC store: a stop walk that read the slot's pointer before the slot was retired may read the word during the rebirth -- the earlier thread's tid (gone: tgkill answers ESRCH and nothing is counted), the rebirth's 0 (a skipped slot), or the new thread's tid (a live thread of this program, which the walk should stop)")
+  (word %npk.tls 5 born-before-publish)    ; pad: written 0 at each rebirth into the pool entry (DEF-66), read by nobody
   (word %npk.tls 6 born-before-publish)    ; map base: a spawned thread's stack mapping, written before the clone; read by the join once the kernel cleared the tid word (DEF-65) -- 0 for the main thread
   (word %npk.tls 7 born-before-publish)    ; map length: as 6
   (word %npk.tls 8 born-before-publish)    ; signal stack: written before the clone (the main thread's by npk_start, before any thread exists); read by the thread itself at its entry (D-305, 1.5.8 step 2)
+  (word %npk.tls 9 born-before-publish)    ; reserved words: written 0 at each rebirth (DEF-66), read by nobody
   (word %npk.tls 10 stated "THE STACK LIMIT (D-305, 1.5.8 step 2), at byte 0x70: per-thread -- written by the thread's creator before the thread runs any emitted code (the parent before the clone; npk_start for the main thread, before `main`), read only by that thread's own emitted prologues (`cmp %fs:0x70`), and rewritten only by that thread's switch to the failsafe stack (npk_fs_switch_call, which restores it)")
 
   ; --- globals -----------------------------------------------------------------
@@ -128,10 +130,15 @@
   ; taken by npk_fs_alloc, never loaded or stored by name), so no access is
   ; listed; its bytes are the holder's alone, after every other thread is parked.
   (word @npk_fs_bump stated "the failsafe region's bump offset (D-292): read and written only by the failsafe holder, after every other thread is parked (D-291)")
-  (word @npk_thread_reg stated "sixty-four slots of two i64 words: the state word (+0) is atomic -- claimed by cmpxchg acq_rel, published release before the clone, read acquire by the stop walk and the retire; the tls word (+1) is written before the release publish and read after an acquire load of the state (D-291)")
+  (word @npk_thread_reg stated "sixty-four slots of two i64 words: the state word (+0) is atomic -- reserved by cmpxchg acq_rel (0 -> 1), published release before the clone (2), read acquire by the stop walk and the retire, retired release (0) by the join; the tls word (+1) is written before the release publish and read after an acquire load of the state (D-291), both ATOMICALLY (monotonic) since the pools (DEF-66, 1.5.8 step 3b): a stale walker's read of a slot may meet the next thread's publish of the same value, the slot's pool entry")
+  (word @npk_tls_pool stated "the trampoline blocks' pool (DEF-66, 1.5.8 step 3b): entry i is the block of whichever spawned thread holds registry slot i, reborn by npk_thread_start between the slot's reservation and its publish, and never freed; its words are %npk.tls's, classified above; its address is handed to npk_reg_publish and so to every reader of the registry")
+  ; @npk_exec_pool (DEF-66, 1.5.8 step 3b): entry i is the executor of whichever spawned thread holds
+  ; registry slot i, reborn with the block and never freed. Its address is stored, never handed to a
+  ; call, so the belt counts no access to the global itself; its words are %npk.exec's, classified above
+  ; -- the eventfd kept, the epoll descriptor closed by the join.
   ; @npk_stop_word is the park-forever futex word: its address is handed to
   ; the futex syscall and it is written by nobody, so no access is listed.
-  (word @npk_hsec once-before-threads "the heap secret: drawn once at the first allocation, which precedes every thread (npk_thread_start allocates its executor under the heap mutex before it clones), never rewritten -- npk_heap_init re-checks it and returns")
+  (word @npk_hsec once-before-threads "the heap secret: drawn once at the first allocation, which precedes every thread (the spawn allocates the child's frame with npk_alloc before it calls npk_thread_start, which clones -- until DEF-66's pools, 1.5.8 step 3b, npk_thread_start also allocated the executor), never rewritten -- npk_heap_init re-checks it and returns")
   (word @npk_chtab lock heap-mx)
   (word @npk_chtab_cap lock heap-mx)
   (word @npk_chtab_len lock heap-mx)

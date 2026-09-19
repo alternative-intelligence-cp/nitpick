@@ -1,0 +1,64 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// A THREAD REBORN INTO A SLOT WHOSE EXECUTOR ONCE ARMED A REACTOR SLEEPS ON
+// THE FUTEX UNTIL IT ARMS ONE ITSELF (DEF-66, 1.5.8 step 3b). The pooled
+// executor keeps its eventfd across the threads in its slot, and the join
+// closes each thread's epoll set. The first cut of the step decided
+// "armed" by the eventfd, so the second thread here -- reborn into the
+// first one's slot, registering no descriptor -- waited in epoll_pwait on
+// descriptor 0, which the kernel refuses at once. It spun until its deadline
+// instead of sleeping (traced by hand: epoll_pwait(0, ...) = -EINVAL, over
+// and over). "Armed" is the epoll set's now. The answer was right on both
+// floors; the difference was the spin.
+mod:thread_reborn_sleeps;
+error:EPipe;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:arms = NIL(int64:rfd) joins JOIN_2S {
+    // a wait that creates this executor's reactor, and times out
+    Result<NIL>:r = await io_ready(rfd =>! int32, 1i32, raw duration_ms(1i64));
+    if (!r.is_error) { pass NIL; }
+    pass NIL;
+};
+
+thread async func:sleeps = NIL(int32:_~v) joins JOIN_2S {
+    // no descriptor: the idle wait is the futex's
+    await sleep(raw duration_ms(20i64)) ?| NIL;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 2048i64) ?! EPipe);
+    wild int32->:fdi = fds =>! wild int32->;
+    int64:rfd = fdi[0i64] => int64;
+    dalloc(fds);
+    int32:pass_n = 0i32;
+    while (pass_n < 2i32) {
+        // each pass's thread is joined at the end of the pass, so the second
+        // is reborn into the slot the first one's join retired
+        if (pass_n == 0i32) { drop arms(rfd); }
+        else { drop sleeps(1i32); }
+        pass_n = pass_n + 1i32;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EPipe)            { exit 81i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 96i32; },
+        (IntOverflow)      { exit 97i32; },
+        (OutOfBounds)      { exit 97i32; },
+        (Unreachable)      { exit 98i32; },
+        (WildLeak)         { exit 99i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
+        (*)                { exit 100i32; }
+    }
+    exit 101i32;
+};

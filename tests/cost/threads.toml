@@ -1,0 +1,11 @@
+# DEF-66 (1.5.8 step 3b): a joined thread's trampoline block and executor, measured. `thread_churn.npk`
+# spawns and joins 1 600 threads in turn; `thread_churn_one.npk` spawns and joins one. Under NPK_HEAP_STATS
+# the churn's peak_live is held to `bound` times the one thread's. Before the pools every thread's 120-byte
+# block and its executor were allocated and never freed: peak_live grew about 232 bytes a thread (46 504 at
+# 100 threads, 394 504 at 1 600). With the pools, one block and one executor per registry slot reborn for
+# each thread in it, the peak is 104 bytes at one thread and at 1 600.
+kind    = "probe"
+program = "tests/backend/programs/thread_churn.npk"
+against = "tests/backend/programs/thread_churn_one.npk"
+bound   = 2
+expect  = "pass"

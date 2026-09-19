@@ -1,0 +1,55 @@
+// expect-exit: 0
+//
+// A JOINED THREAD'S REACTOR IS RELEASED, AND ITS EXECUTOR IS REBORN (DEF-66,
+// 1.5.8 step 3b). Each thread here waits once on a pipe that never becomes
+// readable, which makes its executor create its reactor: an epoll set and an
+// eventfd. Until this step no thread's executor, block or descriptors were
+// ever released, so under the runners' limit of 1,024 descriptors the program
+// ran 505 threads and died at 510 with `Unreachable` (the floor's integrity
+// trap for "could not create the reactor"). Now each thread's slot owns one
+// pooled executor and one pooled block, reborn for the next thread in the
+// slot. The join closes the thread's epoll set, and the eventfd stays with
+// the pool entry, at most 64 ever. 700 threads finish, and the program exits
+// 0 -- which also runs D-151's leak check, so the pipe's buffer is freed.
+mod:thread_reactor_reuse;
+error:EPipe;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:waiter = NIL(int64:rfd) joins JOIN_2S {
+    // nothing is ever written: the one-millisecond deadline answers
+    Result<NIL>:r = await io_ready(rfd =>! int32, 1i32, raw duration_ms(1i64));
+    if (!r.is_error) { pass NIL; }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // pipe2(&fds, O_NONBLOCK)
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 2048i64) ?! EPipe);
+    wild int32->:fdi = fds =>! wild int32->;
+    int64:rfd = fdi[0i64] => int64;
+    dalloc(fds);
+    int32:i = 0i32;
+    while (i < 700i32) {
+        drop waiter(rfd);                             // joined at the end of each pass
+        i = i + 1i32;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EPipe)            { exit 81i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 96i32; },
+        (IntOverflow)      { exit 97i32; },
+        (OutOfBounds)      { exit 97i32; },
+        (Unreachable)      { exit 98i32; },
+        (WildLeak)         { exit 99i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
+        (*)                { exit 100i32; }
+    }
+    exit 101i32;
+};
