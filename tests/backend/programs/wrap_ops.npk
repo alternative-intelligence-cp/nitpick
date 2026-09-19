@@ -1,0 +1,87 @@
+// expect-exit: 0
+//
+// THE WRAPPING FAMILY, AT THREE WIDTHS (D-312, 1.5.8b step 4). `+% -% *%` and
+// their compound forms compute modulo 2^N and never trap, where `+ - *` trap
+// (D-210). Every case below crosses a bound: the plain operator would reach
+// `failsafe` with `IntOverflow` (93) at each one. An operand is computed where
+// the case tests the INSTRUCTION and written as a literal where it tests the
+// FOLDER, which computes the same wrap in `uint128` and emits the constant.
+// The expected values are python's.
+mod:wrap_ops;
+
+// THE FOLDER's OWN ANSWER (D-312): a module binding must fold, so these three
+// are the wrap computed at compile time -- in `uint128`, brought to the width.
+// The plain `+`/`*` would be TYPE-076 here (D-310), which is the difference the
+// operator states.
+fixed int8:FA = 127i8 +% 1i8;
+fixed uint64:FU = (~0u64) +% 1u64;
+fixed uint32:FM = 16777619u32 *% 16777619u32;
+
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+
+func:main = int32(cstring[]:argv) {
+    int32:z = raw zero(argv);           // 0, and opaque to the folder
+
+    // int8, across MIN and MAX
+    int8:a = 127i8 +% (1i8 + (z =>! int8));
+    if (a != (0i8 - 127i8) - 1i8) { exit 1i32; }
+    int8:b = ((0i8 - 127i8) - 1i8) -% (1i8 + (z =>! int8));
+    if (b != 127i8) { exit 2i32; }
+    int8:c = 64i8 *% (4i8 + (z =>! int8));
+    if (c != 0i8) { exit 3i32; }
+
+    // uint64, at the top of the range
+    uint64:u = (~0u64) +% (1u64 + (z =>! uint64));
+    if (u != 0u64) { exit 4i32; }
+    uint64:v = 0u64 -% (1u64 + (z =>! uint64));
+    if (v != (~0u64)) { exit 5i32; }
+    uint64:w = (~0u64) *% (3u64 + (z =>! uint64));
+    if (w != ((1u64 << 63u64) | 9223372036854775805u64)) { exit 6i32; }
+
+    // int128, where the folder's 64-bit window declines and the instruction
+    // answers. The extremes are CONSTRUCTED, never spelled (D-148): the sign
+    // bit alone is the minimum, and its complement is the maximum.
+    int128:mn = 1i128 << 127i128;
+    int128:mx = ~mn;
+    int128:p = mx +% (1i128 + (z =>! int128));
+    if (p != mn) { exit 7i32; }
+    int128:q = mn -% (1i128 + (z =>! int128));
+    if (q != mx) { exit 16i32; }
+
+    // THE COMPOUND FORMS
+    uint32:h = 2166136261u32;
+    h +%= 4294967295u32;                 // minus one, modulo 2^32
+    if (h != 2166136260u32) { exit 8i32; }
+    h -%= 4294967295u32;
+    if (h != 2166136261u32) { exit 9i32; }
+    h *%= 16777619u32;
+    if (h != 84696351u32) { exit 10i32; }
+
+    // THE FOLDER computes the same wrap: both operands literal, no instruction
+    if (FA != (0i8 - 127i8) - 1i8) { exit 11i32; }
+    if (FU != 0u64) { exit 12i32; }
+    if (FM != 637696617u32) { exit 13i32; }
+
+    // A `simd` of integer lanes wraps lane by lane
+    simd<int32, 4>:s = simd(2147483647i32, 0i32, 1i32, 2i32);
+    simd<int32, 4>:t = s +% simd(1i32 + z);
+    if (t[0i64] != (0i32 - 2147483647i32) - 1i32) { exit 14i32; }
+    if (t[3i64] != 3i32) { exit 15i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (ShiftRange)     { exit 89i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

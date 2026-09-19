@@ -84,15 +84,28 @@ br i1 %cond, label %then, label %else
     The ladder is `int8` … `int4096`, and `wide_ladder.npk` executes it —
     arithmetic including `/` and `%` at 1024, 2048 and 4096 bits, and the
     D-210 trap at 512.
-- **Deliberate modular arithmetic has no dedicated spelling** (D-210.3, a
-  decision rather than an oversight). The idiom is widen–compute–truncate over
-  the native wide integers, with `=>!` at the narrowing carrying the
-  acknowledged loss:
+- **Deliberate modular arithmetic is the wrapping family** (D-312, 1.5.8b step
+  4): `+%`, `-%`, `*%`, with the compound forms `+%=`, `-%=`, `*%=`. The result
+  is the low N bits, always; there is no guard, no obligation row and no
+  `failsafe` arm, because nothing can go wrong.
   ```nitpick
-  uint32:mixed = ((h => uint64) * 2654435761u64) =>! uint32;
+  uint32:mixed = h *% 2654435761u32;      // the mix step, said once
   ```
-  If a hot-path consumer emerges, an operator spelling is a question for the
-  language's author (D-143's consumer-first rule).
+  The family is the plain integers' (`intN`/`uintN`) and `simd` integer lanes'
+  and nobody else's: `NITPICK-TYPE-078` names the kind and says why — a twisted
+  value would have its ERR laundered into a number, the ternary kinds saturate
+  at the balanced bound, `frac` is exact or ERR, `dim256` carries a unit,
+  `complex` computes per component, and a float is IEEE. A constant wrap folds
+  WITH the wrap, where the trapping twin is `NITPICK-TYPE-076` (D-310).
+
+  > **[Until 1.5.8b step 4, D-210.3.]** This read "deliberate modular
+  > arithmetic has no dedicated spelling", and the idiom was widen–compute–
+  > truncate (`((h => uint64) * 2654435761u64) =>! uint32`), with a note that an
+  > operator was a question for the language's author under D-143's
+  > consumer-first rule. He asked it himself and settled it as D-312. Measured
+  > at the landing: the prelude's FNV step went from a 128-bit multiply, an
+  > `IntOverflow` guard that could never fire and a truncation — twelve lines of
+  > IR and a retained `overflow` row — to one `mul i64` and no row.
 - **`tbb` remains the saturate-to-ERR family** (D-037's split survives; only
   the default changed sides): where overflow is a VALUE the program inspects
   rather than a fault that stops it, `tbb` is still the type to declare.
@@ -103,7 +116,11 @@ br i1 %cond, label %then, label %else
 > express wrapping at all"). D-210 reversed that on the coverage audit's
 > evidence: silent wraparound under the type nobody has to opt into is the
 > Therac 255→0 shape, correct code does not overflow, and wrapping is still
-> expressible — explicitly, at the width where it is meant.
+> expressible — explicitly, at the width where it is meant. Since 1.5.8b step 4
+> it is expressible in ONE operator (D-312's `+% -% *%`) rather than three, and
+> the reading is the same: the wrap is written where it is meant.
+- Arithmetic, wrapping: `+%`, `-%`, `*%` (and `+%=`, `-%=`, `*%=`) → `add`,
+  `sub`, `mul` with no flags and no guard (D-312)
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
 - Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr` (a computed shift amount behind `icmp ult n, W` → `ShiftRange`; D-277)
 - Casting: explicit only (`x => int64`, `y =>! int32`)

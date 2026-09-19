@@ -285,6 +285,11 @@ pub func:p_is_assign_op = bool(TokenKind:k) never fails {
     if (k == TokenKind.OpPipeAssign)    { pass true; }
     if (k == TokenKind.OpCaretAssign)   { pass true; }
     if (k == TokenKind.OpShlAssign)     { pass true; }
+    // THE WRAPPING COMPOUND FORMS (D-312, 1.5.8b step 4), beside their
+    // trapping twins: `h *%= prime;` is the mix step a hash states.
+    if (k == TokenKind.OpPlusWrapAssign)  { pass true; }
+    if (k == TokenKind.OpMinusWrapAssign) { pass true; }
+    if (k == TokenKind.OpStarWrapAssign)  { pass true; }
     pass (k == TokenKind.OpShrAssign);
 };
 

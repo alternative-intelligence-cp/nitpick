@@ -219,6 +219,24 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     drop strlist_push(@report, raw case_line("derived-path-control", okc, "the same finding at a real path must not be flagged"));
     if (!okc) { drop strlist_push(@report, "      the parser flagged a real path; it should not have"); }
 
+    // AN EXPECTATION WRITTEN AFTER CODE IS FLAGGED, AND A FIXTURE'S PROSE IS
+    // NOT (1.5.8b step 4): the reader takes a `//` comment that is the whole
+    // line, so `stmt;  // expect-error-at:3 CODE` parses as nothing and the
+    // suite walk would skip the file as a fixture. Unit calls on
+    // `stray_expectations`; the Python self-check carries the same two cases
+    // by name, over the same two texts.
+    List<string>:se = raw stray_expectations("mod:m;\nfunc:f = int32() never fails {\n    discard(1tbb32 +% 1tbb32);   // expect-error-at:3 NITPICK-TYPE-078\n    pass 0i32;\n};\n", "p.npk");
+    bool:oks = false;
+    if (se.count == 1i64) { oks = raw text_contains(raw strlist_view(se, 0i64), "line(s) 3 is written after code"); }
+    if (!oks) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("stray-expectation", oks, "an expectation written after code must be flagged, by line"));
+    if (!oks) { drop strlist_push(@report, "      the scan did not flag line 3; it should have"); }
+    List<string>:sf = raw stray_expectations("// A FIXTURE for header_mismatch.npk (no expect-error: the resolve stage skips\n// it).\nmod:m;\n", "p.npk");
+    bool:okf = (sf.count == 0i64);
+    if (!okf) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("stray-expectation-control", okf, "a fixture whose leading comment mentions the word must not be"));
+    if (!okf) { drop strlist_push(@report, "      the scan flagged a fixture's prose; it should not have"); }
+
     // THE SHARED-STATE BELT REPORTS AN UNCLASSIFIED WORD AND A PLAIN ACCESS OF
     // AN ATOMIC ONE (1.5.6 step 0, D-290), and passes a classified word: one
     // synthetic floor text, three spec texts -- the harness's, byte for byte.

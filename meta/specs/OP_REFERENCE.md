@@ -17,8 +17,8 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | 3 | Pipeline | `\|>` `<\|` |
 | 4 | Cast | `=>` `=>!` |
 | 5 | Unary | `!` `~` `-` `@` `<-` `$$i` `$$m` |
-| 6 | Multiplicative | `*` `/` `%` |
-| 7 | Additive | `+` `-` |
+| 6 | Multiplicative | `*` `/` `%` `*%` |
+| 7 | Additive | `+` `-` `+%` `-%` |
 | 8 | Shift | `<<` `>>` |
 | 9 | Range / Spread | `..` `...` `..*` `..^` |
 | 10 | Relational | `<` `<=` `>` `>=` `<=>` |
@@ -86,6 +86,25 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | `/` | Divide | Safe division. Divide-by-zero behavior is **type-directed** — see below. | `a / b` |
 | `%` | Modulo | Remainder operation. Same divide-by-zero rule as `/`. | `a % b` |
 | `**` | Power | Exponentiation (Standard Library expansion). | `2 ** 8` |
+| `+%` | Add, wrapping | Addition **modulo 2^N**: it cannot trap (D-312). Plain integers and `simd` integer lanes only. | `h +% 1u64` |
+| `-%` | Subtract, wrapping | Subtraction modulo 2^N. | `h -% 1u64` |
+| `*%` | Multiply, wrapping | Multiplication modulo 2^N — a hash's mix step, a PRNG, a checksum. | `h *% 1099511628211u64` |
+
+> **The wrapping family** (D-312, 1.5.8b step 4). `+ - *` TRAP on overflow
+> (D-210), which is right where overflow is a mistake. Where the wrap IS the
+> algorithm, the trapping operator is wrong twice over: it refuses a correct
+> program, and a widen-compute-truncate workaround hides the intent behind three
+> operations. `+% -% *%` say it in one: the result is the low N bits, always.
+>
+> The `%` was chosen because it DESCRIBES the operation — "add modulo 2^N" —
+> rather than being a convention borrowed from another language. It carries no
+> guard, no obligation row and no `failsafe` arm: nothing can go wrong, so
+> nothing is checked. The kinds that own their own arithmetic refuse it by name
+> (`NITPICK-TYPE-078`): a twisted value would have its ERR laundered into a
+> number, the ternary kinds saturate at the balanced bound, `frac` is exact or
+> ERR, `dim256` carries a unit, `complex` computes per component, and a float is
+> IEEE. A constant wrap folds WITH the wrap, where the trapping twin would be
+> `NITPICK-TYPE-076` (D-310).
 
 ### 1.1 Division by zero and overflow
 
@@ -175,6 +194,9 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `*=` | Multiply & Assign | Multiply and assign in place. | `x *= 5i32;` |
 | `/=` | Divide & Assign | Divide and assign in place. | `x /= 5i32;` |
 | `%=` | Modulo & Assign | Modulo and assign in place. | `x %= 5i32;` |
+| `+%=` | Add wrapping & Assign | `x +%= v` IS `x = x +% v` (D-312). | `h +%= 1u64;` |
+| `-%=` | Subtract wrapping & Assign | | `h -%= 1u64;` |
+| `*%=` | Multiply wrapping & Assign | The mix step a hash states. | `h *%= 16777619u32;` |
 
 ---
 

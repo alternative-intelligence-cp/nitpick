@@ -1,0 +1,39 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 1
+// expect-obligation: overflow discharged 1
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+//
+// A WRAP HAS NO ROW, AND THE SOLVER STILL KNOWS ITS VALUE (D-312, 1.5.8b step
+// 4). `k *% 16777619` carries no `overflow` row and no guard: the operator's
+// meaning IS the wrap, so there is nothing to prove and nothing to elide. The
+// encoder models it exactly — `(mod (* k 16777619) 2^32)` for an unsigned word
+// — so what follows is decided. The `prove` holds because a value modulo 2^32
+// shifted right by 16 is under 2^16, and the addition after it discharges for
+// the same reason. Its trapping twin `k * 16777619` would be an `open` row
+// here, since `k` is the caller's.
+mod:wrap_no_row;
+
+func:main = int32(cstring[]:argv) {
+    uint32:k = (argv.len =>! int32) =>! uint32;
+    uint32:h = k *% 16777619u32;
+    prove((h >> 16u32) < 65536u32);
+    uint32:g = (h >> 16u32) + 1u32;
+    if (g > 65536u32) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (ShiftRange)     { exit 89i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

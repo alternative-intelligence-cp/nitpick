@@ -1,0 +1,42 @@
+// expect-exit: 0
+//
+// FNV-1a 64 WITH THE WRAPPING FAMILY (D-312, 1.5.8b step 4): a hash's mix step
+// IS a modular multiply, so `*%` states what it does and carries no guard.
+// The three digests are the published ones for "", "a" and "foobar", and the
+// offset basis is written with bit operations, since a `uint64` past 2^63-1 has
+// no literal (D-311). This is the TEXTBOOK algorithm, whose digests are
+// published; the ecosystem's own derived identities use a different basis ON
+// PURPOSE (D-190, `fnv_offset` in the prelude).
+mod:wrap_fnv1a;
+
+func:fnv1a = uint64(string:s) never fails {
+    uint64:h = ((1u64 << 63u64) | 5472609002491880229u64);
+    for (int64:i in 0i64...s.len) {
+        h ^= (s.ptr[i] => uint64);
+        h *%= 1099511628211u64;
+    }
+    pass h;
+};
+
+func:main = int32(cstring[]:argv) {
+    if ((raw fnv1a("")) != ((1u64 << 63u64) | 5472609002491880229u64)) { exit 1i32; }
+    if ((raw fnv1a("a")) != ((1u64 << 63u64) | 3414815163700866188u64)) { exit 2i32; }
+    if ((raw fnv1a("foobar")) != ((1u64 << 63u64) | 402018224477661160u64)) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (ShiftRange)     { exit 89i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

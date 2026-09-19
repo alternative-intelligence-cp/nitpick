@@ -2076,7 +2076,18 @@ func:int_form_shift = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, int64:k)
     string:p = raw pow2_decimal(k);
     if (op == TokenKind.OpShr) { pass (raw term_app2("div", a, raw term_lit(move(p), false), false)); }
     Term:prod = raw term_app2("*", a, raw term_lit(move(p), false), false);
-    Term:wrapped = raw term_app2("mod", prod, raw term_lit(raw pow2_decimal(wb => int64), false), false);
+    pass (raw wrap_to_word(e, ty, prod));
+};
+
+// A TERM BROUGHT INTO ITS WORD, EXACTLY (D-279's `<<` form, and D-312's
+// wrapping family since 1.5.8b step 4): `(mod t 2^N)` for an unsigned word,
+// and the two's-complement reading for a signed one -- the value at or past
+// 2^(N-1) is that value less 2^N. The term is captured first, so the `ite`
+// names it twice and writes it once.
+func:wrap_to_word = Term(Encoder->:e, int32:ty, Term:t) never fails {
+    if (!t.ok) { pass (raw term_none()); }
+    int32:wb = raw word_bits(e, ty);
+    Term:wrapped = raw term_app2("mod", t, raw term_lit(raw pow2_decimal(wb => int64), false), false);
     if (!(raw word_signed(e, ty))) { pass wrapped; }
     Term:s = raw term_capture(e, ty, wrapped);
     if (!s.ok) { pass (raw term_none()); }
@@ -2085,6 +2096,22 @@ func:int_form_shift = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, int64:k)
     string:txt = raw smt_app3("ite", raw smt_app2(">=", s.text, half),
                               raw smt_app2("-", s.text, full), s.text);
     pass Term{ ok: true, is_bool: false, text: move(txt), syms: raw syms_union(s.syms, raw list_init::<int32>(1i64)) };
+};
+
+// `a op% b` AS A TERM (D-312, 1.5.8b step 4): the operation, brought into the
+// word. No row and no guard: the operator's meaning IS the wrap, so there is
+// nothing to prove and nothing to elide.
+func:wrap_binop = Term(Encoder->:e, TokenKind:op, int32:ty, Term:a, Term:b) never fails {
+    if (!(a.ok && b.ok)) { pass (raw term_none()); }
+    if (a.is_bool || b.is_bool) { pass (raw term_none()); }
+    Term:raw_t = raw term_none();
+    if (op == TokenKind.OpPlusWrap)  { raw_t = raw term_app2("+", a, b, false); }
+    if (op == TokenKind.OpMinusWrap) { raw_t = raw term_app2("-", a, b, false); }
+    if (op == TokenKind.OpStarWrap) {
+        if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
+        raw_t = raw term_app2("*", a, b, false);
+    }
+    pass (raw wrap_to_word(e, ty, raw_t));
 };
 
 // `x & m` WITH A NUMERAL MASK, IN Int (D-279) -- the three shapes the tree
@@ -2392,6 +2419,9 @@ func:lane_binop = Term(Encoder->:e, TokenKind:op, int32:elem, Term:a, Term:b, Sp
         if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
         pass (raw term_app2("*", a, b, false));
     }
+    // The wrapping family on a lane (D-312): the operation inside the element's
+    // word, and no any-lane row -- the lanes wrap by the operator's meaning.
+    if (raw wrap_arith_op(op)) { pass (raw wrap_binop(e, op, elem, a, b)); }
     if (op == TokenKind.OpLt)    { pass (raw term_app2("<", a, b, true)); }
     if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", a, b, true)); }
     if (op == TokenKind.OpGt)    { pass (raw term_app2(">", a, b, true)); }
@@ -3618,6 +3648,9 @@ func:bitwise_base = TokenKind(TokenKind:op) never fails {
     if (op == TokenKind.OpAmpAssign)   { pass TokenKind.OpAmp; }
     if (op == TokenKind.OpPipeAssign)  { pass TokenKind.OpPipe; }
     if (op == TokenKind.OpCaretAssign) { pass TokenKind.OpCaret; }
+    if (op == TokenKind.OpPlusWrapAssign)  { pass TokenKind.OpPlusWrap; }
+    if (op == TokenKind.OpMinusWrapAssign) { pass TokenKind.OpMinusWrap; }
+    if (op == TokenKind.OpStarWrapAssign)  { pass TokenKind.OpStarWrap; }
     if (op == TokenKind.OpShlAssign)   { pass TokenKind.OpShl; }
     if (op == TokenKind.OpShrAssign)   { pass TokenKind.OpShr; }
     pass op;
@@ -3700,6 +3733,14 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
         }
         if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", prior, rhs, false)); }
         else { drop bind_assign(e, name, raw term_app2("mod", prior, rhs, false)); }
+        pass NIL;
+    }
+    // `x +%= v`, `-%=`, `*%=` ON A PLAIN INTEGER (D-312, 1.5.8b step 4): the
+    // modular term, no row and no guard.
+    if (raw wrap_arith_op(raw arith_base(op))) {
+        Term:wct = raw wrap_binop(e, raw arith_base(op), lt, prior, rhs);
+        if (!wct.ok) { wct = raw term_opaque(e, lt); }
+        drop bind_assign(e, name, move(wct));
         pass NIL;
     }
     // `x += v`, `-=`, `*=` ON A PLAIN INTEGER: the term and the `overflow`
@@ -3955,6 +3996,18 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                 }
                 if (op == TokenKind.OpSlash) { pass (raw term_app2("div", a, b, false)); }
                 pass (raw term_app2("mod", a, b, false));
+            }
+            // THE WRAPPING FAMILY (D-312, 1.5.8b step 4): the exact modular
+            // term, no row and no guard -- and the folder's constant where the
+            // node has one, as the trapping twins take theirs.
+            if (raw wrap_arith_op(op)) {
+                ConstVal:wcv = raw fold_node_constant(e.tr, id, e.scope, ty);
+                if (wcv.kind == (raw CV_INT())) {
+                    pass (raw term_lit(raw smt_int(wcv.num), false));
+                }
+                Term:wt = raw wrap_binop(e, op, ty, a, b);
+                if (!wt.ok) { pass (raw term_opaque(e, ty)); }
+                pass wt;
             }
             // `+ - *`: the term, and the `overflow` row at the guard's site --
             // none where the node is written as its constant (step 2, no guard).

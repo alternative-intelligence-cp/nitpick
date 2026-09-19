@@ -2912,6 +2912,20 @@ def stage_parse(t, s):
     print("  %-11s %2d real-parser check(s)" % (t["name"], n))
 
 
+def stray_expectation_lines(text):
+    """The lines that spell `expect-error` AFTER CODE (1.5.8b step 4): the
+    expectation reader takes a `//` comment that is the whole line, so these
+    parse as nothing. A leading-comment mention -- a fixture's prose saying it
+    has no expect-error -- is not one. `selfcheck.py` holds the pair
+    (`stray-expectation`, `stray-expectation-control`); npkg's twin is
+    `stray_expectations` in `npkg/suites.npk`."""
+    out = []
+    for i, line in enumerate(text.split("\n"), 1):
+        if "expect-error" in line and not line.strip().startswith("//"):
+            out.append(i)
+    return out
+
+
 def stage_rejection(t, s, which):
     """Whole programs that must be refused with EXACTLY the expected codes by
     the tool the stage names: `resolve` is the LOADER (tools/resolve_check),
@@ -2928,6 +2942,23 @@ def stage_rejection(t, s, which):
     for p in files_of(t):
         exp = read_expectations(p)
         if not exp.errors:
+            # A FIXTURE HAS NO EXPECTATIONS; A MALFORMED ONE IS NOT A FIXTURE
+            # (1.5.8b step 4's harness). The parser reads a `//` comment that
+            # is the WHOLE line, so an expectation written after code on the
+            # same line parses as nothing and the file is skipped in silence --
+            # `wrap_kinds.npk` asserted sixteen refusals and ran zero of them,
+            # and only `check_codes_tested` noticed, because its code was new.
+            # A file that spells an expectation where the reader cannot see it
+            # fails by name.
+            with open(p, encoding="utf-8") as fh:
+                stray = stray_expectation_lines(fh.read())
+            if stray:
+                s.failures += record_verdict(t["name"], os.path.relpath(p, ROOT), [
+                    "%s: `expect-error` on line(s) %s is written after code, where the "
+                    "expectation reader cannot see it -- every expectation is a `//` "
+                    "comment of its own. The file has no parsed expectation and would be "
+                    "skipped as a fixture" % (os.path.relpath(p, ROOT),
+                                              ", ".join(str(x) for x in stray[:6]))])
             continue
         name = os.path.relpath(p, ROOT)
         s.failures += record_verdict(t["name"], name, judge(tool, p, name, exp))

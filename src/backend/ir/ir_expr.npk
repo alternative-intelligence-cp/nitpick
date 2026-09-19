@@ -2184,6 +2184,13 @@ pub func:arith_name = string(TokenKind:op, bool:signed) never fails {
     if (op == TokenKind.OpPlus)    { pass "add"; }
     if (op == TokenKind.OpMinus)   { pass "sub"; }
     if (op == TokenKind.OpStar)    { pass "mul"; }
+    // THE WRAPPING FAMILY (D-312, 1.5.8b step 4): the SAME instruction with no
+    // flags -- LLVM's `add`/`sub`/`mul` are two's-complement modular already,
+    // and `ovf_family_of` answers -1 for these, so no intrinsic, no guard and
+    // no row stands between the operands and the result.
+    if (op == TokenKind.OpPlusWrap)  { pass "add"; }
+    if (op == TokenKind.OpMinusWrap) { pass "sub"; }
+    if (op == TokenKind.OpStarWrap)  { pass "mul"; }
     if (op == TokenKind.OpSlash)   { if (signed) { pass "sdiv"; } pass "udiv"; }
     if (op == TokenKind.OpPercent) { if (signed) { pass "srem"; } pass "urem"; }
     if (op == TokenKind.OpAmp)     { pass "and"; }
@@ -2880,6 +2887,10 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     bool:cfold = (op == TokenKind.OpPlus);
     if (op == TokenKind.OpMinus) { cfold = true; }
     if (op == TokenKind.OpStar)  { cfold = true; }
+    // The wrapping family folds too (D-312, 1.5.8b step 4), with the wrap: the
+    // folder computes it in `uint128` and brings it to the width, and the
+    // encoder takes the same constant, so the three agree by construction.
+    if (raw wrap_arith_op(op)) { cfold = true; }
     if (cfold) {
         ConstEmit:ce = raw emit_const_fold(x, id);
         if (ce.ok) { pass (move(ce.v)); }
@@ -5356,6 +5367,11 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, Span:at, TokenKind:op,
         if (op == TokenKind.OpPlus)    { ins = "add"; }
         if (op == TokenKind.OpMinus)   { ins = "sub"; }
         if (op == TokenKind.OpStar)    { ins = "mul"; }
+        // The wrapping family on lanes (D-312): the same vector instruction,
+        // and `ovf_family_of` above answered -1, so no any-lane guard.
+        if (op == TokenKind.OpPlusWrap)  { ins = "add"; }
+        if (op == TokenKind.OpMinusWrap) { ins = "sub"; }
+        if (op == TokenKind.OpStarWrap)  { ins = "mul"; }
         if (op == TokenKind.OpAmp)     { ins = "and"; }
         if (op == TokenKind.OpPipe)    { ins = "or"; }
         if (op == TokenKind.OpCaret)   { ins = "xor"; }

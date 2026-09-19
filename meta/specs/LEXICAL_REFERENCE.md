@@ -165,6 +165,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 
 ```ebnf
 Operator ::= "+" | "-" | "*" | "/" | "%" | "++" | "--"
+           | "+%" | "-%" | "*%" | "+%=" | "-%=" | "*%="
            | "=" | "+=" | "-=" | "*=" | "/=" | "%="
            | "&=" | "|=" | "^=" | "<<=" | ">>="
            | "==" | "!=" | "<" | "<=" | ">" | ">=" | "<=>"
@@ -191,6 +192,14 @@ Punctuation   ::= "(" | ")" | "{" | "}" | "[" | "]" | "." | "," | ":" | ";" | "`
 >
 > **Direction is semantic** in this operator set: `->` points *to* a target, `<-`
 > brings a value *back*, `=>` goes *from* one type *to* another.
+>
+> **The wrapping family `+% -% *%`** (D-312, 1.5.8b step 4), with the compound
+> forms `+%= -%= *%=`. Plain `+ - *` TRAP on overflow (D-210); these compute
+> modulo 2^N and never trap, for the arithmetic whose stated intent is modular:
+> a hash's mix step, a PRNG, a checksum. The `%` is the operator describing
+> what it does — "add modulo 2^N" — rather than a convention borrowed from
+> another language. They are the longest match, so `a +% b` is one token and
+> `a + %b` was never a program (`%` starts no expression).
 
 ### 5.1 The range and spread family
 

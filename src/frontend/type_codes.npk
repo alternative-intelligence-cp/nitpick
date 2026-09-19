@@ -470,3 +470,11 @@ pub func:TYPE_CONST_OVERFLOW = string() never fails { pass "NITPICK-TYPE-076"; }
 // between the two was an unchecked wild access that type-checked. The
 // element is `(<-p)[i]`.
 pub func:TYPE_INDEX_POINTER = string() never fails { pass "NITPICK-TYPE-082"; };
+
+// THE WRAPPING FAMILY'S KIND RULE (D-312, 1.5.8b step 4): `+% -% *%` and their
+// compound forms compute modulo 2^N, which is the plain integers' and `simd`
+// integer lanes' arithmetic and nobody else's -- a twisted kind would have its
+// ERR laundered by a wrap, the ternary kinds, `frac`, `dim256` and `complex`
+// have their own arithmetic, and a float is IEEE. The message names the kind
+// and says which of those it is.
+pub func:TYPE_WRAP_KIND = string() never fails { pass "NITPICK-TYPE-078"; };

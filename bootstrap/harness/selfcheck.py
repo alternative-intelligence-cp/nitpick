@@ -245,6 +245,30 @@ def main():
     print("  %-26s %-4s  %s" % ("derived-path-control", "ok" if okc else "BAD",
                                 "the same finding at a real path must not be flagged"))
 
+    # AN EXPECTATION WRITTEN AFTER CODE IS FLAGGED, AND A FIXTURE'S PROSE IS
+    # NOT (1.5.8b step 4): the expectation reader takes a `//` comment that is
+    # the whole line, so `stmt;  // expect-error-at:3 CODE` parses as nothing
+    # and the suite walk would skip the file as a fixture -- `wrap_kinds.npk`
+    # asserted sixteen refusals and ran zero. Unit calls, no compiler involved;
+    # `npkg/selfcheck.npk` carries the same two cases by name.
+    stray = harness.stray_expectation_lines(
+        "mod:m;\nfunc:f = int32() never fails {\n"
+        "    discard(1tbb32 +% 1tbb32);   // expect-error-at:3 NITPICK-TYPE-078\n"
+        "    pass 0i32;\n};\n")
+    oks = stray == [3]
+    if not oks:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("stray-expectation", "ok" if oks else "BAD",
+                                "an expectation written after code must be flagged, by line"))
+    calm = harness.stray_expectation_lines(
+        "// A FIXTURE for header_mismatch.npk (no expect-error: the resolve stage skips\n"
+        "// it).\nmod:m;\n")
+    okf = calm == []
+    if not okf:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("stray-expectation-control", "ok" if okf else "BAD",
+                                "a fixture whose leading comment mentions the word must not be"))
+
     # THE SHARED-STATE BELT REPORTS AN UNCLASSIFIED WORD AND A PLAIN ACCESS OF
     # AN ATOMIC ONE (1.5.6 step 0, D-290), and passes a classified word: one
     # synthetic floor text, three spec texts. `npkg/selfcheck.npk` carries the

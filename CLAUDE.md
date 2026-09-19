@@ -1263,7 +1263,19 @@ visit, and the verified build divided by zero where the plain build trapped
 admitted by the checker and refused by the emitter (EMIT-002), for arrays since
 each arm was written; and **DEF-83** — an explorer control's finding seed,
 which spins to the step budget by design, could pass its 60-second net under
-load and read as a blind control (300 s now). The old 1.5.8 was PLANNED 2026-09-18 by
+load and read as a blind control (300 s now). **Step 4 LANDED 2026-09-19**: the
+WRAPPING FAMILY `+% -% *%`, with `+%= -%= *%=` (D-312, the user's own
+question) — arithmetic modulo 2^N at its trapping twin's precedence, with no
+guard, no obligation row and no `failsafe` arm, refused by name on every kind
+that owns its own arithmetic (NITPICK-TYPE-078, sixteen shapes pinned), folded
+WITH the wrap (in `uint128`, since the compiler's own `+ - *` trap), and
+modelled exactly by the encoder as `(mod t 2^N)` — two's complement for a
+signed width — so a row after the site knows the value. FNV-1a 64 and
+splitmix64 reproduce their published sequences, and the prelude's `fnv_mix`
+adopted `*%`: a 128-bit multiply, an `IntOverflow` guard that can never fire
+and a truncation became one `mul i64` in every program that hashes
+(`intern.npk`'s copy of the same step waits for a snapshot that parses the
+operator, D-205). The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
@@ -2007,6 +2019,14 @@ that carried them retired at the cycle close):
   two reactor words: the epoll word stays as the join left it, and the eventfd
   is kept. So a new executor or TLS word must be written at the rebirth in
   `npk_thread_start`.
+- **An expectation is a `//` comment of its OWN LINE** (1.5.8b step 4): both
+  runners read `// expect-error: CODE` and `// expect-error-at: N` only from a
+  comment that is the whole line, and a file in a rejection suite with no
+  PARSED expectation is treated as a FIXTURE and skipped in silence. Writing the
+  expectation after the code (`discard(x);  // expect-error-at:14 …`) therefore
+  runs nothing: `wrap_kinds.npk` asserted sixteen refusals and ran zero, and only
+  `check_codes_tested` noticed, because its code was new. Both runners now refuse
+  a file that spells `expect-error` after code, by name.
 - **A change to emitted TEXT breaks the emitter's unit tests** (1.5.8 step 2):
   `tests/backend/ir_expr.npk`, `ir_func.npk` and `ir_stmt.npk` compare whole
   functions' text exactly, and step 2's `"split-stack"` broke eighteen of their
@@ -2064,6 +2084,15 @@ that carried them retired at the cycle close):
   runs to the budget by design, so a control seed's net is 300 s in both
   runners where a unit seed's is 60. A red control that says `hung` is READ:
   a finding seed killed by load reads exactly like a blind control.
+- **Modular arithmetic is spelled `+% -% *%`** (D-312, 1.5.8b step 4): the
+  wrapping family computes modulo 2^N and never traps, where `+ - *` trap
+  (D-210) — a hash's mix step, a PRNG, a checksum. No guard, no obligation
+  row, no `failsafe` arm, and the folder folds a constant wrap WITH the wrap
+  where its trapping twin is TYPE-076. Plain integers and `simd` integer lanes
+  only: every other kind is `NITPICK-TYPE-078` naming the kind. The compound
+  forms are `+%= -%= *%=`. The prelude's `fnv_mix` uses `*%` since this step;
+  `intern.npk`'s copy of the same step keeps the `uint128` spelling until a
+  snapshot parses the operator (D-205), and the two agree to the bit.
 - **`sealed`/`hidden` draw the private-member line** (D-313, D-314; 1.5.8b
   step 1): code outside the module that declares the struct may read a sealed
   field and may not write it (every write form — an assignment through any

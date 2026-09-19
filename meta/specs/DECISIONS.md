@@ -19768,6 +19768,36 @@ For both, widen-compute-truncate is heavy in the inner loop.
 Lands at 1.5.8b step 4, after the `overflow` rows exist (step 3), so "no
 guard, no row" is tested against them.
 
+
+*[LANDED 2026-09-19, 1.5.8b step 4.]* `+% -% *%` and `+%= -%= *%=` are tokens
+of LEXICAL_REFERENCE §5, at their trapping twins' precedence. The checker
+refuses every other kind by name (`NITPICK-TYPE-078`, eleven shapes pinned in
+`tests/types/rejection/wrap_kinds.npk`), the emitter writes the plain
+`add`/`sub`/`mul` with no flags (`ovf_family_of` answers -1, so no intrinsic,
+no guard), REACH arms nothing, the folder folds with the wrap in `uint128` —
+never TYPE-076 — and the encoder models the result as `(mod t 2^N)`, two's
+complement for a signed width, with no row. `tests/verify/wrap_no_row.npk`
+holds both halves: the `*%` site has no row, and a `prove` over the wrapped
+value discharges.
+
+**The prelude's FNV step adopted it** (§2.5's condition, measured): `fnv_mix`
+was a 128-bit multiply, an `IntOverflow` guard that can never fire and a
+truncation — twelve lines of IR and a retained `overflow` row — and is now
+`(h ^ v) *% 1099511628211u64`, one `mul i64`, in every program that hashes.
+`intern.npk`'s copy of the same step still says `uint128`: `src/` is bounded by
+what the SNAPSHOT can compile (D-205) and no snapshot parses `*%` yet, so it
+adopts at the next refresh. The two agree to the bit meanwhile, which is what
+D-179's error identity needs.
+
+**Which basis is which** (the library listener asked, and this decision's
+worked example is the trap): the textbook FNV-1a 64 basis is
+`0xcbf29ce484222325`, and `tests/backend/programs/wrap_fnv1a.npk` uses it to
+check the published digests. The ECOSYSTEM's derived identities use
+`0xCBF5DAE484222325` ON PURPOSE (D-190) — error codes, the Bridge's interface
+hash, every derived `Hash` — and the prelude's `fnv_offset` builds that one. A
+"fix" of either to the other would move every error code and break every
+driver.
+
 ## D-313 — A struct field may be `sealed`: readable everywhere, written only by code in its struct's declaring module; the compiler-known containers' headers are sealed by definition — **SETTLED (user decision, 2026-09-19: "Lets go with A. As far as keyword, I think sealed is fine. ... i'd rather overlap some than come up with some word that doesn't accurately represent what is happening. ... We don't have classes so someone coming from OOP would not meet the opportunity where the 'usual' meaning for them would even show up and so seeing it will hopefully make them look into what it does."; S-93)**
 
 Found at 1.5.8b's planning, while working out what D-308's length facts rest on.

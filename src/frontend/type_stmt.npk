@@ -1637,6 +1637,15 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // `+` accepts, or the reverse, is a difference nobody would predict.
     TokenKind:op = raw stmt_op(s);
     if (op != TokenKind.OpAssign) {
+        // `x +%= v` IS `x = x +% v` (D-312, 1.5.8b step 4), and its kind rule is
+        // the expression form's, through the one function -- BEFORE every tier
+        // gate below, so a wrap on a kind that owns its own arithmetic reports
+        // TYPE-078 naming the kind rather than that tier's own message. One
+        // mistake, one report (D-240).
+        if (raw wrap_arith_op(raw assign_base_op(op))) {
+            discard(raw type_wrap_arith(e, s.span, raw assign_base_op(op), want, got));
+            pass NIL;
+        }
         // A `dim256` ON EITHER SIDE takes the unit algebra with the REAL
         // operator (D-196, 1.3.3) — and the RESULT must keep the slot's
         // unit, which `x op= v` cannot restate: `d *= d` computes
@@ -1752,6 +1761,12 @@ func:assign_base_op = TokenKind(TokenKind:op) never fails {
     if (op == TokenKind.OpCaretAssign)   { pass TokenKind.OpCaret; }
     if (op == TokenKind.OpShlAssign)     { pass TokenKind.OpShl; }
     if (op == TokenKind.OpShrAssign)     { pass TokenKind.OpShr; }
+    // The wrapping compound forms (D-312, 1.5.8b step 4): `x +%= v` IS
+    // `x = x +% v`, so every path that reads the real operator reads the
+    // wrapping one.
+    if (op == TokenKind.OpPlusWrapAssign)  { pass TokenKind.OpPlusWrap; }
+    if (op == TokenKind.OpMinusWrapAssign) { pass TokenKind.OpMinusWrap; }
+    if (op == TokenKind.OpStarWrapAssign)  { pass TokenKind.OpStarWrap; }
     pass op;
 };
 

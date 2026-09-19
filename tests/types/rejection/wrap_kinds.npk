@@ -1,0 +1,96 @@
+// The wrapping family is the plain integers' and `simd` integer lanes'
+// arithmetic, and nobody else's (D-312, TYPE-078; 1.5.8b step 4). Every kind
+// below owns `+ - *` already, and a wrap would mean something the kind does
+// not have: a twisted value's ERR would be laundered into a number, the
+// ternary kinds saturate at their balanced bound, `frac` is exact or ERR,
+// `dim256` carries a unit, `complex` computes per component, and a float is
+// IEEE. The refusal names the kind and says which of those it is.
+mod:wrap_kinds;
+
+unit:Hz2 = 1 / Seconds;
+
+func:kinds = int32() never fails {
+    tbb32:t = 5tbb32;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 16
+    discard(t +% 1tbb32);
+
+    tfp64:f = 1.5tfp64;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 21
+    discard(f *% 2.0tfp64);
+
+    tryte:y = 4;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 26
+    discard(y +% 1);
+
+    nyte:n = 4;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 31
+    discard(n -% 1);
+
+    frac64:q = 3i64 => frac64;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 36
+    discard(q +% (1i64 => frac64));
+
+    dim256<Hz2>:d = 2.0tfp256 =>! dim256<Hz2>;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 41
+    discard(d +% d);
+
+    complex<flt64>:c = complex(1.0f64, 2.0f64);
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 46
+    discard(c *% c);
+
+    flt64:g = 1.5f64;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 51
+    discard(g +% 2.0f64);
+
+    simd<flt64, 4>:v = simd(1.0f64);
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 56
+    discard(v +% v);
+
+    bool:b = true;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 61
+    discard(b +% b);
+
+    int32:i = 7i32;
+    i +%= 1i32;                                    // legal: a plain integer
+    tbb32:tc = 5tbb32;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 68
+    tc *%= 2tbb32;
+    pass i;
+};
+
+// The compound form on each tier kind takes the SAME gate, before the tier's
+// own (D-240: one mistake, one report).
+func:compounds = int32() never fails {
+    tfp64:f = 1.5tfp64;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 78
+    f *%= 2.0tfp64;
+    tryte:y = 4;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 82
+    y +%= 1;
+    frac64:q = 3i64 => frac64;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 86
+    q +%= (1i64 => frac64);
+    complex<flt64>:c = complex(1.0f64, 2.0f64);
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 90
+    c *%= c;
+    flt64:g = 1.5f64;
+    // expect-error: NITPICK-TYPE-078
+    // expect-error-at: 94
+    g +%= 2.0f64;
+    pass 0i32;
+};

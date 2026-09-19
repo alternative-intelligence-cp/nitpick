@@ -718,6 +718,38 @@ async func:run_parse = NIL(Ctx->:c, int64:t) {
 // `resolve` / `check`: whole programs refused with EXACTLY the expected codes
 // by the tool the stage names -- the loader (`resolve_check`) or the frontend
 // (`check`: the type checker, an analysis, expansion, derive, whichever the
+// EVERY EXPECTATION IS A `//` COMMENT OF ITS OWN (1.5.8b step 4): a line that
+// names one after code is a test the reader cannot see, and the file would be
+// skipped as a fixture. Returns one failure line naming the lines, or nothing.
+// The harness's twin is `stray_expectation_lines`; both self-checks hold the
+// pair `stray-expectation` / `stray-expectation-control`.
+pub func:stray_expectations = List<string>(string:text, string:path) never fails {
+    List<string>:out = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(text);
+    string:nums = "";
+    int64:found = 0i64;
+    for (int64:i in 0i64...lines.count) {
+        string:line = raw strlist_view(lines, i);
+        // trimmed of leading blanks, does the line begin a comment?
+        int64:w = 0i64;
+        while ((w < line.len) && ((line.ptr[w] == 32u8) || (line.ptr[w] == 9u8))) { w = w + 1i64; }
+        bool:is_comment = ((w + 1i64) < line.len) && (line.ptr[w] == 47u8) && (line.ptr[w + 1i64] == 47u8);
+        if ((raw text_contains(line, "expect-error")) && (!is_comment)) {
+            found = found + 1i64;
+            if (found <= 6i64) {
+                if (nums.len > 0i64) { nums = string_concat(nums, ", "); }
+                nums = string_concat(nums, int_to_string(i + 1i64));
+            }
+        }
+    }
+    if (found == 0i64) { pass out; }
+    string:m = string_concat(path, ": `expect-error` on line(s) ");
+    m = string_concat(m, nums);
+    m = string_concat(m, " is written after code, where the expectation reader cannot see it -- every expectation is a `//` comment of its own. The file has no parsed expectation and would be skipped as a fixture");
+    drop list_push(@out, move(m));
+    pass out;
+};
+
 // suite's directory says). A file with no `expect-error:` is a fixture another
 // one imports, not a test.
 async func:run_rejection = NIL(Ctx->:c, int64:t, string:which) {
@@ -730,7 +762,16 @@ async func:run_rejection = NIL(Ctx->:c, int64:t, string:which) {
         string:p = raw strlist_view(files, i);
         string:text = relay read_text(p);
         Expect:exp = raw expect_read(text);
-        if (exp.errors.count == 0i64) { continue; }
+        if (exp.errors.count == 0i64) {
+            // A FIXTURE HAS NO EXPECTATIONS; A MALFORMED ONE IS NOT A FIXTURE
+            // (1.5.8b step 4's harness, twinned here). The reader takes a `//`
+            // comment that is the WHOLE line, so an expectation written after
+            // code parses as nothing and the file is skipped in silence --
+            // `wrap_kinds.npk` asserted sixteen refusals and ran none.
+            List<string>:stray = raw stray_expectations(text, p);
+            if (stray.count > 0i64) { drop record(c, tname, raw rel_to_root(c, p), move(stray)); }
+            continue;
+        }
         string:name = raw rel_to_root(c, p);
         List<string>:fl = relay await check_rejection(c, tool, p, name, exp);
         drop record(c, tname, name, fl);

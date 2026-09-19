@@ -40,6 +40,18 @@ pub func:op_match = OpMatch(string:text, int64:at) never fails {
             OpMatch:mOpBorrowMut = OpMatch{ found: true, kind: TokenKind.OpBorrowMut, length: 3i64 };
             pass mOpBorrowMut;
         }
+        if (raw string_eq(s3, "*%=")) {
+            OpMatch:mOpStarWrapAssign = OpMatch{ found: true, kind: TokenKind.OpStarWrapAssign, length: 3i64 };
+            pass mOpStarWrapAssign;
+        }
+        if (raw string_eq(s3, "+%=")) {
+            OpMatch:mOpPlusWrapAssign = OpMatch{ found: true, kind: TokenKind.OpPlusWrapAssign, length: 3i64 };
+            pass mOpPlusWrapAssign;
+        }
+        if (raw string_eq(s3, "-%=")) {
+            OpMatch:mOpMinusWrapAssign = OpMatch{ found: true, kind: TokenKind.OpMinusWrapAssign, length: 3i64 };
+            pass mOpMinusWrapAssign;
+        }
         if (raw string_eq(s3, "..*")) {
             OpMatch:mOpDotDotStar = OpMatch{ found: true, kind: TokenKind.OpDotDotStar, length: 3i64 };
             pass mOpDotDotStar;
@@ -88,9 +100,17 @@ pub func:op_match = OpMatch(string:text, int64:at) never fails {
             OpMatch:mOpAmpAssign = OpMatch{ found: true, kind: TokenKind.OpAmpAssign, length: 2i64 };
             pass mOpAmpAssign;
         }
+        if (raw string_eq(s2, "*%")) {
+            OpMatch:mOpStarWrap = OpMatch{ found: true, kind: TokenKind.OpStarWrap, length: 2i64 };
+            pass mOpStarWrap;
+        }
         if (raw string_eq(s2, "*=")) {
             OpMatch:mOpStarAssign = OpMatch{ found: true, kind: TokenKind.OpStarAssign, length: 2i64 };
             pass mOpStarAssign;
+        }
+        if (raw string_eq(s2, "+%")) {
+            OpMatch:mOpPlusWrap = OpMatch{ found: true, kind: TokenKind.OpPlusWrap, length: 2i64 };
+            pass mOpPlusWrap;
         }
         if (raw string_eq(s2, "++")) {
             OpMatch:mOpPlusPlus = OpMatch{ found: true, kind: TokenKind.OpPlusPlus, length: 2i64 };
@@ -99,6 +119,10 @@ pub func:op_match = OpMatch(string:text, int64:at) never fails {
         if (raw string_eq(s2, "+=")) {
             OpMatch:mOpPlusAssign = OpMatch{ found: true, kind: TokenKind.OpPlusAssign, length: 2i64 };
             pass mOpPlusAssign;
+        }
+        if (raw string_eq(s2, "-%")) {
+            OpMatch:mOpMinusWrap = OpMatch{ found: true, kind: TokenKind.OpMinusWrap, length: 2i64 };
+            pass mOpMinusWrap;
         }
         if (raw string_eq(s2, "--")) {
             OpMatch:mOpMinusMinus = OpMatch{ found: true, kind: TokenKind.OpMinusMinus, length: 2i64 };

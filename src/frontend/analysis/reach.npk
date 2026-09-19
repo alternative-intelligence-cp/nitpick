@@ -526,6 +526,9 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         // its element's rule — arming IntOverflow for any of them would demand
         // an arm nothing can enter, which is the same reasoning the division
         // suppression above is written from.
+        // THE WRAPPING FAMILY ARMS NOTHING (D-312, 1.5.8b step 4): `+% -% *%`
+        // and their compound forms cannot trap, so they are absent from this
+        // list and from the compound one above, deliberately.
         bool:ovflike = false;
         if (op == TokenKind.OpPlus)  { ovflike = true; }
         if (op == TokenKind.OpMinus) { ovflike = true; }

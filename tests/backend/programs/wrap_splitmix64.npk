@@ -1,0 +1,43 @@
+// expect-exit: 0
+//
+// SPLITMIX64 WITH THE WRAPPING FAMILY (D-312, 1.5.8b step 4): a PRNG's state
+// step and its mix are modular by definition, which is what `+%` and `*%`
+// say. The first five outputs from seed 0 are the reference sequence. Every
+// constant past 2^63-1 is written with bit operations (D-311).
+mod:wrap_splitmix64;
+
+pub struct:SplitMix = { uint64:state; };
+
+func:next = uint64(SplitMix->:s) never fails {
+    s.state +%= ((1u64 << 63u64) | 2177342782468422677u64);
+    uint64:z = s.state;
+    z = (z ^ (z >> 30u64)) *% ((1u64 << 63u64) | 4564476756301768121u64);
+    z = (z ^ (z >> 27u64)) *% ((1u64 << 63u64) | 1499779743744070123u64);
+    pass (z ^ (z >> 31u64));
+};
+
+func:main = int32(cstring[]:argv) {
+    SplitMix:s = SplitMix{ state: 0u64 };
+    if ((raw next(@s)) != ((1u64 << 63u64) | 7070836379803831727u64)) { exit 1i32; }
+    if ((raw next(@s)) != 7960286522194355700u64) { exit 2i32; }
+    if ((raw next(@s)) != 487617019471545679u64) { exit 3i32; }
+    if ((raw next(@s)) != ((1u64 << 63u64) | 8686239339925766636u64)) { exit 4i32; }
+    if ((raw next(@s)) != 1961750202426094747u64) { exit 5i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (ShiftRange)     { exit 89i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

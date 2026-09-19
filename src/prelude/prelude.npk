@@ -452,16 +452,21 @@ impl:flt32:ToString = { func:to_string = string(flt32:self) never fails {
 // stale). It is past the 64-bit literal envelope, so it is built from its two
 // words, 0xCBF5DAE4 = 3421887204 and 0x84222325 = 2216829733; the prime fits.
 pub func:fnv_offset = uint64() never fails { pass ((3421887204u64 << 32u64) | 2216829733u64); };
-// FNV's multiply is DELIBERATELY MODULAR — the mixing IS the wraparound — so
-// since D-210 it is spelled the way deliberate modularity is spelled: widen,
-// compute, truncate, with `=>!` carrying the acknowledged loss (D-210.3). The
-// product of a 64-bit word and the prime needs 104 bits, which `uint128` has.
-// All THREE copies of this step (here, `resolve.err_fnv_step`, and
-// `ir_stmt.pat_err_fnv`) must agree to the bit — D-179's error identity is
-// derived from it on both sides of the compiler — so all three are spelled
-// identically.
+// FNV's multiply is DELIBERATELY MODULAR — the mixing IS the wraparound — and
+// since 1.5.8b step 4 it is spelled by the operator that says so: `*%` (D-312).
+// Until then it was "widen, compute, truncate" (`uint128`, then `=>!`), which
+// computed the same value through a 128-bit multiply, an `IntOverflow` guard
+// that could never fire, and a truncation — measured: twelve lines of IR and a
+// retained `overflow` row against one `mul i64` and no row.
+//
+// THE SECOND COPY of this step, `intern.npk`'s `fnv1a_step`, must agree to the
+// bit — D-179's error identity is derived from it on both sides of the compiler
+// — and it does: both are `(h ^ v) * prime` modulo 2^64. It still says
+// `uint128`, because `src/` is bounded by what the SNAPSHOT can compile
+// (D-205) and no snapshot parses `*%` yet; it adopts the operator at the next
+// refresh, which 1.5.8b step 7's record owes.
 pub func:fnv_mix = uint64(uint64:h, uint64:v) never fails {
-    pass ((((h ^ v) => uint128) * 1099511628211u128) =>! uint64);
+    pass ((h ^ v) *% 1099511628211u64);
 };
 
 // A SCALAR HASHES ITS VALUE (D-123); a derived struct hash combines its fields

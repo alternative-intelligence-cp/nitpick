@@ -22,6 +22,7 @@ mod:type_expr;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
+use "./token_name.npk".*;   // token_kind_name (D-312's refusal names the operator)
 use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./diagnostics.npk".*;
@@ -1125,6 +1126,52 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) nev
         pass (raw te_mismatch(e, at, lt, rt));
     }
     pass common;
+};
+
+// Modular arithmetic is the PLAIN INTEGERS' and `simd` INTEGER LANES', and
+// nobody else's: a twisted value would have its ERR laundered into a number, a
+// ternary, `frac`, `dim256` and `complex` value has arithmetic of its own, and
+// a float has no wrap at all. Each refusal names the kind and says which.
+pub func:wrap_kind_ok = bool(ExprTyper->:e, int32:t) never fails {
+    if (t == 0i32) { pass true; }                      // already reported
+    if (raw type_is_invalid(e.types, t)) { pass true; }
+    if (raw type_is_integer(e.types, t)) { pass true; }
+    if ((raw type_kind(e.types, t)) == (raw TY_SIMD())) {
+        pass (raw type_is_integer(e.types, raw type_elem(e.types, t)));
+    }
+    pass false;
+};
+
+func:wrap_kind_why = string(ExprTyper->:e, int32:t) never fails {
+    int32:k = raw type_kind(e.types, t);
+    if (k == (raw TY_TBB()))     { pass "a twisted value carries ERR, which a wrap would launder into a number"; }
+    if (k == (raw TY_TFP()))     { pass "a twisted value carries ERR, which a wrap would launder into a number"; }
+    if (k == (raw TY_TERN()))    { pass "the ternary kinds saturate to ERR at the balanced bound, which is their own arithmetic"; }
+    if (k == (raw TY_FRAC()))    { pass "a `frac` is exact or ERR, which is its own arithmetic"; }
+    if (k == (raw TY_DIM()))     { pass "a `dim256` carries a unit, which its own algebra composes"; }
+    if (k == (raw TY_COMPLEX())) { pass "a `complex` computes per component, which is its own arithmetic"; }
+    if (k == (raw TY_FLOAT()))   { pass "a float is IEEE: it has infinities and NaN, and no wrap"; }
+    if (k == (raw TY_SIMD()))    { pass "only a vector of plain integer lanes wraps"; }
+    pass "only a plain integer (`intN`/`uintN`) and a `simd` of them wrap";
+};
+
+// `a +% b` (D-312): both sides the plain integers' or `simd` integer lanes',
+// and then the ordinary arithmetic typing -- an unsuffixed literal takes the
+// other side's type, and a mismatched pair is the same report `+` would give.
+pub func:type_wrap_arith = int32(ExprTyper->:e, Span:at, TokenKind:op, int32:lt, int32:rt) never fails {
+    int32:bad = 0i32;
+    if (!(raw wrap_kind_ok(e, lt))) { bad = lt; }
+    if ((bad == 0i32) && (!(raw wrap_kind_ok(e, rt)))) { bad = rt; }
+    if (bad != 0i32) {
+        string:m = string_concat("`", raw token_kind_name(op));
+        m = string_concat(m, "` computes modulo 2^N, which `");
+        m = string_concat(m, raw type_display(e.types, e.interns, bad));
+        m = string_concat(m, "` has no meaning for: ");
+        m = string_concat(m, raw wrap_kind_why(e, bad));
+        m = string_concat(m, " (D-312)");
+        pass (raw te_error(e, raw TYPE_WRAP_KIND(), move(m), at));
+    }
+    pass (raw type_arithmetic(e, at, lt, rt));
 };
 
 // Which operators the `dim256` unit algebra owns — the five arithmetic ones.
@@ -4030,6 +4077,12 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // 1.3.3) — the one place the OPERATOR decides the result TYPE, which is
     // why the shared `type_arithmetic` (which never sees the operator)
     // cannot carry it.
+    // THE WRAPPING FAMILY IS ITS OWN GATE (D-312, 1.5.8b step 4), before every
+    // tier's dispatch: the kinds below own `+ - *` and each would be laundered
+    // by a wrap, so the refusal names the kind at the site.
+    if (raw wrap_arith_op(op)) {
+        pass (raw type_wrap_arith(e, n.span, op, lt, rt));
+    }
     if (raw dim_arith_op(op)) {
         if ((raw type_kind(e.types, lt)) == (raw TY_DIM())) {
             pass (raw type_dim_arith(e, n.span, op, lt, rt));

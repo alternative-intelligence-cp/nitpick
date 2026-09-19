@@ -115,6 +115,12 @@ OP_NAMES = {
     "_~": "UnderTilde", "_^": "UnderCaret", "!!!": "BangBangBang",
     "|>": "PipeFwd", "<|": "PipeBack", "..": "DotDot", "...": "DotDotDot",
     "..*": "DotDotStar", "..^": "DotDotCaret",
+    # THE WRAPPING FAMILY (D-312, 1.5.8b step 4): `+% -% *%` and their compound
+    # forms compute modulo 2^N and never trap, where `+ - *` trap (D-210). The
+    # `%` is the operator DESCRIBING what it does -- "add modulo 2^N" -- which
+    # is why the user chose it over a convention like `&+`.
+    "+%": "PlusWrap", "-%": "MinusWrap", "*%": "StarWrap",
+    "+%=": "PlusWrapAssign", "-%=": "MinusWrapAssign", "*%=": "StarWrapAssign",
 }
 PUNCT_NAMES = {"(": "LParen", ")": "RParen", "{": "LBrace", "}": "RBrace",
                "[": "LBracket", "]": "RBracket", ".": "Dot", ",": "Comma",

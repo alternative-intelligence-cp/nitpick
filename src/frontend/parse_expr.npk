@@ -227,13 +227,19 @@ func:p_level_has = bool(int32:level, TokenKind:k) never fails {
         if (k == TokenKind.OpShl)   { pass true; }
         pass (k == TokenKind.OpShr);
     }
+    // THE WRAPPING FAMILY SITS WITH ITS TRAPPING TWIN (D-312, 1.5.8b step 4):
+    // `a +% b * c` groups as `a +% (b * c)`, exactly as `a + b * c` does, so
+    // the spelling of the overflow rule never moves an expression's shape.
     if (level == 7i32) {
-        if (k == TokenKind.OpPlus)  { pass true; }
+        if (k == TokenKind.OpPlus)      { pass true; }
+        if (k == TokenKind.OpPlusWrap)  { pass true; }
+        if (k == TokenKind.OpMinusWrap) { pass true; }
         pass (k == TokenKind.OpMinus);
     }
     if (level == 6i32) {
-        if (k == TokenKind.OpStar)    { pass true; }
-        if (k == TokenKind.OpSlash)   { pass true; }
+        if (k == TokenKind.OpStar)     { pass true; }
+        if (k == TokenKind.OpStarWrap) { pass true; }
+        if (k == TokenKind.OpSlash)    { pass true; }
         pass (k == TokenKind.OpPercent);
     }
     pass false;

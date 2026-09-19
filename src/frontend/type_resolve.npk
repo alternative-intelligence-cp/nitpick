@@ -1004,6 +1004,33 @@ func:fw_is_u64 = bool(FoldWidth:w) never fails {
     pass ((w.bits == 64i32) && (!w.signed));
 };
 
+// THE WRAPPING FAMILY (D-312, 1.5.8b step 4): `+% -% *%`, the operators that
+// compute modulo 2^N where `+ - *` trap (D-210). Here rather than beside the
+// checker's other operator predicates because the folder needs it too, and the
+// checker reads this module.
+pub func:wrap_arith_op = bool(TokenKind:op) never fails {
+    if (op == TokenKind.OpPlusWrap)  { pass true; }
+    if (op == TokenKind.OpMinusWrap) { pass true; }
+    pass (op == TokenKind.OpStarWrap);
+};
+
+// THE WRAPPING FAMILY'S FOLD (D-312, 1.5.8b step 4): `a op% b` modulo 2^64,
+// computed in `uint128` because the compiler's own `+ - *` TRAP (D-210) and a
+// wrap is exactly the case that would trap. Two 64-bit operands cannot
+// overflow 128 bits, and the subtraction adds 2^64 first so nothing underflows;
+// the caller brings the answer to the operation's width with `fold_to_width`,
+// which is the machine's answer there.
+func:wrap64 = int64(TokenKind:op, int64:a, int64:b) never fails {
+    uint128:ua = (a =>! uint64) => uint128;
+    uint128:ub = (b =>! uint64) => uint128;
+    uint128:mask = (~0u64) => uint128;
+    uint128:res = 0u128;
+    if (op == TokenKind.OpPlusWrap)  { res = ua + ub; }
+    if (op == TokenKind.OpMinusWrap) { res = (ua + (mask + 1u128)) - ub; }
+    if (op == TokenKind.OpStarWrap)  { res = ua * ub; }
+    pass (((res & mask) =>! uint64) =>! int64);
+};
+
 // A RAW 64-BIT RESULT BROUGHT TO A WIDTH OF AT MOST 64: its low `bits`, sign-
 // extended for a signed width -- the machine's answer for `<<` and `~`, which
 // lose bits by definition and never trap (DEF-80: `1i8 << 7i8` folded to 128,
@@ -1282,6 +1309,16 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
     if (l.kind != (raw CV_INT()))  { pass (raw cv_none()); }
     if (rr.kind != (raw CV_INT())) { pass (raw cv_none()); }
     int32:ty = raw fold_join_type(l.type_id, rr.type_id);
+
+    // THE WRAPPING FAMILY FOLDS WITH THE WRAP (D-312, 1.5.8b step 4), and never
+    // reports TYPE-076: the operator's whole meaning is that the bits past the
+    // width are dropped. A width past the folder's 64-bit window declines, as
+    // every other operation does there, and the run-time instruction answers.
+    if (raw wrap_arith_op(op)) {
+        FoldWidth:ww = raw fold_width(r, ty);
+        if (ww.bits > 64i32) { pass (raw cv_none()); }
+        pass (raw cv_int(ty, raw fold_to_width(raw wrap64(op, l.num, rr.num), ww)));
+    }
 
     // `+ - *` EXACTLY AT THE OPERATION'S WIDTH (D-310, K-7; DEF-71): a result the
     // type cannot hold is TYPE-076, reported once and folded to nothing; one this
