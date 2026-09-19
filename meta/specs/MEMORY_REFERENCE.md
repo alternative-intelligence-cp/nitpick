@@ -389,3 +389,53 @@ single-threaded arena's handle wandering into a shared `get` is refused as
 stale (`-4106`), not read. `destroy` consumes the binding at compile time
 (`MOVE-002`), and an un-destroyed shared arena is a wild-role leak the exit
 check names (D-151).
+
+## 5. The stacks (D-305; landed 1.5.8, 2026-09-19)
+
+**Every stack a program runs on is the floor's, and its budget is the
+program's, not the shell's.** `ulimit -s` and `RLIMIT_STACK` do not size any
+of them. Before 1.5.8 the main thread ran on the stack the kernel handed it,
+and an overflow was SIGSEGV with no `failsafe` (DEF-59: the compiler compiling
+itself died under `ulimit -s 2048`). Each stack is ONE anonymous mapping,
+lowest address first:
+
+| region | size | main thread | spawned thread | `failsafe` |
+|---|---|---|---|---|
+| guard (`PROT_NONE`) | 4 KiB | yes | yes | yes |
+| signal stack | 64 KiB | yes | yes | — |
+| guard (`PROT_NONE`) | 4 KiB | yes | yes | — |
+| reserve (below the limit word) | 64 KiB | yes | yes | yes |
+| usable | — | 8 MiB | 2 MiB | 1 MiB |
+
+**The check is in every function the compiler emits.** Each `define` carries
+LLVM's split-stack prologue, which compares the stack pointer less the
+function's exact frame against the thread's LIMIT WORD (`%fs:0x70`, in the
+thread's TLS block) before the frame exists. Crossing it enters the trap route
+as `StackExhausted` (4118), which every `failsafe` names because every program
+can reach it. A frame larger than a page is refused at the prologue, where it
+used to step over a thread's one guard page into whatever lay below (DEF-60). The
+floor's own functions carry no prologue. They fit in the reserve, and a belt
+proves it (VERIFICATION_REFERENCE §9.5).
+
+**`failsafe` runs on a stack of its own**, mapped at startup, because the trap
+route allocates nothing (D-153's rule). So a `failsafe` entered by
+`StackExhausted` has its whole 1 MiB, and an overflow inside `failsafe` meets
+the re-entry rule and exits 70. **Signals run on the thread's signal stack**
+(SA_ONSTACK): the stop signal (D-291), the four machine faults and SIGPIPE
+(D-307). So no signal frame lands in the reserve, and a fault caused by the
+stack itself still has a stack to be handled on.
+
+**A spawned thread's stack is released at its join** (1.5.8 step 1b, DEF-65):
+the joiner unmaps it once the kernel has cleared the thread's tid word. Before
+that, every joined thread kept its mapping and every page it touched until the
+process ended. **A thread's TLS block and executor come from per-slot pools**
+(step 3b, DEF-66): sixty-four entries each, one per thread-registry slot,
+reborn for each thread in the slot and never freed. That is what lets a stale
+stop walk or a stale waker read memory that exists, and a program spawn and
+join threads without limit. The 65th LIVE thread is refused at its start, as
+the registry always did (D-055's posture).
+
+**A `stack` binding (§1.2) lives in the frame of the function that declares
+it**, so it counts against that function's frame, and so against the check
+above. A large `stack` array is a large frame, and a large frame is refused at
+its prologue rather than jumping a guard.

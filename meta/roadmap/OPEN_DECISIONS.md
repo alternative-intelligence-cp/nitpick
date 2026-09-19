@@ -1429,7 +1429,7 @@ but the language admitted what the backend could not build. Routing through `i25
 not a fix: `opt -O2` narrows `sitofp (sext i128 to i256)` back to the `i128` libcall (measured). The fix lowers
 every float↔integer conversion above 64 bits by hand (1.5.8's K-4).
 
-**DEF-62 — OPEN, fixed at 1.5.8 step 0: `npkg`'s VERIFIED-BUILD BELT NEVER COUNTED `BorrowOverlap`.** (found
+**DEF-62 — FIXED at 1.5.8 step 0 (2026-09-18; the heading said "OPEN, fixed at" until 1.5.8's close): `npkg`'s VERIFIED-BUILD BELT NEVER COUNTED `BorrowOverlap`.** (found
 2026-09-18 by the identity survey of 1.5.8's planning.) `npkg/verify.npk`'s list of trap codes the belt counts is a
 hand list of nine (`-4097 -4098 -4111 -4112 -4113 -4114 -4101 -4115 -4100`); 1.5.5 step 2 added `disjoint`'s
 `-4116` to the kind tables of both runners and to this list in the Python twin only, which derives its codes from
@@ -1438,7 +1438,7 @@ had they not, the Python runner would have failed the unit and `npkg` passed it 
 absent from the other, which `parity` sees only as a verdict difference. The fix derives `npkg`'s list from its
 own `trap_of_kind`, as the Python one is.
 
-**DEF-63 — OPEN, fixed at 1.5.8 step 0: THE FLOOR TRANSLATOR'S HEAP TRAP CODES WERE CROSSED.** (found 2026-09-18 by
+**DEF-63 — FIXED at 1.5.8 step 0 (2026-09-18; the heading said "OPEN, fixed at" until 1.5.8's close): THE FLOOR TRANSLATOR'S HEAP TRAP CODES WERE CROSSED.** (found 2026-09-18 by
 the same survey.) `npkg/floor_smt.npk:3252-3254` maps `@npk_heap_bad`, `@npk_heap_badreq` and `@npk_heap_oom` to
 −4103, −4103 and −4104; the floor traps −4102, −4104 and −4103 (`npkrt.ll:4292, 4304, 4298`). No spec clause reads
 `trap_code` yet, so no verdict rests on the table — a latent wrong fact in an instrument, corrected before a clause

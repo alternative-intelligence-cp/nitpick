@@ -231,6 +231,23 @@ boundary.
 > manifest had already declined. The general rule: every subprocess is invoked
 > with settings derived from the manifest, never with its defaults.
 
+**Every emitted function checks its stack (D-305, 1.5.8 step 2).** Each
+`define` the compiler writes carries `"split-stack"`, so the object's
+functions compare the stack pointer less their frame against the thread's
+limit word before the frame exists. The floor's object carries two linker
+notes: `.note.GNU-split-stack` and `.note.GNU-no-split-stack`, gcc's own
+pairing for an object that holds unchecked code. With the first alone, ld.lld
+takes a call from a floor function into an object with no prologue as a
+call it must rewrite, finds no prologue to adjust, and refuses the link
+(measured: "npk_start_main (with -fsplit-stack) calls main (without
+-fsplit-stack), but couldn't adjust its prologue"). With both, the link line
+is unchanged: one program object, the runtime object, nothing else. The
+floor's own functions carry no prologue. The `floor-stack-reserve` belt holds
+their deepest chain within a quarter of the 64 KiB reserve under every limit
+word, in both runners (VERIFICATION_REFERENCE §9.5). Since 1.5.8's close the
+committed snapshot carries the prologue too (a one-hop refresh), so the
+builder and every tool it compiles check their own stacks as a program does.
+
 ### 4.1 Separate compilation, not whole-program
 
 Each module compiles to its own object; `ld.lld` links them. A unit that does not define `failsafe` DECLARES `@npk_failsafe` — every trap route calls it, and only the program root defines it (D-013) — which is what makes a non-root module's object assemble at all; the `object` stage compiles every module under `tests/backend/objects/` alone and requires `llc` to accept it (1.5.1b step 3c, the workbench's O-N14: until then every non-root unit was refused by `llc` with `use of undefined value '@npk_failsafe'`, and this sentence described a model the compiler could not deliver). D-064 already assumes

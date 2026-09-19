@@ -19313,6 +19313,25 @@ under a different shell. Eliding the check where a proof exists — (7).
 
 Lands at 1.5.8 step 2.
 
+*[2026-09-19, LANDED at 1.5.8 step 2, and in the BUILDER at step 4's one-hop
+refresh. Three things the text did not say, each found at implementation. (a)
+The floor carries `.note.GNU-no-split-stack` BESIDE the note of item 2, gcc's
+own pairing for an object holding unchecked code. With the one note alone,
+ld.lld took a floor function's call into an object with no prologue -- every
+tool the old snapshot built -- as a call to rewrite, and refused the link
+("couldn't adjust its prologue"). With both, the link line is unchanged. (b)
+Item 3's stack is one mapping holding more than it lists: a guard, the signal
+stack of item 4, a second guard, the reserve and the usable stack, lowest
+address first (the `failsafe` stack has no signal stack). The TLS block grew
+to 120 bytes, with the limit at 0x70. (c) A trap before the failsafe stack is
+mapped runs `failsafe` where it stands (a trap during boot has no other stack).
+Measured at landing: the floor's deepest chain was 1,032 bytes, and with the
+trap route's second pass and the leaf slack 1,712 of 16,384. `npkc` compiling
+itself under `ulimit -s 1024` exits 0 where it died of SIGSEGV under 2048. Two
+defects in the same code were fixed beside it: a joined thread's stack mapping
+had never been released (DEF-65, step 1b), and a thread's TLS block and
+executor now come from per-slot pools (DEF-66, step 3b).]*
+
 ## D-306 — A float's `=>!` cast to an integer traps `CastRange` (4117) on NaN, an infinity or a value whose truncation the target cannot hold; `cast-range` is that guard's row — **SETTLED (user decision, 2026-09-18: "go with all four"; S-86)**
 
 Found at 1.5.8's planning (DEF-58). `emit_cast` lowered `f =>! intN` to a
@@ -19346,6 +19365,20 @@ not of a meaning" makes the no-meaning cases the trap they are.
 Lands at 1.5.8 step 1 (the guard; DEF-61's conversions beside it) and 1.5.8b
 (the row).
 
+*[2026-09-19, the GUARD LANDED at 1.5.8 step 1; the row is 1.5.8b's. The
+bounds are the truncation's exclusive ones, compared in `double`. Below 2^53
+they are a table of exact literals: −129.0, −32769.0 and −2147483649.0 for
+the signed 8-, 16- and 32-bit targets. From 64 bits up to 1024 the lower test
+is `oge −2^(N−1)`, since no double lies between the two bounds. Past
+`double`'s range the bound is the infinity. The table replaced a computed
+shift, whose new `shift-range` row stood `open` in the compiler's own
+manifest, and `npkg verify` refused the run by D-040. REACH reads BOTH cast
+spellings: the rule's first draft read `=>` alone. Every float-to-integer
+cast is `=>!` (D-095), a different node, so the draft armed nothing, and the
+step's own control caught it. The conversions past 64 bits are hand-lowered
+in both directions (DEF-61), with no compiler-rt call at `-O0` or after `opt
+-O2`.]*
+
 ## D-307 — SIGSEGV, SIGBUS, SIGILL and SIGFPE reach `failsafe` as `MachineFault` (4120), handled on each thread's signal stack — **SETTLED (user decision, 2026-09-18: "go with all four"; S-87)**
 
 The language's own code is guarded and, from D-305, its stack is checked, but
@@ -19375,3 +19408,16 @@ stack — a signal stack is small and `failsafe` is user code; the switch of
 D-305 (5) serves both routes.
 
 Lands at 1.5.8 step 3.
+
+*[2026-09-19, LANDED at 1.5.8 step 3. SIGPIPE joined the actions (DEF-68):
+its default action killed a program writing to a pipe with no reader (exit
+141, measured). It is caught by a handler that RETURNS (SA_RESTART), so the
+write answers EPIPE as a value. A handler, not SIG_IGN: an ignored disposition
+survives `execve` into every child the floor spawns, and a caught one resets
+to the default. The SA_NODEFER case is a fault inside a fault's `failsafe`.
+A `DivByZero` followed by a fault exercises nothing, because that fault is the
+thread's first signal and is delivered whatever the flags say. The fault
+inside a fault exits 70, and 132 (the kernel's kill) on a floor whose actions
+lack the flag. The schedule explorer's shim is not reentrant, so a fault
+inside the shim's own code is the verdict `SHIM FAULT` (exit 97, K-13), never
+an explored trap. TCB.md §5, item 19, names what stays uncontrolled.]*

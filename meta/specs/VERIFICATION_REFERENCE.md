@@ -617,17 +617,17 @@ elide (D-219); the subcycle column says where its rows are produced.
 |---|---|---|---|
 | `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142); a `simd` division's any-lane guard is ONE row over the lanes' conjunction (D-282) | yes | 1.5.0 |
 | `div-min` | a signed division is not `INT_MIN / -1` (D-142); one row over the lanes for a signed-element `simd` (D-282) | yes | 1.5.0 |
-| `overflow` | a plain-integer `+ - *` stays in range (D-210) | yes | 1.5.8 |
-| `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8 |
-| `cast-range` | a checked cast's value fits its target (D-148) | yes | 1.5.8 |
+| `overflow` | a plain-integer `+ - *` stays in range (D-210) | yes | 1.5.8b |
+| `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8b |
+| `cast-range` | a float's `=>!` cast to an integer has an integer meaning (D-306): the value is not NaN or an infinity, and its truncation toward zero lies inside the target -- the two ordered compares before the conversion, `CastRange`; a `simd` cast's any-lane guard is one row over the lanes | yes | 1.5.8b |
 | `exhaustive` | a `pick` covers its domain (checker-discharged) | no | 1.5.4 |
 | `requires` | a callee's precondition holds at the call (D-221) | yes | 1.5.3 |
 | `ensures` | a body's postcondition holds at its return (D-221) | yes | 1.5.3 |
 | `invariant` | a loop invariant holds at entry and is preserved (D-221) | yes | 1.5.3 |
 | `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220) | yes | 1.5.2 |
 | `limit-subsume` | one `Rules` implies another at a boundary (D-220): the caller's knowledge of every argument against the callee's rules, at a direct call of a sync callee | yes | 1.5.2 |
-| `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8 |
-| `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8 |
+| `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8c |
+| `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8c |
 | `err-exit` | the `TbbErr` guard's condition (D-144 as amended, D-278): neither operand is ERR at a comparison on a twisted value, the operand is not ERR at a cast out of its family (both spellings), a checked crossing into or within a family lands in the target's range; a twisted division has no row (a zero divisor is ERR) | yes | 1.5.4b |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
 | `loop-step` | a counted loop's computed step is positive (D-022): the compare at the loop's entry, `BadStep`; a literal step is the checker's (TYPE-068) and has no row | yes | 1.5.4 |
@@ -638,6 +638,16 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `floor-spec` | a clause of a floor symbol's section in `runtime/npkrt.spec` holds of the symbol's IR (D-288, §9): an `ensures` on the returning, non-trapping paths, the trap outcome, the frame, a loop invariant established at entry and preserved by the body, an unrolled loop's bound where the spec claims it exact, a summary callee's `requires` at the call; rows from the floor writer (1.5.6), never the compiler, in `runtime/npkrt.obligations` | no | 1.5.6 |
 | `floor-model` | a bounded protocol model's bad predicate is unreachable within its depth and preemption bound (D-289, §9); rows from the floor writer over `runtime/models/`, in `runtime/npkrt.obligations` | no | 1.5.6 |
 <!-- END obligation-catalogue -->
+
+> **[1.5.8's close (2026-09-19).]** The five kinds this table assigned to
+> "1.5.8" are produced by the two subcycles planning split it into: `overflow`,
+> `bounds` and `cast-range` at 1.5.8b, `terminate` and `stack-depth` at 1.5.8c
+> (with D-304's `decreases`). `cast-range` read "a checked cast's value fits
+> its target (D-148)" until D-306 gave it its guard: a checked integer `=>`
+> already refuses a lossy crossing at compile time (D-095), and the one cast
+> that could produce a value with NO meaning -- a float's `=>!` to an
+> integer, LLVM poison until 1.5.8 step 1 (DEF-58) -- now traps `CastRange`
+> (4117) where its row is not discharged.
 
 > **[D-267, 1.5.3 step 1 (2026-09-06).]** `failsafe-post`'s guard column
 > read `no` as ratified: D-014 stated the postcondition and nothing checked
@@ -1749,6 +1759,49 @@ Expressions are validated whole and up front, in one order in both twins (an
 evaluation short-circuits; a validation does not), and every arithmetic operand
 is held under 2^31 in magnitude so that the Nitpick twin's plain integers, which
 trap on overflow, and Python's, which do not, cannot disagree.
+
+### 9.5 The floor's stack (D-305; landed 1.5.8 step 2, 2026-09-19)
+
+**Every function the compiler emits checks its stack; the floor's functions do
+not, and a belt proves they need not.** An emitted `define` carries
+`"split-stack"` (`ll_fn_open`, one text for all nine sites), so LLVM's prologue
+compares the stack pointer less the function's EXACT frame against the thread's
+limit word at `%fs:0x70` before the frame exists, and calls `__morestack` when
+it would cross: the floor's `module asm` stub, which enters the trap route as
+`StackExhausted` (−4118). The floor's own functions carry no prologue. They run
+before `%fs` exists, inside signal handlers on signal stacks and inside the trap
+route, where a check would have nothing to answer to. So every stack the floor
+maps keeps a 64 KiB RESERVE below its limit word, and the floor object carries
+both linker notes: `.note.GNU-split-stack`, so the link accepts emitted callers,
+and `.note.GNU-no-split-stack`, so ld.lld does not rewrite a floor function's
+calls as though it had a prologue ("couldn't adjust its prologue", measured with
+the first note alone). `__morestack_non_split`, which that rewrite would reach,
+traps −4102.
+
+**`floor-stack-reserve`, in both runners** (`floor.py`'s `reserve_measure`,
+`npkg/floor_stack.npk`), holds the claim the notes make. The floor is compiled
+with `llc -stack-size-section` under the pinned flags, and each function's frame
+is read back: the harness through `llvm-readobj --stack-sizes`, npkg from the ELF
+`.stack_sizes` section itself (`npkg/elf.npk`). It walks the floor's direct-call
+graph, which may not recurse except through the trap route (a cycle anywhere
+else is a failure by name). The deepest chain, plus one more pass of the trap
+route (the re-entry rule bounds the route to one repetition), plus 384 bytes of
+slack for the emitted leaf above it (a 256-byte leaf and the 128-byte red zone),
+must fit in a QUARTER of the reserve, 16,384 bytes. A chain that reaches an
+indirect call stops there: a resume function is emitted and checks itself, and
+JIT code is `wildx`'s (TCB.md §5, item 18). Measured at 1.5.8 step 2 and
+unchanged through 3c: **1,032 bytes** (`npk_arena_alloc` → `npk_ralloc` → … →
+`npk_heap_oom` → `npk_trap` → `npk_exit` → `npk_wild_live_count` →
+`npk_m_livew`), +296 for the second pass of the route, +384: **1,712 of
+16,384**. Planted cases in each runner's self-check (`reserve-over`,
+`reserve-recurses`, and `reserve-control`, which must pass) show it refusing.
+
+**What the belt does not say** is TCB.md §5's item 18: that `llc` reports the
+frames it emits; that no signal frame lands in the reserve (every action the
+floor installs says SA_ONSTACK, and `sigaltstack` itself refuses a stack below
+the machine's minimum, which the floor turns into a startup trap); that JIT
+code checks nothing; and that the switches' assembly (`npk_switch_stack`,
+`npk_fs_switch_call`, `__morestack`) does what its comments say.
 
 ## 10. The schedule explorer (D-212, D-298…D-303; landed 1.5.7, 2026-09-18)
 

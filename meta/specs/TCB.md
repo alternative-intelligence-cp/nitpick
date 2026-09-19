@@ -765,7 +765,8 @@ Listed, not checked -- a clause the entry checker cannot evaluate over the entry
     registered signal stack, unblocked because the action says NODEFER; and
     that what follows stays UNCONTROLLED, by name. A fault before
     `npk_fault_arm` has run (the first instructions of `npk_start`: its TLS
-    boot, the two stack mappings, the signal stack, SIGUSR1's action). A fault
+    boot, the standard descriptors' probe (DEF-69, step 3c), the two stack
+    mappings, the signal stack, SIGUSR1's action). A fault
     whose own delivery fails: a signal stack that is itself unusable, which the
     kernel answers by killing the process. SIGKILL and SIGSTOP, which no
     process can catch, and the kernel's out-of-memory killer. Every other

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) is in its LAST subcycle, 1.5.8 — planned 2026-09-18 as four (`meta/roadmap/1.5/1.5.8.md`: 1.5.8 the runtime's uncontrolled stops — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault; 1.5.8b the `overflow`/`bounds`/`cast-range` rows; 1.5.8c `decreases`/`unbounded` with the `terminate` and `stack-depth` rows; 1.5.8d the close) under D-304…D-307: 1.5.0–1.5.7 have landed, the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -1199,8 +1199,11 @@ file in both runners, B the file's rows the committed manifest records `budget`
 where it was 250, and nothing else moved.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): ONE subcycle, 1.5.8, since 1.5.7's close (2026-09-18) — PLANNED
-2026-09-18 by `nitpick-compiler_s11` as four (`meta/roadmap/1.5/1.5.8.md` §0),
+throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
+`overflow`, `bounds` and `cast-range` rows (planned execution-grade next),
+1.5.8c, `decreases`/`unbounded` with the `terminate` and `stack-depth` rows,
+and 1.5.8d, the cycle's close. The old 1.5.8 was PLANNED 2026-09-18 by
+`nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
 — one program exits 3 at `-O0` and 9 after `opt -O2`), DEF-59 (a stack
@@ -1209,8 +1212,9 @@ DEF-60 (a spawned thread's one guard page could be jumped by a frame larger
 than a page — 151 of the compiler's own). The user ratified S-84…S-87 in one
 sentence ("go with all four") as D-304 (`decreases`/`unbounded`), D-305 (the
 split-stack prologue on every emitted function, `StackExhausted`), D-306
-(`CastRange`) and D-307 (`MachineFault`, the last net).** **Landed so far
-(2026-09-19): steps 0, 1, 1b, 2, 2b, 2c, 3, 3b and 3c.** A float's `=>!` cast to an integer
+(`CastRange`) and D-307 (`MachineFault`, the last net).** **1.5.8 IS COMPLETE
+(2026-09-19; ten landings — steps 0, 1, 1b, 2, 2b, 2c, 3, 3b, 3c and 4 — each a
+cumulative prefix under a full harness, D-228).** A float's `=>!` cast to an integer
 traps `CastRange` (armed where one exists). A joined thread's stack is
 unmapped. **Every function the compiler emits checks its frame against the
 thread's limit word at `%fs:0x70` (`"split-stack"`, one text: `ll_fn_open`),
@@ -1218,8 +1222,8 @@ and every stack is the FLOOR's**: 8 MiB for main, 2 MiB for a thread and 1 MiB
 for `failsafe`, whatever the shell's `ulimit -s` says. Each has a guard, a
 signal stack and a 64 KiB reserve. `StackExhausted` is armed in every program.
 The floor's own frames never check, and the `floor-stack-reserve` belt proves
-they fit (1,712 of 16,384 bytes). The builder keeps no prologues of its own
-until step 4's refresh. The syscall census reads `module asm` (2b, DEF-64), and the
+they fit (1,712 of 16,384 bytes). Since step 4's one-hop snapshot refresh the
+builder, and every tool it compiles, checks its own stack too. The syscall census reads `module asm` (2b, DEF-64), and the
 explorer can HOLD a thread at a site until another passes it (`hold-at:`, 2c,
 DEF-67): a kept seed goes stale when a step is added before its window, so
 DEF-57's regression is now a held control, `frozen-traps.ctl`. **The last
@@ -1904,6 +1908,58 @@ that carried them retired at the cycle close):
   `atomic_from_ptr` (the Bridge's shape; `atomic_threads.npk`). A program's
   own atomic and `sys` steps are points of the explored schedule since 1.5.7
   step 6, their sites numbered from 1,000,000.
+- **Every emitted function checks its stack; the floor's do not** (D-305,
+  1.5.8 step 2). The prologue compares against the thread's limit word at
+  `%fs:0x70`. A floor `define` never carries `"split-stack"`, and the
+  `floor-stack-reserve` belt holds the floor's deepest chain within a quarter
+  of the 64 KiB reserve, so a new call chain or a large alloca in the floor
+  moves that measurement. `ulimit -s` sizes nothing: main has 8 MiB, a thread
+  2 MiB and `failsafe` 1 MiB, each the floor's own mapping. A recursion test
+  measures the floor's budget.
+- **Every `failsafe` names `(StackExhausted)` and `(MachineFault)`** (D-305,
+  D-307; the arms went in everywhere at 1.5.8 step 0). Every program can reach
+  both, so REACH-002 refuses a new root's `failsafe` without them. **A float
+  cast to an integer can trap** (D-306): `f =>! int32` is `CastRange` for NaN,
+  an infinity or a truncation outside the target. A program with such a cast
+  names `(CastRange)`, and REACH reads both cast spellings.
+- **A sentinel is a value the domain never produces** (DEF-69, 1.5.8 step 3c).
+  The reactor's "none" was 0, "safe because fd 0 is stdin", and nothing kept
+  stdin open. It is −1 now, and the floor opens `/dev/null` onto any of 0, 1, 2
+  closed at startup. Before choosing a "none", ask what makes the value
+  impossible, and whether anything enforces that.
+- **A floor global whose initial value is not zero gets a STATIC initializer,
+  never a boot loop** (1.5.8 step 3c). An atomic store before `main` is a
+  counted step in every explored run, and a boot loop of them moves every
+  schedule (DEF-67's cause). An initializer also needs its named type's body
+  ABOVE it in the file, or `llvm-as` reports "initializer with struct type has
+  wrong # elements". A startup step the floor must add (a routed syscall)
+  still moves schedules: re-run every explorer control after it.
+- **A kept explorer seed goes stale with no signal** (DEF-67, 1.5.8 step 2c):
+  one step added before a one-point window moves it out of every seed. The
+  HOLD directive (`hold-at:`, `NPKX_HOLD1..4`) holds the first thread to
+  arrive at a site until another passes it, which finds such a window without
+  a seed. That is how `frozen-traps.ctl` regresses DEF-57 now.
+- **A spawned thread's floor state is a pool entry, reborn per thread**
+  (DEF-65, DEF-66; 1.5.8 steps 1b and 3b). The join unmaps the stack and closes
+  the epoll set, and only then retires the registry slot. The next thread in
+  the slot rewrites every word of the TLS block and the executor except the
+  two reactor words: the epoll word stays as the join left it, and the eventfd
+  is kept. So a new executor or TLS word must be written at the rebirth in
+  `npk_thread_start`.
+- **A change to emitted TEXT breaks the emitter's unit tests** (1.5.8 step 2):
+  `tests/backend/ir_expr.npk`, `ir_func.npk` and `ir_stmt.npk` compare whole
+  functions' text exactly, and step 2's `"split-stack"` broke eighteen of their
+  expected `define` lines. Run `harness.py --only tests/backend/` before
+  committing an emission change. And a harness run lists its failures ONLY in
+  its summary: a run stopped early (the first step-2 run was) says nothing about
+  the stages it passed.
+- **A floor fix is measured against the floor before it** (every 1.5.8 step).
+  Keep the test's object (`quickemit.py --keep`), assemble the previous
+  step's `runtime/npkrt.ll` with the pinned flags, link the two with
+  `ld.lld -static`, and run it (under `ulimit -n 1024`). A test that passes on
+  both floors tests nothing about the fix. Where one program checks several
+  things, check each case against its own defect: remove the earlier cases, or
+  revert one site of the fix.
 
 ### Reserved words that read like ordinary names
 
