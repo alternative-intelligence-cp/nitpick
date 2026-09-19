@@ -98,15 +98,15 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- a nested `mod` is its own scope ---------------------------------------------
     Built:b3 = raw collect(
-        "func:outer = int32() { pass 1i32; }; mod:inner = { func:hidden = int32() { pass 2i32; }; };",
+        "func:outer = int32() { pass 1i32; }; mod:inner = { func:secret = int32() { pass 2i32; }; };",
         @it);
     if (raw diaglist_count(@b3.diags) != 0i64)              { exit 30i32; }
     int32:inner = raw intern_add(@it, "inner");
-    int32:hidden = raw intern_add(@it, "hidden");
+    int32:secret = raw intern_add(@it, "secret");
     // The module's own name is visible at file scope...
     if ((raw scope_lookup(@b3.tab, b3.scope, inner)) == 0i32) { exit 31i32; }
     // ...and its contents are NOT.
-    if ((raw scope_lookup(@b3.tab, b3.scope, hidden)) != 0i32) { exit 32i32; }
+    if ((raw scope_lookup(@b3.tab, b3.scope, secret)) != 0i32) { exit 32i32; }
 
     // The same name in two different modules is not a duplicate. If nested `mod`
     // did not open a scope, this would report one.

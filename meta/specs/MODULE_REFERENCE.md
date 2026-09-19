@@ -105,7 +105,7 @@ The canonical syntax imports directly from an `.npk` file path:
 ```nitpick
 use std.math.*;
 use std.collections.{HashMap, HashSet};
-use hidden.*;                 // an inline module of this file
+use nested.*;                 // an inline module of this file
 use core.math.{sq};           // a nested path
 use core.math as cm;          // an alias over one
 use helpers.f;                // a `pub mod` a file import bound
@@ -200,10 +200,10 @@ Nitpick uses a strict binary visibility model: **Public** or **Private**.
 
 *   **Private (Default)**: Symbols are accessible only within the same module/file. Intra-module access to private symbols is always permitted.
 *   **From either spelling (D-273, 1.5.4c)**: a private member reached by a
-    qualified path from outside its module (`hidden.internal()`,
-    `hidden.SECRET`, a hop through a private nested module), or named by a
-    `use` over its module (`use hidden.internal;`), is `NITPICK-RESOLVE-003`,
-    "`internal` is private to `hidden`", with a note at the declaration — one
+    qualified path from outside its module (`nested.internal()`,
+    `nested.SECRET`, a hop through a private nested module), or named by a
+    `use` over its module (`use nested.internal;`), is `NITPICK-RESOLVE-003`,
+    "`internal` is private to `nested`", with a note at the declaration — one
     mistake, one code, whichever spelling reaches it.
 *   **Public (`pub`)**: Prefix declarations with `pub` to export them.
     ```nitpick

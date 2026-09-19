@@ -501,7 +501,13 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
     }
     if (k == (raw TY_STRUCT())) {
         FieldInfo:fi = raw struct_field(@r, base, name, e.scope);
-        if (fi.found) { pass (fi.type_id); }
+        if (fi.found) {
+            // A `hidden` FIELD IS NOT TOUCHED FROM OUTSIDE ITS MODULE (D-314,
+            // TYPE-080) -- in any position, read or write: the access is the
+            // one place every use of a field passes through.
+            if (raw refuse_hidden_touch(e, base, name, "member access", at)) { pass 0i32; }
+            pass (fi.type_id);
+        }
         pass (raw te_no_member(e, base, name, at));
     }
 
@@ -1976,6 +1982,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             if (raw refuse_write_path(e, raw expr_operand(n), "operation on a stateful value", n.span)) {
                 pass 0i32;
             }
+            // EVERY OPERATION ON A STATEFUL VALUE WRITES THROUGH ITS ADDRESS, as
+            // D-266 reads it -- so a `sealed` field of a stateful kind is
+            // operated on by its own module alone (D-313, TYPE-079).
+            if (raw refuse_sealed_write(e, raw expr_operand(n), "operation on a stateful value", n.span)) {
+                pass 0i32;
+            }
         }
     }
 
@@ -2128,6 +2140,8 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             FieldInfo:fld = raw struct_field(@fr, recv, name, e.scope);
             if (fld.found) {
                 if (raw type_is_func(e.types, fld.type_id)) {
+                    // THE CALL READS THE FIELD (D-314, TYPE-080).
+                    if (raw refuse_hidden_touch(e, recv, name, "call through a function-valued field", n.span)) { pass 0i32; }
                     drop exprtypes_set_callee_ft(e.expr_types, id, fld.type_id);
                     pass (raw check_args(e, fld.type_id, start, count, 0i32,
                                            n.span, 0i32));
@@ -2369,6 +2383,11 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             // A VIEW HAS NO ADDRESS EITHER, AND A FROZEN SELECTOR LENDS ITS
             // (D-266, 1.5.2h): the same implicit address, the same question.
             if (raw refuse_write_path(e, raw expr_operand(n), "call through a pointer receiver", n.span)) {
+                pass 0i32;
+            }
+            // A `sealed` FIELD OR A CONTAINER'S HEADER IS NOT HANDED TO A
+            // `Self->` RECEIVER FROM OUTSIDE ITS MODULE (D-313, TYPE-079).
+            if (raw refuse_sealed_write(e, raw expr_operand(n), "call through a pointer receiver", n.span)) {
                 pass 0i32;
             }
         }

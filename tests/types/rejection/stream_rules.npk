@@ -1,5 +1,5 @@
 // expect-error: NITPICK-TYPE-046
-// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-079
 // expect-error: NITPICK-TYPE-007
 //
 // D-185's ownership rules for descriptors. An OwnedFd OWNS (its drop is the
@@ -8,6 +8,10 @@
 // number would leak one descriptor and double-close another. And `own_fd`
 // owns a DESCRIPTOR: its argument is the kernel `fd` type, not a number a
 // cast happened to produce.
+// [2026-09-19, 1.5.8b step 1 (D-313; DEF-78).] The `.value` write is TYPE-079
+// now, where it was TYPE-007: an `OwnedFd`'s identity word is SEALED by
+// definition, refused at every write form (`@f.value` and `$$m f.value` were
+// accepted until then) -- `header_writes.npk` holds the forms.
 mod:stream_rules;
 
 func:copies = NIL(OwnedFd:o) {

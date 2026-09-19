@@ -1,0 +1,127 @@
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 82
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 83
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 84
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 85
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 86
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 90
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 91
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 92
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 96
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 96
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 96
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 96
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 103
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 108
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 112
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 113
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 117
+//
+// A `hidden` FIELD IS NEITHER READ NOR WRITTEN OUTSIDE ITS MODULE (D-314,
+// S-94; 1.5.8b step 1). Every touch from OUTSIDE the module that declares the
+// struct refuses, read or write: a load, a copy out, a `$$i` claim, `@`,
+// `$$m`, an assignment, a compound assignment, a struct literal naming the
+// field, a struct pattern binding it, a `move` or `pass` out of it, a call
+// through a function-valued one in either spelling (`v.cb(1)` and `(v.cb)(1)`
+// read the field), and a part of it reached by a longer path. The member
+// access is the one place every use of a field passes through, so the rule is
+// asked there and at the two constructs that name a field without one (a
+// literal and a pattern). The other fields of the same struct, and the
+// declaring module's own code, are untouched; a generic struct's hiding is its
+// template's (K-4).
+mod:hidden_fields;
+
+mod:vault = {
+    pub struct:Inner = { int64:a; int64:b; };
+    pub struct:Vault = {
+        hidden int64:key;
+        hidden Inner:inner;
+        hidden string:note;
+        hidden func int64(int64):cb;
+        int64:open;
+    };
+    pub struct:Box<T> = { hidden T:v; };
+
+    func:twice = int64(int64:x) never fails { pass (x * 2i64); };
+
+    pub func:make = Vault(int64:k) never fails {
+        Vault:v = Vault{ key: k, inner: Inner{ a: 1i64, b: 2i64 },
+                         note: string_concat("n", "o"), cb: twice, open: 0i64 };
+        v.key = v.key + 1i64;
+        v.inner.a = v.key;
+        pass v;
+    };
+    pub func:key_of = int64(Vault->:v) never fails {
+        int64:k = v.key + v.inner.b + ((v.cb(1i64)) ?| 0i64);
+        pick (<-v) { (Vault{ key, open }) { k = k + key + open; } }
+        pass k;
+    };
+};
+use vault.*;
+
+func:peek = int64(int64->:p) never fails { pass (<-p); };
+
+// THE TOUCHES, from outside `vault`: each refuses with TYPE-080.
+func:reads = int64(Vault->:v) never fails {
+    int64:x = v.key;
+    Inner:i = v.inner;
+    x = x + v.inner.a;
+    x = x + (raw peek($$i v.key));
+    int64->:q = @v.key;
+    pass x;
+};
+func:writes = NIL(Vault->:v) never fails {
+    v.key = 1i64;
+    v.key += 1i64;
+    v.inner.b = 2i64;
+    pass NIL;
+};
+func:literal = Vault() never fails {
+    Vault:v = Vault{ key: 1i64, inner: Inner{ a: 1i64, b: 2i64 },
+                     note: string_concat("a", "b"), cb: peek_by_value, open: 0i64 };
+    pass v;
+};
+func:peek_by_value = int64(int64:x) never fails { pass x; };
+func:pattern = int64(Vault:v) never fails {
+    int64:k = 0i64;
+    pick (v) { (Vault{ key, open }) { k = key + open; } }
+    pass k;
+};
+func:moves = string() never fails {
+    Vault:v = raw make(3i64);
+    string:s = move(v.note);
+    pass s;
+};
+func:calls = int64(Vault->:v) never fails {
+    int64:a = (v.cb(1i64)) ?| 0i64;
+    int64:b = ((v.cb)(2i64)) ?| 0i64;
+    pass (a + b);
+};
+func:generic = int32(Box<int32>->:b) never fails {
+    pass b.v;
+};
+
+// WHAT PASSES: the fields that are not hidden, and the module's functions.
+func:fine = int64(Vault->:v) never fails {
+    v.open = 5i64;
+    pass (v.open + (raw key_of(v)));
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

@@ -309,12 +309,12 @@ func:check_bool_coverage = NIL(Exhaust->:x, int32:start, int32:count, Span:at) n
 // something earlier already matched everything this arm could.
 
 func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails {
-    bool:sealed = false;
+    bool:after_wildcard = false;
     for (int32:i in 0i32...count) {
         StmtId:aid = raw pick_arm_at(x.ast, start, i);
         StmtNode:arm = raw ast_stmt(x.ast, aid);
 
-        if (sealed) {
+        if (after_wildcard) {
             drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
                 "an earlier `(*)` already matches everything, so this arm can never run",
                 arm.span);
@@ -333,7 +333,7 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
             }
         }
 
-        if (raw arm_is_wildcard(x.ast, arm)) { sealed = true; }
+        if (raw arm_is_wildcard(x.ast, arm)) { after_wildcard = true; }
     }
     pass NIL;
 };

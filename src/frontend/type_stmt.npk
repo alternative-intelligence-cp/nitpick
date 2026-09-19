@@ -782,6 +782,11 @@ func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
         FieldInfo:fi = raw struct_field(@r, selt, fname, e.scope);
         int32:ft = 0i32;
         if (fi.found) { ft = fi.type_id; }
+        // A `hidden` FIELD IS NOT BOUND FROM OUTSIDE ITS MODULE (D-314,
+        // TYPE-080): binding it by name reads it.
+        if (fi.found) {
+            discard(raw refuse_hidden_touch(e, selt, fname, "struct pattern", pn.span));
+        }
         // a callable pattern binding may not take a builtin's name (D-296): a
         // struct pattern binds its field BY NAME, so a function-typed field
         // named after a builtin is declared and called through its receiver,
@@ -1191,21 +1196,268 @@ pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
 
 // Does this struct type declare the named field `fixed`?
 func:struct_field_fixed = bool(ExprTyper->:e, int32:sty, int32:name) never fails {
-    if (sty == 0i32) { pass false; }
-    if ((raw type_kind(e.types, sty)) != (raw TY_STRUCT())) { pass false; }
+    pass (((raw struct_field_quals(e, sty, name)) & (raw QUAL_FIXED())) != 0i32);
+};
+
+// --- WHO MAY TOUCH A FIELD (D-313, D-314; 1.5.8b step 1) -------------------------
+//
+// `sealed`: read anywhere, written only by code inside the module that declares
+// the struct. `hidden`: neither read nor written outside it. The field's own
+// qualifier bits say which; the struct's HOME -- the module scope its
+// declaration was collected into (`symtab_home_scope`) -- says whose.
+
+// THE FIELD'S DECLARATION IN A STRUCT TYPE, by name: its DeclId index, or 0 when
+// the type is not a struct or declares no such field. A generic instance answers
+// through its template's declaration, so an instance's field carries the
+// template's qualifiers and the template's module (K-4).
+pub func:struct_field_decl = int32(ExprTyper->:e, int32:sty, int32:name) never fails {
+    if (sty == 0i32) { pass 0i32; }
+    if ((raw type_kind(e.types, sty)) != (raw TY_STRUCT())) { pass 0i32; }
     int32:sd = raw type_decl_of(e.types, sty);
-    if (sd == 0i32) { pass false; }
+    if (sd == 0i32) { pass 0i32; }
     DeclNode:d = raw ast_decl(e.ast, DeclId{ index: sd });
     int32:cnt = raw item_member_count(e.ast, d);
     for (int32:i in 0i32...cnt) {
-        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
+        DeclId:mid = raw item_member(e.ast, d, i);
+        DeclNode:m = raw ast_decl(e.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
-            if ((raw decl_name(m)) == name) {
-                pass (((raw field_quals(m)) & (raw QUAL_FIXED())) != 0i32);
-            }
+            if ((raw decl_name(m)) == name) { pass mid.index; }
         }
     }
+    pass 0i32;
+};
+
+// THE NAME A STRUCT WAS DECLARED UNDER -- `Box`, where the type displays as
+// `Box<int32>`: a module declares the template, never an instance.
+pub func:struct_decl_name = string(ExprTyper->:e, int32:sty) never fails {
+    int32:sd = raw type_decl_of(e.types, sty);
+    if (sd == 0i32) { pass (raw type_display(e.types, e.interns, sty)); }
+    pass (raw intern_get(e.interns, raw decl_name(raw ast_decl(e.ast, DeclId{ index: sd }))));
+};
+
+// The named field's qualifier bits, or 0 when there is no such field.
+pub func:struct_field_quals = int32(ExprTyper->:e, int32:sty, int32:name) never fails {
+    int32:fldd = raw struct_field_decl(e, sty, name);
+    if (fldd == 0i32) { pass 0i32; }
+    pass (raw field_quals(raw ast_decl(e.ast, DeclId{ index: fldd })));
+};
+
+// IS THE CODE BEING TYPED OUTSIDE THE MODULE THAT DECLARES THIS STRUCT? The line
+// a private member draws (MODULE_REFERENCE §3; `ns_visible`): code whose scope
+// sits within the struct's home module scope -- a nested inline module's
+// included -- is inside, and everything else is outside. A struct whose home
+// was never recorded counts as outside: a rule that cannot find the owner
+// refuses rather than guesses (DEF-54's lesson -- the default of an enumeration
+// is the safe reading).
+pub func:struct_outside = bool(ExprTyper->:e, int32:sty) never fails {
+    int32:sd = raw type_decl_of(e.types, sty);
+    if (sd == 0i32) { pass true; }
+    int32:home = raw symtab_home_scope(e.tab, sd, 0i32);
+    if (home == 0i32) { pass true; }
+    pass (!(raw scope_is_inside(e.tab, e.scope, home)));
+};
+
+// A COMPILER-KNOWN CONTAINER'S HEADER (D-313 §4): `ptr`, `len` and `cap` of a
+// string, a `cstring`, a slice and a `buffer` -- the words that say where the
+// storage is and how much of it the value may touch. No module declares them,
+// so they are SEALED in every module, the prelude's included: a header is
+// written where its value is made, by the floor or the emitter, and nowhere
+// else. `bt` is the base's type after auto-dereference.
+pub func:is_container_header = bool(ExprTyper->:e, int32:bt, int32:name) never fails {
+    if (bt == 0i32) { pass false; }
+    int32:k = raw type_kind(e.types, bt);
+    // AN `OwnedFd`'s `.value` IS ITS IDENTITY WORD (D-185): the number its drop
+    // closes, written by `own_fd` and nowhere else -- a header in every sense
+    // the containers' are, and until 1.5.8b refused only as the direct target
+    // of an assignment (`@f.value` was accepted, and a store through it leaked
+    // one descriptor and double-closed another).
+    if (k == (raw TY_OWNEDFD())) {
+        pass (raw string_eq(raw intern_get(e.interns, name), "value"));
+    }
+    bool:kind_ok = (k == (raw TY_STRING()));
+    if (k == (raw TY_CSTRING())) { kind_ok = true; }
+    if (k == (raw TY_SLICE()))   { kind_ok = true; }
+    if (k == (raw TY_BUFFER()))  { kind_ok = true; }
+    if (!kind_ok) { pass false; }
+    string:f = raw intern_get(e.interns, name);
+    if (raw string_eq(f, "ptr")) { pass true; }
+    if (raw string_eq(f, "len")) { pass true; }
+    if (raw string_eq(f, "cap")) { pass true; }
     pass false;
+};
+
+// AN `RGuard`'s `.value` IS A SHARED HOLD'S VIEW OF THE ELEMENT (D-056): read
+// through it, never written -- a write is the unsynchronized mutation the write
+// lock exists to serialize. Until 1.5.8b it was refused only as the direct
+// target of an assignment: `g.value.x = 5`, `@g.value.y` and `$$m g.value.x`
+// were accepted, each a write through a hold other readers share.
+pub func:is_rguard_value = bool(ExprTyper->:e, int32:bt, int32:name) never fails {
+    if (bt == 0i32) { pass false; }
+    if ((raw type_kind(e.types, bt)) != (raw TY_RGUARD())) { pass false; }
+    pass (raw string_eq(raw intern_get(e.interns, name), "value"));
+};
+
+// THE MEMBER ACCESS A WRITE TO THIS PLACE WRITES THAT IT MAY NOT, or 0: walked
+// outward-in, each member access's field is asked -- a `sealed` field of a
+// struct this code is outside, a compiler-known header, a read hold's view --
+// and a place that is a part of a VALUE is part of what is written, so the walk
+// continues into the value. It stops at a pointer, a slice or a handle base, as `place_fixed`'s
+// root question does: a write through `p.f`'s pointer writes the pointee, not the
+// pointer, and the pointee's own field was asked at `.f` already.
+pub func:place_sealed_access = int32(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass 0i32; }
+    if (raw expr_is_none(id)) { pass 0i32; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        if (bt == 0i32) { pass 0i32; }
+        int32:bk = raw type_kind(e.types, bt);
+        int32:st = bt;
+        if (bk == (raw TY_POINTER())) { st = raw type_elem(e.types, bt); }
+        int32:fname = (raw expr_name(n)) =>! int32;
+        if (raw is_container_header(e, st, fname)) { pass id.index; }
+        if (raw is_rguard_value(e, st, fname)) { pass id.index; }
+        if (((raw struct_field_quals(e, st, fname)) & (raw QUAL_SEALED())) != 0i32) {
+            if (raw struct_outside(e, st)) { pass id.index; }
+        }
+        if (bk == (raw TY_POINTER())) { pass 0i32; }
+        if (bk == (raw TY_HANDLE()))  { pass 0i32; }
+        pass (raw place_sealed_access(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:ib = raw exprtypes_get(e.expr_types, raw expr_lhs(n));
+        if (ib == 0i32) { pass 0i32; }
+        int32:ik = raw type_kind(e.types, ib);
+        if (ik == (raw TY_POINTER())) { pass 0i32; }
+        if (ik == (raw TY_SLICE()))   { pass 0i32; }
+        if (ik == (raw TY_HANDLE()))  { pass 0i32; }
+        pass (raw place_sealed_access(e, raw expr_lhs(n), fuel - 1i32));
+    }
+    pass 0i32;
+};
+
+// TYPE-079 FOR FIELD `fname` OF `st` (the base's type after auto-dereference):
+// a container's header, or a declared `sealed` field this code is outside.
+// `what` names the write form ("assignment", "address (`@`)", …) as
+// `refuse_write_path` does.
+pub func:report_sealed = NIL(ExprTyper->:e, int32:st, int32:fname, string:what,
+                             Span:at) never fails {
+    // A SHARED HOLD IS READ-ONLY (D-056, 1.1.11b), at every write form.
+    if (raw is_rguard_value(e, st, fname)) {
+        string:r1 = string_concat("an `RGuard`'s `.value` is READ-ONLY (D-056): a read hold is shared, and this ", what);
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+            string_concat(r1, " would write through it -- the unsynchronized mutation the write lock exists to serialize; acquire `write` for a `Guard`"),
+            at));
+        pass NIL;
+    }
+    string:fs = raw intern_get(e.interns, fname);
+    string:ts = raw type_display(e.types, e.interns, st);
+    if ((raw type_kind(e.types, st)) == (raw TY_OWNEDFD())) {
+        string:o1 = string_concat("an `OwnedFd`'s `.value` is its identity, SEALED by definition (D-185, D-313): the number its drop closes, written by `own_fd` alone -- this ", what);
+        discard(raw te_error(e, raw TYPE_SEALED_WRITE(),
+            string_concat(o1, " would leak one descriptor and double-close another; wrap a new descriptor with `own_fd` instead"),
+            at));
+        pass NIL;
+    }
+    if (raw is_container_header(e, st, fname)) {
+        string:h1 = string_concat("`", fs);
+        string:h2 = string_concat(h1, "` of this `");
+        string:h3 = string_concat(h2, ts);
+        string:h4 = string_concat(h3, "` is its header, SEALED by definition (D-313): a string's, a `cstring`'s, a slice's and a `buffer`'s `ptr`, `len` and `cap` say where the storage is and how much of it the value may touch, and they are written only where the value is made -- this ");
+        string:h5 = string_concat(h4, what);
+        discard(raw te_error(e, raw TYPE_SEALED_WRITE(),
+            string_concat(h5, " would change what the storage claims to hold; make a new value instead (`string_slice`, `string_concat`, `buffer_new`)"),
+            at));
+        pass NIL;
+    }
+    string:s1 = string_concat("`", ts);
+    string:s2 = string_concat(s1, ".");
+    string:s3 = string_concat(s2, fs);
+    string:s4 = string_concat(s3, "` is `sealed` (D-313): it is read anywhere and written only by the module that declares `");
+    string:s5 = string_concat(s4, raw struct_decl_name(e, st));
+    string:s6 = string_concat(s5, "`, and this ");
+    string:s7 = string_concat(s6, what);
+    discard(raw te_error(e, raw TYPE_SEALED_WRITE(),
+        string_concat(s7, " is outside it -- call a function of that module, which keeps what the seal protects"),
+        at));
+    int32:fldd = raw struct_field_decl(e, st, fname);
+    if (fldd != 0i32) {
+        drop diaglist_push(e.diags, raw diag_note(raw TYPE_SEALED_WRITE(), "declared `sealed` here",
+                                                  (raw ast_decl(e.ast, DeclId{ index: fldd })).span));
+    }
+    pass NIL;
+};
+
+// TYPE-079 WHERE A WRITE FORM MEETS A PLACE: true when reported; the caller then
+// types as invalid and says nothing more (D-240).
+pub func:refuse_sealed_write = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    int32:hit = raw place_sealed_access(e, place, 64i32);
+    if (hit == 0i32) { pass false; }
+    ExprNode:hn = raw ast_expr(e.ast, ExprId{ index: hit });
+    int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(hn));
+    int32:st = bt;
+    if ((raw type_kind(e.types, bt)) == (raw TY_POINTER())) { st = raw type_elem(e.types, bt); }
+    drop report_sealed(e, st, (raw expr_name(hn)) =>! int32, what, at);
+    pass true;
+};
+
+// A `move` OR `pass` OUT OF AN OWNING SEALED FIELD, OR OUT OF ANY PART OF ONE:
+// the type's vacant value is left in the place (D-254), which is a write --
+// refused from outside the module as every write is. A copyable field is
+// copied out and nothing is written; the whole binding may be moved. Asked
+// after the operand is typed; `refuse_move_out_of_limited`'s twin.
+pub func:refuse_move_out_of_sealed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
+                                         Span:at) never fails {
+    if (ty == 0i32) { pass NIL; }
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) { pass NIL; }
+    TypeResolver:r = raw etyper_resolver(e);
+    if (!(raw type_drops(@r, ty, e.scope, 64i32))) { pass NIL; }
+    discard(raw refuse_sealed_write(e, id,
+        "move out (the vacant value it leaves behind is a write, D-254)", at));
+    pass NIL;
+};
+
+// A FIELD QUALIFIER OFF A FIELD (TYPE-081): `sealed` and `hidden` say which code
+// may write, or touch, a struct FIELD -- and only a field has an owner (the
+// module that declares its struct) distinct from the code that uses it. On a
+// local, a parameter, a module binding or a cast target there is no such
+// owner, and the word would claim a protection nothing gives. (A `for` binding
+// takes no qualifier at all: its parser reads a type first.)
+pub func:refuse_field_quals = NIL(ExprTyper->:e, int32:q, string:what, Span:at) never fails {
+    int32:fq = (raw QUAL_SEALED()) | (raw QUAL_HIDDEN());
+    if ((q & fq) == 0i32) { pass NIL; }
+    string:m1 = string_concat("`sealed` and `hidden` qualify a struct FIELD (D-313, D-314): they say which code may write it, or touch it, and only a field has an owner -- the module that declares its struct -- distinct from the code that uses it; this is ", what);
+    discard(raw te_error(e, raw TYPE_FIELD_QUAL(), string_concat(m1, ", which has none"), at));
+    pass NIL;
+};
+
+// TYPE-080 AT A TOUCH OF A `hidden` FIELD FROM OUTSIDE ITS MODULE: a member
+// access in any position, a struct literal naming it, a struct pattern binding
+// it, a call through a function-valued one. `sty` is the struct type, `fname`
+// the field's name; true when reported.
+pub func:refuse_hidden_touch = bool(ExprTyper->:e, int32:sty, int32:fname, string:what,
+                                    Span:at) never fails {
+    if (((raw struct_field_quals(e, sty, fname)) & (raw QUAL_HIDDEN())) == 0i32) { pass false; }
+    if (!(raw struct_outside(e, sty))) { pass false; }
+    string:ts = raw type_display(e.types, e.interns, sty);
+    string:h1 = string_concat("`", ts);
+    string:h2 = string_concat(h1, ".");
+    string:h3 = string_concat(h2, raw intern_get(e.interns, fname));
+    string:h4 = string_concat(h3, "` is `hidden` (D-314): no code outside the module that declares `");
+    string:h5 = string_concat(h4, raw struct_decl_name(e, sty));
+    string:h6 = string_concat(h5, "` reads or writes it, and this ");
+    string:h7 = string_concat(h6, what);
+    discard(raw te_error(e, raw TYPE_HIDDEN_FIELD(),
+        string_concat(h7, " is outside it -- use the functions that module gives"),
+        at));
+    int32:fldd = raw struct_field_decl(e, sty, fname);
+    if (fldd != 0i32) {
+        drop diaglist_push(e.diags, raw diag_note(raw TYPE_HIDDEN_FIELD(), "declared `hidden` here",
+                                                  (raw ast_decl(e.ast, DeclId{ index: fldd })).span));
+    }
+    pass true;
 };
 
 // `Type:name = init;` — the initialiser is checked against the ANNOTATION, and
@@ -1219,6 +1471,8 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
 
     // a callable local may not take a builtin's name (D-296)
     drop check_callable_name(e, raw stmt_name(s), want, "a local", s.span);
+    // a local has no owner distinct from its user (D-313, D-314; TYPE-081)
+    drop refuse_field_quals(e, raw stmt_quals(e.ast, s), "a local", s.span);
 
     // A LOCAL'S `limit<Rules>` (1.5.1, D-220): the rule's subject is the
     // declared type, by identity.
@@ -1343,6 +1597,13 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // A WRITE INTO A VIEW OR A FROZEN SELECTOR (D-266, 1.5.2h): the compound
     // spelling routes through here too.
     if (raw refuse_write_path(e, target, "assignment", s.span)) { pass NIL; }
+    // A WRITE TO A `sealed` FIELD FROM OUTSIDE ITS MODULE, OR TO A CONTAINER'S
+    // HEADER (D-313, TYPE-079) -- the compound spelling included. Asked only of
+    // a target that typed: a `hidden` field in the path was reported at its
+    // access (TYPE-080), and one mistake gets one report (D-240).
+    if (want != 0i32) {
+        if (raw refuse_sealed_write(e, target, "assignment", s.span)) { pass NIL; }
+    }
     // A `pure` BODY STORES ONLY INTO ITS OWN LOCALS (1.5.1, D-221): a store
     // through a pointer, a borrow, a slice, a handle — anything rooted
     // outside this frame — is the effect the caller can see. Asked after the
@@ -1354,30 +1615,11 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
                 s.span));
         }
     }
-    // A SHARED HOLD IS READ-ONLY (D-056, 1.1.11b): writing through an
-    // `RGuard.value` would be the unsynchronized mutation the write lock
-    // exists to serialize — acquire `write` for a `Guard` instead.
-    ExprNode:rgt = raw ast_expr(e.ast, target);
-    if (rgt.kind == ExprKind.ExprMemberAccessExpr) {
-        int32:rgb = raw exprtypes_get(e.expr_types, raw expr_operand(rgt));
-        if (rgb != 0i32) {
-            if ((raw type_kind(e.types, rgb)) == (raw TY_RGUARD())) {
-                discard(raw te_error(e, raw TYPE_MISMATCH(),
-                    "an `RGuard`'s `.value` is READ-ONLY (D-056): a read hold is shared, and a write through it is the unsynchronized mutation the write lock exists to serialize — acquire `write` for a `Guard`",
-                    s.span));
-                pass NIL;
-            }
-            // An OwnedFd's `.value` is READ-ONLY (D-185): the number is the
-            // identity the drop will close — overwriting it would leak one
-            // descriptor and double-close another. `own_fd` a new one.
-            if ((raw type_kind(e.types, rgb)) == (raw TY_OWNEDFD())) {
-                discard(raw te_error(e, raw TYPE_MISMATCH(),
-                    "an `OwnedFd`'s `.value` is READ-ONLY (D-185): the number is the identity its drop closes — overwriting it leaks one descriptor and double-closes another. Wrap a new descriptor with `own_fd` instead",
-                    s.span));
-                pass NIL;
-            }
-        }
-    }
+    // A SHARED HOLD'S `.value` (D-056) AND AN `OwnedFd`'s (D-185) are READ-ONLY
+    // -- refused by `refuse_sealed_write` above, at this write form and at
+    // every other (1.5.8b step 1). Until then this statement asked the two here
+    // and only of a target that WAS the member, so a part of it, its address
+    // and an exclusive claim of it were accepted.
 
     int32:saved = e.expected;
     e.expected = want;
@@ -1600,6 +1842,8 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     drop refuse_pass_of_pointee_owned(e, v, got, s.span);
     // AND OUT OF A LIMITED BINDING'S FIELD OR ELEMENT (1.5.2 step 1, D-251).
     drop refuse_move_out_of_limited(e, v, got, s.span);
+    // AND OUT OF AN OWNING `sealed` FIELD FROM OUTSIDE ITS MODULE (D-313).
+    drop refuse_move_out_of_sealed(e, v, got, s.span);
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
@@ -1912,12 +2156,28 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
     // the layout is how the field types get resolved at all.
     if (d.kind == DeclKind.DeclStructDecl) {
         drop resolve_struct_fields(e, id, d, scope);
+        // `sealed` AND `hidden` ON ONE FIELD CONTRADICT (D-313, D-314; TYPE-081):
+        // sealed is read everywhere, hidden nowhere outside -- one of the two
+        // sentences is false, and a reader cannot tell which was meant.
+        int32:both = (raw QUAL_SEALED()) | (raw QUAL_HIDDEN());
+        int32:sfn = raw item_member_count(e.ast, d);
+        for (int32:sfi in 0i32...sfn) {
+            DeclNode:sfm = raw ast_decl(e.ast, raw item_member(e.ast, d, sfi));
+            if (sfm.kind == DeclKind.DeclFieldDecl) {
+                if (((raw field_quals(sfm)) & both) == both) {
+                    discard(raw te_error(e, raw TYPE_FIELD_QUAL(),
+                        "a field is `sealed` (read anywhere, written only by its module, D-313) or `hidden` (neither read nor written outside it, D-314), never both: the two contradict -- write the one that is true; `hidden` already forbids the writes",
+                        sfm.span));
+                }
+            }
+        }
         pass NIL;
     }
 
     // A GLOBAL'S ANNOTATION AND ITS INITIALISER. The annotation is a type nothing
     // else resolves; the initialiser is an expression nothing else walks.
     if (d.kind == DeclKind.DeclGlobalDecl) {
+        drop refuse_field_quals(e, raw global_quals(d), "a module binding", d.span);
         TypeResolver:gr = raw etyper_resolver(e);
         int32:want = raw resolve_type(@gr, raw global_type(d), scope);
         ExprId:init = raw global_init(d);
@@ -2289,6 +2549,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
         TypeResolver:cpr = raw etyper_resolver(e);
         drop check_callable_name(e, raw decl_name(lpd), raw resolve_type(@cpr, raw param_type(lpd), scope),
                                  "a parameter", lpd.span);
+        drop refuse_field_quals(e, raw param_quals(lpd), "a parameter", lpd.span);
         VerifyId:lpl = raw param_limit(lpd);
         if (!(raw verify_is_none(lpl))) {
             TypeResolver:lpr = raw etyper_resolver(e);

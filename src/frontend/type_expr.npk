@@ -1797,6 +1797,7 @@ func:type_defaults = int32(ExprTyper->:e, ExprNode:n) never fails {
 // no-op. Without that, the one place a programmer states a type outright would
 // be the one place a bare literal could not be written.
 func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) never fails {
+    drop refuse_field_quals(e, raw expr_cast_quals(n), "a cast target", n.span);
     TypeResolver:r = raw etyper_resolver(e);
     TypeId:target_node = TypeId{ index: n.b };
     int32:to = raw resolve_type(@r, target_node, e.scope);
@@ -3138,6 +3139,7 @@ func:type_pipe = int32(ExprTyper->:e, ExprNode:n) never fails {
 // no diagnostic. The node carries the trait window directly (AST_REFERENCE 3.6),
 // which is why this does not go back through the type.
 func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) never fails {
+    drop refuse_field_quals(e, raw expr_cast_quals(n), "a cast target", n.span);
     int32:src = raw type_of_expr(e, raw expr_operand(n));
     TypeResolver:r = raw etyper_resolver(e);
 
@@ -3281,6 +3283,18 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
         }
 
         FieldInfo:f = raw struct_field(@r, st, fname, e.scope);
+        // A LITERAL NAMING A `hidden` FIELD TOUCHES IT, ONE NAMING A `sealed`
+        // FIELD WRITES IT (D-314, D-313): outside the declaring module, the
+        // value is made by that module's functions.
+        if (f.found) {
+            if (!(raw refuse_hidden_touch(e, st, fname, "struct literal", n.span))) {
+                if (((raw struct_field_quals(e, st, fname)) & (raw QUAL_SEALED())) != 0i32) {
+                    if (raw struct_outside(e, st)) {
+                        drop report_sealed(e, st, fname, "struct literal", n.span);
+                    }
+                }
+            }
+        }
         if (!(f.found)) {
             string:u1 = string_concat("`", raw intern_get(e.interns, fname));
             string:u2 = string_concat(u1, "` is not a field of `");
@@ -3852,6 +3866,9 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         }
         // A VIEW HAS NO ADDRESS, AND A FROZEN SELECTOR LENDS ITS (D-266, 1.5.2h).
         if (raw refuse_write_path(e, raw expr_operand(n), "address (`@`)", n.span)) { pass 0i32; }
+        // A `sealed` FIELD OR A CONTAINER'S HEADER HAS NO ADDRESS OUTSIDE ITS
+        // MODULE (D-313, TYPE-079): the pointer type carries no mutability.
+        if (raw refuse_sealed_write(e, raw expr_operand(n), "address (`@`)", n.span)) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
     }
     if (n.kind == ExprKind.ExprDerefExpr) {
@@ -3883,6 +3900,12 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
             pass 0i32;
         }
         if (raw refuse_write_path(e, raw expr_operand(n), "borrow (`$$i`/`$$m`)", n.span)) { pass 0i32; }
+        // `$$m` WRITES; `$$i` READS (D-313 §2, TYPE-079): a shared claim of a
+        // `sealed` field is a read the aliasing analysis holds read-only
+        // (D-286), so only the exclusive claim is a write form here.
+        if (raw borrow_is_mut(n)) {
+            if (raw refuse_sealed_write(e, raw expr_operand(n), "claim (`$$m`)", n.span)) { pass 0i32; }
+        }
         pass (raw tt_pointer(e.types, t));
     }
 
@@ -3907,6 +3930,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (raw refuse_frozen(e, raw expr_operand(n), "`move`", n.span)) { pass 0i32; }
         drop refuse_move_of_borrowed(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_limited(e, raw expr_operand(n), mvt, n.span);
+        drop refuse_move_out_of_sealed(e, raw expr_operand(n), mvt, n.span);
         pass mvt;
     }
 

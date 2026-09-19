@@ -1,0 +1,38 @@
+// expect-error: NITPICK-TYPE-081
+// expect-error-at: 23
+// expect-error: NITPICK-TYPE-081
+// expect-error-at: 25
+// expect-error: NITPICK-TYPE-081
+// expect-error-at: 27
+// expect-error: NITPICK-TYPE-081
+// expect-error-at: 30
+// expect-error: NITPICK-TYPE-081
+// expect-error-at: 33
+//
+// `sealed` AND `hidden` QUALIFY A STRUCT FIELD, AND NOTHING ELSE (D-313, D-314;
+// 1.5.8b step 1). Each says which code may write a field, or touch it, and
+// only a field has an owner -- the module that declares its struct -- distinct
+// from the code that uses it. On a local, a parameter, a module binding or a
+// cast target the word would claim a protection nothing gives, so it refuses
+// (TYPE-081, as `move` off a parameter is MOVE-004; a `for` binding takes no
+// qualifier at all, its parser reading a type first). And
+// the two on ONE field contradict -- `sealed` is read everywhere, `hidden`
+// nowhere outside -- so a field carries one.
+mod:field_qual_position;
+
+struct:Both = { sealed hidden int64:x; int64:y; };
+
+fixed sealed int32:LIMIT = 4i32;
+
+func:param = int32(hidden int32:p) never fails { pass p; };
+
+func:bodies = int64(int32[]:xs) never fails {
+    sealed int64:a = 1i64;
+    int64:b = 0i64;
+    for (int32:v in xs) { b = b + (v => int64); }
+    int64:c = (a + b) => sealed int64;
+    pass c;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

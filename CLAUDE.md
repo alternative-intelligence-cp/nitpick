@@ -909,7 +909,7 @@ type mismatch the snapshot and the compiler under test refuse alike. Step 5:
 the docs. `nitpick.obligations` at 184 rows (six `exhaustive checker`), 15 of
 24 open rows discharged, none moved the other way. **Recorded for the user:**
 DEF-31 — an inline module's members cannot be reached from the module that
-declares it (`use hidden.*;` is RESOLVE-002, `hidden.fetch(...)` is
+declares it (`use nested.*;` is RESOLVE-002, `nested.fetch(...)` is
 TYPE-007), found when the rung file became a positive program; which
 spelling should reach them is a language question — ratified as D-273 and
 landed as 1.5.4c. **1.5.4c (a module symbol means one thing, D-273) IS
@@ -921,9 +921,9 @@ hop taken from outside), ONE direct-call typer (`type_direct_call`, factored
 out of `type_call`) and ONE direct-call emitter (`emit_direct_call`, out of
 `emit_call`); the node's `ns_decl` slot records what a path resolved to, and
 every reader of a method call's receiver skips it when set (the 36 sites are
-classified in the record). `hidden.MAX` reads a binding, `?! hidden.Boom` an
-error constant (the reach analysis reads the record). `use hidden.*;`, `use
-hidden.{f, Point};`, `use hidden.f;`, `use core.math as cm;` bind a module
+classified in the record). `nested.MAX` reads a binding, `?! nested.Boom` an
+error constant (the reach analysis reads the record). `use nested.*;`, `use
+nested.{f, Point};`, `use nested.f;`, `use core.math as cm;` bind a module
 symbol's public names through the file forms' own binders — the only way an
 inline module's TYPES are named from outside — a first segment naming no
 module is RESOLVE-002 (R-1), a later one the module lacks RESOLVE-007, a
@@ -944,7 +944,7 @@ user**: S-49 (a member-less `mod:name;` import binds a module symbol with an
 EMPTY scope, so `name.f()` reports "no member" rather than reaching the file
 — recommended: carry the loaded file's scope, as the alias does) and S-50 (an
 error constant declared inside an inline module hashes under the FILE's name,
-so its `failsafe` arm is `(file.Name)` and `(hidden.Name)` matches nothing —
+so its `failsafe` arm is `(file.Name)` and `(nested.Name)` matches nothing —
 recommended: the file qualifies, and an arm's first segment is checked
 against the module names the program knows). **Both ratified 2026-09-10 as
 D-274 and D-275 and LANDED the same day as 1.5.4d** (`meta/roadmap/1.5/
@@ -957,7 +957,7 @@ across files are one meaning with the alias; and every `pick` arm over an
 `Error` is checked at the arm by the checker (`type_pick_rules`, both
 spellings, `failsafe`'s and any other): an identity no declared constant
 hashes to is RESOLVE-002 with the fix named (R-3, the PAIR check —
-`(hidden.Boom)`, `(file.Nosuch)`, `(nosuch.Boom)`, `(x.DivByZero)` all
+`(nested.Boom)`, `(file.Nosuch)`, `(nosuch.Boom)`, `(x.DivByZero)` all
 matched nothing silently before), any other shape TYPE-007 (R-4, where each
 died as EMIT-002 in the emitter); ONE `error_identity` (intern.npk) for the
 resolver, the emitter and the checker, and the resolver's (declaration,
@@ -1214,7 +1214,19 @@ prelude `List`'s `cap` writable (DEF-73), and `List` elements reached by
 unchecked raw-pointer indexing everywhere (DEF-74). The user settled the field
 qualifiers `sealed` (read anywhere, written only by the declaring module;
 D-313) and `hidden` (neither; D-314), with `List` indexed `l[i]` and checked.
-They land first, before any row. The old 1.5.8 was PLANNED 2026-09-18 by
+They land first, before any row. **Step 1 LANDED 2026-09-19**: `sealed` and
+`hidden` are keywords and field qualifiers — TYPE-079 a write to a sealed field
+from outside its module (every write form: an assignment through any path, a
+compound, a struct literal, a `move`/`pass` out of an owning one, `@`, `$$m`, a
+`Self->` receiver, a stateful operation; `$$i` reads), TYPE-080 any touch of a
+hidden one, TYPE-081 either off a field — "outside" drawn where a private
+member's line is; the compiler-known headers (`ptr`/`len`/`cap` of string,
+cstring, slice and buffer, and `OwnedFd.value`) are sealed BY DEFINITION in
+every module (DEF-72 fixed); and two holes of the same class found on the way
+and closed: an `RGuard`'s `.value` was read-only only as an assignment's direct
+target (`g.value.x = 5`, `@g.value.y`, `$$m g.value.x` were accepted — writes
+through a SHARED hold; DEF-77), and `@f.value` on an `OwnedFd` was accepted
+(DEF-78). Every program's IR is byte-identical. The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
@@ -1999,6 +2011,7 @@ parse failure some lines away from the mistake:
 | `fails`, `end` | the `never fails` contract clause's second word (D-002/D-163) and the `when`/`then`/`end` control-flow family's terminator (LEXICAL_REFERENCE's keyword table) — each cost the 1.4.8 executor a build |
 | `in`, `mod` | the `for … in` keyword and the module-declaration keyword (`mod:name;`) — each cost the 1.5.0 executor a build, as a local named `in` (a byte source) and one named `mod` (a module name) |
 | `old`, `result`, `pure` | the verification keywords 1.5.1 added (D-243, D-245, D-242): `old(expr)` is a keyword operator (the value at entry), `result` a leaf keyword (the success value, `ensures` only — `Result` with a capital R is the type, and `result`'s token is `KwResultValue` for that reason), `pure` a contract clause. `old` was a local in the SMT encoder and a test, `result` a field in `FnSig` and four unit-test fixtures — every one renamed; each reads like the most ordinary local name there is |
+| `sealed`, `hidden` | the field qualifiers 1.5.8b step 1 added (D-313, D-314): `sealed int64:bal;` is written only by the declaring module, `hidden` is not touched outside it. Both read like ordinary names — the compiler had a local and a field named `sealed`, seven tests an inline module named `hidden`, and five more a function or a local named `hidden` (all renamed: `after_wildcard`, `sealed_any`, `nested`, `secret`) |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

@@ -6,22 +6,22 @@
 // -- the emitter hashes the pair through the one `error_identity` the
 // resolver assigned it with, and the checker has admitted the pair because a
 // declared constant hashes to it -- and `failsafe` names the same constant
-// BARE after `use hidden.{Boom};`, the spelling D-275 recommends for a
+// BARE after `use nested.{Boom};`, the spelling D-275 recommends for a
 // constant declared inside an inline module (a bare arm matches by the
 // symbol's declaration, and the reach analysis accepts it for the constant
-// `?! Boom` arms). `classify(5i32)` fails inside `hidden.b` and takes the
-// qualified arm (10); `classify(1i32)` does not fail (0); `hidden.b(1i32) ?!
+// `?! Boom` arms). `classify(5i32)` fails inside `nested.b` and takes the
+// qualified arm (10); `classify(1i32)` does not fail (0); `nested.b(1i32) ?!
 // Boom` succeeds (1).
 mod:error_arm_forms;
-use hidden.{Boom};
+use nested.{Boom};
 
-mod:hidden = {
+mod:nested = {
     error:Boom;
     pub func:b = int32(int32:v) { if (v > 1i32) { fail Boom; } pass v; };
 };
 
 func:classify = int32(int32:v) never fails {
-    Result<int32>:r = hidden.b(v);
+    Result<int32>:r = nested.b(v);
     if (r.is_error) {
         pick (r.err) {
             (error_arm_forms.Boom) { pass 10i32; },
@@ -34,7 +34,7 @@ func:classify = int32(int32:v) never fails {
 func:main = int32(cstring[]:_~argv) {
     int32:a = raw classify(5i32);      // 10, the qualified identity matched outside `failsafe`
     int32:b = raw classify(1i32);      // 0
-    int32:c = hidden.b(1i32) ?! Boom;  // 1, the constant imported bare
+    int32:c = nested.b(1i32) ?! Boom;  // 1, the constant imported bare
     exit (a + b + c);                  // 11
 };
 

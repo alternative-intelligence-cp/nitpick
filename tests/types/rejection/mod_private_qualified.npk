@@ -5,23 +5,23 @@
 // A PRIVATE MEMBER IS PRIVATE FROM EITHER SPELLING (D-273 §3, 1.5.4c): reached
 // through a qualified path from OUTSIDE its module -- a function called, a
 // binding read, a nested module walked through -- it is the loader's own
-// refusal, "`internal` is private to `hidden`" with its note at the
+// refusal, "`internal` is private to `nested`" with its note at the
 // declaration (RESOLVE-003: one mistake, one code, whether the path is
-// spelled `hidden.internal()` or `use hidden.internal;`). Inside the module
+// spelled `nested.internal()` or `use nested.internal;`). Inside the module
 // (`visible` calling `internal`) everything is reachable.
 mod:mod_private_qualified;
 
-mod:hidden = {
+mod:nested = {
     func:internal = int32() never fails { pass 1i32; };
     fixed int32:SECRET = 2i32;
     mod:deep = { pub func:g = int32() never fails { pass 3i32; }; };
     pub func:visible = int32() never fails { pass (raw internal()); };
 };
 
-func:call_private = int32() never fails { pass (raw hidden.internal()); };
-func:read_private = int32() never fails { pass hidden.SECRET; };
-func:walk_private = int32() never fails { pass (raw hidden.deep.g()); };
-func:inside_is_fine = int32() never fails { pass (raw hidden.visible()); };
+func:call_private = int32() never fails { pass (raw nested.internal()); };
+func:read_private = int32() never fails { pass nested.SECRET; };
+func:walk_private = int32() never fails { pass (raw nested.deep.g()); };
+func:inside_is_fine = int32() never fails { pass (raw nested.visible()); };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 func:failsafe = int32(Error:_~e) { exit 1i32; };

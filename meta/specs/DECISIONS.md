@@ -3789,6 +3789,13 @@ robot near a child can wedge.
 
 ---
 
+*[2026-09-19, 1.5.8b step 1; DEF-77.]* The read-only `RGuard.value` (1.1.11b)
+was enforced only when an assignment's target WAS the member. `g.value.x = 5`,
+`@g.value.y` and `$$m g.value.x` were all accepted, each a write through a hold
+other readers share, and so each an unsynchronized mutation. It is now asked by
+D-313's write walk at every write form, with the same code (TYPE-007) and the
+same sentence.
+
 ## D-057 — Macro hygiene and expansion order — **SETTLED**
 
 The macro system is far larger than either document describes, and **its
@@ -13443,6 +13450,13 @@ use-after-free the quarantine caught in `path_parse` itself. The prelude
 copies before reassigning; the LANGUAGE-level hole (`string` cannot say
 "view") is recorded in OPEN_DECISIONS as a pre-Astrée decision.
 
+*[2026-09-19, 1.5.8b step 1; DEF-78.]* `.value`'s read-only rule was enforced
+only for a direct assignment. `@f.value` and `$$m f.value` were accepted, and a
+store through that pointer leaked one descriptor and double-closed another. The
+identity word is now SEALED BY DEFINITION under D-313 §4's header rule, refused
+at every write form as `NITPICK-TYPE-079`; the direct assignment moved from
+TYPE-007.
+
 ## D-185 addendum — the text layer, and buffering as a TYPE — **SETTLED at 1.1.12c**
 
 **Composition is types, never modes.** `TextWriter<W: Writer>` translates;
@@ -17780,6 +17794,8 @@ namespace's sake; the library workbench has none in 170 `mod` uses.
 > scope) and S-50 (an error constant declared inside an inline module hashes
 > under the file's name). `nitpick.obligations` never moved.
 
+*[2026-09-19, D-314 (1.5.8b step 1). `hidden` became a keyword, the field qualifier that is neither read nor written outside the declaring module. The inline module this decision's tests named `hidden` is `nested` now: `use nested.*;`, `nested.fetch(3i32)`, `(nested.Boom)`. The rule is unchanged.]*
+
 ## D-274 — a member-less `mod:name;` import carries the loaded file's scope, as an alias does — **SETTLED (user decision, 2026-09-10: "yes ratify"; OPEN_DECISIONS S-49; lands at 1.5.4d)**
 
 Found landing D-273 (1.5.4c step 0). A member-less `mod:name;` written after a
@@ -17854,6 +17870,11 @@ workbench.
 > analysis is unchanged (it demands, it never forbids). `error_arms.npk`
 > holds ten refusals; `error_arm_forms.npk` runs the qualified identity in an
 > ordinary `pick` and the bare imported arm in `failsafe`.
+
+*[2026-09-19, D-314 (1.5.8b step 1). `hidden` became a keyword. The examples
+above spell an inline module `hidden`, which no longer parses; the tests that
+carried them name it `nested` (`error_arms.npk`, `error_arm_forms.npk`), so
+`(hidden.Boom)` above reads `(nested.Boom)` there. The rule is unchanged.]*
 
 ## D-276 — an import means the same thing inside an inline module: a `use` and a `mod:name;` written inside one bind and load as at file level — **SETTLED (user decision, 2026-09-10: "all of those things sound fine to me. please proceed."; OPEN_DECISIONS S-51; lands at 1.5.4d step 2)**
 
@@ -19711,6 +19732,64 @@ so that meaning cannot arise here.
 
 Lands at 1.5.8b step 1, before every row: live memory-safety holes come first.
 
+*[2026-09-19, 1.5.8b step 1 — LANDED.] How it was built:*
+- The bit is `QUAL_SEALED` (128) on the field.
+- "The module that declares its struct" is the struct's HOME: the module scope
+  its declaration was collected into (`symtab_home_scope`). "Outside" is the
+  line a private member draws (MODULE_REFERENCE §3; `ns_visible`): code whose
+  scope is not within the home. So a module nested inside the declaring one
+  counts as inside. That is unreachable by name today, because an inline module
+  is a closed namespace and cannot import its parent's names.
+- One walk, `place_sealed_access`, is asked where each write form is typed:
+  - the assignment statement, both spellings;
+  - `@` and `$$m`;
+  - the implicit address of a `Self->` receiver;
+  - a stateful operation;
+  - `move` and `pass` out of an owning sealed field.
+
+  The struct literal asks the field directly.
+
+The text left five things unstated, settled as built:
+- (a) **A part of a sealed value is part of what is written.** `h.inner.x = …`
+  writes `inner`. The walk continues into a VALUE and stops at a pointer, slice
+  or handle base, as TYPE-071's `place_fixed` does. So a write THROUGH a sealed
+  pointer field writes the pointee, not the field, and passes. The seal keeps
+  the field's own bytes. A reader could copy the pointer out and write through
+  the copy anyway. `hidden` is how a pointee is kept out of reach.
+- (b) **Every operation on a stateful kind writes through its address**, as
+  D-266 reads it. A sealed atomic, lock, arena, channel or `dyn` field is
+  therefore operated on by its module alone, reads included.
+- (c) **The qualifier off a field is `NITPICK-TYPE-081`, a code the text did not
+  allot.** That covers a local, a parameter, a module binding or a cast target,
+  and `sealed hidden` together on one field (a contradiction). A `for` binding
+  takes no qualifier at all, because its parser reads a type first.
+- (d) **`OwnedFd`'s `.value` joins the headers sealed by definition.** D-185
+  called it read-only and enforced that for a direct assignment only:
+  `@f.value` and `$$m f.value` were accepted (DEF-78). Its code moves from
+  TYPE-007 to TYPE-079.
+- (e) **The same one-spelling hole was in D-056's `RGuard.value` (DEF-77).** It
+  is now asked by this walk at every write form, keeping TYPE-007 and its
+  sentence.
+
+Measured:
+- The prelude writes no header.
+- `src/`, `npkg/`, `tools/` and every test pass the rule untouched, except
+  `stream_rules.npk`, whose `OwnedFd` write moves to TYPE-079.
+- The keyword measurement renamed a local (`exhaust.npk`) and a field
+  (`bindings.npk`) named `sealed`, seven tests' inline module `hidden`, and five
+  more files' function or local `hidden`.
+- The library listener measured zero across its 170 files.
+- Every program's IR is byte-identical: 398 of 398 unrenamed, and the three
+  renamed programs identical after `nested` is read back as `hidden`.
+
+The tests, in both runners:
+- `sealed_fields.npk`: 13 refusals pinned to their lines;
+- `hidden_fields.npk`: 17;
+- `header_writes.npk`: 40;
+- `field_qual_position.npk`: 5.
+
+`List`'s fields are qualified at step 1b, under the bridging refresh (§5).
+
 ## D-314 — A struct field may be `hidden`: neither read nor written outside its struct's declaring module; `List<T>` is indexed `l[i]`, bounds-checked against `count` — **SETTLED (user decision, 2026-09-19: "hidden sounds fine to me. it says what it does. i like it"; S-94)**
 
 Found at 1.5.8b's planning, designing the prelude side of D-313 (DEF-74). The
@@ -19775,3 +19854,14 @@ raw pointer is exactly the danger.
 
 Lands at 1.5.8b step 1, with D-313: live memory-safety holes first.
 
+*[2026-09-19, 1.5.8b step 1 — `hidden` LANDED; `l[i]` and `List`'s
+qualifiers land at step 1b.]*
+- The bit is `QUAL_HIDDEN` (256).
+- The rule is asked at the member access, which every read and write of a field
+  passes through. It is also asked at the two constructs that name a field
+  without an access: the struct literal and the struct pattern.
+- A call through a function-valued hidden field is refused in both spellings,
+  `v.cb(1)` and `(v.cb)(1)`.
+- TYPE-080 carries a note at the declaration. A literal naming several hidden
+  fields reports each, as a literal's missing fields are reported.
+- "Outside" is D-313's line (see its note).

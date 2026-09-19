@@ -1,0 +1,180 @@
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 103
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 111
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 112
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 113
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 114
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 115
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 116
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 117
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 118
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 119
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 120
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 121
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 126
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 127
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 128
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 129
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 130
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 131
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 132
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 137
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 138
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 139
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 140
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 141
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 142
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 143
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 149
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 150
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 151
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 152
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 153
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 154
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 155
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 156
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 157
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 158
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 159
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 164
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 165
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 166
+//
+// A COMPILER-KNOWN VALUE'S HEADER IS SEALED BY DEFINITION (D-313 §4, S-93;
+// 1.5.8b step 1; DEF-72, DEF-78). `ptr`, `len` and `cap` of a string, a
+// `cstring`, a slice and a `buffer` say where the storage is and how much of it
+// the value may touch; an `OwnedFd`'s `value` is the descriptor its drop
+// closes. No module declares them, so every write form refuses them in EVERY
+// module, the prelude's included -- a header is written where its value is
+// made, by the floor or the emitter. Measured before the rule (DEF-72):
+// `s.len = 4096i64` on a six-byte string made `string_slice(s, 4000, 4096)`
+// succeed, a read 96 bytes past the storage -- `lenwrite` below is that probe.
+// And `@f.value` was accepted where `f.value = …` was refused (DEF-78). Reads,
+// and a `$$i` claim, pass.
+mod:header_writes;
+
+func:peek = int64(int64->:p) never fails { pass (<-p); };
+func:poke = NIL(int64->:p) never fails { pass NIL; };
+func:poke_ptr = NIL(uint8->->:p) never fails { pass NIL; };
+func:poke_fd = NIL(fd->:p) never fails { pass NIL; };
+func:poke_iptr = NIL(int32->->:p) never fails { pass NIL; };
+
+func:lenwrite = int32() {
+    string:s = string_concat("abc", "def");
+    s.len = 4096i64;
+    Result<string>:t = string_slice(s, 4000i64, 4096i64);
+    if (t.is_error) { pass 3i32; }
+    pass 0i32;
+};
+
+func:strings = NIL() never fails {
+    string:s = string_concat("abc", "def");
+    s.ptr = NULL;
+    s.len = 1i64;
+    s.cap = 1i64;
+    s.len += 1i64;
+    s.cap += 1i64;
+    uint8->->:a = @s.ptr;
+    int64->:b = @s.len;
+    int64->:c = @s.cap;
+    drop poke_ptr($$m s.ptr);
+    drop poke($$m s.len);
+    drop poke($$m s.cap);
+    pass NIL;
+};
+
+func:cstrings = NIL(cstring:c) never fails {
+    c.ptr = NULL;
+    c.len = 1i64;
+    c.len += 1i64;
+    uint8->->:a = @c.ptr;
+    int64->:b = @c.len;
+    drop poke_ptr($$m c.ptr);
+    drop poke($$m c.len);
+    pass NIL;
+};
+
+func:slices = NIL(int32[]:sl) never fails {
+    sl.ptr = NULL;
+    sl.len = 1i64;
+    sl.len += 1i64;
+    int32->->:a = @sl.ptr;
+    int64->:b = @sl.len;
+    drop poke_iptr($$m sl.ptr);
+    drop poke($$m sl.len);
+    pass NIL;
+};
+
+func:buffers = NIL() never fails {
+    buffer:bf = buffer_new(16i64);
+    bf.ptr = NULL;
+    bf.len = 1i64;
+    bf.cap = 1i64;
+    bf.len += 1i64;
+    bf.cap += 1i64;
+    uint8->->:a = @bf.ptr;
+    int64->:b = @bf.len;
+    int64->:c = @bf.cap;
+    drop poke_ptr($$m bf.ptr);
+    drop poke($$m bf.len);
+    drop poke($$m bf.cap);
+    pass NIL;
+};
+
+func:descriptors = NIL(OwnedFd->:f) never fails {
+    f.value = 4i32 =>! fd;
+    fd->:a = @f.value;
+    drop poke_fd($$m f.value);
+    pass NIL;
+};
+
+// WHAT PASSES: every header READ, and a shared claim of one.
+func:reads = int64(cstring:c, int32[]:sl) never fails {
+    string:s = string_concat("abc", "def");
+    buffer:bf = buffer_new(4i64);
+    int64:n = s.len + s.cap + c.len + sl.len + bf.len + bf.cap;
+    n = n + (raw peek($$i s.len));
+    pass n;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

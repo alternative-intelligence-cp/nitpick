@@ -1552,11 +1552,41 @@ through a control that plants it, or it claims nothing.
 
 **DEF-71 — OPEN, scheduled as 1.5.8b step 2 (D-311): THE CONSTANT FOLDER WRAPS WHERE THE RUN TIME TRAPS.** (found 2026-09-19 by the library workbench, `nitpick-libs_s4`, measuring D-310's reach, and verified by `nitpick-compiler_s11`.) `fixed uint64:B = 0u64 - 1u64;` folds to 2^64−1, and the same subtraction at run time traps `IntOverflow`. One expression has had two meanings since D-210 landed at 1.4.2b: the folder kept D-037's wrap. D-148 prescribes that very spelling for `uint64`'s maximum, and so does LEXICAL_REFERENCE §6.2. Measured with a probe on 1.5.8 step 4's tree: `~0u64` equals the folded value, and the run-time subtraction exits 93. The folder obeys D-210 from step 2, with the refusal TYPE-076, and the maximum is `~0u64` (D-311).
 
-**DEF-72 — OPEN, scheduled as 1.5.8b step 1 (D-313): A COMPILER-KNOWN CONTAINER'S HEADER IS WRITABLE BY ANY PROGRAM.** (found 2026-09-19 by an Explore survey for D-308's length facts, CONFIRMED by `nitpick-compiler_s11`.) `.ptr`, `.len` and `.cap` of `string`, `cstring`, a slice and `buffer` are typed as assignable places (`type_members.npk`), accepted by `require_place`, and stored through a GEP by the emitter. Probe: `string:s = string_concat("abc", "def"); s.len = 4096i64;` then `string_slice(s, 4000i64, 4096i64)` SUCCEEDS, reading 96 bytes past a 6-byte block. No test exercised it. `string_from_bytes` (BUILTIN_REFERENCE says it "traps on misuse") checks nothing, and `#wild_slice`'s "legal only in `wild` context" is enforced nowhere (both are D-308 step 6's length checks).
+**DEF-72 — FIXED at 1.5.8b step 1 (D-313; 2026-09-19): A COMPILER-KNOWN CONTAINER'S HEADER IS WRITABLE BY ANY PROGRAM.** (found 2026-09-19 by an Explore survey for D-308's length facts, CONFIRMED by `nitpick-compiler_s11`.) `.ptr`, `.len` and `.cap` of `string`, `cstring`, a slice and `buffer` are typed as assignable places (`type_members.npk`), accepted by `require_place`, and stored through a GEP by the emitter. Probe: `string:s = string_concat("abc", "def"); s.len = 4096i64;` then `string_slice(s, 4000i64, 4096i64)` SUCCEEDS, reading 96 bytes past a 6-byte block. No test exercised it. `string_from_bytes` (BUILTIN_REFERENCE says it "traps on misuse") checks nothing, and `#wild_slice`'s "legal only in `wild` context" is enforced nowhere (both are D-308 step 6's length checks).
 
-**DEF-73 — OPEN, scheduled as 1.5.8b step 1 (D-313): THE PRELUDE `List`'s FIELDS ARE WRITABLE BY ANY PROGRAM, AND NOTHING TIES THEM TO THE BLOCK.** (found and CONFIRMED the same day.) Probe: two one-element lists; `a.cap = 100i64`; forty `list_push(@a, …)` calls run past `a`'s block without reallocating and overwrite `b`'s element (exit 3). The generated drop walks `count` elements, so `l.count = l.cap + k` is a drop over memory the list does not own. `src/` writes `.count` directly about 150 times by text (truncations and pops of its own lists), and those move to checked prelude operations.
+**DEF-73 — OPEN, scheduled as 1.5.8b step 1b (D-313): THE PRELUDE `List`'s FIELDS ARE WRITABLE BY ANY PROGRAM, AND NOTHING TIES THEM TO THE BLOCK.** (found and CONFIRMED the same day.) Probe: two one-element lists; `a.cap = 100i64`; forty `list_push(@a, …)` calls run past `a`'s block without reallocating and overwrite `b`'s element (exit 3). The generated drop walks `count` elements, so `l.count = l.cap + k` is a drop over memory the list does not own. `src/` writes `.count` directly about 150 times by text (truncations and pops of its own lists), and those move to checked prelude operations.
 
-**DEF-74 — OPEN, scheduled as 1.5.8b step 1 (D-314): `List` ELEMENT ACCESS IS UNCHECKED RAW-POINTER INDEXING, IN ANY MODULE.** (found 2026-09-19 by `nitpick-compiler_s11`, designing the prelude side of D-313, and confirmed.) The prelude offers `list_init`, `list_reserve` and `list_push` only, so every element access is `l.items[i]`, a `wild T->` index with no bounds check and no opt-out spelled where it is written. Probe: two one-element lists, then `a.items[1..5] = …`, overwrites `b`'s element (exit 3). Sites: `src/` 665, `npkg/` 1,011, `tests/` 22. The library workbench's 103 are all inside their declaring modules.
+**DEF-74 — OPEN, scheduled as 1.5.8b step 1b (D-314): `List` ELEMENT ACCESS IS UNCHECKED RAW-POINTER INDEXING, IN ANY MODULE.** (found 2026-09-19 by `nitpick-compiler_s11`, designing the prelude side of D-313, and confirmed.) The prelude offers `list_init`, `list_reserve` and `list_push` only, so every element access is `l.items[i]`, a `wild T->` index with no bounds check and no opt-out spelled where it is written. Probe: two one-element lists, then `a.items[1..5] = …`, overwrites `b`'s element (exit 3). Sites: `src/` 665, `npkg/` 1,011, `tests/` 22. The library workbench's 103 are all inside their declaring modules.
+
+**DEF-72's fix** (1.5.8b step 1): every write form over `ptr`, `len` and `cap`
+of a string, cstring, slice and buffer is `NITPICK-TYPE-079` in every module.
+The forms are an assignment through any path, a compound assignment, `@`,
+`$$m`, a `Self->` receiver and a stateful operation. `lenwrite` is a case of
+`tests/types/rejection/header_writes.npk`. The two primitives' unchecked lengths
+(`string_from_bytes`, `#wild_slice`) stay D-308 step 6's.
+
+**DEF-77 — FIXED at 1.5.8b step 1 (D-313's walk; D-056): AN `RGuard`'s `.value`
+WAS READ-ONLY ONLY AS AN ASSIGNMENT'S DIRECT TARGET.** (found 2026-09-19 by
+`nitpick-compiler_s11`, reading the assignment check while building D-313's
+write walk; confirmed by a probe.)
+- The rule (D-056, 1.1.11b) asked whether an assignment's target WAS
+  `g.value`. So `g.value.x = 5i32` (a part of the element), `@g.value.y` and
+  `$$m g.value.x` were accepted: each a write through a SHARED read hold, the
+  unsynchronized mutation the write lock exists to serialize.
+- No test exercised any of the three.
+- Fixed by asking the read-only view in D-313's one write walk at every write
+  form, with the same code (TYPE-007) and sentence.
+
+**DEF-78 — FIXED at 1.5.8b step 1 (D-313 §4; D-185): `@f.value` ON AN `OwnedFd`
+WAS ACCEPTED.** (found 2026-09-19 by `nitpick-compiler_s11`, the same reading,
+confirmed by a probe.)
+- D-185's read-only `.value` was enforced for a direct assignment only.
+  `@f.value` and `$$m f.value` were accepted, and a store through the pointer
+  changes the descriptor the drop closes: one descriptor leaked, another
+  double-closed.
+- The identity word is SEALED BY DEFINITION now, beside the containers'
+  headers, and refused at every write form as `NITPICK-TYPE-079`.
+- The direct assignment moved from TYPE-007, so `stream_rules.npk` names 079.
 
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 

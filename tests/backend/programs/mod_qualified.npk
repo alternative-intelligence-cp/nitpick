@@ -1,19 +1,19 @@
 // expect-exit: 79
 //
 // THE QUALIFIED CALL IS A DIRECT CALL (D-273, 1.5.4c): a module symbol means
-// one thing wherever it stands. `hidden.fetch(3i32)` calls an inline module's
+// one thing wherever it stands. `nested.fetch(3i32)` calls an inline module's
 // member with no receiver; `core.math.sq(3i32)` walks a nested path through a
 // `pub mod`; `lib.f()` calls through an alias (`use "./mod_qualified_lib.npk"
 // as lib;` -- the alias carries the file's scope, D-273 §4) and `lib.K` reads
-// its binding; `hidden.MAX` reads an inline module's binding; `await
-// hidden.tick(2i32)` drives an `async` member and `drop hidden.idle()` spawns
+// its binding; `nested.MAX` reads an inline module's binding; `await
+// nested.tick(2i32)` drives an `async` member and `drop nested.idle()` spawns
 // one (the join's deadline is armed, so `failsafe` names `DeadlineExceeded`);
-// `raw hidden.pos(n)` stands in a `requires` as any `pure never fails`
-// function does; and `?! hidden.Boom` names an error constant through the
+// `raw nested.pos(n)` stands in a `requires` as any `pure never fails`
+// function does; and `?! nested.Boom` names an error constant through the
 // path -- the reach analysis reads the recorded declaration, and the arm is
 // the file-qualified spelling D-179 gives every constant declared in this
 // file, inline module or not. AND `use` OVER A MODULE PATH (D-273 §2, step
-// 1): `use hidden.*;` binds the inline module's public names -- `fetch` bare,
+// 1): `use nested.*;` binds the inline module's public names -- `fetch` bare,
 // `MAX`, the TYPE `Pair` (the only way an inline module's types are named
 // from outside); `use core.math.{sq};` the selective form and `use core.math
 // as cm;` the alias form over a nested path; `use "./mod_helpers.npk".*;`
@@ -22,11 +22,11 @@
 mod:mod_qualified;
 use "./mod_qualified_lib.npk" as lib;
 use "./mod_helpers.npk".*;
-use hidden.*;
+use nested.*;
 use core.math.{sq};
 use core.math as cm;
 
-mod:hidden = {
+mod:nested = {
     error:Boom;
     pub fixed int32:MAX = 11i32;
     pub struct:Pair = { int32:a; int32:b; };
@@ -47,23 +47,23 @@ mod:core = {
     };
 };
 
-func:half = int32(int32:n) requires raw hidden.pos(n) { pass (n / 2i32); };
+func:half = int32(int32:n) requires raw nested.pos(n) { pass (n / 2i32); };
 
 async func:main = int32(cstring[]:_~argv) {
-    int32:a = raw hidden.fetch(3i32);              // 7
+    int32:a = raw nested.fetch(3i32);              // 7
     int32:b = raw core.math.sq(3i32);              // 9
     int32:c = raw lib.f();                         // 5
-    int32:d = hidden.MAX + lib.K;                  // 12
-    int32:e = await hidden.tick(2i32) ?| 0i32;     // 4
-    drop hidden.idle();
+    int32:d = nested.MAX + lib.K;                  // 12
+    int32:e = await nested.tick(2i32) ?| 0i32;     // 4
+    drop nested.idle();
     int32:f = half(8i32) ?| 0i32;                  // 4
-    int32:g = hidden.boom(1i32) ?! hidden.Boom;    // 1
+    int32:g = nested.boom(1i32) ?! nested.Boom;    // 1
     int32:h = raw helpers.f();                     // 6, a `pub mod` bound by a file import
-    int32:i = raw fetch(1i32);                     // 5, bare after `use hidden.*;`
+    int32:i = raw fetch(1i32);                     // 5, bare after `use nested.*;`
     Pair:pr = Pair{ a: 1i32, b: 2i32 };
     int32:j = pr.a + pr.b + MAX;                   // 14, a type and a binding out of an inline module
     int32:k = raw sq(2i32) + raw cm.sq(1i32);      // 5, the selective form and the alias over a path
-    Pair:q = raw hidden.mk(3i32);
+    Pair:q = raw nested.mk(3i32);
     int32:l = q.a + q.b;                           // 7, a struct built INSIDE its inline module
     exit (a + b + c + d + e + f + g + h + i + j + k + l);   // 79
 };

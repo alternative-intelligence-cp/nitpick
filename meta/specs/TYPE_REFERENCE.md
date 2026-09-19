@@ -922,6 +922,61 @@ struct MyStruct = { int32:x; int64:y; bool:flag; };
 %val = load i64, ptr %field_ptr
 ```
 
+### 9.1.1 Who may touch a field: `sealed` and `hidden` (D-313, D-314; 1.5.8b step 1)
+
+A field may say which code touches it. **"Outside" is the line a private member
+draws** (MODULE_REFERENCE §3): code whose scope is not within the module that
+declares the struct. A generic struct's qualifiers, and its module, are its
+template's.
+
+```nitpick
+mod:bank = {
+    pub struct:Acct = {
+        sealed int64:bal;     // read anywhere; written only inside `bank`
+        hidden int64:pin;     // neither read nor written outside `bank`
+        int64:note;           // anyone
+    };
+    pub func:deposit = NIL(Acct->:a, int64:n) never fails { a.bal += n; pass NIL; };
+};
+```
+
+- **`sealed`** refuses every WRITE from outside, `NITPICK-TYPE-079`. The write
+  forms are:
+  - an assignment through any path, including a part of a sealed value
+    (`h.inner.x`) and a sealed field reached through a pointer;
+  - a compound assignment;
+  - a struct literal naming the field;
+  - a `move` or `pass` out of an OWNING sealed field (the vacant value it leaves
+    is a write, D-254);
+  - `@` and `$$m`;
+  - a call through a `Self->` receiver;
+  - any operation on a stateful value, which writes through its address
+    (D-266).
+
+  A read, a copy out, a `$$i` claim (D-286 holds it read-only) and a write
+  THROUGH a sealed pointer field all pass. The last is a write to the pointee,
+  not to the field's own bytes; `hidden` is how a pointee is kept out of reach.
+- **`hidden`** refuses every touch from outside, read or write,
+  `NITPICK-TYPE-080`: a member access in any position, a struct literal naming
+  it, a struct pattern binding it, and a call through a function-valued one in
+  either spelling.
+- **Only a field carries either.** On a local, a parameter, a module binding or
+  a cast target, or both on one field, the qualifier is `NITPICK-TYPE-081`. A
+  `for` binding takes no qualifier at all.
+- **Sealed by definition, in every module, the prelude's included:**
+  - `ptr`, `len` and `cap` of a `string`, a `cstring`, a slice and a `buffer`.
+    These are the header words that say where the storage is and how much of it
+    the value may touch.
+  - An `OwnedFd`'s `.value`, the descriptor its drop closes.
+
+  No module declares them, so every write form above is TYPE-079 wherever it
+  appears. A header is written where its value is made, by the floor or the
+  emitter. Before this rule, `s.len = 4096i64` on a six-byte string made
+  `string_slice` read 96 bytes past the storage (DEF-72).
+- **An `RGuard`'s `.value` is read-only at every write form** (D-056,
+  `NITPICK-TYPE-007`). A shared hold is read, never written, including any part
+  of the element, its address, and an exclusive claim (DEF-77).
+
 ### 9.2 Arrays (Fixed)
 
 > **Design Note:** Fixed arrays are **Value Types**, not references. Passing `int32[4]` to a function copies all 16 bytes. They do NOT implicitly decay to pointers like in C. If you want to mutate an array inside a function or avoid copying, you must explicitly pass a pointer to it (`int32[4]->`).

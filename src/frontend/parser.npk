@@ -268,6 +268,15 @@ pub func:QUAL_NODROP = int32() never fails { pass 32i32; };
 // spelled the way it always was.
 pub func:QUAL_MOVE = int32() never fails   { pass 64i32; };
 
+// D-313, D-314 (1.5.8b step 1): WHO MAY TOUCH A FIELD. `sealed` -- read
+// anywhere, written only by code inside the module that declares the struct;
+// `hidden` -- neither read nor written outside it. FIELD qualifiers: a field
+// is the one declaration that has an owner distinct from its user, so on a
+// local, a parameter, a module binding or a cast target the checker refuses
+// them (TYPE-081), as it refuses `move` off a parameter.
+pub func:QUAL_SEALED = int32() never fails { pass 128i32; };
+pub func:QUAL_HIDDEN = int32() never fails { pass 256i32; };
+
 pub func:p_qualifier_bit = int32(TokenKind:k) never fails {
     if (k == TokenKind.KwStack)  { pass (raw QUAL_STACK()); }
     if (k == TokenKind.KwWild)   { pass (raw QUAL_WILD()); }
@@ -275,6 +284,8 @@ pub func:p_qualifier_bit = int32(TokenKind:k) never fails {
     if (k == TokenKind.KwFixed)  { pass (raw QUAL_FIXED()); }
     if (k == TokenKind.KwNodrop) { pass (raw QUAL_NODROP()); }
     if (k == TokenKind.KwMove)   { pass (raw QUAL_MOVE()); }
+    if (k == TokenKind.KwSealed) { pass (raw QUAL_SEALED()); }
+    if (k == TokenKind.KwHidden) { pass (raw QUAL_HIDDEN()); }
     pass 0i32;
 };
 

@@ -1,0 +1,130 @@
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 78
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 79
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 80
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 84
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 85
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 89
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 94
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 99
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 102
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 103
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 107
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 108
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 112
+//
+// A `sealed` FIELD IS READ ANYWHERE AND WRITTEN ONLY BY ITS MODULE (D-313,
+// S-93; 1.5.8b step 1). Every write form from OUTSIDE the module that declares
+// the struct refuses: an assignment through any path -- the sealed field
+// itself, a part of a sealed value (`h.inner.open`), a sealed field reached
+// through a pointer -- a compound assignment, a struct literal naming the
+// field, a `move` or `pass` out of an owning sealed field (the vacant value it
+// leaves is a write, D-254), `@`, `$$m`, a call through a pointer receiver,
+// and an operation on a stateful value. A READ passes, and so does a `$$i`
+// claim (D-286 holds it read-only). A write THROUGH a sealed pointer field
+// writes the pointee, not the field: the field's own bytes are what the seal
+// keeps, and `hidden` is how a pointee is kept out of reach (D-314). "Outside"
+// is the line a private member draws (MODULE_REFERENCE §3): the declaring
+// module's own code writes freely. A generic struct's seal is its template's
+// (K-4), and the diagnostic names the template.
+mod:sealed_fields;
+
+mod:bank = {
+    pub struct:Acct = { sealed int64:bal; int64:open; };
+    pub struct:Holder = { sealed Acct:inner; int64:n; };
+    pub struct:Named = { sealed string:name; };
+    pub struct:Cell = { sealed wild int64->:slot; };
+    pub struct:Meter = { sealed atomic<int64>:hits; };
+    pub struct:Box<T> = { sealed T:v; };
+
+    pub func:acct = Acct(int64:b) never fails {
+        Acct:a = Acct{ bal: b, open: 0i64 };
+        a.bal = a.bal + 1i64;
+        a.bal += 1i64;
+        pass a;
+    };
+    pub func:named = Named(move string:s) never fails {
+        Named:n = Named{ name: move(s) };
+        pass n;
+    };
+    pub func:touch = NIL(Acct->:a) never fails { a.open = 1i64; pass NIL; };
+    pub func:reset = NIL(Holder->:h, Meter->:m) never fails {
+        h.inner.bal = 0i64;
+        drop h.inner.touch();
+        m.hits.store(0i64);
+        pass NIL;
+    };
+};
+use bank.*;
+
+func:peek = int64(int64->:p) never fails { pass (<-p); };
+func:poke = NIL(int64->:p) never fails { pass NIL; };
+
+// THE WRITE FORMS, from outside `bank`: each refuses with TYPE-079.
+func:assigns = NIL(Acct->:p) never fails {
+    Acct:a = raw acct(5i64);
+    a.bal = 9i64;
+    a.bal += 1i64;
+    p.bal = 3i64;
+    pass NIL;
+};
+func:through_a_value = NIL(Holder->:h) never fails {
+    h.inner.bal = 1i64;
+    h.inner.open = 1i64;
+    pass NIL;
+};
+func:literal = Acct() never fails {
+    Acct:a = Acct{ bal: 1i64, open: 2i64 };
+    pass a;
+};
+func:moves_out = string() never fails {
+    Named:n = raw named(string_concat("a", "b"));
+    string:s = move(n.name);
+    pass s;
+};
+func:passes_out = string() never fails {
+    Named:n = raw named(string_concat("a", "b"));
+    pass n.name;
+};
+func:addresses = NIL(Acct->:p) never fails {
+    int64->:q = @p.bal;
+    drop poke($$m p.bal);
+    pass NIL;
+};
+func:receivers = NIL(Holder->:h, Meter->:m) never fails {
+    drop h.inner.touch();
+    m.hits.store(4i64);
+    pass NIL;
+};
+func:generic = NIL(Box<int32>->:b) never fails {
+    b.v = 3i32;
+    pass NIL;
+};
+
+// WHAT PASSES: reads, a shared claim, a copy out, a write through a sealed
+// POINTER field (the pointee is not the field), a field that is not sealed,
+// and the declaring module's own functions.
+func:reads = int64(Holder->:h, Cell->:c, Meter->:m) never fails {
+    int64:x = h.inner.bal + h.n;
+    x = x + (raw peek($$i h.inner.bal));
+    Acct:copy = h.inner;
+    <-c.slot = 5i64;
+    h.n = 2i64;
+    drop reset(h, m);
+    pass (x + copy.bal);
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

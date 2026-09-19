@@ -129,7 +129,7 @@ pub struct:AssignState = {
     // permission, like must/checked). The pathological branch that seals on one
     // arm only is then refused for BOTH, which is correct: a page in an unknown
     // seal state is neither safely writable nor safely executable.
-    wild bool->:sealed;
+    wild bool->:sealed_any;
     wild bool->:sealed_firm;
     int32:count;
 };
@@ -183,7 +183,7 @@ pub func:state_new = AssignState(int32:n) never fails {
                                  moved: m3 =>! wild bool->,
                                  freed: m4 =>! wild bool->,
                                  checked: m5 =>! wild bool->,
-                                 sealed: m6 =>! wild bool->,
+                                 sealed_any: m6 =>! wild bool->,
                                  sealed_firm: m7 =>! wild bool->,
                                  count: size =>! int32 };
     for (int64:i in 0i64...size) {
@@ -192,7 +192,7 @@ pub func:state_new = AssignState(int32:n) never fails {
         s.moved[i] = false;
         s.freed[i] = false;
         s.checked[i] = false;
-        s.sealed[i] = false;
+        s.sealed_any[i] = false;
         s.sealed_firm[i] = false;
     }
     pass s;
@@ -207,7 +207,7 @@ func:state_copy = AssignState(AssignState:src) never fails {
         d.moved[i] = src.moved[i];
         d.freed[i] = src.freed[i];
         d.checked[i] = src.checked[i];
-        d.sealed[i] = src.sealed[i];
+        d.sealed_any[i] = src.sealed_any[i];
         d.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
@@ -222,7 +222,7 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) never fails {
         dst.moved[i] = src.moved[i];
         dst.freed[i] = src.freed[i];
         dst.checked[i] = src.checked[i];
-        dst.sealed[i] = src.sealed[i];
+        dst.sealed_any[i] = src.sealed_any[i];
         dst.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
@@ -274,7 +274,7 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
         dst.moved[i] = a.moved[i] || b.moved[i];
         dst.freed[i] = a.freed[i] || b.freed[i];
         dst.checked[i] = a.checked[i] && b.checked[i];
-        dst.sealed[i] = a.sealed[i] || b.sealed[i];
+        dst.sealed_any[i] = a.sealed_any[i] || b.sealed_any[i];
         dst.sealed_firm[i] = a.sealed_firm[i] && b.sealed_firm[i];
         i = i + 1i64;
     }
@@ -296,7 +296,7 @@ func:state_absorb_may = NIL(AssignState:dst, AssignState:body) never fails {
         dst.freed[i] = dst.freed[i] || body.freed[i];
         // sealed UNIONS (a body that seals leaves the page possibly-sealed);
         // sealed_firm does NOT survive a zero-iteration loop (like must/checked).
-        dst.sealed[i] = dst.sealed[i] || body.sealed[i];
+        dst.sealed_any[i] = dst.sealed_any[i] || body.sealed_any[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -313,7 +313,7 @@ func:state_mark = NIL(AssignState:s, int32:slot) never fails {
     s.moved[slot => int64] = false;
     s.freed[slot => int64] = false;
     // A NEW VALUE IS A NEW PAGE, and a fresh page is unsealed (writable).
-    s.sealed[slot => int64] = false;
+    s.sealed_any[slot => int64] = false;
     s.sealed_firm[slot => int64] = false;
     // A NEW VALUE IS A NEW `Result`, and nothing has checked it. Clearing this on
     // assignment is what stops one check licensing every later read of the name.
@@ -365,7 +365,7 @@ func:state_freed = bool(AssignState:s, int32:slot) never fails {
 func:state_mark_sealed = NIL(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass NIL; }
     if (slot >= s.count) { pass NIL; }
-    s.sealed[slot => int64] = true;
+    s.sealed_any[slot => int64] = true;
     s.sealed_firm[slot => int64] = true;
     pass NIL;
 };
@@ -375,7 +375,7 @@ func:state_mark_sealed = NIL(AssignState:s, int32:slot) never fails {
 func:state_sealed = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
-    pass (s.sealed[slot => int64]);
+    pass (s.sealed_any[slot => int64]);
 };
 
 // Firmly-sealed: true only if sealed on every path — executing is permitted
@@ -848,7 +848,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails 
         dst.moved[i] = dst.moved[i] || other.moved[i];
         dst.freed[i] = dst.freed[i] || other.freed[i];
         dst.checked[i] = dst.checked[i] && other.checked[i];
-        dst.sealed[i] = dst.sealed[i] || other.sealed[i];
+        dst.sealed_any[i] = dst.sealed_any[i] || other.sealed_any[i];
         dst.sealed_firm[i] = dst.sealed_firm[i] && other.sealed_firm[i];
         i = i + 1i64;
     }

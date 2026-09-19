@@ -431,3 +431,27 @@ pub func:TYPE_SHIFT_RANGE = string() never fails { pass "NITPICK-TYPE-070"; };
 // in read-only memory (D-211) -- died with SIGSEGV, `failsafe` never running.
 // TYPE-063's twin: pass a `fixed` value by value, or declare it plain.
 pub func:TYPE_FIXED_ADDRESS = string() never fails { pass "NITPICK-TYPE-071"; };
+// A WRITE TO A `sealed` FIELD FROM OUTSIDE ITS DECLARING MODULE (D-313, S-93;
+// 1.5.8b step 1; DEF-72). The write forms: an assignment through any path, a
+// compound assignment, a struct literal naming the field, a `move` or `pass`
+// out of an owning field (the vacant value is a write), `@`, `$$m`, a call
+// through a pointer receiver, an operation on a stateful value. A `$$i` claim
+// reads. "Outside" is the line a private member draws (MODULE_REFERENCE §3):
+// code whose scope is not within the module that declares the struct. The
+// compiler-known containers' headers -- `ptr`, `len`, `cap` of a string, a
+// `cstring`, a slice, a `buffer` -- are sealed BY DEFINITION and declared by no
+// module, so every write form refuses them everywhere: measured before the
+// rule, `s.len = 4096i64` on a six-byte string made `string_slice` read 96 bytes
+// past the storage.
+pub func:TYPE_SEALED_WRITE = string() never fails { pass "NITPICK-TYPE-079"; };
+// A READ OR WRITE OF A `hidden` FIELD FROM OUTSIDE ITS DECLARING MODULE (D-314,
+// S-94; 1.5.8b step 1): a member access naming it in any position, a struct
+// literal naming it, a struct pattern binding it, a call through a
+// function-valued one. The same line as TYPE-079's "outside".
+pub func:TYPE_HIDDEN_FIELD = string() never fails { pass "NITPICK-TYPE-080"; };
+// A FIELD QUALIFIER WHERE IT CANNOT MEAN WHAT IT SAYS (D-313, D-314; 1.5.8b step
+// 1): `sealed` or `hidden` on a local, a parameter, a module binding or a cast
+// target -- each says who may touch a FIELD, and only a field has an owner
+// distinct from its user -- or both on one field, where they contradict (sealed
+// is read everywhere, hidden nowhere outside).
+pub func:TYPE_FIELD_QUAL = string() never fails { pass "NITPICK-TYPE-081"; };

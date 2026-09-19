@@ -52,9 +52,9 @@ func:main = int32(cstring[]:_~argv) {
     Loaded:l1 = raw load("tests/modules/vis/middle.npk", @it, @d1, @r1);
     if (!(raw has(@l1, "shared", @it)))               { exit 10i32; }
     if (!(raw has(@l1, "Shared", @it)))               { exit 11i32; }
-    // `hidden` is private to lib.npk and invisible here. Private means "this
+    // `secret` is private to lib.npk and invisible here. Private means "this
     // module and no other" -- there is no `pub(crate)` middle ground.
-    if (raw has(@l1, "hidden", @it))                  { exit 12i32; }
+    if (raw has(@l1, "secret", @it))                  { exit 12i32; }
     // The `pub use` target arrived too.
     if (!(raw has(@l1, "relayed", @it)))              { exit 13i32; }
     if (raw diaglist_count(@d1) != 0i64)              { exit 14i32; }
@@ -88,7 +88,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw diaglist_at(@d3, 1i64)).severity != ((Severity.Note =>! int32))) {
         exit 32i32;
     }
-    if (raw has(@l3, "hidden", @it))                  { exit 33i32; }
+    if (raw has(@l3, "secret", @it))                  { exit 33i32; }
 
     // --- a named import of a MISSING symbol names the module ------------------------
     DiagList:d4 = raw diaglist_init();

@@ -80,6 +80,11 @@ AsyncKeyword        ::= "async" | "await" | "thread" | "joins"
 
 ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"
                       | "comptime" | "inline" | "noinline" | "macro" | "derive"
+                      | "sealed" | "hidden"
+
+; `sealed` and `hidden` are FIELD qualifiers (D-313, D-314): a sealed field is
+; read anywhere and written only by code in the module that declares its
+; struct; a hidden field is neither read nor written outside that module.
 
 TypeKeyword         ::= "struct" | "enum" | "assoc" | "opaque" | "error"
                       | "unit"

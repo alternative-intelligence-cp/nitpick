@@ -11,7 +11,7 @@
 //
 // EVERY ARM OVER AN `Error` SELECTOR IS READ BY THE CHECKER (D-275, 1.5.4d):
 // in `failsafe`, a `(file.Name)` arm is an IDENTITY checked as a pair
-// against the constants the program declares -- `(hidden.Boom)` names an
+// against the constants the program declares -- `(nested.Boom)` names an
 // INLINE module, which qualifies nothing (the FILE does: `(error_arms.Boom)`
 // beside it is the arm that matches), `(error_arms.Nosuch)` a constant no
 // file declares, `(nosuch.Boom)` a file nothing loaded, and `(x.DivByZero)` a
@@ -25,18 +25,18 @@ mod:error_arms;
 
 fixed int32:K = 3i32;
 
-mod:hidden = {
+mod:nested = {
     error:Boom;
     pub func:b = int32(int32:v) { if (v > 1i32) { fail Boom; } pass v; };
 };
 
 func:classify = int32(int32:v) never fails {
-    Result<int32>:r = hidden.b(v);
+    Result<int32>:r = nested.b(v);
     if (r.is_error) {
         pick (r.err) {
             (7i32)          { pass 1i32; },
             (K)             { pass 2i32; },
-            (hidden.Boom(w)) { pass 3i32; },
+            (nested.Boom(w)) { pass 3i32; },
             (a.b.C)         { pass 4i32; },
             (1i32..9i32)    { pass 5i32; },
             ERR:            { pass 6i32; },
@@ -47,14 +47,14 @@ func:classify = int32(int32:v) never fails {
 };
 
 func:main = int32(cstring[]:_~argv) {
-    int32:g = hidden.b(1i32) ?! hidden.Boom;
+    int32:g = nested.b(1i32) ?! nested.Boom;
     exit (g + (raw classify(5i32)));
 };
 
 func:failsafe = int32(Error:e) {
     pick (e) {
         (error_arms.Boom)   { exit 2i32; },
-        (hidden.Boom)       { exit 3i32; },
+        (nested.Boom)       { exit 3i32; },
         (error_arms.Nosuch) { exit 4i32; },
         (nosuch.Boom)       { exit 5i32; },
         (x.DivByZero)       { exit 6i32; },
