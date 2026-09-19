@@ -1,6 +1,6 @@
 // expect-exit: 0
 // expect-obligation: assert-static checker 2
-// expect-obligation: failsafe-post discharged 14
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
 //
 // `assert_static` FOLDS AT THE FRONTEND (L-17; VERIFICATION §1.1): each
@@ -33,6 +33,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

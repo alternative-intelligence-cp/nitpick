@@ -3,7 +3,7 @@
 // expect-obligation: shift-range discharged 2
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 12
 // expect-obligation: exhaustive checker 1
 //
 // THE `shift-range` ROW (D-277, 1.5.4b step 0): a computed amount nothing
@@ -42,6 +42,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 92i32; },
         (Unreachable)    { exit 95i32; },
         (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

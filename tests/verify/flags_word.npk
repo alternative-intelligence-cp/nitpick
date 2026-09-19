@@ -1,6 +1,6 @@
 // expect-exit: 65
 // expect-obligation: prove discharged 1
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // A FLAG FAMILY IS A 32-BIT WORD (D-230 under D-279): its members are
@@ -25,6 +25,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 92i32; },
         (Unreachable)    { exit 95i32; },
         (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

@@ -1,7 +1,7 @@
 // expect-exit: 32
 // expect-obligation: requires discharged 1
 // expect-obligation: requires open 2
-// expect-obligation: failsafe-post discharged 14
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
 //
 // AN `await`'s ROW (S-44, D-268): recorded like any call's and `held` -- the
@@ -35,6 +35,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

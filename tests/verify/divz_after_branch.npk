@@ -1,7 +1,7 @@
 // expect-exit: 20
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 12
 // expect-obligation: exhaustive checker 1
 //
 // THE 1.5.0 PROMISE KEPT (1.5.4 step 2, L-7, L-8): both arms assign a
@@ -29,6 +29,8 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds) { exit 24i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

@@ -1,6 +1,6 @@
 // expect-exit: 70
 // expect-obligation: failsafe-post open 1
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // `failsafe`'s POSTCONDITION (D-267, L-14): a literal exit's row discharges
@@ -31,6 +31,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)         { exit 92i32; },
         (Unreachable)     { exit 95i32; },
         (WildLeak)        { exit 96i32; },
+        (StackExhausted)  { exit 99i32; },
+        (MachineFault)    { exit 99i32; },
         (*)               { exit 99i32; }
     }
     exit 9i32;

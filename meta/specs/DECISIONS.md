@@ -9983,6 +9983,19 @@ width (0.9.3's `i128`) cannot silently ship an unguarded `INT_MIN/-1`.
 > Reserved by 1.5.2, registered here; the prelude declares the three names
 > and REACH arms each where its construct is declared.
 
+> **[1.5.8 step 0, 2026-09-18; D-277, D-286, D-304…D-307]** The registry
+> since: −4115 `ShiftRange` (D-277, 1.5.4b) and −4116 `BorrowOverlap`
+> (D-286, 1.5.5), and four declared together at 1.5.8 step 0, each armed
+> with its mechanism — −4117 `CastRange` (D-306: a float's `=>!` cast to an
+> integer with no integer meaning; 1.5.8 step 1), −4118 `StackExhausted`
+> (D-305: a function's frame would pass its thread's stack limit; 1.5.8 step
+> 2), −4119 `DecreasesViolated` (D-304: a `decreases` measure did not shrink
+> or fell below zero; 1.5.8c), −4120 `MachineFault` (D-307: SIGSEGV, SIGBUS,
+> SIGILL or SIGFPE, caught on the thread's signal stack; 1.5.8 step 3).
+> `StackExhausted` and `MachineFault` join the unconditional identities
+> (`Unreachable`, `HeapOom`, `HeapBadRequest`, `WildLeak`): every program
+> reaches them, so every `failsafe` names them.
+
 ## D-143 — The float family's final form — **SETTLED**
 
 Cycle 0.9.4, resolving the audit's two open float decisions plus the shape of
@@ -19141,3 +19154,210 @@ not that it schedules as the measured design did.
 > through the harness-built tool. The alternating sweep, not the replay belt,
 > found X-13 and X-19: that is the reference's value. `driver_spawn_fail` forks
 > a real child and is the stated exception.
+
+## D-304 — Every `while` and `when` states `decreases E` or `unbounded`; the measure is checked in every build and proven where it can be; on a function it is optional — **SETTLED (user decision, 2026-09-18: "go with all four"; S-84)**
+
+D-218 (7) ratified termination among the catalogue's kinds — "`decreases`-style
+variants on recursion and unbounded loops" — and VERIFICATION_REFERENCE §7b
+assigns `terminate` to 1.5.8, but the language had no surface for it:
+`decreases` appeared in no lexer, parser, grammar or specification (measured
+at 1.5.8's planning on `e3bf48c`). Asked, the user answered that if
+verification needs it, it goes in ("As far as decreases, I'm not sure really
+what it does but if we need it for verification I say we add it"), and it
+does: no tool can decide in general whether a `while` loop ends, so the
+author says WHY it ends — a whole number that shrinks on every trip and can
+never go below zero, which can only shrink so many times. The safety reason
+is Nikola's: a loop that never ends is a hang, and a hang reaches no
+`failsafe` — the actuators hold their last command. A numerical loop that
+never converges under rounding (`while (err > tol)`) is the classic case, and
+exactly Nikola's kind of code.
+
+**The decision.**
+
+1. `decreases E` is a clause of the `while` and `when` loops, beside
+   `invariant`, and of functions, beside `requires` and `ensures`. `E` is a
+   plain integer (`intN`/`uintN`), admitted as a contract expression is
+   (D-221, TYPE-060): nothing that can fail, suspend, move or store.
+2. It is CHECKED IN EVERY BUILD, as every contract clause is (D-221): at a
+   loop's head, each time its condition holds, the measure is evaluated, and
+   the program traps `DecreasesViolated` (4119) if it is below zero or not
+   smaller than at the previous trip. On a function, at every call inside its
+   recursive group, the callee's measure at the arguments must be below the
+   caller's at entry, and the caller's not below zero. A loop that would spin
+   forever therefore stops — through `failsafe` — within its first measure's
+   value of trips.
+3. The `terminate` rows prove it where they can, and a discharged row's check
+   is elided (D-219). The catalogue's `terminate` gains a guard.
+4. **Every `while` and `when` states exactly one of `decreases E` and
+   `unbounded`.** `unbounded` is a new keyword: the greppable acknowledgment
+   that a loop may not end — an event loop, a read-to-end-of-input loop — in
+   the family of `=>!`, `wild` and `raw`, an explicit opt-out and never the
+   default. A loop with neither, or both, is `NITPICK-TYPE-072`. `for`,
+   `loop` and `till` are bounded by construction (D-234 captures a `for`'s
+   bound; D-022's counted loops) and take neither.
+5. On a FUNCTION it is optional: a runaway recursion reaches D-305's stack
+   check, a controlled stop, so the net exists without it. Where it is
+   written it is checked and proven as in (2).
+6. (4) becomes a refusal only after the compiler's own tree, the libraries it
+   imports, `npkg`, the tools and the tests are swept (D-205: a construct
+   enters `src/` after a snapshot that understands it); until that landing a
+   loop with neither clause is accepted.
+
+**The rules that follow**, each language-visible and each the only
+consistent reading of the above (1.5.8c's plan spells them; listed here so no
+consumer is surprised): a measure is a plain integer — `NITPICK-TYPE-073`
+otherwise; every function of a recursive group states `decreases` if any
+member does, since a call from one member to another compares their two
+measures — `NITPICK-TYPE-074`; a `decreases` on a function the compiler sees
+no recursive call of would check nothing — `NITPICK-TYPE-075` (a recursion
+through a function value or a `dyn` is invisible to the call graph, and a
+measure there has no call to be checked at).
+
+**Alternatives declined.** OPTIONAL everywhere — the silent hang stays the
+default state, and a safety opt-out is never the default. MANDATORY on
+recursion as well — 285 functions in the compiler's own 103 recursive groups
+(measured at planning over the direct calls of `build/npkc.ll`), for a stop
+D-305 already makes controlled. INFERENCE as the rule — a language rule
+cannot depend on how strong the solver is; the encoder may infer a measure to
+DISCHARGE a row, never to accept a loop. A FUEL budget per loop — changes the
+program's behaviour by a number nobody can defend. The precedent is NASA/JPL's
+"Power of Ten" rule 2: every loop has a provable bound, with the one event
+loop stated as the exception. Measured at planning: 769 `while` loops outside
+`tests/` (536 in `src/`, 25 in `lib/`, 206 in `npkg/`, 2 in `tools/`), 148 in
+`tests/`, 8 `when` loops; `decreases` and `unbounded` are identifiers nowhere
+in `nitpick-libs` or `nitpick-apps`, and once in the tree
+(`tests/types/rejection/generics.npk`'s `func:unbounded<U>`).
+
+Lands at 1.5.8c. The library listener was told before anything landed
+(FORECAST F5, 2026-09-18).
+
+## D-305 — A stack overflow is a controlled trap: LLVM's split-stack prologue on every emitted function, `StackExhausted` (4118), `failsafe` on a stack of its own; the check is never elided — **SETTLED (user decision, 2026-09-18: "go with all four"; S-85)**
+
+Found at 1.5.8's planning (DEF-59, DEF-60). The floor installs one signal
+action, SIGUSR1's (D-291), so a stack overflow — a recursion deeper than its
+stack — dies of SIGSEGV with no `failsafe`: `npkc` compiling itself under
+`ulimit -s 2048` exits 139 (it needs between 2 and 4 MiB). And a spawned
+thread's stack has ONE guard page while 151 of the compiler's own functions
+have frames larger than a page at the pinned `-O0` — the largest,
+`emit_expr_kind`, 120,904 bytes — so an overflow that enters one of them steps
+over the guard into whatever mapping lies below: silent corruption, not even
+a crash. G-6 (the coverage audit) asked for the stack's story, and the
+catalogue's `stack-depth` row (D-218 (7)) had neither a guard nor a mechanism.
+
+**The decision.**
+
+1. Every function the compiler emits carries LLVM's `"split-stack"`
+   attribute: its prologue compares the stack pointer, less the function's
+   EXACT frame size, against a per-thread limit word BEFORE the frame exists
+   (`%fs:0x70`, the x86-64 convention). Measured under the pinned `llc` at
+   both levels: `lea -FRAME(%rsp), %r11; cmp %fs:0x70, %r11`; a frame of 256
+   bytes or less compares `%rsp` itself, and a leaf with no frame skips the
+   check (LLVM's 256-byte slack). The floor supplies `__morestack`, which
+   enters the trap route as `StackExhausted` (4118).
+2. The floor object declares itself split-stack-aware (`.note.GNU-split-stack`)
+   and PROVES it: its own deepest chain of frames fits inside the reserve the
+   limit leaves — a belt in both runners over its `-stack-size-section` frames
+   and its call graph (1,032 bytes at planning). Without the note, ld.lld
+   rewrites every caller of floor code to take the slow path on EVERY call
+   (gccgo's segmented-stack protocol; measured: the compare becomes `stc`),
+   which a trapping `__morestack` cannot serve. `__morestack_non_split`,
+   reachable only through that rewrite, is defined and traps `Unreachable`:
+   the closed-world link (D-206) admits no object without the note.
+3. EVERY THREAD'S STACK IS THE FLOOR'S. The main thread moves onto a
+   floor-mapped 8 MiB stack at startup, as every spawned thread already runs on
+   a floor-mapped 2 MiB one: the stack budget is the program's, never the
+   shell's `ulimit`. Each stack is a guard page, then a 64 KiB RESERVE, then
+   the usable stack; the limit word is the reserve's top.
+4. Signals never run on a thread's own stack: every thread registers a signal
+   stack (`sigaltstack`) at its start, and SIGUSR1's action gains SA_ONSTACK,
+   so the kernel's signal frame — whose size is the machine's — never lands in
+   the reserve.
+5. `failsafe` runs on a stack of its own: 1 MiB, mapped at startup (the trap
+   route allocates nothing — D-153's rule). The holder switches to it at the
+   call of `failsafe` with the limit word rewritten, so an overflow INSIDE
+   `failsafe` traps too, and the re-entry rule exits 70 (D-291).
+6. `StackExhausted` is reachable from every program: every `failsafe` names
+   it (REACH-002).
+7. The check is NEVER ELIDED. Whether a function's entry can exhaust its stack
+   depends on every call path to it and on frame sizes the trusted backend
+   decides after emission — outside the manifest's machine-independent
+   evidence (D-218 (2)) — and the check costs one compare per call. The
+   `stack-depth` rows (1.5.8c) report whether a program's depth is provably
+   bounded; they elide nothing.
+
+**Alternatives declined.** A check of our own in the IR (the stack pointer
+against the limit at entry) — the IR does not know the frame size, and at
+`-O0` the prologue's spills write the frame BEFORE an IR-level check could
+run, so a large frame lands past the guard first. A SIGSEGV handler that
+recognizes a guard-page hit — a frame larger than the guard jumps it without
+faulting (the stack-clash class), and `failsafe` would run inside a signal
+handler; D-307 keeps a handler as the last net for OTHER faults. A bigger
+stack — 1.0.9a's stance: a stack overflow is the physical-safety event itself,
+never a stopgap-with-a-bigger-stack candidate. Inheriting the main thread's
+budget from `RLIMIT_STACK` — the same program would stop at a different depth
+under a different shell. Eliding the check where a proof exists — (7).
+
+Lands at 1.5.8 step 2.
+
+## D-306 — A float's `=>!` cast to an integer traps `CastRange` (4117) on NaN, an infinity or a value whose truncation the target cannot hold; `cast-range` is that guard's row — **SETTLED (user decision, 2026-09-18: "go with all four"; S-86)**
+
+Found at 1.5.8's planning (DEF-58). `emit_cast` lowered `f =>! intN` to a
+bare `fptosi`/`fptoui`, whose result for NaN, an infinity or a value outside
+the target is LLVM POISON — not a truncation, not any number — and `simd`'s
+elementwise cast did the same per lane. Measured: `flt64:f = 3000000000.0;
+int32:i = f =>! int32;` followed by `if (i < 0i32) { exit 3i32; }` exits 3 at
+the pinned `-O0`; after `opt -O2` the whole of `main` is `unreachable` and the
+binary falls into the next function, exiting 9. The twisted families'
+entering arms have carried an ordered range guard since 1.3.2; the plain
+integer's arm never did, while `smt_kinds.npk`'s header claimed "casts trap
+(D-148)".
+
+**The decision.** `=>!` from a float to an integer keeps its meaning — the
+fractional part is dropped, toward zero (D-095: float to integer is always
+lossy) — and a value with no integer meaning traps `CastRange` (4117): NaN,
+±∞, or a finite value whose truncation lies outside the target, i.e. outside
+`-2^(N-1) - 1 < f < 2^(N-1)` for a signed N-bit target and `-1 < f < 2^N` for
+an unsigned one, compared in `double` (a `flt32` operand widened exactly
+first; a bound past `double`'s range is the infinity). A `simd` cast is
+guarded any-lane, one trap per site. `CastRange` is armed wherever such a cast
+exists. The `cast-range` row (1.5.8b) is the guard's condition, and a
+discharged row's guard is one `llvm.assume`.
+
+**Alternatives declined.** Saturate (Rust's `as` since 1.45) — the program
+continues with a number the author never wrote, the drift class this language
+exists to stop. ERR — a plain integer has no ERR (D-008). A Result-returning
+spelling — a cast is an expression, and D-095's "`=>!` opts out of a check,
+not of a meaning" makes the no-meaning cases the trap they are.
+
+Lands at 1.5.8 step 1 (the guard; DEF-61's conversions beside it) and 1.5.8b
+(the row).
+
+## D-307 — SIGSEGV, SIGBUS, SIGILL and SIGFPE reach `failsafe` as `MachineFault` (4120), handled on each thread's signal stack — **SETTLED (user decision, 2026-09-18: "go with all four"; S-87)**
+
+The language's own code is guarded and, from D-305, its stack is checked, but
+a hardware fault can still come from `wild` or `wildx` code whose author
+accepted responsibility for it, from a `sys` call's buffer, from JIT code, or
+from a defect in the floor itself — and every one of them killed the process
+with the kernel's default action: no `failsafe`, the uncontrolled stop.
+
+**The decision.** Every thread's signal stack (D-305 (4)) also serves four
+actions — SIGSEGV (11), SIGBUS (7), SIGILL (4), SIGFPE (8) — with SA_ONSTACK,
+SA_SIGINFO, SA_RESTORER and SA_NODEFER. The handler enters the trap route as
+`MachineFault` (4120): the holder runs `failsafe` on its own stack (D-305
+(5)), and every other thread parks (D-291, DEF-57). A second fault inside
+`failsafe` is delivered again (SA_NODEFER) onto the signal stack's top —
+overwriting only frames that never return — and the re-entry rule exits 70.
+`MachineFault` is reachable from every program: every `failsafe` names it.
+
+**What stays uncontrolled, recorded in TCB.md §5:** a fault in the kernel's
+own delivery (a signal stack that cannot hold the frame), and whatever a
+fault has already corrupted — `failsafe` runs after it, with D-292's region to
+allocate from and nothing else promised.
+
+**Alternatives declined.** The default action — the uncontrolled stop this
+language forbids. SIGSEGV alone — the four are one class, the machine
+refusing an instruction. `failsafe` from inside the handler, on the signal
+stack — a signal stack is small and `failsafe` is user code; the switch of
+D-305 (5) serves both routes.
+
+Lands at 1.5.8 step 3.

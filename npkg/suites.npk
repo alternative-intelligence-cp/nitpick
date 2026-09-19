@@ -1478,7 +1478,7 @@ func:read_cost_unit = CostRead(string:text) never fails {
 // The wrapper every recipe carries: a `failsafe` naming every reachable
 // identity (REACH-002 otherwise) and still carrying `(*)` (PICK-003).
 func:cost_failsafe = string() never fails {
-    pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 91i32; },\n        (HeapOom)        { exit 92i32; },\n        (IntOverflow)    { exit 93i32; },\n        (OutOfBounds)    { exit 94i32; },\n        (Unreachable)    { exit 95i32; },\n        (WildLeak)       { exit 96i32; },\n        (*)              { exit 99i32; }\n    }\n    exit 9i32;\n};\n";
+    pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 91i32; },\n        (HeapOom)        { exit 92i32; },\n        (IntOverflow)    { exit 93i32; },\n        (OutOfBounds)    { exit 94i32; },\n        (Unreachable)    { exit 95i32; },\n        (WildLeak)       { exit 96i32; },\n        (StackExhausted) { exit 99i32; },\n        (MachineFault)   { exit 99i32; },\n        (*)              { exit 99i32; }\n    }\n    exit 9i32;\n};\n";
 };
 
 // DEF-1's three shapes, byte for byte the harness's `cost_recipe_text` (and

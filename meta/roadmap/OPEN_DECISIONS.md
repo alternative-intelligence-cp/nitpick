@@ -204,6 +204,10 @@ the builtin surface is typed from a signature table.
 | ~~**S-81**~~ | **D-301** | **SETTLED (user, 2026-09-17: "so, I think i am good with all your recommendations"); LANDS at 1.5.7 step 3.** ~~OPEN (raised by 1.5.7's plan, 2026-09-17).~~ `LOST-WAKE` / `LOST-FUTEX-WAKE` are RED runs even when the exit code is right (RECOMMENDED — MEASURED: a lost wakeup in this runtime is LATENESS under D-071's deadlines, virtual time hides it completely, and `nested_wait`'s planted defect is found on 100 of 100 seeds by the oracle, on 0 by exit code, on 0 of 10 stress runs), or reported without failing. |
 | ~~**S-82**~~ | **D-302** | **SETTLED (user, 2026-09-17: "so, I think i am good with all your recommendations"); LANDS at 1.5.7 step 5.** ~~OPEN (raised by 1.5.7's plan, 2026-09-17).~~ The spec's caller hypotheses EXECUTED at every call of every explored schedule (the plan's §2.4: generated checkers at each specified symbol's entry, `ASSUMPTION <symbol>: <clause>` the verdict, an unevaluable clause listed by name) inside this subcycle (RECOMMENDED — it is where 1.5.6c's sixteenth acceptance gets its test; MEASURED: `npk_small_free`'s old clause false on 5,276 of 5,276 calls, the `apart-when` clause on none), or its own subcycle after. |
 | ~~**S-83**~~ | **D-303** | **SETTLED (user, 2026-09-17, on his stated condition: "The only thing i'm not positive about is the C shim you mentioned. What exactly is it's purpose? If it's just an extra layer of verification for us that doesn't get shipped then i don't see a problem with it." — answered: a reference oracle for the hand-written IR, a measurement tool, never linked into anything the artifact is); LANDED at 1.5.7 step 0 (2026-09-18): `meta/roadmap/1.5/tools/explore_prototype/` with its README and amended headers.** ~~OPEN (raised by 1.5.7's plan, 2026-09-17).~~ Keep the planning prototype's C shim in the tree, OUTSIDE every gate, as the IR shim's BEHAVIOURAL REFERENCE, held to it schedule hash for schedule hash at step 1 (RECOMMENDED — it turns the hand port of ~375 lines of C into ~900 lines of IR from a review into a measurement; the zero-dependency rule governs what ships, and this ships nowhere, built by nothing), or no C file in the repository at all, the IR validated by the units and the negative controls alone. |
+| ~~**S-84**~~ | **D-304** | **SETTLED (user, 2026-09-18: "go with all four" — the sentence that settled S-84…S-87 together, first-hand to `nitpick-compiler_s11`, after his answer to the question itself: "As far as decreases, I'm not sure really what it does but if we need it for verification I say we add it"); LANDS at 1.5.8c.** ~~OPEN (raised by 1.5.8's planning, 2026-09-18).~~ `terminate` has no surface: `decreases` appears in no lexer, parser, grammar or specification, yet D-218 (7) ratified "`decreases`-style variants on recursion and unbounded loops". RECOMMENDED and settled: `decreases E` on `while`/`when` (beside `invariant`) and on functions (beside `requires`/`ensures`), an integer measure CHECKED IN EVERY BUILD (`DecreasesViolated`, 4119, when it fails to shrink or goes below zero) and proven where it can be; REQUIRED on every `while`/`when` as `decreases E` or the new keyword `unbounded` (TYPE-072), after the tree is swept; OPTIONAL on recursion (D-305's stack check is its net). Declined: optional everywhere (a silent hang the default); required on recursion too (285 functions in 103 recursive groups in the compiler, for a stop D-305 makes controlled); inference as the rule; a fuel budget. | 1.5.8c | 1.5.8 planning |
+| ~~**S-85**~~ | **D-305** | **SETTLED (user, 2026-09-18: "go with all four"); LANDS at 1.5.8 step 2.** ~~OPEN (raised by 1.5.8's planning, 2026-09-18; DEF-59, DEF-60).~~ A stack overflow is SIGSEGV with no `failsafe` (the floor installs only SIGUSR1's action; `npkc` under `ulimit -s 2048` exits 139), and a spawned thread's one guard page can be jumped by a frame larger than a page (151 of the compiler's own functions at `-O0`, the largest 120,904 bytes). RECOMMENDED and settled: LLVM's split-stack prologue on every emitted function (the exact frame compared against a per-thread limit BEFORE it is allocated), `StackExhausted` (4118) through `__morestack`, every thread's stack the floor's (the main thread moved onto 8 MiB), signals on per-thread signal stacks, `failsafe` on a stack of its own (an overflow inside it exits 70), the check never elided (its necessity rests on frame sizes the backend decides and on every call path). Declined: an IR-level check (it runs after the frame is written); a guard-page handler (a big frame jumps the guard without faulting); a bigger stack; inheriting `RLIMIT_STACK`. | 1.5.8 | 1.5.8 planning |
+| ~~**S-86**~~ | **D-306** | **SETTLED (user, 2026-09-18: "go with all four"); LANDS at 1.5.8 step 1 (the guard) and 1.5.8b (the row).** ~~OPEN (raised by 1.5.8's planning, 2026-09-18; DEF-58).~~ A float's `=>!` cast to an integer lowered to a bare `fptosi`/`fptoui` — LLVM poison for NaN, ±∞ or an out-of-range value; measured: one program exits 3 at `-O0` and 9 after `opt -O2`, whose fold turned all of `main` into `unreachable`. RECOMMENDED and settled: `=>!` keeps dropping the fraction toward zero, and a value with no integer meaning traps `CastRange` (4117), scalar and `simd` any-lane; `cast-range` is the guard's row. Declined: saturation (a number the author never wrote); ERR (plain integers have none); a Result-returning spelling. | 1.5.8 | 1.5.8 planning |
+| ~~**S-87**~~ | **D-307** | **SETTLED (user, 2026-09-18: "go with all four"); LANDS at 1.5.8 step 3.** ~~OPEN (raised by 1.5.8's planning, 2026-09-18; the question `nitpick-compiler_s10` put to the user through this seat).~~ Any other hardware fault — a `wild`/`wildx` pointer, a `sys` buffer, JIT code, a floor defect — kills with the kernel's default action. RECOMMENDED and settled: SIGSEGV/SIGBUS/SIGILL/SIGFPE handled on each thread's signal stack, entering the trap route as `MachineFault` (4120); `failsafe` on its own stack; a second fault inside it re-enters (SA_NODEFER) and exits 70. What stays uncontrolled (a fault in the kernel's own delivery, and what a fault already corrupted) is recorded in TCB.md §5. Declined: the default action; SIGSEGV alone; `failsafe` on the signal stack. | 1.5.8 | 1.5.8 planning |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
 
@@ -1390,6 +1394,62 @@ TYPE-043) — because a holder that parked would end nothing. The fix as first
 proposed (claim before publishing, every watcher parks) would have parked the
 holder as well; the model's `frozen-parks-holder` control reaches
 `holder-parks` with exactly that change.
+
+**DEF-58 — OPEN, fixed at 1.5.8 step 1 (D-306): A FLOAT'S `=>!` CAST TO AN INTEGER WAS LLVM POISON.** (found
+2026-09-18 on `e3bf48c` by `nitpick-compiler_s11`, planning 1.5.8 — by reading the lowering `cast-range` was to
+elide, and finding none.) `emit_cast`'s float→int arm, written at 0.9.4, is a bare `fptosi`/`fptoui`, and
+`emit_simd_cast`'s is the same per lane. For NaN, ±∞ or a value whose truncation the target cannot hold the result
+is POISON — not a truncation and not any number — and a branch on it is undefined. Measured with
+`flt64:f = 3000000000.0; int32:i = f =>! int32;` then `if (i < 0i32) { exit 3i32; }`: exit 3 at the pinned `-O0`,
+exit 9 after `opt -O2`, which folded the whole of `main` to `unreachable` so that the binary ran into the next
+function. Over a runtime value both levels exit 3 — the hazard is whatever the optimiser can see, which is why no
+test of the running program found it and the harness's `-O2` leg could only have met it on a folded constant. The
+twisted families' ENTERING arms carry an ordered range guard since 1.3.2 ("the select keeps fptosi off poison");
+the plain integer's arm was never given the rule, and `smt_kinds.npk`'s header claimed "casts trap (D-148)".
+
+**DEF-59 — OPEN, fixed at 1.5.8 step 2 (D-305): A STACK OVERFLOW WAS AN UNCONTROLLED STOP.** (found 2026-09-18 on
+`e3bf48c` by `nitpick-compiler_s11`, planning 1.5.8.) The floor installs one signal action, SIGUSR1's (D-291), so a
+recursion deeper than its stack dies of SIGSEGV with the kernel's default action and no `failsafe` — the event the
+language's two exit paths exist to forbid. Measured on the compiler compiling itself: `ulimit -s 4096` succeeds,
+`ulimit -s 2048` exits 139. And the main thread's budget was the SHELL's: the same program stops at a different
+depth under a different `ulimit`.
+
+**DEF-60 — OPEN, fixed at 1.5.8 step 2 (D-305): A SPAWNED THREAD'S ONE GUARD PAGE COULD BE JUMPED.** (found
+2026-09-18 on `e3bf48c` by `nitpick-compiler_s11`, planning 1.5.8.) `npk_thread_start` maps "guard page + 2 MiB";
+`llc -O0 -stack-size-section` over the compiler's own IR finds 151 frames larger than a page (the largest,
+`emit_expr_kind`, 120,904 bytes). An overflow that enters such a frame moves the stack pointer PAST the guard, and
+the frame's writes land in whatever mapping lies below — the stack-clash class: silent corruption of another
+thread's stack or the heap, not even DEF-59's crash. The main thread was spared by the kernel's own 1 MiB guard gap.
+
+**DEF-61 — OPEN, fixed at 1.5.8 step 1: A FLOAT↔128-BIT INTEGER CAST COULD NOT BE LINKED.** (found 2026-09-18 on
+`e3bf48c` by `nitpick-compiler_s11`, probing DEF-58's neighbourhood.) `flt64 =>! int128` and `int128 =>! flt64` are
+admitted (`CAST_LOSSY`) and lower to `fptosi`/`sitofp` at `i128`, which `llc` turns into compiler-rt calls
+(`__fixdfti`, `__floattidf`) at both levels: the zero-dependency scan refuses the link by name. Loud, never unsafe —
+but the language admitted what the backend could not build. Routing through `i256` (which LLVM expands inline) is
+not a fix: `opt -O2` narrows `sitofp (sext i128 to i256)` back to the `i128` libcall (measured). The fix lowers
+every float↔integer conversion above 64 bits by hand (1.5.8's K-4).
+
+**DEF-62 — OPEN, fixed at 1.5.8 step 0: `npkg`'s VERIFIED-BUILD BELT NEVER COUNTED `BorrowOverlap`.** (found
+2026-09-18 by the identity survey of 1.5.8's planning.) `npkg/verify.npk`'s list of trap codes the belt counts is a
+hand list of nine (`-4097 -4098 -4111 -4112 -4113 -4114 -4101 -4115 -4100`); 1.5.5 step 2 added `disjoint`'s
+`-4116` to the kind tables of both runners and to this list in the Python twin only, which derives its codes from
+`TRAP_OF_KIND`. The twins agreed on every verdict because every program's `disjoint` traps did match its rows;
+had they not, the Python runner would have failed the unit and `npkg` passed it — a belt present in one twin and
+absent from the other, which `parity` sees only as a verdict difference. The fix derives `npkg`'s list from its
+own `trap_of_kind`, as the Python one is.
+
+**DEF-63 — OPEN, fixed at 1.5.8 step 0: THE FLOOR TRANSLATOR'S HEAP TRAP CODES WERE CROSSED.** (found 2026-09-18 by
+the same survey.) `npkg/floor_smt.npk:3252-3254` maps `@npk_heap_bad`, `@npk_heap_badreq` and `@npk_heap_oom` to
+−4103, −4103 and −4104; the floor traps −4102, −4104 and −4103 (`npkrt.ll:4292, 4304, 4298`). No spec clause reads
+`trap_code` yet, so no verdict rests on the table — a latent wrong fact in an instrument, corrected before a clause
+can rest on it.
+
+**DEF-64 — OPEN, fixed at 1.5.8 step 2: THE FLOOR'S SYSCALL CENSUS COULD NOT SEE `module asm`.** (found 2026-09-18
+by the explorer survey of 1.5.8's planning.) The kernel-effect table, TCB.md §4b's syscall boundary and the
+explorer's transform all read `call i64 @npk_sys6(i64 N` in function bodies; a syscall written in a `module asm`
+block is invisible to all three. One already is: `rt_sigreturn` (15), the SIGUSR1 handler's restorer (D-291) — no
+kernel-effect row, not among §4b's "27 numbers". Step 2 adds `module asm` of its own (the `__morestack` stubs, the
+stack trampolines), so the census reads `module asm` from then on.
 
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 

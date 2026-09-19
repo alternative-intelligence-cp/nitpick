@@ -3246,12 +3246,15 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
 
 // The trap identity a trap callee ends the path with: `npk_trap`'s and
 // `npk_raise`'s argument, `npk_exit`'s status, the heap traps' fixed codes
-// (HeapBadRequest -4103, HeapOom -4104 -- the runtime's identities), the
-// park and the failsafe call opaque.
+// (the integrity trap -4102, HeapOom -4103, HeapBadRequest -4104 -- the
+// codes `@npk_heap_bad`, `@npk_heap_oom` and `@npk_heap_badreq` pass to
+// `npk_trap`), the park and the failsafe call opaque. (DEF-63, 1.5.8 step 0:
+// until then the three were -4103, -4103, -4104 -- crossed, and read by no
+// clause yet.)
 func:trap_code_of = string(Tx->:t, FloorText->:ft, string:callee, FInstr->:ins) never fails {
-    if (raw text_eq(callee, "@npk_heap_bad")) { pass "(- 4103)"; }
-    if (raw text_eq(callee, "@npk_heap_badreq")) { pass "(- 4103)"; }
-    if (raw text_eq(callee, "@npk_heap_oom")) { pass "(- 4104)"; }
+    if (raw text_eq(callee, "@npk_heap_bad")) { pass "(- 4102)"; }
+    if (raw text_eq(callee, "@npk_heap_badreq")) { pass "(- 4104)"; }
+    if (raw text_eq(callee, "@npk_heap_oom")) { pass "(- 4103)"; }
     if (ins.args.count > 0i64) {
         Term:a = raw term_of(t, ft, raw strlist_view(ins.args, 0i64), raw strlist_view(ins.tys, 0i64));
         if (a.ok) {

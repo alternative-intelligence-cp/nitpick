@@ -1,6 +1,6 @@
 // expect-exit: 34
 // expect-obligation: invariant open 2
-// expect-obligation: failsafe-post discharged 14
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
 //
 // `$` IN AN INVARIANT has a term (1.5.4 step 3, L-11 -- opaque from 1.5.2's
@@ -35,6 +35,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

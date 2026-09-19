@@ -1,7 +1,7 @@
 // expect-exit: 90
 // expect-obligation: err-exit discharged 1
 // expect-obligation: err-exit open 1
-// expect-obligation: failsafe-post discharged 8
+// expect-obligation: failsafe-post discharged 10
 // expect-obligation: exhaustive checker 1
 //
 // A TWISTED DIVISION NEVER TRAPS (D-007's fail-operational row, D-278): a
@@ -40,6 +40,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 92i32; },
         (Unreachable)    { exit 95i32; },
         (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

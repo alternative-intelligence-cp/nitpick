@@ -4,7 +4,7 @@
 // expect-obligation: div-min discharged 2
 // expect-obligation: limit open 1
 // expect-obligation: limit-subsume discharged 1
-// expect-obligation: failsafe-post discharged 11
+// expect-obligation: failsafe-post discharged 13
 // expect-obligation: exhaustive checker 1
 //
 // A `simd` DIVISION'S ROWS OVER KNOWN LANES (D-282, 1.5.4b step 4): the
@@ -41,6 +41,8 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds) { exit 24i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

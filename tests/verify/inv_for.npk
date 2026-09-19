@@ -1,6 +1,6 @@
 // expect-exit: 0
 // expect-obligation: invariant discharged 2
-// expect-obligation: failsafe-post discharged 13
+// expect-obligation: failsafe-post discharged 15
 // expect-obligation: exhaustive checker 1
 //
 // A `for` LOOP'S ROWS: the binding is opaque (as today), the invariant over
@@ -28,6 +28,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

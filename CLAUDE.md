@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has ONE subcycle left — 1.5.8 (the five obligation kinds still without rows, and the close): 1.5.0–1.5.7 have landed, the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) is in its LAST subcycle, 1.5.8 — planned 2026-09-18 as four (`meta/roadmap/1.5/1.5.8.md`: 1.5.8 the runtime's uncontrolled stops — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault; 1.5.8b the `overflow`/`bounds`/`cast-range` rows; 1.5.8c `decreases`/`unbounded` with the `terminate` and `stack-depth` rows; 1.5.8d the close) under D-304…D-307: 1.5.0–1.5.7 have landed, the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -1199,7 +1199,17 @@ file in both runners, B the file's rows the committed manifest records `budget`
 where it was 250, and nothing else moved.
 **WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
 subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): ONE subcycle, 1.5.8, since 1.5.7's close (2026-09-18).**
+throughout): ONE subcycle, 1.5.8, since 1.5.7's close (2026-09-18) — PLANNED
+2026-09-18 by `nitpick-compiler_s11` as four (`meta/roadmap/1.5/1.5.8.md` §0),
+because planning MEASURED first and found three of its five kinds standing on
+uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
+— one program exits 3 at `-O0` and 9 after `opt -O2`), DEF-59 (a stack
+overflow killed with no `failsafe`; `npkc` under `ulimit -s 2048` exits 139),
+DEF-60 (a spawned thread's one guard page could be jumped by a frame larger
+than a page — 151 of the compiler's own). The user ratified S-84…S-87 in one
+sentence ("go with all four") as D-304 (`decreases`/`unbounded`), D-305 (the
+split-stack prologue on every emitted function, `StackExhausted`), D-306
+(`CastRange`) and D-307 (`MachineFault`, the last net).**
 **1.5.7 (D-212's schedule-exploration harness) IS COMPLETE (2026-09-18;
 `meta/roadmap/1.5/1.5.7.md`; eight landings, steps 0–7, each a cumulative
 prefix under a full harness, D-228; seats s8 then s10)**: the REAL floor and

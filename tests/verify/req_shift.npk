@@ -2,7 +2,7 @@
 // expect-obligation: requires open 4
 // expect-obligation: shift-range open 2
 // expect-obligation: shift-range discharged 1
-// expect-obligation: failsafe-post discharged 11
+// expect-obligation: failsafe-post discharged 13
 // expect-obligation: exhaustive checker 1
 //
 // A GUARD'S FACT IS NOT A HYPOTHESIS FROM INSIDE A CONTRACT CLAUSE (DEF-33,
@@ -49,6 +49,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)          { exit 92i32; },
         (Unreachable)      { exit 95i32; },
         (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

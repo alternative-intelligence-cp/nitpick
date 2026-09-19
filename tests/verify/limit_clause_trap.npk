@@ -2,7 +2,7 @@
 // expect-obligation: limit open 1
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 12
+// expect-obligation: failsafe-post discharged 14
 // expect-obligation: exhaustive checker 1
 //
 // A RULE'S OWN GUARDS (D-251, L-1): the clauses are evaluated in SOURCE
@@ -36,6 +36,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom) { exit 9i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

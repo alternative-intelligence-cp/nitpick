@@ -2,7 +2,7 @@
 // expect-obligation: requires open 1
 // expect-obligation: requires discharged 1
 // expect-obligation: ensures discharged 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 12
 // expect-obligation: exhaustive checker 1
 //
 // `ensures` may name `result` -- the grammar binds it, the seam gives it
@@ -32,6 +32,8 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (EnsuresViolated) { exit 1i32; },
         (RequiresViolated) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

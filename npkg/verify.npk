@@ -544,18 +544,35 @@ func:trap_of_kind = string(string:k) never fails {
     pass "";
 };
 
+// THE KINDS BEHIND ONE CODE, for the report -- DERIVED from `trap_of_kind`
+// over the catalogue (1.5.8 step 0, DEF-62), so the two tables that had to
+// agree are one.
 func:kinds_of_trap = string(string:code) never fails {
-    if (raw text_eq(code, "-4097")) { pass "div-zero"; }
-    if (raw text_eq(code, "-4098")) { pass "div-min"; }
-    if (raw text_eq(code, "-4111")) { pass "limit"; }
-    if (raw text_eq(code, "-4112")) { pass "requires"; }
-    if (raw text_eq(code, "-4113")) { pass "ensures/failsafe-post"; }
-    if (raw text_eq(code, "-4114")) { pass "invariant"; }
-    if (raw text_eq(code, "-4101")) { pass "loop-step"; }
-    if (raw text_eq(code, "-4115")) { pass "shift-range"; }
-    if (raw text_eq(code, "-4100")) { pass "err-exit"; }
-    if (raw text_eq(code, "-4116")) { pass "disjoint"; }
-    pass "?";
+    string:out = "";
+    for (int32:k in 1i32...((raw OK_COUNT()) + 1i32)) {
+        if (raw text_eq(raw trap_of_kind(raw ok_name(k)), code)) {
+            if (out.len > 0i64) { out = string_concat(out, "/"); }
+            out = string_concat(out, raw ok_name(k));
+        }
+    }
+    if (out.len == 0i64) { pass "?"; }
+    pass out;
+};
+
+// THE CODES THE BELT COUNTS ARE DERIVED (1.5.8 step 0, DEF-62): every
+// catalogue kind through `trap_of_kind`, each code once, in the catalogue's
+// order -- as the Python twin derives its own from `TRAP_OF_KIND`. Until then
+// they were a hand list of nine, and 1.5.5 step 2 gave `disjoint` its code in
+// the table and not in the list: the Python belt counted `-4116` and this one
+// never did.
+func:counted_trap_codes = List<string>() never fails {
+    List<string>:codes = raw list_init::<string>(12i64);
+    for (int32:k in 1i32...((raw OK_COUNT()) + 1i32)) {
+        string:c = raw trap_of_kind(raw ok_name(k));
+        if (c.len == 0i64) { continue; }
+        if (!(raw strlist_contains(codes, c))) { drop strlist_push(@codes, c); }
+    }
+    pass codes;
 };
 
 // An `llvm.assume` per discharged SITE, a trap per retained GROUP of each
@@ -650,16 +667,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         m = string_concat(m, " discharged sites");
         drop list_push(@fl, move(m));
     }
-    List<string>:codes = raw list_init::<string>(6i64);
-    drop strlist_push(@codes, "-4097");
-    drop strlist_push(@codes, "-4098");
-    drop strlist_push(@codes, "-4111");
-    drop strlist_push(@codes, "-4112");
-    drop strlist_push(@codes, "-4113");
-    drop strlist_push(@codes, "-4114");
-    drop strlist_push(@codes, "-4101");
-    drop strlist_push(@codes, "-4115");
-    drop strlist_push(@codes, "-4100");
+    List<string>:codes = raw counted_trap_codes();
     for (int64:ci in 0i64...codes.count) {
         string:code2 = raw strlist_view(codes, ci);
         int64:left = 0i64;

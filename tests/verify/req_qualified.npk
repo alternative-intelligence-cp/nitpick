@@ -3,7 +3,7 @@
 // expect-obligation: requires open 1
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 13
+// expect-obligation: failsafe-post discharged 15
 // expect-obligation: exhaustive checker 1
 //
 // A `requires` ON A MEMBER CALLED QUALIFIED (D-273, 1.5.4c): `m.half(6i32)`
@@ -37,6 +37,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

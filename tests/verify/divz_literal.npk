@@ -1,7 +1,7 @@
 // expect-exit: 25
 // expect-obligation: div-zero discharged 3
 // expect-obligation: div-min discharged 2
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 12
 // expect-obligation: exhaustive checker 1
 //
 // THE TRACER'S FIRST ROW (1.5.0): every divisor a literal, so every D-007
@@ -29,6 +29,8 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds) { exit 24i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

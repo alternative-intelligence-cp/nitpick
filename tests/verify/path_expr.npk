@@ -1,7 +1,7 @@
 // expect-exit: 0
 // expect-obligation: div-zero discharged 3
 // expect-obligation: div-min discharged 3
-// expect-obligation: failsafe-post discharged 14
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
 //
 // EXPRESSION-LEVEL ARMS (1.5.4 step 2, L-10): the right-hand side of `&&`
@@ -36,6 +36,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

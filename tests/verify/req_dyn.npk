@@ -1,7 +1,7 @@
 // expect-exit: 0
 // expect-obligation: requires discharged 2
 // expect-obligation: requires open 2
-// expect-obligation: failsafe-post discharged 13
+// expect-obligation: failsafe-post discharged 15
 // expect-obligation: exhaustive checker 1
 //
 // A `dyn` CALL'S ROW (D-268) is against the TRAIT method's `requires`, and it
@@ -42,6 +42,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

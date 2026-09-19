@@ -1,6 +1,6 @@
 // expect-exit: 0
 // expect-obligation: invariant discharged 2
-// expect-obligation: failsafe-post discharged 8
+// expect-obligation: failsafe-post discharged 10
 // expect-obligation: exhaustive checker 1
 //
 // A loop `invariant` the backend never read was an obligation that silently
@@ -31,6 +31,8 @@ func:failsafe = int32(Error:e) {
         (Unreachable) { exit 1i32; },
         (WildLeak) { exit 1i32; },
         (InvariantViolated) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

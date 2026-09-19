@@ -3,7 +3,7 @@
 // expect-obligation: div-min discharged 3
 // expect-obligation: shift-range discharged 1
 // expect-obligation: shift-range open 1
-// expect-obligation: failsafe-post discharged 11
+// expect-obligation: failsafe-post discharged 13
 // expect-obligation: exhaustive checker 1
 //
 // LANES THROUGH THE EXPRESSIONS AND THE BINDINGS (D-282, 1.5.4b step 4): a
@@ -48,6 +48,8 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds) { exit 24i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

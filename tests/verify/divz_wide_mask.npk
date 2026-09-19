@@ -1,6 +1,6 @@
 // expect-exit: 3
 // expect-obligation: div-zero discharged 1
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // A LOW-BITS MASK AT 2048 BITS NEEDS NO CROSSING (D-279): `x & 255` is
@@ -26,6 +26,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 92i32; },
         (Unreachable)    { exit 95i32; },
         (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

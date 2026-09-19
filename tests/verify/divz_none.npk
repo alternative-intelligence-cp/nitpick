@@ -1,5 +1,5 @@
 // expect-exit: 0
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // NO ROW WHERE NO TRAP ARMS: float division is IEEE and total (D-143) and a
@@ -32,6 +32,8 @@ func:failsafe = int32(Error:e) {
         (TbbErr) { exit 25i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

@@ -2,7 +2,7 @@
 // expect-obligation: shift-range open 1
 // expect-obligation: div-zero open 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 11
+// expect-obligation: failsafe-post discharged 13
 // expect-obligation: exhaustive checker 1
 //
 // A COMPOUND SHIFT THROUGH A FIELD HAS ITS ROW (DEF-41, 1.5.4e step 0): the
@@ -37,6 +37,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 82i32; },
         (Unreachable)    { exit 85i32; },
         (WildLeak)       { exit 86i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

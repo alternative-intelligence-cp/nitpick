@@ -3,7 +3,7 @@
 // expect-obligation: limit open 2
 // expect-obligation: limit-subsume discharged 1
 // expect-obligation: err-exit discharged 3
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // `limit` OVER A TWISTED SUBJECT ENCODES (D-278, D-251): the rule's `$` is
@@ -49,6 +49,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 92i32; },
         (Unreachable)    { exit 95i32; },
         (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

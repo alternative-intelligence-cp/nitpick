@@ -1,7 +1,7 @@
 // expect-exit: 5
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // A BIT TEST IN A PATH CONDITION (D-279 with 1.5.4's path sensitivity): the
@@ -25,6 +25,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)        { exit 92i32; },
         (Unreachable)    { exit 95i32; },
         (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

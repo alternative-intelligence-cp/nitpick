@@ -2,7 +2,7 @@
 // expect-obligation: div-zero discharged 3
 // expect-obligation: div-zero open 1
 // expect-obligation: div-min discharged 4
-// expect-obligation: failsafe-post discharged 14
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 5
 //
 // A `pick` ARM'S CONDITION (1.5.4 step 1, L-3): the wildcard arm knows the
@@ -54,6 +54,8 @@ func:failsafe = int32(Error:e) {
         (HeapOom)           { exit 92i32; },
         (Unreachable)       { exit 95i32; },
         (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;
