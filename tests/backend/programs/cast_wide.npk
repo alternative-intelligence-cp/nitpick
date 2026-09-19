@@ -1,0 +1,81 @@
+// expect-exit: 0
+//
+// A FLOAT AND AN INTEGER WIDER THAN 64 BITS CONVERT, BY HAND (DEF-61, 1.5.8
+// step 1). `flt64 =>! int128` and `int128 =>! flt64` lowered to compiler-rt
+// calls (`__fixdfti`, `__floattidf`) the zero-dependency scan refused, and a
+// route through `i256` was narrowed back into one by `opt -O2`; every width past
+// 64 bits is now integer arithmetic in the emitter, so the harness's `-O2` leg
+// and its scan of the optimised object hold both levels to these answers. The
+// expected floats are powers of two built by exact doublings, never a long
+// literal: 2^53 + 1 is a tie and rounds to even; 2^65 + 2^12 + 1 is past the
+// tie by its last bit only, which the STICKY bit carries (without it the
+// conversion would round down); `uint128`'s maximum rounds to 2^128 in `flt64`
+// and past `flt32`'s range to infinity; 2^1100 is past `flt64`'s.
+mod:cast_wide;
+
+func:pow2 = flt64(int32:k) never fails {
+    flt64:p = 1.0f64;
+    for (int32:i in 0i32...k) { p = p * 2.0f64; }
+    pass p;
+};
+
+func:pow2f = flt32(int32:k) never fails {
+    flt32:p = 1.0f32;
+    for (int32:i in 0i32...k) { p = p * 2.0f32; }
+    pass p;
+};
+
+func:main = int32(cstring[]:argv) {
+    flt64:s = (argv.len =>! int32) => flt64;
+    flt64:z = s - 1.0f64;
+    flt64:inf = 1.0f64 / z;
+    flt32:z32 = ((argv.len =>! int32) =>! flt32) - 1.0f32;
+    flt32:inf32 = 1.0f32 / z32;
+    int128:one = argv.len => int128;
+    uint128:u1 = argv.len =>! uint128;
+    int256:one256 = argv.len => int256;
+    int4096:one4096 = argv.len => int4096;
+
+    // float -> int128
+    if (((s * 1.5f64) =>! int128) != one)                                    { exit 11i32; }
+    if (((s * (0.0f64 - 2.5f64)) =>! int128) != (0i128 - 2i128))            { exit 12i32; }
+    if (((s * (raw pow2(100i32))) =>! int128) != (one << 100i128))          { exit 13i32; }
+    if (((s * (0.0f64 - (raw pow2(127i32)))) =>! int128) != (one << 127i128)) { exit 14i32; }
+    flt64:below = (raw pow2(127i32)) - (raw pow2(74i32));
+    if (((s * below) =>! int128) != (((one << 126i128) - (one << 74i128)) + (one << 126i128))) { exit 15i32; }
+
+    // int128 -> float
+    if ((((one << 64i128) + one) =>! flt64) != (raw pow2(64i32)))           { exit 16i32; }
+    if ((((one << 53i128) + one) =>! flt64) != (raw pow2(53i32)))           { exit 17i32; }
+    if (((((one << 65i128) + (one << 12i128)) + one) =>! flt64) != ((raw pow2(65i32)) + (raw pow2(13i32)))) { exit 18i32; }
+    if ((((one << 65i128) + (one << 12i128)) =>! flt64) != (raw pow2(65i32))) { exit 19i32; }
+    if (((one << 127i128) =>! flt64) != (0.0f64 - (raw pow2(127i32))))      { exit 20i32; }
+    uint128:umax = ((u1 << 127u128) - u1) + (u1 << 127u128);
+    if ((umax =>! flt64) != (raw pow2(128i32)))                             { exit 21i32; }
+    if (((one << 100i128) =>! flt32) != (raw pow2f(100i32)))                { exit 22i32; }
+    if ((umax =>! flt32) != inf32)                                          { exit 23i32; }
+
+    // wider still
+    if ((((one256 << 200i256) + one256) =>! flt64) != (raw pow2(200i32)))   { exit 24i32; }
+    if (((one4096 << 1100i4096) =>! flt64) != inf)                          { exit 25i32; }
+    flt64:d = (s * (raw pow2(1000i32))) * 1.75f64;
+    if (((d =>! int4096) =>! flt64) != d)                                   { exit 26i32; }
+    if (((s * (0.0f64 - 0.5f64)) =>! uint256) != (0u256))                   { exit 27i32; }
+    if (((s * (0.0f64 - ((raw pow2(100i32)) * 3.0f64))) =>! int256) != (0i256 - (3i256 * (one256 << 100i256)))) { exit 28i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

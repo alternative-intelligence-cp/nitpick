@@ -1,0 +1,28 @@
+// A FLOAT'S `=>!` CAST TO AN INTEGER ARMS `CastRange` (D-306, 1.5.8 step 1):
+// the ordered compare before the conversion traps for NaN, an infinity or a
+// value whose truncation the target cannot hold, so `failsafe` must name the
+// identity (D-179) -- this one does not. The cast is `=>!`, its own node kind:
+// the rule's first draft read `=>` alone and this file compiled.
+mod:reach_cast_range;
+error:E9;
+
+// expect-error: NITPICK-REACH-002
+func:main = int32(cstring[]:argv) {
+    flt64:f = (argv.len =>! int32) => flt64;
+    int32:i = f =>! int32;
+    exit i;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

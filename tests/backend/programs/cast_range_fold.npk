@@ -1,0 +1,30 @@
+// expect-exit: 40
+//
+// DEF-58's OWN PROBE (1.5.8 step 1): the same cast over a constant the
+// optimiser can see. Before the guard this exited 3 at the pinned `-O0` and 9
+// after `opt -O2`, which folded the poison and with it the whole of `main`
+// to `unreachable`; the binary ran into the next function. Now both levels
+// trap `CastRange` -- the harness's `-O2` leg holds them to one exit.
+mod:cast_range_fold;
+func:main = int32(cstring[]:_~argv) {
+    flt64:f = 3000000000.0f64;
+    int32:i = f =>! int32;
+    if (i < 0i32) { exit 3i32; }
+    if (i > 0i32) { exit 4i32; }
+    exit 5i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

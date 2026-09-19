@@ -1,0 +1,35 @@
+// expect-exit: 40
+//
+// A `simd` cast is guarded ANY-LANE (D-306, 1.5.8 step 1): the first cast's
+// four lanes truncate toward zero and convert; the second's third lane is 1e10,
+// past int32, and the one trap of the site fires.
+mod:cast_range_simd;
+func:main = int32(cstring[]:argv) {
+    flt64:s = (argv.len =>! int32) => flt64;
+    simd<flt64, 4>:v = simd(s * 1.5f64, s * (0.0f64 - 2.5f64), s * 3.9f64, s * (0.0f64 - 4.9f64));
+    simd<int32, 4>:w = v =>! simd<int32, 4>;
+    if (w[0] != 1i32) { exit 11i32; }
+    if (w[1] != (0i32 - 2i32)) { exit 12i32; }
+    if (w[2] != 3i32) { exit 13i32; }
+    if (w[3] != (0i32 - 4i32)) { exit 14i32; }
+    simd<flt64, 4>:u = simd(s, s, s * 10000000000.0f64, s);
+    simd<int32, 4>:x = u =>! simd<int32, 4>;
+    if (x[0] == 1i32) { exit 3i32; }
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

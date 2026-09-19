@@ -3206,6 +3206,10 @@ fin:
 ;   -4116  BORROW_OVERLAP    two accesses of one root name overlapping storage
 ;                            while a `$$i`/`$$m` claim is live (D-286, 1.5.5):
 ;                            the byte-range compare at the second access
+;   -4117  CAST_RANGE        a float's `=>!` cast to an integer met NaN, an
+;                            infinity or a value whose truncation the target
+;                            cannot hold (D-306, 1.5.8): the ordered compare
+;                            before the conversion
 ;   -4102  HEAP_INTEGRITY    double-free, foreign/misaligned/null pointer to
 ;                            dalloc/ralloc, corrupted header or torn guard,
 ;                            or a UAF caught by a freed slot's magic (0.10.0)

@@ -72,6 +72,7 @@ pub struct:Reach = {
     bool:saw_deadline;
     bool:saw_limit;          // a write point of a limited binding (1.5.2, D-251)
     bool:saw_shift;          // a shift by a computed amount (D-277, 1.5.4b step 0): the compare before it traps
+    bool:saw_cast_range;     // a float cast to a plain integer (D-306, 1.5.8 step 1): the ordered compare before the conversion traps
     // THE CONTRACT FAMILY (1.5.3 step 0, D-221): a function declaring a
     // `requires` (its entry check traps in every caller), one declaring an
     // `ensures` (its seam check), a loop carrying an `invariant` (its head
@@ -100,7 +101,7 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_div: false, saw_ovf: false, saw_index: false,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
-                     saw_limit: false, saw_shift: false,
+                     saw_limit: false, saw_shift: false, saw_cast_range: false,
                      saw_requires: false, saw_ensures: false, saw_invariant: false,
                      in_failsafe: false,
                      failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32 };
@@ -564,6 +565,28 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         }
     }
     if (n.kind == ExprKind.ExprIndexExpr) { x.saw_index = true; }
+    // A FLOAT'S CAST TO A PLAIN INTEGER (D-306, 1.5.8 step 1; DEF-58): NaN, an
+    // infinity or a value whose truncation the target cannot hold traps
+    // `CastRange` at the ordered compare before the conversion -- a `simd`
+    // of floats to a `simd` of integers any-lane. Only a PLAIN integer
+    // target: the twisted families' entering casts absorb the same values as
+    // ERR and arm their own identity above. BOTH spellings are read: a float
+    // to an integer is always `=>!` (D-095), which is its own node kind, and
+    // the first draft of this rule read `=>` alone and armed nothing (found by
+    // this step's control, a program without the arm that compiled).
+    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+        int32:csrc = raw exprtypes_get(x.ets, raw expr_operand(n));
+        int32:cdst = raw exprtypes_get(x.ets, id);
+        if ((csrc != 0i32) && (cdst != 0i32)) {
+            int32:csk = raw type_kind(x.types, csrc);
+            int32:cdk = raw type_kind(x.types, cdst);
+            if ((csk == (raw TY_SIMD())) && (cdk == (raw TY_SIMD()))) {
+                csk = raw type_kind(x.types, raw type_elem(x.types, csrc));
+                cdk = raw type_kind(x.types, raw type_elem(x.types, cdst));
+            }
+            if ((csk == (raw TY_FLOAT())) && (cdk == (raw TY_INT()))) { x.saw_cast_range = true; }
+        }
+    }
     int32:ntid = raw exprtypes_get(x.ets, id);
     if (ntid != 0i32) {
         int32:nk = raw type_kind(x.types, ntid);
@@ -708,6 +731,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_tbb)      { drop reach_add_system(x, "TbbErr"); }
     if (x.saw_counted)  { drop reach_add_system(x, "BadStep"); }
     if (x.saw_shift)    { drop reach_add_system(x, "ShiftRange"); }
+    if (x.saw_cast_range) { drop reach_add_system(x, "CastRange"); }
     // A GUARD SITE OF THE ALIASING ANALYSIS (D-286, 1.5.5 step 2): the
     // byte-range compare at an access whose path is computed against a live
     // claim traps `BorrowOverlap`; the table the analysis filled says whether

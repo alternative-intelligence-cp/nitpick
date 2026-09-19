@@ -4236,6 +4236,284 @@ func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
     pass (raw iv(move(want.text), move(b5), wid));
 };
 
+// A FLOAT'S CAST TO AN INTEGER IS GUARDED (D-306, 1.5.8 step 1; DEF-58).
+// NaN, an infinity, or a finite value whose truncation the target cannot hold
+// has NO integer meaning, and LLVM's `fptosi`/`fptoui` of it is POISON -- not
+// a truncation, not any number: `flt64:f = 3000000000.0; int32:i = f =>!
+// int32;` exited 3 at `-O0` and 9 after `opt -O2`, which folded the whole of
+// `main` to `unreachable`. The truncation lies in an N-bit target exactly
+// when `LO < d < HI`, tested in `double` (a `flt32` widened first, exactly).
+// Both compares are ORDERED, so NaN fails them; a bound past `double`'s range
+// is the infinity, so only the infinity itself fails it. `=>!` keeps its
+// meaning -- the fraction is dropped toward zero (D-095).
+// The three signed widths whose exclusive lower bound -2^(N-1) - 1 is a
+// `double` (below 2^53); D-231's ladder has no other width there.
+func:cast_lo_exact = bool(int32:bits) never fails {
+    pass ((bits == 8i32) || (bits == 16i32) || (bits == 32i32));
+};
+
+func:cast_lo_pred = string(int32:bits, bool:signed) never fails {
+    if (!signed) { pass "ogt"; }
+    if (raw cast_lo_exact(bits)) { pass "ogt"; }
+    // No `double` lies strictly between -2^(N-1) - 1 and -2^(N-1) once the
+    // spacing there exceeds 1, so the inclusive compare at -2^(N-1) is exact.
+    if (bits <= 1024i32) { pass "oge"; }
+    pass "ogt";
+};
+
+func:cast_lo_const = string(int32:bits, bool:signed) never fails {
+    if (!signed) { pass "-1.0"; }
+    if (bits == 8i32)  { pass "-129.0"; }
+    if (bits == 16i32) { pass "-32769.0"; }
+    if (bits == 32i32) { pass "-2147483649.0"; }
+    if (bits <= 1024i32) { pass (raw pow2_double_signed(bits - 1i32, true)); }
+    pass "0xFFF0000000000000";
+};
+
+func:cast_hi_const = string(int32:bits, bool:signed) never fails {
+    int32:k = bits;
+    if (signed) { k = bits - 1i32; }
+    if (k <= 1023i32) { pass (raw pow2_double_signed(k, false)); }
+    pass "0x7FF0000000000000";
+};
+
+// `<N x T>` and a splat constant `<T C, T C, ...>`.
+func:vec_ty_text = string(int32:lanes, string:t) never fails {
+    pass (raw cat5("<", int_to_string(lanes => int64), " x ", t, ">"));
+};
+
+func:vec_splat_text = string(int32:lanes, string:t, string:c) never fails {
+    string:out = "<";
+    for (int32:li in 0i32...lanes) {
+        if (li > 0i32) { out = string_concat(out, ", "); }
+        out = raw cat5(out, t, " ", c, "");
+    }
+    pass (string_concat(out, ">"));
+};
+
+// THE GUARD, scalar (`lanes` 0) or any-lane over a `simd` (the lanes folded by
+// a bitcast to one integer: every lane fits exactly when it is all ones -- no
+// reduction intrinsic, so nothing can become a libcall). The false branch
+// traps `CastRange` (-4117); a site the manifest discharged is one
+// `llvm.assume` (1.5.8b's `cast-range` row) -- `emit_shift_guard`'s shape.
+pub func:emit_cast_range_guard = NIL(ExprEmitter->:x, int32:lanes, string:d, int32:bits,
+                                     bool:signed, int32:site, Span:at) never fails {
+    string:ty = "double";
+    string:bty = "i1";
+    string:lo = raw cast_lo_const(bits, signed);
+    string:hi = raw cast_hi_const(bits, signed);
+    if (lanes > 0i32) {
+        ty = raw vec_ty_text(lanes, "double");
+        bty = raw vec_ty_text(lanes, "i1");
+        lo = raw vec_splat_text(lanes, "double", lo);
+        hi = raw vec_splat_text(lanes, "double", hi);
+    }
+    string:c1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c1, " = fcmp ", raw cast_lo_pred(bits, signed), " ",
+                      raw cat5(ty, " ", d, ", ", lo)));
+    string:c2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c2, " = fcmp olt ", ty, " ",
+                      raw cat3(d, ", ", hi)));
+    string:ok = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ok, " = and ", bty, " ", raw cat3(c1, ", ", c2)));
+    if (lanes > 0i32) {
+        string:iw = string_concat("i", int_to_string(lanes => int64));
+        string:ob = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ob, " = bitcast ", bty, " ",
+                          raw cat3(ok, " to ", iw)));
+        string:all = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(all, " = icmp eq ", iw, " ",
+                          string_concat(ob, ", -1")));
+        ok = move(all);
+    }
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_CAST_RANGE())) {
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", ok, ")"));
+        pass NIL;
+    }
+    string:bl = raw irw_new_label(x.fe.w, "cr.bad");
+    string:gl = raw irw_new_label(x.fe.w, "cr.ok");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", ok, ", label %", gl,
+                      string_concat(", label %", bl)));
+    drop irw_label(x.fe.w, bl);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4117)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, gl);
+    pass NIL;
+};
+
+// A FLOAT TO AN INTEGER WIDER THAN 64 BITS, BY HAND (DEF-61, 1.5.8 step 1),
+// after the guard. LLVM's own wide conversions are compiler-rt calls
+// (`__fixdfti`) at 128 bits, and an inline expansion elsewhere that `opt -O2`
+// can narrow back into one; a lowering that depends on what the optimiser
+// declines to do is the prototype's lesson. So: the double's bits -- the
+// sign, the biased exponent `e`, the significand `m` with its implicit bit
+// (a subnormal keeps none and truncates to zero anyway) -- and the value is
+// `m * 2^(e - 1075)`; the truncation toward zero is `m >> -k` for `k < 0`
+// (zero once the shift reaches 64) and `m << k` otherwise, which the guard
+// bounds below the width; negated for a set sign bit. Every shift amount is
+// held below its width (D-277's rule).
+func:emit_f2i_wide = string(ExprEmitter->:x, string:d, int32:bits) never fails {
+    string:it = string_concat("i", int_to_string(bits => int64));
+    string:b = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(b, " = bitcast double ", string_concat(d, " to i64")));
+    string:e0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(e0, " = lshr i64 ", string_concat(b, ", 52")));
+    string:e = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(e, " = and i64 ", string_concat(e0, ", 2047")));
+    string:fr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(fr, " = and i64 ", string_concat(b, ", 4503599627370495")));
+    string:nz = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(nz, " = icmp ne i64 ", string_concat(e, ", 0")));
+    string:fi = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(fi, " = or i64 ", string_concat(fr, ", 4503599627370496")));
+    string:m = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(m, " = select i1 ", nz, ", i64 ",
+                      raw cat3(fi, ", i64 ", fr)));
+    string:k = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(k, " = sub i64 ", string_concat(e, ", 1075")));
+    string:kn = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(kn, " = icmp slt i64 ", string_concat(k, ", 0")));
+    string:nk = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(nk, " = sub i64 0, ", k));
+    string:ra = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ra, " = select i1 ", kn, ", i64 ",
+                      string_concat(nk, ", i64 0")));
+    string:rb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(rb, " = icmp uge i64 ", string_concat(ra, ", 64")));
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = select i1 ", rb, ", i64 0, i64 ", ra));
+    string:mr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(mr, " = lshr i64 ", m, ", ", rc));
+    string:mr2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(mr2, " = select i1 ", rb, ", i64 0, i64 ", mr));
+    string:lo = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lo, " = zext i64 ", mr2, " to ", it));
+    string:la = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(la, " = select i1 ", kn, ", i64 0, i64 ", k));
+    string:mz = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(mz, " = zext i64 ", m, " to ", it));
+    string:lan = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lan, " = zext i64 ", la, " to ", it));
+    string:hi = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(hi, " = shl ", it, " ", raw cat3(mz, ", ", lan)));
+    string:mag = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(mag, " = select i1 ", kn, ", ",
+                      raw cat5(it, " ", lo, ", ", raw cat3(it, " ", hi))));
+    string:ng = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ng, " = sub ", it, " 0, ", mag));
+    string:sg = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(sg, " = icmp slt i64 ", string_concat(b, ", 0")));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = select i1 ", sg, ", ",
+                      raw cat5(it, " ", ng, ", ", raw cat3(it, " ", mag))));
+    pass r;
+};
+
+// AN INTEGER WIDER THAN 64 BITS TO A FLOAT, BY HAND (DEF-61, 1.5.8 step 1):
+// the magnitude (a signed operand's negation under a select, in the unsigned
+// view, so `MIN`'s magnitude 2^(N-1) fits); its significant bits by
+// `llvm.ctlz` (an intrinsic LLVM lowers inline at every width -- measured);
+// at most 64 of them convert directly; otherwise the top 64 bits with the
+// STICKY bit -- any discarded bit set -- OR'd into the lowest, converted
+// once (eleven bits past the significand, so the rounding is the full
+// value's), then scaled by 2^s as an exact multiply by a power-of-two
+// constant built from its exponent field, or the infinity once 2^s itself
+// is past the format; the sign reapplied.
+func:emit_i2f_wide = string(ExprEmitter->:x, string:v, int32:bits, bool:signed, string:fty) never fails {
+    string:it = string_concat("i", int_to_string(bits => int64));
+    string:bw = int_to_string(bits => int64);
+    string:mag = string_concat(v, "");
+    string:neg = "";
+    if (signed) {
+        string:ng = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ng, " = icmp slt ", it, " ", string_concat(v, ", 0")));
+        string:nv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(nv, " = sub ", it, " 0, ", v));
+        string:mg = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(mg, " = select i1 ", ng, ", ",
+                          raw cat5(it, " ", nv, ", ", raw cat3(it, " ", v))));
+        mag = move(mg);
+        neg = move(ng);
+    }
+    drop llctx_note_decl(x.fe.ctx, raw cat5("declare ", it, " @llvm.ctlz.", it,
+                      raw cat3("(", it, ", i1)")));
+    string:lz = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lz, " = call ", it, " @llvm.ctlz.",
+                      raw cat5(it, "(", it, " ", raw cat3(mag, ", i1 false)", ""))));
+    string:nb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(nb, " = sub ", it, " ", raw cat3(bw, ", ", lz)));
+    string:fits = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(fits, " = icmp ule ", it, " ", string_concat(nb, ", 64")));
+    string:t0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t0, " = trunc ", it, " ", string_concat(mag, " to i64")));
+    string:f0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(f0, " = uitofp i64 ", t0, " to ", fty));
+    string:s0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(s0, " = sub ", it, " ", string_concat(nb, ", 64")));
+    string:sc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(sc, " = select i1 ", fits, ", ",
+                      raw cat5(it, " 0, ", it, " ", s0)));
+    string:sh = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(sh, " = lshr ", it, " ", raw cat3(mag, ", ", sc)));
+    string:t1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t1, " = trunc ", it, " ", string_concat(sh, " to i64")));
+    string:one = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(one, " = shl ", it, " 1, ", sc));
+    string:mask = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(mask, " = sub ", it, " ", string_concat(one, ", 1")));
+    string:low = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(low, " = and ", it, " ", raw cat3(mag, ", ", mask)));
+    string:st = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(st, " = icmp ne ", it, " ", string_concat(low, ", 0")));
+    string:st64 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(st64, " = zext i1 ", string_concat(st, " to i64")));
+    string:t2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t2, " = or i64 ", t1, ", ", st64));
+    string:f1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(f1, " = uitofp i64 ", t2, " to ", fty));
+    string:s64 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(s64, " = trunc ", it, " ", string_concat(sc, " to i64")));
+    // The format's largest finite exponent and bias: `double` 1023/1023, `float` 127/127.
+    string:maxe = "1023";
+    bool:isd = raw string_eq(fty, "double");
+    if (!isd) { maxe = "127"; }
+    string:big = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(big, " = icmp ugt i64 ", s64, ", ", maxe));
+    string:eb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(eb, " = add i64 ", s64, ", ", maxe));
+    string:ebc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ebc, " = select i1 ", big, ", i64 0, i64 ", eb));
+    string:p = raw irw_temp(x.fe.w);
+    if (isd) {
+        string:pb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(pb, " = shl i64 ", string_concat(ebc, ", 52")));
+        drop irw_line(x.fe.w, raw cat3(p, " = bitcast i64 ", string_concat(pb, " to double")));
+    } else {
+        string:e32 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(e32, " = trunc i64 ", string_concat(ebc, " to i32")));
+        string:pb2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(pb2, " = shl i32 ", string_concat(e32, ", 23")));
+        drop irw_line(x.fe.w, raw cat3(p, " = bitcast i32 ", string_concat(pb2, " to float")));
+    }
+    string:f2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(f2, " = fmul ", fty, " ", raw cat3(f1, ", ", p)));
+    string:f3 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(f3, " = select i1 ", big, ", ",
+                      raw cat5(fty, " 0x7FF0000000000000, ", fty, " ", f2)));
+    string:f = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(f, " = select i1 ", fits, ", ",
+                      raw cat5(fty, " ", f0, ", ", raw cat3(fty, " ", f3))));
+    if (!signed) { pass f; }
+    string:fn = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(fn, " = fneg ", fty, " ", f));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = select i1 ", neg, ", ",
+                      raw cat5(fty, " ", fn, ", ", raw cat3(fty, " ", f))));
+    pass r;
+};
+
 func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
@@ -4330,7 +4608,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // same opcode the scalar element pair would take, operands and result
     // spelled `<N x _>` — the cast instructions all accept vector types.
     if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_SIMD())) {
-        pass (raw emit_simd_cast(x, n, v, move(want), wid));
+        pass (raw emit_simd_cast(x, id, n, v, move(want), wid));
     }
 
     // `enum =>! intN` — the TAG is the number (0.8.0, settled with the user). A
@@ -4350,7 +4628,8 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 
     // FLOAT CASTS (0.9.4). The frontend already decided legality and loss
     // (float→int is always `=>!`; int→float and float-widening follow the
-    // value-range rules); this only picks the instruction.
+    // value-range rules); this picks the instruction -- and, float→int, the
+    // guard (D-306) and, past 64 bits, the hand lowering (DEF-61).
     bool:src_f = raw ll_is_float_text(v.ll);
     bool:dst_f = raw ll_is_float_text(want.text);
     if (src_f) {
@@ -4366,8 +4645,22 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             }
             pass (raw iv(move(want.text), move(fr2), wid));
         }
-        // float→int: signedness of the TARGET picks the instruction.
+        // float→int: the value must HAVE an integer meaning (D-306, DEF-58)
+        // -- the guard, in `double` -- and then signedness of the TARGET picks
+        // the instruction, or past 64 bits the hand lowering (DEF-61).
         bool:dsig = raw type_is_signed(x.fe.ctx.types, wid);
+        int32:dbits = (raw ll_int_width(want.text)) =>! int32;
+        string:dv = string_concat(v.ref, "");
+        if (!(raw string_eq(v.ll, "double"))) {
+            string:dx = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(dx, " = fpext ", v.ll, " ",
+                              string_concat(v.ref, " to double")));
+            dv = move(dx);
+        }
+        drop emit_cast_range_guard(x, 0i32, dv, dbits, dsig, id.index, n.span);
+        if (dbits > 64i32) {
+            pass (raw iv(move(want.text), raw emit_f2i_wide(x, dv, dbits), wid));
+        }
         if (dsig) {
             drop irw_line(x.fe.w, raw cat5(fr2, " = fptosi ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
@@ -4378,6 +4671,14 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv(move(want.text), move(fr2), wid));
     }
     if (dst_f) {
+        // int→float past 64 bits: the hand lowering (DEF-61).
+        if ((raw ll_int_width(v.ll)) > 64i64) {
+            bool:wsig = raw type_is_signed(x.fe.ctx.types, v.type_id);
+            if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TBB())) { wsig = true; }
+            pass (raw iv(string_concat(want.text, ""),
+                         raw emit_i2f_wide(x, v.ref, (raw ll_int_width(v.ll)) =>! int32, wsig,
+                                           want.text), wid));
+        }
         // int→float: signedness of the SOURCE picks the instruction.
         string:fr3 = raw irw_temp(x.fe.w);
         bool:ssig = raw type_is_signed(x.fe.ctx.types, v.type_id);
@@ -5323,7 +5624,7 @@ func:emit_simd_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 // A vector cast, element-opcode at vector type (D-194): the checker's
 // elementwise `cast_class` admitted it, so only the instruction is picked
 // here — same-text casts already returned above.
-func:emit_simd_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+func:emit_simd_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                             move LlType:want, int32:wid) never fails {
     int32:se = raw type_elem(x.fe.ctx.types, v.type_id);
     int32:de = raw type_elem(x.fe.ctx.types, wid);
@@ -5347,6 +5648,19 @@ func:emit_simd_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
     if (sf && (!df)) {
         opn = "fptoui";
         if (raw type_is_signed(x.fe.ctx.types, de)) { opn = "fptosi"; }
+        // THE LANES' GUARD (D-306, 1.5.8 step 1; DEF-58): the scalar rule per
+        // lane, any-lane -- one trap per site. A vector element is at most 64
+        // bits wide (D-194), so the instruction itself converts.
+        int32:vl = (raw tt_get(x.fe.ctx.types, v.type_id)).b;
+        string:vd = string_concat(v.ref, "");
+        if (sb != 64i32) {
+            string:vx = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(vx, " = fpext ", v.ll, " ",
+                              raw cat3(v.ref, " to ", raw vec_ty_text(vl, "double"))));
+            vd = move(vx);
+        }
+        drop emit_cast_range_guard(x, vl, vd, db, raw type_is_signed(x.fe.ctx.types, de),
+                                   id.index, n.span);
     }
     if ((!sf) && df) {
         opn = "uitofp";

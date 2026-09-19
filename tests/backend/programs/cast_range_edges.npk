@@ -1,0 +1,38 @@
+// expect-exit: 0
+//
+// THE BOUNDS, FROM INSIDE (D-306, 1.5.8 step 1): every value here truncates to
+// a number its target holds, so none traps -- the guard's bounds are the
+// truncation's, not the value's. Each wrong answer exits its own code.
+mod:cast_range_edges;
+func:main = int32(cstring[]:argv) {
+    flt64:s = (argv.len =>! int32) => flt64;
+    if (((s * 2147483647.9f64) =>! int32) != 2147483647i32)            { exit 11i32; }
+    if (((s * (0.0f64 - 2147483648.9f64)) =>! int32) != (0i32 - 2147483647i32 - 1i32)) { exit 12i32; }
+    if (((s * 127.9f64) =>! int8) != 127i8)                              { exit 13i32; }
+    if (((s * (0.0f64 - 128.9f64)) =>! int8) != (0i8 - 127i8 - 1i8))    { exit 14i32; }
+    if (((s * 255.9f64) =>! uint8) != 255u8)                             { exit 15i32; }
+    if (((s * (0.0f64 - 0.9f64)) =>! uint8) != 0u8)                      { exit 16i32; }
+    if (((s * 9223372036854774784.0f64) =>! int64) != 9223372036854774784i64) { exit 17i32; }
+    if (((s * (0.0f64 - 9223372036854775808.0f64)) =>! int64) != (0i64 - 9223372036854775807i64 - 1i64)) { exit 18i32; }
+    if (((s * 18446744073709549568.0f64) =>! uint64) != (9223372036854774784u64 * 2u64)) { exit 19i32; }
+    flt32:s32 = (argv.len =>! int32) =>! flt32;
+    if (((s32 * 2147483520.0f32) =>! int32) != 2147483520i32)           { exit 20i32; }
+    if (((s * 2.5f64) =>! int32) != 2i32)                                { exit 21i32; }
+    if (((s * (0.0f64 - 2.5f64)) =>! int32) != (0i32 - 2i32))           { exit 22i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -34,6 +34,7 @@ Silence has no stage.
 | `BORROW-002` | D-004 rule 3 — nor be stored in something longer-lived: a field, a local aggregate, or (DEF-42, 1.5.5 step 0) a local holder declared outside the block that declares the borrowed local, directly, through a copy of a holder, through a literal or through a call's result | `borrows.npk` |
 | `BORROW-013` | D-286 (1.5.5 step 1) — an access conflicts with a live claim: a read or a write-capable access under `$$m`, a write-capable access under `$$i`, a claim on storage a held `@` reaches, a write through a shared claim's holder, a call's arguments among themselves, a `defer` body against its block's claims; a STATIC overlap (a computed one is the `BorrowOverlap` guard's, 1.5.5 step 2) | `aliasing.npk` |
 | `REACH-002` | D-286 (1.5.5 step 2) — a guard site arms `BorrowOverlap`, which `failsafe` must name | `reach_alias.npk` |
+| `REACH-002` | D-306 (1.5.8 step 1) — a float's `=>!` cast to an integer arms `CastRange`, which `failsafe` must name | `reach_cast_range.npk` |
 | `BORROW-014` | D-286 (1.5.5 step 1) — a claim where the analysis cannot follow it: a literal, a `pass` value, a nested expression, a non-local assignment target, an argument of a pointer-carrying call (rule A), a copy of a holder | `aliasing.npk` |
 | `BORROW-003` | D-004 rule 4 — nor cross an `extern` call | `borrows.npk`, `path_shapes.npk` |
 | `BORROW-007` | the derivation walk ran out of fuel | `too_deep.npk` |

@@ -1,0 +1,27 @@
+// expect-exit: 40
+//
+// An infinity has no integer meaning (D-306): `-1.0 / 0.0`, made at run time,
+// cast to uint64, traps `CastRange` at the lower bound.
+mod:cast_range_inf;
+func:main = int32(cstring[]:argv) {
+    flt64:z = ((argv.len =>! int32) => flt64) - 1.0f64;
+    flt64:ninf = (0.0f64 - 1.0f64) / z;
+    uint64:u = ninf =>! uint64;
+    if (u == 0u64) { exit 3i32; }
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

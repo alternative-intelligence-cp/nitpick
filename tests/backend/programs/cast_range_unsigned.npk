@@ -1,0 +1,29 @@
+// expect-exit: 40
+//
+// An unsigned target's lower bound is -1, exclusive (D-306): -0.99 truncates
+// to 0 and converts; -1.0 truncates to -1, which no `uint32` holds, and traps
+// `CastRange`.
+mod:cast_range_unsigned;
+func:main = int32(cstring[]:argv) {
+    flt64:scale = (argv.len =>! int32) => flt64;
+    uint32:a = (scale * (0.0f64 - 0.99f64)) =>! uint32;
+    if (a != 0u32) { exit 3i32; }
+    uint32:b = (scale * (0.0f64 - 1.0f64)) =>! uint32;
+    if (b == 0u32) { exit 4i32; }
+    exit 5i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

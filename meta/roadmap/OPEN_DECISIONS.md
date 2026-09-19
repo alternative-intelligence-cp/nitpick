@@ -1395,7 +1395,7 @@ proposed (claim before publishing, every watcher parks) would have parked the
 holder as well; the model's `frozen-parks-holder` control reaches
 `holder-parks` with exactly that change.
 
-**DEF-58 — OPEN, fixed at 1.5.8 step 1 (D-306): A FLOAT'S `=>!` CAST TO AN INTEGER WAS LLVM POISON.** (found
+**DEF-58 — FIXED at 1.5.8 step 1 (2026-09-18; D-306): the ordered compare before the conversion traps `CastRange`, scalar and `simd` any-lane, and REACH arms it at both cast spellings (its first draft read `=>` alone and armed nothing — found by the step's control); `cast_range_fold.npk` is this defect's own probe, exiting 40 at both levels.** ~~OPEN~~ A FLOAT'S `=>!` CAST TO AN INTEGER WAS LLVM POISON. (found
 2026-09-18 on `e3bf48c` by `nitpick-compiler_s11`, planning 1.5.8 — by reading the lowering `cast-range` was to
 elide, and finding none.) `emit_cast`'s float→int arm, written at 0.9.4, is a bare `fptosi`/`fptoui`, and
 `emit_simd_cast`'s is the same per lane. For NaN, ±∞ or a value whose truncation the target cannot hold the result
@@ -1421,7 +1421,7 @@ depth under a different `ulimit`.
 the frame's writes land in whatever mapping lies below — the stack-clash class: silent corruption of another
 thread's stack or the heap, not even DEF-59's crash. The main thread was spared by the kernel's own 1 MiB guard gap.
 
-**DEF-61 — OPEN, fixed at 1.5.8 step 1: A FLOAT↔128-BIT INTEGER CAST COULD NOT BE LINKED.** (found 2026-09-18 on
+**DEF-61 — FIXED at 1.5.8 step 1 (2026-09-18): every float↔integer conversion past 64 bits is integer arithmetic in the emitter (`emit_f2i_wide`, `emit_i2f_wide`); `cast_wide.npk` holds eighteen known answers through `int128`…`int4096` at both levels, and no optimised object has an undefined symbol.** ~~OPEN~~ A FLOAT↔128-BIT INTEGER CAST COULD NOT BE LINKED. (found 2026-09-18 on
 `e3bf48c` by `nitpick-compiler_s11`, probing DEF-58's neighbourhood.) `flt64 =>! int128` and `int128 =>! flt64` are
 admitted (`CAST_LOSSY`) and lower to `fptosi`/`sitofp` at `i128`, which `llc` turns into compiler-rt calls
 (`__fixdfti`, `__floattidf`) at both levels: the zero-dependency scan refuses the link by name. Loud, never unsafe —

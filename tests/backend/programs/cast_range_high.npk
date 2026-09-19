@@ -1,0 +1,29 @@
+// expect-exit: 40
+//
+// A FLOAT'S `=>!` CAST TO AN INTEGER HAS AN INTEGER MEANING OR TRAPS (D-306,
+// 1.5.8 step 1; DEF-58). 3e9 is past int32, and the ordered compare before the
+// conversion traps `CastRange` -- where the bare `fptosi` it replaces was
+// LLVM poison. A value known only at run time, so neither level can fold it.
+mod:cast_range_high;
+func:main = int32(cstring[]:argv) {
+    flt64:scale = (argv.len =>! int32) => flt64;
+    flt64:f = scale * 3000000000.0f64;
+    int32:i = f =>! int32;
+    if (i < 0i32) { exit 3i32; }
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

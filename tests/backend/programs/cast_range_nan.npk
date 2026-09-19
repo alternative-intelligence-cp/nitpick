@@ -1,0 +1,28 @@
+// expect-exit: 40
+//
+// NaN has no integer meaning (D-306): `0.0 / 0.0`, made at run time (a float
+// division is IEEE-total and traps nothing, DEF-37), cast to int64, traps
+// `CastRange`. The guard's compares are ORDERED, so NaN fails both.
+mod:cast_range_nan;
+func:main = int32(cstring[]:argv) {
+    flt64:z = ((argv.len =>! int32) => flt64) - 1.0f64;
+    flt64:nan = z / z;
+    int64:i = nan =>! int64;
+    if (i == 0i64) { exit 3i32; }
+    exit 4i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 40i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
