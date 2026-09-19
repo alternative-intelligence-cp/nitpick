@@ -164,7 +164,7 @@ pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl,
 pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) never fails {
     int64:i = 0i64;
     while (i < t.v.count) {
-        MacroEntry:e = t.v.items[i];
+        MacroEntry:e = t.v[i];
         if (e.name == name) {
             if (e.owner == owner) { pass e.decl; }
         }
@@ -180,7 +180,7 @@ pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) never 
 pub func:macrotable_find_elsewhere = bool(MacroTable->:t, int32:name) never fails {
     int64:i = 0i64;
     while (i < t.v.count) {
-        if ((t.v.items[i]).name == name) { pass true; }
+        if ((t.v[i]).name == name) { pass true; }
         i = i + 1i64;
     }
     pass false;
@@ -1599,7 +1599,7 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
         Diagnostic:g = raw diaglist_at(d, i);
         int64:s = 0i64;
         while (s < x.sites.v.count) {
-            MacroSite:e = x.sites.v.items[s];
+            MacroSite:e = x.sites.v[s];
             bool:inside = (g.span.file == e.file);
             if (inside) { inside = (g.span.line >= e.lo); }
             if (inside) { inside = (g.span.line <= e.hi); }

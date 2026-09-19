@@ -311,7 +311,7 @@ pub func:sink_length = int64(Sink->:out) never fails {
 // how a sink stores bytes — it reached into `.buf`/`.len` at five sites until
 // 1.4.7 moved the storage.
 pub func:sink_view = string(Sink->:out) never fails {
-    pass string_from_bytes(out.v.items, out.v.count);
+    pass string_from_bytes(out.v[0i64...out.v.count].ptr =>! wild int8->, out.v.count);
 };
 
 // THE SINK'S BYTES AS AN OWNED STRING, CONSUMING THE SINK (1.5.1b step 3):
@@ -321,17 +321,17 @@ pub func:sink_view = string(Sink->:out) never fails {
 // conservative rule closes `f(@local)` for every user function, and the
 // SNAPSHOT that builds `src/` applies it to a builtin's result too).
 pub func:sink_into_string = string(move Sink:s) never fails {
-    pass (string_concat(string_from_bytes(s.v.items, s.v.count), ""));
+    pass (string_concat(string_from_bytes(s.v[0i64...s.v.count].ptr =>! wild int8->, s.v.count), ""));
 };
 
 pub func:sink_byte_at = uint8(Sink->:out, int64:i) never fails {
-    pass (out.v.items[i] =>! uint8);
+    pass (out.v[i] =>! uint8);
 };
 
 // Empty a sink for reuse; the buffer is kept (1.0.8 gave the IR writer a
 // second sink per function, and it is reset at each function's start).
 pub func:sink_reset = NIL(Sink->:out) never fails {
-    out.v.count = 0i64;
+    drop list_clear(@out.v);
     pass NIL;
 };
 
@@ -342,7 +342,7 @@ pub func:sink_append = NIL(Sink->:dst, Sink->:src) never fails {
     drop list_reserve(@dst.v, src.v.count);
     int64:i = 0i64;
     while (i < src.v.count) {
-        drop list_push(@dst.v, src.v.items[i]);
+        drop list_push(@dst.v, src.v[i]);
         i = i + 1i64;
     }
     pass NIL;

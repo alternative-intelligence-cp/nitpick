@@ -1,0 +1,34 @@
+// expect-exit: 94
+//
+// A `List`'s ELEMENT IS BOUNDS-CHECKED AGAINST `count` (D-314 §2, 1.5.8b step 1b;
+// DEF-74). The planning probe wrote five elements past a one-element list through
+// the raw `items` pointer -- legal in any module until the field became `hidden`
+// -- and overwrote another list's element: it exited 3. `l[i]` carries the
+// slice's guard, one unsigned compare against `count`, and traps `OutOfBounds`
+// at the first index past the end: 94.
+mod:list_index_oob;
+
+func:main = int32(cstring[]:_~argv) {
+    List<int64>:a = raw list_init::<int64>(1i64);
+    List<int64>:b = raw list_init::<int64>(1i64);
+    drop list_push(@b, 7i64);
+    drop list_push(@a, 1i64);
+    for (int64:i in 1i64...6i64) { a[i] = 1234567i64; }
+    if (b[0i64] != 7i64) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (HeapOom)          { exit 97i32; },
+        (HeapBadRequest)   { exit 97i32; },
+        (WildLeak)         { exit 95i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 90i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 9i32;
+};

@@ -125,7 +125,7 @@ pub func:srcmgr_count = int32(SourceManager->:m) never fails {
 pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
     int64:i = 0i64;
     while (i < m.v.count) {
-        if (raw string_eq(m.v.items[i].path, path)) {
+        if (raw string_eq(m.v[i].path, path)) {
             pass (raw srcmgr_id(i));
         }
         i = i + 1i64;
@@ -159,7 +159,7 @@ pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if ((file => int64) >= m.v.count) {
         fail FileUnknown;
     }
-    pass (string_from_bytes(m.v.items[file => int64].shown.ptr, m.v.items[file => int64].shown.len));
+    pass (string_from_bytes(m.v[file => int64].shown.ptr, m.v[file => int64].shown.len));
 };
 
 // THE RESOLVED PATH: what the file was opened by, and what a `use` inside it
@@ -171,7 +171,7 @@ pub func:srcmgr_resolved = string(SourceManager->:m, int32:file) {
     if ((file => int64) >= m.v.count) {
         fail FileUnknown;
     }
-    pass (string_from_bytes(m.v.items[file => int64].path.ptr, m.v.items[file => int64].path.len));
+    pass (string_from_bytes(m.v[file => int64].path.ptr, m.v[file => int64].path.len));
 };
 
 pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
@@ -185,8 +185,8 @@ pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
     // owns every source body for the process's life, and a caller's flagged
     // Result local dropping a cap-carrying copy freed the file out from under
     // the interns, the spans, and the lexer itself.
-    pass (string_from_bytes(m.v.items[file => int64].text.ptr,
-                                m.v.items[file => int64].text.len));
+    pass (string_from_bytes(m.v[file => int64].text.ptr,
+                                m.v[file => int64].text.len));
 };
 
 // Byte access, because the lexer works in bytes: the source is UTF-8 and a

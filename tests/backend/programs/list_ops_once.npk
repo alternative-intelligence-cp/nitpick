@@ -1,0 +1,38 @@
+// THE ONE-ROUND BASELINE for `list_ops_churn.npk` (1.5.8b step 1b): the same round, once.
+mod:list_ops_once;
+
+func:round = int64(int64:k) never fails {
+    List<string>:l = raw list_init::<string>(4i64);
+    for (int64:i in 0i64...200i64) { drop list_push(@l, string_concat("element", "-body")); }
+    for (int64:i in 0i64...100i64) { l[i * 2i64] = string_concat("over", "written"); }
+    discard(raw list_pop(@l));
+    discard(raw list_remove(@l, 7i64));
+    discard(raw list_swap_remove(@l, 3i64));
+    drop list_insert(@l, 5i64, string_concat("in", "serted"));
+    drop list_truncate(@l, 150i64);
+    int64:n = l.count + k;
+    drop list_clear(@l);
+    pass n;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:t = 0i64;
+    for (int64:k in 0i64...1i64) { t = t + (raw round(0i64)); }
+    if (t != 150i64) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (HeapOom)          { exit 97i32; },
+        (HeapBadRequest)   { exit 97i32; },
+        (WildLeak)         { exit 95i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 90i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 9i32;
+};

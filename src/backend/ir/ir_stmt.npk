@@ -935,6 +935,15 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                     int32:ibase = raw exprtypes_get(x.et, raw expr_operand(tgt));
                     int32:ibk = raw type_kind(x.fe.ctx.types, ibase);
                     if (ibk == (raw TY_ARRAY())) { tgt_drops_old = true; }
+                    // A `List`'s ELEMENT IS THE LIST'S (D-247; 1.5.8b step 1b):
+                    // `l[i]` is bounds-checked against `count`, so the old
+                    // value is a live element or the vacant value a move left
+                    // (S-26) -- dropped, as a managed array's element is. The
+                    // raw `l.items[i]` this replaces reached it through a
+                    // pointer and dropped nothing.
+                    if (ibk == (raw TY_STRUCT())) {
+                        if (raw type_is_list(x.tr, ibase)) { tgt_drops_old = true; }
+                    }
                 }
             }
             if (tgt_drops_old) {
@@ -3405,7 +3414,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // alloca would die at the first suspension before the seam reads it.
         for (int64:oi in 0i64...olds.count) {
             int32:otid = raw subst_emitted_type(x.fe.ctx,
-                             raw exprtypes_get(x.et, ExprId{ index: olds.items[oi] }));
+                             raw exprtypes_get(x.et, ExprId{ index: olds[oi] }));
             LlType:oll = raw ll_type(x.fe.ctx, otid);
             if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid, d.span)); }
             drop fnem_cross_add(x.fe, (raw fn_body(x.ast, d)).index,
@@ -3506,7 +3515,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     bool:split = false;
     if ((!fn_async) && (!(raw decl_has(d, raw DECL_THREAD())))) {
         for (int64:si in 0i64...obl_pr.count) {
-            if (obl_pr.items[si] != 0i32) { split = true; }
+            if (obl_pr[si] != 0i32) { split = true; }
         }
         // A `requires` SPLITS TOO (1.5.3 step 1, D-268): its predicate is
         // called from the checked entry, so D-252's bypass serves it.
@@ -3538,15 +3547,15 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // coroutine (the parameters are the first bindings in both skeletons) --
     // after the walk, so the elision answers exist, and before the body.
     for (int64:pi in 0i64...obl_pr.count) {
-        if (obl_pr.items[pi] == 0i32) { continue; }
-        drop fnem_rule_at(x.fe, pi, obl_pr.items[pi]);
+        if (obl_pr[pi] == 0i32) { continue; }
+        drop fnem_rule_at(x.fe, pi, obl_pr[pi]);
         // A split function's checks live in its checked entry (D-252).
         if (split) { continue; }
-        DeclNode:ppd = raw ast_decl(x.ast, DeclId{ index: obl_pd.items[pi] });
+        DeclNode:ppd = raw ast_decl(x.ast, DeclId{ index: obl_pd[pi] });
         IrVal:pc = raw emit_limit_check(x, raw fnem_local_slot_at(x.fe, pi),
-                                        obl_pt.items[pi],
-                                        DeclId{ index: obl_pr.items[pi] },
-                                        raw SITE_DECL(), obl_pd.items[pi], ppd.span);
+                                        obl_pt[pi],
+                                        DeclId{ index: obl_pr[pi] },
+                                        raw SITE_DECL(), obl_pd[pi], ppd.span);
         if (!(raw iv_is_ok(pc))) { pass pc; }
     }
     // THE `requires` CHECK (1.5.3 step 1; L-1, D-268): the function's
@@ -3564,8 +3573,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         if (!(raw ll_is_ok(rbt))) { pass (raw iv_from_ll_at(x, rbt, x.fe.ctx.types.t_bool, d.span)); }
         string:rargs = "";
         for (int64:ri in 0i64...obl_pt.count) {
-            LlType:rpl = raw ll_type(x.fe.ctx, obl_pt.items[ri]);
-            if (!(raw ll_is_ok(rpl))) { pass (raw iv_from_ll_at(x, rpl, obl_pt.items[ri], d.span)); }
+            LlType:rpl = raw ll_type(x.fe.ctx, obl_pt[ri]);
+            if (!(raw ll_is_ok(rpl))) { pass (raw iv_from_ll_at(x, rpl, obl_pt[ri], d.span)); }
             string:rpv = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(rpv, " = load ", rpl.text, ", ptr ",
                                              raw fnem_local_slot_at(x.fe, ri)));
@@ -3581,7 +3590,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // -- an alloca hoisted to the entry block, or the frame slot registered
     // above -- for the seam's `ensures` and the heads' invariants to read.
     for (int64:ok in 0i64...olds.count) {
-        ExprId:oid = ExprId{ index: olds.items[ok] };
+        ExprId:oid = ExprId{ index: olds[ok] };
         ExprNode:onode = raw ast_expr(x.ast, oid);
         int32:otid2 = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, oid));
         LlType:oll2 = raw ll_type(x.fe.ctx, otid2);

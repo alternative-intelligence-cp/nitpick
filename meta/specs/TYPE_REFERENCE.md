@@ -1108,6 +1108,16 @@ identical.
 > `--guard-pages` remains available for overrun detection around `wild`
 > allocations without changing the representation.
 
+**Indexing a pointer** (`p[i]`) is the i-th `T` in memory from `p`: pointer
+arithmetic, unchecked, since a thin pointer carries no bound. **It is refused
+where the pointee is itself indexed** (1.5.8b step 1b, `NITPICK-TYPE-082`).
+That covers an array (`int64[8]->`), a slice (`T[]->`) and a `List<T>->`. For
+those, `p[i]` has a second reading, the pointee's own element, which is almost
+always the one meant, and a slip between the two was an unchecked wild access
+that type-checked. D-098 auto-dereferences only where there is one reading
+(`.`). Here the element is spelled `(<-p)[i]`, one level brought back. A
+pointer to a scalar or a struct keeps its indexing.
+
 ---
 
 ## 11. Optional & Result Types (Tier 1 — Written in Nitpick)

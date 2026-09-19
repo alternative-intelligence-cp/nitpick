@@ -340,8 +340,8 @@ pub func:floor_parse = FloorText(string:text) never fails {
             int64:last = cur.blocks.count - 1i64;
             // the implicit first block is renamed by the first label when it
             // has no lines yet (the floor names it `entry:` almost everywhere)
-            if ((last == 0i64) && (cur.blocks.items[0i64].lines.count == 0i64)) {
-                cur.blocks.items[0i64].label = move(lab);
+            if ((last == 0i64) && (cur.blocks[0i64].lines.count == 0i64)) {
+                cur.blocks[0i64].label = move(lab);
                 continue;
             }
             FBlock:b = FBlock{ label: move(lab), lines: raw list_init::<string>(16i64), succs: raw list_init::<int64>(2i64) };
@@ -349,7 +349,7 @@ pub func:floor_parse = FloorText(string:text) never fails {
             continue;
         }
         int64:bi = cur.blocks.count - 1i64;
-        drop strlist_push(@cur.blocks.items[bi].lines, line);
+        drop strlist_push(@cur.blocks[bi].lines, line);
         FGep:g2 = raw gep_of(line);
         if (g2.reg.len > 0i64) { drop list_push(@cur.geps, move(g2)); }
     }
@@ -486,16 +486,16 @@ func:floor_asm_census = NIL(FloorText->:ft, List<string>:lines) never fails {
         int64:mv = raw asm_mov_nr(a);
         if (mv >= 0i64) { prev = mv; continue; }
         if (raw text_eq(a, "syscall")) {
-            drop list_push(@ft.asm_bodies.items[k].sys, prev);
-            drop list_push(@ft.asm_bodies.items[k].read, prev >= 0i64);
+            drop list_push(@ft.asm_bodies[k].sys, prev);
+            drop list_push(@ft.asm_bodies[k].read, prev >= 0i64);
             prev = 0i64 - 1i64;
             continue;
         }
         prev = 0i64 - 1i64;
         string:op = raw asm_call_operand(a);
         if (op.len == 0i64) { continue; }
-        if (op.ptr[0i64] == 42u8) { ft.asm_bodies.items[k].indirect = true; continue; }
-        if (raw asm_is_name(op)) { drop strlist_push(@ft.asm_bodies.items[k].calls, string_concat("@", op)); }
+        if (op.ptr[0i64] == 42u8) { ft.asm_bodies[k].indirect = true; continue; }
+        if (raw asm_is_name(op)) { drop strlist_push(@ft.asm_bodies[k].calls, string_concat("@", op)); }
     }
     pass NIL;
 };
@@ -504,10 +504,10 @@ func:floor_asm_census = NIL(FloorText->:ft, List<string>:lines) never fails {
 // Public since 1.5.6 step 3: a CFG transform (`floor_cfg.npk`) recomputes them.
 pub func:floor_finish = NIL(FFn->:f) never fails {
     for (int64:b in 0i64...f.blocks.count) {
-        f.blocks.items[b].succs.count = 0i64;
-        int64:n = f.blocks.items[b].lines.count;
+        drop list_clear(@f.blocks[b].succs);
+        int64:n = f.blocks[b].lines.count;
         if (n == 0i64) { continue; }
-        string:last = raw strlist_view(f.blocks.items[b].lines, n - 1i64);
+        string:last = raw strlist_view(f.blocks[b].lines, n - 1i64);
         if (!((raw text_starts_with(last, "br ")) || (raw text_starts_with(last, "switch ")))) { continue; }
         int64:from = 0i64;
         while (true) {
@@ -522,7 +522,7 @@ pub func:floor_finish = NIL(FFn->:f) never fails {
             }
             string:lab = raw text_slice(last, s, e);
             int64:ti = raw floor_block_index(f, lab);
-            if (ti >= 0i64) { drop list_push(@f.blocks.items[b].succs, ti); }
+            if (ti >= 0i64) { drop list_push(@f.blocks[b].succs, ti); }
             from = e;
         }
     }
@@ -531,7 +531,7 @@ pub func:floor_finish = NIL(FFn->:f) never fails {
 
 pub func:floor_block_index = int64(FFn->:f, string:label) never fails {
     for (int64:i in 0i64...f.blocks.count) {
-        if (raw text_eq(raw strlist_view_of(f.blocks.items[i].label), label)) { pass i; }
+        if (raw text_eq(raw strlist_view_of(f.blocks[i].label), label)) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -543,7 +543,7 @@ pub func:strlist_view_of = string(string:s) never fails {
 
 pub func:floor_fn_index = int64(FloorText->:ft, string:name) never fails {
     for (int64:i in 0i64...ft.fns.count) {
-        if (raw text_eq(raw strlist_view_of(ft.fns.items[i].name), name)) { pass i; }
+        if (raw text_eq(raw strlist_view_of(ft.fns[i].name), name)) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -551,7 +551,7 @@ pub func:floor_fn_index = int64(FloorText->:ft, string:name) never fails {
 // The GEP a register names in `f`, or -1.
 pub func:floor_gep_index = int64(FFn->:f, string:reg) never fails {
     for (int64:i in 0i64...f.geps.count) {
-        if (raw text_eq(raw strlist_view_of(f.geps.items[i].reg), reg)) { pass i; }
+        if (raw text_eq(raw strlist_view_of(f.geps[i].reg), reg)) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -563,7 +563,7 @@ pub func:floor_is_mutable = bool(FloorText->:ft, string:global) never fails {
 // The body of a named struct type (`%npk.hdr` -> `{ ptr, i32, ... }`), or "".
 pub func:floor_type_body = string(FloorText->:ft, string:name) never fails {
     for (int64:i in 0i64...ft.type_names.count) {
-        if (raw text_eq(raw strlist_view_of(ft.type_names.items[i]), name)) { pass (raw strlist_copy(ft.type_texts, i)); }
+        if (raw text_eq(raw strlist_view_of(ft.type_names[i]), name)) { pass (raw strlist_copy(ft.type_texts, i)); }
     }
     pass "";
 };
@@ -571,7 +571,7 @@ pub func:floor_type_body = string(FloorText->:ft, string:name) never fails {
 // A global's declared type text, or "" when the module declares no such global.
 pub func:floor_global_type = string(FloorText->:ft, string:global) never fails {
     for (int64:i in 0i64...ft.globals.count) {
-        if (raw text_eq(raw strlist_view_of(ft.globals.items[i]), global)) { pass (raw strlist_copy(ft.global_tys, i)); }
+        if (raw text_eq(raw strlist_view_of(ft.globals[i]), global)) { pass (raw strlist_copy(ft.global_tys, i)); }
     }
     pass "";
 };
@@ -621,7 +621,7 @@ pub func:struct_fields = List<string>(string:ty) never fails {
 // a global without one.
 pub func:floor_global_init = string(FloorText->:ft, string:global) never fails {
     for (int64:i in 0i64...ft.globals.count) {
-        if (raw text_eq(raw strlist_view_of(ft.globals.items[i]), global)) { pass (raw strlist_copy(ft.global_inits, i)); }
+        if (raw text_eq(raw strlist_view_of(ft.globals[i]), global)) { pass (raw strlist_copy(ft.global_inits, i)); }
     }
     pass "";
 };

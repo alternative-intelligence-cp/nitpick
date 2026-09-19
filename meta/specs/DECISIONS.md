@@ -19865,3 +19865,65 @@ qualifiers land at step 1b.]*
 - TYPE-080 carries a note at the declaration. A literal naming several hidden
   fields reports each, as a literal's missing fields are reported.
 - "Outside" is D-313's line (see its note).
+
+*[2026-09-19, 1.5.8b step 1b — `l[i]` and `List`'s qualifiers LANDED.]*
+- **`List`'s fields.** The prelude's declaration is `{ hidden wild T->:items;
+  sealed int64:count; sealed int64:cap; }`, and D-313's rule refuses every
+  touch outside the prelude. Found and refused: DEF-73 (`a.cap = 100`), and
+  DEF-74 (`a.items[i]`, which the refusal now makes unreachable).
+- **`l[i]`** is typed as the element through `list_elem_type`, a helper both the
+  checker and the emitter read.
+  - It is lowered from the list's own address, with `count` and `items` loaded
+    AFTER the index is evaluated.
+  - The slice's guard applies: one unsigned compare, `OutOfBounds`, the site
+    convention.
+  - It is a place for every form a slice element is. The alias guard (D-286)
+    wraps it, as it wraps every address.
+- **Settled as built, beyond the text:**
+  - **`l[lo...hi]` ranges as an array or a slice does**, into a checked `T[]`
+    view that borrows the list (D-249). The compiler's own byte views over a
+    sink's `List<int8>` needed it: three sites took `items` as a raw pointer.
+  - **Assigning over an owning element DROPS the old value**, as a managed
+    array's element does (D-186). `l[i]` is checked against `count`, so the old
+    value is live or vacant after a move (S-26). The raw `l.items[i] = v` this
+    replaces dropped nothing, a leak for every owning list the compiler
+    overwrote.
+  - **`p[i]` on a pointer to an array, a slice or a `List` is
+    `NITPICK-TYPE-082`.** The element is `(<-p)[i]`. D-098 auto-dereferences
+    only where there is one reading, and pointer indexing gives these pointees
+    two. The measurement before the rule found zero such sites in the tree. The
+    sweep then produced 66 in `npkg/`, each caught by this rule and written
+    `(<-p)[i]`; without the rule, each would have compiled as pointer
+    arithmetic over lists.
+  - **A view through `<-p` roots at `p`** (the escape analysis's `view_root`).
+    `(<-p).x` and `p.x` are one storage, and the old "fails closed" answer
+    called `string_from_bytes((<-rows)[i].f.ptr, …)` a view of a temporary
+    (BORROW-012). A deref of a temporary pointer still fails closed.
+- **The operations** (§3): `list_pop`, `list_truncate`, `list_clear`,
+  `list_insert`, `list_remove` and `list_swap_remove`. An index outside the list
+  is `!!! OutOfBounds`, the guard's identity, so one mistake has one name. An
+  element leaving the list is moved to the caller, or into a temporary its
+  statement drops (D-246).
+- **The sweep**, classified by the checker rather than by text: the fields were
+  qualified and every refusal listed with the diagnostic bound lifted in a
+  throw-away build.
+  - 2,011 element accesses became `l[i]`.
+  - 77 writes of `count = 0` became `list_clear`.
+  - 42 truncations to a saved mark became `list_truncate`.
+  - 21 decrements became `list_pop`, six of them merged with the read of the
+    last element above them.
+  - One hand-written insert, which wrote past `count`, became `list_insert`.
+  - Three raw byte views became ranges.
+  - The first `l[i]` build then found **DEF-79**: `ast_init` stored the NONE
+    declaration past `count`, so the first real declaration sat at DeclId 0,
+    the id `decl_is_none` reads as absent (since 1.4.7 step 2).
+- **The refresh** is the bridging variant, with one deviation from the plan.
+  Hop 1 carried the qualified fields as well, so only `src/` differed between
+  the hops. That let the bridge itself check the swept tree against the final
+  prelude, and it caught leftover sites the checker's deduplication had
+  collapsed: two list accesses in one member chain share a reported column.
+  Stage 2 == stage 3, 25,707,020 bytes.
+- **Measured:**
+  - `OutOfBounds` guards in the compiler's own emission, 13 → 765;
+  - `IntOverflow` guards, 2,250 → 2,248;
+  - the churn probe's peak equal to one round's (10,764 bytes; `tests/cost/list_ops.toml`).

@@ -47,7 +47,7 @@ pub func:smtbuf_text = string(move SmtBuf:b) never fails {
     wild int8->:out = alloc(b.bytes + 1i64);
     int64:at = 0i64;
     for (int64:i in 0i64...b.lines.count) {
-        string:ln = string_from_bytes(b.lines.items[i].ptr, b.lines.items[i].len);
+        string:ln = string_from_bytes(b.lines[i].ptr, b.lines[i].len);
         for (int64:j in 0i64...ln.len) { out[at + j] = ln.ptr[j] =>! int8; }
         at = at + ln.len;
         out[at] = 10i8;

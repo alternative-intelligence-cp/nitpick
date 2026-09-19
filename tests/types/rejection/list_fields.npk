@@ -1,0 +1,68 @@
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 41
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 42
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 43
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 44
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 45
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 46
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 47
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 48
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 49
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 54
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 54
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 54
+//
+// THE PRELUDE `List`'s FIELDS ARE ITS OWN (D-313 §5, D-314 §3; 1.5.8b step 1b;
+// DEF-73, DEF-74). `items` is `hidden` and `count` and `cap` are `sealed`: outside
+// the prelude, every touch of `items` is TYPE-080 and every write of `count` or
+// `cap` is TYPE-079, while reading `count` and `cap` passes. The planning probes
+// are cases here: `a.cap = 100i64` on a one-element list let forty pushes run past
+// its block into another list's element (DEF-73), and `a.items[i] = …` wrote five
+// elements past a one-element list (DEF-74). Each is refused at its line; what the
+// programs did through the fields is the checked operations (`l[i]`, `list_pop`,
+// `list_truncate`, `list_clear`, `list_insert`, `list_remove`, `list_swap_remove`).
+mod:list_fields;
+
+func:poke = NIL(int64->:p) never fails { pass NIL; };
+
+func:writes = NIL(List<int64>->:p) never fails {
+    List<int64>:a = raw list_init::<int64>(1i64);
+    a.cap = 100i64;
+    a.count = 3i64;
+    a.count += 1i64;
+    p.count = 0i64;
+    int64->:c = @a.count;
+    drop poke($$m a.cap);
+    a.items[0i64] = 5i64;
+    wild int64->:w = a.items;
+    int64:x = p.items[0i64];
+    pass NIL;
+};
+
+func:literal = List<int64>() never fails {
+    List<int64>:l = List{ items: NULL, count: 0i64, cap: 0i64 };
+    pass l;
+};
+
+// WHAT PASSES: the element through `l[i]`, the view through `l[lo...hi]`, and
+// reads of `count` and `cap`.
+func:reads = int64(List<int64>:l) never fails {
+    int64:n = l.count + l.cap;
+    if (l.count > 0i64) { n = n + l[0i64]; }
+    int64[]:v = l[0i64...l.count];
+    pass (n + v.len);
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

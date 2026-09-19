@@ -52,19 +52,19 @@ pub struct:ReqGen = {
 
 pub func:sx_text = string(Sxs->:s, int64:node) never fails {
     if (node < 0i64) { pass ""; }
-    if (s.nodes.items[node].kind == (raw SX_ATOM())) { pass (raw sx_atom(s, node)); }
-    if (s.nodes.items[node].kind == (raw SX_STRING())) {
+    if (s.nodes[node].kind == (raw SX_ATOM())) { pass (raw sx_atom(s, node)); }
+    if (s.nodes[node].kind == (raw SX_STRING())) {
         string:q = string_concat("\"", raw sx_string(s, node));
         pass (string_concat(q, "\""));
     }
     string:out = "(";
-    int64:c = s.nodes.items[node].first;
+    int64:c = s.nodes[node].first;
     bool:first = true;
     while (c >= 0i64) {
         if (!first) { out = string_concat(out, " "); }
         out = string_concat(out, raw sx_text(s, c));
         first = false;
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass (string_concat(out, ")"));
 };
@@ -134,9 +134,9 @@ func:req_name = string(ReqEmit->:e, FloorText->:ft, string:name) never fails {
     string:path = "";
     if (dot >= 0i64) { base = raw text_slice(name, 0i64, dot); path = raw text_slice(name, dot, name.len); }
     string:want = string_concat("%", base);
-    for (int64:p in 0i64...ft.fns.items[e.fi].params.count) {
-        if (!(raw text_eq(raw strlist_view(ft.fns.items[e.fi].params, p), want))) { continue; }
-        string:pty = raw strlist_copy(ft.fns.items[e.fi].param_tys, p);
+    for (int64:p in 0i64...ft.fns[e.fi].params.count) {
+        if (!(raw text_eq(raw strlist_view(ft.fns[e.fi].params, p), want))) { continue; }
+        string:pty = raw strlist_copy(ft.fns[e.fi].param_tys, p);
         string:leaf_ty = raw text_copy(pty);
         string:src = raw text_copy(want);
         if (raw is_aggregate_ty(pty)) {
@@ -272,12 +272,12 @@ func:req_is_pow2 = bool(string:n) never fails {
 func:req_val = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node) never fails {
     if (!e.ok) { pass ""; }
     if (node < 0i64) { pass (raw req_fail(e, "an empty expression")); }
-    if (s.nodes.items[node].kind == (raw SX_ATOM())) {
+    if (s.nodes[node].kind == (raw SX_ATOM())) {
         string:a = raw sx_atom(s, node);
         if (raw req_is_numeral(a)) { pass a; }
         pass (raw req_name(e, ft, a));
     }
-    if (s.nodes.items[node].kind != (raw SX_LIST())) { pass (raw req_fail(e, "a string where an integer was expected")); }
+    if (s.nodes[node].kind != (raw SX_LIST())) { pass (raw req_fail(e, "a string where an integer was expected")); }
     string:h = raw sx_head(s, node);
     int64:n = raw sx_len(s, node);
     if ((raw text_eq(h, "+")) || (raw text_eq(h, "*"))) {
@@ -310,7 +310,7 @@ func:req_val = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node) never fa
         if (n != 3i64) { pass (raw req_fail(e, string_concat("a form the checker cannot evaluate: ", raw sx_text(s, node)))); }
         int64:dn = raw sx_nth(s, node, 2i64);
         string:da = "";
-        if (s.nodes.items[dn].kind == (raw SX_ATOM())) { da = raw sx_atom(s, dn); }
+        if (s.nodes[dn].kind == (raw SX_ATOM())) { da = raw sx_atom(s, dn); }
         if (!((raw req_is_numeral(da)) && (raw req_is_pow2(da)))) { pass (raw req_fail(e, string_concat("a `mod` by other than a power of two: ", raw sx_text(s, node)))); }
         string:a2 = raw req_val(e, ft, s, raw sx_nth(s, node, 1i64));
         if (a2.len == 0i64) { pass ""; }
@@ -448,13 +448,13 @@ func:req_val_wrapped64 = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node
 func:req_bool = string(ReqEmit->:e, FloorText->:ft, Sxs->:s, int64:node) never fails {
     if (!e.ok) { pass ""; }
     if (node < 0i64) { pass (raw req_fail(e, "an empty proposition")); }
-    if (s.nodes.items[node].kind == (raw SX_ATOM())) {
+    if (s.nodes[node].kind == (raw SX_ATOM())) {
         string:a = raw sx_atom(s, node);
         if (raw text_eq(a, "true")) { pass "true"; }
         if (raw text_eq(a, "false")) { pass "false"; }
         pass (raw req_fail(e, string_concat("a bare name where a proposition was expected: ", a)));
     }
-    if (s.nodes.items[node].kind != (raw SX_LIST())) { pass (raw req_fail(e, "a string where a proposition was expected")); }
+    if (s.nodes[node].kind != (raw SX_LIST())) { pass (raw req_fail(e, "a string where a proposition was expected")); }
     string:h = raw sx_head(s, node);
     int64:n = raw sx_len(s, node);
     if ((raw text_eq(h, "and")) || (raw text_eq(h, "or"))) {
@@ -533,14 +533,14 @@ func:req_cstring = string(string:s) never fails {
 func:req_section_translated = bool(Sxs->:s, int64:sec) never fails {
     bool:claims = false;
     bool:boundary = false;
-    int64:c = s.nodes.items[sec].first;
+    int64:c = s.nodes[sec].first;
     while (c >= 0i64) {
         if (raw sx_is_list(s, c)) {
             string:h = raw sx_head(s, c);
             if ((raw text_eq(h, "ensures")) || (raw text_eq(h, "ensures-trap")) || (raw text_eq(h, "frame")) || (raw text_eq(h, "loop"))) { claims = true; }
             if (raw text_eq(h, "boundary")) { boundary = true; }
         }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass (claims && (!boundary));
 };
@@ -562,7 +562,7 @@ func:req_range_facts = List<ReqFact>(ReqEmit->:e, FloorText->:ft, Sxs->:s, List<
     List<string>:texts = raw list_init::<string>(4i64);
     // every range's values first: a range the checker cannot read lists the whole clause
     for (int64:i in 0i64...entries.count) {
-        int64:en = entries.items[i];
+        int64:en = (<-entries)[i];
         drop strlist_push(@texts, raw sx_text(s, en));
         int64:len = raw sx_len(s, en);
         bool:shaped = (raw sx_is_list(s, en)) && ((len == 2i64) || ((len == 4i64) && (raw text_eq(raw sx_atom(s, raw sx_nth(s, en, 2i64)), "apart-when"))));
@@ -681,14 +681,14 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
     List<string>:msgs = raw list_init::<string>(8i64);                  // the message constants' definitions
     int64:nchecked = 0i64;
     int64:nreg = 0i64;                                                   // fresh registers, across clauses
-    int64:c = s.nodes.items[sec].first;
+    int64:c = s.nodes[sec].first;
     while (c >= 0i64) {
-        if (!(raw sx_is_list(s, c))) { c = s.nodes.items[c].next; continue; }
+        if (!(raw sx_is_list(s, c))) { c = s.nodes[c].next; continue; }
         string:h = raw sx_head(s, c);
         bool:is_req = raw text_eq(h, "requires");
         bool:is_obj = raw text_eq(h, "objects");
         bool:is_view = raw text_eq(h, "views");
-        if (!(is_req || is_obj || is_view)) { c = s.nodes.items[c].next; continue; }
+        if (!(is_req || is_obj || is_view)) { c = s.nodes[c].next; continue; }
         ReqEmit:e = ReqEmit{ lines: raw smtbuf_init(), next: nreg, val_names: raw list_init::<string>(8i64), val_regs: raw list_init::<string>(8i64),
                              ok: true, reason: "", fi: fi };
         List<ReqFact>:facts = raw list_init::<ReqFact>(4i64);
@@ -704,39 +704,39 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
             if (is_view) {
                 int64:oc = raw req_find_clause(s, sec, "objects");
                 if (oc >= 0i64) {
-                    int64:oe = s.nodes.items[oc].first;
-                    oe = s.nodes.items[oe].next;
-                    while (oe >= 0i64) { drop list_push(@entries, oe); oe = s.nodes.items[oe].next; }
+                    int64:oe = s.nodes[oc].first;
+                    oe = s.nodes[oe].next;
+                    while (oe >= 0i64) { drop list_push(@entries, oe); oe = s.nodes[oe].next; }
                 }
                 first_view = entries.count;
             }
-            int64:ce = s.nodes.items[c].first;
-            ce = s.nodes.items[ce].next;
-            while (ce >= 0i64) { drop list_push(@entries, ce); ce = s.nodes.items[ce].next; }
+            int64:ce = s.nodes[c].first;
+            ce = s.nodes[ce].next;
+            while (ce >= 0i64) { drop list_push(@entries, ce); ce = s.nodes[ce].next; }
             if (!is_view) { first_view = entries.count; }
             List<ReqFact>:rf = raw req_range_facts(@e, ft, s, @entries, first_view);
             // a views clause records only ITS ranges' facts; the objects' come first in `rf`
             int64:skip = 0i64;
             if (is_view) { skip = raw req_facts_before(first_view, first_view); }
             for (int64:r in skip...rf.count) {
-                drop list_push(@facts, ReqFact{ text: string_concat(raw strlist_view_of(rf.items[r].text), ""),
-                                                ok: string_concat(raw strlist_view_of(rf.items[r].ok), "") });
+                drop list_push(@facts, ReqFact{ text: string_concat(raw strlist_view_of(rf[r].text), ""),
+                                                ok: string_concat(raw strlist_view_of(rf[r].ok), "") });
             }
         }
         if (!e.ok) {
             // listed: every fact of the clause, by name, with the one reason; nothing emitted
             for (int64:f0 in 0i64...facts.count) {
-                drop list_push(@g.clauses, ReqClause{ symbol: raw text_copy(sym), text: string_concat(raw strlist_view_of(facts.items[f0].text), ""),
+                drop list_push(@g.clauses, ReqClause{ symbol: raw text_copy(sym), text: string_concat(raw strlist_view_of(facts[f0].text), ""),
                                                       status: "listed", reason: raw text_copy(e.reason) });
             }
-            c = s.nodes.items[c].next;
+            c = s.nodes[c].next;
             continue;
         }
         // checked: the clause's computations, then per fact the branch and the shim's call
         for (int64:f in 0i64...facts.count) {
-            string:ftext = string_concat(raw strlist_view_of(facts.items[f].text), "");
+            string:ftext = string_concat(raw strlist_view_of(facts[f].text), "");
             string:msg = string_concat(sym, ": ");
-            msg = string_concat(msg, raw strlist_view_of(facts.items[f].text));
+            msg = string_concat(msg, raw strlist_view_of(facts[f].text));
             string:mname = string_concat("@\"npkx.req.msg.", bare);
             mname = string_concat(mname, ".");
             mname = string_concat(mname, int_to_string(nchecked));
@@ -746,7 +746,7 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
             mdef = string_concat(mdef, " x i8] ");
             mdef = string_concat(mdef, raw req_cstring(msg));
             drop strlist_push(@msgs, mdef);
-            string:bl = string_concat("  br i1 ", raw strlist_view_of(facts.items[f].ok));
+            string:bl = string_concat("  br i1 ", raw strlist_view_of(facts[f].ok));
             bl = string_concat(bl, ", label %c");
             bl = string_concat(bl, int_to_string(nchecked + 1i64));
             bl = string_concat(bl, ", label %f");
@@ -766,16 +766,16 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
         nreg = e.next;
         string:ctext = raw smtbuf_text(move(e.lines));
         if (ctext.len > 1i64) { drop smtbuf_line(@fb, raw text_slice(ctext, 0i64, ctext.len - 1i64)); }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     if (nchecked == 0i64) { pass NIL; }
     // the define's parameter list, verbatim, for the header and the call
     string:plist = "";
-    for (int64:p in 0i64...ft.fns.items[fi].params.count) {
+    for (int64:p in 0i64...ft.fns[fi].params.count) {
         if (p > 0i64) { plist = string_concat(plist, ", "); }
-        plist = string_concat(plist, raw strlist_view(ft.fns.items[fi].param_tys, p));
+        plist = string_concat(plist, raw strlist_view(ft.fns[fi].param_tys, p));
         plist = string_concat(plist, " ");
-        plist = string_concat(plist, raw strlist_view(ft.fns.items[fi].params, p));
+        plist = string_concat(plist, raw strlist_view(ft.fns[fi].params, p));
     }
     for (int64:m in 0i64...msgs.count) { drop smtbuf_line(ir, raw strlist_view(msgs, m)); }
     string:head = string_concat("define internal void @\"npkx.req.", bare);
@@ -799,10 +799,10 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
 
 // The first clause of `sec` with head `name`, or -1.
 func:req_find_clause = int64(Sxs->:s, int64:sec, string:name) never fails {
-    int64:c = s.nodes.items[sec].first;
+    int64:c = s.nodes[sec].first;
     while (c >= 0i64) {
         if ((raw sx_is_list(s, c)) && (raw text_eq(raw sx_head(s, c), name))) { pass c; }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass (0i64 - 1i64);
 };
@@ -840,12 +840,12 @@ pub func:req_generate = ReqGen(string:floor, string:spec) never fails {
     // `assumptions.txt`: one line per clause, `SYMBOL<TAB>STATUS<TAB>TEXT<TAB>REASON`
     SmtBuf:b = raw smtbuf_init();
     for (int64:i in 0i64...g.clauses.count) {
-        string:l = string_concat(raw strlist_view_of(g.clauses.items[i].symbol), "\t");
-        l = string_concat(l, raw strlist_view_of(g.clauses.items[i].status));
+        string:l = string_concat(raw strlist_view_of(g.clauses[i].symbol), "\t");
+        l = string_concat(l, raw strlist_view_of(g.clauses[i].status));
         l = string_concat(l, "\t");
-        l = string_concat(l, raw strlist_view_of(g.clauses.items[i].text));
+        l = string_concat(l, raw strlist_view_of(g.clauses[i].text));
         l = string_concat(l, "\t");
-        l = string_concat(l, raw strlist_view_of(g.clauses.items[i].reason));
+        l = string_concat(l, raw strlist_view_of(g.clauses[i].reason));
         drop smtbuf_line(@b, l);
     }
     g.assumptions = raw smtbuf_text(move(b));
@@ -864,7 +864,7 @@ pub func:req_generate = ReqGen(string:floor, string:spec) never fails {
 // The walk: every eligible section's checker into `ir`, its call and clauses into `g`.
 func:req_walk = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s) never fails {
     for (int64:r in 0i64...s.roots.count) {
-        int64:root = s.roots.items[r];
+        int64:root = s.roots[r];
         if (!(raw text_eq(raw sx_head(s, root), "symbol"))) { continue; }
         string:sym = raw sx_atom(s, raw sx_nth(s, root, 1i64));
         if (sym.len == 0i64) { continue; }
@@ -890,7 +890,7 @@ pub func:req_clauses = List<ReqClause>(FloorText->:ft, Sxs->:s) never fails {
 // The eligible sections of `spec` and each one's fact count: `syms` and `counts`.
 func:req_expected_counts = NIL(Sxs->:s, List<string>->:syms, List<int64>->:counts) never fails {
     for (int64:r in 0i64...s.roots.count) {
-        int64:root = s.roots.items[r];
+        int64:root = s.roots[r];
         if (!(raw text_eq(raw sx_head(s, root), "symbol"))) { continue; }
         string:sym = raw sx_atom(s, raw sx_nth(s, root, 1i64));
         if (sym.len == 0i64) { continue; }
@@ -899,7 +899,7 @@ func:req_expected_counts = NIL(Sxs->:s, List<string>->:syms, List<int64>->:count
         int64:nobj = 0i64;
         int64:oc = raw req_find_clause(s, root, "objects");
         if (oc >= 0i64) { nobj = (raw sx_len(s, oc)) - 1i64; }
-        int64:c = s.nodes.items[root].first;
+        int64:c = s.nodes[root].first;
         while (c >= 0i64) {
             if (raw sx_is_list(s, c)) {
                 string:h = raw sx_head(s, c);
@@ -910,7 +910,7 @@ func:req_expected_counts = NIL(Sxs->:s, List<string>->:syms, List<int64>->:count
                     total = total + nv + (nv * nobj);
                 }
             }
-            c = s.nodes.items[c].next;
+            c = s.nodes[c].next;
         }
         if (total == 0i64) { continue; }
         drop strlist_push(syms, sym);
@@ -953,8 +953,8 @@ pub func:explore_assumptions = List<string>(string:spec, string:explored, string
             if (is_checked) { one = 1i64; }
             drop list_push(@row_checked, one);
         } else {
-            row_counts.items[k] = row_counts.items[k] + 1i64;
-            if (is_checked) { row_checked.items[k] = row_checked.items[k] + 1i64; }
+            row_counts[k] = row_counts[k] + 1i64;
+            if (is_checked) { row_checked[k] = row_checked[k] + 1i64; }
         }
     }
     // every eligible section has exactly its facts recorded, and no other symbol has rows
@@ -962,14 +962,14 @@ pub func:explore_assumptions = List<string>(string:spec, string:explored, string
         string:es = raw strlist_view(syms, e);
         int64:k2 = raw strlist_index_of(@row_syms, es);
         int64:got = 0i64;
-        if (k2 >= 0i64) { got = row_counts.items[k2]; }
-        if (got != counts.items[e]) {
+        if (k2 >= 0i64) { got = row_counts[k2]; }
+        if (got != counts[e]) {
             string:m = string_concat(name, "-assumptions: `");
             m = string_concat(m, es);
             m = string_concat(m, "` has ");
             m = string_concat(m, int_to_string(got));
             m = string_concat(m, " row(s) in assumptions.txt and ");
-            m = string_concat(m, int_to_string(counts.items[e]));
+            m = string_concat(m, int_to_string(counts[e]));
             m = string_concat(m, " caller fact(s) in the spec");
             drop list_push(@fl, move(m));
         }
@@ -1013,7 +1013,7 @@ pub func:explore_assumptions = List<string>(string:spec, string:explored, string
         first = false;
     }
     for (int64:c2 in 0i64...row_syms.count) {
-        if (row_checked.items[c2] == 0i64) { continue; }
+        if (row_checked[c2] == 0i64) { continue; }
         string:cs = raw strlist_view(row_syms, c2);
         if ((raw strlist_index_of(@defined, cs)) < 0i64) {
             drop strlist_push(@fl, string_concat(string_concat(string_concat(name, "-assumptions: no `@\"npkx.req."), raw text_slice(cs, 1i64, cs.len)), "\"` is defined in the explored floor"));
@@ -1032,7 +1032,7 @@ pub func:explore_assumptions = List<string>(string:spec, string:explored, string
     for (int64:f3 in 0i64...first_called.count) {
         string:fs = raw strlist_view(first_called, f3);
         int64:k3 = raw strlist_index_of(@row_syms, fs);
-        bool:has_checked = (k3 >= 0i64) && (row_checked.items[k3] > 0i64);
+        bool:has_checked = (k3 >= 0i64) && (row_checked[k3] > 0i64);
         if (!has_checked) { drop strlist_push(@fl, string_concat(string_concat(name, "-assumptions: `"), string_concat(fs, "` calls a checker and has no checked clause"))); }
     }
     if (elsewhere > 0i64) {
@@ -1101,6 +1101,6 @@ func:req_code_keep_strings = string(string:line) never fails {
 
 // The index of `s` in `l`, or -1.
 func:strlist_index_of = int64(List<string>->:l, string:s) never fails {
-    for (int64:i in 0i64...l.count) { if (raw text_eq(raw strlist_view_of(l.items[i]), s)) { pass i; } }
+    for (int64:i in 0i64...l.count) { if (raw text_eq(raw strlist_view_of((<-l)[i]), s)) { pass i; } }
     pass (0i64 - 1i64);
 };

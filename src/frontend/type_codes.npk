@@ -455,3 +455,10 @@ pub func:TYPE_HIDDEN_FIELD = string() never fails { pass "NITPICK-TYPE-080"; };
 // distinct from its user -- or both on one field, where they contradict (sealed
 // is read everywhere, hidden nowhere outside).
 pub func:TYPE_FIELD_QUAL = string() never fails { pass "NITPICK-TYPE-081"; };
+// AN INDEX ON A POINTER WHOSE POINTEE IS ITSELF INDEXED (1.5.8b step 1b;
+// D-098's rule applied to `[]`): `p[i]` on an `int64[8]->`, a `T[]->` or a
+// `List<T>->` reads as pointer arithmetic -- the i-th array, slice or list in
+// memory -- where the pointee's own element is the reading meant; a slip
+// between the two was an unchecked wild access that type-checked. The
+// element is `(<-p)[i]`.
+pub func:TYPE_INDEX_POINTER = string() never fails { pass "NITPICK-TYPE-082"; };

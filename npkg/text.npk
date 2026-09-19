@@ -238,7 +238,7 @@ pub func:text_head = string(string:s, int64:n) never fails {
 pub func:text_join = string(List<string>:l, string:sep) never fails {
     if (l.count == 0i64) { pass ""; }
     int64:total = sep.len * (l.count - 1i64);
-    for (int64:i in 0i64...l.count) { total = total + l.items[i].len; }
+    for (int64:i in 0i64...l.count) { total = total + l[i].len; }
     wild int8->:buf = alloc(total + 1i64);
     int64:at = 0i64;
     for (int64:j in 0i64...l.count) {
@@ -246,8 +246,8 @@ pub func:text_join = string(List<string>:l, string:sep) never fails {
             for (int64:k in 0i64...sep.len) { buf[at + k] = sep.ptr[k] =>! int8; }
             at = at + sep.len;
         }
-        for (int64:m in 0i64...l.items[j].len) { buf[at + m] = l.items[j].ptr[m] =>! int8; }
-        at = at + l.items[j].len;
+        for (int64:m in 0i64...l[j].len) { buf[at + m] = l[j].ptr[m] =>! int8; }
+        at = at + l[j].len;
     }
     string:out = string_concat(string_from_bytes(buf, at), "");
     dalloc(buf);
@@ -263,13 +263,13 @@ pub func:text_join = string(List<string>:l, string:sep) never fails {
 pub func:strlist_view = string(List<string>:l, int64:i) never fails {
     if (i < 0i64)       { !!! OutOfBounds; }
     if (i >= l.count)   { !!! OutOfBounds; }
-    pass (string_from_bytes(l.items[i].ptr, l.items[i].len));
+    pass (string_from_bytes(l[i].ptr, l[i].len));
 };
 
 pub func:strlist_copy = string(List<string>:l, int64:i) never fails {
     if (i < 0i64)       { !!! OutOfBounds; }
     if (i >= l.count)   { !!! OutOfBounds; }
-    pass (string_concat(string_from_bytes(l.items[i].ptr, l.items[i].len), ""));
+    pass (string_concat(string_from_bytes(l[i].ptr, l[i].len), ""));
 };
 
 pub func:strlist_push = NIL(List<string>->:l, string:s) never fails {
@@ -280,7 +280,7 @@ pub func:strlist_push = NIL(List<string>->:l, string:s) never fails {
 
 pub func:strlist_contains = bool(List<string>:l, string:s) never fails {
     for (int64:i in 0i64...l.count) {
-        if (raw string_eq(string_from_bytes(l.items[i].ptr, l.items[i].len), s)) { pass true; }
+        if (raw string_eq(string_from_bytes(l[i].ptr, l[i].len), s)) { pass true; }
     }
     pass false;
 };
@@ -288,7 +288,7 @@ pub func:strlist_contains = bool(List<string>:l, string:s) never fails {
 pub func:strlist_clone = List<string>(List<string>:l) never fails {
     List<string>:out = raw list_init::<string>(l.count + 1i64);
     for (int64:i in 0i64...l.count) {
-        drop strlist_push(@out, string_from_bytes(l.items[i].ptr, l.items[i].len));
+        drop strlist_push(@out, string_from_bytes(l[i].ptr, l[i].len));
     }
     pass out;
 };
@@ -318,8 +318,8 @@ pub func:strlist_sorted = List<string>(List<string>:l) never fails {
     while (i < n) {
         int64:j = i;
         while (j > 0i64) {
-            string:a = string_from_bytes(l.items[ix[j]].ptr, l.items[ix[j]].len);
-            string:b = string_from_bytes(l.items[ix[j - 1i64]].ptr, l.items[ix[j - 1i64]].len);
+            string:a = string_from_bytes(l[ix[j]].ptr, l[ix[j]].len);
+            string:b = string_from_bytes(l[ix[j - 1i64]].ptr, l[ix[j - 1i64]].len);
             if (raw text_less(a, b)) {
                 int64:t = ix[j];
                 ix[j] = ix[j - 1i64];
@@ -333,7 +333,7 @@ pub func:strlist_sorted = List<string>(List<string>:l) never fails {
     }
     List<string>:out = raw list_init::<string>(n + 1i64);
     for (int64:k2 in 0i64...n) {
-        drop strlist_push(@out, string_from_bytes(l.items[ix[k2]].ptr, l.items[ix[k2]].len));
+        drop strlist_push(@out, string_from_bytes(l[ix[k2]].ptr, l[ix[k2]].len));
     }
     dalloc(raw_ix);
     pass out;
@@ -344,11 +344,11 @@ pub func:strlist_sorted_unique = List<string>(List<string>:l) never fails {
     List<string>:s = raw strlist_sorted(l);
     List<string>:out = raw list_init::<string>(s.count + 1i64);
     for (int64:i in 0i64...s.count) {
-        string:cur = string_from_bytes(s.items[i].ptr, s.items[i].len);
+        string:cur = string_from_bytes(s[i].ptr, s[i].len);
         bool:dup = false;
         if (out.count > 0i64) {
-            if (raw string_eq(cur, string_from_bytes(out.items[out.count - 1i64].ptr,
-                                                     out.items[out.count - 1i64].len))) {
+            if (raw string_eq(cur, string_from_bytes(out[out.count - 1i64].ptr,
+                                                     out[out.count - 1i64].len))) {
                 dup = true;
             }
         }
@@ -362,7 +362,7 @@ pub func:strlist_sorted_unique = List<string>(List<string>:l) never fails {
 pub func:strlist_minus = List<string>(List<string>:a, List<string>:b) never fails {
     List<string>:out = raw list_init::<string>(8i64);
     for (int64:i in 0i64...a.count) {
-        string:cur = string_from_bytes(a.items[i].ptr, a.items[i].len);
+        string:cur = string_from_bytes(a[i].ptr, a[i].len);
         if (!(raw strlist_contains(b, cur))) {
             if (!(raw strlist_contains(out, cur))) { drop strlist_push(@out, cur); }
         }

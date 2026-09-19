@@ -300,7 +300,7 @@ func:tt_hash = int64(int32:kind, int32:a, int32:b, int32:c, int32:name) never fa
 func:tt_index_reset = NIL(TypeTable->:t, int64:cap) never fails {
     int64:c = 16i64;
     while (c < cap) { c = c * 2i64; }
-    t.index.count = 0i64;   // an int32 list: truncating drops nothing
+    drop list_clear(@t.index);   // an int32 list: truncating drops nothing
     drop list_reserve(@t.index, c);
     int64:i = 0i64;
     while (i < c) { drop list_push(@t.index, 0i32 - 1i32); i = i + 1i64; }
@@ -316,10 +316,10 @@ func:tt_index_slot = int64(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     int64:slot = (raw tt_hash(kind, a, b, c, name)) & mask;
     bool:searching = true;
     while (searching) {
-        int32:e = t.index.items[slot];
+        int32:e = t.index[slot];
         if (e < 0i32) { searching = false; }
         else {
-            Type:x = t.items.items[e => int64];
+            Type:x = t.items[e => int64];
             if (x.kind == kind) { if (x.a == a) { if (x.b == b) { if (x.c == c) {
                 if (x.name == name) { searching = false; }
             } } } }
@@ -336,9 +336,9 @@ func:tt_index_grow_if_needed = NIL(TypeTable->:t) never fails {
     drop tt_index_reset(t, cap * 2i64);
     int64:i = 0i64;
     while (i < t.items.count) {
-        Type:x = t.items.items[i];
+        Type:x = t.items[i];
         int64:slot = raw tt_index_slot(t, x.kind, x.a, x.b, x.c, x.name);
-        t.index.items[slot] = i =>! int32;
+        t.index[slot] = i =>! int32;
         i = i + 1i64;
     }
     pass NIL;
@@ -351,7 +351,7 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     // never the size, for the reason `tt_set_layout`'s comment gives.
     drop tt_index_grow_if_needed(t);
     int64:slot = raw tt_index_slot(t, kind, a, b, c, name);
-    int32:found = t.index.items[slot];
+    int32:found = t.index[slot];
     if (found >= 0i32) { pass found; }
     Type:n = Type{ kind: kind, a: a, b: b, c: c,
                    size: size, align: align, name: name };
@@ -365,7 +365,7 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     drop list_push(@t.haschan, 0i32);
     drop list_push(@t.hasborrow, 0i32);
     drop list_push(@t.hasshared, 0i32);
-    t.index.items[slot] = id;
+    t.index[slot] = id;
     pass id;
 };
 
@@ -397,8 +397,8 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
 pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.haspt.count) { !!! BoundsId; }
-    t.haspt.items[id => int64] = 1i32;
-    if (has) { t.haspt.items[id => int64] = 2i32; }
+    t.haspt[id => int64] = 1i32;
+    if (has) { t.haspt[id => int64] = 2i32; }
     pass NIL;
 };
 
@@ -407,57 +407,57 @@ pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
 pub func:tt_set_drops = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.drops.count) { !!! BoundsId; }
-    t.drops.items[id => int64] = 1i32;
-    if (has) { t.drops.items[id => int64] = 2i32; }
+    t.drops[id => int64] = 1i32;
+    if (has) { t.drops[id => int64] = 2i32; }
     pass NIL;
 };
 
 pub func:tt_drops = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.drops.count) { pass 0i32; }
-    pass (t.drops.items[id => int64]);
+    pass (t.drops[id => int64]);
 };
 
 // The channel-containment bit, written once by layout (D-183, 1.2.5).
 pub func:tt_set_haschan = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.haschan.count) { !!! BoundsId; }
-    t.haschan.items[id => int64] = 1i32;
-    if (has) { t.haschan.items[id => int64] = 2i32; }
+    t.haschan[id => int64] = 1i32;
+    if (has) { t.haschan[id => int64] = 2i32; }
     pass NIL;
 };
 pub func:tt_haschan = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.haschan.count) { pass 0i32; }
-    pass (t.haschan.items[id => int64]);
+    pass (t.haschan[id => int64]);
 };
 
 // The borrow-containment bit, written once by layout (D-183, 1.2.5b).
 pub func:tt_set_hasborrow = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.hasborrow.count) { !!! BoundsId; }
-    t.hasborrow.items[id => int64] = 1i32;
-    if (has) { t.hasborrow.items[id => int64] = 2i32; }
+    t.hasborrow[id => int64] = 1i32;
+    if (has) { t.hasborrow[id => int64] = 2i32; }
     pass NIL;
 };
 pub func:tt_hasborrow = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.hasborrow.count) { pass 0i32; }
-    pass (t.hasborrow.items[id => int64]);
+    pass (t.hasborrow[id => int64]);
 };
 
 // The shared-cell-containment bit, written once by layout (D-235, 1.4.7b).
 pub func:tt_set_hasshared = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.hasshared.count) { !!! BoundsId; }
-    t.hasshared.items[id => int64] = 1i32;
-    if (has) { t.hasshared.items[id => int64] = 2i32; }
+    t.hasshared[id => int64] = 1i32;
+    if (has) { t.hasshared[id => int64] = 2i32; }
     pass NIL;
 };
 pub func:tt_hasshared = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.hasshared.count) { pass 0i32; }
-    pass (t.hasshared.items[id => int64]);
+    pass (t.hasshared[id => int64]);
 };
 
 // DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
@@ -566,23 +566,23 @@ pub func:tt_ownedfd = int32(TypeTable->:t) never fails {
 pub func:tt_haspt = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.haspt.count) { pass 0i32; }
-    pass (t.haspt.items[id => int64]);
+    pass (t.haspt[id => int64]);
 };
 
 pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.items.count) { !!! BoundsId; }
-    Type:e = t.items.items[id => int64];
+    Type:e = t.items[id => int64];
     e.size = size;
     e.align = align;
-    t.items.items[id => int64] = e;
+    t.items[id => int64] = e;
     pass NIL;
 };
 
 pub func:tt_get = Type(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { !!! BoundsId; }
     if ((id => int64) >= t.items.count) { !!! BoundsId; }
-    pass t.items.items[id => int64];
+    pass t.items[id => int64];
 };
 
 pub func:tt_count = int32(TypeTable->:t) never fails { pass (raw tt_id(t.items.count)); };
@@ -869,8 +869,8 @@ pub func:dim_unit_text = string(int64:vec) never fails {
 pub func:tt_unit_put = NIL(TypeTable->:t, int32:decl, int64:vec) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.unit_decls.count) {
-        if (t.unit_decls.items[i => int64] == decl) {
-            t.unit_vecs.items[i => int64] = vec;
+        if (t.unit_decls[i => int64] == decl) {
+            t.unit_vecs[i => int64] = vec;
             pass NIL;
         }
         i = i + 1i32;
@@ -892,9 +892,9 @@ pub struct:DimVecAnswer = {
 pub func:tt_unit_get = DimVecAnswer(TypeTable->:t, int32:decl) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.unit_decls.count) {
-        if (t.unit_decls.items[i => int64] == decl) {
+        if (t.unit_decls[i => int64] == decl) {
             DimVecAnswer:a = DimVecAnswer{ found: true,
-                                           vec: t.unit_vecs.items[i => int64] };
+                                           vec: t.unit_vecs[i => int64] };
             pass a;
         }
         i = i + 1i32;
@@ -1125,7 +1125,7 @@ pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
                              int64:size, int32:align) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.items.count) {
-        Type:e = t.items.items[i => int64];
+        Type:e = t.items[i => int64];
         if (e.kind == kind) {
             if (e.a == decl) {
                 if (e.c == arg_count) {
@@ -1182,7 +1182,7 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
                         int32:start, int32:count) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.items.count) {
-        Type:e = t.items.items[i => int64];
+        Type:e = t.items[i => int64];
         if (e.kind == (raw TY_DYN())) {
             if (e.b == count) {
                 bool:same = true;
@@ -1417,7 +1417,7 @@ pub func:inst_count = int32(InstanceTable->:t) never fails { pass (raw instancet
 pub func:inst_at = Instance(InstanceTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsIndex; }
     if ((i => int64) >= t.v.count) { !!! BoundsIndex; }
-    pass (t.v.items[i => int64]);
+    pass (t.v[i => int64]);
 };
 
 // --- generic FUNCTION instantiations (1.0.2b) -------------------------------
@@ -1483,7 +1483,7 @@ pub func:fninst_count = int32(FnInstTable->:t) never fails { pass (raw fninsttab
 pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsIndex; }
     if ((i => int64) >= t.v.count) { !!! BoundsIndex; }
-    pass (t.v.items[i => int64]);
+    pass (t.v[i => int64]);
 };
 
 // Record one generic-function instantiation, deduped by (decl, arguments).
@@ -1496,7 +1496,7 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
                              int32:owner_impl, int32:type_id, Span:at) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.v.count) {
-        FnInstance:e = t.v.items[i => int64];
+        FnInstance:e = t.v[i => int64];
         if (e.decl == decl) {
             if (e.args_count == args_count) {
                 bool:same = true;
@@ -1528,7 +1528,7 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
 pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.v.count) {
-        if ((t.v.items[i => int64]).type_id == type_id) { pass NIL; }
+        if ((t.v[i => int64]).type_id == type_id) { pass NIL; }
         i = i + 1i32;
     }
     Instance:e = Instance{ type_id: type_id, at: at };

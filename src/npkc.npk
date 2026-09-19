@@ -250,7 +250,7 @@ func:obl_write_dir = bool(string:dir, ObTable->:t) never fails {
         string:name = string_concat(raw file_number(i + 1i64), ".smt2");
         Result<cstring>:fc = to_cstring(raw path_join(abs, name));
         if (fc.is_error) { pass false; }
-        Result<NIL>:w = write_file(fc.value, string_from_bytes(t.files.items[i].ptr, t.files.items[i].len));
+        Result<NIL>:w = write_file(fc.value, string_from_bytes(t.files[i].ptr, t.files[i].len));
         if (w.is_error) { pass false; }
     }
     Result<cstring>:ic = to_cstring(raw path_join(abs, "index.txt"));
@@ -264,10 +264,10 @@ func:obl_write_dir = bool(string:dir, ObTable->:t) never fails {
     // THE TIER-2 TWINS (D-281, 1.5.4b step 3): `NNNN.t2.smt2` and
     // `index.t2.txt`, written only where a row qualified.
     for (int64:j in 0i64...t.t2_names.count) {
-        string:tn = string_concat(string_from_bytes(t.t2_names.items[j].ptr, t.t2_names.items[j].len), ".t2.smt2");
+        string:tn = string_concat(string_from_bytes(t.t2_names[j].ptr, t.t2_names[j].len), ".t2.smt2");
         Result<cstring>:tc = to_cstring(raw path_join(abs, tn));
         if (tc.is_error) { pass false; }
-        Result<NIL>:tw = write_file(tc.value, string_from_bytes(t.t2_texts.items[j].ptr, t.t2_texts.items[j].len));
+        Result<NIL>:tw = write_file(tc.value, string_from_bytes(t.t2_texts[j].ptr, t.t2_texts[j].len));
         if (tw.is_error) { pass false; }
     }
     if (t.t2_index.count > 0i64) {

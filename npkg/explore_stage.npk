@@ -166,7 +166,7 @@ func:explored_env = ProcArgs(int64:seed, int64:k, int64:depth, int64:p1, int64:p
 
 // The i-th directed site of a resolved control, or -1 past its count.
 func:site_or_none = int64(Sites->:s, int64:i) never fails {
-    if (i < s.numbers.count) { pass s.numbers.items[i]; }
+    if (i < s.numbers.count) { pass s.numbers[i]; }
     pass (0i64 - 1i64);
 };
 
@@ -299,10 +299,10 @@ pub async func:run_explored = SeedRun(Ctx->:c, string:exe, int64:seed, int64:k, 
 // The seeds a unit runs, in order: `// explore-seed: S` first, then 1..N without them.
 pub func:explore_seeds = List<int64>(Expect->:exp) never fails {
     List<int64>:seeds = raw list_init::<int64>(exp.explore + 2i64);
-    for (int64:i in 0i64...exp.explore_first.count) { drop list_push(@seeds, exp.explore_first.items[i]); }
+    for (int64:i in 0i64...exp.explore_first.count) { drop list_push(@seeds, exp.explore_first[i]); }
     for (int64:s in 1i64..exp.explore) {
         bool:named = false;
-        for (int64:j in 0i64...exp.explore_first.count) { if (exp.explore_first.items[j] == s) { named = true; } }
+        for (int64:j in 0i64...exp.explore_first.count) { if (exp.explore_first[j] == s) { named = true; } }
         if (!named) { drop list_push(@seeds, s); }
     }
     pass seeds;
@@ -392,17 +392,17 @@ pub async func:check_explored_program = XMeasured(Ctx->:c, string:path, string:n
     m.seeds = seeds.count;
     string:first_hash = "";
     for (int64:i in 0i64...seeds.count) {
-        SeedRun:rs = relay await run_explored(c, base, seeds.items[i], k, exp.explore_depth, exp.exit_code, name);
+        SeedRun:rs = relay await run_explored(c, base, seeds[i], k, exp.explore_depth, exp.exit_code, name);
         if (rs.findings.count > 0i64) { m.findings = move(rs.findings); pass m; }
         if (i == 0i64) { first_hash = move(rs.hash); }
     }
     // THE REPLAY BELT (X-7): the first seed again, the same hash
     if (seeds.count > 0i64) {
-        SeedRun:rr = relay await run_explored(c, base, seeds.items[0i64], k, exp.explore_depth, exp.exit_code, name);
+        SeedRun:rr = relay await run_explored(c, base, seeds[0i64], k, exp.explore_depth, exp.exit_code, name);
         if (rr.findings.count > 0i64) { m.findings = move(rr.findings); pass m; }
         if (!(raw text_eq(rr.hash, first_hash))) {
             string:m1 = string_concat(name, ": explore-replay-differs: seed ");
-            m1 = string_concat(m1, int_to_string(seeds.items[0i64]));
+            m1 = string_concat(m1, int_to_string(seeds[0i64]));
             m1 = string_concat(m1, " gave two schedule hashes (");
             m1 = string_concat(m1, first_hash);
             m1 = string_concat(m1, ", ");
@@ -608,14 +608,14 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
         m = string_concat(m, ", directed at ");
         for (int64:d in 0i64...sites.numbers.count) {
             if (d > 0i64) { m = string_concat(m, ","); }
-            m = string_concat(m, int_to_string(sites.numbers.items[d]));
+            m = string_concat(m, int_to_string(sites.numbers[d]));
         }
     }
     if (holds.numbers.count > 0i64) {
         m = string_concat(m, ", held at ");
         for (int64:hd in 0i64...holds.numbers.count) {
             if (hd > 0i64) { m = string_concat(m, ","); }
-            m = string_concat(m, int_to_string(holds.numbers.items[hd]));
+            m = string_concat(m, int_to_string(holds.numbers[hd]));
         }
     }
     m = string_concat(m, "; ");

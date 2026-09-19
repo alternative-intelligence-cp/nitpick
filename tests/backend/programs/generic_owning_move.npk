@@ -13,7 +13,7 @@ error:E9;
 struct:Holder<T> = { List<T>:items; };
 
 func:take<T> = T(Holder<T>->:h, int64:i) never fails {
-    pass (move(h.items.items[i]));
+    pass (move(h.items[i]));
 };
 
 func:put<T> = NIL(Holder<T>->:h, move T:v) never fails {
@@ -22,7 +22,7 @@ func:put<T> = NIL(Holder<T>->:h, move T:v) never fails {
 };
 
 func:last<T> = T(Holder<T>->:h) never fails {
-    pass (move(h.items.items[h.items.count - 1i64]));
+    pass (move(h.items[h.items.count - 1i64]));
 };
 
 func:run = int32() {

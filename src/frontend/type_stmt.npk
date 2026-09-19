@@ -816,7 +816,7 @@ func:check_arms = NIL(ExprTyper->:e, ExprId:sel, bool:consuming, int32:start,
         }
         if (frz) { drop list_push(@e.frozen, froot); }
         drop check_stmt(e, aid);
-        if (frz) { e.frozen.count = e.frozen.count - 1i64; }
+        if (frz) { discard(raw list_pop(@e.frozen)); }
     }
     pass NIL;
 };

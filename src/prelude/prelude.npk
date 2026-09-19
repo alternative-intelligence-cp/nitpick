@@ -2085,9 +2085,9 @@ impl:complex<tfp64>:ToString = { func:to_string = string(complex<tfp64>:self) ne
 // compiler-known type whose operations needed an import was one spelling in
 // the prelude and another at every use.
 pub struct:List<T> = {
-    wild T->:items;
-    int64:count;
-    int64:cap;
+    hidden wild T->:items;
+    sealed int64:count;
+    sealed int64:cap;
 };
 
 // A capacity of zero would make the doubling in `list_reserve` a no-op
@@ -2144,4 +2144,84 @@ pub func:list_push<T> = NIL(List<T>->:l, move T:v) never fails {
     l.items[l.count] = move(v);
     l.count = l.count + 1i64;
     pass NIL;
+};
+
+// --- THE CHECKED OPERATIONS (D-314 §3, 1.5.8b step 1b) -----------------------
+//
+// `l[i]` is the element, bounds-checked against `count` (D-314 §2). These are
+// what programs reached into the fields for, each checked: an index outside
+// the list is `OutOfBounds`, the identity the index guard traps with, so one
+// mistake has one name wherever it is made. An owning element that leaves the
+// list is MOVED out -- to the caller, or into a temporary its statement drops
+// (D-246) -- and a slot past `count` is never read again, so the vacant value
+// a move leaves there (S-26) is never dropped twice. Here the fields are the
+// prelude's own: `items` is `hidden` and `count` and `cap` are `sealed`
+// outside it (D-313, D-314).
+
+// THE LAST ELEMENT, moved out; an empty list traps.
+pub func:list_pop<T> = T(List<T>->:l) never fails {
+    if (l.count <= 0i64) { !!! OutOfBounds; }
+    l.count = l.count - 1i64;
+    pass move(l.items[l.count]);
+};
+
+// KEEP THE FIRST `n`: elements `n…count−1` are dropped, last first. `n`
+// outside `[0, count]` traps -- a truncation that would GROW the list is a
+// mistake, not a no-op.
+pub func:list_truncate<T> = NIL(List<T>->:l, int64:n) never fails {
+    if (n < 0i64) { !!! OutOfBounds; }
+    if (n > l.count) { !!! OutOfBounds; }
+    while (l.count > n) {
+        l.count = l.count - 1i64;
+        discard(move(l.items[l.count]));
+    }
+    pass NIL;
+};
+
+// Every element dropped; the block is kept for reuse.
+pub func:list_clear<T> = NIL(List<T>->:l) never fails {
+    drop list_truncate(l, 0i64);
+    pass NIL;
+};
+
+// `v` AT `i`, the elements from `i` on shifted up one; `i` in `[0, count]`
+// (`count` appends).
+pub func:list_insert<T> = NIL(List<T>->:l, int64:i, move T:v) never fails {
+    if (i < 0i64) { !!! OutOfBounds; }
+    if (i > l.count) { !!! OutOfBounds; }
+    drop list_reserve(l, 1i64);
+    int64:k = l.count;
+    while (k > i) {
+        l.items[k] = move(l.items[k - 1i64]);
+        k = k - 1i64;
+    }
+    l.items[i] = move(v);
+    l.count = l.count + 1i64;
+    pass NIL;
+};
+
+// THE ELEMENT AT `i`, moved out, and the ones after it shifted down one --
+// order preserved.
+pub func:list_remove<T> = T(List<T>->:l, int64:i) never fails {
+    if (i < 0i64) { !!! OutOfBounds; }
+    if (i >= l.count) { !!! OutOfBounds; }
+    T:out = move(l.items[i]);
+    int64:k = i;
+    while ((k + 1i64) < l.count) {
+        l.items[k] = move(l.items[k + 1i64]);
+        k = k + 1i64;
+    }
+    l.count = l.count - 1i64;
+    pass out;
+};
+
+// THE ELEMENT AT `i`, moved out, and the LAST moved into its place -- one move,
+// order not preserved.
+pub func:list_swap_remove<T> = T(List<T>->:l, int64:i) never fails {
+    if (i < 0i64) { !!! OutOfBounds; }
+    if (i >= l.count) { !!! OutOfBounds; }
+    T:out = move(l.items[i]);
+    l.count = l.count - 1i64;
+    if (i < l.count) { l.items[i] = move(l.items[l.count]); }
+    pass out;
 };

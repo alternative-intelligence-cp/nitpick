@@ -13,13 +13,13 @@ struct:Holder<T> = { List<T>:items; };
 
 // expect-error: NITPICK-TYPE-046
 func:take_copy<T> = T(Holder<T>->:h, int64:i) never fails {
-    T:x = h.items.items[i];
+    T:x = h.items[i];
     pass x;
 };
 
 // expect-error: NITPICK-TYPE-046
 func:store_copy<T> = NIL(Holder<T>->:h, T:v) never fails {
-    h.items.items[0i64] = v;
+    h.items[0i64] = v;
     pass NIL;
 };
 

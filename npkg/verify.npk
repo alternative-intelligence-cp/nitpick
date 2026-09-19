@@ -189,11 +189,11 @@ pub func:net_untrusted = HangNet() never fails {
 pub func:net_of_manifest = HangNet(ObManifest->:m) never fails {
     HangNet:n = HangNet{ trusted: true, budget: raw list_init::<string>(8i64) };
     for (int64:i in 0i64...m.rows.count) {
-        if (m.rows.items[i].verdict != (raw OV_BUDGET())) { continue; }
+        if (m.rows[i].verdict != (raw OV_BUDGET())) { continue; }
         drop strlist_push(@n.budget, raw net_key(
-            string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len),
-            raw ok_name(m.rows.items[i].kind),
-            string_from_bytes(m.rows.items[i].symbol.ptr, m.rows.items[i].symbol.len)));
+            string_from_bytes(m.rows[i].hash.ptr, m.rows[i].hash.len),
+            raw ok_name(m.rows[i].kind),
+            string_from_bytes(m.rows[i].symbol.ptr, m.rows[i].symbol.len)));
     }
     pass n;
 };
@@ -214,18 +214,18 @@ pub func:file_budget = int64(List<string>:keys, HangNet->:net) never fails {
 pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows,
                                List<VFile>:files, string:name, List<string>->:fl, HangNet->:net) {
     for (int64:fi in 0i64...files.count) {
-        string:fno = string_from_bytes(files.items[fi].fno.ptr, files.items[fi].fno.len);
-        int64:checks = files.items[fi].checks;
+        string:fno = string_from_bytes(files[fi].fno.ptr, files[fi].fno.len);
+        int64:checks = files[fi].checks;
         int64:enc = 0i64;
         List<string>:keys = raw list_init::<string>(checks + 1i64);
         for (int64:ri in 0i64...rows.count) {
-            if (raw text_eq(string_from_bytes(rows.items[ri].fno.ptr, rows.items[ri].fno.len), fno)) {
-                if (rows.items[ri].encoded) {
+            if (raw text_eq(string_from_bytes((<-rows)[ri].fno.ptr, (<-rows)[ri].fno.len), fno)) {
+                if ((<-rows)[ri].encoded) {
                     enc = enc + 1i64;
                     drop strlist_push(@keys, raw net_key(
-                        string_from_bytes(rows.items[ri].hash.ptr, rows.items[ri].hash.len),
-                        string_from_bytes(rows.items[ri].kind.ptr, rows.items[ri].kind.len),
-                        string_from_bytes(rows.items[ri].symbol.ptr, rows.items[ri].symbol.len)));
+                        string_from_bytes((<-rows)[ri].hash.ptr, (<-rows)[ri].hash.len),
+                        string_from_bytes((<-rows)[ri].kind.ptr, (<-rows)[ri].kind.len),
+                        string_from_bytes((<-rows)[ri].symbol.ptr, (<-rows)[ri].symbol.len)));
                 }
             }
         }
@@ -278,11 +278,11 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
             got = got + 1i64;
             // the next encoded row of this file
             while (next_row < rows.count) {
-                bool:mine = raw text_eq(string_from_bytes(rows.items[next_row].fno.ptr, rows.items[next_row].fno.len), fno);
-                if (mine && rows.items[next_row].encoded) { break; }
+                bool:mine = raw text_eq(string_from_bytes((<-rows)[next_row].fno.ptr, (<-rows)[next_row].fno.len), fno);
+                if (mine && (<-rows)[next_row].encoded) { break; }
                 next_row = next_row + 1i64;
             }
-            if (next_row < rows.count) { rows.items[next_row].verdict = v; next_row = next_row + 1i64; }
+            if (next_row < rows.count) { (<-rows)[next_row].verdict = v; next_row = next_row + 1i64; }
         }
         if (got != checks) {
             string:m3 = string_concat(name, ": z3 answered ");
@@ -332,15 +332,15 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
                 if (kv.is_error) { drop list_push(fl, string_concat(name, ": index.t2.txt: an ordinal is not a number")); pass NIL; }
                 int64:found = 0i64 - 1i64;
                 for (int64:ri in 0i64...rows.count) {
-                    if ((rows.items[ri].k == kv.value) && (raw text_eq(string_from_bytes(rows.items[ri].fno.ptr, rows.items[ri].fno.len), fno2))) { found = ri; }
+                    if (((<-rows)[ri].k == kv.value) && (raw text_eq(string_from_bytes((<-rows)[ri].fno.ptr, (<-rows)[ri].fno.len), fno2))) { found = ri; }
                 }
                 drop list_push(@idx, found);
                 if (found >= 0i64) {
-                    if (rows.items[found].verdict == (raw OV_BUDGET())) { any_budget = true; }
+                    if ((<-rows)[found].verdict == (raw OV_BUDGET())) { any_budget = true; }
                     drop strlist_push(@keys2, raw net_key(
-                        string_from_bytes(rows.items[found].hash.ptr, rows.items[found].hash.len),
-                        string_from_bytes(rows.items[found].kind.ptr, rows.items[found].kind.len),
-                        string_from_bytes(rows.items[found].symbol.ptr, rows.items[found].symbol.len)));
+                        string_from_bytes((<-rows)[found].hash.ptr, (<-rows)[found].hash.len),
+                        string_from_bytes((<-rows)[found].kind.ptr, (<-rows)[found].kind.len),
+                        string_from_bytes((<-rows)[found].symbol.ptr, (<-rows)[found].symbol.len)));
                 }
             }
             if (!any_budget) { continue; }
@@ -369,11 +369,11 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
                     pass NIL;
                 }
                 if (got2 < idx.count) {
-                    int64:ri3 = idx.items[got2];
+                    int64:ri3 = idx[got2];
                     if (ri3 >= 0i64) {
-                        if ((rows.items[ri3].verdict == (raw OV_BUDGET())) && (raw text_eq(a2, "unsat"))) {
-                            rows.items[ri3].verdict = raw OV_DISCHARGED();
-                            rows.items[ri3].tier = "real";
+                        if (((<-rows)[ri3].verdict == (raw OV_BUDGET())) && (raw text_eq(a2, "unsat"))) {
+                            (<-rows)[ri3].verdict = raw OV_DISCHARGED();
+                            (<-rows)[ri3].tier = "real";
                         }
                     }
                 }
@@ -386,9 +386,9 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
         }
     }
     for (int64:ri2 in 0i64...rows.count) {
-        if (!rows.items[ri2].encoded) {
-            if (rows.items[ri2].checker) { rows.items[ri2].verdict = raw OV_CHECKER(); }
-            else { rows.items[ri2].verdict = raw OV_UNENCODED(); }
+        if (!(<-rows)[ri2].encoded) {
+            if ((<-rows)[ri2].checker) { (<-rows)[ri2].verdict = raw OV_CHECKER(); }
+            else { (<-rows)[ri2].verdict = raw OV_UNENCODED(); }
         }
     }
     pass NIL;
@@ -402,16 +402,16 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
     List<string>:keys = raw list_init::<string>(rows.count + 1i64);
     for (int64:i in 0i64...rows.count) {
         // `symbol<TAB>hash<TAB>kind<TAB>verdict<TAB>role` sorts by symbol, then hash
-        string:k = string_concat(string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len), "\t");
-        k = string_concat(k, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
+        string:k = string_concat(string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len), "\t");
+        k = string_concat(k, string_from_bytes(rows[i].hash.ptr, rows[i].hash.len));
         k = string_concat(k, "\t");
-        k = string_concat(k, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
+        k = string_concat(k, string_from_bytes(rows[i].kind.ptr, rows[i].kind.len));
         k = string_concat(k, "\t");
-        k = string_concat(k, raw ov_name(rows.items[i].verdict));
+        k = string_concat(k, raw ov_name(rows[i].verdict));
         k = string_concat(k, "\t");
-        k = string_concat(k, string_from_bytes(rows.items[i].role.ptr, rows.items[i].role.len));
+        k = string_concat(k, string_from_bytes(rows[i].role.ptr, rows[i].role.len));
         k = string_concat(k, "\t");
-        k = string_concat(k, string_from_bytes(rows.items[i].tier.ptr, rows.items[i].tier.len));
+        k = string_concat(k, string_from_bytes(rows[i].tier.ptr, rows[i].tier.len));
         drop list_push(@keys, move(k));
     }
     List<string>:sorted = raw strlist_sorted_unique(keys);
@@ -454,12 +454,12 @@ func:elision_word = string(int32:kind, int32:v, string:role) never fails {
 func:manifest_keys = List<string>(move ObManifest:m) never fails {
     List<string>:keys = raw list_init::<string>(m.rows.count + 1i64);
     for (int64:i in 0i64...m.rows.count) {
-        string:k = string_concat(string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len), " ");
-        k = string_concat(k, raw ok_name(m.rows.items[i].kind));
+        string:k = string_concat(string_from_bytes(m.rows[i].hash.ptr, m.rows[i].hash.len), " ");
+        k = string_concat(k, raw ok_name(m.rows[i].kind));
         k = string_concat(k, " ");
-        k = string_concat(k, raw ov_name(m.rows.items[i].verdict));
+        k = string_concat(k, raw ov_name(m.rows[i].verdict));
         k = string_concat(k, " ");
-        k = string_concat(k, string_from_bytes(m.rows.items[i].symbol.ptr, m.rows.items[i].symbol.len));
+        k = string_concat(k, string_from_bytes(m.rows[i].symbol.ptr, m.rows[i].symbol.len));
         drop list_push(@keys, move(k));
     }
     pass (raw strlist_sorted_unique(keys));
@@ -616,11 +616,11 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     List<bool>:sok = raw list_init::<bool>(8i64);
     int64:disch = 0i64;
     for (int64:i in 0i64...rows.count) {
-        string:sym = string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len);
+        string:sym = string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len);
         if (!(raw row_function_held(defined, sym))) { continue; }
-        bool:d = (rows.items[i].verdict == (raw OV_DISCHARGED()));
-        string:k = string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len);
-        string:role = string_from_bytes(rows.items[i].role.ptr, rows.items[i].role.len);
+        bool:d = (rows[i].verdict == (raw OV_DISCHARGED()));
+        string:k = string_from_bytes(rows[i].kind.ptr, rows[i].kind.len);
+        string:role = string_from_bytes(rows[i].role.ptr, rows[i].role.len);
         // ONE `llvm.assume` PER DISCHARGED ROW OF AN ASSUME KIND (P-19, L-11):
         // a guard-less kind's discharge emits nothing, and a contract's
         // discharge is the guard's removal alone (1.5.3 L-11).
@@ -632,14 +632,14 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
             if ((raw text_eq(k, "limit-subsume")) || (raw text_eq(k, "requires"))) {
                 int64:sslot = 0i64 - 1i64;
                 for (int64:sj in 0i64...ssyms.count) {
-                    if ((raw text_eq(raw strlist_view(ssyms, sj), sym)) && (sgroups.items[sj] == rows.items[i].group)) { sslot = sj; }
+                    if ((raw text_eq(raw strlist_view(ssyms, sj), sym)) && (sgroups[sj] == rows[i].group)) { sslot = sj; }
                 }
                 if (sslot < 0i64) {
                     drop strlist_push(@ssyms, sym);
-                    drop list_push(@sgroups, rows.items[i].group);
+                    drop list_push(@sgroups, rows[i].group);
                     drop list_push(@sok, d);
                 } else {
-                    if (!d) { sok.items[sslot] = false; }
+                    if (!d) { sok[sslot] = false; }
                 }
             }
         }
@@ -649,17 +649,17 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         int64:slot = 0i64 - 1i64;
         for (int64:j in 0i64...gsyms.count) {
             if ((raw text_eq(raw strlist_view(gsyms, j), sym)) && (raw text_eq(raw strlist_view(gcodes, j), code))
-                && (ggroups.items[j] == rows.items[i].group)) { slot = j; }
+                && (ggroups[j] == rows[i].group)) { slot = j; }
         }
         if (slot < 0i64) {
             drop strlist_push(@gsyms, sym);
             drop strlist_push(@gcodes, code);
-            drop list_push(@ggroups, rows.items[i].group);
+            drop list_push(@ggroups, rows[i].group);
             drop list_push(@gret, !d);
-            drop list_push(@gtraps, rows.items[i].traps);
+            drop list_push(@gtraps, rows[i].traps);
         } else {
-            if (!d) { gret.items[slot] = true; }
-            if (rows.items[i].traps > gtraps.items[slot]) { gtraps.items[slot] = rows.items[i].traps; }
+            if (!d) { gret[slot] = true; }
+            if (rows[i].traps > gtraps[slot]) { gtraps[slot] = rows[i].traps; }
         }
     }
     int64:assumes = raw count_of(ir, "call void @llvm.assume(");
@@ -676,7 +676,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         string:code2 = raw strlist_view(codes, ci);
         int64:left = 0i64;
         for (int64:gj in 0i64...gsyms.count) {
-            if (gret.items[gj] && (raw text_eq(raw strlist_view(gcodes, gj), code2))) { left = left + gtraps.items[gj]; }
+            if (gret[gj] && (raw text_eq(raw strlist_view(gcodes, gj), code2))) { left = left + gtraps[gj]; }
         }
         string:needle = string_concat("@npk_trap(i32 ", code2);
         needle = string_concat(needle, ")");
@@ -724,7 +724,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         drop list_push(@fl, move(m4));
     }
     int64:subs = 0i64;
-    for (int64:si in 0i64...sok.count) { if (sok.items[si]) { subs = subs + 1i64; } }
+    for (int64:si in 0i64...sok.count) { if (sok[si]) { subs = subs + 1i64; } }
     if (bcalls != subs) {
         string:m5 = string_concat(name, ": the verified IR holds ");
         m5 = string_concat(m5, int_to_string(bcalls));
@@ -746,7 +746,7 @@ pub async func:compile_args = Run(Ctx->:c, string:compiler, List<string>:args, D
 func:verdict_counts = string(List<VRow>:rows) never fails {
     int64:d = 0i64; int64:o = 0i64; int64:b = 0i64; int64:u = 0i64; int64:ck = 0i64;
     for (int64:i in 0i64...rows.count) {
-        int32:v = rows.items[i].verdict;
+        int32:v = rows[i].verdict;
         if (v == (raw OV_DISCHARGED())) { d = d + 1i64; }
         if (v == (raw OV_OPEN()))       { o = o + 1i64; }
         if (v == (raw OV_BUDGET()))     { b = b + 1i64; }
@@ -771,7 +771,7 @@ func:verdict_counts = string(List<VRow>:rows) never fails {
 func:verdict_counts_sum = bool(List<VRow>:rows) never fails {
     int64:counted = 0i64;
     for (int64:i in 0i64...rows.count) {
-        int32:v = rows.items[i].verdict;
+        int32:v = rows[i].verdict;
         if ((v == (raw OV_DISCHARGED())) || (v == (raw OV_OPEN())) || (v == (raw OV_BUDGET())) || (v == (raw OV_UNENCODED())) || (v == (raw OV_CHECKER()))) { counted = counted + 1i64; }
     }
     pass (counted == rows.count);
@@ -993,9 +993,9 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
 pub func:floor_verdict_failures = List<string>(List<VRow>:rows) never fails {
     List<string>:fl = raw list_init::<string>(2i64);
     for (int64:i in 0i64...rows.count) {
-        string:site = string_from_bytes(rows.items[i].site.ptr, rows.items[i].site.len);
-        string:sym = string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len);
-        if (rows.items[i].verdict == (raw OV_OPEN())) {
+        string:site = string_from_bytes(rows[i].site.ptr, rows[i].site.len);
+        string:sym = string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len);
+        if (rows[i].verdict == (raw OV_OPEN())) {
             string:m = string_concat("floor: ", sym);
             m = string_concat(m, ": ");
             m = string_concat(m, site);
@@ -1003,7 +1003,7 @@ pub func:floor_verdict_failures = List<string>(List<VRow>:rows) never fails {
             drop strlist_push(@fl, m);
             continue;
         }
-        if ((raw text_starts_with(site, "spec:unroll-exact")) && (rows.items[i].verdict != (raw OV_DISCHARGED()))) {
+        if ((raw text_starts_with(site, "spec:unroll-exact")) && (rows[i].verdict != (raw OV_DISCHARGED()))) {
             string:m2 = string_concat("floor: ", sym);
             m2 = string_concat(m2, ": ");
             m2 = string_concat(m2, site);
@@ -1249,8 +1249,8 @@ func:file_block = string(string:text, int64:k) never fails {
 async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, List<VFile>:files, string:out_path) {
     string:report = "";
     for (int64:i in 0i64...rows.count) {
-        if (!rows.items[i].encoded) { continue; }
-        string:fno = string_from_bytes(rows.items[i].fno.ptr, rows.items[i].fno.len);
+        if (!rows[i].encoded) { continue; }
+        string:fno = string_from_bytes(rows[i].fno.ptr, rows[i].fno.len);
         Result<cstring>:fc = to_cstring(raw path_join(dir, string_concat(fno, ".smt2")));
         if (fc.is_error) { fail fc.err; }
         Result<string>:ft = read_file(fc.value);
@@ -1258,19 +1258,19 @@ async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, Li
         // the k-th encoded row of the file is the k-th check
         int64:kth = 0i64;
         for (int64:j in 0i64...(i + 1i64)) {
-            if (raw text_eq(string_from_bytes(rows.items[j].fno.ptr, rows.items[j].fno.len), fno)) {
-                if (rows.items[j].encoded) { kth = kth + 1i64; }
+            if (raw text_eq(string_from_bytes(rows[j].fno.ptr, rows[j].fno.len), fno)) {
+                if (rows[j].encoded) { kth = kth + 1i64; }
             }
         }
         // A ROW TIER 2 DECIDED (D-281): tier 1 answered `unknown` there, so
         // its core is the twin's business; the report says which tier decided.
-        if (raw text_eq(string_from_bytes(rows.items[i].tier.ptr, rows.items[i].tier.len), "real")) {
+        if (raw text_eq(string_from_bytes(rows[i].tier.ptr, rows[i].tier.len), "real")) {
             report = string_concat(report, "== ");
-            report = string_concat(report, string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len));
+            report = string_concat(report, string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len));
             report = string_concat(report, " ");
-            report = string_concat(report, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
+            report = string_concat(report, string_from_bytes(rows[i].kind.ptr, rows[i].kind.len));
             report = string_concat(report, " discharged real ");
-            report = string_concat(report, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
+            report = string_concat(report, string_from_bytes(rows[i].hash.ptr, rows[i].hash.len));
             report = string_concat(report, "\n   decided at tier 2 (the Real-interval twin, `");
             report = string_concat(report, fno);
             report = string_concat(report, ".t2.smt2`); tier 1 answered unknown under the profile\n");
@@ -1280,7 +1280,7 @@ async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, Li
         q = string_concat(q, raw file_base(ft.value));
         q = string_concat(q, "(push)\n");
         q = string_concat(q, raw file_block(ft.value, kth));
-        int32:v = rows.items[i].verdict;
+        int32:v = rows[i].verdict;
         if (v == (raw OV_OPEN()))       { q = string_concat(q, "(get-model)\n"); }
         if (v == (raw OV_BUDGET()))     { q = string_concat(q, "(get-info :reason-unknown)\n"); }
         if (v == (raw OV_DISCHARGED())) { q = string_concat(q, "(get-unsat-core)\n"); }
@@ -1297,15 +1297,15 @@ async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, Li
         if (r.is_error) { fail r.err; }
         Run:run = move(r.value);
         report = string_concat(report, "== ");
-        report = string_concat(report, string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len));
+        report = string_concat(report, string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len));
         report = string_concat(report, " ");
-        report = string_concat(report, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
+        report = string_concat(report, string_from_bytes(rows[i].kind.ptr, rows[i].kind.len));
         report = string_concat(report, " ");
         report = string_concat(report, raw ov_name(v));
         report = string_concat(report, " ");
-        report = string_concat(report, string_from_bytes(rows.items[i].tier.ptr, rows.items[i].tier.len));
+        report = string_concat(report, string_from_bytes(rows[i].tier.ptr, rows[i].tier.len));
         report = string_concat(report, " ");
-        report = string_concat(report, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
+        report = string_concat(report, string_from_bytes(rows[i].hash.ptr, rows[i].hash.len));
         report = string_concat(report, "\n");
         if (run.timed_out) { report = string_concat(report, "(the explain query exceeded its wall-clock net)\n"); }
         else { report = string_concat(report, run.x.out); }

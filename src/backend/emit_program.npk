@@ -1336,7 +1336,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // THE VECTOR INTRINSICS THE BODIES USED (D-284, 1.5.4e step 0), noted by
     // the vector emitter and declared here, after them.
     for (int64:vdi in 0i64...c.vec_decls.count) {
-        drop irw_raw(w, string_concat(c.vec_decls.items[vdi], ""));
+        drop irw_raw(w, string_concat(c.vec_decls[vdi], ""));
     }
     // INSTANCES THE BODIES CREATED (1.0.7): a `List<int64>` that exists only
     // because `list_make<int64>`'s body built one. Textual IR resolves a named
@@ -2194,7 +2194,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     // the byte constants first
     int32:i = 0i32;
     while (i < n) {
-        string->:sp2 = @w.site_paths.items[i => int64];   // no claim: `w` is handed on while it lives (D-286)
+        string->:sp2 = @w.site_paths[i => int64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, "@npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, " = internal constant [");
@@ -2217,7 +2217,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     i = 0i32;
     while (i < n) {
         drop irw_write(w, ", i32 ");
-        drop irw_write(w, int_to_string(w.site_lines.items[i => int64] => int64));
+        drop irw_write(w, int_to_string(w.site_lines[i => int64] => int64));
         i = i + 1i32;
     }
     drop irw_write(w, "]");
@@ -2228,7 +2228,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_write(w, " x { ptr, i64 }] [{ ptr, i64 } { ptr null, i64 0 }");
     i = 0i32;
     while (i < n) {
-        string->:sp3 = @w.site_paths.items[i => int64];   // no claim: `w` is handed on while it lives (D-286)
+        string->:sp3 = @w.site_paths[i => int64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, ", { ptr, i64 } { ptr @npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, ", i64 ");

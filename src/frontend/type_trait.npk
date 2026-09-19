@@ -86,7 +86,7 @@ pub func:impl_count = int32(ImplTable->:t) never fails { pass (raw impltable_id(
 pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsImpl; }
     if ((i => int64) >= t.v.count) { !!! BoundsImpl; }
-    pass (t.v.items[i => int64]);
+    pass (t.v[i => int64]);
 };
 
 func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
@@ -502,7 +502,7 @@ pub func:bound_count = int32(BoundTable->:t) never fails { pass (raw boundtable_
 pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsBound; }
     if ((i => int64) >= t.v.count) { !!! BoundsBound; }
-    pass (t.v.items[i => int64]);
+    pass (t.v[i => int64]);
 };
 
 func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,

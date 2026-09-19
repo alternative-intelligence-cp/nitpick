@@ -148,13 +148,13 @@ func:key_of_ptr = string(FloorText->:ft, FFn->:f, string:ptr) never fails {
     }
     int64:gi = raw floor_gep_index(f, ptr);
     if (gi < 0i64) { pass ""; }
-    if (f.geps.items[gi].global.len > 0i64) {
-        if (raw floor_is_mutable(ft, raw strlist_view_of(f.geps.items[gi].global))) {
-            pass (raw text_copy(raw strlist_view_of(f.geps.items[gi].global)));
+    if (f.geps[gi].global.len > 0i64) {
+        if (raw floor_is_mutable(ft, raw strlist_view_of(f.geps[gi].global))) {
+            pass (raw text_copy(raw strlist_view_of(f.geps[gi].global)));
         }
         pass "";
     }
-    pass (raw wkey_of(raw strlist_view_of(f.geps.items[gi].ty), f.geps.items[gi].slot, ""));
+    pass (raw wkey_of(raw strlist_view_of(f.geps[gi].ty), f.geps[gi].slot, ""));
 };
 
 // The ordering word in an atomic access's tail, or "plain".
@@ -221,10 +221,10 @@ func:is_lock_fn = bool(string:callee) never fails {
 
 pub func:floor_accesses = List<FAccess>(FloorText->:ft, int64:fi) never fails {
     List<FAccess>:out = raw list_init::<FAccess>(16i64);
-    FFn->:f = @ft.fns.items[fi];
+    FFn->:f = @ft.fns[fi];
     for (int64:b in 0i64...f.blocks.count) {
-        for (int64:i in 0i64...f.blocks.items[b].lines.count) {
-            string:line = raw strlist_view(f.blocks.items[b].lines, i);
+        for (int64:i in 0i64...f.blocks[b].lines.count) {
+            string:line = raw strlist_view(f.blocks[b].lines, i);
             bool:is_load = false;
             bool:is_store = raw text_starts_with(line, "store ");
             int64:eq = raw text_index_of(line, " = load ");
@@ -305,9 +305,9 @@ pub func:floor_accesses = List<FAccess>(FloorText->:ft, int64:fi) never fails {
 pub func:floor_calls = List<FCall>(FFn->:f) never fails {
     List<FCall>:out = raw list_init::<FCall>(8i64);
     for (int64:b in 0i64...f.blocks.count) {
-        for (int64:i in 0i64...f.blocks.items[b].lines.count) {
+        for (int64:i in 0i64...f.blocks[b].lines.count) {
             string:args = "";
-            string:callee = raw call_of(raw strlist_view(f.blocks.items[b].lines, i), @args);
+            string:callee = raw call_of(raw strlist_view(f.blocks[b].lines, i), @args);
             if (callee.len == 0i64) { continue; }
             FCall:c = FCall{ block: b, line: i, callee: move(callee) };
             drop list_push(@out, move(c));
@@ -321,9 +321,9 @@ pub func:floor_calls = List<FCall>(FFn->:f) never fails {
 pub func:floor_lock_calls = List<FLockCall>(FFn->:f) never fails {
     List<FLockCall>:out = raw list_init::<FLockCall>(4i64);
     for (int64:b in 0i64...f.blocks.count) {
-        for (int64:i in 0i64...f.blocks.items[b].lines.count) {
+        for (int64:i in 0i64...f.blocks[b].lines.count) {
             string:args = "";
-            string:callee = raw call_of(raw strlist_view(f.blocks.items[b].lines, i), @args);
+            string:callee = raw call_of(raw strlist_view(f.blocks[b].lines, i), @args);
             if (callee.len == 0i64) { continue; }
             if (!(raw is_lock_fn(callee))) { continue; }
             bool:is_lock = ((raw text_eq(callee, "@npk_mx_lock")) || (raw text_eq(callee, "@npk_ch_lock")));
@@ -364,19 +364,19 @@ pub func:floor_dominators = List<int32>(FFn->:f) never fails {
     List<int64>:pred_of = raw list_init::<int64>(n * n + 1i64);   // pred_of[b*n + p] == 1 iff p -> b
     for (int64:i2 in 0i64...(n * n)) { drop list_push(@pred_of, 0i64); }
     for (int64:b in 0i64...n) {
-        for (int64:s in 0i64...f.blocks.items[b].succs.count) {
-            int64:t = f.blocks.items[b].succs.items[s];
-            pred_of.items[t * n + b] = 1i64;
+        for (int64:s in 0i64...f.blocks[b].succs.count) {
+            int64:t = f.blocks[b].succs[s];
+            pred_of[t * n + b] = 1i64;
         }
     }
     // the entry dominates only itself
-    for (int64:d in 0i64...n) { if (d != 0i64) { dom.items[d] = 0i32; } }
+    for (int64:d in 0i64...n) { if (d != 0i64) { dom[d] = 0i32; } }
     bool:changed = true;
     while (changed) {
         changed = false;
         for (int64:b2 in 1i64...n) {
             bool:any_pred = false;
-            for (int64:p in 0i64...n) { if (pred_of.items[b2 * n + p] == 1i64) { any_pred = true; } }
+            for (int64:p in 0i64...n) { if (pred_of[b2 * n + p] == 1i64) { any_pred = true; } }
             for (int64:d2 in 0i64...n) {
                 int32:v = 0i32;
                 if (d2 == b2) { v = 1i32; }
@@ -384,14 +384,14 @@ pub func:floor_dominators = List<int32>(FFn->:f) never fails {
                     if (any_pred) {
                         v = 1i32;
                         for (int64:p2 in 0i64...n) {
-                            if (pred_of.items[b2 * n + p2] == 1i64) {
-                                if (dom.items[p2 * n + d2] == 0i32) { v = 0i32; }
+                            if (pred_of[b2 * n + p2] == 1i64) {
+                                if (dom[p2 * n + d2] == 0i32) { v = 0i32; }
                             }
                         }
                     }
                 }
-                if (dom.items[b2 * n + d2] != v) {
-                    dom.items[b2 * n + d2] = v;
+                if (dom[b2 * n + d2] != v) {
+                    dom[b2 * n + d2] = v;
                     changed = true;
                 }
             }
@@ -416,21 +416,21 @@ pub func:floor_held_at = bool(FFn->:f, List<int32>->:dom, List<FLockCall>->:lock
     int64:n = f.blocks.count;
     bool:dominated = false;
     for (int64:k in 0i64...locks.count) {
-        if (!locks.items[k].is_lock) { continue; }
-        if (!(raw lock_matches(lock, raw strlist_view_of(locks.items[k].lock)))) { continue; }
-        int64:lb = locks.items[k].block;
-        if ((lb == bi) && (locks.items[k].line < li)) { dominated = true; }
-        if ((lb != bi) && (dom.items[bi * n + lb] == 1i32)) { dominated = true; }
+        if (!(<-locks)[k].is_lock) { continue; }
+        if (!(raw lock_matches(lock, raw strlist_view_of((<-locks)[k].lock)))) { continue; }
+        int64:lb = (<-locks)[k].block;
+        if ((lb == bi) && ((<-locks)[k].line < li)) { dominated = true; }
+        if ((lb != bi) && ((<-dom)[bi * n + lb] == 1i32)) { dominated = true; }
     }
     if (!dominated) { pass false; }
     List<int32>:has_unlock = raw list_init::<int32>(n + 1i64);
     for (int64:i in 0i64...n) { drop list_push(@has_unlock, 0i32); }
     bool:own_after = false;
     for (int64:k2 in 0i64...locks.count) {
-        if (locks.items[k2].is_lock) { continue; }
-        if (!(raw lock_matches(lock, raw strlist_view_of(locks.items[k2].lock)))) { continue; }
-        has_unlock.items[locks.items[k2].block] = 1i32;
-        if ((locks.items[k2].block == bi) && (locks.items[k2].line > li)) { own_after = true; }
+        if ((<-locks)[k2].is_lock) { continue; }
+        if (!(raw lock_matches(lock, raw strlist_view_of((<-locks)[k2].lock)))) { continue; }
+        has_unlock[(<-locks)[k2].block] = 1i32;
+        if (((<-locks)[k2].block == bi) && ((<-locks)[k2].line > li)) { own_after = true; }
     }
     List<int32>:covered = raw list_init::<int32>(n + 1i64);
     for (int64:i2 in 0i64...n) { drop list_push(@covered, 1i32); }
@@ -439,30 +439,30 @@ pub func:floor_held_at = bool(FFn->:f, List<int32>->:dom, List<FLockCall>->:lock
         changed = false;
         for (int64:b in 0i64...n) {
             int32:v = 0i32;
-            int64:ln = f.blocks.items[b].lines.count;
+            int64:ln = f.blocks[b].lines.count;
             string:last = "";
-            if (ln > 0i64) { last = raw strlist_view(f.blocks.items[b].lines, ln - 1i64); }
-            if ((has_unlock.items[b] == 1i32) || (raw text_starts_with(last, "unreachable"))) { v = 1i32; }
+            if (ln > 0i64) { last = raw strlist_view(f.blocks[b].lines, ln - 1i64); }
+            if ((has_unlock[b] == 1i32) || (raw text_starts_with(last, "unreachable"))) { v = 1i32; }
             else {
-                if (f.blocks.items[b].succs.count == 0i64) { v = 0i32; }
+                if (f.blocks[b].succs.count == 0i64) { v = 0i32; }
                 else {
                     v = 1i32;
-                    for (int64:s in 0i64...f.blocks.items[b].succs.count) {
-                        if (covered.items[f.blocks.items[b].succs.items[s]] == 0i32) { v = 0i32; }
+                    for (int64:s in 0i64...f.blocks[b].succs.count) {
+                        if (covered[f.blocks[b].succs[s]] == 0i32) { v = 0i32; }
                     }
                 }
             }
-            if (covered.items[b] != v) { covered.items[b] = v; changed = true; }
+            if (covered[b] != v) { covered[b] = v; changed = true; }
         }
     }
     if (own_after) { pass true; }
-    int64:oln = f.blocks.items[bi].lines.count;
+    int64:oln = f.blocks[bi].lines.count;
     string:olast = "";
-    if (oln > 0i64) { olast = raw strlist_view(f.blocks.items[bi].lines, oln - 1i64); }
+    if (oln > 0i64) { olast = raw strlist_view(f.blocks[bi].lines, oln - 1i64); }
     if (raw text_eq(olast, "unreachable")) { pass true; }
-    if (f.blocks.items[bi].succs.count == 0i64) { pass false; }
-    for (int64:s2 in 0i64...f.blocks.items[bi].succs.count) {
-        if (covered.items[f.blocks.items[bi].succs.items[s2]] == 0i32) { pass false; }
+    if (f.blocks[bi].succs.count == 0i64) { pass false; }
+    for (int64:s2 in 0i64...f.blocks[bi].succs.count) {
+        if (covered[f.blocks[bi].succs[s2]] == 0i32) { pass false; }
     }
     pass true;
 };
@@ -534,14 +534,14 @@ pub func:floor_read_shared = Shared(string:spec_text) never fails {
         } else {
             pass (raw shared_refuse(string_concat("runtime/npkrt.spec: unknown (shared ...) entry `", string_concat(head, "`"))));
         } } } }
-        e = sx.nodes.items[e].next;
+        e = sx.nodes[e].next;
     }
     pass sh;
 };
 
 func:word_index = int64(Shared->:sh, string:wkey) never fails {
     for (int64:i in 0i64...sh.words.count) {
-        if (raw text_eq(raw strlist_view_of(sh.words.items[i].wkey), wkey)) { pass i; }
+        if (raw text_eq(raw strlist_view_of(sh.words[i].wkey), wkey)) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -561,7 +561,7 @@ func:is_exempt = bool(Shared->:sh, string:fn, string:lock) never fails {
 };
 
 func:site_text = string(FFn->:f, int64:bi, int64:li) never fails {
-    string:s = string_concat("block `", raw strlist_view_of(f.blocks.items[bi].label));
+    string:s = string_concat("block `", raw strlist_view_of(f.blocks[bi].label));
     s = string_concat(s, "` line ");
     pass (string_concat(s, int_to_string(li + 1i64)));
 };
@@ -579,15 +579,15 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
     List<string>:reported = raw list_init::<string>(8i64);
     List<string>:seen = raw list_init::<string>(64i64);
     for (int64:fi in 0i64...ft.fns.count) {
-        FFn->:f = @ft.fns.items[fi];
+        FFn->:f = @ft.fns[fi];
         string:fname = raw strlist_view_of(f.name);
         List<FAccess>:acc = raw floor_accesses(@ft, fi);
         List<int32>:dom = raw floor_dominators(f);
         List<FLockCall>:lk = raw floor_lock_calls(f);
         for (int64:a in 0i64...acc.count) {
-            string:wkey = raw strlist_view_of(acc.items[a].wkey);
-            string:kind = raw strlist_view_of(acc.items[a].kind);
-            string:ordr = raw strlist_view_of(acc.items[a].ordr);
+            string:wkey = raw strlist_view_of(acc[a].wkey);
+            string:kind = raw strlist_view_of(acc[a].kind);
+            string:ordr = raw strlist_view_of(acc[a].ordr);
             if (!(raw strlist_contains(seen, wkey))) { drop strlist_push(@seen, wkey); }
             int64:wi = raw word_index(@sh, wkey);
             if (wi < 0i64) {
@@ -604,8 +604,8 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
                 }
                 continue;
             }
-            string:cls = raw strlist_view_of(sh.words.items[wi].cls);
-            string:arg = raw strlist_view_of(sh.words.items[wi].arg);
+            string:cls = raw strlist_view_of(sh.words[wi].cls);
+            string:arg = raw strlist_view_of(sh.words[wi].arg);
             if (raw text_eq(cls, "atomic")) {
                 if (raw text_eq(kind, "call-arg")) {
                     string:m1 = string_concat(name, ": shared-atomic-by-pointer: `");
@@ -664,7 +664,7 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
                 }
                 if (raw is_under(@sh, fname, arg)) { continue; }
                 if (raw is_exempt(@sh, fname, arg)) { continue; }
-                if (!(raw floor_held_at(f, @dom, @lk, acc.items[a].block, acc.items[a].line, arg))) {
+                if (!(raw floor_held_at(f, @dom, @lk, acc[a].block, acc[a].line, arg))) {
                     string:m5 = string_concat(name, ": shared-outside-lock: `");
                     m5 = string_concat(m5, raw wkey_text(wkey));
                     m5 = string_concat(m5, "` is classified under ");
@@ -674,7 +674,7 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
                     m5 = string_concat(m5, "` ");
                     m5 = string_concat(m5, kind);
                     m5 = string_concat(m5, "s it at ");
-                    m5 = string_concat(m5, raw site_text(f, acc.items[a].block, acc.items[a].line));
+                    m5 = string_concat(m5, raw site_text(f, acc[a].block, acc[a].line));
                     m5 = string_concat(m5, " where no lock(");
                     m5 = string_concat(m5, arg);
                     m5 = string_concat(m5, ") dominates the access and an unlock(");
@@ -701,13 +701,13 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
         // every call of an under-lock function is made with its lock held
         List<FCall>:calls = raw floor_calls(f);
         for (int64:c in 0i64...calls.count) {
-            string:callee = raw strlist_view_of(calls.items[c].callee);
+            string:callee = raw strlist_view_of(calls[c].callee);
             for (int64:u in 0i64...sh.under_fn.count) {
                 if (!(raw text_eq(raw strlist_view(sh.under_fn, u), callee))) { continue; }
                 string:lock = raw strlist_view(sh.under_lock, u);
                 if (raw is_under(@sh, fname, lock)) { continue; }
                 if (raw is_exempt(@sh, fname, lock)) { continue; }
-                if (!(raw floor_held_at(f, @dom, @lk, calls.items[c].block, calls.items[c].line, lock))) {
+                if (!(raw floor_held_at(f, @dom, @lk, calls[c].block, calls[c].line, lock))) {
                     string:m7 = string_concat(name, ": shared-call-outside-lock: `");
                     m7 = string_concat(m7, callee);
                     m7 = string_concat(m7, "` is (under-lock ");
@@ -715,7 +715,7 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
                     m7 = string_concat(m7, ") and `");
                     m7 = string_concat(m7, fname);
                     m7 = string_concat(m7, "` calls it at ");
-                    m7 = string_concat(m7, raw site_text(f, calls.items[c].block, calls.items[c].line));
+                    m7 = string_concat(m7, raw site_text(f, calls[c].block, calls[c].line));
                     m7 = string_concat(m7, " without holding ");
                     m7 = string_concat(m7, lock);
                     drop list_push(@fl, move(m7));
@@ -725,13 +725,13 @@ pub func:floor_shared_check = List<string>(string:floor_text, string:spec_text, 
     }
     // a classified word nobody accesses, or a named function the floor lacks, is stale
     for (int64:w in 0i64...sh.words.count) {
-        string:wk = raw strlist_view_of(sh.words.items[w].wkey);
-        if (raw text_eq(raw strlist_view_of(sh.words.items[w].cls), "mutex")) { continue; }
+        string:wk = raw strlist_view_of(sh.words[w].wkey);
+        if (raw text_eq(raw strlist_view_of(sh.words[w].cls), "mutex")) { continue; }
         if (!(raw strlist_contains(seen, wk))) {
             string:m8 = string_concat(name, ": shared-stale: `");
             m8 = string_concat(m8, raw wkey_text(wk));
             m8 = string_concat(m8, "` is classified `");
-            m8 = string_concat(m8, raw strlist_view_of(sh.words.items[w].cls));
+            m8 = string_concat(m8, raw strlist_view_of(sh.words[w].cls));
             m8 = string_concat(m8, "` and no function accesses it -- remove the entry or the belt is describing a word the floor no longer has");
             drop list_push(@fl, move(m8));
         }

@@ -1554,9 +1554,9 @@ through a control that plants it, or it claims nothing.
 
 **DEF-72 — FIXED at 1.5.8b step 1 (D-313; 2026-09-19): A COMPILER-KNOWN CONTAINER'S HEADER IS WRITABLE BY ANY PROGRAM.** (found 2026-09-19 by an Explore survey for D-308's length facts, CONFIRMED by `nitpick-compiler_s11`.) `.ptr`, `.len` and `.cap` of `string`, `cstring`, a slice and `buffer` are typed as assignable places (`type_members.npk`), accepted by `require_place`, and stored through a GEP by the emitter. Probe: `string:s = string_concat("abc", "def"); s.len = 4096i64;` then `string_slice(s, 4000i64, 4096i64)` SUCCEEDS, reading 96 bytes past a 6-byte block. No test exercised it. `string_from_bytes` (BUILTIN_REFERENCE says it "traps on misuse") checks nothing, and `#wild_slice`'s "legal only in `wild` context" is enforced nowhere (both are D-308 step 6's length checks).
 
-**DEF-73 — OPEN, scheduled as 1.5.8b step 1b (D-313): THE PRELUDE `List`'s FIELDS ARE WRITABLE BY ANY PROGRAM, AND NOTHING TIES THEM TO THE BLOCK.** (found and CONFIRMED the same day.) Probe: two one-element lists; `a.cap = 100i64`; forty `list_push(@a, …)` calls run past `a`'s block without reallocating and overwrite `b`'s element (exit 3). The generated drop walks `count` elements, so `l.count = l.cap + k` is a drop over memory the list does not own. `src/` writes `.count` directly about 150 times by text (truncations and pops of its own lists), and those move to checked prelude operations.
+**DEF-73 — FIXED at 1.5.8b step 1b (D-313; 2026-09-19): THE PRELUDE `List`'s FIELDS ARE WRITABLE BY ANY PROGRAM, AND NOTHING TIES THEM TO THE BLOCK.** (found and CONFIRMED the same day.) Probe: two one-element lists; `a.cap = 100i64`; forty `list_push(@a, …)` calls run past `a`'s block without reallocating and overwrite `b`'s element (exit 3). The generated drop walks `count` elements, so `l.count = l.cap + k` is a drop over memory the list does not own. `src/` writes `.count` directly about 150 times by text (truncations and pops of its own lists), and those move to checked prelude operations.
 
-**DEF-74 — OPEN, scheduled as 1.5.8b step 1b (D-314): `List` ELEMENT ACCESS IS UNCHECKED RAW-POINTER INDEXING, IN ANY MODULE.** (found 2026-09-19 by `nitpick-compiler_s11`, designing the prelude side of D-313, and confirmed.) The prelude offers `list_init`, `list_reserve` and `list_push` only, so every element access is `l.items[i]`, a `wild T->` index with no bounds check and no opt-out spelled where it is written. Probe: two one-element lists, then `a.items[1..5] = …`, overwrites `b`'s element (exit 3). Sites: `src/` 665, `npkg/` 1,011, `tests/` 22. The library workbench's 103 are all inside their declaring modules.
+**DEF-74 — FIXED at 1.5.8b step 1b (D-314; 2026-09-19): `List` ELEMENT ACCESS IS UNCHECKED RAW-POINTER INDEXING, IN ANY MODULE.** (found 2026-09-19 by `nitpick-compiler_s11`, designing the prelude side of D-313, and confirmed.) The prelude offers `list_init`, `list_reserve` and `list_push` only, so every element access is `l.items[i]`, a `wild T->` index with no bounds check and no opt-out spelled where it is written. Probe: two one-element lists, then `a.items[1..5] = …`, overwrites `b`'s element (exit 3). Sites: `src/` 665, `npkg/` 1,011, `tests/` 22. The library workbench's 103 are all inside their declaring modules.
 
 **DEF-72's fix** (1.5.8b step 1): every write form over `ptr`, `len` and `cap`
 of a string, cstring, slice and buffer is `NITPICK-TYPE-079` in every module.
@@ -1587,6 +1587,33 @@ confirmed by a probe.)
 - The identity word is SEALED BY DEFINITION now, beside the containers'
   headers, and refused at every write form as `NITPICK-TYPE-079`.
 - The direct assignment moved from TYPE-007, so `stream_rules.npk` names 079.
+
+**DEF-73's and DEF-74's fix** (1.5.8b step 1b):
+- The prelude's `List` is `{ hidden wild T->:items; sealed int64:count;
+  sealed int64:cap; }`. Outside the prelude, `items` is not touched (TYPE-080)
+  and `count`/`cap` are not written (TYPE-079).
+- Every element access is `l[i]`, bounds-checked against `count`.
+- Every change goes through a checked operation: `list_pop`, `list_truncate`,
+  `list_clear`, `list_insert`, `list_remove`, `list_swap_remove`, beside
+  `list_push`/`list_reserve`.
+- Both probes are cases: `tests/types/rejection/list_fields.npk` refuses them,
+  and `tests/backend/programs/list_index_oob.npk` is DEF-74's probe written
+  `a[i]`, trapping `OutOfBounds` at the first index past the end (it exited 3,
+  another list overwritten).
+
+**DEF-79 — FIXED at 1.5.8b step 1b: `ast_init` STORED THE NONE DECLARATION PAST
+`count`, SO THE FIRST REAL DECLARATION SAT AT THE "NONE" ID.** (found 2026-09-19
+by `l[i]`'s bounds check, on the first build of the swept compiler.)
+- Every other AST array pushes its NONE node at index 0. `decls` stored it into
+  slot 0 of an EMPTY list, `ast.decls.items[0i64] = declNone`, and left
+  `count` at 0.
+- The first real declaration was then pushed over it, at DeclId 0, which is the
+  id `decl_is_none` reads as absent.
+- Latent since 1.4.7 step 2, when `Ast` moved to `List`s. It was harmless in
+  practice because that declaration is the prelude's header, which every walk
+  skips, and so it was never noticed.
+- The stage-2 compiler trapped `OutOfBounds` in `ast_init` on its first run.
+  The NONE node is pushed now.
 
 ## 2g. Re-examination leads for the floor's evidence (owner: the compiler seat; raised at the s6→s7 hand-off, 2026-09-17)
 

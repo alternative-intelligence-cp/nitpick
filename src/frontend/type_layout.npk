@@ -161,6 +161,28 @@ pub func:type_is_list = bool(TypeResolver->:r, int32:lt) never fails {
     pass (raw decl_is_list(r, DeclId{ index: di }));
 };
 
+// THE ELEMENT TYPE OF A `List<T>`, or 0 when `lt` is not the compiler-known
+// `List` (D-247): `items`' pointee, bound through the instance's arguments by
+// `struct_field` -- the one binding the layout, the generated drop and the
+// checker read. `l[i]` types as it (D-314 §2, 1.5.8b step 1b).
+pub func:list_elem_type = int32(TypeResolver->:r, int32:lt) never fails {
+    if (!(raw type_is_list(r, lt))) { pass 0i32; }
+    DeclId:ldid = DeclId{ index: raw type_decl(r.types, lt) };
+    DeclNode:ld = raw ast_decl(r.ast, ldid);
+    int32:lhome = raw symtab_home_scope(r.tab, ldid.index, 0i32);
+    int32:nm = raw item_member_count(r.ast, ld);
+    for (int32:m in 0i32...nm) {
+        DeclNode:fm = raw ast_decl(r.ast, raw item_member(r.ast, ld, m));
+        if (fm.kind == DeclKind.DeclFieldDecl) {
+            // field 0 is `items`, a pointer to T (`decl_is_list` checked)
+            FieldInfo:fi = raw struct_field(r, lt, raw decl_name(fm), lhome);
+            if (!(fi.found)) { pass 0i32; }
+            pass (raw type_elem(r.types, fi.type_id));
+        }
+    }
+    pass 0i32;
+};
+
 // The whole struct: size rounded up to its own alignment, which is the widest
 // alignment any field wanted.
 //

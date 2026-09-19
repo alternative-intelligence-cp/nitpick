@@ -435,7 +435,7 @@ pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) never fails {
 pub func:exprtypes_mark_crossing = NIL(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
     while (i < t.cross.count) {
-        if (t.cross.items[i] == stmt_index) { pass NIL; }
+        if (t.cross[i] == stmt_index) { pass NIL; }
         i = i + 1i64;
     }
     drop list_push(@t.cross, stmt_index);
@@ -447,7 +447,7 @@ pub func:exprtypes_mark_crossing = NIL(ExprTypes->:t, int32:stmt_index) never fa
 pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
     while (i < t.cross.count) {
-        if (t.cross.items[i] == stmt_index) { pass true; }
+        if (t.cross[i] == stmt_index) { pass true; }
         i = i + 1i64;
     }
     pass false;
@@ -457,7 +457,7 @@ pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails 
 
 pub func:exprtypes_mark_alias = NIL(ExprTypes->:t, int32:site, int32:party, int32:holder) never fails {
     for (int64:i in 0i64...t.alias_site.count) {
-        if ((t.alias_site.items[i] == site) && (t.alias_party.items[i] == party)) { pass NIL; }
+        if ((t.alias_site[i] == site) && (t.alias_party[i] == party)) { pass NIL; }
     }
     drop list_push(@t.alias_site, site);
     drop list_push(@t.alias_party, party);
@@ -471,7 +471,7 @@ pub func:exprtypes_alias_any = bool(ExprTypes->:t) never fails { pass (t.alias_s
 pub func:exprtypes_alias_count_at = int32(ExprTypes->:t, int32:site) never fails {
     int32:n = 0i32;
     for (int64:i in 0i64...t.alias_site.count) {
-        if (t.alias_site.items[i] == site) { n = n + 1i32; }
+        if (t.alias_site[i] == site) { n = n + 1i32; }
     }
     pass n;
 };
@@ -479,8 +479,8 @@ pub func:exprtypes_alias_count_at = int32(ExprTypes->:t, int32:site) never fails
 pub func:exprtypes_alias_party_at = int32(ExprTypes->:t, int32:site, int32:k) never fails {
     int32:n = 0i32;
     for (int64:i in 0i64...t.alias_site.count) {
-        if (t.alias_site.items[i] == site) {
-            if (n == k) { pass t.alias_party.items[i]; }
+        if (t.alias_site[i] == site) {
+            if (n == k) { pass t.alias_party[i]; }
             n = n + 1i32;
         }
     }
@@ -490,8 +490,8 @@ pub func:exprtypes_alias_party_at = int32(ExprTypes->:t, int32:site, int32:k) ne
 pub func:exprtypes_alias_holder_at = int32(ExprTypes->:t, int32:site, int32:k) never fails {
     int32:n = 0i32;
     for (int64:i in 0i64...t.alias_site.count) {
-        if (t.alias_site.items[i] == site) {
-            if (n == k) { pass t.alias_holder.items[i]; }
+        if (t.alias_site[i] == site) {
+            if (n == k) { pass t.alias_holder[i]; }
             n = n + 1i32;
         }
     }
@@ -502,7 +502,7 @@ pub func:exprtypes_alias_holder_at = int32(ExprTypes->:t, int32:site, int32:k) n
 // address the emitter must keep)?
 pub func:exprtypes_alias_is_party = bool(ExprTypes->:t, int32:site) never fails {
     for (int64:i in 0i64...t.alias_party.count) {
-        if (t.alias_party.items[i] == site) { pass true; }
+        if (t.alias_party[i] == site) { pass true; }
     }
     pass false;
 };
@@ -512,7 +512,7 @@ pub func:exprtypes_alias_is_party = bool(ExprTypes->:t, int32:site) never fails 
 pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
     while (i < t.odecl.count) {
-        if (t.odecl.items[i] == stmt_index) { pass NIL; }
+        if (t.odecl[i] == stmt_index) { pass NIL; }
         i = i + 1i64;
     }
     drop list_push(@t.odecl, stmt_index);
@@ -525,7 +525,7 @@ pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never
 pub func:exprtypes_owning_decl = bool(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
     while (i < t.odecl.count) {
-        if (t.odecl.items[i] == stmt_index) { pass true; }
+        if (t.odecl[i] == stmt_index) { pass true; }
         i = i + 1i64;
     }
     pass false;

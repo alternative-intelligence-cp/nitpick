@@ -282,8 +282,8 @@ pub func:findings_of = List<Finding>(string:stderr) never fails {
 func:codes_repr = string(List<Finding>:fs, bool:notes) never fails {
     List<string>:codes = raw list_init::<string>(4i64);
     for (int64:i in 0i64...fs.count) {
-        if (fs.items[i].is_note != notes) { continue; }
-        drop strlist_push(@codes, string_from_bytes(fs.items[i].code.ptr, fs.items[i].code.len));
+        if (fs[i].is_note != notes) { continue; }
+        drop strlist_push(@codes, string_from_bytes(fs[i].code.ptr, fs[i].code.len));
     }
     List<string>:sorted = raw strlist_sorted_unique(codes);
     string:out = "[";
@@ -301,14 +301,14 @@ func:hits_repr = string(List<Finding>:fs, string:code, bool:notes) never fails {
     string:out = "[";
     bool:first = true;
     for (int64:i in 0i64...fs.count) {
-        if (fs.items[i].is_note != notes) { continue; }
-        if (!(raw text_eq(string_from_bytes(fs.items[i].code.ptr, fs.items[i].code.len), code))) { continue; }
+        if (fs[i].is_note != notes) { continue; }
+        if (!(raw text_eq(string_from_bytes(fs[i].code.ptr, fs[i].code.len), code))) { continue; }
         if (!first) { out = string_concat(out, ", "); }
         first = false;
         out = string_concat(out, "(");
-        out = string_concat(out, int_to_string(fs.items[i].line));
+        out = string_concat(out, int_to_string(fs[i].line));
         out = string_concat(out, ", ");
-        out = string_concat(out, int_to_string(fs.items[i].col));
+        out = string_concat(out, int_to_string(fs[i].col));
         out = string_concat(out, ")");
     }
     pass (string_concat(out, "]"));
@@ -320,17 +320,17 @@ func:hits_repr = string(List<Finding>:fs, string:code, bool:notes) never fails {
 func:match_channel = NIL(List<string>->:fl, string:name, List<Expected>:want,
                          List<Finding>:got, bool:notes) never fails {
     for (int64:i in 0i64...want.count) {
-        string:code = string_from_bytes(want.items[i].code.ptr, want.items[i].code.len);
-        int64:line = want.items[i].line;
-        int64:col = want.items[i].col;
+        string:code = string_from_bytes(want[i].code.ptr, want[i].code.len);
+        int64:line = want[i].line;
+        int64:col = want[i].col;
         bool:any_code = false;
         bool:at = false;
         for (int64:g in 0i64...got.count) {
-            if (got.items[g].is_note != notes) { continue; }
-            if (!(raw text_eq(string_from_bytes(got.items[g].code.ptr, got.items[g].code.len), code))) { continue; }
+            if (got[g].is_note != notes) { continue; }
+            if (!(raw text_eq(string_from_bytes(got[g].code.ptr, got[g].code.len), code))) { continue; }
             any_code = true;
-            if (got.items[g].line == line) {
-                if ((col < 0i64) || (got.items[g].col == col)) { at = true; }
+            if (got[g].line == line) {
+                if ((col < 0i64) || (got[g].col == col)) { at = true; }
             }
         }
         if (!any_code) {
@@ -371,11 +371,11 @@ func:unexpected_codes = NIL(List<string>->:fl, string:name, List<Expected>:want,
                             List<Finding>:got) never fails {
     List<string>:codes = raw list_init::<string>(4i64);
     for (int64:g in 0i64...got.count) {
-        if (got.items[g].is_note) { continue; }
-        string:code = string_from_bytes(got.items[g].code.ptr, got.items[g].code.len);
+        if (got[g].is_note) { continue; }
+        string:code = string_from_bytes(got[g].code.ptr, got[g].code.len);
         bool:named = false;
         for (int64:i in 0i64...want.count) {
-            if (raw text_eq(string_from_bytes(want.items[i].code.ptr, want.items[i].code.len), code)) {
+            if (raw text_eq(string_from_bytes(want[i].code.ptr, want[i].code.len), code)) {
                 named = true;
             }
         }
@@ -429,9 +429,9 @@ pub async func:check_rejection = List<string>(Ctx->:c, string:binary, string:pat
     // derived diagnostic to the derive's declaration; this is the belt, and
     // the self-check's `derived-path` case is the proof it bites.
     for (int64:g in 0i64...got.count) {
-        if (got.items[g].derived) {
+        if (got[g].derived) {
             string:dm = string_concat(name, ": reported ");
-            dm = string_concat(dm, string_from_bytes(got.items[g].code.ptr, got.items[g].code.len));
+            dm = string_concat(dm, string_from_bytes(got[g].code.ptr, got[g].code.len));
             dm = string_concat(dm, " at a `<derived-N>` line nobody wrote (D-259: a derived diagnostic is re-homed to the derive's declaration, and one that was not is a compiler defect)");
             drop list_push(@fl, move(dm));
         }
@@ -647,7 +647,7 @@ async func:tool_for = string(Ctx->:c, string:which) {
 
 // The entry's label, a view.
 func:entry_name = string(Ctx->:c, int64:t) never fails {
-    pass (string_from_bytes(c.m.tests.items[t].name.ptr, c.m.tests.items[t].name.len));
+    pass (string_from_bytes(c.m.tests[t].name.ptr, c.m.tests[t].name.len));
 };
 
 // --- the stages (D-238): one function per stage, the entry decides the files ----------
@@ -657,9 +657,9 @@ func:entry_name = string(Ctx->:c, int64:t) never fails {
 // is not run. `--only` narrows here and nowhere else; the counts are these.
 async func:run_compile = NIL(Ctx->:c, int64:t, List<string>:only) {
     string:tname = raw entry_name(c, t);
-    string:kind = string_from_bytes(c.m.tests.items[t].kind.ptr, c.m.tests.items[t].kind.len);
+    string:kind = string_from_bytes(c.m.tests[t].kind.ptr, c.m.tests[t].kind.len);
     bool:filtering = (only.count > 0i64);
-    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:paths = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     StrSet:skip = raw imported_by_others(paths);
     List<string>:run_paths = raw list_init::<string>(paths.count + 1i64);
     for (int64:i in 0i64...paths.count) {
@@ -702,7 +702,7 @@ async func:run_parse = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
     string:pc = relay await tool_for(c, "parse_check");
     if (pc.len == 0i64) { pass NIL; }
-    List<string>:files = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:files = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     int64:count = 0i64;
     for (int64:q in 0i64...files.count) {
         string:p = raw strlist_view(files, q);
@@ -724,7 +724,7 @@ async func:run_rejection = NIL(Ctx->:c, int64:t, string:which) {
     string:tname = raw entry_name(c, t);
     string:tool = relay await tool_for(c, which);
     if (tool.len == 0i64) { pass NIL; }
-    List<string>:files = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:files = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     int64:count = 0i64;
     for (int64:i in 0i64...files.count) {
         string:p = raw strlist_view(files, i);
@@ -749,7 +749,7 @@ async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
     string:check = relay await tool_for(c, "check");
     if (check.len == 0i64) { pass NIL; }
-    List<string>:files = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:files = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     int64:count = 0i64;
     for (int64:i in 0i64...files.count) {
         string:p = raw strlist_view(files, i);
@@ -775,7 +775,7 @@ async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
 async func:run_object = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
     string:objdir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "objects");
-    List<string>:mods = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:mods = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     if (mods.count > 0i64) {
         Result<NIL>:d = ensure_dir(objdir);
         if (d.is_error) { fail d.err; }
@@ -798,8 +798,8 @@ async func:run_object = NIL(Ctx->:c, int64:t) {
 async func:run_fixture = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
     string:fixdir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "fixtures");
-    List<string>:fixtures = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
-    List<string>:cfixtures = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".c");
+    List<string>:fixtures = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
+    List<string>:cfixtures = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".c");
     if ((fixtures.count > 0i64) || (cfixtures.count > 0i64)) {
         Result<NIL>:d = ensure_dir(fixdir);
         if (d.is_error) { fail d.err; }
@@ -856,7 +856,7 @@ async func:run_fixture = NIL(Ctx->:c, int64:t) {
 // the suite imports is a fixture, not a program.
 async func:run_program = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
-    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:paths = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     StrSet:skip = raw imported_by_others(paths);
     int64:count = 0i64;
     for (int64:k in 0i64...paths.count) {
@@ -881,7 +881,7 @@ async func:run_program = NIL(Ctx->:c, int64:t) {
 // unit for unit and message for message.
 async func:run_explore = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
-    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:paths = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     StrSet:skip = raw imported_by_others(paths);
     ExploredObjects:xo = relay await explored_objects(c);
     if (xo.findings.count > 0i64) {
@@ -976,7 +976,7 @@ async func:run_explore = NIL(Ctx->:c, int64:t) {
 // floor, run; `expect-exit:` read from the first 400 bytes.
 async func:run_runtime_stage = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
-    List<string>:tests = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".ll");
+    List<string>:tests = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".ll");
     int64:count = 0i64;
     for (int64:i in 0i64...tests.count) {
         string:rp = raw strlist_view(tests, i);
@@ -1145,13 +1145,13 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     List<string>:keys = raw list_init::<string>(4i64);
     List<int64>:counts = raw list_init::<int64>(4i64);
     for (int64:i in 0i64...rows.count) {
-        if (!(raw row_in_module(string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len), modname))) { continue; }
-        string:key = string_concat(string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len), " ");
-        key = string_concat(key, raw ov_name(rows.items[i].verdict));
+        if (!(raw row_in_module(string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len), modname))) { continue; }
+        string:key = string_concat(string_from_bytes(rows[i].kind.ptr, rows[i].kind.len), " ");
+        key = string_concat(key, raw ov_name(rows[i].verdict));
         int64:slot = 0i64 - 1i64;
         for (int64:j in 0i64...keys.count) { if (raw text_eq(raw strlist_view(keys, j), key)) { slot = j; } }
         if (slot < 0i64) { drop list_push(@keys, move(key)); drop list_push(@counts, 1i64); }
-        else { counts.items[slot] = counts.items[slot] + 1i64; }
+        else { counts[slot] = counts[slot] + 1i64; }
     }
     if (exp.obligations_none && (keys.count > 0i64)) {
         string:m1 = string_concat(name, ": expected no obligations in module `");
@@ -1163,15 +1163,15 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     }
     // every expected key present with its count; every found key expected
     for (int64:e in 0i64...exp.obligations.count) {
-        string:want = string_concat(string_from_bytes(exp.obligations.items[e].kind.ptr, exp.obligations.items[e].kind.len), " ");
-        want = string_concat(want, string_from_bytes(exp.obligations.items[e].verdict.ptr, exp.obligations.items[e].verdict.len));
+        string:want = string_concat(string_from_bytes(exp.obligations[e].kind.ptr, exp.obligations[e].kind.len), " ");
+        want = string_concat(want, string_from_bytes(exp.obligations[e].verdict.ptr, exp.obligations[e].verdict.len));
         int64:found = 0i64;
-        for (int64:j2 in 0i64...keys.count) { if (raw text_eq(raw strlist_view(keys, j2), want)) { found = counts.items[j2]; } }
-        if (found != exp.obligations.items[e].n) {
+        for (int64:j2 in 0i64...keys.count) { if (raw text_eq(raw strlist_view(keys, j2), want)) { found = counts[j2]; } }
+        if (found != exp.obligations[e].n) {
             string:m2 = string_concat(name, ": ");
             m2 = string_concat(m2, want);
             m2 = string_concat(m2, ": expected ");
-            m2 = string_concat(m2, int_to_string(exp.obligations.items[e].n));
+            m2 = string_concat(m2, int_to_string(exp.obligations[e].n));
             m2 = string_concat(m2, ", found ");
             m2 = string_concat(m2, int_to_string(found));
             m2 = string_concat(m2, " (the rows of module `");
@@ -1183,15 +1183,15 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     for (int64:j3 in 0i64...keys.count) {
         bool:named = false;
         for (int64:e2 in 0i64...exp.obligations.count) {
-            string:w2 = string_concat(string_from_bytes(exp.obligations.items[e2].kind.ptr, exp.obligations.items[e2].kind.len), " ");
-            w2 = string_concat(w2, string_from_bytes(exp.obligations.items[e2].verdict.ptr, exp.obligations.items[e2].verdict.len));
+            string:w2 = string_concat(string_from_bytes(exp.obligations[e2].kind.ptr, exp.obligations[e2].kind.len), " ");
+            w2 = string_concat(w2, string_from_bytes(exp.obligations[e2].verdict.ptr, exp.obligations[e2].verdict.len));
             if (raw text_eq(w2, raw strlist_view(keys, j3))) { named = true; }
         }
         if (!named) {
             string:m3 = string_concat(name, ": ");
             m3 = string_concat(m3, raw strlist_view(keys, j3));
             m3 = string_concat(m3, ": expected 0, found ");
-            m3 = string_concat(m3, int_to_string(counts.items[j3]));
+            m3 = string_concat(m3, int_to_string(counts[j3]));
             m3 = string_concat(m3, " (the rows of module `");
             m3 = string_concat(m3, modname);
             m3 = string_concat(m3, "`; every reported kind/verdict must be named, D-237's shape)");
@@ -1238,9 +1238,9 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
         }
         List<Finding>:got2 = raw findings_of(run2.x.err);
         for (int64:g2 in 0i64...got2.count) {
-            if (got2.items[g2].derived) {
+            if (got2[g2].derived) {
                 string:dm2 = string_concat(name, ": reported ");
-                dm2 = string_concat(dm2, string_from_bytes(got2.items[g2].code.ptr, got2.items[g2].code.len));
+                dm2 = string_concat(dm2, string_from_bytes(got2[g2].code.ptr, got2[g2].code.len));
                 dm2 = string_concat(dm2, " at a `<derived-N>` line nobody wrote (D-259)");
                 drop list_push(@fl, move(dm2));
             }
@@ -1295,7 +1295,7 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
 
 async func:run_verify = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
-    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:paths = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".npk");
     int64:count = 0i64;
     for (int64:k in 0i64...paths.count) {
         string:p2 = raw strlist_view(paths, k);
@@ -1424,12 +1424,12 @@ func:read_cost_unit = CostRead(string:text) never fails {
     string:kind = string_from_bytes(u.kind.ptr, u.kind.len);
     int64:ne = raw toml_entry_count(d);
     for (int64:i in 0i64...ne) {
-        string:key = string_from_bytes(d.entries.items[i].key.ptr, d.entries.items[i].key.len);
-        if (d.entries.items[i].section.len > 0i64) {
-            key = string_from_bytes(d.entries.items[i].section.ptr, d.entries.items[i].section.len);
+        string:key = string_from_bytes(d.entries[i].key.ptr, d.entries[i].key.len);
+        if (d.entries[i].section.len > 0i64) {
+            key = string_from_bytes(d.entries[i].section.ptr, d.entries[i].section.len);
         }
         bool:allowed = raw cost_key_allowed(kind, key);
-        if (d.entries.items[i].section.len > 0i64) { allowed = false; }
+        if (d.entries[i].section.len > 0i64) { allowed = false; }
         if (!allowed) {
             string:m = string_concat("`", key);
             m = string_concat(m, "` is not a key a ");
@@ -1834,7 +1834,7 @@ async func:run_cost_self = CostOut(Ctx->:c, CostUnit->:u, string:name, ProcArgs:
 // print here so the run's log carries the measurement.
 async func:run_cost = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
-    List<string>:units = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".toml");
+    List<string>:units = relay files_of(c, c.m.tests[t].paths, c.m.tests[t].recursive, ".toml");
     ProcArgs:env = relay cost_env();
     defer { drop args_free(@env); }
     int64:count = 0i64;
@@ -1871,7 +1871,7 @@ async func:run_cost = NIL(Ctx->:c, int64:t) {
 pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
     bool:filtering = (only.count > 0i64);
     for (int64:t in 0i64...c.m.tests.count) {
-        string:stage = string_from_bytes(c.m.tests.items[t].stage.ptr, c.m.tests.items[t].stage.len);
+        string:stage = string_from_bytes(c.m.tests[t].stage.ptr, c.m.tests[t].stage.len);
         if (raw text_eq(stage, "compile")) {
             Result<NIL>:r0 = await run_compile(c, t, only);
             if (r0.is_error) { fail r0.err; }

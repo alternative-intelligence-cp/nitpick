@@ -561,12 +561,12 @@ pub async func:run_binary = List<string>(Ctx->:c, string:name, string:exe, List<
         if (!run.x.exited) { got = 0i64 - run.x.signal; }
         if (got != want) {
             int64:slot = 0i64 - 1i64;
-            for (int64:i in 0i64...codes.count) { if (codes.items[i] == got) { slot = i; } }
+            for (int64:i in 0i64...codes.count) { if (codes[i] == got) { slot = i; } }
             if (slot < 0i64) {
                 drop list_push(@codes, got);
                 drop list_push(@counts, 1i64);
             } else {
-                counts.items[slot] = counts.items[slot] + 1i64;
+                counts[slot] = counts[slot] + 1i64;
             }
         }
     }
@@ -579,16 +579,16 @@ pub async func:run_binary = List<string>(Ctx->:c, string:name, string:exe, List<
             int64:best = 0i64 - 1i64;
             for (int64:i2 in 0i64...codes.count) {
                 bool:used = false;
-                for (int64:j in 0i64...done.count) { if (done.items[j] == i2) { used = true; } }
+                for (int64:j in 0i64...done.count) { if (done[j] == i2) { used = true; } }
                 if (used) { continue; }
                 if (best < 0i64) { best = i2; }
-                else { if (codes.items[i2] < codes.items[best]) { best = i2; } }
+                else { if (codes[i2] < codes[best]) { best = i2; } }
             }
             drop list_push(@done, best);
             if (detail.len > 0i64) { detail = string_concat(detail, ", "); }
-            detail = string_concat(detail, int_to_string(codes.items[best]));
+            detail = string_concat(detail, int_to_string(codes[best]));
             detail = string_concat(detail, " x");
-            detail = string_concat(detail, int_to_string(counts.items[best]));
+            detail = string_concat(detail, int_to_string(counts[best]));
         }
         string:m = string_concat(name, ": expected ");
         m = string_concat(m, int_to_string(want));
@@ -607,7 +607,7 @@ pub async func:run_binary = List<string>(Ctx->:c, string:name, string:exe, List<
         pass fl;
     }
     string:m2 = string_concat(name, ": exited ");
-    m2 = string_concat(m2, int_to_string(codes.items[0i64]));
+    m2 = string_concat(m2, int_to_string(codes[0i64]));
     if (optimised) {
         m2 = string_concat(m2, " under -O2, expected ");
         m2 = string_concat(m2, int_to_string(want));
@@ -690,13 +690,13 @@ pub func:verdicts_text = string(Ctx->:c) never fails {
     // for the runner, and appending each to a growing prefix was quadratic.
     Sink:sk = raw sink_to_buffer(4096i64);
     for (int64:i in 0i64...c.verdicts.count) {
-        if (c.verdicts.items[i].ok) { drop sink_write(@sk, "PASS\t"); }
+        if (c.verdicts[i].ok) { drop sink_write(@sk, "PASS\t"); }
         else { drop sink_write(@sk, "FAIL\t"); }
-        drop sink_write(@sk, string_from_bytes(c.verdicts.items[i].suite.ptr, c.verdicts.items[i].suite.len));
+        drop sink_write(@sk, string_from_bytes(c.verdicts[i].suite.ptr, c.verdicts[i].suite.len));
         drop sink_write(@sk, "\t");
-        drop sink_write(@sk, string_from_bytes(c.verdicts.items[i].name.ptr, c.verdicts.items[i].name.len));
+        drop sink_write(@sk, string_from_bytes(c.verdicts[i].name.ptr, c.verdicts[i].name.len));
         drop sink_write(@sk, "\t");
-        drop sink_write(@sk, raw text_replace_byte(string_from_bytes(c.verdicts.items[i].msg.ptr, c.verdicts.items[i].msg.len), 10u8, 32u8));
+        drop sink_write(@sk, raw text_replace_byte(string_from_bytes(c.verdicts[i].msg.ptr, c.verdicts[i].msg.len), 10u8, 32u8));
         drop sink_write(@sk, "\n");
     }
     pass (raw sink_into_string(move(sk)));

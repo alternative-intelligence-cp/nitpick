@@ -216,36 +216,36 @@ func:xp_compile = int64(XModel->:m, Sxs->:s, int64:node) never fails {
         if (!m.ok) { pass (0i64 - 1i64); }
         drop list_push(@ops, o);
     }
-    if (raw text_eq(h, "not")) { pass (raw xp_push(m, raw XK_NOT(), ops.items[0i64], 0i64, 0i64)); }
-    if (raw text_eq(h, "=>"))  { pass (raw xp_push(m, raw XK_IMPL(), ops.items[0i64], ops.items[1i64], 0i64)); }
-    if (raw text_eq(h, "ite")) { pass (raw xp_push(m, raw XK_ITE(), ops.items[0i64], ops.items[1i64], ops.items[2i64])); }
+    if (raw text_eq(h, "not")) { pass (raw xp_push(m, raw XK_NOT(), ops[0i64], 0i64, 0i64)); }
+    if (raw text_eq(h, "=>"))  { pass (raw xp_push(m, raw XK_IMPL(), ops[0i64], ops[1i64], 0i64)); }
+    if (raw text_eq(h, "ite")) { pass (raw xp_push(m, raw XK_ITE(), ops[0i64], ops[1i64], ops[2i64])); }
     if (raw text_eq(h, "-")) {
-        if (n == 1i64) { pass (raw xp_push(m, raw XK_NEG(), ops.items[0i64], 0i64, 0i64)); }
+        if (n == 1i64) { pass (raw xp_push(m, raw XK_NEG(), ops[0i64], 0i64, 0i64)); }
     }
     if (bin >= 0i64) {
-        int64:acc = ops.items[0i64];
-        for (int64:j in 1i64...n) { acc = raw xp_push(m, bin, acc, ops.items[j], 0i64); }
+        int64:acc = ops[0i64];
+        for (int64:j in 1i64...n) { acc = raw xp_push(m, bin, acc, ops[j], 0i64); }
         pass acc;
     }
     if (raw text_eq(h, "=")) {
         // every operand equals the first
-        int64:eq = raw xp_push(m, raw XK_EQ(), ops.items[0i64], ops.items[1i64], 0i64);
-        for (int64:j2 in 2i64...n) { eq = raw xp_push(m, raw XK_AND(), eq, raw xp_push(m, raw XK_EQ(), ops.items[0i64], ops.items[j2], 0i64), 0i64); }
+        int64:eq = raw xp_push(m, raw XK_EQ(), ops[0i64], ops[1i64], 0i64);
+        for (int64:j2 in 2i64...n) { eq = raw xp_push(m, raw XK_AND(), eq, raw xp_push(m, raw XK_EQ(), ops[0i64], ops[j2], 0i64), 0i64); }
         pass eq;
     }
     if (raw text_eq(h, "distinct")) {
         int64:ne = 0i64 - 1i64;
         for (int64:p in 0i64...n) {
             for (int64:q in (p + 1i64)...n) {
-                int64:one = raw xp_push(m, raw XK_NE(), ops.items[p], ops.items[q], 0i64);
+                int64:one = raw xp_push(m, raw XK_NE(), ops[p], ops[q], 0i64);
                 if (ne < 0i64) { ne = one; } else { ne = raw xp_push(m, raw XK_AND(), ne, one, 0i64); }
             }
         }
         pass ne;
     }
     // a comparison chain: every adjacent pair
-    int64:ch = raw xp_push(m, cmp, ops.items[0i64], ops.items[1i64], 0i64);
-    for (int64:j3 in 2i64...n) { ch = raw xp_push(m, raw XK_AND(), ch, raw xp_push(m, cmp, ops.items[j3 - 1i64], ops.items[j3], 0i64), 0i64); }
+    int64:ch = raw xp_push(m, cmp, ops[0i64], ops[1i64], 0i64);
+    for (int64:j3 in 2i64...n) { ch = raw xp_push(m, raw XK_AND(), ch, raw xp_push(m, cmp, ops[j3 - 1i64], ops[j3], 0i64), 0i64); }
     pass ch;
 };
 
@@ -256,37 +256,37 @@ func:xp_operand_ok = bool(XModel->:m, int64:v) never fails {
 
 // The value of a pool expression in the state `cur` (a proposition is 0 or 1).
 func:xp_eval = int64(XModel->:m, List<int64>:cur, int64:e) never fails {
-    int64:k = m.ek.items[e];
-    if (k == (raw XK_NUM())) { pass m.ea.items[e]; }
-    if (k == (raw XK_VAR())) { pass cur.items[m.ea.items[e]]; }
+    int64:k = m.ek[e];
+    if (k == (raw XK_NUM())) { pass m.ea[e]; }
+    if (k == (raw XK_VAR())) { pass cur[m.ea[e]]; }
     if (k == (raw XK_TRUE())) { pass 1i64; }
     if (k == (raw XK_FALSE())) { pass 0i64; }
-    if (k == (raw XK_NOT())) { if ((raw xp_eval(m, cur, m.ea.items[e])) != 0i64) { pass 0i64; } pass 1i64; }
+    if (k == (raw XK_NOT())) { if ((raw xp_eval(m, cur, m.ea[e])) != 0i64) { pass 0i64; } pass 1i64; }
     if (k == (raw XK_AND())) {
-        if ((raw xp_eval(m, cur, m.ea.items[e])) == 0i64) { pass 0i64; }
-        if ((raw xp_eval(m, cur, m.eb.items[e])) == 0i64) { pass 0i64; }
+        if ((raw xp_eval(m, cur, m.ea[e])) == 0i64) { pass 0i64; }
+        if ((raw xp_eval(m, cur, m.eb[e])) == 0i64) { pass 0i64; }
         pass 1i64;
     }
     if (k == (raw XK_OR())) {
-        if ((raw xp_eval(m, cur, m.ea.items[e])) != 0i64) { pass 1i64; }
-        if ((raw xp_eval(m, cur, m.eb.items[e])) != 0i64) { pass 1i64; }
+        if ((raw xp_eval(m, cur, m.ea[e])) != 0i64) { pass 1i64; }
+        if ((raw xp_eval(m, cur, m.eb[e])) != 0i64) { pass 1i64; }
         pass 0i64;
     }
     if (k == (raw XK_IMPL())) {
-        if ((raw xp_eval(m, cur, m.ea.items[e])) == 0i64) { pass 1i64; }
-        if ((raw xp_eval(m, cur, m.eb.items[e])) != 0i64) { pass 1i64; }
+        if ((raw xp_eval(m, cur, m.ea[e])) == 0i64) { pass 1i64; }
+        if ((raw xp_eval(m, cur, m.eb[e])) != 0i64) { pass 1i64; }
         pass 0i64;
     }
     if (k == (raw XK_ITE())) {
-        if ((raw xp_eval(m, cur, m.ea.items[e])) != 0i64) { pass (raw xp_eval(m, cur, m.eb.items[e])); }
-        pass (raw xp_eval(m, cur, m.ec.items[e]));
+        if ((raw xp_eval(m, cur, m.ea[e])) != 0i64) { pass (raw xp_eval(m, cur, m.eb[e])); }
+        pass (raw xp_eval(m, cur, m.ec[e]));
     }
-    int64:x = raw xp_eval(m, cur, m.ea.items[e]);
+    int64:x = raw xp_eval(m, cur, m.ea[e]);
     if (k == (raw XK_NEG())) {
         if (!(raw xp_operand_ok(m, x))) { pass 0i64; }
         pass (0i64 - x);
     }
-    int64:y = raw xp_eval(m, cur, m.eb.items[e]);
+    int64:y = raw xp_eval(m, cur, m.eb[e]);
     if (k == (raw XK_EQ())) { if (x == y) { pass 1i64; } pass 0i64; }
     if (k == (raw XK_NE())) { if (x != y) { pass 1i64; } pass 0i64; }
     if (k == (raw XK_LT())) { if (x < y) { pass 1i64; } pass 0i64; }
@@ -303,7 +303,7 @@ func:xp_eval = int64(XModel->:m, List<int64>:cur, int64:e) never fails {
 // A binding (VAR, pool expression) appended to the window that started at
 // `wstart`, unless the window already binds VAR: the FIRST binding wins.
 func:xm_bind = NIL(XModel->:m, int64:wstart, int64:vi, int64:e) never fails {
-    for (int64:i in wstart...m.nvar.count) { if (m.nvar.items[i] == vi) { pass NIL; } }
+    for (int64:i in wstart...m.nvar.count) { if (m.nvar[i] == vi) { pass NIL; } }
     drop list_push(@m.nvar, vi);
     drop list_push(@m.nexpr, e);
     pass NIL;
@@ -331,14 +331,14 @@ func:xm_body = int64(XModel->:m, Sxs->:s, int64:body, int64:wstart) never fails 
     while (c >= 0i64) {
         if (!m.ok) { pass gd; }
         string:h = raw sx_head(s, c);
-        if (raw text_eq(h, "ir")) { c = s.nodes.items[c].next; continue; }
+        if (raw text_eq(h, "ir")) { c = s.nodes[c].next; continue; }
         if (raw text_eq(h, "guard")) {
             int64:g = raw xp_compile(m, s, raw sx_nth(s, c, 1i64));
             if (!m.ok) { pass gd; }
             if (gd < 0i64) { gd = g; } else { gd = raw xp_push(m, raw XK_AND(), gd, g, 0i64); }
         } else { if (raw text_eq(h, "next")) {
-            int64:b = s.nodes.items[c].first;
-            b = s.nodes.items[b].next;
+            int64:b = s.nodes[c].first;
+            b = s.nodes[b].next;
             while (b >= 0i64) {
                 string:vn = raw sx_atom(s, raw sx_nth(s, b, 0i64));
                 int64:vi = raw xm_var_index(m, vn);
@@ -346,7 +346,7 @@ func:xm_body = int64(XModel->:m, Sxs->:s, int64:body, int64:wstart) never fails 
                 int64:e = raw xp_compile(m, s, raw sx_nth(s, b, 1i64));
                 if (!m.ok) { pass gd; }
                 drop xm_bind(m, wstart, vi, e);
-                b = s.nodes.items[b].next;
+                b = s.nodes[b].next;
             }
         } else { if (raw text_eq(h, "kernel")) {
             string:w = raw sx_atom(s, raw sx_nth(s, c, 1i64));
@@ -360,33 +360,33 @@ func:xm_body = int64(XModel->:m, Sxs->:s, int64:body, int64:wstart) never fails 
             bool:done = false;
             if ((raw text_eq(w, "futex-wait")) && (na == 3i64)) {
                 // PARKED := (ite (= WORD EXPECTED) 1 0); PARKED must be a variable
-                if (m.ek.items[ka.items[2i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
-                int64:eqw = raw xp_push(m, raw XK_EQ(), ka.items[0i64], ka.items[1i64], 0i64);
+                if (m.ek[ka[2i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
+                int64:eqw = raw xp_push(m, raw XK_EQ(), ka[0i64], ka[1i64], 0i64);
                 int64:one = raw xp_push(m, raw XK_NUM(), 1i64, 0i64, 0i64);
                 int64:zero = raw xp_push(m, raw XK_NUM(), 0i64, 0i64, 0i64);
-                drop xm_bind(m, wstart, m.ea.items[ka.items[2i64]], raw xp_push(m, raw XK_ITE(), eqw, one, zero));
+                drop xm_bind(m, wstart, m.ea[ka[2i64]], raw xp_push(m, raw XK_ITE(), eqw, one, zero));
                 done = true;
             }
             if (((raw text_eq(w, "futex-wake")) || (raw text_eq(w, "eventfd-read"))) && (na == 1i64)) {
-                if (m.ek.items[ka.items[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
-                drop xm_bind(m, wstart, m.ea.items[ka.items[0i64]], raw xp_push(m, raw XK_NUM(), 0i64, 0i64, 0i64));
+                if (m.ek[ka[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
+                drop xm_bind(m, wstart, m.ea[ka[0i64]], raw xp_push(m, raw XK_NUM(), 0i64, 0i64, 0i64));
                 done = true;
             }
             if ((raw text_eq(w, "eventfd-write")) && (na == 1i64)) {
-                if (m.ek.items[ka.items[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
-                drop xm_bind(m, wstart, m.ea.items[ka.items[0i64]], raw xp_push(m, raw XK_NUM(), 1i64, 0i64, 0i64));
+                if (m.ek[ka[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
+                drop xm_bind(m, wstart, m.ea[ka[0i64]], raw xp_push(m, raw XK_NUM(), 1i64, 0i64, 0i64));
                 done = true;
             }
             if ((raw text_eq(w, "spurious")) && (na == 1i64)) {
-                if (m.ek.items[ka.items[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
-                int64:g2 = raw xp_push(m, raw XK_EQ(), ka.items[0i64], raw xp_push(m, raw XK_NUM(), 1i64, 0i64, 0i64), 0i64);
+                if (m.ek[ka[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
+                int64:g2 = raw xp_push(m, raw XK_EQ(), ka[0i64], raw xp_push(m, raw XK_NUM(), 1i64, 0i64, 0i64), 0i64);
                 if (gd < 0i64) { gd = g2; } else { gd = raw xp_push(m, raw XK_AND(), gd, g2, 0i64); }
-                drop xm_bind(m, wstart, m.ea.items[ka.items[0i64]], raw xp_push(m, raw XK_NUM(), 0i64, 0i64, 0i64));
+                drop xm_bind(m, wstart, m.ea[ka[0i64]], raw xp_push(m, raw XK_NUM(), 0i64, 0i64, 0i64));
                 done = true;
             }
             if ((raw text_eq(w, "signal")) && (na == 2i64)) {
-                if (m.ek.items[ka.items[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
-                drop xm_bind(m, wstart, m.ea.items[ka.items[0i64]], ka.items[1i64]);
+                if (m.ek[ka[0i64]] != (raw XK_VAR())) { drop xm_fail(m, "a kernel rule's arguments are state variables and numerals"); pass gd; }
+                drop xm_bind(m, wstart, m.ea[ka[0i64]], ka[1i64]);
                 done = true;
             }
             if (!done) { drop xm_fail(m, string_concat("a kernel rule the library does not know: ", w)); pass gd; }
@@ -394,7 +394,7 @@ func:xm_body = int64(XModel->:m, Sxs->:s, int64:body, int64:wstart) never fails 
             drop xm_fail(m, string_concat("a form the models' grammar does not have inside a step: ", h));
             pass gd;
         } } }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass gd;
 };
@@ -404,18 +404,18 @@ func:xm_pins = NIL(XModel->:m, Sxs->:s, int64:node) never fails {
     for (int64:i in 0i64...m.vars.count) { drop list_push(@m.pin, 0i64); drop list_push(@m.pin_val, 0i64); }
     if (!(raw sx_is_list(s, node))) { pass NIL; }
     if (!(raw text_eq(raw sx_head(s, node), "and"))) { pass NIL; }
-    int64:c = s.nodes.items[node].first;
-    c = s.nodes.items[c].next;
+    int64:c = s.nodes[node].first;
+    c = s.nodes[c].next;
     while (c >= 0i64) {
         if ((raw sx_is_list(s, c)) && ((raw sx_len(s, c)) == 3i64) && (raw text_eq(raw sx_head(s, c), "="))) {
             string:vn = raw sx_atom(s, raw sx_nth(s, c, 1i64));
             string:nv = raw sx_atom(s, raw sx_nth(s, c, 2i64));
             int64:vi = raw xm_var_index(m, vn);
             if ((vi >= 0i64) && (raw xp_is_numeral(nv)) && (nv.len <= 18i64)) {
-                if (m.pin.items[vi] == 0i64) { m.pin.items[vi] = 1i64; m.pin_val.items[vi] = raw xp_parse(nv); }
+                if (m.pin[vi] == 0i64) { m.pin[vi] = 1i64; m.pin_val[vi] = raw xp_parse(nv); }
             }
         }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass NIL;
 };
@@ -426,19 +426,19 @@ pub func:xm_read = XModel(string:text) never fails {
     Sxs:s = raw sx_parse(text);
     if (!s.ok) { drop xm_fail(@m, "a model file is one (model NAME ...) form"); pass m; }
     if (s.roots.count != 1i64) { drop xm_fail(@m, "a model file is one (model NAME ...) form"); pass m; }
-    int64:r = s.roots.items[0i64];
+    int64:r = s.roots[0i64];
     if (!(raw sx_is_list(@s, r)) || !(raw text_eq(raw sx_head(@s, r), "model")) || ((raw sx_len(@s, r)) < 3i64)) {
         drop xm_fail(@m, "a model file is one (model NAME ...) form"); pass m;
     }
-    int64:c0 = s.nodes.items[r].first;
-    c0 = s.nodes.items[c0].next;
-    c0 = s.nodes.items[c0].next;
+    int64:c0 = s.nodes[r].first;
+    c0 = s.nodes[c0].next;
+    c0 = s.nodes[c0].next;
     // pass 1: the state
     int64:c = c0;
     while (c >= 0i64) {
         if ((raw sx_is_list(@s, c)) && (raw text_eq(raw sx_head(@s, c), "state"))) {
-            int64:v = s.nodes.items[c].first;
-            v = s.nodes.items[v].next;
+            int64:v = s.nodes[c].first;
+            v = s.nodes[v].next;
             while (v >= 0i64) {
                 string:vn = raw sx_atom(@s, raw sx_nth(@s, v, 0i64));
                 string:lo = raw sx_atom(@s, raw sx_nth(@s, v, 1i64));
@@ -449,17 +449,17 @@ pub func:xm_read = XModel(string:text) never fails {
                 drop strlist_push(@m.vars, vn);
                 drop list_push(@m.lo, raw xp_parse(lo));
                 drop list_push(@m.hi, raw xp_parse(hi));
-                v = s.nodes.items[v].next;
+                v = s.nodes[v].next;
             }
         }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     // pass 2: everything else, in file order
     c = c0;
     while (c >= 0i64) {
         if (!m.ok) { pass m; }
         string:h = raw sx_head(@s, c);
-        if ((raw text_eq(h, "of")) || (raw text_eq(h, "state"))) { c = s.nodes.items[c].next; continue; }
+        if ((raw text_eq(h, "of")) || (raw text_eq(h, "state"))) { c = s.nodes[c].next; continue; }
         if (raw text_eq(h, "init")) {
             m.init_e = raw xp_compile(@m, @s, raw sx_nth(@s, c, 1i64));
             if (!m.ok) { pass m; }
@@ -467,13 +467,13 @@ pub func:xm_read = XModel(string:text) never fails {
         } else { if (raw text_eq(h, "thread")) {
             int64:ti = m.threads.count;
             drop strlist_push(@m.threads, raw sx_atom(@s, raw sx_nth(@s, c, 1i64)));
-            int64:sc = s.nodes.items[c].first;
-            sc = s.nodes.items[sc].next;
-            sc = s.nodes.items[sc].next;
+            int64:sc = s.nodes[c].first;
+            sc = s.nodes[sc].next;
+            sc = s.nodes[sc].next;
             while (sc >= 0i64) {
-                int64:body = s.nodes.items[sc].first;
-                body = s.nodes.items[body].next;
-                body = s.nodes.items[body].next;
+                int64:body = s.nodes[sc].first;
+                body = s.nodes[body].next;
+                body = s.nodes[body].next;
                 int64:wstart = m.nvar.count;
                 int64:gd = raw xm_body(@m, @s, body, wstart);
                 if (!m.ok) { pass m; }
@@ -482,7 +482,7 @@ pub func:xm_read = XModel(string:text) never fails {
                 drop list_push(@m.s_guard, gd);
                 drop list_push(@m.s_nstart, wstart);
                 drop list_push(@m.s_ncount, m.nvar.count - wstart);
-                sc = s.nodes.items[sc].next;
+                sc = s.nodes[sc].next;
             }
         } else { if (raw text_eq(h, "bad")) {
             int64:be = raw xp_compile(@m, @s, raw sx_nth(@s, c, 2i64));
@@ -499,10 +499,10 @@ pub func:xm_read = XModel(string:text) never fails {
             while (mu >= 0i64) {
                 string:mk = raw sx_head(@s, mu);
                 if (raw text_eq(mk, "replace")) {
-                    int64:mbody = s.nodes.items[mu].first;
-                    mbody = s.nodes.items[mbody].next;
-                    mbody = s.nodes.items[mbody].next;
-                    mbody = s.nodes.items[mbody].next;
+                    int64:mbody = s.nodes[mu].first;
+                    mbody = s.nodes[mbody].next;
+                    mbody = s.nodes[mbody].next;
+                    mbody = s.nodes[mbody].next;
                     int64:mw = m.nvar.count;
                     int64:mg = raw xm_body(@m, @s, mbody, mw);
                     if (!m.ok) { pass m; }
@@ -522,7 +522,7 @@ pub func:xm_read = XModel(string:text) never fails {
                 } else {
                     drop xm_fail(@m, string_concat("a mutation the models' grammar does not have: ", mk)); pass m;
                 } }
-                mu = s.nodes.items[mu].next;
+                mu = s.nodes[mu].next;
             }
             drop strlist_push(@m.c_name, raw sx_atom(@s, raw sx_nth(@s, c, 1i64)));
             drop strlist_push(@m.c_bad, raw sx_atom(@s, raw sx_nth(@s, c, 2i64)));
@@ -531,7 +531,7 @@ pub func:xm_read = XModel(string:text) never fails {
         } else {
             drop xm_fail(@m, string_concat("a form the models' grammar does not have: ", h)); pass m;
         } } } } }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     if ((m.init_e < 0i64) || (m.depth < 0i64) || (m.preempt < 0i64) || (m.vars.count == 0i64)) {
         drop xm_fail(@m, "a model needs (state ...), (init ...), (depth K) and (preempt D)");
@@ -568,27 +568,27 @@ func:xp_steps_under = XSteps(XModel->:m, int64:ctl) never fails {
     for (int64:si in 0i64...m.s_thr.count) {
         bool:hit = false;
         if (ctl >= 0i64) {
-            int64:ms = m.c_mstart.items[ctl];
-            for (int64:k in 0i64...m.c_mcount.items[ctl]) {
+            int64:ms = m.c_mstart[ctl];
+            for (int64:k in 0i64...m.c_mcount[ctl]) {
                 int64:mi = ms + k;
                 int64:mt = raw xm_thread_index(m, raw strlist_view(m.m_thr, mi));
-                if ((mt == m.s_thr.items[si]) && (raw text_eq(raw strlist_view(m.m_step, mi), raw strlist_view(m.s_name, si)))) {
+                if ((mt == m.s_thr[si]) && (raw text_eq(raw strlist_view(m.m_step, mi), raw strlist_view(m.s_name, si)))) {
                     hit = true;
-                    if (m.m_kind.items[mi] == 0i64) {
-                        drop list_push(@o.thr, m.s_thr.items[si]);
-                        drop list_push(@o.guard, m.m_guard.items[mi]);
-                        drop list_push(@o.nstart, m.m_nstart.items[mi]);
-                        drop list_push(@o.ncount, m.m_ncount.items[mi]);
+                    if (m.m_kind[mi] == 0i64) {
+                        drop list_push(@o.thr, m.s_thr[si]);
+                        drop list_push(@o.guard, m.m_guard[mi]);
+                        drop list_push(@o.nstart, m.m_nstart[mi]);
+                        drop list_push(@o.ncount, m.m_ncount[mi]);
                         drop list_push(@o.base, si);
                     }
                 }
             }
         }
         if (!hit) {
-            drop list_push(@o.thr, m.s_thr.items[si]);
-            drop list_push(@o.guard, m.s_guard.items[si]);
-            drop list_push(@o.nstart, m.s_nstart.items[si]);
-            drop list_push(@o.ncount, m.s_ncount.items[si]);
+            drop list_push(@o.thr, m.s_thr[si]);
+            drop list_push(@o.guard, m.s_guard[si]);
+            drop list_push(@o.nstart, m.s_nstart[si]);
+            drop list_push(@o.ncount, m.s_ncount[si]);
             drop list_push(@o.base, si);
         }
     }
@@ -612,9 +612,9 @@ func:xt_new = XTable(int64:cap) never fails {
 func:xt_find = int64(XTable->:t, List<int64>:keys, int64:key) never fails {
     int64:h = key & t.mask;
     while (true) {
-        int64:v = t.slots.items[h];
+        int64:v = t.slots[h];
         if (v < 0i64) { pass (0i64 - 1i64); }
-        if (keys.items[v] == key) { pass v; }
+        if (keys[v] == key) { pass v; }
         h = (h + 1i64) & t.mask;
     }
     pass (0i64 - 1i64);
@@ -622,15 +622,15 @@ func:xt_find = int64(XTable->:t, List<int64>:keys, int64:key) never fails {
 
 func:xt_put = NIL(XTable->:t, int64:key, int64:idx) never fails {
     int64:h = key & t.mask;
-    while (t.slots.items[h] >= 0i64) { h = (h + 1i64) & t.mask; }
-    t.slots.items[h] = idx;
+    while (t.slots[h] >= 0i64) { h = (h + 1i64) & t.mask; }
+    t.slots[h] = idx;
     pass NIL;
 };
 
 // The table doubled and every state re-placed (called at half load).
 func:xt_grown = XTable(XTable->:t, List<int64>:keys) never fails {
     XTable:n = raw xt_new((t.mask + 1i64) * 2i64);
-    for (int64:i in 0i64...keys.count) { drop xt_put(@n, keys.items[i], i); }
+    for (int64:i in 0i64...keys.count) { drop xt_put(@n, keys[i], i); }
     pass n;
 };
 
@@ -639,9 +639,9 @@ func:xp_decode = NIL(XModel->:m, List<int64>:strides, int64:key, List<int64>->:c
     // most significant variable first: the last declared
     int64:i = m.vars.count - 1i64;
     while (i >= 0i64) {
-        int64:d = rest / strides.items[i];
-        rest = rest - (d * strides.items[i]);
-        cur.items[i] = d + m.lo.items[i];
+        int64:d = rest / strides[i];
+        rest = rest - (d * strides[i]);
+        (<-cur)[i] = d + m.lo[i];
         i = i - 1i64;
     }
     pass NIL;
@@ -660,7 +660,7 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     int64:prod = 1i64;
     for (int64:i in 0i64...nv) {
         drop list_push(@strides, prod);
-        int64:radix = (m.hi.items[i] - m.lo.items[i]) + 1i64;
+        int64:radix = (m.hi[i] - m.lo[i]) + 1i64;
         if (radix < 1i64) { m.too_large = true; pass run; }
         if (prod > (4611686018427387904i64 / radix)) { m.too_large = true; pass run; }
         prod = prod * radix;
@@ -673,8 +673,8 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     // the initial states: the free variables enumerated in declaration order, filtered by `init`
     int64:combos = 1i64;
     for (int64:i3 in 0i64...nv) {
-        if (m.pin.items[i3] == 0i64) {
-            combos = combos * ((m.hi.items[i3] - m.lo.items[i3]) + 1i64);
+        if (m.pin[i3] == 0i64) {
+            combos = combos * ((m.hi[i3] - m.lo[i3]) + 1i64);
             if (combos > (raw XP_STATE_CAP())) { m.too_large = true; pass run; }
         }
     }
@@ -684,21 +684,21 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
         // the LAST free variable varies fastest, as nested loops in declaration order do
         int64:j = nv - 1i64;
         while (j >= 0i64) {
-            if (m.pin.items[j] != 0i64) { cur.items[j] = m.pin_val.items[j]; }
+            if (m.pin[j] != 0i64) { cur[j] = m.pin_val[j]; }
             else {
-                int64:radix2 = (m.hi.items[j] - m.lo.items[j]) + 1i64;
+                int64:radix2 = (m.hi[j] - m.lo[j]) + 1i64;
                 int64:q = rest / radix2;
-                cur.items[j] = (rest - (q * radix2)) + m.lo.items[j];
+                cur[j] = (rest - (q * radix2)) + m.lo[j];
                 rest = q;
             }
             j = j - 1i64;
         }
         bool:in_range = true;
-        for (int64:i4 in 0i64...nv) { if ((cur.items[i4] < m.lo.items[i4]) || (cur.items[i4] > m.hi.items[i4])) { in_range = false; } }
+        for (int64:i4 in 0i64...nv) { if ((cur[i4] < m.lo[i4]) || (cur[i4] > m.hi[i4])) { in_range = false; } }
         if (!in_range) { continue; }
         if ((raw xp_eval(m, cur, m.init_e)) == 0i64) { continue; }
         int64:key = 0i64;
-        for (int64:i5 in 0i64...nv) { key = key + ((cur.items[i5] - m.lo.items[i5]) * strides.items[i5]); }
+        for (int64:i5 in 0i64...nv) { key = key + ((cur[i5] - m.lo[i5]) * strides[i5]); }
         if ((raw xt_find(@seen, run.keys, key)) >= 0i64) { continue; }
         drop list_push(@run.keys, key);
         drop list_push(@run.dist, 0i64);
@@ -711,37 +711,37 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     List<int64>:adj_to = raw list_init::<int64>(1024i64);
     int64:head = 0i64;
     while (head < run.keys.count) {
-        drop xp_decode(m, strides, run.keys.items[head], @cur);
+        drop xp_decode(m, strides, run.keys[head], @cur);
         drop list_push(@adj_start, adj_thr.count);
         for (int64:si in 0i64...steps.thr.count) {
-            int64:g = steps.guard.items[si];
+            int64:g = steps.guard[si];
             if (g >= 0i64) { if ((raw xp_eval(m, cur, g)) == 0i64) { continue; } }
-            for (int64:i6 in 0i64...nv) { nxt.items[i6] = cur.items[i6]; }
-            int64:ws = steps.nstart.items[si];
-            for (int64:b in 0i64...steps.ncount.items[si]) {
-                nxt.items[m.nvar.items[ws + b]] = raw xp_eval(m, cur, m.nexpr.items[ws + b]);
+            for (int64:i6 in 0i64...nv) { nxt[i6] = cur[i6]; }
+            int64:ws = steps.nstart[si];
+            for (int64:b in 0i64...steps.ncount[si]) {
+                nxt[m.nvar[ws + b]] = raw xp_eval(m, cur, m.nexpr[ws + b]);
             }
             int64:out = 0i64 - 1i64;
             for (int64:i7 in 0i64...nv) {
-                if ((out < 0i64) && ((nxt.items[i7] < m.lo.items[i7]) || (nxt.items[i7] > m.hi.items[i7]))) { out = i7; }
+                if ((out < 0i64) && ((nxt[i7] < m.lo[i7]) || (nxt[i7] > m.hi[i7]))) { out = i7; }
             }
             if (out >= 0i64) {
-                int64:bs = steps.base.items[si];
-                if ((run.blocked.items[bs] < 0i64) || (out < run.blocked.items[bs])) { run.blocked.items[bs] = out; }
+                int64:bs = steps.base[si];
+                if ((run.blocked[bs] < 0i64) || (out < run.blocked[bs])) { run.blocked[bs] = out; }
                 continue;
             }
             int64:nkey = 0i64;
-            for (int64:i8 in 0i64...nv) { nkey = nkey + ((nxt.items[i8] - m.lo.items[i8]) * strides.items[i8]); }
+            for (int64:i8 in 0i64...nv) { nkey = nkey + ((nxt[i8] - m.lo[i8]) * strides[i8]); }
             int64:ni = raw xt_find(@seen, run.keys, nkey);
             if (ni < 0i64) {
                 if (run.keys.count >= (raw XP_STATE_CAP())) { m.too_large = true; pass run; }
                 drop list_push(@run.keys, nkey);
-                drop list_push(@run.dist, run.dist.items[head] + 1i64);
+                drop list_push(@run.dist, run.dist[head] + 1i64);
                 ni = run.keys.count - 1i64;
                 if ((run.keys.count * 2i64) > (seen.mask + 1i64)) { seen = raw xt_grown(@seen, run.keys); }
                 else { drop xt_put(@seen, nkey, ni); }
             }
-            drop list_push(@adj_thr, steps.thr.items[si]);
+            drop list_push(@adj_thr, steps.thr[si]);
             drop list_push(@adj_to, ni);
         }
         head = head + 1i64;
@@ -753,27 +753,27 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     List<int64>:sw = raw list_init::<int64>((ns * nt) + 1i64);
     for (int64:i9 in 0i64...(ns * nt)) { drop list_push(@sw, raw XP_INF()); }
     for (int64:s0 in 0i64...ninit) {
-        for (int64:e0 in adj_start.items[s0]...adj_start.items[s0 + 1i64]) { sw.items[(adj_to.items[e0] * nt) + adj_thr.items[e0]] = 0i64; }
+        for (int64:e0 in adj_start[s0]...adj_start[s0 + 1i64]) { sw[(adj_to[e0] * nt) + adj_thr[e0]] = 0i64; }
     }
     bool:changed = true;
     while (changed) {
         changed = false;
         for (int64:s1 in 0i64...ns) {
             for (int64:t1 in 0i64...nt) {
-                int64:c1 = sw.items[(s1 * nt) + t1];
+                int64:c1 = sw[(s1 * nt) + t1];
                 if (c1 >= (raw XP_INF())) { continue; }
-                for (int64:e1 in adj_start.items[s1]...adj_start.items[s1 + 1i64]) {
+                for (int64:e1 in adj_start[s1]...adj_start[s1 + 1i64]) {
                     int64:nc = c1;
-                    if (adj_thr.items[e1] != t1) { nc = c1 + 1i64; }
-                    int64:slot = (adj_to.items[e1] * nt) + adj_thr.items[e1];
-                    if (nc < sw.items[slot]) { sw.items[slot] = nc; changed = true; }
+                    if (adj_thr[e1] != t1) { nc = c1 + 1i64; }
+                    int64:slot = (adj_to[e1] * nt) + adj_thr[e1];
+                    if (nc < sw[slot]) { sw[slot] = nc; changed = true; }
                 }
             }
         }
     }
     for (int64:s2 in 0i64...ns) {
         int64:best = raw XP_INF();
-        for (int64:t2 in 0i64...nt) { if (sw.items[(s2 * nt) + t2] < best) { best = sw.items[(s2 * nt) + t2]; } }
+        for (int64:t2 in 0i64...nt) { if (sw[(s2 * nt) + t2] < best) { best = sw[(s2 * nt) + t2]; } }
         if (s2 < ninit) { best = 0i64; }
         drop list_push(@run.minsw, best);
     }
@@ -784,10 +784,10 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     for (int64:i10 in 0i64...(ns * nt)) { drop list_push(@lay, raw XP_INF()); drop list_push(@nlay, raw XP_INF()); drop list_push(@bestk, raw XP_INF()); }
     if (m.depth >= 1i64) {
         for (int64:s3 in 0i64...ninit) {
-            for (int64:e3 in adj_start.items[s3]...adj_start.items[s3 + 1i64]) {
-                int64:sl3 = (adj_to.items[e3] * nt) + adj_thr.items[e3];
-                lay.items[sl3] = 0i64;
-                bestk.items[sl3] = 0i64;
+            for (int64:e3 in adj_start[s3]...adj_start[s3 + 1i64]) {
+                int64:sl3 = (adj_to[e3] * nt) + adj_thr[e3];
+                lay[sl3] = 0i64;
+                bestk[sl3] = 0i64;
             }
         }
     }
@@ -795,28 +795,28 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     int64:klast = m.depth;
     if (klast < 2i64) { klast = 1i64; }
     for (int64:kk in 2i64...(klast + 1i64)) {
-        for (int64:i11 in 0i64...(ns * nt)) { nlay.items[i11] = raw XP_INF(); }
+        for (int64:i11 in 0i64...(ns * nt)) { nlay[i11] = raw XP_INF(); }
         for (int64:s4 in 0i64...ns) {
             for (int64:t4 in 0i64...nt) {
-                int64:c4 = lay.items[(s4 * nt) + t4];
+                int64:c4 = lay[(s4 * nt) + t4];
                 if (c4 >= (raw XP_INF())) { continue; }
-                for (int64:e4 in adj_start.items[s4]...adj_start.items[s4 + 1i64]) {
+                for (int64:e4 in adj_start[s4]...adj_start[s4 + 1i64]) {
                     int64:nc4 = c4;
-                    if (adj_thr.items[e4] != t4) { nc4 = c4 + 1i64; }
-                    int64:sl4 = (adj_to.items[e4] * nt) + adj_thr.items[e4];
-                    if (nc4 < nlay.items[sl4]) { nlay.items[sl4] = nc4; }
+                    if (adj_thr[e4] != t4) { nc4 = c4 + 1i64; }
+                    int64:sl4 = (adj_to[e4] * nt) + adj_thr[e4];
+                    if (nc4 < nlay[sl4]) { nlay[sl4] = nc4; }
                 }
             }
         }
         for (int64:i12 in 0i64...(ns * nt)) {
-            lay.items[i12] = nlay.items[i12];
-            if (nlay.items[i12] < bestk.items[i12]) { bestk.items[i12] = nlay.items[i12]; }
+            lay[i12] = nlay[i12];
+            if (nlay[i12] < bestk[i12]) { bestk[i12] = nlay[i12]; }
         }
     }
     for (int64:s5 in 0i64...ns) {
         int64:isin = 0i64;
         if (s5 < ninit) { isin = 1i64; }
-        for (int64:t5 in 0i64...nt) { if (bestk.items[(s5 * nt) + t5] <= m.preempt) { isin = 1i64; } }
+        for (int64:t5 in 0i64...nt) { if (bestk[(s5 * nt) + t5] <= m.preempt) { isin = 1i64; } }
         drop list_push(@run.inside, isin);
     }
     pass run;
@@ -848,16 +848,16 @@ func:xp_hits = XHits(XModel->:m, XRun->:run, int64:e) never fails {
     int64:nv = m.vars.count;
     List<int64>:strides = raw list_init::<int64>(nv);
     int64:prod = 1i64;
-    for (int64:i in 0i64...nv) { drop list_push(@strides, prod); prod = prod * ((m.hi.items[i] - m.lo.items[i]) + 1i64); }
+    for (int64:i in 0i64...nv) { drop list_push(@strides, prod); prod = prod * ((m.hi[i] - m.lo[i]) + 1i64); }
     List<int64>:cur = raw list_init::<int64>(nv);
     for (int64:i2 in 0i64...nv) { drop list_push(@cur, 0i64); }
     for (int64:s in 0i64...run.keys.count) {
-        drop xp_decode(m, strides, run.keys.items[s], @cur);
+        drop xp_decode(m, strides, run.keys[s], @cur);
         if ((raw xp_eval(m, cur, e)) == 0i64) { continue; }
         h.found = true;
-        if (run.dist.items[s] < h.depth) { h.depth = run.dist.items[s]; }
-        if (run.minsw.items[s] < h.changes) { h.changes = run.minsw.items[s]; }
-        if (run.inside.items[s] != 0i64) { h.inside = true; }
+        if (run.dist[s] < h.depth) { h.depth = run.dist[s]; }
+        if (run.minsw[s] < h.changes) { h.changes = run.minsw[s]; }
+        if (run.inside[s] != 0i64) { h.inside = true; }
     }
     pass h;
 };
@@ -887,17 +887,17 @@ pub func:floor_explore_model = List<string>(string:mname, string:text) never fai
     List<string>:fl = raw list_init::<string>(4i64);
     string:head = raw xp_head(mname);
     for (int64:si in 0i64...m.s_thr.count) {
-        if (base.blocked.items[si] < 0i64) { continue; }
+        if (base.blocked[si] < 0i64) { continue; }
         string:w = string_concat(head, "floor-model-range-blocks: step `");
-        w = string_concat(w, raw strlist_view(m.threads, m.s_thr.items[si]));
+        w = string_concat(w, raw strlist_view(m.threads, m.s_thr[si]));
         w = string_concat(w, ".");
         w = string_concat(w, raw strlist_view(m.s_name, si));
         w = string_concat(w, "` can take `");
-        w = string_concat(w, raw strlist_view(m.vars, base.blocked.items[si]));
+        w = string_concat(w, raw strlist_view(m.vars, base.blocked[si]));
         drop strlist_push(@fl, string_concat(w, "` out of its range from a reachable state -- the unrolling drops that transition silently"));
     }
     for (int64:bi in 0i64...m.b_name.count) {
-        XHits:h = raw xp_hits(@m, @base, m.b_expr.items[bi]);
+        XHits:h = raw xp_hits(@m, @base, m.b_expr[bi]);
         if (m.eval_bad) { pass (raw xp_unreadable(mname, "an expression's value leaves the range the explicit reading computes in")); }
         if (!h.found) { continue; }
         string:w2 = string_concat(head, "floor-model-bad-reachable: `");
@@ -920,7 +920,7 @@ pub func:floor_explore_model = List<string>(string:mname, string:text) never fai
     for (int64:ci in 0i64...m.c_name.count) {
         int64:be = 0i64 - 1i64;
         for (int64:bj in 0i64...m.b_name.count) {
-            if ((be < 0i64) && (raw text_eq(raw strlist_view(m.b_name, bj), raw strlist_view(m.c_bad, ci)))) { be = m.b_expr.items[bj]; }
+            if ((be < 0i64) && (raw text_eq(raw strlist_view(m.b_name, bj), raw strlist_view(m.c_bad, ci)))) { be = m.b_expr[bj]; }
         }
         if (be < 0i64) {
             string:w3 = string_concat(head, "floor-model-unreadable: a control names no bad predicate: ");
@@ -958,7 +958,7 @@ pub func:xp_facts = string(string:text) never fails {
     XRun:run = raw xp_run(@m, 0i64 - 1i64);
     if (m.too_large || m.eval_bad) { pass ""; }
     int64:inside = 0i64;
-    for (int64:s in 0i64...run.keys.count) { if (run.inside.items[s] != 0i64) { inside = inside + 1i64; } }
+    for (int64:s in 0i64...run.keys.count) { if (run.inside[s] != 0i64) { inside = inside + 1i64; } }
     string:o = string_concat("(K ", int_to_string(m.depth));
     o = string_concat(o, ", D ");
     o = string_concat(o, int_to_string(m.preempt));

@@ -273,20 +273,20 @@ pub func:emit_checked_entry = IrVal(ExprEmitter->:x, string:sym, List<int32>:pru
             args = string_concat(args, ", ");
         }
         string:an = string_concat("%a", int_to_string(i));
-        params = raw cat3(params, x.fe.plls.items[i], string_concat(" ", an));
-        args = raw cat3(args, x.fe.plls.items[i], string_concat(" ", an));
+        params = raw cat3(params, x.fe.plls[i], string_concat(" ", an));
+        args = raw cat3(args, x.fe.plls[i], string_concat(" ", an));
     }
     drop irw_raw(x.fe.w, raw cat5("define ", x.fe.ret_ll, " ", sym,
                                     raw cat3("(", params, raw ll_fn_open())));
     drop irw_label(x.fe.w, "entry");
     for (int64:pi in 0i64...prules.count) {
-        if (prules.items[pi] == 0i32) { continue; }
-        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: pdecls.items[pi] });
-        LlType:pl = raw ll_type(x.fe.ctx, ptypes.items[pi]);
-        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes.items[pi], pd.span)); }
+        if (prules[pi] == 0i32) { continue; }
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: pdecls[pi] });
+        LlType:pl = raw ll_type(x.fe.ctx, ptypes[pi]);
+        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes[pi], pd.span)); }
         IrVal:c = raw emit_limit_check_value(x, string_concat("%a", int_to_string(pi)), pl,
-                                             ptypes.items[pi], DeclId{ index: prules.items[pi] },
-                                             raw SITE_DECL(), pdecls.items[pi], pd.span);
+                                             ptypes[pi], DeclId{ index: prules[pi] },
+                                             raw SITE_DECL(), pdecls[pi], pd.span);
         if (!(raw iv_is_ok(c))) { pass c; }
     }
     // THE `requires` PREDICATE (1.5.3 step 1; L-1, L-2), after the limit
@@ -499,8 +499,8 @@ pub func:emit_req_fn = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d, string:fna
     x.fe.decl = did.index;
     string:bl = string_concat(rt.text, "");
     for (int64:i in 0i64...pnames.count) {
-        LlType:pl = raw fnem_param(x.fe, pnames.items[i], ptypes.items[i], false);
-        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes.items[i], d.span)); }
+        LlType:pl = raw fnem_param(x.fe, pnames[i], ptypes[i], false);
+        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes[i], d.span)); }
     }
     drop fnem_open(x.fe);
     int32:cc = raw fn_contract_count(x.ast, d);
@@ -563,7 +563,7 @@ func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nest
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(x.ast, s, @xs);
     for (int64:xi in 0i64...xs.count) {
-        if (!(raw pickexpr_continues_elided(x, ExprId{ index: xs.items[xi] }, label, nested, fuel - 1i32))) { pass false; }
+        if (!(raw pickexpr_continues_elided(x, ExprId{ index: xs[xi] }, label, nested, fuel - 1i32))) { pass false; }
     }
     if (s.kind == StmtKind.StmtContinueStmt) {
         bool:mine = false;

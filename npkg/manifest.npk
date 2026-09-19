@@ -151,15 +151,15 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
         pass (raw refuse(root, w));
     }
     for (int64:i in 0i64...d.entries.count) {
-        string:sec = string_from_bytes(d.entries.items[i].section.ptr, d.entries.items[i].section.len);
-        string:key = string_from_bytes(d.entries.items[i].key.ptr, d.entries.items[i].key.len);
+        string:sec = string_from_bytes(d.entries[i].section.ptr, d.entries[i].section.len);
+        string:key = string_from_bytes(d.entries[i].key.ptr, d.entries[i].key.len);
         if (raw text_eq(key, "edition")) {
-            string:w1 = string_concat("nitpick.toml: line ", int_to_string(d.entries.items[i].line));
+            string:w1 = string_concat("nitpick.toml: line ", int_to_string(d.entries[i].line));
             w1 = string_concat(w1, ": there is no `edition` key -- one language, no editions (D-077)");
             pass (raw refuse(root, w1));
         }
         if (!(raw schema_allows(sec, key))) {
-            string:w2 = string_concat("nitpick.toml: line ", int_to_string(d.entries.items[i].line));
+            string:w2 = string_concat("nitpick.toml: line ", int_to_string(d.entries[i].line));
             w2 = string_concat(w2, ": `");
             if (sec.len > 0i64) { w2 = string_concat(w2, sec); w2 = string_concat(w2, "."); }
             w2 = string_concat(w2, key);

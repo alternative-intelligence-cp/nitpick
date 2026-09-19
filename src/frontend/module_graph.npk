@@ -138,14 +138,14 @@ pub func:graph_count = int32(ModuleGraph->:g) never fails { pass (raw graph_id(g
 pub func:graph_at = ModuleEntry(ModuleGraph->:g, int32:i) never fails {
     if (i < 0i32) { !!! BoundsIndex; }
     if ((i => int64) >= g.v.count) { !!! BoundsIndex; }
-    pass g.v.items[i => int64];
+    pass g.v[i => int64];
 };
 
 // Already in the graph? Returns its index, or -1.
 pub func:graph_find = int32(ModuleGraph->:g, int32:file) never fails {
     int32:i = 0i32;
     while ((i => int64) < g.v.count) {
-        if (g.v.items[i => int64].file == file) {
+        if (g.v[i => int64].file == file) {
             pass i;
         }
         i = i + 1i32;
@@ -305,14 +305,14 @@ pub func:graph_load_prelude = int32(ModuleGraph->:g) never fails {
 pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
     while ((i => int64) < g.v.count) {
-        ModuleEntry:e = g.v.items[i => int64];
+        ModuleEntry:e = g.v[i => int64];
         DeclId:root = DeclId{ index: e.root };
         // past the header slot: a file's `mod:name;` binds nothing (D-248)
         e.scope = raw collect_file_module(@g.tab, @g.ast, g.diags, root, 0i32);
         // THE PRELUDE'S SCOPE (D-247; 1.5.1b step 5b): module 0 is the prelude,
         // and `List<T>` -- compiler-known and owning -- is declared there.
         if (i == 0i32) { g.tab.prelude_scope = e.scope; }
-        g.v.items[i => int64] = e;
+        g.v[i => int64] = e;
         i = i + 1i32;
     }
     // THE FILE-MODULE IMPORTS ARE LINKED LAST (D-274): every scope exists now,
@@ -346,7 +346,7 @@ func:graph_link_file_modules = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
     while ((i => int64) < g.v.count) {
         if (i != g.prelude) {
-            ModuleEntry:e = g.v.items[i => int64];
+            ModuleEntry:e = g.v[i => int64];
             DeclId:rootId = DeclId{ index: e.root };
             drop link_file_modules_in(g, e.scope, rootId, raw header_slot(@g.ast, rootId));
         }
@@ -390,7 +390,7 @@ func:link_one_file_module = NIL(ModuleGraph->:g, int32:scope, DeclId:item,
     // declaration is that declaration's, linked on its own turn.
     if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
     if (s.origin != item.index) { pass NIL; }
-    drop symtab_set_inner(@g.tab, sym, g.v.items[loaded => int64].scope);
+    drop symtab_set_inner(@g.tab, sym, g.v[loaded => int64].scope);
     pass NIL;
 };
 
@@ -398,8 +398,8 @@ func:link_one_file_module = NIL(ModuleGraph->:g, int32:scope, DeclId:item,
 func:file_module_loaded = int32(ModuleGraph->:g, DeclId:item) never fails {
     int32:i = 0i32;
     while ((i => int64) < g.links.count) {
-        if (g.links.items[i => int64].decl == item.index) {
-            pass g.links.items[i => int64].loaded;
+        if (g.links[i => int64].decl == item.index) {
+            pass g.links[i => int64].loaded;
         }
         i = i + 1i32;
     }

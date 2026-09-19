@@ -86,14 +86,14 @@ pub func:tokenlist_at = Token(TokenList->:l, int64:i) never fails {
     if (i >= l.v.count) {
         !!! BoundsId;
     }
-    pass l.v.items[i];
+    pass l.v[i];
 };
 
 pub func:tokenlist_last = Token(TokenList->:l) never fails {
     if (l.v.count == 0i64) {
         !!! BoundsId;
     }
-    pass l.v.items[l.v.count - 1i64];
+    pass l.v[l.v.count - 1i64];
 };
 
 // Split a `>>` at `i` into two `>` tokens.
@@ -112,26 +112,19 @@ pub func:tokenlist_last = Token(TokenList->:l) never fails {
 pub func:tokenlist_split_shr = bool(TokenList->:l, int64:i) never fails {
     if (i < 0i64) { pass false; }
     if (i >= l.v.count) { pass false; }
-    if (l.v.items[i].kind != TokenKind.OpShr) { pass false; }
+    if (l.v[i].kind != TokenKind.OpShr) { pass false; }
 
-    drop list_reserve(@l.v, 1i64);
+    Token:orig = l.v[i];
 
-    Token:orig = l.v.items[i];
-
-    // Shift the tail up by one to make room for the second `>`.
-    int64:j = l.v.count;
-    while (j > i) {
-        l.v.items[j] = l.v.items[j - 1i64];
-        j = j - 1i64;
-    }
-    l.v.count = l.v.count + 1i64;
-
-    // Two one-byte spans, so a diagnostic can point at either half.
+    // Two one-byte spans, so a diagnostic can point at either half. The first
+    // `>` takes the `>>`'s place and the second is INSERTED after it -- the
+    // tail shifted up by the prelude's checked operation (1.5.8b step 1b),
+    // where it was written past `count` by hand.
     Span:a = raw span_make(orig.span.file, orig.span.offset, orig.span.line,
                            orig.span.col, 1i32);
     Span:b = raw span_make(orig.span.file, orig.span.offset + 1i32,
                            orig.span.line, orig.span.col + 1i32, 1i32);
-    l.v.items[i] = raw token_make(TokenKind.OpGt, a, 0i64);
-    l.v.items[i + 1i64] = raw token_make(TokenKind.OpGt, b, 0i64);
+    l.v[i] = raw token_make(TokenKind.OpGt, a, 0i64);
+    drop list_insert(@l.v, i + 1i64, raw token_make(TokenKind.OpGt, b, 0i64));
     pass true;
 };

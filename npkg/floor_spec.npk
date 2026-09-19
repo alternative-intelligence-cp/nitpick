@@ -46,8 +46,8 @@ func:push_node = int64(Sxs->:s, int32:kind, move string:text) never fails {
 // Link `child` as the last child of `parent` (or as a root when parent < 0),
 // through `last`, the previous sibling at that level (or -1).
 func:link = NIL(Sxs->:s, int64:parent, int64:last, int64:child) never fails {
-    if (last >= 0i64) { s.nodes.items[last].next = child; }
-    else { if (parent >= 0i64) { s.nodes.items[parent].first = child; } }
+    if (last >= 0i64) { s.nodes[last].next = child; }
+    else { if (parent >= 0i64) { s.nodes[parent].first = child; } }
     // EVERY top-level form is a root (1.5.6 step 3): until this fix only the
     // first was listed and the rest hung off its `next`, which the step-0
     // belt never noticed because it asked for the one section that existed
@@ -74,14 +74,14 @@ pub func:sx_parse = Sxs(string:text) never fails {
         int64:parent = 0i64 - 1i64;
         int64:last = root_last;
         if (open_list.count > 0i64) {
-            parent = open_list.items[open_list.count - 1i64];
-            last = open_last.items[open_last.count - 1i64];
+            parent = open_list[open_list.count - 1i64];
+            last = open_last[open_last.count - 1i64];
         }
         if (c == 40u8) {
             string:empty = "";
             int64:nd = raw push_node(@s, raw SX_LIST(), move(empty));
             drop link(@s, parent, last, nd);
-            if (open_list.count > 0i64) { open_last.items[open_last.count - 1i64] = nd; } else { root_last = nd; }
+            if (open_list.count > 0i64) { open_last[open_last.count - 1i64] = nd; } else { root_last = nd; }
             drop list_push(@open_list, nd);
             drop list_push(@open_last, 0i64 - 1i64);
             i = i + 1i64;
@@ -93,8 +93,8 @@ pub func:sx_parse = Sxs(string:text) never fails {
                 s.problem = string_concat("unbalanced `)` at line ", int_to_string(line));
                 pass s;
             }
-            open_list.count = open_list.count - 1i64;
-            open_last.count = open_last.count - 1i64;
+            discard(raw list_pop(@open_list));
+            discard(raw list_pop(@open_last));
             i = i + 1i64;
             continue;
         }
@@ -109,7 +109,7 @@ pub func:sx_parse = Sxs(string:text) never fails {
             string:st = raw text_slice(text, i + 1i64, j);
             int64:nd2 = raw push_node(@s, raw SX_STRING(), move(st));
             drop link(@s, parent, last, nd2);
-            if (open_list.count > 0i64) { open_last.items[open_last.count - 1i64] = nd2; } else { root_last = nd2; }
+            if (open_list.count > 0i64) { open_last[open_last.count - 1i64] = nd2; } else { root_last = nd2; }
             i = j + 1i64;
             continue;
         }
@@ -118,7 +118,7 @@ pub func:sx_parse = Sxs(string:text) never fails {
         string:at = raw text_slice(text, i, k);
         int64:nd3 = raw push_node(@s, raw SX_ATOM(), move(at));
         drop link(@s, parent, last, nd3);
-        if (open_list.count > 0i64) { open_last.items[open_last.count - 1i64] = nd3; } else { root_last = nd3; }
+        if (open_list.count > 0i64) { open_last[open_last.count - 1i64] = nd3; } else { root_last = nd3; }
         i = k;
     }
     if (open_list.count > 0i64) {
@@ -131,47 +131,47 @@ pub func:sx_parse = Sxs(string:text) never fails {
 // The k-th item of a list node (0-based), or -1.
 pub func:sx_nth = int64(Sxs->:s, int64:list_node, int64:k) never fails {
     if (list_node < 0i64) { pass (0i64 - 1i64); }
-    if (s.nodes.items[list_node].kind != (raw SX_LIST())) { pass (0i64 - 1i64); }
-    int64:c = s.nodes.items[list_node].first;
+    if (s.nodes[list_node].kind != (raw SX_LIST())) { pass (0i64 - 1i64); }
+    int64:c = s.nodes[list_node].first;
     int64:n = 0i64;
     while (c >= 0i64) {
         if (n == k) { pass c; }
         n = n + 1i64;
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass (0i64 - 1i64);
 };
 
 pub func:sx_len = int64(Sxs->:s, int64:list_node) never fails {
     if (list_node < 0i64) { pass 0i64; }
-    if (s.nodes.items[list_node].kind != (raw SX_LIST())) { pass 0i64; }
-    int64:c = s.nodes.items[list_node].first;
+    if (s.nodes[list_node].kind != (raw SX_LIST())) { pass 0i64; }
+    int64:c = s.nodes[list_node].first;
     int64:n = 0i64;
-    while (c >= 0i64) { n = n + 1i64; c = s.nodes.items[c].next; }
+    while (c >= 0i64) { n = n + 1i64; c = s.nodes[c].next; }
     pass n;
 };
 
 // The text of an ATOM node, OWNED, or "" (a string or a list answers "").
 pub func:sx_atom = string(Sxs->:s, int64:node) never fails {
     if (node < 0i64) { pass ""; }
-    if (s.nodes.items[node].kind != (raw SX_ATOM())) { pass ""; }
-    pass (raw text_copy(string_from_bytes(s.nodes.items[node].text.ptr, s.nodes.items[node].text.len)));
+    if (s.nodes[node].kind != (raw SX_ATOM())) { pass ""; }
+    pass (raw text_copy(string_from_bytes(s.nodes[node].text.ptr, s.nodes[node].text.len)));
 };
 
 // The text of a STRING node, or "" -- and whether it is one.
 pub func:sx_is_string = bool(Sxs->:s, int64:node) never fails {
     if (node < 0i64) { pass false; }
-    pass (s.nodes.items[node].kind == (raw SX_STRING()));
+    pass (s.nodes[node].kind == (raw SX_STRING()));
 };
 
 pub func:sx_string = string(Sxs->:s, int64:node) never fails {
     if (!(raw sx_is_string(s, node))) { pass ""; }
-    pass (raw text_copy(string_from_bytes(s.nodes.items[node].text.ptr, s.nodes.items[node].text.len)));
+    pass (raw text_copy(string_from_bytes(s.nodes[node].text.ptr, s.nodes[node].text.len)));
 };
 
 pub func:sx_is_list = bool(Sxs->:s, int64:node) never fails {
     if (node < 0i64) { pass false; }
-    pass (s.nodes.items[node].kind == (raw SX_LIST()));
+    pass (s.nodes[node].kind == (raw SX_LIST()));
 };
 
 // The head atom of a list node: its first item's atom text, or "".
@@ -182,7 +182,7 @@ pub func:sx_head = string(Sxs->:s, int64:list_node) never fails {
 // The first top-level list whose head is `name`, or -1.
 pub func:sx_find_root = int64(Sxs->:s, string:name) never fails {
     for (int64:i in 0i64...s.roots.count) {
-        int64:r = s.roots.items[i];
+        int64:r = s.roots[i];
         if (raw text_eq(raw sx_head(s, r), name)) { pass r; }
     }
     pass (0i64 - 1i64);

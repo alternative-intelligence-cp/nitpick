@@ -756,7 +756,7 @@ pub func:tx_mem_define = NIL(Tx->:t, string:name, string:body) never fails {
 // walks the graph itself, and a sink's hypothesis names its reach explicitly.
 func:trans_refs = List<string>(Tx->:t, string:sym) never fails {
     for (int64:m in 0i64...t.tr_name.count) {
-        if (raw text_eq(raw strlist_view(t.tr_name, m), sym)) { pass (raw strlist_clone(t.tr_syms.items[m])); }
+        if (raw text_eq(raw strlist_view(t.tr_name, m), sym)) { pass (raw strlist_clone(t.tr_syms[m])); }
     }
     List<string>:out = raw list_init::<string>(8i64);
     StrSet:seen = raw strset_init(32i64);
@@ -772,7 +772,7 @@ func:trans_refs = List<string>(Tx->:t, string:sym) never fails {
         if (w > 1i64) { drop strlist_push(@out, cur); }
         for (int64:d in 0i64...t.def_names.count) {
             if (!(raw text_eq(raw strlist_view(t.def_names, d), cur))) { continue; }
-            for (int64:r in 0i64...t.def_refs.items[d].count) { drop strlist_push(@work, raw strlist_view(t.def_refs.items[d], r)); }
+            for (int64:r in 0i64...t.def_refs[d].count) { drop strlist_push(@work, raw strlist_view(t.def_refs[d], r)); }
             break;
         }
     }
@@ -827,20 +827,20 @@ pub func:tx_hyp_reaches = NIL(Tx->:t, string:sym) never fails {
     int64:w = 0i64;
     while (w < work.count) {
         string:cur = raw strlist_copy(work, w);
-        int64:dp = depth.items[w];
+        int64:dp = depth[w];
         w = w + 1i64;
         if (!(raw strset_add(@seen, cur))) { continue; }
         if (dp >= 2i64) { continue; }
         for (int64:d in 0i64...t.def_names.count) {
             if (!(raw text_eq(raw strlist_view(t.def_names, d), cur))) { continue; }
-            for (int64:r in 0i64...t.def_refs.items[d].count) { drop strlist_push(@work, raw strlist_view(t.def_refs.items[d], r)); drop list_push(@depth, dp + 1i64); }
+            for (int64:r in 0i64...t.def_refs[d].count) { drop strlist_push(@work, raw strlist_view(t.def_refs[d], r)); drop list_push(@depth, dp + 1i64); }
             break;
         }
     }
     int64:last = t.hyps.count - 1i64;
     for (int64:k in 0i64...raw strset_count(seen)) {
         string:s2 = raw strset_key(seen, k);
-        if (!(raw strlist_contains(t.hyp_syms.items[last], s2))) { drop strlist_push(@t.hyp_syms.items[last], s2); }
+        if (!(raw strlist_contains(t.hyp_syms[last], s2))) { drop strlist_push(@t.hyp_syms[last], s2); }
     }
     drop strset_free(@seen);
     pass NIL;
@@ -1015,10 +1015,10 @@ pub func:tx_instantiate_templates = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x
         // so its loads forward and its applications carry their range axioms)
         for (int64:ii in 0i64...t.it_mem.count) {
             if (!(raw text_eq(raw strlist_view(t.it_mem, ii), m))) { continue; }
-            int64:hb = t.it_blk.items[ii];
+            int64:hb = t.it_blk[ii];
             REnv:ea = raw renv_new(raw strlist_view(t.it_cm, ii), raw strlist_view(t.it_mem, ii), false, true);
             drop renv_add(@ea, raw strlist_view(t.it_sym, ii), a);
-            string:inst = raw inv_conjuncts_over(t, ft, s, t.it_inv.items[ii], raw strlist_view(t.it_sym, ii), @ea, @x.meta.items[hb]);
+            string:inst = raw inv_conjuncts_over(t, ft, s, t.it_inv[ii], raw strlist_view(t.it_sym, ii), @ea, @x.meta[hb]);
             if (raw text_eq(inst, "true")) { continue; }
             drop tx_hyp(t, raw smt_app2("=>", raw strlist_view(t.it_guard, ii), inst), raw strlist_view(t.it_tag, ii), 0i64);
         }
@@ -1027,8 +1027,8 @@ pub func:tx_instantiate_templates = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x
         // through a pointwise definition
         for (int64:d2 in 0i64...t.def_names.count) {
             if (!(raw text_eq(raw strlist_view(t.def_names, d2), m))) { continue; }
-            for (int64:r in 0i64...t.def_refs.items[d2].count) {
-                string:ref = raw strlist_view(t.def_refs.items[d2], r);
+            for (int64:r in 0i64...t.def_refs[d2].count) {
+                string:ref = raw strlist_view(t.def_refs[d2], r);
                 if (raw strlist_contains(t.mem_syms, ref)) { drop strlist_push(@ms, ref); drop strlist_push(@ats, a); }
             }
             break;
@@ -1100,22 +1100,22 @@ func:tx_set = NIL(Tx->:t, string:ir, string:ty, Term:v) never fails {
     // incoming, an unrolled counter): its readers fold on
     int64:ri = raw reg_index(t, ir);
     if (v.is_num) {
-        t.reg_is_num.items[ri] = true;
-        t.reg_num.items[ri] = v.num;
+        t.reg_is_num[ri] = true;
+        t.reg_num[ri] = v.num;
     }
     // THE SHAPE FACTS SURVIVE THE REGISTER: `%rb = or %r1, %ab1` reads `%r1`
     // as a shift by one and `%ab1` as a value below two only if the table
     // remembers what their definitions were
-    t.reg_shl_k.items[ri] = v.shl_k;
-    t.reg_lt_k.items[ri] = v.lt_k;
-    t.reg_div_root.items[ri] = string_concat(raw strlist_view_of(v.div_root), "");
-    t.reg_div_by.items[ri] = v.div_by;
-    t.reg_lin_root.items[ri] = string_concat(raw strlist_view_of(v.lin_root), "");
-    t.reg_lin_off.items[ri] = v.lin_off;
-    t.reg_lin_parts.items[ri] = string_concat(raw strlist_view_of(v.lin_parts), "");
-    t.reg_tbl_global.items[ri] = string_concat(raw strlist_view_of(v.tbl_global), "");
-    t.reg_tbl_idx.items[ri] = string_concat(raw strlist_view_of(v.tbl_idx), "");
-    t.reg_tbl_scale.items[ri] = v.tbl_scale;
+    t.reg_shl_k[ri] = v.shl_k;
+    t.reg_lt_k[ri] = v.lt_k;
+    t.reg_div_root[ri] = string_concat(raw strlist_view_of(v.div_root), "");
+    t.reg_div_by[ri] = v.div_by;
+    t.reg_lin_root[ri] = string_concat(raw strlist_view_of(v.lin_root), "");
+    t.reg_lin_off[ri] = v.lin_off;
+    t.reg_lin_parts[ri] = string_concat(raw strlist_view_of(v.lin_parts), "");
+    t.reg_tbl_global[ri] = string_concat(raw strlist_view_of(v.tbl_global), "");
+    t.reg_tbl_idx[ri] = string_concat(raw strlist_view_of(v.tbl_idx), "");
+    t.reg_tbl_scale[ri] = v.tbl_scale;
     // AN ALIAS: `%s = load` names `|ld:3|`, `%ex` names `exec` -- a reader of the
     // register gets the symbol itself, so a clause's load and the body's register
     // are one term (the define-fun stays, for a clause that names the register)
@@ -1124,7 +1124,7 @@ func:tx_set = NIL(Tx->:t, string:ir, string:ty, Term:v) never fails {
     // address the body computes is the very text a clause renders
     if ((raw text_eq(sort, "Int")) && (!v.is_num)) {
         bool:atom = (raw is_word_atom(raw strlist_view_of(v.text), 128i64)) && (!(raw text_starts_with(raw strlist_view_of(v.text), "(")));
-        if (atom || (raw is_plain_sum(raw strlist_view_of(v.text)))) { t.reg_alias.items[ri] = string_concat(raw strlist_view_of(v.text), ""); }
+        if (atom || (raw is_plain_sum(raw strlist_view_of(v.text)))) { t.reg_alias[ri] = string_concat(raw strlist_view_of(v.text), ""); }
         else {
             // THE OTHER DIRECTION: a register the body reads by NAME (a quotient,
             // a cleared-low-bits form, a product) is what a clause rendering the
@@ -1158,23 +1158,23 @@ func:term_of_reg = Term(Tx->:t, string:ir) never fails {
     string:sort = raw strlist_view(t.reg_sort, i);
     if (raw text_eq(sort, "Bool")) { pass (raw term_bool(raw strlist_view(t.reg_sym, i))); }
     if (raw text_eq(sort, "Int")) {
-        if (t.reg_is_num.items[i]) { pass (raw term_num(t.reg_num.items[i], t.reg_bits.items[i])); }
+        if (t.reg_is_num[i]) { pass (raw term_num(t.reg_num[i], t.reg_bits[i])); }
         string:rname = raw strlist_copy(t.reg_sym, i);
         if ((raw strlist_view(t.reg_alias, i)).len > 0i64) { rname = raw strlist_copy(t.reg_alias, i); }
-        Term:r = raw term_int(rname, t.reg_bits.items[i]);
-        r.shl_k = t.reg_shl_k.items[i];
-        r.lt_k = t.reg_lt_k.items[i];
+        Term:r = raw term_int(rname, t.reg_bits[i]);
+        r.shl_k = t.reg_shl_k[i];
+        r.lt_k = t.reg_lt_k[i];
         r.div_root = raw strlist_copy(t.reg_div_root, i);
-        r.div_by = t.reg_div_by.items[i];
+        r.div_by = t.reg_div_by[i];
         r.lin_root = raw strlist_copy(t.reg_lin_root, i);
-        r.lin_off = t.reg_lin_off.items[i];
+        r.lin_off = t.reg_lin_off[i];
         r.lin_parts = raw strlist_copy(t.reg_lin_parts, i);
         r.tbl_global = raw strlist_copy(t.reg_tbl_global, i);
         r.tbl_idx = raw strlist_copy(t.reg_tbl_idx, i);
-        r.tbl_scale = t.reg_tbl_scale.items[i];
+        r.tbl_scale = t.reg_tbl_scale[i];
         pass r;
     }
-    pass (raw term_fp(raw strlist_view(t.reg_sym, i), t.reg_bits.items[i]));
+    pass (raw term_fp(raw strlist_view(t.reg_sym, i), t.reg_bits[i]));
 };
 
 // --- values ----------------------------------------------------------------------------------------
@@ -1242,7 +1242,7 @@ pub func:tx_global = string(Tx->:t, FloorText->:ft, string:ir) never fails {
                 // the fact IS the byte's range: no range axiom beside it
                 string:app = raw smt_app1("mem", a);
                 if (!(raw strlist_contains(t.mem_apps, app))) { drop strlist_push(@t.mem_apps, app); }
-                drop tx_hyp(t, raw smt_app2("=", app, int_to_string(bytes.items[i])), "constant", 0i64);
+                drop tx_hyp(t, raw smt_app2("=", app, int_to_string(bytes[i])), "constant", 0i64);
             }
         }
     }
@@ -1279,9 +1279,9 @@ func:const_bytes = List<int64>(FloorText->:ft, string:ty, string:init) never fai
         for (int64:pi in 0i64...parts.count) {
             string:piece = raw text_trim(raw strlist_view(parts, pi));
             int64:sp = raw text_find_byte(piece, 32u8, 0i64);
-            if (sp < 0i64) { out.count = 0i64; pass out; }
+            if (sp < 0i64) { drop list_clear(@out); pass out; }
             uint128:v = 0u128;
-            if (!(raw u128_parse(raw text_slice(piece, sp + 1i64, piece.len), esz * 8i64, @v))) { out.count = 0i64; pass out; }
+            if (!(raw u128_parse(raw text_slice(piece, sp + 1i64, piece.len), esz * 8i64, @v))) { drop list_clear(@out); pass out; }
             for (int64:b in 0i64...esz) {
                 drop list_push(@out, (v % 256u128) =>! int64);
                 v = v / 256u128;
@@ -1370,28 +1370,28 @@ func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, in
     List<string>:whens = raw list_init::<string>(4i64);
     List<string>:facts = raw list_init::<string>(8i64);
     if (oc0 >= 0i64) {
-        int64:oc = s.nodes.items[oc0].first;
-        oc = s.nodes.items[oc].next;
+        int64:oc = s.nodes[oc0].first;
+        oc = s.nodes[oc].next;
         while (oc >= 0i64) {
             if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); break; }
             drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
             drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
             if ((raw sx_len(s, oc)) == 4i64) { drop strlist_push(@whens, raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m)); }
             else { drop strlist_push(@whens, ""); }
-            oc = s.nodes.items[oc].next;
+            oc = s.nodes[oc].next;
         }
     }
     int64:nobj = los.count;
     if (vc0 >= 0i64) {
-        int64:vc = s.nodes.items[vc0].first;
-        vc = s.nodes.items[vc].next;
+        int64:vc = s.nodes[vc0].first;
+        vc = s.nodes[vc].next;
         while (vc >= 0i64) {
             // a view is `(lo len)`: the conditional form is an object's (no section needs a conditional view)
             if (!(raw sx_is_list(s, vc)) || ((raw sx_len(s, vc)) != 2i64)) { drop tx_problem(t, "a views range is not `(lo len)`"); break; }
             drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, vc, 0i64), e, m));
             drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, vc, 1i64), e, m));
             drop strlist_push(@whens, "");
-            vc = s.nodes.items[vc].next;
+            vc = s.nodes[vc].next;
         }
     }
     string:top = raw pow2_decimal(64i64);
@@ -1521,9 +1521,9 @@ func:divisor_cases = string(Tx->:t, string:text, List<string>->:vals) never fail
     }
     for (int64:i in 0i64...t.tv_text.count) {
         if (!(raw text_eq(raw strlist_view(t.tv_text, i), s))) { continue; }
-        for (int64:j in 0i64...t.tv_vals.items[i].count) {
+        for (int64:j in 0i64...t.tv_vals[i].count) {
             uint128:v = 0u128;
-            if (!(raw u128_parse(raw strlist_view(t.tv_vals.items[i], j), 64i64, @v))) { pass ""; }
+            if (!(raw u128_parse(raw strlist_view(t.tv_vals[i], j), 64i64, @v))) { pass ""; }
             drop strlist_push(vals, raw u128_text(raw u128_add(v, k, 64i64)));
         }
         pass (raw strlist_copy(t.tv_idx, i));
@@ -1552,13 +1552,13 @@ func:div_over_cases = string(Tx->:t, string:op, string:a, string:idx, List<strin
 
 // The ranges of an `(objects (lo len) ...)` clause rendered under `e`, into `los`/`lens`.
 func:objects_ranges = NIL(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, REnv->:e, BMeta->:m, List<string>->:los, List<string>->:lens) never fails {
-    int64:oc = s.nodes.items[oc0].first;
-    oc = s.nodes.items[oc].next;
+    int64:oc = s.nodes[oc0].first;
+    oc = s.nodes[oc].next;
     while (oc >= 0i64) {
         if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); break; }
         drop strlist_push(los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
         drop strlist_push(lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
-        oc = s.nodes.items[oc].next;
+        oc = s.nodes[oc].next;
     }
     pass NIL;
 };
@@ -1597,10 +1597,10 @@ func:caller_objects_in = string(Tx->:t, string:f, bool:with_loops) never fails {
 func:sx_mentions = bool(Sxs->:s, int64:node, string:name) never fails {
     if (node < 0i64) { pass false; }
     if (!(raw sx_is_list(s, node))) { pass (raw text_eq(raw sx_atom(s, node), name)); }
-    int64:c = s.nodes.items[node].first;
+    int64:c = s.nodes[node].first;
     while (c >= 0i64) {
         if (raw sx_mentions(s, c, name)) { pass true; }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass false;
 };
@@ -1617,14 +1617,14 @@ func:inv_conjuncts_over = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:inv, str
         pass "true";
     }
     string:out = "true";
-    int64:c = s.nodes.items[body].first;
-    c = s.nodes.items[c].next;   // past `and`
+    int64:c = s.nodes[body].first;
+    c = s.nodes[c].next;   // past `and`
     while (c >= 0i64) {
         if (raw sx_mentions(s, c, name)) {
             string:r = raw render(t, ft, s, c, e, m);
             if (raw text_eq(out, "true")) { out = move(r); } else { out = string_concat(raw smt_app2("and", out, r), ""); }
         }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass out;
 };
@@ -1702,7 +1702,7 @@ func:addr_in_object = bool(Tx->:t, string:prefix, uint128:total) never fails {
     }
     for (int64:o in 0i64...t.objects.count) {
         if (!(raw text_eq(raw strlist_view(t.objects, o), prefix))) { continue; }
-        if (total < (t.object_sizes.items[o] =>! uint128)) { pass true; }
+        if (total < (t.object_sizes[o] =>! uint128)) { pass true; }
     }
     pass false;
 };
@@ -1719,7 +1719,7 @@ func:tx_object = NIL(Tx->:t, string:sym, int64:size) never fails {
     drop tx_hyp(t, raw smt_app2("<=", raw smt_app2("+", sym, sz), raw pow2_decimal(64i64)), "range", 0i64);
     for (int64:i in 0i64...t.objects.count) {
         string:o = raw strlist_view(t.objects, i);
-        string:osz = int_to_string(t.object_sizes.items[i]);
+        string:osz = int_to_string(t.object_sizes[i]);
         drop tx_hyp(t, raw smt_app2("or", raw smt_app2("<=", raw smt_app2("+", sym, sz), o),
                                           raw smt_app2("<=", raw smt_app2("+", o, osz), sym)), "layout", 0i64);
     }
@@ -2241,7 +2241,7 @@ func:tx_or = Term(Tx->:t, Term:a, Term:b, int64:bits) never fails {
     if ((a.lt_k > 0i64) && (a.lt_k < bits)) { drop list_push(@ks, a.lt_k); }
     if ((b.lt_k > 0i64) && (b.lt_k < bits)) { drop list_push(@ks, b.lt_k); }
     for (int64:i2 in 0i64...ks.count) {
-        int64:k = ks.items[i2];
+        int64:k = ks[i2];
         string:p2 = raw pow2_text(k);
         // a's low k bits clear and b below 2^k: o = a + b; and the other way round
         drop tx_hyp(t, raw smt_app2("=>", raw smt_app2("and", raw smt_app2("=", raw smt_app2("mod", a.text, p2), "0"), raw smt_app2("<", b.text, p2)),
@@ -2416,7 +2416,7 @@ func:term_int_lt = Term(string:text, int64:bits, int64:lt_k) never fails {
 // The `(symbol @name ...)` root of the spec, or -1.
 pub func:spec_section = int64(Sxs->:s, string:name) never fails {
     for (int64:i in 0i64...s.roots.count) {
-        int64:r = s.roots.items[i];
+        int64:r = s.roots[i];
         if (!(raw text_eq(raw sx_head(s, r), "symbol"))) { continue; }
         if (raw text_eq(raw sx_atom(s, raw sx_nth(s, r, 1i64)), name)) { pass r; }
     }
@@ -2427,7 +2427,7 @@ pub func:spec_section = int64(Sxs->:s, string:name) never fails {
 pub func:spec_clause = int64(Sxs->:s, int64:sec, string:head, int64:k) never fails {
     if (sec < 0i64) { pass (0i64 - 1i64); }
     int64:n = 0i64;
-    int64:c = s.nodes.items[sec].first;
+    int64:c = s.nodes[sec].first;
     while (c >= 0i64) {
         if (raw sx_is_list(s, c)) {
             if (raw text_eq(raw sx_head(s, c), head)) {
@@ -2435,7 +2435,7 @@ pub func:spec_clause = int64(Sxs->:s, int64:sec, string:head, int64:k) never fai
                 n = n + 1i64;
             }
         }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass (0i64 - 1i64);
 };
@@ -2809,19 +2809,19 @@ func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e,
     // are one text
     if ((raw text_eq(head, "+")) && (len >= 3i64)) {
         List<string>:sa = raw list_init::<string>(len);
-        int64:sc = s.nodes.items[node].first;
-        sc = s.nodes.items[sc].next;
-        while (sc >= 0i64) { drop strlist_push(@sa, raw render(t, ft, s, sc, e, m)); sc = s.nodes.items[sc].next; }
+        int64:sc = s.nodes[node].first;
+        sc = s.nodes[sc].next;
+        while (sc >= 0i64) { drop strlist_push(@sa, raw render(t, ft, s, sc, e, m)); sc = s.nodes[sc].next; }
         pass (raw sum_atoms_text(sa, ""));
     }
     string:out = "(";
-    int64:c = s.nodes.items[node].first;
+    int64:c = s.nodes[node].first;
     bool:first = true;
     while (c >= 0i64) {
         if (!first) { out = string_concat(out, " "); }
         first = false;
         out = string_concat(out, raw render(t, ft, s, c, e, m));
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass (string_concat(out, ")"));
 };
@@ -2879,7 +2879,7 @@ pub func:fwd_load = string(Tx->:t, string:memsym, string:addr, int64:n, int64:de
     // and a merge's branches share their symbols -- without this the text of
     // a load through the unrolled copies of a loop is exponential
     for (int64:q in 0i64...t.ld_mem.count) {
-        if ((t.ld_size.items[q] == n) && (raw text_eq(raw strlist_view(t.ld_mem, q), memsym)) && (raw text_eq(raw strlist_view(t.ld_addr, q), addr))) {
+        if ((t.ld_size[q] == n) && (raw text_eq(raw strlist_view(t.ld_mem, q), memsym)) && (raw text_eq(raw strlist_view(t.ld_addr, q), addr))) {
             pass (raw strlist_copy(t.ld_sym, q));
         }
     }
@@ -2888,7 +2888,7 @@ pub func:fwd_load = string(Tx->:t, string:memsym, string:addr, int64:n, int64:de
     bool:named = false;
     for (int64:i in 0i64...t.st_name.count) {
         if (!(raw text_eq(raw strlist_view(t.st_name, i), memsym))) { continue; }
-        if (t.st_size.items[i] != n) {
+        if (t.st_size[i] != n) {
             // a store of another size: the bytes here where the two ranges
             // overlap, else what the memory below holds at the address -- a
             // four-byte store beside an eight-byte word must not turn the word's
@@ -2896,7 +2896,7 @@ pub func:fwd_load = string(Tx->:t, string:memsym, string:addr, int64:n, int64:de
             string:below0 = raw fwd_load(t, raw strlist_view(t.st_prev, i), addr, n, depth + 1i64);
             string:sa = raw strlist_view(t.st_addr, i);
             string:ov = raw smt_app2("and", raw smt_app2("<", sa, raw smt_app2("+", addr, int_to_string(n))),
-                                            raw smt_app2("<", addr, raw smt_app2("+", sa, int_to_string(t.st_size.items[i]))));
+                                            raw smt_app2("<", addr, raw smt_app2("+", sa, int_to_string(t.st_size[i]))));
             string:g0 = raw strlist_view(t.st_guard, i);
             if (!(raw text_eq(g0, "true"))) { ov = raw smt_app2("and", g0, ov); }
             out = raw smt_app3("ite", ov, raw load_text(t, memsym, addr, n), below0);
@@ -2915,11 +2915,11 @@ pub func:fwd_load = string(Tx->:t, string:memsym, string:addr, int64:n, int64:de
     if (out.len == 0i64) {
         for (int64:m in 0i64...t.mg_name.count) {
             if (!(raw text_eq(raw strlist_view(t.mg_name, m), memsym))) { continue; }
-            int64:k = t.mg_mems.items[m].count;
-            string:v = raw fwd_load(t, raw strlist_view(t.mg_mems.items[m], k - 1i64), addr, n, depth + 1i64);
+            int64:k = t.mg_mems[m].count;
+            string:v = raw fwd_load(t, raw strlist_view(t.mg_mems[m], k - 1i64), addr, n, depth + 1i64);
             for (int64:j in 0i64...(k - 1i64)) {
                 int64:bi = k - 2i64 - j;
-                v = raw smt_app3("ite", raw strlist_view(t.mg_edges.items[m], bi), raw fwd_load(t, raw strlist_view(t.mg_mems.items[m], bi), addr, n, depth + 1i64), v);
+                v = raw smt_app3("ite", raw strlist_view(t.mg_edges[m], bi), raw fwd_load(t, raw strlist_view(t.mg_mems[m], bi), addr, n, depth + 1i64), v);
             }
             out = move(v);
             named = true;
@@ -3172,7 +3172,7 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
     int64:oa = raw ke_option_arg(k);
     if (oa > 0i64) {
         bool:opt_ok = false;
-        if (av.items[oa - 1i64].is_num) { opt_ok = raw ke_option_ok(k, av.items[oa - 1i64].num =>! int64); }
+        if (av[oa - 1i64].is_num) { opt_ok = raw ke_option_ok(k, av[oa - 1i64].num =>! int64); }
         if (!opt_ok) {
             string:wo = string_concat("a syscall option the kernel-effect table has no row for (", int_to_string(k));
             wo = string_concat(wo, ", argument ");
@@ -3185,13 +3185,13 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
     }
     if (kind == 2i64) {
         // the process ends: a trap site whose code is the status; "" says so
-        drop tx_trap_site(t, pc, raw signed_view(av.items[0i64].text, 64i64));
+        drop tx_trap_site(t, pc, raw signed_view(av[0i64].text, 64i64));
         pass "";
     }
     // the result
     t.tmp_n = t.tmp_n + 1i64;
     string:app = string_concat("(sys ", int_to_string(k));
-    for (int64:i2 in 0i64...6i64) { app = string_concat(app, " "); app = string_concat(app, av.items[i2].text); }
+    for (int64:i2 in 0i64...6i64) { app = string_concat(app, " "); app = string_concat(app, av[i2].text); }
     app = string_concat(app, " ");
     app = string_concat(app, int_to_string(t.tmp_n));
     app = string_concat(app, ")");
@@ -3211,10 +3211,10 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
     // bytes are unbounded in the model and no caller's frame claim can be proven -- found by a refuted row)
     int64:bound_arg = raw ke_bound_arg(k);
     if (bound_arg > 0i64) {
-        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2(">=", sr, "0"), raw smt_app2("<=", sr, av.items[bound_arg - 1i64].text)), "sys", 0i64);
+        drop tx_hyp(t, raw smt_app2("=>", raw smt_app2(">=", sr, "0"), raw smt_app2("<=", sr, av[bound_arg - 1i64].text)), "sys", 0i64);
     }
     if (kind == 1i64) {
-        string:buf = raw text_copy(raw strlist_view_of(av.items[buf_arg - 1i64].text));
+        string:buf = raw text_copy(raw strlist_view_of(av[buf_arg - 1i64].text));
         string:len = "";
         if (raw text_eq(len_text, "result")) { len = raw text_copy(sr); }
         if (raw text_eq(len_text, "result12")) { len = raw smt_app2("*", "12", sr); }
@@ -3229,13 +3229,13 @@ func:tx_syscall = string(Tx->:t, FloorText->:ft, FInstr->:ins, string:pc, string
     if (kind == 3i64) {
         // mmap(addr, len, prot, flags, fd, off): an address, or an errno past 2^64-4096;
         // the mapping's bytes fresh, and zero when anonymous (flags & 0x20)
-        string:len2 = raw text_copy(raw strlist_view_of(av.items[1i64].text));
+        string:len2 = raw text_copy(raw strlist_view_of(av[1i64].text));
         string:errs = raw smt_app2(">=", rs, raw smt_app2("-", raw pow2_decimal(64i64), "4096"));
         string:inr2 = raw smt_app2("and", raw smt_app2("<=", rs, "|pt|"), raw smt_app2("<", "|pt|", raw smt_app2("+", rs, len2)));
         string:unch2 = raw smt_app2("or", errs, raw smt_app1("not", inr2));
         string:vw = "";
         bool:anon = false;
-        if (av.items[3i64].is_num) { if (((av.items[3i64].num / 32u128) % 2u128) == 1u128) { anon = true; } }
+        if (av[3i64].is_num) { if (((av[3i64].num / 32u128) % 2u128) == 1u128) { anon = true; } }
         if (anon) { vw = raw smt_app2("and", raw smt_app1("not", errs), inr2); }
         string:name2 = raw tx_fresh_mem(t);
         drop tx_template(t, name2, mem, pc, unch2, vw, "0");
@@ -3308,7 +3308,7 @@ func:tx_intrinsic_mem = string(Tx->:t, FloorText->:ft, string:callee, FInstr->:i
 // A row with an excluded hypothesis tag ("" for none).
 func:tx_row_ex = NIL(Tx->:t, string:site, string:goal, string:exclude) never fails {
     drop tx_row(t, site, goal);
-    t.row_excl.items[t.row_excl.count - 1i64] = raw text_copy(exclude);
+    t.row_excl[t.row_excl.count - 1i64] = raw text_copy(exclude);
     pass NIL;
 };
 
@@ -3320,12 +3320,12 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
     int64:cfi = raw floor_fn_index(ft, callee);
     int64:sec = raw spec_section(s, callee);
     if ((cfi < 0i64) || (sec < 0i64)) { drop tx_problem(t, string_concat("a summary of a symbol without a section: ", callee)); pass (raw text_copy(mem_cur)); }
-    if (ft.fns.items[cfi].params.count != ins.args.count) { drop tx_problem(t, string_concat("a call's operand count differs from the callee's parameters: ", callee)); pass (raw text_copy(mem_cur)); }
+    if (ft.fns[cfi].params.count != ins.args.count) { drop tx_problem(t, string_concat("a call's operand count differs from the callee's parameters: ", callee)); pass (raw text_copy(mem_cur)); }
     // the substitution: parameters -> argument texts
     REnv:e = raw renv_new(mem_cur, "", false, false);
     for (int64:pi in 0i64...ins.args.count) {
-        string:pty = raw strlist_view(ft.fns.items[cfi].param_tys, pi);
-        string:pname = raw strlist_view(ft.fns.items[cfi].params, pi);
+        string:pty = raw strlist_view(ft.fns[cfi].param_tys, pi);
+        string:pname = raw strlist_view(ft.fns[cfi].params, pi);
         if (raw is_aggregate_ty(pty)) {
             List<string>:fv = raw agg_fields(t, ft, raw strlist_view(ins.args, pi), pty);
             List<string>:spaths = raw list_init::<string>(4i64);
@@ -3377,7 +3377,7 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
         }
     }
     // 2. the result symbols
-    string:rty = raw strlist_view_of(ft.fns.items[cfi].ret_ty);
+    string:rty = raw strlist_view_of(ft.fns[cfi].ret_ty);
     if (!(raw text_eq(rty, "void"))) {
         if (raw is_aggregate_ty(rty)) {
             List<string>:fs = raw list_init::<string>(4i64);
@@ -3514,17 +3514,17 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
 // `(frame (lo len) (lo len) ...)`: is `f` inside any range?
 func:frame_in_ranges = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:fr, REnv->:e, BMeta->:m, string:f) never fails {
     string:out = "false";
-    int64:c = s.nodes.items[fr].first;
-    c = s.nodes.items[c].next;   // past the head
+    int64:c = s.nodes[fr].first;
+    c = s.nodes[c].next;   // past the head
     while (c >= 0i64) {
         // the atom `objects` narrows the claim to the caller's objects (`frame_names_objects`, `objects_in`)
-        if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { c = s.nodes.items[c].next; continue; }
+        if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { c = s.nodes[c].next; continue; }
         if (!(raw sx_is_list(s, c)) || ((raw sx_len(s, c)) != 2i64)) { drop tx_problem(t, "a frame range is not `(lo len)` or the atom `objects`"); pass "false"; }
         string:lo = raw render(t, ft, s, raw sx_nth(s, c, 0i64), e, m);
         string:ln = raw render(t, ft, s, raw sx_nth(s, c, 1i64), e, m);
         string:inr = raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln)));
         if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass out;
 };
@@ -3534,11 +3534,11 @@ func:frame_in_ranges = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:fr, REnv->:
 // words and its fresh blocks, which no caller can name, and promises the
 // objects it was handed.
 func:frame_names_objects = bool(Sxs->:s, int64:fr) never fails {
-    int64:c = s.nodes.items[fr].first;
-    c = s.nodes.items[c].next;
+    int64:c = s.nodes[fr].first;
+    c = s.nodes[c].next;
     while (c >= 0i64) {
         if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { pass true; }
-        c = s.nodes.items[c].next;
+        c = s.nodes[c].next;
     }
     pass false;
 };
@@ -3553,8 +3553,8 @@ func:views_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, BMe
     string:out = "false";
     int64:vc0 = raw spec_clause(s, sec, "views", 0i64);
     if (vc0 < 0i64) { pass out; }
-    int64:vc = s.nodes.items[vc0].first;
-    vc = s.nodes.items[vc].next;
+    int64:vc = s.nodes[vc0].first;
+    vc = s.nodes[vc].next;
     while (vc >= 0i64) {
         if (!(raw sx_is_list(s, vc)) || ((raw sx_len(s, vc)) != 2i64)) { drop tx_problem(t, "a views range is not `(lo len)`"); pass "false"; }
         string:lo = raw render(t, ft, s, raw sx_nth(s, vc, 0i64), e, m);
@@ -3562,7 +3562,7 @@ func:views_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, BMe
         string:inr = raw smt_app2("and", raw smt_app1("not", raw smt_app2("=", lo, "0")),
                                          raw smt_app2("and", raw smt_app2("<=", lo, f), raw smt_app2("<", f, raw smt_app2("+", lo, ln))));
         if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
-        vc = s.nodes.items[vc].next;
+        vc = s.nodes[vc].next;
     }
     pass out;
 };
@@ -3575,8 +3575,8 @@ func:objects_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, B
     string:out = "false";
     int64:oc0 = raw spec_clause(s, sec, "objects", 0i64);
     if (oc0 >= 0i64) {
-        int64:oc = s.nodes.items[oc0].first;
-        oc = s.nodes.items[oc].next;
+        int64:oc = s.nodes[oc0].first;
+        oc = s.nodes[oc].next;
         while (oc >= 0i64) {
             if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); pass "false"; }
             string:lo = raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m);
@@ -3585,7 +3585,7 @@ func:objects_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, B
             // an `apart-when` range is one of the symbol's objects where its condition holds
             if ((raw sx_len(s, oc)) == 4i64) { inr = raw smt_app2("and", raw render(t, ft, s, raw sx_nth(s, oc, 3i64), e, m), inr); }
             if (raw text_eq(out, "false")) { out = move(inr); } else { out = raw smt_app2("or", out, inr); }
-            oc = s.nodes.items[oc].next;
+            oc = s.nodes[oc].next;
         }
     }
     string:vin = raw views_in(t, ft, s, sec, e, m, f);
@@ -3615,7 +3615,7 @@ func:forward_preds = List<int64>(XFn->:x, int64:b) never fails {
     List<int64>:out = raw list_init::<int64>(4i64);
     for (int64:p in 0i64...x.f.blocks.count) {
         bool:edge = false;
-        for (int64:k in 0i64...x.f.blocks.items[p].succs.count) { if (x.f.blocks.items[p].succs.items[k] == b) { edge = true; } }
+        for (int64:k in 0i64...x.f.blocks[p].succs.count) { if (x.f.blocks[p].succs[k] == b) { edge = true; } }
         if (!edge) { continue; }
         if (raw floor_is_back_edge(@x.loops, p, b)) { continue; }
         drop list_push(@out, p);
@@ -3627,12 +3627,12 @@ func:forward_preds = List<int64>(XFn->:x, int64:b) never fails {
 // whose label is p's origin label (or p's own label), renamed through p's
 // environment; "" with a problem when none matches.
 func:phi_incoming = string(Tx->:t, XFn->:x, FInstr->:ins, int64:p) never fails {
-    string:plabel = raw strlist_view_of(x.f.blocks.items[p].label);
-    string:porigin = raw strlist_view_of(x.meta.items[p].origin_label);
+    string:plabel = raw strlist_view_of(x.f.blocks[p].label);
+    string:porigin = raw strlist_view_of(x.meta[p].origin_label);
     for (int64:i in 0i64...ins.labels.count) {
         string:lab = raw strlist_view(ins.labels, i);
         if ((raw text_eq(lab, plabel)) || (raw text_eq(lab, porigin))) {
-            pass (raw meta_rename(@x.meta.items[p], raw strlist_view(ins.args, i)));
+            pass (raw meta_rename(@x.meta[p], raw strlist_view(ins.args, i)));
         }
     }
     string:w = string_concat("a phi has no incoming for the predecessor ", plabel);
@@ -3645,21 +3645,21 @@ func:phi_incoming = string(Tx->:t, XFn->:x, FInstr->:ins, int64:p) never fails {
 // The memory `mem` of a block's spec context: the function's entry memory,
 // or, inside an inlined callee's blocks, the memory at that callee's entry.
 func:ctx_mem = string(Tx->:t, XFn->:x, int64:b) never fails {
-    string:ofn = raw strlist_view_of(x.meta.items[b].origin_fn);
+    string:ofn = raw strlist_view_of(x.meta[b].origin_fn);
     if (raw text_eq(ofn, raw strlist_view_of(x.f.name))) { pass "mem"; }
     // the callee's entry copy: this block's label with its origin label replaced by the callee's first label
-    string:lab = raw strlist_view_of(x.f.blocks.items[b].label);
-    string:ol = raw strlist_view_of(x.meta.items[b].origin_label);
+    string:lab = raw strlist_view_of(x.f.blocks[b].label);
+    string:ol = raw strlist_view_of(x.meta[b].origin_label);
     int64:at = raw text_index_of(lab, ol);
     if (at < 0i64) { pass "mem"; }
     string:prefix = raw text_slice(lab, 0i64, at);
     string:sfx = raw text_slice(lab, at + ol.len, lab.len);
     for (int64:e in 0i64...x.f.blocks.count) {
-        if ((raw strlist_view_of(x.meta.items[e].entry_of)).len == 0i64) { continue; }
-        if (!(raw text_eq(raw strlist_view_of(x.meta.items[e].origin_fn), ofn))) { continue; }
-        string:want = string_concat(prefix, raw strlist_view_of(x.meta.items[e].origin_label));
+        if ((raw strlist_view_of(x.meta[e].entry_of)).len == 0i64) { continue; }
+        if (!(raw text_eq(raw strlist_view_of(x.meta[e].origin_fn), ofn))) { continue; }
+        string:want = string_concat(prefix, raw strlist_view_of(x.meta[e].origin_label));
         want = string_concat(want, sfx);
-        if (raw text_eq(raw strlist_view_of(x.f.blocks.items[e].label), want)) {
+        if (raw text_eq(raw strlist_view_of(x.f.blocks[e].label), want)) {
             if (e < t.blk_mem_in.count) { pass (raw strlist_copy(t.blk_mem_in, e)); }
         }
     }
@@ -3683,10 +3683,10 @@ func:sys_writes = bool(int64:k) never fails {
 };
 
 func:loop_writes = bool(XFn->:x, int64:li) never fails {
-    for (int64:m in 0i64...x.loops.items[li].members.count) {
-        int64:b = x.loops.items[li].members.items[m];
-        for (int64:l in 0i64...x.f.blocks.items[b].lines.count) {
-            FInstr:ins = raw floor_instr(raw strlist_view(x.f.blocks.items[b].lines, l));
+    for (int64:m in 0i64...x.loops[li].members.count) {
+        int64:b = x.loops[li].members[m];
+        for (int64:l in 0i64...x.f.blocks[b].lines.count) {
+            FInstr:ins = raw floor_instr(raw strlist_view(x.f.blocks[b].lines, l));
             if (raw text_eq(ins.op, "store")) { pass true; }
             if (raw text_eq(ins.op, "atomicrmw") || raw text_eq(ins.op, "cmpxchg")) { pass true; }
             if (!(raw text_eq(ins.op, "call"))) { continue; }
@@ -3711,9 +3711,9 @@ func:loop_writes = bool(XFn->:x, int64:li) never fails {
 
 // The spec's `(loop LABEL ...)` clause for a header block, or -1.
 func:loop_clause_of = int64(Sxs->:s, XFn->:x, int64:h) never fails {
-    int64:sec = raw spec_section(s, raw strlist_view_of(x.meta.items[h].origin_fn));
+    int64:sec = raw spec_section(s, raw strlist_view_of(x.meta[h].origin_fn));
     if (sec < 0i64) { pass (0i64 - 1i64); }
-    pass (raw spec_loop(s, sec, raw strlist_view_of(x.meta.items[h].origin_label)));
+    pass (raw spec_loop(s, sec, raw strlist_view_of(x.meta[h].origin_label)));
 };
 
 // The original (spec) name of a header phi's destination: the environment
@@ -3731,7 +3731,7 @@ func:orig_name = string(BMeta->:m, string:ir) never fails {
 // One block, in dominance order: its path condition, its entry memory,
 // its lines, its edges.
 func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fails {
-    string:label = raw strlist_view_of(x.f.blocks.items[b].label);
+    string:label = raw strlist_view_of(x.f.blocks[b].label);
     string:pc = raw pc_sym(label);
     List<int64>:preds = raw forward_preds(x, b);
     int64:li = raw floor_loop_of_header(@x.loops, b);
@@ -3741,12 +3741,12 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
     else {
         string:d = "false";
         for (int64:i in 0i64...preds.count) {
-            string:e = raw edge_sym(raw strlist_view_of(x.f.blocks.items[preds.items[i]].label), label);
+            string:e = raw edge_sym(raw strlist_view_of(x.f.blocks[preds[i]].label), label);
             if (i == 0i64) { d = move(e); } else { d = raw smt_app2("or", d, e); }
         }
         drop tx_define(t, pc, "Bool", d);
     }
-    t.blk_pc.items[b] = raw text_copy(pc);
+    t.blk_pc[b] = raw text_copy(pc);
     // 2. the memory at entry
     string:mem_cur = "mem";
     int64:lclause = 0i64 - 1i64;
@@ -3755,7 +3755,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
         lclause = raw loop_clause_of(s, x, b);
         if (lclause >= 0i64) { inv = raw spec_clause(s, lclause, "invariant", 0i64); }
         if (inv < 0i64) {
-            string:w = string_concat("loop ", raw strlist_view_of(x.meta.items[b].origin_label));
+            string:w = string_concat("loop ", raw strlist_view_of(x.meta[b].origin_label));
             w = string_concat(w, " has no invariant and no bound");
             drop tx_problem(t, w);
         }
@@ -3771,33 +3771,33 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
     // memory the header was entered with, and a fresh function would only
     // ask the invariant to restate what the translation already knows.
     if (!(is_header && (raw loop_writes(x, li)))) {
-        if (preds.count == 1i64) { mem_cur = raw strlist_copy(t.blk_mem_out, preds.items[0i64]); }
+        if (preds.count == 1i64) { mem_cur = raw strlist_copy(t.blk_mem_out, preds[0i64]); }
         if (preds.count > 1i64) {
             // the same memory on every edge needs no merge (a loop that
             // writes nothing, in every copy)
             bool:same = true;
             for (int64:j0 in 1i64...preds.count) {
-                if (!(raw text_eq(raw strlist_view(t.blk_mem_out, preds.items[j0]), raw strlist_view(t.blk_mem_out, preds.items[0i64])))) { same = false; }
+                if (!(raw text_eq(raw strlist_view(t.blk_mem_out, preds[j0]), raw strlist_view(t.blk_mem_out, preds[0i64])))) { same = false; }
             }
-            if (same) { mem_cur = raw strlist_copy(t.blk_mem_out, preds.items[0i64]); }
+            if (same) { mem_cur = raw strlist_copy(t.blk_mem_out, preds[0i64]); }
             else {
                 List<string>:medges = raw list_init::<string>(preds.count + 1i64);
                 List<string>:mmems = raw list_init::<string>(preds.count + 1i64);
                 for (int64:j in 0i64...preds.count) {
-                    drop strlist_push(@medges, raw edge_sym(raw strlist_view_of(x.f.blocks.items[preds.items[j]].label), label));
-                    drop strlist_push(@mmems, raw strlist_view(t.blk_mem_out, preds.items[j]));
+                    drop strlist_push(@medges, raw edge_sym(raw strlist_view_of(x.f.blocks[preds[j]].label), label));
+                    drop strlist_push(@mmems, raw strlist_view(t.blk_mem_out, preds[j]));
                 }
                 mem_cur = string_concat(raw tx_merge_mem(t, medges, mmems), "");
             }
         }
     }
-    t.blk_mem_in.items[b] = string_concat(mem_cur, "");
+    t.blk_mem_in[b] = string_concat(mem_cur, "");
     // 3. the lines
     bool:ended = false;
     List<string>:hphi_ir = raw list_init::<string>(4i64);
     List<string>:hphi_orig = raw list_init::<string>(4i64);
-    for (int64:l in 0i64...x.f.blocks.items[b].lines.count) {
-        string:line = raw strlist_view(x.f.blocks.items[b].lines, l);
+    for (int64:l in 0i64...x.f.blocks[b].lines.count) {
+        string:line = raw strlist_view(x.f.blocks[b].lines, l);
         FInstr:ins = raw floor_instr(line);
         if (ins.op.len == 0i64) { drop tx_problem(t, string_concat("instruction form not read: ", line)); continue; }
         if (ended && (raw text_eq(ins.op, "unreachable"))) { continue; }   // the `unreachable` a trap call is followed by
@@ -3807,7 +3807,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             if (is_header) {
                 drop tx_declare_reg(t, ins.dest, ins.ty);
                 drop strlist_push(@hphi_ir, ins.dest);
-                drop strlist_push(@hphi_orig, raw orig_name(@x.meta.items[b], ins.dest));
+                drop strlist_push(@hphi_orig, raw orig_name(@x.meta[b], ins.dest));
                 continue;
             }
             if (preds.count == 0i64) { drop tx_declare_reg(t, ins.dest, ins.ty); continue; }
@@ -3826,7 +3826,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             string:s_lparts = "";
             for (int64:j2 in 0i64...preds.count) {
                 int64:pi2 = preds.count - 1i64 - j2;
-                string:inc = raw phi_incoming(t, x, @ins, preds.items[pi2]);
+                string:inc = raw phi_incoming(t, x, @ins, preds[pi2]);
                 if (inc.len == 0i64) { break; }
                 Term:tv = raw term_of(t, ft, inc, ins.ty);
                 if (!tv.ok) { break; }
@@ -3834,7 +3834,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 if (j2 == 0i64) { first_inc = string_concat(tv.text, ""); }
                 else { if (!(raw text_eq(raw strlist_view_of(tv.text), first_inc))) { all_same = false; } }
                 if (j2 == 0i64) { v = string_concat(tv.text, ""); continue; }
-                string:e3 = raw edge_sym(raw strlist_view_of(x.f.blocks.items[preds.items[pi2]].label), label);
+                string:e3 = raw edge_sym(raw strlist_view_of(x.f.blocks[preds[pi2]].label), label);
                 v = string_concat(raw smt_app3("ite", e3, tv.text, v), "");
             }
             if (v.len == 0i64) { continue; }
@@ -4081,12 +4081,12 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             if (raw is_aggregate_ty(fty3)) {
                 // the whole inner aggregate: its leaves become the dest's
                 List<string>:inner = raw list_init::<string>(4i64);
-                for (int64:pi4 in 0i64...pos.count) { drop strlist_push(@inner, raw strlist_view(src_leaves, pos.items[pi4])); }
+                for (int64:pi4 in 0i64...pos.count) { drop strlist_push(@inner, raw strlist_view(src_leaves, pos[pi4])); }
                 drop tx_set_fields(t, ft, ins.dest, fty3, inner);
                 continue;
             }
             if (pos.count != 1i64) { drop tx_problem(t, string_concat("an extractvalue index past the fields: ", line)); continue; }
-            string:leaf = raw strlist_view(src_leaves, pos.items[0i64]);
+            string:leaf = raw strlist_view(src_leaves, pos[0i64]);
             Term:fv2 = raw term_int(leaf, raw ty_bits(fty3));
             if (raw text_eq(raw ty_sort(fty3), "Bool")) { fv2 = raw term_bool(leaf); }
             if (raw text_starts_with(raw ty_sort(fty3), "F")) { fv2 = raw term_fp(leaf, raw ty_bits(fty3)); }
@@ -4106,11 +4106,11 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             if (raw is_aggregate_ty(ety)) {
                 List<string>:ev_leaves = raw agg_fields(t, ft, raw strlist_view(ins.args, 1i64), ety);
                 if (ev_leaves.count != pos2.count) { drop tx_problem(t, string_concat("an insertvalue of an aggregate whose leaves do not fit: ", line)); continue; }
-                for (int64:pi5 in 0i64...pos2.count) { fv3.items[pos2.items[pi5]] = raw text_copy(raw strlist_view(ev_leaves, pi5)); }
+                for (int64:pi5 in 0i64...pos2.count) { fv3[pos2[pi5]] = raw text_copy(raw strlist_view(ev_leaves, pi5)); }
             } else {
                 Term:ev = raw term_of(t, ft, raw strlist_view(ins.args, 1i64), ety);
                 if (!ev.ok) { continue; }
-                fv3.items[pos2.items[0i64]] = raw text_copy(raw strlist_view_of(ev.text));
+                fv3[pos2[0i64]] = raw text_copy(raw strlist_view_of(ev.text));
             }
             drop tx_set_fields(t, ft, ins.dest, ins.ty, fv3);
             continue;
@@ -4263,18 +4263,18 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
             continue;
         }
         if (raw text_eq(op, "unreachable")) {
-            if (x.meta.items[b].is_stop) {
+            if (x.meta[b].is_stop) {
                 // `(unroll N)`: the bound is a hypothesis, and every row it
                 // reaches reads `[<=N]`; `(unroll N exact)`: the bound is a
                 // claim -- the row `unroll-exact` proves it (the cone excludes
                 // the hypothesis), and nothing is marked
-                string:tag = string_concat("stop:", raw strlist_view_of(x.meta.items[b].origin_label));
-                if (x.meta.items[b].exact) {
+                string:tag = string_concat("stop:", raw strlist_view_of(x.meta[b].origin_label));
+                if (x.meta[b].exact) {
                     drop tx_hyp(t, raw smt_app1("not", pc), tag, 0i64);
-                    string:st = string_concat("spec:unroll-exact:", raw strlist_view_of(x.meta.items[b].origin_label));
+                    string:st = string_concat("spec:unroll-exact:", raw strlist_view_of(x.meta[b].origin_label));
                     drop tx_row_ex(t, st, raw smt_app1("not", pc), tag);
                 } else {
-                    drop tx_hyp(t, raw smt_app1("not", pc), tag, x.meta.items[b].bound);
+                    drop tx_hyp(t, raw smt_app1("not", pc), tag, x.meta[b].bound);
                 }
                 // the stop's pc is a sink nothing is defined from: the hypothesis
                 // joins a cone through what the pc is made of (a bound on one loop
@@ -4289,21 +4289,21 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
         }
         drop tx_problem(t, string_concat("instruction form not read: ", line));
     }
-    t.blk_mem_out.items[b] = string_concat(mem_cur, "");
-    t.blk_ended.items[b] = ended;
-    t.blk_done.items[b] = true;
+    t.blk_mem_out[b] = string_concat(mem_cur, "");
+    t.blk_ended[b] = ended;
+    t.blk_done[b] = true;
     // 4. a header's invariant: the hypothesis over the fresh symbols, and the init row
     if (is_header && (inv >= 0i64)) {
         string:cm = raw ctx_mem(t, x, b);
         REnv:eh = raw renv_new(cm, mem_cur, false, true);
-        string:ih = raw loop_inv_text(t, ft, s, lclause, inv, @eh, @x.meta.items[b]);
+        string:ih = raw loop_inv_text(t, ft, s, lclause, inv, @eh, @x.meta[b]);
         // the loop's objects, for the allocations inside it
         int64:loc = raw spec_clause(s, lclause, "objects", 0i64);
         if (loc >= 0i64) {
             REnv:eo2 = raw renv_new(cm, raw strlist_view(t.blk_mem_in, b), false, true);
             List<string>:llo = raw list_init::<string>(4i64);
             List<string>:lln = raw list_init::<string>(4i64);
-            drop objects_ranges(t, ft, s, loc, @eo2, @x.meta.items[b], @llo, @lln);
+            drop objects_ranges(t, ft, s, loc, @eo2, @x.meta[b], @llo, @lln);
             for (int64:li2 in 0i64...llo.count) {
                 drop strlist_push(@t.lobj_lo, raw strlist_view(llo, li2));
                 drop strlist_push(@t.lobj_len, raw strlist_view(lln, li2));
@@ -4334,21 +4334,21 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
         // init: every entry edge establishes I with the phis at their incoming values
         string:goal = "true";
         for (int64:pi3 in 0i64...preds.count) {
-            int64:p = preds.items[pi3];
+            int64:p = preds[pi3];
             REnv:ep = raw renv_new(cm, raw strlist_view(t.blk_mem_out, p), false, true);
             bool:okp = true;
-            for (int64:l2 in 0i64...x.f.blocks.items[b].lines.count) {
-                FInstr:pins = raw floor_instr(raw strlist_view(x.f.blocks.items[b].lines, l2));
+            for (int64:l2 in 0i64...x.f.blocks[b].lines.count) {
+                FInstr:pins = raw floor_instr(raw strlist_view(x.f.blocks[b].lines, l2));
                 if (!(raw text_eq(pins.op, "phi"))) { continue; }
                 string:inc2 = raw phi_incoming(t, x, @pins, p);
                 if (inc2.len == 0i64) { okp = false; break; }
                 Term:tv2 = raw term_of(t, ft, inc2, pins.ty);
                 if (!tv2.ok) { okp = false; break; }
-                drop renv_add(@ep, raw orig_name(@x.meta.items[b], pins.dest), raw strlist_view_of(tv2.text));
+                drop renv_add(@ep, raw orig_name(@x.meta[b], pins.dest), raw strlist_view_of(tv2.text));
             }
             if (!okp) { break; }
-            string:ig = raw smt_app2("=>", raw edge_sym(raw strlist_view_of(x.f.blocks.items[p].label), label),
-                                     raw loop_inv_text(t, ft, s, lclause, inv, @ep, @x.meta.items[b]));
+            string:ig = raw smt_app2("=>", raw edge_sym(raw strlist_view_of(x.f.blocks[p].label), label),
+                                     raw loop_inv_text(t, ft, s, lclause, inv, @ep, @x.meta[b]));
             if (pi3 == 0i64) { goal = string_concat(ig, ""); } else { goal = string_concat(raw smt_app2("and", goal, ig), ""); }
         }
         string:st2 = string_concat("spec:invariant-init:", label);
@@ -4362,12 +4362,12 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
 // memory at the latch's exit.
 func:tx_preserve_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
     for (int64:li in 0i64...x.loops.count) {
-        int64:h = x.loops.items[li].header;
+        int64:h = x.loops[li].header;
         int64:lclause = raw loop_clause_of(s, x, h);
         int64:inv = 0i64 - 1i64;
         if (lclause >= 0i64) { inv = raw spec_clause(s, lclause, "invariant", 0i64); }
         if (inv < 0i64) { continue; }
-        string:hlabel = raw strlist_view_of(x.f.blocks.items[h].label);
+        string:hlabel = raw strlist_view_of(x.f.blocks[h].label);
         string:cm = raw ctx_mem(t, x, h);
         string:hpc = raw strlist_view(t.blk_pc, h);
         string:hmem = raw strlist_view(t.blk_mem_in, h);
@@ -4390,30 +4390,30 @@ func:tx_preserve_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fail
             int64:pair = 1i64;
             while ((pair + 1i64) < iln) {
                 string:isym = raw sx_atom(s, raw sx_nth(s, ic, pair));
-                string:iexp = raw render(t, ft, s, raw sx_nth(s, ic, pair + 1i64), @ei0, @x.meta.items[h]);
+                string:iexp = raw render(t, ft, s, raw sx_nth(s, ic, pair + 1i64), @ei0, @x.meta[h]);
                 drop renv_add(@ei, isym, iexp);
                 pair = pair + 2i64;
             }
-            drop tx_hyp(t, raw smt_app2("=>", hpc, raw loop_inv_text(t, ft, s, lclause, inv, @ei, @x.meta.items[h])), tag2, 0i64);
+            drop tx_hyp(t, raw smt_app2("=>", hpc, raw loop_inv_text(t, ft, s, lclause, inv, @ei, @x.meta[h])), tag2, 0i64);
         }
         string:goal = "true";
-        for (int64:a in 0i64...x.loops.items[li].latches.count) {
-            int64:p = x.loops.items[li].latches.items[a];
-            if (!t.blk_done.items[p]) { continue; }
+        for (int64:a in 0i64...x.loops[li].latches.count) {
+            int64:p = x.loops[li].latches[a];
+            if (!t.blk_done[p]) { continue; }
             REnv:ep = raw renv_new(cm, raw strlist_view(t.blk_mem_out, p), false, true);
             bool:okp = true;
-            for (int64:l2 in 0i64...x.f.blocks.items[h].lines.count) {
-                FInstr:pins = raw floor_instr(raw strlist_view(x.f.blocks.items[h].lines, l2));
+            for (int64:l2 in 0i64...x.f.blocks[h].lines.count) {
+                FInstr:pins = raw floor_instr(raw strlist_view(x.f.blocks[h].lines, l2));
                 if (!(raw text_eq(pins.op, "phi"))) { continue; }
                 string:inc = raw phi_incoming(t, x, @pins, p);
                 if (inc.len == 0i64) { okp = false; break; }
                 Term:tv = raw term_of(t, ft, inc, pins.ty);
                 if (!tv.ok) { okp = false; break; }
-                drop renv_add(@ep, raw orig_name(@x.meta.items[h], pins.dest), raw strlist_view_of(tv.text));
+                drop renv_add(@ep, raw orig_name(@x.meta[h], pins.dest), raw strlist_view_of(tv.text));
             }
             if (!okp) { break; }
-            string:pg = raw smt_app2("=>", raw edge_sym(raw strlist_view_of(x.f.blocks.items[p].label), hlabel),
-                                     raw loop_inv_text(t, ft, s, lclause, inv, @ep, @x.meta.items[h]));
+            string:pg = raw smt_app2("=>", raw edge_sym(raw strlist_view_of(x.f.blocks[p].label), hlabel),
+                                     raw loop_inv_text(t, ft, s, lclause, inv, @ep, @x.meta[h]));
             if (a == 0i64) { goal = string_concat(pg, ""); } else { goal = string_concat(raw smt_app2("and", goal, pg), ""); }
         }
         string:st = string_concat("spec:invariant-preserve:", hlabel);
@@ -4459,8 +4459,8 @@ func:tx_exit = NIL(Tx->:t, FloorText->:ft, XFn->:x) never fails {
             string:v = "";
             for (int64:k in 0i64...t.ret_pcs.count) {
                 int64:ri = t.ret_pcs.count - 1i64 - k;
-                if (f >= t.ret_vals.items[ri].count) { drop tx_problem(t, "a return with fewer fields than the type"); break; }
-                string:rv = raw strlist_view(t.ret_vals.items[ri], f);
+                if (f >= t.ret_vals[ri].count) { drop tx_problem(t, "a return with fewer fields than the type"); break; }
+                string:rv = raw strlist_view(t.ret_vals[ri], f);
                 if (k == 0i64) { v = raw text_copy(rv); continue; }
                 v = raw smt_app3("ite", raw strlist_view(t.ret_pcs, ri), rv, v);
             }
@@ -4553,7 +4553,7 @@ func:tx_section_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:sec) 
     for (int64:ao in 0i64...t.objects.count) {
         string:asym = raw strlist_view(t.objects, ao);
         if (!(raw text_starts_with(asym, "|a:"))) { continue; }
-        string:ain = raw smt_app2("and", raw smt_app2("<=", asym, fx), raw smt_app2("<", fx, raw smt_app2("+", asym, int_to_string(t.object_sizes.items[ao]))));
+        string:ain = raw smt_app2("and", raw smt_app2("<=", asym, fx), raw smt_app2("<", fx, raw smt_app2("+", asym, int_to_string(t.object_sizes[ao]))));
         if (raw text_eq(stack_in, "false")) { stack_in = move(ain); } else { stack_in = string_concat(raw smt_app2("or", stack_in, ain), ""); }
     }
     if (fr >= 0i64) {
@@ -4603,8 +4603,8 @@ func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
     while (again && (k < 256i64)) {
         again = false;
         for (int64:b in 0i64...x.f.blocks.count) {
-            for (int64:l in 0i64...x.f.blocks.items[b].lines.count) {
-                FInstr:ins = raw floor_instr(raw strlist_view(x.f.blocks.items[b].lines, l));
+            for (int64:l in 0i64...x.f.blocks[b].lines.count) {
+                FInstr:ins = raw floor_instr(raw strlist_view(x.f.blocks[b].lines, l));
                 if (!(raw text_eq(ins.op, "call"))) { continue; }
                 string:callee = raw strlist_view_of(ins.callee);
                 if (!(raw text_starts_with(callee, "@"))) { continue; }
@@ -4621,12 +4621,12 @@ func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
                     drop tx_problem(t, wb);
                     pass NIL;
                 }
-                if (ft.fns.items[cfi].params.count != ins.args.count) {
+                if (ft.fns[cfi].params.count != ins.args.count) {
                     drop tx_problem(t, string_concat("a call's operand count differs from the callee's parameters: ", callee));
                     pass NIL;
                 }
                 k = k + 1i64;
-                drop xfn_inline(x, b, l, @ft.fns.items[cfi], ft.fns.items[cfi].params, k);
+                drop xfn_inline(x, b, l, @ft.fns[cfi], ft.fns[cfi].params, k);
                 again = true;
                 break;
             }
@@ -4643,7 +4643,7 @@ func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
         int64:chosen_size = 0i64;
         bool:chosen_exact = false;
         for (int64:li in 0i64...x.loops.count) {
-            int64:h = x.loops.items[li].header;
+            int64:h = x.loops[li].header;
             int64:lc = raw loop_clause_of(s, x, h);
             if (lc < 0i64) { continue; }
             int64:ur = raw spec_clause(s, lc, "unroll", 0i64);
@@ -4655,13 +4655,13 @@ func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
                 if (!(raw text_eq(raw sx_atom(s, raw sx_nth(s, ur, 2i64)), "exact"))) { drop tx_problem(t, "an unroll clause is `(unroll N)` or `(unroll N exact)`"); pass NIL; }
                 ex = true;
             }
-            int64:size = x.loops.items[li].members.count;
+            int64:size = x.loops[li].members.count;
             if ((chosen < 0i64) || (size < chosen_size)) { chosen = li; chosen_n = n.value; chosen_size = size; chosen_exact = ex; }
         }
         if (chosen < 0i64) { break; }
         drop xfn_unroll(x, chosen, chosen_n, guard, chosen_exact);
         for (int64:pp in 0i64...x.problems.count) { drop tx_problem(t, raw strlist_view(x.problems, pp)); }
-        x.problems.count = 0i64;
+        drop list_clear(@x.problems);
     }
     pass NIL;
 };
@@ -4714,37 +4714,37 @@ func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
         grew = false;
         for (int64:dd in 0i64...t.defs.count) {
             int64:d = t.defs.count - 1i64 - dd;
-            if (din.items[d]) { continue; }
+            if (din[d]) { continue; }
             if (!(raw strset_has(syms, raw strlist_view(t.def_names, d)))) { continue; }
-            din.items[d] = true;
-            for (int64:r in 0i64...t.def_refs.items[d].count) {
-                if (raw strset_add(@syms, raw strlist_view(t.def_refs.items[d], r))) { grew = true; }
+            din[d] = true;
+            for (int64:r in 0i64...t.def_refs[d].count) {
+                if (raw strset_add(@syms, raw strlist_view(t.def_refs[d], r))) { grew = true; }
             }
         }
         for (int64:h in 0i64...t.hyps.count) {
-            if (hin.items[h]) { continue; }
+            if (hin[h]) { continue; }
             if (excl.len > 0i64) { if (raw text_eq(raw strlist_view(t.hyp_tags, h), excl)) { continue; } }
             if ((!bv_goal) && (raw text_eq(raw strlist_view(t.hyp_tags, h), "bv"))) { continue; }
             bool:touch = false;
-            for (int64:q in 0i64...t.hyp_syms.items[h].count) { if (raw strset_has(syms, raw strlist_view(t.hyp_syms.items[h], q))) { touch = true; break; } }
+            for (int64:q in 0i64...t.hyp_syms[h].count) { if (raw strset_has(syms, raw strlist_view(t.hyp_syms[h], q))) { touch = true; break; } }
             if (!touch) { continue; }
-            hin.items[h] = true;
+            hin[h] = true;
             grew = true;
-            for (int64:r2 in 0i64...t.hyp_syms.items[h].count) {
-                discard(raw strset_add(@syms, raw strlist_view(t.hyp_syms.items[h], r2)));
+            for (int64:r2 in 0i64...t.hyp_syms[h].count) {
+                discard(raw strset_add(@syms, raw strlist_view(t.hyp_syms[h], r2)));
             }
         }
     }
     // the canonical text: the cone's definitions in order, its hypotheses in order, the goal
     SmtBuf:b = raw smtbuf_init();
-    for (int64:d2 in 0i64...t.defs.count) { if (din.items[d2]) { drop smtbuf_line(@b, raw strlist_view(t.defs, d2)); } }
+    for (int64:d2 in 0i64...t.defs.count) { if (din[d2]) { drop smtbuf_line(@b, raw strlist_view(t.defs, d2)); } }
     List<int64>:ch = raw list_init::<int64>(16i64);
     int64:bound = 0i64;
     for (int64:h2 in 0i64...t.hyps.count) {
-        if (!hin.items[h2]) { continue; }
+        if (!hin[h2]) { continue; }
         drop list_push(@ch, h2);
         drop smtbuf_line(@b, raw smt_app1("assert", raw strlist_view(t.hyps, h2)));
-        if (t.hyp_bounds.items[h2] > bound) { bound = t.hyp_bounds.items[h2]; }
+        if (t.hyp_bounds[h2] > bound) { bound = t.hyp_bounds[h2]; }
     }
     drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app1("not", goal)));
     string:canon = raw smtbuf_text(move(b));
@@ -4768,38 +4768,38 @@ func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
 // `--dump @sym`): every block after inlining and unrolling, with its origin
 // and environment.
 pub func:floor_dump = string(FloorText->:ft, Sxs->:s, int64:fi, int64:sec) never fails {
-    string:name = raw text_copy(raw strlist_view_of(ft.fns.items[fi].name));
+    string:name = raw text_copy(raw strlist_view_of(ft.fns[fi].name));
     Tx:t = raw tx_init(name);
-    XFn:x = raw xfn_of(@ft.fns.items[fi]);
+    XFn:x = raw xfn_of(@ft.fns[fi]);
     drop tx_transform(@t, ft, s, @x);
     string:out = "";
     for (int64:p in 0i64...t.problems.count) { out = string_concat(out, raw strlist_view(t.problems, p)); out = string_concat(out, "\n"); }
     List<int64>:rpo = raw floor_rpo(@x.f, @x.loops);
     out = string_concat(out, "rpo:");
-    for (int64:r in 0i64...rpo.count) { out = string_concat(out, " "); out = string_concat(out, raw strlist_view_of(x.f.blocks.items[rpo.items[r]].label)); }
+    for (int64:r in 0i64...rpo.count) { out = string_concat(out, " "); out = string_concat(out, raw strlist_view_of(x.f.blocks[rpo[r]].label)); }
     out = string_concat(out, "\n");
     for (int64:b in 0i64...x.f.blocks.count) {
-        out = string_concat(out, raw strlist_view_of(x.f.blocks.items[b].label));
+        out = string_concat(out, raw strlist_view_of(x.f.blocks[b].label));
         out = string_concat(out, ":  ; from ");
-        out = string_concat(out, raw strlist_view_of(x.meta.items[b].origin_fn));
+        out = string_concat(out, raw strlist_view_of(x.meta[b].origin_fn));
         out = string_concat(out, " ");
-        out = string_concat(out, raw strlist_view_of(x.meta.items[b].origin_label));
+        out = string_concat(out, raw strlist_view_of(x.meta[b].origin_label));
         out = string_concat(out, " succs");
-        for (int64:k in 0i64...x.f.blocks.items[b].succs.count) {
+        for (int64:k in 0i64...x.f.blocks[b].succs.count) {
             out = string_concat(out, " ");
-            out = string_concat(out, raw strlist_view_of(x.f.blocks.items[x.f.blocks.items[b].succs.items[k]].label));
+            out = string_concat(out, raw strlist_view_of(x.f.blocks[x.f.blocks[b].succs[k]].label));
         }
         out = string_concat(out, " env");
-        for (int64:e in 0i64...x.meta.items[b].ren_from.count) {
+        for (int64:e in 0i64...x.meta[b].ren_from.count) {
             out = string_concat(out, " ");
-            out = string_concat(out, raw strlist_view(x.meta.items[b].ren_from, e));
+            out = string_concat(out, raw strlist_view(x.meta[b].ren_from, e));
             out = string_concat(out, "->");
-            out = string_concat(out, raw strlist_view(x.meta.items[b].ren_to, e));
+            out = string_concat(out, raw strlist_view(x.meta[b].ren_to, e));
         }
         out = string_concat(out, "\n");
-        for (int64:l in 0i64...x.f.blocks.items[b].lines.count) {
+        for (int64:l in 0i64...x.f.blocks[b].lines.count) {
             out = string_concat(out, "  ");
-            out = string_concat(out, raw strlist_view(x.f.blocks.items[b].lines, l));
+            out = string_concat(out, raw strlist_view(x.f.blocks[b].lines, l));
             out = string_concat(out, "\n");
         }
     }
@@ -4809,9 +4809,9 @@ pub func:floor_dump = string(FloorText->:ft, Sxs->:s, int64:fi, int64:sec) never
 
 // THE ENTRY POINT: the file for one symbol with a section.
 pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:sec) never fails {
-    string:name = raw text_copy(raw strlist_view_of(ft.fns.items[fi].name));
+    string:name = raw text_copy(raw strlist_view_of(ft.fns[fi].name));
     Tx:t = raw tx_init(name);
-    XFn:x = raw xfn_of(@ft.fns.items[fi]);
+    XFn:x = raw xfn_of(@ft.fns[fi]);
     drop tx_transform(@t, ft, s, @x);
     // the entry state: memory, the parameters, the free symbols, the frame point
     drop tx_mem_declare(@t, "mem");
@@ -4872,7 +4872,7 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
     List<int64>:rpo = raw floor_rpo(@x.f, @x.loops);
     for (int64:i in 0i64...rpo.count) {
         if (t.problems.count > 0i64) { break; }
-        drop tx_block(@t, ft, s, @x, rpo.items[i]);
+        drop tx_block(@t, ft, s, @x, rpo[i]);
     }
     if (t.problems.count == 0i64) {
         drop tx_exit(@t, ft, @x);
@@ -4892,9 +4892,9 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
     for (int64:ri2 in 0i64...out.rows.count) {
         string:c = string_concat("; o", int_to_string(ri2 + 1i64));
         c = string_concat(c, " floor-spec ");
-        c = string_concat(c, raw strlist_view_of(out.rows.items[ri2].hash));
+        c = string_concat(c, raw strlist_view_of(out.rows[ri2].hash));
         c = string_concat(c, " ");
-        c = string_concat(c, raw strlist_view_of(out.rows.items[ri2].site));
+        c = string_concat(c, raw strlist_view_of(out.rows[ri2].site));
         drop smtbuf_line(@b2, c);
     }
     drop smtbuf_line(@b2, string_concat("; checks ", int_to_string(out.rows.count)));
@@ -4903,8 +4903,8 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
     for (int64:d in 0i64...t.defs.count) { drop smtbuf_line(@b2, raw strlist_view(t.defs, d)); }
     for (int64:ri3 in 0i64...out.rows.count) {
         drop smtbuf_line(@b2, "(push)");
-        for (int64:h in 0i64...out.rows.items[ri3].cone_hyps.count) {
-            int64:hi = out.rows.items[ri3].cone_hyps.items[h];
+        for (int64:h in 0i64...out.rows[ri3].cone_hyps.count) {
+            int64:hi = out.rows[ri3].cone_hyps[h];
             string:named = string_concat("(! ", raw strlist_view(t.hyps, hi));
             named = string_concat(named, " :named h");
             named = string_concat(named, int_to_string(hi));

@@ -326,15 +326,15 @@ func:region_enter_cond = NIL(Encoder->:e, Term:c) never fails {
 // run at an exit the straight line does not see.
 func:region_leave = NIL(Encoder->:e) never fails {
     int32:r = e.cur_region;
-    int32:parent = e.region_parent.items[r => int64];
-    if (e.region_cond.items[r => int64].ok) {
-        Term:c = raw term_copy(e.region_cond.items[r => int64]);
+    int32:parent = e.region_parent[r => int64];
+    if (e.region_cond[r => int64].ok) {
+        Term:c = raw term_copy(e.region_cond[r => int64]);
         int64:n0 = e.hyps.count;
-        for (int64:h in e.region_hyp0.items[r => int64]...n0) {
-            if (e.hyps.items[h].region != r) { continue; }
-            if (string_equals(e.hyps.items[h].text, c.text)) { continue; }
-            string:gt = raw smt_app2("=>", c.text, e.hyps.items[h].text);
-            List<int32>:gs = raw syms_union(c.syms, e.hyps.items[h].syms);
+        for (int64:h in e.region_hyp0[r => int64]...n0) {
+            if (e.hyps[h].region != r) { continue; }
+            if (string_equals(e.hyps[h].text, c.text)) { continue; }
+            string:gt = raw smt_app2("=>", c.text, e.hyps[h].text);
+            List<int32>:gs = raw syms_union(c.syms, e.hyps[h].syms);
             drop hyp_push_in(e, gt, gs, parent);
         }
     }
@@ -348,7 +348,7 @@ func:region_dominates = bool(Encoder->:e, int32:h, int32:o) never fails {
     int32:fuel = 4096i32;
     while ((r >= 0i32) && (fuel > 0i32)) {
         if (r == h) { pass true; }
-        r = e.region_parent.items[r => int64];
+        r = e.region_parent[r => int64];
         fuel = fuel - 1i32;
     }
     pass false;
@@ -554,7 +554,7 @@ func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
 // term for, so the proposition is unprovable rather than trap-blind.
 func:prop_fact = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
-    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
+    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms[i]); }
     drop list_push(@e.pfacts, Term{ ok: true, is_bool: true, text: string_concat(text, ""), syms: move(copy) });
     pass NIL;
 };
@@ -577,10 +577,10 @@ func:prop_end = Term(Encoder->:e, int64:mark, Term:c) never fails {
     Term:acc = raw term_copy(c);
     if (acc.ok && acc.is_bool) {
         for (int64:i in mark...e.pfacts.count) {
-            acc = raw term_app2("and", e.pfacts.items[i], acc, true);
+            acc = raw term_app2("and", e.pfacts[i], acc, true);
         }
     }
-    e.pfacts.count = mark;
+    drop list_truncate(@e.pfacts, mark);
     pass acc;
 };
 
@@ -588,7 +588,7 @@ func:prop_end = Term(Encoder->:e, int64:mark, Term:c) never fails {
 // into the parent of the region it is leaving.
 func:hyp_push_in = NIL(Encoder->:e, string:text, List<int32>:syms, int32:region) never fails {
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
-    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
+    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms[i]); }
     SmtHyp:h = SmtHyp{ text: string_concat(text, ""), syms: move(copy), region: region };
     drop list_push(@e.hyps, move(h));
     pass NIL;
@@ -615,13 +615,13 @@ func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
 };
 
 func:sym_text = string(Encoder->:e, int32:idx) never fails {
-    pass (string_concat(e.syms.items[idx => int64].text, ""));
+    pass (string_concat(e.syms[idx => int64].text, ""));
 };
 
 // A declared symbol by its text, or -1.
 func:sym_find = int32(Encoder->:e, string:text) never fails {
     for (int64:i in 0i64...e.syms.count) {
-        if (string_equals(e.syms.items[i].text, text)) { pass (i =>! int32); }
+        if (string_equals(e.syms[i].text, text)) { pass (i =>! int32); }
     }
     pass 0i32 - 1i32;
 };
@@ -680,11 +680,11 @@ func:term_lit = Term(string:text, bool:is_bool) never fails {
 
 func:syms_union = List<int32>(List<int32>:a, List<int32>:b) never fails {
     List<int32>:out = raw list_init::<int32>(a.count + b.count + 1i64);
-    for (int64:i in 0i64...a.count) { drop list_push(@out, a.items[i]); }
+    for (int64:i in 0i64...a.count) { drop list_push(@out, a[i]); }
     for (int64:j in 0i64...b.count) {
         bool:have = false;
-        for (int64:k in 0i64...out.count) { if (out.items[k] == b.items[j]) { have = true; } }
-        if (!have) { drop list_push(@out, b.items[j]); }
+        for (int64:k in 0i64...out.count) { if (out[k] == b[j]) { have = true; } }
+        if (!have) { drop list_push(@out, b[j]); }
     }
     pass out;
 };
@@ -709,9 +709,9 @@ func:term_is_numeral = bool(Term:t) never fails {
 
 func:version_next = int64(Encoder->:e, int32:name) never fails {
     for (int64:i in 0i64...e.ver_name.count) {
-        if (e.ver_name.items[i] == name) {
-            int32:k = e.ver_next.items[i];
-            e.ver_next.items[i] = k + 1i32;
+        if (e.ver_name[i] == name) {
+            int32:k = e.ver_next[i];
+            e.ver_next[i] = k + 1i32;
             pass (k => int64);
         }
     }
@@ -724,13 +724,13 @@ func:bind_find = int64(Encoder->:e, int32:name) never fails {
     int64:i = e.binds.count;
     while (i > 0i64) {
         i = i - 1i64;
-        if (e.binds.items[i].name == name) { pass i; }
+        if (e.binds[i].name == name) { pass i; }
     }
     pass (0i64 - 1i64);
 };
 
 func:is_escaped = bool(Encoder->:e, int32:name) never fails {
-    for (int64:i in 0i64...e.escaped.count) { if (e.escaped.items[i] == name) { pass true; } }
+    for (int64:i in 0i64...e.escaped.count) { if (e.escaped[i] == name) { pass true; } }
     pass false;
 };
 
@@ -773,7 +773,7 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
 func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     int64:i = raw bind_find(e, name);
     if (i < 0i64) { pass NIL; }
-    int32:ty = e.binds.items[i].type_id;
+    int32:ty = e.binds[i].type_id;
     if (!(raw is_termed(e, ty))) { pass NIL; }
     if (raw is_escaped(e, name)) { pass NIL; }
     string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
@@ -785,7 +785,7 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
         drop list_push(@one, sym);
         drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
     }
-    e.binds.items[i].sym = sym;
+    e.binds[i].sym = sym;
     pass NIL;
 };
 
@@ -794,18 +794,18 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
 // version to refresh (DEF-14).
 func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
     for (int64:k in 0i64...names.count) {
-        int64:i = raw bind_find(e, names.items[k]);
+        int64:i = raw bind_find(e, names[k]);
         if (i < 0i64) { continue; }
-        int32:ty = e.binds.items[i].type_id;
-        if (e.binds.items[i].lanes.count > 0i64) {
-            e.binds.items[i].lanes = raw lane_syms_new(e, names.items[k], ty);
+        int32:ty = e.binds[i].type_id;
+        if (e.binds[i].lanes.count > 0i64) {
+            e.binds[i].lanes = raw lane_syms_new(e, names[k], ty);
             continue;
         }
         if (!(raw is_termed(e, ty))) { continue; }
-        if (raw is_escaped(e, names.items[k])) { continue; }
-        string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
-                                raw version_next(e, names.items[k]));
-        e.binds.items[i].sym = raw sym_new(e, nm, ty);
+        if (raw is_escaped(e, names[k])) { continue; }
+        string:nm = raw smt_sym(raw intern_get(e.interns, names[k]),
+                                raw version_next(e, names[k]));
+        e.binds[i].sym = raw sym_new(e, nm, ty);
         // A LIMITED NAME KEEPS ITS RULE ACROSS A MERGE (L-7): the fresh
         // version is "the value after the construct", and every write inside
         // was guarded by the rule -- the hypothesis, no obligation.
@@ -816,7 +816,7 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
 
 func:invalidate_all = NIL(Encoder->:e) never fails {
     List<int32>:names = raw list_init::<int32>(e.binds.count + 1i64);
-    for (int64:i in 0i64...e.binds.count) { drop list_push(@names, e.binds.items[i].name); }
+    for (int64:i in 0i64...e.binds.count) { drop list_push(@names, e.binds[i].name); }
     drop invalidate(e, names);
     pass NIL;
 };
@@ -824,14 +824,14 @@ func:invalidate_all = NIL(Encoder->:e) never fails {
 // The symbols of every binding, to restore after a branch.
 func:snapshot = List<int32>(Encoder->:e) never fails {
     List<int32>:out = raw list_init::<int32>(e.binds.count + 1i64);
-    for (int64:i in 0i64...e.binds.count) { drop list_push(@out, e.binds.items[i].sym); }
+    for (int64:i in 0i64...e.binds.count) { drop list_push(@out, e.binds[i].sym); }
     pass out;
 };
 
 func:restore = NIL(Encoder->:e, List<int32>:snap) never fails {
     int64:n = snap.count;
     if (e.binds.count < n) { n = e.binds.count; }
-    for (int64:i in 0i64...n) { e.binds.items[i].sym = snap.items[i]; }
+    for (int64:i in 0i64...n) { e.binds[i].sym = snap[i]; }
     // The lanes of every `simd` binding are fresh past a restore (D-282):
     // the snapshot carries scalar versions only, and opaque is sound.
     drop lanes_refresh_all(e);
@@ -839,7 +839,7 @@ func:restore = NIL(Encoder->:e, List<int32>:snap) never fails {
 };
 
 func:scope_mark = int64(Encoder->:e) never fails { pass e.binds.count; };
-func:scope_release = NIL(Encoder->:e, int64:mark) never fails { e.binds.count = mark; pass NIL; };
+func:scope_release = NIL(Encoder->:e, int64:mark) never fails { drop list_truncate(@e.binds, mark); pass NIL; };
 
 // --- obligations ---------------------------------------------------------------------------
 
@@ -856,10 +856,10 @@ func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int
                      int32:site, Span:at, bool:encoded, int32:role, int32:group,
                      int32:traps) never fails {
     if (e.quiet > 0i32) { pass NIL; }
-    int32:ord = e.ordinals.items[kind => int64] + 1i32;
-    e.ordinals.items[kind => int64] = ord;
+    int32:ord = e.ordinals[kind => int64] + 1i32;
+    e.ordinals[kind => int64] = ord;
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
-    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
+    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms[i]); }
     SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: move(copy),
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: role, group: group, traps: traps,
@@ -878,8 +878,8 @@ func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int
 // guard, verdict `checker` -- the catalogue's inventory entry.
 func:record_checker = NIL(Encoder->:e, int32:kind, int32:space, int32:site, Span:at) never fails {
     if (e.quiet > 0i32) { pass NIL; }
-    int32:ord = e.ordinals.items[kind => int64] + 1i32;
-    e.ordinals.items[kind => int64] = ord;
+    int32:ord = e.ordinals[kind => int64] + 1i32;
+    e.ordinals[kind => int64] = ord;
     SmtObl:o = SmtObl{ kind: kind, goal: "", syms: raw list_init::<int32>(1i64),
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: raw ROLE_GUARD(), group: site, traps: 0i32,
@@ -973,7 +973,7 @@ pub struct:PStep = { bool:is_index; bool:is_range; int32:name; int32:ix; };
 func:memo_put = NIL(Encoder->:e, int32:id, Term:t) never fails {
     if (!t.ok) { pass NIL; }
     for (int64:i in 0i64...e.memo_ids.count) {
-        if (e.memo_ids.items[i] == id) { e.memo_terms.items[i] = raw term_copy(t); pass NIL; }
+        if (e.memo_ids[i] == id) { e.memo_terms[i] = raw term_copy(t); pass NIL; }
     }
     drop list_push(@e.memo_ids, id);
     drop list_push(@e.memo_terms, raw term_copy(t));
@@ -982,7 +982,7 @@ func:memo_put = NIL(Encoder->:e, int32:id, Term:t) never fails {
 
 func:memo_get = Term(Encoder->:e, int32:id) never fails {
     for (int64:i in 0i64...e.memo_ids.count) {
-        if (e.memo_ids.items[i] == id) { pass (raw term_copy(e.memo_terms.items[i])); }
+        if (e.memo_ids[i] == id) { pass (raw term_copy(e.memo_terms[i])); }
     }
     pass (raw term_none());
 };
@@ -1008,7 +1008,7 @@ func:enc_path = bool(Encoder->:e, ExprId:place, List<PStep>->:out) never fails {
         }
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             int64:k = rev.count;
-            while (k > 0i64) { k = k - 1i64; drop list_push(out, rev.items[k]); }
+            while (k > 0i64) { k = k - 1i64; drop list_push(out, rev[k]); }
             pass true;
         }
         pass false;
@@ -1041,8 +1041,8 @@ func:enc_alias_site = NIL(Encoder->:e, ExprId:id) never fails {
         string:pg = "";
         bool:pdisjoint = false;
         for (int64:i in 0i64...m) {
-            PStep:sa = ap.items[i];
-            PStep:sp = pp.items[i];
+            PStep:sa = ap[i];
+            PStep:sp = pp[i];
             if ((!sa.is_index) && (!sp.is_index)) {
                 if (sa.name != sp.name) { pdisjoint = true; }
                 continue;
@@ -1650,7 +1650,7 @@ func:sx_node = int64(SxP->:p) never fails {
             drop list_push(@mine, k);
         }
         int64:k0 = p.kids.count;
-        for (int64:i in 0i64...mine.count) { drop list_push(@p.kids, mine.items[i]); }
+        for (int64:i in 0i64...mine.count) { drop list_push(@p.kids, mine[i]); }
         drop list_push(@p.nodes, SxNode{ atom: false, text: "", kid0: k0, nkids: mine.count });
         pass (p.nodes.count - 1i64);
     }
@@ -1676,32 +1676,32 @@ func:sx_node = int64(SxP->:p) never fails {
 };
 
 func:sx_kid = int64(SxP:p, int64:k, int64:i) never fails {
-    pass p.kids.items[p.nodes.items[k].kid0 + i];
+    pass p.kids[p.nodes[k].kid0 + i];
 };
 
 func:sx_is = bool(SxP:p, int64:k, string:text) never fails {
     if (k < 0i64) { pass false; }
-    if (!p.nodes.items[k].atom) { pass false; }
-    pass (string_equals(p.nodes.items[k].text, text));
+    if (!p.nodes[k].atom) { pass false; }
+    pass (string_equals(p.nodes[k].text, text));
 };
 
 func:sx_text = string(SxP:p, int64:k) never fails {
-    pass (string_concat(p.nodes.items[k].text, ""));
+    pass (string_concat(p.nodes[k].text, ""));
 };
 
 // The head of a list node as an atom text, or "" for an atom or a list head.
 func:sx_head = string(SxP:p, int64:k) never fails {
-    if (p.nodes.items[k].atom) { pass ""; }
-    if (p.nodes.items[k].nkids == 0i64) { pass ""; }
+    if (p.nodes[k].atom) { pass ""; }
+    if (p.nodes[k].nkids == 0i64) { pass ""; }
     int64:h = raw sx_kid(p, k, 0i64);
-    if (!p.nodes.items[h].atom) { pass ""; }
+    if (!p.nodes[h].atom) { pass ""; }
     pass (raw sx_text(p, h));
 };
 
 // The float definition a symbol text names, as its index in `fpdefs`, or -1.
 func:fpdef_of = int64(Encoder->:e, string:sym) never fails {
     for (int64:i in 0i64...e.fpdefs.count) {
-        if (string_equals(e.fpdefs.items[i].sym, sym)) { pass i; }
+        if (string_equals(e.fpdefs[i].sym, sym)) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -1709,7 +1709,7 @@ func:fpdef_of = int64(Encoder->:e, string:sym) never fails {
 func:fpsym_is = bool(Encoder->:e, string:text) never fails {
     int32:si = raw sym_find(e, text);
     if (si < 0i32) { pass false; }
-    pass (e.syms.items[si => int64].fsort.len > 0i64);
+    pass (e.syms[si => int64].fsort.len > 0i64);
 };
 
 // The error model's constants per width: eps, eta, MAX_NORMAL as Reals.
@@ -1733,11 +1733,11 @@ struct:T2 = { bool:ok; List<string>:sides; };
 // A term's Real twin: the float comparisons and operations to their Real
 // forms, `to_fp` to its argument, everything else verbatim over its twins.
 func:t2_term = string(Encoder->:e, SxP:p, T2->:t, int64:k) never fails {
-    if (p.nodes.items[k].atom) { pass (raw sx_text(p, k)); }
-    int64:nk = p.nodes.items[k].nkids;
+    if (p.nodes[k].atom) { pass (raw sx_text(p, k)); }
+    int64:nk = p.nodes[k].nkids;
     if (nk == 0i64) { pass "()"; }
     int64:h = raw sx_kid(p, k, 0i64);
-    if (!p.nodes.items[h].atom) {
+    if (!p.nodes[h].atom) {
         // ((_ to_fp E S) RNE X): the argument's own Real.
         if ((raw sx_is(p, raw sx_kid(p, h, 0i64), "_")) && (raw sx_is(p, raw sx_kid(p, h, 1i64), "to_fp")) && (nk == 3i64)) {
             pass (raw t2_term(e, p, t, raw sx_kid(p, k, 2i64)));
@@ -1775,9 +1775,9 @@ func:t2_hyp = string(Encoder->:e, T2->:t, string:text) never fails {
     int64:root = raw sx_node(@p);
     if (root < 0i64) { t.ok = false; pass "false"; }
     if ((raw sx_head(p, root)).len > 0i64) {
-        if ((raw sx_is(p, raw sx_kid(p, root, 0i64), "=")) && (p.nodes.items[root].nkids == 3i64)) {
+        if ((raw sx_is(p, raw sx_kid(p, root, 0i64), "=")) && (p.nodes[root].nkids == 3i64)) {
             int64:sk = raw sx_kid(p, root, 1i64);
-            if (p.nodes.items[sk].atom) {
+            if (p.nodes[sk].atom) {
                 string:sym = raw sx_text(p, sk);
                 if (raw fpsym_is(e, sym)) {
                     int64:rhs = raw sx_kid(p, root, 2i64);
@@ -1785,8 +1785,8 @@ func:t2_hyp = string(Encoder->:e, T2->:t, string:text) never fails {
                     if (di < 0i64) {
                         pass (raw smt_app2("=", sym, raw t2_term(e, p, t, rhs)));
                     }
-                    string:op = string_concat(e.fpdefs.items[di].op, "");
-                    int32:ty = e.fpdefs.items[di].ty;
+                    string:op = string_concat(e.fpdefs[di].op, "");
+                    int32:ty = e.fpdefs[di].ty;
                     if ((string_equals(op, "neg")) || (string_equals(op, "widen"))) {
                         pass (raw smt_app2("=", sym, raw t2_term(e, p, t, rhs)));
                     }
@@ -1821,7 +1821,7 @@ func:t2_hyp = string(Encoder->:e, T2->:t, string:text) never fails {
 // (iii): comparisons and their Boolean combinations, over symbols and the
 // Int fragment; no `fp.eq`, no predicate on NaN, no raw float operation.
 func:t2_goal_ok = bool(Encoder->:e, SxP:p, int64:k) never fails {
-    if (p.nodes.items[k].atom) { pass true; }
+    if (p.nodes[k].atom) { pass true; }
     string:h = raw sx_head(p, k);
     if (h.len == 0i64) { pass false; }
     bool:known = false;
@@ -1832,13 +1832,13 @@ func:t2_goal_ok = bool(Encoder->:e, SxP:p, int64:k) never fails {
     if (string_equals(h, "npk_sdiv") || string_equals(h, "npk_srem") || string_equals(h, "to_real")) { known = true; }
     if (string_equals(h, "=") || string_equals(h, "distinct")) {
         known = true;
-        for (int64:i in 1i64...p.nodes.items[k].nkids) {
+        for (int64:i in 1i64...p.nodes[k].nkids) {
             int64:c = raw sx_kid(p, k, i);
-            if (p.nodes.items[c].atom) { if (raw fpsym_is(e, raw sx_text(p, c))) { pass false; } }
+            if (p.nodes[c].atom) { if (raw fpsym_is(e, raw sx_text(p, c))) { pass false; } }
         }
     }
     if (!known) { pass false; }
-    for (int64:i2 in 1i64...p.nodes.items[k].nkids) {
+    for (int64:i2 in 1i64...p.nodes[k].nkids) {
         if (!(raw t2_goal_ok(e, p, raw sx_kid(p, k, i2)))) { pass false; }
     }
     pass true;
@@ -1852,13 +1852,13 @@ func:t2_bounds_in = int32(Encoder->:e, SxP:p, int64:k, string:sym) never fails {
     if (h.len == 0i64) { pass 0i32; }
     if (string_equals(h, "and")) {
         int32:acc = 0i32;
-        for (int64:i in 1i64...p.nodes.items[k].nkids) { acc = acc | (raw t2_bounds_in(e, p, raw sx_kid(p, k, i), sym)); }
+        for (int64:i in 1i64...p.nodes[k].nkids) { acc = acc | (raw t2_bounds_in(e, p, raw sx_kid(p, k, i), sym)); }
         pass acc;
     }
-    if (p.nodes.items[k].nkids != 3i64) { pass 0i32; }
+    if (p.nodes[k].nkids != 3i64) { pass 0i32; }
     int64:a = raw sx_kid(p, k, 1i64);
     int64:b = raw sx_kid(p, k, 2i64);
-    if (!(p.nodes.items[a].atom && p.nodes.items[b].atom)) { pass 0i32; }
+    if (!(p.nodes[a].atom && p.nodes[b].atom)) { pass 0i32; }
     bool:ge = (string_equals(h, "fp.geq")) || (string_equals(h, "fp.gt"));
     bool:le = (string_equals(h, "fp.leq")) || (string_equals(h, "fp.lt"));
     if (!(ge || le)) { pass 0i32; }
@@ -1868,8 +1868,8 @@ func:t2_bounds_in = int32(Encoder->:e, SxP:p, int64:k, string:sym) never fails {
     int64:db = raw fpdef_of(e, raw sx_text(p, b));
     bool:a_lit = false;
     bool:b_lit = false;
-    if (da >= 0i64) { a_lit = string_equals(e.fpdefs.items[da].op, "lit"); }
-    if (db >= 0i64) { b_lit = string_equals(e.fpdefs.items[db].op, "lit"); }
+    if (da >= 0i64) { a_lit = string_equals(e.fpdefs[da].op, "lit"); }
+    if (db >= 0i64) { b_lit = string_equals(e.fpdefs[db].op, "lit"); }
     int32:m = 0i32;
     if (a_sym && b_lit) { if (ge) { m = m | 1i32; } else { m = m | 2i32; } }
     if (b_sym && a_lit) { if (ge) { m = m | 2i32; } else { m = m | 1i32; } }
@@ -1882,38 +1882,38 @@ pub func:enc_t2_text = string(Encoder->:e, List<int64>->:ks) never fails {
     List<string>:blocks = raw list_init::<string>(4i64);
     List<int32>:decl = raw list_init::<int32>(8i64);
     for (int64:oi in 0i64...e.obls.count) {
-        if (!e.obls.items[oi].encoded) { continue; }
-        if (!(string_equals(e.obls.items[oi].tier, "fp"))) { continue; }
+        if (!e.obls[oi].encoded) { continue; }
+        if (!(string_equals(e.obls[oi].tier, "fp"))) { continue; }
         // (iii) the goal's shape
-        SxP:gp = raw sxp_init(e.obls.items[oi].goal);
+        SxP:gp = raw sxp_init(e.obls[oi].goal);
         int64:groot = raw sx_node(@gp);
         if (groot < 0i64) { continue; }
         if (!(raw t2_goal_ok(e, gp, groot))) { continue; }
         // the cone's hypotheses, parsed once
         List<SxP>:hp = raw list_init::<SxP>(8i64);
         List<int64>:hr = raw list_init::<int64>(8i64);
-        for (int64:hi in 0i64...e.obls.items[oi].cone_hyps.count) {
-            SxP:one = raw sxp_init(e.hyps.items[e.obls.items[oi].cone_hyps.items[hi] => int64].text);
+        for (int64:hi in 0i64...e.obls[oi].cone_hyps.count) {
+            SxP:one = raw sxp_init(e.hyps[e.obls[oi].cone_hyps[hi] => int64].text);
             int64:r1 = raw sx_node(@one);
             drop list_push(@hr, r1);
             drop list_push(@hp, move(one));
         }
         // (i) every float symbol defined or bounded; no uninterpreted function
         bool:elig = true;
-        for (int64:ci in 0i64...e.obls.items[oi].cone_syms.count) {
-            int32:si = e.obls.items[oi].cone_syms.items[ci];
-            if (e.syms.items[si => int64].sorts.len > 0i64) { elig = false; }
-            if (e.syms.items[si => int64].fsort.len == 0i64) { continue; }
+        for (int64:ci in 0i64...e.obls[oi].cone_syms.count) {
+            int32:si = e.obls[oi].cone_syms[ci];
+            if (e.syms[si => int64].sorts.len > 0i64) { elig = false; }
+            if (e.syms[si => int64].fsort.len == 0i64) { continue; }
             string:st = raw sym_text(e, si);
             bool:defined = false;
             int32:bm = 0i32;
             for (int64:hj in 0i64...hp.count) {
-                int64:root = hr.items[hj];
+                int64:root = hr[hj];
                 if (root < 0i64) { continue; }
-                if ((raw sx_is(hp.items[hj], raw sx_kid(hp.items[hj], root, 0i64), "=")) && (hp.items[hj].nodes.items[root].nkids == 3i64)) {
-                    if (raw sx_is(hp.items[hj], raw sx_kid(hp.items[hj], root, 1i64), st)) { defined = true; }
+                if ((raw sx_is(hp[hj], raw sx_kid(hp[hj], root, 0i64), "=")) && (hp[hj].nodes[root].nkids == 3i64)) {
+                    if (raw sx_is(hp[hj], raw sx_kid(hp[hj], root, 1i64), st)) { defined = true; }
                 }
-                bm = bm | (raw t2_bounds_in(e, hp.items[hj], root, st));
+                bm = bm | (raw t2_bounds_in(e, hp[hj], root, st));
             }
             if (!(defined || (bm == 3i32))) { elig = false; }
         }
@@ -1922,8 +1922,8 @@ pub func:enc_t2_text = string(Encoder->:e, List<int64>->:ks) never fails {
         T2:t = T2{ ok: true, sides: raw list_init::<string>(4i64) };
         SmtBuf:blk = raw smtbuf_init();
         drop smtbuf_line(@blk, "(push)");
-        for (int64:hk in 0i64...e.obls.items[oi].cone_hyps.count) {
-            string:tw = raw t2_hyp(e, @t, e.hyps.items[e.obls.items[oi].cone_hyps.items[hk] => int64].text);
+        for (int64:hk in 0i64...e.obls[oi].cone_hyps.count) {
+            string:tw = raw t2_hyp(e, @t, e.hyps[e.obls[oi].cone_hyps[hk] => int64].text);
             if (!t.ok) { break; }
             drop smtbuf_line(@blk, raw smt_app1("assert", tw));
         }
@@ -1937,8 +1937,8 @@ pub func:enc_t2_text = string(Encoder->:e, List<int64>->:ks) never fails {
         drop smtbuf_line(@blk, "(pop)");
         drop list_push(@blocks, raw smtbuf_text(move(blk)));
         drop list_push(ks, oi + 1i64);
-        for (int64:ci2 in 0i64...e.obls.items[oi].cone_syms.count) {
-            int32:s2 = e.obls.items[oi].cone_syms.items[ci2];
+        for (int64:ci2 in 0i64...e.obls[oi].cone_syms.count) {
+            int32:s2 = e.obls[oi].cone_syms[ci2];
             if (!(raw has_sym(decl, s2))) { drop list_push(@decl, s2); }
         }
     }
@@ -1949,7 +1949,7 @@ pub func:enc_t2_text = string(Encoder->:e, List<int64>->:ks) never fails {
     drop smtbuf_line(@out, "(define-fun absr ((t Real)) Real (ite (>= t 0.0) t (- t)))");
     for (int64:si2 in 0i64...e.syms.count) {
         if (!(raw has_sym(decl, si2 =>! int32))) { continue; }
-        if (e.syms.items[si2].fsort.len > 0i64) {
+        if (e.syms[si2].fsort.len > 0i64) {
             drop smtbuf_line(@out, raw smt_app2("declare-const", raw sym_text(e, si2 =>! int32), "Real"));
         } else {
             drop smtbuf_line(@out, raw sym_declaration(e, si2 =>! int32));
@@ -1962,7 +1962,7 @@ pub func:enc_t2_text = string(Encoder->:e, List<int64>->:ks) never fails {
 
 // A list element viewed without a copy (the string's bytes, borrowed).
 func:strlist_view_enc = string(List<string>:l, int64:i) never fails {
-    pass (string_from_bytes(l.items[i].ptr, l.items[i].len));
+    pass (string_from_bytes(l[i].ptr, l[i].len));
 };
 
 // --- bitwise operations: the Int forms and the bounded crossing (D-279, D-280) ------------
@@ -2180,7 +2180,7 @@ func:flag_word_cast = Term(Encoder->:e, Term:t, int32:from, int32:to) never fail
 
 func:lanes_find = int64(Encoder->:e, int32:id) never fails {
     for (int64:i in 0i64...e.lane_tab.count) {
-        if (e.lane_tab.items[i].id == id) { pass i; }
+        if (e.lane_tab[i].id == id) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -2194,8 +2194,8 @@ func:lanes_of = List<Term>(Encoder->:e, ExprId:x, int32:vt) never fails {
     int64:li = raw lanes_find(e, x.index);
     for (int32:i in 0i32...n) {
         if (li >= 0i64) {
-            if ((i => int64) < e.lane_tab.items[li].lanes.count) {
-                drop list_push(@out, raw term_copy(e.lane_tab.items[li].lanes.items[i => int64]));
+            if ((i => int64) < e.lane_tab[li].lanes.count) {
+                drop list_push(@out, raw term_copy(e.lane_tab[li].lanes[i => int64]));
                 continue;
             }
         }
@@ -2236,17 +2236,17 @@ func:lane_syms_new = List<int32>(Encoder->:e, int32:name, int32:ty) never fails 
 
 // The binding's lanes defined equal to a value's lanes, where known.
 func:bind_lanes_from = NIL(Encoder->:e, int64:bi, ExprId:src) never fails {
-    if (e.binds.items[bi].lanes.count == 0i64) { pass NIL; }
+    if (e.binds[bi].lanes.count == 0i64) { pass NIL; }
     if (raw expr_is_none(src)) { pass NIL; }
-    List<Term>:sl = raw lanes_of(e, src, e.binds.items[bi].type_id);
-    for (int64:i in 0i64...e.binds.items[bi].lanes.count) {
+    List<Term>:sl = raw lanes_of(e, src, e.binds[bi].type_id);
+    for (int64:i in 0i64...e.binds[bi].lanes.count) {
         if (i >= sl.count) { break; }
-        if (!sl.items[i].ok) { continue; }
-        int32:ls = e.binds.items[bi].lanes.items[i];
-        if (sl.items[i].is_bool != e.syms.items[ls => int64].is_bool) { continue; }
+        if (!sl[i].ok) { continue; }
+        int32:ls = e.binds[bi].lanes[i];
+        if (sl[i].is_bool != e.syms[ls => int64].is_bool) { continue; }
         List<int32>:one = raw list_init::<int32>(1i64);
         drop list_push(@one, ls);
-        drop hyp_push(e, raw smt_app2("=", raw sym_text(e, ls), sl.items[i].text), raw syms_union(one, sl.items[i].syms));
+        drop hyp_push(e, raw smt_app2("=", raw sym_text(e, ls), sl[i].text), raw syms_union(one, sl[i].syms));
     }
     pass NIL;
 };
@@ -2255,8 +2255,8 @@ func:bind_lanes_from = NIL(Encoder->:e, int64:bi, ExprId:src) never fails {
 func:bind_lanes_assign = NIL(Encoder->:e, int32:name, ExprId:src) never fails {
     int64:bi = raw bind_find(e, name);
     if (bi < 0i64) { pass NIL; }
-    if (e.binds.items[bi].lanes.count == 0i64) { pass NIL; }
-    e.binds.items[bi].lanes = raw lane_syms_new(e, name, e.binds.items[bi].type_id);
+    if (e.binds[bi].lanes.count == 0i64) { pass NIL; }
+    e.binds[bi].lanes = raw lane_syms_new(e, name, e.binds[bi].type_id);
     drop bind_lanes_from(e, bi, src);
     pass NIL;
 };
@@ -2264,20 +2264,20 @@ func:bind_lanes_assign = NIL(Encoder->:e, int32:name, ExprId:src) never fails {
 // Every `simd` binding's lanes fresh and opaque.
 func:lanes_refresh_all = NIL(Encoder->:e) never fails {
     for (int64:i in 0i64...e.binds.count) {
-        if (e.binds.items[i].lanes.count == 0i64) { continue; }
-        e.binds.items[i].lanes = raw lane_syms_new(e, e.binds.items[i].name, e.binds.items[i].type_id);
+        if (e.binds[i].lanes.count == 0i64) { continue; }
+        e.binds[i].lanes = raw lane_syms_new(e, e.binds[i].name, e.binds[i].type_id);
     }
     pass NIL;
 };
 
 // A binding's lanes as terms, recorded for the read.
 func:lanes_of_binding = NIL(Encoder->:e, int64:bi, int32:id) never fails {
-    List<Term>:out = raw list_init::<Term>(e.binds.items[bi].lanes.count + 1i64);
-    for (int64:i in 0i64...e.binds.items[bi].lanes.count) {
-        int32:ls = e.binds.items[bi].lanes.items[i];
+    List<Term>:out = raw list_init::<Term>(e.binds[bi].lanes.count + 1i64);
+    for (int64:i in 0i64...e.binds[bi].lanes.count) {
+        int32:ls = e.binds[bi].lanes[i];
         List<int32>:one = raw list_init::<int32>(1i64);
         drop list_push(@one, ls);
-        drop list_push(@out, Term{ ok: true, is_bool: e.syms.items[ls => int64].is_bool, text: raw sym_text(e, ls), syms: move(one) });
+        drop list_push(@out, Term{ ok: true, is_bool: e.syms[ls => int64].is_bool, text: raw sym_text(e, ls), syms: move(one) });
     }
     drop lanes_put(e, id, move(out));
     pass NIL;
@@ -2343,8 +2343,8 @@ func:record_division_lanes = NIL(Encoder->:e, int32:elem, List<Term>:la, List<Te
     List<int32>:bs = raw list_init::<int32>(4i64);
     string:mn = raw smt_int_min(raw type_int_bits(e.types, elem));
     for (int64:i in 0i64...lb.count) {
-        Term:tb = raw term_copy(lb.items[i]);
-        Term:ta = raw term_copy(la.items[i]);
+        Term:tb = raw term_copy(lb[i]);
+        Term:ta = raw term_copy(la[i]);
         if (!tb.ok) { tb = raw term_opaque(e, elem); }
         if (!ta.ok) { ta = raw term_opaque(e, elem); }
         string:z = raw smt_app1("not", raw smt_app2("=", tb.text, "0"));
@@ -2370,7 +2370,7 @@ func:record_shift_lanes = NIL(Encoder->:e, int32:elem, List<Term>:lb, int32:site
     string:goal = "";
     List<int32>:gs = raw list_init::<int32>(4i64);
     for (int64:i in 0i64...lb.count) {
-        Term:tb = raw term_copy(lb.items[i]);
+        Term:tb = raw term_copy(lb[i]);
         if (!tb.ok) { tb = raw term_opaque(e, elem); }
         string:one = raw smt_app2("and", raw smt_app2(">=", tb.text, "0"), raw smt_app2("<", tb.text, w));
         if (goal.len == 0i64) { goal = move(one); } else { goal = raw smt_app2("and", goal, one); }
@@ -2400,7 +2400,7 @@ func:enc_simd_binary = NIL(Encoder->:e, TokenKind:op, int32:vt, ExprId:id, ExprI
     List<Term>:out = raw list_init::<Term>((n => int64) + 1i64);
     for (int32:i in 0i32...n) {
         if (((i => int64) < la.count) && ((i => int64) < lb.count)) {
-            drop list_push(@out, raw lane_binop(e, op, elem, la.items[i => int64], lb.items[i => int64], at));
+            drop list_push(@out, raw lane_binop(e, op, elem, la[i => int64], lb[i => int64], at));
         } else {
             drop list_push(@out, raw term_none());
         }
@@ -2421,10 +2421,10 @@ func:enc_simd_cast = NIL(Encoder->:e, ExprId:operand, int32:st, int32:vt, int32:
     for (int32:i in 0i32...n) {
         Term:t = raw term_none();
         if ((i => int64) < src.count) {
-            if ((!unchecked) && (raw is_int(e, se)) && (raw is_int(e, de)) && src.items[i => int64].ok && (!src.items[i => int64].is_bool)) {
-                t = raw term_copy(src.items[i => int64]);
+            if ((!unchecked) && (raw is_int(e, se)) && (raw is_int(e, de)) && src[i => int64].ok && (!src[i => int64].is_bool)) {
+                t = raw term_copy(src[i => int64]);
             } else {
-                t = raw float_cast(e, src.items[i => int64], se, de);
+                t = raw float_cast(e, src[i => int64], se, de);
             }
         }
         if (!t.ok) { t = raw term_opaque(e, de); }
@@ -2439,29 +2439,29 @@ func:enc_simd_method = Term(Encoder->:e, string:m, ExprId:recv, int32:rt, int32:
     int32:elem = raw type_elem(e.types, rt);
     List<Term>:l = raw lanes_of(e, recv, rt);
     if (l.count == 0i64) { pass (raw term_opaque(e, ty)); }
-    for (int64:c in 0i64...l.count) { if (!l.items[c].ok) { pass (raw term_opaque(e, ty)); } }
+    for (int64:c in 0i64...l.count) { if (!l[c].ok) { pass (raw term_opaque(e, ty)); } }
     if ((raw string_eq(m, "any")) || (raw string_eq(m, "all"))) {
         string:hd = "or";
         if (raw string_eq(m, "all")) { hd = "and"; }
-        Term:acc = raw term_copy(l.items[0i64]);
+        Term:acc = raw term_copy(l[0i64]);
         if (!acc.is_bool) { pass (raw term_opaque(e, ty)); }
         for (int64:i in 1i64...l.count) {
-            if (!l.items[i].is_bool) { pass (raw term_opaque(e, ty)); }
-            acc = raw term_app2(hd, acc, l.items[i], true);
+            if (!l[i].is_bool) { pass (raw term_opaque(e, ty)); }
+            acc = raw term_app2(hd, acc, l[i], true);
         }
         pass acc;
     }
-    Term:acc2 = raw term_copy(l.items[0i64]);
+    Term:acc2 = raw term_copy(l[0i64]);
     if (acc2.is_bool) { pass (raw term_opaque(e, ty)); }
     for (int64:i2 in 1i64...l.count) {
-        if (l.items[i2].is_bool) { pass (raw term_opaque(e, ty)); }
+        if (l[i2].is_bool) { pass (raw term_opaque(e, ty)); }
         if (raw string_eq(m, "sum")) {
             if (raw is_float(e, elem)) {
-                acc2 = raw fp_make(e, "add", elem, acc2.text, l.items[i2].text, raw smt_app3("fp.add", "RNE", acc2.text, l.items[i2].text),
-                                   raw syms_union(acc2.syms, l.items[i2].syms));
+                acc2 = raw fp_make(e, "add", elem, acc2.text, l[i2].text, raw smt_app3("fp.add", "RNE", acc2.text, l[i2].text),
+                                   raw syms_union(acc2.syms, l[i2].syms));
                 if (!acc2.ok) { pass (raw term_opaque(e, ty)); }
             } else {
-                acc2 = raw term_app2("+", acc2, l.items[i2], false);
+                acc2 = raw term_app2("+", acc2, l[i2], false);
             }
             continue;
         }
@@ -2471,8 +2471,8 @@ func:enc_simd_method = Term(Encoder->:e, string:m, ExprId:recv, int32:rt, int32:
             pred = "fp.lt";
             if (raw string_eq(m, "max")) { pred = "fp.gt"; }
         }
-        Term:c2 = raw term_app2(pred, acc2, l.items[i2], true);
-        acc2 = Term{ ok: true, is_bool: false, text: raw smt_app3("ite", c2.text, acc2.text, l.items[i2].text),
+        Term:c2 = raw term_app2(pred, acc2, l[i2], true);
+        acc2 = Term{ ok: true, is_bool: false, text: raw smt_app3("ite", c2.text, acc2.text, l[i2].text),
                      syms: raw syms_union(c2.syms, raw list_init::<int32>(1i64)) };
     }
     pass acc2;
@@ -2536,11 +2536,11 @@ func:limited_root_name = int32(Encoder->:e, ExprId:id) never fails {
 // A binding's current version as a term; `term_none` when it has no symbol
 // (an address-taken name, or a type outside the fragment).
 func:bind_term = Term(Encoder->:e, int64:bi) never fails {
-    int32:sym = e.binds.items[bi].sym;
+    int32:sym = e.binds[bi].sym;
     if (sym < 0i32) { pass (raw term_none()); }
     List<int32>:one = raw list_init::<int32>(1i64);
     drop list_push(@one, sym);
-    pass Term{ ok: true, is_bool: e.syms.items[sym => int64].is_bool,
+    pass Term{ ok: true, is_bool: e.syms[sym => int64].is_bool,
                text: raw sym_text(e, sym), syms: move(one) };
 };
 
@@ -2604,7 +2604,7 @@ func:enc_rule = Term(Encoder->:e, int32:rule, Term:subject, int32:fuel) never fa
 // cone) and at every invalidation. Sound because every write to the binding
 // is guarded by this rule or discharged under these same hypotheses (P-8).
 func:assert_rule = NIL(Encoder->:e, int64:bi) never fails {
-    int32:rule = e.binds.items[bi].rule;
+    int32:rule = e.binds[bi].rule;
     if (rule == 0i32) { pass NIL; }
     Term:v = raw bind_term(e, bi);
     if (!v.ok) { pass NIL; }
@@ -2617,7 +2617,7 @@ func:assert_rule = NIL(Encoder->:e, int64:bi) never fails {
 // A `limit` ROW at a write point of binding `bi`: the rule over the new
 // version, encoded; `unencoded` when the version has no term (L-6).
 func:record_limit = NIL(Encoder->:e, int64:bi, int32:space, int32:site, Span:at) never fails {
-    int32:rule = e.binds.items[bi].rule;
+    int32:rule = e.binds[bi].rule;
     if (rule == 0i32) { pass NIL; }
     Term:v = raw bind_term(e, bi);
     if (!v.ok) { drop record_limit_unencoded(e, space, site, at); pass NIL; }
@@ -2633,7 +2633,7 @@ func:after_write = NIL(Encoder->:e, int32:name, int32:space, int32:site, Span:at
     if (name == 0i32) { pass NIL; }
     int64:bi = raw bind_find(e, name);
     if (bi < 0i64) { pass NIL; }
-    if (e.binds.items[bi].rule == 0i32) { pass NIL; }
+    if (e.binds[bi].rule == 0i32) { pass NIL; }
     drop record_limit(e, bi, space, site, at);
     drop assert_rule(e, bi);
     pass NIL;
@@ -2714,8 +2714,8 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
             drop list_push(@terms, raw term_copy(rcv));
         } else {
             int64:ai = (p - off) => int64;
-            drop list_push(@types, atys.items[ai]);
-            drop list_push(@terms, raw term_copy(args.items[ai]));
+            drop list_push(@types, atys[ai]);
+            drop list_push(@terms, raw term_copy(args[ai]));
         }
     }
     bool:co = (raw decl_has(cdn, raw DECL_ASYNC())) || (raw decl_has(cdn, raw DECL_THREAD()));
@@ -2760,8 +2760,8 @@ func:record_subsume_ce = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce, int
         if (raw verify_is_none(pl)) { continue; }
         has_limited = true;
         int32:rule = (raw limit_target(raw ast_verify(e.ast, pl))).index;
-        Term:a = raw term_copy(ce.terms.items[i2 => int64]);
-        if (!a.ok) { a = raw term_opaque(e, ce.types.items[i2 => int64]); }
+        Term:a = raw term_copy(ce.terms[i2 => int64]);
+        if (!a.ok) { a = raw term_opaque(e, ce.types[i2 => int64]); }
         if (!a.ok) { broken = true; continue; }
         Term:c = raw enc_rule(e, rule, a, 64i32);
         if (!c.ok) { broken = true; continue; }
@@ -2836,16 +2836,16 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     string:app = "";
     List<int32>:syms = raw list_init::<int32>(4i64);
     for (int64:i in 0i64...ce.terms.count) {
-        if (!ce.terms.items[i].ok) { pass (raw term_none()); }
-        int32:pt = ce.types.items[i];
+        if (!ce.terms[i].ok) { pass (raw term_none()); }
+        int32:pt = ce.types[i];
         if (!(raw is_termed(e, pt))) { pass (raw term_none()); }
-        if (ce.terms.items[i].is_bool != (raw is_bool(e, pt))) { pass (raw term_none()); }
+        if (ce.terms[i].is_bool != (raw is_bool(e, pt))) { pass (raw term_none()); }
         if (i > 0i64) { sorts = string_concat(sorts, " "); app = string_concat(app, " "); }
         if (raw is_bool(e, pt)) { sorts = string_concat(sorts, "Bool"); }
         else { if (raw is_float(e, pt)) { sorts = string_concat(sorts, raw fp_sort(e, pt)); }
                else { sorts = string_concat(sorts, "Int"); } }
-        app = string_concat(app, ce.terms.items[i].text);
-        syms = raw syms_union(syms, ce.terms.items[i].syms);
+        app = string_concat(app, ce.terms[i].text);
+        syms = raw syms_union(syms, ce.terms[i].syms);
     }
     sorts = string_concat(sorts, ")");
     string:fname = string_concat("uf.", raw intern_get(e.interns, raw decl_name(cdn)));
@@ -2955,7 +2955,7 @@ func:enc_under = Term(Encoder->:e, List<int32>:names, List<int32>:types, List<Te
                       DeclNode:d, int32:kind, bool:partial, Term:result_term) never fails {
     int64:mark = raw scope_mark(e);
     for (int64:i in 0i64...names.count) {
-        drop bind_define(e, names.items[i], types.items[i], raw term_copy(terms.items[i]), 0i32, true);
+        drop bind_define(e, names[i], types[i], raw term_copy(terms[i]), 0i32, true);
     }
     Term:saved_res = raw term_copy(e.result);
     e.result = raw term_copy(result_term);
@@ -3035,7 +3035,7 @@ func:enc_conformance = NIL(Encoder->:e, DeclNode:d) never fails {
     for (int32:p in 0i32...pc) {
         DeclNode:tp = raw ast_decl(e.ast, raw fn_param(e.ast, tm, p));
         drop list_push(@names, raw decl_name(tp));
-        drop list_push(@types, e.binds.items[p => int64].type_id);
+        drop list_push(@types, e.binds[p => int64].type_id);
         drop list_push(@terms, raw bind_term(e, p => int64));
     }
     int32:tr_n = raw contract_count(e, tm, raw CONTRACT_REQUIRES());
@@ -3126,7 +3126,7 @@ func:loop_frame = int64(Encoder->:e, int32:label) never fails {
     int64:i = e.loop_sids.count;
     while (i > 0i64) {
         i = i - 1i64;
-        if (e.loop_labels.items[i] == label) { pass i; }
+        if (e.loop_labels[i] == label) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -3143,7 +3143,7 @@ func:loop_has_break = bool(Encoder->:e, StmtId:sid, int32:label, bool:nested, in
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(e.ast, s, @xs);
     for (int64:xi in 0i64...xs.count) {
-        if (raw expr_has_break(e, ExprId{ index: xs.items[xi] }, label, nested, fuel - 1i32)) { pass true; }
+        if (raw expr_has_break(e, ExprId{ index: xs[xi] }, label, nested, fuel - 1i32)) { pass true; }
     }
     if (s.kind == StmtKind.StmtBreakStmt) {
         if ((raw stmt_label(s)) == 0i32) { pass (!nested); }
@@ -3196,7 +3196,7 @@ func:expr_has_break = bool(Encoder->:e, ExprId:id, int32:label, bool:nested, int
     List<int32>:kids = raw list_init::<int32>(4i64);
     drop expr_children(e, n, @kids);
     for (int64:i in 0i64...kids.count) {
-        if (raw expr_has_break(e, ExprId{ index: kids.items[i] }, label, nested, fuel - 1i32)) { pass true; }
+        if (raw expr_has_break(e, ExprId{ index: kids[i] }, label, nested, fuel - 1i32)) { pass true; }
     }
     pass false;
 };
@@ -3320,8 +3320,8 @@ func:counter_next = Term(Encoder->:e, Term:cur, Term:step, Term:asc) never fails
 func:counter_advance = NIL(Encoder->:e, int32:kind, int32:name, Term:step, Term:asc, int64:dollar) never fails {
     if (kind == 2i32) {
         if ((dollar >= 0i64) && (dollar < e.dollars.count)) {
-            Term:cur = raw term_copy(e.dollars.items[dollar]);
-            e.dollars.items[dollar] = raw counter_next(e, cur, step, asc);
+            Term:cur = raw term_copy(e.dollars[dollar]);
+            e.dollars[dollar] = raw counter_next(e, cur, step, asc);
         }
         pass NIL;
     }
@@ -3382,7 +3382,7 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     // range binding's havoced version inside its bounds.
     if (ctr.kind == 2i32) {
         Term:d = raw dollar_fresh(e);
-        e.dollars.items[dollar] = raw term_copy(d);
+        e.dollars[dollar] = raw term_copy(d);
         drop push_dollar_range(e, ctr, d);
     }
     if ((ctr.kind == 1i32) && ctr.ranged) {
@@ -3414,14 +3414,14 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     drop list_push(@e.loop_casc, raw term_copy(ctr.asc));
     drop list_push(@e.loop_cdollar, dollar);
     drop walk_block(e, body);
-    e.loop_sids.count = e.loop_sids.count - 1i64;
-    e.loop_labels.count = e.loop_labels.count - 1i64;
-    e.loop_invs.count = e.loop_invs.count - 1i64;
-    e.loop_ckind.count = e.loop_ckind.count - 1i64;
-    e.loop_cname.count = e.loop_cname.count - 1i64;
-    e.loop_cstep.count = e.loop_cstep.count - 1i64;
-    e.loop_casc.count = e.loop_casc.count - 1i64;
-    e.loop_cdollar.count = e.loop_cdollar.count - 1i64;
+    discard(raw list_pop(@e.loop_sids));
+    discard(raw list_pop(@e.loop_labels));
+    discard(raw list_pop(@e.loop_invs));
+    discard(raw list_pop(@e.loop_ckind));
+    discard(raw list_pop(@e.loop_cname));
+    discard(raw list_pop(@e.loop_cstep));
+    discard(raw list_pop(@e.loop_casc));
+    discard(raw list_pop(@e.loop_cdollar));
     if (nc > 0i32) {
         StmtNode:bs = raw ast_stmt(e.ast, body);
         // THE PRESERVATION ROW SEES THE INCREMENTED COUNTER (L-11, L-12).
@@ -3447,7 +3447,7 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     // binding's fresh version exactly at its bound (`ite (< lo hi) hi lo`).
     if (ctr.kind == 2i32) {
         Term:x = raw dollar_fresh(e);
-        e.dollars.items[dollar] = raw term_copy(x);
+        e.dollars[dollar] = raw term_copy(x);
         drop push_dollar_exit(e, ctr, x);
     }
     if ((ctr.kind == 1i32) && ctr.ranged) {
@@ -3480,7 +3480,7 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
         e.quiet = e.quiet - 1i32;
         if (wc2.ok && wc2.is_bool) { drop hyp_push(e, raw smt_app1("not", wc2.text), wc2.syms); }
     }
-    if (ctr.kind == 2i32) { e.dollars.count = e.dollars.count - 1i64; }
+    if (ctr.kind == 2i32) { discard(raw list_pop(@e.dollars)); }
     pass NIL;
 };
 
@@ -3514,7 +3514,7 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     // lanes were recorded at the expression, the binding's not yet).
     int64:sb = raw bind_find(e, name);
     if (sb >= 0i64) {
-        int32:svt = e.binds.items[sb].type_id;
+        int32:svt = e.binds[sb].type_id;
         if (raw is_simd(e, svt)) {
             if (op == TokenKind.OpAssign) { drop bind_lanes_assign(e, name, raw stmt_assigned(s)); pass NIL; }
             // A COMPOUND ON A `simd` BINDING (D-284, 1.5.4e step 0; DEF-39):
@@ -3544,7 +3544,7 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     Term:prior = raw enc_expr(e, target);
     int64:bi = raw bind_find(e, name);
     int32:lt = 0i32;
-    if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
+    if (bi >= 0i64) { lt = e.binds[bi].type_id; }
     // A TWISTED COMPOUND (D-278): the one twisted encoder, as `x = x op v`.
     if (raw is_twisted(e, lt)) {
         TokenKind:tbop = raw arith_base(op);
@@ -3592,7 +3592,7 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
 
 func:term_copy = Term(Term:t) never fails {
     List<int32>:s = raw list_init::<int32>(t.syms.count + 1i64);
-    for (int64:i in 0i64...t.syms.count) { drop list_push(@s, t.syms.items[i]); }
+    for (int64:i in 0i64...t.syms.count) { drop list_push(@s, t.syms[i]); }
     pass Term{ ok: t.ok, is_bool: t.is_bool, text: string_concat(t.text, ""), syms: move(s) };
 };
 
@@ -3679,7 +3679,7 @@ func:walk_children = NIL(Encoder->:e, ExprNode:n) never fails {
     List<int32>:kids = raw list_init::<int32>(4i64);
     drop expr_children(e, n, @kids);
     for (int64:i in 0i64...kids.count) {
-        Term:t = raw enc_expr(e, ExprId{ index: kids.items[i] });
+        Term:t = raw enc_expr(e, ExprId{ index: kids[i] });
     }
     pass NIL;
 };
@@ -3720,18 +3720,18 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         int64:bi = raw bind_find(e, n.payload =>! int32);
         if (bi >= 0i64) {
             // A `simd` binding's read: its lane symbols (D-282), no scalar term.
-            if (e.binds.items[bi].lanes.count > 0i64) {
+            if (e.binds[bi].lanes.count > 0i64) {
                 drop lanes_of_binding(e, bi, id.index);
                 pass (raw term_none());
             }
             // UNDER `old(...)` (D-243): the binding's entry version.
-            int32:want = e.binds.items[bi].sym;
-            if (e.at_entry) { want = e.binds.items[bi].entry; }
+            int32:want = e.binds[bi].sym;
+            if (e.at_entry) { want = e.binds[bi].entry; }
             if (want >= 0i32) {
                 int32:si = want;
                 List<int32>:one = raw list_init::<int32>(1i64);
                 drop list_push(@one, si);
-                pass Term{ ok: true, is_bool: e.syms.items[si => int64].is_bool,
+                pass Term{ ok: true, is_bool: e.syms[si => int64].is_bool,
                            text: raw sym_text(e, si), syms: move(one) };
             }
         }
@@ -3978,7 +3978,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprIterationVarExpr) {
         if (e.subject.ok) { pass (raw term_copy(e.subject)); }
         if (e.dollars.count > 0i64) {
-            Term:top = raw term_copy(e.dollars.items[e.dollars.count - 1i64]);
+            Term:top = raw term_copy(e.dollars[e.dollars.count - 1i64]);
             if (top.ok) { pass top; }
         }
         pass (raw term_opaque(e, ty));
@@ -4105,7 +4105,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             NumVal:ik = raw numeral_of(e, iix, raw expr_rhs(n));
             if (ik.ok && (ik.v >= 0i64) && (ik.v < (((raw tt_get(e.types, ibt)).b) => int64))) {
                 List<Term>:il = raw lanes_of(e, raw expr_lhs(n), ibt);
-                if (ik.v < il.count) { pass (raw term_copy(il.items[ik.v])); }
+                if (ik.v < il.count) { pass (raw term_copy(il[ik.v])); }
             }
             pass (raw term_opaque(e, ielem));
         }
@@ -4167,7 +4167,7 @@ func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out) never fa
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(e.ast, s, @xs);
     for (int64:xi in 0i64...xs.count) {
-        drop collect_assigned_expr(e, ExprId{ index: xs.items[xi] }, out, 64i32);
+        drop collect_assigned_expr(e, ExprId{ index: xs[xi] }, out, 64i32);
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
         ExprNode:t = raw ast_expr(e.ast, raw stmt_target(s));
@@ -4227,7 +4227,7 @@ func:collect_assigned_expr = NIL(Encoder->:e, ExprId:id, List<int32>->:out, int3
     List<int32>:kids = raw list_init::<int32>(4i64);
     drop expr_children(e, n, @kids);
     for (int64:i in 0i64...kids.count) {
-        drop collect_assigned_expr(e, ExprId{ index: kids.items[i] }, out, fuel - 1i32);
+        drop collect_assigned_expr(e, ExprId{ index: kids[i] }, out, fuel - 1i32);
     }
     pass NIL;
 };
@@ -4270,7 +4270,7 @@ func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
     }
     List<int32>:kids = raw list_init::<int32>(4i64);
     drop expr_children(e, n, @kids);
-    for (int64:i in 0i64...kids.count) { drop collect_escaped_expr(e, ExprId{ index: kids.items[i] }); }
+    for (int64:i in 0i64...kids.count) { drop collect_escaped_expr(e, ExprId{ index: kids[i] }); }
     pass NIL;
 };
 
@@ -4280,7 +4280,7 @@ func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
     // THE EXPRESSIONS THROUGH THE ONE ENUMERATION (DEF-26), then the bodies.
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(e.ast, s, @xs);
-    for (int64:xi in 0i64...xs.count) { drop collect_escaped_expr(e, ExprId{ index: xs.items[xi] }); }
+    for (int64:xi in 0i64...xs.count) { drop collect_escaped_expr(e, ExprId{ index: xs[xi] }); }
     if (s.kind == StmtKind.StmtBlockStmt) {
         for (int32:i in 0i32...(raw stmt_list_count(s))) {
             drop collect_escaped(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) });
@@ -4391,16 +4391,16 @@ func:walk_pick_arms = Term(Encoder->:e, int32:start, int32:count, Term:sel, int3
         StmtId:body = raw arm_body(arm);
         int64:mark = raw scope_mark(e);
         Term:region_c = raw term_none();
-        if (conds.items[a => int64].ok && (!any_guard)) { region_c = raw term_copy(conds.items[a => int64]); }
+        if (conds[a => int64].ok && (!any_guard)) { region_c = raw term_copy(conds[a => int64]); }
         if (region_c.ok) { drop region_enter_cond(e, region_c); } else { drop region_enter(e); }
         drop bind_pattern(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
-        if (conds.items[a => int64].ok) {
-            drop hyp_push(e, conds.items[a => int64].text, conds.items[a => int64].syms);
+        if (conds[a => int64].ok) {
+            drop hyp_push(e, conds[a => int64].text, conds[a => int64].syms);
         }
         if (!any_guard) {
             for (int32:j in 0i32...a) {
-                if (conds.items[j => int64].ok) {
-                    drop hyp_push(e, raw smt_app1("not", conds.items[j => int64].text), conds.items[j => int64].syms);
+                if (conds[j => int64].ok) {
+                    drop hyp_push(e, raw smt_app1("not", conds[j => int64].text), conds[j => int64].syms);
                 }
             }
         }
@@ -4444,14 +4444,14 @@ func:walk_pick_arms = Term(Encoder->:e, int32:start, int32:count, Term:sel, int3
     int32:k = count;
     while (k > 0i32) {
         k = k - 1i32;
-        if (!fts.items[k => int64]) { continue; }
-        Term:gk = raw term_copy(give_terms.items[k => int64]);
+        if (!fts[k => int64]) { continue; }
+        Term:gk = raw term_copy(give_terms[k => int64]);
         if (!gk.ok) { pass (raw term_none()); }
         if (!have) { val = move(gk); have = true; continue; }
         if (gk.is_bool != val.is_bool) { pass (raw term_none()); }
         val = Term{ ok: true, is_bool: val.is_bool,
-                    text: raw smt_app3("ite", conds.items[k => int64].text, gk.text, val.text),
-                    syms: raw syms_union(conds.items[k => int64].syms, raw syms_union(gk.syms, val.syms)) };
+                    text: raw smt_app3("ite", conds[k => int64].text, gk.text, val.text),
+                    syms: raw syms_union(conds[k => int64].syms, raw syms_union(gk.syms, val.syms)) };
     }
     if (!have) { pass (raw term_none()); }
     pass val;
@@ -4554,34 +4554,34 @@ func:merge_arms = NIL(Encoder->:e, List<Term>:conds, List<List<int32>>:snaps, Li
     int64:completing = 0i64;
     int64:only = 0i64 - 1i64;
     for (int64:i in 0i64...arms) {
-        if (fts.items[i]) { completing = completing + 1i64; only = i; }
+        if (fts[i]) { completing = completing + 1i64; only = i; }
     }
     if (completing == 0i64) { pass NIL; }
     // A `simd` binding's lanes are fresh past a merge (D-282): the arms'
     // lane versions are not merged, and opaque is sound.
     drop lanes_refresh_all(e);
     if (completing == 1i64) {
-        drop adopt_versions(e, snaps.items[only]);
-        if (mergeable && conds.items[only].ok) { drop hyp_push(e, conds.items[only].text, conds.items[only].syms); }
+        drop adopt_versions(e, snaps[only]);
+        if (mergeable && conds[only].ok) { drop hyp_push(e, conds[only].text, conds[only].syms); }
         pass NIL;
     }
     int64:n = pre.count;
     if (e.binds.count < n) { n = e.binds.count; }
-    for (int64:i2 in 0i64...arms) { if (snaps.items[i2].count < n) { n = snaps.items[i2].count; } }
+    for (int64:i2 in 0i64...arms) { if (snaps[i2].count < n) { n = snaps[i2].count; } }
     for (int64:b in 0i64...n) {
         bool:same = true;
         int32:first = 0i32 - 1i32;
         bool:seen = false;
         bool:named = true;
         for (int64:a in 0i64...arms) {
-            if (!fts.items[a]) { continue; }
-            int32:v = snaps.items[a].items[b];
+            if (!fts[a]) { continue; }
+            int32:v = snaps[a][b];
             if (v < 0i32) { named = false; }
             if (!seen) { first = v; seen = true; }
             else { if (v != first) { same = false; } }
         }
-        if (same) { e.binds.items[b].sym = first; continue; }
-        int32:name = e.binds.items[b].name;
+        if (same) { e.binds[b].sym = first; continue; }
+        int32:name = e.binds[b].name;
         if (!(mergeable && named)) {
             List<int32>:one = raw list_init::<int32>(1i64);
             drop list_push(@one, name);
@@ -4595,16 +4595,16 @@ func:merge_arms = NIL(Encoder->:e, List<Term>:conds, List<List<int32>>:snaps, Li
         bool:broken = false;
         while (k > 0i64) {
             k = k - 1i64;
-            if (!fts.items[k]) { continue; }
-            int32:vk = snaps.items[k].items[b];
-            Term:tk = Term{ ok: true, is_bool: e.syms.items[vk => int64].is_bool, text: raw sym_text(e, vk),
+            if (!fts[k]) { continue; }
+            int32:vk = snaps[k][b];
+            Term:tk = Term{ ok: true, is_bool: e.syms[vk => int64].is_bool, text: raw sym_text(e, vk),
                             syms: raw list_init::<int32>(1i64) };
             drop list_push(@tk.syms, vk);
             if (!have) { t = move(tk); have = true; continue; }
-            if (!conds.items[k].ok) { broken = true; break; }
+            if (!conds[k].ok) { broken = true; break; }
             t = Term{ ok: true, is_bool: t.is_bool,
-                      text: raw smt_app3("ite", conds.items[k].text, tk.text, t.text),
-                      syms: raw syms_union(conds.items[k].syms, raw syms_union(tk.syms, t.syms)) };
+                      text: raw smt_app3("ite", conds[k].text, tk.text, t.text),
+                      syms: raw syms_union(conds[k].syms, raw syms_union(tk.syms, t.syms)) };
         }
         if (broken) {
             List<int32>:one2 = raw list_init::<int32>(1i64);
@@ -4652,9 +4652,9 @@ func:pattern_cond = Term(Encoder->:e, PatNode:p, Term:sel, int32:sel_ty, List<Te
         Term:acc = raw term_none();
         bool:first = true;
         for (int64:i in 0i64...prior.count) {
-            if (!prior.items[i].ok) { pass (raw term_none()); }
-            if (first) { acc = raw term_copy(prior.items[i]); first = false; }
-            else { acc = raw term_app2("or", acc, prior.items[i], true); }
+            if (!prior[i].ok) { pass (raw term_none()); }
+            if (first) { acc = raw term_copy(prior[i]); first = false; }
+            else { acc = raw term_app2("or", acc, prior[i], true); }
         }
         pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", acc.text),
                    syms: raw syms_union(acc.syms, raw list_init::<int32>(1i64)) };
@@ -4797,8 +4797,8 @@ func:adopt_versions = NIL(Encoder->:e, List<int32>:vers) never fails {
     int64:n = vers.count;
     if (e.binds.count < n) { n = e.binds.count; }
     for (int64:i in 0i64...n) {
-        bool:changed = (e.binds.items[i].sym != vers.items[i]);
-        e.binds.items[i].sym = vers.items[i];
+        bool:changed = (e.binds[i].sym != vers[i]);
+        e.binds[i].sym = vers[i];
         if (changed) { drop assert_rule(e, i); }
     }
     pass NIL;
@@ -5020,12 +5020,12 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         Term:li = raw term_none();
         Term:sp = raw term_none();
         if (s.kind == StmtKind.StmtTillStmt) {
-            if (argc == 2i32) { li = raw term_copy(args.items[0i64]); sp = raw term_copy(args.items[1i64]); }
+            if (argc == 2i32) { li = raw term_copy(args[0i64]); sp = raw term_copy(args[1i64]); }
         } else {
             if (argc == 3i32) {
-                st = raw term_copy(args.items[0i64]);
-                li = raw term_copy(args.items[1i64]);
-                sp = raw term_copy(args.items[2i64]);
+                st = raw term_copy(args[0i64]);
+                li = raw term_copy(args[1i64]);
+                sp = raw term_copy(args[2i64]);
             }
         }
         ctr.start = raw term_capture(e, i64t, st);
@@ -5091,8 +5091,8 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         int64:np = snap_post.count;
         if (snap_pre.count < np) { np = snap_pre.count; }
         for (int64:bi in 0i64...np) {
-            int32:post = snap_post.items[bi];
-            int32:pre = snap_pre.items[bi];
+            int32:post = snap_post[bi];
+            int32:pre = snap_pre[bi];
             if ((post != pre) && (post >= 0i32) && (pre >= 0i32)) {
                 List<int32>:two = raw list_init::<int32>(2i64);
                 drop list_push(@two, post);
@@ -5237,26 +5237,26 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         // here -- a preservation row keyed at the `continue`.
         int64:fr = raw loop_frame(e, raw stmt_label(s));
         if (fr >= 0i64) {
-            VerifyId:civ = VerifyId{ index: e.loop_invs.items[fr] };
+            VerifyId:civ = VerifyId{ index: e.loop_invs[fr] };
             int32:cnc = raw invariant_clauses(e, civ);
             if (cnc > 0i32) {
                 // THE HEAD SEES THE INCREMENTED COUNTER (L-11, L-12): a
                 // `continue` re-enters at the increment.
-                int32:ck = e.loop_ckind.items[fr];
+                int32:ck = e.loop_ckind[fr];
                 if (ck != 0i32) {
-                    drop counter_advance(e, ck, e.loop_cname.items[fr], raw term_copy(e.loop_cstep.items[fr]),
-                                         raw term_copy(e.loop_casc.items[fr]), e.loop_cdollar.items[fr]);
+                    drop counter_advance(e, ck, e.loop_cname[fr], raw term_copy(e.loop_cstep[fr]),
+                                         raw term_copy(e.loop_casc[fr]), e.loop_cdollar[fr]);
                 }
                 e.quiet = e.quiet + 1i32;
                 Term:cg = raw invariant_conj(e, civ, false);
                 e.quiet = e.quiet - 1i32;
                 if (cg.ok) {
                     drop record_at(e, raw OK_INVARIANT(), cg.text, cg.syms, raw SITE_STMT(), sid.index, s.span, true,
-                                   raw ROLE_GUARD(), e.loop_sids.items[fr], cnc);
+                                   raw ROLE_GUARD(), e.loop_sids[fr], cnc);
                 } else {
                     List<int32>:cnone = raw list_init::<int32>(1i64);
                     drop record_at(e, raw OK_INVARIANT(), "", cnone, raw SITE_STMT(), sid.index, s.span, false,
-                                   raw ROLE_GUARD(), e.loop_sids.items[fr], cnc);
+                                   raw ROLE_GUARD(), e.loop_sids[fr], cnc);
                 }
             }
         }
@@ -5326,15 +5326,15 @@ pub func:enc_body = NIL(Encoder->:e, StmtId:body) never fails {
 // --- the cone and the hash (P-4) -----------------------------------------------------------
 
 func:has_sym = bool(List<int32>:l, int32:s) never fails {
-    for (int64:i in 0i64...l.count) { if (l.items[i] == s) { pass true; } }
+    for (int64:i in 0i64...l.count) { if (l[i] == s) { pass true; } }
     pass false;
 };
 
 func:sym_sort = string(Encoder->:e, int32:idx) never fails {
-    if (e.syms.items[idx => int64].fsort.len > 0i64) {
-        pass (string_from_bytes(e.syms.items[idx => int64].fsort.ptr, e.syms.items[idx => int64].fsort.len));
+    if (e.syms[idx => int64].fsort.len > 0i64) {
+        pass (string_from_bytes(e.syms[idx => int64].fsort.ptr, e.syms[idx => int64].fsort.len));
     }
-    if (e.syms.items[idx => int64].is_bool) { pass "Bool"; }
+    if (e.syms[idx => int64].is_bool) { pass "Bool"; }
     pass "Int";
 };
 
@@ -5342,12 +5342,12 @@ func:sym_sort = string(Encoder->:e, int32:idx) never fails {
 // `(declare-fun |uf.f.7| (Int Int) Int)`.
 func:sym_declaration = string(Encoder->:e, int32:idx) never fails {
     string:d = "(declare-const ";
-    if (e.syms.items[idx => int64].sorts.len > 0i64) { d = "(declare-fun "; }
+    if (e.syms[idx => int64].sorts.len > 0i64) { d = "(declare-fun "; }
     d = string_concat(d, raw sym_text(e, idx));
     d = string_concat(d, " ");
-    if (e.syms.items[idx => int64].sorts.len > 0i64) {
-        d = string_concat(d, string_from_bytes(e.syms.items[idx => int64].sorts.ptr,
-                                               e.syms.items[idx => int64].sorts.len));
+    if (e.syms[idx => int64].sorts.len > 0i64) {
+        d = string_concat(d, string_from_bytes(e.syms[idx => int64].sorts.ptr,
+                                               e.syms[idx => int64].sorts.len));
         d = string_concat(d, " ");
     }
     d = string_concat(d, raw sym_sort(e, idx));
@@ -5357,28 +5357,28 @@ func:sym_declaration = string(Encoder->:e, int32:idx) never fails {
 // Fill every obligation's cone, canonical text and hash.
 pub func:enc_finish = NIL(Encoder->:e) never fails {
     for (int64:oi in 0i64...e.obls.count) {
-        if (!e.obls.items[oi].encoded) {
+        if (!e.obls[oi].encoded) {
             string:uhead = "(unencoded ";
-            if (e.obls.items[oi].checker) { uhead = "(checker "; }
-            string:u = string_concat(uhead, raw ok_name(e.obls.items[oi].kind));
+            if (e.obls[oi].checker) { uhead = "(checker "; }
+            string:u = string_concat(uhead, raw ok_name(e.obls[oi].kind));
             u = string_concat(u, " ");
-            u = string_concat(u, int_to_string(e.obls.items[oi].ordinal => int64));
+            u = string_concat(u, int_to_string(e.obls[oi].ordinal => int64));
             u = string_concat(u, ")");
-            e.obls.items[oi].canon = string_concat(u, "");
+            e.obls[oi].canon = string_concat(u, "");
             string:hu = string_concat(u, "\n");
             hu = string_concat(hu, e.symbol);
             hu = string_concat(hu, "\n");
-            hu = string_concat(hu, raw ok_name(e.obls.items[oi].kind));
+            hu = string_concat(hu, raw ok_name(e.obls[oi].kind));
             hu = string_concat(hu, "\n");
-            e.obls.items[oi].hash = raw sha256_hex(hu);
-            e.obls.items[oi].tier = "-";
+            e.obls[oi].hash = raw sha256_hex(hu);
+            e.obls[oi].tier = "-";
             continue;
         }
         // The relevance closure over hypotheses [0, hyps).
-        int64:limit_h = e.obls.items[oi].hyps;
+        int64:limit_h = e.obls[oi].hyps;
         List<int32>:cs = raw list_init::<int32>(8i64);
-        for (int64:g in 0i64...e.obls.items[oi].syms.count) {
-            if (!(raw has_sym(cs, e.obls.items[oi].syms.items[g]))) { drop list_push(@cs, e.obls.items[oi].syms.items[g]); }
+        for (int64:g in 0i64...e.obls[oi].syms.count) {
+            if (!(raw has_sym(cs, e.obls[oi].syms[g]))) { drop list_push(@cs, e.obls[oi].syms[g]); }
         }
         List<bool>:inc = raw list_init::<bool>(limit_h + 1i64);
         for (int64:h0 in 0i64...limit_h) { drop list_push(@inc, false); }
@@ -5386,17 +5386,17 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
         while (grew) {
             grew = false;
             for (int64:h in 0i64...limit_h) {
-                if (inc.items[h]) { continue; }
-                if (!(raw region_dominates(e, e.hyps.items[h].region, e.obls.items[oi].region))) { continue; }
+                if (inc[h]) { continue; }
+                if (!(raw region_dominates(e, e.hyps[h].region, e.obls[oi].region))) { continue; }
                 bool:touch = false;
-                for (int64:q in 0i64...e.hyps.items[h].syms.count) {
-                    if (raw has_sym(cs, e.hyps.items[h].syms.items[q])) { touch = true; }
+                for (int64:q in 0i64...e.hyps[h].syms.count) {
+                    if (raw has_sym(cs, e.hyps[h].syms[q])) { touch = true; }
                 }
                 if (!touch) { continue; }
-                inc.items[h] = true;
+                inc[h] = true;
                 grew = true;
-                for (int64:q2 in 0i64...e.hyps.items[h].syms.count) {
-                    if (!(raw has_sym(cs, e.hyps.items[h].syms.items[q2]))) { drop list_push(@cs, e.hyps.items[h].syms.items[q2]); }
+                for (int64:q2 in 0i64...e.hyps[h].syms.count) {
+                    if (!(raw has_sym(cs, e.hyps[h].syms[q2]))) { drop list_push(@cs, e.hyps[h].syms[q2]); }
                 }
             }
         }
@@ -5406,31 +5406,31 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
             if (raw has_sym(cs, si =>! int32)) { drop list_push(@sorted, si =>! int32); }
         }
         List<int32>:hl = raw list_init::<int32>(8i64);
-        for (int64:h2 in 0i64...limit_h) { if (inc.items[h2]) { drop list_push(@hl, h2 =>! int32); } }
+        for (int64:h2 in 0i64...limit_h) { if (inc[h2]) { drop list_push(@hl, h2 =>! int32); } }
         SmtBuf:b = raw smtbuf_init();
         for (int64:s2 in 0i64...sorted.count) {
-            drop smtbuf_line(@b, raw sym_declaration(e, sorted.items[s2]));
+            drop smtbuf_line(@b, raw sym_declaration(e, sorted[s2]));
         }
         for (int64:h3 in 0i64...hl.count) {
-            drop smtbuf_line(@b, raw smt_app1("assert", string_concat(e.hyps.items[hl.items[h3] => int64].text, "")));
+            drop smtbuf_line(@b, raw smt_app1("assert", string_concat(e.hyps[hl[h3] => int64].text, "")));
         }
-        drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app1("not", string_concat(e.obls.items[oi].goal, ""))));
+        drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app1("not", string_concat(e.obls[oi].goal, ""))));
         string:canon = raw smtbuf_text(move(b));
         string:hin = string_concat(canon, e.symbol);
         hin = string_concat(hin, "\n");
-        hin = string_concat(hin, raw ok_name(e.obls.items[oi].kind));
+        hin = string_concat(hin, raw ok_name(e.obls[oi].kind));
         hin = string_concat(hin, "\n");
-        e.obls.items[oi].hash = raw sha256_hex(hin);
+        e.obls[oi].hash = raw sha256_hex(hin);
         // THE TIER (D-281): what the cone's theory is -- `fp` where a float
         // sort is in it, `bv` where a bit-vector crossing is, else `int`.
         string:tier = "int";
         if (raw has_sub(canon, "int2bv")) { tier = "bv"; }
         if (raw has_sub(canon, "FloatingPoint")) { tier = "fp"; }
         if (raw has_sub(canon, "(fp.")) { tier = "fp"; }
-        e.obls.items[oi].tier = move(tier);
-        e.obls.items[oi].canon = move(canon);
-        e.obls.items[oi].cone_syms = move(sorted);
-        e.obls.items[oi].cone_hyps = move(hl);
+        e.obls[oi].tier = move(tier);
+        e.obls[oi].canon = move(canon);
+        e.obls[oi].cone_syms = move(sorted);
+        e.obls[oi].cone_hyps = move(hl);
     }
     pass NIL;
 };
@@ -5439,7 +5439,7 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
 pub func:enc_mark_discharged = NIL(Encoder->:e, List<string>:hashes) never fails {
     for (int64:oi in 0i64...e.obls.count) {
         for (int64:h in 0i64...hashes.count) {
-            if (string_equals(e.obls.items[oi].hash, hashes.items[h])) { e.obls.items[oi].discharged = true; }
+            if (string_equals(e.obls[oi].hash, hashes[h])) { e.obls[oi].discharged = true; }
         }
     }
     pass NIL;
@@ -5448,8 +5448,8 @@ pub func:enc_mark_discharged = NIL(Encoder->:e, List<string>:hashes) never fails
 // Is the site (an ExprId index) of kind `kind` discharged? The emitter's question.
 pub func:enc_site_discharged = bool(Encoder->:e, int32:space, int32:site, int32:kind) never fails {
     for (int64:oi in 0i64...e.obls.count) {
-        if ((e.obls.items[oi].site == site) && (e.obls.items[oi].kind == kind)) {
-            if (e.obls.items[oi].space == space) { pass e.obls.items[oi].discharged; }
+        if ((e.obls[oi].site == site) && (e.obls[oi].kind == kind)) {
+            if (e.obls[oi].space == space) { pass e.obls[oi].discharged; }
         }
     }
     pass false;
@@ -5467,26 +5467,26 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
     for (int64:oi in 0i64...e.obls.count) {
         string:c = string_concat("; o", int_to_string(oi + 1i64));
         c = string_concat(c, " ");
-        c = string_concat(c, raw ok_name(e.obls.items[oi].kind));
+        c = string_concat(c, raw ok_name(e.obls[oi].kind));
         c = string_concat(c, " ");
-        c = string_concat(c, e.obls.items[oi].hash);
+        c = string_concat(c, e.obls[oi].hash);
         c = string_concat(c, " ");
-        c = string_concat(c, int_to_string(e.obls.items[oi].line => int64));
+        c = string_concat(c, int_to_string(e.obls[oi].line => int64));
         c = string_concat(c, ":");
-        c = string_concat(c, int_to_string(e.obls.items[oi].col => int64));
-        if (!e.obls.items[oi].encoded) {
-            if (e.obls.items[oi].checker) { c = string_concat(c, " checker"); }
+        c = string_concat(c, int_to_string(e.obls[oi].col => int64));
+        if (!e.obls[oi].encoded) {
+            if (e.obls[oi].checker) { c = string_concat(c, " checker"); }
             else { c = string_concat(c, " unencoded"); }
         }
         drop smtbuf_line(@b, c);
-        if (e.obls.items[oi].encoded) { checks = checks + 1i64; }
+        if (e.obls[oi].encoded) { checks = checks + 1i64; }
     }
     drop smtbuf_line(@b, string_concat("; checks ", int_to_string(checks)));
     // THE LOGIC: linear or nonlinear integer arithmetic, with uninterpreted
     // functions (L-3) the moment one is declared -- QF_LIA refuses a
     // `declare-fun` of arity above zero.
     bool:has_uf = false;
-    for (int64:ui in 0i64...e.syms.count) { if (e.syms.items[ui].sorts.len > 0i64) { has_uf = true; } }
+    for (int64:ui in 0i64...e.syms.count) { if (e.syms[ui].sorts.len > 0i64) { has_uf = true; } }
     // A FLOAT SORT IN THE FILE (D-281): `ALL`, since every file carries Int
     // symbols beside the float ones (a parameter's range axiom at least).
     if (e.uses_fp) { drop smtbuf_line(@b, "(set-logic ALL)"); }
@@ -5507,17 +5507,17 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
         drop smtbuf_line(@b, raw sym_declaration(e, si =>! int32));
     }
     for (int64:oi2 in 0i64...e.obls.count) {
-        if (!e.obls.items[oi2].encoded) { continue; }
+        if (!e.obls[oi2].encoded) { continue; }
         drop smtbuf_line(@b, "(push)");
-        for (int64:h in 0i64...e.obls.items[oi2].cone_hyps.count) {
-            int32:hi = e.obls.items[oi2].cone_hyps.items[h];
-            string:named = string_concat("(! ", e.hyps.items[hi => int64].text);
+        for (int64:h in 0i64...e.obls[oi2].cone_hyps.count) {
+            int32:hi = e.obls[oi2].cone_hyps[h];
+            string:named = string_concat("(! ", e.hyps[hi => int64].text);
             named = string_concat(named, " :named h");
             named = string_concat(named, int_to_string(hi => int64));
             named = string_concat(named, ")");
             drop smtbuf_line(@b, raw smt_app1("assert", named));
         }
-        string:goal = string_concat("(! ", raw smt_app1("not", string_concat(e.obls.items[oi2].goal, "")));
+        string:goal = string_concat("(! ", raw smt_app1("not", string_concat(e.obls[oi2].goal, "")));
         goal = string_concat(goal, " :named o");
         goal = string_concat(goal, int_to_string(oi2 + 1i64));
         goal = string_concat(goal, ")");

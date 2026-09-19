@@ -63,6 +63,37 @@ in the PRELUDE with its functions (`list_init`, `list_push`, `list_reserve`)
 since 1.5.1b step 5b, through the bridging refresh the seed README describes;
 until then it lived in `src/frontend/list.npk`.
 
+**Its fields are the prelude's own** (D-313, D-314; 1.5.8b step 1b):
+`{ hidden wild T->:items; sealed int64:count; sealed int64:cap; }`. Outside the
+prelude, `items` is not touched (TYPE-080) and `count` and `cap` are read but
+not written (TYPE-079). Until then any program could scribble on them:
+- `a.cap = 100` let pushes run past the block into another list (DEF-73);
+- `a.items[i] = …` wrote past `count` unchecked (DEF-74).
+
+A list is used through two mechanisms:
+- **`l[i]` is the element**, bounds-checked against `count` with the slice's
+  guard (`OutOfBounds`). It is a place: read it, write it, compound it, claim it
+  (`$$i`, `$$m`), take its address, or `move` out of it. **Assigning over an
+  owning element drops the old value**, as a managed array's element does; the
+  element is live or vacant after a move (S-26), never unowned.
+  - `l[lo...hi]` is a checked `T[]` view of elements `lo…hi−1`. It borrows the
+    list (D-249).
+  - A list behind a pointer is `(<-p)[i]`. `p[i]` on a pointer to an array, a
+    slice or a `List` is refused (TYPE-082), because it reads as pointer
+    arithmetic.
+- **The checked operations** change a list:
+  - `list_push`, `list_reserve`;
+  - `list_pop` (the last element, moved out);
+  - `list_truncate(l, n)` (drops `n…count−1`);
+  - `list_clear`;
+  - `list_insert(l, i, v)` (`i` in `[0, count]`);
+  - `list_remove(l, i)` (order kept);
+  - `list_swap_remove(l, i)` (the last element moved into the hole).
+
+  An index outside the list is `OutOfBounds`, whatever spells it. An element
+  that leaves the list is moved to the caller, or into a temporary its statement
+  drops (D-246).
+
 ### 1.1c What a `pass` or a `move` transfers (D-183 as corrected at 1.5.1b step 5)
 
 `pass` moves the returned value out implicitly, and `move(place)` explicitly;

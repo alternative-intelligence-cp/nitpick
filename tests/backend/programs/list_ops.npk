@@ -1,0 +1,92 @@
+// A `List` IS INDEXED LIKE A SLICE, AND CHANGED THROUGH ITS CHECKED OPERATIONS
+// (D-314 §2-3, 1.5.8b step 1b). `l[i]` reads, writes and compounds an element;
+// `l[lo...hi]` is a checked `T[]` view; a list behind a pointer is indexed
+// `(<-p)[i]` (TYPE-082 refuses `p[i]`, pointer arithmetic over lists); and
+// `list_pop`, `list_truncate`, `list_clear`, `list_insert`, `list_remove` and
+// `list_swap_remove` each keep `count` and the elements in step -- over
+// `int64` and over OWNING `string` elements, whose overwrite drops the old value
+// as a managed array's element does. Each case its own exit.
+mod:list_ops;
+
+func:sum = int64(List<int64>:l) never fails {
+    int64:s = 0i64;
+    for (int64:i in 0i64...l.count) { s = s + l[i]; }
+    pass s;
+};
+
+func:bump = NIL(List<int64>->:l) never fails {
+    (<-l)[0i64] = (<-l)[0i64] + 100i64;
+    pass NIL;
+};
+
+func:view_sum = int64(int64[]:v) never fails {
+    int64:s = 0i64;
+    for (int64:x in v) { s = s + x; }
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    List<int64>:a = raw list_init::<int64>(2i64);
+    for (int64:i in 0i64...10i64) { drop list_push(@a, i); }
+    if (a[3i64] != 3i64) { exit 10i32; }
+    a[3i64] = 30i64;
+    a[4i64] += 5i64;
+    if ((raw sum(a)) != 77i64) { exit 11i32; }
+    drop bump(@a);
+    if (a[0i64] != 100i64) { exit 12i32; }
+    if ((raw view_sum(a[2i64...5i64])) != 41i64) { exit 13i32; }
+    if ((raw view_sum(a[0i64...0i64])) != 0i64) { exit 14i32; }
+
+    int64:p = raw list_pop(@a);
+    if ((p != 9i64) || (a.count != 9i64)) { exit 20i32; }
+    drop list_insert(@a, 1i64, 55i64);
+    if ((a[1i64] != 55i64) || (a[2i64] != 1i64) || (a.count != 10i64)) { exit 21i32; }
+    drop list_insert(@a, a.count, 66i64);
+    if ((a[a.count - 1i64] != 66i64) || (a.count != 11i64)) { exit 22i32; }
+    int64:r = raw list_remove(@a, 1i64);
+    if ((r != 55i64) || (a[1i64] != 1i64) || (a.count != 10i64)) { exit 23i32; }
+    int64:w = raw list_swap_remove(@a, 0i64);
+    if ((w != 100i64) || (a[0i64] != 66i64) || (a.count != 9i64)) { exit 24i32; }
+    int64:last = raw list_swap_remove(@a, a.count - 1i64);
+    if ((last != 8i64) || (a.count != 8i64)) { exit 25i32; }
+    drop list_truncate(@a, 3i64);
+    if ((a.count != 3i64) || (a[2i64] != 2i64)) { exit 26i32; }
+    drop list_truncate(@a, 3i64);
+    if (a.count != 3i64) { exit 27i32; }
+    drop list_clear(@a);
+    if (a.count != 0i64) { exit 28i32; }
+    drop list_push(@a, 4i64);
+    if ((a.count != 1i64) || (a[0i64] != 4i64)) { exit 29i32; }
+
+    List<string>:ss = raw list_init::<string>(1i64);
+    drop list_push(@ss, string_concat("ab", "cd"));
+    drop list_push(@ss, string_concat("ef", "gh"));
+    ss[0i64] = string_concat("x", "y");
+    if ((ss[0i64].len != 2i64) || (ss[1i64].len != 4i64)) { exit 30i32; }
+    string:t = raw list_pop(@ss);
+    if ((t.len != 4i64) || (ss.count != 1i64)) { exit 31i32; }
+    drop list_insert(@ss, 0i64, string_concat("q", "rs"));
+    string:u = raw list_remove(@ss, 1i64);
+    if ((u.len != 2i64) || (ss[0i64].len != 3i64)) { exit 32i32; }
+    drop list_push(@ss, string_concat("m", "n"));
+    string:v = raw list_swap_remove(@ss, 0i64);
+    if ((v.len != 3i64) || (ss[0i64].len != 2i64)) { exit 33i32; }
+    drop list_clear(@ss);
+    if (ss.count != 0i64) { exit 34i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (HeapOom)          { exit 97i32; },
+        (HeapBadRequest)   { exit 97i32; },
+        (WildLeak)         { exit 95i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 90i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 9i32;
+};

@@ -1226,7 +1226,17 @@ every module (DEF-72 fixed); and two holes of the same class found on the way
 and closed: an `RGuard`'s `.value` was read-only only as an assignment's direct
 target (`g.value.x = 5`, `@g.value.y`, `$$m g.value.x` were accepted — writes
 through a SHARED hold; DEF-77), and `@f.value` on an `OwnedFd` was accepted
-(DEF-78). Every program's IR is byte-identical. The old 1.5.8 was PLANNED 2026-09-18 by
+(DEF-78). Every program's IR is byte-identical. **Step 1b LANDED 2026-09-19**:
+the prelude's `List` is `{ hidden wild T->:items; sealed int64:count; sealed
+int64:cap; }` (DEF-73, DEF-74 fixed), `l[i]` is the element bounds-checked
+against `count` and `l[lo...hi]` a checked view, a list behind a pointer is
+`(<-p)[i]` (TYPE-082 refuses `p[i]` on a pointer to an array, a slice or a
+`List`: pointer arithmetic that type-checked), and the prelude's checked
+operations `list_pop`/`list_truncate`/`list_clear`/`list_insert`/
+`list_remove`/`list_swap_remove` are how a list changes; 2,011 element accesses
+swept, the compiler's own `OutOfBounds` guards 13 → 765, and the new check
+found DEF-79 on its first run (the NONE declaration stored past `count` since
+1.4.7). A bridging snapshot refresh carries it. The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
@@ -1984,6 +1994,24 @@ that carried them retired at the cycle close):
   both floors tests nothing about the fix. Where one program checks several
   things, check each case against its own defect: remove the earlier cases, or
   revert one site of the fix.
+
+- **A `List` is indexed `l[i]`, and changed only through its operations**
+  (D-313, D-314; 1.5.8b step 1b). `items` is `hidden` and `count`/`cap` are
+  `sealed` outside the prelude: read `l.count`, index `l[i]` (bounds-checked
+  against `count`), view `l[lo...hi]`, and change the list with `list_push`,
+  `list_pop`, `list_truncate(@l, mark)`, `list_clear`, `list_insert`,
+  `list_remove`, `list_swap_remove`. Behind a pointer the element is
+  `(<-p)[i]` — `p[i]` on a pointer to an array, a slice or a `List` is
+  TYPE-082, since it would index the POINTER. Assigning over an owning element
+  drops the old value (a managed array's rule), and `list_clear`/
+  `list_truncate` drop what they remove where a bare `count` write leaked it.
+- **`sealed`/`hidden` draw the private-member line** (D-313, D-314; 1.5.8b
+  step 1): code outside the module that declares the struct may read a sealed
+  field and may not write it (every write form — an assignment through any
+  path, a compound, a struct literal, a move out of an owning one, `@`, `$$m`,
+  a `Self->` receiver, a stateful operation; `$$i` reads), and may not touch a
+  hidden one at all. The compiler-known headers (`ptr`/`len`/`cap` of string,
+  cstring, slice, buffer; `OwnedFd.value`) are sealed in EVERY module.
 
 ### Reserved words that read like ordinary names
 

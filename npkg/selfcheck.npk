@@ -208,13 +208,13 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     // the same two cases by name.
     List<Finding>:dp = raw findings_of("NITPICK-TYPE-019 <derived-1>:6:12: `bool` has no method `cmp`\n");
     bool:okd = false;
-    if (dp.count == 1i64) { okd = dp.items[0i64].derived; }
+    if (dp.count == 1i64) { okd = dp[0i64].derived; }
     if (!okd) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("derived-path", okd, "a finding at a `<derived-N>` line nobody wrote must be flagged"));
     if (!okd) { drop strlist_push(@report, "      the parser did not flag it; it should have"); }
     List<Finding>:dc = raw findings_of("NITPICK-TYPE-019 p.npk:6:12: `bool` has no method `cmp`\n");
     bool:okc = false;
-    if (dc.count == 1i64) { okc = !(dc.items[0i64].derived); }
+    if (dc.count == 1i64) { okc = !(dc[0i64].derived); }
     if (!okc) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("derived-path-control", okc, "the same finding at a real path must not be flagged"));
     if (!okc) { drop strlist_push(@report, "      the parser flagged a real path; it should not have"); }
@@ -941,7 +941,7 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     List<string>:xmf3 = raw explore_marker_finding(@xm3, "explore-marked-n");
     bool:okm3 = (xmf3.count == 0i64) && (xm3.explore == 7i64) && (xm3.explore_depth == 4i64) && (xm3.explore_no.len == 0i64)
                 && (xm3.explore_first.count == 1i64);
-    if (okm3) { okm3 = (xm3.explore_first.items[0i64] == 3i64); }
+    if (okm3) { okm3 = (xm3.explore_first[0i64] == 3i64); }
     if (!okm3) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("explore-marked-n", okm3, "`// explore: N d=D` and `// explore-seed: S` read as written"));
     if (!okm3) {
@@ -1044,7 +1044,7 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         Sites:xs1 = raw resolve_sites(@xc_d1, xp_sites, "planted");
         Sites:xs2 = raw resolve_sites(@xc_d2, xp_sites, "planted");
         Sites:xs3 = raw resolve_sites(@xc_d3, xp_sites, "planted");
-        okc7 = (xs0.findings.count == 0i64) && (xs0.numbers.count == 2i64) && (xs0.numbers.items[0i64] == 1i64) && (xs0.numbers.items[1i64] == 0i64)
+        okc7 = (xs0.findings.count == 0i64) && (xs0.numbers.count == 2i64) && (xs0.numbers[0i64] == 1i64) && (xs0.numbers[1i64] == 0i64)
             && (xs1.findings.count == 1i64) && (raw text_contains(raw strlist_view(xs1.findings, 0i64), "explore-control-site-unmatched")) && (raw text_contains(raw strlist_view(xs1.findings, 0i64), "3 site(s)"))
             && (xs2.findings.count == 1i64) && (raw text_contains(raw strlist_view(xs2.findings, 0i64), "explore-control-site-unmatched")) && (raw text_contains(raw strlist_view(xs2.findings, 0i64), "0 site(s)"))
             && (xs3.findings.count == 1i64) && (raw text_contains(raw strlist_view(xs3.findings, 0i64), "explore-control-site-kind"));
@@ -1063,8 +1063,8 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         Sites:xh0 = raw resolve_holds(@xc_h, xp_sites, "planted");
         Sites:xh1 = raw resolve_sites(@xc_h, xp_sites, "planted");
         Sites:xh2 = raw resolve_holds(@xc_hk, xp_sites, "planted");
-        okc8 = (xh0.findings.count == 0i64) && (xh0.numbers.count == 1i64) && (xh0.numbers.items[0i64] == 0i64)
-            && (xh1.findings.count == 0i64) && (xh1.numbers.count == 1i64) && (xh1.numbers.items[0i64] == 1i64)
+        okc8 = (xh0.findings.count == 0i64) && (xh0.numbers.count == 1i64) && (xh0.numbers[0i64] == 0i64)
+            && (xh1.findings.count == 0i64) && (xh1.numbers.count == 1i64) && (xh1.numbers[0i64] == 1i64)
             && (xh2.findings.count == 1i64) && (raw text_contains(raw strlist_view(xh2.findings, 0i64), "explore-control-site-kind"))
             && (raw text_contains(raw strlist_view(xh2.findings, 0i64), "`hold-at:"));
     }

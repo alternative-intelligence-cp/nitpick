@@ -206,7 +206,7 @@ pub func:man_parse_named = ObManifest(string:text, bool:floor) never fails {
 
 // An owned copy of the i-th string of a list.
 func:view_copy = string(List<string>:l, int64:i) never fails {
-    pass (string_concat(string_from_bytes(l.items[i].ptr, l.items[i].len), ""));
+    pass (string_concat(string_from_bytes(l[i].ptr, l[i].len), ""));
 };
 
 // EVERY ROW'S HASH AND VERDICT WORD (1.5.4 step 4, L-16), borrowed: what the
@@ -214,8 +214,8 @@ func:view_copy = string(List<string>:l, int64:i) never fails {
 // manifest.
 pub func:man_rows_flat = NIL(ObManifest->:m, List<string>->:hashes, List<string>->:words) never fails {
     for (int64:i in 0i64...m.rows.count) {
-        drop list_push(hashes, string_concat(string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len), ""));
-        drop list_push(words, string_concat(raw ov_name(m.rows.items[i].verdict), ""));
+        drop list_push(hashes, string_concat(string_from_bytes(m.rows[i].hash.ptr, m.rows[i].hash.len), ""));
+        drop list_push(words, string_concat(raw ov_name(m.rows[i].verdict), ""));
     }
     pass NIL;
 };
@@ -225,8 +225,8 @@ pub func:man_rows_flat = NIL(ObManifest->:m, List<string>->:hashes, List<string>
 pub func:man_discharged = List<string>(move ObManifest:m) never fails {
     List<string>:out = raw list_init::<string>(m.rows.count + 1i64);
     for (int64:i in 0i64...m.rows.count) {
-        if (m.rows.items[i].verdict == (raw OV_DISCHARGED())) {
-            drop list_push(@out, string_concat(string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len), ""));
+        if (m.rows[i].verdict == (raw OV_DISCHARGED())) {
+            drop list_push(@out, string_concat(string_from_bytes(m.rows[i].hash.ptr, m.rows[i].hash.len), ""));
         }
     }
     pass out;

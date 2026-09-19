@@ -111,7 +111,7 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
 func:reach_add_decl = NIL(Reach->:x, int32:decl_index) never fails {
     int32:i = 0i32;
     while ((i => int64) < x.rdecls.count) {
-        if (x.rdecls.items[i => int64] == decl_index) { pass NIL; }
+        if (x.rdecls[i => int64] == decl_index) { pass NIL; }
         i = i + 1i32;
     }
     // BOTH, ALWAYS -- the qualifier from the one table (D-179, 1.5.4d).
@@ -767,10 +767,10 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
         string:owed = "";
         int32:k = 0i32;
         while ((k => int64) < x.rdecls.count) {
-            DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: x.rdecls.items[k => int64] });
+            DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: x.rdecls[k => int64] });
             if (k > 0i32) { owed = string_concat(owed, ", "); }
-            if (x.rquals.items[k => int64] != 0i32) {
-                owed = string_concat(owed, raw intern_get(x.interns, x.rquals.items[k => int64]));
+            if (x.rquals[k => int64] != 0i32) {
+                owed = string_concat(owed, raw intern_get(x.interns, x.rquals[k => int64]));
                 owed = string_concat(owed, ".");
             }
             owed = string_concat(owed, raw intern_get(x.interns, raw decl_name(wd)));
@@ -813,7 +813,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     StmtNode:pn = raw ast_stmt(x.ast, StmtId{ index: pick_at });
     int32:i2 = 0i32;
     while ((i2 => int64) < x.rdecls.count) {
-        int32:want = x.rdecls.items[i2 => int64];
+        int32:want = x.rdecls[i2 => int64];
         bool:named = false;
         int32:a2 = 0i32;
         while (a2 < (raw pick_arm_count(pn))) {
@@ -842,7 +842,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
                     if ((raw pat_enum_bind_count(x.ast, pat)) == 0i32) {
                         DeclNode:wd2 = raw ast_decl(x.ast, DeclId{ index: want });
                         if ((raw pat_enum_segment(x.ast, pat, 0i32))
-                                == x.rquals.items[i2 => int64]) {
+                                == x.rquals[i2 => int64]) {
                             if ((raw pat_enum_segment(x.ast, pat, 1i32))
                                     == (raw decl_name(wd2))) {
                                 named = true;
@@ -856,9 +856,9 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
         if (!named) {
             DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: want });
             string:wq = "";
-            if (x.rquals.items[i2 => int64] != 0i32) {
+            if (x.rquals[i2 => int64] != 0i32) {
                 wq = string_concat(
-                         raw intern_get(x.interns, x.rquals.items[i2 => int64]), ".");
+                         raw intern_get(x.interns, x.rquals[i2 => int64]), ".");
             }
             string:m1 = string_concat(
                 string_concat("`failsafe` does not name `", wq),

@@ -201,7 +201,7 @@ pub func:esc_byte_into = NIL(Sink->:out, uint8:b) never fails {
 pub func:strtab_write_all = NIL(StrTable->:t, IrWriter->:w) never fails {
     int64:i = 0i64;
     while (i < t.v.count) {
-        string->:data = $$i t.v.items[i];
+        string->:data = $$i t.v[i];
         // THE LINE AS ITS PIECES (1.5.1b step 3, DEF-1 axis 3): the escaped
         // bytes go straight into the module stream, never through a growing
         // `enc` -- the reporter's 480 000-byte literal requested 107 GiB here.
@@ -1406,13 +1406,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     }
     if (n.kind == ExprKind.ExprOldExpr) {
         for (int64:oi in 0i64...x.fe.old_ids.count) {
-            if (x.fe.old_ids.items[oi] != id.index) { continue; }
+            if (x.fe.old_ids[oi] != id.index) { continue; }
             int32:otid = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, id));
             LlType:oll = raw ll_type(x.fe.ctx, otid);
             if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid, n.span)); }
             string:ov = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(ov, " = load ", oll.text, ", ptr ",
-                                             x.fe.old_slots.items[oi]));
+                                             x.fe.old_slots[oi]));
             pass (raw iv(string_concat(oll.text, ""), move(ov), otid));
         }
         pass (raw iv_broken(n.span));
@@ -9670,6 +9670,38 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
                                   raw cat3("i64 ", vidx64, ""), "")));
             pass (raw pv(move(vr), elem_tid));
         }
+        // A `List<T>`'s ELEMENT PLACE (D-314 §2, 1.5.8b step 1b): the list's own
+        // address, then the index, then `count` and `items` loaded AFTER the
+        // index is evaluated -- an index expression that grows the list is
+        // read against the list it left. `count` is the bound and the guard
+        // is the slice's (`OutOfBounds`, one unsigned compare); the element is
+        // `items[i]`.
+        if (okind == (raw TY_STRUCT())) {
+            if (raw type_is_list(x.tr, obj_tid)) {
+                PlaceVal:lbase = raw addr_of(x, raw expr_lhs(n));
+                if (lbase.state != (raw LL_OK())) { pass lbase; }
+                LlType:lll = raw ll_type(x.fe.ctx, obj_tid);
+                if (!(raw ll_is_ok(lll))) { pass (raw pv_broken(n.span)); }
+                IrVal:lix = raw emit_expr(x, raw expr_rhs(n));
+                if (!(raw iv_is_ok(lix))) { pass (raw pv_from_iv(move(lix))); }
+                string:lidx64 = raw index_as_i64(x, lix);
+                string:lcp = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(lcp, " = getelementptr ", lll.text,
+                                  ", ptr ", string_concat(lbase.addr, ", i32 0, i32 1")));
+                string:lcount = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(lcount, " = load i64, ptr ", lcp));
+                drop emit_bounds_guard(x, lidx64, lcount, n.span);
+                string:lip = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(lip, " = getelementptr ", lll.text,
+                                  ", ptr ", string_concat(lbase.addr, ", i32 0, i32 0")));
+                string:litems = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(litems, " = load ptr, ptr ", lip));
+                string:lr = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(lr, " = getelementptr ", ell.text,
+                                  ", ptr ", raw cat4(litems, ", i64 ", lidx64, "")));
+                pass (raw pv(move(lr), elem_tid));
+            }
+        }
         pass (raw pv_broken(n.span));
     }
 
@@ -10284,6 +10316,15 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     int32:obj_tid = raw exprtypes_get(x.et, raw expr_lhs(n));
     int32:okind = raw type_kind(x.fe.ctx.types, obj_tid);
     int32:elem_tid = raw type_elem(x.fe.ctx.types, obj_tid);
+    // A `List`'s element is its `items`' pointee (slot `a` of a struct is its
+    // declaration, never an element).
+    bool:is_list = false;
+    if (okind == (raw TY_STRUCT())) {
+        if (raw type_is_list(x.tr, obj_tid)) {
+            is_list = true;
+            elem_tid = raw list_elem_type(x.tr, obj_tid);
+        }
+    }
     LlType:ell = raw ll_type(x.fe.ctx, elem_tid);
     if (!(raw ll_is_ok(ell))) {
         pass (raw iv_from_ll_at(x, ell, elem_tid, n.span));
@@ -10311,6 +10352,26 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat5(sl2, " = extractvalue ", ov.ll, " ",
                           string_concat(ov.ref, ", 1")));
         src_len = move(sl2);
+    }
+    // A `List<T>`'s VIEW (D-314 §2, 1.5.8b step 1b): its `items` and its
+    // `count`, read from the list's own address.
+    if (is_list) {
+        PlaceVal:lp = raw addr_of(x, raw expr_lhs(n));
+        if (lp.state != (raw LL_OK())) { pass (raw iv_from_place(move(lp))); }
+        LlType:lll = raw ll_type(x.fe.ctx, obj_tid);
+        if (!(raw ll_is_ok(lll))) { pass (raw iv_broken(n.span)); }
+        string:lip = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(lip, " = getelementptr ", lll.text,
+                          ", ptr ", string_concat(lp.addr, ", i32 0, i32 0")));
+        string:litems = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(litems, " = load ptr, ptr ", lip));
+        base = move(litems);
+        string:lcp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(lcp, " = getelementptr ", lll.text,
+                          ", ptr ", string_concat(lp.addr, ", i32 0, i32 1")));
+        string:lcount = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(lcount, " = load i64, ptr ", lcp));
+        src_len = move(lcount);
     }
     if (base.len == 0i64) { pass (raw iv_broken(n.span)); }
 

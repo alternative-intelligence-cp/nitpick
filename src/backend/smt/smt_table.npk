@@ -82,9 +82,9 @@ pub func:obl_index_text = string(ObTable->:t) never fails {
     for (int64:i in 0i64...t.files.count) {
         drop sink_write(@s, raw file_number(i + 1i64));
         drop sink_write(@s, "\t");
-        drop sink_write(@s, string_from_bytes(t.file_syms.items[i].ptr, t.file_syms.items[i].len));
+        drop sink_write(@s, string_from_bytes(t.file_syms[i].ptr, t.file_syms[i].len));
         drop sink_write(@s, "\t");
-        drop sink_write(@s, int_to_string(t.file_checks.items[i]));
+        drop sink_write(@s, int_to_string(t.file_checks[i]));
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));
@@ -93,7 +93,7 @@ pub func:obl_index_text = string(ObTable->:t) never fails {
 pub func:obl_t2_index_text = string(ObTable->:t) never fails {
     Sink:s = raw sink_to_buffer(1024i64);
     for (int64:i in 0i64...t.t2_index.count) {
-        drop sink_write(@s, string_from_bytes(t.t2_index.items[i].ptr, t.t2_index.items[i].len));
+        drop sink_write(@s, string_from_bytes(t.t2_index[i].ptr, t.t2_index[i].len));
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));
@@ -102,7 +102,7 @@ pub func:obl_t2_index_text = string(ObTable->:t) never fails {
 pub func:obl_rows_text = string(ObTable->:t) never fails {
     Sink:s = raw sink_to_buffer(4096i64);
     for (int64:i in 0i64...t.rows.count) {
-        drop sink_write(@s, string_from_bytes(t.rows.items[i].ptr, t.rows.items[i].len));
+        drop sink_write(@s, string_from_bytes(t.rows[i].ptr, t.rows[i].len));
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));

@@ -241,9 +241,14 @@ pub func:ast_init = Ast() never fails {
     drop list_push(@ast.stmts, sn);
     drop list_push(@ast.stmt_flags, 0i32);
 
+    // PUSHED, as every other array's NONE node is (DEF-79, found 1.5.8b step
+    // 1b by `l[i]`'s bounds check on its first run): from 1.4.7 step 2 until
+    // then this was a store to slot 0 of an EMPTY list -- past `count`, so the
+    // first real declaration was pushed over it at index 0, the index
+    // `decl_is_none` reads as absent.
     DeclNode:declNone = DeclNode{ kind: DeclKind.DeclNone, span: z,
                             a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
-    ast.decls.items[0i64] = declNone;
+    drop list_push(@ast.decls, declNone);
 
     TypeNode:tn = TypeNode{ kind: TypeKind.TypeNone, span: z,
                             a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
@@ -287,7 +292,7 @@ pub func:ast_add_expr_w = ExprId(Ast->:ast, ExprKind:kind, Span:span,
 pub func:ast_expr = ExprNode(Ast->:ast, ExprId:id) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    pass ast.exprs.items[id.index => int64];
+    pass ast.exprs[id.index => int64];
 };
 
 pub func:ast_expr_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.exprs.count)); };
@@ -310,10 +315,10 @@ pub func:ast_expr_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.ex
 pub func:ast_set_decl_window = NIL(Ast->:ast, DeclId:id, int32:start, int32:count) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.decls.count) { !!! BoundsId; }
-    DeclNode:n = ast.decls.items[id.index => int64];
+    DeclNode:n = ast.decls[id.index => int64];
     n.b = start;
     n.c = count;
-    ast.decls.items[id.index => int64] = n;
+    ast.decls[id.index => int64] = n;
     pass NIL;
 };
 
@@ -324,18 +329,18 @@ pub func:ast_set_decl_window = NIL(Ast->:ast, DeclId:id, int32:start, int32:coun
 pub func:ast_or_decl_flags = NIL(Ast->:ast, DeclId:id, int32:bits) never fails {
     if (id.index < 1i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.decls.count) { !!! BoundsId; }
-    DeclNode:n = ast.decls.items[id.index => int64];
+    DeclNode:n = ast.decls[id.index => int64];
     n.a = n.a | bits;
-    ast.decls.items[id.index => int64] = n;
+    ast.decls[id.index => int64] = n;
     pass NIL;
 };
 
 pub func:ast_set_expr_a = NIL(Ast->:ast, ExprId:id, int32:value) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    ExprNode:n = ast.exprs.items[id.index => int64];
+    ExprNode:n = ast.exprs[id.index => int64];
     n.a = value;
-    ast.exprs.items[id.index => int64] = n;
+    ast.exprs[id.index => int64] = n;
     pass NIL;
 };
 
@@ -345,9 +350,9 @@ pub func:ast_set_expr_a = NIL(Ast->:ast, ExprId:id, int32:value) never fails {
 pub func:ast_set_verify_a = NIL(Ast->:ast, VerifyId:id, int32:value) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.verifies.count) { !!! BoundsId; }
-    VerifyNode:n = ast.verifies.items[id.index => int64];
+    VerifyNode:n = ast.verifies[id.index => int64];
     n.a = value;
-    ast.verifies.items[id.index => int64] = n;
+    ast.verifies[id.index => int64] = n;
     pass NIL;
 };
 
@@ -358,9 +363,9 @@ pub func:ast_set_verify_a = NIL(Ast->:ast, VerifyId:id, int32:value) never fails
 pub func:ast_set_pat_a = NIL(Ast->:ast, PatId:id, int32:value) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.pats.count) { !!! BoundsId; }
-    PatNode:n = ast.pats.items[id.index => int64];
+    PatNode:n = ast.pats[id.index => int64];
     n.a = value;
-    ast.pats.items[id.index => int64] = n;
+    ast.pats[id.index => int64] = n;
     pass NIL;
 };
 
@@ -372,9 +377,9 @@ pub func:ast_set_pat_a = NIL(Ast->:ast, PatId:id, int32:value) never fails {
 pub func:ast_set_pat_payload = NIL(Ast->:ast, PatId:id, int64:value) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.pats.count) { !!! BoundsId; }
-    PatNode:n = ast.pats.items[id.index => int64];
+    PatNode:n = ast.pats[id.index => int64];
     n.payload = value;
-    ast.pats.items[id.index => int64] = n;
+    ast.pats[id.index => int64] = n;
     pass NIL;
 };
 
@@ -418,26 +423,26 @@ pub func:HYG_SEEN = int32() never fails { pass 8i32; };
 pub func:ast_expr_flag = bool(Ast->:ast, ExprId:id, int32:bit) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    pass ((ast.expr_flags.items[id.index => int64] & bit) != 0i32);
+    pass ((ast.expr_flags[id.index => int64] & bit) != 0i32);
 };
 
 pub func:ast_set_expr_flag = NIL(Ast->:ast, ExprId:id, int32:bit) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    ast.expr_flags.items[id.index => int64] = ast.expr_flags.items[id.index => int64] | bit;
+    ast.expr_flags[id.index => int64] = ast.expr_flags[id.index => int64] | bit;
     pass NIL;
 };
 
 pub func:ast_stmt_flag = bool(Ast->:ast, StmtId:id, int32:bit) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.stmts.count) { !!! BoundsId; }
-    pass ((ast.stmt_flags.items[id.index => int64] & bit) != 0i32);
+    pass ((ast.stmt_flags[id.index => int64] & bit) != 0i32);
 };
 
 pub func:ast_set_stmt_flag = NIL(Ast->:ast, StmtId:id, int32:bit) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.stmts.count) { !!! BoundsId; }
-    ast.stmt_flags.items[id.index => int64] = ast.stmt_flags.items[id.index => int64] | bit;
+    ast.stmt_flags[id.index => int64] = ast.stmt_flags[id.index => int64] | bit;
     pass NIL;
 };
 
@@ -459,22 +464,22 @@ pub func:ast_adopt_expr_flags = NIL(Ast->:ast, ExprId:dst, ExprId:src) never fai
     if ((dst.index => int64) >= ast.exprs.count) { !!! BoundsId; }
     if (src.index < 1i32) { !!! BoundsId; }
     if ((src.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    ast.expr_flags.items[dst.index => int64] = ast.expr_flags.items[dst.index => int64]
-                                       | ast.expr_flags.items[src.index => int64];
+    ast.expr_flags[dst.index => int64] = ast.expr_flags[dst.index => int64]
+                                       | ast.expr_flags[src.index => int64];
     pass NIL;
 };
 
 pub func:ast_replace_expr = NIL(Ast->:ast, ExprId:id, ExprNode:n) never fails {
     if (id.index < 1i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    ast.exprs.items[id.index => int64] = n;
+    ast.exprs[id.index => int64] = n;
     pass NIL;
 };
 
 pub func:ast_replace_stmt = NIL(Ast->:ast, StmtId:id, StmtNode:n) never fails {
     if (id.index < 1i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.stmts.count) { !!! BoundsId; }
-    ast.stmts.items[id.index => int64] = n;
+    ast.stmts[id.index => int64] = n;
     pass NIL;
 };
 
@@ -491,12 +496,12 @@ pub func:ast_replace_stmt = NIL(Ast->:ast, StmtId:id, StmtNode:n) never fails {
 pub func:ast_blank_expr = NIL(Ast->:ast, ExprId:id) never fails {
     if (id.index < 1i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.exprs.count) { !!! BoundsId; }
-    ExprNode:n = ast.exprs.items[id.index => int64];
+    ExprNode:n = ast.exprs[id.index => int64];
     ExprNode:blank = ExprNode{ kind: ExprKind.ExprNone, span: n.span,
                                a: 0i32, b: 0i32, c: 0i32, payload: 0i64,
                                width: NumWidth.WNone };
-    ast.exprs.items[id.index => int64] = blank;
-    ast.expr_flags.items[id.index => int64] = 0i32;
+    ast.exprs[id.index => int64] = blank;
+    ast.expr_flags[id.index => int64] = 0i32;
     pass NIL;
 };
 
@@ -515,7 +520,7 @@ pub func:ast_add_stmt = StmtId(Ast->:ast, StmtKind:kind, Span:span,
 pub func:ast_stmt = StmtNode(Ast->:ast, StmtId:id) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.stmts.count) { !!! BoundsId; }
-    pass ast.stmts.items[id.index => int64];
+    pass ast.stmts[id.index => int64];
 };
 
 pub func:ast_stmt_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.stmts.count)); };
@@ -529,9 +534,9 @@ pub func:ast_stmt_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.st
 pub func:ast_set_error_code = NIL(Ast->:ast, DeclId:id, int32:code) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.decls.count) { !!! BoundsId; }
-    DeclNode:n = ast.decls.items[id.index => int64];
+    DeclNode:n = ast.decls[id.index => int64];
     n.c = code;
-    ast.decls.items[id.index => int64] = n;
+    ast.decls[id.index => int64] = n;
     pass NIL;
 };
 
@@ -547,7 +552,7 @@ pub func:ast_add_decl = DeclId(Ast->:ast, DeclKind:kind, Span:span,
 pub func:ast_decl = DeclNode(Ast->:ast, DeclId:id) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.decls.count) { !!! BoundsId; }
-    pass ast.decls.items[id.index => int64];
+    pass ast.decls[id.index => int64];
 };
 
 pub func:ast_decl_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.decls.count)); };
@@ -566,7 +571,7 @@ pub func:ast_add_type = TypeId(Ast->:ast, TypeKind:kind, Span:span,
 pub func:ast_type = TypeNode(Ast->:ast, TypeId:id) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.types.count) { !!! BoundsId; }
-    pass ast.types.items[id.index => int64];
+    pass ast.types[id.index => int64];
 };
 
 pub func:ast_type_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.types.count)); };
@@ -585,7 +590,7 @@ pub func:ast_add_pat = PatId(Ast->:ast, PatKind:kind, Span:span,
 pub func:ast_pat = PatNode(Ast->:ast, PatId:id) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.pats.count) { !!! BoundsId; }
-    pass ast.pats.items[id.index => int64];
+    pass ast.pats[id.index => int64];
 };
 
 pub func:ast_pat_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.pats.count)); };
@@ -604,7 +609,7 @@ pub func:ast_add_verify = VerifyId(Ast->:ast, VerifyKind:kind, Span:span,
 pub func:ast_verify = VerifyNode(Ast->:ast, VerifyId:id) never fails {
     if (id.index < 0i32) { !!! BoundsId; }
     if ((id.index => int64) >= ast.verifies.count) { !!! BoundsId; }
-    pass ast.verifies.items[id.index => int64];
+    pass ast.verifies[id.index => int64];
 };
 
 pub func:ast_verify_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.verifies.count)); };
@@ -650,9 +655,9 @@ pub func:ast_scratch_commit = IdSpan(Ast->:ast, int32:mark) never fails {
     int32:n = (raw ast_smark(ast.scratch.count)) - mark;
     int32:start = raw ast_id(ast.ids.count);
     for (int32:i in 0i32...n) {
-        drop ast_ids_push(ast, ast.scratch.items[(mark + i) => int64]);
+        drop ast_ids_push(ast, ast.scratch[(mark + i) => int64]);
     }
-    ast.scratch.count = mark => int64;
+    drop list_truncate(@ast.scratch, mark => int64);
     IdSpan:sp = IdSpan{ start: start, count: n };
     pass sp;
 };
@@ -684,7 +689,7 @@ pub func:ast_scratch_at = int32(Ast->:ast, int32:mark, int32:i) never fails {
     if (i < 0i32) { !!! BoundsScratch; }
     int32:at = mark + i;
     if ((at => int64) >= ast.scratch.count) { !!! BoundsScratch; }
-    pass (ast.scratch.items[at => int64]);
+    pass (ast.scratch[at => int64]);
 };
 
 // ABANDON everything pushed since `mark`, committing nothing.
@@ -697,7 +702,7 @@ pub func:ast_scratch_at = int32(Ast->:ast, int32:mark, int32:i) never fails {
 pub func:ast_scratch_drop = NIL(Ast->:ast, int32:mark) never fails {
     if (mark < 0i32) { !!! BoundsScratch; }
     if ((mark => int64) > ast.scratch.count) { !!! BoundsScratch; }
-    ast.scratch.count = mark => int64;
+    drop list_truncate(@ast.scratch, mark => int64);
     pass NIL;
 };
 
@@ -709,7 +714,7 @@ pub func:ast_scratch_set = NIL(Ast->:ast, int32:mark, int32:i, int32:value) neve
     if (i < 0i32) { !!! BoundsScratch; }
     int32:at = mark + i;
     if ((at => int64) >= ast.scratch.count) { !!! BoundsScratch; }
-    ast.scratch.items[at => int64] = value;
+    ast.scratch[at => int64] = value;
     pass NIL;
 };
 
@@ -732,7 +737,7 @@ pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) never fails {
     int32:at = start + i;
     if (at < 0i32) { !!! BoundsWindow; }
     if ((at => int64) >= ast.ids.count) { !!! BoundsWindow; }
-    pass ast.ids.items[at => int64];
+    pass ast.ids[at => int64];
 };
 
 // --- expression SHAPES ---------------------------------------------------------------------

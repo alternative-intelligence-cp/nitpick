@@ -569,6 +569,15 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
                 pass (raw tt_slice(e.types, raw type_elem(e.types, base)));
             }
             if (bk == (raw TY_SLICE())) { pass base; }
+            // A `List<T>` RANGES AS A SLICE DOES (D-314 §2, 1.5.8b step 1b):
+            // `l[lo...hi]` is a `T[]` view of elements `lo…hi−1`, checked
+            // against `count`. A view of the list's storage borrows the list
+            // (D-249), so it cannot outlive a change to it.
+            if (bk == (raw TY_STRUCT())) {
+                TypeResolver:rlr = raw etyper_resolver(e);
+                int32:rlel = raw list_elem_type(@rlr, base);
+                if (rlel != 0i32) { pass (raw tt_slice(e.types, rlel)); }
+            }
             string:r1 = string_concat("`",
                             raw type_display(e.types, e.interns, base));
             pass (raw te_error(e, raw TYPE_MISMATCH(),
@@ -592,11 +601,47 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:k = raw type_kind(e.types, base);
     if (k == (raw TY_ARRAY()))   { pass (raw type_elem(e.types, base)); }
     if (k == (raw TY_SLICE()))   { pass (raw type_elem(e.types, base)); }
-    if (k == (raw TY_POINTER())) { pass (raw type_elem(e.types, base)); }
+    if (k == (raw TY_POINTER())) {
+        // A POINTER TO A VALUE THAT IS ITSELF INDEXED IS NOT INDEXED (1.5.8b
+        // step 1b; D-098's rule). `p[i]` on a pointer is "the i-th value in
+        // memory from `p`" -- and where the pointee is an array, a slice or a
+        // `List`, it has a second reading, the pointee's own element, which
+        // is almost always the one meant. The pointer reading is refused;
+        // the pointee's is spelled `(<-p)[i]` (one level brought back, as
+        // D-098 has `pp.x` write `<-`).
+        int32:pel = raw type_elem(e.types, base);
+        int32:pek = raw type_kind(e.types, pel);
+        bool:indexed = (pek == (raw TY_ARRAY()));
+        if (pek == (raw TY_SLICE())) { indexed = true; }
+        if (pek == (raw TY_STRUCT())) {
+            TypeResolver:plr = raw etyper_resolver(e);
+            if (raw type_is_list(@plr, pel)) { indexed = true; }
+        }
+        if (indexed) {
+            string:q1 = string_concat("`p[i]` on this `",
+                            raw type_display(e.types, e.interns, base));
+            string:q2 = string_concat(q1, "` would index the POINTER -- the i-th `");
+            string:q3 = string_concat(q2, raw type_display(e.types, e.interns, pel));
+            pass (raw te_error(e, raw TYPE_INDEX_POINTER(),
+                string_concat(q3, "` in memory -- not the value it points at: write `(<-p)[i]` for the element (D-098: one level brought back is spelled where there are two readings)"),
+                n.span));
+        }
+        pass pel;
+    }
     // A LANE READS AND WRITES AS THE ELEMENT (D-194), bounds-checked like an
     // array's — the lane count is in the type, so the check is against a
     // constant.
     if (k == (raw TY_SIMD()))    { pass (raw type_elem(e.types, base)); }
+    // A `List<T>` IS INDEXED LIKE A SLICE (D-314 §2, 1.5.8b step 1b): the
+    // element's place -- readable, writable, claimable -- bounds-checked
+    // against `count` by the emitter's own lowering, with the slice's guard.
+    // Its storage is reached through `items`, which only the prelude names
+    // (D-314's `hidden`).
+    if (k == (raw TY_STRUCT())) {
+        TypeResolver:lr = raw etyper_resolver(e);
+        int32:lel = raw list_elem_type(@lr, base);
+        if (lel != 0i32) { pass lel; }
+    }
 
     string:m1 = string_concat("`", raw type_display(e.types, e.interns, base));
     string:m2 = string_concat(m1, "` cannot be indexed");

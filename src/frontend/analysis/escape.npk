@@ -802,7 +802,14 @@ func:view_root = ViewRoot(Escape->:x, ExprId:place) never fails {
             if (raw string_eq(bnm, "wild_ptr"))   { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }
             pass ViewRoot{ id: raw expr_none(), kind: 2i32 };
         }
-        if (rn.kind != ExprKind.ExprIdentifierExpr)    { pass ViewRoot{ id: raw expr_none(), kind: 2i32 }; }   // a temporary, or `<-p`: fails closed
+        // `<-p` IS THE POINTEE (1.5.8b step 1b): a view through it aliases what
+        // `p` reaches, as a view rooted at the pointer-shaped binding does --
+        // `(<-p).x` and `p.x` are one storage -- so the walk goes on into the
+        // operand. `(<-lp)[i]` is how a `List` behind a pointer is indexed
+        // (TYPE-082). A deref of a TEMPORARY pointer still fails closed: the
+        // operand's own root is the call.
+        if (rn.kind == ExprKind.ExprDerefExpr)         { cur = raw expr_operand(rn); continue; }
+        if (rn.kind != ExprKind.ExprIdentifierExpr)    { pass ViewRoot{ id: raw expr_none(), kind: 2i32 }; }   // a temporary: fails closed
         if (rn.a == 0i32) { pass ViewRoot{ id: r.id, kind: 1i32 }; }
         // A VIEW BINDING STANDS IN FOR ITS SELECTOR (D-266, 1.5.2h): what a
         // view of the binding aliases is the selector's storage -- a local's
@@ -1230,7 +1237,7 @@ func:check_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, Span:a
     List<int32>:roots = raw list_init::<int32>(4i64);
     drop collect_local_roots(x, val, raw ESCAPE_DEPTH(), @roots);
     for (int64:i in 0i64...roots.count) {
-        Symbol:rs = raw symtab_get(x.tab, roots.items[i]);
+        Symbol:rs = raw symtab_get(x.tab, roots[i]);
         if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) { continue; }
         if (raw scope_strictly_inside(x.tab, rs.scope, holder_scope)) {
             drop escape_err(x, raw BORROW_STORED(),

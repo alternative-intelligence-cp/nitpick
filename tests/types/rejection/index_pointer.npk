@@ -1,0 +1,35 @@
+// expect-error: NITPICK-TYPE-082
+// expect-error-at: 22
+// expect-error: NITPICK-TYPE-082
+// expect-error-at: 23
+// expect-error: NITPICK-TYPE-082
+// expect-error-at: 24
+// expect-error: NITPICK-TYPE-082
+// expect-error-at: 25
+//
+// A POINTER TO A VALUE THAT IS ITSELF INDEXED IS NOT INDEXED (1.5.8b step 1b; D-098
+// applied to `[]`). `p[i]` on a pointer is "the i-th value in memory from `p`",
+// and where the pointee is an array, a slice or a `List` it has a second reading,
+// the pointee's own element -- almost always the one meant. D-098 auto-
+// dereferences only where there is one reading (`.`), so here the pointer
+// reading is refused and the element is spelled `(<-p)[i]`, one level brought
+// back. Measured before the rule: no site in the tree indexed such a pointer;
+// the sweep that made `List` indexable wrote 66 in `npkg/`, each caught here and
+// written `(<-p)[i]`. A pointer to a SCALAR keeps its indexing: that is the
+// pointer family's own element access.
+mod:index_pointer;
+
+func:arrays = int64(int64[4]->:ap) never fails { pass ap[1i64]; };
+func:slices = int32(int32[]->:sp) never fails { pass sp[0i64]; };
+func:lists = int64(List<int64>->:lp) never fails { pass lp[0i64]; };
+func:list_write = NIL(List<int64>->:lp) never fails { lp[0i64] = 3i64; pass NIL; };
+
+// WHAT PASSES: the element brought back, and a scalar pointer's indexing.
+func:fine = int64(int64[4]->:ap, int32[]->:sp, List<int64>->:lp, wild int64->:raw_elems) never fails {
+    int64:a = (<-ap)[1i64] + ((<-sp)[0i64] => int64);
+    if ((<-lp).count > 0i64) { (<-lp)[0i64] = a; a = a + (<-lp)[0i64]; }
+    pass (a + raw_elems[2i64]);
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

@@ -1,0 +1,12 @@
+# D-314 §3 (1.5.8b step 1b): the checked `List` operations drop what they take
+# out, measured. `list_ops_churn.npk` runs a round -- 200 owning strings pushed,
+# half overwritten through `l[i]`, elements taken by `list_pop`, `list_remove`,
+# `list_swap_remove`, `list_truncate` and `list_clear` -- five hundred times;
+# `list_ops_once.npk` runs it once. Under NPK_HEAP_STATS the churn's peak must
+# stay within `bound` times the one round's: an operation or an element
+# overwrite that leaked would peak at hundreds of times it.
+kind    = "probe"
+program = "tests/backend/programs/list_ops_churn.npk"
+against = "tests/backend/programs/list_ops_once.npk"
+bound   = 2
+expect  = "pass"

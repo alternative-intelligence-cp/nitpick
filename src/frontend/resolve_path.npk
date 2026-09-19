@@ -69,10 +69,10 @@ pub func:rootlist_at = Root(RootList->:l, int64:i) never fails {
     // flagged local dropping it frees nothing. By-value ergonomics for the
     // 40-odd call sites, at the cost of rebuilding one small struct.
     Root:r = Root{
-        name: string_from_bytes(l.v.items[i].name.ptr,
-                                    l.v.items[i].name.len),
-        dir: string_from_bytes(l.v.items[i].dir.ptr,
-                                   l.v.items[i].dir.len) };
+        name: string_from_bytes(l.v[i].name.ptr,
+                                    l.v[i].name.len),
+        dir: string_from_bytes(l.v[i].dir.ptr,
+                                   l.v[i].dir.len) };
     pass r;
 };
 

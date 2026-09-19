@@ -242,8 +242,8 @@ pub func:toml_parse = TomlDoc(string:text) never fails {
                 drop list_push(@d.counts, 0i64);
                 slot = d.arrays.count - 1i64;
             }
-            index = d.counts.items[slot];
-            d.counts.items[slot] = index + 1i64;
+            index = d.counts[slot];
+            d.counts[slot] = index + 1i64;
             section = move(name);
             continue;
         }
@@ -273,11 +273,11 @@ pub func:toml_parse = TomlDoc(string:text) never fails {
 
 pub func:toml_find = int64(TomlDoc:d, string:section, int64:index, string:key) never fails {
     for (int64:i in 0i64...d.entries.count) {
-        if (d.entries.items[i].index != index) { continue; }
-        if (!(raw text_eq(string_from_bytes(d.entries.items[i].section.ptr,
-                                            d.entries.items[i].section.len), section))) { continue; }
-        if (raw text_eq(string_from_bytes(d.entries.items[i].key.ptr,
-                                          d.entries.items[i].key.len), key)) { pass i; }
+        if (d.entries[i].index != index) { continue; }
+        if (!(raw text_eq(string_from_bytes(d.entries[i].section.ptr,
+                                            d.entries[i].section.len), section))) { continue; }
+        if (raw text_eq(string_from_bytes(d.entries[i].key.ptr,
+                                          d.entries[i].key.len), key)) { pass i; }
     }
     pass (0i64 - 1i64);
 };
@@ -289,38 +289,38 @@ pub func:toml_has = bool(TomlDoc:d, string:section, int64:index, string:key) nev
 pub func:toml_string = string(TomlDoc:d, string:section, int64:index, string:key) {
     int64:i = raw toml_find(d, section, index, key);
     if (i < 0i64) { fail ETomlMissing; }
-    if (d.entries.items[i].kind != 0i64) { fail ETomlKind; }
-    pass (string_concat(string_from_bytes(d.entries.items[i].sval.ptr,
-                                          d.entries.items[i].sval.len), ""));
+    if (d.entries[i].kind != 0i64) { fail ETomlKind; }
+    pass (string_concat(string_from_bytes(d.entries[i].sval.ptr,
+                                          d.entries[i].sval.len), ""));
 };
 
 pub func:toml_int = int64(TomlDoc:d, string:section, int64:index, string:key) {
     int64:i = raw toml_find(d, section, index, key);
     if (i < 0i64) { fail ETomlMissing; }
-    if (d.entries.items[i].kind != 1i64) { fail ETomlKind; }
-    pass d.entries.items[i].ival;
+    if (d.entries[i].kind != 1i64) { fail ETomlKind; }
+    pass d.entries[i].ival;
 };
 
 pub func:toml_bool = bool(TomlDoc:d, string:section, int64:index, string:key) {
     int64:i = raw toml_find(d, section, index, key);
     if (i < 0i64) { fail ETomlMissing; }
-    if (d.entries.items[i].kind != 2i64) { fail ETomlKind; }
-    pass (d.entries.items[i].ival != 0i64);
+    if (d.entries[i].kind != 2i64) { fail ETomlKind; }
+    pass (d.entries[i].ival != 0i64);
 };
 
 // An array of strings, COPIED out; an empty array is an empty list.
 pub func:toml_strings = List<string>(TomlDoc:d, string:section, int64:index, string:key) {
     int64:i = raw toml_find(d, section, index, key);
     if (i < 0i64) { fail ETomlMissing; }
-    if (d.entries.items[i].kind == 5i64) { pass (raw list_init::<string>(1i64)); }
-    if (d.entries.items[i].kind != 3i64) { fail ETomlKind; }
-    pass (raw strlist_clone(d.entries.items[i].items));
+    if (d.entries[i].kind == 5i64) { pass (raw list_init::<string>(1i64)); }
+    if (d.entries[i].kind != 3i64) { fail ETomlKind; }
+    pass (raw strlist_clone(d.entries[i].items));
 };
 
 // How many [[name]] elements the document holds; zero when none.
 pub func:toml_array_count = int64(TomlDoc:d, string:name) never fails {
     for (int64:a in 0i64...d.arrays.count) {
-        if (raw text_eq(raw strlist_view(d.arrays, a), name)) { pass d.counts.items[a]; }
+        if (raw text_eq(raw strlist_view(d.arrays, a), name)) { pass d.counts[a]; }
     }
     pass 0i64;
 };

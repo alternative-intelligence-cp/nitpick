@@ -1076,7 +1076,7 @@ func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
     // manager issued the id, so every row of this module's derived text is
     // stamped with it here and appended to the graph's registry.
     for (int64:oi in 0i64...out.origins.count) {
-        DerivedOrigin:o = out.origins.items[oi];
+        DerivedOrigin:o = out.origins[oi];
         o.file = file;
         drop list_push(@g.origins, o);
     }
@@ -1305,7 +1305,7 @@ pub func:rehome_derived = NIL(ModuleGraph->:g) never fails {
         int64:best = 0i64 - 1i64;
         int32:best_line = 0i32;
         for (int64:k in 0i64...g.origins.count) {
-            DerivedOrigin:o = g.origins.items[k];
+            DerivedOrigin:o = g.origins[k];
             if (o.file == d.span.file) {
                 if (o.line <= d.span.line) {
                     if ((best < 0i64) || (o.line >= best_line)) {
@@ -1316,7 +1316,7 @@ pub func:rehome_derived = NIL(ModuleGraph->:g) never fails {
             }
         }
         if (best < 0i64) { continue; }
-        DerivedOrigin:src = g.origins.items[best];
+        DerivedOrigin:src = g.origins[best];
         DeclNode:sd = raw ast_decl(@g.ast, DeclId{ index: src.subject });
         string:p1 = string_concat("in the `", raw intern_get(g.interns, src.trait_name));
         string:p2 = string_concat(p1, "` that `#[derive(");

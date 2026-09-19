@@ -121,8 +121,8 @@ pub func:expect_read = Expect(string:text) never fails {
             At:a = raw read_at(raw after_colon(body));
             if (!a.ok) { e.ok = false; e.bad_line = li + 1i64; pass e; }
             if (e.errors.count > 0i64) {
-                e.errors.items[e.errors.count - 1i64].line = a.line;
-                e.errors.items[e.errors.count - 1i64].col = a.col;
+                e.errors[e.errors.count - 1i64].line = a.line;
+                e.errors[e.errors.count - 1i64].col = a.col;
             }
             continue;
         }
@@ -134,8 +134,8 @@ pub func:expect_read = Expect(string:text) never fails {
             At:a2 = raw read_at(raw after_colon(body));
             if (!a2.ok) { e.ok = false; e.bad_line = li + 1i64; pass e; }
             if (e.notes.count > 0i64) {
-                e.notes.items[e.notes.count - 1i64].line = a2.line;
-                e.notes.items[e.notes.count - 1i64].col = a2.col;
+                e.notes[e.notes.count - 1i64].line = a2.line;
+                e.notes[e.notes.count - 1i64].col = a2.col;
             }
             continue;
         }
@@ -217,7 +217,7 @@ pub func:expect_codes = string(List<Expected>:l) never fails {
     for (int64:i in 0i64...l.count) {
         if (i > 0i64) { out = string_concat(out, ", "); }
         out = string_concat(out, "'");
-        out = string_concat(out, string_from_bytes(l.items[i].code.ptr, l.items[i].code.len));
+        out = string_concat(out, string_from_bytes(l[i].code.ptr, l[i].code.len));
         out = string_concat(out, "'");
     }
     pass (string_concat(out, "]"));

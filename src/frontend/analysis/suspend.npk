@@ -157,7 +157,7 @@ func:cur_touch = NIL(Suspend->:x, int64:at) never fails {
 func:reg_find = int64(Suspend->:x, int32:stmt_index) never fails {
     int64:i = 0i64;
     while (i < x.lstmt.count) {
-        if (x.lstmt.items[i] == stmt_index) { pass i; }
+        if (x.lstmt[i] == stmt_index) { pass i; }
         i = i + 1i64;
     }
     pass 0i64 - 1i64;
@@ -234,7 +234,7 @@ func:reg_extend = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
         StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
         idx = raw reg_add(x, s.origin, raw pos_of(o.span));
     }
-    if (at > x.luse.items[idx]) { x.luse.items[idx] = at; }
+    if (at > x.luse[idx]) { x.luse[idx] = at; }
     pass NIL;
 };
 
@@ -252,7 +252,7 @@ func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     drop cur_touch(x, at);
     int64:pt = at;
     if (x.in_defer) { pt = x.fn_end; }
-    if (pt > x.luse.items[idx]) { x.luse.items[idx] = pt; }
+    if (pt > x.luse[idx]) { x.luse[idx] = pt; }
     pass NIL;
 };
 
@@ -301,13 +301,13 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
         // counts-move-together invariant can be half-done, so they are listed
         // rather than folded: a missed line here leaves a previous function's
         // rows visible to the next one's settle.
-        x.lstmt.count = 0i64;
-        x.ldecl.count = 0i64;
-        x.luse.count = 0i64;
-        x.spos.count = 0i64;
-        x.sls.count = 0i64;
-        x.slc.count = 0i64;
-        x.lsflat.count = 0i64;
+        drop list_clear(@x.lstmt);
+        drop list_clear(@x.ldecl);
+        drop list_clear(@x.luse);
+        drop list_clear(@x.spos);
+        drop list_clear(@x.sls);
+        drop list_clear(@x.slc);
+        drop list_clear(@x.lsflat);
         x.ldepth = 0i32;
         // "TO THE FUNCTION'S END" MEANS PAST EVERY SUSPENSION IN THIS
         // SETTLE, and reading it off the body block's SPAN never delivered
@@ -354,23 +354,23 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
 func:suspend_settle = NIL(Suspend->:x) never fails {
     int64:i = 0i64;
     while (i < x.lstmt.count) {
-        int64:dpos = x.ldecl.items[i];
-        int64:upos = x.luse.items[i];
+        int64:dpos = x.ldecl[i];
+        int64:upos = x.luse[i];
         bool:crossed = false;
         int64:j = 0i64;
         while (j < x.spos.count) {
-            int64:p = x.spos.items[j];
+            int64:p = x.spos[j];
             if (dpos < p) { if (p < upos) { crossed = true; } }
             int32:w = 0i32;
-            while (w < x.slc.items[j]) {
-                int64:ls = x.lsflat.items[x.sls.items[j] + (w => int64)];
+            while (w < x.slc[j]) {
+                int64:ls = x.lsflat[x.sls[j] + (w => int64)];
                 if (dpos < ls) { if (upos > ls) { crossed = true; } }
                 w = w + 1i32;
             }
             j = j + 1i64;
         }
         if (crossed) {
-            drop exprtypes_mark_crossing(x.ets, x.lstmt.items[i]);
+            drop exprtypes_mark_crossing(x.ets, x.lstmt[i]);
         }
         i = i + 1i64;
     }
@@ -426,8 +426,8 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
             // toward MORE crossing. The checker marked which var-decls own;
             // a function with no suspensions never consults any of this.
             if (raw exprtypes_owning_decl(x.ets, id.index)) {
-                if (x.fn_end > x.luse.items[ni]) {
-                    x.luse.items[ni] = x.fn_end;
+                if (x.fn_end > x.luse[ni]) {
+                    x.luse[ni] = x.fn_end;
                 }
             }
         }

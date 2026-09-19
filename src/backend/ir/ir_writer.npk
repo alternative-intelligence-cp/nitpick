@@ -269,7 +269,7 @@ func:trim_scan_defs = NIL(InternTable->:syms, string:text, int64:lo, int64:hi,
 // The bytes of `s[lo, hi)` appended to `dst`.
 func:trim_copy = NIL(Sink->:dst, Sink->:s, int64:lo, int64:hi) never fails {
     if (hi <= lo) { pass NIL; }
-    drop sink_write(dst, string_from_bytes(#ptr_add<int8>(s.v.items, lo), hi - lo));
+    drop sink_write(dst, string_from_bytes(s.v[lo...hi].ptr =>! wild int8->, hi - lo));
     pass NIL;
 };
 
@@ -299,12 +299,12 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     List<int32>:roots = raw list_init::<int32>(4096i64);
     int64:i = 0i64;
     while (i < n) {
-        string:t = raw trim_sink_text(w, w.item_sink.items[i]);
+        string:t = raw trim_sink_text(w, w.item_sink[i]);
         drop list_push(@def_lo, defs.count);
-        drop trim_scan_defs(@syms, t, w.item_start.items[i], w.item_end.items[i], @defs);
+        drop trim_scan_defs(@syms, t, w.item_start[i], w.item_end[i], @defs);
         drop list_push(@def_hi, defs.count);
         drop list_push(@ref_lo, refs.count);
-        drop trim_scan_refs(@syms, t, w.item_start.items[i], w.item_end.items[i], @refs);
+        drop trim_scan_refs(@syms, t, w.item_start[i], w.item_end[i], @refs);
         drop list_push(@ref_hi, refs.count);
         i = i + 1i64;
     }
@@ -315,9 +315,9 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
         int64:cursor = 0i64;
         int64:k = 0i64;
         while (k < n) {
-            if (w.item_sink.items[k] == sid) {
-                drop trim_scan_refs(@syms, t, cursor, w.item_start.items[k], @roots);
-                cursor = w.item_end.items[k];
+            if (w.item_sink[k] == sid) {
+                drop trim_scan_refs(@syms, t, cursor, w.item_start[k], @roots);
+                cursor = w.item_end[k];
             }
             k = k + 1i64;
         }
@@ -331,9 +331,9 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     while (z < nsyms) { drop list_push(@owner, 0i32 - 1i32); z = z + 1i64; }
     i = 0i64;
     while (i < n) {
-        int64:d = def_lo.items[i];
-        while (d < def_hi.items[i]) {
-            owner.items[defs.items[d] => int64] = i =>! int32;
+        int64:d = def_lo[i];
+        while (d < def_hi[i]) {
+            owner[defs[d] => int64] = i =>! int32;
             d = d + 1i64;
         }
         i = i + 1i64;
@@ -345,21 +345,20 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     List<int64>:work = raw list_init::<int64>(n);
     int64:r = 0i64;
     while (r < roots.count) {
-        int32:o = owner.items[roots.items[r] => int64];
-        if (o >= 0i32) { if (kept.items[o => int64] == 0i32) {
-            kept.items[o => int64] = 1i32;
+        int32:o = owner[roots[r] => int64];
+        if (o >= 0i32) { if (kept[o => int64] == 0i32) {
+            kept[o => int64] = 1i32;
             drop list_push(@work, o => int64);
         } }
         r = r + 1i64;
     }
     while (work.count > 0i64) {
-        int64:it = work.items[work.count - 1i64];
-        work.count = work.count - 1i64;
-        int64:q = ref_lo.items[it];
-        while (q < ref_hi.items[it]) {
-            int32:o2 = owner.items[refs.items[q] => int64];
-            if (o2 >= 0i32) { if (kept.items[o2 => int64] == 0i32) {
-                kept.items[o2 => int64] = 1i32;
+        int64:it = raw list_pop(@work);
+        int64:q = ref_lo[it];
+        while (q < ref_hi[it]) {
+            int32:o2 = owner[refs[q] => int64];
+            if (o2 >= 0i32) { if (kept[o2 => int64] == 0i32) {
+                kept[o2 => int64] = 1i32;
                 drop list_push(@work, o2 => int64);
             } }
             q = q + 1i64;
@@ -375,12 +374,12 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
             int64:cursor2 = 0i64;
             int64:k2 = 0i64;
             while (k2 < n) {
-                if (w.item_sink.items[k2] == sid) {
-                    drop trim_copy(@fresh, src, cursor2, w.item_start.items[k2]);
-                    if (kept.items[k2] != 0i32) {
-                        drop trim_copy(@fresh, src, w.item_start.items[k2], w.item_end.items[k2]);
+                if (w.item_sink[k2] == sid) {
+                    drop trim_copy(@fresh, src, cursor2, w.item_start[k2]);
+                    if (kept[k2] != 0i32) {
+                        drop trim_copy(@fresh, src, w.item_start[k2], w.item_end[k2]);
                     }
-                    cursor2 = w.item_end.items[k2];
+                    cursor2 = w.item_end[k2];
                 }
                 k2 = k2 + 1i64;
             }
@@ -391,9 +390,9 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
         sid = sid + 1i32;
     }
     // The items are spent; a second trim would find nothing to do.
-    w.item_sink.count = 0i64;
-    w.item_start.count = 0i64;
-    w.item_end.count = 0i64;
+    drop list_clear(@w.item_sink);
+    drop list_clear(@w.item_start);
+    drop list_clear(@w.item_end);
     pass NIL;
 };
 
@@ -475,8 +474,8 @@ pub func:irw_entry_label = NIL(IrWriter->:w, string:name) never fails {
 pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fails {
     int32:i = 0i32;
     while ((i => int64) < w.site_lines.count) {
-        if (w.site_lines.items[i => int64] == line) {
-            if (raw string_eq(w.site_paths.items[i => int64], path)) {
+        if (w.site_lines[i => int64] == line) {
+            if (raw string_eq(w.site_paths[i => int64], path)) {
                 pass (i + 1i32);
             }
         }

@@ -74,7 +74,7 @@ func:floor_ensure_dir = NIL(string:abs) {
 pub func:spec_symbols = List<string>(Sxs->:s) never fails {
     List<string>:out = raw list_init::<string>(64i64);
     for (int64:i in 0i64...s.roots.count) {
-        int64:r = s.roots.items[i];
+        int64:r = s.roots[i];
         if (!(raw text_eq(raw sx_head(s, r), "symbol"))) { continue; }
         drop strlist_push(@out, raw sx_atom(s, raw sx_nth(s, r, 1i64)));
     }
@@ -133,13 +133,13 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models,
             string:ln = string_concat(no, "\t");
             ln = string_concat(ln, int_to_string(r + 1i64));
             ln = string_concat(ln, "\tfloor-spec\t");
-            ln = string_concat(ln, raw strlist_view_of(f.rows.items[r].hash));
+            ln = string_concat(ln, raw strlist_view_of(f.rows[r].hash));
             ln = string_concat(ln, "\t1\t");
             ln = string_concat(ln, name);
             ln = string_concat(ln, "\t");
-            ln = string_concat(ln, raw strlist_view_of(f.rows.items[r].site));
+            ln = string_concat(ln, raw strlist_view_of(f.rows[r].site));
             ln = string_concat(ln, "\tconform\t0\t0\t");
-            ln = string_concat(ln, raw strlist_view_of(f.rows.items[r].tier));
+            ln = string_concat(ln, raw strlist_view_of(f.rows[r].tier));
             ln = string_concat(ln, "\n");
             rows = string_concat(rows, ln);
         }
@@ -148,7 +148,7 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models,
     string:controls = "";
     int64:cn = 0i64;
     for (int64:mi in 0i64...models.count) {
-        MModel->:m = @models.items[mi];
+        MModel->:m = @models[mi];
         ModelFile:mf = raw model_emit(m);
         n = n + 1i64;
         string:mno = raw fno(n);
@@ -211,11 +211,11 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models,
 // The parameters of the floor's define `name` as a spec spells them (`dst`, `a.0`...).
 func:param_names = List<string>(FloorText->:ft, int64:fi) never fails {
     List<string>:out = raw list_init::<string>(8i64);
-    for (int64:p in 0i64...ft.fns.items[fi].params.count) {
-        string:pn = raw strlist_view(ft.fns.items[fi].params, p);
+    for (int64:p in 0i64...ft.fns[fi].params.count) {
+        string:pn = raw strlist_view(ft.fns[fi].params, p);
         if (pn.len == 0i64) { continue; }
         string:bare = raw text_slice(pn, 1i64, pn.len);
-        string:pty = raw strlist_view(ft.fns.items[fi].param_tys, p);
+        string:pty = raw strlist_view(ft.fns[fi].param_tys, p);
         if (raw is_aggregate_ty(pty)) {
             List<string>:fs = raw struct_fields(pty);
             if (raw text_starts_with(pty, "%")) { fs = raw struct_fields(raw floor_type_body(ft, pty)); }
@@ -233,7 +233,7 @@ func:param_names = List<string>(FloorText->:ft, int64:fi) never fails {
 
 // Does a block of the define carry the label?
 func:has_label = bool(FloorText->:ft, int64:fi, string:label) never fails {
-    pass ((raw floor_block_index(@ft.fns.items[fi], label)) >= 0i64);
+    pass ((raw floor_block_index(@ft.fns[fi], label)) >= 0i64);
 };
 
 // THE SPEC BELT (D-288 §2.11): every `(symbol ...)` section names a define
@@ -249,7 +249,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
     List<string>:fl = raw list_init::<string>(4i64);
     List<string>:seen = raw list_init::<string>(64i64);
     for (int64:i in 0i64...s.roots.count) {
-        int64:r = s.roots.items[i];
+        int64:r = s.roots[i];
         string:head = raw sx_head(s, r);
         if (raw text_eq(head, "shared")) { continue; }
         if (!(raw text_eq(head, "symbol"))) {
@@ -266,9 +266,9 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
         bool:excused = false;
         bool:summary = false;
         bool:has_ensures = false;
-        int64:c = s.nodes.items[r].first;
-        c = s.nodes.items[c].next;   // past `symbol`
-        c = s.nodes.items[c].next;   // past the name
+        int64:c = s.nodes[r].first;
+        c = s.nodes[c].next;   // past `symbol`
+        c = s.nodes[c].next;   // past the name
         while (c >= 0i64) {
             if (!(raw sx_is_list(s, c))) {
                 drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a bare word inside the section of ", name));
@@ -308,16 +308,16 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
                     drop strlist_push(@fl, w2);
                 }
                 // a sub-clause the translator does not read would be dropped in silence (1.5.6c step 1)
-                int64:lc = s.nodes.items[c].first;
-                lc = s.nodes.items[lc].next;   // past `loop`
-                if (lc >= 0i64) { lc = s.nodes.items[lc].next; }   // past the label
+                int64:lc = s.nodes[c].first;
+                lc = s.nodes[lc].next;   // past `loop`
+                if (lc >= 0i64) { lc = s.nodes[lc].next; }   // past the label
                 while (lc >= 0i64) {
                     if (!(raw sx_is_list(s, lc))) {
                         string:w5 = string_concat("floor: runtime/npkrt.spec: a bare word inside the loop ", label);
                         w5 = string_concat(w5, " of ");
                         w5 = string_concat(w5, name);
                         drop strlist_push(@fl, w5);
-                        lc = s.nodes.items[lc].next;
+                        lc = s.nodes[lc].next;
                         continue;
                     }
                     string:lh = raw sx_head(s, lc);
@@ -330,7 +330,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
                         w6 = string_concat(w6, lh);
                         drop strlist_push(@fl, w6);
                     }
-                    lc = s.nodes.items[lc].next;
+                    lc = s.nodes[lc].next;
                 }
                 if ((raw spec_clause_count(s, c, "objects")) > 1i64) {
                     string:w7 = string_concat("floor: runtime/npkrt.spec: a clause read once and written twice in the loop ", label);
@@ -346,7 +346,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
                 w3 = string_concat(w3, ch);
                 drop strlist_push(@fl, w3);
             }
-            c = s.nodes.items[c].next;
+            c = s.nodes[c].next;
         }
         // A HEAD THE TRANSLATOR READS ONCE MAY BE WRITTEN ONCE (1.5.6c step 1):
         // `spec_clause(s, sec, HEAD, 0)` is how `floor_smt.npk` reads each of
@@ -413,9 +413,9 @@ pub func:floor_classes = List<string>(FloorText->:ft) never fails {
     for (int64:i in 0i64...n) {
         bool:a = false;
         bool:at = false;
-        for (int64:b in 0i64...ft.fns.items[i].blocks.count) {
-            for (int64:l in 0i64...ft.fns.items[i].blocks.items[b].lines.count) {
-                string:ln = raw strlist_view(ft.fns.items[i].blocks.items[b].lines, l);
+        for (int64:b in 0i64...ft.fns[i].blocks.count) {
+            for (int64:l in 0i64...ft.fns[i].blocks[b].lines.count) {
+                string:ln = raw strlist_view(ft.fns[i].blocks[b].lines, l);
                 if (raw has_word(ln, "asm")) { a = true; }
                 if ((raw text_index_of(ln, "call ")) >= 0i64) {
                     for (int64:ai in 0i64...ft.asm_syms.count) {
@@ -432,15 +432,15 @@ pub func:floor_classes = List<string>(FloorText->:ft) never fails {
     }
     // reaches asm: a fixpoint over the call graph
     List<bool>:reaches = raw list_init::<bool>(n + 1i64);
-    for (int64:i2 in 0i64...n) { drop list_push(@reaches, is_asm.items[i2]); }
+    for (int64:i2 in 0i64...n) { drop list_push(@reaches, is_asm[i2]); }
     bool:grew = true;
     while (grew) {
         grew = false;
         for (int64:i3 in 0i64...n) {
-            if (reaches.items[i3]) { continue; }
-            for (int64:b2 in 0i64...ft.fns.items[i3].blocks.count) {
-                for (int64:l2 in 0i64...ft.fns.items[i3].blocks.items[b2].lines.count) {
-                    string:ln2 = raw strlist_view(ft.fns.items[i3].blocks.items[b2].lines, l2);
+            if (reaches[i3]) { continue; }
+            for (int64:b2 in 0i64...ft.fns[i3].blocks.count) {
+                for (int64:l2 in 0i64...ft.fns[i3].blocks[b2].lines.count) {
+                    string:ln2 = raw strlist_view(ft.fns[i3].blocks[b2].lines, l2);
                     if ((raw text_index_of(ln2, "call ")) < 0i64) { continue; }
                     int64:at2 = raw text_find_byte(ln2, 64u8, 0i64);
                     if (at2 < 0i64) { continue; }
@@ -448,15 +448,15 @@ pub func:floor_classes = List<string>(FloorText->:ft) never fails {
                     while ((e < ln2.len) && (ln2.ptr[e] != 40u8) && (ln2.ptr[e] != 32u8)) { e = e + 1i64; }
                     int64:ci = raw floor_fn_index(ft, raw text_slice(ln2, at2, e));
                     if (ci < 0i64) { continue; }
-                    if (reaches.items[ci]) { reaches.items[i3] = true; grew = true; }
+                    if (reaches[ci]) { reaches[i3] = true; grew = true; }
                 }
             }
         }
     }
     for (int64:i4 in 0i64...n) {
-        if (is_asm.items[i4]) { drop strlist_push(@cls, "asm"); continue; }
-        if (is_atomic.items[i4]) { drop strlist_push(@cls, "atomic"); continue; }
-        if (reaches.items[i4]) { drop strlist_push(@cls, "syscall"); continue; }
+        if (is_asm[i4]) { drop strlist_push(@cls, "asm"); continue; }
+        if (is_atomic[i4]) { drop strlist_push(@cls, "atomic"); continue; }
+        if (reaches[i4]) { drop strlist_push(@cls, "syscall"); continue; }
         drop strlist_push(@cls, "pure");
     }
     pass cls;
@@ -505,12 +505,12 @@ pub func:floor_disposition = string(Sxs->:s, string:name, string:cls, List<ManRo
     string:modelled = "";
     for (int64:mi in 0i64...models.count) {
         bool:names_it = false;
-        for (int64:si in 0i64...models.items[mi].steps.count) {
-            if (raw strlist_contains(models.items[mi].steps.items[si].ir_syms, name)) { names_it = true; }
+        for (int64:si in 0i64...models[mi].steps.count) {
+            if (raw strlist_contains(models[mi].steps[si].ir_syms, name)) { names_it = true; }
         }
         if (!names_it) { continue; }
         if (modelled.len > 0i64) { modelled = string_concat(modelled, ", "); }
-        modelled = string_concat(modelled, raw strlist_view_of(models.items[mi].name));
+        modelled = string_concat(modelled, raw strlist_view_of(models[mi].name));
     }
     int64:sec = raw spec_section(s, name);
     if (sec < 0i64) {
@@ -521,11 +521,11 @@ pub func:floor_disposition = string(Sxs->:s, string:name, string:cls, List<ManRo
     int64:b = 0i64;
     int64:o = 0i64;
     for (int64:i in 0i64...rows.count) {
-        if (!(raw text_eq(raw strlist_view_of(rows.items[i].symbol), name))) { continue; }
-        if (rows.items[i].kind != (raw OK_FLOOR_SPEC())) { continue; }
-        if (rows.items[i].verdict == (raw OV_DISCHARGED())) { d = d + 1i64; }
-        if (rows.items[i].verdict == (raw OV_BUDGET())) { b = b + 1i64; }
-        if (rows.items[i].verdict == (raw OV_OPEN())) { o = o + 1i64; }
+        if (!(raw text_eq(raw strlist_view_of((<-rows)[i].symbol), name))) { continue; }
+        if ((<-rows)[i].kind != (raw OK_FLOOR_SPEC())) { continue; }
+        if ((<-rows)[i].verdict == (raw OV_DISCHARGED())) { d = d + 1i64; }
+        if ((<-rows)[i].verdict == (raw OV_BUDGET())) { b = b + 1i64; }
+        if ((<-rows)[i].verdict == (raw OV_OPEN())) { o = o + 1i64; }
     }
     string:out = "";
     if ((d + b + o) > 0i64) {
@@ -566,7 +566,7 @@ pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:r
     List<string>:cls = raw floor_classes(ft);
     List<string>:keyed = raw list_init::<string>(ft.fns.count + 1i64);
     for (int64:i in 0i64...ft.fns.count) {
-        string:name = raw strlist_view_of(ft.fns.items[i].name);
+        string:name = raw strlist_view_of(ft.fns[i].name);
         string:ln = string_concat("| `", name);
         ln = string_concat(ln, "` | ");
         ln = string_concat(ln, raw strlist_view(cls, i));
@@ -578,7 +578,7 @@ pub func:tcb_floor_rows = List<string>(FloorText->:ft, Sxs->:s, List<ManRow>->:r
     // every `module asm` symbol with a body (1.5.8 step 2b; DEF-64): the
     // assembler's input, which no translator and no transform reads
     for (int64:a in 0i64...ft.asm_bodies.count) {
-        string:an = raw strlist_view_of(ft.asm_bodies.items[a].name);
+        string:an = raw strlist_view_of(ft.asm_bodies[a].name);
         if ((raw floor_fn_index(ft, an)) >= 0i64) { continue; }
         string:la = string_concat("| `", an);
         la = string_concat(la, "` | asm | trusted (module asm) |");
@@ -598,13 +598,13 @@ pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:
     List<int64>:counts = raw list_init::<int64>(4i64);
     int64:total = 0i64;
     for (int64:i in 0i64...rows.count) {
-        if (rows.items[i].verdict != (raw OV_BUDGET())) { continue; }
+        if ((<-rows)[i].verdict != (raw OV_BUDGET())) { continue; }
         total = total + 1i64;
-        string:sym = raw strlist_view_of(rows.items[i].symbol);
+        string:sym = raw strlist_view_of((<-rows)[i].symbol);
         int64:at = 0i64 - 1i64;
         for (int64:k in 0i64...syms.count) { if (raw text_eq(raw strlist_view(syms, k), sym)) { at = k; } }
         if (at < 0i64) { drop strlist_push(@syms, sym); drop list_push(@counts, 1i64); }
-        else { counts.items[at] = counts.items[at] + 1i64; }
+        else { counts[at] = counts[at] + 1i64; }
     }
     string:out = "**Rows the profile did not decide** (`budget`; the verdict rule keeps them as\nresidue, never as a proof). ";
     if (total > 0i64) { out = string_concat(out, string_concat(int_to_string(total), " of them")); }
@@ -615,7 +615,7 @@ pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:
     for (int64:o in 0i64...ordered.count) {
         string:sym2 = raw strlist_view(ordered, o);
         int64:c2 = 0i64;
-        for (int64:k2 in 0i64...syms.count) { if (raw text_eq(raw strlist_view(syms, k2), sym2)) { c2 = counts.items[k2]; } }
+        for (int64:k2 in 0i64...syms.count) { if (raw text_eq(raw strlist_view(syms, k2), sym2)) { c2 = counts[k2]; } }
         out = string_concat(out, "- `");
         out = string_concat(out, sym2);
         out = string_concat(out, "` -- ");
@@ -624,7 +624,7 @@ pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:
     }
     out = string_concat(out, "\n**Sentences the spec carries**, each a claim NOT made:\n\n");
     for (int64:r in 0i64...s.roots.count) {
-        int64:root = s.roots.items[r];
+        int64:root = s.roots[r];
         if (!(raw text_eq(raw sx_head(s, root), "symbol"))) { continue; }
         string:name = raw sx_atom(s, raw sx_nth(s, root, 1i64));
         int64:rs = raw spec_clause(s, root, "residue", 0i64);
@@ -668,7 +668,7 @@ pub func:tcb_residue_region = string(Sxs->:s, List<ManRow>->:rows, List<MModel>:
         for (int64:m in 0i64...models.count) {
             if (m > 0i64) { out = string_concat(out, ", "); }
             out = string_concat(out, "`");
-            out = string_concat(out, raw strlist_view_of(models.items[m].name));
+            out = string_concat(out, raw strlist_view_of(models[m].name));
             out = string_concat(out, "`");
         }
         out = string_concat(out, ".");
@@ -716,9 +716,9 @@ func:callers_translated = bool(Sxs->:s, string:name) never fails {
 
 // Does define `fi` call `sym` (a direct call, anywhere in its body)?
 func:callers_calls = bool(FloorText->:ft, int64:fi, string:sym) never fails {
-    List<FCall>:cs = raw floor_calls(@ft.fns.items[fi]);
+    List<FCall>:cs = raw floor_calls(@ft.fns[fi]);
     for (int64:i in 0i64...cs.count) {
-        if (raw text_eq(raw strlist_view_of(cs.items[i].callee), sym)) { pass true; }
+        if (raw text_eq(raw strlist_view_of(cs[i].callee), sym)) { pass true; }
     }
     pass false;
 };
@@ -767,12 +767,12 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
         for (int64:c in 0i64...ft.fns.count) {
             if (c == fi) { continue; }
             if (!(raw callers_calls(ft, c, sym))) { continue; }
-            string:cname = raw strlist_view_of(ft.fns.items[c].name);
+            string:cname = raw strlist_view_of(ft.fns[c].name);
             if (raw callers_translated(s, cname)) { drop strlist_push(@covered, cname); }
             else { drop strlist_push(@unproved, cname); }
         }
         List<string>:none = raw list_init::<string>(1i64);
-        bool:exported = !ft.fns.items[fi].internal;
+        bool:exported = !ft.fns[fi].internal;
         total = total + 1i64;
         if (unproved.count > 0i64) { n_open = n_open + 1i64; }
         if (exported) { n_exp = n_exp + 1i64; }
@@ -781,9 +781,9 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
         int64:ex_c = 0i64;
         int64:ex_n = 0i64;
         for (int64:q in 0i64...clauses.count) {
-            if (!(raw text_eq(raw strlist_view_of(clauses.items[q].symbol), sym))) { continue; }
+            if (!(raw text_eq(raw strlist_view_of(clauses[q].symbol), sym))) { continue; }
             ex_n = ex_n + 1i64;
-            if (raw text_eq(raw strlist_view_of(clauses.items[q].status), "checked")) { ex_c = ex_c + 1i64; }
+            if (raw text_eq(raw strlist_view_of(clauses[q].status), "checked")) { ex_c = ex_c + 1i64; }
         }
         table = string_concat(table, "\n| `");
         table = string_concat(table, sym);
@@ -804,7 +804,7 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
     int64:n_checked = 0i64;
     int64:n_listed = 0i64;
     for (int64:q2 in 0i64...clauses.count) {
-        if (raw text_eq(raw strlist_view_of(clauses.items[q2].status), "checked")) { n_checked = n_checked + 1i64; } else { n_listed = n_listed + 1i64; }
+        if (raw text_eq(raw strlist_view_of(clauses[q2].status), "checked")) { n_checked = n_checked + 1i64; } else { n_listed = n_listed + 1i64; }
     }
     string:out = string_concat(int_to_string(total), " sections have rows AND assume something of their caller. For ");
     out = string_concat(out, int_to_string(n_closed));
@@ -825,14 +825,14 @@ pub func:tcb_callers_region = string(FloorText->:ft, Sxs->:s) never fails {
         out = string_concat(out, "\n\nListed, not checked -- a clause the entry checker cannot evaluate over the entry state:");
         bool:first_l = true;
         for (int64:q3 in 0i64...clauses.count) {
-            if (raw text_eq(raw strlist_view_of(clauses.items[q3].status), "checked")) { continue; }
+            if (raw text_eq(raw strlist_view_of(clauses[q3].status), "checked")) { continue; }
             if (first_l) { out = string_concat(out, "\n"); first_l = false; } else { out = string_concat(out, "\n"); }
             out = string_concat(out, "- `");
-            out = string_concat(out, raw strlist_view_of(clauses.items[q3].symbol));
+            out = string_concat(out, raw strlist_view_of(clauses[q3].symbol));
             out = string_concat(out, "`: `");
-            out = string_concat(out, raw strlist_view_of(clauses.items[q3].text));
+            out = string_concat(out, raw strlist_view_of(clauses[q3].text));
             out = string_concat(out, "` -- ");
-            out = string_concat(out, raw strlist_view_of(clauses.items[q3].reason));
+            out = string_concat(out, raw strlist_view_of(clauses[q3].reason));
         }
     }
     pass out;
@@ -913,15 +913,15 @@ func:sys_node_count = int64(FloorText->:ft) never fails {
 };
 
 func:sys_node_name = string(FloorText->:ft, int64:fi) never fails {
-    if (fi < ft.fns.count) { pass (raw strlist_view_of(ft.fns.items[fi].name)); }
-    pass (raw strlist_view_of(ft.asm_bodies.items[fi - ft.fns.count].name));
+    if (fi < ft.fns.count) { pass (raw strlist_view_of(ft.fns[fi].name)); }
+    pass (raw strlist_view_of(ft.asm_bodies[fi - ft.fns.count].name));
 };
 
 func:sys_node_index = int64(FloorText->:ft, string:name) never fails {
     int64:fi = raw floor_fn_index(ft, name);
     if (fi >= 0i64) { pass fi; }
     for (int64:k in 0i64...ft.asm_bodies.count) {
-        if (raw text_eq(raw strlist_view_of(ft.asm_bodies.items[k].name), name)) { pass (ft.fns.count + k); }
+        if (raw text_eq(raw strlist_view_of(ft.asm_bodies[k].name), name)) { pass (ft.fns.count + k); }
     }
     pass (0i64 - 1i64);
 };
@@ -932,23 +932,23 @@ pub func:floor_direct_syscalls = List<int64>(FloorText->:ft, int64:fi) never fai
     List<int64>:out = raw list_init::<int64>(4i64);
     if (fi >= ft.fns.count) {
         int64:ai = fi - ft.fns.count;
-        for (int64:s in 0i64...ft.asm_bodies.items[ai].sys.count) {
-            if (!(ft.asm_bodies.items[ai].read.items[s])) { continue; }
-            int64:nr = ft.asm_bodies.items[ai].sys.items[s];
+        for (int64:s in 0i64...ft.asm_bodies[ai].sys.count) {
+            if (!(ft.asm_bodies[ai].read[s])) { continue; }
+            int64:nr = ft.asm_bodies[ai].sys[s];
             bool:had = false;
-            for (int64:h in 0i64...out.count) { if (out.items[h] == nr) { had = true; } }
+            for (int64:h in 0i64...out.count) { if (out[h] == nr) { had = true; } }
             if (!had) { drop list_push(@out, nr); }
         }
         for (int64:x in 0i64...out.count) {
             for (int64:y in (x + 1i64)...out.count) {
-                if (out.items[y] < out.items[x]) { int64:tmp = out.items[x]; out.items[x] = out.items[y]; out.items[y] = tmp; }
+                if (out[y] < out[x]) { int64:tmp = out[x]; out[x] = out[y]; out[y] = tmp; }
             }
         }
         pass out;
     }
-    for (int64:b in 0i64...ft.fns.items[fi].blocks.count) {
-        for (int64:l in 0i64...ft.fns.items[fi].blocks.items[b].lines.count) {
-            string:ln = raw strlist_view(ft.fns.items[fi].blocks.items[b].lines, l);
+    for (int64:b in 0i64...ft.fns[fi].blocks.count) {
+        for (int64:l in 0i64...ft.fns[fi].blocks[b].lines.count) {
+            string:ln = raw strlist_view(ft.fns[fi].blocks[b].lines, l);
             int64:p = raw text_index_of(ln, "call i64 @npk_sys6(i64 ");
             if (p < 0i64) { continue; }
             int64:s2 = p + 23i64;
@@ -958,14 +958,14 @@ pub func:floor_direct_syscalls = List<int64>(FloorText->:ft, int64:fi) never fai
             if (!(raw u128_parse(raw text_slice(ln, s2, e), 64i64, @v))) { continue; }
             int64:n = v =>! int64;
             bool:have = false;
-            for (int64:i in 0i64...out.count) { if (out.items[i] == n) { have = true; } }
+            for (int64:i in 0i64...out.count) { if (out[i] == n) { have = true; } }
             if (!have) { drop list_push(@out, n); }
         }
     }
     // ascending
     for (int64:i2 in 0i64...out.count) {
         for (int64:j in (i2 + 1i64)...out.count) {
-            if (out.items[j] < out.items[i2]) { int64:t = out.items[i2]; out.items[i2] = out.items[j]; out.items[j] = t; }
+            if (out[j] < out[i2]) { int64:t = out[i2]; out[i2] = out[j]; out[j] = t; }
         }
     }
     pass out;
@@ -976,18 +976,18 @@ func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
     List<int64>:out = raw list_init::<int64>(4i64);
     if (fi >= ft.fns.count) {
         int64:ai = fi - ft.fns.count;
-        for (int64:c in 0i64...ft.asm_bodies.items[ai].calls.count) {
-            int64:ni = raw sys_node_index(ft, raw strlist_view(ft.asm_bodies.items[ai].calls, c));
+        for (int64:c in 0i64...ft.asm_bodies[ai].calls.count) {
+            int64:ni = raw sys_node_index(ft, raw strlist_view(ft.asm_bodies[ai].calls, c));
             if (ni < 0i64) { continue; }
             bool:had = false;
-            for (int64:h in 0i64...out.count) { if (out.items[h] == ni) { had = true; } }
+            for (int64:h in 0i64...out.count) { if (out[h] == ni) { had = true; } }
             if (!had) { drop list_push(@out, ni); }
         }
         pass out;
     }
-    for (int64:b in 0i64...ft.fns.items[fi].blocks.count) {
-        for (int64:l in 0i64...ft.fns.items[fi].blocks.items[b].lines.count) {
-            string:ln = raw strlist_view(ft.fns.items[fi].blocks.items[b].lines, l);
+    for (int64:b in 0i64...ft.fns[fi].blocks.count) {
+        for (int64:l in 0i64...ft.fns[fi].blocks[b].lines.count) {
+            string:ln = raw strlist_view(ft.fns[fi].blocks[b].lines, l);
             if ((raw text_index_of(ln, "call ")) < 0i64) { continue; }
             int64:at = raw text_find_byte(ln, 64u8, 0i64);
             if (at < 0i64) { continue; }
@@ -996,7 +996,7 @@ func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
             int64:ci = raw sys_node_index(ft, raw text_slice(ln, at, e));
             if (ci < 0i64) { continue; }
             bool:have = false;
-            for (int64:i in 0i64...out.count) { if (out.items[i] == ci) { have = true; } }
+            for (int64:i in 0i64...out.count) { if (out[i] == ci) { have = true; } }
             if (!have) { drop list_push(@out, ci); }
         }
     }
@@ -1011,30 +1011,29 @@ pub func:floor_reach_syscalls = List<int64>(FloorText->:ft, int64:fi, bool->:tra
     List<bool>:seen = raw list_init::<bool>((raw sys_node_count(ft)) + 1i64);
     for (int64:i in 0i64...(raw sys_node_count(ft))) { drop list_push(@seen, false); }
     drop list_push(@work, fi);
-    seen.items[fi] = true;
+    seen[fi] = true;
     <-traps = false;
     while (work.count > 0i64) {
-        int64:cur = work.items[work.count - 1i64];
-        work.count = work.count - 1i64;
+        int64:cur = raw list_pop(@work);
         List<int64>:d = raw floor_direct_syscalls(ft, cur);
         for (int64:k in 0i64...d.count) {
             bool:have = false;
-            for (int64:i2 in 0i64...out.count) { if (out.items[i2] == d.items[k]) { have = true; } }
-            if (!have) { drop list_push(@out, d.items[k]); }
+            for (int64:i2 in 0i64...out.count) { if (out[i2] == d[k]) { have = true; } }
+            if (!have) { drop list_push(@out, d[k]); }
         }
         List<int64>:cs = raw floor_callees(ft, cur);
         for (int64:c in 0i64...cs.count) {
-            int64:ci = cs.items[c];
+            int64:ci = cs[c];
             if (raw is_trap_entry(raw sys_node_name(ft, ci))) { <-traps = true; continue; }
-            if (seen.items[ci]) { continue; }
-            seen.items[ci] = true;
+            if (seen[ci]) { continue; }
+            seen[ci] = true;
             drop list_push(@work, ci);
         }
     }
     if (raw is_trap_entry(raw sys_node_name(ft, fi))) { <-traps = false; }
     for (int64:i3 in 0i64...out.count) {
         for (int64:j in (i3 + 1i64)...out.count) {
-            if (out.items[j] < out.items[i3]) { int64:t = out.items[i3]; out.items[i3] = out.items[j]; out.items[j] = t; }
+            if (out[j] < out[i3]) { int64:t = out[i3]; out[i3] = out[j]; out[j] = t; }
         }
     }
     pass out;
@@ -1046,9 +1045,9 @@ func:syscall_list_text = string(List<int64>:ns) never fails {
     string:out = "";
     for (int64:i in 0i64...ns.count) {
         if (i > 0i64) { out = string_concat(out, ", "); }
-        out = string_concat(out, int_to_string(ns.items[i]));
+        out = string_concat(out, int_to_string(ns[i]));
         out = string_concat(out, " ");
-        out = string_concat(out, raw syscall_name(ns.items[i]));
+        out = string_concat(out, raw syscall_name(ns[i]));
     }
     pass out;
 };
@@ -1104,14 +1103,14 @@ pub func:tcb_syscall_rows = List<string>(FloorText->:ft) never fails {
 pub func:floor_asm_census_findings = List<string>(FloorText->:ft) never fails {
     List<string>:fl = raw list_init::<string>(2i64);
     for (int64:i in 0i64...ft.asm_unread_lines.count) {
-        string:w = string_concat("floor: floor-asm-line-unread: line ", int_to_string(ft.asm_unread_lines.items[i]));
+        string:w = string_concat("floor: floor-asm-line-unread: line ", int_to_string(ft.asm_unread_lines[i]));
         w = string_concat(w, " is `module asm` but not `module asm \"TEXT\"` followed by nothing or a `;` comment -- the census could not read the symbol it belongs to (DEF-64)");
         drop strlist_push(@fl, w);
     }
     for (int64:a in 0i64...ft.asm_bodies.count) {
-        for (int64:s in 0i64...ft.asm_bodies.items[a].read.count) {
-            if (ft.asm_bodies.items[a].read.items[s]) { continue; }
-            string:w2 = string_concat("floor: floor-asm-syscall-unread: `", raw strlist_view_of(ft.asm_bodies.items[a].name));
+        for (int64:s in 0i64...ft.asm_bodies[a].read.count) {
+            if (ft.asm_bodies[a].read[s]) { continue; }
+            string:w2 = string_concat("floor: floor-asm-syscall-unread: `", raw strlist_view_of(ft.asm_bodies[a].name));
             w2 = string_concat(w2, "`'s syscall #");
             w2 = string_concat(w2, int_to_string(s + 1i64));
             w2 = string_concat(w2, " has no `mov $N, %eax` immediately before it -- the census reads a `module asm` syscall's number from that instruction alone, never from a register it would have to trace (DEF-64); load the number right before the `syscall`");
@@ -1127,8 +1126,8 @@ pub func:floor_syscall_sites = List<string>(FloorText->:ft) never fails {
     for (int64:ai in 0i64...ft.asm_bodies.count) {
         List<int64>:da = raw floor_direct_syscalls(ft, ft.fns.count + ai);
         for (int64:ak in 0i64...da.count) {
-            if ((raw ke_effect(da.items[ak])) != 4i64) { continue; }
-            string:wa = string_concat("floor: floor-syscall-row: runtime/npkrt.ll issues syscall ", int_to_string(da.items[ak]));
+            if ((raw ke_effect(da[ak])) != 4i64) { continue; }
+            string:wa = string_concat("floor: floor-syscall-row: runtime/npkrt.ll issues syscall ", int_to_string(da[ak]));
             wa = string_concat(wa, ", which the kernel-effect table has no row for -- give it one in VERIFICATION_REFERENCE SS9.2's `kernel-effects` region and regenerate");
             drop strlist_push(@fl, wa);
         }
@@ -1136,14 +1135,14 @@ pub func:floor_syscall_sites = List<string>(FloorText->:ft) never fails {
     for (int64:i in 0i64...ft.fns.count) {
         List<int64>:d = raw floor_direct_syscalls(ft, i);
         for (int64:k in 0i64...d.count) {
-            if ((raw ke_effect(d.items[k])) != 4i64) { continue; }
-            string:w = string_concat("floor: floor-syscall-row: runtime/npkrt.ll issues syscall ", int_to_string(d.items[k]));
+            if ((raw ke_effect(d[k])) != 4i64) { continue; }
+            string:w = string_concat("floor: floor-syscall-row: runtime/npkrt.ll issues syscall ", int_to_string(d[k]));
             w = string_concat(w, ", which the kernel-effect table has no row for -- give it one in VERIFICATION_REFERENCE SS9.2's `kernel-effects` region and regenerate");
             drop strlist_push(@fl, w);
         }
-        for (int64:bi in 0i64...ft.fns.items[i].blocks.count) {
-            for (int64:li in 0i64...ft.fns.items[i].blocks.items[bi].lines.count) {
-                List<string>:sa = raw sys6_args(raw strlist_view(ft.fns.items[i].blocks.items[bi].lines, li));
+        for (int64:bi in 0i64...ft.fns[i].blocks.count) {
+            for (int64:li in 0i64...ft.fns[i].blocks[bi].lines.count) {
+                List<string>:sa = raw sys6_args(raw strlist_view(ft.fns[i].blocks[bi].lines, li));
                 if (sa.count == 0i64) { continue; }
                 int64:nr = raw sys6_int(raw strlist_view(sa, 0i64));
                 if (nr < 0i64) { continue; }
@@ -1155,7 +1154,7 @@ pub func:floor_syscall_sites = List<string>(FloorText->:ft) never fails {
                 bool:admitted = false;
                 if (oval >= 0i64) { admitted = raw ke_option_ok(nr, oval); }
                 if (admitted) { continue; }
-                string:wo = string_concat("floor: floor-syscall-option: `", ft.fns.items[i].name);
+                string:wo = string_concat("floor: floor-syscall-option: `", ft.fns[i].name);
                 wo = string_concat(wo, "` issues syscall ");
                 wo = string_concat(wo, int_to_string(nr));
                 wo = string_concat(wo, " (");

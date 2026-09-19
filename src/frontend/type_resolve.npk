@@ -801,8 +801,8 @@ func:foldenv_new = FoldEnv() never fails {
 func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
     int32:i = 0i32;
     while ((i => int64) < e.names.count) {
-        if (e.names.items[i => int64] == name) {
-            e.vals.items[i => int64] = move(v);
+        if (e.names[i => int64] == name) {
+            e.vals[i => int64] = move(v);
             pass NIL;
         }
         i = i + 1i32;
@@ -816,14 +816,14 @@ func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
 func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
     int32:i = 0i32;
     while ((i => int64) < e.names.count) {
-        if (e.names.items[i => int64] == name) {
+        if (e.names[i => int64] == name) {
             // Deep-viewed (D-183): the env owns the text; the caller's copy views.
-            ConstVal:cv = ConstVal{ kind: e.vals.items[i => int64].kind,
-                                    type_id: e.vals.items[i => int64].type_id,
-                                    num: e.vals.items[i => int64].num,
+            ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
+                                    type_id: e.vals[i => int64].type_id,
+                                    num: e.vals[i => int64].num,
                                     text: string_from_bytes(
-                                        e.vals.items[i => int64].text.ptr,
-                                        e.vals.items[i => int64].text.len) };
+                                        e.vals[i => int64].text.ptr,
+                                        e.vals[i => int64].text.len) };
             pass cv;
         }
         i = i + 1i32;

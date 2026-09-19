@@ -107,7 +107,7 @@ pub func:floor_stack_check = List<string>(string:floor_text, string:name) never 
     List<string>:found = raw list_init::<string>(4i64);
     FloorText:ft = raw floor_parse(floor_text);
     for (int64:fi in 0i64...ft.fns.count) {
-        if (ft.fns.items[fi].blocks.count == 0i64) { continue; }
+        if (ft.fns[fi].blocks.count == 0i64) { continue; }
         // the entry block defines every alloca before anything else names it
         // (an alloca in any other block is D-173's finding, `ir_allocas_hoisted`)
         List<string>:a_reg = raw list_init::<string>(4i64);     // the allocas, in order
@@ -118,15 +118,15 @@ pub func:floor_stack_check = List<string>(string:floor_text, string:name) never 
         List<string>:k_reg = raw list_init::<string>(8i64);     // a register known as alloca + constant offset
         List<int64>:k_owner = raw list_init::<int64>(8i64);
         List<int64>:k_off = raw list_init::<int64>(8i64);
-        for (int64:li2 in 0i64...ft.fns.items[fi].blocks.items[0i64].lines.count) {
-            string:line = raw strlist_copy(ft.fns.items[fi].blocks.items[0i64].lines, li2);
+        for (int64:li2 in 0i64...ft.fns[fi].blocks[0i64].lines.count) {
+            string:line = raw strlist_copy(ft.fns[fi].blocks[0i64].lines, li2);
             // 1. the alloca
             string:ar = raw alloca_reg(line);
             if (ar.len > 0i64) {
                 int64:nb = raw alloca_bytes(raw alloca_type(line));
                 if (nb < 0i64) {
                     string:mu = string_concat(name, ": alloca-not-defined: `");
-                    mu = string_concat(mu, ft.fns.items[fi].name);
+                    mu = string_concat(mu, ft.fns[fi].name);
                     mu = string_concat(mu, "`: an alloca of a type the stack rule does not size: ");
                     mu = string_concat(mu, raw alloca_type(line));
                     drop strlist_push(@found, mu);
@@ -198,10 +198,10 @@ pub func:floor_stack_check = List<string>(string:floor_text, string:name) never 
                 if ((wb > 0i64) && (ap > 0i64)) {
                     int64:ks = raw known_at(k_reg, raw strlist_view(w, ap));
                     if (ks >= 0i64) {
-                        int64:oi = k_owner.items[ks];
+                        int64:oi = k_owner[ks];
                         for (int64:by in 0i64...wb) {
-                            int64:cell = k_off.items[ks] + by;
-                            if (cell < a_size.items[oi]) { have.items[a_base.items[oi] + cell] = 1i64; }
+                            int64:cell = k_off[ks] + by;
+                            if (cell < a_size[oi]) { have[a_base[oi] + cell] = 1i64; }
                         }
                         continue;
                     }
@@ -217,7 +217,7 @@ pub func:floor_stack_check = List<string>(string:floor_text, string:name) never 
                 int64:mval = raw word_int(raw strlist_view(w, 8i64));
                 if ((km >= 0i64) && (mval >= 0i64)) {
                     for (int64:by2 in 0i64...mval) {
-                        if (by2 < a_size.items[km]) { have.items[a_base.items[km] + by2] = 1i64; }
+                        if (by2 < a_size[km]) { have[a_base[km] + by2] = 1i64; }
                     }
                     continue;
                 }
@@ -226,18 +226,18 @@ pub func:floor_stack_check = List<string>(string:floor_text, string:name) never 
             for (int64:u in 0i64...w.count) {
                 int64:ku = raw known_at(k_reg, raw strlist_view(w, u));
                 if (ku < 0i64) { continue; }
-                int64:own3 = k_owner.items[ku];
-                if (a_told.items[own3] != 0i64) { continue; }
+                int64:own3 = k_owner[ku];
+                if (a_told[own3] != 0i64) { continue; }
                 int64:got = 0i64;
-                for (int64:c3 in 0i64...a_size.items[own3]) { got = got + have.items[a_base.items[own3] + c3]; }
-                if (got == a_size.items[own3]) { continue; }
-                a_told.items[own3] = 1i64;
+                for (int64:c3 in 0i64...a_size[own3]) { got = got + have[a_base[own3] + c3]; }
+                if (got == a_size[own3]) { continue; }
+                a_told[own3] = 1i64;
                 string:md = string_concat(name, ": alloca-not-defined: `");
-                md = string_concat(md, ft.fns.items[fi].name);
+                md = string_concat(md, ft.fns[fi].name);
                 md = string_concat(md, "` uses `");
                 md = string_concat(md, raw strlist_view(a_reg, own3));
                 md = string_concat(md, "` (");
-                md = string_concat(md, int_to_string(a_size.items[own3]));
+                md = string_concat(md, int_to_string(a_size[own3]));
                 md = string_concat(md, " bytes) before its entry block has defined all of it -- ");
                 md = string_concat(md, int_to_string(got));
                 md = string_concat(md, " byte(s) defined; cover it with stores or one llvm.memset of its whole size before anything else touches it (DEF-52)");
@@ -245,16 +245,16 @@ pub func:floor_stack_check = List<string>(string:floor_text, string:name) never 
             }
         }
         for (int64:ai in 0i64...a_reg.count) {
-            if (a_told.items[ai] != 0i64) { continue; }
+            if (a_told[ai] != 0i64) { continue; }
             int64:got2 = 0i64;
-            for (int64:c4 in 0i64...a_size.items[ai]) { got2 = got2 + have.items[a_base.items[ai] + c4]; }
-            if (got2 == a_size.items[ai]) { continue; }
+            for (int64:c4 in 0i64...a_size[ai]) { got2 = got2 + have[a_base[ai] + c4]; }
+            if (got2 == a_size[ai]) { continue; }
             string:me = string_concat(name, ": alloca-not-defined: `");
-            me = string_concat(me, ft.fns.items[fi].name);
+            me = string_concat(me, ft.fns[fi].name);
             me = string_concat(me, "` leaves `");
             me = string_concat(me, raw strlist_view(a_reg, ai));
             me = string_concat(me, "` (");
-            me = string_concat(me, int_to_string(a_size.items[ai]));
+            me = string_concat(me, int_to_string(a_size[ai]));
             me = string_concat(me, " bytes) with ");
             me = string_concat(me, int_to_string(got2));
             me = string_concat(me, " byte(s) defined at the end of its entry block -- cover it with stores or one llvm.memset of its whole size (DEF-52)");
@@ -316,7 +316,7 @@ func:rg_index = int64(RGraph->:g, string:name) never fails {
 
 func:rg_is_back = bool(List<int64>:bf, List<int64>:bt, int64:f, int64:t) never fails {
     for (int64:i in 0i64...bf.count) {
-        if ((bf.items[i] == f) && (bt.items[i] == t)) { pass true; }
+        if ((bf[i] == f) && (bt[i] == t)) { pass true; }
     }
     pass false;
 };
@@ -326,11 +326,11 @@ func:rg_is_back = bool(List<int64>:bf, List<int64>:bt, int64:f, int64:t) never f
 func:rg_walk = NIL(RGraph->:g, int64:f, List<int64>->:state, List<int64>->:parent,
                    List<int64>->:bf, List<int64>->:bt, List<string>->:found,
                    string:name) never fails {
-    state.items[f] = 1i64;
-    int64:c0 = g.cstart.items[f];
-    for (int64:k in 0i64...g.ccount.items[f]) {
-        int64:t = g.cidx.items[c0 + k];
-        if (state.items[t] == 1i64) {
+    (<-state)[f] = 1i64;
+    int64:c0 = g.cstart[f];
+    for (int64:k in 0i64...g.ccount[f]) {
+        int64:t = g.cidx[c0 + k];
+        if ((<-state)[t] == 1i64) {
             drop list_push(bf, f);
             drop list_push(bt, t);
             if (!(raw text_eq(raw strlist_view(g.names, t), "@npk_trap"))) {
@@ -339,13 +339,13 @@ func:rg_walk = NIL(RGraph->:g, int64:f, List<int64>->:state, List<int64>->:paren
                 while (true) {
                     drop list_push(@up, x);
                     if (x == t) { break; }
-                    if (parent.items[x] < 0i64) { break; }
-                    x = parent.items[x];
+                    if ((<-parent)[x] < 0i64) { break; }
+                    x = (<-parent)[x];
                 }
                 string:cyc = "";
                 int64:j = up.count - 1i64;
                 while (j >= 0i64) {
-                    cyc = string_concat(cyc, raw strlist_view(g.names, up.items[j]));
+                    cyc = string_concat(cyc, raw strlist_view(g.names, up[j]));
                     cyc = string_concat(cyc, " -> ");
                     j = j - 1i64;
                 }
@@ -356,30 +356,30 @@ func:rg_walk = NIL(RGraph->:g, int64:f, List<int64>->:state, List<int64>->:paren
             }
             continue;
         }
-        if (state.items[t] == 0i64) {
-            parent.items[t] = f;
+        if ((<-state)[t] == 0i64) {
+            (<-parent)[t] = f;
             drop rg_walk(g, t, state, parent, bf, bt, found, name);
         }
     }
-    state.items[f] = 2i64;
+    (<-state)[f] = 2i64;
     pass NIL;
 };
 
 func:rg_depth = int64(RGraph->:g, int64:f, List<int64>->:bf, List<int64>->:bt,
                       List<int64>->:memo, List<int64>->:via) never fails {
-    if (memo.items[f] >= 0i64) { pass memo.items[f]; }
+    if ((<-memo)[f] >= 0i64) { pass (<-memo)[f]; }
     int64:best = 0i64;
     int64:bv = 0i64 - 1i64;
-    int64:c0 = g.cstart.items[f];
-    for (int64:k in 0i64...g.ccount.items[f]) {
-        int64:t = g.cidx.items[c0 + k];
+    int64:c0 = g.cstart[f];
+    for (int64:k in 0i64...g.ccount[f]) {
+        int64:t = g.cidx[c0 + k];
         if (raw rg_is_back(<-bf, <-bt, f, t)) { continue; }
         int64:d = raw rg_depth(g, t, bf, bt, memo, via);
         if (d > best) { best = d; bv = t; }
     }
-    int64:mine = (g.frame.items[f] + 8i64) + best;
-    memo.items[f] = mine;
-    via.items[f] = bv;
+    int64:mine = (g.frame[f] + 8i64) + best;
+    (<-memo)[f] = mine;
+    (<-via)[f] = bv;
     pass mine;
 };
 
@@ -403,8 +403,8 @@ pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string
                        cstart: raw list_init::<int64>(256i64), ccount: raw list_init::<int64>(256i64),
                        cidx: raw list_init::<int64>(1024i64) };
     for (int64:i in 0i64...ft.fns.count) {
-        drop strlist_push(@g.names, ft.fns.items[i].name);
-        string:bare = raw text_slice(ft.fns.items[i].name, 1i64, ft.fns.items[i].name.len);
+        drop strlist_push(@g.names, ft.fns[i].name);
+        string:bare = raw text_slice(ft.fns[i].name, 1i64, ft.fns[i].name.len);
         int64:fr = 0i64 - 1i64;
         for (int64:k in 0i64...sizes.count) {
             string:ln = raw strlist_view(sizes, k);
@@ -418,7 +418,7 @@ pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string
         }
         if (fr < 0i64) {
             string:m = string_concat(name, ": floor-stack-reserve: no frame size for ");
-            m = string_concat(m, ft.fns.items[i].name);
+            m = string_concat(m, ft.fns[i].name);
             drop strlist_push(@out.findings, m);
             pass out;
         }
@@ -427,13 +427,13 @@ pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string
     for (int64:i2 in 0i64...ft.fns.count) {
         drop list_push(@g.cstart, g.cidx.count);
         int64:before = g.cidx.count;
-        List<FCall>:cl = raw floor_calls(@ft.fns.items[i2]);
+        List<FCall>:cl = raw floor_calls(@ft.fns[i2]);
         for (int64:k2 in 0i64...cl.count) {
-            int64:t = raw rg_index(@g, cl.items[k2].callee);
+            int64:t = raw rg_index(@g, cl[k2].callee);
             if (t < 0i64) { continue; }
             bool:seen = false;
             for (int64:q in before...g.cidx.count) {
-                if (g.cidx.items[q] == t) { seen = true; }
+                if (g.cidx[q] == t) { seen = true; }
             }
             if (!seen) { drop list_push(@g.cidx, t); }
         }
@@ -453,7 +453,7 @@ pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string
     List<int64>:bf = raw list_init::<int64>(4i64);
     List<int64>:bt = raw list_init::<int64>(4i64);
     for (int64:w in 0i64...n) {
-        if (state.items[w] == 0i64) { drop rg_walk(@g, w, @state, @parent, @bf, @bt, @out.findings, name); }
+        if (state[w] == 0i64) { drop rg_walk(@g, w, @state, @parent, @bf, @bt, @out.findings, name); }
     }
     if (out.findings.count > 0i64) { pass out; }
     int64:worst = 0i64;
@@ -465,7 +465,7 @@ pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string
     int64:x = wf;
     while (x >= 0i64) {
         drop strlist_push(@out.path, raw strlist_view(g.names, x));
-        x = via.items[x];
+        x = via[x];
     }
     int64:ti = raw rg_index(@g, "@npk_trap");
     int64:trap = 0i64;

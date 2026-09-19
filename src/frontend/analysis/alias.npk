@@ -206,14 +206,14 @@ func:alias_decl = NIL(Alias->:x, DeclId:id, int32:scope) never fails {
 // ONE FUNCTION: the pre-scan, then the walk over the body with the parameters'
 // assignment-admitted parties live from the entry.
 func:alias_fn = NIL(Alias->:x, DeclNode:d, StmtId:body) never fails {
-    x.live.count = 0i64;
-    x.frames.count = 0i64;
-    x.pre.count = 0i64;
-    x.call_marks.count = 0i64;
+    drop list_clear(@x.live);
+    drop list_clear(@x.frames);
+    drop list_clear(@x.pre);
+    drop list_clear(@x.call_marks);
     drop prescan_stmt(x, body, raw ALIAS_DEPTH());
     // A parameter holder's scope is the function: its parties are live at entry.
     for (int64:i in 0i64...x.pre.count) {
-        Party:pp = x.pre.items[i];
+        Party:pp = x.pre[i];
         if (pp.holder == 0i32) { continue; }
         Symbol:hs = raw symtab_get(x.tab, pp.holder);
         if (hs.origin_kind == (raw SYM_DECL())) { drop list_push(@x.live, pp); }
@@ -402,7 +402,7 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
             int64:k = rev.count;
             while (k > 0i64) {
                 k = k - 1i64;
-                drop list_push(out, rev.items[k]);
+                drop list_push(out, rev[k]);
             }
             pass true;
         }
@@ -418,8 +418,8 @@ func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
     if (b.count < n) { n = b.count; }
     bool:computed = false;
     for (int64:i in 0i64...n) {
-        Step:sa = a.items[i];
-        Step:sb = b.items[i];
+        Step:sa = a[i];
+        Step:sb = b[i];
         if ((sa.kind == 0i32) && (sb.kind == 0i32)) {
             if (sa.name != sb.name) { pass (raw OV_DISJOINT()); }
             continue;
@@ -444,7 +444,7 @@ func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
 func:render_place = string(Alias->:x, int32:root, List<Step>:steps) never fails {
     string:s = string_concat(raw intern_get(x.it, (raw symtab_get(x.tab, root)).name), "");
     for (int64:i in 0i64...steps.count) {
-        Step:st = steps.items[i];
+        Step:st = steps[i];
         if (st.kind == 0i32) {
             s = string_concat(s, ".");
             s = string_concat(s, raw intern_get(x.it, st.name));
@@ -509,7 +509,7 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
     // A WRITE THROUGH A SHARED CLAIM'S HOLDER: shared means readers.
     if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
         for (int64:h in 0i64...x.live.count) {
-            Party:hp = x.live.items[h];
+            Party:hp = x.live[h];
             if ((hp.kind == (raw PARTY_SHARED())) && (hp.holder == root)) {
                 string:m = string_concat("a write-capable access through `", raw intern_get(x.it, (raw symtab_get(x.tab, root)).name));
                 m = string_concat(m, "`, which holds ");
@@ -521,7 +521,7 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
         }
     }
     for (int64:i in 0i64...x.live.count) {
-        Party:p = x.live.items[i];
+        Party:p = x.live[i];
         if (p.root != root) { continue; }
         if (p.site.index == self_site.index) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
@@ -568,9 +568,8 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
 func:frame_push = NIL(Alias->:x) never fails { drop list_push(@x.frames, x.live.count); pass NIL; };
 func:frame_pop = NIL(Alias->:x) never fails {
     if (x.frames.count == 0i64) { pass NIL; }
-    int64:mark = x.frames.items[x.frames.count - 1i64];
-    x.frames.count = x.frames.count - 1i64;
-    x.live.count = mark;
+    int64:mark = raw list_pop(@x.frames);
+    drop list_truncate(@x.live, mark);
     pass NIL;
 };
 
@@ -578,7 +577,7 @@ func:frame_pop = NIL(Alias->:x) never fails {
 func:register_holder = NIL(Alias->:x, int32:hsym) never fails {
     if (hsym == 0i32) { pass NIL; }
     for (int64:i in 0i64...x.pre.count) {
-        Party:pp = x.pre.items[i];
+        Party:pp = x.pre[i];
         if (pp.holder == hsym) { drop list_push(@x.live, pp); }
     }
     pass NIL;
@@ -692,7 +691,7 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
         int64:mark = x.live.count;
         drop push_enclosing_parties(x, id);
         drop alias_stmt(x, StmtId{ index: s.a }, dd);
-        x.live.count = mark;
+        drop list_truncate(@x.live, mark);
         pass NIL;
     }
     if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
@@ -721,10 +720,10 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
 // a SIBLING block would be pushed too, and a sibling's party can only refuse.
 func:push_enclosing_parties = NIL(Alias->:x, StmtId:defer_id) never fails {
     for (int64:i in 0i64...x.pre.count) {
-        Party:pp = x.pre.items[i];
+        Party:pp = x.pre[i];
         bool:already = false;
         for (int64:j in 0i64...x.live.count) {
-            if (x.live.items[j].site.index == pp.site.index) { already = true; }
+            if (x.live[j].site.index == pp.site.index) { already = true; }
         }
         if (already) { continue; }
         drop list_push(@x.live, pp);
@@ -775,7 +774,7 @@ func:refuse_holder_copy = NIL(Alias->:x, ExprId:val, int32:target_sym) never fai
 func:sym_holds_claim = bool(Alias->:x, int32:sym) never fails {
     if (sym == 0i32) { pass false; }
     for (int64:i in 0i64...x.live.count) {
-        Party:p = x.live.items[i];
+        Party:p = x.live[i];
         if ((p.holder == sym) && (p.kind != (raw PARTY_PLAIN()))) { pass true; }
     }
     pass false;
@@ -1063,7 +1062,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
     }
     // Then each claim against the outer parties and the EARLIER claims of the
     // call -- one report per conflicting pair, at the later claim.
-    x.live.count = mark;
+    drop list_truncate(@x.live, mark);
     for (int32:k in 0i32...count) {
         ExprId:a3 = ExprId{ index: raw ast_id_at(x.ast, start, k) };
         int32:pk3 = raw party_kind_of(x, a3);
@@ -1076,7 +1075,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         if (root3 == 0i32) { continue; }
         drop list_push(@x.live, Party{ site: a3, kind: pk3, root: root3, holder: 0i32 });
     }
-    x.live.count = mark;
+    drop list_truncate(@x.live, mark);
     pass NIL;
 };
 

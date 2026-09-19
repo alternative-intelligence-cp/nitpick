@@ -35,7 +35,7 @@ func:slot_of = int64(StrSet->:s, string:key) never fails {
         int64:v = sl[i];
         if (v == 0i64) { pass i; }
         int64:k = v - 1i64;
-        if (raw string_eq(string_from_bytes(s.keys.items[k].ptr, s.keys.items[k].len), key)) {
+        if (raw string_eq(string_from_bytes(s.keys[k].ptr, s.keys[k].len), key)) {
             pass i;
         }
         i = (((i + 1i64) =>! uint64) & mask) =>! int64;
@@ -50,7 +50,7 @@ func:strset_grow = NIL(StrSet->:s) never fails {
     s.cap = ncap;
     wild int64->:sl = s.slots =>! wild int64->;
     for (int64:k in 0i64...s.keys.count) {
-        int64:i = raw slot_of(s, string_from_bytes(s.keys.items[k].ptr, s.keys.items[k].len));
+        int64:i = raw slot_of(s, string_from_bytes(s.keys[k].ptr, s.keys[k].len));
         sl[i] = k + 1i64;
     }
     pass NIL;

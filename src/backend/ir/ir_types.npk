@@ -205,7 +205,7 @@ func:drop_type_register = NIL(LlCtx->:c, int32:dty) never fails {
     bool:seen = false;
     int64:i = 0i64;
     while (i < c.drop_types.count) {
-        if (c.drop_types.items[i] == dty) { seen = true; }
+        if (c.drop_types[i] == dty) { seen = true; }
         i = i + 1i64;
     }
     if (!seen) {
@@ -233,7 +233,7 @@ pub func:vacant_fn_sym = string(LlCtx->:c, int32:dty) never fails {
 
 pub func:drop_type_count = int64(LlCtx->:c) never fails { pass c.drop_types.count; };
 pub func:drop_type_at = int32(LlCtx->:c, int64:i) never fails {
-    pass (c.drop_types.items[i]);
+    pass (c.drop_types[i]);
 };
 
 // Record one impl's table. Called by the pre-pass; the emitter reads it back
@@ -251,9 +251,9 @@ pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) ne
 pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) never fails {
     int32:i = 0i32;
     while ((i => int64) < c.vt_self.count) {
-        if (c.vt_self.items[i => int64] == self_ty) {
-            if (c.vt_trait.items[i => int64] == trait_ty) {
-                pass (c.vt_sym.items[i => int64]);
+        if (c.vt_self[i => int64] == self_ty) {
+            if (c.vt_trait[i => int64] == trait_ty) {
+                pass (c.vt_sym[i => int64]);
             }
         }
         i = i + 1i32;
@@ -303,8 +303,8 @@ pub func:SITE_CONF = int32() never fails { pass 3i32; };
 // emitters' one question (D-218.9); false whenever no `--elide` was given.
 pub func:llctx_elided = bool(LlCtx->:c, int32:space, int32:site, int32:kind) never fails {
     for (int64:i in 0i64...c.el_sites.count) {
-        if ((c.el_sites.items[i] == site) && (c.el_kinds.items[i] == kind)) {
-            if ((c.el_spaces.items[i] == space) && (c.el_ctxs.items[i] == c.cur_ctx)) { pass true; }
+        if ((c.el_sites[i] == site) && (c.el_kinds[i] == kind)) {
+            if ((c.el_spaces[i] == space) && (c.el_ctxs[i] == c.cur_ctx)) { pass true; }
         }
     }
     pass false;
@@ -316,10 +316,10 @@ pub func:llctx_elided = bool(LlCtx->:c, int32:space, int32:site, int32:kind) nev
 pub func:llctx_prove_word = string(LlCtx->:c, int32:site) never fails {
     if (c.obl == NULL) { pass "absent from the manifest"; }
     for (int64:i in 0i64...c.pv_sites.count) {
-        if (c.pv_sites.items[i] != site) { continue; }
+        if (c.pv_sites[i] != site) { continue; }
         for (int64:j in 0i64...c.obl.man_hashes.count) {
-            if (string_equals(c.obl.man_hashes.items[j], c.pv_hashes.items[i])) {
-                pass (string_concat(c.obl.man_words.items[j], ""));
+            if (string_equals(c.obl.man_hashes[j], c.pv_hashes[i])) {
+                pass (string_concat(c.obl.man_words[j], ""));
             }
         }
     }
@@ -1249,7 +1249,7 @@ pub func:ll_fn_open = string() never fails {
 // the bodies. A repeat is a no-op, so the note costs the caller nothing.
 pub func:llctx_note_decl = NIL(LlCtx->:c, move string:text) never fails {
     for (int64:i in 0i64...c.vec_decls.count) {
-        if (raw string_eq(c.vec_decls.items[i], text)) { pass NIL; }
+        if (raw string_eq(c.vec_decls[i], text)) { pass NIL; }
     }
     drop list_push(@c.vec_decls, move(text));
     pass NIL;
