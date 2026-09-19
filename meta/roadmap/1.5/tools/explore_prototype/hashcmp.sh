@@ -3,12 +3,15 @@
 # built against the explored floor with the C reference shim (`npkx.c`, clang) and with the IR shim
 # (`runtime/explore/npkx.ll`, the pinned llc); per seed the two (exit, steps, hash, verdict) must agree. Run by
 # hand, outside every gate; OUT must already hold `npkrt.explore.o` (the transformer's output assembled),
-# `npkx_c.o` (the C shim) and `npkx.o` (the IR shim). Programs that need virtual signals (step 2) or spawn a
+# `npkx_c.o` (the C shim) and `npkx.o` (the IR shim) -- and, since step 6 (X-20), `explored` (the tool the harness
+# builds from tools/explored.npk), whose `--program` mode transforms each program's OWN IR as both runners do, so
+# both shims see the program's points too. Programs that need virtual signals (step 2) or spawn a
 # real child (`explore: no`) differ by design until then. Measured at step 1 under a twelve-process CPU load:
 # 30 of 30 signal-free programs agree on all 20 seeds.
 set -u
 ROOT=$1; OUT=$2; SEEDS=$3
 cd "$ROOT" || exit 2
+[ -x "$OUT/explored" ] || { echo "hashcmp: $OUT/explored is missing -- copy the tool the harness builds (step 6: the program's own IR is transformed)"; exit 2; }
 LLC=$(python3 -c 'import sys; sys.path.insert(0,"bootstrap/harness"); import harness; print(" ".join(harness.LLC_FLAGS))')
 LLD=$(python3 -c 'import sys; sys.path.insert(0,"bootstrap/harness"); import harness; print(" ".join(harness.LLD_FLAGS))')
 ulimit -n 1024
@@ -17,7 +20,8 @@ for f in $(grep -l '^// stress:' tests/backend/programs/*.npk | sort); do
   name=$(basename "$f" .npk)
   if grep -q '^// argv:\|^// fixture' "$f"; then skipped=$((skipped+1)); continue; fi
   build/npkc "$f" > "$OUT/$name.ll" 2> "$OUT/$name.err" || { echo "$name SKIP(compile)"; continue; }
-  llc $LLC "$OUT/$name.ll" -o "$OUT/$name.o" 2>> "$OUT/$name.err" || { echo "$name SKIP(llc)"; continue; }
+  "$OUT/explored" --program "$OUT/$name.ll" "$OUT/$name.x.ll" "$OUT/$name.x.sites.txt" >> "$OUT/$name.err" 2>&1 || { echo "$name SKIP(transform)"; continue; }
+  llc $LLC "$OUT/$name.x.ll" -o "$OUT/$name.o" 2>> "$OUT/$name.err" || { echo "$name SKIP(llc)"; continue; }
   ld.lld $LLD -o "$OUT/$name.c" "$OUT/$name.o" "$OUT/npkrt.explore.o" "$OUT/npkx_c.o" 2>> "$OUT/$name.err" || { echo "$name SKIP(link c)"; continue; }
   ld.lld $LLD -o "$OUT/$name.ir" "$OUT/$name.o" "$OUT/npkrt.explore.o" "$OUT/npkx.o" 2>> "$OUT/$name.err" || { echo "$name SKIP(link ir)"; continue; }
   same=0; diff=0; first=""

@@ -1283,7 +1283,19 @@ thread's end is now settled before anyone else steps (the clone's ctid word
 handed to `npkx_spawned`, the next baton holder waiting for the clear). Found
 on the way: the harness's `define_headers` read one line, so three multi-line
 defines had no header and `check_spec`'s free-symbol check skipped them in
-silence. Steps 6–7: program-level atomics, the docs. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
+silence. **Step 6 LANDED 2026-09-18: the program's own steps** (X-20, X-21): every
+explored unit's emitted IR goes through the same transformer's PROGRAM MODE
+before `llc` — a point before each atomic step of its defines (`atomic<T>`,
+`atomic_from_ptr` lower inline, in the program), each `sys` call's
+`@npk_sys6(` routed, sites numbered from 1,000,000 — under the counting belt in
+both runners. The census found no explored program holding a program-level
+atomic (an `atomic<T>` borrow cannot cross a spawn, D-180), and 23 `sys` calls
+in seven programs that had run as real syscalls with no point before them.
+`atomic_threads.npk` counts to 400 from two threads through `atomic_from_ptr`
+over `wild` storage, and the PROGRAM control `atomic-lost-update.ctl`
+(`program-old:`/`program-new:` pairs over the named program's SOURCE) splits
+its `fetch_add` into a `load` and a `store`. Found at seed 1 (55 of 100);
+without the program's points, 0 of 100. Step 7: the docs and the close. **1.5.8 is not a close-out footnote**: VERIFICATION_REFERENCE
 §7b's catalogue assigns it the five obligation kinds that have NO rows in
 `nitpick.obligations` — `overflow`, `bounds`, `cast-range` (guards to elide)
 and `terminate`, `stack-depth` (none) — D-210 §4 commits cycle 1.5 to proving

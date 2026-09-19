@@ -286,6 +286,50 @@ pub func:explore_seeds = List<int64>(Expect->:exp) never fails {
 
 pub struct:XMeasured = { List<string>:findings; bool:ran; int64:threads; int64:k; int64:depth; int64:seeds; };
 
+// THE PROGRAM'S OWN STEPS (step 6, the plan's §2.7; X-20): `base`.ll, a unit's
+// emitted IR, through the ONE transformer's program mode -- a point before
+// every atomic step line, every `@npk_sys6(` call routed, sites from
+// `PROGRAM_SITE_BASE` -- held to the counting belt, written as `base`.x.ll
+// with its sites beside it, and assembled by the pinned llc. The harness's
+// `explored_program_object`, verdict for verdict. The shim's module is never
+// transformed.
+pub struct:XProg = { List<string>:findings; string:obj; };
+
+pub async func:explored_program_object = XProg(Ctx->:c, string:base, string:name) {
+    XProg:out = XProg{ findings: raw list_init::<string>(1i64), obj: "" };
+    Result<cstring>:pc = to_cstring(string_concat(base, ".ll"));
+    if (pc.is_error) { fail pc.err; }
+    Result<string>:ptx = read_file(pc.value);
+    if (ptx.is_error) { fail ptx.err; }
+    Explored:px = raw explore_transform_program(ptx.value);
+    for (int64:i in 0i64...px.problems.count) {
+        drop strlist_push(@out.findings, string_concat(string_concat(name, ": the transformer refused the program's IR: "), raw strlist_view(px.problems, i)));
+    }
+    if (out.findings.count > 0i64) { pass out; }
+    List<string>:tot = raw explore_totality_of("program", ptx.value, px.text);
+    for (int64:j in 0i64...tot.count) { drop strlist_push(@out.findings, string_concat(string_concat(name, ": "), raw strlist_view(tot, j))); }
+    if (out.findings.count > 0i64) { pass out; }
+    string:xll = string_concat(base, ".x.ll");
+    Result<cstring>:xc = to_cstring(xll);
+    if (xc.is_error) { fail xc.err; }
+    Result<NIL>:w1 = write_file(xc.value, px.text);
+    if (w1.is_error) { fail w1.err; }
+    Result<cstring>:sc = to_cstring(string_concat(base, ".x.sites.txt"));
+    if (sc.is_error) { fail sc.err; }
+    Result<NIL>:w2 = write_file(sc.value, px.sites);
+    if (w2.is_error) { fail w2.err; }
+    string:xo = string_concat(base, ".x.o");
+    Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, xll, xo);
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) {
+        drop strlist_push(@out.findings, string_concat(string_concat(name, ": llc rejected the explored program: "), raw text_head(raw text_trim(st1.text), 160i64)));
+        pass out;
+    }
+    out.obj = move(xo);
+    pass out;
+};
+
 // One unit of the stage: compile, link against the explored floor and the
 // shim, the measuring run, the seeds, the replay belt.
 pub async func:check_explored_program = XMeasured(Ctx->:c, string:path, string:name, Expect->:exp,
@@ -296,10 +340,12 @@ pub async func:check_explored_program = XMeasured(Ctx->:c, string:path, string:n
                                 string_concat("xprog_", raw text_replace_byte(fname, 46u8, 95u8)));
     List<string>:fl = relay await emit_and_object(c, string_from_bytes(c.npkc.ptr, c.npkc.len), path, name, base, c.allow);
     if (fl.count > 0i64) { m.findings = move(fl); pass m; }
+    XProg:xp = relay await explored_program_object(c, base, name);
+    if (xp.findings.count > 0i64) { m.findings = move(xp.findings); pass m; }
     List<string>:args = raw strlist_clone(c.m.lld_flags);
     drop strlist_push(@args, "-o");
     drop strlist_push(@args, base);
-    drop strlist_push(@args, string_concat(base, ".o"));
+    drop strlist_push(@args, xp.obj);
     drop strlist_push(@args, xfloor_o);
     drop strlist_push(@args, shim_o);
     Result<Step>:ls = await tool_step(c, string_from_bytes(c.t.lld.ptr, c.t.lld.len), args, raw duration_secs(600i64));
@@ -433,13 +479,30 @@ pub async func:run_explore_control = CtlRun(Ctx->:c, string:path, string:name, s
     Result<string>:ptx = read_file(pc.value);
     if (ptx.is_error) { fail ptx.err; }
     Expect:exp = raw expect_read(ptx.value);
+    // A PROGRAM CONTROL (step 6, X-21): the defect is planted in the program's SOURCE, and the patched
+    // source -- the same basename, which the module's name must match -- is compiled from here
+    string:psrc = string_concat(prog, "");
+    if (ctl.prog_before.count > 0i64) {
+        Patched:pp = raw apply_program_control(ptx.value, @ctl, name);
+        if (pp.problem.len > 0i64) {
+            drop list_push(@out.findings, string_concat(pp.problem, ""));
+            pass out;
+        }
+        psrc = raw path_join(cdir, raw text_file_name(ctl.program));
+        Result<cstring>:ppc = to_cstring(psrc);
+        if (ppc.is_error) { fail ppc.err; }
+        Result<NIL>:pw = write_file(ppc.value, pp.text);
+        if (pw.is_error) { fail pw.err; }
+    }
     string:base = raw path_join(cdir, "prog");
-    List<string>:fl = relay await emit_and_object(c, string_from_bytes(c.npkc.ptr, c.npkc.len), prog, ctl.program, base, c.allow);
+    List<string>:fl = relay await emit_and_object(c, string_from_bytes(c.npkc.ptr, c.npkc.len), psrc, ctl.program, base, c.allow);
     if (fl.count > 0i64) { out.findings = move(fl); pass out; }
+    XProg:xp = relay await explored_program_object(c, base, name);
+    if (xp.findings.count > 0i64) { out.findings = move(xp.findings); pass out; }
     List<string>:args = raw strlist_clone(c.m.lld_flags);
     drop strlist_push(@args, "-o");
     drop strlist_push(@args, base);
-    drop strlist_push(@args, string_concat(base, ".o"));
+    drop strlist_push(@args, xp.obj);
     drop strlist_push(@args, xo);
     drop strlist_push(@args, shim_o);
     Result<Step>:ls = await tool_step(c, string_from_bytes(c.t.lld.ptr, c.t.lld.len), args, raw duration_secs(600i64));

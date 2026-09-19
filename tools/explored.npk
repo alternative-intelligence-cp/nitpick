@@ -10,6 +10,12 @@
 // tool's output -- ONE transformer, two counting readers. (The plan named
 // this file `tools/explore.npk`; a program cannot hold two modules named
 // `explore`, and the transformer's module keeps the name.)
+//
+// `explored --program IN.ll OUT.ll SITES.txt` (step 6, the plan's §2.7; X-20)
+// transforms ONE UNIT's emitted IR by the same rules -- a point before every
+// atomic step line, every `@npk_sys6(` call routed, sites numbered from
+// `PROGRAM_SITE_BASE` -- runs the totality belt over the pair, and writes
+// OUT.ll and SITES.txt, exiting 0; 1 with every finding on stdout.
 mod:explored;
 
 use "../src/frontend/paths.npk".*;
@@ -48,10 +54,32 @@ func:write_text = NIL(string:path, string:text) {
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        drop say("usage: explored <manifest root> [--emit DIR]");
+        drop say("usage: explored <manifest root> [--emit DIR] | explored --program IN.ll OUT.ll SITES.txt");
         exit 2i32;
     }
     string:root = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    if ((argv.len == 5i64) && (raw text_eq(root, "--program"))) {
+        string:pin = string_from_bytes(argv[2i64].ptr, argv[2i64].len);
+        Result<cstring>:pc = to_cstring(pin);
+        if (pc.is_error) { drop say("explore: the program's IR: not a path"); exit 1i32; }
+        Result<string>:ptx = read_file(pc.value);
+        if (ptx.is_error) { drop say(string_concat("explore: the program's IR cannot be read: ", pin)); exit 1i32; }
+        Explored:px = raw explore_transform_program(ptx.value);
+        List<string>:pfl = raw explore_totality_of("program", ptx.value, px.text);
+        for (int64:pk in 0i64...px.problems.count) { drop say(raw strlist_view(px.problems, pk)); }
+        for (int64:pj in 0i64...pfl.count) { drop say(raw strlist_view(pfl, pj)); }
+        int64:pn = px.problems.count + pfl.count;
+        if (pn > 0i64) { drop say(string_concat(int_to_string(pn), " finding(s)")); exit 1i32; }
+        Result<NIL>:pw1 = write_text(string_from_bytes(argv[3i64].ptr, argv[3i64].len), px.text);
+        if (pw1.is_error) { drop say("explore: the explored program could not be written"); exit 1i32; }
+        Result<NIL>:pw2 = write_text(string_from_bytes(argv[4i64].ptr, argv[4i64].len), px.sites);
+        if (pw2.is_error) { drop say("explore: the program's sites could not be written"); exit 1i32; }
+        string:pm = string_concat("explore: the explored program written -- ", int_to_string(px.points));
+        pm = string_concat(pm, " point(s), ");
+        pm = string_concat(pm, int_to_string(px.routed));
+        drop say(string_concat(pm, " routed call(s)"));
+        exit 0i32;
+    }
     if (argv.len >= 4i64) {
         if (raw text_eq(string_from_bytes(argv[2i64].ptr, argv[2i64].len), "--emit")) {
             string:dir = string_from_bytes(argv[3i64].ptr, argv[3i64].len);

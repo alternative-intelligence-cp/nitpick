@@ -54,7 +54,12 @@ same step. Step 5 also brought X-19, the settled end: `npkx_spawned(tid, ctid)` 
 word per slot, an ending thread queues it, and the next holder of the baton waits for the kernel's clear before it
 steps — the D-303 sweep after the checkers had found `shared_arena_spawn` at 784 or 787 steps in either shim, a race
 between the kernel's clear and the joiner's read of the word (`transform.py` hands the word too). Each block is
-marked in `npkx.c`; the sweep was re-run after each.
+marked in `npkx.c`; the sweep was re-run after each. Step 6 (X-20) changed no shim: both runners transform each
+program's OWN IR as well (its `atomic<T>` steps and `sys` calls, sites from 1,000,000), so `hashcmp.sh` now takes
+the harness-built tool as `OUT/explored` and runs `explored --program` over each program's IR before `llc`,
+refusing by name without it. Both shims then see the same points; `transform.py` and `build.sh` stay floor-only
+(a unit built by hand with `build.sh` has no program points, which is right for a floor-only measurement and
+wrong for a program with atomics of its own).
 
 **Running it by hand** (a measurement, never a verdict):
 

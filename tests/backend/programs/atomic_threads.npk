@@ -1,0 +1,53 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// TWO THREADS, ONE COUNTER, EVERY INCREMENT KEPT (1.5.7 step 6; D-182, D-016).
+// The first explored program whose OWN IR carries atomic steps: `atomic<T>`
+// and `atomic_from_ptr` lower inline, in the program rather than the floor,
+// so until step 6 the explorer never put a scheduling point between them.
+// An `atomic<T>` borrow may not cross a spawn (D-180 sanctions the locks and
+// `shared_arena` only), so the shared word is `wild` storage both threads
+// reach through `atomic_from_ptr` -- the Bridge's shape (D-187). Each thread
+// adds 1, 200 times, by `fetch_add`: one read-modify-write, one step. The
+// total is 400 on every schedule, and exit 1 says an increment was lost.
+// `runtime/explore/controls/atomic-lost-update.ctl` plants the lost update
+// in THIS source (a `load` and a `store`, two steps with a window between
+// them) and the explorer must find it: the control that shows the
+// program's own steps are interleaved.
+mod:atomic_threads;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+
+thread async func:bump = NIL(wild int64->:cell, int64:n) joins JOIN_5S {
+    for (int64:i in 0i64...n) {
+        discard(atomic_from_ptr::<int64>(cell).fetch_add(1i64));
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    wild int8->:raw_cell = alloc(8i64);
+    wild int64->:cell = raw_cell =>! wild int64->;
+    atomic_from_ptr::<int64>(cell).store(0i64);
+    {
+        drop bump(cell, 200i64);
+        drop bump(cell, 200i64);
+    }
+    int64:total = atomic_from_ptr::<int64>(cell).load();
+    if (total != 400i64) { exit 1i32; }
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 43i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (Unreachable)      { exit 72i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

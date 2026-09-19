@@ -61,11 +61,13 @@ def _is_sys6_call(code):
     return "@npk_sys6(" in code and "call " in code
 
 
-def check_totality(floor_text, explored_text, name="explore"):
+def check_totality(floor_text, explored_text, name="explore", what="floor"):
     """THE TOTALITY BELT (the twin of `explore_totality`): the floor's step
     count equals the explored floor's points plus routed calls, no atomic step
     of the output lacks the point immediately before it, and no `@npk_sys6(`
-    call is left unrouted. Findings by name; none when it holds."""
+    call is left unrouted. Findings by name; none when it holds. `what` names
+    the module in the count's finding -- "program" for a unit's own IR (step 6,
+    the twin of `explore_totality_of`)."""
     fails = []
     n = census(floor_text)
     points = routed = 0
@@ -89,20 +91,22 @@ def check_totality(floor_text, explored_text, name="explore"):
             fails.append("%s-step-escapes: an atomic step with no scheduling point before it, in %s: %s" % (name, fn, code[:100]))
         prev = code
     if points + routed != n:
-        fails.append("%s-step-escapes: the floor holds %d step line(s) and the explored floor %d point(s) plus %d routed call(s) -- "
-                     "a step escaped the transform, or a point precedes no step" % (name, n, points, routed))
+        fails.append("%s-step-escapes: the %s holds %d step line(s) and the explored %s %d point(s) plus %d routed call(s) -- "
+                     "a step escaped the transform, or a point precedes no step" % (name, what, n, what, points, routed))
     return fails
 
 
-def check_sites(explored_text, sites_text, name="explore"):
+def check_sites(explored_text, sites_text, name="explore", base=0):
     """The site map agrees with the text: one `N<TAB>function<TAB>kind<TAB>text`
     line per point or routed call, the points numbered by their sites in
-    order, every `atomic` site a point and every `sys6` site a routed call."""
+    order, every `atomic` site a point and every `sys6` site a routed call.
+    A unit's own sites are numbered from `base` (step 6: 1,000,000, the
+    transformer's `PROGRAM_SITE_BASE`)."""
     fails = []
     rows = [l.split("\t") for l in sites_text.split("\n") if l.strip()]
     for i, r in enumerate(rows):
-        if len(r) != 4 or r[0] != str(i) or r[2] not in ("atomic", "sys6"):
-            return ["%s: sites.txt line %d is not `%d<TAB>function<TAB>atomic|sys6<TAB>text`" % (name, i + 1, i)]
+        if len(r) != 4 or r[0] != str(base + i) or r[2] not in ("atomic", "sys6"):
+            return ["%s: sites.txt line %d is not `%d<TAB>function<TAB>atomic|sys6<TAB>text`" % (name, i + 1, base + i)]
     atomic_sites = [int(r[0]) for r in rows if r[2] == "atomic"]
     points = [int(m.group(1)) for _, code in _bodies(explored_text) for m in [_POINT_RE.match(code)] if m]
     if points != atomic_sites:
@@ -220,21 +224,25 @@ def read_control(text, name="explore"):
     step wide that blind PCT cannot land on; the runners resolve each against
     the patched floor's sites.txt (exactly one `atomic` row, or the control is
     refused by name). (control, reason)."""
-    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "spec_subs": [], "preempt": []}
+    ctl = {"program": "", "verdict": "", "within": 0, "subs": [], "spec_subs": [], "prog_subs": [], "preempt": []}
     block = None
     target = "subs"
+    # the three pair kinds: the floor's `old:`/`new:`, a SPEC control's (step 5, X-18) and a PROGRAM
+    # control's (step 6, X-21: a defect planted in the named program's source)
+    kinds = {"old:": "subs", "spec-old:": "spec_subs", "program-old:": "prog_subs"}
+    news = {"new:": "subs", "spec-new:": "spec_subs", "program-new:": "prog_subs"}
     for raw in text.split("\n"):
         if raw.startswith(";"):
             continue
-        if raw in ("old:", "spec-old:"):
-            target = "subs" if raw == "old:" else "spec_subs"
+        if raw in kinds:
+            target = kinds[raw]
             ctl[target].append(([], []))
             block = 0
             continue
-        if raw in ("new:", "spec-new:"):
-            want = "subs" if raw == "new:" else "spec_subs"
+        if raw in news:
+            want = news[raw]
             if want != target or not ctl[target] or ctl[target][-1][1]:
-                return None, "%s: a `%s` with no `%s` before it" % (name, raw, "old:" if raw == "new:" else "spec-old:")
+                return None, "%s: a `%s` with no `%s` before it" % (name, raw, raw[:-len("new:")] + "old:")
             block = 1
             continue
         if block is not None and (raw.startswith("  ") or raw == ""):
@@ -265,14 +273,17 @@ def read_control(text, name="explore"):
             return None, "%s: no `%s:`" % (name, key)
     if ctl["within"] < 1:
         return None, "%s: `within:` must be at least 1" % name
-    if not ctl["subs"] and not ctl["spec_subs"]:
-        return None, "%s: no `old:`/`new:` pair and no `spec-old:`/`spec-new:` pair" % name
+    if not ctl["subs"] and not ctl["spec_subs"] and not ctl["prog_subs"]:
+        return None, "%s: no `old:`/`new:` pair, no `spec-old:`/`spec-new:` pair and no `program-old:`/`program-new:` pair" % name
     for i, (old, new) in enumerate(ctl["subs"]):
         if not old or not new:
             return None, "%s: `old:` and `new:` must each hold at least one line (pair %d)" % (name, i + 1)
     for i, (old, new) in enumerate(ctl["spec_subs"]):
         if not old or not new:
             return None, "%s: `spec-old:` and `spec-new:` must each hold at least one line (pair %d)" % (name, i + 1)
+    for i, (old, new) in enumerate(ctl["prog_subs"]):
+        if not old or not new:
+            return None, "%s: `program-old:` and `program-new:` must each hold at least one line (pair %d)" % (name, i + 1)
     if len(ctl["preempt"]) > 4:
         return None, "%s: at most four `preempt-at:` sites (the shim holds four)" % name
     v = ctl["verdict"]
@@ -286,14 +297,15 @@ def read_control(text, name="explore"):
 
 
 def apply_control(floor_text, ctl, name="explore", which="subs"):
-    """The floor (`subs`) or the spec (`spec_subs`) with each pair's `old`
-    lines replaced by its `new` lines, in order -- each exactly one occurrence
-    in the text as it stands, or the control is refused by name. A SPEC
-    control (step 5, D-302) plants a FALSE caller hypothesis; its verdict is
-    the shim's `ASSUMPTION`."""
+    """The floor (`subs`), the spec (`spec_subs`) or the program's source
+    (`prog_subs`) with each pair's `old` lines replaced by its `new` lines, in
+    order -- each exactly one occurrence in the text as it stands, or the
+    control is refused by name. A SPEC control (step 5, D-302) plants a FALSE
+    caller hypothesis, its verdict the shim's `ASSUMPTION`; a PROGRAM control
+    (step 6, X-21) plants a defect in the program itself."""
     text = floor_text
-    what = "runtime/npkrt.ll" if which == "subs" else "runtime/npkrt.spec"
-    key = "old" if which == "subs" else "spec-old"
+    what = {"subs": "runtime/npkrt.ll", "spec_subs": "runtime/npkrt.spec", "prog_subs": ctl["program"]}[which]
+    key = {"subs": "old", "spec_subs": "spec-old", "prog_subs": "program-old"}[which]
     for i, (old_lines, new_lines) in enumerate(ctl[which]):
         old = "\n".join(old_lines) + "\n"
         n = text.count(old)

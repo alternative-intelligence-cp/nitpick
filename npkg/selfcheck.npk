@@ -783,6 +783,26 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!okxc) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("explore-step-escapes-control", okxc, "the transformer's own output must pass the counting belt"));
     if (!okxc) { drop strlist_push(@report, string_concat("      the belt rejected it: ", raw strlist_view(xc, 0i64))); }
+    // STEP 6 (X-20): the transformer's PROGRAM mode over a planted unit's IR is a literal too --
+    // a point before each atomic step, numbered from `PROGRAM_SITE_BASE`; the `sys` call routed;
+    // a quoted name read whole off the raw line (the code part blanks it); nothing else touched;
+    // the two declares appended -- and the pair passes the counting belt. The harness holds the
+    // tool's `--program` mode to the same three texts.
+    string:xq_prog = "define internal void @\"p.bump\"(ptr %c) {\nentry:\n  %t1 = atomicrmw add ptr %c, i64 1 seq_cst\n  %t2 = call i64 @npk_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n  ret void\n}\ndefine i32 @\"p.main\"() {\nentry:\n  store atomic i64 0, ptr null seq_cst, align 8\n  ret i32 0\n}\ndeclare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\n";
+    string:xq_expected = "define internal void @\"p.bump\"(ptr %c) {\nentry:\n  call void @npkx_point(i32 1000000)\n  %t1 = atomicrmw add ptr %c, i64 1 seq_cst\n  %t2 = call i64 @npkx_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n  ret void\n}\ndefine i32 @\"p.main\"() {\nentry:\n  call void @npkx_point(i32 1000002)\n  store atomic i64 0, ptr null seq_cst, align 8\n  ret i32 0\n}\ndeclare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\n\n; --- the explorer's shim, for the program's own steps (runtime/explore/npkx.ll; 1.5.7 step 6) ---\ndeclare void @npkx_point(i32)\ndeclare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)\n";
+    string:xq_sites = "1000000\t@\"p.bump\"\tatomic\t%t1 = atomicrmw add ptr %c, i64 1 seq_cst\n1000001\t@\"p.bump\"\tsys6\t%t2 = call i64 @npk_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n1000002\t@\"p.main\"\tatomic\tstore atomic i64 0, ptr null seq_cst, align 8\n";
+    Explored:xq = raw explore_transform_program(xq_prog);
+    List<string>:xqt = raw explore_totality_of("program", xq_prog, xq.text);
+    bool:okxq = (xq.problems.count == 0i64) && (raw text_eq(xq.text, xq_expected)) && (raw text_eq(xq.sites, xq_sites)) && (xqt.count == 0i64);
+    if (!okxq) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-transform-program", okxq, "the transformer's program mode over a planted unit's IR is the literal, text and sites, and passes the counting belt"));
+    if (!okxq) {
+        string:xqw = "      the text ";
+        if (raw text_eq(xq.text, xq_expected)) { xqw = string_concat(xqw, "matches the literal"); } else { xqw = string_concat(xqw, "differs from the literal"); }
+        if (raw text_eq(xq.sites, xq_sites)) { xqw = string_concat(xqw, ", the sites match"); } else { xqw = string_concat(xqw, ", the sites differ"); }
+        if (xqt.count > 0i64) { xqw = string_concat(string_concat(xqw, "; the belt: "), raw strlist_view(xqt, 0i64)); }
+        drop strlist_push(@report, xqw);
+    }
     // THE MARKER BELT (1.5.7 step 1; D-299): a `// stress:` program says whether
     // it is explored. The harness's three planted headers through the real
     // reader: unmarked fails by name, `explore: no <reason>` and `explore: N d=D`
@@ -862,6 +882,23 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!okc5) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("explore-control-two-pairs", okc5, "a control's pairs apply in order, each `old` against the text as it stands"));
     if (!okc5) { drop strlist_push(@report, string_concat("      got: ", xc_got)); }
+    // STEP 6's PROGRAM control (X-21), on planted text in both runners: `program-old:`/
+    // `program-new:` pairs are their own kind -- applied to the program's SOURCE and never to
+    // the floor -- and a `program-new:` closing a floor `old:` is refused by name.
+    Control:xc_prog = raw read_control("program: p.npk\nverdict: wrong-exit\nwithin: 1\nprogram-old:\n    x = 1;\nprogram-new:\n    x = 2;\n", "planted");
+    bool:okc9 = false;
+    string:xc_pgot = "";
+    if (xc_prog.ok) {
+        Patched:xc_pf = raw apply_control("a\n    x = 1;\n", @xc_prog, "planted");
+        Patched:xc_pp = raw apply_program_control("a\n    x = 1;\n", @xc_prog, "planted");
+        okc9 = (xc_prog.before.count == 0i64) && (xc_prog.prog_before.count == 1i64) && (raw text_eq(xc_pf.text, "a\n    x = 1;\n")) && (raw text_eq(xc_pp.text, "a\n    x = 2;\n"));
+        xc_pgot = string_concat(xc_pp.text, xc_pp.problem);
+    } else { xc_pgot = string_concat(xc_prog.problem, ""); }
+    Control:xc_mix = raw read_control("program: p.npk\nverdict: wrong-exit\nwithin: 1\nold:\n    x = 1;\nprogram-new:\n    x = 2;\n", "planted");
+    if (okc9) { okc9 = (!xc_mix.ok) && (raw text_contains(xc_mix.problem, "`program-new:` with no `program-old:`")); }
+    if (!okc9) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("explore-control-program", okc9, "`program-old:`/`program-new:` pairs are their own kind, applied to the program's source and never to the floor"));
+    if (!okc9) { drop strlist_push(@report, string_concat("      got: ", raw text_head(xc_pgot, 200i64))); }
     Control:xc_v1 = raw read_control("program: p\nverdict: wrong-exit\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");
     Control:xc_v2 = raw read_control("program: p\nverdict: exit 7\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");
     Control:xc_v3 = raw read_control("program: p\nverdict: LOST-WAKE\nwithin: 1\nold:\n  a\nnew:\n  b\n", "planted");

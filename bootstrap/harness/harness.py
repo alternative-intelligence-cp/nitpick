@@ -3929,13 +3929,53 @@ def run_explored(base, seed, k, depth, exp, name):
     return [], int(t.group(2)), t.group(3), int(t.group(6) or 0)
 
 
+# THE PROGRAM'S OWN STEPS (1.5.7 step 6, the plan's 2.7; X-20): a unit's emitted
+# IR is transformed by the ONE transformer too -- `atomic<T>`/`atomic_from_ptr`
+# lower inline and `sys` calls `@npk_sys6` from the program -- through the same
+# tool (`explored --program`), its sites numbered from the transformer's
+# PROGRAM_SITE_BASE, held here to the counting belt and the site map as the
+# floor's are. The shim's module is never transformed.
+PROGRAM_SITE_BASE = 1000000
+
+
+def explored_program_object(tmp, base, name):
+    """`base`.ll (a unit's emitted IR) through `explored --program`: the
+    counting belt and the site map over the pair, then the pinned llc --
+    (fails, the object's path)."""
+    import explore
+    tool = os.path.join(tmp, "explored")
+    xll, xsites, xo = base + ".x.ll", base + ".x.sites.txt", base + ".x.o"
+    try:
+        r = subprocess.run([tool, "--program", base + ".ll", xll, xsites], capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return ["%s: the transformer did not terminate over the program's IR" % name], None
+    if r.returncode != 0:
+        return ["%s: the transformer refused the program's IR: %s" % (name, (r.stdout + r.stderr).strip()[:300])], None
+    with open(base + ".ll", encoding="utf-8") as fh:
+        pt = fh.read()
+    with open(xll, encoding="utf-8") as fh:
+        xt = fh.read()
+    with open(xsites, encoding="utf-8") as fh:
+        st = fh.read()
+    fails = explore.check_totality(pt, xt, "explore", "program") + explore.check_sites(xt, st, "explore", PROGRAM_SITE_BASE)
+    if fails:
+        return ["%s: %s" % (name, f) for f in fails], None
+    r = subprocess.run(["llc"] + LLC_FLAGS + [xll, "-o", xo], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["%s: llc rejected the explored program: %s" % (name, r.stderr.strip()[:160])], None
+    return [], xo
+
+
 def check_explored_program(binary, path, name, exp, tmp, xfloor_o, shim_o):
     """One unit of the stage: (fails, (threads, k, depth, seeds) or None)."""
     base = os.path.join(tmp, "xprog_" + os.path.basename(path).replace(".", "_"))
     fails = emit_and_object(binary, path, name, base, runtime_allowlist())
     if fails:
         return fails, None
-    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o", xfloor_o, shim_o],
+    fails, xprog_o = explored_program_object(tmp, base, name)
+    if fails:
+        return fails, None
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, xprog_o, xfloor_o, shim_o],
                        capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link against the explored floor failed: %s" % (name, r.stderr.strip()[:140])], None
@@ -4070,11 +4110,25 @@ def run_explore_control(tmp, path, name, shim_o):
     if not os.path.exists(prog):
         return ["%s: names a program that does not exist: %s" % (name, ctl["program"])], 0
     exp = read_expectations(prog)
+    if ctl["prog_subs"]:
+        # A PROGRAM CONTROL (step 6, X-21): the defect is planted in the program's SOURCE, and the patched
+        # source -- the same basename, which the module's name must match -- is compiled from here
+        with open(prog, encoding="utf-8") as fh:
+            ptext = fh.read()
+        pprog, why = explore.apply_control(ptext, ctl, name, "prog_subs")
+        if pprog is None:
+            return [why], 0
+        prog = os.path.join(croot, os.path.basename(ctl["program"]))
+        with open(prog, "w", encoding="utf-8") as fh:
+            fh.write(pprog)
     base = os.path.join(croot, "prog")
     fails = emit_and_object(COMPILER, prog, ctl["program"], base, runtime_allowlist())
     if fails:
         return fails, 0
-    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o", cfloor_o, shim_o], capture_output=True, text=True)
+    fails, xprog_o = explored_program_object(tmp, base, name)
+    if fails:
+        return fails, 0
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, xprog_o, cfloor_o, shim_o], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link against the patched floor failed: %s" % (name, r.stderr.strip()[:140])], 0
     # the measuring run: seed 0, no change points -- k is the schedule's length. A verdict there is not

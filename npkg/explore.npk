@@ -79,6 +79,27 @@ func:define_symbol = string(string:code) never fails {
     pass (raw text_slice(code, at, stop));
 };
 
+// The same read off the RAW line, a quoted name (`@"mod.f"`, the emitter's
+// spelling) whole: the code part blanks a string's contents, and a unit's
+// functions are nearly all quoted (step 6).
+func:define_symbol_raw = string(string:line) never fails {
+    if (!(raw text_starts_with(line, "define "))) { pass ""; }
+    int64:at = raw text_find_byte(line, 64u8, 0i64);        // '@'
+    if (at < 0i64) { pass ""; }
+    if (((at + 1i64) < line.len) && (line.ptr[at + 1i64] == 34u8)) {  // '"'
+        int64:close = raw text_find_byte(line, 34u8, at + 2i64);
+        if (close < 0i64) { pass ""; }
+        pass (raw text_slice(line, at, close + 1i64));
+    }
+    int64:stop = at;
+    while (stop < line.len) {
+        uint8:c = line.ptr[stop];
+        if ((c == 40u8) || (c == 32u8)) { break; }             // '(' or ' '
+        stop = stop + 1i64;
+    }
+    pass (raw text_slice(line, at, stop));
+};
+
 // `%r = call ...` -- the register a call line defines; "" when it defines none.
 func:defined_register = string(string:code) never fails {
     if (code.len == 0i64) { pass ""; }
@@ -271,6 +292,88 @@ pub func:explore_transform = Explored(string:floor, string:spec) never fails {
                    points: points, routed: routed, checkers: nck, problems: move(problems) };
 };
 
+// THE PROGRAM'S OWN STEPS (step 6, the plan's §2.7; X-20). `atomic<T>` and
+// `atomic_from_ptr` lower INLINE in the program's IR, and the `sys` builtin
+// calls `@npk_sys6` from it: steps the floor's transform never sees. A unit's
+// emitted IR goes through the same two rules -- a point before every atomic
+// step line of its defines, every `@npk_sys6(` call routed -- and nothing
+// else: a program defines no thread entry and calls no clone (the floor does
+// both), and it has no spec. Its sites are numbered from `PROGRAM_SITE_BASE`,
+// a range the floor's sites (numbered from 0) and a routed syscall's identity
+// (`n | 2^31`, the shim's) never reach, so one schedule hash reads both
+// modules' points without ambiguity. The shim's module is never transformed.
+pub func:PROGRAM_SITE_BASE = int64() never fails { pass 1000000i64; };
+
+pub func:explore_transform_program = Explored(string:prog) never fails {
+    List<string>:lines = raw raw_lines(prog);
+    SmtBuf:out = raw smtbuf_init();
+    SmtBuf:sites = raw smtbuf_init();
+    List<string>:problems = raw list_init::<string>(2i64);
+    int64:points = 0i64;
+    int64:routed = 0i64;
+    int64:nsite = raw PROGRAM_SITE_BASE();
+    string:fn = "";
+    int64:i = 0i64;
+    while (i < lines.count) {
+        string:line = raw strlist_view(lines, i);
+        string:code = raw floor_code_part(line);
+        string:sym = raw define_symbol(code);
+        if (sym.len > 0i64) {
+            fn = raw define_symbol_raw(line);
+            if (raw text_eq(fn, "@npk_sys6")) {
+                drop strlist_push(@problems, "explore: the program defines `@npk_sys6` -- the trampoline is the floor's, and a program's own would escape the route");
+            }
+            drop smtbuf_line(@out, line);
+            // a header that continues on the next lines ends at `{`, as the floor's may
+            while ((!(raw text_ends_with(code, "{"))) && ((i + 1i64) < lines.count)) {
+                i = i + 1i64;
+                line = raw strlist_view(lines, i);
+                code = raw floor_code_part(line);
+                drop smtbuf_line(@out, line);
+            }
+            i = i + 1i64;
+            continue;
+        }
+        if (fn.len == 0i64) {
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        if (raw text_eq(code, "}")) {
+            fn = "";
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        if (raw line_is_sys6_call(code)) {
+            drop smtbuf_line(@sites, raw site_row(nsite, fn, "sys6", code));
+            nsite = nsite + 1i64;
+            routed = routed + 1i64;
+            drop smtbuf_line(@out, raw text_replace_first(line, "@npk_sys6(", "@npkx_sys6("));
+            i = i + 1i64;
+            continue;
+        }
+        if (raw line_is_atomic_step(code)) {
+            drop smtbuf_line(@sites, raw site_row(nsite, fn, "atomic", code));
+            string:pt = string_concat("  call void @npkx_point(i32 ", int_to_string(nsite));
+            drop smtbuf_line(@out, string_concat(pt, ")"));
+            nsite = nsite + 1i64;
+            points = points + 1i64;
+            drop smtbuf_line(@out, line);
+            i = i + 1i64;
+            continue;
+        }
+        drop smtbuf_line(@out, line);
+        i = i + 1i64;
+    }
+    drop smtbuf_line(@out, "");
+    drop smtbuf_line(@out, "; --- the explorer's shim, for the program's own steps (runtime/explore/npkx.ll; 1.5.7 step 6) ---");
+    drop smtbuf_line(@out, "declare void @npkx_point(i32)");
+    drop smtbuf_line(@out, "declare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)");
+    pass Explored{ text: raw smtbuf_text(move(out)), sites: raw smtbuf_text(move(sites)), assumptions: "",
+                   points: points, routed: routed, checkers: 0i64, problems: move(problems) };
+};
+
 // The index of `s` in `l`, or -1.
 func:strlist_index = int64(List<string>:l, string:s) never fails {
     for (int64:i in 0i64...l.count) { if (raw text_eq(raw strlist_view(l, i), s)) { pass i; } }
@@ -322,6 +425,12 @@ pub func:explore_census = int64(string:floor) never fails {
 // THE TOTALITY BELT over a floor and its explored text: every step accounted
 // for, by count and by position. The findings, by name; none when it holds.
 pub func:explore_totality = List<string>(string:floor, string:explored) never fails {
+    pass (raw explore_totality_of("floor", floor, explored));
+};
+
+// The same belt over any module and its transform -- `what` names the module in
+// the count's finding: "floor", or "program" for a unit's own IR (step 6).
+pub func:explore_totality_of = List<string>(string:what, string:floor, string:explored) never fails {
     List<string>:fl = raw list_init::<string>(2i64);
     int64:census = raw explore_census(floor);
     List<string>:lines = raw raw_lines(explored);
@@ -364,8 +473,12 @@ pub func:explore_totality = List<string>(string:floor, string:explored) never fa
         prev = string_concat(code, "");
     }
     if ((points + routed) != census) {
-        string:m = string_concat("explore-step-escapes: the floor holds ", int_to_string(census));
-        m = string_concat(m, " step line(s) and the explored floor ");
+        string:m = string_concat("explore-step-escapes: the ", what);
+        m = string_concat(m, " holds ");
+        m = string_concat(m, int_to_string(census));
+        m = string_concat(m, " step line(s) and the explored ");
+        m = string_concat(m, what);
+        m = string_concat(m, " ");
         m = string_concat(m, int_to_string(points));
         m = string_concat(m, " point(s) plus ");
         m = string_concat(m, int_to_string(routed));
@@ -555,60 +668,55 @@ pub func:check_oracle_offsets = List<string>(string:floor, string:shim, string:n
 // `before`/`after` hold one string per pair: the pair's lines joined by "\n";
 // `spec_before`/`spec_after` likewise for a SPEC control's `spec-old:`/
 // `spec-new:` pairs (step 5, D-302: a false caller hypothesis planted in
-// `runtime/npkrt.spec`, the verdict the shim's `ASSUMPTION`); `preempt` one
-// `@function <prefix>` value per `preempt-at:` line.
+// `runtime/npkrt.spec`, the verdict the shim's `ASSUMPTION`); `prog_before`/
+// `prog_after` for a PROGRAM control's `program-old:`/`program-new:` pairs
+// (step 6, X-21: a defect planted in the named program's SOURCE, compiled from
+// the control's build directory); `preempt` one `@function <prefix>` value per
+// `preempt-at:` line.
 pub struct:Control = { bool:ok; string:problem; string:program; string:verdict; int64:within; List<string>:before; List<string>:after;
-                       List<string>:spec_before; List<string>:spec_after; List<string>:preempt; };
+                       List<string>:spec_before; List<string>:spec_after; List<string>:prog_before; List<string>:prog_after;
+                       List<string>:preempt; };
 
 func:control_bad = Control(string:problem) never fails {
     pass Control{ ok: false, problem: raw text_copy(problem), program: "", verdict: "", within: 0i64,
                   before: raw list_init::<string>(1i64), after: raw list_init::<string>(1i64),
-                  spec_before: raw list_init::<string>(1i64), spec_after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64) };
+                  spec_before: raw list_init::<string>(1i64), spec_after: raw list_init::<string>(1i64),
+                  prog_before: raw list_init::<string>(1i64), prog_after: raw list_init::<string>(1i64), preempt: raw list_init::<string>(1i64) };
 };
 
 pub func:read_control = Control(string:text, string:name) never fails {
     Control:c = Control{ ok: true, problem: "", program: "", verdict: "", within: 0i64,
                          before: raw list_init::<string>(2i64), after: raw list_init::<string>(2i64),
-                         spec_before: raw list_init::<string>(2i64), spec_after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64) };
+                         spec_before: raw list_init::<string>(2i64), spec_after: raw list_init::<string>(2i64),
+                         prog_before: raw list_init::<string>(2i64), prog_after: raw list_init::<string>(2i64), preempt: raw list_init::<string>(2i64) };
     List<string>:lines = raw raw_lines(text);
     int64:block = 0i64;                                             // 0 none, 1 old, 2 new
     bool:open = false;                                              // a pair is being read
-    bool:spec_pair = false;                                         // the open pair is a spec pair
+    int64:kind = 0i64;                                              // the open pair's kind: 0 floor, 1 spec, 2 program
     List<string>:cur_old = raw list_init::<string>(4i64);
     List<string>:cur_new = raw list_init::<string>(4i64);
     for (int64:i in 0i64...lines.count) {
         string:ln = raw strlist_view(lines, i);
         if (raw text_starts_with(ln, ";")) { continue; }
-        bool:is_old = raw text_eq(ln, "old:");
-        bool:is_spec_old = raw text_eq(ln, "spec-old:");
-        if (is_old || is_spec_old) {
+        int64:old_kind = raw pair_kind_of(ln, "old:");
+        if (old_kind >= 0i64) {
             if (open) {
-                if (spec_pair) {
-                    drop list_push(@c.spec_before, raw text_join(cur_old, "\n"));
-                    drop list_push(@c.spec_after, raw text_join(cur_new, "\n"));
-                } else {
-                    drop list_push(@c.before, raw text_join(cur_old, "\n"));
-                    drop list_push(@c.after, raw text_join(cur_new, "\n"));
-                }
+                drop control_close_pair(@c, kind, raw text_join(cur_old, "\n"), raw text_join(cur_new, "\n"));
                 cur_old = raw list_init::<string>(4i64);
                 cur_new = raw list_init::<string>(4i64);
             }
             open = true;
-            spec_pair = is_spec_old;
+            kind = old_kind;
             block = 1i64;
             continue;
         }
-        bool:is_new = raw text_eq(ln, "new:");
-        bool:is_spec_new = raw text_eq(ln, "spec-new:");
-        if (is_new || is_spec_new) {
-            if ((!open) || (cur_new.count > 0i64) || (spec_pair != is_spec_new)) {
-                string:kw = "new:";
-                string:before_kw = "old:";
-                if (is_spec_new) { kw = "spec-new:"; before_kw = "spec-old:"; }
+        int64:new_kind = raw pair_kind_of(ln, "new:");
+        if (new_kind >= 0i64) {
+            if ((!open) || (cur_new.count > 0i64) || (kind != new_kind)) {
                 string:m0 = string_concat(name, ": a `");
-                m0 = string_concat(m0, kw);
+                m0 = string_concat(m0, ln);
                 m0 = string_concat(m0, "` with no `");
-                m0 = string_concat(m0, before_kw);
+                m0 = string_concat(m0, raw pair_keyword(new_kind, "old:"));
                 pass (raw control_bad(string_concat(m0, "` before it")));
             }
             block = 2i64;
@@ -644,18 +752,14 @@ pub func:read_control = Control(string:text, string:name) never fails {
         pass (raw control_bad(string_concat(string_concat(name, ": a line the control grammar does not know: "), raw text_head(ln, 80i64))));
     }
     if (open) {
-        if (spec_pair) {
-            drop list_push(@c.spec_before, raw text_join(cur_old, "\n"));
-            drop list_push(@c.spec_after, raw text_join(cur_new, "\n"));
-        } else {
-            drop list_push(@c.before, raw text_join(cur_old, "\n"));
-            drop list_push(@c.after, raw text_join(cur_new, "\n"));
-        }
+        drop control_close_pair(@c, kind, raw text_join(cur_old, "\n"), raw text_join(cur_new, "\n"));
     }
     if (c.program.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `program:`"))); }
     if (c.verdict.len == 0i64) { pass (raw control_bad(string_concat(name, ": no `verdict:`"))); }
     if (c.within < 1i64) { pass (raw control_bad(string_concat(name, ": `within:` must be at least 1"))); }
-    if ((c.before.count == 0i64) && (c.spec_before.count == 0i64)) { pass (raw control_bad(string_concat(name, ": no `old:`/`new:` pair and no `spec-old:`/`spec-new:` pair"))); }
+    if ((c.before.count == 0i64) && (c.spec_before.count == 0i64) && (c.prog_before.count == 0i64)) {
+        pass (raw control_bad(string_concat(name, ": no `old:`/`new:` pair, no `spec-old:`/`spec-new:` pair and no `program-old:`/`program-new:` pair")));
+    }
     for (int64:p in 0i64...c.before.count) {
         if (((raw strlist_view(c.before, p)).len == 0i64) || ((raw strlist_view(c.after, p)).len == 0i64)) {
             string:m = string_concat(name, ": `old:` and `new:` must each hold at least one line (pair ");
@@ -668,6 +772,13 @@ pub func:read_control = Control(string:text, string:name) never fails {
             string:m2 = string_concat(name, ": `spec-old:` and `spec-new:` must each hold at least one line (pair ");
             m2 = string_concat(m2, int_to_string(p2 + 1i64));
             pass (raw control_bad(string_concat(m2, ")")));
+        }
+    }
+    for (int64:p3 in 0i64...c.prog_before.count) {
+        if (((raw strlist_view(c.prog_before, p3)).len == 0i64) || ((raw strlist_view(c.prog_after, p3)).len == 0i64)) {
+            string:m3 = string_concat(name, ": `program-old:` and `program-new:` must each hold at least one line (pair ");
+            m3 = string_concat(m3, int_to_string(p3 + 1i64));
+            pass (raw control_bad(string_concat(m3, ")")));
         }
     }
     if (c.preempt.count > 4i64) { pass (raw control_bad(string_concat(name, ": at most four `preempt-at:` sites (the shim holds four)"))); }
@@ -694,6 +805,45 @@ pub func:apply_control = Patched(string:floor, Control->:c, string:name) never f
 
 pub func:apply_spec_control = Patched(string:spec, Control->:c, string:name) never fails {
     pass (raw apply_pairs(spec, @c.spec_before, @c.spec_after, name, "spec-old", "runtime/npkrt.spec"));
+};
+
+// The program's SOURCE with the `program-old:`/`program-new:` pairs applied
+// (step 6, X-21) -- the same rule, over the file `program:` names.
+pub func:apply_program_control = Patched(string:src, Control->:c, string:name) never fails {
+    pass (raw apply_pairs(src, @c.prog_before, @c.prog_after, name, "program-old", c.program));
+};
+
+// A pair keyword's kind: `<prefix>` alone (0, the floor), `spec-<prefix>` (1)
+// or `program-<prefix>` (2); -1 for any other line.
+func:pair_kind_of = int64(string:ln, string:suffix) never fails {
+    if (raw text_eq(ln, suffix)) { pass 0i64; }
+    if (raw text_eq(ln, string_concat("spec-", suffix))) { pass 1i64; }
+    if (raw text_eq(ln, string_concat("program-", suffix))) { pass 2i64; }
+    pass (0i64 - 1i64);
+};
+
+// The keyword of a kind: `old:`, `spec-old:`, `program-old:` (and `new:` alike).
+func:pair_keyword = string(int64:kind, string:suffix) never fails {
+    if (kind == 1i64) { pass (string_concat("spec-", suffix)); }
+    if (kind == 2i64) { pass (string_concat("program-", suffix)); }
+    pass (string_concat(suffix, ""));
+};
+
+// A finished pair onto the list its kind names.
+func:control_close_pair = NIL(Control->:c, int64:kind, move string:was, move string:becomes) never fails {
+    if (kind == 1i64) {
+        drop list_push(@c.spec_before, move(was));
+        drop list_push(@c.spec_after, move(becomes));
+        pass NIL;
+    }
+    if (kind == 2i64) {
+        drop list_push(@c.prog_before, move(was));
+        drop list_push(@c.prog_after, move(becomes));
+        pass NIL;
+    }
+    drop list_push(@c.before, move(was));
+    drop list_push(@c.after, move(becomes));
+    pass NIL;
 };
 
 func:apply_pairs = Patched(string:src, List<string>->:befores, List<string>->:afters, string:name, string:key, string:what) never fails {

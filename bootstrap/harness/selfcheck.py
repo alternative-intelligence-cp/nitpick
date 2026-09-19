@@ -579,6 +579,39 @@ def main():
         print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
         if not ok:
             print("      the belt accepted it; it should not have" if must_fail else "      the belt rejected it: %s" % fails[0][:300])
+    # STEP 6 (X-20): the transformer's PROGRAM mode over a planted unit's IR is a literal too -- through
+    # the tool's `--program` mode, the same three texts npkg's self-check holds its module to -- and the
+    # pair passes this runner's counting belt and site map (sites from PROGRAM_SITE_BASE).
+    xq_prog = 'define internal void @"p.bump"(ptr %c) {\nentry:\n  %t1 = atomicrmw add ptr %c, i64 1 seq_cst\n  %t2 = call i64 @npk_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n  ret void\n}\ndefine i32 @"p.main"() {\nentry:\n  store atomic i64 0, ptr null seq_cst, align 8\n  ret i32 0\n}\ndeclare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\n'
+    xq_expected = 'define internal void @"p.bump"(ptr %c) {\nentry:\n  call void @npkx_point(i32 1000000)\n  %t1 = atomicrmw add ptr %c, i64 1 seq_cst\n  %t2 = call i64 @npkx_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n  ret void\n}\ndefine i32 @"p.main"() {\nentry:\n  call void @npkx_point(i32 1000002)\n  store atomic i64 0, ptr null seq_cst, align 8\n  ret i32 0\n}\ndeclare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)\n\n; --- the explorer\'s shim, for the program\'s own steps (runtime/explore/npkx.ll; 1.5.7 step 6) ---\ndeclare void @npkx_point(i32)\ndeclare i64 @npkx_sys6(i64, i64, i64, i64, i64, i64, i64)\n'
+    xq_sites = '1000000\t@"p.bump"\tatomic\t%t1 = atomicrmw add ptr %c, i64 1 seq_cst\n1000001\t@"p.bump"\tsys6\t%t2 = call i64 @npk_sys6(i64 39, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)\n1000002\t@"p.main"\tatomic\tstore atomic i64 0, ptr null seq_cst, align 8\n'
+    okxq = False
+    xq_why = "tools/explored.npk did not build"
+    if xtool and os.path.exists(str(xtool)):
+        xq_dir = os.path.join(tmp, "explore_transform_program")
+        os.makedirs(xq_dir, exist_ok=True)
+        with open(os.path.join(xq_dir, "p.ll"), "w", encoding="utf-8") as fh:
+            fh.write(xq_prog)
+        r = subprocess.run([xtool, "--program", os.path.join(xq_dir, "p.ll"), os.path.join(xq_dir, "p.x.ll"),
+                            os.path.join(xq_dir, "p.x.sites.txt")], capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            xq_why = "the tool refused: " + (r.stdout + r.stderr).strip()[:300]
+        else:
+            with open(os.path.join(xq_dir, "p.x.ll"), encoding="utf-8") as fh:
+                xq_text = fh.read()
+            with open(os.path.join(xq_dir, "p.x.sites.txt"), encoding="utf-8") as fh:
+                xq_got_sites = fh.read()
+            xq_belt = (explore.check_totality(xq_prog, xq_text, "explore", "program")
+                       + explore.check_sites(xq_text, xq_got_sites, "explore", harness.PROGRAM_SITE_BASE))
+            okxq = xq_text == xq_expected and xq_got_sites == xq_sites and not xq_belt
+            xq_why = ("the text " + ("matches" if xq_text == xq_expected else "differs from") + " the literal, the sites "
+                      + ("match" if xq_got_sites == xq_sites else "differ") + (("; the belt: " + xq_belt[0][:200]) if xq_belt else ""))
+    if not okxq:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-transform-program", "ok" if okxq else "BAD",
+                                "the transformer's program mode over a planted unit's IR is the literal, text and sites, and passes the counting belt"))
+    if not okxq:
+        print("      " + xq_why)
     # THE MARKER BELT (1.5.7 step 1; D-299): a `// stress:` program says whether it
     # is explored. Three planted headers through the real reader: unmarked fails
     # by name, `explore: no <reason>` and `explore: N d=4` pass and read as
@@ -655,6 +688,26 @@ def main():
     print("  %-26s %-4s  %s" % ("explore-control-two-pairs", "ok" if okc3 else "BAD", "a control's pairs apply in order, each `old` against the text as it stands"))
     if not okc3:
         print("      got %r (%s)" % (xc_out, xc_why4))
+    # STEP 6's PROGRAM control (X-21), on planted text in both runners: `program-old:`/`program-new:` pairs
+    # are their own kind -- applied to the program's SOURCE and never to the floor -- and a `program-new:`
+    # closing a floor `old:` is refused by name.
+    xc_prog, xc_why9 = explore.read_control("program: p.npk\nverdict: wrong-exit\nwithin: 1\nprogram-old:\n    x = 1;\nprogram-new:\n    x = 2;\n", "planted")
+    okc9 = False
+    xc_pgot = xc_why9
+    if xc_prog is not None:
+        xc_pf, _ = explore.apply_control("a\n    x = 1;\n", xc_prog, "planted")
+        xc_pp, xc_why10 = explore.apply_control("a\n    x = 1;\n", xc_prog, "planted", "prog_subs")
+        okc9 = (not xc_prog["subs"] and len(xc_prog["prog_subs"]) == 1 and xc_pf == "a\n    x = 1;\n" and xc_pp == "a\n    x = 2;\n")
+        xc_pgot = "%r %s" % (xc_pp, xc_why10)
+    xc_mix, xc_why11 = explore.read_control("program: p.npk\nverdict: wrong-exit\nwithin: 1\nold:\n    x = 1;\nprogram-new:\n    x = 2;\n", "planted")
+    if okc9:
+        okc9 = xc_mix is None and "`program-new:` with no `program-old:`" in xc_why11
+    if not okc9:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("explore-control-program", "ok" if okc9 else "BAD",
+                                "`program-old:`/`program-new:` pairs are their own kind, applied to the program's source and never to the floor"))
+    if not okc9:
+        print("      got %s" % xc_pgot[:200])
 
     class _XcExp:
         exit = 3

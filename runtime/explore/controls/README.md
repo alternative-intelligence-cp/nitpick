@@ -25,10 +25,20 @@ spec-old:                                        a SPEC control's pairs (step 5,
   <lines of runtime/npkrt.spec, exactly once>    runtime/npkrt.spec -- a FALSE caller hypothesis planted
 spec-new:                                        where the floor is untouched
   <their replacement>
+program-old:                                     a PROGRAM control's pairs (step 6, X-21): the same over
+  <lines of the program's source, exactly once>  the source of the file `program:` names -- a defect in
+program-new:                                     the program's own synchronization
+  <their replacement>
 ```
 
-A control holds floor pairs, spec pairs, or both; the patched spec goes beside the patched floor in the
-run's build directory, so the entry checkers (D-302) are generated from it as from the real one.
+A control holds floor pairs, spec pairs, program pairs, or any mix; the patched spec goes beside the
+patched floor in the run's build directory, so the entry checkers (D-302) are generated from it as from the
+real one, and the patched program source is written there too (the same basename, which its module's name
+must match) and compiled from there. A block line is taken verbatim and must begin with two spaces, so a
+program control plants indented source lines only; a program with a relative `use` cannot be planted (its
+imports would not resolve from the build directory: a compile error, loud). Every unit's own IR, the
+planted program's included, is transformed as the floor is (step 6, X-20), so a program's `atomic<T>` and
+`sys` steps are points of the schedule.
 
 The verdict is one of:
 
@@ -56,6 +66,16 @@ scheduling point wide inside runs of 100,000 steps; blind PCT's bound there is 1
 seed, and 0 of 100 seeds found any of them, so they are directed. A directed site takes effect BEFORE
 the named instruction (the scheduling point precedes the step), so a control names the first step AFTER
 its window — the reserve, not the capacity read; the stop walk's first read, not the claim.
+
+## The program control (step 6, 2026-09-18)
+
+`atomic-lost-update.ctl` plants a lost update in `atomic_threads` itself: its `fetch_add` (one
+read-modify-write, one step) becomes a `load` and a `store` (two steps with a window between them). Two
+threads count to 400; a thread preempted between its load and its store writes back a stale value. The
+explorer sees it only through the points step 6 puts in the PROGRAM's own IR, and that was MEASURED, 100
+seeds each at the measured k: the planted source linked with its IR untransformed, 100 of 100 exit 0 (k 115:
+each thread's loop runs from one floor step to the next with no point inside it, so no schedule can split
+a load from its store); transformed, found at seed 1 and in 55 of 100 (exit 1, a total short of 400; k 917).
 
 ## The spec control (step 5, 2026-09-18)
 
