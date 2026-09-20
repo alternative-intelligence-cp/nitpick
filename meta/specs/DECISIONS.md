@@ -5010,6 +5010,21 @@ is unaffected: it consumes a view and produces an owning `string`.
   cross an `extern` boundary — `extern` signatures take a pointer and a length as
   separate parameters, as C does.
 
+> **[Landed 1.5.8b step 5, 2026-09-19 — the runtime check is now PROVEN away
+> where a proof is available.]** "`--verify-memory` keeps proving bounds
+> statically" above was the intent; until this step nothing decided a bounds
+> guard, and every one of them ran. The `bounds` row (VERIFICATION_REFERENCE
+> §7b) is that proof: `0 <= i < len` at every checked element access — an
+> array's, a slice's, a buffer's and, since D-314, a `List`'s against its
+> `count` — and one row for a range slice's `lo <= hi <= len` pair, elided
+> into one `llvm.assume` where discharged and kept otherwise (D-309's rule for
+> the residue). What makes a loop's accesses provable is that A CONTAINER'S
+> LENGTH IS ONE TERM: `.len` and `.count` read off a binding are the same
+> uninterpreted symbol wherever they appear, so the bound of `for (int64:i in
+> 0i64...xs.len)` and the length the row compares against are one thing. A
+> length read through a call, or off a name a pointer may write (DEF-14), has
+> no term and its rows stay `open` with their guards.
+
 ---
 
 ## D-071 — Every thread runs an executor; blocking is always task suspension — **SETTLED**
@@ -19431,6 +19446,18 @@ cast is `=>!` (D-095), a different node, so the draft armed nothing, and the
 step's own control caught it. The conversions past 64 bits are hand-lowered
 in both directions (DEF-61), with no compiler-rt call at `-O0` or after `opt
 -O2`.]*
+
+*[2026-09-19, THE ROW LANDED at 1.5.8b step 5. `cast-range`'s goal is the
+emitter's own guard read back as a proposition — the two ORDERED compares
+against the same `double` bounds the table renders, so the row and the check
+cannot drift apart: one function (`cast_bounds.npk`) writes the LLVM text and
+the SMT text from one set of bounds, and a `flt32` operand is widened for the
+comparison exactly as the emitter widens it. A discharged row elides into one
+`llvm.assume` over the conjunction. What discharges is a cast whose operand
+the path bounds — a literal, a value a branch has compared, a `limit`ed
+binding; a float that arrived through a call is `open` and keeps its trap,
+which is D-309's rule. The cast's RESULT stays opaque either way: nothing
+downstream learns the integer's value from the row.]*
 
 ## D-307 — SIGSEGV, SIGBUS, SIGILL and SIGFPE reach `failsafe` as `MachineFault` (4120), handled on each thread's signal stack — **SETTLED (user decision, 2026-09-18: "go with all four"; S-87)**
 

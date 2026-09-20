@@ -1275,7 +1275,24 @@ splitmix64 reproduce their published sequences, and the prelude's `fnv_mix`
 adopted `*%`: a 128-bit multiply, an `IntOverflow` guard that can never fire
 and a truncation became one `mul i64` in every program that hashes
 (`intern.npk`'s copy of the same step waits for a snapshot that parses the
-operator, D-205). The old 1.5.8 was PLANNED 2026-09-18 by
+operator, D-205). **Step 5 LANDED 2026-09-19**: the `bounds` and `cast-range`
+rows — an index inside its bound at every checked access (one row for a range
+slice's pair) and a float's `=>!` cast to an integer inside its target's, each
+goal the EMITTER's own guard read back, each elided into one `llvm.assume`
+where discharged. A CONTAINER'S LENGTH IS ONE TERM (`(|npk.len| base)` per
+binding, ended by a write to the binding), which is what lets a loop over
+`xs.len` prove its own accesses; the compiler's own manifest is **3,040 rows —
+1,136 discharged, 1,177 open, 722 `unencoded`**, and the 722 are one shape: a
+`List` is address-taken by every `push`, so DEF-14 leaves it no length term
+(E-4 re-homes that residue to 1.6's leg B, where a frame condition is the
+tool). DEF-82 is fixed — a `defer` body's guard is ONE row and one trap PER
+COPY the emitter writes. Four defects of the step's own making were found by
+its instruments, not by reading: an element WRITE had a guard and no row (71
+unaccounted traps), the range slice asked for its elision under the wrong site
+key (the row read `discharged` while the guard stayed), the length symbol's
+sentinel was 0 where `sym_new` hands out ids from 0 (DEF-69's rule again), and
+a shared symbol's range axiom sat in the region of its first read, so two
+functions lost discharged rows the gate then refused. The old 1.5.8 was PLANNED 2026-09-18 by
 `nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
@@ -2100,6 +2117,24 @@ that carried them retired at the cycle close):
   a `Self->` receiver, a stateful operation; `$$i` reads), and may not touch a
   hidden one at all. The compiler-known headers (`ptr`/`len`/`cap` of string,
   cstring, slice, buffer; `OwnedFd.value`) are sealed in EVERY module.
+
+- **An index's proof is a length TERM, and a length term belongs to a binding**
+  (D-070's rows, 1.5.8b step 5): `xs.len` and `l.count` read off a BINDING are
+  one symbol, so a loop written over the length proves the accesses inside it
+  and the verified build drops their compares. A write to the binding ends the
+  symbol; a name a pointer may write (DEF-14) never had one, which is why every
+  `List` access — the container is address-taken by `push` — is an `unencoded`
+  row that keeps its guard (722 of the compiler's own; E-4 sends that residue to
+  1.6). So a `bounds` row discharges for a slice, a string, a buffer or a fixed
+  array whose length is named and stable, and a `prove`-like bound on an index
+  (a `limit<Rules>`) discharges too. A float's `=>!` cast to an integer carries
+  a `cast-range` row over the OPERAND; the resulting integer stays opaque.
+- **A guard inside a `defer` body is one row and several traps** (DEF-82,
+  1.5.8b step 5): the walk sees the body once, the emitter writes it at every
+  exit that runs it, and the row's `traps` field is one copy's times the copies.
+  When adding a construct the emitter may write more than once, ask what the
+  belts will count — they compare the IR's traps and assumes against the rows,
+  and they fail closed.
 
 ### Reserved words that read like ordinary names
 

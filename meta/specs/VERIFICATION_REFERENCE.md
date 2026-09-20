@@ -622,8 +622,8 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142); a `simd` division's any-lane guard is ONE row over the lanes' conjunction (D-282) | yes | 1.5.0 |
 | `div-min` | a signed division is not `INT_MIN / -1` (D-142); one row over the lanes for a signed-element `simd` (D-282) | yes | 1.5.0 |
 | `overflow` | a plain-integer `+ - *` or negation stays in range (D-210): the intrinsic's overflow bit at the guard's own site (K-9) -- a binary node's, a compound's target's, a negation's own node; ONE row over the lanes for a `simd` integer operation, and ONE with N-1 traps for an integer `.sum()`; a node the folder writes as its constant has no guard and no row (D-310) | yes | 1.5.8b step 3 |
-| `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8b step 5 (pending) |
-| `cast-range` | a float's `=>!` cast to an integer has an integer meaning (D-306): the value is not NaN or an infinity, and its truncation toward zero lies inside the target -- the two ordered compares before the conversion, `CastRange`; a `simd` cast's any-lane guard is one row over the lanes | yes | 1.5.8b step 5 (pending) |
+| `bounds` | an index is inside its array, slice, buffer or `List` (D-070, D-314): `0 <= i < len` at every checked element access, and ONE row for a range slice's pair (`lo <= hi <= len`) at the RANGE's node; the length is the term `(|npk.len| base)` wherever it is named, so a loop written over `xs.len` or `l.count` proves the accesses inside it; a fixed array's length is its type's constant | yes | 1.5.8b step 5 |
+| `cast-range` | a float's `=>!` cast to an integer has an integer meaning (D-306): the value is not NaN or an infinity, and its truncation toward zero lies inside the target -- the two ordered compares before the conversion, `CastRange`; a `simd` cast's any-lane guard is one row over the lanes | yes | 1.5.8b step 5 |
 | `exhaustive` | a `pick` covers its domain (checker-discharged) | no | 1.5.4 |
 | `requires` | a callee's precondition holds at the call (D-221) | yes | 1.5.3 |
 | `ensures` | a body's postcondition holds at its return (D-221) | yes | 1.5.3 |
@@ -652,6 +652,31 @@ elide (D-219); the subcycle column says where its rows are produced.
 > that could produce a value with NO meaning -- a float's `=>!` to an
 > integer, LLVM poison until 1.5.8 step 1 (DEF-58) -- now traps `CastRange`
 > (4117) where its row is not discharged.
+
+> **[1.5.8b step 5 (2026-09-19).]** Both kinds are live, and three things
+> about them are worth stating where the catalogue can be read against the
+> manifest. (1) A CONTAINER'S LENGTH IS ONE TERM. `.len` on a slice, a
+> string, a cstring or a buffer and `.count` on a `List` are
+> `(|npk.len| base)` -- an uninterpreted function of the base, anchored to
+> the BINDING it was read from and invalidated with it -- so the bound in
+> `for (int64:i in 0i64...xs.len)` and the length an element's row compares
+> against are the same symbol and the row discharges. An escaped name has no
+> length term (DEF-14's rule: a name a pointer may write is never named), and
+> neither does a length read through a call, which is why a row over a
+> parameter's element is `open` unless the loop bounds it.
+> (2) A RANGE SLICE IS ONE ROW for the pair the emitter tests in one `and`,
+> recorded at the RANGE node -- the index expression's rhs, not the index
+> expression, which is the key the emitter must ask with. Asked with the
+> wrong key the row reads `discharged` and its guard stays in the verified
+> build; the belt that counts a kind's assumes against its elided guards is
+> what caught it.
+> (3) A GUARD INSIDE A `defer` BODY IS ONE ROW AND SEVERAL TRAPS (DEF-82).
+> The walk sees a `defer` body once; the emitter writes it at every exit that
+> runs it. So a row recorded inside one carries the body's statement id, the
+> emitter reports each copy it writes, and the row's `traps` field is
+> computed when the table is written -- one copy's traps times the copies.
+> `defer_guard_copies.npk` holds both directions; before the fix the row said
+> one where the build held two, in both.
 
 > **[D-267, 1.5.3 step 1 (2026-09-06).]** `failsafe-post`'s guard column
 > read `no` as ratified: D-014 stated the postcondition and nothing checked
@@ -723,8 +748,9 @@ elide (D-219); the subcycle column says where its rows are produced.
 > text denotes (a `flt32` literal rounded twice, as the emitter's double-then-
 > `fptrunc` road does), an integer entering `to_fp RNE (to_real x)`, a
 > widening exact, a narrowing `=>!` rounded; `%` (`frem`) and a float LEAVING
-> to an integer stay opaque (1.5.8's `cast-range`); `flt128` is storage
-> (D-143) and has no term. Every float value is NAMED and its definition
+> to an integer stay opaque (the cast's RESULT has no term; the crossing
+> itself carries a `cast-range` row over the operand since 1.5.8b step 5);
+> `flt128` is storage (D-143) and has no term. Every float value is NAMED and its definition
 > recorded, so the twin below reads a flat list. Floats never trap: no row
 > is theirs — what the terms buy is that a `limit`, a contract, an
 > `invariant`, a `prove` and a `TbbErr` guard over a float entering `tbb` or
@@ -889,7 +915,9 @@ the two agree by correct rounding; a `flt32` literal rounded twice, as the
 emitter's double-then-`fptrunc` road does), an integer entering `to_fp RNE
 (to_real x)`, a widening exact, a narrowing `=>!` rounded; `%` (`frem`, a
 truncated fmod, not IEEE's `fp.rem`) and a float LEAVING to an integer stay
-opaque (1.5.8's `cast-range`); `flt128` is storage (D-143) and has no term.
+opaque as VALUES -- the crossing itself carries a `cast-range` row over the
+operand since 1.5.8b step 5, whose goal is the emitter's own two ordered
+compares; `flt128` is storage (D-143) and has no term.
 Every float value is NAMED — a fresh symbol defined equal to the operation,
 its definition recorded by shape — so the twin below reads a flat list.
 Floats never trap (D-007): no row is theirs; what tier 1 buys is that a
@@ -932,8 +960,8 @@ under the element's theory above and no term of its own — a side table by
 expression: the constructor's arguments, a splat's one term N times, an
 elementwise operation lane-wise (a word's arithmetic, bitwise and compares;
 a float's IEEE operations; a `bool` lane's `==`/`!=`/`&`/`|`/`^`), `[i]`
-with a numeral index the lane's term (a computed index opaque; its `bounds`
-row is 1.5.8's), `.len` the count, `.any()`/`.all()` the disjunction and
+with a numeral index the lane's term (a computed index opaque, its `bounds`
+row live since 1.5.8b step 5), `.len` the count, `.any()`/`.all()` the disjunction and
 conjunction, `sum`/`min`/`max` folded in the emitter's order (`sum` left to
 right; `min`/`max` as its `select` over the strict compare, `fcmp olt`/`ogt`
 on floats — false on NaN, so a NaN lane is passed over as the machine does;
@@ -973,6 +1001,14 @@ manifest at the close: 368 rows in 197 function files, decided in 3.9 s
 under the profile — 329 `int`, 11 `bv` (step 1's crossings), 28 `-`, no
 `fp` row, since neither the compiler nor the prelude functions its emission
 holds compute in floats or vectors.
+
+> **[1.5.8b (2026-09-19).]** Three of the four things this paragraph lists as
+> outside the fragment came inside it: D-210's overflow rows at step 3, and
+> `bounds` and `cast-range` at step 5 -- the last over the float OPERAND (the
+> resulting integer is still opaque, which is what "a float leaving to an
+> integer is opaque" goes on meaning). A `limit` over a string, a struct or an
+> array and the `TbbErr` guards over a `frac` or a tfp-element `complex` are
+> still `unencoded` with their guards kept.
 
 ## 8. The SMT elimination manifest
 
@@ -1110,8 +1146,9 @@ holds compute in floats or vectors.
 > and producing rows has a code in both runners' trap tables, or is a
 > bypass kind (`limit-subsume`, whose guard is the callee's entry). A kind
 > the catalogue marks `pending` must appear in no row. `overflow` traps
-> `-4110`. `overflow` and `cast-range` elide into assumes, and the belts'
-> assume kinds had lacked `cast-range` since D-306 gave it a guard.
+> `-4110`, `bounds` `-4099` and `cast-range` `-4117`. `overflow`, `bounds`
+> and `cast-range` elide into assumes, and the belts' assume kinds had
+> lacked `cast-range` since D-306 gave it a guard.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

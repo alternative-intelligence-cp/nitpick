@@ -46,7 +46,18 @@ pub struct:ObTable = {
     List<string>:files;      // each function's .smt2 text, in emission order
     List<string>:file_syms;  // its symbol
     List<int64>:file_checks; // its `(check-sat)` count
-    List<string>:rows;       // rows.txt lines
+    // A ROW'S LINE IN FOUR PIECES (DEF-82, 1.5.8b step 5). A `defer` body is
+    // written ONCE PER EXIT that runs it and the walk records its guards once,
+    // so a row inside one keeps the traps of ONE copy and the count of the
+    // copies -- and the count exists only after the function is lowered, which
+    // is after `obl_finish` rendered the row. The tenth field is therefore
+    // computed when the table is written: `row_traps * row_mult`.
+    List<string>:rows;       // rows.txt fields 1..9
+    List<int32>:row_traps;   // field 10, for ONE copy of the guard
+    List<int32>:row_defer;   // the defer body's statement id this row sits in, or 0
+    List<int32>:row_mult;    // the copies the emitter wrote: 1, or a defer body's count
+    List<string>:row_tail;   // fields 11 and 12
+    int64:batch_lo;          // the first row of the function now being lowered
     // THE TIER-2 TWINS (D-281, 1.5.4b step 3): `NNNN.t2.smt2` texts by file
     // number, and `index.t2.txt`'s lines (`NNNN<TAB>count<TAB>k1,k2,...`).
     List<string>:t2_names;
@@ -67,6 +78,11 @@ pub func:obtable_init = ObTable(bool:want_files) never fails {
                   file_syms: raw list_init::<string>(16i64),
                   file_checks: raw list_init::<int64>(16i64),
                   rows: raw list_init::<string>(32i64),
+                  row_traps: raw list_init::<int32>(32i64),
+                  row_defer: raw list_init::<int32>(32i64),
+                  row_mult: raw list_init::<int32>(32i64),
+                  row_tail: raw list_init::<string>(32i64),
+                  batch_lo: 0i64,
                   t2_names: raw list_init::<string>(4i64),
                   t2_texts: raw list_init::<string>(4i64),
                   t2_index: raw list_init::<string>(4i64),
@@ -179,7 +195,12 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
         drop list_push(@fchecks, t.file_checks[i]);
     }
     // a line `NNNN<TAB>...`: renumbered when its file is kept, dropped when not
+    // -- with the four pieces of DEF-82's row travelling together.
     List<string>:rows = raw list_init::<string>(t.rows.count + 1i64);
+    List<int32>:rtraps = raw list_init::<int32>(t.rows.count + 1i64);
+    List<int32>:rdefer = raw list_init::<int32>(t.rows.count + 1i64);
+    List<int32>:rmult = raw list_init::<int32>(t.rows.count + 1i64);
+    List<string>:rtail = raw list_init::<string>(t.rows.count + 1i64);
     t.encoded_rows = 0i64;
     t.unencoded_rows = 0i64;
     t.checker_rows = 0i64;
@@ -201,6 +222,10 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
                     if (nl.ptr[p] == 99u8) { t.checker_rows = t.checker_rows + 1i64; }
                 }
                 drop list_push(@rows, move(nl));
+                drop list_push(@rtraps, t.row_traps[r]);
+                drop list_push(@rdefer, t.row_defer[r]);
+                drop list_push(@rmult, t.row_mult[r]);
+                drop list_push(@rtail, move(t.row_tail[r]));
                 break;
             }
         }
@@ -234,6 +259,10 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
     t.file_syms = move(fsyms);
     t.file_checks = move(fchecks);
     t.rows = move(rows);
+    t.row_traps = move(rtraps);
+    t.row_defer = move(rdefer);
+    t.row_mult = move(rmult);
+    t.row_tail = move(rtail);
     t.t2_names = move(t2n);
     t.t2_texts = move(t2t);
     t.t2_index = move(t2i);
@@ -249,11 +278,32 @@ pub func:obl_t2_index_text = string(ObTable->:t) never fails {
     pass (raw sink_into_string(move(s)));
 };
 
+// THE TENTH FIELD IS COMPUTED HERE (DEF-82): one copy's traps times the
+// copies the emitter wrote. `row_mult` is 1 for every ordinary row and the
+// emission count for a row inside a `defer` body — 0 when that body was never
+// written, which is a row whose guard is not in the artifact at all.
 pub func:obl_rows_text = string(ObTable->:t) never fails {
     Sink:s = raw sink_to_buffer(4096i64);
     for (int64:i in 0i64...t.rows.count) {
         drop sink_write(@s, string_from_bytes(t.rows[i].ptr, t.rows[i].len));
+        drop sink_write(@s, "\t");
+        drop sink_write(@s, int_to_string((t.row_traps[i] * t.row_mult[i]) => int64));
+        drop sink_write(@s, string_from_bytes(t.row_tail[i].ptr, t.row_tail[i].len));
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));
+};
+
+// THE EMITTER COUNTED ANOTHER COPY of a `defer` body (DEF-82). Only the
+// function being lowered is looked at: its rows were pushed by the
+// `obl_finish` that ran just before its body, and `batch_lo` is where they
+// start. Function emission never nests (the `FnEmitter` is one struct, and
+// generic instances are drained by `emit_program`'s worklist between
+// functions), so "the current batch" is exactly this function's rows.
+pub func:obl_note_defer_copy = NIL(ObTable->:t, int32:stmt_id) never fails {
+    if (stmt_id == 0i32) { pass NIL; }
+    for (int64:r in t.batch_lo...t.rows.count) {
+        if (t.row_defer[r] == stmt_id) { t.row_mult[r] = t.row_mult[r] + 1i32; }
+    }
+    pass NIL;
 };

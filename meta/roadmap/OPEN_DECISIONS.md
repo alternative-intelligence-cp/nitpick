@@ -1678,7 +1678,7 @@ The fix:
   (`ens_inner_guard.npk`).
 - Both self-checks hold five cases, the defect's own shape among them.
 
-**DEF-82 — OPEN, owned by the compiler seat, scheduled for 1.5.8b step 5: A
+**DEF-82 — FIXED at 1.5.8b step 5: A
 `defer` BODY'S GUARD IS EMITTED ONCE PER EXIT AND HAS ONE ROW.** (found 2026-09-19
 by `nitpick-compiler_s11`, reading the encoder beside DEF-81's fix.) The encoder
 walks a `defer` body once, with every name opaque. That is sound: the row holds
@@ -1694,6 +1694,45 @@ the belts see the traps and assumes the build holds. That means writing a
 function's rows after its body is lowered, since the elision answers the
 lowering needs are computed before it. Step 5 adds the `bounds` rows, and an
 element write in a `defer` is the likeliest shape.
+
+*[FIXED 2026-09-19 at 1.5.8b step 5, as the direction above says: by counting
+what the emitter does. A row recorded inside a `defer` body carries that body's
+statement id (`SmtObl.defer_stmt`, set while the walk is inside it — nested
+bodies need no case, since an inner body's id is counted once per copy of the
+outer); the two sites that write a body (`run_defers_down_to`,
+`run_exit_defers`) report each copy; and the row's tenth field is computed when
+the table is WRITTEN, as one copy's traps times the copies. Writing the whole
+row after the lowering was not needed — only the traps field is deferred, so
+the table keeps a row's line in four pieces and assembles them at the end, and
+the elision answers stay computed before the body as they must be. The batch
+the emitter counts into is the function's own rows: function emission never
+nests (the `FnEmitter` is one struct; generic instances are drained by
+`emit_program`'s worklist between functions). `tests/verify/defer_guard_copies.npk`
+holds both directions — an open row whose guard is written twice and a
+discharged one whose two copies are both elided — and it FAILS against the
+pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
+-4099 traps for 1 retained".]*
+
+**DEF-85 — OPEN, owned by the compiler seat, raised at 1.5.8b step 5's third full
+harness: `failsafe_alloc.npk`'s VERDICT RESTS ON A FIVE-SECOND WALL CLOCK.** (found
+2026-09-20 by `nitpick-compiler_s11`.) The program's two threads are declared
+`joins JOIN_5S`, and its expected answer is `failsafe`'s 45. Under THREE full
+harnesses running at once, one run in 40 answered 70 — the trap route's re-entry
+code, which is what a second trap inside `failsafe` produces. Measured afterwards on
+a quiet machine: 120 consecutive runs, all 45. So the mechanism is the join deadline
+slipping under load, the raise landing while `failsafe` is already running, and the
+re-entry rule ending the process at 70 exactly as D-291 and D-307 say it should —
+the compiler and the floor both did the right thing, and the TEST is what is
+load-sensitive. This matters because `NPK_HEAP_STATS` exists precisely so that "a
+wall-clock is never a verdict" (1.5.1b step 0), and here a wall-clock sits in a
+verdict position: a green run means "the machine was fast enough", which is not the
+property the program was written to show (D-292's failsafe region answering without
+waiting on a mutex a stopped thread holds). Options, for the user: raise the
+deadline far past any plausible load; make the program's answer independent of the
+join (the `failsafe` answer is what matters, not that the threads joined); or mark
+it as a test whose stress loop runs only on an unloaded machine. Not a defect in the
+compiler, the floor or the runners — recorded so the next seat that sees a lone 70
+does not go looking for one.
 
 **DEF-83 — FIXED at 1.5.8b step 3: AN EXPLORER CONTROL'S FINDING SEED COULD PASS
 ITS WALL-CLOCK NET.** (found 2026-09-19 by 1.5.8b step 1b's first full harness.)
@@ -1767,6 +1806,20 @@ defect declares a `DEF-` in §2f.
 ---
 
 ## 4. Decisions blocking 1.5 (verification) and 1.6 (the analyzer evidence — "Astrée" until D-233)
+
+> **[1.5.8b step 5 (2026-09-19) — E-4, for 1.6's leg B: THE `bounds` RESIDUE IS A FRAME
+> PROBLEM, NOT A SOLVER ONE.]** The `bounds` rows landed with 831 rows in the compiler's
+> own build: 79 discharged, 30 open and **722 `unencoded`**, and the 722 are one shape.
+> A `List` is address-taken by every `list_push(@l, …)`, so DEF-14's rule — a name a
+> pointer may write is never NAMED — leaves it no length term, and an access through a
+> `List<T>->` parameter has none either. Giving those a term is not a matter of a better
+> query: two reads of `l.count` are the same value only while nothing writes `l`, and a
+> loop body that calls anything may. What is needed is a FRAME CONDITION ("nothing in
+> this region writes this object"), which is an effect analysis over the emitted IR —
+> exactly 1.6 leg B's abstract interpretation, where an interval domain plus a
+> no-store-to-this-object fact is the standard shape. Recorded so the next seat does not
+> re-derive it, and so the 722 are read as a scheduled residue (D-309: measured, guarded,
+> reported) rather than as a hole. Owner: the compiler seat at 1.6.
 
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >

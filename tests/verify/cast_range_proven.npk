@@ -1,0 +1,35 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+// expect-obligation: cast-range discharged 1
+// expect-obligation: overflow open 1
+//
+// A FLOAT CAST PROVEN TO HAVE AN INTEGER MEANING (D-306; 1.5.8b step 5). The
+// branch bounds the value, so the guard's own condition — a number (an
+// ordered compare is false for NaN) strictly inside the target's range — is
+// proven, and the verified build turns the two compares into one
+// `llvm.assume`. The row's goal is the emitter's guard term for term: both
+// spellings of D-306's bounds come from `cast_bounds.npk`.
+mod:cast_range_proven;
+
+func:main = int32(cstring[]:argv) {
+    flt64:f = ((argv.len =>! int32) => flt64) * 2.0f64;
+    if ((f < 0.0f64) || (f > 100.0f64)) { exit 7i32; }
+    int32:k = f =>! int32;
+    exit (k - 2i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 88i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

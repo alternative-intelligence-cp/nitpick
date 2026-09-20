@@ -1,0 +1,42 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+// expect-obligation: bounds discharged 3
+// expect-obligation: overflow open 3
+//
+// AN INDEX PROVEN INSIDE ITS BOUND (D-070; 1.5.8b step 5). A container's
+// LENGTH is one term wherever it is named: `xs.len` in the loop's bound and
+// the length an element's `bounds` row compares against are the same symbol,
+// so a loop written over the length proves every element access inside it.
+// The verified build turns each guard into one `llvm.assume`. A fixed array's
+// length is its type's constant, so a literal index discharges outright.
+mod:bounds_proven;
+
+func:sum = int32(int32[]:xs) never fails {
+    int32:acc = 0i32;
+    for (int64:i in 0i64...xs.len) {
+        acc = acc +% xs[i];
+    }
+    pass acc;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int32:s = raw sum(a[0i64...4i64]);
+    exit (s - 10i32 + a[2i64] - 3i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

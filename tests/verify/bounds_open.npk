@@ -1,0 +1,36 @@
+// expect-exit: 94
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+// expect-obligation: bounds open 1
+// expect-obligation: overflow open 1
+//
+// AN INDEX NOTHING BOUNDS KEEPS ITS GUARD, AND THE GUARD FIRES (D-070,
+// D-309; 1.5.8b step 5). The index is the caller's, and no fact relates it to
+// the array's length, so the row stays `open` and the verified build holds the
+// trap. At run time the index is past the end and `OutOfBounds` (94) is the
+// answer, at -O0 and at -O2.
+mod:bounds_open;
+
+func:pick_one = int32(int32[4]:a, int64:i) never fails {
+    pass a[i];
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    exit (raw pick_one(a, (argv.len =>! int64) + 8i64));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

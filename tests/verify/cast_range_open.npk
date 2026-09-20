@@ -1,0 +1,39 @@
+// expect-exit: 88
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+// expect-obligation: cast-range open 1
+//
+// A FLOAT CAST NOTHING BOUNDS KEEPS ITS GUARD, AND THE GUARD FIRES (D-306,
+// D-309; 1.5.8b step 5). Nothing relates the value to `int32`'s range, so the
+// row does not discharge and the verified build holds the trap. At run time
+// the value is 10^30, far past the target, and `CastRange` (88) is the answer
+// at -O0 and at -O2 — where before D-306 it was LLVM poison.
+mod:cast_range_open;
+
+// The value comes through a call, so the walk has no term for it: the row is
+// over an opaque float and is refuted at once, rather than spending the whole
+// rlimit on arithmetic that cannot help it (that shape is a `budget` row, and
+// keeps its guard just the same).
+func:big = flt64(int32:k) never fails {
+    pass ((k => flt64) * 1.0e30f64);
+};
+
+func:main = int32(cstring[]:argv) {
+    flt64:f = raw big(argv.len =>! int32);
+    exit (f =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (CastRange)      { exit 88i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

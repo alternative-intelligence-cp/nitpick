@@ -1,0 +1,48 @@
+// expect-exit: 94
+// expect-obligation: bounds discharged 2
+// expect-obligation: bounds open 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 10
+//
+// A LENGTH TERM ENDS WHERE ITS BINDING IS WRITTEN (1.5.8b step 5). The reason a
+// loop over `xs.len` proves its own accesses is that a container's length is
+// ONE term wherever it is named. That is only sound while the binding keeps the
+// container it was read from: the moment `xs` is assigned, the next read of
+// `xs.len` names a FRESH symbol, and a row over the new one cannot be closed by
+// a fact about the old.
+//
+// This program is the control for that rule. A `for` captures its bound at
+// entry (D-234), so the loop is six iterations long; the body replaces `xs`
+// with a two-element view on the first pass. The access `xs[i]` must therefore
+// keep its guard and trap at `i == 2` — exit 94. If the encoder held the first
+// length across the assignment the row would discharge, the verified build
+// would drop the compare, and the program would read two elements past the end
+// of `small` instead.
+mod:bounds_reassigned;
+
+func:main = int32(cstring[]:argv) {
+    int32[6]:big = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32];
+    int32[2]:small = [10i32, 20i32];
+    int32[]:xs = big[0i64...6i64];
+    int32:acc = 0i32;
+    for (int64:i in 0i64...xs.len) {
+        xs = small[0i64...2i64];
+        acc = acc +% xs[i];
+    }
+    exit (acc -% 30i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)    { exit 94i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

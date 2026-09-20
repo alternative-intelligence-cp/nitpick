@@ -1,0 +1,107 @@
+// cast_bounds -- THE BOUNDS A FLOAT MUST BE INSIDE TO HAVE AN INTEGER MEANING
+// (D-306, 1.5.8 step 1), IN BOTH SPELLINGS (1.5.8b step 5).
+//
+// A float's `=>!` cast to an integer traps `CastRange` unless the value is a
+// number strictly inside the target's range. The EMITTER writes that test as
+// two ordered `fcmp`s against `double` constants; the ENCODER writes the same
+// test as a `cast-range` obligation in the float theory. Two spellings of ONE
+// bound is exactly the shape that drifts, so both are produced here, from the
+// same constants, and this module is a LEAF: the emitter reads it, and so does
+// the encoder, which cannot import the emitter.
+//
+// The constants are exact doubles by construction -- an exponent-only bit
+// pattern for a power of two, and a small integer otherwise -- so the SMT
+// rendering is exact too: a hex pattern crosses as a bit-vector to `to_fp`,
+// and a decimal as a Real under RNE, which rounds nothing it is given here.
+
+mod:cast_bounds;
+
+use "../frontend/intern.npk".*;   // slice_proven
+
+pub func:hex_nibble = string(uint64:nib) never fails {
+    if (nib == 0u64)  { pass "0"; }
+    if (nib == 1u64)  { pass "1"; }
+    if (nib == 2u64)  { pass "2"; }
+    if (nib == 3u64)  { pass "3"; }
+    if (nib == 4u64)  { pass "4"; }
+    if (nib == 5u64)  { pass "5"; }
+    if (nib == 6u64)  { pass "6"; }
+    if (nib == 7u64)  { pass "7"; }
+    if (nib == 8u64)  { pass "8"; }
+    if (nib == 9u64)  { pass "9"; }
+    if (nib == 10u64) { pass "A"; }
+    if (nib == 11u64) { pass "B"; }
+    if (nib == 12u64) { pass "C"; }
+    if (nib == 13u64) { pass "D"; }
+    if (nib == 14u64) { pass "E"; }
+    pass "F";
+};
+
+pub func:pow2_double_signed = string(int32:k, bool:neg) never fails {
+    uint64:e = ((1023i32 + k) =>! uint64) << 52u64;
+    if (neg) { e = e | (1u64 << 63u64); }
+    string:out = "0x";
+    int32:i = 15i32;
+    while (i >= 0i32) {
+        out = string_concat(out,
+                  raw hex_nibble((e >> ((i * 4i32) =>! uint64)) & 15u64));
+        i = i - 1i32;
+    }
+    pass out;
+};
+
+pub func:cast_lo_exact = bool(int32:bits) never fails {
+    pass ((bits == 8i32) || (bits == 16i32) || (bits == 32i32));
+};
+
+pub func:cast_lo_pred = string(int32:bits, bool:signed) never fails {
+    if (!signed) { pass "ogt"; }
+    if (raw cast_lo_exact(bits)) { pass "ogt"; }
+    // No `double` lies strictly between -2^(N-1) - 1 and -2^(N-1) once the
+    // spacing there exceeds 1, so the inclusive compare at -2^(N-1) is exact.
+    if (bits <= 1024i32) { pass "oge"; }
+    pass "ogt";
+};
+
+pub func:cast_lo_const = string(int32:bits, bool:signed) never fails {
+    if (!signed) { pass "-1.0"; }
+    if (bits == 8i32)  { pass "-129.0"; }
+    if (bits == 16i32) { pass "-32769.0"; }
+    if (bits == 32i32) { pass "-2147483649.0"; }
+    if (bits <= 1024i32) { pass (raw pow2_double_signed(bits - 1i32, true)); }
+    pass "0xFFF0000000000000";
+};
+
+pub func:cast_hi_const = string(int32:bits, bool:signed) never fails {
+    int32:k = bits;
+    if (signed) { k = bits - 1i32; }
+    if (k <= 1023i32) { pass (raw pow2_double_signed(k, false)); }
+    pass "0x7FF0000000000000";
+};
+
+// THE SAME BOUND AS AN SMT `Float64` TERM (1.5.8b step 5): the emitter's hex
+// pattern is a bit-vector literal to `to_fp`, and its decimal is a Real under
+// RNE. A negative decimal is written `(- 129.0)`, since SMT-LIB has no signed
+// numeral.
+pub func:cast_bound_smt = string(string:llvm_text) never fails {
+    if (llvm_text.len == 0i64) { pass ""; }
+    if (llvm_text.len > 2i64) {
+        if ((llvm_text.ptr[0i64] == 48u8) && (llvm_text.ptr[1i64] == 120u8)) {
+            string:h = string_concat("((_ to_fp 11 53) #x",
+                           string_concat(raw slice_proven(llvm_text, 2i64, llvm_text.len), ")"));
+            pass h;
+        }
+    }
+    if (llvm_text.ptr[0i64] == 45u8) {
+        string:neg = raw slice_proven(llvm_text, 1i64, llvm_text.len);
+        string:t = string_concat("((_ to_fp 11 53) RNE (- ", string_concat(neg, "))"));
+        pass t;
+    }
+    pass (string_concat("((_ to_fp 11 53) RNE ", string_concat(llvm_text, ")")));
+};
+
+// The SMT predicate for the low bound, beside the emitter's `fcmp` word.
+pub func:cast_lo_smt_pred = string(int32:bits, bool:signed) never fails {
+    if (raw string_eq(raw cast_lo_pred(bits, signed), "ogt")) { pass "fp.gt"; }
+    pass "fp.geq";
+};

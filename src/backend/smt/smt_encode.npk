@@ -102,10 +102,12 @@ use "../../frontend/parse_pick.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/numeric.npk".*;   // tfp_q_decimal: a `tfp` literal's exact Q value (D-195; 1.5.4b step 2)
 use "../../frontend/expr_types.npk".*;
+use "../../frontend/type_layout.npk".*;   // type_is_list: a `List`'s length is its `count` (1.5.8b step 5)
 use "../../frontend/symbols.npk".*;   // a free call's callee, by its symbol (1.5.2 step 3)
 use "../../frontend/type_resolve.npk".*;
 use "../../../lib/nhash.npk".*;
 use "../ir/ir_types.npk".*;
+use "../cast_bounds.npk".*;   // D-306's bounds, in the SMT spelling (1.5.8b step 5)
 use "./smt_writer.npk".*;
 use "./smt_kinds.npk".*;
 
@@ -146,6 +148,7 @@ pub struct:SmtObl = {
     int32:role;              // ROLE_* (1.5.3 step 2, L-13): what the row's retention keeps
     int32:group;             // the rows one guard shares (a loop's three rows, a call's bypass rows)
     int32:traps;             // the traps the group keeps when any of its rows is retained
+    int32:defer_stmt;        // DEF-82: the `defer` body this row sits in, or 0
     int32:line;
     int32:col;
     int32:region;            // the branch region of the site
@@ -172,6 +175,14 @@ struct:Bind = {
     // written value's lanes where those are known -- and a fresh opaque set
     // at every invalidation, restore and merge; empty for any other type.
     List<int32>:lanes;
+    // A CONTAINER BINDING'S LENGTH SYMBOL (1.5.8b step 5): `|len.<name>.<k>|`,
+    // named lazily at the first read and FRESH after every write or
+    // invalidation of the name, so `xs.len` and an element's `bounds` row name
+    // one length exactly while the binding is untouched. 0 for none -- an
+    // escaped name (DEF-14) and every non-container type keep it 0, and their
+    // rows stay `unencoded` rather than resting on a symbol a call could
+    // falsify.
+    int32:lensym;
 };
 
 // A term: encodable or not; when encodable, its text, sort and symbols.
@@ -285,6 +296,7 @@ pub struct:Encoder = {
     int32:ret_type;
     bool:is_failsafe;
     int32:clause_ctx;
+    int32:cur_defer;         // DEF-82: the `defer` body being walked, or 0
     List<int32>:loop_sids;
     List<int32>:loop_labels;
     List<int32>:loop_invs;
@@ -386,7 +398,7 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   subject: raw term_none(), quiet: 0i32, in_prop: 0i32,
                   pfacts: raw list_init::<Term>(4i64),
                   result: raw term_none(), at_entry: false, fn_decl: 0i32, impl_decl: 0i32,
-                  trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32,
+                  trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32, cur_defer: 0i32,
                   loop_sids: raw list_init::<int32>(4i64),
                   loop_labels: raw list_init::<int32>(4i64),
                   loop_invs: raw list_init::<int32>(4i64),
@@ -763,7 +775,7 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
     }
     List<int32>:lanes = raw list_init::<int32>(1i64);
     if ((raw is_simd(e, ty)) && (substitution || (!(raw is_escaped(e, name))))) { lanes = raw lane_syms_new(e, name, ty); }
-    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule, entry: sym, lanes: move(lanes) };
+    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule, entry: sym, lanes: move(lanes), lensym: 0i32 - 1i32 };
     drop list_push(@e.binds, move(b));
     pass NIL;
 };
@@ -773,6 +785,7 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
 func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     int64:i = raw bind_find(e, name);
     if (i < 0i64) { pass NIL; }
+    e.binds[i].lensym = 0i32 - 1i32;   // a write ends the length symbol (1.5.8b step 5)
     int32:ty = e.binds[i].type_id;
     if (!(raw is_termed(e, ty))) { pass NIL; }
     if (raw is_escaped(e, name)) { pass NIL; }
@@ -797,6 +810,10 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         int64:i = raw bind_find(e, names[k]);
         if (i < 0i64) { continue; }
         int32:ty = e.binds[i].type_id;
+        // A WRITE OR AN INVALIDATION ENDS THE LENGTH SYMBOL (1.5.8b step 5):
+        // the next read of this name's length names a fresh one, because the
+        // container it stands for may be another one entirely.
+        e.binds[i].lensym = 0i32 - 1i32;
         if (e.binds[i].lanes.count > 0i64) {
             e.binds[i].lanes = raw lane_syms_new(e, names[k], ty);
             continue;
@@ -863,6 +880,7 @@ func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int
     SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: move(copy),
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: role, group: group, traps: traps,
+                       defer_stmt: e.cur_defer,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
                        checker: false, tier: "",
                        cone_syms: raw list_init::<int32>(1i64),
@@ -883,6 +901,7 @@ func:record_checker = NIL(Encoder->:e, int32:kind, int32:space, int32:site, Span
     SmtObl:o = SmtObl{ kind: kind, goal: "", syms: raw list_init::<int32>(1i64),
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: raw ROLE_GUARD(), group: site, traps: 0i32,
+                       defer_stmt: e.cur_defer,
                        line: at.line, col: at.col, region: e.cur_region, encoded: false,
                        checker: true, tier: "",
                        cone_syms: raw list_init::<int32>(1i64),
@@ -983,6 +1002,169 @@ func:overflow_out_lanes = List<Term>(Encoder->:e, TokenKind:op, int32:elem,
         }
     }
     pass out;
+};
+
+// THE LENGTH OF A CONTAINER VALUE (1.5.8b step 5): an UNINTERPRETED function
+// of the container's own term, `(|npk.len| s)`, so `s.len` where the program
+// writes it and the bound a `bounds` row compares against are ONE term. Equal
+// values have equal lengths, which is all a row needs: `for (i in 0...s.len)`
+// bounds the index by the same symbol the row names, and the row discharges.
+// A fixed array's length is its type's constant instead (DEF-22), known
+// exactly. Anything else has no length term and its rows stay `open`.
+func:len_term = Term(Encoder->:e, Term:base, int32:bty) never fails {
+    if ((raw type_kind(e.types, bty)) == (raw TY_ARRAY())) {
+        pass (raw term_lit(int_to_string((raw type_array_count(e.types, bty)) => int64), false));
+    }
+    if (!base.ok) { pass (raw term_none()); }
+    if (base.is_bool) { pass (raw term_none()); }
+    int32:lf = raw sym_new_fun(e, "|npk.len|", "(Int)", false, "");
+    List<int32>:lone = raw list_init::<int32>(1i64);
+    drop list_push(@lone, lf);
+    pass Term{ ok: true, is_bool: false, text: raw smt_app1("|npk.len|", base.text),
+               syms: raw syms_union(base.syms, lone) };
+};
+
+// THE LENGTH OF A CONTAINER A NAME HOLDS (1.5.8b step 5): the binding's own
+// length symbol, named at the first read and fresh after every write or
+// invalidation. A slice, a `string`, a `cstring`, a `buffer` and a `List` are
+// AGGREGATES with no value term, so their length cannot hang off the value the
+// way a number's facts do; it hangs off the NAME instead, and the name's
+// version discipline is what keeps it honest. An escaped name (DEF-14) gets
+// none: a call holding its address could change the container behind the
+// walk's back. A base that is not a bare name gets none either.
+func:place_len_term = Term(Encoder->:e, ExprId:base, int32:bty) never fails {
+    if ((raw type_kind(e.types, bty)) == (raw TY_ARRAY())) {
+        pass (raw term_lit(int_to_string((raw type_array_count(e.types, bty)) => int64), false));
+    }
+    ExprNode:bn = raw ast_expr(e.ast, base);
+    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass (raw term_none()); }
+    int32:nm = bn.payload =>! int32;
+    int64:bi = raw bind_find(e, nm);
+    if (bi < 0i64) { pass (raw term_none()); }
+    if (raw is_escaped(e, nm)) { pass (raw term_none()); }
+    // THE SENTINEL IS -1, NEVER 0 (1.5.8b step 5): `sym_new` hands out ids from
+    // ZERO, so a first-symbol length -- which is what a function whose first
+    // named term is a length gets -- read as "not yet minted" and was re-minted
+    // at every use. Two reads of `xs.len` then named two symbols and no row
+    // over them could close. DEF-69's rule: a sentinel is a value the domain
+    // never produces.
+    if (e.binds[bi].lensym < 0i32) {
+        string:lt = string_concat("len.", raw intern_get(e.interns, nm));
+        string:lnm = raw smt_sym(lt, raw version_next(e, nm));
+        // THE RANGE AXIOM GOES IN THE ROOT REGION, not wherever the first read
+        // happens to be (1.5.8b step 5). A symbol's range is a fact about its
+        // SORT -- true on every path -- while a hypothesis is only in a row's
+        // cone when its region dominates the row's. One symbol read from two
+        // loops would otherwise carry its axiom in the first loop alone, and a
+        // row in the second could not use `i < len <= MAX`: measured, two rows
+        // of `nio_normalize` stopped discharging when the length became one
+        // symbol, though the facts around them were strictly stronger.
+        int32:preg = e.cur_region;
+        e.cur_region = 0i32;
+        int32:lsy = raw sym_new(e, lnm, raw tt_int(e.types, 64i32, true));
+        e.cur_region = preg;
+        e.binds[bi].lensym = lsy;
+    }
+    List<int32>:ls = raw list_init::<int32>(1i64);
+    drop list_push(@ls, e.binds[bi].lensym);
+    pass Term{ ok: true, is_bool: false,
+               text: raw sym_text(e, e.binds[bi].lensym), syms: move(ls) };
+};
+
+// Does this kind carry a length the encoder can name? A slice, a `string`, a
+// `cstring`, a `buffer` and a `List` do; a fixed array's is its type's.
+func:has_len_term = bool(Encoder->:e, int32:bty) never fails {
+    int32:k = raw type_kind(e.types, bty);
+    if (k == (raw TY_ARRAY()))   { pass true; }
+    if (k == (raw TY_SLICE()))   { pass true; }
+    if (k == (raw TY_STRING()))  { pass true; }
+    if (k == (raw TY_CSTRING())) { pass true; }
+    if (k == (raw TY_BUFFER()))  { pass true; }
+    pass false;
+};
+
+// THE `bounds` ROW (D-070; 1.5.8b step 5): the index is inside its bound --
+// `0 <= i` and `i < len`, the unsigned compare's own meaning -- at the INDEX
+// EXPRESSION's site, the key the emitter guards and elides under. The fact is
+// a hypothesis after the site (every continuing path passed the compare), and
+// inside a proposition it is the proposition's (DEF-33). A term the walk
+// cannot express leaves the row `unencoded`, and the guard stays.
+func:record_bounds = NIL(Encoder->:e, Term:idx, Term:len, int32:site, Span:at) never fails {
+    if (!(idx.ok && len.ok && (!idx.is_bool) && (!len.is_bool))) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_BOUNDS(), "", none, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    string:goal = raw smt_app2("and", raw smt_app2("<=", "0", idx.text),
+                               raw smt_app2("<", idx.text, len.text));
+    List<int32>:gs = raw syms_union(idx.syms, len.syms);
+    drop record(e, raw OK_BOUNDS(), goal, gs, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, gs); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, gs);
+    pass NIL;
+};
+
+// A RANGE VIEW'S ONE ROW (1.5.8b step 5): the emitter's guard is one compare
+// of both conditions -- `lo <= hi` and `hi <= len` -- so the row is one too,
+// at the range expression's own site. The inclusive form's bound is `hi + 1`,
+// exactly as the emitter computes it.
+func:record_bounds_range = NIL(Encoder->:e, Term:lo, Term:hi, Term:len, int32:site,
+                               Span:at) never fails {
+    if (!(lo.ok && hi.ok && len.ok && (!lo.is_bool) && (!hi.is_bool) && (!len.is_bool))) {
+        List<int32>:none2 = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_BOUNDS(), "", none2, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    string:goal = raw smt_app2("and", raw smt_app2("<=", lo.text, hi.text),
+                               raw smt_app2("<=", hi.text, len.text));
+    List<int32>:gs2 = raw syms_union(raw syms_union(lo.syms, hi.syms), len.syms);
+    drop record(e, raw OK_BOUNDS(), goal, gs2, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, gs2); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, gs2);
+    pass NIL;
+};
+
+// THE `cast-range` ROW (D-306; 1.5.8b step 5): a float's cast to an integer
+// has an integer meaning -- the value is a number (an ordered compare is false
+// for NaN) strictly inside the target's range. The goal is the EMITTER's own
+// guard, term for term: the two ordered compares against `double` bounds that
+// `cast_bounds.npk` renders for both spellings, with a `flt32` operand widened
+// exactly, as the emitter's `fpext` widens it. The fact is a hypothesis after
+// the site; inside a proposition it is the proposition's (DEF-33).
+func:record_cast_range = NIL(Encoder->:e, Term:f, int32:sty, int32:dty, int32:site,
+                             Span:at) never fails {
+    if (!(f.ok && (!f.is_bool))) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_CAST_RANGE(), "", none, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    string:d = string_concat(f.text, "");
+    if ((raw word_bits(e, sty)) == 32i32) {
+        d = raw smt_app2("(_ to_fp 11 53)", "RNE", f.text);
+    }
+    int32:bits = raw word_bits(e, dty);
+    bool:sg = raw word_signed(e, dty);
+    string:lo = raw cast_bound_smt(raw cast_lo_const(bits, sg));
+    string:hi = raw cast_bound_smt(raw cast_hi_const(bits, sg));
+    if ((lo.len == 0i64) || (hi.len == 0i64)) {
+        List<int32>:none2 = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_CAST_RANGE(), "", none2, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    e.uses_fp = true;
+    string:goal = raw smt_app2("and", raw smt_app2(raw cast_lo_smt_pred(bits, sg), d, lo),
+                               raw smt_app2("fp.lt", d, hi));
+    drop record(e, raw OK_CAST_RANGE(), goal, f.syms, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, f.syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, f.syms);
+    pass NIL;
 };
 
 // A SHIFT BY A COMPUTED AMOUNT (D-277, 1.5.4b step 0): the `shift-range` row
@@ -4145,6 +4327,12 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (fw.ok) { pass fw; }
         Term:tw = raw twisted_cast(e, ct, st, ty, false, id.index, n.span);
         if (tw.ok) { pass tw; }
+        // A FLOAT LEAVING TO AN INTEGER IS A GUARD (D-306): its row here, its
+        // value opaque -- the truncation is not a term the fragment holds.
+        if ((raw is_float(e, st)) && (raw is_int(e, ty))) {
+            drop record_cast_range(e, ct, st, ty, id.index, n.span);
+            pass (raw term_opaque(e, ty));
+        }
         Term:fc = raw float_cast(e, ct, st, ty);
         if (fc.ok) { pass fc; }
         // An elementwise `simd` cast (D-282): the scalar cast per lane.
@@ -4155,8 +4343,9 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         pass (raw term_opaque(e, ty));
     }
     // `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
-    // pattern -- the word re-signed one way, the int re-signed the other;
-    // every other unchecked cast stays opaque until 1.5.8's `cast-range`.
+    // pattern -- the word re-signed one way, the int re-signed the other; a
+    // float leaving to an integer is a `cast-range` row (D-306, 1.5.8b step
+    // 5), and every other unchecked cast stays opaque.
     if (n.kind == ExprKind.ExprUncheckedCastExpr) {
         Term:ut = raw enc_expr(e, raw expr_operand(n));
         int32:ust = raw ty_of(e, raw expr_operand(n));
@@ -4164,6 +4353,10 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (fw2.ok) { pass fw2; }
         Term:tw2 = raw twisted_cast(e, ut, ust, ty, true, id.index, n.span);
         if (tw2.ok) { pass tw2; }
+        if ((raw is_float(e, ust)) && (raw is_int(e, ty))) {
+            drop record_cast_range(e, ut, ust, ty, id.index, n.span);
+            pass (raw term_opaque(e, ty));
+        }
         Term:fc2 = raw float_cast(e, ut, ust, ty);
         if (fc2.ok) { pass fc2; }
         if ((raw is_simd(e, ust)) && (raw is_simd(e, ty))) {
@@ -4320,6 +4513,17 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             Term:ibase = raw enc_expr(e, raw expr_lhs(n));
             Term:iix = raw enc_expr(e, raw expr_rhs(n));
             int32:ielem = raw type_elem(e.types, ibt);
+            // THE LANE'S OWN `bounds` ROW (1.5.8b step 5): the emitter guards a
+            // lane place against the LANE COUNT, which is the type's own
+            // constant -- so a numeral index discharges outright and a
+            // computed one decides against whatever bounds the path gives it.
+            // This arm returns before the general element arm below, so the
+            // row has to be recorded here: without it the guard was a trap the
+            // belts could not account for (three verify programs, caught by
+            // step 5's own full harness).
+            drop record_bounds(e, iix,
+                               raw term_lit(int_to_string(((raw tt_get(e.types, ibt)).b) => int64), false),
+                               (raw expr_rhs(n)).index, n.span);
             NumVal:ik = raw numeral_of(e, iix, raw expr_rhs(n));
             if (ik.ok && (ik.v >= 0i64) && (ik.v < (((raw tt_get(e.types, ibt)).b) => int64))) {
                 List<Term>:il = raw lanes_of(e, raw expr_lhs(n), ibt);
@@ -4338,18 +4542,65 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     }
     // AN ELEMENT READ (D-286, 1.5.5 step 2): the base and the index are
     // sites, the index's term is memoised for the `disjoint` rows, and the
-    // access is a guard site when the aliasing analysis marked it. The value
-    // is opaque (an element's bounds row is 1.5.8's).
+    // access is a guard site when the aliasing analysis marked it. The
+    // element's `bounds` row is recorded here since 1.5.8b step 5, at the
+    // INDEX EXPRESSION's site -- the emitter's own key -- against the
+    // container's length term; a range view's ONE row is the pair's. The
+    // value read out stays opaque: what an element HOLDS is nobody's fact.
     if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:bty2 = raw ty_of(e, raw expr_lhs(n));
         Term:ibase = raw enc_expr(e, raw expr_lhs(n));
+        ExprNode:rn2 = raw ast_expr(e.ast, raw expr_rhs(n));
+        if (rn2.kind == ExprKind.ExprRangeExpr) {
+            Term:rlo = raw enc_expr(e, raw expr_lhs(rn2));
+            Term:rhi = raw enc_expr(e, raw expr_rhs(rn2));
+            if (rn2.payload == 1i64) {
+                if (rhi.ok && (!rhi.is_bool)) {
+                    rhi = raw term_app2("+", rhi, raw term_lit("1", false), false);
+                }
+            }
+            Term:rlen = raw term_none();
+            if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
+                rlen = raw place_len_term(e, raw expr_lhs(n), bty2);
+            }
+            drop record_bounds_range(e, rlo, rhi, rlen, (raw expr_rhs(n)).index, n.span);
+            drop enc_alias_site(e, id);
+            pass (raw term_opaque(e, ty));
+        }
         Term:iidx = raw enc_expr(e, raw expr_rhs(n));
         drop memo_put(e, (raw expr_rhs(n)).index, iidx);
+        Term:ilen = raw term_none();
+        if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
+            ilen = raw place_len_term(e, raw expr_lhs(n), bty2);
+        }
+        // A POINTER's element has no bound at all (D-038: pointers are thin),
+        // and the emitter guards nothing there -- so no row either.
+        if ((raw type_kind(e.types, bty2)) != (raw TY_POINTER())) {
+            drop record_bounds(e, iidx, ilen, (raw expr_rhs(n)).index, n.span);
+        }
         drop enc_alias_site(e, id);
         pass (raw term_opaque(e, ty));
     }
     // A FIELD READ: the base a site, the access a guard site when marked.
+    // A CONTAINER'S LENGTH IS THE SAME TERM ITS `bounds` ROWS COMPARE AGAINST
+    // (1.5.8b step 5): `.len` on a slice, a `string`, a `cstring` or a
+    // `buffer`, and `.count` on a `List`, are `(|npk.len| base)` -- so a loop
+    // written over the length bounds the index by the row's own symbol. A
+    // fixed array's `.len` is its type's constant (DEF-22). `.cap` and
+    // `.ptr` stay opaque: neither bounds anything.
     if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
         Term:mbase2 = raw enc_expr(e, raw expr_operand(n));
+        int32:mbt2 = raw ty_of(e, raw expr_operand(n));
+        string:mfld = raw intern_get(e.interns, n.payload =>! int32);
+        bool:mlen = ((raw string_eq(mfld, "len")) && (raw has_len_term(e, mbt2)));
+        if ((raw string_eq(mfld, "count")) && (raw type_is_list(e.tr, mbt2))) { mlen = true; }
+        if (mlen) {
+            Term:lt2 = raw place_len_term(e, raw expr_operand(n), mbt2);
+            if (lt2.ok) {
+                drop enc_alias_site(e, id);
+                pass lt2;
+            }
+        }
         drop enc_alias_site(e, id);
         pass (raw term_opaque(e, ty));
     }
@@ -4540,14 +4791,14 @@ func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
 func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
     if (p.kind == PatKind.PatStructDestructure) {
         for (int32:i in 0i32...(raw pat_bind_count(p))) {
-            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64) };
+            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64), lensym: 0i32 };
             drop list_push(@e.binds, move(b));
         }
         pass NIL;
     }
     if (p.kind == PatKind.PatEnumDestructure) {
         for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
-            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64) };
+            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64), lensym: 0i32 };
             drop list_push(@e.binds, move(b2));
         }
         pass NIL;
@@ -5077,6 +5328,21 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                 Term:tbase = raw enc_expr(e, raw expr_lhs(tn));
                 Term:tidx = raw enc_expr(e, raw expr_rhs(tn));
                 drop memo_put(e, (raw expr_rhs(tn)).index, tidx);
+                // THE WRITE'S OWN `bounds` ROW (1.5.8b step 5): an element
+                // WRITE is guarded exactly as a read is -- `addr_of_place` is
+                // one function for both -- and until this line only the read
+                // had a row, so `t.haspt[id] = 1i32` left a trap the belts
+                // could not account for (71 of them in the compiler's own
+                // emission). The site is the INDEX node, the key the emitter
+                // elides under, and the length is the target base's.
+                int32:tbty = raw ty_of(e, raw expr_lhs(tn));
+                if ((raw type_kind(e.types, tbty)) != (raw TY_POINTER())) {
+                    Term:tlen = raw term_none();
+                    if ((raw has_len_term(e, tbty)) || (raw type_is_list(e.tr, tbty))) {
+                        tlen = raw place_len_term(e, raw expr_lhs(tn), tbty);
+                    }
+                    drop record_bounds(e, tidx, tlen, (raw expr_rhs(tn)).index, s.span);
+                }
             } else {
                 drop walk_children(e, tn);
             }
@@ -5375,12 +5641,21 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     if (s.kind == StmtKind.StmtDeferStmt) {
         // Runs at an exit the straight line does not see: every name opaque
         // while it is walked, the outer state restored after.
+        // AND ONCE PER EXIT (DEF-82, 1.5.8b step 5): the walk sees this body
+        // once, the emitter writes it at every exit that runs it, so a guard
+        // in here is one row and several traps. The rows recorded under this
+        // body carry its statement id, and the table multiplies their traps
+        // by the copies the emitter reports. Nested defers need no special
+        // case: the inner body's id is counted once per copy of the outer.
+        int32:pdefer = e.cur_defer;
+        e.cur_defer = (raw stmt_target(s)).index;
         List<int32>:snap = raw snapshot(e);
         drop region_enter(e);
         drop invalidate_all(e);
         drop walk_block(e, StmtId{ index: (raw stmt_target(s)).index });
         drop region_leave(e);
         drop restore(e, snap);
+        e.cur_defer = pdefer;
         pass NIL;
     }
 

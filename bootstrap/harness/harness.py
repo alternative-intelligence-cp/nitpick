@@ -3159,14 +3159,17 @@ TRAP_OF_KIND = {"div-zero": "-4097", "div-min": "-4098", "limit": "-4111",
                 "invariant": "-4114", "loop-step": "-4101", "shift-range": "-4115",
                 "err-exit": "-4100", "disjoint": "-4116",
                 # 1.5.8b step 3 (K-9, K-12): the `IntOverflow` guard's rows.
-                "overflow": "-4110"}
+                "overflow": "-4110",
+                # 1.5.8b step 5: the `OutOfBounds` guard's rows (D-070) and the
+                # `CastRange` guard's (D-306).
+                "bounds": "-4099", "cast-range": "-4117"}
 BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
 # `overflow` and `cast-range` (1.5.8b step 3; K-10, K-11): each elides into one
 # assume -- the second has since D-306, and this set lacked it, a gap in both
 # runners' belts that no row exposed while cast-range produced none.
 ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-exit",
-                          "overflow", "cast-range"))
+                          "overflow", "cast-range", "bounds"))
 
 
 def hang_net(checks, budget):

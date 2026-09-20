@@ -52,6 +52,7 @@ use "./ir_func.npk".*;
 use "./ir_expr.npk".*;
 use "./ir_rules.npk".*;
 use "../smt/smt_obligations.npk".*;
+use "../smt/smt_table.npk".*;   // obl_note_defer_copy (DEF-82, 1.5.8b step 5)
 use "../smt/smt_kinds.npk".*;   // OK_REQUIRES/OK_ENSURES/OK_FAILSAFE_POST, the seam checks' elision keys (1.5.3)
 
 // A `br` or a block start, through the terminated flag — mirrors the seed's
@@ -345,6 +346,10 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int64:depth) never fails {
         while (i > lo) {
             i = i - 1i64;
             StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
+            // ANOTHER COPY OF THIS BODY (DEF-82, 1.5.8b step 5): the walk
+            // recorded its guards once and this is one of the exits that
+            // writes them, so the table multiplies those rows' traps.
+            if (x.fe.ctx.obl != NULL) { drop obl_note_defer_copy(x.fe.ctx.obl, body.index); }
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }
@@ -470,6 +475,10 @@ pub func:run_exit_defers = IrVal(ExprEmitter->:x) never fails {
         while (i > lo) {
             i = i - 1i64;
             StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
+            // ANOTHER COPY OF THIS BODY (DEF-82, 1.5.8b step 5): the walk
+            // recorded its guards once and this is one of the exits that
+            // writes them, so the table multiplies those rows' traps.
+            if (x.fe.ctx.obl != NULL) { drop obl_note_defer_copy(x.fe.ctx.obl, body.index); }
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }

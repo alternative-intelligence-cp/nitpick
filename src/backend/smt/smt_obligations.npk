@@ -142,6 +142,10 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         }
         drop list_push(@c.obl.t2_index, move(ix));
     }
+    // THE FUNCTION'S ROWS START HERE (DEF-82): the emitter counts a `defer`
+    // body's copies into this batch as it lowers the body, which happens
+    // right after this walk.
+    c.obl.batch_lo = c.obl.rows.count;
     for (int64:oi3 in 0i64...en.obls.count) {
         string:r = string_concat(fno, "\t");
         r = string_concat(r, int_to_string(oi3 + 1i64));
@@ -167,16 +171,22 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         r = string_concat(r, raw role_name(en.obls[oi3].role));
         r = string_concat(r, "\t");
         r = string_concat(r, int_to_string(en.obls[oi3].group => int64));
-        r = string_concat(r, "\t");
-        r = string_concat(r, int_to_string(en.obls[oi3].traps => int64));
+        // THE TENTH FIELD IS THE TABLE'S (DEF-82, 1.5.8b step 5): one copy's
+        // traps here, multiplied by the copies the emitter writes.
+        drop list_push(@c.obl.row_traps, en.obls[oi3].traps);
+        drop list_push(@c.obl.row_defer, en.obls[oi3].defer_stmt);
+        int32:mult = 1i32;
+        if (en.obls[oi3].defer_stmt != 0i32) { mult = 0i32; }
+        drop list_push(@c.obl.row_mult, mult);
         // THE TIER (D-281, 1.5.4b step 3): the eleventh field.
-        r = string_concat(r, "\t");
-        r = string_concat(r, string_from_bytes(en.obls[oi3].tier.ptr, en.obls[oi3].tier.len));
+        string:tl = "\t";
+        tl = string_concat(tl, string_from_bytes(en.obls[oi3].tier.ptr, en.obls[oi3].tier.len));
         // THE CLAUSE CONTEXT (DEF-81, 1.5.8b step 3): the twelfth field -- 0,
         // or the loop statement or return seam whose clause check holds this
         // row's guard. That guard exists only where its check is emitted.
-        r = string_concat(r, "\t");
-        r = string_concat(r, int_to_string(en.obls[oi3].ctx => int64));
+        tl = string_concat(tl, "\t");
+        tl = string_concat(tl, int_to_string(en.obls[oi3].ctx => int64));
+        drop list_push(@c.obl.row_tail, move(tl));
         drop list_push(@c.obl.rows, move(r));
     }
     pass NIL;

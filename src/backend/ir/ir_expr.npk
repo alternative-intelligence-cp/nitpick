@@ -52,6 +52,7 @@ use "../../frontend/parse_decorate.npk".*;
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "../smt/smt_kinds.npk".*;
+use "../cast_bounds.npk".*;   // the cast bounds, in both spellings (1.5.8b step 5)
 use "./ir_func.npk".*;
 use "../../frontend/type_resolve.npk".*;
 use "../../frontend/type_generic.npk".*;   // type_subst, for transitive instantiation (1.0.7)
@@ -1811,11 +1812,20 @@ func:index_as_i64 = string(ExprEmitter->:x, IrVal:ix) never fails {
 // (-4099) through the D-142 route. Emitted at EVERY dynamic index — a slice's
 // length is a runtime fact and an array's is a constant, but the refusal is
 // the same controlled shutdown either way.
+// THE INDEX IS INSIDE ITS BOUND (D-070): ONE unsigned compare, which reads a
+// negative index as huge, trapping `OutOfBounds` (-4099). `site` is the INDEX
+// EXPRESSION's node id -- the key the `bounds` row is recorded and elided
+// under (1.5.8b step 5, K-9's rule): a discharged row turns the branch into one
+// `llvm.assume`, and the compare stays for the solver's fact to name.
 func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref,
-                             Span:at) never fails {
+                             int32:site, Span:at) never fails {
     string:ok_c = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(ok_c, " = icmp ult i64 ", idx64, ", ",
                       string_concat(len_ref, "")));
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_BOUNDS())) {
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", ok_c, ")"));
+        pass NIL;
+    }
     string:trap_l = raw irw_new_label(x.fe.w, "idx.oob");
     string:ok_l = raw irw_new_label(x.fe.w, "idx.ok");
     drop irw_line(x.fe.w, raw cat5("br i1 ", ok_c, ", label %", ok_l,
@@ -1970,11 +1980,13 @@ func:emit_tern_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:tmn = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, recv_tid));
     if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
 
-    IrVal:ixv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast,
-                                   raw expr_list_start(n), 0i32) });
+    // THE DIGIT'S INDEX IS THE ARGUMENT (D-197's `t.trit(i)`), so its own node
+    // is the `bounds` row's site (1.5.8b step 5), as an element's index is.
+    ExprId:tix = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), 0i32) };
+    IrVal:ixv = raw emit_expr(x, tix);
     if (!(raw iv_is_ok(ixv))) { pass ixv; }
     string:ix64 = raw index_as_i64(x, ixv);
-    drop emit_bounds_guard(x, ix64, int_to_string(tdigits => int64), n.span);
+    drop emit_bounds_guard(x, ix64, int_to_string(tdigits => int64), tix.index, n.span);
 
     // The receiver's taint, read before the arithmetic that would obscure it.
     string:rerr = raw irw_temp(x.fe.w);
@@ -3310,37 +3322,7 @@ func:pow2_double_text = string(int32:k) never fails {
     pass (raw pow2_double_signed(k, false));
 };
 
-func:hex_nibble = string(uint64:nib) never fails {
-    if (nib == 0u64)  { pass "0"; }
-    if (nib == 1u64)  { pass "1"; }
-    if (nib == 2u64)  { pass "2"; }
-    if (nib == 3u64)  { pass "3"; }
-    if (nib == 4u64)  { pass "4"; }
-    if (nib == 5u64)  { pass "5"; }
-    if (nib == 6u64)  { pass "6"; }
-    if (nib == 7u64)  { pass "7"; }
-    if (nib == 8u64)  { pass "8"; }
-    if (nib == 9u64)  { pass "9"; }
-    if (nib == 10u64) { pass "A"; }
-    if (nib == 11u64) { pass "B"; }
-    if (nib == 12u64) { pass "C"; }
-    if (nib == 13u64) { pass "D"; }
-    if (nib == 14u64) { pass "E"; }
-    pass "F";
-};
 
-func:pow2_double_signed = string(int32:k, bool:neg) never fails {
-    uint64:e = ((1023i32 + k) =>! uint64) << 52u64;
-    if (neg) { e = e | (1u64 << 63u64); }
-    string:out = "0x";
-    int32:i = 15i32;
-    while (i >= 0i32) {
-        out = string_concat(out,
-                  raw hex_nibble((e >> ((i * 4i32) =>! uint64)) & 15u64));
-        i = i - 1i32;
-    }
-    pass out;
-};
 
 // `tfp` CASTS (D-195). Within the family the raw value shifts by the F
 // difference and the sentinel maps. LEAVING the family, ERR TRAPS UNDER
@@ -4307,34 +4289,9 @@ func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
 // meaning -- the fraction is dropped toward zero (D-095).
 // The three signed widths whose exclusive lower bound -2^(N-1) - 1 is a
 // `double` (below 2^53); D-231's ladder has no other width there.
-func:cast_lo_exact = bool(int32:bits) never fails {
-    pass ((bits == 8i32) || (bits == 16i32) || (bits == 32i32));
-};
 
-func:cast_lo_pred = string(int32:bits, bool:signed) never fails {
-    if (!signed) { pass "ogt"; }
-    if (raw cast_lo_exact(bits)) { pass "ogt"; }
-    // No `double` lies strictly between -2^(N-1) - 1 and -2^(N-1) once the
-    // spacing there exceeds 1, so the inclusive compare at -2^(N-1) is exact.
-    if (bits <= 1024i32) { pass "oge"; }
-    pass "ogt";
-};
 
-func:cast_lo_const = string(int32:bits, bool:signed) never fails {
-    if (!signed) { pass "-1.0"; }
-    if (bits == 8i32)  { pass "-129.0"; }
-    if (bits == 16i32) { pass "-32769.0"; }
-    if (bits == 32i32) { pass "-2147483649.0"; }
-    if (bits <= 1024i32) { pass (raw pow2_double_signed(bits - 1i32, true)); }
-    pass "0xFFF0000000000000";
-};
 
-func:cast_hi_const = string(int32:bits, bool:signed) never fails {
-    int32:k = bits;
-    if (signed) { k = bits - 1i32; }
-    if (k <= 1023i32) { pass (raw pow2_double_signed(k, false)); }
-    pass "0x7FF0000000000000";
-};
 
 // `<N x T>` and a splat constant `<T C, T C, ...>`.
 func:vec_ty_text = string(int32:lanes, string:t) never fails {
@@ -9740,7 +9697,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             drop irw_line(x.fe.w, raw cat5(slen, " = extractvalue ", ov.ll,
                               " ", string_concat(ov.ref, ", 1")));
             string:idx64 = raw index_as_i64(x, ix);
-            drop emit_bounds_guard(x, idx64, slen, n.span);
+            drop emit_bounds_guard(x, idx64, slen, (raw expr_rhs(n)).index, n.span);
             string:data = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(data, " = extractvalue ", ov.ll,
                               " ", string_concat(ov.ref, ", 0")));
@@ -9774,7 +9731,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             string:idx64 = raw index_as_i64(x, ix);
             string:bound = int_to_string(
                 (raw type_array_count(x.fe.ctx.types, obj_tid)) => int64);
-            drop emit_bounds_guard(x, idx64, bound, n.span);
+            drop emit_bounds_guard(x, idx64, bound, (raw expr_rhs(n)).index, n.span);
             string:r = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", all.text,
                               ", ptr ", raw cat4(base.addr, ", i64 0, ",
@@ -9795,7 +9752,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             string:vidx64 = raw index_as_i64(x, vix);
             string:vbound = int_to_string(
                 ((raw tt_get(x.fe.ctx.types, obj_tid)).b) => int64);
-            drop emit_bounds_guard(x, vidx64, vbound, n.span);
+            drop emit_bounds_guard(x, vidx64, vbound, (raw expr_rhs(n)).index, n.span);
             string:vr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(vr, " = getelementptr ", vall.text,
                               ", ptr ", raw cat4(vbase.addr, ", i64 0, ",
@@ -9822,7 +9779,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
                                   ", ptr ", string_concat(lbase.addr, ", i32 0, i32 1")));
                 string:lcount = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat3(lcount, " = load i64, ptr ", lcp));
-                drop emit_bounds_guard(x, lidx64, lcount, n.span);
+                drop emit_bounds_guard(x, lidx64, lcount, (raw expr_rhs(n)).index, n.span);
                 string:lip = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(lip, " = getelementptr ", lll.text,
                                   ", ptr ", string_concat(lbase.addr, ", i32 0, i32 0")));
@@ -10537,6 +10494,30 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                       string_concat(src_len, "")));
     string:both = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(both, " = and i1 ", c1, ", ", c2));
+    // ONE `bounds` ROW FOR THE PAIR (1.5.8b step 5), at the RANGE's own node:
+    // the guard is one compare of both conditions, so its discharge removes
+    // one branch and leaves one `llvm.assume` over the same `and`. The site is
+    // the RANGE node — `(raw expr_rhs(n)).index`, what the encoder records the
+    // row under, which is the index expression's rhs and NOT `id` (the index
+    // expression itself). Asked with `id` the key never matched and the guard
+    // stayed in the verified build while its row read `discharged`; the belt
+    // that counts a kind's assumes against its elided guards is what said so.
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), (raw expr_rhs(n)).index,
+                         raw OK_BOUNDS())) {
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", both, ")"));
+        string:ge = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ge, " = getelementptr ", ell.text,
+                          ", ptr ", raw cat4(base, ", i64 ", lo64, "")));
+        string:cnte = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cnte, " = sub i64 ", hi64, ", ", lo64));
+        string:ae = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(ae, " = insertvalue { ptr, i64 } zeroinitializer, ptr ",
+                          string_concat(ge, ", 0")));
+        string:be = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(be, " = insertvalue { ptr, i64 } ", ae,
+                          ", i64 ", string_concat(cnte, ", 1")));
+        pass (raw iv("{ ptr, i64 }", move(be), raw exprtypes_get(x.et, id)));
+    }
     string:trap_l = raw irw_new_label(x.fe.w, "rng.oob");
     string:ok_l = raw irw_new_label(x.fe.w, "rng.ok");
     drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", ok_l,
