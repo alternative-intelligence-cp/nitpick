@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 314 decisions, D-001 through D-314 (this sentence said 240 from 1.4.8c until 1.5.8b's planning). The **plan is in `meta/roadmap/`**,
@@ -1243,7 +1243,20 @@ when it does not fit (TYPE-076, D-310; `0u64 - 1u64` among them — D-311's
 constant when it fits (DEF-70: all 85 constant checked operations gone), and
 the folder's every other operation is now the machine's (DEF-80: a wide shift
 trapped the compiler, a narrow `<<` and `~` were not truncated, `uint64`
-divided and compared signed). **Step 3 LANDED 2026-09-19**: every plain-integer
+divided and compared signed). **Step 6 LANDED 2026-09-19** (D-308 §§1–5,
+the field-limit MECHANISM; §§6–7 — the 2^47 ceiling, the length producers'
+checks, the built-in length fact and the prelude `List`'s own rule — are step
+6b's, split at the decision's seam because they move the floor's bytes): a
+struct field may carry `limit<Rules>`, a rule about that ONE field, checked
+after each of its three write points and a FACT at every read. The rule must
+hold of the field's vacant value, decided by the constant folder at the
+declaration (TYPE-077) — and a rule the folder cannot decide there is refused,
+since nothing decides it later. A limited field has no address, through a
+pointer to its struct as well (TYPE-063 extended: the case a rule about a
+BINDING could never see). `field_limit.npk` is the payoff — a `div-zero`, a
+`div-min` and three `overflow` rows discharge on facts that exist only because
+a field carries a rule — and the compiler's own emission is BYTE-IDENTICAL, so
+no verdict moved. **Step 3 LANDED 2026-09-19**: every plain-integer
 `+ - *` and negation is an `overflow` row at its guard's site (one over a
 `simd` operation's lanes, one with N−1 traps for an integer `.sum()`), a
 discharged row's branch becomes one `llvm.assume`, and the compiler's own
@@ -2069,6 +2082,18 @@ that carried them retired at the cycle close):
   TYPE-082, since it would index the POINTER. Assigning over an owning element
   drops the old value (a managed array's rule), and `list_clear`/
   `list_truncate` drop what they remove where a bare `count` write leaked it.
+- **A field may carry its own `limit<Rules>`** (D-308, 1.5.8b step 6):
+  `limit<r_level> int64:n;` in a struct body is a rule about THAT FIELD,
+  checked after every write to it — a struct literal's value, an assignment
+  through any path (a pointer's included), a compound — and a FACT at every
+  read, which is what lets a row over `t.n + 1` decide where an opaque field
+  read could not. The rule must hold of the field's VACANT value (TYPE-077,
+  decided by the constant folder at the declaration: `0`, or `false`), and a
+  rule the folder cannot decide there is refused, since nothing decides it
+  later — so the subject is a plain integer, a `bool` or a `char`. A limited
+  field has NO ADDRESS (TYPE-063), through a pointer to its struct as well.
+  Arming is at the WRITES, so importing a struct and never writing it demands
+  no `failsafe` arm.
 - **A constant means what the run time means** (D-310, D-311; 1.5.8b step 2):
   a `+ - *` or negation of constants that does not fit its type is TYPE-076
   where it is written, `0u64 - 1u64` included — spell a `uint64` past 2^63−1

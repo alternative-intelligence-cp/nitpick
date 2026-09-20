@@ -628,7 +628,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `requires` | a callee's precondition holds at the call (D-221) | yes | 1.5.3 |
 | `ensures` | a body's postcondition holds at its return (D-221) | yes | 1.5.3 |
 | `invariant` | a loop invariant holds at entry and is preserved (D-221) | yes | 1.5.3 |
-| `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220) | yes | 1.5.2 |
+| `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220), and a limited FIELD at each of its three (D-308): a struct literal's value for it, an assignment through any path including a pointer's, a compound assignment -- the field's row keyed on the WRITTEN expression, a limited root's on the statement, so a write to a limited field of a limited binding is two rows at two keys | yes | 1.5.2; fields 1.5.8b step 6 |
 | `limit-subsume` | one `Rules` implies another at a boundary (D-220): the caller's knowledge of every argument against the callee's rules, at a direct call of a sync callee | yes | 1.5.2 |
 | `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8c |
 | `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8c |

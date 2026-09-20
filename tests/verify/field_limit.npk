@@ -1,0 +1,77 @@
+// expect-exit: 0
+// expect-obligation: div-min discharged 1
+// expect-obligation: div-zero discharged 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 14
+// expect-obligation: limit discharged 2
+// expect-obligation: limit open 1
+// expect-obligation: overflow discharged 3
+//
+// A FIELD'S `limit<Rules>` IS CHECKED AT ITS WRITES AND KNOWN AT ITS READS
+// (D-308; 1.5.8b step 6). This is the payoff the decision was taken for: to
+// the solver a field read is an opaque term, so a row over `t.n - 1` could not
+// be decided however the program was written. With the rule on the field, the
+// read's term satisfies it -- because every write was checked against it and
+// the vacant value was proven to satisfy it at the declaration (TYPE-077) --
+// and the rows downstream of a read decide.
+//
+// What each part shows:
+//   * the two write points whose value the walk knows (a literal's constant,
+//     an assignment's) DISCHARGE, so the verified build drops those checks;
+//   * a write of an unknown value stays OPEN and keeps its check -- D-309's
+//     residue, here by construction;
+//   * `div` divides by `t.n + 1`, which is nonzero BECAUSE the rule says
+//     `n >= 0`: the `div-zero` row discharges on a fact that exists only
+//     because a field carries a rule;
+//   * `span` subtracts inside the rule's own bounds, so its `overflow` rows
+//     discharge for the same reason.
+mod:field_limit;
+
+Rules<int64>:r_level = { $ >= 0i64, $ <= 100i64 };
+
+struct:Tank = {
+    limit<r_level> int64:n;
+    int64:serial;
+};
+
+// The divisor is `n + 1`, and `n >= 0` is the field's rule: nonzero.
+func:div = int64(Tank:t, int64:num) never fails {
+    pass (num / (t.n + 1i64));
+};
+
+// Both operands lie in [0, 100] by the rule, so neither `+` nor `-` can leave
+// `int64` -- the `overflow` rows discharge on the field's rule alone.
+func:span = int64(Tank:a, Tank:b) never fails {
+    pass ((a.n + b.n) - 1i64);
+};
+
+func:main = int32(cstring[]:argv) {
+    // A LITERAL'S VALUE: known, inside the rule -- discharged.
+    Tank:t = Tank{ n: 40i64, serial: 1i64 };
+    // AN ASSIGNMENT OF A KNOWN VALUE: discharged.
+    t.n = 7i64;
+    // AN ASSIGNMENT OF AN UNKNOWN ONE: open, and its check stays (D-309).
+    t.n = (argv.len -% 1i64);
+    int64:d = raw div(t, 100i64);
+    int64:s = raw span(t, t);
+    exit ((d -% d +% s -% s) =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)  { exit 88i32; },
+        (DivByZero)      { exit 89i32; },
+        (DivOverflow)    { exit 90i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (CastRange)      { exit 17i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

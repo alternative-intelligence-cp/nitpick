@@ -3907,7 +3907,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         // comes back so no second sentence follows (D-240).
         if (raw place_limited(e, raw expr_operand(n), 64i32)) {
             discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
-                "a limited binding has no address (D-251): every write to it is a write point the emitter checks, and a write through `@` would be one no rule sees -- pass it by value",
+                "a limited binding or field has no address (D-251, D-308): every write to it is a write point the emitter checks, and a write through `@` would be one no rule sees -- pass it by value",
                 n.span));
             pass 0i32;
         }
@@ -3942,7 +3942,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         // mutability and a write through it is one no rule sees.
         if (raw place_limited(e, raw expr_operand(n), 64i32)) {
             discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
-                "a limited binding cannot be borrowed (D-251): `$$i` and `$$m` are one pointer type, a write through it is one no rule sees, and every write to a limited binding is a checked write point -- pass it by value",
+                "a limited binding or field cannot be borrowed (D-251, D-308): `$$i` and `$$m` are one pointer type, a write through it is one no rule sees, and every write to a limited binding is a checked write point -- pass it by value",
                 n.span));
             pass 0i32;
         }

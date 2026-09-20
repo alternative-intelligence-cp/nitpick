@@ -398,6 +398,54 @@ pub func:emit_assign_limit = IrVal(ExprEmitter->:x, ExprId:target, int32:site,
                                DeclId{ index: rr }, raw SITE_STMT(), site, at));
 };
 
+// --- A LIMITED FIELD'S WRITE POINTS (D-308 SS2; 1.5.8b step 6) ---------------------
+//
+// A struct field may carry `limit<Rules>`, and the rule is the FIELD's wherever
+// its struct lives. Its write points are a struct literal (its value for the
+// field), an assignment to the field through ANY path -- `s.f = v` and, through
+// a pointer, `p.f = v` -- and a compound assignment. Each checks the field's
+// own value after the write, in every build, and traps `LimitViolated`; the
+// verified build elides a check whose `limit` row is discharged, as it does a
+// binding's. The site is the WRITTEN EXPRESSION's node -- the member access, or
+// the literal's value for the field -- never the statement's, which a limited
+// ROOT's check already keys on: `p.x = v` with `p` a limited local and `x` a
+// limited field is two checks at two keys, and the belts count both.
+//
+// A declared-uninitialised aggregate and a move out of the field leave the
+// vacant value, which TYPE-077 proved the rule admits; a whole-struct copy
+// moves values that each passed a write point. So nothing else writes.
+
+// The rule a struct's field is limited by, as its declaration's index, or 0.
+pub func:struct_field_rule = int32(ExprEmitter->:x, int32:sty, int32:name) never fails {
+    int32:fdecl = raw struct_field_decl_of(x.ast, x.fe.ctx.types, sty, name);
+    if (fdecl == 0i32) { pass 0i32; }
+    VerifyId:fl = raw field_limit(raw ast_decl(x.ast, DeclId{ index: fdecl }));
+    if (raw verify_is_none(fl)) { pass 0i32; }
+    pass ((raw limit_target(raw ast_verify(x.ast, fl))).index);
+};
+
+// ... of the field a member access names, the base read THROUGH a pointer
+// (`.` auto-dereferences, D-098).
+pub func:member_field_rule = int32(ExprEmitter->:x, ExprId:target) never fails {
+    if (raw expr_is_none(target)) { pass 0i32; }
+    ExprNode:n = raw ast_expr(x.ast, target);
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass 0i32; }
+    int32:bt = raw exprtypes_get(x.et, raw expr_operand(n));
+    if (bt == 0i32) { pass 0i32; }
+    if ((raw type_kind(x.fe.ctx.types, bt)) == (raw TY_POINTER())) { bt = raw type_elem(x.fe.ctx.types, bt); }
+    pass (raw struct_field_rule(x, bt, n.payload =>! int32));
+};
+
+// THE ASSIGNMENT'S WRITE POINT, after the store: the field's address is the
+// one the store just used, so nothing is evaluated twice.
+pub func:emit_field_assign_limit = IrVal(ExprEmitter->:x, ExprId:target, string:addr,
+                                         int32:type_id, Span:at) never fails {
+    int32:rr = raw member_field_rule(x, target);
+    if (rr == 0i32) { pass (raw iv_nil()); }
+    pass (raw emit_limit_check(x, addr, type_id, DeclId{ index: rr }, raw SITE_EXPR(),
+                               target.index, at));
+};
+
 // --- contracts (1.5.3 step 1; D-221, D-241, D-243, D-245, D-267, D-268) -------
 //
 // ONE SHAPE FOR EVERY CLAUSE CHECK: the proposition lowered as a condition

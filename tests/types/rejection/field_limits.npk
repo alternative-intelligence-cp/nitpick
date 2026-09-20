@@ -1,0 +1,136 @@
+// A FIELD'S `limit<Rules>` AT ITS DECLARATION (D-308; 1.5.8b step 6).
+//
+// A struct field may carry a rule about that one field. Two things are decided
+// where the field is declared, because nothing later could decide them:
+//
+//   * the rule's subject is the field's own type BY IDENTITY (TYPE-059, the
+//     rule a limited binding already obeys -- so a limited field of a type
+//     parameter refuses, D-220's "no type parameter");
+//   * the rule holds of the field's VACANT value (TYPE-077). A
+//     declared-uninitialised aggregate holds the vacant value (D-225) and a
+//     move out of the field leaves it (S-26); neither passes a write point, so
+//     no check would ever see that value. The constant folder decides the rule
+//     with `$` bound to it, and a rule it cannot decide is refused too.
+//
+// One mistake, one report (D-240): a subject mismatch is TYPE-059 alone, never
+// TYPE-077 beside it.
+mod:field_limits;
+
+Rules<int64>:r_nonneg = { $ >= 0i64 };
+Rules<int64>:r_pos = { $ > 0i64 };
+Rules<int64>:r_small_pos = { limit<r_pos>, $ < 100i64 };
+Rules<int32>:r_i32 = { $ >= 0i32 };
+Rules<flt64>:r_unit = { $ >= 0.0f64, $ <= 1.0f64 };
+Rules<bool>:r_true = { $ == true };
+Rules<bool>:r_false = { $ == false };
+
+func:pure_id = int64(int64:v) never fails pure { pass v; };
+Rules<int64>:r_call = { raw pure_id($) >= 0i64 };
+
+// ACCEPTED: the rule admits 0, and a `bool` rule that admits `false`.
+struct:Good = {
+    limit<r_nonneg> int64:n;
+    limit<r_false> bool:quiet;
+    int64:free;
+};
+
+// THE VACANT VALUE FAILS THE RULE: `0 > 0` is false.
+struct:BadPos = {
+    // expect-error: NITPICK-TYPE-077
+    // expect-error-at: 41
+    limit<r_pos> int64:n;
+};
+
+// ... AND THROUGH A REFINEMENT: `r_small_pos` is `r_pos` and `$ < 100`.
+struct:BadRefined = {
+    // expect-error: NITPICK-TYPE-077
+    // expect-error-at: 48
+    limit<r_small_pos> int64:n;
+};
+
+// A `bool` FIELD WHOSE RULE REFUSES `false`.
+struct:BadBool = {
+    // expect-error: NITPICK-TYPE-077
+    // expect-error-at: 55
+    limit<r_true> bool:armed;
+};
+
+// THE FOLDER CANNOT DECIDE A CALL: refused, since nothing decides it later.
+struct:BadCall = {
+    // expect-error: NITPICK-TYPE-077
+    // expect-error-at: 62
+    limit<r_call> int64:n;
+};
+
+// A FLOAT FIELD HAS NO VACANT VALUE THE FOLDER HOLDS.
+struct:BadFloat = {
+    // expect-error: NITPICK-TYPE-077
+    // expect-error-at: 69
+    limit<r_unit> flt64:p;
+};
+
+// THE SUBJECT IS THE FIELD'S TYPE BY IDENTITY: TYPE-059 alone (D-240).
+struct:BadSubject = {
+    // expect-error: NITPICK-TYPE-059
+    // expect-error-at: 76
+    limit<r_i32> int64:n;
+};
+
+// A TYPE PARAMETER IS NO RULE'S SUBJECT (D-220).
+struct:BadGeneric<T> = {
+    // expect-error: NITPICK-TYPE-059
+    // expect-error-at: 83
+    limit<r_nonneg> T:v;
+};
+
+// A LIMITED FIELD HAS NO ADDRESS (D-308 SS4; TYPE-063 extended). A write
+// through an alias is one no write point sees -- and the rule is the FIELD's,
+// wherever its struct lives, so the refusal holds through a pointer to the
+// struct too (`@pg.n`), which a rule about a BINDING could never have said.
+// `@g` itself is fine: a write through it spells the field (`pg.n = v`) and is
+// a write point.
+func:poke = NIL(int64->:p) never fails { pass NIL; };
+func:read_at = int64(int64->:p) never fails { pass (<-p); };
+
+func:addresses = int64() never fails {
+    Good:g = Good{ n: 1i64, quiet: false, free: 0i64 };
+    Good->:pg = @g;
+    // expect-error: NITPICK-TYPE-063
+    // expect-error-at: 100
+    drop poke(@g.n);
+    // expect-error: NITPICK-TYPE-063
+    // expect-error-at: 103
+    drop poke(@pg.n);
+    // expect-error: NITPICK-TYPE-063
+    // expect-error-at: 106
+    drop poke($$m g.n);
+    // expect-error: NITPICK-TYPE-063
+    // expect-error-at: 109
+    int64:r = raw read_at($$i g.n);
+    // expect-error: NITPICK-TYPE-063
+    // expect-error-at: 112
+    drop g.n.poke();
+    // ... and the unlimited sibling has one, as ever.
+    drop poke(@g.free);
+    pass r;
+};
+
+func:main = int32(cstring[]:argv) {
+    Good:g = Good{ n: 1i64, quiet: false, free: 0i64 };
+    exit ((g.n -% 1i64) =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)  { exit 88i32; },
+        (CastRange)      { exit 17i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

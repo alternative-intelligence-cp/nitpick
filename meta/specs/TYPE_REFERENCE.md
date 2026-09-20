@@ -994,6 +994,57 @@ mod:bank = {
   `NITPICK-TYPE-007`). A shared hold is read, never written, including any part
   of the element, its address, and an exclusive claim (DEF-77).
 
+### 9.1.2 A field's own rule: `limit<Rules>` (D-308; 1.5.8b step 6)
+
+A field may carry a `limit<Rules>`, written where a local's is — after the
+qualifiers, before the type:
+
+```
+Rules<int64>:r_level = { $ >= 0i64, $ <= 100i64 };
+
+struct:Tank = {
+    limit<r_level> sealed int64:n;
+    int64:serial;
+};
+```
+
+The rule is about THAT ONE FIELD: its clauses mention `$` alone, and `$` is the
+field's value. Struct-wide relational rules (`$.count <= $.cap`) are decided
+OUT — a write to one field would re-check a rule over the others, so a
+two-field update would pass through a state the rule refuses, which is the
+known type-invariant problem. Single-field rules do not have it.
+
+- **The subject is the field's type by identity** (`NITPICK-TYPE-059`, the rule
+  a limited binding already obeys): no widening and no type parameter, so a
+  limited field of a generic struct's `T` refuses.
+- **The rule must hold of the field's VACANT value** (`NITPICK-TYPE-077`).
+  A declared-uninitialised aggregate holds the vacant value (D-225) and a
+  `move` or `pass` out of the field leaves it (S-26); neither passes a write
+  point, so no check would ever see that value. The constant folder decides
+  the rule at the declaration with `$` bound to it — 0 for a plain integer,
+  `false` for a `bool` — and a rule it cannot decide there is refused too,
+  since nothing decides it later. Only a plain integer, a `bool` or a `char`
+  field has a vacant value the folder holds; any other subject refuses with
+  that reason.
+- **The write points**, each checked after the write in EVERY build, trapping
+  `LimitViolated`:
+  - a struct literal's value for the field;
+  - an assignment to the field through ANY path — `s.f = v`, and through a
+    pointer `p.f = v`, since the rule is the field's wherever its struct lives;
+  - a compound assignment, `s.f += v`.
+- **A limited field has no address** (`NITPICK-TYPE-063`, the limited binding's
+  rule extended): `@s.f`, `$$i`/`$$m` of it and a pointer-receiver call on it
+  refuse, through a pointer to the struct as well — a write through an alias is
+  one no write point sees. A write through `wild` storage is the author's
+  opt-out, as for every checked property.
+- **Every read is a fact**: the rule over the read's term is a hypothesis for
+  every row after it. That is what the feature is FOR — to the solver a field
+  read is otherwise an opaque term, so a row over `t.n + 1` could not be decided
+  however the program was written.
+
+The verified build elides a write point's check where its `limit` row
+discharges, exactly as for a binding.
+
 ### 9.2 Arrays (Fixed)
 
 > **Design Note:** Fixed arrays are **Value Types**, not references. Passing `int32[4]` to a function copies all 16 bytes. They do NOT implicitly decay to pointers like in C. If you want to mutate an array inside a function or avoid copying, you must explicitly pass a pointer to it (`int32[4]->`).

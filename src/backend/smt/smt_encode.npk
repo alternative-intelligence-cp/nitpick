@@ -2916,6 +2916,52 @@ func:enc_rule = Term(Encoder->:e, int32:rule, Term:subject, int32:fuel) never fa
     pass acc;
 };
 
+// A STRUCT FIELD'S `limit<Rules>` (D-308, 1.5.8b step 6), as its declaration's
+// index or 0. The base is read THROUGH a pointer (`.` auto-dereferences,
+// D-098): the rule is the field's wherever its struct lives.
+func:field_rule_of = int32(Encoder->:e, int32:bty, int32:fname) never fails {
+    int32:bt = bty;
+    if (bt == 0i32) { pass 0i32; }
+    if ((raw type_kind(e.types, bt)) == (raw TY_POINTER())) { bt = raw type_elem(e.types, bt); }
+    int32:fdecl = raw struct_field_decl_of(e.ast, e.types, bt, fname);
+    if (fdecl == 0i32) { pass 0i32; }
+    VerifyId:fl = raw field_limit(raw ast_decl(e.ast, DeclId{ index: fdecl }));
+    if (raw verify_is_none(fl)) { pass 0i32; }
+    pass ((raw limit_target(raw ast_verify(e.ast, fl))).index);
+};
+
+// THE FIELD'S RULE OVER A TERM, pushed as a hypothesis (D-308 SS3). Nothing
+// for an unlimited field, and nothing inside a proposition's own evaluation
+// (DEF-33: a guard met inside a clause is the clause's, never a free fact).
+func:assert_field_rule = NIL(Encoder->:e, int32:bty, int32:fname, Term:v) never fails {
+    if (e.quiet > 0i32) { pass NIL; }
+    if (e.in_prop > 0i32) { pass NIL; }
+    if (!v.ok) { pass NIL; }
+    int32:rule = raw field_rule_of(e, bty, fname);
+    if (rule == 0i32) { pass NIL; }
+    Term:r = raw enc_rule(e, rule, v, 64i32);
+    if (!r.ok) { pass NIL; }
+    drop hyp_push(e, r.text, r.syms);
+    pass NIL;
+};
+
+// A `limit` ROW AT A LIMITED FIELD'S WRITE POINT (D-308 SS2): the rule over
+// the WRITTEN value, at the site the emitter guards under -- the member
+// access for an assignment, the value expression for a struct literal.
+// `unencoded` when the written value has no term (L-6's rule for a binding).
+pub func:record_field_limit = NIL(Encoder->:e, int32:bty, int32:fname, Term:v,
+                                  int32:site, Span:at) never fails {
+    int32:rule = raw field_rule_of(e, bty, fname);
+    if (rule == 0i32) { pass NIL; }
+    if (!v.ok) { drop record_limit_unencoded(e, raw SITE_EXPR(), site, at); pass NIL; }
+    Term:g = raw enc_rule(e, rule, v, 64i32);
+    if (!g.ok) { drop record_limit_unencoded(e, raw SITE_EXPR(), site, at); pass NIL; }
+    drop record(e, raw OK_LIMIT(), g.text, g.syms, raw SITE_EXPR(), site, at, true);
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, g.text, g.syms);      // ... and a fact after it (L-7's order)
+    pass NIL;
+};
+
 // THE RULE AS A HYPOTHESIS on a binding's current version (L-7): pushed
 // after a write point's own obligation (so the goal is never in its own
 // cone) and at every invalidation. Sound because every write to the binding
@@ -4602,7 +4648,15 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             }
         }
         drop enc_alias_site(e, id);
-        pass (raw term_opaque(e, ty));
+        // A LIMITED FIELD'S RULE IS A FACT AT EVERY READ (D-308 SS3; 1.5.8b
+        // step 6): the read's own opaque term satisfies the rule, because
+        // every write to the field was checked against it (or discharged
+        // under these same hypotheses) and the vacant value was proven to
+        // satisfy it at the declaration (TYPE-077). That is what lets a row
+        // over `l.count - 1` decide where a bare opaque term could not.
+        Term:mo = raw term_opaque(e, ty);
+        drop assert_field_rule(e, mbt2, n.payload =>! int32, mo);
+        pass mo;
     }
     // `#sqrt(x)` (D-200) is the instruction, `fp.sqrt RNE` (D-281); every
     // other builtin's value is opaque, its arguments sites.
@@ -4616,6 +4670,21 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             }
             pass (raw term_opaque(e, ty));
         }
+    }
+    // A STRUCT LITERAL IS A WRITE POINT FOR EVERY LIMITED FIELD IT NAMES
+    // (D-308 SS2, 1.5.8b step 6): each value encoded once, its row recorded at
+    // the VALUE expression's site -- the emitter's own key, which checks the
+    // value in register before it enters the aggregate. The literal's own
+    // value stays opaque.
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:lpairs = n.c / 2i32;
+        for (int32:li in 0i32...lpairs) {
+            int32:lfn = raw ast_id_at(e.ast, n.b, li * 2i32);
+            ExprId:lvid = ExprId{ index: raw ast_id_at(e.ast, n.b, (li * 2i32) + 1i32) };
+            Term:lv = raw enc_expr(e, lvid);
+            drop record_field_limit(e, ty, lfn, lv, lvid.index, n.span);
+        }
+        pass (raw term_opaque(e, ty));
     }
     // Everything else: the value is opaque, the children are still sites.
     drop walk_children(e, n);
@@ -5324,6 +5393,19 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
             // THE TARGET'S OWN INDEX IS MEMOISED AND THE TARGET IS A GUARD
             // SITE WHEN MARKED (D-286, 1.5.5 step 2): the children are walked
             // once, the top node's index kept for the `disjoint` row.
+            // A LIMITED FIELD'S WRITE POINT (D-308 SS2, 1.5.8b step 6): the
+            // rule over the value STORED, at the member access -- the emitter's
+            // own key. A plain `=` stores the right-hand side; a compound
+            // stores the arithmetic's result, which the `fov` branch below
+            // builds as `ft` for the `overflow` row, so the row is recorded
+            // there. A limited ROOT's row is `emit_assign_limit`'s, at the
+            // statement's key: two checks, two keys, both counted.
+            if (tn.kind == ExprKind.ExprMemberAccessExpr) {
+                if (op == TokenKind.OpAssign) {
+                    drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
+                                            tn.payload =>! int32, rhs, target.index, s.span);
+                }
+            }
             if (tn.kind == ExprKind.ExprIndexExpr) {
                 Term:tbase = raw enc_expr(e, raw expr_lhs(tn));
                 Term:tidx = raw enc_expr(e, raw expr_rhs(tn));
@@ -5379,6 +5461,11 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                         if (fbop == TokenKind.OpStar)  { e.nonlinear = true; ft = raw term_app2("*", fcur, rhs, false); }
                     }
                     drop record_overflow(e, pt3, ft, target.index, s.span);
+                    // ... and the limited FIELD's row over the same result.
+                    if (tn.kind == ExprKind.ExprMemberAccessExpr) {
+                        drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
+                                                tn.payload =>! int32, ft, target.index, s.span);
+                    }
                 }
                 if (raw is_simd(e, pt3)) {
                     int32:felem = raw type_elem(e.types, pt3);

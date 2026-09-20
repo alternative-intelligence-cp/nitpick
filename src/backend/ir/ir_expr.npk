@@ -10715,6 +10715,18 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         v = raw emit_fit(x, fi.type_id, move(v), n.span);
         if (raw iv_is_ok(v)) { drop temp_take(x, v.ref); }   // the literal keeps it (D-246)
         if (!(raw iv_is_ok(v))) { pass v; }
+        // A LIMITED FIELD'S FIRST WRITE POINT (D-308 SS2, 1.5.8b step 6): the
+        // literal's value for the field, checked in register before it enters
+        // the aggregate, at the VALUE expression's site.
+        int32:lrule = raw struct_field_rule(x, stid, fname);
+        if (lrule != 0i32) {
+            LlType:lfl = raw ll_type(x.fe.ctx, fi.type_id);
+            if (!(raw ll_is_ok(lfl))) { pass (raw iv_from_ll_at(x, lfl, fi.type_id, n.span)); }
+            IrVal:lck = raw emit_limit_check_value(x, v.ref, lfl, fi.type_id,
+                                                   DeclId{ index: lrule }, raw SITE_EXPR(),
+                                                   vid.index, n.span);
+            if (!(raw iv_is_ok(lck))) { pass lck; }
+        }
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", sll.text, " ",
                           raw cat5(acc, ", ", v.ll, " ",

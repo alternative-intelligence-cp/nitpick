@@ -657,6 +657,24 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         pass NIL;
     }
 
+    // A STRUCT'S FIELD MAY CARRY `limit<Rules>` (D-308, 1.5.8b step 6): the
+    // rule name resolves from the MODULE scope, as a local's and a parameter's
+    // do, so a typo is the identifier's own RESOLVE-002 and a name that is not
+    // a `Rules` block is RESOLVE-011. A field's TYPE is not resolved here --
+    // the type resolver owns that, lazily, per instance.
+    if (d.kind == DeclKind.DeclStructDecl) {
+        int32:fn = raw item_member_count(r.ast, d);
+        int32:fi = 0i32;
+        while (fi < fn) {
+            DeclNode:f = raw ast_decl(r.ast, raw item_member(r.ast, d, fi));
+            if (f.kind == DeclKind.DeclFieldDecl) {
+                drop resolve_limit(r, raw field_limit(f), scope);
+            }
+            fi = fi + 1i32;
+        }
+        pass NIL;
+    }
+
     if (d.kind == DeclKind.DeclEnumDecl) {
         int32:n = raw item_member_count(r.ast, d);
         int32:i = 0i32;

@@ -19568,6 +19568,35 @@ the source and checked.
 
 Lands at 1.5.8b step 6.
 
+*[2026-09-19, SS1-SS5 LANDED at 1.5.8b step 6; SS6 and SS7 are step 6b's. A field's
+`limit<Rules>` is parsed into the field declaration's spare slot and CLONED by
+the macro expander's field splice (a verify node shared between two expansions
+resolves once and the last wins -- 1.5.1's finding); the rule name resolves from
+the MODULE scope through the resolver's new struct arm, so a typo is the
+identifier's own RESOLVE-002. TYPE-077 is decided BY THE CONSTANT FOLDER at the
+declaration, with `$` bound to the vacant value at the subject's own type
+(`fold_rule_clause_at`): a rule the folder cannot decide there is refused with
+that reason, because nothing decides it later. TYPE-063 extended by asking the
+FIELD before the pointer-base exit, so `@p.f` through a pointer refuses -- the
+case a rule about a BINDING could never have seen. The three write points are
+the emitter's `emit_field_assign_limit` (both assignment forms, after the store,
+at the field's own address) and `emit_struct_lit`'s check of the value in
+register before it enters the aggregate; REACH arms `LimitViolated` at those
+writes and nowhere else, so importing a struct and never writing it demands no
+arm. The encoder records a `limit` row at each write point keyed on the WRITTEN
+expression -- a limited root's row keeps the statement's key, so both are
+counted -- and pushes the rule over the read's term as a hypothesis at every
+read, which is the payoff: `field_limit.npk`'s `div-zero`, `div-min` and three
+`overflow` rows all discharge on facts that exist only because a field carries a
+rule. ONE field lookup now serves the checker, the emitter and the encoder
+(`struct_field_decl_of`). Measured: the compiler's own emission is BYTE-IDENTICAL
+(nothing in `src/` is limited yet), so no verdict moved and the manifest did not.
+`field_limit_trap.npk` drives each write point from a child of itself, outside
+its rule above and below and inside it at both edges -- twenty children, plus the
+control that writes the same out-of-range value to the UNLIMITED sibling and must
+not trap, which is what proves the check is keyed to the field and not to the
+struct.]*
+
 ## D-309 — The overflow rows nothing proves keep their guards; no bound is written into the tree for a count's sake — **SETTLED (user decision, 2026-09-19: "those recommendations sound fine to me as well. Lets ratify those too."; S-89)**
 
 D-210 §4 reads "1.5 proves the traps away". Measured at 1.5.8b's planning, the

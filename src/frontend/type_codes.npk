@@ -478,3 +478,11 @@ pub func:TYPE_INDEX_POINTER = string() never fails { pass "NITPICK-TYPE-082"; };
 // have their own arithmetic, and a float is IEEE. The message names the kind
 // and says which of those it is.
 pub func:TYPE_WRAP_KIND = string() never fails { pass "NITPICK-TYPE-078"; };
+
+// A FIELD'S `limit<Rules>` MUST HOLD OF THE FIELD'S VACANT VALUE (D-308 SS5;
+// 1.5.8b step 6). A declared-uninitialised aggregate holds the vacant value
+// (D-225) and a move out of the field leaves it (S-26); neither passes a write
+// point, so nothing would ever check it -- the rule is folded over that value
+// at the declaration, and refused when it is false OR when the folder cannot
+// decide it (there is no later point to decide it at).
+pub func:TYPE_FIELD_LIMIT_VACANT = string() never fails { pass "NITPICK-TYPE-077"; };

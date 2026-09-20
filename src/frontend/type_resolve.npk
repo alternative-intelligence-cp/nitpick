@@ -159,6 +159,11 @@ pub struct:TypeResolver = {
     // node kind precisely because a counter is not a binding anybody declared.
     int64:fold_counter;
     bool:fold_counting;
+    // `$` AS A RULE'S SUBJECT (D-308 SS5, 1.5.8b step 6): when nonzero, `$`
+    // folds to `fold_counter` AT THIS TYPE -- the subject's, so a width's
+    // arithmetic is the subject's and not int64's -- rather than as a loop's
+    // int64 counter. Set and restored by `fold_rule_clause_at` alone.
+    int32:fold_subject_ty;
 };
 
 pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
@@ -174,7 +179,8 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    inst_chain: [],
                                    env: raw foldenv_none(),
                                    fold_blown: false, fold_depth: 0i32,
-                                   fold_counter: 0i64, fold_counting: false };
+                                   fold_counter: 0i64, fold_counting: false,
+                                   fold_subject_ty: 0i32 };
     pass r;
 };
 
@@ -1077,6 +1083,50 @@ pub func:fold_node_constant = ConstVal(TypeResolver->:r, ExprId:id, int32:scope,
     pass cv;
 };
 
+// THE DECLARATION OF A STRUCT'S FIELD, BY NAME -- an instance's through its
+// template's declaration, so an instance's field carries the template's
+// qualifiers, the template's module (K-4) and the template's `limit<Rules>`
+// (D-308). ONE lookup for the checker (`struct_field_decl`), the emitter's
+// write points and the encoder's rows and read facts: it needs the tree and
+// the type table and nothing else, so it lives where all three can see it.
+pub func:struct_field_decl_of = int32(Ast->:ast, TypeTable->:types, int32:sty, int32:name) never fails {
+    if (sty == 0i32) { pass 0i32; }
+    if ((raw type_kind(types, sty)) != (raw TY_STRUCT())) { pass 0i32; }
+    int32:sd = raw type_decl_of(types, sty);
+    if (sd == 0i32) { pass 0i32; }
+    DeclNode:d = raw ast_decl(ast, DeclId{ index: sd });
+    int32:cnt = raw item_member_count(ast, d);
+    for (int32:i in 0i32...cnt) {
+        DeclId:mid = raw item_member(ast, d, i);
+        DeclNode:m = raw ast_decl(ast, mid);
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            if ((raw decl_name(m)) == name) { pass mid.index; }
+        }
+    }
+    pass 0i32;
+};
+
+// ONE CLAUSE OF A `Rules` BLOCK, FOLDED WITH `$` = `value` AT `subject_ty`
+// (D-308 SS5, 1.5.8b step 6). The caller asks only for subjects whose vacant
+// value is a number the folder holds (a plain integer, a `bool`, a `char`);
+// the answer is a `CV_BOOL`, or `cv_none` when the clause is not something the
+// folder evaluates -- which the caller refuses, because a rule nothing can
+// decide over the vacant value has no later point to be checked at.
+pub func:fold_rule_clause_at = ConstVal(TypeResolver->:r, ExprId:clause, int32:scope,
+                                        int32:subject_ty, int64:value) never fails {
+    bool:pc = r.fold_counting;
+    int64:pv = r.fold_counter;
+    int32:pt = r.fold_subject_ty;
+    r.fold_counting = true;
+    r.fold_counter = value;
+    r.fold_subject_ty = subject_ty;
+    ConstVal:cv = raw fold_const(r, clause, scope);
+    r.fold_counting = pc;
+    r.fold_counter = pv;
+    r.fold_subject_ty = pt;
+    pass cv;
+};
+
 pub func:fold_const = ConstVal(TypeResolver->:r, ExprId:id, int32:scope) never fails {
     r.fold_blown = false;
     r.fold_depth = 0i32;
@@ -1206,6 +1256,12 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
 
     if (e.kind == ExprKind.ExprIterationVarExpr) {
         if (!(r.fold_counting)) { pass (raw cv_none()); }
+        if (r.fold_subject_ty != 0i32) {
+            int32:sk = raw type_kind(r.types, r.fold_subject_ty);
+            if (sk == (raw TY_BOOL())) { pass (raw cv_bool(r.fold_subject_ty, r.fold_counter != 0i64)); }
+            if (sk == (raw TY_CHAR())) { pass (raw cv_char(r.fold_subject_ty, r.fold_counter)); }
+            pass (raw cv_int(r.fold_subject_ty, r.fold_counter));
+        }
         pass (raw cv_int(raw tt_int(r.types, 64i32, true), r.fold_counter));
     }
 

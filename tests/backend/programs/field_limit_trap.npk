@@ -1,0 +1,169 @@
+// expect-exit: 0
+//
+// A LIMITED FIELD'S WRITE POINTS, EACH WATCHED TO TRAP (D-308 SS2; 1.5.8b step
+// 6). A struct field may carry `limit<Rules>`: a rule about that one field,
+// checked after every write to it, in every build. This program drives each
+// write point OUTSIDE its rule from a child of itself and requires the trap's
+// exit code, then drives each INSIDE its rule and requires silence -- because a
+// check that fires on everything passes a test that only watches it fire.
+//
+//   case 1  a struct literal's value for the field
+//   case 2  an assignment to the field, `b.n = v`
+//   case 3  an assignment THROUGH A POINTER, `p.n = v` -- the rule is the
+//           field's, wherever its struct lives (the case a rule about a
+//           BINDING could never see)
+//   case 4  a compound assignment, `b.n -= v`
+//   case 5  a field of a struct nested in another, `o.inner.n = v`
+//   case 6  THE CONTROL: the UNLIMITED sibling `serial`, written with the
+//           same out-of-range value. It must never trap -- a check keyed to
+//           the struct rather than to the field would fire here.
+//
+// The program re-runs ITSELF as a child with (case, value-name) arguments --
+// it reads its own argv[0] -- so each trap ends a CHILD and the parent reads
+// the code `failsafe` chose: 88 for `LimitViolated`. Twenty children.
+mod:field_limit_trap;
+
+use "../../../lib/nproc.npk".*;
+
+error:E9;
+
+Rules<int64>:r_level = { $ >= 0i64, $ <= 100i64 };
+
+struct:Tank = {
+    limit<r_level> int64:n;
+    int64:serial;
+};
+
+struct:Rig = {
+    Tank:inner;
+    int64:id;
+};
+
+func:set_through = NIL(Tank->:p, int64:v) never fails {
+    p.n = v;
+    pass NIL;
+};
+
+// One case, with `v` the value written. Answers 0 when nothing trapped and the
+// field holds what was written.
+func:drive = int32(int64:which, int64:v) never fails {
+    if (which == 1i64) {
+        Tank:t1 = Tank{ n: v, serial: 1i64 };
+        if (t1.n != v) { pass 3i32; }
+        pass 0i32;
+    }
+    if (which == 5i64) {
+        Rig:r = Rig{ inner: Tank{ n: 50i64, serial: 3i64 }, id: 9i64 };
+        r.inner.n = v;
+        if (r.inner.n != v) { pass 3i32; }
+        pass 0i32;
+    }
+    if (which == 6i64) {
+        Tank:t6 = Tank{ n: 50i64, serial: 2i64 };
+        t6.serial = v;
+        Tank:t6b = Tank{ n: 50i64, serial: v };
+        if (t6.serial != v) { pass 3i32; }
+        if (t6b.serial != v) { pass 3i32; }
+        pass 0i32;
+    }
+    Tank:t = Tank{ n: 50i64, serial: 2i64 };
+    if (which == 2i64) { t.n = v; }
+    if (which == 3i64) { drop set_through(@t, v); }
+    if (which == 4i64) { t.n -= (50i64 -% v); }
+    if (t.n != v) { pass 3i32; }
+    pass 0i32;
+};
+
+func:args_of = ProcArgs(string:exe, string:a, string:b) {
+    ProcArgs:pa = raw args_init();
+    args_push(@pa, exe) ?! E9;
+    args_push(@pa, a) ?! E9;
+    args_push(@pa, b) ?! E9;
+    pass pa;
+};
+
+// Run this program again as a child with (case, value-name); its exit status.
+async func:child = int64(Path:self, ProcArgs->:env, string:which, string:val) {
+    ProcArgs:a = args_of(self.text, which, val) ?! E9;
+    Proc:p = proc_spawn(self, @a, env) ?! E9;
+    ProcExit:x = (await proc_wait(move(p), raw duration_secs(10i64))) ?! E9;
+    drop args_free(@a);
+    if (!x.exited) { pass 255i64; }
+    pass x.status;
+};
+
+func:case_of = int64(string:w) never fails {
+    if (string_equals(w, "1")) { pass 1i64; }
+    if (string_equals(w, "2")) { pass 2i64; }
+    if (string_equals(w, "3")) { pass 3i64; }
+    if (string_equals(w, "4")) { pass 4i64; }
+    if (string_equals(w, "5")) { pass 5i64; }
+    if (string_equals(w, "6")) { pass 6i64; }
+    pass 0i64;
+};
+
+func:value_of = int64(string:v) never fails {
+    if (string_equals(v, "hi"))  { pass 101i64; }
+    if (string_equals(v, "lo"))  { pass (0i64 -% 1i64); }
+    if (string_equals(v, "top")) { pass 100i64; }
+    pass 0i64;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len == 3i64) {
+        string:w = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+        string:v = string_from_bytes(argv[2i64].ptr, argv[2i64].len);
+        exit (raw drive(raw case_of(w), raw value_of(v)));
+    }
+    string:sp = string_from_bytes(argv[0i64].ptr, argv[0i64].len);
+    Path:self = path_parse(sp) ?! E9;
+    ProcArgs:env = raw args_init();
+    cstring[]:mine = environ();
+    for (int64:i in 0i64...mine.len) { args_push_cstring(@env, mine[i]) ?! E9; }
+
+    string[5]:cases = ["1", "2", "3", "4", "5"];
+    for (int64:c in 0i64...5i64) {
+        // OUTSIDE the rule, above and below: the trap, read as failsafe's 88.
+        int64:hi = (await child(self, @env, cases[c], "hi")) ?! E9;
+        if (hi != 88i64) { exit ((10i64 + c) =>! int32); }
+        int64:lo = (await child(self, @env, cases[c], "lo")) ?! E9;
+        if (lo != 88i64) { exit ((20i64 + c) =>! int32); }
+        // INSIDE it, at both edges: silence, and the value is there.
+        int64:top = (await child(self, @env, cases[c], "top")) ?! E9;
+        if (top != 0i64) { exit ((30i64 + c) =>! int32); }
+        int64:bot = (await child(self, @env, cases[c], "bot")) ?! E9;
+        if (bot != 0i64) { exit ((40i64 + c) =>! int32); }
+    }
+    // THE CONTROL (case 6): the unlimited sibling takes the same out-of-range
+    // value through both write forms, and NOTHING traps.
+    int64:sib_hi = (await child(self, @env, "6", "hi")) ?! E9;
+    if (sib_hi != 0i64) { exit 51i32; }
+    int64:sib_lo = (await child(self, @env, "6", "lo")) ?! E9;
+    if (sib_lo != 0i64) { exit 52i32; }
+    drop args_free(@env);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)    { exit 88i32; },
+        (E9)               { exit 61i32; },
+        (BadPath)          { exit 62i32; },
+        (EProcArgs)        { exit 63i32; },
+        (EProcSpawn)       { exit 64i32; },
+        (EProcDeadline)    { exit 65i32; },
+        (EProcWait)        { exit 66i32; },
+        (DeadlineExceeded) { exit 67i32; },
+        (DriverLeak)       { exit 68i32; },
+        (IntOverflow)      { exit 93i32; },
+        (OutOfBounds)      { exit 94i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 97i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

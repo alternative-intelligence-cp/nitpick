@@ -1015,6 +1015,94 @@ pub func:check_limit_subject = NIL(ExprTyper->:e, VerifyId:lim, int32:declared, 
     pass NIL;
 };
 
+// A LIMITED FIELD'S RULE HOLDS OF THE FIELD'S VACANT VALUE (D-308 SS5; TYPE-077).
+// A declared-uninitialised aggregate holds the vacant value (D-225), and a move
+// or `pass` out of the field leaves it (S-26). Neither is a write point, so no
+// check would ever see that value: the rule is decided over it HERE, once, by
+// the constant folder with `$` bound to it. Refused when a clause folds to
+// `false`, and refused when a clause is not something the folder evaluates --
+// a rule nothing can decide now has no later point to be decided at. The
+// vacant value is a number for a plain integer (0), a `bool` (`false`) and a
+// `char` (0); every other subject has none the folder holds, and is refused
+// with the reason. Refinements are walked: a rule is its own clauses AND its
+// refinements', over ONE subject (`check_refine_subject`).
+func:field_limit_vacant_walk = int32(ExprTyper->:e, DeclId:rd, int32:subject, int32:fuel) never fails {
+    // 0: every clause holds. 1: a clause is false. 2: a clause cannot be decided.
+    if (fuel <= 0i32) { pass 2i32; }
+    DeclNode:dn = raw ast_decl(e.ast, rd);
+    if (dn.kind != DeclKind.DeclRuleDecl) { pass 0i32; }     // resolution already refused it
+    int32:home = raw symtab_home_scope(e.tab, rd.index, e.scope);
+    TypeResolver:fr = raw etyper_resolver(e);
+    int32:rn = raw rule_refine_count(e.ast, dn);
+    for (int32:ri in 0i32...rn) {
+        VerifyNode:rv = raw ast_verify(e.ast, raw rule_refine(e.ast, dn, ri));
+        DeclId:rrd = raw limit_target(rv);
+        if (raw decl_is_none(rrd)) { continue; }
+        int32:sub = raw field_limit_vacant_walk(e, rrd, subject, fuel - 1i32);
+        if (sub != 0i32) { pass sub; }
+    }
+    int32:cn = raw rule_clause_count(e.ast, dn);
+    for (int32:ci in 0i32...cn) {
+        ConstVal:cv = raw fold_rule_clause_at(@fr, raw rule_clause(e.ast, dn, ci), home, subject, 0i64);
+        if (cv.kind != (raw CV_BOOL())) { pass 2i32; }
+        if (cv.num == 0i64) { pass 1i32; }
+    }
+    pass 0i32;
+};
+
+pub func:check_field_limit_vacant = NIL(ExprTyper->:e, VerifyId:lim, int32:declared, int32:sname,
+                                        int32:fname, Span:at) never fails {
+    if (raw verify_is_none(lim)) { pass NIL; }
+    if (declared == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, declared)) { pass NIL; }
+    VerifyNode:lv = raw ast_verify(e.ast, lim);
+    DeclId:rd = raw limit_target(lv);
+    if (raw decl_is_none(rd)) { pass NIL; }                 // resolution already refused it
+    int32:subject = raw rules_subject_type(e, rd);
+    if (subject != declared) { pass NIL; }                   // TYPE-059 said so already (D-240)
+    string:who = string_concat("`", raw intern_get(e.interns, sname));
+    who = string_concat(who, ".");
+    who = string_concat(who, raw intern_get(e.interns, fname));
+    who = string_concat(who, "`");
+    string:rname = raw intern_get(e.interns, raw limit_rule(lv));
+    int32:k = raw type_kind(e.types, declared);
+    bool:numeric = (raw type_is_integer(e.types, declared)) || (k == (raw TY_BOOL())) || (k == (raw TY_CHAR()));
+    if (!numeric) {
+        string:n1 = string_concat(who, " is limited by `");
+        n1 = string_concat(n1, rname);
+        n1 = string_concat(n1, "`, and a `");
+        n1 = string_concat(n1, raw type_display(e.types, e.interns, declared));
+        discard(raw te_error(e, raw TYPE_FIELD_LIMIT_VACANT(), string_concat(n1,
+            "` field's vacant value is not one the constant folder holds (D-308): a declared-uninitialised aggregate and a move out of the field both leave the vacant value WITHOUT passing a write point, so a field's rule must be decidable over it at the declaration -- which today means a plain integer, a `bool` or a `char` field"),
+            at));
+        pass NIL;
+    }
+    int32:verdict = raw field_limit_vacant_walk(e, rd, declared, 32i32);
+    if (verdict == 0i32) { pass NIL; }
+    string:vtext = "`0`";
+    if (k == (raw TY_BOOL())) { vtext = "`false`"; }
+    if (verdict == 1i32) {
+        string:m1 = string_concat("`limit<", rname);
+        m1 = string_concat(m1, ">` does not hold of ");
+        m1 = string_concat(m1, who);
+        m1 = string_concat(m1, "'s vacant value, ");
+        m1 = string_concat(m1, vtext);
+        discard(raw te_error(e, raw TYPE_FIELD_LIMIT_VACANT(), string_concat(m1,
+            " (D-308): a declared-uninitialised aggregate holds it (D-225) and a move out of the field leaves it, and neither passes a write point -- so a field's rule must admit the vacant value, or the field can hold a value its rule refuses with no check ever having run"),
+            at));
+        pass NIL;
+    }
+    string:u1 = string_concat("`limit<", rname);
+    u1 = string_concat(u1, ">` cannot be decided over ");
+    u1 = string_concat(u1, who);
+    u1 = string_concat(u1, "'s vacant value, ");
+    u1 = string_concat(u1, vtext);
+    discard(raw te_error(e, raw TYPE_FIELD_LIMIT_VACANT(), string_concat(u1,
+        " (D-308): a field's rule is folded at the declaration with `$` bound to the vacant value, and a clause here is not a constant expression over `$` -- a call, a member access or a name the folder does not evaluate. Nothing checks the vacant value later, so the rule must be one the folder can decide"),
+        at));
+    pass NIL;
+};
+
 // A REFINEMENT NAMES A RULE OVER THE SAME SUBJECT (1.5.1, D-220): a refinement
 // is a conjunction, and a conjunction has one subject.
 func:check_refine_subject = NIL(ExprTyper->:e, VerifyId:ref, int32:subject) never fails {
@@ -1116,6 +1204,11 @@ pub func:place_limited = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails 
         pass false;
     }
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        // A LIMITED FIELD IS LIMITED WHEREVER ITS STRUCT LIVES (D-308 SS4, 1.5.8b
+        // step 6): asked BEFORE the pointer-base exit below, because the rule is
+        // the field's and not a binding's -- `@p.f` through a pointer is an
+        // address no write point sees, exactly as `@s.f` is.
+        if (raw member_names_limited_field(e, n)) { pass true; }
         int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
         if (bt != 0i32) {
             int32:bk = raw type_kind(e.types, bt);
@@ -1211,20 +1304,8 @@ func:struct_field_fixed = bool(ExprTyper->:e, int32:sty, int32:name) never fails
 // through its template's declaration, so an instance's field carries the
 // template's qualifiers and the template's module (K-4).
 pub func:struct_field_decl = int32(ExprTyper->:e, int32:sty, int32:name) never fails {
-    if (sty == 0i32) { pass 0i32; }
-    if ((raw type_kind(e.types, sty)) != (raw TY_STRUCT())) { pass 0i32; }
-    int32:sd = raw type_decl_of(e.types, sty);
-    if (sd == 0i32) { pass 0i32; }
-    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: sd });
-    int32:cnt = raw item_member_count(e.ast, d);
-    for (int32:i in 0i32...cnt) {
-        DeclId:mid = raw item_member(e.ast, d, i);
-        DeclNode:m = raw ast_decl(e.ast, mid);
-        if (m.kind == DeclKind.DeclFieldDecl) {
-            if ((raw decl_name(m)) == name) { pass mid.index; }
-        }
-    }
-    pass 0i32;
+    // ONE lookup, shared with the emitter and the encoder (1.5.8b step 6).
+    pass (raw struct_field_decl_of(e.ast, e.types, sty, name));
 };
 
 // THE NAME A STRUCT WAS DECLARED UNDER -- `Box`, where the type displays as
@@ -1236,6 +1317,28 @@ pub func:struct_decl_name = string(ExprTyper->:e, int32:sty) never fails {
 };
 
 // The named field's qualifier bits, or 0 when there is no such field.
+// THE FIELD'S `limit<Rules>` (D-308, 1.5.8b step 6), or none: the one lookup the
+// address refusal, the write points and the encoder's read facts share.
+pub func:struct_field_limit = VerifyId(ExprTyper->:e, int32:sty, int32:name) never fails {
+    int32:fldd = raw struct_field_decl(e, sty, name);
+    if (fldd == 0i32) { pass (raw verify_none()); }
+    pass (raw field_limit(raw ast_decl(e.ast, DeclId{ index: fldd })));
+};
+
+// DOES THIS MEMBER ACCESS NAME A LIMITED FIELD? The base's struct is read
+// THROUGH a pointer (`.` auto-dereferences, D-098): a field's rule belongs to
+// the field wherever its struct lives, which is what makes `p.f = v` a write
+// point and `@p.f` an address no write point could see.
+pub func:member_names_limited_field = bool(ExprTyper->:e, ExprNode:n) never fails {
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+    if (bt == 0i32) { pass false; }
+    if ((raw type_kind(e.types, bt)) == (raw TY_POINTER())) { bt = raw type_elem(e.types, bt); }
+    if (bt == 0i32) { pass false; }
+    if ((raw type_kind(e.types, bt)) != (raw TY_STRUCT())) { pass false; }
+    pass (!(raw verify_is_none(raw struct_field_limit(e, bt, n.payload =>! int32))));
+};
+
 pub func:struct_field_quals = int32(ExprTyper->:e, int32:sty, int32:name) never fails {
     int32:fldd = raw struct_field_decl(e, sty, name);
     if (fldd == 0i32) { pass 0i32; }
@@ -2183,6 +2286,23 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
                     discard(raw te_error(e, raw TYPE_FIELD_QUAL(),
                         "a field is `sealed` (read anywhere, written only by its module, D-313) or `hidden` (neither read nor written outside it, D-314), never both: the two contradict -- write the one that is true; `hidden` already forbids the writes",
                         sfm.span));
+                }
+                // A FIELD'S `limit<Rules>` (D-308, 1.5.8b step 6): the subject is
+                // the field's own type BY IDENTITY (TYPE-059, the binding's rule --
+                // so a limited `T` field of a generic struct refuses, D-220's "no
+                // type parameter"), and the rule holds of the field's VACANT value
+                // (TYPE-077). The type comes through the layout walk, never a raw
+                // re-resolve (1.1.12c's lesson, above).
+                VerifyId:sfl = raw field_limit(sfm);
+                if (!(raw verify_is_none(sfl))) {
+                    TypeResolver:sflr = raw etyper_resolver(e);
+                    int32:sfst = raw tt_struct(e.types, id.index, raw decl_name(d), 0i64, 1i32);
+                    FieldInfo:sffi = raw struct_field(@sflr, sfst, raw decl_name(sfm), scope);
+                    if (sffi.found) {
+                        drop check_limit_subject(e, sfl, sffi.type_id, sfm.span);
+                        drop check_field_limit_vacant(e, sfl, sffi.type_id, raw decl_name(d),
+                                                      raw decl_name(sfm), sfm.span);
+                    }
                 }
             }
         }

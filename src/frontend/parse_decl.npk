@@ -548,6 +548,8 @@ pub func:param_is_discarded = bool(DeclNode:d) never fails {
 };
 pub func:field_type = TypeId(DeclNode:d) never fails  { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:field_quals = int32(DeclNode:d) never fails { pass d.c; };
+// THE FIELD'S `limit<Rules>` (D-308, 1.5.8b step 6), or 0 for none: slot `b`.
+pub func:field_limit = VerifyId(DeclNode:d) never fails { pass VerifyId{ index: d.b }; };
 pub func:param_quals = int32(DeclNode:d) never fails { pass d.c; };
 pub func:global_type = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:global_init = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.b }; pass e; };
@@ -1031,12 +1033,19 @@ func:p_parse_field = DeclId(Parser->:p) never fails {
     // Slot `c` IS THE FLAGS SLOT on a field, on a parameter and on a global, so
     // one accessor shape reads all three rather than three conventions to recall.
     int32:quals = raw p_qualifiers(p);
+    // `limit<Rules>` AFTER THE QUALIFIERS, as a local's does (D-308): the rule
+    // binds to the DECLARATION, not to the type, so it sits beside `sealed` and
+    // `hidden` rather than inside the type. Slot `b` holds it; a field had none.
+    int32:lim = 0i32;
+    if (raw p_at(p, TokenKind.KwLimit)) {
+        lim = (raw p_parse_limit(p)).index;
+    }
     TypeId:ty = raw p_parse_type(p);
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_advance(p);
     discard(raw p_expect(p, TokenKind.PSemi));
     pass (raw ast_add_decl(p.ast, DeclKind.DeclFieldDecl, sp,
-                             ty.index, 0i32, quals, name.payload));
+                             ty.index, lim, quals, name.payload));
 };
 
 func:p_parse_variant = DeclId(Parser->:p) never fails {

@@ -998,6 +998,11 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // THE SECOND WRITE POINT (1.5.2 step 2, D-251), after the store.
         IrVal:lc = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
         if (!(raw iv_is_ok(lc))) { pass lc; }
+        // ... AND A LIMITED FIELD'S (D-308, 1.5.8b step 6): the rule is the field's,
+        // through any path, so `p.f = v` through a pointer is checked here too.
+        IrVal:flc = raw emit_field_assign_limit(x, raw stmt_target(s), place.addr,
+                                                place.type_id, s.span);
+        if (!(raw iv_is_ok(flc))) { pass flc; }
         pass (raw iv_nil());
     }
 
@@ -1037,6 +1042,9 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // guards ran above; the rule is asked of the stored result.
     IrVal:lc2 = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
     if (!(raw iv_is_ok(lc2))) { pass lc2; }
+    IrVal:flc2 = raw emit_field_assign_limit(x, raw stmt_target(s), place.addr,
+                                             place.type_id, s.span);
+    if (!(raw iv_is_ok(flc2))) { pass flc2; }
     pass (raw iv_nil());
 };
 

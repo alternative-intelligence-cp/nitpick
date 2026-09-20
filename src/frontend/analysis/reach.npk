@@ -34,6 +34,7 @@ use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;   // limit_target (1.5.2, D-251)
 use "../types.npk".*;
 use "../expr_types.npk".*;
+use "../type_resolve.npk".*;     // struct_field_decl_of: a limited field's write point (D-308, 1.5.8b step 6)
 use "./analysis_codes.npk".*;
 
 pub func:REACH_DEPTH = int32() never fails { pass 256i32; };
@@ -238,6 +239,26 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
     pass NIL;
 };
 
+// A LIMITED FIELD'S WRITE POINT (D-308 SS2, 1.5.8b step 6): a struct's field may
+// carry `limit<Rules>`, checked where the field is WRITTEN -- an assignment
+// through any path (a pointer base read through, D-098) and a struct literal's
+// value for it. `LimitViolated` is armed exactly there, and the rule's clauses
+// walked for their own arms, as a limited binding's are: arming at the
+// declaration instead would demand an arm of every program that imports a
+// struct and never writes it.
+func:reach_field_write = NIL(Reach->:x, int32:sty, int32:fname, int32:fuel) never fails {
+    int32:st = sty;
+    if (st == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, st)) == (raw TY_POINTER())) { st = raw type_elem(x.types, st); }
+    int32:fdecl = raw struct_field_decl_of(x.ast, x.types, st, fname);
+    if (fdecl == 0i32) { pass NIL; }
+    VerifyId:fl = raw field_limit(raw ast_decl(x.ast, DeclId{ index: fdecl }));
+    if (raw verify_is_none(fl)) { pass NIL; }
+    x.saw_limit = true;
+    drop reach_rule(x, raw limit_target(raw ast_verify(x.ast, fl)), fuel - 1i32);
+    pass NIL;
+};
+
 // THE RULE'S OWN ARMS (1.5.2, D-251): a `Rules` body is evaluated at every
 // write point of every binding it limits, so its clauses are walked as the
 // writing function's own expressions, through refinements -- fuel-bounded,
@@ -285,6 +306,12 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
+        // A WRITE TO A LIMITED FIELD (D-308, 1.5.8b step 6), plain or compound.
+        ExprNode:atn = raw ast_expr(x.ast, raw stmt_target(s));
+        if (atn.kind == ExprKind.ExprMemberAccessExpr) {
+            drop reach_field_write(x, raw exprtypes_get(x.ets, raw expr_operand(atn)),
+                                   atn.payload =>! int32, fuel);
+        }
         // A compound `/=` or `%=` IS a division (1.3.3 — the shared
         // arithmetic core emits the D-007/D-142 guards for it, where the
         // old raw tail emitted none). The statement's own operator arms the
@@ -654,7 +681,10 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
+        // THE LITERAL'S VALUE FOR A LIMITED FIELD IS A WRITE POINT (D-308).
+        int32:lsty = raw exprtypes_get(x.ets, id);
         while (i < cnt) {
+            drop reach_field_write(x, lsty, raw ast_id_at(x.ast, raw expr_list_start(n), i - 1i32), fuel);
             drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast,
                                 raw expr_list_start(n), i) }, fuel - 1i32);
             i = i + 2i32;
