@@ -486,3 +486,35 @@ pub func:TYPE_WRAP_KIND = string() never fails { pass "NITPICK-TYPE-078"; };
 // at the declaration, and refused when it is false OR when the folder cannot
 // decide it (there is no later point to decide it at).
 pub func:TYPE_FIELD_LIMIT_VACANT = string() never fails { pass "NITPICK-TYPE-077"; };
+
+// THE TERMINATION CLAUSES (D-304, 1.5.8c; the four codes D-304 reserved,
+// declared at step 0 and armed as the mechanism lands -- step 1 for TYPE-073
+// and TYPE-075, step 4 for TYPE-072 and TYPE-074, after the sweep of the tree
+// D-304 (6) requires first).
+//
+// A `while` OR `when` LOOP THAT DOES NOT STATE EXACTLY ONE OF `decreases E` AND
+// `unbounded` (D-304 (4)): neither, both, the clause twice, a clause in any
+// position but the one after the condition and before `invariant`, or a clause
+// on a `for`, `loop` or `till` -- which are bounded by construction (D-234,
+// D-022) and take neither. The measure says why the loop ends; `unbounded` is
+// the greppable acknowledgment that it may not, in the family of `=>!`, `wild`
+// and `raw`, never the default. DORMANT until 1.5.8c step 4 (D-304 (6)): a loop
+// with neither clause is accepted until the tree is swept.
+pub func:TYPE_LOOP_CLAUSE = string() never fails { pass "NITPICK-TYPE-072"; };
+// A `decreases` MEASURE THAT IS NOT A PLAIN INTEGER (D-304 (1)): a float, a
+// twisted kind, a `bool`, a struct -- a measure is a whole number that shrinks
+// on every trip and never goes below zero, and only `intN`/`uintN` can be one.
+pub func:TYPE_MEASURE_KIND = string() never fails { pass "NITPICK-TYPE-073"; };
+// A RECURSIVE GROUP IN WHICH SOME BUT NOT EVERY MEMBER STATES `decreases`
+// (D-304's rules): a call from one member to another compares the two members'
+// measures, so a member without one has nothing to compare at. Reported at the
+// declaration, naming the group's other members. Armed at 1.5.8c step 4 with
+// the groups.
+pub func:TYPE_MEASURE_GROUP = string() never fails { pass "NITPICK-TYPE-074"; };
+// A `decreases` ON A FUNCTION THE COMPILER SEES NO RECURSIVE CALL OF (D-304's
+// rules): the measure would be checked at a call inside the function's
+// recursive group, and there is none -- a recursion through a function value or
+// a `dyn` is invisible to the call graph by decision, and a measure there has
+// no call to be checked at. Until step 4 computes the groups, EVERY function
+// measure is this refusal.
+pub func:TYPE_MEASURE_NO_RECURSION = string() never fails { pass "NITPICK-TYPE-075"; };

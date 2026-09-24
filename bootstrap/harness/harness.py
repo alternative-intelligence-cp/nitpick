@@ -617,6 +617,14 @@ UNTESTED_CODES = {
     # OPEN -- a question, not an omission.
     "NITPICK-TYPE-023":    "open -- the C variadic tail, recorded in PROTOTYPE_DELTA",
 
+    # SCHEDULED -- D-304's four codes, declared at 1.5.8c step 0 so the plan's
+    # steps land against named codes; each comes off this list in the step that
+    # arms it and writes its case (`decreases_rules.npk`).
+    "NITPICK-TYPE-072":    "scheduled -- the loop-clause rule: its both/twice/for/order shapes armed at 1.5.8c step 1, its `neither` shape at step 4 after the sweep (D-304 (6))",
+    "NITPICK-TYPE-073":    "scheduled -- the measure's kind, armed at 1.5.8c step 1",
+    "NITPICK-TYPE-074":    "scheduled -- the recursive-group rule, armed at 1.5.8c step 4 with the groups",
+    "NITPICK-TYPE-075":    "scheduled -- a function measure with no recursive call, armed at 1.5.8c step 1",
+
     # NO RUNG LEFT (1.5.4 step 4, S-47): the last construct that rung lowered
     # and tests/rejection/ retired with it; the code and its `refuse` branch
     # stay for the next rung a cycle adds, whose test comes with it

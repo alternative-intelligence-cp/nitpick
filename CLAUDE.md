@@ -1201,7 +1201,7 @@ where it was 250, and nothing else moved.
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
-(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c, `decreases`/`unbounded` with the
+(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared), `decreases`/`unbounded` with the
 `terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
@@ -2314,6 +2314,7 @@ parse failure some lines away from the mistake:
 | `fails`, `end` | the `never fails` contract clause's second word (D-002/D-163) and the `when`/`then`/`end` control-flow family's terminator (LEXICAL_REFERENCE's keyword table) — each cost the 1.4.8 executor a build |
 | `in`, `mod` | the `for … in` keyword and the module-declaration keyword (`mod:name;`) — each cost the 1.5.0 executor a build, as a local named `in` (a byte source) and one named `mod` (a module name) |
 | `old`, `result`, `pure` | the verification keywords 1.5.1 added (D-243, D-245, D-242): `old(expr)` is a keyword operator (the value at entry), `result` a leaf keyword (the success value, `ensures` only — `Result` with a capital R is the type, and `result`'s token is `KwResultValue` for that reason), `pure` a contract clause. `old` was a local in the SMT encoder and a test, `result` a field in `FnSig` and four unit-test fixtures — every one renamed; each reads like the most ordinary local name there is |
+| `decreases`, `unbounded` | the termination clauses of D-304 (1.5.8c): `while (c) decreases n - i { … }` says why a loop ends, `while (c) unbounded { … }` that it may not. Keywords from 1.5.8c step 1 (the codes TYPE-072…075 are declared at step 0); until then `unbounded` was a function name in one test. Both read like ordinary names — a budget, a queue, a flag |
 | `sealed`, `hidden` | the field qualifiers 1.5.8b step 1 added (D-313, D-314): `sealed int64:bal;` is written only by the declaring module, `hidden` is not touched outside it. Both read like ordinary names — the compiler had a local and a field named `sealed`, seven tests an inline module named `hidden`, and five more a function or a local named `hidden` (all renamed: `after_wildcard`, `sealed_any`, `nested`, `secret`) |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex

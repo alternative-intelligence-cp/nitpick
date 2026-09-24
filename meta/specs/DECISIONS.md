@@ -19354,6 +19354,13 @@ in `nitpick-libs` or `nitpick-apps`, and once in the tree
 Lands at 1.5.8c. The library listener was told before anything landed
 (FORECAST F5, 2026-09-18).
 
+> **Note (2026-09-24, 1.5.8c step 0):** the four codes are DECLARED
+> (`TYPE_LOOP_CLAUSE` 072, `TYPE_MEASURE_KIND` 073, `TYPE_MEASURE_GROUP` 074,
+> `TYPE_MEASURE_NO_RECURSION` 075, `src/frontend/type_codes.npk`), each armed by
+> the step that builds its mechanism — 073 and 075 at step 1, 072 and 074 at step
+> 4 after the sweep (6). The question the plan raised about the ~16 event loops
+> is settled as D-316: `unbounded`, with the reason on the line above.
+
 ## D-305 — A stack overflow is a controlled trap: LLVM's split-stack prologue on every emitted function, `StackExhausted` (4118), `failsafe` on a stack of its own; the check is never elided — **SETTLED (user decision, 2026-09-18: "go with all four"; S-85)**
 
 Found at 1.5.8's planning (DEF-59, DEF-60). The floor installs one signal
