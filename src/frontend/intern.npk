@@ -210,15 +210,16 @@ pub func:fnv1a_seed = uint64() never fails {
     pass ((3421887204u64 << 32u64) | 2216829733u64);
 };
 
-// THE PRELUDE'S `fnv_mix` IS `(h ^ v) *% prime` SINCE 1.5.8b step 4 (D-312),
-// one `mul i64` with no guard. This copy computes the same value the older
-// way, because `src/` is bounded by what the SNAPSHOT can compile (D-205) and
-// no snapshot parses `*%` yet. It adopts the operator at the next refresh,
-// which 1.5.8b step 7's record owes; until then the two agree to the bit --
-// both are `(h ^ v) * prime` modulo 2^64 -- which is what D-179's error
-// identity needs.
+// THE SAME STEP AS THE PRELUDE'S `fnv_mix`, IN THE SAME SPELLING (D-312;
+// adopted at 1.5.8b step 6d, the first `src/` change after the refresh that
+// carried `*%` into the builder -- D-205: `src/` is bounded by what the
+// SNAPSHOT can compile, and until step 6c's refresh no snapshot parsed the
+// operator, so this copy computed the value the older way, widen-multiply-
+// truncate in `uint128`). `*%` IS the reduction modulo 2^64 that FNV
+// specifies: one `mul i64`, no guard, no row, and the value the older spelling
+// gave to the bit -- which is what D-179's error identity needs.
 pub func:fnv1a_step = uint64(uint64:h, uint64:v) never fails {
-    pass ((((h ^ v) => uint128) * 1099511628211u128) =>! uint64);
+    pass ((h ^ v) *% 1099511628211u64);
 };
 
 // The step over a name's bytes, low byte first (D-123's specified order).

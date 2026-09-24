@@ -2097,9 +2097,33 @@ pub func:pick_selector_address = SelAddr(ExprEmitter->:x, ExprId:sel_id, int32:s
     pass SelAddr{ val: move(tv), addr: move(spill) };
 };
 
+// A BINDING SPELLED `_` BINDS NOTHING (D-266; DEF-88, 1.5.8b step 6d): it holds
+// its POSITION in a multi-payload pattern -- binding i is payload i -- and
+// names no slot. `arms_bind_any` has always read it so, and so does the
+// checker; `bind_payload` counted positions instead, and a lending arm whose
+// only "binding" was `_` asked for a selector address nobody had made.
+func:enum_bind_is_wild = bool(ExprEmitter->:x, PatNode:pn, int32:i) never fails {
+    int32:nm = raw pat_enum_bind(x.ast, pn, i);
+    if (nm == 0i32) { pass true; }
+    pass (raw string_eq(raw intern_get(x.interns, nm), "_"));
+};
+
 func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
                           IrVal:sel, int32:arm_idx, Span:at,
                           bool:consuming, string:sel_addr) never fails {
+    // WHAT THE ARM BINDS: a NAME. `_` binds nothing (DEF-88), so an arm of
+    // wildcards alone binds nothing, whatever its count -- the one notion
+    // the whole-drop below, the address check and the binding paths share.
+    bool:binds = false;
+    if (pn.kind == PatKind.PatEnumDestructure) {
+        int32:nbn = raw pat_enum_bind_count(x.ast, pn);
+        for (int32:nb in 0i32...nbn) {
+            if (!(raw enum_bind_is_wild(x, pn, nb))) { binds = true; }
+        }
+    }
+    if (pn.kind == PatKind.PatStructDestructure) {
+        if ((raw pat_bind_count(pn)) > 0i32) { binds = true; }
+    }
     // A CONSUMING ARM THAT BINDS NOTHING STILL TOOK THE VALUE APART (D-216).
     // `move(v)` cleared the selector's drop flag, so the enum's own scope drop
     // will not run; an arm that binds no payload therefore owns it and nobody
@@ -2109,13 +2133,6 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // code for a value with nothing to free. An arm that DOES bind takes
     // ownership into the binding instead, and that binding carries the flag.
     if (consuming) {
-        bool:binds = false;
-        if (pn.kind == PatKind.PatEnumDestructure) {
-            if ((raw pat_enum_bind_count(x.ast, pn)) > 0i32) { binds = true; }
-        }
-        if (pn.kind == PatKind.PatStructDestructure) {
-            if ((raw pat_bind_count(pn)) > 0i32) { binds = true; }
-        }
         if (!binds) {
             if (raw type_drops_recorded(x.fe.ctx.types, sel_tid, 64i32)) {
                 string:cds = raw irw_temp(x.fe.w);
@@ -2135,10 +2152,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // to bind from is a defect in the two functions' agreement, not a rung.
     bool:view = !consuming;
     if (view) {
-        bool:binds_any = false;
-        if (pn.kind == PatKind.PatStructDestructure) { if ((raw pat_bind_count(pn)) > 0i32) { binds_any = true; } }
-        if (pn.kind == PatKind.PatEnumDestructure) { if ((raw pat_enum_bind_count(x.ast, pn)) > 0i32) { binds_any = true; } }
-        if (binds_any) { if (sel_addr.len == 0i64) { pass (raw iv_broken(at)); } }
+        if (binds) { if (sel_addr.len == 0i64) { pass (raw iv_broken(at)); } }
     }
     // A STRUCT DESTRUCTURE BINDS EACH NAMED FIELD (1.0.9c): `(Point{ x, y })`
     // reads `x` and `y` out of the selector by field. The pattern is
@@ -2180,7 +2194,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         pass (raw iv_nil());
     }
     if (pn.kind != PatKind.PatEnumDestructure) { pass (raw iv_nil()); }
-    if ((raw pat_enum_bind_count(x.ast, pn)) == 0i32) { pass (raw iv_nil()); }
+    if (!binds) { pass (raw iv_nil()); }
 
     int32:segs = raw pat_enum_segment_count(x.ast, pn);
     int32:vname1 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
@@ -2270,6 +2284,22 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             drop irw_line(x.fe.w, raw cat5(bpp2, " = getelementptr i8, ptr ",
                               bbase, ", i64 ", int_to_string(bs.offset)));
             bpp = move(bpp2);
+        }
+        // `_` IN ONE POSITION OF A MULTI-PAYLOAD PATTERN (DEF-88): nothing is
+        // bound there. A lending arm leaves the payload where it is; a
+        // CONSUMING arm owns it and no binding will free it -- the selector's
+        // own drop was cleared by `move` and the whole-drop above runs only
+        // for an arm that names nothing -- so the payload is dropped HERE,
+        // in place, through its type's own drop body.
+        if (raw enum_bind_is_wild(x, pn, bi)) {
+            if (consuming) {
+                if (raw type_drops_recorded(x.fe.ctx.types, bs.type_id, 64i32)) {
+                    drop irw_line(x.fe.w, raw cat4("call void ",
+                                      raw drop_fn_sym(x.fe.ctx, bs.type_id),
+                                      raw cat3("(ptr ", bpp, ")"), ""));
+                }
+            }
+            continue;
         }
         if (view) {
             string:bvslot = raw pick_bind_slot(x, arm_idx, bi,

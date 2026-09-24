@@ -1,0 +1,12 @@
+# DEF-88 (1.5.8b step 6d): a `pick` arm that discards an owning payload with
+# `_` frees it -- a consuming arm of wildcards alone drops the whole value
+# through the enum's drop body (D-216), and a consuming multi-payload arm drops
+# the `_` payload in place at the bind. `pick_lend_wild_churn.npk` runs both
+# shapes two thousand times; `pick_lend_wild.npk` runs them once. Under
+# NPK_HEAP_STATS the churn's peak must stay within `bound` times the once's: a
+# payload either arm left unfreed would peak thousands of times it.
+kind    = "probe"
+program = "tests/backend/programs/pick_lend_wild_churn.npk"
+against = "tests/backend/programs/pick_lend_wild.npk"
+bound   = 2
+expect  = "pass"

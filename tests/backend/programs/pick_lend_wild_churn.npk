@@ -1,0 +1,68 @@
+// expect-exit: 0
+//
+// THE CHURN TWIN of `pick_lend_wild.npk` (DEF-88, 1.5.8b step 6d): the two
+// consuming shapes -- `(Res.Note(_))`, whose arm owns the whole value, and
+// `(Pair.Two(a, _))`, whose `_` payload is dropped in place -- two thousand
+// times. `tests/cost/pick_lend_wild.toml` holds this program's peak to the
+// once's: a payload either arm failed to free would peak thousands of times it.
+mod:pick_lend_wild_churn;
+
+enum:Res = { Note(string); Blank; };
+enum:Pair = { Two(string, string); One(string); };
+
+func:tag = int64(Res:r) never fails {
+    pick (r) {
+        (Res.Note(_)) { pass 1i64; },
+        (Res.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:toss = int64(move Res:r) never fails {
+    pick (move(r)) {
+        (Res.Note(_)) { pass 3i64; },
+        (Res.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:first = int64(move Pair:p) never fails {
+    pick (move(p)) {
+        (Pair.Two(a, _)) { pass a.len; },
+        (Pair.One(s))    { pass s.len; }
+    }
+    pass 0i64;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:n = 2000i64;
+    Res:a = Res.Note(string_concat("seven", "ty"));
+    Res:b = Res.Blank;
+    int64:t1 = raw tag(a);                          // 1, and `a` is still whole
+    int64:t2 = raw tag(b);                          // 0
+    int64:t3 = raw tag(a);                          // 1 again: nothing was taken
+    int64:acc = 0i64;
+    for (int64:i in 0i64...n) {
+        Res:c = Res.Note(string_concat("thirty", "-three"));
+        acc = acc + raw toss(move(c));              // 3 each, the body freed each
+        Pair:q = Pair.Two(string_concat("ab", "c"), string_concat("long", "er-tail"));
+        acc = acc + raw first(move(q));             // 3 each, payload 1 freed in place
+    }
+    int64:took = raw toss(move(a));                 // 3
+    exit ((t1 + t2 + t3 + took + acc - 5i64 - (6i64 * n)) =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 9i32; },
+        (CastRange)      { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
+};

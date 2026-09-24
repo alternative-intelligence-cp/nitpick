@@ -1,0 +1,81 @@
+// expect-exit: 0
+//
+// A `pick` ARM THAT NAMES A VARIANT AND DISCARDS AN OWNING PAYLOAD WITH `_`
+// (DEF-88, 1.5.8b step 6d). `_` binds nothing (D-266: no copy, no view) and
+// holds its POSITION in a multi-payload pattern. The checker admitted every
+// shape here; the emitter refused the first as EMIT-002 on every compiler
+// before this step -- unrun, because `tests/accept/moves.npk`, which spells
+// it, asks only the frontend. Three shapes, each with its ownership stated:
+//
+//   `tag`    a LENDING arm `(Res.Note(_))`: binds nothing, so the selector
+//            needs no address; the selector is intact afterwards.
+//   `toss`   a CONSUMING arm `(Res.Note(_))`: the arm names nothing, so it owns
+//            the whole value and the enum's drop body frees the payload (D-216).
+//   `first`  a CONSUMING arm `(Pair.Two(a, _))`: `a` takes payload 0 with its
+//            drop flag; payload 1 is dropped IN PLACE at the bind, since the
+//            selector's own drop was cleared by `move` and no binding owns it.
+//
+// `pick_lend_wild_churn.npk` runs the consuming shapes two thousand times and
+// `tests/cost/pick_lend_wild.toml` holds the allocator's peak there to this
+// program's: a payload the arm left unfreed would grow it thousands of times.
+mod:pick_lend_wild;
+
+enum:Res = { Note(string); Blank; };
+enum:Pair = { Two(string, string); One(string); };
+
+func:tag = int64(Res:r) never fails {
+    pick (r) {
+        (Res.Note(_)) { pass 1i64; },
+        (Res.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:toss = int64(move Res:r) never fails {
+    pick (move(r)) {
+        (Res.Note(_)) { pass 3i64; },
+        (Res.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+func:first = int64(move Pair:p) never fails {
+    pick (move(p)) {
+        (Pair.Two(a, _)) { pass a.len; },
+        (Pair.One(s))    { pass s.len; }
+    }
+    pass 0i64;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:n = 1i64;
+    Res:a = Res.Note(string_concat("seven", "ty"));
+    Res:b = Res.Blank;
+    int64:t1 = raw tag(a);                          // 1, and `a` is still whole
+    int64:t2 = raw tag(b);                          // 0
+    int64:t3 = raw tag(a);                          // 1 again: nothing was taken
+    int64:acc = 0i64;
+    for (int64:i in 0i64...n) {
+        Res:c = Res.Note(string_concat("thirty", "-three"));
+        acc = acc + raw toss(move(c));              // 3 each, the body freed each
+        Pair:q = Pair.Two(string_concat("ab", "c"), string_concat("long", "er-tail"));
+        acc = acc + raw first(move(q));             // 3 each, payload 1 freed in place
+    }
+    int64:took = raw toss(move(a));                 // 3
+    exit ((t1 + t2 + t3 + took + acc - 5i64 - (6i64 * n)) =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 9i32; },
+        (CastRange)      { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
+};

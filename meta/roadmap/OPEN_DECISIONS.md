@@ -1719,8 +1719,9 @@ discharged one whose two copies are both elided — and it FAILS against the
 pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
 -4099 traps for 1 retained".]*
 
-**DEF-88 — OPEN, owned by the compiler seat, scheduled at 1.5.8b step 6d: A
-LENDING `pick` ARM WITH `_` OVER AN OWNING PAYLOAD IS REFUSED BY THE EMITTER.**
+**DEF-88 — FIXED at 1.5.8b step 6d: A `pick` ARM WITH `_` OVER AN OWNING PAYLOAD
+WAS REFUSED BY THE EMITTER — and, once it lowered, the CONSUMING form had to say who
+frees the payload `_` discards.**
 (found 2026-09-23 by `nitpick-compiler_s12`: step 6c's whole-tree sweep ran the
 FULL compiler over every root, where step 6b's had run the checker alone.)
 `tests/accept/moves.npk:223` — `pick (r) { (MvokRes.Note(_)) { pass 1i64; }, … }`
@@ -1731,12 +1732,23 @@ before it that carried the construct. Nobody ran it: `tests/accept/` is the one
 suite for every stage and asks the FRONTEND for silence, so an emitter refusal of
 an accepted file is invisible there — which is a gap in the suite's shape as much
 as in the emitter (the same file's `pick (move(r))` twin lowers). Not a safety
-hole: a refusal, never a miscompile. The fix belongs with the emitter's lending
-`pick` arms (`ir_stmt.npk`, the payload-pattern binding of 1.5.2h) and lands at
-step 6d beside `intern.npk`'s `*%`, with a program test that RUNS the arm;
-whether `tests/accept/` should also be emitted (not run) is the same question
-1.5.1b step 3c answered for library units with the `object` stage, and step 7
-records it.
+hole: a refusal, never a miscompile. THE FIX (step 6d, `ir_stmt.npk`'s
+`bind_payload`): `arms_bind_any` — which decides whether the selector's ADDRESS is
+produced for a lending pick — had always excluded `_`, while `bind_payload` counted
+POSITIONS, so an arm whose only "binding" was `_` asked for an address nobody made.
+One notion now, `enum_bind_is_wild`: `_` binds nothing and keeps its position (binding
+i is payload i). A lending arm of wildcards needs no address and binds nothing; a
+CONSUMING arm of wildcards alone names nothing and so owns the whole value, which the
+enum's drop body frees (D-216's existing branch, now reached); and a consuming
+multi-payload arm such as `(Pair.Two(a, _))` drops the `_` payload IN PLACE at the
+bind, through its type's drop body — the selector's own drop was cleared by `move` and
+no binding owns that slot, so nothing else would. MEASURED under `NPK_HEAP_STATS`
+(`pick_lend_wild.npk` once, `pick_lend_wild_churn.npk` two thousand times,
+`tests/cost/pick_lend_wild.toml`): peak_live 21 bytes in both, 6,001 allocations in
+the churn — both consuming forms free what `_` discards. `tests/accept/moves.npk`
+lowers through the full compiler for the first time. Whether `tests/accept/` should
+also be EMITTED (not run), as 1.5.1b step 3c's `object` stage does for library units,
+is step 7's question.
 
 **DEF-87 — FIXED at 1.5.8b step 6c: `#wild_slice` WITH A NARROW COUNT REACHED
 `llc` AS A TYPE ERROR.** (found 2026-09-23 by `nitpick-compiler_s12`, writing the

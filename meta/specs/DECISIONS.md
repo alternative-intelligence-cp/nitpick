@@ -15145,6 +15145,16 @@ the loop-carried move analysis it interacts with.
 > describes had a COPY to refuse; a view has none, and TYPE-046 at a lending
 > bind retired with it (`move_rules.npk`'s case is a control).
 
+> **Note (2026-09-23, 1.5.8b step 6d — DEF-88):** the consuming form and `_`. An
+> arm of wildcards alone names nothing, so it owns the whole value and the enum's
+> drop body frees the payload (the branch this decision wrote, reached for the
+> first time once the arm lowered). A multi-payload arm that names some positions
+> and discards another — `(Pair.Two(a, _))` — drops the `_` payload IN PLACE at the
+> bind through its type's drop body: the selector's drop flag was cleared by
+> `move`, `a` carries only its own, and nothing else would free payload 1.
+> Measured: `pick_lend_wild_churn.npk` peaks where `pick_lend_wild.npk` peaks
+> (21 bytes) over two thousand rounds and 6,001 allocations.
+
 ## D-217 — NIKOS struck from 1.5 — **SETTLED (user-ratified; B-5)**
 
 A decision, not a deferral-by-silence: Astrée IS the
@@ -17645,6 +17655,14 @@ the rule and traps nothing (exit 7), while `drop bump(@p);` is refused at the
 > rejection file reports the same code set under the step 0 checker and the
 > step 1 checker except the three that flipped by design and the new file.
 
+> **Note (2026-09-23, 1.5.8b step 6d — DEF-88):** "`_` takes no copy and no view"
+> was the checker's reading and `arms_bind_any`'s; the emitter's binding walk
+> counted positions, so a lending arm `(Variant(_))` over an owning payload was
+> refused as EMIT-002 on every compiler that carried the construct, unrun because
+> `tests/accept/` asks only the frontend. One notion now (`enum_bind_is_wild`):
+> `_` binds nothing and keeps its position; a lending arm of wildcards needs no
+> selector address. `pick_lend_wild.npk` runs it.
+
 ## D-267 — `failsafe`'s postcondition has a runtime guard — **SETTLED (user decision, 2026-09-06: "ratify both as recommended"; OPEN_DECISIONS S-43; lands at 1.5.3 steps 0–2)**
 
 D-014 §3.3: a `failsafe` that returns 0 — conventionally success — is a
@@ -19920,6 +19938,16 @@ check the published digests. The ECOSYSTEM's derived identities use
 hash, every derived `Hash` — and the prelude's `fnv_offset` builds that one. A
 "fix" of either to the other would move every error code and break every
 driver.
+
+> **Note (2026-09-23, 1.5.8b step 6d):** `intern.npk`'s `fnv1a_step` — the
+> compiler's own copy of the prelude's `fnv_mix` — spells `*%` now. Step 4 left it
+> in the `uint128` widen-multiply-truncate form because no committed builder parsed
+> the operator (D-205); step 6c's one-hop refresh carried the wrapping family into
+> the builder, and this is the first `src/` change after it. The value is the
+> same to the bit (both are `(h ^ v) * prime` modulo 2^64, which D-179's error
+> identity needs); the compiler's own manifest loses the one `overflow` row the
+> 128-bit multiply carried -- a discharged one (the product cannot overflow 128
+> bits), gone because `*%` has no guard: 3,391 -> 3,390 lines, no verdict moved.
 
 ## D-313 — A struct field may be `sealed`: readable everywhere, written only by code in its struct's declaring module; the compiler-known containers' headers are sealed by definition — **SETTLED (user decision, 2026-09-19: "Lets go with A. As far as keyword, I think sealed is fine. ... i'd rather overlap some than come up with some word that doesn't accurately represent what is happening. ... We don't have classes so someone coming from OOP would not meet the opportunity where the 'usual' meaning for them would even show up and so seeing it will hopefully make them look into what it does."; S-93)**
 

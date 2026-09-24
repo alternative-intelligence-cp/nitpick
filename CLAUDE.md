@@ -1286,9 +1286,14 @@ discharged, 1,113 → 964 open, the facts closing 149 rows of D-309's residue,
 the gate over 2,368 shared rows moving nothing; the floor's bytes moved (its
 first since `6340d5c`), its 388 rows unmoved, D-303's sweep 41 of 41 real
 programs agreeing (the one real-child program disagrees by design, on both
-floors, and is skipped by its marker now). `intern.npk`'s `*%` and DEF-88 (a
-lending `pick` arm `(Variant(_))` over an owning payload refused by the
-emitter, pre-existing) are 6d. **Step 3 LANDED 2026-09-19**: every plain-integer
+floors, and is skipped by its marker now). **Step 6d LANDED 2026-09-23**: `intern.npk`'s `fnv1a_step` spells `*%`
+(step 4's owed item, the first `src/` change after the refresh that carried
+the operator into the builder), and **DEF-88 fixed** — `_` binds nothing in
+the emitter as it always did in the checker: a lending arm `(Variant(_))`
+over an owning payload lowers (EMIT-002 on every compiler before, unrun since
+`tests/accept/` asks only the frontend), a consuming arm of wildcards owns and
+drops the whole value, and a consuming `(Two(a, _))` drops the `_` payload in
+place at the bind — measured at 21 bytes peak over 2,000 rounds. **Step 3 LANDED 2026-09-19**: every plain-integer
 `+ - *` and negation is an `overflow` row at its guard's site (one over a
 `simd` operation's lanes, one with N−1 traps for an integer `.sum()`), a
 discharged row's branch becomes one `llvm.assume`, and the compiler's own
@@ -2228,6 +2233,13 @@ that carried them retired at the cycle close):
   is the pointer's; a fact keyed on `has_len_term(operand type)` missed it and
   `b.cap + 1` stayed open. Any fact pushed at a member read should ask the
   pointee's kind when the base is a pointer.
+- **`_` in a `pick` pattern binds nothing and keeps its position** (DEF-88,
+  1.5.8b step 6d): the emitter's `enum_bind_is_wild` is the one notion, shared
+  with `arms_bind_any` and the checker. A CONSUMING arm that discards a payload
+  with `_` still owns it: all-wildcards drops the whole value through the
+  enum's drop body, a mixed `(Two(a, _))` drops payload 1 in place at the bind.
+  When adding a pattern shape to the emitter, ask who frees what the pattern
+  does not name — and measure it with a churn twin under `NPK_HEAP_STATS`.
 - **A whole-tree sweep with the CHECKER sees no emitter refusal** (found at
   6c): step 6b's sweep ran `tools/check` and reported nothing for
   `tests/accept/moves.npk`; the same sweep with `npkc` found the file dying as
