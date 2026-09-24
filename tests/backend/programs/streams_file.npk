@@ -9,11 +9,25 @@
 // close. The 1500-iteration scope proves it: without the drop closing each
 // descriptor, EMFILE arrives near 1024.
 mod:streams_file;
+use "../../../lib/nsys.npk".*;   // SYS_GETPID (DEF-91)
 error:E9;
 
+
+// THE FILE IS REMOVED AT THE END (DEF-91): a per-process name would otherwise
+// leave one file per run in /tmp. A failed check leaves it, for the reader.
+func:scrub = NIL(Path:p) never fails {
+    Result<cstring>:c = to_cstring(p.text);
+    if (c.is_error) { pass NIL; }
+    discard(sys(263i64, raw AT_FDCWD(), c.value.ptr, 0i64) ?| 0i64);   // unlinkat
+    pass NIL;
+};
+
 async func:roundtrip = int32() {
-    Path:p = path_parse("/tmp//./gone/../npk_streams_file.tmp") ?! E9;
-    if (!(string_equals(p.text, "/tmp/npk_streams_file.tmp"))) { pass 10i32; }
+    // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
+    // this program at once -- two harnesses in two worktrees -- never share a file.
+    string:me = int_to_string(sys(raw SYS_GETPID()) ?! E9);
+    Path:p = path_parse(string_concat("/tmp//./gone/../npk_streams_file.", string_concat(me, ".tmp"))) ?! E9;
+    if (!(string_equals(p.text, string_concat("/tmp/npk_streams_file.", string_concat(me, ".tmp"))))) { pass 10i32; }
 
     {
         ByteWriter:w = byte_writer_create(p, raw duration_ms(500i64)) ?! E9;
@@ -41,6 +55,7 @@ async func:roundtrip = int32() {
     Result<int64>:eof = await r.read(buf[0i64...6i64], raw duration_ms(200i64));
     if (!eof.is_error)      { pass 18i32; }
     if (eof.err != IoEof)   { pass 19i32; }
+    drop scrub(p);
     pass 5i32;
 };
 

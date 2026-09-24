@@ -270,6 +270,32 @@ The Z3 solver can prove that one Rules block subsumes another (e.g., `r_small_po
 
 ---
 
+### 2.1 A field's own rule (D-308; landed 1.5.8b steps 6 and 6c)
+
+A struct field may carry `limit<R>` — `sealed limit<Len> int64:count;` — a rule
+about that ONE field, spelled after the field's qualifiers and before its type.
+Its subject is the field's type by identity (TYPE-059). **The write points** are a
+struct literal's value for the field, an assignment through any path (`s.f = v`,
+`p.f = v` through a pointer) and a compound assignment; each is checked after the
+write, in every build, trapping `LimitViolated`, and is a `limit` row keyed on the
+WRITTEN expression (a limited root's own row keeps the statement's key, so a write
+to a limited field of a limited binding is two checks at two keys). **Every read of
+the field is a fact**: the rule over the read's term is a hypothesis for later
+rows, and over a `List`'s length SYMBOL at each read of `l.count` as well, which
+is what lets `l.count + 1` decide. **The rule must hold of the field's vacant
+value** (D-225: `0`, `false`), decided by the constant folder at the declaration —
+TYPE-077 otherwise, and a rule the folder cannot decide there is refused too, so
+the subject is a plain integer, a `bool` or a `char`. **A limited field has no
+address** (TYPE-063, through a pointer to its struct as well): `@s.f`, `$$m`/`$$i`
+of it and a pointer-receiver call on it refuse, because a write through an alias is
+one no write point sees. REACH arms `LimitViolated` at the writes and nowhere else.
+The prelude's `List` carries `pub Rules<int64>:ListLen = { $ >= 0i64, $ <=
+140737488355328i64 };` on `count` and `cap` (D-308 §6), a name D-239 reserves; the
+built-in lengths of `string`, `cstring`, a slice and a `buffer` carry the same
+bound as a FACT at every read without a rule (D-308 §7: the allocator refuses a
+larger block, the two producers of a caller-supplied length are guarded, and no
+program may write a header — TYPE_REFERENCE §9.2.1, MEMORY_REFERENCE §3).
+
 ## 3. Function Contracts: `requires` and `ensures`
 
 Nitpick implements classic Design by Contract (DbC) on function boundaries.

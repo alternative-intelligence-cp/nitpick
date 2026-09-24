@@ -216,10 +216,11 @@ the builtin surface is typed from a signature table.
 | ~~**S-93**~~ | **D-313** | **SETTLED (user, 2026-09-19: "Lets go with A. As far as keyword, I think sealed is fine. ... i'd rather overlap some than come up with some word that doesn't accurately represent what is happening."); LANDS at 1.5.8b step 1.** ~~OPEN (raised by 1.5.8b's planning, 2026-09-19; DEF-72, DEF-73).~~ Nitpick had no field visibility, and two confirmed memory-safety holes followed (a string's `.len` writable; the prelude `List`'s `cap` writable, corrupting the heap). RECOMMENDED and settled: a `sealed` field qualifier, meaning read anywhere and written only by the declaring module, with struct literals, moves out and write-capable addresses counting as writes (TYPE-079). The compiler-known containers' headers are sealed by definition, the prelude `List`'s three fields are sealed, and `src/`'s direct writes move to checked prelude operations with a bridging refresh. Declined: special-casing only the compiler-known containers, run-time validation only, and read-and-write privacy. |
 | ~~**S-94**~~ | **D-314** | **SETTLED (user, 2026-09-19: "hidden sounds fine to me. it says what it does. i like it"); LANDS at 1.5.8b step 1 with D-313.** ~~OPEN (raised by 1.5.8b's planning, 2026-09-19; DEF-74).~~ `List` element access is raw wild-pointer indexing through `items` in any module, unchecked, with no opt-out at the site (about 1,700 sites). RECOMMENDED and settled: a `hidden` field qualifier, neither read nor written outside the declaring module (TYPE-080), completing `sealed`. `List<T>` is indexed `l[i]`, bounds-checked against `count` with the slice's guard and row. The prelude `List`'s `items` is hidden and `count`/`cap` sealed, it gains checked pop/truncate/clear/insert/remove/swap_remove, and the sites move to `l[i]`. Declined: a List-only special case, a `wild` acknowledgement at every raw index, and `private`. |
 
-## 2e-bis. ~~A language question 1.5.8b step 6c raised~~ SETTLED the same day as D-315
+## 2e-bis. ~~Two language questions 1.5.8b raised~~ BOTH SETTLED — S-95 as D-315 (2026-09-23), S-96 as D-316 (2026-09-24)
 
 | # | Item | Recommendation |
 |---|---|---|
+| ~~**S-96**~~ | **SETTLED as D-316 (user, 2026-09-24: "both of your recommendations are fine").** ~~The sixteen genuine event loops of the tree (the executor's run loop, the reactor's wait, a driver's dispatch, `npkg`'s output drains): `unbounded` with the reason on the line above, or a measure over a trip budget?~~ Raised by 1.5.8c's plan (§3) at 1.5.8b step 7. | `unbounded`, with the reason on the line above — D-304 §4's own words for an event loop; a trip budget is "a number nobody can defend", D-304's objection to fuel; the reasons are greppable, so the list of opt-outs is auditable. |
 | ~~**S-95**~~ | **SETTLED as D-315 (user, 2026-09-23: "i am sure your recommendation is likely fine as long as it doesn't compromise on safety anywhere" — and it compromises none: the sentence enforced nothing, and 6c added the ceiling check). LANDED at 1.5.8b step 6c.** ~~What does "legal only in `wild` context" mean for `#wild_slice` (and `#wild_ptr`)?~~ BUILTIN_REFERENCE's `#wild_slice<T>(ptr, len)` row has said it since D-070, and 1.5.8b's plan (§2.7) read it as a rule to enforce at step 6c "as TYPE-054's rule for a builtin's call context". Measured at 6c: no such rule exists for either builtin, and the phrase has no checkable definition anywhere — the only context rule either carries is TYPE-061 (neither may appear in a `pure` body, D-242), and neither the checker nor any decision defines a "`wild` context" (a `wild`-qualified receiving binding? a function that holds `wild` storage? a module that imports `nsys`?). What 6c DID enforce is the ceiling: both producers' lengths are held to `[0, 2^47]` and trap `OutOfBounds` outside it (D-308 §7). | **Strike the sentence.** The `#wild_` spelling IS the acknowledgement — the greppable opt-out the TOS system asks for (D-019 for `#wild_ptr`, D-070 for `#wild_slice`) — and TYPE-061 already bars both from the one context where an unverifiable extent could launder into a proof. A rule keyed on the RECEIVING binding's regime would be a second mechanism saying the same thing in a place the author does not write it, which the blueprint philosophy argues against. If a rule is wanted, the one that fits the language is the existing spelling: the call itself. Until settled, the row keeps the sentence with a note pointing here, and nothing enforces it — as nothing ever did. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
@@ -1719,6 +1720,43 @@ discharged one whose two copies are both elided — and it FAILS against the
 pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
 -4099 traps for 1 retained".]*
 
+**DEF-91 — FIXED at 1.5.8b step 7: FOUR PROGRAM TESTS SHARED FIXED `/tmp` PATHS AND
+RACED WHEN TWO HARNESSES RAN AT ONCE.**
+(found 2026-09-24 by `nitpick-compiler_s12`: step 7's third full harness, running beside
+three others in three worktrees, had `fs_basic.npk` exit 91 and `dyn_stream.npk` exit 91
+under -O2 only, while the same run's `parity` stage -- `npkg test`, later -- passed both.)
+Reproduced deliberately: two copies of either program at once, 30 rounds -- 91 in 11 of
+60 (`dyn_stream`) and 20 of 60 (`fs_basic`); one copy alone, 30 rounds, never. The 91 is
+each program's OWN `(E9) { exit 91i32; }` reached through a `?! E9` on a read whose file
+the other copy had just truncated (gdb at `npk_trap`: `npk_raise` from `work`), not the
+ceiling and not the floor. `dyn_stream`, `fs_basic`, `text_roundtrip` and
+`streams_file` named `/tmp/npk_<name>` literally; `trap_stops_runner` already put its pid
+in the name. THE FIX: the pid in every such name (`sys(raw SYS_GETPID())`, `lib/nsys.npk`),
+and the file unlinked at the end (`scrub`, `unlinkat` through `AT_FDCWD`) so a per-process
+name leaves nothing behind (a failed check leaves its file for the reader); 60 of 60 in
+pairs after. SURVEYED AND LEFT: 33 programs carry 2–5 s join deadlines; several TEST the
+deadline itself and none has flaked but `failsafe_alloc` (DEF-85), so they stand -- a red
+on one of them under load is READ as DEF-85's class and its deadline raised then, never
+re-run. THE LESSON: a test that names a path names a resource every concurrent run of it
+shares; the process id is the cheapest partition, and cleanup is part of the name's cost.
+
+
+`check_codes_tested` READ A NUMERAL-RETURNING STRING FUNCTION AS A DIAGNOSTIC CODE.**
+(found 2026-09-24 by `nitpick-compiler_s12`, running the whole-tree checks in-process
+over 1.5.8c step 0's tree before its harness; the running 6c, 6d and 7 harnesses
+would each have ended red on it.) `CODE_DECL_RE` recognised a code declaration as
+`pub func:NAME = string() never fails { pass "<uppercase, digits, hyphens>"; }`, so
+`cast_bounds.npk`'s `len_ceiling_text` — `pass "140737488355328"` (step 6c) — was a
+"code" asserted by no test, and the check failed on a rule that does not exist. A
+false positive that fails closed, never a miscompile; but a red run reads as a
+finding here, and a red on a rule that does not exist is time spent reading nothing.
+THE FIX: the regex asks for the code's own shape, `NITPICK-<STAGE>-<NNN>` — which is
+how `check_codes_centralised` has always recognised a code literal (`"NITPICK-`), so
+the two checks now agree on what a code is. No twin in `npkg` (the check is the
+harness's alone). THE LESSON: an instrument that recognises a thing by a LOOSER shape
+than the thing's definition will one day match something else; recognise by the
+definition.
+
 **DEF-88 — FIXED at 1.5.8b step 6d: A `pick` ARM WITH `_` OVER AN OWNING PAYLOAD
 WAS REFUSED BY THE EMITTER — and, once it lowered, the CONSUMING form had to say who
 frees the payload `_` discards.**
@@ -1813,8 +1851,12 @@ generic is INSTANTIATED at, read from the checker's instance table
 (`inst_count`, `tt_instance`), the day a program pays for it in more than an arm
 it cannot enter; today four tests pay one line each.
 
-**DEF-85 — OPEN, owned by the compiler seat, raised at 1.5.8b step 5's third full
-harness: `failsafe_alloc.npk`'s VERDICT RESTS ON A FIVE-SECOND WALL CLOCK.** (found
+**DEF-85 — FIXED at 1.5.8b step 7 (the user, 2026-09-24: "both of your recommendations
+are fine" — option 1 of the three below): the join deadline is a HANG NET, sixty
+seconds, a bound only a real hang reaches, as D-297's solver net and DEF-83's control net
+are; the verdict is the region's answer and nothing the scheduler decides. Raised at
+1.5.8b step 5's third full harness: `failsafe_alloc.npk`'s VERDICT RESTED ON A
+FIVE-SECOND WALL CLOCK.** (found
 2026-09-20 by `nitpick-compiler_s11`.) The program's two threads are declared
 `joins JOIN_5S`, and its expected answer is `failsafe`'s 45. Under THREE full
 harnesses running at once, one run in 40 answered 70 — the trap route's re-entry
@@ -1908,7 +1950,10 @@ defect declares a `DEF-` in §2f.
 ## 4. Decisions blocking 1.5 (verification) and 1.6 (the analyzer evidence — "Astrée" until D-233)
 
 > **[1.5.8b step 5 (2026-09-19) — E-4, for 1.6's leg B: THE `bounds` RESIDUE IS A FRAME
-> PROBLEM, NOT A SOLVER ONE.]** The `bounds` rows landed with 831 rows in the compiler's
+> PROBLEM, NOT A SOLVER ONE.]** *(This E-4 is §4's; §2g's E-4 is the floor's kernel-effect
+> lead, CLOSED at 1.5.6b. Two leads, one number, since step 5 — disambiguated here at step 7
+> rather than renumbered, because the plan's step 5 and 6c records, D-308's note, CLAUDE.md
+> and the 1.5 README all cite "E-4" for this one.)* The `bounds` rows landed with 831 rows in the compiler's
 > own build: 79 discharged, 30 open and **722 `unencoded`**, and the 722 are one shape.
 > A `List` is address-taken by every `list_push(@l, …)`, so DEF-14's rule — a name a
 > pointer may write is never NAMED — leaves it no length term, and an access through a
@@ -1933,7 +1978,7 @@ defect declares a `DEF-` in §2f.
 > impl, or walks the program's own coercions instead). Closes when a program pays for the
 > over-approximation in more than an arm it cannot enter, or at 1.5.8d's close, whichever
 > comes first. (This section's E-4 shares its number with §2g's closed E-4 — two leads, one
-> number, since step 5; step 7's doc pass renumbers this section's.)
+> number, since step 5; step 7 disambiguated both in place rather than renumbering.)
 
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >

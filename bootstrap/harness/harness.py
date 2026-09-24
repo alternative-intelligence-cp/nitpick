@@ -3016,9 +3016,41 @@ def stage_accept(t, s):
     n = 0
     for p in files_of(t):
         name = os.path.relpath(p, ROOT)
-        s.failures += record_verdict(t["name"], name, check_type_accept(tc, p, name))
+        fails = check_type_accept(tc, p, name)
+        # AND THE EMITTER MUST LOWER IT (1.5.8b step 7, after DEF-88): an
+        # accepted file that dies in the emitter is a compiler defect by
+        # construction (EMIT-002 says so), and this suite asked only the
+        # frontend for a cycle -- `moves.npk`'s lending arm `(Variant(_))` sat
+        # here refused on every compiler since it was written. One verdict per
+        # file still: silence first, then the emission.
+        if not fails:
+            fails = emit_accept(COMPILER, p, name)
+        s.failures += record_verdict(t["name"], name, fails)
         n += 1
-    print("  %-11s %2d acceptance test(s)" % (t["name"], n))
+    print("  %-11s %2d acceptance test(s), each also EMITTED by the compiler under test" % (t["name"], n))
+
+
+def emit_accept(binary, path, name):
+    """The compiler under test must EMIT an accepted file (1.5.8b step 7).
+
+    The frontend's silence was the whole suite until DEF-88: an emitter
+    refusal of an accepted program (`NITPICK-EMIT-002`, a defect in the
+    compiler by its own message) had no stage that could see it. Measured on
+    `c5ba885` with `tests/accept/moves.npk`: this function reports it; on the
+    tree that fixed DEF-88 it reports nothing. The negative control is that
+    history, not a planted case -- no construct the checker admits and the
+    emitter refuses is known today, which is exactly what this leg holds."""
+    try:
+        r = subprocess.run([binary, path], capture_output=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return ["%s: the compiler did not terminate emitting an accepted file" % name]
+    if r.returncode == 3:
+        return ["%s: the compiler TRAPPED emitting an accepted file -- a defect in it, not in this file" % name]
+    if r.returncode != 0:
+        got = r.stderr.decode("utf-8", "replace").strip().replace("\n", ", ")
+        return ["%s: the frontend accepted this file and the emitter refused it (%s) -- "
+                "a compiler defect (DEF-88's class), never a fault in the file" % (name, got[:300])]
+    return []
 
 
 def stage_object(t, s):

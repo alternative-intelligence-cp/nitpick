@@ -18749,6 +18749,15 @@ negative control — then on the new. Declined: recording the gap as residue.
 > `trap-route` model gained the error code it lacked (`wrong-error`,
 > `holder-parks`). OPEN_DECISIONS §2f has the record.
 
+> **Note (2026-09-24, 1.5.8b step 7 — DEF-85):** the stop walk's bound is a test's
+> JOIN DEADLINE, and a test's join deadline is a hang net, never a verdict.
+> `failsafe_alloc.npk` bounded its churner at five seconds; three harnesses at once
+> made the stop miss it once in forty runs, the deadline raised inside the trap
+> route, and the program answered the re-entry exit 70 where a quiet machine answers
+> 45 every time — the route doing exactly what this decision says, with a wall clock
+> in a verdict position. Settled by the user as sixty seconds, a bound only a real
+> hang reaches (the solver's net, D-297; the explorer's control net, DEF-83).
+
 ## D-292 — `failsafe` allocates from a PREALLOCATED REGION: the trap route's allocator — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-70; a D-203 floor addition; lands at 1.5.6 step 2)**
 
 D-014 and the heap's own header say the trap path allocates nothing and
@@ -19623,6 +19632,11 @@ read, which is the payoff: `field_limit.npk`'s `div-zero`, `div-min` and three
 rule. ONE field lookup now serves the checker, the emitter and the encoder
 (`struct_field_decl_of`). Measured: the compiler's own emission is BYTE-IDENTICAL
 (nothing in `src/` is limited yet), so no verdict moved and the manifest did not.
+*[Corrected 2026-09-23, 1.5.8b step 7: the EMISSION (`build/npkc.ll`, D-265) moved
+by 119,600 bytes, since `src/` grew; every existing PROGRAM's emission was
+byte-identical, and the manifest DID move, 3,040 → 3,049, by the rows of the new
+compiler code — zero verdicts moved. The library listener read the sentence
+against notice 37's ladder and caught it.]*
 `field_limit_trap.npk` drives each write point from a child of itself, outside
 its rule above and below and inside it at both edges -- twenty children, plus the
 control that writes the same out-of-range value to the UNLIMITED sibling and must
@@ -20245,3 +20259,27 @@ it, the bounds check at each index trusts it, and a rule about the receiving
 binding's regime would not have changed either.
 
 Lands at 1.5.8b step 6c: the row's sentence, OPEN_DECISIONS S-95, this entry.
+## D-316 — An event loop says `unbounded`, with its reason on the line above; a trip budget is not a measure — **SETTLED (user decision, 2026-09-24: "both of your recommendations are fine"; S-96)**
+
+Raised by 1.5.8c's plan at 1.5.8b step 7. D-304 §4 makes every `while` and
+`when` state `decreases E` or `unbounded`, and describes `unbounded` as "the
+greppable acknowledgment that a loop may not end — an event loop, a
+read-to-end-of-input loop". The plan's census found about sixteen such loops in
+the tree — the executor's run loop, the reactor's wait, a driver's dispatch,
+`npkg`'s tool-output drains — and asked whether each should instead carry a
+measure over a TRIP BUDGET: a maximum number of iterations, after which the
+program stops through `failsafe`.
+
+**The decision.** `unbounded`, and the reason on the line above it, every time.
+A trip budget for a loop that ends when the program ends is "a number nobody can
+defend" — D-304's own objection to a fuel budget, which changes the program's
+behaviour by an arbitrary constant — and the explicit opt-out is what the TOS
+system asks for: a construct the author writes to say "this may not end, and
+here is why". The reasons are greppable, so the list of opt-outs in a tree is
+auditable in one command, which is the review that matters. A loop whose end IS
+a computed number (a retry loop over a budget the program states) takes a
+measure over that number, not `unbounded`.
+
+Lands at 1.5.8c step 3, the sweep; the loops given `unbounded` are listed in its
+record with their reasons.
+

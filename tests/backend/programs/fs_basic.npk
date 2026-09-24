@@ -24,14 +24,17 @@ func:main = int32(cstring[]:_~argv) {
     if (cwd.len == 0i64)       { exit 10i32; }
     if (cwd.ptr[0i64] != 47u8) { exit 11i32; }
 
+    // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
+    // this program at once -- two harnesses in two worktrees -- never share a file.
+    string:dn = string_concat("npk_fs_basic_dir.", int_to_string(sys(raw SYS_GETPID()) ?! E9));
     Path:tmp = path_parse("/tmp") ?! E9;
     fd:tmpd = dir_open(tmp) ?! E9;
 
     // A previous run may have left the directory: make it, tolerating EEXIST.
-    Result<NIL>:mk = mkdir_at(tmpd, "npk_fs_basic_dir");
+    Result<NIL>:mk = mkdir_at(tmpd, dn);
     if (mk.is_error) { if (mk.err != Exists) { exit 12i32; } }
-    Path:dp = path_canon(tmp, "npk_fs_basic_dir") ?! E9;
-    if (!(string_equals(dp.text, "/tmp/npk_fs_basic_dir"))) { exit 13i32; }
+    Path:dp = path_canon(tmp, dn) ?! E9;
+    if (!(string_equals(dp.text, string_concat("/tmp/", dn)))) { exit 13i32; }
     fd:d = dir_open(dp) ?! E9;
 
     // Two files, created beneath the directory at 0600.
@@ -81,7 +84,7 @@ func:main = int32(cstring[]:_~argv) {
     unlink_at(d, "c.txt") ?! E9;
     rmdir_at(d, "sub") ?! E9;
     close(d) ?! E9;
-    rmdir_at(tmpd, "npk_fs_basic_dir") ?! E9;
+    rmdir_at(tmpd, dn) ?! E9;
     close(tmpd) ?! E9;
     exit 0i32;
 };

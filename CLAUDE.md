@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 315 decisions, D-001 through D-315 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, and 314 until 1.5.8b step 6c). The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 316 decisions, D-001 through D-316 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, and 314 until 1.5.8b step 6c). The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -1293,7 +1293,13 @@ the emitter as it always did in the checker: a lending arm `(Variant(_))`
 over an owning payload lowers (EMIT-002 on every compiler before, unrun since
 `tests/accept/` asks only the frontend), a consuming arm of wildcards owns and
 drops the whole value, and a consuming `(Two(a, _))` drops the `_` payload in
-place at the bind — measured at 21 bytes peak over 2,000 rounds. **Step 3 LANDED 2026-09-19**: every plain-integer
+place at the bind — measured at 21 bytes peak over 2,000 rounds. **Step 7 LANDED 2026-09-23 — 1.5.8b IS
+COMPLETE**: `1.5.8c.md` planned execution-grade over a loop census (851 loops:
+~550 a tool writes, ~300 read), `meta/NOTICES.md` (the notice log), the accept
+suite EMITS each file it accepts (DEF-88's lesson), the two "byte-identical
+emission" sentences corrected, DEF-85 fixed (a test's join deadline is a hang
+net: `failsafe_alloc.npk` at sixty seconds) and D-316 (an event loop says
+`unbounded` with its reason; S-96, the user). **Step 3 LANDED 2026-09-19**: every plain-integer
 `+ - *` and negation is an `overflow` row at its guard's site (one over a
 `simd` operation's lanes, one with N−1 traps for an integer `.sum()`), a
 discharged row's branch becomes one `llvm.assume`, and the compiler's own
@@ -1566,7 +1572,7 @@ its holes — none was found by a test.
 ### Building and testing
 
 ```
-python3 bootstrap/harness/harness.py                    # everything, ~20 minutes + the parity stage's `npkg test`
+python3 bootstrap/harness/harness.py                    # everything: about THREE HOURS since 1.5.8b step 3 (below)
 python3 bootstrap/harness/harness.py --only type_stmt   # one test, ~1 minute
 ```
 
@@ -1586,11 +1592,18 @@ into `build/` (gitignored), and `npkg build` leaves `build/npkc`:
 ```
 python3 bootstrap/harness/quickemit.py --keep npkg/main.npk   # builds .internal/quickemit/p_main_npk
 .internal/quickemit/p_main_npk build                          # the ladder: floor, builder, src/ -> build/npkc
-.internal/quickemit/p_main_npk test                           # every suite, ~25 minutes; --only SUBSTR to iterate
+.internal/quickemit/p_main_npk test                           # every suite, ~2.5 hours (the verify sweep); --only SUBSTR to iterate
 .internal/quickemit/p_main_npk test --selfcheck               # the runner self-check alone (§7.1)
 .internal/quickemit/p_main_npk test --verdicts out.txt        # plus one verdict line per unit (the parity diff's input)
 ```
 
+**A full run takes about three hours, and most of it prints nothing** (corrected
+2026-09-23; this file said "~20 minutes" and "~25 minutes" from 1.4.8 until then):
+1.5.8b took the compiler's manifest from 368 rows to more than 3,000, so the
+verify sweep decides an order of magnitude more per program — about 47 seconds
+each over 115 programs, twice (the harness's own `verify` stage and the `parity`
+stage's `npkg test`), and the `parity` stage prints nothing until it ends. A log
+quiet for an hour is normal; check the process's live children, not the log.
 The harness's `parity` stage does all of this on every full run and diffs the
 verdicts, so a green harness already says the two runners agree; `npkg test`
 by hand is for iterating on `npkg` itself, and its `--only` skips the sweeps
@@ -2233,6 +2246,24 @@ that carried them retired at the cycle close):
   is the pointer's; a fact keyed on `has_len_term(operand type)` missed it and
   `b.cap + 1` stayed open. Any fact pushed at a member read should ask the
   pointee's kind when the base is a pointer.
+- **A test's join deadline is a HANG NET, never a verdict** (DEF-85, 1.5.8b
+  step 7): it bounds the trap route's stop walk (D-291), and under load a tight
+  five-second bound made `failsafe_alloc.npk` answer the re-entry exit once in
+  forty runs. Choose a bound only a real hang reaches (sixty seconds there), as
+  the solver's net (D-297) and the explorer's control net (DEF-83) are chosen;
+  a red that is a deadline under load is READ, not re-run.
+- **A program test's temp path carries its pid** (DEF-91, 1.5.8b step 7): a
+  literal `/tmp/npk_<name>` is shared by every concurrent run of that program,
+  and four harnesses in four worktrees made `dyn_stream` and `fs_basic` answer
+  their own `(E9)` exit through a truncated file. Spell it
+  `string_concat("/tmp/npk_<name>.", int_to_string(sys(raw SYS_GETPID()) ?! E9))`
+  and unlink it at the end (`scrub`); `trap_stops_runner.npk` is the model.
+- **An accepted file is also EMITTED** (1.5.8b step 7): `tests/accept/`'s
+  verdict is the frontend's silence AND the compiler under test lowering the
+  file, in both runners. An `EMIT-002` there is a compiler defect by its own
+  message; for a cycle the suite could not see one (DEF-88 sat in `moves.npk`
+  since it was written). Put a construct the checker admits into an accept
+  file and the emitter is now asked too.
 - **`_` in a `pick` pattern binds nothing and keeps its position** (DEF-88,
   1.5.8b step 6d): the emitter's `enum_bind_is_wild` is the one notion, shared
   with `arms_bind_any` and the checker. A CONSUMING arm that discards a payload

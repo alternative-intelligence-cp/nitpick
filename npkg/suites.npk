@@ -796,11 +796,45 @@ async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
         string:p = raw strlist_view(files, i);
         string:name = raw rel_to_root(c, p);
         List<string>:fl = relay await check_accept(c, check, p, name);
+        // AND THE EMITTER MUST LOWER IT (1.5.8b step 7, after DEF-88): an
+        // accepted file that dies in the emitter is a compiler defect by its
+        // own message, and this suite asked only the frontend for a cycle.
+        // One verdict per file: silence first, then the emission.
+        if (fl.count == 0i64) {
+            fl = relay await emit_accept(c, string_from_bytes(c.npkc.ptr, c.npkc.len), p, name);
+        }
         drop record(c, tname, name, fl);
         count = count + 1i64;
     }
-    drop say(raw stage_line(tname, count, "acceptance test(s)"));
+    drop say(raw stage_line(tname, count, "acceptance test(s), each also EMITTED by the compiler under test"));
     pass NIL;
+};
+
+// The compiler under test must EMIT an accepted file (1.5.8b step 7): the
+// harness's `emit_accept`, verdict for verdict. Measured on `c5ba885` with
+// `tests/accept/moves.npk`: reported; on the tree that fixed DEF-88: silent.
+pub async func:emit_accept = List<string>(Ctx->:c, string:binary, string:path, string:name) {
+    List<string>:fl = raw list_init::<string>(1i64);
+    Result<Run>:r = await compile_stdout(c, binary, path, raw duration_secs(300i64));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) {
+        drop strlist_push(@fl, string_concat(name, ": the compiler did not terminate emitting an accepted file"));
+        pass fl;
+    }
+    int64:rc = run.x.status;
+    if (!run.x.exited) { rc = 0i64 - run.x.signal; }
+    if (rc == 3i64) {
+        drop strlist_push(@fl, string_concat(name, ": the compiler TRAPPED emitting an accepted file -- a defect in it, not in this file"));
+        pass fl;
+    }
+    if (rc == 0i64) { pass fl; }
+    string:m = string_concat(name, ": the frontend accepted this file and the emitter refused it (");
+    List<string>:elines = raw text_lines(run.x.err);
+    if (elines.count > 0i64) { m = string_concat(m, raw strlist_view(elines, 0i64)); }
+    m = string_concat(m, ") -- a compiler defect (DEF-88's class), never a fault in the file");
+    drop list_push(@fl, move(m));
+    pass fl;
 };
 
 // `fixture`: helper binaries a test spawns, built like programs and never run;

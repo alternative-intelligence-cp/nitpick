@@ -12,10 +12,24 @@
 // the heap this waited on the mutex with no deadline -- a hang, the
 // uncontrolled stop (this program timed out on step 1's floor); with the
 // failsafe region it bumps from preallocated `.bss` and answers 45.
+//
+// THE JOIN DEADLINE IS A HANG NET, NEVER A VERDICT (DEF-85, settled by the user
+// 2026-09-24 as option 1 of three; 1.5.8b step 7). It bounds the trap route's
+// stop walk (D-291): how long the route waits for the churner -- inside the
+// allocator, under its mutex, in a tight loop -- to park. At five seconds, three
+// full harnesses running at once made it miss once in forty runs, and the
+// deadline raised INSIDE the trap route: a second trap, the re-entry exit 70,
+// where a quiet machine answers 45 a hundred and twenty times out of a hundred
+// and twenty. The compiler and the floor did what D-291 and D-307 say; the test
+// had put a wall clock in a verdict position, which is what NPK_HEAP_STATS
+// (1.5.1b step 0) exists to forbid. Sixty seconds is a bound only a real hang
+// reaches -- the solver's hang net (D-297) and the explorer's control net
+// (DEF-83, 60 -> 300 s) settled the same way -- so the verdict is the region's
+// answer and nothing the scheduler decides.
 mod:failsafe_alloc;
-fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+fixed Duration:JOIN_60S = Duration{ ns: 60000000000i64 };
 
-thread async func:churner = NIL(int32:_~v) joins JOIN_5S {
+thread async func:churner = NIL(int32:_~v) joins JOIN_60S {
     int64:n = 0i64;
     while (n < 2000000000i64) {                        // the stop is what ends this
         wild int8->:p = alloc(64i64);
@@ -26,7 +40,7 @@ thread async func:churner = NIL(int32:_~v) joins JOIN_5S {
     pass NIL;
 };
 
-thread async func:trapper = NIL(int32:zero) joins JOIN_5S {
+thread async func:trapper = NIL(int32:zero) joins JOIN_60S {
     int64:t0 = mono_now();
     while ((mono_now() - t0) < 20000000i64) { }       // the churner is churning
     discard(10i32 / zero);

@@ -8,10 +8,23 @@
 // constructors' nested TextWriter<LineBufWriter<ByteWriter>> shape is what
 // the generic machinery carries. Nobody closes anything.
 mod:text_roundtrip;
+use "../../../lib/nsys.npk".*;   // SYS_GETPID (DEF-91)
 error:E9;
 
+
+// THE FILE IS REMOVED AT THE END (DEF-91): a per-process name would otherwise
+// leave one file per run in /tmp. A failed check leaves it, for the reader.
+func:scrub = NIL(Path:p) never fails {
+    Result<cstring>:c = to_cstring(p.text);
+    if (c.is_error) { pass NIL; }
+    discard(sys(263i64, raw AT_FDCWD(), c.value.ptr, 0i64) ?| 0i64);   // unlinkat
+    pass NIL;
+};
+
 async func:work = int32() {
-    Path:p = path_parse("/tmp/npk_text_roundtrip.tmp") ?! E9;
+    // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
+    // this program at once -- two harnesses in two worktrees -- never share a file.
+    Path:p = path_parse(string_concat("/tmp/npk_text_roundtrip.", string_concat(int_to_string(sys(raw SYS_GETPID()) ?! E9), ".tmp"))) ?! E9;
     {
         ByteWriter:bw = byte_writer_create(p, raw duration_ms(500i64)) ?! E9;
         TextWriter<ByteWriter>:tw = raw text_writer(move(bw), LineEnding.CrLf);
@@ -53,6 +66,7 @@ async func:work = int32() {
     if ((si.inner.src.value =>! int64) < 3i64)        { pass 19i32; }
     if ((se.inner.sink.value =>! int64) < 3i64)       { pass 20i32; }
     if ((so.inner.inner.sink.value =>! int64) < 3i64) { pass 21i32; }
+    drop scrub(p);
     pass 5i32;
 };
 

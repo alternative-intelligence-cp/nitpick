@@ -9,6 +9,7 @@
 // family vtable path — so the same erased call translates line endings the
 // plain ByteWriter passes through untouched.
 mod:dyn_stream;
+use "../../../lib/nsys.npk".*;   // SYS_GETPID (DEF-91)
 error:E9;
 
 async func:report = int64(dyn Writer:sink, Duration:within) {
@@ -18,9 +19,22 @@ async func:report = int64(dyn Writer:sink, Duration:within) {
     pass n;
 };
 
+
+// THE FILE IS REMOVED AT THE END (DEF-91): a per-process name would otherwise
+// leave one file per run in /tmp. A failed check leaves it, for the reader.
+func:scrub = NIL(Path:p) never fails {
+    Result<cstring>:c = to_cstring(p.text);
+    if (c.is_error) { pass NIL; }
+    discard(sys(263i64, raw AT_FDCWD(), c.value.ptr, 0i64) ?| 0i64);   // unlinkat
+    pass NIL;
+};
+
 async func:work = int32() {
     // sink 1: raw bytes — "\n" stays "\n"
-    Path:p1 = path_parse("/tmp/npk_dyn_stream_raw.tmp") ?! E9;
+    // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
+    // this program at once -- two harnesses in two worktrees -- never share a file.
+    string:me = int_to_string(relay sys(raw SYS_GETPID()));
+    Path:p1 = path_parse(string_concat("/tmp/npk_dyn_stream_raw.", string_concat(me, ".tmp"))) ?! E9;
     {
         ByteWriter:b1 = byte_writer_create(p1, raw duration_ms(500i64)) ?! E9;
         dyn Writer:d1 = move(b1);
@@ -28,7 +42,7 @@ async func:work = int32() {
         if (n1 != 8i64) { pass 10i32; }
     }
     // sink 2: a CrLf TextWriter — the SAME call, translated
-    Path:p2 = path_parse("/tmp/npk_dyn_stream_crlf.tmp") ?! E9;
+    Path:p2 = path_parse(string_concat("/tmp/npk_dyn_stream_crlf.", string_concat(me, ".tmp"))) ?! E9;
     {
         ByteWriter:b2 = byte_writer_create(p2, raw duration_ms(500i64)) ?! E9;
         TextWriter<ByteWriter>:t2 = raw text_writer(move(b2), LineEnding.CrLf);
@@ -50,6 +64,8 @@ async func:work = int32() {
         if (buf[7i64] != 13u8)  { pass 15i32; }   // "\r"
         if (buf[8i64] != 10u8)  { pass 16i32; }   // "\n"
     }
+    drop scrub(p1);
+    drop scrub(p2);
     pass 5i32;
 };
 
