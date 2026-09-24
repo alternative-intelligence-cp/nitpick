@@ -1201,7 +1201,7 @@ where it was 250, and nothing else moved.
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
-(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape), `decreases`/`unbounded` with the
+(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix, so `src/`, the prelude and the tools may carry the clauses from step 3), `decreases`/`unbounded` with the
 `terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The

@@ -45,10 +45,14 @@ or moves the floor; it is unnumbered and names the number the landing will take.
 | 35+36 | 2026-09-19 | `0439819`, `3207f72` | 1.5.8b steps 4 and 5 (`+% -% *%`; the `bounds`/`cast-range` rows) | one message; its "since 1.5.4e" for the floor's last move was wrong (`6340d5c` is right — the listener caught it) |
 | 37 | 2026-09-20 | `c5ba885` | 1.5.8b step 6 (a field's own `limit<Rules>`) | its "byte-identical emission" sentence contradicted its own ladder (the listener caught it; the plan's sentence was the defect — fixed at step 7) |
 | — | 2026-09-23 | — | ADVANCE for step 6b (the reach fix) and for step 6c (the ceiling, `ListLen`, the arms, the floor) | |
-| 38 | 2026-09-23 | | 1.5.8b step 6b (DEF-86: the reach analysis follows calls into the prelude) | |
-| 39 | 2026-09-23 | | 1.5.8b step 6c (D-308 §§6–7; the floor moves) | re-pin |
-| 40 | 2026-09-23 | | 1.5.8b step 6d (`intern.npk`'s `*%`; DEF-88) | |
+| 38 | 2026-09-24 | `14ef02f` | 1.5.8b step 6b (DEF-86: the reach analysis follows calls into the prelude) | the rows 38–40 were written at step 7 (2026-09-23) ahead of their landings; each was sent 2026-09-24 |
+| 39 | 2026-09-24 | `3e4b47d` | 1.5.8b step 6c (D-308 §§6–7; the floor moves) | re-pin (`npkrt.o` 72,560 → 72,576 B) |
+| 40 | 2026-09-24 | `3156b72` | 1.5.8b step 6d (`intern.npk`'s `*%`; DEF-88) | |
+| 41 | 2026-09-24 | `aee4dd9` | 1.5.8b step 7 (the docs and the close; 1.5.8b COMPLETE) | every ladder row unchanged from `3156b72` |
 | — | 2026-09-24 | — | ADVANCE for 1.5.8c step 1: `decreases`/`unbounded` become keywords (none in the libraries, measured 2026-09-23), `DecreasesViolated` an arm every program with a `decreases` names, `terminate` guarded; the landing takes the number after 1.5.8c step 0's | sent to `nitpick-libs_s5` (the seat changed hands 2026-09-24) |
+| 42 | 2026-09-24 | `68b6e05` | 1.5.8c step 0 (the plan and the codes) | no language change |
+| 43 | 2026-09-24 | `f578e6b` | 1.5.8c step 1 (the mechanism: the two keywords, the loop and function clauses, the check, the `terminate` rows; DEF-90) | sent by `nitpick-compiler_s13` (the seat after s12) |
+| 44 | 2026-09-24 | | 1.5.8c step 2 (the one-hop snapshot refresh: the committed builder parses the clauses and carries DEF-90's fix; the builder rows move) | carries the SWEEP RECIPE for the libraries (step 3's tool and idioms; D-316) |
 
 The messages themselves are not kept here; each seat keeps the text it sent in its
 own `.internal/handoff_*/` scratch for as long as that survives, and this table is
