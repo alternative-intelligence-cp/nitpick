@@ -211,6 +211,12 @@ pub struct:FnEmitter = {
     string:result_ll;
     List<int32>:old_ids;
     List<string>:old_slots;
+    // THE ENTRY MEASURE'S SLOT (D-304 (5), 1.5.8c step 4): where this body
+    // stored `m0 = <sym>.measure(params)` at its start -- an alloca, or the
+    // frame slot at role 44 -- read by every call inside the function's
+    // recursive group; "" when the function states no measure or its group
+    // has no cycle, and in every generated predicate (no call is checked there).
+    string:measure_slot;
     bool:is_failsafe;
 
     // THE PICK STACK (0.9.7): the frame `give` and `fall` resolve against.
@@ -333,6 +339,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         decl: 0i32, result_ref: "", result_ll: "",
         old_ids: raw list_init::<int32>(4i64),
         old_slots: raw list_init::<string>(4i64),
+        measure_slot: "",
         is_failsafe: false,
         pick_dones: raw list_init::<string>(8i64),
         pick_slots: raw list_init::<string>(8i64),
@@ -429,6 +436,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.result_ll = "";
     drop list_clear(@fe.old_ids);
     drop list_clear(@fe.old_slots);
+    fe.measure_slot = "";
     fe.is_failsafe = false;
     fe.is_async = false;
     fe.is_gives = false;

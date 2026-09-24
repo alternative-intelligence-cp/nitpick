@@ -1,0 +1,61 @@
+// expect-exit: 24
+// expect-obligation: terminate discharged 3
+// expect-obligation: stack-depth discharged 2
+// expect-obligation: overflow discharged 4
+// expect-obligation: overflow open 2
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+//
+// A RECURSIVE GROUP'S MEASURES (D-304 (5), 1.5.8c step 4): `fact` calls itself
+// under `n > 0` with `n - 1`, so its call row -- the callee's measure at the
+// arguments below the caller's at entry, and the caller's at least zero:
+// `(and (>= n 0) (< (- n 1) n))` -- discharges on the path condition alone, and
+// the verified build turns the check's two compares into one assume. The mutual
+// pair `is_even`/`is_odd` is one group of two, each measured (TYPE-074 would
+// refuse either alone), each call row the same shape. The `stack-depth` row of
+// each group is DERIVED by the runners (D-305 (7)): every member measured and
+// every call row discharged, so the recursion's depth is bounded by the entry
+// measure -- `discharged`, twice. The measures' own arithmetic: `n - 1i32`
+// discharged three times under `n > 0`, `n * fact(n - 1)` open (a product of
+// two unknowns), `4i32 + (... =>! int32)` open (a cast's result is opaque).
+mod:terminate_recursive;
+error:E9;
+
+func:fact = int32(int32:n) decreases n never fails {
+    if (n <= 0i32) { pass 1i32; }
+    pass (n * (raw fact(n - 1i32)));
+};
+
+func:is_even = bool(int32:n) decreases n never fails {
+    if (n <= 0i32) { pass true; }
+    pass (raw is_odd(n - 1i32));
+};
+
+func:is_odd = bool(int32:n) decreases n never fails {
+    if (n <= 0i32) { pass false; }
+    pass (raw is_even(n - 1i32));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:k = 4i32 + ((argv.len - 1i64) =>! int32);
+    int32:f = raw fact(k);
+    if (!(raw is_even(k))) { exit 1i32; }
+    exit f;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -150,7 +150,7 @@ func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st,
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
 
-    Fx:f = raw fx("func:step = int32(int32:a) { int32:x = a; x = x + 1i32; x += 2i32; pass x; }; func:count = int32(int32:n) { int32:i = 0i32; while (i < n) { if (i == 3i32) { break; } i = i + 1i32; } pass i; }; func:cleanup = int32() { int32:x = 0i32; defer { x = x + 9i32; } pass x; }; func:pipe = int32(int32:a) { int32:v = relay step(a); pass v; }; func:main = int32(cstring[]:_~argv) { exit 0i32; };", @it);
+    Fx:f = raw fx("func:step = int32(int32:a) { int32:x = a; x = x + 1i32; x += 2i32; pass x; }; func:count = int32(int32:n) { int32:i = 0i32; while (i < n) unbounded { if (i == 3i32) { break; } i = i + 1i32; } pass i; }; func:cleanup = int32() { int32:x = 0i32; defer { x = x + 9i32; } pass x; }; func:pipe = int32(int32:a) { int32:v = relay step(a); pass v; }; func:main = int32(cstring[]:_~argv) { exit 0i32; };", @it);
     if (f.parse_errs != 0i64)                              { exit 8i32; }
     if ((raw diaglist_count(@f.diags)) != 0i64)            { exit 9i32; }
 

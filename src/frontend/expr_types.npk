@@ -114,7 +114,23 @@ pub struct:ExprTypes = {
     // (`namespace_path`) is the checker's, once; recording its answer is what
     // keeps it one.
     wild int32->:ns_decl;
+    // THE CALL GRAPH'S EDGE (1.5.8c step 4, D-304 (2), (5)): for every call the
+    // checker types inside a function -- a plain call, a method call, a qualified
+    // one -- the caller's declaration and the callee's, recorded beside the call
+    // so the recursive-group pass (`analysis/recursion.npk`) reads a table and
+    // walks nothing. A call through a `dyn` or a function value records no callee
+    // (P-7: not an edge the compiler sees). Kept apart from `callee`, whose
+    // readers expect the method-dispatch record alone.
+    wild int32->:call_from;
+    wild int32->:call_to;
     int32:count;
+    // THE RECURSIVE GROUPS (1.5.8c step 4): per DECLARATION index, the group the
+    // function belongs to (0 = none: not a function, or not walked), and per
+    // group whether it has a cycle -- written once by the pass, read by the
+    // emitter (the measure check at a call inside the group) and the encoder
+    // (the call's `terminate` row, the group's `stack-depth` row).
+    List<int32>:fn_group;
+    List<bool>:group_cyclic;
 
     // LOCALS LIVE ACROSS A SUSPENSION (D-177, 1.1.4). The suspend walk marks
     // the STMT INDEX of each var-decl whose live range crosses an `await` or a
@@ -152,6 +168,8 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
     wild int8->:ctr = alloc(size * #size_of<int32>());
     wild int8->:cft = alloc(size * #size_of<int32>());
     wild int8->:nsd = alloc(size * #size_of<int32>());
+    wild int8->:cfr = alloc(size * #size_of<int32>());
+    wild int8->:cto = alloc(size * #size_of<int32>());
 
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
@@ -160,7 +178,11 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              callee_trait: ctr =>! wild int32->,
                              callee_ft: cft =>! wild int32->,
                              ns_decl: nsd =>! wild int32->,
+                             call_from: cfr =>! wild int32->,
+                             call_to: cto =>! wild int32->,
                              count: size =>! int32,
+                             fn_group: raw list_init::<int32>(16i64),
+                             group_cyclic: raw list_init::<bool>(16i64),
                              cross: raw list_init::<int32>(16i64),
                              odecl: raw list_init::<int32>(16i64),
                              alias_site: raw list_init::<int32>(8i64),
@@ -174,8 +196,77 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
         t.callee_trait[i] = 0i32;
         t.callee_ft[i] = 0i32;
         t.ns_decl[i] = 0i32;
+        t.call_from[i] = 0i32;
+        t.call_to[i] = 0i32;
     }
     pass t;
+};
+
+// A CALL'S EDGE (1.5.8c step 4): recorded by the checker at every call it
+// types with a declaration in hand; `from` is the function being checked
+// (`e.fn_decl`, 0 outside a body), `to` the callee's declaration.
+pub func:exprtypes_set_call = NIL(ExprTypes->:t, ExprId:id, int32:from, int32:to) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
+    t.call_from[id.index => int64] = from;
+    t.call_to[id.index => int64] = to;
+    pass NIL;
+};
+pub func:exprtypes_call_from = int32(ExprTypes->:t, ExprId:id) never fails {
+    if (id.index < 0i32) { pass 0i32; }
+    if (id.index >= t.count) { pass 0i32; }
+    pass (t.call_from[id.index => int64]);
+};
+pub func:exprtypes_call_to = int32(ExprTypes->:t, ExprId:id) never fails {
+    if (id.index < 0i32) { pass 0i32; }
+    if (id.index >= t.count) { pass 0i32; }
+    pass (t.call_to[id.index => int64]);
+};
+
+// THE GROUPS (1.5.8c step 4): `fn_group` is indexed by DECLARATION index and
+// grown to hold it; `group_cyclic` by group id (1-based; 0 is no group).
+pub func:exprtypes_set_group = NIL(ExprTypes->:t, int32:decl, int32:group) never fails {
+    if (decl < 0i32) { !!! BoundsId; }
+    while (t.fn_group.count <= (decl => int64)) decreases (decl => int64) - t.fn_group.count {
+        drop list_push(@t.fn_group, 0i32);
+    }
+    t.fn_group[decl => int64] = group;
+    pass NIL;
+};
+pub func:exprtypes_group = int32(ExprTypes->:t, int32:decl) never fails {
+    if (decl < 0i32) { pass 0i32; }
+    if ((decl => int64) >= t.fn_group.count) { pass 0i32; }
+    pass (t.fn_group[decl => int64]);
+};
+pub func:exprtypes_set_group_cyclic = NIL(ExprTypes->:t, int32:group, bool:cyclic) never fails {
+    if (group < 0i32) { !!! BoundsId; }
+    while (t.group_cyclic.count <= (group => int64)) decreases (group => int64) - t.group_cyclic.count {
+        drop list_push(@t.group_cyclic, false);
+    }
+    t.group_cyclic[group => int64] = cyclic;
+    pass NIL;
+};
+// ONE CYCLIC GROUP, SHARED (1.5.8c step 4): are two declarations members of
+// the same recursive group with a cycle -- the one test the emitter's call
+// check (`emit_measure_call_check`) and the encoder's call row
+// (`record_terminate_call`) read, so the two agree by construction on which
+// calls are recursive. A declaration in no group, or in a group with no
+// cycle, shares none.
+pub func:exprtypes_same_cyclic_group = bool(ExprTypes->:t, int32:a, int32:b) never fails {
+    if ((a <= 0i32) || (b <= 0i32)) { pass false; }
+    int32:g = raw exprtypes_group(t, a);
+    if (g == 0i32) { pass false; }
+    if ((raw exprtypes_group(t, b)) != g) { pass false; }
+    pass (raw exprtypes_group_cyclic(t, g));
+};
+
+pub func:exprtypes_group_cyclic = bool(ExprTypes->:t, int32:group) never fails {
+    if (group <= 0i32) { pass false; }
+    if ((group => int64) >= t.group_cyclic.count) { pass false; }
+    pass (t.group_cyclic[group => int64]);
+};
+pub func:exprtypes_group_count = int32(ExprTypes->:t) never fails {
+    pass ((t.group_cyclic.count =>! int32) - 1i32);
 };
 
 // SIZED FROM THE AST, so the table cannot be short. An expression index past the

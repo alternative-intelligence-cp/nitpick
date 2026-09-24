@@ -1391,7 +1391,7 @@ def main():
         rdir = os.path.join(tmp, "rows_" + name.replace("-", "_"))
         os.makedirs(rdir, exist_ok=True)
         with open(os.path.join(rdir, "index.txt"), "w", encoding="utf-8") as fh:
-            fh.write("0001\t@main\t1\n")
+            fh.write("0001\t@main\t1\t0\t0\n")
         with open(os.path.join(rdir, "rows.txt"), "w", encoding="utf-8") as fh:
             fh.write(line + "\n")
         with open(os.path.join(rdir, "0001.smt2"), "w", encoding="utf-8") as fh:

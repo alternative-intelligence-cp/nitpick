@@ -1,0 +1,226 @@
+// recursion -- THE RECURSIVE GROUPS (D-304 (2), (5); 1.5.8c step 4): the
+// strongly connected components of the call graph, over the edges the checker
+// recorded while typing every body (`exprtypes_set_call`: a plain call, a
+// method call, a qualified call -- each caller's declaration and its callee's).
+// A call through a `dyn` receiver is no edge, and neither is a call through a
+// function value (P-7: the compiler sees no callee there, so a recursion
+// through one is D-305's stack check's to stop). One pass, one table, no walk:
+// the pass reads the edge table and computes Tarjan's components ITERATIVELY
+// (explicit stacks -- a recursive Tarjan would be a cyclic group of this
+// compiler's own, with no measure to state), then records per DECLARATION its
+// group and per group whether it has a cycle (a self-call is one), on
+// `ExprTypes`, where the emitter and the encoder read them.
+//
+// The two rules the groups decide: every function of a CYCLIC group states
+// `decreases` if any member does, since a call from one member to another
+// compares their two measures (NITPICK-TYPE-074); and a `decreases` on a
+// function whose group has no cycle checks nothing -- the measure is compared
+// at a call inside the group, and there is none (NITPICK-TYPE-075). `main` and
+// `failsafe` are in no cyclic group by construction (nobody calls them).
+mod:recursion;
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_decl.npk".*;
+use "../parse_decorate.npk".*;   // fn_measure, contract_kind
+use "../types.npk".*;
+use "../expr_types.npk".*;
+use "../type_codes.npk".*;
+
+pub struct:Recursion = {
+    Ast->:ast;
+    InternTable->:interns;
+    TypeTable->:types;
+    ExprTypes->:ets;
+    DiagList->:diags;
+    int32:groups;      // groups found (ids are 1-based; 0 is "no group")
+    int32:cyclic;      // of them, how many have a cycle
+    int32:members;     // functions in cyclic groups
+    int32:edges;       // call edges the table held
+};
+
+pub func:recursion_init = Recursion(Ast->:ast, InternTable->:interns, TypeTable->:types,
+                                    ExprTypes->:ets, DiagList->:diags) never fails {
+    pass Recursion{ ast: ast, interns: interns, types: types, ets: ets, diags: diags,
+                    groups: 0i32, cyclic: 0i32, members: 0i32, edges: 0i32 };
+};
+
+// A method call whose receiver is a `dyn`: dispatched through a vtable, no
+// edge (P-7). The receiver's recorded type says.
+func:through_dyn = bool(Recursion->:x, ExprId:id) never fails {
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind != ExprKind.ExprMethodCallExpr) { pass false; }
+    int32:rt = raw exprtypes_get(x.ets, raw expr_operand(n));
+    if (rt == 0i32) { pass false; }
+    if ((raw type_kind(x.types, rt)) == (raw TY_DYN())) { pass true; }
+    pass false;
+};
+
+func:fn_display = string(Recursion->:x, int32:decl) never fails {
+    DeclNode:dn = raw ast_decl(x.ast, DeclId{ index: decl });
+    pass (raw intern_get(x.interns, raw decl_name(dn)));
+};
+
+pub func:recursion_run = NIL(Recursion->:x) never fails {
+    int32:nd = raw ast_decl_count(x.ast);
+    // THE NODES: every function declaration, wherever it stands (a module's item,
+    // an impl's method, a nested module's, the prelude's).
+    List<int32>:node_of = raw list_init::<int32>((nd => int64) + 1i64);
+    List<int32>:decl_of = raw list_init::<int32>(256i64);
+    for (int32:d in 0i32...nd) {
+        DeclNode:dn = raw ast_decl(x.ast, DeclId{ index: d });
+        if (dn.kind == DeclKind.DeclFunctionDecl) {
+            drop list_push(@node_of, decl_of.count =>! int32);
+            drop list_push(@decl_of, d);
+        } else {
+            drop list_push(@node_of, 0i32 - 1i32);
+        }
+    }
+    int64:nn = decl_of.count;
+    // THE EDGES, as compressed rows: a degree per node, prefix sums, then the fill.
+    int32:nexpr = raw ast_expr_count(x.ast);
+    List<int32>:eu = raw list_init::<int32>(256i64);
+    List<int32>:ev = raw list_init::<int32>(256i64);
+    for (int32:i in 0i32...nexpr) {
+        ExprId:id = ExprId{ index: i };
+        int32:from = raw exprtypes_call_from(x.ets, id);
+        int32:to = raw exprtypes_call_to(x.ets, id);
+        if ((from <= 0i32) || (to <= 0i32)) { continue; }
+        if ((from >= nd) || (to >= nd)) { continue; }
+        int32:u = node_of[from => int64];
+        int32:v = node_of[to => int64];
+        if ((u < 0i32) || (v < 0i32)) { continue; }
+        if (raw through_dyn(x, id)) { continue; }
+        drop list_push(@eu, u);
+        drop list_push(@ev, v);
+    }
+    x.edges = eu.count =>! int32;
+    List<int32>:adj_start = raw list_init::<int32>(nn + 1i64);
+    for (int64:z in 0i64...(nn + 1i64)) { drop list_push(@adj_start, 0i32); }
+    for (int64:k in 0i64...eu.count) { adj_start[(eu[k] => int64) + 1i64] = adj_start[(eu[k] => int64) + 1i64] + 1i32; }
+    for (int64:z2 in 0i64...nn) { adj_start[z2 + 1i64] = adj_start[z2 + 1i64] + adj_start[z2]; }
+    List<int32>:adj = raw list_init::<int32>(eu.count + 1i64);
+    for (int64:z3 in 0i64...eu.count) { drop list_push(@adj, 0i32); }
+    List<int32>:fill = raw list_init::<int32>(nn + 1i64);
+    for (int64:z4 in 0i64...nn) { drop list_push(@fill, adj_start[z4]); }
+    for (int64:k2 in 0i64...eu.count) {
+        int64:u2 = eu[k2] => int64;
+        adj[fill[u2] => int64] = ev[k2];
+        fill[u2] = fill[u2] + 1i32;
+    }
+    // TARJAN, ITERATIVELY: a frame per node on the way down (the node and its next
+    // edge), the component stack beside it. Every trip of the main loop either
+    // advances one edge index or pops one frame, so the trips are bounded by the
+    // edges plus the nodes -- the measure says so.
+    List<int32>:idx = raw list_init::<int32>(nn + 1i64);
+    List<int32>:low = raw list_init::<int32>(nn + 1i64);
+    List<bool>:onst = raw list_init::<bool>(nn + 1i64);
+    for (int64:z5 in 0i64...nn) { drop list_push(@idx, 0i32 - 1i32); drop list_push(@low, 0i32); drop list_push(@onst, false); }
+    List<int32>:st = raw list_init::<int32>(nn + 1i64);
+    List<int32>:cs_node = raw list_init::<int32>(nn + 1i64);
+    List<int32>:cs_edge = raw list_init::<int32>(nn + 1i64);
+    int32:index = 0i32;
+    int32:grp = 0i32;
+    int64:budget = (2i64 * nn) + eu.count + 1i64;
+    for (int64:root in 0i64...nn) {
+        if (idx[root] >= 0i32) { continue; }
+        idx[root] = index; low[root] = index; index = index + 1i32;
+        drop list_push(@st, root =>! int32); onst[root] = true;
+        drop list_push(@cs_node, root =>! int32); drop list_push(@cs_edge, 0i32);
+        int64:steps = 0i64;
+        while (cs_node.count > 0i64) decreases budget - steps {
+            steps = steps + 1i64;
+            int64:top = cs_node.count - 1i64;
+            int32:v = cs_node[top];
+            int32:ei = cs_edge[top];
+            int32:d0 = adj_start[v => int64];
+            int32:d1 = adj_start[(v => int64) + 1i64];
+            if ((d0 + ei) < d1) {
+                int32:w = adj[(d0 + ei) => int64];
+                cs_edge[top] = ei + 1i32;
+                if (idx[w => int64] < 0i32) {
+                    idx[w => int64] = index; low[w => int64] = index; index = index + 1i32;
+                    drop list_push(@st, w); onst[w => int64] = true;
+                    drop list_push(@cs_node, w); drop list_push(@cs_edge, 0i32);
+                } else {
+                    if (onst[w => int64]) {
+                        if (idx[w => int64] < low[v => int64]) { low[v => int64] = idx[w => int64]; }
+                    }
+                }
+            } else {
+                discard(raw list_pop(@cs_node));
+                discard(raw list_pop(@cs_edge));
+                if (cs_node.count > 0i64) {
+                    int32:u3 = cs_node[cs_node.count - 1i64];
+                    if (low[v => int64] < low[u3 => int64]) { low[u3 => int64] = low[v => int64]; }
+                }
+                if (low[v => int64] == idx[v => int64]) {
+                    grp = grp + 1i32;
+                    int32:size = 0i32;
+                    bool:more = true;
+                    while (more) decreases st.count {
+                        int32:w2 = raw list_pop(@st);
+                        onst[w2 => int64] = false;
+                        size = size + 1i32;
+                        drop exprtypes_set_group(x.ets, decl_of[w2 => int64], grp);
+                        if (w2 == v) { more = false; }
+                    }
+                    bool:cyc = (size > 1i32);
+                    if (!cyc) {
+                        for (int32:k3 in d0...d1) { if (adj[k3 => int64] == v) { cyc = true; } }
+                    }
+                    drop exprtypes_set_group_cyclic(x.ets, grp, cyc);
+                    if (cyc) { x.cyclic = x.cyclic + 1i32; x.members = x.members + size; }
+                }
+            }
+        }
+    }
+    x.groups = grp;
+    // THE TWO RULES. Per group: how many members, how many state a measure.
+    List<int32>:gsize = raw list_init::<int32>((grp => int64) + 1i64);
+    List<int32>:gmeas = raw list_init::<int32>((grp => int64) + 1i64);
+    for (int64:z6 in 0i64...((grp => int64) + 1i64)) { drop list_push(@gsize, 0i32); drop list_push(@gmeas, 0i32); }
+    for (int64:m in 0i64...nn) {
+        int32:g = raw exprtypes_group(x.ets, decl_of[m]);
+        gsize[g => int64] = gsize[g => int64] + 1i32;
+        DeclNode:mdn = raw ast_decl(x.ast, DeclId{ index: decl_of[m] });
+        if (!(raw verify_is_none(raw fn_measure(x.ast, mdn)))) { gmeas[g => int64] = gmeas[g => int64] + 1i32; }
+    }
+    for (int64:m2 in 0i64...nn) {
+        int32:decl = decl_of[m2];
+        DeclNode:dn = raw ast_decl(x.ast, DeclId{ index: decl });
+        int32:g2 = raw exprtypes_group(x.ets, decl);
+        bool:cyc2 = raw exprtypes_group_cyclic(x.ets, g2);
+        VerifyId:mv = raw fn_measure(x.ast, dn);
+        if ((!cyc2) && (!(raw verify_is_none(mv)))) {
+            VerifyNode:mvn = raw ast_verify(x.ast, mv);
+            drop diaglist_push(x.diags, raw diag_error(raw TYPE_MEASURE_NO_RECURSION(),
+                "`decreases` on a function the compiler sees no recursive call of checks nothing (D-304): the measure is compared at a call inside the function's recursive group, and this function's group has no cycle -- a recursion through a function value or a `dyn` is not a call the compiler sees, and D-305's stack check is its stop",
+                mvn.span));
+        }
+        if (cyc2 && (raw verify_is_none(mv)) && (gmeas[g2 => int64] > 0i32)) {
+            // name the measured members, so the reader sees whose measure this call would compare against
+            string:who = "";
+            int32:named = 0i32;
+            for (int64:m3 in 0i64...nn) {
+                if ((raw exprtypes_group(x.ets, decl_of[m3])) != g2) { continue; }
+                DeclNode:odn = raw ast_decl(x.ast, DeclId{ index: decl_of[m3] });
+                if (raw verify_is_none(raw fn_measure(x.ast, odn))) { continue; }
+                if (named > 0i32) { who = string_concat(who, ", "); }
+                if (named < 3i32) { who = string_concat(who, string_concat("`", string_concat(raw fn_display(x, decl_of[m3]), "`"))); }
+                named = named + 1i32;
+            }
+            if (named > 3i32) { who = string_concat(who, " and others"); }
+            string:m1 = string_concat("`", string_concat(raw fn_display(x, decl), "` states no `decreases` while "));
+            string:m4 = string_concat(m1, who);
+            drop diaglist_push(x.diags, raw diag_error(raw TYPE_MEASURE_GROUP(),
+                string_concat(m4, " in its recursive group does (D-304): every function of a recursive group states a measure, since a call from one member to another compares their two measures -- state one here, or remove theirs"),
+                dn.span));
+        }
+    }
+    pass NIL;
+};

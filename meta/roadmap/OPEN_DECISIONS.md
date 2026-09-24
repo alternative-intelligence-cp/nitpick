@@ -1743,6 +1743,29 @@ and `tests/modules/rejection/rules_private.npk` (a rule without `pub` refused at
 RESOLVE-003). The lesson of D-227 again: a fact read from a slot that means something else
 is not absent, it is false, and a coincidence keeps it true for as long as it likes.
 
+**DEF-92 — OPEN (found 2026-09-24 by `nitpick-compiler_s13`, measuring 1.5.8c step 3's cost): THE
+GENERIC-INSTANCE INTERNER `tt_instance` IS A LINEAR SCAN OVER THE WHOLE TYPE TABLE, AND IT IS
+85% OF THE FRONTEND'S INSTRUCTIONS.**
+Measured first, as the rule says: the checker (`tools/check.npk`, built by the same builder from
+step 2's tree and from the swept tree) over `src/npkc.npk`, twice each, alternating, under the
+same two-harness load -- 73.3 / 74.7 s before the sweep, 94.5 / 94.8 s after (user time; the
+sweep adds 28%). Then `valgrind --tool=callgrind` on both checkers over `npkg/main.npk`
+(scratch `cg/pre.out`, `cg/swept.out`; 307 G and 410 G instructions): EXCLUSIVE, `tt_instance`
+is 84.7% before and 87.2% after, `scope_lookup_local` 3.9% / 3.6%, nothing else above 1%;
+INCLUSIVE, 94% of both runs sits under `escape_walk` -> `escape_stmt` -> `struct_field` ->
+`struct_field_bound` -> `resolve_type` -> `resolve_user_named` -> `tt_instance`. `tt_instance`
+(`types.npk`) walks EVERY item of the type table on every call, comparing kind, declaration,
+argument count and the argument ids -- the 1.0.7 identity rule, correct, and O(types) per call
+where `tt_intern` has carried a hash index since 1.5.2d. The sweep's measures are field reads on
+generic instances (`p.tokens.v.count`, `lx.text.len`, `s.nodes.count`, `fe.cross_stmts.count`),
+each a `struct_field` the escape analysis resolves through this scan, which is the whole of the
+28%: the checks themselves are free at run time (the compiler's own -O0 build did not move at
+1.5.8b step 3 under 1,181 more traps). NOT the sweep's defect and not step 4's to fix: a scaling
+defect of 1.5.2d's class in the type table, to be fixed as its own measured landing (a hash index
+over (kind, declaration, arguments) beside `tt_intern`'s; the compiler's own build is 73 s of
+which this is most). Recorded here so it is not lost; the fix moves no verdict and no language
+rule, and re-measures the checker over `src/npkc.npk` before and after.
+
 **DEF-91 — FIXED at 1.5.8b step 7: FOUR PROGRAM TESTS SHARED FIXED `/tmp` PATHS AND
 RACED WHEN TWO HARNESSES RAN AT ONCE.**
 (found 2026-09-24 by `nitpick-compiler_s12`: step 7's third full harness, running beside

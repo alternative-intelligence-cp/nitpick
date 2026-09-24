@@ -1,0 +1,28 @@
+// expect-error: NITPICK-TYPE-075
+// expect-error-at: 13
+//
+// A MEASURE NEEDS A RECURSIVE CALL TO BE CHECKED AT (D-304 (5); 1.5.8c step 4):
+// `lone` calls nothing in its own group -- the group pass finds no cycle -- so
+// its `decreases` would compare at no call and checks nothing: NITPICK-TYPE-075.
+// A recursion through a function value or a `dyn` is not a call the compiler
+// sees (P-7), so a measure on it is refused the same way; D-305's stack check
+// is that recursion's stop. In its own file because the group pass runs only
+// over a program the checker admitted.
+mod:decreases_no_recursion;
+
+func:lone = int32(int32:n) decreases n never fails {
+    pass (n + 1i32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit (raw lone(3i32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 93i32; }, (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

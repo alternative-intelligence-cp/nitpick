@@ -565,6 +565,122 @@ pub func:emit_req_fn = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d, string:fna
     pass (raw iv_nil());
 };
 
+// THE MEASURE PREDICATE'S SYMBOL: `.measure` inside the quotes, `req_sym`'s rule.
+pub func:measure_sym = string(string:sym) never fails {
+    if (sym.len == 0i64) { pass ""; }
+    if (sym.ptr[sym.len - 1i64] == 34u8) {
+        pass (string_concat(string_from_bytes(sym.ptr, sym.len - 1i64), ".measure\""));
+    }
+    pass (string_concat(sym, ".measure"));
+};
+
+// DOES THIS FUNCTION'S MEASURE CHECK ANYTHING (D-304 (5), 1.5.8c step 4): a
+// `decreases E` on a function whose recursive group has a cycle -- the checker
+// refuses one on any other function (TYPE-075), so the second test is the
+// belt. Read by the body's entry (the `m0` snapshot), the coroutine pre-scan
+// (the frame slot) and the emission of the predicate.
+pub func:fn_measure_checks = bool(ExprEmitter->:x, DeclId:did, DeclNode:d) never fails {
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (raw verify_is_none(raw fn_measure(x.ast, d))) { pass false; }
+    int32:g = raw exprtypes_group(x.et, did.index);
+    if (g == 0i32) { pass false; }
+    pass (raw exprtypes_group_cyclic(x.et, g));
+};
+
+// A measure widened by its sign into the predicate's `i128` (every plain
+// integer of at most 64 bits fits exactly; TYPE-073 holds a function's
+// measure to that width).
+func:measure_widen = string(ExprEmitter->:x, string:ll, string:ref, bool:signed) never fails {
+    if (string_equals(ll, "i128")) { pass (string_concat(ref, "")); }
+    string:w = raw irw_temp(x.fe.w);
+    string:op = "zext ";
+    if (signed) { op = "sext "; }
+    drop irw_line(x.fe.w, raw cat5(w, " = ", op, ll, raw cat3(" ", ref, " to i128")));
+    pass w;
+};
+
+// THE MEASURE PREDICATE (D-304 (5), 1.5.8c step 4): `define i128
+// @"<sym>.measure"(<params>)` -- the function's parameter list verbatim, every
+// parameter LENT (no flag, no drop), the measure evaluated at its own width
+// and widened by its sign into `i128`, `ret i128`. Called at the body's entry
+// over the parameters as they arrived (the caller's `m0`) and at every call
+// inside the function's recursive group over the argument registers (the
+// callee's `m1`), exactly as `.req` is called over them. Its guards -- an
+// overflow inside `E` -- consult the same elision answers as any expression
+// site, and their ROWS are recorded once, at the function's entry, under the
+// parameters' RANGE AXIOMS ALONE (`enc_entry_measure`): the predicate runs at
+// a call site BEFORE the callee's checked entry (D-252), so no `requires` and
+// no limited parameter's rule has held where it runs, and a guard proven from
+// the types alone is proven for every argument the checker admits. Emitted
+// LAST, after the body, the checked entry and `.req`: one FnEmitter.
+pub func:emit_measure_fn = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d, string:fname,
+                                 int32:qual, string:plain_sym, List<int32>:pnames,
+                                 List<int32>:ptypes) never fails {
+    int32:t128 = raw tt_int(x.fe.ctx.types, 128i32, true);
+    LlType:rt = raw fnem_begin(x.fe, fname, qual, t128, true);
+    if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, t128, d.span)); }
+    x.fe.sym = raw measure_sym(plain_sym);
+    x.fe.decl = did.index;
+    for (int64:i in 0i64...pnames.count) {
+        LlType:pl = raw fnem_param(x.fe, pnames[i], ptypes[i], false);
+        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes[i], d.span)); }
+    }
+    drop fnem_open(x.fe);
+    VerifyNode:mv = raw ast_verify(x.ast, raw fn_measure(x.ast, d));
+    ExprId:me = raw contract_cond(mv);
+    int32:mtid = raw exprtypes_get(x.et, me);
+    int64:ctm = raw fnem_temp_mark(x.fe);
+    IrVal:m = raw emit_expr(x, me);
+    if (!(raw iv_is_ok(m))) { pass m; }
+    drop emit_temp_drops(x, ctm);
+    drop fnem_temp_release(x.fe, ctm);
+    string:wide = raw measure_widen(x, m.ll, m.ref, raw type_is_signed(x.fe.ctx.types, mtid));
+    drop irw_line(x.fe.w, raw cat3("ret i128 ", wide, ""));
+    x.fe.terminated = true;
+    drop fnem_close(x.fe, true);
+    pass (raw iv_nil());
+};
+
+// THE RECURSIVE CALL'S CHECK (D-304 (5), 1.5.8c step 4): at a call whose
+// callee shares the caller's cyclic group, before the call -- `m1 =
+// <callee>.measure(args)` over the argument registers exactly as the call
+// passes them (the receiver first for a method: the predicate's parameter
+// list), `m0` the caller's entry snapshot, then `m0 >= 0` and `m1 < m0` as
+// one verdict with ONE trap `DecreasesViolated` (4119) -- the depth of the
+// recursion is then bounded by the entry measure, a finite number the program
+// computed. Elided into one `llvm.assume` when the call's `terminate` row is
+// discharged. A caller with no snapshot (no measure, or a group without a
+// cycle -- and every generated predicate, where `measure_slot` is "") checks
+// nothing; a callee outside the group is no recursive call; a call through a
+// `dyn` never reaches here (P-7). The encoder's `record_terminate_call` reads
+// the same group predicate, so a check and its row exist together.
+pub func:emit_measure_call_check = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:callee,
+                                         string:callee_sym, string:args) never fails {
+    if (x.fe.measure_slot.len == 0i64) { pass (raw iv_nil()); }
+    if (!(raw exprtypes_same_cyclic_group(x.et, x.fe.decl, callee))) { pass (raw iv_nil()); }
+    DeclNode:cd = raw ast_decl(x.ast, DeclId{ index: callee });
+    if (cd.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_nil()); }
+    if (raw verify_is_none(raw fn_measure(x.ast, cd))) { pass (raw iv_nil()); }
+    bool:elided = raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), id.index, raw OK_TERMINATE());
+    string:m1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(m1, " = call i128 ", raw measure_sym(callee_sym), "(",
+                                     string_concat(args, ")")));
+    string:m0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(m0, " = load i128, ptr ", x.fe.measure_slot));
+    string:nn = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(nn, " = icmp sge i128 ", string_concat(m0, ", 0")));
+    string:lt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lt, " = icmp slt i128 ", m1, ", ", m0));
+    string:ok = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ok, " = and i1 ", nn, ", ", lt));
+    if (elided) {
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", ok, ")"));
+    } else {
+        drop emit_check_i1_code(x, ok, "-4119", n.span, "rec");
+    }
+    pass (raw iv_nil());
+};
+
 // THE INVARIANT AT A LOOP HEAD (L-8, L-13): one check per clause, elided
 // only when EVERY row of the loop is discharged -- the entry row at the
 // loop statement, the preservation row at its body block, and one per

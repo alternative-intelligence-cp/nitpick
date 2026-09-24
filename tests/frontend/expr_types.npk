@@ -167,7 +167,7 @@ func:main = int32(cstring[]:_~argv) {
     // arguments, an index, a member access, a cast. 0.4.4 found sixteen statement
     // kinds unvisited precisely because the tests put every case at the top level
     // of one body.
-    Ex:v2 = raw ex("struct:P = { int32:x; }; func:g = int32(int32:k) never fails { pass k; }; func:f = NIL(P:p, int32:n, int32[]:a) { if (n > 0i32) { int32:b = raw g(p.x); } while (n < 3i32) { int32:c = a[1i64]; } int64:w = n => int64; pass NIL; };",
+    Ex:v2 = raw ex("struct:P = { int32:x; }; func:g = int32(int32:k) never fails { pass k; }; func:f = NIL(P:p, int32:n, int32[]:a) { if (n > 0i32) { int32:b = raw g(p.x); } while (n < 3i32) unbounded { int32:c = a[1i64]; } int64:w = n => int64; pass NIL; };",
                    @it);
     if (raw errs(@v2) != 0i64)                                  { exit 22i32; }
     if ((raw unrecorded(@v2)) != 0i32)                          { exit 23i32; }

@@ -1,0 +1,146 @@
+// group_dump -- THE RECURSIVE GROUPS OF A PROGRAM (1.5.8c step 4; outside the
+// TCB, P-8: a measurement tool, like the loop dump beside it). Runs the
+// frontend over a root -- the same `front_run` every tool drives -- and prints
+// one line per function of a CYCLIC group (`G<group> <name> measured|unmeasured`,
+// the group id the pass's own) and a summary: functions, groups, cyclic groups,
+// their members, and the call edges the checker recorded. The plan's step 4
+// gate measures the pass against 1.5.8's planning figure (103 groups / 285
+// functions over the direct `call @` edges of `build/npkc.ll`, generic suffixes
+// stripped); this reads the DECLARATIONS, so a generic function is one member
+// whatever its instances, and a call through a `dyn` is no edge (P-7).
+//
+//   python3 bootstrap/harness/quickemit.py --keep meta/roadmap/1.5/tools/group_dump.npk
+//   .internal/quickemit/p_group_dump_npk src/npkc.npk 2> groups.txt
+mod:group_dump;
+
+use "../../../../src/driver/pipeline.npk".*;
+use "../../../../src/frontend/source_location.npk".*;
+use "../../../../src/frontend/intern.npk".*;
+use "../../../../src/frontend/diagnostics.npk".*;
+use "../../../../src/frontend/diag_writer.npk".*;
+use "../../../../src/frontend/source.npk".*;
+use "../../../../src/frontend/ast_kind.npk".*;
+use "../../../../src/frontend/ast.npk".*;
+use "../../../../src/frontend/parse_expr.npk".*;
+use "../../../../src/frontend/parse_decl.npk".*;
+use "../../../../src/frontend/symbols.npk".*;
+use "../../../../src/frontend/builtins.npk".*;
+use "../../../../src/frontend/expr_types.npk".*;
+use "../../../../src/frontend/analysis/bindings.npk".*;
+use "../../../../src/frontend/analysis/escape.npk".*;
+use "../../../../src/frontend/analysis/locks.npk".*;
+use "../../../../src/frontend/module_graph.npk".*;
+use "../../../../src/frontend/resolve_path.npk".*;
+use "../../../../src/frontend/token.npk".*;
+use "../../../../src/frontend/type_trait.npk".*;
+use "../../../../src/frontend/types.npk".*;
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        await diag_say("usage: group_dump <root.npk>") ?| NIL;
+        exit 2i32;
+    }
+    cstring:arg = argv[1i64];
+    string:root = string_from_bytes(arg.ptr, arg.len);
+    Front:f;
+    int32:fr = raw front_run($$m f, root);
+    if (fr == 2i32) { exit 2i32; }
+    if (fr != 0i32) {
+        await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
+        exit 1i32;
+    }
+    int32:nd = raw ast_decl_count(@f.g.ast);
+    int32:fns = 0i32;
+    int32:groups = 0i32;
+    int32:members = 0i32;
+    int32:measured = 0i32;
+    for (int32:d in 1i32...nd) {
+        DeclNode:dn = raw ast_decl(@f.g.ast, DeclId{ index: d });
+        if (dn.kind != DeclKind.DeclFunctionDecl) { continue; }
+        fns = fns + 1i32;
+        int32:g = raw exprtypes_group(@f.ets, d);
+        if (g > groups) { groups = g; }
+        if (g == 0i32) { continue; }
+        if (!(raw exprtypes_group_cyclic(@f.ets, g))) { continue; }
+        members = members + 1i32;
+        string:line = string_concat("G", int_to_string(g => int64));
+        line = string_concat(line, " ");
+        line = string_concat(line, raw intern_get(@f.it, raw decl_name(dn)));
+        if (raw verify_is_none(raw fn_measure(@f.g.ast, dn))) {
+            line = string_concat(line, " unmeasured");
+        } else {
+            line = string_concat(line, " measured");
+            measured = measured + 1i32;
+        }
+        await diag_say(line) ?| NIL;
+    }
+    int32:cyclic = 0i32;
+    for (int32:g2 in 1i32..groups) {
+        if (raw exprtypes_group_cyclic(@f.ets, g2)) { cyclic = cyclic + 1i32; }
+    }
+    int32:nexpr = raw ast_expr_count(@f.g.ast);
+    int32:edges = 0i32;
+    for (int32:x in 0i32...nexpr) {
+        if ((raw exprtypes_call_from(@f.ets, ExprId{ index: x })) > 0i32) { edges = edges + 1i32; }
+    }
+    string:sum = string_concat("summary: functions ", int_to_string(fns => int64));
+    sum = string_concat(sum, ", groups ");
+    sum = string_concat(sum, int_to_string(groups => int64));
+    sum = string_concat(sum, ", cyclic ");
+    sum = string_concat(sum, int_to_string(cyclic => int64));
+    sum = string_concat(sum, ", members ");
+    sum = string_concat(sum, int_to_string(members => int64));
+    sum = string_concat(sum, " (measured ");
+    sum = string_concat(sum, int_to_string(measured => int64));
+    sum = string_concat(sum, "), call edges ");
+    sum = string_concat(sum, int_to_string(edges => int64));
+    await diag_say(sum) ?| NIL;
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (DivByZero) { exit 3i32; },
+        (DivOverflow) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (ShiftRange)  { exit 3i32; },
+        (IntOverflow) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (ast.BoundsId) { exit 3i32; },
+        (ast.BoundsScratch) { exit 3i32; },
+        (ast.BoundsWindow) { exit 3i32; },
+        (bindings.Rederived) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (escape.Rederived) { exit 3i32; },
+        (expr_types.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (locks.Rederived) { exit 3i32; },
+        (module_graph.BoundsIndex) { exit 3i32; },
+        (module_graph.ProvenSlice) { exit 3i32; },
+        (resolve_path.BoundsIndex) { exit 3i32; },
+        (source.BoundsIndex) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (symbols.BoundsId) { exit 3i32; },
+        (token.BoundsId) { exit 3i32; },
+        (type_trait.BoundsBound) { exit 3i32; },
+        (type_trait.BoundsImpl) { exit 3i32; },
+        (types.BoundsId) { exit 3i32; },
+        (types.BoundsIndex) { exit 3i32; },
+        (StackExhausted) { exit 3i32; },
+        (MachineFault) { exit 3i32; },
+        (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
+    exit 3i32;
+};

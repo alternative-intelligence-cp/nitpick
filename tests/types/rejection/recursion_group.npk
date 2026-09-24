@@ -1,0 +1,68 @@
+// expect-error: NITPICK-TYPE-074
+// expect-error-at: 20
+// expect-error: NITPICK-TYPE-074
+// expect-error-at: 30
+//
+// A RECURSIVE GROUP STATES ITS MEASURES TOGETHER (D-304 (2), 1.5.8c step 4):
+// a call from one member to another compares the callee's measure at the
+// arguments against the caller's at entry, so a member without a measure has
+// nothing to compare -- NITPICK-TYPE-074 at that member, naming who has one.
+// A self-recursive function with no measure beside a group that has none is
+// fine (D-304 (5): on a function the measure is optional), and a group whose
+// members ALL state one is what step 4 checks at every call.
+mod:recursion_group;
+
+// the pair: `f` states its measure, `g` -- in the same cycle -- does not
+func:f = int32(int32:n) decreases n {
+    if (n <= 0i32) { pass 0i32; }
+    pass (g(n - 1i32) ?| 0i32);
+};
+func:g = int32(int32:n) {
+    if (n <= 0i32) { pass 0i32; }
+    pass (f(n - 1i32) ?| 0i32);
+};
+
+// the triangle: `a` and `c` measured, `b` not
+func:a = int32(int32:n) decreases n {
+    if (n <= 0i32) { pass 0i32; }
+    pass (b(n - 1i32) ?| 0i32);
+};
+func:b = int32(int32:n) {
+    if (n <= 0i32) { pass 0i32; }
+    pass (c(n - 1i32) ?| 0i32);
+};
+func:c = int32(int32:n) decreases n {
+    if (n <= 0i32) { pass 0i32; }
+    pass (a(n - 1i32) ?| 0i32);
+};
+
+// a self-recursion without a measure: no member has one, nothing to compare
+func:h = int32(int32:n) {
+    if (n <= 0i32) { pass 0i32; }
+    pass (h(n - 1i32) ?| 0i32);
+};
+
+// a fully measured pair: the shape step 4 checks at every call, refused nowhere
+func:p = int32(int32:n) decreases n {
+    if (n <= 0i32) { pass 0i32; }
+    pass (q(n - 1i32) ?| 0i32);
+};
+func:q = int32(int32:n) decreases n {
+    if (n <= 0i32) { pass 0i32; }
+    pass (p(n - 1i32) ?| 0i32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = f(3i32) ?| 0i32;
+    v = v + (a(3i32) ?| 0i32) + (h(2i32) ?| 0i32) + (p(2i32) ?| 0i32);
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 93i32; }, (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -64,6 +64,7 @@ use "../frontend/analysis/bindings.npk".*;
 use "../frontend/analysis/exhaust.npk".*;
 use "../frontend/analysis/locks.npk".*;
 use "../frontend/analysis/suspend.npk".*;
+use "../frontend/analysis/recursion.npk".*;   // the recursive groups (D-304, 1.5.8c step 4)
 use "../frontend/analysis/reach.npk".*;
 use "../../lib/nsys.npk".*;   // `sys_cwd`, for the manifest walk (D-236)
 
@@ -480,6 +481,14 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
         drop exhaust_module(@exh, mid7, e7.scope);
         z2 = z2 + 1i32;
     }
+
+    // THE RECURSIVE GROUPS (D-304 (2), (5); 1.5.8c step 4): the strongly
+    // connected components of the call graph the checker recorded, per
+    // declaration on `ExprTypes` for the emitter and the encoder; the two rules
+    // they decide (TYPE-074, TYPE-075) are reported here, after every body is
+    // typed and before anything reads a measure.
+    Recursion:rec = raw recursion_init(@f.g.ast, @f.it, @f.types, @f.ets, @f.diags);
+    drop recursion_run(@rec);
 
     // LIVENESS ACROSS AWAIT (D-177, 1.1.4). Which locals cross a suspension
     // point, marked on `ExprTypes` for the emitter: a crossing local lives in

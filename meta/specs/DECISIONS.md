@@ -19395,6 +19395,35 @@ Lands at 1.5.8c. The library listener was told before anything landed
 > `failsafe` in the tree names `(DecreasesViolated)` from this step, the
 > runners' generated ones included: the prelude's loops reach nearly every
 > program. The `neither` shape of TYPE-072 becomes a refusal at step 4.
+>
+> **Note (2026-09-24, 1.5.8c step 4 — (2) and (5) live for functions; (4)
+> whole; (6) done):** a `while`/`when` with no clause is TYPE-072 from this
+> step. The recursive groups are computed after every body is typed
+> (`src/frontend/analysis/recursion.npk`, Tarjan over the checker's recorded
+> calls, iteratively; a call through a `dyn` or a function value is no edge),
+> TYPE-074 and TYPE-075 report from the groups, and TYPE-073 holds a FUNCTION's
+> measure to at most 64 bits: the members' measures compare in one signed
+> 128-bit domain, the generated predicate `<sym>.measure(params) -> i128`.
+> The check of (2): the body's entry stores `m0 = <sym>.measure(params)` (an
+> alloca; frame role 44 in a coroutine), and every call inside the group -- a
+> direct call, a method call, an `await`, a spawn -- evaluates the callee's
+> measure over the argument registers and traps `DecreasesViolated` unless
+> `m0 >= 0` and `m1 < m0`, one trap. The rows of (3): a `terminate` row per
+> such call (a `guard` row of the caller's, elided into one assume), the
+> measure's own guard rows at the function's entry under the parameters' range
+> axioms alone (the predicate runs before the callee's checked entry, D-252),
+> and the `stack-depth` row of D-305 (7), one per cyclic group, derived by the
+> runners. `tests/verify/terminate_recursive.npk`: `fact`'s and the
+> `is_even`/`is_odd` pair's call rows discharged on the path condition alone,
+> their `stack-depth` rows derived `discharged`; `stack_depth_open.npk`: a
+> group with no measure and a measured group whose call row is `open`, both
+> rows `open`. A measure below zero at a recursive call traps
+> (`decreases_recursion_negative.npk`, 42); a measure that grows traps at the
+> first recursive call (`decreases_recursion_trap.npk`, 41); a self, a mutual,
+> a method, a coroutine and a `requires`-split recursion run silent
+> (`decreases_recursion.npk`). The compiler's own recursion states no measure,
+> so its `stack-depth` rows are all `open` (the count in 1.5.8c step 4's
+> record), which is the honest figure D-304's alternatives paragraph accepted.
 
 ## D-305 — A stack overflow is a controlled trap: LLVM's split-stack prologue on every emitted function, `StackExhausted` (4118), `failsafe` on a stack of its own; the check is never elided — **SETTLED (user decision, 2026-09-18: "go with all four"; S-85)**
 
@@ -19448,7 +19477,12 @@ catalogue's `stack-depth` row (D-218 (7)) had neither a guard nor a mechanism.
    decides after emission — outside the manifest's machine-independent
    evidence (D-218 (2)) — and the check costs one compare per call. The
    `stack-depth` rows (1.5.8c) report whether a program's depth is provably
-   bounded; they elide nothing.
+   bounded; they elide nothing. *[2026-09-24, 1.5.8c step 4: LANDED as
+   written -- one row per recursive group with a cycle, no guard, no query,
+   its verdict derived by both runners from the group's `terminate` call rows
+   (`discharged` when every member states `decreases` and every recursive
+   call's row is discharged; `open` otherwise), VERIFICATION_REFERENCE §4b.
+   The compiler's own rows are all `open`: its recursion states no measure.]*
 
 **Alternatives declined.** A check of our own in the IR (the stack pointer
 against the limit at entry) — the IR does not know the frame size, and at

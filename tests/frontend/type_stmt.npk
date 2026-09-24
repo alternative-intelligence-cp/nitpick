@@ -261,7 +261,7 @@ func:main = int32(cstring[]:_~argv) {
         Fx:c2 = raw fx("func:f = NIL() { if (1i32) { pass NIL; } pass NIL; };", @it);
         if (raw errs(@c2) != 1i64)                                 { exit 51i32; }
 
-        Fx:c3 = raw fx("func:f = NIL() { while (1i32) { pass NIL; } pass NIL; };", @it);
+        Fx:c3 = raw fx("func:f = NIL() { while (1i32) unbounded { pass NIL; } pass NIL; };", @it);
         if (raw errs(@c3) != 1i64)                                 { exit 52i32; }
 
         // A pointer is not a condition either.
@@ -292,9 +292,9 @@ func:main = int32(cstring[]:_~argv) {
     // `check_function`/`check_decl` and exercised by the rejection and accept
     // suites instead.
     {
-        Fx:p1 = raw fx("func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant t >= 0i32 { t = t + 1i32; } pass t; };", @it);
+        Fx:p1 = raw fx("func:f = int32(int32:n) { int32:t = 0i32; while (t < n) decreases n - t invariant t >= 0i32 { t = t + 1i32; } pass t; };", @it);
         if (raw errs(@p1) != 0i64)                                 { exit 110i32; }
-        Fx:p2 = raw fx("func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant t { t = t + 1i32; } pass t; };", @it);
+        Fx:p2 = raw fx("func:f = int32(int32:n) { int32:t = 0i32; while (t < n) decreases n - t invariant t { t = t + 1i32; } pass t; };", @it);
         if (raw errs(@p2) != 1i64)                                 { exit 111i32; }
         if (!(raw string_eq(raw code0(@p2), raw TYPE_MISMATCH()))) { exit 112i32; }
         Fx:p3 = raw fx("func:f = int32(int32:n) { prove(n); pass n; };", @it);
@@ -304,7 +304,7 @@ func:main = int32(cstring[]:_~argv) {
         if (raw errs(@p4) != 0i64)                                 { exit 114i32; }
         // An outcome operator inside an invariant is the contract rule's
         // refusal, not a type mismatch (D-240: one mistake, one report).
-        Fx:p5 = raw fx("func:g = int32(int32:v) { pass v; }; func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant (g(t) ?| 0i32) >= 0i32 { t = t + 1i32; } pass t; };", @it);
+        Fx:p5 = raw fx("func:g = int32(int32:v) { pass v; }; func:f = int32(int32:n) { int32:t = 0i32; while (t < n) decreases n - t invariant (g(t) ?| 0i32) >= 0i32 { t = t + 1i32; } pass t; };", @it);
         if (raw errs(@p5) != 1i64)                                 { exit 115i32; }
         if (!(raw string_eq(raw code0(@p5), raw TYPE_CONTRACT_RULES()))) { exit 116i32; }
     }
@@ -334,14 +334,14 @@ func:main = int32(cstring[]:_~argv) {
         if (raw errs(@n1) != 1i64)                                 { exit 72i32; }
         Fx:n2 = raw fx("func:f = NIL() { if (true) { pass NIL; } else { int32:x = true; } pass NIL; };", @it);
         if (raw errs(@n2) != 1i64)                                 { exit 73i32; }
-        Fx:n3 = raw fx("func:f = NIL() { while (true) { int32:x = true; } pass NIL; };", @it);
+        Fx:n3 = raw fx("func:f = NIL() { while (true) unbounded { int32:x = true; } pass NIL; };", @it);
         if (raw errs(@n3) != 1i64)                                 { exit 74i32; }
         Fx:n4 = raw fx("func:f = NIL() { { int32:x = true; } pass NIL; };", @it);
         if (raw errs(@n4) != 1i64)                                 { exit 75i32; }
         Fx:n5 = raw fx("func:f = NIL() { defer { int32:x = true; } pass NIL; };", @it);
         if (raw errs(@n5) != 1i64)                                 { exit 76i32; }
         // …and TWO DEEP, so the recursion is real rather than one level of unrolling.
-        Fx:n6 = raw fx("func:f = NIL() { if (true) { while (true) { int32:x = true; } } pass NIL; };", @it);
+        Fx:n6 = raw fx("func:f = NIL() { if (true) { while (true) unbounded { int32:x = true; } } pass NIL; };", @it);
         if (raw errs(@n6) != 1i64)                                 { exit 77i32; }
     }
 

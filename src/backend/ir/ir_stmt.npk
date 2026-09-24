@@ -3538,6 +3538,12 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
             drop fnem_cross_add(x.fe, (raw fn_body(x.ast, d)).index,
                                 60i32 + (oi =>! int32), otid, move(oll.text));
         }
+        // THE ENTRY MEASURE IS FRAME-RESIDENT TOO (D-304 (5), 1.5.8c step 4):
+        // role 44 on the body's block, an `i128` -- a recursive call after a
+        // suspension reads it, so an alloca would not do.
+        if (raw fn_measure_checks(x, did, d)) {
+            drop fnem_cross_add(x.fe, (raw fn_body(x.ast, d)).index, 44i32, 0i32, "i128");
+        }
     }
 
     // The parameters as the obligation walk will see them (1.5.0): the same
@@ -3703,6 +3709,34 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         drop irw_line(x.fe.w, raw cat5(rq, " = call ", rbt.text, " ",
                                          raw cat4(raw req_sym(plain_sym), "(", rargs, ")")));
     }
+    // THE ENTRY MEASURE (D-304 (5), 1.5.8c step 4): `m0 = <sym>.measure(params)`
+    // at the body's start -- after the entry checks, since a `requires` runs
+    // first in every build -- into an alloca (a sync body) or the frame slot
+    // registered above (a coroutine); every call inside the function's
+    // recursive group compares the callee's measure against it. The predicate
+    // is called over the parameters as they arrived, loaded from their slots as
+    // the `.req` call loads them. A split function's calls are in its BODY, so
+    // the snapshot is the body's, not the checked entry's -- a snapshot is not
+    // a check, and nothing bypasses it.
+    if (raw fn_measure_checks(x, did, d)) {
+        string:mslot = raw loop_slot(x, raw fn_body(x.ast, d), 44i32, "i128");
+        if (mslot.len == 0i64) { pass (raw iv_broken(d.span)); }
+        string:margs = "";
+        for (int64:mi in 0i64...obl_pt.count) {
+            LlType:mpl = raw ll_type(x.fe.ctx, obl_pt[mi]);
+            if (!(raw ll_is_ok(mpl))) { pass (raw iv_from_ll_at(x, mpl, obl_pt[mi], d.span)); }
+            string:mpv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(mpv, " = load ", mpl.text, ", ptr ",
+                                             raw fnem_local_slot_at(x.fe, mi)));
+            if (mi > 0i64) { margs = string_concat(margs, ", "); }
+            margs = raw cat3(margs, mpl.text, string_concat(" ", mpv));
+        }
+        string:m0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(m0, " = call i128 ", raw measure_sym(plain_sym), "(",
+                                         string_concat(margs, ")")));
+        drop irw_line(x.fe.w, raw cat3("store i128 ", m0, string_concat(", ptr ", mslot)));
+        x.fe.measure_slot = move(mslot);
+    }
     // THE ENTRY SNAPSHOTS (D-243, L-10): each `old(e)` evaluated ONCE, here,
     // after the entry checks and before the first statement, into its slot
     // -- an alloca hoisted to the entry block, or the frame slot registered
@@ -3757,6 +3791,20 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = rsaved;
         x.tr.enclosing = resaved;
         if (!(raw iv_is_ok(rf))) { pass rf; }
+    }
+    // THE MEASURE PREDICATE (D-304 (5), 1.5.8c step 4), after `.req`, for the
+    // same reason: one FnEmitter. Under the instance's window, as the body was.
+    if (raw fn_measure_checks(x, did, d)) {
+        GenericScope:msaved = x.tr.generics;
+        GenericScope:mesaved = x.tr.enclosing;
+        if (specialize) {
+            x.tr.generics = g;
+            x.tr.enclosing = g;
+        }
+        IrVal:mf = raw emit_measure_fn(x, did, d, fname, qual, plain_sym, obl_pn, obl_pt);
+        x.tr.generics = msaved;
+        x.tr.enclosing = mesaved;
+        if (!(raw iv_is_ok(mf))) { pass mf; }
     }
     pass (raw iv_nil());
 };

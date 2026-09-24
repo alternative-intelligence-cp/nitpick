@@ -492,8 +492,9 @@ while (true) unbounded { … }                                   // an event loo
   own context: neither `result` nor `old(…)` exists in it. The clause comes
   BEFORE `invariant`, once; `unbounded` and `decreases` never both; `for`,
   `loop` and `till` are bounded by construction (D-234, D-022) and take
-  neither -- each of those shapes is TYPE-072 by name. A `while`/`when` with
-  no clause is accepted until 1.5.8c step 4 sweeps the tree (D-304 (6)).
+  neither -- each of those shapes is TYPE-072 by name, and so is a
+  `while`/`when` with NO clause since 1.5.8c step 4 (the tree was swept at
+  step 3, D-304 (6)).
 - **The check, in every build**: at the top of the body, each time the
   condition holds, `E` is evaluated at its own width; a signed measure below
   zero traps `DecreasesViolated` (4119), and from the second visit on a measure
@@ -522,10 +523,70 @@ while (true) unbounded { … }                                   // an event loo
   condition); a halving `n` under `n > 0` (the Int division form, D-279). A
   `List`'s `count` as the bound has no length term (DEF-14, E-4): the row is
   `unencoded`, the check stays, D-309's rule.
-- **Recursion** (D-304 (2), (5)): a function's `decreases E` is parsed as a
-  contract of kind `decreases` and refused as TYPE-075 until step 4 computes
-  the recursive groups -- the measure is compared at a call inside the
-  function's group, and until then the compiler sees none.
+- **Recursion** (D-304 (2), (5); landed 1.5.8c step 4, 2026-09-24). A
+  function's `decreases E` is a contract of kind `decreases` beside `requires`
+  and `ensures`, optional (D-304 (5)), and checked at every call inside the
+  function's RECURSIVE GROUP. **The groups**: one pass after every body is
+  typed (`src/frontend/analysis/recursion.npk`) -- Tarjan's components, run
+  ITERATIVELY, over the call edges the checker recorded while typing (a plain
+  call, a method call resolved statically, a qualified call, an awaited or
+  spawned one alike); a call through a `dyn` receiver or a function value is
+  no edge (P-7: the compiler sees no callee, and D-305's stack check is that
+  recursion's stop). Per declaration its group, per group whether it has a
+  cycle (a self-call is one), on `ExprTypes`, where the emitter and the
+  encoder read them through ONE predicate (`exprtypes_same_cyclic_group`), so
+  a check and its row exist together. TYPE-074: every function of a cyclic
+  group states `decreases` if any member does (a call compares two measures).
+  TYPE-075: a `decreases` on a function whose group has no cycle checks
+  nothing. TYPE-073, for functions: the measure is at most 64 bits wide --
+  the members' measures compare in one signed 128-bit domain (`int128`), which
+  holds every plain integer of at most 64 bits exactly; a loop's measure
+  compares only with itself and keeps any width.
+  **The check, in every build**: a generated predicate `<sym>.measure(params)
+  -> i128` (the parameter list verbatim, each lent, the measure widened by its
+  sign; emitted after the body, the checked entry and `.req`, one emitter);
+  the body's ENTRY stores `m0 = <sym>.measure(params)` -- an alloca in a sync
+  body, the frame slot at role 44 in a coroutine -- after the entry checks and
+  before the `old(…)` snapshots; a split function's snapshot is its BODY's
+  (nothing bypasses a snapshot). At every call inside the group -- a direct
+  call, a method call, an `await`, a spawn -- `m1 = <callee>.measure(args)`
+  over the argument registers exactly as the call passes them, then `m0 >= 0`
+  and `m1 < m0` as one verdict with ONE trap `DecreasesViolated`. A generated
+  predicate holds no snapshot, so a recursive call inside a `requires` clause
+  or a measure is not checked (its row says so, below). `unbounded` is a
+  loop's word only.
+  **The rows**: the `terminate` CALL row -- `(and (>= m0 0) (< m1 m0))`, `m1`
+  the callee's measure over the actual terms (its parameters bound by position,
+  the receiver first, QUIET), `m0` the caller's measure at entry -- a `guard`
+  row of the CALLER's at the call (site space 0), group the call, one trap,
+  elided into one `llvm.assume`; a recursive call outside the body is an
+  `unencoded` row with NO trap, so it holds nothing and the belts expect
+  nothing. The measure's own guards (an overflow inside `E`) have ONE row each,
+  recorded at the function's entry under the parameters' RANGE AXIOMS ALONE:
+  the predicate runs at a call site BEFORE the callee's checked entry (D-252),
+  so no `requires` and no limited parameter's rule has held where it runs,
+  and a guard elided on their strength would be elided where it can trap (the
+  encoder binds the parameters, encodes the measure, and only then takes the
+  limited parameters' entry writes and the `requires`; every other function
+  keeps its order, so no row of it moved). The **`stack-depth`** row (D-305
+  (7)): one per cyclic group, in the FIRST member instance the emission
+  reaches, at that member's declaration, `d` in `rows.txt` -- no query, no
+  guard; its verdict is DERIVED by both runners once every file is decided:
+  `discharged` when the file's function states a measure (TYPE-074 makes that
+  the whole group's) and every `terminate` row at a call in every file of the
+  group is discharged -- the depth is then bounded by the entry measure, a
+  finite number the program computes -- and `open` otherwise (a group with no
+  measure, a call row `open` or `unencoded`). Its problem text names the
+  members and whether they are measured, so the row moves when the group
+  does. It elides nothing (the stack check stays in every build, D-305) and
+  is reported, honestly: the compiler's own groups state no measure, so its
+  rows are `open`. `index.txt` carries per file the function's cyclic group
+  (0 for none) and whether it states a measure -- the two facts the derivation
+  reads.
+  **What discharges**: `fact(n) decreases n` calling `fact(n - 1)` under
+  `n > 0` -- the path condition proves both halves; a mutual pair the same;
+  `step(n - 1)` under `n != 0` alone leaves `m0 >= 0` open and the check
+  stays (`tests/verify/terminate_recursive.npk`, `stack_depth_open.npk`).
 - **The sweep (1.5.8c step 3, D-304 (6))**: every `while` and `when` of the
   compiler's tree -- `src/`, the prelude, `lib/`, `npkg/`, the tools and the
   tests, 977 loops as the parser counts them -- states its clause. A TOOL
@@ -733,8 +794,8 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `invariant` | a loop invariant holds at entry and is preserved (D-221) | yes | 1.5.3 |
 | `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220), and a limited FIELD at each of its three (D-308): a struct literal's value for it, an assignment through any path including a pointer's, a compound assignment -- the field's row keyed on the WRITTEN expression, a limited root's on the statement, so a write to a limited field of a limited binding is two rows at two keys | yes | 1.5.2; fields 1.5.8b step 6 |
 | `limit-subsume` | one `Rules` implies another at a boundary (D-220): the caller's knowledge of every argument against the callee's rules, at a direct call of a sync callee | yes | 1.5.2 |
-| `terminate` | a `while`/`when` loop's `decreases E` measure is at least zero at every head visit (a signed measure; an unsigned one cannot be below zero and records no such row) and smaller than at the previous visit (D-304, D-218.7): the head's check, `DecreasesViolated` -- the entry row at the statement, the preservation row at the body block, one per `continue` re-entering the loop; a recursive call's row against the caller's measure lands at 1.5.8c step 4 | yes | 1.5.8c |
-| `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8c |
+| `terminate` | a `while`/`when` loop's `decreases E` measure is at least zero at every head visit (a signed measure; an unsigned one cannot be below zero and records no such row) and smaller than at the previous visit (D-304, D-218.7): the head's check, `DecreasesViolated` -- the entry row at the statement, the preservation row at the body block, one per `continue` re-entering the loop; and, at every call inside a recursive group whose members state `decreases` (D-304 (5)), the callee's measure at the arguments below the caller's at entry with the caller's at least zero, `(and (>= m0 0) (< m1 m0))` -- the check before the call, one trap, a row of the caller's at the call site; a recursive call inside a `requires` clause or a measure has no check and an `unencoded` row with no trap | yes | 1.5.8c |
+| `stack-depth` | the recursion depth is bounded (the audit's G-6 row; D-305 (7)): one row per recursive group with a cycle, in the first member the emission reaches, DERIVED by the runners from the group's `terminate` call rows -- `discharged` when every member states `decreases` and every recursive call's row is discharged (the depth is then bounded by the entry measure), `open` otherwise; no query, no guard, elides nothing (the stack check stays in every build) | no | 1.5.8c |
 | `err-exit` | the `TbbErr` guard's condition (D-144 as amended, D-278): neither operand is ERR at a comparison on a twisted value, the operand is not ERR at a cast out of its family (both spellings), a checked crossing into or within a family lands in the target's range; a twisted division has no row (a zero divisor is ERR) | yes | 1.5.4b |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
 | `loop-step` | a counted loop's computed step is positive (D-022): the compare at the loop's entry, `BadStep`; a literal step is the checker's (TYPE-068) and has no row | yes | 1.5.4 |
@@ -1156,7 +1217,10 @@ holds compute in floats or vectors.
 
 > **[1.5.4 (2026-09-06).]** `rows.txt`'s fifth column is `1` (a row with a
 > `(check-sat)`), `0` (`unencoded`) or `c` (a row the frontend decided:
-> verdict `checker`, tier `-`, word `none` — no answer consumed). The
+> verdict `checker`, tier `-`, word `none` — no answer consumed) — and,
+> since 1.5.8c step 4, `d` (a row the RUNNERS derive once every file is
+> decided: a `stack-depth` row, §4b; verdict `discharged` or `open`, tier
+> `-`, word `none`). The
 > verified build refuses an undischarged `prove` (`NITPICK-VERIFY-001`): the
 > one row whose retention is a refusal, since a `prove` has no guard; a
 > verify test names that refusal with `expect-error:` and ends there.
@@ -1258,6 +1322,15 @@ holds compute in floats or vectors.
 > kind (two assumes for a signed measure's discharged loop, one for an
 > unsigned one's), and OFF the guard-less set (`ok_has_guard(12)` true, the
 > catalogue's column `yes`). `stack-depth` stays guard-less and pending step 4.
+>
+> **1.5.8c step 4 (D-304 (5), D-305 (7)):** `terminate` rows at recursive
+> calls too (the same code, the same assume kind: one assume per discharged
+> call), and `stack-depth` LIVE -- `d` in `rows.txt`'s fifth field, a row the
+> RUNNERS derive from the group's call rows after every file is decided
+> (§4b), guard-less as before, tier `-`, elision word `none`. `index.txt`
+> gained its fourth and fifth fields (the file's cyclic group, whether its
+> function states a measure); both runners refuse an index line of another
+> shape by name, as they refuse a row line (DEF-75's rule).
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

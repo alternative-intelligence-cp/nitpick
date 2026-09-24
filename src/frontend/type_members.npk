@@ -752,6 +752,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // Record what a `recv.method()` call records, so the emitter dispatches to
     // the same symbol: the impl method, its trait, its symbol, its signature.
     drop exprtypes_set_callee(e.expr_types, id, mdecl);
+    drop exprtypes_set_call(e.expr_types, id, e.fn_decl, mdecl);   // the call graph's edge (1.5.8c step 4)
     drop exprtypes_set_callee_trait(e.expr_types, id, trait_ty);
     drop exprtypes_set_callee_sym(e.expr_types, id,
             raw intern_add(e.interns,
@@ -809,6 +810,9 @@ func:type_direct_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:sym,
     Symbol:s = raw symtab_get(e.tab, sym);
     int32:cd = s.origin;
     DeclNode:d = raw ast_decl(e.ast, DeclId{ index: cd });
+    // THE CALL GRAPH'S EDGE (1.5.8c step 4): a plain call to a declared function
+    // records its callee here -- `callee` stays the method-dispatch record.
+    if (d.kind == DeclKind.DeclFunctionDecl) { drop exprtypes_set_call(e.expr_types, id, e.fn_decl, cd); }
     // A CALL INSIDE A CONTRACT (1.5.1, D-221): a NAMED callee under `raw`
     // (its call is a `Result`; `raw` is the licensed unwrap, and the licence
     // is what checks `never fails`), declared `pure` -- the obligation walk
@@ -1941,6 +1945,7 @@ func:type_namespace_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:msy
     // await site, the encoder), and `ns_decl`, which tells every reader of
     // its RECEIVER that there is none.
     drop exprtypes_set_callee(e.expr_types, id, ms.origin);
+    drop exprtypes_set_call(e.expr_types, id, e.fn_decl, ms.origin);   // the call graph's edge (1.5.8c step 4)
     drop exprtypes_set_ns_decl(e.expr_types, id, ms.origin);
     TypeResolver:r = raw etyper_resolver(e);
     int32:ft = raw fn_type(@r, DeclId{ index: ms.origin }, ms.name, e.scope);
@@ -2274,6 +2279,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     // copy of the resolution is a second answer waiting to drift from this one.
     // Recorded on the expression, the same key its type is recorded under.
     drop exprtypes_set_callee(e.expr_types, id, did_index);
+    drop exprtypes_set_call(e.expr_types, id, e.fn_decl, did_index);   // the call graph's edge (1.5.8c step 4)
 
     // AND THE SYMBOL IT IS EMITTED UNDER (1.0.5b). D-156's amendment makes a
     // method's symbol carry its impl, and the two facts that takes — the

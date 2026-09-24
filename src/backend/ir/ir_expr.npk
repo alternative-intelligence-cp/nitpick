@@ -4982,7 +4982,13 @@ func:await_callee_decl = int32(ExprEmitter->:x, ExprId:cid) never fails {
 // allocate by the GEP-null size, initialise the header, store the arguments
 // in source order, each fit to its parameter. The ref is the frame pointer.
 func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
-                              string:cfr_ty, string:crs, Span:at) never fails {
+                              string:cfr_ty, string:crs, int32:cdi, string:csym,
+                              Span:at) never fails {
+    // THE ARGUMENTS AS THE MEASURE PREDICATE TAKES THEM (D-304 (5), 1.5.8c step
+    // 4): the receiver first, each argument as fit, the gathered tail last --
+    // the same registers the frame stores below, listed for the recursive
+    // call's check after the last store.
+    string:margs = "";
     string:fr = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
                       raw fnem_frame_size_arg(cfr_ty), ")"));
@@ -5037,6 +5043,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
             string:rg0 = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
             drop irw_line(x.fe.w, raw cat3("store ptr ", crp.addr,
                               string_concat(", ptr ", rg0)));
+            margs = string_concat("ptr ", crp.addr);
         }
         if (!cwant_ptr) {
             IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
@@ -5047,6 +5054,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
             string:rg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
             drop irw_line(x.fe.w, raw cat5("store ", rv.ll, " ", rv.ref,
                               string_concat(", ptr ", rg)));
+            margs = raw cat3(rv.ll, " ", rv.ref);
         }
         base = 1i32;
     }
@@ -5070,6 +5078,8 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + base + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           string_concat(", ptr ", ag)));
+        if (margs.len > 0i64) { margs = string_concat(margs, ", "); }
+        margs = raw cat3(margs, av.ll, string_concat(" ", av.ref));
     }
     if (fva) {
         IrVal:tv = raw emit_va_tail_frame(x, cft, start, count, ffitn, at);
@@ -5078,7 +5088,14 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         string:vg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + (vtot - 1i32));
         drop irw_line(x.fe.w, raw cat3("store { ptr, i64 } ", tv.ref,
                           string_concat(", ptr ", vg)));
+        if (margs.len > 0i64) { margs = string_concat(margs, ", "); }
+        margs = raw cat3(margs, "{ ptr, i64 }", string_concat(" ", tv.ref));
     }
+    // THE RECURSIVE CALL'S CHECK (D-304 (5), 1.5.8c step 4): an `await` drives
+    // its child inline and a spawn is a call the group's edges hold, so both
+    // are checked here, over the registers the frame just took.
+    IrVal:mc = raw emit_measure_call_check(x, cid, cn, cdi, csym, margs);
+    if (!(raw iv_is_ok(mc))) { pass mc; }
     pass (raw iv("ptr", move(fr), 0i32));
 };
 
@@ -5228,7 +5245,8 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
     string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
     x.fe.spawn_args = true;   // the child's for its life (D-246, D-180)
-    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, cdi,
+                                     raw mangled_fn_sym(x.fe.ctx, ac.qual, ac.name), n.span);
     x.fe.spawn_args = false;
     if (cfv.state != (raw LL_OK())) { pass cfv; }
     string:hdr = raw fnem_hdr_ty();
@@ -5272,7 +5290,8 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
     string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
     x.fe.spawn_args = true;   // the child's for its life (D-246, D-180)
-    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, cdi,
+                                     raw mangled_fn_sym(x.fe.ctx, ac.qual, ac.name), n.span);
     x.fe.spawn_args = false;
     if (cfv.state != (raw LL_OK())) { pass cfv; }
 
@@ -7024,7 +7043,8 @@ func:emit_await_kind = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     // The callee's frame, then its arguments — via the same helper the
     // spawn uses. Nothing here can suspend: `await` nests inside no
     // expression that could re-enter this sequence.
-    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, cdi,
+                                     raw mangled_fn_sym(x.fe.ctx, ac.qual, ac.name), n.span);
     if (cfv.state != (raw LL_OK())) { pass cfv; }
     string:fr = move(cfv.ref);
 
@@ -7362,6 +7382,10 @@ func:emit_direct_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:decl
     // THE CALLER-SIDE BYPASS (D-252, 1.5.2 step 4): a direct call whose
     // `limit-subsume` row the manifest discharged names the callee's BODY,
     // past its checked entry; every other call names the entry.
+    // THE RECURSIVE CALL'S CHECK (D-304 (5), 1.5.8c step 4), over the same
+    // argument registers, before the call names its body or its entry.
+    IrVal:mc = raw emit_measure_call_check(x, id, n, decl, sym, args);
+    if (!(raw iv_is_ok(mc))) { pass mc; }
     if (raw callee_bypasses(x, decl, id)) { sym = raw body_sym(sym); }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
@@ -9320,6 +9344,10 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     // THE CALLER-SIDE BYPASS (D-252): a static method call whose row the
     // manifest discharged names the body; an erased call never does.
     if (!via_dyn) {
+        // THE RECURSIVE CALL'S CHECK (D-304 (5), 1.5.8c step 4): the receiver is
+        // the predicate's first parameter, as it is the call's.
+        IrVal:mc = raw emit_measure_call_check(x, id, n, decl, sym, args);
+        if (!(raw iv_is_ok(mc))) { pass mc; }
         if (raw callee_bypasses(x, decl, id)) { sym = raw body_sym(sym); }
     }
     LlType:ret = raw node_ll(x, id);

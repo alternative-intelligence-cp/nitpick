@@ -10,7 +10,9 @@
 
 mod:smt_obligations;
 
+use "../../frontend/ast_kind.npk".*;   // DeclKind (1.5.8c step 4)
 use "../../frontend/ast.npk".*;
+use "../../frontend/expr_types.npk".*;   // the recursive groups (1.5.8c step 4)
 use "../../frontend/parse_decl.npk".*;
 use "../ir/ir_types.npk".*;
 use "../ir/ir_expr.npk".*;
@@ -45,10 +47,28 @@ pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
     en.ret_type = ret_type;
     en.is_failsafe = is_failsafe;
     drop enc_prepare(@en, body);   // the escape set before any name is bound (DEF-14)
-    for (int64:i in 0i64...pnames.count) {
-        drop enc_param(@en, pnames[i], ptypes[i], prules[i], pdecls[i]);
+    // THE ENTRY MEASURE'S ORDER (D-304 (5), 1.5.8c step 4): a function whose
+    // measure the group checks binds every parameter first, encodes its measure
+    // -- its guards' rows under the range axioms alone (`enc_entry_measure`
+    // says why) -- and only then takes each limited parameter's entry write and
+    // the `requires`; every other function keeps the one-phase order it had, so
+    // no row of it moves.
+    if (raw enc_fn_measure_checks(@en)) {
+        for (int64:i0 in 0i64...pnames.count) {
+            drop enc_param_bind(@en, pnames[i0], ptypes[i0], prules[i0]);
+        }
+        drop enc_entry_measure(@en);
+        for (int64:i1 in 0i64...pnames.count) {
+            drop enc_param_entry(@en, pnames[i1], prules[i1], pdecls[i1]);
+        }
+    } else {
+        for (int64:i in 0i64...pnames.count) {
+            drop enc_param(@en, pnames[i], ptypes[i], prules[i], pdecls[i]);
+        }
+        drop enc_entry_measure(@en);   // `fn_m0` is none for these
     }
     drop enc_entry_contracts(@en);   // the entry row and its hypothesis; the conformance rows
+    drop enc_stack_depth(@en);       // the group's `stack-depth` row, in its first member's file (D-305 (7))
     drop enc_body(@en, body);
     drop obl_finish(x, symbol, @en);
     pass NIL;
@@ -125,6 +145,23 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
     drop list_push(@c.obl.files, raw enc_file_text(en));
     drop list_push(@c.obl.file_syms, string_concat(symbol, ""));
     drop list_push(@c.obl.file_checks, checks);
+    // THE FILE'S RECURSIVE GROUP AND WHETHER ITS FUNCTION STATES A MEASURE
+    // (D-305 (7), 1.5.8c step 4): `index.txt`'s fourth and fifth columns -- the
+    // runners derive a `stack-depth` row's verdict from the `terminate` call
+    // rows of every file of its group (0 for a function in no cyclic group;
+    // a `Rules` predicate's walk has no declaration and writes 0 0).
+    int32:fgroup = 0i32;
+    bool:fmeasured = false;
+    if (en.fn_decl != 0i32) {
+        int32:fg = raw exprtypes_group(en.et, en.fn_decl);
+        if (fg != 0i32) { if (raw exprtypes_group_cyclic(en.et, fg)) { fgroup = fg; } }
+        DeclNode:fdn = raw ast_decl(en.ast, DeclId{ index: en.fn_decl });
+        if (fdn.kind == DeclKind.DeclFunctionDecl) {
+            fmeasured = !(raw verify_is_none(raw fn_measure(en.ast, fdn)));
+        }
+    }
+    drop list_push(@c.obl.file_groups, fgroup);
+    drop list_push(@c.obl.file_measured, fmeasured);
     string:fno = raw file_number(c.obl.files.count);
     // THE TIER-2 TWIN (D-281): the rows the Real-interval abstraction may
     // decide, in a file of their own beside the tier-1 file.
@@ -157,7 +194,13 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         if (en.obls[oi3].encoded) { r = string_concat(r, "1"); c.obl.encoded_rows = c.obl.encoded_rows + 1i64; }
         else {
             if (en.obls[oi3].checker) { r = string_concat(r, "c"); c.obl.checker_rows = c.obl.checker_rows + 1i64; }
-            else { r = string_concat(r, "0"); c.obl.unencoded_rows = c.obl.unencoded_rows + 1i64; }
+            else {
+                // `d`: THE RUNNERS DERIVE IT (D-305 (7), 1.5.8c step 4) -- a
+                // `stack-depth` row, no query, its verdict read off its group's
+                // `terminate` call rows once every file is decided.
+                if (en.obls[oi3].derived) { r = string_concat(r, "d"); c.obl.derived_rows = c.obl.derived_rows + 1i64; }
+                else { r = string_concat(r, "0"); c.obl.unencoded_rows = c.obl.unencoded_rows + 1i64; }
+            }
         }
         r = string_concat(r, "\t");
         r = string_concat(r, symbol);

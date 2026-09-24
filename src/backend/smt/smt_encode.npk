@@ -155,6 +155,7 @@ pub struct:SmtObl = {
     int32:region;            // the branch region of the site
     bool:encoded;            // false: an `unencoded` row (P-12)
     bool:checker;            // THE FRONTEND DECIDED IT (1.5.4 step 4, L-20): no query, verdict `checker`
+    bool:derived;            // THE RUNNERS DERIVE IT (D-305 (7), 1.5.8c step 4): a `stack-depth` row -- no query, its verdict read off the group's `terminate` call rows after every file is decided
     string:tier;             // filled by finish (D-281): `int`, `bv`, `fp`; `-` for an unencoded or checker row
     List<int32>:cone_syms;   // filled by finish: symbols in the cone, ascending
     List<int32>:cone_hyps;   // filled by finish: hypotheses in the cone, in order
@@ -307,6 +308,16 @@ pub struct:Encoder = {
     List<int32>:loop_meas;
     List<Term>:loop_mstart;
     List<bool>:loop_msigned;
+    // THE FUNCTION'S OWN MEASURE AT ENTRY (D-304 (5), 1.5.8c step 4): the term
+    // of its `decreases E` over the parameters' entry versions, `term_none`
+    // for a function that states none or whose group has no cycle; every
+    // recursive call's row compares the callee's measure over the actuals
+    // against it. `in_body` is set while the body is walked: the check the row
+    // stands for is emitted in the body alone (a generated predicate has no
+    // snapshot), so a recursive call inside a `requires` clause -- walked at
+    // the entry -- records no row, as it has no check.
+    Term:fn_m0;
+    bool:in_body;
     // AN INDEX EXPRESSION'S TERM, BY EXPRESSION (D-286, 1.5.5 step 2): the
     // `disjoint` row compares the index pairs of two paths, and a party's
     // index was encoded when its claim was walked -- earlier, under the
@@ -409,6 +420,7 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   loop_sids: raw list_init::<int32>(4i64),
                   loop_labels: raw list_init::<int32>(4i64),
                   loop_invs: raw list_init::<int32>(4i64),
+                  fn_m0: raw term_none(), in_body: false,
                   loop_meas: raw list_init::<int32>(4i64),
                   loop_mstart: raw list_init::<Term>(4i64),
                   loop_msigned: raw list_init::<bool>(4i64),
@@ -892,7 +904,7 @@ func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int
                        ctx: e.clause_ctx, role: role, group: group, traps: traps,
                        defer_stmt: e.cur_defer,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
-                       checker: false, tier: "",
+                       checker: false, derived: false, tier: "",
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
                        canon: "", hash: "", discharged: false };
@@ -913,7 +925,32 @@ func:record_checker = NIL(Encoder->:e, int32:kind, int32:space, int32:site, Span
                        ctx: e.clause_ctx, role: raw ROLE_GUARD(), group: site, traps: 0i32,
                        defer_stmt: e.cur_defer,
                        line: at.line, col: at.col, region: e.cur_region, encoded: false,
-                       checker: true, tier: "",
+                       checker: true, derived: false, tier: "",
+                       cone_syms: raw list_init::<int32>(1i64),
+                       cone_hyps: raw list_init::<int32>(1i64),
+                       canon: "", hash: "", discharged: false };
+    drop list_push(@e.obls, move(o));
+    pass NIL;
+};
+
+// A ROW THE RUNNERS DERIVE (D-305 (7), 1.5.8c step 4): the `stack-depth` row
+// of a recursive group -- no query, no guard; its problem text names the
+// group's members and whether every one states a measure, so the row moves
+// when the group does, and both runners read its verdict off the group's
+// `terminate` call rows once every file is decided (`discharged` when the
+// members state measures and every recursive call's row is discharged, `open`
+// otherwise). `d` in `rows.txt`.
+func:record_derived = NIL(Encoder->:e, int32:kind, int32:space, int32:site, Span:at,
+                          string:text) never fails {
+    if (e.quiet > 0i32) { pass NIL; }
+    int32:ord = e.ordinals[kind => int64] + 1i32;
+    e.ordinals[kind => int64] = ord;
+    SmtObl:o = SmtObl{ kind: kind, goal: string_concat(text, ""), syms: raw list_init::<int32>(1i64),
+                       hyps: e.hyps.count, site: site, space: space, ordinal: ord,
+                       ctx: e.clause_ctx, role: raw ROLE_GUARD(), group: site, traps: 0i32,
+                       defer_stmt: e.cur_defer,
+                       line: at.line, col: at.col, region: e.cur_region, encoded: false,
+                       checker: false, derived: true, tier: "",
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
                        canon: "", hash: "", discharged: false };
@@ -3079,6 +3116,21 @@ struct:CallEnc = {
     List<Term>:terms;
 };
 
+// THE CALLEE'S DECLARATION (1.5.2 step 3; factored at 1.5.8c step 4): the one
+// the checker recorded, or -- a free call records none -- the identifier's
+// own symbol when it is a declaration. 0 when nothing is known.
+func:call_decl_of = int32(Encoder->:e, ExprId:id, ExprNode:n) never fails {
+    int32:cd = raw exprtypes_callee(e.et, id);
+    if ((cd == 0i32) && (n.kind == ExprKind.ExprCallExpr) && (n.a != 0i32)) {
+        ExprNode:cn = raw ast_expr(e.ast, ExprId{ index: n.a });
+        if ((cn.kind == ExprKind.ExprIdentifierExpr) && (cn.a != 0i32)) {
+            Symbol:cs = raw symtab_get(e.tab, cn.a);
+            if (cs.origin_kind == (raw SYM_DECL())) { cd = cs.origin; }
+        }
+    }
+    pass cd;
+};
+
 func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     Term:rcv = raw term_none();
     int32:rty = 0i32;
@@ -3118,14 +3170,7 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     CallEnc:none = CallEnc{ cd: 0i32, coroutine: false, through_dyn: false,
                             names: raw list_init::<int32>(1i64), types: raw list_init::<int32>(1i64),
                             terms: raw list_init::<Term>(1i64) };
-    int32:cd = raw exprtypes_callee(e.et, id);
-    if ((cd == 0i32) && (n.kind == ExprKind.ExprCallExpr) && (n.a != 0i32)) {
-        ExprNode:cn = raw ast_expr(e.ast, ExprId{ index: n.a });
-        if ((cn.kind == ExprKind.ExprIdentifierExpr) && (cn.a != 0i32)) {
-            Symbol:cs = raw symtab_get(e.tab, cn.a);
-            if (cs.origin_kind == (raw SYM_DECL())) { cd = cs.origin; }
-        }
-    }
+    int32:cd = raw call_decl_of(e, id, n);
     if (cd == 0i32) { pass none; }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
     if (cdn.kind != DeclKind.DeclFunctionDecl) { pass none; }
@@ -3165,11 +3210,101 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
 // the call, the call names the body -- and `held` at an `await` or through a
 // `dyn`, where the guard is the callee's own entry and no build can remove it.
 func:record_call_rows = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce) never fails {
+    // THE RECURSIVE CALL'S ROW FIRST (D-304 (5), 1.5.8c step 4): it needs the
+    // callee even where `enc_call` bound nothing (a variadic callee).
+    drop record_terminate_call(e, id, n, ce);
     if (ce.cd == 0i32) { pass NIL; }
     int32:role = raw ROLE_BYPASS();
     if (ce.coroutine || ce.through_dyn) { role = raw ROLE_HELD(); }
     drop record_subsume_ce(e, id, n, ce, role);
     drop record_requires(e, id, n, ce, role);
+    pass NIL;
+};
+
+// THE CALLEE'S MEASURE OVER THE ACTUALS (D-304 (5), 1.5.8c step 4): its
+// `decreases E` with the parameters bound by position to the argument terms
+// (the receiver first), QUIET -- the guards inside `E` are the callee's own
+// rows, recorded at ITS entry under its parameters' types and lowered once in
+// its predicate -- a fresh version of each name equal to its term, released
+// after; `enc_under`'s shape for a term that is not a proposition.
+func:measure_under = Term(Encoder->:e, CallEnc:ce, DeclNode:cdn) never fails {
+    VerifyId:mv = raw fn_measure(e.ast, cdn);
+    if (raw verify_is_none(mv)) { pass (raw term_none()); }
+    int64:mark = raw scope_mark(e);
+    for (int64:i in 0i64...ce.names.count) {
+        drop bind_define(e, ce.names[i], ce.types[i], raw term_copy(ce.terms[i]), 0i32, true);
+    }
+    e.quiet = e.quiet + 1i32;
+    Term:t = raw enc_expr(e, raw contract_cond(raw ast_verify(e.ast, mv)));
+    e.quiet = e.quiet - 1i32;
+    drop scope_release(e, mark);
+    if (!(t.ok && (!t.is_bool))) { pass (raw term_none()); }
+    pass t;
+};
+
+// THE RECURSIVE CALL'S ROW (D-304 (5), 1.5.8c step 4): at a call whose callee
+// shares the caller's cyclic group, both stating a measure -- the goal
+// `(and (>= m0 0) (< m1 m0))`, `m1` the callee's measure over the actuals,
+// `m0` the caller's at entry (`fn_m0`): the check the emitter puts before the
+// call (`emit_measure_call_check`), kind `terminate`, a `guard` row of the
+// CALLER's (the trap is at the call site whatever the callee's kind -- at an
+// `await` and a spawn too), group the call, one trap; its condition a
+// hypothesis after the site as every guard's is (inside a proposition, the
+// proposition's own -- DEF-33). Recorded only while the BODY is walked
+// (`in_body`): a generated predicate has no snapshot and emits no check, so a
+// recursive call inside a `requires` clause has no row either. A measure the
+// walk cannot express leaves the row `unencoded` and the check stays; a callee
+// `enc_call` could not bind (a variadic) is found by the same resolution and
+// its row is `unencoded` too, so the check is never a trap no row accounts
+// for. A call through a `dyn` is no edge and no row (P-7).
+func:record_terminate_call = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce) never fails {
+    if (e.fn_decl == 0i32) { pass NIL; }
+    if (ce.through_dyn) { pass NIL; }
+    int32:cd = ce.cd;
+    if (cd == 0i32) {
+        cd = raw call_decl_of(e, id, n);
+        if (cd == 0i32) { pass NIL; }
+        if ((n.kind == ExprKind.ExprMethodCallExpr) && (n.a != 0i32)) {
+            if ((raw exprtypes_ns_decl(e.et, id)) == 0i32) {
+                int32:rty = raw ty_of(e, ExprId{ index: n.a });
+                if (rty != 0i32) { if ((raw type_kind(e.types, rty)) == (raw TY_DYN())) { pass NIL; } }
+            }
+        }
+    }
+    if (!(raw exprtypes_same_cyclic_group(e.et, e.fn_decl, cd))) { pass NIL; }
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
+    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    if (raw verify_is_none(raw fn_measure(e.ast, cdn))) { pass NIL; }
+    DeclNode:fdn = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    if (raw verify_is_none(raw fn_measure(e.ast, fdn))) { pass NIL; }
+    // OUTSIDE THE BODY -- a recursive call inside a `requires` clause or the
+    // measure itself -- the predicate that evaluates it has no snapshot and
+    // emits no check: an `unencoded` row with NO trap, so the group's
+    // `stack-depth` row stays `open` (a recursion the group's measures do not
+    // bound) and the belts expect no trap for it.
+    if (!e.in_body) {
+        List<int32>:none0 = raw list_init::<int32>(1i64);
+        drop record_at(e, raw OK_TERMINATE(), "", none0, raw SITE_EXPR(), id.index, n.span, false,
+                       raw ROLE_GUARD(), id.index, 0i32);
+        pass NIL;
+    }
+    Term:m1 = raw term_none();
+    if (ce.cd != 0i32) { m1 = raw measure_under(e, ce, cdn); }
+    if (!(m1.ok && e.fn_m0.ok)) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record_at(e, raw OK_TERMINATE(), "", none, raw SITE_EXPR(), id.index, n.span, false,
+                       raw ROLE_GUARD(), id.index, 1i32);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    Term:nn = raw term_app2(">=", raw term_copy(e.fn_m0), raw term_lit("0", false), true);
+    Term:lt = raw term_app2("<", m1, raw term_copy(e.fn_m0), true);
+    Term:g = raw term_app2("and", nn, lt, true);
+    drop record_at(e, raw OK_TERMINATE(), g.text, g.syms, raw SITE_EXPR(), id.index, n.span, true,
+                   raw ROLE_GUARD(), id.index, 1i32);
+    if (e.in_prop > 0i32) { drop prop_fact(e, g.text, g.syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, g.text, g.syms);
     pass NIL;
 };
 
@@ -6067,7 +6202,23 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 // name from its first definition.
 pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty, int32:rule,
                          int32:decl_index) never fails {
+    drop enc_param_bind(e, name, ty, rule);
+    drop enc_param_entry(e, name, rule, decl_index);
+    pass NIL;
+};
+
+// THE TWO HALVES OF `enc_param` (1.5.8c step 4): the binding, and the entry
+// write point. A function whose measure the group checks binds every
+// parameter first, encodes its measure (`enc_entry_measure`), and only then
+// takes each limited parameter's entry write -- so the measure's rows sit
+// under the range axioms alone; every other function calls the pair back to
+// back through `enc_param`, and no row of it moves.
+pub func:enc_param_bind = NIL(Encoder->:e, int32:name, int32:ty, int32:rule) never fails {
     drop bind_define(e, name, ty, raw term_none(), rule, false);
+    pass NIL;
+};
+
+pub func:enc_param_entry = NIL(Encoder->:e, int32:name, int32:rule, int32:decl_index) never fails {
     // THE THIRD WRITE POINT (1.5.2 step 2, D-251): a limited parameter's
     // check at the callee's entry is a row -- unencoded until step 3.
     if (rule != 0i32) {
@@ -6077,6 +6228,75 @@ pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty, int32:rule,
         // the rule -- then the rule as the hypothesis every later read has.
         drop after_write(e, name, raw SITE_DECL(), decl_index, pd.span);
     }
+    pass NIL;
+};
+
+// DOES THIS FUNCTION'S MEASURE CHECK ANYTHING (D-304 (5), 1.5.8c step 4): the
+// emitter's `fn_measure_checks`, for the encoder -- a `decreases` on a
+// function of a cyclic group.
+pub func:enc_fn_measure_checks = bool(Encoder->:e) never fails {
+    if (e.fn_decl == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (raw verify_is_none(raw fn_measure(e.ast, d))) { pass false; }
+    int32:g = raw exprtypes_group(e.et, e.fn_decl);
+    if (g == 0i32) { pass false; }
+    pass (raw exprtypes_group_cyclic(e.et, g));
+};
+
+// THE FUNCTION'S OWN MEASURE AT ENTRY (D-304 (5), 1.5.8c step 4): `E` encoded
+// LOUD once over the parameters' entry versions -- its guards' rows are this
+// function's (the predicate `<sym>.measure` lowers each guard once and reads
+// these rows' answers), under the parameters' RANGE AXIOMS ALONE: the
+// predicate runs at every call inside the group over the arguments BEFORE the
+// callee's checked entry (D-252), so no `requires` and no limited parameter's
+// rule has held where it runs, and a guard elided on their strength would be
+// elided where it can trap. Hence the order in `obl_function`: after the
+// parameters are bound, before any rule or `requires` is pushed. The term is
+// kept as `fn_m0` for every recursive call's row; the guards' facts stand as
+// hypotheses after their rows, since the body runs only past the snapshot.
+pub func:enc_entry_measure = NIL(Encoder->:e) never fails {
+    e.fn_m0 = raw term_none();
+    if (!(raw enc_fn_measure_checks(e))) { pass NIL; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    Term:m = raw enc_expr(e, raw contract_cond(raw ast_verify(e.ast, raw fn_measure(e.ast, d))));
+    if (m.ok && (!m.is_bool)) { e.fn_m0 = move(m); }
+    pass NIL;
+};
+
+// THE `stack-depth` ROW (D-305 (7); 1.5.8c step 4): one per cyclic group, in
+// the FIRST member instance the emission reaches (the table remembers the
+// groups that have one), at that member's declaration -- no guard, no query,
+// derived by the runners. Its text names the members and whether every one
+// states a measure. A cyclic group is kept or dropped WHOLE by D-262's trim
+// (each member references another), so the row's file stands exactly when the
+// group's do.
+pub func:enc_stack_depth = NIL(Encoder->:e) never fails {
+    if (e.fn_decl == 0i32) { pass NIL; }
+    int32:g = raw exprtypes_group(e.et, e.fn_decl);
+    if (g == 0i32) { pass NIL; }
+    if (!(raw exprtypes_group_cyclic(e.et, g))) { pass NIL; }
+    if (e.ctx.obl == NULL) { pass NIL; }
+    for (int64:i in 0i64...e.ctx.obl.sd_groups.count) {
+        if (e.ctx.obl.sd_groups[i] == g) { pass NIL; }
+    }
+    drop list_push(@e.ctx.obl.sd_groups, g);
+    string:members = "";
+    bool:measured = true;
+    int32:nd = raw ast_decl_count(e.ast);
+    for (int32:di in 1i32...nd) {
+        if ((raw exprtypes_group(e.et, di)) != g) { continue; }
+        DeclNode:dn = raw ast_decl(e.ast, DeclId{ index: di });
+        if (dn.kind != DeclKind.DeclFunctionDecl) { continue; }
+        members = string_concat(members, " ");
+        members = string_concat(members, raw intern_get(e.interns, raw decl_name(dn)));
+        if (raw verify_is_none(raw fn_measure(e.ast, dn))) { measured = false; }
+    }
+    string:head = "(stack-depth unmeasured";
+    if (measured) { head = "(stack-depth measured"; }
+    DeclNode:fdn = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    drop record_derived(e, raw OK_STACK_DEPTH(), raw SITE_DECL(), e.fn_decl, fdn.span,
+                        string_concat(string_concat(head, members), ")"));
     pass NIL;
 };
 
@@ -6113,7 +6333,9 @@ pub func:enc_prepare = NIL(Encoder->:e, StmtId:body) never fails {
 };
 
 pub func:enc_body = NIL(Encoder->:e, StmtId:body) never fails {
+    e.in_body = true;
     drop walk_block(e, body);
+    e.in_body = false;
     pass NIL;
 };
 
@@ -6158,6 +6380,10 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
             u = string_concat(u, " ");
             u = string_concat(u, int_to_string(e.obls[oi].ordinal => int64));
             u = string_concat(u, ")");
+            // A DERIVED ROW'S TEXT IS THE GROUP (1.5.8c step 4): its members and
+            // whether they are measured, never an ordinal -- so the row keeps
+            // its hash while the group stands and moves when the group moves.
+            if (e.obls[oi].derived) { u = string_concat(e.obls[oi].goal, ""); }
             e.obls[oi].canon = string_concat(u, "");
             string:hu = string_concat(u, "\n");
             hu = string_concat(hu, e.symbol);

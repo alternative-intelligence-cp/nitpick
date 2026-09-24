@@ -358,10 +358,14 @@ func:reach_fn = NIL(Reach->:x, DeclId:id) never fails {
                 if ((ck == (raw CONTRACT_REQUIRES())) || (ck == (raw CONTRACT_ENSURES()))) {
                     drop reach_expr(x, ExprId{ index: cv.b }, raw REACH_DEPTH());
                 }
-                // A function's `decreases` (D-304) is walked for its own arms;
-                // its check arms nothing until the groups exist (step 4), and
-                // the checker refuses every one until then (TYPE-075).
+                // A function's `decreases` (D-304 (5), 1.5.8c step 4) is a
+                // check at every call inside its recursive group -- the
+                // callee's measure over the arguments against the caller's at
+                // entry, `DecreasesViolated` -- so it arms the identity where
+                // it is written, as a loop's does, and its measure is walked
+                // for its own arms (an overflow inside `E`).
                 if (ck == (raw CONTRACT_DECREASES())) {
+                    x.saw_decreases = true;
                     drop reach_expr(x, ExprId{ index: cv.b }, raw REACH_DEPTH());
                 }
             }

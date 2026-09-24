@@ -1,0 +1,56 @@
+// expect-exit: 5
+// expect-obligation: stack-depth open 2
+// expect-obligation: terminate open 1
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 6
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+//
+// TWO `stack-depth` ROWS LEFT OPEN (D-305 (7), 1.5.8c step 4). `ping`/`pong`
+// state no measure at all -- legal, since a function's measure is optional
+// (D-304 (5)) and TYPE-074 asks only that a group state its measures TOGETHER --
+// so nothing bounds their depth: the group's row is `open` and no call row
+// exists. `step` states `decreases n` but recurses under `n != 0` alone, which
+// does not put `n` at or above zero: its one call row `(and (>= n 0) (< (- n 1)
+// n))` is `open`, the check stays in the verified build (and passes, since
+// `main` calls it at 2), and the group's row is `open` because a call row is.
+// D-305's stack check is the stop for both; the rows say so, honestly.
+mod:stack_depth_open;
+error:E9;
+
+func:ping = int32(int32:n) never fails {
+    if (n <= 0i32) { pass 0i32; }
+    pass (1i32 + (raw pong(n - 1i32)));
+};
+
+func:pong = int32(int32:n) never fails {
+    if (n <= 0i32) { pass 0i32; }
+    pass (1i32 + (raw ping(n - 1i32)));
+};
+
+func:step = int32(int32:n) decreases n never fails {
+    if (n == 0i32) { pass 0i32; }
+    pass (1i32 + (raw step(n - 1i32)));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:k = 3i32 + ((argv.len - 1i64) =>! int32);
+    exit ((raw ping(k)) + (raw step(2i32)));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

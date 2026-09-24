@@ -617,12 +617,6 @@ UNTESTED_CODES = {
     # OPEN -- a question, not an omission.
     "NITPICK-TYPE-023":    "open -- the C variadic tail, recorded in PROTOTYPE_DELTA",
 
-    # SCHEDULED -- D-304's codes, declared at 1.5.8c step 0 so the plan's steps
-    # land against named codes; each comes off this list in the step that arms
-    # it and writes its case (`decreases_rules.npk`: 072, 073 and 075 came off
-    # at step 1; 072's `neither` shape joins the file at step 4).
-    "NITPICK-TYPE-074":    "scheduled -- the recursive-group rule, armed at 1.5.8c step 4 with the groups",
-
     # NO RUNG LEFT (1.5.4 step 4, S-47): the last construct that rung lowered
     # and tests/rejection/ retired with it; the code and its `refuse` branch
     # stay for the next rung a cycle adds, whose test comes with it
@@ -3310,7 +3304,19 @@ def z3_verdicts(obl_dir, name, budget=None):
             return None, ["%s: a rows.txt line is not `NNNN k kind hash encoded symbol space:site role group traps tier ctx` (%d fields)" % (name, len(r))]
         if r[7] not in ROW_ROLES:
             return None, ["%s: a rows.txt row names a role the runners do not know: %r" % (name, r[7])]
-    for fno, sym, checks in idx:
+        if r[4] not in ("1", "0", "c", "d"):
+            return None, ["%s: a rows.txt row's encoded field is not 1, 0, c or d: %r" % (name, r[4])]
+    # THE INDEX'S FIVE FIELDS (D-305 (7), 1.5.8c step 4): the file's recursive
+    # group (0 for none) and whether its function states a measure -- what the
+    # `stack-depth` derivation below reads. A line of another shape fails by
+    # name (DEF-75's rule, carried to the index).
+    grp_of, meas_of = {}, {}
+    for r in idx:
+        if len(r) != 5:
+            return None, ["%s: an index.txt line is not `NNNN symbol checks group measured` (%d fields)" % (name, len(r))]
+        grp_of[r[0]] = r[3]
+        meas_of[r[0]] = (r[4] == "1")
+    for fno, sym, checks, _grp, _meas in idx:
         checks = int(checks)
         enc = [r for r in rows if r[0] == fno and r[4] == "1"]
         if len(enc) != checks:
@@ -3370,16 +3376,34 @@ def z3_verdicts(obl_dir, name, budget=None):
                 if verdict.get((fno, k)) == "budget" and a == "unsat":
                     verdict[(fno, k)] = "discharged"
                     tier2.add((fno, k))
+    # THE DERIVED ROWS (D-305 (7), 1.5.8c step 4): a `stack-depth` row (`d`)
+    # is `discharged` when its file's function states a measure (TYPE-074 makes
+    # that the whole group's) and every `terminate` row AT A CALL -- site space
+    # 0, an expression; a loop's rows are statements' -- in every file of its
+    # group is discharged, `open` otherwise. A call row left `unencoded` keeps
+    # its check and leaves the depth unproven. `npkg verify`'s twin, byte for
+    # byte.
+    for r in rows:
+        if r[4] != "d":
+            continue
+        g = grp_of.get(r[0], "0")
+        ok = meas_of.get(r[0], False) and g != "0"
+        if ok:
+            for c in rows:
+                if c[2] == "terminate" and c[6].startswith("0:") and grp_of.get(c[0]) == g:
+                    if c[4] != "1" or verdict.get((c[0], c[1])) != "discharged":
+                        ok = False
+        verdict[(r[0], r[1])] = "discharged" if ok else "open"
     full = []
     # `c` IS A ROW THE FRONTEND DECIDED (1.5.4 step 4, L-20): no answer
-    # consumed, verdict `checker`.
+    # consumed, verdict `checker`; `d` one the runners derived (above).
     # THE TIER (D-281, 1.5.4b step 3): the encoder's word for the cone's
     # theory, the eleventh field, carried into the manifest's column.
     # THE CLAUSE CONTEXT (DEF-81, 1.5.8b step 3): the twelfth field -- 0, or
     # the loop statement or return seam whose clause check holds the row's
     # guard.
     for fno, k, kind, h, encoded, sym, site, role, group, traps, tier, ctx in rows:
-        v = verdict[(fno, k)] if encoded == "1" else ("checker" if encoded == "c" else "unencoded")
+        v = verdict[(fno, k)] if encoded in ("1", "d") else ("checker" if encoded == "c" else "unencoded")
         full.append((fno, k, kind, h, v, sym, site, role, group, int(traps), "real" if (fno, k) in tier2 else tier, int(ctx)))
     return full, []
 

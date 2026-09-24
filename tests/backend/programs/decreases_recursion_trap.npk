@@ -1,0 +1,35 @@
+// expect-exit: 41
+//
+// A RECURSION WHOSE MEASURE GROWS (D-304 (5), 1.5.8c step 4): `up` states
+// `decreases n` and calls `up(n + 1)`. At the first recursive call the caller's
+// entry measure is 0 and the callee's at the argument is 1 -- not below it --
+// so the check before the call traps `DecreasesViolated` through `failsafe`,
+// 41, before the callee runs: `acc` is never written twice.
+mod:decreases_recursion_trap;
+error:E9;
+
+func:up = int32(int32:n) decreases n never fails {
+    if (n >= 4i32) { pass n; }
+    pass (raw up(n + 1i32));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:start = 0i32 + ((argv.len - 1i64) =>! int32);
+    exit (raw up(start));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

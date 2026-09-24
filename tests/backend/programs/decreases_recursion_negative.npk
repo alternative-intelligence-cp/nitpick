@@ -1,0 +1,37 @@
+// expect-exit: 42
+//
+// A RECURSION ENTERED BELOW ZERO (D-304 (5), 1.5.8c step 4): `down` states
+// `decreases n` and is called at -3; its recursive call `down(n + 1)` moves
+// TOWARD zero, but the caller's entry measure is negative, and a measure below
+// zero bounds nothing -- the check before the call traps `DecreasesViolated`
+// on `m0 >= 0` alone, through `failsafe`, 42. The check is the caller's, at the
+// call: a measured function entered below zero that makes no recursive call
+// checks nothing (nothing to bound).
+mod:decreases_recursion_negative;
+error:E9;
+
+func:down = int32(int32:n) decreases n never fails {
+    if (n == 0i32) { pass 0i32; }
+    pass (raw down(n + 1i32));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:start = (0i32 - 3i32) - ((argv.len - 1i64) =>! int32);
+    exit (raw down(start));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 42i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

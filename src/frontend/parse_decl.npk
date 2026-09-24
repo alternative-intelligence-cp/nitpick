@@ -248,6 +248,19 @@ pub func:fn_declares_pure = bool(Ast->:ast, DeclNode:d) never fails {
     }
     pass false;
 };
+// A FUNCTION'S `decreases` (D-304 (5), 1.5.8c step 4): its contract of kind
+// `decreases`, or none -- read by the recursive-group pass, the emitter and the
+// encoder at every call inside a recursive group.
+pub func:fn_measure = VerifyId(Ast->:ast, DeclNode:d) never fails {
+    int32:cn = raw fn_contract_count(ast, d);
+    for (int32:c in 0i32...cn) {
+        VerifyId:vid = raw fn_contract(ast, d, c);
+        VerifyNode:v = raw ast_verify(ast, vid);
+        if (v.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(v)) == (raw CONTRACT_DECREASES())) { pass vid; }
+    }
+    pass (VerifyId{ index: 0i32 });
+};
 pub func:fn_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) never fails {
     int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d))
                  + (raw fn_param_count(ast, d)) + (raw fn_contract_count(ast, d));

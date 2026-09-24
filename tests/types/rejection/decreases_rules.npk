@@ -1,33 +1,37 @@
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 36
+// expect-error-at: 40
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 42
+// expect-error-at: 46
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 48
+// expect-error-at: 52
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 54
+// expect-error-at: 58
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 60
+// expect-error-at: 64
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 66
+// expect-error-at: 70
 // expect-error: NITPICK-TYPE-072
-// expect-error-at: 72
+// expect-error-at: 76
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 115
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 116
 // expect-error: NITPICK-TYPE-073
-// expect-error-at: 78
+// expect-error-at: 82
 // expect-error: NITPICK-TYPE-073
-// expect-error-at: 85
+// expect-error-at: 89
 // expect-error: NITPICK-TYPE-073
-// expect-error-at: 91
-// expect-error: NITPICK-TYPE-075
 // expect-error-at: 95
+// expect-error: NITPICK-TYPE-073
+// expect-error-at: 124
 // THE TERMINATION CLAUSES' SHAPES (D-304, 1.5.8c step 1). A `while` or `when`
 // states exactly one of `decreases E` and `unbounded`, before its `invariant`;
 // `for`, `loop` and `till` are bounded by construction (D-234, D-022) and take
-// neither; the measure is a plain integer (TYPE-073); a function's measure has
-// no recursive call the compiler can see until step 4 computes the groups
-// (TYPE-075). The `neither` shape of TYPE-072 -- a `while` with no clause --
-// is accepted until the tree is swept (D-304 (6), step 4), so the two clean
-// loops at the end are accepted here and refused there.
+// neither; the measure is a plain integer (TYPE-073); a function's measure on a
+// function whose recursive group has no cycle checks nothing (TYPE-075, since
+// step 4 computes the groups). The `neither` shape of TYPE-072 -- a `while` or
+// a `when` with no clause -- is refused since the tree was swept (D-304 (6),
+// 1.5.8c steps 3 and 4): the two loops at the end.
 mod:decreases_rules;
 error:E9;
 
@@ -92,17 +96,32 @@ func:twisted_measure = tbb32(tbb32:t0) never fails {
     pass t;
 };
 
-func:count_down = int32(int32:n) decreases n never fails {   // ERR:075
+// ACCEPTED since step 4 (the groups): `count_down` calls itself, so its measure has
+// a call to be compared at. A measure on a function whose group has no cycle is
+// TYPE-075, in `decreases_no_recursion.npk` -- the group pass runs only over a
+// program the checker admitted, so that shape cannot share a file with these.
+func:count_down = int32(int32:n) decreases n never fails {
     if (n <= 0i32) { pass 0i32; }
     pass (raw count_down(n - 1i32));
 };
 
 // ACCEPTED: one clause each, before the invariant, on the two loop forms that
-// take one -- and a `while` with neither, until step 4.
+// take one. REFUSED since step 4 (the tree swept at step 3): a `while` or a
+// `when` with NEITHER clause -- the last shape of TYPE-072.
 func:clean = int32(int32:n) never fails {
     int32:i = 0i32;
     while (i < n) decreases n - i invariant i >= 0i32 { i = i + 1i32; }
     when (i > 0i32) unbounded { i = i - 1i32; }
-    while (i < 3i32) { i = i + 1i32; }
+    while (i < 3i32) { i = i + 1i32; }                    // ERR:072 (neither)
+    when (i > 0i32) { i = i - 1i32; }                     // ERR:072 (neither)
     pass i;
+};
+
+// TYPE-073 (1.5.8c step 4): a FUNCTION's measure is at most 64 bits wide --
+// every member of a recursive group compares its measure against the others'
+// in one signed 128-bit domain at each call, and `int128` does not fit it. A
+// loop's measure keeps its own width: it compares only with itself.
+func:wide = int32(int128:n) decreases n never fails {   // ERR:073
+    if (n <= 0i128) { pass 0i32; }
+    pass (raw wide(n - 1i128));
 };

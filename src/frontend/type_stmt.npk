@@ -977,10 +977,19 @@ pub func:check_proposition = NIL(ExprTyper->:e, ExprId:c, int32:ctx) never fails
 // `intN`/`uintN` can be one -- a float rounds, a twisted kind carries ERR, a
 // `bool` has no order. Typed under CTX_DECREASES, so a contract's rules
 // (TYPE-060) hold of it: nothing that fails, suspends, moves or stores.
-// A `while`/`when` with NO clause is accepted until 1.5.8c step 4 (D-304 (6)):
-// the tree is swept first, then the `neither` shape joins TYPE-072.
+// A `while`/`when` with NO clause is TYPE-072 too, since 1.5.8c step 4 (D-304
+// (6): the tree was swept at step 3, then the `neither` shape joined).
 pub func:check_measure = NIL(ExprTyper->:e, VerifyId:m, bool:bounded_form, string:form, Span:at) never fails {
-    if (raw verify_is_none(m)) { pass NIL; }
+    if (raw verify_is_none(m)) {
+        // THE `neither` SHAPE (D-304 (4), (6); live since 1.5.8c step 4, the tree
+        // swept at step 3): a `while`/`when` says why it ends, or that it may not.
+        if (!bounded_form) {
+            discard(raw te_error(e, raw TYPE_LOOP_CLAUSE(),
+                "a `while`/`when` states why it ends (D-304): `decreases E`, a whole number that shrinks on every trip and never goes below zero, or `unbounded` -- the acknowledgment that it may not, with the reason on the line above",
+                at));
+        }
+        pass NIL;
+    }
     VerifyNode:v = raw ast_verify(e.ast, m);
     if (bounded_form) {
         discard(raw te_error(e, raw TYPE_LOOP_CLAUSE(),
@@ -2732,8 +2741,8 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
             // measure over the parameters, a plain integer (TYPE-073), typed
             // under the measure context; one at most (TYPE-072); none on
             // `main`/`failsafe` (D-244). And, until step 4 computes the
-            // recursive groups, EVERY function measure is TYPE-075: the
-            // compiler sees no recursive call of this function to check it at.
+            // recursive groups (1.5.8c step 4, `analysis/recursion.npk`), which
+            // report TYPE-074 and TYPE-075 -- the checker only types the measure.
             if (ck == (raw CONTRACT_DECREASES())) {
                 fn_measures = fn_measures + 1i32;
                 if (e.fn_terminal) {
@@ -2746,11 +2755,28 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
                             "a function states `decreases` at most once (D-304): a second measure would compare against which?",
                             ccv.span));
                     } else {
-                        int32:mt = raw check_measure_expr(e, raw contract_cond(ccv));
-                        if (mt != 0i32) {
-                            discard(raw te_error(e, raw TYPE_MEASURE_NO_RECURSION(),
-                                "`decreases` on a function the compiler sees no recursive call of checks nothing (D-304): the measure is compared at a call inside the function's recursive group, and there is none -- until 1.5.8c step 4 computes the groups, every function measure is refused here; a loop's `decreases` is checked today",
-                                ccv.span));
+                        // TYPED HERE; JUDGED BY THE GROUPS (1.5.8c step 4): a measure on a
+                        // function whose recursive group has no cycle is TYPE-075, and a
+                        // cyclic group with a measure on some member and none on another
+                        // is TYPE-074 -- both reported by `analysis/recursion.npk`, which
+                        // computes the groups after every body is typed.
+                        int32:fmt = raw check_measure_expr(e, raw contract_cond(ccv));
+                        // AT MOST 64 BITS WIDE (1.5.8c step 4): a function's measure is
+                        // compared against the OTHER members' at every call inside the
+                        // group -- `m1 < m0` across two declarations whose measures may
+                        // differ in width and sign -- so the predicates widen every
+                        // measure into one signed 128-bit domain, which holds every
+                        // plain integer of at most 64 bits exactly and nothing wider.
+                        // A loop's measure compares only with itself and keeps its
+                        // own width (any width, the prelude's `uint2048` loops among
+                        // them).
+                        if (fmt != 0i32) {
+                            if ((raw type_int_bits(e.types, fmt)) > 64i32) {
+                                ExprNode:fmn = raw ast_expr(e.ast, raw contract_cond(ccv));
+                                discard(raw te_error(e, raw TYPE_MEASURE_KIND(),
+                                    "a function's `decreases` measure is at most 64 bits wide (D-304): every member of a recursive group compares its measure against the others' in one signed 128-bit domain at each call inside the group, and a wider width does not fit it",
+                                    fmn.span));
+                            }
                         }
                     }
                 }

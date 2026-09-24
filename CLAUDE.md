@@ -1201,7 +1201,7 @@ where it was 250, and nothing else moved.
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
-(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`), `decreases`/`unbounded` with the
+(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`; step 4 landed 2026-09-24: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`) with TYPE-074/075, a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners, DEF-92 found by measuring the sweep's cost), `decreases`/`unbounded` with the
 `terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
@@ -2261,14 +2261,34 @@ that carried them retired at the cycle close):
   (TYPE-073), checked at the top of the body each time the condition holds --
   below zero (signed) or not below the previous trip traps `DecreasesViolated`,
   so a program with a `decreases` names `(DecreasesViolated)`. A loop with NO
-  clause is accepted until step 4 sweeps the tree; a function's `decreases` is
-  TYPE-075 until the same step computes the recursive groups. The `terminate`
+  clause is TYPE-072 since step 4 (the tree was swept at step 3). The `terminate`
   rows (entry, preservation, one per `continue`) discharge a counter loop's
   measure; a verify test names them (`expect-obligation: terminate discharged N`).
-- **The frame roles 42 and 43 are the measure's** (1.5.8c step 1): a
-  coroutine's `while`/`when` with a checked `decreases` keeps the previous
-  measure and the first-visit flag in the frame. Roles in use on a statement:
-  0–7+, 20–25, 30+k (channel stashes), 41 (join mark), 42/43, 60+k (`old`).
+- **The frame roles 42, 43 and 44 are the measures'** (1.5.8c steps 1 and 4):
+  a coroutine's `while`/`when` with a checked `decreases` keeps the previous
+  measure and the first-visit flag in the frame (42, 43), and a coroutine of a
+  recursive group that states a measure keeps its entry measure `m0` at role
+  44 on the body's block. Roles in use on a statement: 0–7+, 20–25, 30+k
+  (channel stashes), 41 (join mark), 42/43/44, 60+k (`old`).
+- **A FUNCTION's `decreases` is checked at every call inside its recursive
+  group** (D-304 (5), 1.5.8c step 4): `func:fact = int32(int32:n) decreases n
+  never fails { … }` -- the clause among the contracts, before `never fails`.
+  The groups are Tarjan over the checker's recorded calls (a `dyn` or a
+  function-value call is no edge), so a measure on a function nobody in its
+  group calls back is TYPE-075, a cyclic group with a measure on some member
+  and none on another is TYPE-074, and a function measure wider than 64 bits
+  is TYPE-073 (the members' measures compare in one `i128`; a loop's keeps
+  any width). The check is `m0 >= 0 && m1 < m0` before the call -- the callee's
+  measure over the arguments against the caller's at entry, through the
+  generated `<sym>.measure` predicate -- so a call under `n > 0` with `n - 1`
+  discharges its `terminate` row and a call under `n != 0` alone does not
+  (`m0 >= 0` is open). A recursive call inside a `requires` clause is not
+  checked (the predicate has no snapshot) and its row is `unencoded` with no
+  trap. The `stack-depth` row (kind 13, `d` in `rows.txt`) is DERIVED by both
+  runners after all files are decided -- one per cyclic group, `discharged`
+  iff the group is measured and every call row discharged -- and `index.txt`
+  has FIVE fields now (`NNNN symbol checks group measured`): a planted
+  obligations directory (a self-check case, a tool) must write all five.
 - **Every `while`/`when` in the tree states its clause, and a new one must**
   (1.5.8c step 3; TYPE-072's `neither` shape refuses from step 4). Write the
   measure with the loop: a counter's `bound - i`, a scan's bytes left

@@ -4,13 +4,21 @@
 // import the emitter; the walk that fills it is `smt_obligations.npk`.
 //
 //   <dir>/NNNN.smt2   one per function with obligations, in emission order
-//   <dir>/index.txt   NNNN<TAB>symbol<TAB>checks
+//   <dir>/index.txt   NNNN<TAB>symbol<TAB>checks<TAB>group<TAB>measured
 //   <dir>/rows.txt    NNNN<TAB>k<TAB>kind<TAB>hash<TAB>encoded<TAB>symbol<TAB>space:site<TAB>role<TAB>group<TAB>traps<TAB>tier<TAB>ctx
 //
 // `encoded` is `1` for a row with a `(check-sat)`, `0` for an `unencoded`
-// row, and `c` for a row THE FRONTEND DECIDED (1.5.4 step 4, L-20): an
+// row, `c` for a row THE FRONTEND DECIDED (1.5.4 step 4, L-20): an
 // `exhaustive` row at a `pick` (the 0.5 analysis refused every uncovered
-// one), an `assert-static` row (the fold) -- no query, verdict `checker`.
+// one), an `assert-static` row (the fold) -- no query, verdict `checker` --
+// and `d` for a row THE RUNNERS DERIVE (D-305 (7), 1.5.8c step 4): a
+// `stack-depth` row, one per recursive group with a cycle, whose verdict is
+// read off the group's `terminate` call rows once every file is decided.
+// `index.txt`'s fourth column is the file's function's recursive group (0 for
+// none, or one with no cycle) and its fifth whether that function states a
+// `decreases` (`1`/`0`) -- the two facts the derivation reads; the floor's
+// writer (npkg/floor.npk) writes `0 0`, as its symbols recurse through no
+// group the compiler computes.
 //
 // The next four (1.5.3 step 2, L-13): the site's id space and index, the
 // row's role (`guard`, `bypass`, `held`, `conform`), the group of rows one
@@ -46,6 +54,8 @@ pub struct:ObTable = {
     List<string>:files;      // each function's .smt2 text, in emission order
     List<string>:file_syms;  // its symbol
     List<int64>:file_checks; // its `(check-sat)` count
+    List<int32>:file_groups;   // its function's cyclic recursive group, 0 for none (1.5.8c step 4)
+    List<bool>:file_measured;  // whether its function states `decreases`
     // A ROW'S LINE IN FOUR PIECES (DEF-82, 1.5.8b step 5). A `defer` body is
     // written ONCE PER EXIT that runs it and the walk records its guards once,
     // so a row inside one keeps the traps of ONE copy and the count of the
@@ -66,6 +76,10 @@ pub struct:ObTable = {
     int64:encoded_rows;      // totals for the driver's report line
     int64:unencoded_rows;
     int64:checker_rows;
+    int64:derived_rows;      // the `d` rows (1.5.8c step 4)
+    // THE GROUPS WITH A `stack-depth` ROW (D-305 (7), 1.5.8c step 4): one row
+    // per cyclic group, in the first member instance the emission reaches.
+    List<int32>:sd_groups;
 };
 
 pub func:obtable_init = ObTable(bool:want_files) never fails {
@@ -77,6 +91,9 @@ pub func:obtable_init = ObTable(bool:want_files) never fails {
                   files: raw list_init::<string>(16i64),
                   file_syms: raw list_init::<string>(16i64),
                   file_checks: raw list_init::<int64>(16i64),
+                  file_groups: raw list_init::<int32>(16i64),
+                  file_measured: raw list_init::<bool>(16i64),
+                  sd_groups: raw list_init::<int32>(4i64),
                   rows: raw list_init::<string>(32i64),
                   row_traps: raw list_init::<int32>(32i64),
                   row_defer: raw list_init::<int32>(32i64),
@@ -86,7 +103,8 @@ pub func:obtable_init = ObTable(bool:want_files) never fails {
                   t2_names: raw list_init::<string>(4i64),
                   t2_texts: raw list_init::<string>(4i64),
                   t2_index: raw list_init::<string>(4i64),
-                  encoded_rows: 0i64, unencoded_rows: 0i64, checker_rows: 0i64 };
+                  encoded_rows: 0i64, unencoded_rows: 0i64, checker_rows: 0i64,
+                  derived_rows: 0i64 };
 };
 
 // `NNNN`, four digits, 1-based.
@@ -109,6 +127,10 @@ pub func:obl_index_text = string(ObTable->:t) never fails {
         drop sink_write(@s, string_from_bytes(t.file_syms[i].ptr, t.file_syms[i].len));
         drop sink_write(@s, "\t");
         drop sink_write(@s, int_to_string(t.file_checks[i]));
+        drop sink_write(@s, "\t");
+        drop sink_write(@s, int_to_string(t.file_groups[i] => int64));
+        drop sink_write(@s, "\t");
+        if (t.file_measured[i]) { drop sink_write(@s, "1"); } else { drop sink_write(@s, "0"); }
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));
@@ -185,6 +207,8 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
     List<string>:files = raw list_init::<string>(t.files.count + 1i64);
     List<string>:fsyms = raw list_init::<string>(t.files.count + 1i64);
     List<int64>:fchecks = raw list_init::<int64>(t.files.count + 1i64);
+    List<int32>:fgroups = raw list_init::<int32>(t.files.count + 1i64);
+    List<bool>:fmeasured = raw list_init::<bool>(t.files.count + 1i64);
     for (int64:i in 0i64...t.files.count) {
         string:sym = string_from_bytes(t.file_syms[i].ptr, t.file_syms[i].len);
         if (!(raw sym_held(defs, sym))) { continue; }
@@ -193,6 +217,8 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
         drop list_push(@files, move(t.files[i]));
         drop list_push(@fsyms, move(t.file_syms[i]));
         drop list_push(@fchecks, t.file_checks[i]);
+        drop list_push(@fgroups, t.file_groups[i]);
+        drop list_push(@fmeasured, t.file_measured[i]);
     }
     // a line `NNNN<TAB>...`: renumbered when its file is kept, dropped when not
     // -- with the four pieces of DEF-82's row travelling together.
@@ -204,6 +230,7 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
     t.encoded_rows = 0i64;
     t.unencoded_rows = 0i64;
     t.checker_rows = 0i64;
+    t.derived_rows = 0i64;
     for (int64:r in 0i64...t.rows.count) {
         string:ln = string_from_bytes(t.rows[r].ptr, t.rows[r].len);
         if (ln.len < 5i64) { continue; }
@@ -212,7 +239,7 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
             if (raw string_eq(string_from_bytes(olds[k].ptr, olds[k].len), fno)) {
                 string:nl = string_concat(string_from_bytes(news[k].ptr, news[k].len),
                                           string_slice(ln, 4i64, ln.len) ?| "");
-                // the fifth field is `encoded`: 1, 0 or c
+                // the fifth field is `encoded`: 1, 0, c or d
                 int64:tabs = 0i64;
                 int64:p = 0i64;
                 while ((p < nl.len) && (tabs < 4i64)) decreases nl.len - p { if (nl.ptr[p] == 9u8) { tabs = tabs + 1i64; } p = p + 1i64; }
@@ -220,6 +247,7 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
                     if (nl.ptr[p] == 49u8) { t.encoded_rows = t.encoded_rows + 1i64; }
                     if (nl.ptr[p] == 48u8) { t.unencoded_rows = t.unencoded_rows + 1i64; }
                     if (nl.ptr[p] == 99u8) { t.checker_rows = t.checker_rows + 1i64; }
+                    if (nl.ptr[p] == 100u8) { t.derived_rows = t.derived_rows + 1i64; }
                 }
                 drop list_push(@rows, move(nl));
                 drop list_push(@rtraps, t.row_traps[r]);
@@ -258,6 +286,8 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
     t.files = move(files);
     t.file_syms = move(fsyms);
     t.file_checks = move(fchecks);
+    t.file_groups = move(fgroups);
+    t.file_measured = move(fmeasured);
     t.rows = move(rows);
     t.row_traps = move(rtraps);
     t.row_defer = move(rdefer);

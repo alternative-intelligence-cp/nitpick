@@ -55,6 +55,12 @@ use "./floor_model.npk".*;
 // this reader skipped it in silence, so a row could vanish from one runner's
 // belts and not the other's.
 pub error:ERowsMalformed;
+// AN `index.txt` LINE THE RUNNERS CANNOT READ (1.5.8c step 4): not the
+// five-field line `NNNN symbol checks group measured` -- the fourth and fifth
+// fields (the file's recursive group, whether its function states a measure)
+// are what the `stack-depth` derivation reads. This reader skipped a line of
+// another shape in silence until then (DEF-75's rule, carried to the index).
+pub error:EIndexMalformed;
 
 // One row of rows.txt, with its verdict once decided.
 pub struct:VRow = {
@@ -66,6 +72,7 @@ pub struct:VRow = {
     string:symbol;
     int32:verdict;      // OV_* (0 until decided)
     bool:checker;       // a `c` row: the frontend decided it (1.5.4 step 4, L-20)
+    bool:derived;       // a `d` row: the runners derive it (D-305 (7), 1.5.8c step 4) -- a `stack-depth` row
     // THE SITE, THE ROLE, THE GROUP, THE TRAPS (1.5.3 step 2, L-13): the
     // site's `space:index`; `guard`, `bypass`, `held` or `conform`; the rows
     // one guard shares; the traps that guard keeps while any of them is
@@ -136,11 +143,14 @@ pub func:read_rows = List<VRow>(string:dir) {
         Result<int64>:cx = text_int(raw strlist_view(f, 11i64));
         if (cx.is_error) { fail ERowsMalformed; }
         if ((raw role_of_name(raw strlist_view(f, 7i64))) < 0i32) { fail ERowsMalformed; }
+        string:encf = raw strlist_view(f, 4i64);
+        if (!((raw text_eq(encf, "1")) || (raw text_eq(encf, "0")) || (raw text_eq(encf, "c")) || (raw text_eq(encf, "d")))) { fail ERowsMalformed; }
         VRow:r = VRow{ fno: raw strlist_copy(f, 0i64), k: k.value,
                        kind: raw strlist_copy(f, 2i64), hash: raw strlist_copy(f, 3i64),
                        encoded: raw text_eq(raw strlist_view(f, 4i64), "1"),
                        symbol: raw strlist_copy(f, 5i64), verdict: 0i32,
                        checker: raw text_eq(raw strlist_view(f, 4i64), "c"),
+                       derived: raw text_eq(raw strlist_view(f, 4i64), "d"),
                        site: raw strlist_copy(f, 6i64), role: raw strlist_copy(f, 7i64),
                        group: grp.value, traps: trp.value, tier: raw strlist_copy(f, 10i64),
                        ctx: cx.value };
@@ -149,7 +159,9 @@ pub func:read_rows = List<VRow>(string:dir) {
     pass rows;
 };
 
-pub struct:VFile = { string:fno; string:symbol; int64:checks; };
+pub struct:VFile = { string:fno; string:symbol; int64:checks;
+                     int64:group;      // the file's function's cyclic recursive group, 0 for none (1.5.8c step 4)
+                     bool:measured; }; // whether that function states `decreases`
 
 pub func:read_index = List<VFile>(string:dir) {
     List<VFile>:files = raw list_init::<VFile>(16i64);
@@ -162,10 +174,15 @@ pub func:read_index = List<VFile>(string:dir) {
         string:ln = raw strlist_view(lines, i);
         if (ln.len == 0i64) { continue; }
         List<string>:f = raw split_tabs(ln);
-        if (f.count != 3i64) { continue; }
+        if (f.count != 5i64) { fail EIndexMalformed; }
         Result<int64>:n = text_int(raw strlist_view(f, 2i64));
-        if (n.is_error) { continue; }
-        VFile:v = VFile{ fno: raw strlist_copy(f, 0i64), symbol: raw strlist_copy(f, 1i64), checks: n.value };
+        if (n.is_error) { fail EIndexMalformed; }
+        Result<int64>:g = text_int(raw strlist_view(f, 3i64));
+        if (g.is_error) { fail EIndexMalformed; }
+        string:mf = raw strlist_view(f, 4i64);
+        if (!((raw text_eq(mf, "1")) || (raw text_eq(mf, "0")))) { fail EIndexMalformed; }
+        VFile:v = VFile{ fno: raw strlist_copy(f, 0i64), symbol: raw strlist_copy(f, 1i64), checks: n.value,
+                         group: g.value, measured: raw text_eq(mf, "1") };
         drop list_push(@files, move(v));
     }
     pass files;
@@ -408,8 +425,42 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
     for (int64:ri2 in 0i64...rows.count) {
         if (!(<-rows)[ri2].encoded) {
             if ((<-rows)[ri2].checker) { (<-rows)[ri2].verdict = raw OV_CHECKER(); }
-            else { (<-rows)[ri2].verdict = raw OV_UNENCODED(); }
+            else { if (!(<-rows)[ri2].derived) { (<-rows)[ri2].verdict = raw OV_UNENCODED(); } }
         }
+    }
+    // THE DERIVED ROWS (D-305 (7), 1.5.8c step 4): a `stack-depth` row is
+    // `discharged` when its file's function states a measure (TYPE-074 makes
+    // that the whole group's) and every `terminate` row AT A CALL -- site space
+    // 0, an expression; a loop's rows are statements' -- in every file of its
+    // group is discharged, `open` otherwise. A call row left `unencoded` keeps
+    // its check and leaves the depth unproven. The harness's rule, byte for byte.
+    for (int64:di in 0i64...rows.count) {
+        if (!(<-rows)[di].derived) { continue; }
+        string:dfno = string_from_bytes((<-rows)[di].fno.ptr, (<-rows)[di].fno.len);
+        int64:dgroup = 0i64;
+        bool:dmeasured = false;
+        for (int64:df in 0i64...files.count) {
+            if (raw text_eq(string_from_bytes(files[df].fno.ptr, files[df].fno.len), dfno)) {
+                dgroup = files[df].group;
+                dmeasured = files[df].measured;
+            }
+        }
+        bool:ok = dmeasured && (dgroup != 0i64);
+        if (ok) {
+            for (int64:ci in 0i64...rows.count) {
+                if (!(raw text_eq(string_from_bytes((<-rows)[ci].kind.ptr, (<-rows)[ci].kind.len), "terminate"))) { continue; }
+                if (!(raw text_starts_with(string_from_bytes((<-rows)[ci].site.ptr, (<-rows)[ci].site.len), "0:"))) { continue; }
+                string:cfno = string_from_bytes((<-rows)[ci].fno.ptr, (<-rows)[ci].fno.len);
+                int64:cgroup = 0i64;
+                for (int64:cf in 0i64...files.count) {
+                    if (raw text_eq(string_from_bytes(files[cf].fno.ptr, files[cf].fno.len), cfno)) { cgroup = files[cf].group; }
+                }
+                if (cgroup != dgroup) { continue; }
+                if (!(<-rows)[ci].encoded) { ok = false; }
+                if ((<-rows)[ci].verdict != (raw OV_DISCHARGED())) { ok = false; }
+            }
+        }
+        if (ok) { (<-rows)[di].verdict = raw OV_DISCHARGED(); } else { (<-rows)[di].verdict = raw OV_OPEN(); }
     }
     pass NIL;
 };
