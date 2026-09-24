@@ -1743,9 +1743,22 @@ and `tests/modules/rejection/rules_private.npk` (a rule without `pub` refused at
 RESOLVE-003). The lesson of D-227 again: a fact read from a slot that means something else
 is not absent, it is false, and a coincidence keeps it true for as long as it likes.
 
-**DEF-92 — OPEN (found 2026-09-24 by `nitpick-compiler_s13`, measuring 1.5.8c step 3's cost): THE
-GENERIC-INSTANCE INTERNER `tt_instance` IS A LINEAR SCAN OVER THE WHOLE TYPE TABLE, AND IT IS
-85% OF THE FRONTEND'S INSTRUCTIONS.**
+**DEF-92 — FIXED at 1.5.8c step 4b (found 2026-09-24 by `nitpick-compiler_s13`, measuring 1.5.8c
+step 3's cost): THE GENERIC-INSTANCE INTERNER `tt_instance` WAS A LINEAR SCAN OVER THE WHOLE
+TYPE TABLE, AND IT WAS 85% OF THE FRONTEND'S INSTRUCTIONS.**
+THE FIX (step 4b, the same day): an instance index in the type table beside `tt_intern`'s --
+every struct and enum item under the hash of (kind, declaration, argument count, argument ids),
+open addressing rebuilt at half load, entered in id order and never overwriting, so the first
+equal item along a probe is the earliest, which is what the scan answered; a `tt_struct`/
+`tt_enum` item (no arguments) is entered by `tt_intern` under its head's hash, an instance with
+arguments by `tt_instance`, the one creator of windowed instances; the hash is kept per item so
+a rebuild needs no AST, and a `held` flag says which items the index holds (a hash is no
+sentinel, DEF-69). MEASURED, the same alternating A/B under the same load (two full harnesses
+and two builds running): the checker over `src/npkc.npk` 137.1 / 136.7 s with the scan (step
+4's tree) against 25.1 / 25.2 s with the index -- 5.4x; every program's emission byte-identical
+between the two compilers (the index answers exactly what the scan answered, so no type id
+moved). The lesson stands with 1.5.2d's: a per-program cost that reads as "the new feature's"
+is measured first, and the third linear scan of the type table fell where the first two had.
 Measured first, as the rule says: the checker (`tools/check.npk`, built by the same builder from
 step 2's tree and from the swept tree) over `src/npkc.npk`, twice each, alternating, under the
 same two-harness load -- 73.3 / 74.7 s before the sweep, 94.5 / 94.8 s after (user time; the

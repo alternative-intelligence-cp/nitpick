@@ -17407,6 +17407,18 @@ decided 168 functions to emit 14: 260 of its 267 seconds went to one
 unreferenced function. No hash or verdict moves, and the compiler's own
 manifest drops exactly the rows of the prelude functions it does not reference.
 
+> **Note (2026-09-24, 1.5.8c step 4b — DEF-92):** the type table and the interner
+> gained hash indexes at 1.5.2d, and a THIRD linear scan stood beside them until
+> this step: `tt_instance`, the generic-instance interner, walked every item of
+> the table on every call — keyed on the arguments' CONTENTS, which the slot
+> index cannot answer — and `callgrind` put 85% of the checker's instructions in
+> it, reached through `struct_field` from the escape analysis at every field
+> read on a generic instance. It has its own index now (`inst_index`,
+> `types.npk`); the checker over `src/npkc.npk` runs 5.4x faster under the same
+> load and every program's emission is byte-identical, the index answering
+> exactly what the scan answered. Found by measuring 1.5.8c step 3's cost, as
+> §1's rule asks.
+
 ## D-263 — the prelude's `List<T>` stores through the managed heap's untracked entry; D-151 keeps counting every `wild` block — **SETTLED (user decision, 2026-09-05: "i am fine with your recommendation"; OPEN_DECISIONS S-39; lands at 1.5.2e step 1)**
 
 Found at 1.5.2d's close writing `generic_move_out.npk`: an owning `List<T>`

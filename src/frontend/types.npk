@@ -267,6 +267,23 @@ pub struct:TypeTable = {
     // compile); a type's identity is still what it IS, found in one probe.
     List<int32>:index;
     int32:index_mask;
+    // THE INSTANCE INDEX (DEF-92, 1.5.8c step 4b): an instance's identity is
+    // its declaration and its arguments' CONTENTS (1.0.7, `tt_instance`), never
+    // its window's start, so the index above -- keyed on the slots -- cannot
+    // answer it, and until this step `tt_instance` walked every item of the
+    // table: 85% of the checker's instructions. This one holds every struct
+    // and enum item under the hash of (kind, declaration, argument count, the
+    // argument ids), open addressing in a power-of-two table, rebuilt at half
+    // load, entered in id order and never overwriting -- so the first equal
+    // item along a probe is the earliest, which is what the scan answered, and
+    // no type id moves. `inst_hash` keeps each held item's key hash so a
+    // rebuild needs no AST; `inst_held` says which items the index holds (a
+    // hash can be any value, so no hash is a sentinel -- DEF-69).
+    List<int32>:inst_index;
+    int32:inst_mask;
+    List<int64>:inst_hash;
+    List<bool>:inst_held;
+    int64:inst_count;
 };
 
 // --- construction ----------------------------------------------------------------------
@@ -370,8 +387,130 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     drop list_push(@t.haschan, 0i32);
     drop list_push(@t.hasborrow, 0i32);
     drop list_push(@t.hasshared, 0i32);
+    // ... and the instance index's two (DEF-92, 1.5.8c step 4b): not held, hash 0
+    // -- the flag is what says so, never the hash.
+    drop list_push(@t.inst_hash, 0i64);
+    drop list_push(@t.inst_held, false);
     t.index[slot] = id;
+    // A STRUCT OR ENUM WITH NO ARGUMENTS (`tt_struct`, `tt_enum`: `b` 0, `c` 0)
+    // is entered here under its head's hash, which needs no AST; an instance
+    // with arguments is entered by `tt_instance`, the one creator of windowed
+    // instances, which computed the hash over its ids.
+    if ((c == 0i32) && ((kind == (raw TY_STRUCT())) || (kind == (raw TY_ENUM())))) {
+        drop tt_inst_enter(t, id, (raw tt_inst_hash_head(kind, a, 0i32)) =>! int64);
+    }
     pass id;
+};
+
+// --- the instance index (DEF-92, 1.5.8c step 4b) -------------------------------------------
+
+// The hash of an instance key's head -- kind, declaration, argument count --
+// through the tree's own FNV step; the arguments' ids follow it in
+// `tt_inst_hash`. A key with no arguments hashes to its head alone, so the
+// two agree on a `tt_struct` item queried with an empty window.
+func:tt_inst_hash_head = uint64(int32:kind, int32:decl, int32:argc) never fails {
+    uint64:h = raw fnv1a_seed();
+    h = raw fnv1a_step(h, kind =>! uint64);
+    h = raw fnv1a_step(h, decl =>! uint64);
+    h = raw fnv1a_step(h, argc =>! uint64);
+    pass h;
+};
+
+func:tt_inst_hash = int64(Ast->:ast, int32:kind, int32:decl, int32:arg_start,
+                          int32:argc) never fails {
+    uint64:h = raw tt_inst_hash_head(kind, decl, argc);
+    for (int32:k in 0i32...argc) {
+        h = raw fnv1a_step(h, (raw ast_id_at(ast, arg_start, k)) =>! uint64);
+    }
+    pass (h =>! int64);
+};
+
+// The table emptied to a capacity (a power of two, at least 16): every slot -1.
+func:tt_inst_reset = NIL(TypeTable->:t, int64:cap) never fails {
+    int64:c = 16i64;
+    while (c < cap) decreases cap - c { c = c * 2i64; }
+    drop list_clear(@t.inst_index);   // an int32 list: truncating drops nothing
+    drop list_reserve(@t.inst_index, c);
+    int64:i = 0i64;
+    while (i < c) decreases c - i { drop list_push(@t.inst_index, 0i32 - 1i32); i = i + 1i64; }
+    t.inst_mask = (c - 1i64) =>! int32;
+    pass NIL;
+};
+
+// The first empty slot along a hash's probe: where a NEW item goes (the caller
+// looked for an equal one first, or knows the item is new by `tt_intern`'s own
+// key). Bounded by the table, which is grown before it fills.
+func:tt_inst_empty_slot = int64(TypeTable->:t, int64:h) never fails {
+    int64:mask = t.inst_mask => int64;
+    int64:slot = h & mask;
+    int64:probes = 0i64;
+    while (t.inst_index[slot] >= 0i32) decreases (mask + 1i64) - probes {
+        slot = (slot + 1i64) & mask;
+        probes = probes + 1i64;
+    }
+    pass slot;
+};
+
+// AT HALF LOAD THE TABLE DOUBLES and every held item is re-entered from its
+// kept hash, in id order -- the earliest of equal contents first along any
+// probe, as the scan found it.
+func:tt_inst_grow_if_needed = NIL(TypeTable->:t) never fails {
+    int64:cap = t.inst_index.count;
+    if (((t.inst_count + 1i64) * 2i64) <= cap) { pass NIL; }
+    drop tt_inst_reset(t, cap * 2i64);
+    int64:i = 0i64;
+    while (i < t.items.count) decreases t.items.count - i {
+        if (t.inst_held[i]) {
+            int64:slot = raw tt_inst_empty_slot(t, t.inst_hash[i]);
+            t.inst_index[slot] = i =>! int32;
+        }
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// An item enters the index once, under its key's hash.
+func:tt_inst_enter = NIL(TypeTable->:t, int32:id, int64:h) never fails {
+    if (t.inst_held[id => int64]) { pass NIL; }
+    t.inst_hash[id => int64] = h;
+    t.inst_held[id => int64] = true;
+    drop tt_inst_grow_if_needed(t);
+    int64:slot = raw tt_inst_empty_slot(t, h);
+    t.inst_index[slot] = id;
+    t.inst_count = t.inst_count + 1i64;
+    pass NIL;
+};
+
+// THE LOOKUP: the id of the first item whose kind, declaration, argument count
+// and argument ids equal the key's -- the hash filters, the contents decide,
+// read through the AST as the scan read them -- or -1 at the empty slot the
+// key's probe ends in.
+func:tt_inst_find = int32(TypeTable->:t, Ast->:ast, int64:h, int32:kind, int32:decl,
+                          int32:arg_start, int32:argc) never fails {
+    int64:mask = t.inst_mask => int64;
+    int64:slot = h & mask;
+    int64:probes = 0i64;
+    bool:searching = true;
+    int32:found = 0i32 - 1i32;
+    while (searching) decreases (mask + 1i64) - probes {
+        int32:e = t.inst_index[slot];
+        if (e < 0i32) { searching = false; }
+        else {
+            if (t.inst_hash[e => int64] == h) {
+                Type:x = t.items[e => int64];
+                if ((x.kind == kind) && (x.a == decl) && (x.c == argc)) {
+                    bool:same = true;
+                    for (int32:k in 0i32...argc) {
+                        if ((raw ast_id_at(ast, x.b, k)) != (raw ast_id_at(ast, arg_start, k))) { same = false; }
+                    }
+                    if (same) { found = e; searching = false; }
+                }
+            }
+            if (searching) { slot = (slot + 1i64) & mask; }
+        }
+        probes = probes + 1i64;
+    }
+    pass found;
 };
 
 // A LAYOUT IS WRITTEN IN PLACE, NEVER RE-INTERNED.
@@ -1129,30 +1268,16 @@ pub func:tt_enum = int32(TypeTable->:t, int32:decl, int32:name,
 pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
                              int32:name, int32:arg_start, int32:arg_count,
                              int64:size, int32:align) never fails {
-    int32:i = 0i32;
-    while ((i => int64) < t.items.count) decreases t.items.count - (i => int64) {
-        Type:e = t.items[i => int64];
-        if (e.kind == kind) {
-            if (e.a == decl) {
-                if (e.c == arg_count) {
-                    bool:same = true;
-                    int32:k = 0i32;
-                    while (k < arg_count) decreases arg_count - k {
-                        if ((raw ast_id_at(ast, e.b, k))
-                                != (raw ast_id_at(ast, arg_start, k))) {
-                            same = false;
-                            k = arg_count;
-                        } else {
-                            k = k + 1i32;
-                        }
-                    }
-                    if (same) { pass i; }
-                }
-            }
-        }
-        i = i + 1i32;
-    }
-    pass (raw tt_intern(t, kind, decl, arg_start, arg_count, size, align, name));
+    // ONE PROBE (DEF-92, 1.5.8c step 4b) where a scan of every type stood: the
+    // key is what the scan compared -- kind, declaration, argument count and
+    // the arguments' ids -- and the first equal item along the probe is the
+    // earliest, as the scan's was.
+    int64:h = raw tt_inst_hash(ast, kind, decl, arg_start, arg_count);
+    int32:found = raw tt_inst_find(t, ast, h, kind, decl, arg_start, arg_count);
+    if (found >= 0i32) { pass found; }
+    int32:id = raw tt_intern(t, kind, decl, arg_start, arg_count, size, align, name);
+    drop tt_inst_enter(t, id, h);
+    pass id;
 };
 
 pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) never fails {
@@ -1339,9 +1464,15 @@ pub func:typetable_init = TypeTable() never fails {
         unit_decls: raw list_init::<int32>(16i64),
         unit_vecs: raw list_init::<int64>(16i64),
         index: raw list_init::<int32>(256i64),
-        index_mask: 0i32
+        index_mask: 0i32,
+        inst_index: raw list_init::<int32>(256i64),
+        inst_mask: 0i32,
+        inst_hash: raw list_init::<int64>(n),
+        inst_held: raw list_init::<bool>(n),
+        inst_count: 0i64
     };
     drop tt_index_reset(@t, 256i64);
+    drop tt_inst_reset(@t, 256i64);
 
     // Index 0 is the INVALID type, reserved like every other index-0 in this
     // compiler: a type that failed to resolve is a value rather than an absence,

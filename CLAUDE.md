@@ -1856,7 +1856,12 @@ that carried them retired at the cycle close):
   bindings analysis sizing its state by the whole program. `perf` cannot open
   events on this machine; `valgrind --tool=callgrind` on the checker over a
   floor-only probe answers in 30 s, `callgrind_annotate --inclusive=yes` reads
-  it.
+  it. **The same rule found DEF-92** (1.5.8c step 4b): the sweep's measures
+  read as a 28% frontend cost and were field reads on generic instances
+  reaching `tt_instance`, the third linear scan of the type table (85% of the
+  checker's instructions); its index made the whole frontend 5.4x faster. When
+  a cost appears with a change, profile over `npkg/main.npk` (callgrind, ~15
+  min) and read the EXCLUSIVE top before reading the change.
 - **A shift's amount is checked** (D-277, 1.5.4b): `x << n` is defined for
   `0 ≤ n < width(x)` only — a literal, a negated literal or a `fixed`
   constant outside it is TYPE-070 at the shift (both spellings), a computed
