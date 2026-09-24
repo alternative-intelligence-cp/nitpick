@@ -15,9 +15,10 @@
 // to an integer traps (D-306 -- since 1.5.8 step 1; this line said "casts
 // trap (D-148)" from 1.5.0 while no cast guard existed at all, DEF-58),
 // `limit` residue traps (D-220), a contract violation traps (D-221), an
-// ERR exit traps (D-144); exhaustiveness is the checker's, `prove` and
-// `assert_static` are compile-time obligations, and termination and the
-// stack-depth row have no runtime counterpart to remove.
+// ERR exit traps (D-144), a loop's measure traps (D-304 -- since 1.5.8c step 1;
+// until then `terminate` had no guard, and the language no `decreases`);
+// exhaustiveness is the checker's, `prove` and `assert_static` are compile-time
+// obligations, and the stack-depth row has no runtime counterpart to remove.
 
 mod:smt_kinds;
 
@@ -127,6 +128,9 @@ pub func:ok_has_guard = bool(int32:k) never fails {
     if (k == 19i32) { pass true; }
     // `disjoint` (D-286, 1.5.5 step 2): the byte-range compare at the access.
     if (k == 20i32) { pass true; }
+    // `terminate` (D-304 (3), 1.5.8c step 1): the loop head's `DecreasesViolated`
+    // check -- a signed measure's two compares, an unsigned one's single.
+    if (k == 12i32) { pass true; }
     pass false;
 };
 

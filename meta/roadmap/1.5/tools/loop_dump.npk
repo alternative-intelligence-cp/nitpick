@@ -1,0 +1,389 @@
+// loop_dump -- every `while` / `when` loop of one file, as the REAL PARSER sees it
+// (1.5.8c step 3, D-304 §6): one line per loop, tab-separated --
+//
+//   L  line  col  kind  clause  cond-line  cond-col  cond-offset  body-line  body-col  body-offset  writes  keyword-offset
+//
+// where `clause` is `none`, `decreases` or `unbounded`, the condition and body
+// positions are the parser's (the sweep tool cuts the condition's text at the
+// matching `)` from there, never by a regex over the line), and `writes` lists
+// the names the body WRITES as the AST shows them: `=x` an assignment whose
+// target's root is `x`, `@x` an address taken or a `$$i`/`$$m` claim or a method
+// call on `x` (a receiver may be written through `Self->`), `~x` a move. A nested
+// loop's writes are its enclosing loop's too. The sweep tool
+// (`meta/roadmap/1.5/tools/decreases_sweep.py`) writes `decreases bound - v`
+// only for a counter it can PROVE monotone from this list and the body's text,
+// and lists every other loop for a reader (P-3).
+//
+// Exit 0 with the lines on stdout; 1 when the file does not parse (its
+// diagnostics on stderr, no lines); 2 when it cannot be read; 3 on a defect
+// in this tool.
+//
+// It lives beside the census, OUTSIDE the TCB (P-8): it writes and counts
+// SOURCE, and the compiler checks what the sweep wrote. Built with the compiler
+// under test -- `python3 bootstrap/harness/quickemit.py --keep
+// meta/roadmap/1.5/tools/loop_dump.npk` -- because the committed snapshot
+// could not emit it until 1.5.8c step 2 carries DEF-90's fix (the standard
+// output writer's nested `write` was the first program to reach it).
+mod:loop_dump;
+
+use "../../../../src/frontend/source_location.npk".*;
+use "../../../../src/frontend/token_kind.npk".*;
+use "../../../../src/frontend/token.npk".*;
+use "../../../../src/frontend/intern.npk".*;
+use "../../../../src/frontend/ast_kind.npk".*;
+use "../../../../src/frontend/ast.npk".*;
+use "../../../../src/frontend/diag_codes.npk".*;
+use "../../../../src/frontend/diagnostics.npk".*;
+use "../../../../src/frontend/diag_writer.npk".*;
+use "../../../../src/frontend/parse_codes.npk".*;
+use "../../../../src/frontend/lexer.npk".*;
+use "../../../../src/frontend/parser.npk".*;
+use "../../../../src/frontend/parse_type.npk".*;
+use "../../../../src/frontend/parse_expr.npk".*;
+use "../../../../src/frontend/parse_decorate.npk".*;
+use "../../../../src/frontend/parse_stmt.npk".*;
+use "../../../../src/frontend/parse_pick.npk".*;
+use "../../../../src/frontend/parse_decl.npk".*;
+use "../../../../src/frontend/source.npk".*;
+use "../../../../src/frontend/types.npk".*;
+
+pub struct:Dump = {
+    Ast->:ast;
+    InternTable->:it;
+    string:out;      // the lines, accumulated
+    string:writes;   // the current loop body's writes, `=x,@x,~x,`
+};
+
+func:FUEL = int32() never fails { pass 400i32; };
+
+// The identifier at the ROOT of a place expression: `x`, `x.f`, `x[i]`, `<-x`,
+// `x?.f`, a cast of one; "" for anything else (a call's result, a literal).
+func:root_name = string(Dump->:dd, ExprId:e, int32:fuel) never fails {
+    if (raw expr_is_none(e)) { pass ""; }
+    if (fuel <= 0i32) { pass ""; }
+    ExprNode:n = raw ast_expr(dd.ast, e);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        pass (string_concat(raw intern_get(dd.it, (raw expr_name(n)) =>! int32), ""));
+    }
+    if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
+        || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprCastExpr)
+        || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+        pass (raw root_name(dd, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        pass (raw root_name(dd, raw expr_lhs(n), fuel - 1i32));
+    }
+    pass "";
+};
+
+func:note = NIL(Dump->:dd, string:mark, string:name) never fails {
+    if (name.len == 0i64) { pass NIL; }
+    string:m1 = string_concat(mark, name);
+    dd.writes = string_concat(dd.writes, string_concat(m1, ","));
+    pass NIL;
+};
+
+func:walk_window = NIL(Dump->:dd, int32:start, int32:count, int32:fuel) never fails {
+    for (int32:i in 0i32...count) {
+        drop walk_expr(dd, ExprId{ index: raw ast_id_at(dd.ast, start, i) }, fuel - 1i32);
+    }
+    pass NIL;
+};
+
+func:walk_expr = NIL(Dump->:dd, ExprId:e, int32:fuel) never fails {
+    if (raw expr_is_none(e)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(dd.ast, e);
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        drop note(dd, "@", raw root_name(dd, raw expr_operand(n), fuel));
+        drop walk_expr(dd, raw expr_operand(n), fuel - 1i32);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop note(dd, "@", raw root_name(dd, raw expr_operand(n), fuel));
+        drop walk_expr(dd, raw expr_operand(n), fuel - 1i32);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        drop note(dd, "~", raw root_name(dd, raw expr_operand(n), fuel));
+        drop walk_expr(dd, raw expr_operand(n), fuel - 1i32);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        // a receiver may be written through `Self->`: conservative
+        drop note(dd, "@", raw root_name(dd, raw expr_lhs(n), fuel));
+        drop walk_expr(dd, raw expr_lhs(n), fuel - 1i32);
+        drop walk_window(dd, raw expr_list_start(n), raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop walk_expr(dd, raw pickx_selector(n), fuel - 1i32);
+        for (int32:pa in 0i32...(raw pickx_arm_count(n))) {
+            drop walk_stmt(dd, raw pick_arm_at(dd.ast, raw pickx_arm_start(n), pa), fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop walk_expr(dd, raw expr_callee(n), fuel - 1i32);
+        drop walk_window(dd, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                         (raw expr_list_count(n)) - (raw expr_generic_count(n)), fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        drop walk_window(dd, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                         (raw expr_list_count(n)) - (raw builtin_generic_count(n)), fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            drop walk_expr(dd, ExprId{ index: raw ast_id_at(dd.ast, raw expr_list_start(n), i) }, fuel - 1i32);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop walk_window(dd, raw expr_list_start(n), raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    drop walk_expr(dd, raw expr_lhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop walk_window(dd, raw expr_list_start(n), raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    drop walk_expr(dd, raw expr_rhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop walk_expr(dd, raw expr_third(n), fuel - 1i32);
+    pass NIL;
+};
+
+func:clause_word = string(Dump->:dd, VerifyId:m) never fails {
+    if (raw verify_is_none(m)) { pass "none"; }
+    VerifyNode:v = raw ast_verify(dd.ast, m);
+    if (raw measure_is_unbounded(v)) { pass "unbounded"; }
+    pass "decreases";
+};
+
+func:pos3 = string(Span:sp) never fails {
+    string:a = string_concat(int_to_string(sp.line => int64), "\t");
+    string:b = string_concat(a, string_concat(int_to_string(sp.col => int64), "\t"));
+    pass (string_concat(b, int_to_string(sp.offset => int64)));
+};
+
+// A LOOP: its line, then its body walked with a fresh write list; the nested
+// loops report themselves on the way and their writes join this one's.
+func:report_loop = NIL(Dump->:dd, StmtNode:s, string:kind, VerifyId:m, ExprId:cond,
+                       StmtId:body, int32:fuel) never fails {
+    string:saved = move(dd.writes);
+    dd.writes = "";
+    drop walk_expr(dd, cond, fuel - 1i32);
+    drop walk_stmt(dd, body, fuel - 1i32);
+    string:mine = move(dd.writes);
+    dd.writes = string_concat(saved, mine);
+    ExprNode:cn = raw ast_expr(dd.ast, cond);
+    StmtNode:bn = raw ast_stmt(dd.ast, body);
+    string:l1 = string_concat("L\t", string_concat(int_to_string(s.span.line => int64), "\t"));
+    string:l2 = string_concat(l1, string_concat(int_to_string(s.span.col => int64), "\t"));
+    string:l3 = string_concat(l2, string_concat(kind, "\t"));
+    string:l4 = string_concat(l3, string_concat(raw clause_word(dd, m), "\t"));
+    string:l5 = string_concat(l4, string_concat(raw pos3(cn.span), "\t"));
+    string:l6 = string_concat(l5, string_concat(raw pos3(bn.span), "\t"));
+    // THE KEYWORD'S OFFSET LAST: a binary condition's span is its OPERATOR's, so
+    // the sweep finds the condition's `(` from the loop's own keyword, not from
+    // the condition's first token.
+    string:l7a = string_concat(l6, string_concat(mine, "\t"));
+    string:l7 = string_concat(l7a, string_concat(int_to_string(s.span.offset => int64), "\n"));
+    dd.out = string_concat(dd.out, l7);
+    pass NIL;
+};
+
+func:walk_stmt = NIL(Dump->:dd, StmtId:sid, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(dd.ast, sid);
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop walk_stmt(dd, StmtId{ index: raw ast_id_at(dd.ast, raw stmt_list_start(s), i) }, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        drop walk_expr(dd, raw stmt_decl_init(dd.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop note(dd, "=", raw root_name(dd, raw stmt_target(s), fuel));
+        drop walk_expr(dd, raw stmt_target(s), fuel - 1i32);
+        drop walk_expr(dd, raw stmt_assigned(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop walk_expr(dd, raw stmt_cond(s), fuel - 1i32);
+        drop walk_stmt(dd, raw stmt_then(s), fuel - 1i32);
+        drop walk_stmt(dd, raw stmt_else(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop report_loop(dd, s, "while", raw stmt_while_measure(dd.ast, s), raw stmt_cond(s),
+                         raw stmt_body(dd.ast, s), fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop report_loop(dd, s, "when", raw stmt_when_measure(dd.ast, s), raw stmt_cond(s),
+                         raw stmt_when_body(dd.ast, s), fuel);
+        drop walk_stmt(dd, raw stmt_when_then(dd.ast, s), fuel - 1i32);
+        drop walk_stmt(dd, raw stmt_when_end(dd.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop walk_expr(dd, raw stmt_for_iter(dd.ast, s), fuel - 1i32);
+        drop walk_stmt(dd, raw stmt_for_body(dd.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        for (int32:ai in 0i32...(raw stmt_counted_argc(dd.ast, s))) {
+            drop walk_expr(dd, raw stmt_counted_arg(dd.ast, s, ai), fuel - 1i32);
+        }
+        drop walk_stmt(dd, raw stmt_counted_body(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop walk_expr(dd, raw pick_selector(s), fuel - 1i32);
+        for (int32:pa in 0i32...(raw pick_arm_count(s))) {
+            drop walk_stmt(dd, raw pick_arm_at(dd.ast, raw pick_arm_start(s), pa), fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop walk_expr(dd, raw arm_guard(s), fuel - 1i32);
+        drop walk_stmt(dd, raw arm_body(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        drop walk_stmt(dd, StmtId{ index: s.a }, fuel - 1i32);
+        pass NIL;
+    }
+    if (raw stmt_carries_expr(s.kind)) {
+        drop walk_expr(dd, raw stmt_expr(s), fuel - 1i32);
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)
+        || (s.kind == StmtKind.StmtGiveStmt)) {
+        drop walk_expr(dd, raw stmt_operand(s), fuel - 1i32);
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:walk_decl = NIL(Dump->:dd, DeclId:did, int32:fuel) never fails {
+    if (raw decl_is_none(did)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    DeclNode:d = raw ast_decl(dd.ast, did);
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        drop walk_stmt(dd, raw fn_body(dd.ast, d), fuel - 1i32);
+        pass NIL;
+    }
+    if ((d.kind == DeclKind.DeclModuleDecl) || (d.kind == DeclKind.DeclTraitDecl)) {
+        for (int32:i in 0i32...(raw item_member_count(dd.ast, d))) {
+            drop walk_decl(dd, raw item_member(dd.ast, d, i), fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        for (int32:i in 0i32...(raw impl_member_count(dd.ast, d))) {
+            drop walk_decl(dd, raw impl_member(dd.ast, d, i), fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclMacroDecl) {
+        int32:bk = raw macro_body_kind(dd.ast, d);
+        for (int32:i in 0i32...(raw macro_body_count(dd.ast, d))) {
+            int32:b = raw macro_body_at(dd.ast, d, i);
+            if (bk == (raw MACRO_BODY_STMTS())) { drop walk_stmt(dd, StmtId{ index: b }, fuel - 1i32); }
+            if (bk == (raw MACRO_BODY_DECLS())) { drop walk_decl(dd, DeclId{ index: b }, fuel - 1i32); }
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        await diag_say("usage: loop_dump <file.npk>") ?| NIL;
+        exit 2i32;
+    }
+    cstring:arg = argv[1i64];
+    string:path = string_from_bytes(arg.ptr, arg.len);
+    SourceManager:sm = raw srcmgr_init();
+    Result<int32>:loaded = srcmgr_load(@sm, move(path));
+    if (loaded.is_error) {
+        await diag_say("cannot read the file") ?| NIL;
+        exit 2i32;
+    }
+    int32:file = loaded.value;
+    string:text = raw srcmgr_text_proven(@sm, file);
+    InternTable:it = raw intern_init();
+    DiagList:lexed = raw diaglist_init();
+    TokenList:toks = raw lex_all(file, text, @it, @lexed);
+    Ast:ast = raw ast_init();
+    DiagList:parsed = raw diaglist_init();
+    Parser:p = raw parser_init(@toks, @ast, @parsed, @it);
+    DeclId:root = raw p_parse_module(@p);
+    int64:n = (raw diaglist_count(@lexed)) + (raw diaglist_count(@parsed));
+    if (n != 0i64) {
+        await diag_report_stderr(@lexed, @sm) ?| NIL;
+        await diag_report_stderr(@parsed, @sm) ?| NIL;
+        exit 1i32;
+    }
+    Dump:dd = Dump{ ast: @ast, it: @it, out: "", writes: "" };
+    drop walk_decl(@dd, root, raw FUEL());
+    Result<TextWriter<LineBufWriter<ByteWriter>>>:sr = std_out();
+    if (sr.is_error) { exit 3i32; }
+    TextWriter<LineBufWriter<ByteWriter>>:tw = move(sr.value);
+    discard(await tw.write(string_bytes(dd.out), raw duration_secs(30i64)) ?| 0i64);
+    await tw.flush(raw duration_secs(30i64)) ?| NIL;
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (DivByZero) { exit 3i32; },
+        (DivOverflow) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (ShiftRange)  { exit 3i32; },
+        (IntOverflow) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (ast.BoundsId) { exit 3i32; },
+        (ast.BoundsScratch) { exit 3i32; },
+        (ast.BoundsWindow) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (source.BoundsIndex) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (token.BoundsId) { exit 3i32; },
+        (types.BoundsId) { exit 3i32; },
+        (types.BoundsIndex) { exit 3i32; },
+        (StackExhausted) { exit 3i32; },
+        (MachineFault) { exit 3i32; },
+        (LimitViolated) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
+    exit 3i32;
+};

@@ -48,6 +48,10 @@ pub func:CONTRACT_ENSURES = int32() never fails  { pass 2i32; };
 // keyword rather than getting two — and the `<=` is what a reader sees the
 // difference in, at the point where it matters.
 pub func:CONTRACT_ACQUIRES = int32() never fails { pass 3i32; };
+// `decreases E` on a FUNCTION (D-304 (1), (5); 1.5.8c) -- the fourth contract
+// kind: a measure over the parameters, compared at every call inside the
+// function's recursive group (step 4). Optional by D-304 (5).
+pub func:CONTRACT_DECREASES = int32() never fails { pass 4i32; };
 
 // Set on an `acquires` contract whose form is `<= N` rather than bare `N`.
 pub func:CONTRACT_BOUNDED = int32() never fails  { pass 1i32; };
@@ -220,6 +224,7 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
             if (raw p_at(p, TokenKind.KwRequires)) { kind = raw CONTRACT_REQUIRES(); }
             if (raw p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }
             if (raw p_at(p, TokenKind.KwAcquires)) { kind = raw CONTRACT_ACQUIRES(); }
+            if (raw p_at(p, TokenKind.KwDecreases)) { kind = raw CONTRACT_DECREASES(); }
             if (kind == 0i32) { break; }
             discard(raw p_advance(p));
 
@@ -245,6 +250,61 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
     }
     pass (raw ast_scratch_commit(p.ast, mark));
 };
+
+// --- the termination clause (D-304, 1.5.8c step 1) --------------------------------------
+//
+// `while (c) decreases n - i invariant P { … }` / `while (c) unbounded { … }` --
+// between the head and the invariant. The grammar is never partial (D-085): a
+// RUN of clauses is read and counted (`c`), the first kept, so `decreases a
+// decreases b` and `decreases a unbounded` reach the checker as one node that
+// says "two clauses" (TYPE-072). The loop heads call this twice, before and
+// after `p_parse_invariant`, and mark a clause found after it (payload 1) --
+// the order is fixed, and a reader meets the termination argument first.
+//
+// Returns the reserved NONE handle when there is no clause.
+pub func:p_parse_measure = VerifyId(Parser->:p) never fails {
+    if (!((raw p_at(p, TokenKind.KwDecreases)) || (raw p_at(p, TokenKind.KwUnbounded)))) {
+        pass (raw verify_none());
+    }
+    Span:sp = raw p_span(p);
+    int32:first_kind = 0i32 - 1i32;
+    int32:first_expr = 0i32;
+    int32:seen = 0i32;
+    while ((raw p_at(p, TokenKind.KwDecreases)) || (raw p_at(p, TokenKind.KwUnbounded))) {
+        bool:unb = raw p_at(p, TokenKind.KwUnbounded);
+        discard(raw p_advance(p));
+        int32:ex = 0i32;
+        if (!unb) {
+            ExprId:m = raw p_parse_expr(p);
+            ex = m.index;
+        }
+        if (seen == 0i32) {
+            first_kind = 0i32;
+            if (unb) { first_kind = 1i32; }
+            first_expr = ex;
+        }
+        seen = seen + 1i32;
+    }
+    pass (raw ast_add_verify(p.ast, VerifyKind.VerifyDecreasesNode, sp,
+                               first_kind, first_expr, seen, 0i64));
+};
+
+// TWO READINGS OF THE HEAD, ONE NODE: the clause before `invariant` and the
+// clause after it, merged so the checker sees every shape by name.
+pub func:p_merge_measures = VerifyId(Parser->:p, VerifyId:before, VerifyId:after) never fails {
+    if (raw verify_is_none(after)) { pass before; }
+    VerifyNode:a = raw ast_verify(p.ast, after);
+    if (raw verify_is_none(before)) {
+        pass (raw ast_add_verify(p.ast, VerifyKind.VerifyDecreasesNode, a.span, a.a, a.b, a.c, 1i64));
+    }
+    VerifyNode:b = raw ast_verify(p.ast, before);
+    pass (raw ast_add_verify(p.ast, VerifyKind.VerifyDecreasesNode, b.span, b.a, b.b, b.c + a.c, 1i64));
+};
+
+pub func:measure_is_unbounded = bool(VerifyNode:v) never fails { pass (v.a == 1i32); };
+pub func:measure_expr = ExprId(VerifyNode:v) never fails { ExprId:e = ExprId{ index: v.b }; pass e; };
+pub func:measure_count = int32(VerifyNode:v) never fails { pass v.c; };
+pub func:measure_after_invariant = bool(VerifyNode:v) never fails { pass (v.payload == 1i64); };
 
 // --- loop invariants -------------------------------------------------------------------
 //

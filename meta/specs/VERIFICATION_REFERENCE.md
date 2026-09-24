@@ -478,6 +478,55 @@ When compiled with `--verify-contracts`, the Z3 solver verifies the inductive st
 > and has neither. An invariant naming `$` or the binding is decided on the
 > merits now, where until 1.5.4 it was `open` because the counter was opaque.
 
+### 4b. Termination: `decreases` and `unbounded` (D-304; landed 1.5.8c step 1, 2026-09-24)
+
+A `while` or `when` loop says why it ends, or says that it may not:
+
+```nitpick
+while (i < n) decreases n - i invariant total >= 0i32 { … }   // a measure, then the invariant
+while (true) unbounded { … }                                   // an event loop: the acknowledgment
+```
+
+- **The measure** `E` is a plain integer (`intN`/`uintN`, TYPE-073) over the
+  values at the head, a contract expression (§3's admission, TYPE-060) under its
+  own context: neither `result` nor `old(…)` exists in it. The clause comes
+  BEFORE `invariant`, once; `unbounded` and `decreases` never both; `for`,
+  `loop` and `till` are bounded by construction (D-234, D-022) and take
+  neither -- each of those shapes is TYPE-072 by name. A `while`/`when` with
+  no clause is accepted until 1.5.8c step 4 sweeps the tree (D-304 (6)).
+- **The check, in every build**: at the top of the body, each time the
+  condition holds, `E` is evaluated at its own width; a signed measure below
+  zero traps `DecreasesViolated` (4119), and from the second visit on a measure
+  not below the previous visit's traps the same. Two slots per loop, never a
+  sentinel (DEF-69): the previous measure in the measure's type and an `i8`
+  first-visit flag -- allocas in a sync body, frame slots at roles 42 and 43
+  in a coroutine, since a loop spans suspensions. `continue` re-enters the
+  head and is checked; `break` and `exit` leave without one. `unbounded`
+  emits nothing.
+- **The `terminate` rows**: the ENTRY row at the loop statement, `E >= 0`
+  (signed measures only), inside the body's region with the invariant and the
+  condition as hypotheses; the PRESERVATION row at the body block, `E' < E`
+  over the versions at the body's end against those at its start; one per
+  `continue` that re-enters the loop, against the body-start value. All share
+  the loop's group and its trap count (two signed, one unsigned); the check's
+  compares become one `llvm.assume` each only when EVERY row is discharged,
+  and the evaluation and the store stay (a later visit's compare reads the
+  slot). The measure's own guards -- an overflow in `n - i` -- record their
+  rows in each context the head's evaluation runs in (the entry, the back
+  edge, each `continue`), at clause context 0: the evaluation is never removed,
+  so they are ordinary guards with one row per visit context, and the entry's
+  fact discharges the back edge's row where the entry's own stays `open`
+  (nothing bounds `n - i` below `INT_MAX` on the first visit).
+- **What discharges**: a counter loop's `bound - v` against `v = v + 1` (the
+  preservation outright, the entry from the condition -- 1.5.4's path
+  condition); a halving `n` under `n > 0` (the Int division form, D-279). A
+  `List`'s `count` as the bound has no length term (DEF-14, E-4): the row is
+  `unencoded`, the check stays, D-309's rule.
+- **Recursion** (D-304 (2), (5)): a function's `decreases E` is parsed as a
+  contract of kind `decreases` and refused as TYPE-075 until step 4 computes
+  the recursive groups -- the measure is compared at a call inside the
+  function's group, and until then the compiler sees none.
+
 ---
 
 ## 5. Verification Compiler Flags
@@ -656,7 +705,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `invariant` | a loop invariant holds at entry and is preserved (D-221) | yes | 1.5.3 |
 | `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220), and a limited FIELD at each of its three (D-308): a struct literal's value for it, an assignment through any path including a pointer's, a compound assignment -- the field's row keyed on the WRITTEN expression, a limited root's on the statement, so a write to a limited field of a limited binding is two rows at two keys | yes | 1.5.2; fields 1.5.8b step 6 |
 | `limit-subsume` | one `Rules` implies another at a boundary (D-220): the caller's knowledge of every argument against the callee's rules, at a direct call of a sync callee | yes | 1.5.2 |
-| `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8c |
+| `terminate` | a `while`/`when` loop's `decreases E` measure is at least zero at every head visit (a signed measure; an unsigned one cannot be below zero and records no such row) and smaller than at the previous visit (D-304, D-218.7): the head's check, `DecreasesViolated` -- the entry row at the statement, the preservation row at the body block, one per `continue` re-entering the loop; a recursive call's row against the caller's measure lands at 1.5.8c step 4 | yes | 1.5.8c |
 | `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8c |
 | `err-exit` | the `TbbErr` guard's condition (D-144 as amended, D-278): neither operand is ERR at a comparison on a twisted value, the operand is not ERR at a cast out of its family (both spellings), a checked crossing into or within a family lands in the target's range; a twisted division has no row (a zero divisor is ERR) | yes | 1.5.4b |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
@@ -1175,6 +1224,12 @@ holds compute in floats or vectors.
 > `-4110`, `bounds` `-4099` and `cast-range` `-4117`. `overflow`, `bounds`
 > and `cast-range` elide into assumes, and the belts' assume kinds had
 > lacked `cast-range` since D-306 gave it a guard.
+>
+> **1.5.8c step 1 (D-304):** `terminate` gained its guard -- the loop head's
+> `DecreasesViolated` check, `-4119` in both runners' trap tables, an assume
+> kind (two assumes for a signed measure's discharged loop, one for an
+> unsigned one's), and OFF the guard-less set (`ok_has_guard(12)` true, the
+> catalogue's column `yes`). `stack-depth` stays guard-less and pending step 4.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

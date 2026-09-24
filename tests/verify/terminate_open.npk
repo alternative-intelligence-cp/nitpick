@@ -1,0 +1,45 @@
+// expect-exit: 41
+// expect-obligation: terminate open 2
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 2
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+//
+// A MEASURE NOTHING BOUNDS (D-304, 1.5.8c step 1): `decreases k` where `k`
+// comes from `argv` and, on the third trip, is not decremented -- so the
+// ENTRY row `k >= 0` has a counterexample (a negative `k`) and the
+// PRESERVATION row `k' < k` has one (the trip that keeps `k`). Both stay
+// `open`, the head keeps its check, and the check is what stops the loop:
+// the fourth visit's measure equals the third's, `DecreasesViolated`, 41.
+// Recorded, guarded, never silently true (D-309's rule, for a measure). The
+// overflow rows: `argv.len - 1i64` and `i + 1i32` discharged, `9i32 + (…)` and
+// `k - 1i32` (an unbounded `k` at `INT_MIN`) open.
+mod:terminate_open;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:k = 9i32 + ((argv.len - 1i64) =>! int32);
+    int32:i = 0i32;
+    while (i < 100i32) decreases k {
+        if (i != 2i32) { k = k - 1i32; }
+        i = i + 1i32;
+    }
+    exit (i =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

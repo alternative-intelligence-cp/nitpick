@@ -525,6 +525,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         int32:mark = raw ast_scratch_mark(x.ast);
         drop ast_scratch_push(x.ast, b.index);
         drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_while_invariant(x.ast, s), f)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_while_measure(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, c.index, w.start, w.count, s.payload));
     }
@@ -536,6 +537,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         drop ast_scratch_push(x.ast, it.index);
         drop ast_scratch_push(x.ast, b.index);
         drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_for_invariant(x.ast, s), f)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_for_measure(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, s.a, w.start, w.count, s.payload));
     }
@@ -550,6 +552,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         drop ast_scratch_push(x.ast, t.index);
         drop ast_scratch_push(x.ast, e.index);
         drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_when_invariant(x.ast, s), f)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_when_measure(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, c.index, w.start, w.count, s.payload));
     }
@@ -632,6 +635,13 @@ func:clone_verify = VerifyId(Expander->:x, VerifyId:id, int32:fuel) never fails 
                                            raw invariant_count(v), fuel);
         pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, w.start, w.count, v.payload));
     }
+    // A MEASURE (D-304, 1.5.8c) carries one expression, or none under `unbounded`.
+    if (v.kind == VerifyKind.VerifyDecreasesNode) {
+        ExprId:me = raw measure_expr(v);
+        int32:mi = 0i32;
+        if (!(raw expr_is_none(me))) { mi = (raw clone_expr(x, me, fuel)).index; }
+        pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, mi, v.c, v.payload));
+    }
     pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, v.b, v.c, v.payload));
 };
 
@@ -655,6 +665,7 @@ func:clone_counted = StmtId(Expander->:x, StmtNode:s, int32:fuel) never fails {
         ExprId:a = raw clone_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel);
         drop ast_scratch_push(x.ast, a.index);
     }
+    drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_counted_measure(x.ast, s), fuel)).index);
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_stmt(x.ast, s.kind, s.span, b.index, w.start, w.count, s.payload));
 };

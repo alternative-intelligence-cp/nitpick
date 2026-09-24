@@ -1,0 +1,108 @@
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 36
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 42
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 48
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 54
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 60
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 66
+// expect-error: NITPICK-TYPE-072
+// expect-error-at: 72
+// expect-error: NITPICK-TYPE-073
+// expect-error-at: 78
+// expect-error: NITPICK-TYPE-073
+// expect-error-at: 85
+// expect-error: NITPICK-TYPE-073
+// expect-error-at: 91
+// expect-error: NITPICK-TYPE-075
+// expect-error-at: 95
+// THE TERMINATION CLAUSES' SHAPES (D-304, 1.5.8c step 1). A `while` or `when`
+// states exactly one of `decreases E` and `unbounded`, before its `invariant`;
+// `for`, `loop` and `till` are bounded by construction (D-234, D-022) and take
+// neither; the measure is a plain integer (TYPE-073); a function's measure has
+// no recursive call the compiler can see until step 4 computes the groups
+// (TYPE-075). The `neither` shape of TYPE-072 -- a `while` with no clause --
+// is accepted until the tree is swept (D-304 (6), step 4), so the two clean
+// loops at the end are accepted here and refused there.
+mod:decreases_rules;
+error:E9;
+
+func:both = int32(int32:n) never fails {
+    int32:i = 0i32;
+    while (i < n) decreases n - i unbounded { i = i + 1i32; }   // ERR:072
+    pass i;
+};
+
+func:twice = int32(int32:n) never fails {
+    int32:i = 0i32;
+    while (i < n) decreases n - i decreases n { i = i + 1i32; }   // ERR:072
+    pass i;
+};
+
+func:on_for = int32(int32:n) never fails {
+    int32:i = 0i32;
+    for (int32:k in 0i32...n) decreases n { i = i + k; }   // ERR:072
+    pass i;
+};
+
+func:on_loop = int32() never fails {
+    int32:i = 0i32;
+    loop (0i64, 5i64, 1i64) unbounded { i = i + 1i32; }   // ERR:072
+    pass i;
+};
+
+func:on_till = int32() never fails {
+    int32:i = 0i32;
+    till (5i64, 1i64) decreases 5i64 { i = i + 1i32; }   // ERR:072
+    pass i;
+};
+
+func:after_invariant = int32(int32:n) never fails {
+    int32:i = 0i32;
+    while (i < n) invariant i >= 0i32 decreases n - i { i = i + 1i32; }   // ERR:072
+    pass i;
+};
+
+func:when_both = int32(int32:n) never fails {
+    int32:i = 0i32;
+    when (i < n) unbounded decreases n - i { i = i + 1i32; }   // ERR:072
+    pass i;
+};
+
+func:float_measure = flt64(flt64:f0) never fails {
+    flt64:f = f0;
+    while (f > 0.0) decreases f { f = f - 1.0; }   // ERR:073
+    pass f;
+};
+
+func:bool_measure = int32() never fails {
+    bool:go = true;
+    int32:i = 0i32;
+    while (go) decreases go { go = false; i = i + 1i32; }   // ERR:073
+    pass i;
+};
+
+func:twisted_measure = tbb32(tbb32:t0) never fails {
+    tbb32:t = t0;
+    while (!(is_err(t))) decreases t { t = t - 1tbb32; }   // ERR:073
+    pass t;
+};
+
+func:count_down = int32(int32:n) decreases n never fails {   // ERR:075
+    if (n <= 0i32) { pass 0i32; }
+    pass (raw count_down(n - 1i32));
+};
+
+// ACCEPTED: one clause each, before the invariant, on the two loop forms that
+// take one -- and a `while` with neither, until step 4.
+func:clean = int32(int32:n) never fails {
+    int32:i = 0i32;
+    while (i < n) decreases n - i invariant i >= 0i32 { i = i + 1i32; }
+    when (i > 0i32) unbounded { i = i - 1i32; }
+    while (i < 3i32) { i = i + 1i32; }
+    pass i;
+};

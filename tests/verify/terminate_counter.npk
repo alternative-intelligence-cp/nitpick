@@ -1,0 +1,46 @@
+// expect-exit: 10
+// expect-obligation: terminate discharged 2
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 2
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+//
+// A COUNTER LOOP'S MEASURE (D-304, 1.5.8c step 1): `decreases n - i` against
+// `i = i + 1i32` under `i < n`. The ENTRY row `n - i >= 0` follows from the
+// condition (1.5.4's path condition), and the PRESERVATION row
+// `n - (i + 1) < n - i` outright -- both discharged, so the verified build
+// turns the two compares into assumes and the loop runs with no trap of its
+// own (the harness runs the elided build at -O0 and -O2). The measure's
+// arithmetic carries its own rows, read one by one: `argv.len - 1i64` discharged
+// (the built-in length fact), `10i32 + (… =>! int32)` open (a cast's result is
+// opaque), `i + 1i32` discharged under `i < n`, and `n - i` TWICE -- once per
+// context the head's evaluation runs in (DEF-81's rule): the entry's row is
+// open (nothing bounds `n - i` below `INT_MAX`), the back edge's is discharged
+// on the entry guard's own fact -- so that guard stays, the rows' verdicts
+// differing by context exactly as a loop invariant's inner guards do.
+mod:terminate_counter;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = 10i32 + ((argv.len - 1i64) =>! int32);
+    int32:i = 0i32;
+    while (i < n) decreases n - i { i = i + 1i32; }
+    exit (i =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

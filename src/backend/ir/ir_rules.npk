@@ -594,14 +594,122 @@ pub func:invariant_elided = bool(ExprEmitter->:x, StmtId:sid, StmtId:body,
                                  int32:label) never fails {
     if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_INVARIANT()))) { pass false; }
     if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), body.index, raw OK_INVARIANT()))) { pass false; }
-    pass (raw continues_elided(x, body, label, false, 64i32));
+    pass (raw continues_elided(x, body, label, false, 64i32, raw OK_INVARIANT()));
+};
+
+// THE MEASURE AT A LOOP HEAD (D-304, 1.5.8c step 1): `while (c) decreases E`
+// -- checked each time the condition holds, before the body: `E` is evaluated
+// at its own width, a signed measure traps `DecreasesViolated` (4119) below
+// zero, and from the second visit on, a measure not smaller than the previous
+// visit's traps the same; then the value is kept for the next visit. TWO
+// SLOTS, never a sentinel (DEF-69, P-5): the previous measure in the measure's
+// own type, and an `i8` first-visit flag -- an alloca each in a sync body,
+// frame slots at roles 42 and 43 in a coroutine (a loop spans suspensions).
+// `continue` re-enters the head and is checked; `break` and `exit` leave
+// without one. The `terminate` rows (the entry row at the statement -- signed
+// measures only, an unsigned one cannot go below zero -- the preservation row
+// at the body block, one per `continue`) elide the two compares into one
+// `llvm.assume` each; the evaluation and the store stay, since a later visit's
+// compare reads the slot. `unbounded` emits nothing: it is the acknowledgment
+// that no measure exists (D-304 (4)).
+// Does this loop's clause CHECK anything: a `decreases E` with an expression
+// (`unbounded` and the absent clause check nothing).
+pub func:measure_checks = bool(ExprEmitter->:x, VerifyId:meas) never fails {
+    if (raw verify_is_none(meas)) { pass false; }
+    VerifyNode:v = raw ast_verify(x.ast, meas);
+    if (raw measure_is_unbounded(v)) { pass false; }
+    pass (!(raw expr_is_none(raw measure_expr(v))));
+};
+
+pub func:emit_decreases_check = IrVal(ExprEmitter->:x, VerifyId:meas, StmtId:sid, StmtId:body,
+                                      int32:label, string:prev_slot, string:flag_slot) never fails {
+    if (raw verify_is_none(meas)) { pass (raw iv_nil()); }
+    VerifyNode:v = raw ast_verify(x.ast, meas);
+    if (raw measure_is_unbounded(v)) { pass (raw iv_nil()); }
+    ExprId:me = raw measure_expr(v);
+    if (raw expr_is_none(me)) { pass (raw iv_nil()); }
+    int32:mtid = raw exprtypes_get(x.et, me);
+    bool:signed = raw type_is_signed(x.fe.ctx.types, mtid);
+    bool:elided = raw decreases_elided(x, sid, body, label, signed);
+    int64:ctm = raw fnem_temp_mark(x.fe);
+    IrVal:m = raw emit_expr(x, me);
+    if (!(raw iv_is_ok(m))) { pass m; }
+    drop emit_temp_drops(x, ctm);
+    drop fnem_temp_release(x.fe, ctm);
+    ExprNode:mn = raw ast_expr(x.ast, me);
+    // BELOW ZERO (signed measures): `E >= 0`.
+    if (signed) {
+        string:nn = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(nn, " = icmp sge ", m.ll, " ", string_concat(m.ref, ", 0")));
+        if (elided) {
+            drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", nn, ")"));
+        } else {
+            drop emit_check_i1_code(x, nn, "-4119", mn.span, "dec.nonneg");
+        }
+    }
+    // NOT SMALLER THAN LAST TIME: from the second visit on.
+    string:seen8 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(seen8, " = load i8, ptr ", flag_slot, "", ""));
+    string:seen = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(seen, " = icmp ne i8 ", string_concat(seen8, ", 0")));
+    string:cmp_l = raw irw_new_label(x.fe.w, "dec.cmp");
+    string:keep_l = raw irw_new_label(x.fe.w, "dec.keep");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", seen, ", label %", cmp_l, string_concat(", label %", keep_l)));
+    drop irw_label(x.fe.w, cmp_l);
+    string:prev = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(prev, " = load ", m.ll, ", ptr ", prev_slot));
+    string:less = raw irw_temp(x.fe.w);
+    string:pred = "icmp ult ";
+    if (signed) { pred = "icmp slt "; }
+    drop irw_line(x.fe.w, raw cat5(less, " = ", pred, m.ll, raw cat5(" ", m.ref, ", ", prev, "")));
+    if (elided) {
+        // The label that follows opens the next block; `terminated` is NOT set
+        // here -- the body is emitted after this check, and a set flag would
+        // make the emitter skip it as dead code (the first elided build did).
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", less, ")"));
+        drop irw_line(x.fe.w, raw cat3("br label %", keep_l, ""));
+    } else {
+        string:bad_l = raw irw_new_label(x.fe.w, "dec.bad");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", less, ", label %", keep_l, string_concat(", label %", bad_l)));
+        drop irw_label(x.fe.w, bad_l);
+        drop emit_contract_trap(x, "-4119", mn.span);
+    }
+    drop irw_label(x.fe.w, keep_l);
+    drop irw_line(x.fe.w, raw cat5("store ", m.ll, " ", m.ref, string_concat(", ptr ", prev_slot)));
+    drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", flag_slot, ""));
+    pass (raw iv_nil());
+};
+
+// THE BRANCH AND THE TRAP over a verdict in register, with the block names
+// the reader asked for (the `ctr.` pair belongs to the contracts).
+func:emit_check_i1_code = NIL(ExprEmitter->:x, string:verdict, string:code, Span:at,
+                              string:stem) never fails {
+    string:good = raw irw_new_label(x.fe.w, string_concat(stem, ".ok"));
+    string:bad = raw irw_new_label(x.fe.w, string_concat(stem, ".bad"));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", verdict, ", label %", good, string_concat(", label %", bad)));
+    drop irw_label(x.fe.w, bad);
+    drop emit_contract_trap(x, code, at);
+    drop irw_label(x.fe.w, good);
+    pass NIL;
+};
+
+// Every `terminate` row of the loop discharged: the entry row (a signed
+// measure's; an unsigned one records none), the preservation row at the body,
+// one per `continue` re-entering it -- the invariant's rule, kind by kind.
+pub func:decreases_elided = bool(ExprEmitter->:x, StmtId:sid, StmtId:body, int32:label,
+                                 bool:signed) never fails {
+    if (signed) {
+        if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_TERMINATE()))) { pass false; }
+    }
+    if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), body.index, raw OK_TERMINATE()))) { pass false; }
+    pass (raw continues_elided(x, body, label, false, 64i32, raw OK_TERMINATE()));
 };
 
 // Every `continue` re-entering the loop whose body this is has its row
 // discharged. `nested` is true inside a nested loop, where an unlabelled
 // `continue` is the inner loop's; a `defer` body cannot `continue`.
 func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nested,
-                             int32:fuel) never fails {
+                             int32:fuel, int32:kind) never fails {
     if (raw stmt_is_none(sid)) { pass true; }
     if (fuel <= 0i32) { pass false; }
     StmtNode:s = raw ast_stmt(x.ast, sid);
@@ -611,7 +719,7 @@ func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nest
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(x.ast, s, @xs);
     for (int64:xi in 0i64...xs.count) {
-        if (!(raw pickexpr_continues_elided(x, ExprId{ index: xs[xi] }, label, nested, fuel - 1i32))) { pass false; }
+        if (!(raw pickexpr_continues_elided(x, ExprId{ index: xs[xi] }, label, nested, fuel - 1i32, kind))) { pass false; }
     }
     if (s.kind == StmtKind.StmtContinueStmt) {
         bool:mine = false;
@@ -621,42 +729,42 @@ func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nest
             if ((raw stmt_label(s)) == label) { mine = true; }
         }
         if (!mine) { pass true; }
-        pass (raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_INVARIANT()));
+        pass (raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, kind));
     }
     if (s.kind == StmtKind.StmtBlockStmt) {
         for (int32:i in 0i32...(raw stmt_list_count(s))) {
             StmtId:ch = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
-            if (!(raw continues_elided(x, ch, label, nested, fuel - 1i32))) { pass false; }
+            if (!(raw continues_elided(x, ch, label, nested, fuel - 1i32, kind))) { pass false; }
         }
         pass true;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
-        if (!(raw continues_elided(x, raw stmt_then(s), label, nested, fuel - 1i32))) { pass false; }
-        pass (raw continues_elided(x, raw stmt_else(s), label, nested, fuel - 1i32));
+        if (!(raw continues_elided(x, raw stmt_then(s), label, nested, fuel - 1i32, kind))) { pass false; }
+        pass (raw continues_elided(x, raw stmt_else(s), label, nested, fuel - 1i32, kind));
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
-        pass (raw continues_elided(x, raw stmt_body(x.ast, s), label, true, fuel - 1i32));
+        pass (raw continues_elided(x, raw stmt_body(x.ast, s), label, true, fuel - 1i32, kind));
     }
     if (s.kind == StmtKind.StmtForStmt) {
-        pass (raw continues_elided(x, raw stmt_for_body(x.ast, s), label, true, fuel - 1i32));
+        pass (raw continues_elided(x, raw stmt_for_body(x.ast, s), label, true, fuel - 1i32, kind));
     }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
-        pass (raw continues_elided(x, raw stmt_counted_body(s), label, true, fuel - 1i32));
+        pass (raw continues_elided(x, raw stmt_counted_body(s), label, true, fuel - 1i32, kind));
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
-        if (!(raw continues_elided(x, raw stmt_when_body(x.ast, s), label, true, fuel - 1i32))) { pass false; }
-        if (!(raw continues_elided(x, raw stmt_when_then(x.ast, s), label, true, fuel - 1i32))) { pass false; }
-        pass (raw continues_elided(x, raw stmt_when_end(x.ast, s), label, true, fuel - 1i32));
+        if (!(raw continues_elided(x, raw stmt_when_body(x.ast, s), label, true, fuel - 1i32, kind))) { pass false; }
+        if (!(raw continues_elided(x, raw stmt_when_then(x.ast, s), label, true, fuel - 1i32, kind))) { pass false; }
+        pass (raw continues_elided(x, raw stmt_when_end(x.ast, s), label, true, fuel - 1i32, kind));
     }
     if (s.kind == StmtKind.StmtPickStmt) {
         for (int32:j in 0i32...(raw pick_arm_count(s))) {
             StmtId:arm = raw pick_arm_at(x.ast, raw pick_arm_start(s), j);
-            if (!(raw continues_elided(x, arm, label, nested, fuel - 1i32))) { pass false; }
+            if (!(raw continues_elided(x, arm, label, nested, fuel - 1i32, kind))) { pass false; }
         }
         pass true;
     }
     if (s.kind == StmtKind.StmtPickArm) {
-        pass (raw continues_elided(x, raw arm_body(s), label, nested, fuel - 1i32));
+        pass (raw continues_elided(x, raw arm_body(s), label, nested, fuel - 1i32, kind));
     }
     pass true;
 };
@@ -666,34 +774,34 @@ func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nest
 // block's; every other kind is searched for nested ones by its shape
 // (`collect_old_expr`'s descent).
 func:pickexpr_continues_elided = bool(ExprEmitter->:x, ExprId:id, int32:label, bool:nested,
-                                      int32:fuel) never fails {
+                                      int32:fuel, int32:kind) never fails {
     if (raw expr_is_none(id)) { pass true; }
     if (fuel <= 0i32) { pass false; }
     ExprNode:n = raw ast_expr(x.ast, id);
     if (n.kind == ExprKind.ExprPickExpr) {
-        if (!(raw pickexpr_continues_elided(x, ExprId{ index: n.a }, label, nested, fuel - 1i32))) { pass false; }
+        if (!(raw pickexpr_continues_elided(x, ExprId{ index: n.a }, label, nested, fuel - 1i32, kind))) { pass false; }
         for (int32:pa in 0i32...n.c) {
-            if (!(raw continues_elided(x, raw pick_arm_at(x.ast, n.b, pa), label, nested, fuel - 1i32))) { pass false; }
+            if (!(raw continues_elided(x, raw pick_arm_at(x.ast, n.b, pa), label, nested, fuel - 1i32, kind))) { pass false; }
         }
         pass true;
     }
     if (n.kind == ExprKind.ExprCallExpr) {
-        if (!(raw pickexpr_continues_elided(x, raw expr_callee(n), label, nested, fuel - 1i32))) { pass false; }
+        if (!(raw pickexpr_continues_elided(x, raw expr_callee(n), label, nested, fuel - 1i32, kind))) { pass false; }
         pass (raw pickexpr_continues_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
                                             (raw expr_list_count(n)) - (raw expr_generic_count(n)),
-                                            label, nested, fuel));
+                                            label, nested, fuel, kind));
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
         pass (raw pickexpr_continues_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
                                             (raw expr_list_count(n)) - (raw builtin_generic_count(n)),
-                                            label, nested, fuel));
+                                            label, nested, fuel, kind));
     }
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
         while (i < cnt) {
             if (!(raw pickexpr_continues_elided(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) },
-                                                label, nested, fuel - 1i32))) { pass false; }
+                                                label, nested, fuel - 1i32, kind))) { pass false; }
             i = i + 2i32;
         }
         pass true;
@@ -703,23 +811,23 @@ func:pickexpr_continues_elided = bool(ExprEmitter->:x, ExprId:id, int32:label, b
     if (shape == (raw EXPR_SHAPE_NONE())) { pass true; }
     if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass true; }
     if (shape == (raw EXPR_SHAPE_LIST())) {
-        pass (raw pickexpr_continues_window(x, raw expr_list_start(n), raw expr_list_count(n), label, nested, fuel));
+        pass (raw pickexpr_continues_window(x, raw expr_list_start(n), raw expr_list_count(n), label, nested, fuel, kind));
     }
-    if (!(raw pickexpr_continues_elided(x, raw expr_lhs(n), label, nested, fuel - 1i32))) { pass false; }
+    if (!(raw pickexpr_continues_elided(x, raw expr_lhs(n), label, nested, fuel - 1i32, kind))) { pass false; }
     if (shape == (raw EXPR_SHAPE_ONE())) { pass true; }
     if (shape == (raw EXPR_SHAPE_ONELIST())) {
-        pass (raw pickexpr_continues_window(x, raw expr_list_start(n), raw expr_list_count(n), label, nested, fuel));
+        pass (raw pickexpr_continues_window(x, raw expr_list_start(n), raw expr_list_count(n), label, nested, fuel, kind));
     }
-    if (!(raw pickexpr_continues_elided(x, raw expr_rhs(n), label, nested, fuel - 1i32))) { pass false; }
+    if (!(raw pickexpr_continues_elided(x, raw expr_rhs(n), label, nested, fuel - 1i32, kind))) { pass false; }
     if (shape == (raw EXPR_SHAPE_TWO())) { pass true; }
-    pass (raw pickexpr_continues_elided(x, raw expr_third(n), label, nested, fuel - 1i32));
+    pass (raw pickexpr_continues_elided(x, raw expr_third(n), label, nested, fuel - 1i32, kind));
 };
 
 func:pickexpr_continues_window = bool(ExprEmitter->:x, int32:start, int32:count, int32:label,
-                                      bool:nested, int32:fuel) never fails {
+                                      bool:nested, int32:fuel, int32:kind) never fails {
     for (int32:i in 0i32...count) {
         if (!(raw pickexpr_continues_elided(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
-                                            label, nested, fuel - 1i32))) { pass false; }
+                                            label, nested, fuel - 1i32, kind))) { pass false; }
     }
     pass true;
 };

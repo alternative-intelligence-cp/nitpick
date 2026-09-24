@@ -617,13 +617,11 @@ UNTESTED_CODES = {
     # OPEN -- a question, not an omission.
     "NITPICK-TYPE-023":    "open -- the C variadic tail, recorded in PROTOTYPE_DELTA",
 
-    # SCHEDULED -- D-304's four codes, declared at 1.5.8c step 0 so the plan's
-    # steps land against named codes; each comes off this list in the step that
-    # arms it and writes its case (`decreases_rules.npk`).
-    "NITPICK-TYPE-072":    "scheduled -- the loop-clause rule: its both/twice/for/order shapes armed at 1.5.8c step 1, its `neither` shape at step 4 after the sweep (D-304 (6))",
-    "NITPICK-TYPE-073":    "scheduled -- the measure's kind, armed at 1.5.8c step 1",
+    # SCHEDULED -- D-304's codes, declared at 1.5.8c step 0 so the plan's steps
+    # land against named codes; each comes off this list in the step that arms
+    # it and writes its case (`decreases_rules.npk`: 072, 073 and 075 came off
+    # at step 1; 072's `neither` shape joins the file at step 4).
     "NITPICK-TYPE-074":    "scheduled -- the recursive-group rule, armed at 1.5.8c step 4 with the groups",
-    "NITPICK-TYPE-075":    "scheduled -- a function measure with no recursive call, armed at 1.5.8c step 1",
 
     # NO RUNG LEFT (1.5.4 step 4, S-47): the last construct that rung lowered
     # and tests/rejection/ retired with it; the code and its `refuse` branch
@@ -3220,7 +3218,9 @@ VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
 # twin, 1.5.2 step 3): their rows read `none` in the elision column and their
 # discharge emits nothing into the IR. Diffed against the catalogue's column
 # by `check_obligation_kinds_agree`.
-GUARDLESS_KINDS = frozenset(("exhaustive", "terminate", "stack-depth",
+# `terminate` LEFT this set at 1.5.8c step 1 (D-304 (3): the catalogue's
+# `terminate` gains a guard -- the loop head's `DecreasesViolated` check).
+GUARDLESS_KINDS = frozenset(("exhaustive", "stack-depth",
                              "prove", "assert-static", "floor-spec", "floor-model"))
 # THE ROLE OF A ROW (1.5.3 step 2, L-13; `smt_kinds.npk`'s ROLE_*): `guard`, a
 # check in the row's own function, elided when discharged; `bypass`, a
@@ -3239,14 +3239,20 @@ TRAP_OF_KIND = {"div-zero": "-4097", "div-min": "-4098", "limit": "-4111",
                 "overflow": "-4110",
                 # 1.5.8b step 5: the `OutOfBounds` guard's rows (D-070) and the
                 # `CastRange` guard's (D-306).
-                "bounds": "-4099", "cast-range": "-4117"}
+                "bounds": "-4099", "cast-range": "-4117",
+                # 1.5.8c step 1 (D-304): the `DecreasesViolated` guard's rows -- a
+                # loop's measure below zero or not smaller than last visit's.
+                "terminate": "-4119"}
 BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
 # `overflow` and `cast-range` (1.5.8b step 3; K-10, K-11): each elides into one
 # assume -- the second has since D-306, and this set lacked it, a gap in both
 # runners' belts that no row exposed while cast-range produced none.
 ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-exit",
-                          "overflow", "cast-range", "bounds"))
+                          "overflow", "cast-range", "bounds",
+                          # 1.5.8c step 1: a discharged loop's two compares (one for an
+                          # unsigned measure) become one assume each.
+                          "terminate"))
 
 
 def hang_net(checks, budget):

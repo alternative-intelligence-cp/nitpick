@@ -1,0 +1,38 @@
+// expect-exit: 0
+// expect-obligation: terminate discharged 1
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 1
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+//
+// AN UNSIGNED MEASURE (D-304, 1.5.8c step 1): `decreases u` on a `uint32`
+// cannot be below zero, so the loop records NO entry row and the check keeps
+// ONE compare -- strict decrease -- which the PRESERVATION row `u - 1 < u`
+// under `u > 0` discharges; the verified build turns it into one assume. The
+// overflow rows: `argv.len - 1i64` and `u - 1u32` (under `u > 0`) discharged,
+// `5u32 + (…)` open.
+mod:terminate_unsigned;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    uint32:u = 5u32 + ((argv.len - 1i64) =>! uint32);
+    while (u > 0u32) decreases u { u = u - 1u32; }
+    exit (u =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

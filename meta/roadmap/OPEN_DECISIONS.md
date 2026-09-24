@@ -1740,6 +1740,25 @@ on one of them under load is READ as DEF-85's class and its deadline raised then
 re-run. THE LESSON: a test that names a path names a resource every concurrent run of it
 shares; the process id is the cheapest partition, and cleanup is part of the name's cost.
 
+**DEF-90 — FIXED at 1.5.8c step 1: AN AWAITED METHOD CALL ON A FAMILY-IMPL INSTANCE
+INSIDE ANOTHER GENERIC BODY NAMED ITS SPECIALIZATION AND NEVER RECORDED IT.**
+(found 2026-09-24 by `nitpick-compiler_s12`, writing the loop dump tool for 1.5.8c
+step 3: the first program to `write` through `std_out()`.) `TextWriter<W>`'s `write`
+awaits `self.inner.write(...)`; at `W = LineBufWriter<ByteWriter>` the awaited path
+(`async_callee_name`, 1.1.12c) substituted the receiver and spelled
+`LineBufWriter<ByteWriter>:Writer.write` -- and, unlike its sync twin
+(`emit_method_call`), never called `note_family_instance`, so no instance loop emitted
+the specialization: its resume and frame were referenced and never defined, and `llc`
+refused the module ("base element of getelementptr must be sized"). Reproduced on
+`c5ba885` and on every compiler back to the nested writers (1.1.12c);
+`text_roundtrip.npk` reaches the writer through the free `text_flush`, which is why
+the suite was green. Not a miscompile: a refusal at `llc`. THE FIX: the awaited
+bound-call path records the family instance exactly as the sync path does (one
+line, beside the name it already derives); `tests/backend/programs/std_out_nested.npk`
+writes and flushes through the nested writer and exits 0.
+
+**DEF-89 — FIXED at 1.5.8b step 6c (the amended landing): THE HARNESS'S
+
 
 `check_codes_tested` READ A NUMERAL-RETURNING STRING FUNCTION AS A DIAGNOSTIC CODE.**
 (found 2026-09-24 by `nitpick-compiler_s12`, running the whole-tree checks in-process

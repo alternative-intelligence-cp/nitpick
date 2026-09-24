@@ -48,6 +48,7 @@ or moves the floor; it is unnumbered and names the number the landing will take.
 | 38 | 2026-09-23 | | 1.5.8b step 6b (DEF-86: the reach analysis follows calls into the prelude) | |
 | 39 | 2026-09-23 | | 1.5.8b step 6c (D-308 §§6–7; the floor moves) | re-pin |
 | 40 | 2026-09-23 | | 1.5.8b step 6d (`intern.npk`'s `*%`; DEF-88) | |
+| — | 2026-09-24 | — | ADVANCE for 1.5.8c step 1: `decreases`/`unbounded` become keywords (none in the libraries, measured 2026-09-23), `DecreasesViolated` an arm every program with a `decreases` names, `terminate` guarded; the landing takes the number after 1.5.8c step 0's | sent to `nitpick-libs_s5` (the seat changed hands 2026-09-24) |
 
 The messages themselves are not kept here; each seat keeps the text it sent in its
 own `.internal/handoff_*/` scratch for as long as that survives, and this table is

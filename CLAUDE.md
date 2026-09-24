@@ -1201,7 +1201,7 @@ where it was 250, and nothing else moved.
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
-(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared), `decreases`/`unbounded` with the
+(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape), `decreases`/`unbounded` with the
 `terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
@@ -2246,6 +2246,28 @@ that carried them retired at the cycle close):
   is the pointer's; a fact keyed on `has_len_term(operand type)` missed it and
   `b.cap + 1` stayed open. Any fact pushed at a member read should ask the
   pointee's kind when the base is a pointer.
+- **A `while`/`when` loop states why it ends** (D-304, 1.5.8c step 1):
+  `while (c) decreases n - i invariant P { … }` or `while (c) unbounded { … }`,
+  the measure clause BEFORE `invariant`, exactly one of the two; `for`, `loop`
+  and `till` take neither (TYPE-072). The measure is a plain integer
+  (TYPE-073), checked at the top of the body each time the condition holds --
+  below zero (signed) or not below the previous trip traps `DecreasesViolated`,
+  so a program with a `decreases` names `(DecreasesViolated)`. A loop with NO
+  clause is accepted until step 4 sweeps the tree; a function's `decreases` is
+  TYPE-075 until the same step computes the recursive groups. The `terminate`
+  rows (entry, preservation, one per `continue`) discharge a counter loop's
+  measure; a verify test names them (`expect-obligation: terminate discharged N`).
+- **The frame roles 42 and 43 are the measure's** (1.5.8c step 1): a
+  coroutine's `while`/`when` with a checked `decreases` keeps the previous
+  measure and the first-visit flag in the frame. Roles in use on a statement:
+  0–7+, 20–25, 30+k (channel stashes), 41 (join mark), 42/43, 60+k (`old`).
+- **Emitting a branch to the label that follows does not mark the block
+  terminated** (1.5.8c step 1): `x.fe.terminated = true` after a `br` makes the
+  emitter skip everything up to the next `s_start`, and the elided measure
+  check silently dropped the loop body that way -- the assume belt (fewer
+  assumes than discharged guards) and the verified binary's exit code both
+  caught it. Set the flag only where the block really ends (a trap's
+  `unreachable`, a `ret`), and let `irw_label` open the next one.
 - **A test's join deadline is a HANG NET, never a verdict** (DEF-85, 1.5.8b
   step 7): it bounds the trap route's stop walk (D-291), and under load a tight
   five-second bound made `failsafe_alloc.npk` answer the re-entry exit once in

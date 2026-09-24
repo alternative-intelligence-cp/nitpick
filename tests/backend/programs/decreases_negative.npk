@@ -1,0 +1,33 @@
+// expect-exit: 42
+//
+// A SIGNED MEASURE BELOW ZERO (D-304, 1.5.8c step 1): `decreases 2i32 - i`
+// shrinks on every trip -- and reaches -1 on the fourth visit, where the head's
+// first compare traps `DecreasesViolated`, 42, before any comparison with the
+// previous trip. An unsigned measure cannot reach this compare and does not
+// carry it (`decreases_trap.npk`).
+mod:decreases_negative;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = 10i32 + ((argv.len - 1i64) =>! int32);
+    int32:i = 0i32;
+    while (i < n) decreases 2i32 - i { i = i + 1i32; }
+    exit (i =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 42i32; },
+        (InvariantViolated) { exit 34i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

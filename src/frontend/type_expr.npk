@@ -3427,6 +3427,11 @@ pub func:CTX_ENSURES = int32() never fails   { pass 2i32; };
 pub func:CTX_INVARIANT = int32() never fails { pass 3i32; };
 pub func:CTX_RULES = int32() never fails     { pass 4i32; };
 pub func:CTX_PROVE = int32() never fails     { pass 5i32; };
+// A MEASURE (D-304, 1.5.8c): a `decreases E` on a loop or a function -- a
+// contract expression that is an INTEGER, not a proposition; neither `result`
+// nor `old(…)` exists in one (the rules above admit them under `ensures` and
+// `invariant` alone, so nothing here need refuse them a second time).
+pub func:CTX_DECREASES = int32() never fails { pass 6i32; };
 
 // WHAT A CONTRACT MAY NOT CONTAIN (1.5.1, D-221), in one place, by kind. A
 // contract is a proposition evaluable anywhere — at a call site the caller

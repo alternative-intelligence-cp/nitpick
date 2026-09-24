@@ -121,15 +121,19 @@ pub func:stmt_decl_attr = DeclId(Ast->:ast, StmtNode:s, int32:i) never fails {
     DeclId:d = DeclId{ index: raw s_at(ast, s, (raw VAR_HDR()) + i) }; pass d;
 };
 
-// WhileStmt: a = cond; header [0] body, [1] invariant.
+// WhileStmt: a = cond; header [0] body, [1] invariant, [2] measure (D-304).
 pub func:stmt_body = StmtId(Ast->:ast, StmtNode:s) never fails {
     StmtId:i = StmtId{ index: raw s_at(ast, s, 0i32) }; pass i;
 };
 pub func:stmt_while_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 1i32) }; pass v;
 };
+pub func:stmt_while_measure = VerifyId(Ast->:ast, StmtNode:s) never fails {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 2i32) }; pass v;
+};
 
-// ForStmt: a = binding; header [0] iterable, [1] body, [2] invariant.
+// ForStmt: a = binding; header [0] iterable, [1] body, [2] invariant, [3] measure
+// (D-304 -- always refused on a `for`, recorded so the refusal has a span).
 pub func:stmt_for_binding = DeclId(StmtNode:s) never fails { DeclId:i = DeclId{ index: s.a }; pass i; };
 pub func:stmt_for_iter = ExprId(Ast->:ast, StmtNode:s) never fails {
     ExprId:e = ExprId{ index: raw s_at(ast, s, 0i32) }; pass e;
@@ -140,9 +144,13 @@ pub func:stmt_for_body = StmtId(Ast->:ast, StmtNode:s) never fails {
 pub func:stmt_for_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 2i32) }; pass v;
 };
+pub func:stmt_for_measure = VerifyId(Ast->:ast, StmtNode:s) never fails {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 3i32) }; pass v;
+};
 
 // Loop/TillStmt: a = body; header [0] invariant, [1] head-argument count, then
-// the head arguments.
+// the head arguments, then [2 + argc] the measure (D-304 -- always refused on a
+// counted loop, recorded so the refusal has a span).
 func:COUNTED_HDR = int32() never fails { pass 2i32; };
 
 pub func:stmt_counted_body = StmtId(StmtNode:s) never fails{ StmtId:i = StmtId{ index: s.a }; pass i; };
@@ -150,6 +158,9 @@ pub func:stmt_counted_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 0i32) }; pass v;
 };
 pub func:stmt_counted_argc = int32(Ast->:ast, StmtNode:s) never fails { pass (raw s_at(ast, s, 1i32)); };
+pub func:stmt_counted_measure = VerifyId(Ast->:ast, StmtNode:s) never fails {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, (raw COUNTED_HDR()) + (raw stmt_counted_argc(ast, s))) }; pass v;
+};
 
 // `loop(start, limit, step)` and `till(limit, step)` -- the head arguments, by
 // position. Reading them out is the same operation for both, and the checker is
@@ -199,6 +210,13 @@ pub func:counted_step_literal = StepLit(Ast->:ast, StmtNode:s) never fails {
 // statement kinds by hand missed them; a kind not listed here carries no
 // expression, and a kind that does but is not listed is a missed site -- the
 // class DEF-26 was. Bodies (blocks, arms, loop bodies) are each walker's own.
+func:push_measure_expr = NIL(Ast->:ast, VerifyId:m, List<int32>->:out) never fails {
+    if (raw verify_is_none(m)) { pass NIL; }
+    ExprId:me = raw measure_expr(raw ast_verify(ast, m));
+    if (!(raw expr_is_none(me))) { drop list_push(out, me.index); }
+    pass NIL;
+};
+
 pub func:stmt_expr_ids = NIL(Ast->:ast, StmtNode:s, List<int32>->:out) never fails {
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         ExprId:init = raw stmt_decl_init(ast, s);
@@ -214,11 +232,15 @@ pub func:stmt_expr_ids = NIL(Ast->:ast, StmtNode:s, List<int32>->:out) never fai
         || (s.kind == StmtKind.StmtWhenStmt)) {
         ExprId:c = raw stmt_cond(s);
         if (!(raw expr_is_none(c))) { drop list_push(out, c.index); }
+        // THE MEASURE (D-304, 1.5.8c): an expression of the loop's head.
+        if (s.kind == StmtKind.StmtWhileStmt) { drop push_measure_expr(ast, raw stmt_while_measure(ast, s), out); }
+        if (s.kind == StmtKind.StmtWhenStmt)  { drop push_measure_expr(ast, raw stmt_when_measure(ast, s), out); }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
         ExprId:it = raw stmt_for_iter(ast, s);
         if (!(raw expr_is_none(it))) { drop list_push(out, it.index); }
+        drop push_measure_expr(ast, raw stmt_for_measure(ast, s), out);
         pass NIL;
     }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
@@ -226,6 +248,7 @@ pub func:stmt_expr_ids = NIL(Ast->:ast, StmtNode:s, List<int32>->:out) never fai
             ExprId:a = raw stmt_counted_arg(ast, s, ai);
             if (!(raw expr_is_none(a))) { drop list_push(out, a.index); }
         }
+        drop push_measure_expr(ast, raw stmt_counted_measure(ast, s), out);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
@@ -272,6 +295,9 @@ pub func:stmt_when_end = StmtId(Ast->:ast, StmtNode:s) never fails {
 };
 pub func:stmt_when_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 3i32) }; pass v;
+};
+pub func:stmt_when_measure = VerifyId(Ast->:ast, StmtNode:s) never fails {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 4i32) }; pass v;
 };
 
 pub func:p_is_assign_op = bool(TokenKind:k) never fails {
@@ -703,11 +729,17 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
         // `while (i < n) invariant total >= 0i32, i >= 0i32 { … }` -- between the
         // head and the body, comma-separated and unparenthesised like the
         // contracts it belongs with.
+        // THE TERMINATION CLAUSE (D-304, 1.5.8c) comes BEFORE the invariant;
+        // one read after it too, so the wrong order is the checker's TYPE-072
+        // and never a parse error some tokens away.
+        VerifyId:m1 = raw p_parse_measure(p);
         VerifyId:inv = raw p_parse_invariant(p);
+        VerifyId:meas = raw p_merge_measures(p, m1, raw p_parse_measure(p));
         StmtId:b = raw p_parse_block(p);
         int32:mark = raw ast_scratch_mark(p.ast);
         drop ast_scratch_push(p.ast, b.index);
         drop ast_scratch_push(p.ast, inv.index);
+        drop ast_scratch_push(p.ast, meas.index);
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (raw ast_add_stmt(p.ast, StmtKind.StmtWhileStmt, sp,
                                  c.index, w.start, w.count, label));
@@ -732,12 +764,17 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
         discard(raw p_expect(p, TokenKind.KwIn));
         ExprId:iter = raw p_parse_expr(p);
         discard(raw p_expect(p, TokenKind.PRParen));
+        // A `for` is bounded by construction (D-234) and takes no termination
+        // clause; the parser still reads one so the checker can say so (TYPE-072).
+        VerifyId:fm1 = raw p_parse_measure(p);
         VerifyId:inv = raw p_parse_invariant(p);
+        VerifyId:fmeas = raw p_merge_measures(p, fm1, raw p_parse_measure(p));
         StmtId:b = raw p_parse_block(p);
         int32:mark = raw ast_scratch_mark(p.ast);
         drop ast_scratch_push(p.ast, iter.index);
         drop ast_scratch_push(p.ast, b.index);
         drop ast_scratch_push(p.ast, inv.index);
+        drop ast_scratch_push(p.ast, fmeas.index);
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (raw ast_add_stmt(p.ast, StmtKind.StmtForStmt, sp,
                                  binding.index, w.start, w.count, label));
@@ -771,7 +808,9 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
     // `when` takes an invariant like every other loop. AST_REFERENCE section 2
     // omitted the field while VERIFICATION_REFERENCE section 4 listed `when`
     // among the constructs that accept one; the spec now says so too.
+    VerifyId:wm1 = raw p_parse_measure(p);
     VerifyId:winv = raw p_parse_invariant(p);
+    VerifyId:wmeas = raw p_merge_measures(p, wm1, raw p_parse_measure(p));
     int32:mark = raw ast_scratch_mark(p.ast);
     StmtId:wb = raw p_parse_block(p);
     drop ast_scratch_push(p.ast, wb.index);
@@ -788,6 +827,7 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
         drop ast_scratch_push(p.ast, 0i32);
     }
     drop ast_scratch_push(p.ast, winv.index);
+    drop ast_scratch_push(p.ast, wmeas.index);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_stmt(p.ast, StmtKind.StmtWhenStmt, sp,
                              wc.index, w.start, w.count, label));
@@ -809,13 +849,17 @@ func:p_counted = StmtId(Parser->:p, Span:sp, int64:label, StmtKind:kind) never f
     }
     IdSpan:args = raw ast_scratch_commit(p.ast, amark);
     discard(raw p_expect(p, TokenKind.PRParen));
+    // Bounded by construction (D-022): a clause here is the checker's TYPE-072.
+    VerifyId:cm1 = raw p_parse_measure(p);
     VerifyId:inv = raw p_parse_invariant(p);
+    VerifyId:cmeas = raw p_merge_measures(p, cm1, raw p_parse_measure(p));
     StmtId:b = raw p_parse_block(p);
 
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, inv.index);
     drop ast_scratch_push(p.ast, argc);
     drop ast_copy_window(p.ast, args);
+    drop ast_scratch_push(p.ast, cmeas.index);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_stmt(p.ast, kind, sp, b.index, w.start, w.count, label));
 };

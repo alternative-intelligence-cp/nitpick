@@ -568,6 +568,7 @@ func:trap_of_kind = string(string:k) never fails {
     if (raw text_eq(k, "overflow"))      { pass "-4110"; }   // 1.5.8b step 3
     if (raw text_eq(k, "bounds"))        { pass "-4099"; }   // 1.5.8b step 5 (D-070)
     if (raw text_eq(k, "cast-range"))    { pass "-4117"; }   // 1.5.8b step 5 (D-306)
+    if (raw text_eq(k, "terminate"))     { pass "-4119"; }   // 1.5.8c step 1 (D-304)
     pass "";
 };
 
@@ -762,7 +763,8 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         // into assumes; the second did since D-306 and this list lacked it, a
         // gap in both runners' belts.
         bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit")) || (raw text_eq(k, "shift-range")) || (raw text_eq(k, "err-exit"))
-                           || (raw text_eq(k, "overflow")) || (raw text_eq(k, "cast-range")) || (raw text_eq(k, "bounds"));
+                           || (raw text_eq(k, "overflow")) || (raw text_eq(k, "cast-range")) || (raw text_eq(k, "bounds"))
+                           || (raw text_eq(k, "terminate"));   // 1.5.8c step 1 (D-304)
         if (assume_kind) {
             int64:aslot = 0i64 - 1i64;
             for (int64:aj in 0i64...asyms.count) {

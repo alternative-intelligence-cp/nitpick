@@ -1,0 +1,65 @@
+// expect-exit: 0
+//
+// THE MEASURE CHECK'S SILENT SHAPES (D-304, 1.5.8c step 1): a counting loop
+// whose measure shrinks on every trip runs to its end; a loop that `break`s
+// before its measure would fail is silent (the check runs only where the
+// condition holds); a `when` with a measure; an UNSIGNED measure, which the
+// check holds to strict decrease alone; a `continue` re-entering the head
+// after the measure shrank; and a nested pair, each with its own slots. Every
+// loop here runs, so a wrong check would trap `DecreasesViolated` and exit 41.
+mod:decreases_trap;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = 10i32 + ((argv.len - 1i64) =>! int32);
+    int32:i = 0i32;
+    int32:acc = 0i32;
+    while (i < n) decreases n - i invariant i >= 0i32 { acc = acc + i; i = i + 1i32; }
+    // a break before the measure would stop shrinking: the check never sees it
+    int32:j = 0i32;
+    while (true) decreases n - j {
+        if (j >= n) { break; }
+        j = j + 1i32;
+    }
+    // `when`, with its own two slots
+    int32:k = n;
+    when (k > 0i32) decreases k { k = k - 1i32; acc = acc + 1i32; } then { acc = acc + 100i32; }
+    // an unsigned measure: strict decrease alone
+    uint32:u = 5u32;
+    while (u > 0u32) decreases u { u = u - 1u32; }
+    // a `continue` re-entering the head after the measure shrank
+    int32:c = 0i32;
+    while (c < n) decreases n - c {
+        c = c + 1i32;
+        if ((c % 2i32) == 0i32) { continue; }
+        acc = acc + 1i32;
+    }
+    // nested: the outer measure holds across the inner loop's trips
+    int32:o = 0i32;
+    while (o < 3i32) decreases 3i32 - o {
+        int32:p = 0i32;
+        while (p < 4i32) decreases 4i32 - p { p = p + 1i32; acc = acc + 1i32; }
+        o = o + 1i32;
+    }
+    if (acc != 45i32 + 10i32 + 100i32 + 5i32 + 12i32) { exit 7i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

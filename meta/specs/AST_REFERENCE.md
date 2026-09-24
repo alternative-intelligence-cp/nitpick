@@ -55,7 +55,7 @@ FunctionDecl
   params       : ParamDecl[]
   variadic     : VariadicSpec?         // see below
   return_type  : TypeNode              // the SUCCESS type; Result<T> is implicit
-  contracts    : (ContractNode | NeverFails | JoinsWithin | Gives | Pure)[]   // requires / ensures / acquires / never fails (D-163) / joins / gives / pure (D-221)
+  contracts    : (ContractNode | NeverFails | JoinsWithin | Gives | Pure)[]   // requires / ensures / acquires / decreases (D-304) / never fails (D-163) / joins / gives / pure (D-221)
   body         : BlockStmt?            // absent in trait declarations
 ```
 
@@ -183,11 +183,11 @@ so `Type` is no longer a keyword at all and the ambiguity cannot recur.
 | `ExprStmt` | `expr` | must have type `NIL`, and the value-less forms are a CLOSED list (D-163 rule 6): `drop f();` / `relay f();` / `f() ?! c;` / `f() ?\| NIL;` — a bare call discards a `Result` (`TYPE-039`) |
 | `IfStmt` | `cond`, `then_block`, `else_branch: IfStmt \| BlockStmt \| none` |
 | `PickStmt` | `selector: Expr`, `arms: PickArm[]` |
-| `WhileStmt` | `label: Ident?`, `cond`, `invariants: InvariantNode[]`, `body` |
-| `ForStmt` | `label`, `binding: ParamDecl`, `iterable: Expr`, `invariants`, `body` |
-| `LoopStmt` | `label`, `start`, `limit`, `step`, `invariants`, `body` |
-| `TillStmt` | `label`, `limit`, `step`, `invariants`, `body` |
-| `WhenStmt` | `label`, `cond`, `invariants`, `body`, `then_block: BlockStmt?`, `end_block: BlockStmt?` |
+| `WhileStmt` | `label: Ident?`, `cond`, `invariants: InvariantNode[]`, `measure: DecreasesNode?`, `body` — header slots: [0] body, [1] invariant, [2] measure (D-304, 1.5.8c) |
+| `ForStmt` | `label`, `binding: ParamDecl`, `iterable: Expr`, `invariants`, `measure: DecreasesNode?` (always refused, TYPE-072), `body` — header slots: [0] iterable, [1] body, [2] invariant, [3] measure |
+| `LoopStmt` | `label`, `start`, `limit`, `step`, `invariants`, `measure: DecreasesNode?` (always refused, TYPE-072), `body` — header slots: [0] invariant, [1] argc, the arguments, [2 + argc] measure |
+| `TillStmt` | `label`, `limit`, `step`, `invariants`, `measure: DecreasesNode?` (always refused, TYPE-072), `body` — the `LoopStmt` layout |
+| `WhenStmt` | `label`, `cond`, `invariants`, `measure: DecreasesNode?`, `body`, `then_block: BlockStmt?`, `end_block: BlockStmt?` — header slots: [0] body, [1] then, [2] end, [3] invariant, [4] measure |
 | `BreakStmt` | `label: Ident?` |
 | `ContinueStmt` | `label: Ident?` |
 | `PassStmt` | `value: Expr?` |
@@ -548,18 +548,21 @@ D-230; `whence`, `fcmd` and `advice` are the prelude enums `Whence`, `Fcmd` and
 
 | Node | Fields |
 |---|---|
-| `ContractNode` | `kind: requires \| ensures`, `condition: Expr` |
+| `ContractNode` | `kind: requires \| ensures \| acquires \| decreases`, `condition: Expr` — `decreases E` on a FUNCTION (D-304, 1.5.8c): the measure over the parameters, compared at every call inside the function's recursive group (step 4) |
 | `InvariantNode` | `conditions: Expr[]` — attached to loop statements |
 | `LimitNode` | `rule: Ident`, `target: DeclId` (slot `a`, written once by resolve — `limit_target`, 1.5.1) — `limit<r_pos>` on a declaration, a parameter, or as a refinement inside a `Rules` body |
 | `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
 | `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
 | `Gives` | *(no fields)* — the **`gives`** marker clause (D-183, 1.2.6): the function is a factory whose return hands its channels to the caller, which must stash them. A channel-returning function without it is a getter, and creating a channel inside one is refused. |
 | `Pure` | *(no fields)* — the **`pure`** marker clause (D-221, 1.5.1): the body is a function of its arguments and nothing else — no allocation, no I/O, no suspension, no store the caller can see, no callee that is not itself `pure` and NAMED — checked in the body (`NITPICK-TYPE-061`) and read by name at call sites inside contracts, which admit only `never fails` `pure` callees. An impl keeps its trait method's `pure`. Orthogonal to `never fails`: a pure function may `fail`; a contract writes both words. |
+| `DecreasesNode` | `unbounded: bool` (slot `a`: 0 for `decreases E`, 1 for `unbounded`), `measure: Expr?` (slot `b`; none under `unbounded`), `written: int` (slot `c`: how many termination clauses the loop wrote — one is the rule, more is TYPE-072), `after_invariant: bool` (payload: a clause found after `invariant`, the wrong order, TYPE-072) — **the termination clause of a `while`/`when` loop** (D-304, 1.5.8c): `while (c) decreases n - i invariant P { … }` or `while (c) unbounded { … }`, the clause BEFORE `invariant`. The parser keeps every shape (D-085) and the checker refuses by name; `for`, `loop` and `till` carry the slot too, always refused (bounded by construction, D-234/D-022). A function's `decreases E` is a `ContractNode` of kind `decreases` (`CONTRACT_DECREASES`), not this node |
 
 `ensures` may reference **`result`** (the success value) and **`old(expr)`** (a
 value at entry); an `invariant` may reference `old` too. Both are keywords with
 their own expression nodes since 1.5.1 (D-221; §3.6), not identifiers a
-context gives meaning to.
+context gives meaning to. A `decreases` measure admits neither: it is an
+integer over the values at the head (D-304), typed under its own contract
+context (`CTX_DECREASES`), with TYPE-060's admission and nothing more.
 
 ---
 

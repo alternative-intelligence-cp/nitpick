@@ -19360,6 +19360,24 @@ Lands at 1.5.8c. The library listener was told before anything landed
 > the step that builds its mechanism — 073 and 075 at step 1, 072 and 074 at step
 > 4 after the sweep (6). The question the plan raised about the ~16 event loops
 > is settled as D-316: `unbounded`, with the reason on the line above.
+>
+> **Note (2026-09-24, 1.5.8c step 1 — the mechanism landed):** `decreases` and
+> `unbounded` are keywords (LEXICAL_REFERENCE §4); the clause is a
+> `DecreasesNode` in every loop's header (AST_REFERENCE §5), BEFORE
+> `invariant`, one at most -- TYPE-072's other shapes (both, twice, the wrong
+> order, a clause on `for`/`loop`/`till`) refuse now and the `neither` shape
+> waits for step 4 as (6) requires; the measure is a plain integer (TYPE-073),
+> typed under its own contract context; a function's `decreases` is a contract
+> of kind `decreases` and TYPE-075 until step 4's groups. (2) is live for loops:
+> the check at the top of the body each time the condition holds, two slots
+> (frame roles 42 and 43 in a coroutine), `DecreasesViolated` armed by the
+> reach analysis where the clause is written. (3) is live for loops: the
+> `terminate` rows (entry, preservation, one per `continue`) discharge a
+> counter loop's measure and the verified build turns the check's compares
+> into assumes (VERIFICATION_REFERENCE §4b). The first elided build dropped
+> the loop body -- the emitter's `terminated` flag left set after the elided
+> path's branch -- and both runners' assume belt and the exit-code check
+> caught it before any tree was swept.
 
 ## D-305 — A stack overflow is a controlled trap: LLVM's split-stack prologue on every emitted function, `StackExhausted` (4118), `failsafe` on a stack of its own; the check is never elided — **SETTLED (user decision, 2026-09-18: "go with all four"; S-85)**
 

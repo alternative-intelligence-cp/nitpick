@@ -5174,6 +5174,17 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
                 int32:btrait = raw exprtypes_callee_trait(x.et, cid);
                 int32:bq = raw impl_decl_for(x, conc, btrait);
                 if (bq == 0i32) { bq = cdi; }
+                // AND THE INSTANCE IS RECORDED (DEF-90, 1.5.8c step 1), as the
+                // sync path records it (`emit_method_call`): when the impl that
+                // answers is a FAMILY impl, the checker saw the parameter and
+                // recorded nothing, so nothing emitted the specialization this
+                // name now spells -- `TextWriter<W>`'s `write` awaiting
+                // `self.inner.write` at `W = LineBufWriter<ByteWriter>` referenced
+                // `LineBufWriter<ByteWriter>:Writer.write`'s resume and frame,
+                // and neither was defined: `std_out()` plus one `write` was a
+                // module `llc` refused ("base element of getelementptr must be
+                // sized"), on every compiler since the nested writers landed.
+                drop note_family_instance(x, conc, btrait, raw decl_name(cdecl), cn.span);
                 pass AsyncCallee{ name: raw method_symbol_name(x.fe.ctx.types,
                                             x.interns, conc, btrait, mn),
                                   qual: bq };

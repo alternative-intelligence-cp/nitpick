@@ -1,0 +1,47 @@
+// expect-exit: 0
+// expect-obligation: terminate discharged 2
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 2
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+//
+// THE MEASURE'S SLOTS SURVIVE A SUSPENSION (D-304, 1.5.8c step 1; P-5): in a
+// coroutine the previous measure and the first-visit flag are FRAME slots
+// (roles 42 and 43), so a loop that `await`s inside its body compares the
+// measure across the suspension -- an alloca would have died at it and the
+// second visit would have compared against garbage. Three trips, one sleep
+// each, the measure `3 - i` discharged as a counter's is. The overflow rows:
+// `3i32 - i` at the entry open and at the back edge discharged (the entry
+// guard's fact), `i + 1i32` discharged under `i < 3`, `acc + 1i32` open.
+mod:terminate_async;
+error:E9;
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:i = 0i32;
+    int32:acc = 0i32;
+    while (i < 3i32) decreases 3i32 - i {
+        Result<NIL>:z = await sleep(raw duration_ns(1000i64));
+        if (z.is_error) { exit 1i32; }
+        acc = acc + 1i32;
+        i = i + 1i32;
+    }
+    if (acc != 3i32) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (DeadlineExceeded)  { exit 97i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

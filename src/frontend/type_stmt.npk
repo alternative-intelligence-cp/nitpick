@@ -117,12 +117,14 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop check_cond(e, s);
+        drop check_measure(e, raw stmt_while_measure(e.ast, s), false, "a `while` loop", s.span);
         drop check_invariants(e, raw stmt_while_invariant(e.ast, s));
         drop check_stmt(e, raw stmt_body(e.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop check_cond(e, s);
+        drop check_measure(e, raw stmt_when_measure(e.ast, s), false, "a `when` loop", s.span);
         drop check_invariants(e, raw stmt_when_invariant(e.ast, s));
         drop check_stmt(e, raw stmt_when_body(e.ast, s));
         drop check_stmt(e, raw stmt_when_then(e.ast, s));
@@ -143,6 +145,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
 
     if (s.kind == StmtKind.StmtForStmt) {
         drop check_for(e, s);
+        drop check_measure(e, raw stmt_for_measure(e.ast, s), true, "a `for` loop", s.span);
         drop check_invariants(e, raw stmt_for_invariant(e.ast, s));
         drop check_stmt(e, raw stmt_for_body(e.ast, s));
         pass NIL;
@@ -930,6 +933,9 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
     e.counted_depth = e.counted_depth + 1i32;
     // The invariant may name `$`, so it is typed inside the counter's window.
     drop check_invariants(e, raw stmt_counted_invariant(e.ast, s));
+    string:cform = "a `loop` statement";
+    if (s.kind == StmtKind.StmtTillStmt) { cform = "a `till` statement"; }
+    drop check_measure(e, raw stmt_counted_measure(e.ast, s), true, cform, s.span);
     drop check_stmt(e, raw stmt_counted_body(s));
     e.counted_depth = e.counted_depth - 1i32;
     pass NIL;
@@ -958,6 +964,67 @@ pub func:check_proposition = NIL(ExprTyper->:e, ExprId:c, int32:ctx) never fails
     ExprNode:cn = raw ast_expr(e.ast, c);
     drop require_bool(e, t, cn.span);
     pass NIL;
+};
+
+// A LOOP'S TERMINATION CLAUSE (D-304, 1.5.8c step 1): `decreases E` or
+// `unbounded`, exactly one, before `invariant`, on a `while` or a `when` --
+// every other shape is TYPE-072 by name: `for`, `loop` and `till` are bounded
+// by construction (D-234, D-022) and take neither; two clauses say two things
+// about one loop; a clause after the invariant is out of the one order the
+// blueprint asks for. The measure is a PLAIN INTEGER (TYPE-073): a whole
+// number that shrinks on every trip and never goes below zero, and only
+// `intN`/`uintN` can be one -- a float rounds, a twisted kind carries ERR, a
+// `bool` has no order. Typed under CTX_DECREASES, so a contract's rules
+// (TYPE-060) hold of it: nothing that fails, suspends, moves or stores.
+// A `while`/`when` with NO clause is accepted until 1.5.8c step 4 (D-304 (6)):
+// the tree is swept first, then the `neither` shape joins TYPE-072.
+pub func:check_measure = NIL(ExprTyper->:e, VerifyId:m, bool:bounded_form, string:form, Span:at) never fails {
+    if (raw verify_is_none(m)) { pass NIL; }
+    VerifyNode:v = raw ast_verify(e.ast, m);
+    if (bounded_form) {
+        discard(raw te_error(e, raw TYPE_LOOP_CLAUSE(),
+            string_concat(form, " is bounded by construction (D-234, D-022) and takes neither `decreases` nor `unbounded` (D-304)"),
+            v.span));
+        pass NIL;
+    }
+    if ((raw measure_count(v)) > 1i32) {
+        discard(raw te_error(e, raw TYPE_LOOP_CLAUSE(),
+            string_concat(form, " states exactly one of `decreases E` and `unbounded` (D-304): this one states more than one"),
+            v.span));
+        pass NIL;
+    }
+    if (raw measure_after_invariant(v)) {
+        discard(raw te_error(e, raw TYPE_LOOP_CLAUSE(),
+            "the termination clause comes before `invariant` (D-304): `while (c) decreases E invariant P { … }` -- the measure says why the loop ends, the invariant what holds while it runs",
+            v.span));
+        pass NIL;
+    }
+    if (raw measure_is_unbounded(v)) { pass NIL; }
+    ExprId:me = raw measure_expr(v);
+    if (raw expr_is_none(me)) { pass NIL; }
+    discard(raw check_measure_expr(e, me));
+    pass NIL;
+};
+
+// THE MEASURE'S TYPE (TYPE-073): typed under the measure context, a plain
+// integer or refused naming the kind it was. Answers the type, 0 when refused
+// or already reported.
+pub func:check_measure_expr = int32(ExprTyper->:e, ExprId:me) never fails {
+    int32:saved = e.contract_ctx;
+    e.contract_ctx = raw CTX_DECREASES();
+    int32:t = raw type_of_expr(e, me);
+    e.contract_ctx = saved;
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_INT())) {
+        ExprNode:mn = raw ast_expr(e.ast, me);
+        string:k1 = string_concat("a `decreases` measure is a plain integer (`intN`/`uintN`, D-304) -- a whole number that shrinks on every trip and never goes below zero; this one is `",
+                                  raw type_display(e.types, e.interns, t));
+        discard(raw te_error(e, raw TYPE_MEASURE_KIND(),
+            string_concat(k1, "`"), mn.span));
+        pass 0i32;
+    }
+    pass t;
 };
 
 // A loop's invariants: each conjunct a proposition. The reserved NONE handle
@@ -2653,10 +2720,38 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     // verifier's, typed nowhere" — the sentence above the `joins` loop —
     // which is how a contract of any type at all was accepted.
     int32:cci = 0i32;
+    int32:fn_measures = 0i32;
     while (cci < (raw fn_contract_count(e.ast, d))) {
         VerifyNode:ccv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, cci));
         if (ccv.kind == VerifyKind.VerifyContractNode) {
             int32:ck = raw contract_kind(ccv);
+            // A FUNCTION'S `decreases E` (D-304 (1), (5); 1.5.8c step 1): the
+            // measure over the parameters, a plain integer (TYPE-073), typed
+            // under the measure context; one at most (TYPE-072); none on
+            // `main`/`failsafe` (D-244). And, until step 4 computes the
+            // recursive groups, EVERY function measure is TYPE-075: the
+            // compiler sees no recursive call of this function to check it at.
+            if (ck == (raw CONTRACT_DECREASES())) {
+                fn_measures = fn_measures + 1i32;
+                if (e.fn_terminal) {
+                    discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                        "`main` and `failsafe` carry no contract (D-244): nobody calls them, so a `decreases` has no recursive call to be checked at",
+                        ccv.span));
+                } else {
+                    if (fn_measures > 1i32) {
+                        discard(raw te_error(e, raw TYPE_LOOP_CLAUSE(),
+                            "a function states `decreases` at most once (D-304): a second measure would compare against which?",
+                            ccv.span));
+                    } else {
+                        int32:mt = raw check_measure_expr(e, raw contract_cond(ccv));
+                        if (mt != 0i32) {
+                            discard(raw te_error(e, raw TYPE_MEASURE_NO_RECURSION(),
+                                "`decreases` on a function the compiler sees no recursive call of checks nothing (D-304): the measure is compared at a call inside the function's recursive group, and there is none -- until 1.5.8c step 4 computes the groups, every function measure is refused here; a loop's `decreases` is checked today",
+                                ccv.span));
+                        }
+                    }
+                }
+            }
             int32:cctx = 0i32;
             if (ck == (raw CONTRACT_REQUIRES())) { cctx = raw CTX_REQUIRES(); }
             if (ck == (raw CONTRACT_ENSURES()))  { cctx = raw CTX_ENSURES(); }

@@ -1228,6 +1228,20 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     string:flag = raw loop_slot(x, sid, 1i32, "i8");
     if (flag.len == 0i64) { pass (raw iv_broken(s.span)); }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", flag, ""));
+    // THE MEASURE'S TWO SLOTS (D-304, 1.5.8c step 1), as `emit_while`'s.
+    VerifyId:wmeas = raw stmt_when_measure(x.ast, s);
+    string:dprev = "";
+    string:dflag = "";
+    if (raw measure_checks(x, wmeas)) {
+        int32:mtid = raw exprtypes_get(x.et, raw measure_expr(raw ast_verify(x.ast, wmeas)));
+        LlType:mll = raw ll_type(x.fe.ctx, mtid);
+        if (!(raw ll_is_ok(mll))) { pass (raw iv_from_ll_at(x, mll, mtid, s.span)); }
+        dprev = raw loop_slot(x, sid, 42i32, string_concat(mll.text, ""));
+        if (dprev.len == 0i64) { pass (raw iv_broken(s.span)); }
+        dflag = raw loop_slot(x, sid, 43i32, "i8");
+        if (dflag.len == 0i64) { pass (raw iv_broken(s.span)); }
+        drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", dflag, ""));
+    }
 
     string:head_l = raw irw_new_label(x.fe.w, "wn.head");
     string:body_l = raw irw_new_label(x.fe.w, "wn.body");
@@ -1250,6 +1264,10 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
+    if (dprev.len > 0i64) {
+        IrVal:dc = raw emit_decreases_check(x, wmeas, sid, raw stmt_when_body(x.ast, s), raw stmt_label(s), dprev, dflag);
+        if (!(raw iv_is_ok(dc))) { pass dc; }
+    }
     drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", flag, ""));
     drop fnem_loop_push(x.fe, string_concat(head_l, ""), string_concat(junc_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_block(x, raw stmt_when_body(x.ast, s));
@@ -1606,6 +1624,23 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     // the condition, so it runs at entry and after every iteration -- LIVE-1's
     // 0.9.0 refusal retires here and at the three other loop shapes.
     VerifyId:winv = raw stmt_while_invariant(x.ast, s);
+    // THE MEASURE'S TWO SLOTS (D-304, 1.5.8c step 1): the previous value in the
+    // measure's own type and the first-visit flag, written before the head so
+    // the first visit compares against nothing; the check runs at the top of
+    // the body, each time the condition holds (`emit_decreases_check`).
+    VerifyId:wmeas = raw stmt_while_measure(x.ast, s);
+    string:dprev = "";
+    string:dflag = "";
+    if (raw measure_checks(x, wmeas)) {
+        int32:mtid = raw exprtypes_get(x.et, raw measure_expr(raw ast_verify(x.ast, wmeas)));
+        LlType:mll = raw ll_type(x.fe.ctx, mtid);
+        if (!(raw ll_is_ok(mll))) { pass (raw iv_from_ll_at(x, mll, mtid, s.span)); }
+        dprev = raw loop_slot(x, sid, 42i32, string_concat(mll.text, ""));
+        if (dprev.len == 0i64) { pass (raw iv_broken(s.span)); }
+        dflag = raw loop_slot(x, sid, 43i32, "i8");
+        if (dflag.len == 0i64) { pass (raw iv_broken(s.span)); }
+        drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", dflag, ""));
+    }
     string:head_l = raw irw_new_label(x.fe.w, "wh.head");
     string:body_l = raw irw_new_label(x.fe.w, "wh.body");
     string:done_l = raw irw_new_label(x.fe.w, "wh.done");
@@ -1626,6 +1661,10 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
+    if (dprev.len > 0i64) {
+        IrVal:dc = raw emit_decreases_check(x, wmeas, sid, raw stmt_body(x.ast, s), raw stmt_label(s), dprev, dflag);
+        if (!(raw iv_is_ok(dc))) { pass dc; }
+    }
     drop fnem_loop_push(x.fe, string_concat(head_l, ""), string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_block(x, raw stmt_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
@@ -2729,6 +2768,22 @@ pub func:emit_function_named = IrVal(ExprEmitter->:x, DeclId:did,
               raw generic_scope_none(), false));
 };
 
+// THE MEASURE'S FRAME SLOTS (D-304, 1.5.8c step 1): a coroutine's `while`/
+// `when` with a checked `decreases` keeps the previous measure (role 42, the
+// measure's own type) and the first-visit flag (role 43, `i8`) in the frame,
+// because the loop spans suspensions and an alloca would die at one. Registered
+// here so `loop_slot` finds them, as every other loop role is.
+func:scan_measure_slots = IrVal(ExprEmitter->:x, StmtId:sid, VerifyId:meas) never fails {
+    if (!(raw measure_checks(x, meas))) { pass (raw iv_nil()); }
+    ExprId:me = raw measure_expr(raw ast_verify(x.ast, meas));
+    int32:mtid = raw exprtypes_get(x.et, me);
+    LlType:mll = raw ll_type(x.fe.ctx, mtid);
+    if (!(raw ll_is_ok(mll))) { pass (raw iv_from_ll_at(x, mll, mtid, raw span_none())); }
+    drop fnem_cross_add(x.fe, sid.index, 42i32, mtid, move(mll.text));
+    drop fnem_cross_add(x.fe, sid.index, 43i32, 0i32, "i8");
+    pass (raw iv_nil());
+};
+
 // A loop's hidden slot (stage D2): the frame GEP in a coroutine, an alloca
 // otherwise. The pre-scan registered every coroutine loop's roles, so a miss
 // while async is a defect — fail closed as broken IR, never a quiet alloca.
@@ -3281,6 +3336,8 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
     if (s.kind == StmtKind.StmtWhileStmt) {
         IrVal:rw = raw scan_expr(x, raw stmt_cond(s), fuel - 1i32);
         if (!(raw iv_is_ok(rw))) { pass rw; }
+        IrVal:rwm = raw scan_measure_slots(x, sid, raw stmt_while_measure(x.ast, s));
+        if (!(raw iv_is_ok(rwm))) { pass rwm; }
         pass (raw scan_crossing(x, raw stmt_body(x.ast, s), fuel - 1i32));
     }
     // LOOP STATE IS FRAME-RESIDENT IN A COROUTINE, uniformly (stage D2): the
@@ -3327,6 +3384,8 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
     if (s.kind == StmtKind.StmtWhenStmt) {
         // The `when` tracking flag persists across iterations — framed too.
         drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i8");
+        IrVal:rwnm = raw scan_measure_slots(x, sid, raw stmt_when_measure(x.ast, s));
+        if (!(raw iv_is_ok(rwnm))) { pass rwnm; }
         IrVal:rwc = raw scan_expr(x, raw stmt_cond(s), fuel - 1i32);
         if (!(raw iv_is_ok(rwc))) { pass rwc; }
         IrVal:r2 = raw scan_crossing(x, raw stmt_when_body(x.ast, s), fuel - 1i32);

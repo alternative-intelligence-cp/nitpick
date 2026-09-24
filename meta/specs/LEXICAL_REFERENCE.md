@@ -63,6 +63,7 @@ VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
                       | "acquires" | "gives"
                       | "invariant" | "fails" | "on" | "with" | "never"
                       | "old" | "result" | "pure"
+                      | "decreases" | "unbounded"
 
 ; the contract position after a parameter list (D-163, D-181, D-221):
 ;   Contracts ::= ( "requires" Expr | "ensures" Expr

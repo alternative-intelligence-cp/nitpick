@@ -1,0 +1,33 @@
+// expect-error: NITPICK-REACH-002
+//
+// A LOOP'S `decreases` ARMS `DecreasesViolated` (D-304, 1.5.8c step 1): the
+// head's check traps where the measure is below zero or not below the previous
+// trip's, and the identity can reach `failsafe` from any program that writes
+// the clause -- so a `failsafe` that does not name it refuses here, as one
+// missing `(InvariantViolated)` does for a loop with an invariant. `unbounded`
+// arms nothing: it checks nothing. `(IntOverflow)` IS named, for `n - i` and
+// `i + 1i32`; the one arm missing is the measure's.
+mod:reach_decreases;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = 10i32 + ((argv.len - 1i64) =>! int32);
+    int32:i = 0i32;
+    while (i < n) decreases n - i { i = i + 1i32; }
+    exit (i =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

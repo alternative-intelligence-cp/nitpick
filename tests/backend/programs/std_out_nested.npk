@@ -1,0 +1,40 @@
+// expect-exit: 0
+//
+// THE STANDARD OUTPUT WRITER, WRITTEN AND FLUSHED (DEF-90, 1.5.8c step 1):
+// `std_out()` is a `TextWriter<LineBufWriter<ByteWriter>>`, and its `write`
+// awaits `self.inner.write` at `W = LineBufWriter<ByteWriter>` -- a family
+// impl's method at a NESTED instance, reached only through the outer generic
+// body. The awaited call named the specialization (1.1.12c's substitution) and
+// recorded no instance, so `LineBufWriter<ByteWriter>:Writer.write`'s resume
+// and frame were referenced and never defined, and this program was a module
+// `llc` refused ("base element of getelementptr must be sized") on every
+// compiler since the nested writers landed at 1.1.12c. `text_roundtrip.npk`
+// reaches the writer through the free `text_flush`, which is why it passed.
+mod:std_out_nested;
+error:E9;
+
+async func:main = int32(cstring[]:_~argv) {
+    Result<TextWriter<LineBufWriter<ByteWriter>>>:sr = std_out();
+    if (sr.is_error) { exit 3i32; }
+    TextWriter<LineBufWriter<ByteWriter>>:tw = move(sr.value);
+    discard(await tw.write(string_bytes("nested\n"), raw duration_secs(30i64)) ?| 0i64);
+    await tw.flush(raw duration_secs(30i64)) ?| NIL;
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 20i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (IntOverflow)      { exit 93i32; },
+        (OutOfBounds)      { exit 94i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

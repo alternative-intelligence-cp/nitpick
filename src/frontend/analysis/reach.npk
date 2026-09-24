@@ -84,6 +84,7 @@ pub struct:Reach = {
     bool:saw_requires;
     bool:saw_ensures;
     bool:saw_invariant;
+    bool:saw_decreases;      // a loop carrying `decreases E` (D-304, 1.5.8c): its head check traps
     // Walking `failsafe`'s own body (REACH-004 asks it of every `exit`).
     bool:in_failsafe;
 
@@ -128,6 +129,7 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
                      saw_limit: false, saw_shift: false, saw_cast_range: false,
                      saw_requires: false, saw_ensures: false, saw_invariant: false,
+                     saw_decreases: false,
                      in_failsafe: false,
                      failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32,
                      seen: raw list_init::<bool>((nd => int64) + 1i64),
@@ -356,6 +358,12 @@ func:reach_fn = NIL(Reach->:x, DeclId:id) never fails {
                 if ((ck == (raw CONTRACT_REQUIRES())) || (ck == (raw CONTRACT_ENSURES()))) {
                     drop reach_expr(x, ExprId{ index: cv.b }, raw REACH_DEPTH());
                 }
+                // A function's `decreases` (D-304) is walked for its own arms;
+                // its check arms nothing until the groups exist (step 4), and
+                // the checker refuses every one until then (TYPE-075).
+                if (ck == (raw CONTRACT_DECREASES())) {
+                    drop reach_expr(x, ExprId{ index: cv.b }, raw REACH_DEPTH());
+                }
             }
         }
         bool:was_failsafe = x.in_failsafe;
@@ -506,12 +514,14 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop reach_invariant(x, raw stmt_while_invariant(x.ast, s), fuel - 1i32);
+        drop reach_measure(x, raw stmt_while_measure(x.ast, s), fuel - 1i32);
         drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_body(x.ast, s), fuel - 1i32);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop reach_invariant(x, raw stmt_when_invariant(x.ast, s), fuel - 1i32);
+        drop reach_measure(x, raw stmt_when_measure(x.ast, s), fuel - 1i32);
         drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
@@ -520,18 +530,21 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtLoopStmt) {
         drop reach_invariant(x, raw stmt_counted_invariant(x.ast, s), fuel - 1i32);
+        drop reach_measure(x, raw stmt_counted_measure(x.ast, s), fuel - 1i32);
         x.saw_counted = true;
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtTillStmt) {
         drop reach_invariant(x, raw stmt_counted_invariant(x.ast, s), fuel - 1i32);
+        drop reach_measure(x, raw stmt_counted_measure(x.ast, s), fuel - 1i32);
         x.saw_counted = true;
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
         drop reach_invariant(x, raw stmt_for_invariant(x.ast, s), fuel - 1i32);
+        drop reach_measure(x, raw stmt_for_measure(x.ast, s), fuel - 1i32);
         drop reach_expr(x, raw stmt_for_iter(x.ast, s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_for_body(x.ast, s), fuel - 1i32);
         pass NIL;
@@ -594,6 +607,21 @@ func:reach_invariant = NIL(Reach->:x, VerifyId:inv, int32:fuel) never fails {
     for (int32:i in 0i32...(raw invariant_count(v))) {
         drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast, v.b, i) }, fuel);
     }
+    pass NIL;
+};
+
+// A LOOP'S MEASURE (D-304, 1.5.8c step 1): its head check traps
+// `DecreasesViolated`, so the identity is armed where a `decreases` is written
+// (never for `unbounded`, which checks nothing), and the measure is walked for
+// its own arms -- an overflow inside `bound - i` -- as the loop's expressions.
+func:reach_measure = NIL(Reach->:x, VerifyId:m, int32:fuel) never fails {
+    if (raw verify_is_none(m)) { pass NIL; }
+    VerifyNode:v = raw ast_verify(x.ast, m);
+    if (raw measure_is_unbounded(v)) { pass NIL; }
+    ExprId:me = raw measure_expr(v);
+    if (raw expr_is_none(me)) { pass NIL; }
+    x.saw_decreases = true;
+    drop reach_expr(x, me, fuel);
     pass NIL;
 };
 
@@ -946,6 +974,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_requires)  { drop reach_add_system(x, "RequiresViolated"); }
     if (x.saw_ensures)   { drop reach_add_system(x, "EnsuresViolated"); }
     if (x.saw_invariant) { drop reach_add_system(x, "InvariantViolated"); }
+    if (x.saw_decreases) { drop reach_add_system(x, "DecreasesViolated"); }
 
     if (x.failsafe_decl == 0i32) {
         // NO HANDLER (DEF-5, 1.5.1b step 1b; D-013): a root that declares

@@ -301,6 +301,12 @@ pub struct:Encoder = {
     List<int32>:loop_sids;
     List<int32>:loop_labels;
     List<int32>:loop_invs;
+    // THE MEASURE OF EACH OPEN LOOP (D-304, 1.5.8c step 1): the clause node, the
+    // measure's term at the body's start (what a `continue` and the preservation
+    // row compare against), and its signedness (the traps a signed one keeps).
+    List<int32>:loop_meas;
+    List<Term>:loop_mstart;
+    List<bool>:loop_msigned;
     // AN INDEX EXPRESSION'S TERM, BY EXPRESSION (D-286, 1.5.5 step 2): the
     // `disjoint` row compares the index pairs of two paths, and a party's
     // index was encoded when its claim was walked -- earlier, under the
@@ -403,6 +409,9 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   loop_sids: raw list_init::<int32>(4i64),
                   loop_labels: raw list_init::<int32>(4i64),
                   loop_invs: raw list_init::<int32>(4i64),
+                  loop_meas: raw list_init::<int32>(4i64),
+                  loop_mstart: raw list_init::<Term>(4i64),
+                  loop_msigned: raw list_init::<bool>(4i64),
                   memo_ids: raw list_init::<int32>(8i64),
                   memo_terms: raw list_init::<Term>(8i64) };
 };
@@ -3366,6 +3375,15 @@ func:invariant_conj = Term(Encoder->:e, VerifyId:inv, bool:partial) never fails 
     pass acc;
 };
 
+// Does a loop's termination clause CHECK anything (a `decreases E` with an
+// expression): the emitter's `measure_checks`, for the encoder.
+func:enc_measure_checks = bool(Encoder->:e, VerifyId:meas) never fails {
+    if (raw verify_is_none(meas)) { pass false; }
+    VerifyNode:v = raw ast_verify(e.ast, meas);
+    if (raw measure_is_unbounded(v)) { pass false; }
+    pass (!(raw expr_is_none(raw measure_expr(v))));
+};
+
 func:invariant_clauses = int32(Encoder->:e, VerifyId:inv) never fails {
     if (raw verify_is_none(inv)) { pass 0i32; }
     pass (raw invariant_count(raw ast_verify(e.ast, inv)));
@@ -3777,7 +3795,7 @@ func:counter_advance = NIL(Encoder->:e, int32:kind, int32:name, Term:step, Term:
 // loop's rows share its group and its clause count: the head's check elides
 // only when every one is discharged, and keeps one trap per clause.
 func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:cond,
-                     int32:label, Counter:ctr) never fails {
+                     int32:label, Counter:ctr, VerifyId:meas) never fails {
     StmtNode:s = raw ast_stmt(e.ast, sid);
     List<int32>:assigned = raw list_init::<int32>(4i64);
     drop collect_assigned(e, body, @assigned);
@@ -3832,6 +3850,43 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
         Term:wc = raw enc_expr(e, cond);
         if (wc.ok && wc.is_bool) { drop hyp_push(e, wc.text, wc.syms); }
     }
+    // THE MEASURE (D-304, 1.5.8c step 1; the `terminate` rows): the check runs
+    // at the top of the body, each time the condition holds, so its rows sit
+    // INSIDE the body's region with the invariant and the condition as
+    // hypotheses. `E` is encoded LOUD here -- its own guards (an overflow in
+    // `bound - i`) record their rows in this context, at the body's end and at
+    // each `continue`, one row per context the head's evaluation runs in
+    // (DEF-81's rule), all at clause context 0 since the evaluation is never
+    // removed. The ENTRY row, signed measures only: `E >= 0` (an unsigned
+    // measure cannot go below zero and records no row); the PRESERVATION row
+    // at the body block, `E' < E` over the versions at the body's end against
+    // those at its start; one per `continue` (`walk_stmt`). All share the
+    // loop's group and the check's trap count: two for a signed measure, one
+    // for an unsigned one.
+    bool:has_meas = raw enc_measure_checks(e, meas);
+    Term:m0 = raw term_none();
+    bool:msigned = false;
+    int32:mtraps = 1i32;
+    if (has_meas) {
+        ExprId:me0 = raw measure_expr(raw ast_verify(e.ast, meas));
+        msigned = raw type_is_signed(e.types, raw exprtypes_get(e.et, me0));
+        if (msigned) { mtraps = 2i32; }
+        m0 = raw enc_expr(e, me0);
+        if (msigned) {
+            if (m0.ok) {
+                Term:nn = raw term_app2(">=", m0, raw term_lit("0", false), true);
+                drop record_at(e, raw OK_TERMINATE(), nn.text, nn.syms, raw SITE_STMT(), sid.index, s.span, true,
+                               raw ROLE_GUARD(), sid.index, mtraps);
+            } else {
+                List<int32>:mnone = raw list_init::<int32>(1i64);
+                drop record_at(e, raw OK_TERMINATE(), "", mnone, raw SITE_STMT(), sid.index, s.span, false,
+                               raw ROLE_GUARD(), sid.index, mtraps);
+            }
+        }
+    }
+    drop list_push(@e.loop_meas, meas.index);
+    drop list_push(@e.loop_mstart, raw term_copy(m0));
+    drop list_push(@e.loop_msigned, msigned);
     drop list_push(@e.loop_sids, sid.index);
     drop list_push(@e.loop_labels, label);
     drop list_push(@e.loop_invs, inv.index);
@@ -3841,6 +3896,25 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     drop list_push(@e.loop_casc, raw term_copy(ctr.asc));
     drop list_push(@e.loop_cdollar, dollar);
     drop walk_block(e, body);
+    // THE PRESERVATION ROW OF THE MEASURE: the value at the body's end is below
+    // the value at its start.
+    if (has_meas) {
+        StmtNode:mbs = raw ast_stmt(e.ast, body);
+        ExprId:me1 = raw measure_expr(raw ast_verify(e.ast, meas));
+        Term:m1 = raw enc_expr(e, me1);
+        if (m0.ok && m1.ok) {
+            Term:lt = raw term_app2("<", m1, m0, true);
+            drop record_at(e, raw OK_TERMINATE(), lt.text, lt.syms, raw SITE_STMT(), body.index, mbs.span, true,
+                           raw ROLE_GUARD(), sid.index, mtraps);
+        } else {
+            List<int32>:pnone = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_TERMINATE(), "", pnone, raw SITE_STMT(), body.index, mbs.span, false,
+                           raw ROLE_GUARD(), sid.index, mtraps);
+        }
+    }
+    discard(raw list_pop(@e.loop_meas));
+    discard(raw list_pop(@e.loop_mstart));
+    discard(raw list_pop(@e.loop_msigned));
     discard(raw list_pop(@e.loop_sids));
     discard(raw list_pop(@e.loop_labels));
     discard(raw list_pop(@e.loop_invs));
@@ -5642,7 +5716,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop walk_loop(e, sid, raw stmt_while_invariant(e.ast, s), raw stmt_body(e.ast, s),
-                       raw stmt_cond(s), raw stmt_label(s), raw counter_none());
+                       raw stmt_cond(s), raw stmt_label(s), raw counter_none(), raw stmt_while_measure(e.ast, s));
         pass NIL;
     }
 
@@ -5684,7 +5758,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         int64:mark = raw scope_mark(e);
         drop bind_define(e, raw decl_name(bd), bt, entry, 0i32, false);
         drop walk_loop(e, sid, raw stmt_for_invariant(e.ast, s), raw stmt_for_body(e.ast, s),
-                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr);
+                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr, raw verify_none());
         drop scope_release(e, mark);
         pass NIL;
     }
@@ -5745,7 +5819,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
             drop hyp_push(e, pos2.text, pos2.syms);
         }
         drop walk_loop(e, sid, raw stmt_counted_invariant(e.ast, s), raw stmt_counted_body(s),
-                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr);
+                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr, raw verify_none());
         pass NIL;
     }
 
@@ -5765,7 +5839,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         bool:has_pre = cpre.ok && cpre.is_bool;
         List<int32>:snap_pre = raw snapshot(e);
         drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
-                       raw stmt_cond(s), raw stmt_label(s), raw counter_none());
+                       raw stmt_cond(s), raw stmt_label(s), raw counter_none(), raw stmt_when_measure(e.ast, s));
         List<int32>:snap_post = raw snapshot(e);
         Term:npre = raw term_none();
         if (has_pre) {
@@ -5936,6 +6010,24 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         // here -- a preservation row keyed at the `continue`.
         int64:fr = raw loop_frame(e, raw stmt_label(s));
         if (fr >= 0i64) {
+            // THE MEASURE AT A `continue` (D-304): the head's check runs again
+            // with the values here -- a row against the body-start value.
+            VerifyId:cmeas = VerifyId{ index: e.loop_meas[fr] };
+            if (raw enc_measure_checks(e, cmeas)) {
+                int32:cmt = 1i32;
+                if (e.loop_msigned[fr]) { cmt = 2i32; }
+                Term:cm0 = raw term_copy(e.loop_mstart[fr]);
+                Term:cmc = raw enc_expr(e, raw measure_expr(raw ast_verify(e.ast, cmeas)));
+                if (cm0.ok && cmc.ok) {
+                    Term:clt = raw term_app2("<", cmc, cm0, true);
+                    drop record_at(e, raw OK_TERMINATE(), clt.text, clt.syms, raw SITE_STMT(), sid.index, s.span, true,
+                                   raw ROLE_GUARD(), e.loop_sids[fr], cmt);
+                } else {
+                    List<int32>:cmnone = raw list_init::<int32>(1i64);
+                    drop record_at(e, raw OK_TERMINATE(), "", cmnone, raw SITE_STMT(), sid.index, s.span, false,
+                                   raw ROLE_GUARD(), e.loop_sids[fr], cmt);
+                }
+            }
             VerifyId:civ = VerifyId{ index: e.loop_invs[fr] };
             int32:cnc = raw invariant_clauses(e, civ);
             if (cnc > 0i32) {

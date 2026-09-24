@@ -1,0 +1,52 @@
+// expect-exit: 10
+// expect-obligation: terminate discharged 3
+// expect-obligation: overflow discharged 4
+// expect-obligation: overflow open 3
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// A `continue` RE-ENTERS THE HEAD (D-304, 1.5.8c step 1): the measure is
+// checked there too, so the loop has THREE rows -- the entry row, the
+// preservation row at the body's end, and one at the `continue`, each
+// against the body-start value. The counter is incremented before the
+// `continue` on the odd trips and at the body's end on the even ones, so
+// every path shrinks `n - i` by one and every row discharges. The rest, read:
+// `i % 2i32` is a literal divisor (div-zero and div-min discharged); the
+// overflow rows are `argv.len - 1i64`, `i + 1i32`, and `n - i` in three
+// contexts -- the entry's open, the back edge's and the `continue`'s
+// discharged on the entry guard's fact -- with `10i32 + (…)` and `odd + 1i32`
+// (nothing bounds `odd`) open.
+mod:terminate_continue;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = 10i32 + ((argv.len - 1i64) =>! int32);
+    int32:i = 0i32;
+    int32:odd = 0i32;
+    while (i < n) decreases n - i {
+        i = i + 1i32;
+        if ((i % 2i32) == 1i32) { odd = odd + 1i32; continue; }
+    }
+    if (odd != 5i32) { exit 7i32; }
+    exit (i =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
