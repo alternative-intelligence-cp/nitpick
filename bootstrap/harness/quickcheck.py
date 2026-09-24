@@ -35,7 +35,13 @@ OUT = os.path.join(ROOT, ".internal", "quickcheck")
 def build():
     os.makedirs(OUT, exist_ok=True)
     rt = os.path.join(OUT, "npkrt.o")
-    if not os.path.exists(rt):
+    # THE FLOOR MOVES TOO (found at 1.5.8b step 6b): a cached npkrt.o older
+    # than runtime/npkrt.ll linked a builder that needed `__morestack` (the
+    # split-stack floor of 1.5.8 step 2) against a floor from before it, and
+    # the first quickcheck after the refresh failed at the link with no hint
+    # that the cache was the cause. Re-assemble when the source is newer.
+    if (not os.path.exists(rt)
+            or os.path.getmtime(rt) < os.path.getmtime(harness.RUNTIME_LL)):
         r = subprocess.run(["llc"] + harness.LLC_FLAGS + [harness.RUNTIME_LL, "-o", rt],
                            capture_output=True, text=True)
         if r.returncode != 0:

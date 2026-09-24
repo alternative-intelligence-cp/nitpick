@@ -12464,6 +12464,20 @@ finally get names.
 > qualifier is the declaring FILE's basename; an inline module qualifies
 > nothing.
 
+> **Note (2026-09-23, 1.5.8b step 6b — DEF-86):** "the pick must NAME each one"
+> was hollow for what the PRELUDE raises on a program's behalf. Since 1.1.6 the
+> reach analysis walked the program's modules and not the prelude, on the
+> premise that a program reaches the prelude's guards only through machinery
+> its own text contains; `list_pop`'s `!!! OutOfBounds` on an empty list
+> falsified it, and the raise reached `failsafe` through `(*)` with no arm ever
+> demanded (measured: exit 44 where the armed program answers 55, and the
+> compiler accepted the arm's absence). The walk follows every resolved callee
+> now — into the prelude and every import, each function once; a trait-method
+> callee (a `dyn` receiver, a bound in a generic body) reaches every impl of
+> its trait; a function named as a value is reached — and 20 of the tree's 502
+> roots gained an arm. The set this decision promises is computed over what the
+> program REACHES, not over what its own text spells.
+
 ## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED; the sanctioned-crossing list grew a fifth member at 1.4.4 (user-ratified)**
 
 C-8, settled at 1.1.8's close, on evidence that did not exist when the

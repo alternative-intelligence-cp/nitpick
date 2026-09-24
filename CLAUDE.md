@@ -1255,8 +1255,20 @@ since nothing decides it later. A limited field has no address, through a
 pointer to its struct as well (TYPE-063 extended: the case a rule about a
 BINDING could never see). `field_limit.npk` is the payoff — a `div-zero`, a
 `div-min` and three `overflow` rows discharge on facts that exist only because
-a field carries a rule — and the compiler's own emission is BYTE-IDENTICAL, so
-no verdict moved. **Step 3 LANDED 2026-09-19**: every plain-integer
+a field carries a rule — and every existing program's emission is
+byte-identical (the compiler's own moved, since `src/` grew), so no verdict
+moved. **Step 6b LANDED 2026-09-23 (DEF-86)**: the reach analysis FOLLOWS
+CALLS INTO THE PRELUDE — since 1.1.6 it had walked the program's modules and
+not the prelude, on the premise that a program reaches the prelude's guards
+only through machinery its own text contains, and `list_pop`'s `!!! OutOfBounds`
+on an empty list falsified it: a program with no index of its own was told
+`OutOfBounds` could not arrive and the raise landed in `(*)` (exit 44 where the
+armed program answers 55). Every resolved callee is walked once now, a trait-
+method callee reaches every impl of the trait, a function named as a value is
+reached; 20 of the tree's 502 roots gained an arm (13 `IntOverflow`, 7
+`OutOfBounds`, 4 `TbbErr`, 1 `ShiftRange`, 2 `BadPath`), no other diagnostic
+moved. The ceiling and the facts are step 6c, with the one-hop refresh the
+prelude's `limit<ListLen>` needs; `intern.npk`'s `*%` is 6d. **Step 3 LANDED 2026-09-19**: every plain-integer
 `+ - *` and negation is an `overflow` row at its guard's site (one over a
 `simd` operation's lanes, one with N−1 traps for an integer `.sum()`), a
 discharged row's branch becomes one `llvm.assume`, and the compiler's own
@@ -2160,6 +2172,16 @@ that carried them retired at the cycle close):
   When adding a construct the emitter may write more than once, ask what the
   belts will count — they compare the IR's traps and assumes against the rows,
   and they fail closed.
+- **`failsafe` must name what the PRELUDE can raise on the program's behalf**
+  (DEF-86, 1.5.8b step 6b): the reach analysis follows every resolved call into
+  the prelude and every import, so a program that calls `list_pop`, formats a
+  float, hashes through a bound or parses a path is asked for the arms those
+  bodies can reach — `(OutOfBounds)`, `(IntOverflow)`, `(TbbErr)`, `(BadPath)`
+  — exactly as it is asked for its own. A `dyn` or bound call reaches EVERY impl
+  of the trait (an over-approximation; E-5 owns narrowing it), so a generic
+  bound over a prelude trait can demand `(TbbErr)` a program never instantiates.
+  REACH-002 names each missing identity; add the arm with the code `(*)` would
+  have answered and nothing else changes. The prelude is still not walked whole.
 
 ### Reserved words that read like ordinary names
 

@@ -1,0 +1,34 @@
+// expect-error: NITPICK-REACH-002
+//
+// A RAISE INSIDE THE PRELUDE REACHES `failsafe` (DEF-86, 1.5.8b step 6b). The
+// prelude's `list_pop` raises `!!! OutOfBounds` on an empty list. This
+// program's own text has no index expression, so until step 6b the reach
+// analysis -- which walked the program's modules and not the prelude, on the
+// premise that a program reaches the prelude's guards only through machinery
+// its own text contains -- demanded no `(OutOfBounds)` arm, and the raise
+// landed in `(*)`: a controlled stop under the wrong arm, with the author
+// told the identity could not arrive. The walk follows every resolved callee
+// now, so `list_pop`'s raise is reachable here and the missing arm refuses.
+// `(IntOverflow)` IS named: `list_pop`'s `count - 1` and `list_init`'s
+// `cap * size` reach it too, and this file is about the raise.
+mod:reach_prelude;
+
+func:main = int32(cstring[]:_~argv) {
+    List<int32>:l = raw list_init::<int32>(4i64);
+    int32:v = raw list_pop(@l);
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
+};

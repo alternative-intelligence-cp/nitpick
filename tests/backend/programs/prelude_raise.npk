@@ -1,0 +1,31 @@
+// expect-exit: 55
+//
+// A RAISE INSIDE THE PRELUDE, CAUGHT BY THE ARM THE COMPILER NOW DEMANDS
+// (DEF-86, 1.5.8b step 6b). `list_pop` on an empty list raises
+// `!!! OutOfBounds` from inside the prelude; the reach analysis follows the
+// call into `list_pop`, demands `(OutOfBounds)` of this failsafe (the
+// rejection twin `reach_prelude.npk` shows the refusal without it), and the
+// raise lands in that arm -- 55 -- and not in `(*)`'s 44, which is where it
+// landed on every compiler before this step, with no arm ever asked for.
+mod:prelude_raise;
+
+func:main = int32(cstring[]:_~argv) {
+    List<int32>:l = raw list_init::<int32>(4i64);
+    int32:v = raw list_pop(@l);
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)    { exit 55i32; },
+        (IntOverflow)    { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 44i32; }
+    }
+    exit 9i32;
+};

@@ -35,6 +35,7 @@ use "../parse_decorate.npk".*;   // limit_target (1.5.2, D-251)
 use "../types.npk".*;
 use "../expr_types.npk".*;
 use "../type_resolve.npk".*;     // struct_field_decl_of: a limited field's write point (D-308, 1.5.8b step 6)
+use "../type_trait.npk".*;       // ImplTable: a trait-method callee reaches every impl (DEF-86, 1.5.8b step 6b)
 use "./analysis_codes.npk".*;
 
 pub func:REACH_DEPTH = int32() never fails { pass 256i32; };
@@ -90,11 +91,33 @@ pub struct:Reach = {
     int32:failsafe_decl;
     int32:main_decl;         // the root's `main`, or 0 (DEF-5: a `main` without a handler refuses)
     int32:prelude_scope;
+
+    // THE REACHED SET (DEF-86, 1.5.8b step 6b). The walk used to stop at the
+    // program's own text: the prelude was excluded on the premise that a
+    // program reaches the prelude's guards only through machinery its own
+    // text contains -- an index, a division. That premise was false the day
+    // the prelude's `list_pop` raised `!!! OutOfBounds` on an empty list: a
+    // program whose only index was inside `list_pop` was told nothing, and
+    // the raise fell to `failsafe`'s `(*)`. So the walk now follows every
+    // resolved callee, into the prelude and into every import, and walks each
+    // function ONCE: `seen` marks a function walked or queued (by declaration
+    // index), `queue` holds those not yet walked, and `reach_settle` drains
+    // it before the set is read. A trait's own method as the callee -- a
+    // `dyn` dispatch, or a bound inside a generic body, where the impl is not
+    // known here -- reaches every impl of that trait (`trait_of` names the
+    // trait a method declaration belongs to; the impl table lists the impls).
+    // The prelude is still not walked WHOLE: what the program does not reach
+    // arms nothing, which is the precision the exclusion was written for.
+    List<bool>:seen;
+    List<int32>:queue;
+    List<int32>:trait_of;
+    ImplTable->:impls;
 };
 
 pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                             TypeTable->:types, ExprTypes->:ets,
-                            DiagList->:diags) never fails {
+                            DiagList->:diags, ImplTable->:impls) never fails {
+    int32:nd = raw ast_decl_count(ast);
     Reach:x = Reach{ ast: ast, tab: tab, interns: interns, types: types,
                      ets: ets, diags: diags,
                      rdecls: raw list_init::<int32>(32i64),
@@ -105,8 +128,94 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_limit: false, saw_shift: false, saw_cast_range: false,
                      saw_requires: false, saw_ensures: false, saw_invariant: false,
                      in_failsafe: false,
-                     failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32 };
+                     failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32,
+                     seen: raw list_init::<bool>((nd => int64) + 1i64),
+                     queue: raw list_init::<int32>(64i64),
+                     trait_of: raw list_init::<int32>((nd => int64) + 1i64),
+                     impls: impls };
+    for (int32:i in 0i32...nd) {
+        drop list_push(@x.seen, false);
+        drop list_push(@x.trait_of, 0i32);
+    }
+    // EVERY TRAIT'S OWN METHODS, by declaration: the one question a callee
+    // must answer before its impls can be found (DEF-86). Every module's
+    // traits, the prelude's included -- a program dispatching through a
+    // prelude trait reaches the prelude's impls of it.
+    for (int32:t in 0i32...nd) {
+        DeclNode:td = raw ast_decl(ast, DeclId{ index: t });
+        if (td.kind == DeclKind.DeclTraitDecl) {
+            int32:tn = raw item_member_count(ast, td);
+            for (int32:k in 0i32...tn) {
+                DeclId:mid = raw item_member(ast, td, k);
+                if ((mid.index > 0i32) && (mid.index < nd)) {
+                    x.trait_of[mid.index => int64] = t;
+                }
+            }
+        }
+    }
     pass x;
+};
+
+// A FUNCTION THE PROGRAM REACHES, queued to be walked once (DEF-86, 1.5.8b
+// step 6b): a callee resolved by the checker or the resolver, an impl method a
+// trait-method callee may dispatch to, or a function named as a VALUE. Anything
+// that is not a function declaration, and anything already walked or queued,
+// is dropped here.
+func:reach_enqueue = NIL(Reach->:x, int32:decl) never fails {
+    if (decl <= 0i32) { pass NIL; }
+    if ((decl => int64) >= x.seen.count) { pass NIL; }
+    if (x.seen[decl => int64]) { pass NIL; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: decl });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    x.seen[decl => int64] = true;
+    drop list_push(@x.queue, decl);
+    pass NIL;
+};
+
+// THE CALLEE OF A CALL, REACHED (DEF-86). The checker records the declaration
+// it settled on for a method call, a `dyn` dispatch and a module-qualified
+// call (1.0.3, 1.5.4c); a plain call's callee is the identifier's own symbol.
+// When the recorded callee is a TRAIT's method -- the receiver a `dyn`, or a
+// parameter under a bound, so the impl is decided elsewhere -- every impl of
+// that trait that declares the method is reached too: an over-approximation,
+// and the sound direction (an arm the program cannot enter costs a line; a
+// raise no arm names lands in `(*)`, which is what this fixes).
+func:reach_callee = NIL(Reach->:x, ExprId:id, ExprNode:n) never fails {
+    int32:cd = raw exprtypes_callee(x.ets, id);
+    if ((cd == 0i32) && (n.kind == ExprKind.ExprCallExpr)) {
+        ExprId:ce = raw expr_callee(n);
+        if (!(raw expr_is_none(ce))) {
+            ExprNode:cn = raw ast_expr(x.ast, ce);
+            if ((cn.kind == ExprKind.ExprIdentifierExpr) && (cn.a != 0i32)) {
+                Symbol:cs = raw symtab_get(x.tab, cn.a);
+                if (cs.origin_kind == (raw SYM_DECL())) { cd = cs.origin; }
+            }
+        }
+    }
+    if (cd <= 0i32) { pass NIL; }
+    drop reach_enqueue(x, cd);
+    if ((cd => int64) >= x.trait_of.count) { pass NIL; }
+    int32:tdecl = x.trait_of[cd => int64];
+    if (tdecl == 0i32) { pass NIL; }
+    DeclNode:md = raw ast_decl(x.ast, DeclId{ index: cd });
+    int32:mname = raw decl_name(md);
+    int32:ic = raw impl_count(x.impls);
+    for (int32:i in 0i32...ic) {
+        ImplEntry:ie = raw impl_at(x.impls, i);
+        if (ie.trait_id == 0i32) { continue; }
+        if ((raw type_decl_of(x.types, ie.trait_id)) != tdecl) { continue; }
+        DeclNode:idn = raw ast_decl(x.ast, DeclId{ index: ie.decl });
+        if (idn.kind != DeclKind.DeclImplDecl) { continue; }
+        int32:mn = raw impl_member_count(x.ast, idn);
+        for (int32:j in 0i32...mn) {
+            DeclId:mid = raw impl_member(x.ast, idn, j);
+            DeclNode:mm = raw ast_decl(x.ast, mid);
+            if ((mm.kind == DeclKind.DeclFunctionDecl) && ((raw decl_name(mm)) == mname)) {
+                drop reach_enqueue(x, mid.index);
+            }
+        }
+    }
+    pass NIL;
 };
 
 func:reach_add_decl = NIL(Reach->:x, int32:decl_index) never fails {
@@ -173,6 +282,42 @@ pub func:reach_module = NIL(Reach->:x, DeclId:mod_id) never fails {
 func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
     DeclNode:d = raw ast_decl(x.ast, id);
     if (d.kind == DeclKind.DeclFunctionDecl) {
+        // ONCE (DEF-86): a function the queue already holds, or one walked
+        // from it before its module's turn, is not walked again.
+        if ((id.index > 0i32) && ((id.index => int64) < x.seen.count)) {
+            if (x.seen[id.index => int64]) { pass NIL; }
+            x.seen[id.index => int64] = true;
+        }
+        drop reach_fn(x, id);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        drop reach_module(x, id);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = raw impl_member_count(x.ast, d);
+        for (int32:j in 0i32...mn) {
+            drop reach_decl(x, raw impl_member(x.ast, d, j));
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        for (int32:k in 0i32...tn) {
+            drop reach_decl(x, raw item_member(x.ast, d, k));
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// ONE FUNCTION'S WALK -- its limited parameters, its contracts, its body.
+// Entered from `reach_decl` for the program's own declarations and from the
+// queue for everything they reach (DEF-86); `seen` is marked by the caller.
+func:reach_fn = NIL(Reach->:x, DeclId:id) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
+    if (d.kind == DeclKind.DeclFunctionDecl) {
         if (raw string_eq(raw intern_get(x.interns, raw decl_name(d)), "failsafe")) {
             x.failsafe_decl = id.index;
         }
@@ -216,24 +361,6 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
         x.in_failsafe = (x.failsafe_decl == id.index);
         drop reach_stmt(x, raw fn_body(x.ast, d), raw REACH_DEPTH());
         x.in_failsafe = was_failsafe;
-        pass NIL;
-    }
-    if (d.kind == DeclKind.DeclModuleDecl) {
-        drop reach_module(x, id);
-        pass NIL;
-    }
-    if (d.kind == DeclKind.DeclImplDecl) {
-        int32:mn = raw impl_member_count(x.ast, d);
-        for (int32:j in 0i32...mn) {
-            drop reach_decl(x, raw impl_member(x.ast, d, j));
-        }
-        pass NIL;
-    }
-    if (d.kind == DeclKind.DeclTraitDecl) {
-        int32:tn = raw item_member_count(x.ast, d);
-        for (int32:k in 0i32...tn) {
-            drop reach_decl(x, raw item_member(x.ast, d, k));
-        }
         pass NIL;
     }
     pass NIL;
@@ -692,6 +819,7 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (n.kind == ExprKind.ExprCallExpr) {
+        drop reach_callee(x, id, n);
         drop reach_expr(x, raw expr_callee(n), fuel - 1i32);
         drop reach_expr_window(x, (raw expr_list_start(n))
                   + (raw expr_generic_count(n)),
@@ -715,6 +843,15 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
             j = j + 1i32;
         }
         pass NIL;
+    }
+    // A METHOD CALL reaches its recorded callee (DEF-86); its receiver and
+    // arguments are walked by shape below, as before.
+    if (n.kind == ExprKind.ExprMethodCallExpr) { drop reach_callee(x, id, n); }
+    // A FUNCTION NAMED AS A VALUE is reached (DEF-86): whoever holds the value
+    // may call it, and the walk cannot see who.
+    if ((n.kind == ExprKind.ExprIdentifierExpr) && (n.a != 0i32)) {
+        Symbol:vs = raw symtab_get(x.tab, n.a);
+        if (vs.origin_kind == (raw SYM_DECL())) { drop reach_enqueue(x, vs.origin); }
     }
     int32:shape = raw expr_shape(n.kind);
     if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
@@ -751,6 +888,14 @@ func:reach_expr_window = NIL(Reach->:x, int32:start, int32:count,
 
 // After the walk: fold in the system family, find failsafe's pick, compare.
 pub func:reach_settle = NIL(Reach->:x) never fails {
+    // EVERYTHING THE PROGRAM REACHES IS WALKED BEFORE THE SET IS READ (DEF-86,
+    // 1.5.8b step 6b): the queue holds every callee the module walk met that
+    // its module's turn did not cover -- the prelude's functions above all --
+    // and each walk may queue more.
+    while (x.queue.count > 0i64) {
+        int32:qd = raw list_pop(@x.queue);
+        drop reach_fn(x, DeclId{ index: qd });
+    }
     // The floor is unconditional: allocation and the exit-time checks are in
     // every program -- and, since D-305 (1.5.8 step 2), the stack check: every
     // function the compiler emits compares its frame against the thread's

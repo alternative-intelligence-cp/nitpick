@@ -494,19 +494,22 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // REACHABLE ERRORS (D-179, 1.1.7): the program-wide set that can reach
     // `failsafe`, and the named coverage its `pick` owes. Whole-program like
     // the locks — one set, one failsafe, one verdict.
-    Reach:rch = raw reach_init(@f.g.ast, @f.g.tab, @f.it, @f.types, @f.ets, @f.diags);
+    Reach:rch = raw reach_init(@f.g.ast, @f.g.tab, @f.it, @f.types, @f.ets, @f.diags, @f.im);
     if (f.g.prelude >= 0i32) {
         ModuleEntry:rpe = raw graph_at(@f.g, f.g.prelude);
         rch.prelude_scope = rpe.scope;
     }
     int32:rc0 = 0i32;
     while (rc0 < (raw graph_count(@f.g))) {
-        // The PRELUDE is excluded from the detector walk: a program reaches
-        // its guard-bearing internals only through machinery the program's
-        // OWN text must contain (a tbb value, an index, a division), and
-        // those trip the detectors where they appear. Walking the prelude
-        // would make every conditional unconditional and the precision
-        // pointless.
+        // The PRELUDE is not walked as a MODULE: walking it whole would make
+        // every conditional identity unconditional and the precision
+        // pointless. What the program REACHES in it is walked, function by
+        // function, from the queue the walk fills at every resolved call
+        // (DEF-86, 1.5.8b step 6b). Until then the prelude was excluded on
+        // the premise that a program reaches its guards only through
+        // machinery the program's own text contains -- an index, a division
+        // -- which `list_pop`'s `!!! OutOfBounds` on an empty list falsified:
+        // that raise reached `failsafe`'s `(*)` with no arm ever asked for.
         if (rc0 != f.g.prelude) {
             ModuleEntry:e10 = raw graph_at(@f.g, rc0);
             drop reach_module(@rch, DeclId{ index: e10.root });

@@ -1713,6 +1713,41 @@ discharged one whose two copies are both elided — and it FAILS against the
 pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
 -4099 traps for 1 retained".]*
 
+**DEF-86 — FIXED at 1.5.8b step 6b: THE REACH ANALYSIS DID NOT SEE A RAISE, A
+GUARD OR A `fail` INSIDE THE PRELUDE.** (found 2026-09-23 by `nitpick-compiler_s12`,
+planning the prelude `List`'s `limit<ListLen>` -- D-308 §6 -- whose checks inside
+`list_push` would have been one more prelude-internal trap site the analysis could
+not see.) Since 1.1.6 the walk excluded the prelude on the premise, stated in
+`pipeline.npk`, that a program reaches the prelude's guards only through machinery
+its own text contains -- an index, a division. The prelude's `list_pop` falsified
+it the day it was written: `!!! OutOfBounds` on an empty list, in a program whose
+own text has no index, reached `failsafe` with no arm ever asked for and landed in
+`(*)`. Measured: exit 44 through the wildcard, where the same program with the arm
+answers 55, and the compiler had accepted the arm's absence. Nine raises in the
+prelude's `List` operations had that shape, and every guard the prelude's own
+arithmetic and indexing carry -- the text layer's, Dragon4's, the List
+operations' -- and every `fail` of a prelude constant (`BadPath` in the path
+functions) were invisible the same way. THE FIX: the walk follows every resolved
+callee -- a plain call's symbol, a method call's recorded declaration, a
+module-qualified call's (D-273) -- into the prelude and into every import, walks
+each function ONCE from a queue drained before the set is read, reaches every
+impl of a trait when the callee is the trait's own method (a `dyn` dispatch, or a
+bound inside a generic body, where the impl is decided elsewhere: an
+over-approximation, in the sound direction), and counts a function named as a
+VALUE as reached. The prelude is still not walked WHOLE, which keeps the precision
+the exclusion was written for. MEASURED over the tree's 502 root programs: 20
+gained an arm they could not have been asked for before -- 13 `IntOverflow`, 7
+`OutOfBounds`, 4 `TbbErr` (the bound over-approximation, all four in derive and
+dispatch tests whose generics never instantiate at a twisted type), 1
+`ShiftRange`, and 2 `BadPath` in the two tools that parse paths -- and no other
+diagnostic moved in any of the 140 type and analysis rejection files.
+`reach_prelude.npk` refuses the missing arm; `prelude_raise.npk` answers 55
+through it. **Owed, with its design and its trigger (E-5, §4):** the bound-call
+over-approximation can be narrowed to the impls at the types the enclosing
+generic is INSTANTIATED at, read from the checker's instance table
+(`inst_count`, `tt_instance`), the day a program pays for it in more than an arm
+it cannot enter; today four tests pay one line each.
+
 **DEF-85 — OPEN, owned by the compiler seat, raised at 1.5.8b step 5's third full
 harness: `failsafe_alloc.npk`'s VERDICT RESTS ON A FIVE-SECOND WALL CLOCK.** (found
 2026-09-20 by `nitpick-compiler_s11`.) The program's two threads are declared
@@ -1820,6 +1855,20 @@ defect declares a `DEF-` in §2f.
 > no-store-to-this-object fact is the standard shape. Recorded so the next seat does not
 > re-derive it, and so the 722 are read as a scheduled residue (D-309: measured, guarded,
 > reported) rather than as a hole. Owner: the compiler seat at 1.6.
+
+> **[1.5.8b step 6b (2026-09-23) — E-5, owned by the compiler seat: A BOUND CALL'S REACH
+> CAN BE NARROWED TO THE INSTANTIATED IMPLS.]** DEF-86 made the reach analysis follow
+> calls into the prelude, and a callee that is a trait's own method — a `dyn` receiver, or
+> a bound inside a generic body — reaches EVERY impl of the trait, because the walk sees a
+> generic body once and the impl is decided per instantiation. Sound, and measured at four
+> arms across the tree's 502 roots (`TbbErr` in derive and dispatch tests whose generics
+> never instantiate at a twisted type). The narrowing: for a bound call inside generic G,
+> read G's instances from the checker's instance table (`inst_count`/`tt_instance`), bind
+> the bound parameter per instance, and reach only the impl at that type (`dyn` keeps every
+> impl, or walks the program's own coercions instead). Closes when a program pays for the
+> over-approximation in more than an arm it cannot enter, or at 1.5.8d's close, whichever
+> comes first. (This section's E-4 shares its number with §2g's closed E-4 — two leads, one
+> number, since step 5; step 7's doc pass renumbers this section's.)
 
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
