@@ -19378,6 +19378,23 @@ Lands at 1.5.8c. The library listener was told before anything landed
 > the loop body -- the emitter's `terminated` flag left set after the elided
 > path's branch -- and both runners' assume belt and the exit-code check
 > caught it before any tree was swept.
+>
+> **Note (2026-09-24, 1.5.8c step 3 — the sweep landed; (6)'s condition is met):**
+> every `while` and `when` of the compiler's tree states its clause -- 977 loops
+> as the parser counts them (`meta/roadmap/1.5/tools/loop_dump.npk`), 392
+> written by the sweep tool from the shape it can prove monotone, 563 decided
+> by a reader and applied from the committed record `decreases_read.txt`
+> (88 `stable`, 112 `hoist`, 289 `measure`, 72 `unbounded`, 9 by hand), 22
+> that already carried one. (2) reaches the compile-time evaluator too: a
+> measure of a loop `fold_while` runs is checked each trip and a violation is
+> a counterexample reported as TYPE-069, so the evaluator agrees with the
+> emitter (DEF-29's lesson). A measure may call a `pure never fails` function
+> (TYPE-060), so the parser's `p_left` (the tokens left, every parser loop's
+> measure), `tokenlist_count`, the AST's `item_member_count`, `d_at` and
+> `ast_id_at`, and the three round constants are declared `pure`. Every
+> `failsafe` in the tree names `(DecreasesViolated)` from this step, the
+> runners' generated ones included: the prelude's loops reach nearly every
+> program. The `neither` shape of TYPE-072 becomes a refusal at step 4.
 
 ## D-305 — A stack overflow is a controlled trap: LLVM's split-stack prologue on every emitted function, `StackExhausted` (4118), `failsafe` on a stack of its own; the check is never elided — **SETTLED (user decision, 2026-09-18: "go with all four"; S-85)**
 
@@ -20307,4 +20324,29 @@ measure over that number, not `unbounded`.
 
 Lands at 1.5.8c step 3, the sweep; the loops given `unbounded` are listed in its
 record with their reasons.
+
+> **Note (2026-09-24, 1.5.8c step 3 — landed):** 72 loops of the sweep say
+> `unbounded`, each with its reason on the line above (73 in the tree with
+> step 1's own test), and every one is a line of
+> `meta/roadmap/1.5/tools/decreases_read.txt` -- the reader's record the sweep
+> tool applied; `grep '^unbounded'` lists them. By reason, as the file
+> classifies: 12 are bounded by a deadline the program states (the prelude's
+> `ByteReader`/`ByteWriter` retry loops, `TextReader`'s refill and its write
+> loop, the Bridge's reads and its wait for the driver's death, `nproc`'s pipe
+> waits, the mock driver's -- `DeadlineExceeded`'s kind of end, in time and not
+> in trips); 12 are spins on the monotonic clock in the trap tests; 18 are
+> worklists that grow as they drain, each item pushed once (the module loader,
+> the reach queue, the instance, type and drop tables the checker and the
+> emitter re-read on purpose, the writer's trim, the floor tools' block walks,
+> the explorer's state search); 7 are fixed points over a finite set (the
+> import rounds, the cone, the dominator and coverage passes, the floor's
+> reachability); 4 are chain or tree walks with no cycle by construction; 5 are
+> event or dispatch loops that end with their channel or child (an actor's
+> inbox, a worker's jobs, the mock driver's dispatch, the stderr drain,
+> `nproc`'s drain); and 14 are shapes a test shows an analysis or the grammar's
+> sample, where the loop's ending is not the point (a flag never written, a
+> labelled break, the fuel refusal's own spin). Not one loop was given a trip
+> budget; the three round-bounded passes (expansion, escape, locks) carry a
+> measure over their round constant, now `pure`, as the decision's last
+> sentence asks.
 

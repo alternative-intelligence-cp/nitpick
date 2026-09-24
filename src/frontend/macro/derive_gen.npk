@@ -137,7 +137,7 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 
     int32:n = raw attr_arg_count(at);
     int32:i = 0i32;
-    while (i < n) {
+    while (i < n) decreases n - i {
         ExprId:arg = ExprId{ index: raw ast_id_at(ast, raw attr_arg_start(at), i) };
         ExprNode:ae = raw ast_expr(ast, arg);
 
@@ -266,7 +266,7 @@ func:dv_sink_init = DvSink() never fails {
 
 func:dv_put = NIL(DvSink->:out, string:chunk) never fails {
     int64:i = 0i64;
-    while (i < chunk.len) {
+    while (i < chunk.len) decreases chunk.len - i {
         if (chunk.ptr[i] == 10u8) {
             DerivedOrigin:o = DerivedOrigin{ file: 0i32, line: out.line,
                                              subject: out.subject,
@@ -1045,7 +1045,8 @@ func:gen_to_string_enum = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
 // violation rather than a special case.
 pub func:derive_apply = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
-    while (i < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (i < nmods) decreases nmods - i {
         ModuleEntry:e = raw graph_at(g, i);
         if (i != g.prelude) {
             drop derive_in_module(g, DeclId{ index: e.root }, i);
@@ -1169,7 +1170,7 @@ func:derive_one = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
     if (gw.count > 0i32) {
         string:params = "<";
         int32:gi = 0i32;
-        while (gi < gw.count) {
+        while (gi < gw.count) decreases gw.count - gi {
             if (gi > 0i32) { params = string_concat(params, ", "); }
             DeclNode:gp = raw ast_decl(ast,
                               DeclId{ index: raw ast_id_at(ast, gw.start, gi) });

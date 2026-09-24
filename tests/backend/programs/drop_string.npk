@@ -25,7 +25,7 @@ func:keepit = int64(move string:s) never fails {
 func:main = int32(cstring[]:_~argv) {
     int32:i = 0i32;
     int64:acc = 0i64;
-    while (i < 500i32) {
+    while (i < 500i32) decreases 500i32 - i {
         {
             string:lit = "a literal, whose body is not ours to free";
             string:heap = string_concat("abcdefgh", "ijklmnop");
@@ -55,6 +55,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 97i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

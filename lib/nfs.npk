@@ -119,7 +119,7 @@ func:dir_init = Dir() never fails {
 func:dir_push = NIL(Dir->:d, wild int8->:name, int64:len, int64:kind) never fails {
     if ((d.used + len) > d.acap) {
         int64:na = d.acap * 2i64;
-        while ((d.used + len) > na) { na = na * 2i64; }
+        while ((d.used + len) > na) decreases (d.used + len) - na { na = na * 2i64; }
         d.names = ralloc(d.names, na);
         d.acap = na;
     }
@@ -170,9 +170,9 @@ func:swap_entries = NIL(Dir->:d, int64:a, int64:b) never fails {
 // every step is a visible byte compare beats a clever one here.
 func:dir_sort = NIL(Dir->:d) never fails {
     int64:i = 1i64;
-    while (i < d.count) {
+    while (i < d.count) decreases d.count - i {
         int64:j = i;
-        while (j > 0i64) {
+        while (j > 0i64) decreases j {
             if (raw name_less(d, j, j - 1i64)) {
                 drop swap_entries(d, j, j - 1i64);
                 j = j - 1i64;
@@ -193,7 +193,8 @@ pub func:dir_list = Dir(Path:p) {
     Dir:d = raw dir_init();
     wild int8->:buf = alloc(32768i64);
     bool:more = true;
-    while (more) {
+    // reads the directory until getdents64 answers nothing; each answer is consumed whole, and a directory is finite (D-316)
+    while (more) unbounded {
         Result<int64>:r = sys(raw SYS_GETDENTS64(), df, buf, 32768i64);
         if (r.is_error) {
             dalloc(buf);
@@ -204,7 +205,7 @@ pub func:dir_list = Dir(Path:p) {
         }
         if (r.value == 0i64) { more = false; }
         int64:off = 0i64;
-        while (off < r.value) {
+        while (off < r.value) decreases r.value - off {
             // linux_dirent64: u64 d_ino @0, s64 d_off @8, u16 d_reclen @16,
             // u8 d_type @18, char d_name[] @19 (NUL-terminated, padded to reclen).
             wild int8->:rec = #ptr_add<int8>(buf, off);
@@ -219,7 +220,7 @@ pub func:dir_list = Dir(Path:p) {
             int64:dtype = (<-(#ptr_add<uint8>(rec, 18i64))) => int64;
             wild int8->:name = #ptr_add<int8>(rec, 19i64);
             int64:nlen = 0i64;
-            while (name[nlen] != 0i8) { nlen = nlen + 1i64; }
+            while (name[nlen] != 0i8) decreases (reclen - 19i64) - nlen { nlen = nlen + 1i64; }
             bool:dot = false;
             if (nlen == 1i64) { if (name[0i64] == 46i8) { dot = true; } }
             if (nlen == 2i64) {

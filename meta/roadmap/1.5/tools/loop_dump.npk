@@ -137,7 +137,7 @@ func:walk_expr = NIL(Dump->:dd, ExprId:e, int32:fuel) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             drop walk_expr(dd, ExprId{ index: raw ast_id_at(dd.ast, raw expr_list_start(n), i) }, fuel - 1i32);
             i = i + 2i32;
         }
@@ -383,6 +383,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 3i32; },
         (MachineFault) { exit 3i32; },
         (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
         (*) { exit 3i32; }
     }
     exit 3i32;

@@ -28,7 +28,7 @@ func:main = int32(cstring[]:_~argv) {
     // Wider elements over the same bytes: an int64 lattice.
     buffer:w = buffer_new(64i64);
     int64:i = 0i64;
-    while (i < 8i64) {
+    while (i < 8i64) decreases 8i64 - i {
         <-(#ptr_add<int64>(w.ptr, i)) = i * 100i64;
         i = i + 1i64;
     }
@@ -67,6 +67,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 98i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault) { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*) { exit 99i32; }
     }
     exit 9i32;

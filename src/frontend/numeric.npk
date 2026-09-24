@@ -137,7 +137,7 @@ func:base_from_suffix = NumBase(string:sfx) never fails {
 // The longest type suffix the run ends with, leaving a non-empty remainder.
 func:strip_type_suffix = int64(string:run) never fails {
     int64:n = 6i64;
-    while (n >= 2i64) {
+    while (n >= 2i64) decreases n - 2i64 {
         if (run.len > n) {
             string:tail = raw slice_proven(run, run.len - n, run.len);
             NumWidth:w = raw num_width_of(tail);
@@ -205,7 +205,7 @@ pub func:num_scan = NumScan(string:run) never fails {
     bool:over = false;
 
     int64:i = 0i64;
-    while (i < digits.len) {
+    while (i < digits.len) decreases digits.len - i {
         uint8:c = digits.ptr[i] => uint8;
         if (c == 95u8) {
             // Underscores are permitted for readability and ignored (§6.2).
@@ -318,7 +318,7 @@ func:tfpq_decimal = string(uint512:v0) never fails {
     if (v0 == 0u512) { pass "0"; }
     uint512:v = v0;
     string:acc = "";
-    while (v != 0u512) {
+    while (v != 0u512) decreases v {
         uint512:rem = v % 10u512;
         v = v / 10u512;
         acc = string_concat(int_to_string(rem =>! int64), acc);
@@ -337,7 +337,7 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     bool:negex = false;
     int32:st = 0i32;    // 0 int, 1 frac, 2 exp, 3 done
     int64:i = 0i64;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         uint8:c = text.ptr[i];
         bool:handled = false;
         if (c >= 48u8) {
@@ -379,26 +379,26 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
         dalloc(frs);
         pass "0";
     }
-    while (ex > 0i64) {
+    while (ex > 0i64) decreases ex {
         uint8:mv = 0u8;
         if (nf > 0i64) {
             mv = frs[0i64];
             int64:j = 0i64;
-            while (j < (nf - 1i64)) { frs[j] = frs[j + 1i64]; j = j + 1i64; }
+            while (j < (nf - 1i64)) decreases ((nf - 1i64)) - j { frs[j] = frs[j + 1i64]; j = j + 1i64; }
             nf = nf - 1i64;
         }
         ints[ni] = mv;
         ni = ni + 1i64;
         ex = ex - 1i64;
     }
-    while (ex < 0i64) {
+    while (ex < 0i64) decreases 0i64 - ex {
         uint8:mv2 = 0u8;
         if (ni > 0i64) {
             mv2 = ints[ni - 1i64];
             ni = ni - 1i64;
         }
         int64:j2 = nf;
-        while (j2 > 0i64) { frs[j2] = frs[j2 - 1i64]; j2 = j2 - 1i64; }
+        while (j2 > 0i64) decreases j2 { frs[j2] = frs[j2 - 1i64]; j2 = j2 - 1i64; }
         frs[0i64] = mv2;
         nf = nf + 1i64;
         ex = ex + 1i64;
@@ -421,7 +421,7 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
             // the next bit below the point, most significant first.
             uint64:carry = 0u64;
             int64:j3 = nf - 1i64;
-            while (j3 >= 0i64) {
+            while (j3 >= 0i64) decreases j3 {
                 uint64:t2 = (((frs[j3]) => uint64) * 2u64) + carry;
                 carry = 0u64;
                 if (t2 >= 10u64) { t2 = t2 - 10u64; carry = 1u64; }
@@ -436,7 +436,7 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
         // --- rounding: one more doubled bit, sticky over what remains ---
         uint64:rcarry = 0u64;
         int64:j4 = nf - 1i64;
-        while (j4 >= 0i64) {
+        while (j4 >= 0i64) decreases j4 {
             uint64:t3 = (((frs[j4]) => uint64) * 2u64) + rcarry;
             rcarry = 0u64;
             if (t3 >= 10u64) { t3 = t3 - 10u64; rcarry = 1u64; }

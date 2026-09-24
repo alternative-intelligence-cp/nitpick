@@ -85,7 +85,7 @@ func:main = int32(cstring[]:_~argv) {
     // NEGATIVE-CONTROLLED: exit 31 against the unfixed sort, 0 with it.
     DiagList:asc = raw diaglist_init();
     int32:ai = 0i32;
-    while (ai < 12i32) {
+    while (ai < 12i32) decreases 12i32 - ai {
         Span:sp = raw span_point(0i32, ai, ai + 1i32, 1i32);
         string:msg = string_concat("keepme-", int_to_string(ai => int64));
         drop diaglist_push(@asc, raw diag_error("NITPICK-019", move(msg), sp));
@@ -98,7 +98,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // EVERY message must have survived the sort intact, and in its place.
     int32:aj = 0i32;
-    while (aj < 12i32) {
+    while (aj < 12i32) decreases 12i32 - aj {
         string:want = string_concat("keepme-", int_to_string(aj => int64));
         Diagnostic:dv = raw diaglist_at(@asc, aj => int64);
         if (!(raw string_eq(dv.message, want))) { exit 31i32; }
@@ -147,6 +147,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 3i32; },
         (MachineFault) { exit 3i32; },
         (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
         (*) { exit 3i32; }
     }
     exit 3i32;

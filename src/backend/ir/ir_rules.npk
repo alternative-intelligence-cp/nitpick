@@ -355,7 +355,7 @@ pub func:callee_bypasses = bool(ExprEmitter->:x, int32:decl_index, ExprId:call) 
 pub func:place_root_local = int64(ExprEmitter->:x, ExprId:id) never fails {
     ExprId:cur = id;
     int32:fuel = 64i32;
-    while (fuel > 0i32) {
+    while (fuel > 0i32) decreases fuel {
         fuel = fuel - 1i32;
         if (raw expr_is_none(cur)) { pass (0i64 - 1i64); }
         ExprNode:n = raw ast_expr(x.ast, cur);
@@ -799,7 +799,7 @@ func:pickexpr_continues_elided = bool(ExprEmitter->:x, ExprId:id, int32:label, b
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             if (!(raw pickexpr_continues_elided(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) },
                                                 label, nested, fuel - 1i32, kind))) { pass false; }
             i = i + 2i32;
@@ -948,7 +948,7 @@ func:collect_old_expr = NIL(ExprEmitter->:x, ExprId:id, List<int32>->:out,
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             drop collect_old_expr(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) },
                                   out, fuel - 1i32);
             i = i + 2i32;

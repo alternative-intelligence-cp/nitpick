@@ -173,7 +173,7 @@ func:ordering_of = string(string:tail) never fails {
 func:last_ptr = string(string:line, string->:tail) never fails {
     int64:at = 0i64 - 1i64;
     int64:from = 0i64;
-    while (true) {
+    while (true) decreases line.len - from {
         int64:p = raw text_index_from(line, ", ptr ", from);
         if (p < 0i64) { break; }
         at = p;
@@ -182,7 +182,7 @@ func:last_ptr = string(string:line, string->:tail) never fails {
     if (at < 0i64) { pass ""; }
     int64:s = at + 6i64;
     int64:e = s;
-    while (e < line.len) {
+    while (e < line.len) decreases line.len - e {
         uint8:c = line.ptr[e];
         if ((c == 44u8) || (c == 32u8)) { break; }
         e = e + 1i64;
@@ -198,7 +198,7 @@ func:call_of = string(string:line, string->:args) never fails {
     int64:at = raw text_find_byte(line, 64u8, c);
     if (at < 0i64) { pass ""; }
     int64:e = at + 1i64;
-    while (e < line.len) {
+    while (e < line.len) decreases line.len - e {
         uint8:ch = line.ptr[e];
         if (ch == 40u8) { break; }
         if (raw text_is_ws(ch)) { pass ""; }
@@ -252,7 +252,7 @@ pub func:floor_accesses = List<FAccess>(FloorText->:ft, int64:fi) never fails {
                 if (pp < 0i64) { continue; }
                 int64:s = pp + 5i64;
                 int64:e = s;
-                while (e < line.len) {
+                while (e < line.len) decreases line.len - e {
                     uint8:c = line.ptr[e];
                     if ((c == 44u8) || (c == 32u8)) { break; }
                     e = e + 1i64;
@@ -262,7 +262,7 @@ pub func:floor_accesses = List<FAccess>(FloorText->:ft, int64:fi) never fails {
                 string:kind2 = "cmpxchg";
                 if (rmw >= 0i64) {
                     int64:ke = rmw + 10i64;
-                    while ((ke < line.len) && (line.ptr[ke] != 32u8)) { ke = ke + 1i64; }
+                    while ((ke < line.len) && (line.ptr[ke] != 32u8)) decreases line.len - ke { ke = ke + 1i64; }
                     kind2 = raw text_slice(line, rmw, ke);
                 }
                 FAccess:a2 = FAccess{ block: b, line: i, wkey: move(key2), kind: move(kind2), ordr: "atomic" };
@@ -274,12 +274,12 @@ pub func:floor_accesses = List<FAccess>(FloorText->:ft, int64:fi) never fails {
             if (callee.len == 0i64) { continue; }
             bool:lockfn = raw is_lock_fn(callee);
             int64:from = 0i64;
-            while (true) {
+            while (true) decreases args.len - from {
                 int64:p2 = raw text_index_from(args, "ptr %", from);
                 if (p2 < 0i64) { break; }
                 int64:s2 = p2 + 4i64;
                 int64:e2 = s2;
-                while (e2 < args.len) {
+                while (e2 < args.len) decreases args.len - e2 {
                     uint8:c2 = args.ptr[e2];
                     if ((c2 == 44u8) || (c2 == 32u8) || (c2 == 41u8)) { break; }
                     e2 = e2 + 1i64;
@@ -334,7 +334,7 @@ pub func:floor_lock_calls = List<FLockCall>(FFn->:f) never fails {
                 if (p >= 0i64) {
                     int64:s = p + 4i64;
                     int64:e = s;
-                    while (e < args.len) {
+                    while (e < args.len) decreases args.len - e {
                         uint8:c = args.ptr[e];
                         if ((c == 44u8) || (c == 32u8)) { break; }
                         e = e + 1i64;
@@ -372,7 +372,8 @@ pub func:floor_dominators = List<int32>(FFn->:f) never fails {
     // the entry dominates only itself
     for (int64:d in 0i64...n) { if (d != 0i64) { dom[d] = 0i32; } }
     bool:changed = true;
-    while (changed) {
+    // the dominator fixed point: a round that changes no entry is the last, and the entries are finite (D-316)
+    while (changed) unbounded {
         changed = false;
         for (int64:b2 in 1i64...n) {
             bool:any_pred = false;
@@ -435,7 +436,8 @@ pub func:floor_held_at = bool(FFn->:f, List<int32>->:dom, List<FLockCall>->:lock
     List<int32>:covered = raw list_init::<int32>(n + 1i64);
     for (int64:i2 in 0i64...n) { drop list_push(@covered, 1i32); }
     bool:changed = true;
-    while (changed) {
+    // the coverage fixed point: a round that changes no entry is the last, and the entries are finite (D-316)
+    while (changed) unbounded {
         changed = false;
         for (int64:b in 0i64...n) {
             int32:v = 0i32;
@@ -486,7 +488,7 @@ pub func:floor_read_shared = Shared(string:spec_text) never fails {
                         exempt_fn: raw list_init::<string>(8i64), exempt_lock: raw list_init::<string>(8i64),
                         exempt_reason: raw list_init::<string>(8i64) };
     int64:e = raw sx_nth(@sx, root, 1i64);
-    while (e >= 0i64) {
+    while (e >= 0i64) decreases sx.nodes.count - e {
         if (!(raw sx_is_list(@sx, e))) { pass (raw shared_refuse("runtime/npkrt.spec: a (shared ...) entry is not a list")); }
         string:head = raw sx_head(@sx, e);
         if (raw text_eq(head, "lock")) {
@@ -507,7 +509,7 @@ pub func:floor_read_shared = Shared(string:spec_text) never fails {
             string:arg = "";
             string:reason = "";
             int64:k = rest + 1i64;
-            while (true) {
+            while (true) decreases sx.nodes.count - k {
                 int64:it = raw sx_nth(@sx, e, k);
                 if (it < 0i64) { break; }
                 if (raw sx_is_string(@sx, it)) { reason = raw sx_string(@sx, it); }

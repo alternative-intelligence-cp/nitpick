@@ -147,7 +147,8 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
     int32:found = 0i32;
 
     int64:i = 0i64;
-    while (i < (raw rootlist_count(roots))) {
+    int64:nroots = raw rootlist_count(roots);
+    while (i < nroots) decreases nroots - i {
         Root:root = raw rootlist_at(roots, i);
         string:candidate = raw path_normalise(raw path_join(root.dir, target));
         Result<cstring>:c = to_cstring(candidate);

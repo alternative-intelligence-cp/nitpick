@@ -10,15 +10,17 @@ func:main = int32(cstring[]:argv) {
     loop (2i64, 6i64, 1i64) { acc = acc + ($ =>! int32); }        // 2+3+4+5 = 14
     till (3i64, 1i64) { acc = acc + 1i32; }                        // +3 = 17
     loop (5i64, 1i64, 2i64) { acc = acc + ($ =>! int32); }         // 5+3 = +8 = 25
-    when (acc > 24i32) { acc = acc - 25i32; } then { acc = acc + 100i32; } end { acc = 0i32; }
+    when (acc > 24i32) decreases acc - 24i32 { acc = acc - 25i32; } then { acc = acc + 100i32; } end { acc = 0i32; }
     // body ran → then: acc = 0 + 100 = 100
-    when (acc < 0i32) { acc = 9i32; } then { acc = 8i32; } end { acc = acc + 20i32; }
+    when (acc < 0i32) decreases acc { acc = 9i32; } then { acc = 8i32; } end { acc = acc + 20i32; }
     // never ran → end: 120
     for (int64:i in 0i64..3i64) { acc = acc + (i =>! int32); }     // +0+1+2+3 = 126
     int32[3]:arr = [5i32, 6i32, 7i32];
     for (int32:v in arr) { acc = acc + v; }                        // +18 = 144
-    outer: while (true) {
-        while (true) { break outer; }
+    // a labelled `break outer` from the inner loop is this loop's only exit -- the shape under test
+    outer: while (true) unbounded {
+        // exits by `break outer` on its first trip -- the shape under test
+        while (true) unbounded { break outer; }
     }
     int64:brk = 0i64;
     scan: loop (0i64, 10i64, 1i64) {
@@ -38,6 +40,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

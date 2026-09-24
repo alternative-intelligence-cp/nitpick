@@ -52,7 +52,8 @@ or moves the floor; it is unnumbered and names the number the landing will take.
 | — | 2026-09-24 | — | ADVANCE for 1.5.8c step 1: `decreases`/`unbounded` become keywords (none in the libraries, measured 2026-09-23), `DecreasesViolated` an arm every program with a `decreases` names, `terminate` guarded; the landing takes the number after 1.5.8c step 0's | sent to `nitpick-libs_s5` (the seat changed hands 2026-09-24) |
 | 42 | 2026-09-24 | `68b6e05` | 1.5.8c step 0 (the plan and the codes) | no language change |
 | 43 | 2026-09-24 | `f578e6b` | 1.5.8c step 1 (the mechanism: the two keywords, the loop and function clauses, the check, the `terminate` rows; DEF-90) | sent by `nitpick-compiler_s13` (the seat after s12) |
-| 44 | 2026-09-24 | | 1.5.8c step 2 (the one-hop snapshot refresh: the committed builder parses the clauses and carries DEF-90's fix; the builder rows move) | carries the SWEEP RECIPE for the libraries (step 3's tool and idioms; D-316) |
+| 44 | 2026-09-24 | `5ea6053` | 1.5.8c step 2 (the one-hop snapshot refresh: the committed builder parses the clauses and carries DEF-90's fix; the builder rows move) | carries the SWEEP RECIPE for the libraries (step 3's tool and idioms; D-316) |
+| 45 | 2026-09-24 | | 1.5.8c step 3 (the sweep of our tree: every `while`/`when` clausal, 392 by the tool, 563 by the reading, 72 `unbounded`; the evaluator checks a measure; every failsafe names `(DecreasesViolated)`) | no language change; the record `decreases_read.txt` is the libraries' worked example |
 
 The messages themselves are not kept here; each seat keeps the text it sent in its
 own `.internal/handoff_*/` scratch for as long as that survives, and this table is

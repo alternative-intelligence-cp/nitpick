@@ -2,7 +2,7 @@
 // expect-obligation: limit discharged 2
 // expect-obligation: limit open 1
 // expect-obligation: limit-subsume discharged 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // A `limit` OVER A FLOAT SUBJECT ENCODES (D-281): the rule's `$` is the
@@ -36,6 +36,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 96i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

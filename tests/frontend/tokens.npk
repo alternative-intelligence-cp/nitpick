@@ -36,14 +36,14 @@ func:main = int32(cstring[]:_~argv) {
     // assumed. Every token's payload is its index, so a lost or corrupted
     // entry shows up as a mismatch rather than as a crash.
     int64:i = 0i64;
-    while (i < 1000i64) {
+    while (i < 1000i64) decreases 1000i64 - i {
         drop tokenlist_push(@list, raw token_make(TokenKind.Ident, sp, i));
         i = i + 1i64;
     }
     if (raw tokenlist_count(@list) != 1000i64) { exit 21i32; }
 
     int64:j = 0i64;
-    while (j < 1000i64) {
+    while (j < 1000i64) decreases 1000i64 - j {
         Token:t = raw tokenlist_at(@list, j);
         if (t.payload != j)                    { exit 22i32; }
         if (!(raw token_is(t, TokenKind.Ident))) { exit 23i32; }
@@ -94,6 +94,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

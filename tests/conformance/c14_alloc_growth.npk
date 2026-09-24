@@ -35,24 +35,24 @@ func:main = int32(cstring[]:_~argv) {
     // A pattern that depends on the index, so a copy that lands short or shifted
     // is a different value rather than the same zero.
     int64:i = 0i64;
-    while (i < cap) {
+    while (i < cap) decreases cap - i {
         items[i] = (i =>! int32) * 7i32;
         i = i + 1i64;
     }
 
     // DOUBLE PAST A MEGABYTE. One growth stays inside the first chunk and proves
     // nothing; the crash needs a block that ends where the mapping does.
-    while (cap < 400000i64) {
+    while (cap < 400000i64) decreases 400000i64 - cap {
         int64:next = cap * 2i64;
         items = raw grow(items, cap, next);
         // Everything written before the growth is still there.
         int64:j = 0i64;
-        while (j < cap) {
+        while (j < cap) decreases cap - j {
             if (items[j] != ((j =>! int32) * 7i32)) { exit 10i32; }
             j = j + 1i64;
         }
         // …and the new space is writable to its last element.
-        while (j < next) {
+        while (j < next) decreases next - j {
             items[j] = (j =>! int32) * 7i32;
             j = j + 1i64;
         }
@@ -62,7 +62,7 @@ func:main = int32(cstring[]:_~argv) {
     // One last full pass, so the final block is checked end to end rather than
     // only up to where the last growth started.
     int64:k = 0i64;
-    while (k < cap) {
+    while (k < cap) decreases cap - k {
         if (items[k] != ((k =>! int32) * 7i32)) { exit 11i32; }
         k = k + 1i64;
     }
@@ -72,7 +72,7 @@ func:main = int32(cstring[]:_~argv) {
     // one — the same defect pointing the other way.
     items = raw grow(items, cap, 16i64);
     int64:m = 0i64;
-    while (m < 16i64) {
+    while (m < 16i64) decreases 16i64 - m {
         if (items[m] != ((m =>! int32) * 7i32)) { exit 12i32; }
         m = m + 1i64;
     }
@@ -92,6 +92,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

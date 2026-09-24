@@ -271,7 +271,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
         int64:c = s.nodes[r].first;
         c = s.nodes[c].next;   // past `symbol`
         c = s.nodes[c].next;   // past the name
-        while (c >= 0i64) {
+        while (c >= 0i64) decreases s.nodes.count - c {
             if (!(raw sx_is_list(s, c))) {
                 drop strlist_push(@fl, string_concat("floor: runtime/npkrt.spec: a bare word inside the section of ", name));
                 break;
@@ -313,7 +313,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
                 int64:lc = s.nodes[c].first;
                 lc = s.nodes[lc].next;   // past `loop`
                 if (lc >= 0i64) { lc = s.nodes[lc].next; }   // past the label
-                while (lc >= 0i64) {
+                while (lc >= 0i64) decreases s.nodes.count - lc {
                     if (!(raw sx_is_list(s, lc))) {
                         string:w5 = string_concat("floor: runtime/npkrt.spec: a bare word inside the loop ", label);
                         w5 = string_concat(w5, " of ");
@@ -384,7 +384,7 @@ pub func:floor_spec_current = List<string>(FloorText->:ft, Sxs->:s) never fails 
         // must not shadow a parameter
         List<string>:pn = raw param_names(ft, fi);
         int64:fk = 0i64;
-        while (true) {
+        while (true) decreases s.nodes.count - fk {
             int64:fc = raw spec_clause(s, r, "free", fk);
             if (fc < 0i64) { break; }
             fk = fk + 1i64;
@@ -436,7 +436,8 @@ pub func:floor_classes = List<string>(FloorText->:ft) never fails {
     List<bool>:reaches = raw list_init::<bool>(n + 1i64);
     for (int64:i2 in 0i64...n) { drop list_push(@reaches, is_asm[i2]); }
     bool:grew = true;
-    while (grew) {
+    // a fixed point over the floor's functions: a round that marks no new one is the last, and the functions are finite (D-316)
+    while (grew) unbounded {
         grew = false;
         for (int64:i3 in 0i64...n) {
             if (reaches[i3]) { continue; }
@@ -447,7 +448,7 @@ pub func:floor_classes = List<string>(FloorText->:ft) never fails {
                     int64:at2 = raw text_find_byte(ln2, 64u8, 0i64);
                     if (at2 < 0i64) { continue; }
                     int64:e = at2;
-                    while ((e < ln2.len) && (ln2.ptr[e] != 40u8) && (ln2.ptr[e] != 32u8)) { e = e + 1i64; }
+                    while ((e < ln2.len) && (ln2.ptr[e] != 40u8) && (ln2.ptr[e] != 32u8)) decreases ln2.len - e { e = e + 1i64; }
                     int64:ci = raw floor_fn_index(ft, raw text_slice(ln2, at2, e));
                     if (ci < 0i64) { continue; }
                     if (reaches[ci]) { reaches[i3] = true; grew = true; }
@@ -467,7 +468,7 @@ pub func:floor_classes = List<string>(FloorText->:ft) never fails {
 // Does the line carry `w` as a whole word?
 func:has_word = bool(string:line, string:w) never fails {
     int64:from = 0i64;
-    while (true) {
+    while (true) decreases line.len - from {
         int64:p = raw text_index_from(line, w, from);
         if (p < 0i64) { pass false; }
         bool:ok = true;
@@ -879,7 +880,7 @@ func:sys6_args = List<string>(string:line) never fails {
     if (e < 0i64) { pass out; }
     List<string>:w = raw text_split_ws(raw text_replace_byte(raw text_slice(line, s, e), 44u8, 32u8));
     int64:i = 1i64;
-    while (i < w.count) {
+    while (i < w.count) decreases w.count - i {
         drop strlist_push(@out, raw strlist_copy(w, i));
         i = i + 2i64;
     }
@@ -955,7 +956,7 @@ pub func:floor_direct_syscalls = List<int64>(FloorText->:ft, int64:fi) never fai
             if (p < 0i64) { continue; }
             int64:s2 = p + 23i64;
             int64:e = s2;
-            while ((e < ln.len) && (ln.ptr[e] != 44u8)) { e = e + 1i64; }
+            while ((e < ln.len) && (ln.ptr[e] != 44u8)) decreases ln.len - e { e = e + 1i64; }
             uint128:v = 0u128;
             if (!(raw u128_parse(raw text_slice(ln, s2, e), 64i64, @v))) { continue; }
             int64:n = v =>! int64;
@@ -994,7 +995,7 @@ func:floor_callees = List<int64>(FloorText->:ft, int64:fi) never fails {
             int64:at = raw text_find_byte(ln, 64u8, 0i64);
             if (at < 0i64) { continue; }
             int64:e = at;
-            while ((e < ln.len) && (ln.ptr[e] != 40u8) && (ln.ptr[e] != 32u8)) { e = e + 1i64; }
+            while ((e < ln.len) && (ln.ptr[e] != 40u8) && (ln.ptr[e] != 32u8)) decreases ln.len - e { e = e + 1i64; }
             int64:ci = raw sys_node_index(ft, raw text_slice(ln, at, e));
             if (ci < 0i64) { continue; }
             bool:have = false;
@@ -1015,7 +1016,8 @@ pub func:floor_reach_syscalls = List<int64>(FloorText->:ft, int64:fi, bool->:tra
     drop list_push(@work, fi);
     seen[fi] = true;
     <-traps = false;
-    while (work.count > 0i64) {
+    // a worklist over the floor's call graph: a callee is pushed once (`seen`) and popped once, and the functions are finite (D-316)
+    while (work.count > 0i64) unbounded {
         int64:cur = raw list_pop(@work);
         List<int64>:d = raw floor_direct_syscalls(ft, cur);
         for (int64:k in 0i64...d.count) {

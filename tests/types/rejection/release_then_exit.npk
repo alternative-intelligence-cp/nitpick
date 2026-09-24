@@ -23,13 +23,14 @@ func:main = int32(cstring[]:argv) {
 };
 
 // expect-error: NITPICK-TYPE-062
-// expect-error-at: 35:5
+// expect-error-at: 36:5
 func:failsafe = int32(Error:e) {
     pick (e) {
         (HeapOom)        { exit 9i32; },
         (HeapBadRequest) { exit 9i32; },
         (Unreachable)    { exit 9i32; },
         (WildLeak)       { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
         (*)              { exit 9i32; }
     }
     wild_release_all();

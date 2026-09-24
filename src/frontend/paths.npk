@@ -34,7 +34,7 @@ pub func:path_is_relative = bool(string:p) never fails {
 // Everything before the last `/`. A path with no `/` has directory ".".
 pub func:path_dirname = string(string:p) never fails {
     int64:i = p.len;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (p.ptr[i] == ((raw SLASH()) =>! uint8)) {
             if (i == 0i64) {
@@ -54,7 +54,7 @@ pub func:path_dirname = string(string:p) never fails {
 pub func:path_basename = string(string:p) never fails {
     int64:start = 0i64;
     int64:i = p.len;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (p.ptr[i] == ((raw SLASH()) =>! uint8)) {
             start = i + 1i64;
@@ -104,10 +104,10 @@ pub func:path_normalise = string(string:p) never fails {
     int64:nseg = 0i64;
     int64:i = 0i64;
 
-    while (i <= p.len) {
+    while (i <= p.len) decreases p.len - i {
         // Scan one segment, ending at a `/` or at the end of the path.
         int64:seg_start = i;
-        while (i < p.len) {
+        while (i < p.len) decreases p.len - i {
             if (p.ptr[i] == ((raw SLASH()) =>! uint8)) { break; }
             i = i + 1i64;
         }
@@ -201,7 +201,7 @@ pub func:path_normalise = string(string:p) never fails {
 pub func:path_relative = string(string:base, string:target) never fails {
     int64:i = 0i64;
     int64:cut = 0i64;   // just past the common ancestor's trailing `/`
-    while ((i < base.len) && (i < target.len)) {
+    while ((i < base.len) && (i < target.len)) decreases base.len - i {
         if (base.ptr[i] != target.ptr[i]) { break; }
         if (base.ptr[i] == ((raw SLASH()) =>! uint8)) { cut = i + 1i64; }
         i = i + 1i64;
@@ -217,7 +217,7 @@ pub func:path_relative = string(string:base, string:target) never fails {
     int64:ups = 0i64;
     bool:in_seg = false;
     int64:k = cut;
-    while (k < base.len) {
+    while (k < base.len) decreases base.len - k {
         if (base.ptr[k] == ((raw SLASH()) =>! uint8)) {
             in_seg = false;
         } else {
@@ -227,7 +227,7 @@ pub func:path_relative = string(string:base, string:target) never fails {
     }
     string:out = "";
     int64:u = 0i64;
-    while (u < ups) {
+    while (u < ups) decreases ups - u {
         if (out.len > 0i64) { out = string_concat(out, "/"); }
         out = string_concat(out, "..");
         u = u + 1i64;

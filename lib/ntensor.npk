@@ -71,7 +71,7 @@ pub func:tensor_of<T> = tensor<T>(int64[]:dims) {
     int64[9]:d = [0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64];
     int64:total = 1i64;
     int64:i = 0i64;
-    while (i < dims.len) {
+    while (i < dims.len) decreases dims.len - i {
         if (dims[i] <= 0i64) { fail BadShape; }
         d[i] = dims[i];
         total = total * dims[i];
@@ -88,7 +88,7 @@ func:tensor_offset<T> = int64(tensor<T>->:self, int64[]:idx) {
     if (idx.len != self.ndims) { fail BadIndex; }
     int64:off = 0i64;
     int64:i = 0i64;
-    while (i < self.ndims) {
+    while (i < self.ndims) decreases self.ndims - i {
         if (idx[i] < 0i64)             { fail BadIndex; }
         if (idx[i] >= self.dims[i])    { fail BadIndex; }
         off = (off * self.dims[i]) + idx[i];

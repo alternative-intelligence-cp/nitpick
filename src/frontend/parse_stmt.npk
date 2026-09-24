@@ -377,7 +377,8 @@ pub func:p_looks_like_decl = bool(Parser->:p) never fails {
     int32:angle = 0i32;
     int32:paren = 0i32;
     int32:brack = 0i32;
-    while (k < (raw DECL_SCAN_LIMIT())) {
+    int64:scan_limit = raw DECL_SCAN_LIMIT();
+    while (k < scan_limit) decreases scan_limit - k {
         TokenKind:t = (raw p_peek_at(p, k)).kind;
         if (t == TokenKind.Eof)     { pass false; }
         if (t == TokenKind.PSemi)   { pass false; }
@@ -447,7 +448,7 @@ pub func:p_parse_block = StmtId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -841,7 +842,7 @@ func:p_counted = StmtId(Parser->:p, Span:sp, int64:label, StmtKind:kind) never f
         ExprId:a1 = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
         argc = 1i32;
-        while (raw p_accept(p, TokenKind.PComma)) {
+        while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
             ExprId:argN = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, argN.index);
             argc = argc + 1i32;

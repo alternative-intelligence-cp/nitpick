@@ -505,7 +505,7 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     }
     string:params = "";
     int32:i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         if (i > 0i32) { params = string_concat(params, ", "); }
         params = raw cat3(params, fe.plls[i => int64], " %a");
         params = string_concat(params, int_to_string(i => int64));
@@ -519,7 +519,7 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     drop irw_open_fn(fe.w);
 
     i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         string:arg = string_concat("%a", int_to_string(i => int64));
         string:slot = raw irw_temp(fe.w);
         // READ IN PLACE, NOT COPIED (D-183): `irw_alloca` and `cat5` LEND
@@ -569,7 +569,7 @@ pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:role,
 pub func:fnem_cross_find = int64(FnEmitter->:fe, int32:stmt_index,
                                  int32:role) never fails {
     int64:i = 0i64;
-    while (i < fe.cross_stmts.count) {
+    while (i < fe.cross_stmts.count) decreases fe.cross_stmts.count - i {
         if (fe.cross_stmts[i] == stmt_index) {
             if (fe.cross_roles[i] == role) { pass i; }
         }
@@ -704,13 +704,13 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     fe.awaitee_gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 6i64);
 
     i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i64 + (i => int64));
         drop fnem_bind(fe, fe.pnames[i => int64], move(pg), fe.ptypes[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
+    while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
         fe.cross_geps[i => int64] =
             raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i64 + fe.pnames.count + (i => int64));
         i = i + 1i32;
@@ -731,7 +731,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // reused from the free list carries garbage there only until then.
     int64:fslot = 12i64 + fe.pnames.count + fe.cross_stmts.count;
     i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         if (fe.pmoves[i => int64] != 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
                 string:pfg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
@@ -743,7 +743,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
+    while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
         if (fe.cross_roles[i => int64] == 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
                 fe.cross_fgeps[i => int64] =
@@ -892,7 +892,7 @@ pub func:fnem_frame_init = NIL(FnEmitter->:fe, string:frame_ty, string:fr,
 pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     string:params = "";
     int32:i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         if (i > 0i32) { params = string_concat(params, ", "); }
         params = raw cat3(params, fe.plls[i => int64], " %a");
         params = string_concat(params, int_to_string(i => int64));
@@ -922,7 +922,7 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     drop irw_line(fe.w, raw cat4(fr, " = alloca ", fe.frame_ty, ""));
     drop fnem_frame_init(fe, fe.frame_ty, fr, fe.resume_sym);
     i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 12i32 + i);
         drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " %a",
                           int_to_string(i => int64),
@@ -976,7 +976,7 @@ pub func:fnem_decl_last = NIL(FnEmitter->:fe, int32:stmt_index) never fails {
 pub func:fnem_lookup_decl = int64(FnEmitter->:fe, int32:stmt_index) never fails {
     if (stmt_index == 0i32) { pass (0i64 - 1i64); }
     int64:i = fe.lnames.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (fe.ldecls[i => int64] == stmt_index) { pass i; }
     }
@@ -993,7 +993,7 @@ pub func:fnem_claim_put = NIL(FnEmitter->:fe, int32:site, string:ref) never fail
 
 pub func:fnem_claim_get = string(FnEmitter->:fe, int32:site) never fails {
     int64:i = fe.claim_sites.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (fe.claim_sites[i => int64] == site) { pass (string_concat(fe.claim_refs[i => int64], "")); }
     }
@@ -1035,7 +1035,7 @@ pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:l
 // `fnem_local_slot_at` / `fnem_local_type_at` in place; -1 is not-found.
 pub func:fnem_lookup_idx = int64(FnEmitter->:fe, int32:name) never fails {
     int64:i = fe.lnames.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (fe.lnames[i => int64] == name) { pass i; }
     }
@@ -1222,7 +1222,7 @@ pub func:fnem_loop_tmark_at = int64(FnEmitter->:fe, int64:i) never fails {
 pub func:fnem_loop_find = int64(FnEmitter->:fe, int32:label) never fails {
     if (label == 0i32) { pass (fe.loop_heads.count - 1i64); }
     int64:i = fe.loop_heads.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (fe.loop_labels[i => int64] == label) { pass i; }
     }
@@ -1232,7 +1232,7 @@ pub func:fnem_loop_find = int64(FnEmitter->:fe, int32:label) never fails {
 // The innermost `$` slot — the nearest counted frame; "" when none is open.
 pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
     int64:i = fe.loop_heads.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         // A GETTER OVER A CONTAINER OF OWNING VALUES: returning a BORROW is
         // refused by D-004 rule 2 and the deep-view accessor family D-183
@@ -1358,7 +1358,7 @@ pub func:fnem_temp_push = int64(FnEmitter->:fe, int32:ttid, move string:slot,
 // SSA name answers. Newest first: the same name never names two live ones.
 pub func:fnem_temp_take = NIL(FnEmitter->:fe, string:ref) never fails {
     int64:i = fe.ttypes.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (fe.tlive[i] != 0i32) {
             if (raw string_eq(fe.trefs[i], ref)) {
@@ -1386,7 +1386,7 @@ pub func:fnem_temp_flag_at = string(FnEmitter->:fe, int64:i) never fails {
 pub func:fnem_frame_fixed_slots = int64(FnEmitter->:fe) never fails {
     int64:n = 12i64 + fe.pnames.count + fe.cross_stmts.count;
     int32:i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         if (fe.pmoves[i => int64] != 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
                 n = n + 1i64;
@@ -1395,7 +1395,7 @@ pub func:fnem_frame_fixed_slots = int64(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
+    while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
         if (fe.cross_roles[i => int64] == 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
                 n = n + 1i64;
@@ -1498,12 +1498,12 @@ func:fnem_frame_type_write = NIL(FnEmitter->:fe) never fails {
     string:slots = string_concat("ptr, i32, i32, ", fe.ret_ll);
     slots = string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
     int32:i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         slots = raw cat3(slots, ", ", fe.plls[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
+    while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
         slots = raw cat3(slots, ", ", fe.cross_lls[i => int64]);
         i = i + 1i32;
     }
@@ -1514,7 +1514,7 @@ func:fnem_frame_type_write = NIL(FnEmitter->:fe) never fails {
     // local's byte must cross with it, because an alloca dies between
     // `resume` calls exactly like the value slot it guards would have.
     i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
+    while ((i => int64) < fe.pnames.count) decreases fe.pnames.count - (i => int64) {
         if (fe.pmoves[i => int64] != 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
                 slots = string_concat(slots, ", i8");
@@ -1523,7 +1523,7 @@ func:fnem_frame_type_write = NIL(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
+    while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
         if (fe.cross_roles[i => int64] == 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
                 slots = string_concat(slots, ", i8");
@@ -1532,7 +1532,7 @@ func:fnem_frame_type_write = NIL(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     int64:t = 0i64;
-    while (t < fe.tframe_lls.count) {
+    while (t < fe.tframe_lls.count) decreases fe.tframe_lls.count - t {
         slots = raw cat3(slots, ", ", fe.tframe_lls[t]);
         t = t + 1i64;
     }
@@ -1590,7 +1590,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
             drop irw_entry(fe.w, raw cat3("br i1 ", is0, ", label %coro.tinit, label %coro.go"));
             drop irw_entry_label(fe.w, "coro.tinit");
             int64:tf = 0i64;
-            while (tf < fe.tframe_flags.count) {
+            while (tf < fe.tframe_flags.count) decreases fe.tframe_flags.count - tf {
                 drop irw_entry(fe.w, raw cat3("store i8 0, ptr ", fe.tframe_flags[tf], ""));
                 tf = tf + 1i64;
             }
@@ -1599,7 +1599,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         }
         string:cases = "";
         int32:k = 0i32;
-        while ((k => int64) < fe.seg_labels.count) {
+        while ((k => int64) < fe.seg_labels.count) decreases fe.seg_labels.count - (k => int64) {
             cases = raw cat5(cases, " i32 ", int_to_string(k => int64),
                              ", label %", fe.seg_labels[k => int64]);
             k = k + 1i32;

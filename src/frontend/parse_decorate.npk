@@ -116,7 +116,7 @@ pub func:p_parse_attribute = DeclId(Parser->:p) never fails {
         if (!(raw p_at(p, TokenKind.PRParen))) {
             ExprId:a1 = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, a1.index);
-            while (raw p_accept(p, TokenKind.PComma)) {
+            while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                 ExprId:argN = raw p_parse_expr(p);
                 drop ast_scratch_push(p.ast, argN.index);
             }
@@ -133,7 +133,7 @@ pub func:p_parse_attribute = DeclId(Parser->:p) never fails {
 // Gather however many attributes precede something.
 pub func:p_parse_attributes = IdSpan(Parser->:p) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (raw p_at_attribute(p)) {
+    while (raw p_at_attribute(p)) decreases raw p_left(p) {
         DeclId:a = raw p_parse_attribute(p);
         drop ast_scratch_push(p.ast, a.index);
     }
@@ -166,7 +166,7 @@ pub func:p_parse_limit = VerifyId(Parser->:p) never fails {
 // keywords and bare predicates (D-002).
 pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         // `never fails` (D-163) — a marker contract with no predicate, filed in
         // the contracts window as `VerifyNeverFails`. The body check reads it.
@@ -270,7 +270,7 @@ pub func:p_parse_measure = VerifyId(Parser->:p) never fails {
     int32:first_kind = 0i32 - 1i32;
     int32:first_expr = 0i32;
     int32:seen = 0i32;
-    while ((raw p_at(p, TokenKind.KwDecreases)) || (raw p_at(p, TokenKind.KwUnbounded))) {
+    while ((raw p_at(p, TokenKind.KwDecreases)) || (raw p_at(p, TokenKind.KwUnbounded))) decreases raw p_left(p) {
         bool:unb = raw p_at(p, TokenKind.KwUnbounded);
         discard(raw p_advance(p));
         int32:ex = 0i32;
@@ -324,7 +324,7 @@ pub func:p_parse_invariant = VerifyId(Parser->:p) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
     ExprId:c1 = raw p_parse_expr(p);
     drop ast_scratch_push(p.ast, c1.index);
-    while (raw p_accept(p, TokenKind.PComma)) {
+    while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
         ExprId:condN = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, condN.index);
     }

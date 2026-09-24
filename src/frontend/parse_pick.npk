@@ -101,7 +101,7 @@ pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) never fails
     if (p.kind == PatKind.PatEnumDestructure) {
         int32:bc = raw pat_enum_bind_count(ast, p);
         int32:i = 0i32;
-        while (i < bc) {
+        while (i < bc) decreases bc - i {
             if ((raw pat_enum_bind(ast, p, i)) == name) { pass i; }
             i = i + 1i32;
         }
@@ -210,7 +210,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
     Token:first = raw p_advance(p);
     drop ast_scratch_push(p.ast, first.payload =>! int32);
     int32:segments = 1i32;
-    while (raw p_at(p, TokenKind.PDot)) {
+    while (raw p_at(p, TokenKind.PDot)) decreases raw p_left(p) {
         if ((raw p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
         discard(raw p_advance(p));
         Token:sn = raw p_advance(p);
@@ -228,7 +228,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
                                        0i32, 0i32, 0i32, first.payload);
         discard(raw p_advance(p));
         int32:bmark = raw ast_scratch_mark(p.ast);
-        while (true) {
+        while (true) decreases raw p_left(p) {
             if (raw p_at(p, TokenKind.PRBrace)) { break; }
             if (raw p_at_end(p)) { break; }
             Token:b = raw p_advance(p);
@@ -243,7 +243,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
 
     int32:binds = 0i32;
     if (raw p_accept(p, TokenKind.PLParen)) {
-        while (true) {
+        while (true) decreases raw p_left(p) {
             if (raw p_at(p, TokenKind.PRParen)) { break; }
             if (raw p_at_end(p)) { break; }
             Token:b = raw p_advance(p);
@@ -326,7 +326,7 @@ func:p_parse_pick_selector = ExprId(Parser->:p) never fails {
 func:p_parse_arms = IdSpan(Parser->:p) never fails {
     discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -381,7 +381,7 @@ func:block_gives = bool(Ast->:ast, StmtNode:b) never fails {
     if (b.kind != StmtKind.StmtBlockStmt) { pass false; }
     int32:i = 0i32;
     int32:n = raw stmt_list_count(b);
-    while (i < n) {
+    while (i < n) decreases n - i {
         StmtId:sid = StmtId{ index: raw ast_id_at(ast, raw stmt_list_start(b), i) };
         StmtNode:s = raw ast_stmt(ast, sid);
         if (s.kind == StmtKind.StmtGiveStmt) { pass true; }

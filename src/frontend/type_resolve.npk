@@ -30,6 +30,7 @@ use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
+use "./parse_decorate.npk".*;   // measure_is_unbounded, measure_expr: the evaluator checks a loop's measure (1.5.8c step 3)
 use "./parser.npk".*;   // QUAL_FIXED, for what may stand in a constant expression
 use "./builtins.npk".*;     // is_builtin_name, for the four with compile-time answers
 // A DECLARED CYCLE with type_layout (1.4.7, OWED-8; legal by D-086, the same
@@ -194,7 +195,7 @@ pub func:generic_lookup = ParamBind(TypeResolver->:r, int32:name, Span:at) never
 func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name,
                                  Span:at) never fails {
     int32:i = 0i32;
-    while (i < g.params_count) {
+    while (i < g.params_count) decreases g.params_count - i {
         // NOT `pid` — one of the five kernel identifier types (D-042), and a type
         // name is not an identifier.
         DeclId:gpid = DeclId{ index: raw ast_id_at(r.ast, g.params_start, i) };
@@ -665,7 +666,7 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
 func:depth_chain = string(TypeResolver->:r, int32:name) never fails {
     string:out = "";
     int32:i = 0i32;
-    while (i < r.depth) {
+    while (i < r.depth) decreases r.depth - i {
         if (i > 0i32) { out = string_concat(out, " -> "); }
         out = string_concat(out,
                   raw intern_get(r.interns, r.inst_chain[i => int64]));
@@ -806,7 +807,7 @@ func:foldenv_new = FoldEnv() never fails {
 // same answer more slowly.
 func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
     int32:i = 0i32;
-    while ((i => int64) < e.names.count) {
+    while ((i => int64) < e.names.count) decreases e.names.count - (i => int64) {
         if (e.names[i => int64] == name) {
             e.vals[i => int64] = move(v);
             pass NIL;
@@ -821,7 +822,7 @@ func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
 
 func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
     int32:i = 0i32;
-    while ((i => int64) < e.names.count) {
+    while ((i => int64) < e.names.count) decreases e.names.count - (i => int64) {
         if (e.names[i => int64] == name) {
             // Deep-viewed (D-183): the env owns the text; the caller's copy views.
             ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
@@ -1624,7 +1625,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
     if (st.kind == StmtKind.StmtBlockStmt) {
         int32:n = raw stmt_list_count(st);
         int32:i = 0i32;
-        while (i < n) {
+        while (i < n) decreases n - i {
             StmtId:s2 = StmtId{ index: raw ast_id_at(r.ast, raw stmt_list_start(st), i) };
             FoldFlow:fl = raw fold_stmt(r, s2, scope, f);
             if (fl.failed) { pass fl; }
@@ -1710,11 +1711,48 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
 // fold is doing, so a loop cannot spend a budget that the expression around it has
 // already used — which is the property that makes one number enough.
 func:fold_while = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:fuel) never fails {
+    // THE MEASURE IS EVALUATED TOO (1.5.8c step 3, D-304): a `decreases E` on a loop
+    // the evaluator runs is checked where it runs -- the compiler verifies by
+    // evaluation where it evaluates (1.5.4's L-18 for `prove`; DEF-29's lesson that
+    // the evaluator agrees with the emitter), so a measure that does not shrink, or a
+    // signed one below zero, is a counterexample reported once and the fold ends.
+    // `unbounded` checks nothing. The fuel stays: a measure bounds the trips it
+    // counts, and the fuel bounds the evaluation as a whole.
+    VerifyId:mv = raw stmt_while_measure(r.ast, st);
+    bool:has_m = false;
+    ExprId:me = ExprId{ index: 0i32 };
+    if (!(raw verify_is_none(mv))) {
+        VerifyNode:vn = raw ast_verify(r.ast, mv);
+        if (!(raw measure_is_unbounded(vn))) { has_m = true; me = raw measure_expr(vn); }
+    }
+    int64:prev = 0i64;
+    bool:first = true;
     int32:left = fuel;
-    while (left > 0i32) {
+    while (left > 0i32) decreases left {
         ConstVal:c = raw fold_expr(r, raw stmt_cond(st), scope, left);
         if (c.kind != (raw CV_BOOL())) { pass (raw flow_fail()); }
         if (c.num == 0i64) { pass (raw flow_none()); }
+        if (has_m) {
+            ConstVal:m = raw fold_expr(r, me, scope, left);
+            if (!(raw cv_is_int(m))) { pass (raw flow_fail()); }
+            bool:signed = true;
+            if (m.type_id != 0i32) { signed = raw type_is_signed(r.types, m.type_id); }
+            bool:bad = false;
+            if (signed) {
+                if (m.num < 0i64) { bad = true; }
+                if ((!first) && (m.num >= prev)) { bad = true; }
+            } else {
+                if ((!first) && ((m.num =>! uint64) >= (prev =>! uint64))) { bad = true; }
+            }
+            if (bad) {
+                drop fold_reported(r, raw TYPE_ASSERT_STATIC(),
+                    "this loop's `decreases` measure did not shrink, or went below zero, at compile time (D-304): a measure in a `comptime` body is evaluated over the call's values, and this call is a counterexample",
+                    st.span);
+                pass (raw flow_fail());
+            }
+            prev = m.num;
+            first = false;
+        }
         FoldFlow:fl = raw fold_stmt(r, raw stmt_body(r.ast, st), scope, left);
         if (fl.failed) { pass fl; }
         if (fl.returned) { pass fl; }
@@ -1796,7 +1834,7 @@ func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:f
 
     int32:left = fuel;
     int64:i = lo;
-    while (left > 0i32) {
+    while (left > 0i32) decreases left {
         bool:more = (i < hi);
         if (!asc) { more = (i > hi); }
         if (!more) {
@@ -2008,7 +2046,7 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
 pub func:mangle_instance = string(TypeResolver->:r, int32:name, IdSpan:w) never fails {
     string:m = string_concat(raw intern_get(r.interns, name), "<");
     int32:i = 0i32;
-    while (i < w.count) {
+    while (i < w.count) decreases w.count - i {
         if (i > 0i32) { m = string_concat(m, ", "); }
         m = string_concat(m,
                 raw type_display(r.types, r.interns,
@@ -2272,7 +2310,8 @@ pub func:dim_unit_eval = DimVecAnswer(Ast->:ast, TypeTable->:types,
         if (!r2.found) { pass no; }
         int64:out = 0i64;
         int32:axi = 0i32;
-        while (axi < (raw DIM_AXES())) {
+        int32:naxes = raw DIM_AXES();
+        while (axi < naxes) decreases naxes - axi {
             int32:le = raw dim_axis_get(l.vec, axi);
             int32:re = raw dim_axis_get(r2.vec, axi);
             int32:ne = le + re;
@@ -2698,7 +2737,8 @@ func:resolve_func_type = int32(TypeResolver->:r, TypeNode:n, int32:scope) never 
     int32:ret = raw resolve_type(r, raw type_return(n), scope);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
-    while (i < (raw type_param_count(n))) {
+    int32:nparams = raw type_param_count(n);
+    while (i < nparams) decreases nparams - i {
         int32:pt = raw resolve_type(r, raw type_param_at(r.ast, n, i), scope);
         drop ast_scratch_push(r.ast, pt);
         i = i + 1i32;
@@ -2712,7 +2752,8 @@ func:resolve_func_type = int32(TypeResolver->:r, TypeNode:n, int32:scope) never 
 func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fails {
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
-    while (i < (raw type_args_count(n))) {
+    int32:nargs = raw type_args_count(n);
+    while (i < nargs) decreases nargs - i {
         TypeId:operand = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), i) };
         int32:t = raw resolve_trait_type(r, operand, scope);
         // EVERY OPERAND OF `dyn` MUST BE A TRAIT. `dyn int32` is not a dynamic
@@ -2774,7 +2815,8 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fails 
 func:assoc_of_trait = int32(TypeResolver->:r, int32:trait_decl, int32:name) never fails {
     DeclNode:td = raw ast_decl(r.ast, DeclId{ index: trait_decl });
     int32:k = 0i32;
-    while (k < (raw item_member_count(r.ast, td))) {
+    int32:nmembers = raw item_member_count(r.ast, td);
+    while (k < nmembers) decreases nmembers - k {
         DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, td, k));
         if (m.kind == DeclKind.DeclAssocTypeDecl) {
             if ((raw decl_name(m)) == name) {
@@ -2799,7 +2841,8 @@ func:assoc_of_trait = int32(TypeResolver->:r, int32:trait_decl, int32:name) neve
 func:trait_declares_assoc = bool(Ast->:ast, int32:trait_decl, int32:name) never fails {
     DeclNode:td = raw ast_decl(ast, DeclId{ index: trait_decl });
     int32:k = 0i32;
-    while (k < (raw item_member_count(ast, td))) {
+    int32:nmembers = raw item_member_count(ast, td);
+    while (k < nmembers) decreases nmembers - k {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, td, k));
         if (m.kind == DeclKind.DeclAssocTypeDecl) {
             if ((raw decl_name(m)) == name) { pass true; }

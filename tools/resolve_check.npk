@@ -90,7 +90,8 @@ async func:main = int32(cstring[]:argv) {
 
     Resolver:r = raw resolver_init(@g.ast, @g.tab, @it, @diags);
     int32:i = 0i32;
-    while (i < (raw graph_count(@g))) {
+    int32:nmods = raw graph_count(@g);
+    while (i < nmods) decreases nmods - i {
         ModuleEntry:e = raw graph_at(@g, i);
         DeclId:mod_id = DeclId{ index: e.root };
         // WHICH MODULE IS THE PRELUDE, as the pipeline says it (D-179): an
@@ -116,7 +117,7 @@ async func:main = int32(cstring[]:argv) {
     // (D-248, 1.5.1b step 1): the loader's rule, so the loader's tool reports it.
     drop graph_check_entry_points(@g);
     int32:k = 0i32;
-    while (k < (raw graph_count(@g))) {
+    while (k < nmods) decreases nmods - k {
         ModuleEntry:e2 = raw graph_at(@g, k);
         DeclId:mid = DeclId{ index: e2.root };
         drop check_global_cycles(@r, mid, e2.scope);
@@ -168,6 +169,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 3i32; },
         (MachineFault) { exit 3i32; },
         (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
         (*) { exit 3i32; }
     }
     exit 3i32;

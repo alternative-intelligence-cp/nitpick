@@ -66,7 +66,8 @@ func:pool_close<J> = NIL(ThreadPool<J>:pool) {
 async func:worker<J: Work> = NIL(Channel<J, 3i32, 8i64>:jobs,
                                  Channel<int32, 4i32, 8i64>:out) {
     bool:running = true;
-    while (running) {
+    // the worker's job loop: it ends when the channel closes and drains (D-316)
+    while (running) unbounded {
         Result<J>:r = await jobs.recv(raw duration_ms(2000i64));
         if (r.is_error) {
             running = false;
@@ -87,7 +88,7 @@ async func:main = int32(cstring[]:_~argv) {
     drop worker::<Sum>(pool.jobs, out);
 
     int32:i = 0i32;
-    while (i < 6i32) {
+    while (i < 6i32) decreases 6i32 - i {
         await pool_submit(pool, Sum{ a: i, b: i },
                           raw duration_ms(2000i64)) ?! E1;
         i = i + 1i32;
@@ -96,7 +97,7 @@ async func:main = int32(cstring[]:_~argv) {
 
     int32:got = 0i32;
     int32:total = 0i32;
-    while (got < 6i32) {
+    while (got < 6i32) decreases 6i32 - got {
         Result<int32>:r = await out.recv(raw duration_ms(2000i64));
         if (r.is_error) { exit 71i32; }
         total = total + r.value;
@@ -119,6 +120,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 97i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

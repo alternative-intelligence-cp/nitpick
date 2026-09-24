@@ -28,7 +28,7 @@ thread async func:filler = NIL(shared_arena<int64>->:s,
                                int64:base) joins JOIN_2S {
     int64:i = 0i64;
     int64:last = 0i64;
-    while (i < 50i64) {
+    while (i < 50i64) decreases 50i64 - i {
         Handle<int64>:h = s.alloc(base + i);
         last = s.get(h) ?! E9;
         if (last != (base + i)) { !!! E9; }
@@ -71,6 +71,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

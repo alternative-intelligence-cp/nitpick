@@ -91,7 +91,8 @@ func:errs = int64(Ex->:x) never fails {
 func:unrecorded = int32(Ex->:x) never fails {
     int32:missing = 0i32;
     int32:i = 1i32;
-    while (i < (raw ast_expr_count(@x.ast))) {
+    int32:nexprs = raw ast_expr_count(@x.ast);
+    while (i < nexprs) decreases nexprs - i {
         ExprId:id = ExprId{ index: i };
         if (!(raw exprtypes_known(@x.ets, id))) { missing = missing + 1i32; }
         i = i + 1i32;
@@ -208,7 +209,8 @@ func:main = int32(cstring[]:_~argv) {
     int32:want = raw tt_int(@v4.types, 64i32, true);
     bool:found = false;
     int32:i = 1i32;
-    while (i < (raw ast_expr_count(@v4.ast))) {
+    int32:nexprs = raw ast_expr_count(@v4.ast);
+    while (i < nexprs) decreases nexprs - i {
         ExprId:id = ExprId{ index: i };
         ExprNode:n = raw ast_expr(@v4.ast, id);
         if (n.kind == ExprKind.ExprBinaryExpr) {
@@ -319,6 +321,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

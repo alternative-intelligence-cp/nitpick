@@ -31,7 +31,7 @@ fixed Duration:JOIN_60S = Duration{ ns: 60000000000i64 };
 
 thread async func:churner = NIL(int32:_~v) joins JOIN_60S {
     int64:n = 0i64;
-    while (n < 2000000000i64) {                        // the stop is what ends this
+    while (n < 2000000000i64) decreases 2000000000i64 - n {                        // the stop is what ends this
         wild int8->:p = alloc(64i64);
         p[0i64] = 1i8;
         dalloc(p);
@@ -42,7 +42,8 @@ thread async func:churner = NIL(int32:_~v) joins JOIN_60S {
 
 thread async func:trapper = NIL(int32:zero) joins JOIN_60S {
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 20000000i64) { }       // the churner is churning
+    // a spin on the monotonic clock (D-316)
+    while ((mono_now() - t0) < 20000000i64) unbounded { }       // the churner is churning
     discard(10i32 / zero);
     pass NIL;
 };
@@ -52,7 +53,8 @@ async func:main = int32(cstring[]:argv) {
     drop churner(1i32);
     drop trapper(zero);
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 2000000000i64) { }     // never suspends; the trap ends this
+    // a spin on the monotonic clock until the trap ends it (D-316)
+    while ((mono_now() - t0) < 2000000000i64) unbounded { }     // never suspends; the trap ends this
     exit 0i32;                                         // no trap happened
 };
 
@@ -66,13 +68,13 @@ func:failsafe = int32(Error:e) {
             // 64-byte steps would need 33 MB and exit 70 at the bound
             string:chunk = "";
             int32:k = 0i32;
-            while (k < 64i32) {
+            while (k < 64i32) decreases 64i32 - k {
                 chunk = string_concat(chunk, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
                 k = k + 1i32;
             }
             string:s = "";
             int32:i = 0i32;
-            while (i < 16i32) {
+            while (i < 16i32) decreases 16i32 - i {
                 s = string_concat(s, chunk);
                 i = i + 1i32;
             }
@@ -89,6 +91,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

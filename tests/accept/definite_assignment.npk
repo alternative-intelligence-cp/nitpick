@@ -91,7 +91,8 @@ func:fixed_once_per_path = int32(bool:c) never fails {
 // whether it is readable after.
 func:assigned_before_a_loop = int32(bool:c) never fails {
     int32:x = 0i32;
-    while (c) { x = x + 1i32; }
+    // a flag loop that shows the analysis a shape; the flag never changes
+    while (c) unbounded { x = x + 1i32; }
     pass x;
 };
 
@@ -99,7 +100,8 @@ func:assigned_before_a_loop = int32(bool:c) never fails {
 // and the body being possibly-zero-iterations says nothing about that.
 func:declared_inside_a_loop = int32(bool:c) never fails {
     int32:total = 0i32;
-    while (c) {
+    // a flag loop that shows the analysis a shape; the flag never changes
+    while (c) unbounded {
         int32:step = 2i32;
         total = total + step;
     }
@@ -167,7 +169,7 @@ func:failsafe = int32(Error:e) {
     pick (e) {
         (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
         (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
-        (IntOverflow) { exit 93i32; }, (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (*) { exit 99i32; }
+        (IntOverflow) { exit 93i32; }, (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; }
     }
     exit 9i32;
 };

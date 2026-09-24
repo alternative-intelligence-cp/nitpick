@@ -3,7 +3,7 @@
 // expect-obligation: requires open 3
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 15
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
 // expect-obligation: overflow open 4
 //
@@ -46,6 +46,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)          { exit 96i32; },
         (StackExhausted)    { exit 99i32; },
         (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

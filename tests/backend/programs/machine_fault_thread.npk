@@ -35,7 +35,8 @@ thread async func:faulter = NIL(int32:_~v) joins JOIN_5S {
 async func:main = int32(cstring[]:_~argv) {
     drop faulter(1i32);
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 400000000i64) { }     // the stop parks this loop
+    // a spin on the monotonic clock until the stop parks it (D-316)
+    while ((mono_now() - t0) < 400000000i64) unbounded { }     // the stop parks this loop
     exit 0i32;                                        // never reached: the fault stops the program
 };
 
@@ -50,6 +51,7 @@ func:failsafe = int32(Error:e) {
         (Unreachable)      { exit 96i32; },
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 99i32;

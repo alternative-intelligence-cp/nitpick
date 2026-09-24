@@ -673,7 +673,7 @@ func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) never fails {
     if (ta.c != tb.c) { pass false; }
     if (!(raw types_agree(e, ta.a, tb.a))) { pass false; }
     int32:i = 0i32;
-    while (i < ta.c) {
+    while (i < ta.c) decreases ta.c - i {
         int32:pa = raw ast_id_at(e.ast, ta.b, i);
         int32:pb = raw ast_id_at(e.ast, tb.b, i);
         if (!(raw types_agree(e, pa, pb))) { pass false; }
@@ -724,7 +724,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
             int32:sig = 0i32;
             bool:lead = true;
             int64:ti = 0i64;
-            while (ti < txt.len) {
+            while (ti < txt.len) decreases txt.len - ti {
                 uint8:ch = txt.ptr[ti];
                 if (ch == 101u8) { break; }   // 'e' — exponent: digits end
                 if (ch == 69u8)  { break; }   // 'E'
@@ -1223,7 +1223,8 @@ pub func:type_dim_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
     if (mul || divi) {
         int64:out = 0i64;
         int32:axi = 0i32;
-        while (axi < (raw DIM_AXES())) {
+        int32:naxes = raw DIM_AXES();
+        while (axi < naxes) decreases naxes - axi {
             int32:le = raw dim_axis_get(lv, axi);
             int32:re = raw dim_axis_get(rv, axi);
             int32:ne = le + re;
@@ -3309,7 +3310,7 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     // THE WINDOW ALTERNATES NAME, VALUE — one window, so the two cannot get out of
     // step the way a second parallel one could.
     int32:i = 0i32;
-    while ((i + 1i32) < cnt) {
+    while ((i + 1i32) < cnt) decreases cnt - i {
         int32:fname = raw ast_id_at(e.ast, start, i);
         ExprId:val = ExprId{ index: raw ast_id_at(e.ast, start, i + 1i32) };
 
@@ -3318,7 +3319,7 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
         // has a code for.
         int32:j = 0i32;
         bool:again = false;
-        while (j < i) {
+        while (j < i) decreases i - j {
             if ((raw ast_id_at(e.ast, start, j)) == fname) { again = true; }
             j = j + 2i32;
         }
@@ -3390,7 +3391,7 @@ func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
             int32:fname = raw decl_name(m);
             bool:given = false;
             int32:i = 0i32;
-            while ((i + 1i32) < cnt) {
+            while ((i + 1i32) < cnt) decreases cnt - i {
                 if ((raw ast_id_at(e.ast, start, i)) == fname) { given = true; }
                 i = i + 2i32;
             }

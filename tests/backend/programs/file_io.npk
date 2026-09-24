@@ -17,7 +17,7 @@ func:roundtrip = bool(cstring:path, string:data) never fails {
     string:back = move(r.value);   // the Result is not read again (D-183)
     if (back.len != data.len) { pass false; }
     int64:i = 0i64;
-    while (i < data.len) {
+    while (i < data.len) decreases data.len - i {
         if (back.ptr[i] != data.ptr[i]) { pass false; }
         i = i + 1i64;
     }
@@ -61,6 +61,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

@@ -103,7 +103,8 @@ func:freed_in_a_defer = NIL() never fails {
 // expect-error: NITPICK-TAINT-001
 func:checked_only_inside_a_loop = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
-    while (c) {
+    // a flag loop that shows the analysis a shape; the flag never changes
+    while (c) unbounded {
         if (r.is_error) { pass 0i32; }
     }
     pass (r.value);
@@ -128,7 +129,8 @@ func:downward_inside_a_branch = NIL(bool:c) never fails {
 func:downward_inside_a_loop = NIL(bool:c) never fails {
     Lease:a = take_2() ?! E9;
     discard(a.v);
-    while (c) {
+    // a flag loop that shows the analysis a shape; the flag never changes
+    while (c) unbounded {
         Lease:b = take_1() ?! E9;
         discard(b.v);
     }

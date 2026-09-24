@@ -182,7 +182,8 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errors(@rk) != 0i64)                          { exit 80i32; }
     bool:found_bound = false;
     int32:i = 1i32;
-    while (i < (raw ast_expr_count(@rk.ast))) {
+    int32:nexprs = raw ast_expr_count(@rk.ast);
+    while (i < nexprs) decreases nexprs - i {
         ExprId:eid = ExprId{ index: i };
         ExprNode:e = raw ast_expr(@rk.ast, eid);
         if (e.kind == ExprKind.ExprIdentifierExpr) {
@@ -270,6 +271,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 3i32; },
         (MachineFault) { exit 3i32; },
         (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
         (*) { exit 3i32; }
     }
     exit 3i32;

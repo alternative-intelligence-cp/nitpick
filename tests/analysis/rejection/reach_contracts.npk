@@ -18,7 +18,7 @@ func:bump = int32(int32:n) ensures result > 0i32 { pass (n + 1i32); };
 
 func:count = int32(int32:n) {
     int32:i = 0i32;
-    while (i < n) invariant i >= 0i32 { i = i + 1i32; }
+    while (i < n) decreases n - i invariant i >= 0i32 { i = i + 1i32; }
     pass i;
 };
 
@@ -40,6 +40,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 96i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

@@ -1,6 +1,6 @@
 // expect-error: NITPICK-VERIFY-001
 // expect-obligation: prove open 1
-// expect-obligation: failsafe-post discharged 9
+// expect-obligation: failsafe-post discharged 10
 // expect-obligation: exhaustive checker 1
 //
 // A FALSE FLOAT PROPOSITION IS `open` (D-281): `a + b > a` fails for a
@@ -29,6 +29,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 96i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

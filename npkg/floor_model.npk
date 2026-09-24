@@ -144,7 +144,7 @@ func:tmpl_of = string(Sxs->:s, int64:node, List<string>:vars) never fails {
     string:out = "(";
     int64:c = s.nodes[node].first;
     bool:first = true;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!first) { out = string_concat(out, " "); }
         first = false;
         out = string_concat(out, raw tmpl_of(s, c, vars));
@@ -158,11 +158,11 @@ pub func:subst_at = string(string:tmpl, int64:k) never fails {
     string:out = "";
     int64:i = 0i64;
     string:suffix = string_concat("_", int_to_string(k));
-    while (i < tmpl.len) {
+    while (i < tmpl.len) decreases tmpl.len - i {
         uint8:c = tmpl.ptr[i];
         if (c == 123u8) {
             int64:e = i + 1i64;
-            while ((e < tmpl.len) && (tmpl.ptr[e] != 125u8)) { e = e + 1i64; }
+            while ((e < tmpl.len) && (tmpl.ptr[e] != 125u8)) decreases tmpl.len - e { e = e + 1i64; }
             out = string_concat(out, raw text_slice(tmpl, i + 1i64, e));
             out = string_concat(out, suffix);
             i = e + 1i64;
@@ -186,7 +186,7 @@ func:tmpl_mentions = bool(string:tmpl, string:v) never fails {
 func:read_next = string(Sxs->:s, int64:nx, List<string>:vars, List<string>->:nv, List<string>->:ne) never fails {
     int64:c = s.nodes[nx].first;
     c = s.nodes[c].next;   // past `next`
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!(raw sx_is_list(s, c)) || ((raw sx_len(s, c)) != 2i64)) { pass "a next binding is (VAR EXPR)"; }
         string:v = raw sx_atom(s, raw sx_nth(s, c, 0i64));
         if (!(raw strlist_contains(vars, v))) { pass (string_concat("a next binding names no state variable: ", v)); }
@@ -257,7 +257,7 @@ func:is_numeral_text = bool(string:a) never fails {
     if (a.len == 0i64) { pass false; }
     int64:i = 0i64;
     if (a.ptr[0i64] == 45u8) { i = 1i64; if (a.len == 1i64) { pass false; } }
-    while (i < a.len) { if (!(raw text_is_digit(a.ptr[i]))) { pass false; } i = i + 1i64; }
+    while (i < a.len) decreases a.len - i { if (!(raw text_is_digit(a.ptr[i]))) { pass false; } i = i + 1i64; }
     pass true;
 };
 
@@ -265,7 +265,7 @@ func:read_step_body = SBody(Sxs->:s, int64:sn, int64:from, List<string>:vars, Li
                             List<string>->:isyms, List<string>->:iblocks) never fails {
     SBody:out = SBody{ why: "", gd: "true" };
     int64:c = from;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!(raw sx_is_list(s, c))) { out.why = "a bare word inside a step"; pass out; }
         string:h = raw sx_head(s, c);
         if (raw text_eq(h, "ir")) {
@@ -317,12 +317,12 @@ pub func:model_parse = MModel(string:fname, string:text) never fails {
     c0 = s.nodes[c0].next;   // past `model`
     c0 = s.nodes[c0].next;   // past the name
     int64:c = c0;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!(raw sx_is_list(@s, c))) { pass (raw mm_problem(fname, "a bare word inside the model")); }
         if (raw text_eq(raw sx_head(@s, c), "state")) {
             int64:v = s.nodes[c].first;
             v = s.nodes[v].next;
-            while (v >= 0i64) {
+            while (v >= 0i64) decreases s.nodes.count - v {
                 if (!(raw sx_is_list(@s, v)) || ((raw sx_len(@s, v)) != 3i64)) { pass (raw mm_problem(fname, "a state variable is (VAR LO HI)")); }
                 string:vn = raw sx_atom(@s, raw sx_nth(@s, v, 0i64));
                 if (raw strlist_contains(m.vars, vn)) { pass (raw mm_problem(fname, string_concat("a state variable declared twice: ", vn))); }
@@ -342,7 +342,7 @@ pub func:model_parse = MModel(string:fname, string:text) never fails {
     c = c0;
     bool:has_init = false;
     List<string>:ctl_names = raw list_init::<string>(4i64);
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         string:h = raw sx_head(@s, c);
         if (raw text_eq(h, "state")) { c = s.nodes[c].next; continue; }
         if (raw text_eq(h, "of")) {
@@ -361,7 +361,7 @@ pub func:model_parse = MModel(string:fname, string:text) never fails {
             int64:sc = s.nodes[c].first;
             sc = s.nodes[sc].next;
             sc = s.nodes[sc].next;
-            while (sc >= 0i64) {
+            while (sc >= 0i64) decreases s.nodes.count - sc {
                 if (!(raw sx_is_list(@s, sc)) || !(raw text_eq(raw sx_head(@s, sc), "step")) || ((raw sx_len(@s, sc)) < 2i64)) { pass (raw mm_problem(fname, string_concat("a thread's forms are (step NAME ...): ", tn))); }
                 string:sname = raw sx_atom(@s, raw sx_nth(@s, sc, 1i64));
                 for (int64:k in 0i64...m.steps.count) {
@@ -403,7 +403,7 @@ pub func:model_parse = MModel(string:fname, string:text) never fails {
             mut = s.nodes[mut].next;
             mut = s.nodes[mut].next;
             mut = s.nodes[mut].next;
-            while (mut >= 0i64) {
+            while (mut >= 0i64) decreases s.nodes.count - mut {
                 if (!(raw sx_is_list(@s, mut)) || ((raw sx_len(@s, mut)) < 3i64)) { pass (raw mm_problem(fname, string_concat("a control's mutation is (replace THREAD STEP ...) or (remove THREAD STEP): ", cn))); }
                 string:mh = raw sx_head(@s, mut);
                 string:mt = raw sx_atom(@s, raw sx_nth(@s, mut, 1i64));
@@ -461,7 +461,7 @@ func:parse_i64 = int64(string:a) never fails {
     int64:i = 0i64;
     bool:neg = false;
     if (a.ptr[0i64] == 45u8) { neg = true; i = 1i64; }
-    while (i < a.len) { v = (v * 10i64) + ((a.ptr[i] - 48u8) =>! int64); i = i + 1i64; }
+    while (i < a.len) decreases a.len - i { v = (v * 10i64) + ((a.ptr[i] - 48u8) =>! int64); i = i + 1i64; }
     if (neg) { pass (0i64 - v); }
     pass v;
 };
@@ -817,7 +817,7 @@ func:strlist_index = int64(List<string>:l, string:s) never fails {
 // `w` as a whole word of `line` (a token boundary on both sides).
 func:has_word = bool(string:line, string:w) never fails {
     int64:from = 0i64;
-    while (true) {
+    while (true) decreases line.len - from {
         int64:p = raw text_index_from(line, w, from);
         if (p < 0i64) { pass false; }
         bool:lok = (p == 0i64) || (!(raw is_word_byte(line.ptr[p - 1i64])));

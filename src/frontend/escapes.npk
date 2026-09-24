@@ -75,7 +75,7 @@ pub func:escape_decode = EscapeResult(string:text, int64:at) never fails {
         int64:i = at + 3i64;
         int64:acc = 0i64;
         bool:seen_digit = false;
-        while (i < text.len) {
+        while (i < text.len) decreases text.len - i {
             uint8:c = text.ptr[i] => uint8;
             if (c == 125u8) {                             // }
                 if (!seen_digit) { pass (raw esc_fail()); }
@@ -127,7 +127,7 @@ pub func:utf8_decode = EscapeResult(string:text, int64:pos) never fails {
     }
     if ((pos + need) >= text.len) { pass (raw esc_fail()); }
     int64:k = 1i64;
-    while (k <= need) {
+    while (k <= need) decreases need - k {
         int64:bk = (text.ptr[pos + k]) => int64;
         if (bk < 128i64) { pass (raw esc_fail()); }
         if (bk >= 192i64) { pass (raw esc_fail()); }
@@ -180,7 +180,7 @@ pub func:decode_string = DecodedString(string:content) never fails {
     int64:i = 0i64;
     bool:valid = true;
 
-    while (i < content.len) {
+    while (i < content.len) decreases content.len - i {
         uint8:c = content.ptr[i] => uint8;
         if (c == 92u8) {
             EscapeResult:e = raw escape_decode(content, i);

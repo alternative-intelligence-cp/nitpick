@@ -74,7 +74,7 @@ use "./analysis_codes.npk".*;
 pub func:LOCK_NONE_MIN = int32() never fails { pass 2147483647i32; };
 pub func:LOCK_NONE_MAX = int32() never fails { pass (0i32 - 2147483647i32); };
 
-pub func:LOCK_ROUNDS = int32() never fails { pass 64i32; };
+pub func:LOCK_ROUNDS = int32() never fails pure { pass 64i32; };
 pub func:LOCK_DEPTH = int32() never fails  { pass 256i32; };
 
 // WHAT EACH FUNCTION MAY ACQUIRE, transitively. Indexed by `DeclId`, dense, for
@@ -501,7 +501,8 @@ func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:dept
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:h = held;
         int32:i = 0i32;
-        while (i < (raw stmt_list_count(s))) {
+        int32:nstmts = raw stmt_list_count(s);
+        while (i < nstmts) decreases nstmts - i {
             StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
             drop locks_stmt(x, caller, sub, h, d);
             h = raw raise_held(x, caller, sub, h);
@@ -547,7 +548,8 @@ func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:dept
     if (s.kind == StmtKind.StmtPickStmt) {
         drop locks_expr(x, caller, raw pick_selector(s), held, d);
         int32:i2 = 0i32;
-        while (i2 < (raw pick_arm_count(s))) {
+        int32:narms = raw pick_arm_count(s);
+        while (i2 < narms) decreases narms - i2 {
             drop locks_stmt(x, caller, raw pick_arm_at(x.ast, raw pick_arm_start(s), i2), held, d);
             i2 = i2 + 1i32;
         }
@@ -714,7 +716,7 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
             drop locks_expr(x, caller, v, held, d);
             i = i + 2i32;
@@ -724,7 +726,8 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
     if (n.kind == ExprKind.ExprPickExpr) {
         drop locks_expr(x, caller, raw pickx_selector(n), held, d);
         int32:j = 0i32;
-        while (j < (raw pickx_arm_count(n))) {
+        int32:narms = raw pickx_arm_count(n);
+        while (j < narms) decreases narms - j {
             drop locks_stmt(x, caller, raw pick_arm_at(x.ast, raw pickx_arm_start(n), j), held, d);
             j = j + 1i32;
         }

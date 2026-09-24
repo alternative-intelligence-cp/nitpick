@@ -239,7 +239,7 @@ func:cap_init = Cap() never fails {
 func:cap_append = NIL(Cap->:c, wild int8->:src, int64:n) never fails {
     if ((c.len + n) > c.cap) {
         int64:nc = c.cap * 2i64;
-        while ((c.len + n) > nc) { nc = nc * 2i64; }
+        while ((c.len + n) > nc) decreases (c.len + n) - nc { nc = nc * 2i64; }
         c.buf = ralloc(c.buf, nc);
         c.cap = nc;
     }
@@ -267,7 +267,8 @@ func:cap_free = NIL(Cap->:c) never fails {
 // read end is NONBLOCK). True while the pipe is still open: false once EOF
 // — or anything that is not "try again" — has been seen.
 func:cap_drain = bool(Cap->:c, fd:src, wild int8->:tmp) never fails {
-    while (true) {
+    // drains a pipe until it blocks or closes: each read consumes what it answers (D-316)
+    while (true) unbounded {
         Result<int64>:r = read(src, tmp, 65536i64);
         if (r.is_error) {
             if (r.err == WouldBlock)  { pass true; }
@@ -331,7 +332,8 @@ pub async func:proc_wait = ProcExit(move Proc:p, Duration:within) {
     defer { drop cap_free(@co); drop cap_free(@ce); }
     int32:ofd = (p.out.value) => int32;
     int32:efd = (p.err.value) => int32;
-    while (out_open || err_open) {
+    // waits on the child's two pipes, bounded by the deadline `give_up` (EProcDeadline), not by a count (D-316)
+    while (out_open || err_open) unbounded {
         if (out_open) { out_open = raw cap_drain(@co, p.out.value, tmp); }
         if (err_open) { err_open = raw cap_drain(@ce, p.err.value, tmp); }
         if (!(out_open || err_open)) { break; }

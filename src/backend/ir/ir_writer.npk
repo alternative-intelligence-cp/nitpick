@@ -190,7 +190,7 @@ func:trim_token = TrimTok(InternTable->:syms, string:text, int64:p) never fails 
     if ((p + 1i64) >= text.len) { pass none; }
     if (text.ptr[p + 1i64] == 34u8) {   // a quoted name
         int64:q = p + 2i64;
-        while (q < text.len) {
+        while (q < text.len) decreases text.len - q {
             if (text.ptr[q] == 34u8) {
                 if (q == (p + 2i64)) { pass none; }
                 string:name = string_from_bytes(#ptr_add<uint8>(text.ptr =>! wild uint8->, p + 2i64), q - (p + 2i64));
@@ -201,7 +201,7 @@ func:trim_token = TrimTok(InternTable->:syms, string:text, int64:p) never fails 
         pass none;
     }
     int64:e = p + 1i64;
-    while (e < text.len) {
+    while (e < text.len) decreases text.len - e {
         if (!(raw trim_sym_byte(text.ptr[e]))) { break; }
         e = e + 1i64;
     }
@@ -214,7 +214,7 @@ func:trim_token = TrimTok(InternTable->:syms, string:text, int64:p) never fails 
 func:trim_scan_refs = NIL(InternTable->:syms, string:text, int64:lo, int64:hi,
                           List<int32>->:into) never fails {
     int64:p = lo;
-    while (p < hi) {
+    while (p < hi) decreases hi - p {
         if (text.ptr[p] == 64u8) {   // @
             TrimTok:t = raw trim_token(syms, text, p);
             if (t.sym >= 0i32) { drop list_push(into, t.sym); }
@@ -230,7 +230,7 @@ func:trim_scan_refs = NIL(InternTable->:syms, string:text, int64:lo, int64:hi,
 func:trim_has_at = bool(string:text, int64:at, string:word) never fails {
     if ((at + word.len) > text.len) { pass false; }
     int64:i = 0i64;
-    while (i < word.len) {
+    while (i < word.len) decreases word.len - i {
         if (text.ptr[at + i] != word.ptr[i]) { pass false; }
         i = i + 1i64;
     }
@@ -244,11 +244,11 @@ func:trim_scan_defs = NIL(InternTable->:syms, string:text, int64:lo, int64:hi,
                           List<int32>->:into) never fails {
     int64:p = lo;
     bool:at_line_start = true;
-    while (p < hi) {
+    while (p < hi) decreases hi - p {
         if (at_line_start) {
             if (raw trim_has_at(text, p, "define")) {
                 int64:q = p + 6i64;
-                while ((q < hi) && (text.ptr[q] != 64u8) && (text.ptr[q] != 10u8)) { q = q + 1i64; }
+                while ((q < hi) && (text.ptr[q] != 64u8) && (text.ptr[q] != 10u8)) decreases hi - q { q = q + 1i64; }
                 if ((q < hi) && (text.ptr[q] == 64u8)) {
                     TrimTok:t = raw trim_token(syms, text, q);
                     if (t.sym >= 0i32) { drop list_push(into, t.sym); }
@@ -298,7 +298,7 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     List<int64>:ref_hi = raw list_init::<int64>(n);
     List<int32>:roots = raw list_init::<int32>(4096i64);
     int64:i = 0i64;
-    while (i < n) {
+    while (i < n) decreases n - i {
         string:t = raw trim_sink_text(w, w.item_sink[i]);
         drop list_push(@def_lo, defs.count);
         drop trim_scan_defs(@syms, t, w.item_start[i], w.item_end[i], @defs);
@@ -310,11 +310,11 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     }
     // The roots: every token outside the items, in all three sinks.
     int32:sid = 0i32;
-    while (sid <= 2i32) {
+    while (sid <= 2i32) decreases 2i32 - sid {
         string:t = raw trim_sink_text(w, sid);
         int64:cursor = 0i64;
         int64:k = 0i64;
-        while (k < n) {
+        while (k < n) decreases n - k {
             if (w.item_sink[k] == sid) {
                 drop trim_scan_refs(@syms, t, cursor, w.item_start[k], @roots);
                 cursor = w.item_end[k];
@@ -328,11 +328,11 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     int64:nsyms = (raw intern_count(@syms)) => int64;
     List<int32>:owner = raw list_init::<int32>(nsyms + 1i64);
     int64:z = 0i64;
-    while (z < nsyms) { drop list_push(@owner, 0i32 - 1i32); z = z + 1i64; }
+    while (z < nsyms) decreases nsyms - z { drop list_push(@owner, 0i32 - 1i32); z = z + 1i64; }
     i = 0i64;
-    while (i < n) {
+    while (i < n) decreases n - i {
         int64:d = def_lo[i];
-        while (d < def_hi[i]) {
+        while (d < def_hi[i]) decreases def_hi[i] - d {
             owner[defs[d] => int64] = i =>! int32;
             d = d + 1i64;
         }
@@ -341,10 +341,10 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     // The fixpoint: from the roots, through kept items' references.
     List<int32>:kept = raw list_init::<int32>(n);
     i = 0i64;
-    while (i < n) { drop list_push(@kept, 0i32); i = i + 1i64; }
+    while (i < n) decreases n - i { drop list_push(@kept, 0i32); i = i + 1i64; }
     List<int64>:work = raw list_init::<int64>(n);
     int64:r = 0i64;
-    while (r < roots.count) {
+    while (r < roots.count) decreases roots.count - r {
         int32:o = owner[roots[r] => int64];
         if (o >= 0i32) { if (kept[o => int64] == 0i32) {
             kept[o => int64] = 1i32;
@@ -352,10 +352,11 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
         } }
         r = r + 1i64;
     }
-    while (work.count > 0i64) {
+    // the trim's worklist: an item is pushed once (`kept` marks it) and popped once, and the items are finite (D-316)
+    while (work.count > 0i64) unbounded {
         int64:it = raw list_pop(@work);
         int64:q = ref_lo[it];
-        while (q < ref_hi[it]) {
+        while (q < ref_hi[it]) decreases ref_hi[it] - q {
             int32:o2 = owner[refs[q] => int64];
             if (o2 >= 0i32) { if (kept[o2 => int64] == 0i32) {
                 kept[o2 => int64] = 1i32;
@@ -366,14 +367,14 @@ pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
     }
     // Rebuild `out` and `tail` from their non-item bytes and the kept items.
     sid = 0i32;
-    while (sid <= 2i32) {
+    while (sid <= 2i32) decreases 2i32 - sid {
         if (sid != 1i32) {
             Sink->:src = @w.out;
             if (sid == 2i32) { src = @w.tail; }
             Sink:fresh = raw sink_to_buffer(raw sink_length(src));
             int64:cursor2 = 0i64;
             int64:k2 = 0i64;
-            while (k2 < n) {
+            while (k2 < n) decreases n - k2 {
                 if (w.item_sink[k2] == sid) {
                     drop trim_copy(@fresh, src, cursor2, w.item_start[k2]);
                     if (kept[k2] != 0i32) {
@@ -473,7 +474,7 @@ pub func:irw_entry_label = NIL(IrWriter->:w, string:name) never fails {
 // One stamp site, registered: its id, minting the row on first sight.
 pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fails {
     int32:i = 0i32;
-    while ((i => int64) < w.site_lines.count) {
+    while ((i => int64) < w.site_lines.count) decreases w.site_lines.count - (i => int64) {
         if (w.site_lines[i => int64] == line) {
             if (raw string_eq(w.site_paths[i => int64], path)) {
                 pass (i + 1i32);

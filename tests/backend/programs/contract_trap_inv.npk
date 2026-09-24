@@ -9,7 +9,7 @@ error:E9;
 
 func:count = int32(int32:k) never fails {
     int32:i = 0i32;
-    while (i < 3i32) invariant i < 2i32 + k {
+    while (i < 3i32) decreases 3i32 - i invariant i < 2i32 + k {
         i = i + 1i32;
     }
     pass i;
@@ -33,6 +33,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)          { exit 96i32; },
         (StackExhausted)    { exit 99i32; },
         (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

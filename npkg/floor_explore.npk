@@ -145,7 +145,7 @@ func:xp_is_numeral = bool(string:a) never fails {
     if (a.len == 0i64) { pass false; }
     int64:i = 0i64;
     if (a.ptr[0i64] == 45u8) { i = 1i64; if (a.len == 1i64) { pass false; } }
-    while (i < a.len) { if (!(raw text_is_digit(a.ptr[i]))) { pass false; } i = i + 1i64; }
+    while (i < a.len) decreases a.len - i { if (!(raw text_is_digit(a.ptr[i]))) { pass false; } i = i + 1i64; }
     pass true;
 };
 
@@ -155,7 +155,7 @@ func:xp_parse = int64(string:a) never fails {
     int64:i = 0i64;
     bool:neg = false;
     if (a.ptr[0i64] == 45u8) { neg = true; i = 1i64; }
-    while (i < a.len) { v = (v * 10i64) + ((a.ptr[i] - 48u8) =>! int64); i = i + 1i64; }
+    while (i < a.len) decreases a.len - i { v = (v * 10i64) + ((a.ptr[i] - 48u8) =>! int64); i = i + 1i64; }
     if (neg) { pass (0i64 - v); }
     pass v;
 };
@@ -328,7 +328,7 @@ func:xm_kernel_arg = int64(XModel->:m, Sxs->:s, int64:node) never fails {
 func:xm_body = int64(XModel->:m, Sxs->:s, int64:body, int64:wstart) never fails {
     int64:gd = 0i64 - 1i64;
     int64:c = body;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!m.ok) { pass gd; }
         string:h = raw sx_head(s, c);
         if (raw text_eq(h, "ir")) { c = s.nodes[c].next; continue; }
@@ -339,7 +339,7 @@ func:xm_body = int64(XModel->:m, Sxs->:s, int64:body, int64:wstart) never fails 
         } else { if (raw text_eq(h, "next")) {
             int64:b = s.nodes[c].first;
             b = s.nodes[b].next;
-            while (b >= 0i64) {
+            while (b >= 0i64) decreases s.nodes.count - b {
                 string:vn = raw sx_atom(s, raw sx_nth(s, b, 0i64));
                 int64:vi = raw xm_var_index(m, vn);
                 if (vi < 0i64) { drop xm_fail(m, string_concat("a next binding names no state variable: ", vn)); pass gd; }
@@ -406,7 +406,7 @@ func:xm_pins = NIL(XModel->:m, Sxs->:s, int64:node) never fails {
     if (!(raw text_eq(raw sx_head(s, node), "and"))) { pass NIL; }
     int64:c = s.nodes[node].first;
     c = s.nodes[c].next;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if ((raw sx_is_list(s, c)) && ((raw sx_len(s, c)) == 3i64) && (raw text_eq(raw sx_head(s, c), "="))) {
             string:vn = raw sx_atom(s, raw sx_nth(s, c, 1i64));
             string:nv = raw sx_atom(s, raw sx_nth(s, c, 2i64));
@@ -435,11 +435,11 @@ pub func:xm_read = XModel(string:text) never fails {
     c0 = s.nodes[c0].next;
     // pass 1: the state
     int64:c = c0;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if ((raw sx_is_list(@s, c)) && (raw text_eq(raw sx_head(@s, c), "state"))) {
             int64:v = s.nodes[c].first;
             v = s.nodes[v].next;
-            while (v >= 0i64) {
+            while (v >= 0i64) decreases s.nodes.count - v {
                 string:vn = raw sx_atom(@s, raw sx_nth(@s, v, 0i64));
                 string:lo = raw sx_atom(@s, raw sx_nth(@s, v, 1i64));
                 string:hi = raw sx_atom(@s, raw sx_nth(@s, v, 2i64));
@@ -456,7 +456,7 @@ pub func:xm_read = XModel(string:text) never fails {
     }
     // pass 2: everything else, in file order
     c = c0;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!m.ok) { pass m; }
         string:h = raw sx_head(@s, c);
         if ((raw text_eq(h, "of")) || (raw text_eq(h, "state"))) { c = s.nodes[c].next; continue; }
@@ -470,7 +470,7 @@ pub func:xm_read = XModel(string:text) never fails {
             int64:sc = s.nodes[c].first;
             sc = s.nodes[sc].next;
             sc = s.nodes[sc].next;
-            while (sc >= 0i64) {
+            while (sc >= 0i64) decreases s.nodes.count - sc {
                 int64:body = s.nodes[sc].first;
                 body = s.nodes[body].next;
                 body = s.nodes[body].next;
@@ -496,7 +496,7 @@ pub func:xm_read = XModel(string:text) never fails {
         } else { if (raw text_eq(h, "control")) {
             int64:mstart = m.m_kind.count;
             int64:mu = raw sx_nth(@s, c, 3i64);
-            while (mu >= 0i64) {
+            while (mu >= 0i64) decreases s.nodes.count - mu {
                 string:mk = raw sx_head(@s, mu);
                 if (raw text_eq(mk, "replace")) {
                     int64:mbody = s.nodes[mu].first;
@@ -611,18 +611,22 @@ func:xt_new = XTable(int64:cap) never fails {
 // The index of `key`, or -1.
 func:xt_find = int64(XTable->:t, List<int64>:keys, int64:key) never fails {
     int64:h = key & t.mask;
-    while (true) {
+    // the probe is bounded by the table (1.5.8c step 3): it is grown before it fills, so an empty slot exists
+    int64:probes = 0i64;
+    while (true) decreases (t.mask + 1i64) - probes {
         int64:v = t.slots[h];
         if (v < 0i64) { pass (0i64 - 1i64); }
         if (keys[v] == key) { pass v; }
         h = (h + 1i64) & t.mask;
+        probes = probes + 1i64;
     }
     pass (0i64 - 1i64);
 };
 
 func:xt_put = NIL(XTable->:t, int64:key, int64:idx) never fails {
     int64:h = key & t.mask;
-    while (t.slots[h] >= 0i64) { h = (h + 1i64) & t.mask; }
+    int64:probes = 0i64;   // bounded by the table, as in `xt_find`
+    while (t.slots[h] >= 0i64) decreases (t.mask + 1i64) - probes { h = (h + 1i64) & t.mask; probes = probes + 1i64; }
     t.slots[h] = idx;
     pass NIL;
 };
@@ -638,7 +642,7 @@ func:xp_decode = NIL(XModel->:m, List<int64>:strides, int64:key, List<int64>->:c
     int64:rest = key;
     // most significant variable first: the last declared
     int64:i = m.vars.count - 1i64;
-    while (i >= 0i64) {
+    while (i >= 0i64) decreases i {
         int64:d = rest / strides[i];
         rest = rest - (d * strides[i]);
         (<-cur)[i] = d + m.lo[i];
@@ -683,7 +687,7 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
         int64:rest = ci;
         // the LAST free variable varies fastest, as nested loops in declaration order do
         int64:j = nv - 1i64;
-        while (j >= 0i64) {
+        while (j >= 0i64) decreases j {
             if (m.pin[j] != 0i64) { cur[j] = m.pin_val[j]; }
             else {
                 int64:radix2 = (m.hi[j] - m.lo[j]) + 1i64;
@@ -710,7 +714,8 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
     List<int64>:adj_thr = raw list_init::<int64>(1024i64);
     List<int64>:adj_to = raw list_init::<int64>(1024i64);
     int64:head = 0i64;
-    while (head < run.keys.count) {
+    // a breadth-first search over the model's states: a state is keyed once (`seen`) and the space is capped at XP_STATE_CAP (D-316)
+    while (head < run.keys.count) unbounded {
         drop xp_decode(m, strides, run.keys[head], @cur);
         drop list_push(@adj_start, adj_thr.count);
         for (int64:si in 0i64...steps.thr.count) {
@@ -756,7 +761,8 @@ pub func:xp_run = XRun(XModel->:m, int64:ctl) never fails {
         for (int64:e0 in adj_start[s0]...adj_start[s0 + 1i64]) { sw[(adj_to[e0] * nt) + adj_thr[e0]] = 0i64; }
     }
     bool:changed = true;
-    while (changed) {
+    // a shortest-path relaxation: a round that lowers no distance is the last, and the distances are bounded below (D-316)
+    while (changed) unbounded {
         changed = false;
         for (int64:s1 in 0i64...ns) {
             for (int64:t1 in 0i64...nt) {

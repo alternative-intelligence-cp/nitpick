@@ -268,7 +268,7 @@ pub func:symtab_add_error = NIL(SymbolTable->:t, int32:decl, int32:qual,
 // The declaration whose code this is, or 0.
 pub func:symtab_error_by_code = int32(SymbolTable->:t, int32:code) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.error_codes.count) {
+    while ((i => int64) < t.error_codes.count) decreases t.error_codes.count - (i => int64) {
         if (t.error_codes[i => int64] == code) {
             pass t.error_decls[i => int64];
         }
@@ -282,7 +282,7 @@ pub func:symtab_error_by_code = int32(SymbolTable->:t, int32:code) never fails {
 // spelling is its only one).
 pub func:symtab_error_qual = int32(SymbolTable->:t, int32:decl) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.error_decls.count) {
+    while ((i => int64) < t.error_decls.count) decreases t.error_decls.count - (i => int64) {
         if (t.error_decls[i => int64] == decl) {
             pass t.error_quals[i => int64];
         }
@@ -313,7 +313,7 @@ func:symtab_set_home = NIL(SymbolTable->:t, int32:decl, int32:scope) never fails
     int64:want = (decl => int64) + 1i64;
     if (t.decl_home.count < want) {
         drop list_reserve(@t.decl_home, want - t.decl_home.count);
-        while (t.decl_home.count < want) { drop list_push(@t.decl_home, 0i32); }
+        while (t.decl_home.count < want) decreases want - t.decl_home.count { drop list_push(@t.decl_home, 0i32); }
     }
     // FIRST WRITER WINS. The declaration's own module collects it first; a
     // re-collection round after expansion must not move it.
@@ -332,7 +332,7 @@ pub func:symtab_set_local_ord = NIL(SymbolTable->:t, int32:sym, int32:ord) never
     int64:want = (sym => int64) + 1i64;
     if (t.local_ord.count < want) {
         drop list_reserve(@t.local_ord, want - t.local_ord.count);
-        while (t.local_ord.count < want) { drop list_push(@t.local_ord, 0i32 - 1i32); }
+        while (t.local_ord.count < want) decreases want - t.local_ord.count { drop list_push(@t.local_ord, 0i32 - 1i32); }
     }
     t.local_ord[sym => int64] = ord;
     pass NIL;
@@ -375,7 +375,7 @@ pub func:symtab_set_stmt_ord = NIL(SymbolTable->:t, int32:stmt, int32:ord) never
     int64:want = (stmt => int64) + 1i64;
     if (t.stmt_ord.count < want) {
         drop list_reserve(@t.stmt_ord, want - t.stmt_ord.count);
-        while (t.stmt_ord.count < want) { drop list_push(@t.stmt_ord, 0i32 - 1i32); }
+        while (t.stmt_ord.count < want) decreases want - t.stmt_ord.count { drop list_push(@t.stmt_ord, 0i32 - 1i32); }
     }
     t.stmt_ord[stmt => int64] = ord;
     pass NIL;
@@ -395,7 +395,7 @@ pub func:symtab_set_fn_slots = NIL(SymbolTable->:t, int32:decl, int32:n) never f
     int64:want = (decl => int64) + 1i64;
     if (t.fn_slots.count < want) {
         drop list_reserve(@t.fn_slots, want - t.fn_slots.count);
-        while (t.fn_slots.count < want) { drop list_push(@t.fn_slots, 0i32); }
+        while (t.fn_slots.count < want) decreases want - t.fn_slots.count { drop list_push(@t.fn_slots, 0i32); }
     }
     t.fn_slots[decl => int64] = n;
     pass NIL;
@@ -430,7 +430,7 @@ pub func:symtab_scope_count = int32(SymbolTable->:t) never fails { pass (raw sym
 // Look a name up in ONE scope, without walking outward.
 pub func:scope_lookup_local = int32(SymbolTable->:t, int32:scope, int32:name) never fails {
     int32:cur = t.scopes[scope => int64].first;
-    while (cur != 0i32) {
+    while (cur != 0i32) decreases cur {
         if (t.syms[cur => int64].name == name) {
             pass cur;
         }
@@ -447,7 +447,7 @@ pub func:scope_lookup_local = int32(SymbolTable->:t, int32:scope, int32:name) ne
 // for, and 0.3.4 handles it.
 pub func:scope_lookup = int32(SymbolTable->:t, int32:scope, int32:name) never fails {
     int32:cur = scope;
-    while (cur != 0i32) {
+    while (cur != 0i32) decreases cur {
         int32:hit = raw scope_lookup_local(t, cur, name);
         if (hit != 0i32) {
             pass hit;
@@ -469,7 +469,7 @@ pub func:scope_is_inside = bool(SymbolTable->:t, int32:scope, int32:target) neve
     if (target == 0i32) { pass false; }
     int32:cur = scope;
     int32:fuel = 4096i32;
-    while ((cur != 0i32) && (fuel > 0i32)) {
+    while ((cur != 0i32) && (fuel > 0i32)) decreases fuel {
         if (cur == target) { pass true; }
         cur = raw scope_parent(t, cur);
         fuel = fuel - 1i32;
@@ -618,7 +618,7 @@ pub func:scope_symbol_at = int32(SymbolTable->:t, int32:scope, int32:i) never fa
     int32:want = n - 1i32 - i;
     int32:cur = t.scopes[scope => int64].first;
     int32:k = 0i32;
-    while (cur != 0i32) {
+    while (cur != 0i32) decreases cur {
         if (k == want) { pass cur; }
         cur = t.syms[cur => int64].next;
         k = k + 1i32;
@@ -629,7 +629,7 @@ pub func:scope_symbol_at = int32(SymbolTable->:t, int32:scope, int32:i) never fa
 pub func:scope_symbol_count = int32(SymbolTable->:t, int32:scope) never fails {
     int32:cur = t.scopes[scope => int64].first;
     int32:n = 0i32;
-    while (cur != 0i32) {
+    while (cur != 0i32) decreases cur {
         cur = t.syms[cur => int64].next;
         n = n + 1i32;
     }

@@ -114,7 +114,7 @@ func:through_control_flow = int32(bool:flag) never fails {
     }
 
     int32:i = 0i32;
-    while (i < 3i32) {
+    while (i < 3i32) decreases 3i32 - i {
         acc = acc + (raw sum_through(@x, p));
         i = i + 1i32;
     }
@@ -240,6 +240,7 @@ func:failsafe = int32(Error:e) {
         (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault) { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*) { exit 99i32; }
     }
     exit 9i32;

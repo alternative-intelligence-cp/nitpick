@@ -156,7 +156,7 @@ func:cur_touch = NIL(Suspend->:x, int64:at) never fails {
 // contract pins this one -- every consumer is a local in this file.
 func:reg_find = int64(Suspend->:x, int32:stmt_index) never fails {
     int64:i = 0i64;
-    while (i < x.lstmt.count) {
+    while (i < x.lstmt.count) decreases x.lstmt.count - i {
         if (x.lstmt[i] == stmt_index) { pass i; }
         i = i + 1i64;
     }
@@ -270,7 +270,7 @@ func:susp_add = NIL(Suspend->:x, int64:at) never fails {
     drop list_push(@x.sls, flat_start);
     drop list_push(@x.slc, x.ldepth);
     int32:i = 0i32;
-    while (i < x.ldepth) {
+    while (i < x.ldepth) decreases x.ldepth - i {
         drop list_push(@x.lsflat, x.lstack[i => int64]);
         i = i + 1i32;
     }
@@ -353,16 +353,16 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
 // back edge can put the suspension between two of its moments.
 func:suspend_settle = NIL(Suspend->:x) never fails {
     int64:i = 0i64;
-    while (i < x.lstmt.count) {
+    while (i < x.lstmt.count) decreases x.lstmt.count - i {
         int64:dpos = x.ldecl[i];
         int64:upos = x.luse[i];
         bool:crossed = false;
         int64:j = 0i64;
-        while (j < x.spos.count) {
+        while (j < x.spos.count) decreases x.spos.count - j {
             int64:p = x.spos[j];
             if (dpos < p) { if (p < upos) { crossed = true; } }
             int32:w = 0i32;
-            while (w < x.slc[j]) {
+            while (w < x.slc[j]) decreases x.slc[j] - w {
                 int64:ls = x.lsflat[x.sls[j] + (w => int64)];
                 if (dpos < ls) { if (upos > ls) { crossed = true; } }
                 w = w + 1i32;
@@ -674,7 +674,7 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             drop suspend_expr(x, ExprId{ index: raw ast_id_at(x.ast,
                                   raw expr_list_start(n), i) }, fuel - 1i32);
             i = i + 2i32;
@@ -836,7 +836,8 @@ func:has_susp = bool(Suspend->:x, ExprId:id, int32:fuel) never fails {
                                 a: n.a, b: n.b, c: n.c, payload: 0i64 };
         if (raw has_susp(x, raw pick_selector(ps), fuel - 1i32)) { pass true; }
         int32:j = 0i32;
-        while (j < (raw pick_arm_count(ps))) {
+        int32:narms = raw pick_arm_count(ps);
+        while (j < narms) decreases narms - j {
             if (raw stmt_has_susp(x, StmtId{ index: raw ast_id_at(x.ast,
                     raw pick_arm_start(ps), j) }, fuel - 1i32)) { pass true; }
             j = j + 1i32;
@@ -846,7 +847,7 @@ func:has_susp = bool(Suspend->:x, ExprId:id, int32:fuel) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             if (raw has_susp(x, ExprId{ index: raw ast_id_at(x.ast,
                     raw expr_list_start(n), i) }, fuel - 1i32)) { pass true; }
             i = i + 2i32;
@@ -905,7 +906,8 @@ func:stmt_has_susp = bool(Suspend->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:i = 0i32;
-        while (i < (raw stmt_list_count(s))) {
+        int32:nstmts = raw stmt_list_count(s);
+        while (i < nstmts) decreases nstmts - i {
             if (raw stmt_has_susp(x, StmtId{ index: raw ast_id_at(x.ast,
                     raw stmt_list_start(s), i) }, fuel - 1i32)) { pass true; }
             i = i + 1i32;
@@ -997,7 +999,7 @@ func:fe_walk = int32(Suspend->:x, ExprId:id, int32:st, int32:fuel) never fails {
         int32:st3 = st;
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             st3 = raw fe_walk(x, ExprId{ index: raw ast_id_at(x.ast,
                       raw expr_list_start(n), i) }, st3, fuel - 1i32);
             i = i + 2i32;

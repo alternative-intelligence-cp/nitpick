@@ -18,7 +18,7 @@ error:Sent;
 fixed Duration:JOIN_30S = Duration{ ns: 30000000000i64 };
 thread async func:worker = NIL(Channel<int32, 3i32, 4i64>:ch, Channel<int64, 3i32, 4i64>:back) joins JOIN_30S {
     int32:i = 0i32;
-    while (i < 5i32) {
+    while (i < 5i32) decreases 5i32 - i {
         int32:v = await ch.recv(raw duration_ms(3000i64)) ?! Sent;
         i = i + 1i32;
     }
@@ -32,7 +32,7 @@ async func:main = int32(cstring[]:_~argv) {
     int64:t0 = mono_now();
     drop worker(ch, back);
     int32:i = 0i32;
-    while (i < 5i32) {
+    while (i < 5i32) decreases 5i32 - i {
         await sleep(raw duration_ms(10i64)) ?| NIL;
         await ch.send(i, raw duration_ms(3000i64)) ?! Sent;
         i = i + 1i32;
@@ -57,6 +57,7 @@ func:failsafe = int32(Error:e) {
         (DivOverflow)      { exit 98i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

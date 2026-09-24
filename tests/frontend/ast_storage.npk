@@ -43,7 +43,7 @@ func:main = int32(cstring[]:_~argv) {
     // pointer-based AST would have needed the handles to survive the realloc;
     // indices do it for free, which is the reason for the design.
     int32:i = 0i32;
-    while (i < 1000i32) {
+    while (i < 1000i32) decreases 1000i32 - i {
         discard(raw ast_add_expr(@ast, ExprKind.ExprIntLiteral, sp,
                                  0i32, 0i32, 0i32, i => int64));
         i = i + 1i32;
@@ -57,7 +57,7 @@ func:main = int32(cstring[]:_~argv) {
     if (b2.a != lit.index)                               { exit 32i32; }
 
     int32:j = 0i32;
-    while (j < 1000i32) {
+    while (j < 1000i32) decreases 1000i32 - j {
         ExprId:h = ExprId{ index: 4i32 + j };
         ExprNode:e = raw ast_expr(@ast, h);
         if (e.payload != (j => int64))                   { exit 33i32; }
@@ -101,7 +101,8 @@ func:main = int32(cstring[]:_~argv) {
     // down. This is the same technique as `check_kinds_reachable` (0.2) and
     // `resolve_audit` (0.3.5), applied to a third list that could drift.
     int32:k = 1i32;
-    while (k <= (raw EXPR_KIND_MAX())) {
+    int32:kmax = raw EXPR_KIND_MAX();
+    while (k <= kmax) decreases kmax - k {
         // `=>!` BECAUSE MANUFACTURING THE TAG IS THE POINT (Q2/D-223): this walk
         // exists to enumerate every kind NUMBER and prove each one has a shape,
         // so the conversion from a counter to a kind is the thing under test,
@@ -181,6 +182,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

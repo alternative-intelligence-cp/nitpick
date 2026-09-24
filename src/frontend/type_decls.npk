@@ -134,7 +134,8 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
     bool:nf = raw fn_declares_never_fails(r.ast, d);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
-    while (i < (raw fn_param_count(r.ast, d))) {
+    int32:nparams = raw fn_param_count(r.ast, d);
+    while (i < nparams) decreases nparams - i {
         // NOT `pid` — that is one of the five kernel identifier types (D-042).
         DeclId:param_id = raw fn_param(r.ast, d, i);
         DeclNode:pn = raw ast_decl(r.ast, param_id);
@@ -220,7 +221,8 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) never
 
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
-    while (i < (raw extern_fn_param_count(r.ast, d))) {
+    int32:nparams = raw extern_fn_param_count(r.ast, d);
+    while (i < nparams) decreases nparams - i {
         DeclId:param_id = raw extern_fn_param(r.ast, d, i);
         DeclNode:pn = raw ast_decl(r.ast, param_id);
         int32:pt = raw resolve_type(r, raw param_type(pn), scope);

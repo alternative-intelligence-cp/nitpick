@@ -97,7 +97,7 @@ pub func:reject_wildx = int32(Front->:f) never fails {
     int32:found = 0i32;
     int32:si = 0i32;
     int32:sn = raw ast_stmt_count(@f.g.ast);
-    while (si < sn) {
+    while (si < sn) decreases sn - si {
         StmtNode:s = raw ast_stmt(@f.g.ast, StmtId{ index: si });
         if (s.kind == StmtKind.StmtVarDeclStmt) {
             if (((raw stmt_quals(@f.g.ast, s)) & (raw QUAL_WILDX())) != 0i32) {
@@ -111,7 +111,7 @@ pub func:reject_wildx = int32(Front->:f) never fails {
     }
     int32:di = 0i32;
     int32:dn = raw ast_decl_count(@f.g.ast);
-    while (di < dn) {
+    while (di < dn) decreases dn - di {
         DeclNode:d = raw ast_decl(@f.g.ast, DeclId{ index: di });
         if (((raw decl_flags(d)) & (raw DECL_RET_WILDX())) != 0i32) {
             drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
@@ -146,7 +146,7 @@ func:front_set_root = NIL(Front->:f, string:root_path) never fails {
     string:probe = string_concat(dir, "");
     string:found = "";
     bool:looking = true;
-    while (looking) {
+    while (looking) decreases probe.len {
         Result<cstring>:cc = to_cstring(raw path_join(probe, "nitpick.toml"));
         if (!cc.is_error) {
             if (path_exists(cc.value)) {
@@ -191,6 +191,9 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     if (first < 0i32) {
         pass 2i32;
     }
+    // THE GRAPH IS COMPLETE FROM HERE (1.5.8c step 3): every module walk below is
+    // bounded by this one count, which is what lets each state `decreases nmods - i`.
+    int32:nmods = raw graph_count(@f.g);
 
     // --- stage 0: expansion --------------------------------------------------
     //
@@ -206,7 +209,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     f.xp = raw expander_init(@f.g.ast, @f.it, @f.diags);
     int64:before_expand = raw diaglist_count(@f.diags);
     int32:cm = 0i32;
-    while (cm < (raw graph_count(@f.g))) {
+    while (cm < nmods) decreases nmods - cm {
         drop collect_macros(@f.xp, DeclId{ index: (raw graph_at(@f.g, cm)).root });
         cm = cm + 1i32;
     }
@@ -217,11 +220,11 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // half-expanded program.
     int32:xr = 0i32;
     bool:more = true;
-    while (more) {
+    while (more) decreases (raw EXPAND_ROUNDS()) - xr {
         if (xr >= (raw EXPAND_ROUNDS())) { break; }
         more = false;
         int32:xm = 0i32;
-        while (xm < (raw graph_count(@f.g))) {
+        while (xm < nmods) decreases nmods - xm {
             if (raw expand_module(@f.xp, DeclId{ index: (raw graph_at(@f.g, xm)).root })) {
                 more = true;
             }
@@ -305,7 +308,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
 
     Resolver:r = raw resolver_init(@f.g.ast, @f.g.tab, @f.it, @f.diags);
     int32:i = 0i32;
-    while (i < (raw graph_count(@f.g))) {
+    while (i < nmods) decreases nmods - i {
         ModuleEntry:e = raw graph_at(@f.g, i);
         DeclId:mod_id = DeclId{ index: e.root };
         // D-179: the prelude is where the system error family's explicit
@@ -325,7 +328,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     drop graph_check_owned_names(@f.g);
     drop graph_check_entry_points(@f.g);
     int32:k = 0i32;
-    while (k < (raw graph_count(@f.g))) {
+    while (k < nmods) decreases nmods - k {
         ModuleEntry:e2 = raw graph_at(@f.g, k);
         DeclId:mid = DeclId{ index: e2.root };
         drop check_global_cycles(@r, mid, e2.scope);
@@ -363,7 +366,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // before any question is asked of it. Collecting and checking module by module
     // would make the answer depend on the order the graph happened to load in.
     int32:m = 0i32;
-    while (m < (raw graph_count(@f.g))) {
+    while (m < nmods) decreases nmods - m {
         ModuleEntry:e3 = raw graph_at(@f.g, m);
         DeclId:mid3 = DeclId{ index: e3.root };
         drop collect_impls(@f.im, @tr, mid3, e3.scope);
@@ -388,7 +391,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     ExprTyper:et = raw etyper_init(@f.g.ast, @f.types, @f.g.tab, @f.it, @f.diags, 0i32,
                                    @f.im, @f.bd, @f.inst, @f.fninsts, @f.ets);
     int32:b = 0i32;
-    while (b < (raw graph_count(@f.g))) {
+    while (b < nmods) decreases nmods - b {
         ModuleEntry:e4 = raw graph_at(@f.g, b);
         DeclId:mid4 = DeclId{ index: e4.root };
         et.scope = e4.scope;
@@ -430,7 +433,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
                                  @tr);
     int32:round = 0i32;
     bool:settling = true;
-    while (settling) {
+    while (settling) decreases (raw ESCAPE_ROUNDS()) - round {
         if (round >= (raw ESCAPE_ROUNDS())) { break; }
         drop escape_new_round(@esc);
         drop escape_walk(@esc, @f.g);
@@ -449,7 +452,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // -- a holder is never copied, so every party has one admission site.
     Alias:als = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags, @tr);
     int32:ya = 0i32;
-    while (ya < (raw graph_count(@f.g))) {
+    while (ya < nmods) decreases nmods - ya {
         ModuleEntry:ea = raw graph_at(@f.g, ya);
         drop alias_module(@als, DeclId{ index: ea.root }, ea.scope);
         ya = ya + 1i32;
@@ -460,7 +463,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // the sound answer and a fixed point on the first pass.
     Assign:asg = raw assign_init(@f.g.ast, @f.g.tab, @f.it, @f.types, @f.ets, @f.diags, @tr);
     int32:y2 = 0i32;
-    while (y2 < (raw graph_count(@f.g))) {
+    while (y2 < nmods) decreases nmods - y2 {
         ModuleEntry:e6 = raw graph_at(@f.g, y2);
         DeclId:mid6 = DeclId{ index: e6.root };
         drop assign_module(@asg, mid6, e6.scope);
@@ -471,7 +474,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // type, so it runs after typing like every other analysis in this cycle.
     Exhaust:exh = raw exhaust_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags);
     int32:z2 = 0i32;
-    while (z2 < (raw graph_count(@f.g))) {
+    while (z2 < nmods) decreases nmods - z2 {
         ModuleEntry:e7 = raw graph_at(@f.g, z2);
         DeclId:mid7 = DeclId{ index: e7.root };
         drop exhaust_module(@exh, mid7, e7.scope);
@@ -485,7 +488,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // has no emitter to record for.
     Suspend:ssp = raw suspend_init(@f.g.ast, @f.g.tab, @f.ets, @f.types, @f.it, @f.diags);
     int32:s0 = 0i32;
-    while (s0 < (raw graph_count(@f.g))) {
+    while (s0 < nmods) decreases nmods - s0 {
         ModuleEntry:e9 = raw graph_at(@f.g, s0);
         drop suspend_module(@ssp, DeclId{ index: e9.root });
         s0 = s0 + 1i32;
@@ -500,7 +503,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
         rch.prelude_scope = rpe.scope;
     }
     int32:rc0 = 0i32;
-    while (rc0 < (raw graph_count(@f.g))) {
+    while (rc0 < nmods) decreases nmods - rc0 {
         // The PRELUDE is not walked as a MODULE: walking it whole would make
         // every conditional identity unconditional and the precision
         // pointless. What the program REACHES in it is walked, function by
@@ -524,7 +527,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // widening rounds would report each finding once per round.
     Locks:lk = raw locks_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.im, @f.bd, @f.diags, @tr);
     int32:s1 = 0i32;
-    while (s1 < (raw graph_count(@f.g))) {
+    while (s1 < nmods) decreases nmods - s1 {
         ModuleEntry:e8 = raw graph_at(@f.g, s1);
         drop locks_seed(@lk, DeclId{ index: e8.root }, e8.scope);
         s1 = s1 + 1i32;
@@ -536,11 +539,11 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // as only the seed compiled this file.
     int32:lock_round = 0i32;
     bool:lock_settling = true;
-    while (lock_settling) {
+    while (lock_settling) decreases (raw LOCK_ROUNDS()) - lock_round {
         if (lock_round >= (raw LOCK_ROUNDS())) { break; }
         drop locks_new_round(@lk);
         int32:w1 = 0i32;
-        while (w1 < (raw graph_count(@f.g))) {
+        while (w1 < nmods) decreases nmods - w1 {
             ModuleEntry:e9 = raw graph_at(@f.g, w1);
             drop locks_widen(@lk, DeclId{ index: e9.root }, e9.scope);
             w1 = w1 + 1i32;
@@ -555,7 +558,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
 
     drop locks_report_mode(@lk);
     int32:r1 = 0i32;
-    while (r1 < (raw graph_count(@f.g))) {
+    while (r1 < nmods) decreases nmods - r1 {
         ModuleEntry:ea = raw graph_at(@f.g, r1);
         drop locks_widen(@lk, DeclId{ index: ea.root }, ea.scope);
         r1 = r1 + 1i32;
@@ -592,7 +595,8 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
 // cannot drift apart by being written twice.
 func:escape_walk = NIL(Escape->:esc, ModuleGraph->:g) never fails {
     int32:i = 0i32;
-    while (i < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (i < nmods) decreases nmods - i {
         ModuleEntry:m = raw graph_at(g, i);
         DeclId:mid = DeclId{ index: m.root };
         drop escape_module(esc, mid, m.scope);

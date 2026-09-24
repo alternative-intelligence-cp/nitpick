@@ -63,7 +63,7 @@ func:main = int32(cstring[]:_~argv) {
     // slot 0 (freeing its string body) and then the cell.
     int32:acc = 0i32;
     int32:i = 0i32;
-    while (i < 200i32) {
+    while (i < 200i32) decreases 200i32 - i {
         Loud:l = Loud{ name: (string_concat("abcde", "")), v: 12i32 };
         dyn Speaks:d = move(l);
         acc = acc + (d.say() ?! E9);
@@ -105,6 +105,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 78i32; },
         (StackExhausted) { exit 79i32; },
         (MachineFault) { exit 79i32; },
+        (DecreasesViolated) { exit 79i32; },
         (*) { exit 79i32; }
     }
     exit 79i32;

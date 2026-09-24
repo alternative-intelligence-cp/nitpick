@@ -22,7 +22,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // 2000 descriptor-owning enum drops: the leak that motivated the arm.
     int32:i = 0i32;
-    while (i < 2000i32) {
+    while (i < 2000i32) decreases 2000i32 - i {
         {
             fd:fi = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
             Res:r = Res.Fd(own_fd(fi));
@@ -34,7 +34,7 @@ func:main = int32(cstring[]:_~argv) {
     // payload area, so this loop is the OFFSET proof — a wrong one frees a
     // garbage pointer and the allocator traps.
     int32:j = 0i32;
-    while (j < 200i32) {
+    while (j < 200i32) decreases 200i32 - j {
         {
             Res:p = Res.Pair(7i32, string_slice("abcdefgh", 1i64, 7i64) ?! E9);
         }
@@ -65,6 +65,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 98i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

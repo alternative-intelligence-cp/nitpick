@@ -20,7 +20,8 @@ use "../../src/backend/ir/ir_writer.npk".*;
 func:same_text = bool(IrWriter->:a, IrWriter->:b) never fails {
     if ((raw irw_length(a)) != (raw irw_length(b))) { pass false; }
     int64:i = 0i64;
-    while (i < (raw irw_length(a))) {
+    int64:nbytes = raw irw_length(a);
+    while (i < nbytes) decreases nbytes - i {
         if ((raw irw_byte_at(a, i)) != (raw irw_byte_at(b, i))) { pass false; }
         i = i + 1i64;
     }
@@ -78,7 +79,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:big = raw irw_to_buffer();
     string:body = "call void @npk_nothing()";
     int32:i = 0i32;
-    while (i < 2000i32) {
+    while (i < 2000i32) decreases 2000i32 - i {
         drop irw_line(@big, body);
         i = i + 1i32;
     }
@@ -112,6 +113,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

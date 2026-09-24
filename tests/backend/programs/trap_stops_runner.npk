@@ -32,7 +32,7 @@ thread async func:runner = NIL(int32:_~v) joins JOIN_5S {
     // openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_APPEND = 1089, 0644 = 420)
     fd:f = open(c, 1089i64, 420i64) ?! EProbe;
     int64:n = 0i64;
-    while (n < 1000000000i64) {                        // the stop is what ends this
+    while (n < 1000000000i64) decreases 1000000000i64 - n {                        // the stop is what ends this
         Result<int64>:w = write(f, ONE.ptr, 1i64);     // one byte, no allocation
         n = n + 1i64;
     }
@@ -42,7 +42,8 @@ thread async func:runner = NIL(int32:_~v) joins JOIN_5S {
 
 thread async func:trapper = NIL(int32:zero) joins JOIN_5S {
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 20000000i64) { }       // the runner is writing
+    // a spin on the monotonic clock (D-316)
+    while ((mono_now() - t0) < 20000000i64) unbounded { }       // the runner is writing
     discard(10i32 / zero);
     pass NIL;
 };
@@ -52,7 +53,8 @@ async func:main = int32(cstring[]:argv) {
     drop runner(1i32);
     drop trapper(zero);
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 2000000000i64) { }     // never suspends; the trap ends this
+    // a spin on the monotonic clock until the trap ends it (D-316)
+    while ((mono_now() - t0) < 2000000000i64) unbounded { }     // never suspends; the trap ends this
     exit 0i32;                                         // no trap happened
 };
 
@@ -66,7 +68,8 @@ func:failsafe = int32(Error:e) {
             Result<string>:s1 = read_file(c.value);
             if (s1.is_error) { exit 45i32; }           // no observation at all
             int64:t0 = mono_now();
-            while ((mono_now() - t0) < 50000000i64) { }
+            // a spin on the monotonic clock (D-316)
+            while ((mono_now() - t0) < 50000000i64) unbounded { }
             Result<string>:s2 = read_file(c.value);
             if (s2.is_error) { exit 45i32; }
             discard(sys(263i64, raw AT_FDCWD(), c.value.ptr, 0i64) ?| 0i64);   // unlinkat
@@ -84,6 +87,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

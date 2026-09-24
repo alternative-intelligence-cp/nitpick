@@ -105,7 +105,7 @@ func:split_fields = List<string>(string:line, int64:n) never fails {
     List<string>:out = raw list_init::<string>(n + 1i64);
     int64:start = 0i64;
     int64:i = 0i64;
-    while ((i < line.len) && (out.count < (n - 1i64))) {
+    while ((i < line.len) && (out.count < (n - 1i64))) decreases line.len - i {
         if (line.ptr[i] == 32u8) {
             drop list_push(@out, raw piece(line, start, i));
             start = i + 1i64;
@@ -135,7 +135,7 @@ pub func:man_parse_named = ObManifest(string:text, bool:floor) never fails {
     int64:start = 0i64;
     int64:i = 0i64;
     bool:saw_magic = false;
-    while (i <= text.len) {
+    while (i <= text.len) decreases text.len - i {
         bool:at_end = (i == text.len);
         bool:nl = false;
         if (!at_end) { if (text.ptr[i] == 10u8) { nl = true; } }

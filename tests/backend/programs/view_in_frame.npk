@@ -17,7 +17,7 @@ mod:view_in_frame;
 func:count_digits = int64(uint8[]:src, int64:from) never fails {
     int64:i = from;
     int64:n = 0i64;
-    while (i < src.len) {
+    while (i < src.len) decreases src.len - i {
         if (src[i] < 48u8) { i = src.len; }
         else {
             if (src[i] > 57u8) { i = src.len; }
@@ -49,6 +49,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 96i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

@@ -28,7 +28,7 @@ func:main = int32(cstring[]:argv) {
     // whole string keeps this a runtime test and not a string-library test.
     bool:found_slash = false;
     int64:i = 0i64;
-    while (i < prog.len) {
+    while (i < prog.len) decreases prog.len - i {
         if (prog.ptr[i] == 47u8) { found_slash = true; }
         i = i + 1i64;
     }
@@ -49,6 +49,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

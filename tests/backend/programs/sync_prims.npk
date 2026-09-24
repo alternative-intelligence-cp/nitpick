@@ -20,7 +20,7 @@ thread async func:reader = NIL(RwLock<int32, 3i32>->:r,
                                Channel<int32, 4i32, 8i64>:done) joins JOIN_2S {
     int32:i = 0i32;
     int32:acc = 0i32;
-    while (i < 50i32) {
+    while (i < 50i32) decreases 50i32 - i {
         RGuard<int32>:g = relay await r.read(raw duration_ms(500i64));
         acc = acc + g.value;
         i = i + 1i32;
@@ -32,7 +32,8 @@ thread async func:reader = NIL(RwLock<int32, 3i32>->:r,
 thread async func:waiter = NIL(Mutex<int32, 3i32>->:m, CondVar<4i32>->:cv,
                                Channel<int32, 4i32, 8i64>:done) joins JOIN_2S {
     Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
-    while (g.value == 0i32) {
+    // waits on the condition variable until the value is set, each wait bounded by its own deadline (D-316)
+    while (g.value == 0i32) unbounded {
         await cv.timedwait(g, raw duration_ms(1000i64)) ?! E9;
     }
     await done.send(g.value, raw duration_ms(500i64)) ?! E9;
@@ -107,6 +108,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

@@ -59,7 +59,7 @@ pub func:CLONE_FUEL = int32() never fails { pass 512i32; };
 // How many rounds the fixed-point loop may take. A macro body may contain an
 // invocation, so one pass is not enough; `macro:m = () { #m(); };` never settles,
 // which is what this refuses.
-pub func:EXPAND_ROUNDS = int32() never fails { pass 32i32; };
+pub func:EXPAND_ROUNDS = int32() never fails pure { pass 32i32; };
 
 // A macro, found by name AND by the module that declared it. One entry per
 // `macro:` declaration in the program.
@@ -163,7 +163,7 @@ pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl,
 // declaration kind. Nothing here needs to arbitrate.
 pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) never fails {
     int64:i = 0i64;
-    while (i < t.v.count) {
+    while (i < t.v.count) decreases t.v.count - i {
         MacroEntry:e = t.v[i];
         if (e.name == name) {
             if (e.owner == owner) { pass e.decl; }
@@ -179,7 +179,7 @@ pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) never 
 // otherwise, and they are unrelated mistakes.
 pub func:macrotable_find_elsewhere = bool(MacroTable->:t, int32:name) never fails {
     int64:i = 0i64;
-    while (i < t.v.count) {
+    while (i < t.v.count) decreases t.v.count - i {
         if ((t.v[i]).name == name) { pass true; }
         i = i + 1i64;
     }
@@ -197,7 +197,7 @@ func:expand_err = NIL(Expander->:x, move string:code, move string:msg, Span:sp) 
 // positional: parameter `i` takes argument `i`.
 func:param_index = int32(Expander->:x, int32:name) never fails {
     int32:i = 0i32;
-    while (i < x.params_count) {
+    while (i < x.params_count) decreases x.params_count - i {
         if ((raw ast_id_at(x.ast, x.params_start, i)) == name) { pass i; }
         i = i + 1i32;
     }
@@ -406,14 +406,14 @@ func:clone_call = ExprId(Expander->:x, ExprNode:n, int32:gc, int32:fuel) never f
 
     int32:mark = raw ast_scratch_mark(x.ast);
     int32:i = 0i32;
-    while (i < gc) {
+    while (i < gc) decreases gc - i {
         // The generic arguments are TYPE ids and are copied through: a type
         // mentioning a macro parameter is not a form the corpus exercises, and
         // substituting into one silently would be inventing a rule.
         drop ast_scratch_push(x.ast, raw ast_id_at(x.ast, start, i));
         i = i + 1i32;
     }
-    while (i < total) {
+    while (i < total) decreases total - i {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         ExprId:c = raw clone_expr(x, a, fuel);
         drop ast_scratch_push(x.ast, c.index);
@@ -737,16 +737,16 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
         // on purpose: a raw slot read is how a window whose sections shift silently
         // becomes a defect, and this clone would be the worst place to have one.
         int32:i = 0i32;
-        while (i < gc) { drop ast_scratch_push(x.ast, (raw fn_generic(x.ast, d, i)).index); i = i + 1i32; }
+        while (i < gc) decreases gc - i { drop ast_scratch_push(x.ast, (raw fn_generic(x.ast, d, i)).index); i = i + 1i32; }
         // PARAMETERS AND CONTRACTS ARE CLONED (1.5.1, V-19): a parameter carries
         // a `limit` and a contract carries a condition, and both are nodes
         // resolution writes onto — shared, the last expansion resolved wins.
         i = 0i32;
-        while (i < pc) { drop ast_scratch_push(x.ast, (raw clone_param(x, raw fn_param(x.ast, d, i), f)).index); i = i + 1i32; }
+        while (i < pc) decreases pc - i { drop ast_scratch_push(x.ast, (raw clone_param(x, raw fn_param(x.ast, d, i), f)).index); i = i + 1i32; }
         i = 0i32;
-        while (i < cc) { drop ast_scratch_push(x.ast, (raw clone_verify(x, raw fn_contract(x.ast, d, i), f)).index); i = i + 1i32; }
+        while (i < cc) decreases cc - i { drop ast_scratch_push(x.ast, (raw clone_verify(x, raw fn_contract(x.ast, d, i), f)).index); i = i + 1i32; }
         i = 0i32;
-        while (i < ac) { drop ast_scratch_push(x.ast, (raw fn_attr(x.ast, d, i)).index); i = i + 1i32; }
+        while (i < ac) decreases ac - i { drop ast_scratch_push(x.ast, (raw fn_attr(x.ast, d, i)).index); i = i + 1i32; }
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
     }
@@ -949,7 +949,7 @@ func:blank_tree = NIL(Expander->:x, ExprId:id, int32:fuel) never fails {
             if (n.kind == ExprKind.ExprStructLiteralExpr) {
                 int32:cnt = raw expr_list_count(n);
                 int32:i = 1i32;
-                while (i < cnt) {
+                while (i < cnt) decreases cnt - i {
                     drop blank_tree(x, ExprId{ index: raw ast_id_at(x.ast,
                                      raw expr_list_start(n), i) }, f);
                     i = i + 2i32;
@@ -1139,7 +1139,7 @@ func:expand_in_expr = bool(Expander->:x, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             if (raw expand_in_expr(x, ExprId{ index: raw ast_id_at(x.ast,
                                        raw expr_list_start(n), i) })) { hit = true; }
             i = i + 2i32;
@@ -1505,7 +1505,8 @@ func:expand_impl_window = bool(Expander->:x, DeclId:id) never fails {
 // naming the invocation rather than as a program that silently did nothing.
 pub func:expand_audit = NIL(Expander->:x) never fails {
     int32:i = 1i32;
-    while (i < (raw ast_expr_count(x.ast))) {
+    int32:nexprs = raw ast_expr_count(x.ast);
+    while (i < nexprs) decreases nexprs - i {
         ExprId:id = ExprId{ index: i };
         ExprNode:n = raw ast_expr(x.ast, id);
         // A MACRO BODY IS A TEMPLATE, not program text. `#caller(x)` there is
@@ -1609,7 +1610,7 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
     for (int64:i in 0i64...n) {
         Diagnostic:g = raw diaglist_at(d, i);
         int64:s = 0i64;
-        while (s < x.sites.v.count) {
+        while (s < x.sites.v.count) decreases x.sites.v.count - s {
             MacroSite:e = x.sites.v[s];
             bool:inside = (g.span.file == e.file);
             if (inside) { inside = (g.span.line >= e.lo); }

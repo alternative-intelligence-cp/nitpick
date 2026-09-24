@@ -92,7 +92,8 @@ func:gx = Gx(string:src, InternTable->:it) never fails {
 
     DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
-    while (i < (raw item_member_count(@ast, mn))) {
+    int32:nmembers = raw item_member_count(@ast, mn);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:item = raw item_member(@ast, mn, i);
         DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
@@ -862,13 +863,13 @@ func:main = int32(cstring[]:_~argv) {
 func:nested_generic = string(int32:depth) never fails {
     string:s = "struct:C<T> = { T:v; }; func:f = NIL() never fails { ";
     int32:i = 0i32;
-    while (i < depth) {
+    while (i < depth) decreases depth - i {
         s = string_concat(s, "C< ");
         i = i + 1i32;
     }
     s = string_concat(s, "int32");
     int32:j = 0i32;
-    while (j < depth) {
+    while (j < depth) decreases depth - j {
         s = string_concat(s, " >");
         j = j + 1i32;
     }
@@ -908,6 +909,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

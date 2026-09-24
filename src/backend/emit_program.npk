@@ -97,7 +97,8 @@ func:refuse = NIL(DiagList->:diags, IrVal:v) never fails {
 func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                              DiagList->:diags, ModuleGraph->:g) never fails {
     int32:m = 0i32;
-    while (m < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (m < nmods) decreases nmods - m {
         ModuleEntry:me = raw graph_at(g, m);
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         drop emit_headers_in(w, tr, c, diags, g, mn, me.scope);
@@ -116,7 +117,8 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     // field annotations resolve; `ll_struct_body` substitutes this instance's
     // arguments over them.
     int32:t = 0i32;
-    while (t < (raw tt_count(c.types))) {
+    // the type table is re-read each trip: emitting an instance's header may intern more, each given its header in turn; a program interns finitely many types (D-316)
+    while (t < (raw tt_count(c.types))) unbounded {
         if ((raw type_args_count_of(c.types, t)) > 0i32) {
             drop emit_instance_header(w, tr, c, diags, g, t);
         }
@@ -180,7 +182,8 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     x.cur_impl = item.index;
 
     int32:i = 0i32;
-    while (i < (raw impl_member_count(x.ast, d))) {
+    int32:nmembers = raw impl_member_count(x.ast, d);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:mid = raw impl_member(x.ast, d, i);
         DeclNode:m = raw ast_decl(x.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -208,7 +211,8 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         if (tdecl != 0i32) {
             DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
             int32:k = 0i32;
-            while (k < (raw item_member_count(x.ast, td))) {
+            int32:nmembers = raw item_member_count(x.ast, td);
+            while (k < nmembers) decreases nmembers - k {
                 DeclId:tmid = raw item_member(x.ast, td, k);
                 DeclNode:tm = raw ast_decl(x.ast, tmid);
                 if (tm.kind == DeclKind.DeclFunctionDecl) {
@@ -294,7 +298,8 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     int32:slots = 1i32;
 
     int32:k = 0i32;
-    while (k < (raw item_member_count(x.ast, td))) {
+    int32:nmembers = raw item_member_count(x.ast, td);
+    while (k < nmembers) decreases nmembers - k {
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             // AN ASYNC METHOD'S SLOT IS ITS RESUME FUNCTION (D-185, 1.1.12d)
@@ -327,7 +332,7 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // coroutine's frame, as a pointer-sized constant. `dyn` erases the type
     // that knows it; the table is where it survives erasure.
     k = 0i32;
-    while (k < (raw item_member_count(x.ast, td))) {
+    while (k < nmembers) decreases nmembers - k {
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             if (raw decl_has(tm, raw DECL_ASYNC())) {
@@ -402,7 +407,7 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     if (recv_ptr) { args = "ptr %d"; }
     int32:pc = raw fn_param_count(x.ast, tm);
     int32:i = 1i32;
-    while (i < pc) {
+    while (i < pc) decreases pc - i {
         DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, tm, i));
         int32:pt = raw resolve_type(x.tr, raw param_type(pd), home);
         LlType:pll = raw ll_type(x.fe.ctx, pt);
@@ -557,7 +562,8 @@ func:family_vtable_ready = bool(ExprEmitter->:x, int32:trait_ty,
     if (tdecl == 0i32) { pass false; }
     DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
     int32:k = 0i32;
-    while (k < (raw item_member_count(x.ast, td))) {
+    int32:nmembers = raw item_member_count(x.ast, td);
+    while (k < nmembers) decreases nmembers - k {
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             if (!(raw family_method_recorded(x, raw decl_name(tm), impl_decl,
@@ -578,13 +584,14 @@ func:family_method_recorded = bool(ExprEmitter->:x, int32:name,
                                    int32:impl_decl, int32:args_start,
                                    int32:args_count) never fails {
     int32:i = 0i32;
-    while (i < (raw fninst_count(x.fninsts))) {
+    int32:ninsts = raw fninst_count(x.fninsts);
+    while (i < ninsts) decreases ninsts - i {
         FnInstance:e = raw fninst_at(x.fninsts, i);
         if (e.owner_impl == impl_decl) {
             if (e.args_count == args_count) {
                 bool:same = true;
                 int32:j = 0i32;
-                while (j < args_count) {
+                while (j < args_count) decreases args_count - j {
                     if ((raw ast_id_at(x.ast, e.args_start, j))
                             != (raw ast_id_at(x.ast, args_start, j))) {
                         same = false;
@@ -616,7 +623,8 @@ func:impl_method_sym = int32(ExprEmitter->:x, int32:self_ty, int32:trait_ty,
 // Did this impl write its own method called `name`? 0 when it inherits.
 func:impl_own_member = int32(Ast->:ast, DeclNode:d, int32:name) never fails {
     int32:i = 0i32;
-    while (i < (raw impl_member_count(ast, d))) {
+    int32:nmembers = raw impl_member_count(ast, d);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:mid = raw impl_member(ast, d, i);
         DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -638,7 +646,8 @@ func:emit_headers_in = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                            DiagList->:diags, ModuleGraph->:g, DeclNode:mn,
                            int32:scope) never fails {
     int32:i = 0i32;
-    while (i < (raw item_member_count(@g.ast, mn))) {
+    int32:nitems = raw item_member_count(@g.ast, mn);
+    while (i < nitems) decreases nitems - i {
         DeclId:item = raw item_member(@g.ast, mn, i);
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclStructDecl) {
@@ -689,7 +698,8 @@ func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // answer for each other here.
 func:type_of_decl = int32(LlCtx->:c, int32:decl_index, int32:kind) never fails {
     int32:i = 0i32;
-    while (i < (raw tt_count(c.types))) {
+    int32:ntypes = raw tt_count(c.types);
+    while (i < ntypes) decreases ntypes - i {
         if ((raw type_kind(c.types, i)) == kind) {
             if ((raw type_decl(c.types, i)) == decl_index) {
                 if ((raw type_args_count_of(c.types, i)) == 0i32) { pass i; }
@@ -749,9 +759,10 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) never fails {
     wild int8->:mem = alloc(sz * #size_of<int32>());
     wild int32->:map = mem =>! wild int32->;
     int64:z = 0i64;
-    while (z < sz) { map[z] = 0i32; z = z + 1i64; }
+    while (z < sz) decreases sz - z { map[z] = 0i32; z = z + 1i64; }
     int32:m = 0i32;
-    while (m < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (m < nmods) decreases nmods - m {
         ModuleEntry:me = raw graph_at(g, m);
         string:base = raw path_basename(raw srcmgr_resolved_proven(@g.sm, me.file));
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
@@ -770,7 +781,8 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) never fails {
 // table it needs. Same answer as `build_modmap`: walk once, record, look up.
 func:build_vtmap = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c) never fails {
     int32:m = 0i32;
-    while (m < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (m < nmods) decreases nmods - m {
         ModuleEntry:me = raw graph_at(g, m);
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         drop vtmap_members(g, tr, c, mn, me.scope);
@@ -859,7 +871,8 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
             // failing test: the fallback links, it just does not qualify.
             if (d.kind == DeclKind.DeclImplDecl) {
                 int32:mi = 0i32;
-                while (mi < (raw impl_member_count(@g.ast, d))) {
+                int32:nmembers = raw impl_member_count(@g.ast, d);
+                while (mi < nmembers) decreases nmembers - mi {
                     DeclId:mid = raw impl_member(@g.ast, d, mi);
                     map[mid.index => int64] = cid;
                     mi = mi + 1i32;
@@ -870,7 +883,8 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
             // its module qualification like any other definition.
             if (d.kind == DeclKind.DeclTraitDecl) {
                 int32:ti = 0i32;
-                while (ti < (raw item_member_count(@g.ast, d))) {
+                int32:nitems = raw item_member_count(@g.ast, d);
+                while (ti < nitems) decreases nitems - ti {
                     DeclId:tmem = raw item_member(@g.ast, d, ti);
                     map[tmem.index => int64] = cid;
                     ti = ti + 1i32;
@@ -910,11 +924,12 @@ func:unit_defines_failsafe = bool(ModuleGraph->:g, InternTable->:interns) never 
 // declare block a fixed constant of every module this compiler ever emits.
 func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     int32:i = 0i32;
-    while (i < (raw rt_count())) {
+    int32:nrt = raw rt_count();
+    while (i < nrt) decreases nrt - i {
         RtSig:sig = raw rt_sig(raw rt_name_at(i));
         string:args = "";
         int32:a = 0i32;
-        while (a < sig.argc) {
+        while (a < sig.argc) decreases sig.argc - a {
             if (a > 0i32) { args = string_concat(args, ", "); }
             args = string_concat(args, raw rt_arg(sig, a));
             a = a + 1i32;
@@ -1015,9 +1030,11 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // through i4096, at -O0 and -O2 alike (verified before the guard was
     // written; the opt-O2 leg re-proves it on every run).
     int32:owi = 0i32;
-    while (owi < (raw int_width_count())) {
+    int32:nwidths = raw int_width_count();
+    while (owi < nwidths) decreases nwidths - owi {
         int32:owf = 0i32;
-        while (owf < (raw ovf_family_count())) {
+        int32:nfamilies = raw ovf_family_count();
+        while (owf < nfamilies) decreases nfamilies - owf {
             string:owh = raw cat5("declare { ", raw int_width_at(owi),
                               ", i1 } @", raw ovf_intrinsic_name(owf,
                                   raw int_width_at(owi)), "(");
@@ -1106,7 +1123,8 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) nev
     int32:inner = raw nested_module_scope(x.tab, m, x.scope);
     if (inner != 0i32) { x.scope = inner; }
     int32:i = 0i32;
-    while (i < (raw item_member_count(x.ast, m))) {
+    int32:nitems = raw item_member_count(x.ast, m);
+    while (i < nitems) decreases nitems - i {
         DeclId:item = raw item_member(x.ast, m, i);
         DeclNode:d = raw ast_decl(x.ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
@@ -1189,7 +1207,8 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // a LOCAL emitter is a borrow the escape analysis cannot name (BORROW-009),
     // while one reached through a parameter is.
     int32:fv = 0i32;
-    while (fv < (raw fninst_count(fninsts))) {
+    // the instance table is re-read each trip: emitting a family vtable may record more instances, each emitted in turn; a program's instances are finite (D-316)
+    while (fv < (raw fninst_count(fninsts))) unbounded {
         FnInstance:fvi = raw fninst_at(fninsts, fv);
         if (fvi.owner_impl != 0i32) {
             int32:fvhs = raw impl_scope_of(impls, fvi.owner_impl);
@@ -1205,7 +1224,8 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     }
 
     int32:m = 0i32;
-    while (m < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (m < nmods) decreases nmods - m {
         ModuleEntry:me = raw graph_at(g, m);
         // THE PRELUDE'S ITEMS (1.5.2d, D-262 §1): each non-generic function
         // and each impl's methods and vtable are bracketed, and
@@ -1215,7 +1235,8 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                                         tr, fninsts, me.scope);
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         int32:i = 0i32;
-        while (i < (raw item_member_count(@g.ast, mn))) {
+        int32:nitems = raw item_member_count(@g.ast, mn);
+        while (i < nitems) decreases nitems - i {
             DeclId:item = raw item_member(@g.ast, mn, i);
             DeclNode:d = raw ast_decl(@g.ast, item);
             if (d.kind == DeclKind.DeclFunctionDecl) {
@@ -1276,7 +1297,8 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // The emitter is built at the DECLARING module's scope, since that is where
     // the body's annotations resolve.
     int32:fi = 0i32;
-    while (fi < (raw fninst_count(fninsts))) {
+    // the instance table is re-read each trip by design (1.0.7): emitting an instance records the ones its body calls, each emitted in turn; a program's instances are finite (D-316)
+    while (fi < (raw fninst_count(fninsts))) unbounded {
         FnInstance:inst = raw fninst_at(fninsts, fi);
         // An impl-owned instantiation is emitted by its own impl block, where
         // `Self` and the impl's parameters are bound (1.0.4b).
@@ -1369,7 +1391,8 @@ func:emit_drop_bodies = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                             Ast->:ast, SymbolTable->:tab,
                             DiagList->:diags) never fails {
     int64:i = 0i64;
-    while (i < (raw drop_type_count(c))) {
+    // the drop registry is re-read each trip: a drop body names its fields' drop bodies, which registers their types, each emitted in turn; a program's owning types are finite (D-316)
+    while (i < (raw drop_type_count(c))) unbounded {
         int32:dty = raw drop_type_at(c, i);
         // A REGISTERED TYPE THE EMITTER CANNOT LOWER IS A DEFECT SAID ALOUD
         // (1.5.2e, O-N17): `emit_one_drop` and `emit_one_vacant` used to emit
@@ -1738,7 +1761,8 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         string:arms = "";
         bool:have_arm = false;
         int32:vi = 0i32;
-        while (vi < (raw item_member_count(ast, ed))) {
+        int32:nvariants = raw item_member_count(ast, ed);
+        while (vi < nvariants) decreases nvariants - vi {
             DeclNode:vm = raw ast_decl(ast, raw item_member(ast, ed, vi));
             if (vm.kind == DeclKind.DeclEnumVariant) {
                 bool:owns = false;
@@ -1778,13 +1802,13 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                           " ]", ""));
         // Pass 2: one block per owning variant.
         vi = 0i32;
-        while (vi < (raw item_member_count(ast, ed))) {
+        while (vi < nvariants) decreases nvariants - vi {
             DeclNode:vm = raw ast_decl(ast, raw item_member(ast, ed, vi));
             if (vm.kind == DeclKind.DeclEnumVariant) {
                 bool:owns2 = false;
                 int32:pc2 = raw variant_payload_count(vm);
                 int32:q = 0i32;
-                while (q < pc2) {
+                while (q < pc2) decreases pc2 - q {
                     PayloadSlot:qs = raw variant_payload_slot_at(tr, c.types,
                                          ast, tab, ehome, dty,
                                          raw decl_name(vm), q);
@@ -1803,7 +1827,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                       " = getelementptr ", t.text,
                                       ", ptr %v, i32 0, i32 1"));
                     int32:rj = pc2;
-                    while (rj > 0i32) {
+                    while (rj > 0i32) decreases rj {
                         rj = rj - 1i32;
                         PayloadSlot:rs = raw variant_payload_slot_at(tr, c.types,
                                              ast, tab, ehome, dty,
@@ -1857,7 +1881,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         int32:lhome = raw symtab_home_scope(tab, ldid.index, 0i32);
         int32:lel = 0i32;
         int32:lm = 0i32;
-        while (lm < (raw item_member_count(ast, ld))) {
+        while (lm < (raw item_member_count(ast, ld))) decreases (raw item_member_count(ast, ld)) - lm {
             DeclNode:lfm = raw ast_decl(ast, raw item_member(ast, ld, lm));
             if (lfm.kind == DeclKind.DeclFieldDecl) {
                 // field 0 is `items`, a pointer to T (`decl_is_list` checked)
@@ -1910,18 +1934,19 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         // count the fields first, so the walk can run backwards
         int32:nf = 0i32;
         int32:m = 0i32;
-        while (m < (raw item_member_count(ast, d))) {
+        int32:nmembers = raw item_member_count(ast, d);
+        while (m < nmembers) decreases nmembers - m {
             DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, m));
             if (fm.kind == DeclKind.DeclFieldDecl) { nf = nf + 1i32; }
             m = m + 1i32;
         }
         int32:fi = nf;
-        while (fi > 0i32) {
+        while (fi > 0i32) decreases fi {
             fi = fi - 1i32;
             // find the fi'th field decl
             int32:seen = 0i32;
             int32:q = 0i32;
-            while (q < (raw item_member_count(ast, d))) {
+            while (q < (raw item_member_count(ast, d))) decreases (raw item_member_count(ast, d)) - q {
                 DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, q));
                 if (fm.kind == DeclKind.DeclFieldDecl) {
                     if (seen == fi) {
@@ -2046,7 +2071,8 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         DeclNode:ed = raw ast_decl(ast, edid);
         int32:ehome = raw symtab_home_scope(tab, edid.index, 0i32);
         int32:vi = 0i32;
-        while (vi < (raw item_member_count(ast, ed))) {
+        int32:nvariants = raw item_member_count(ast, ed);
+        while (vi < nvariants) decreases nvariants - vi {
             DeclNode:vm = raw ast_decl(ast, raw item_member(ast, ed, vi));
             if (vm.kind == DeclKind.DeclEnumVariant) {
                 if ((raw variant_tag_of(ast, vm, vi)) == 0i32) {
@@ -2095,7 +2121,8 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         int32:home = raw symtab_home_scope(tab, did.index, 0i32);
         int32:fi = 0i32;
         int32:q = 0i32;
-        while (q < (raw item_member_count(ast, d))) {
+        int32:nmembers = raw item_member_count(ast, d);
+        while (q < nmembers) decreases nmembers - q {
             DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, q));
             if (fm.kind == DeclKind.DeclFieldDecl) {
                 // THROUGH THE BOUND WALK (1.1.12c), for the same reason the
@@ -2132,7 +2159,8 @@ func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                              DiagList->:diags, ModuleGraph->:g, int32:from) never fails {
     int32:t = from;
     bool:some = false;
-    while (t < (raw tt_count(c.types))) {
+    // the type table is re-read each trip (the late headers): an instance interned while emitting gets its header here, and a program interns finitely many types (D-316)
+    while (t < (raw tt_count(c.types))) unbounded {
         if ((raw type_args_count_of(c.types, t)) > 0i32) {
             if (!some) { drop irw_blank(w); some = true; }
             drop emit_instance_header(w, tr, c, diags, g, t);
@@ -2145,7 +2173,7 @@ func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // The scope an impl was collected in (its module's), or 0.
 func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.decl == impl_decl) { pass e.scope; }
         i = i + 1i32;
@@ -2156,7 +2184,7 @@ func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) never fails {
 // Does any of this instantiation's arguments still name a parameter? (1.0.7)
 func:fninst_is_template = bool(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
     int32:i = 0i32;
-    while (i < inst.args_count) {
+    while (i < inst.args_count) decreases inst.args_count - i {
         if (raw type_mentions_param(c.types, ast,
                                     raw ast_id_at(ast, inst.args_start, i),
                                     64i32)) {
@@ -2175,7 +2203,7 @@ func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
     string:m = string_concat(
                    raw intern_get(c.interns, raw decl_name(d)), "<");
     int32:i = 0i32;
-    while (i < inst.args_count) {
+    while (i < inst.args_count) decreases inst.args_count - i {
         if (i > 0i32) { m = string_concat(m, ", "); }
         m = string_concat(m,
                 raw type_display(c.types, c.interns,
@@ -2200,7 +2228,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     // which is what the reporter's 4 000-statement program measured.
     // the byte constants first
     int32:i = 0i32;
-    while (i < n) {
+    while (i < n) decreases n - i {
         string->:sp2 = @w.site_paths[i => int64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, "@npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
@@ -2209,7 +2237,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
         drop irw_write(w, " x i8] c\"");
         Sink->:es = raw irw_sink(w);
         int64:bj = 0i64;
-        while (bj < sp2.len) {
+        while (bj < sp2.len) decreases sp2.len - bj {
             drop esc_byte_into(es, sp2.ptr[bj] => uint8);
             bj = bj + 1i64;
         }
@@ -2222,7 +2250,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_write(w, int_to_string((n + 1i32) => int64));
     drop irw_write(w, " x i32] [i32 0");
     i = 0i32;
-    while (i < n) {
+    while (i < n) decreases n - i {
         drop irw_write(w, ", i32 ");
         drop irw_write(w, int_to_string(w.site_lines[i => int64] => int64));
         i = i + 1i32;
@@ -2234,7 +2262,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_write(w, int_to_string((n + 1i32) => int64));
     drop irw_write(w, " x { ptr, i64 }] [{ ptr, i64 } { ptr null, i64 0 }");
     i = 0i32;
-    while (i < n) {
+    while (i < n) decreases n - i {
         string->:sp3 = @w.site_paths[i => int64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, ", { ptr, i64 } { ptr @npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));

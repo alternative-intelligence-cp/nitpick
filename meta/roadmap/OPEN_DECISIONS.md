@@ -1720,6 +1720,29 @@ discharged one whose two copies are both elided — and it FAILS against the
 pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
 -4099 traps for 1 retained".]*
 
+**DEF-93 — FIXED at 1.5.8c step 3: A `Rules` DECLARATION'S `pub` WAS NEVER STORED, AND
+`decl_flags` READ ITS SUBJECT TYPE'S NODE INDEX AS THE FLAG WORD.**
+(found 2026-09-24 by `nitpick-compiler_s13`: step 3's second full harness had
+`tests/modules/rejection/owned_names.npk` report seven of its eight refusals -- the
+prelude-owned `ListLen` case gone -- and a probe showed a program's `limit<ListLen>` had
+become RESOLVE-002 on the swept tree while it resolved on step 2's; the loader, the
+resolver, the symbol table, the interner and the parser were reverted in turn and none
+restored it.) THE CAUSE, read once the bisect had said "not the walks": `p_parse_rules`
+took its caller's `flags` and passed none to `ast_add_decl`, and `decl_flags` answers
+`d.a` for every kind but a global's -- for a `Rules` declaration `a` is the SUBJECT TYPE's
+node index. So `pub Rules<int64>:ListLen` was exported exactly when the `int64` type node's
+index in the prelude's AST had bit 0 set (`DECL_PUB` is 1): it had, from 1.5.8b step 6c's
+declaration of the rule to step 2, and step 3's clauses in the prelude moved the nodes.
+The 1.4.8 global's defect ("whether a `pub fixed` binding was exported depended on that
+index's parity") one declaration kind over, and D-239's owned-name refusal for a rule was
+the parity's too. THE FIX: the rule's flags ride the high half of its count slot as a
+global's do (`c = count | flags << 16`; `decl_flags` and `decl_win_count` read the halves;
+AST_REFERENCE §5's row says so); `tests/backend/programs/rules_pub.npk` (a `pub Rules` in
+an inline module bound by `use m.{R};`, and `limit<ListLen>` named in a program -- exit 3)
+and `tests/modules/rejection/rules_private.npk` (a rule without `pub` refused at the `use`,
+RESOLVE-003). The lesson of D-227 again: a fact read from a slot that means something else
+is not absent, it is false, and a coincidence keeps it true for as long as it likes.
+
 **DEF-91 — FIXED at 1.5.8b step 7: FOUR PROGRAM TESTS SHARED FIXED `/tmp` PATHS AND
 RACED WHEN TWO HARNESSES RAN AT ONCE.**
 (found 2026-09-24 by `nitpick-compiler_s12`: step 7's third full harness, running beside

@@ -15,7 +15,7 @@ mod:variadic;
 func:total = int64(int64:base, ..*int64[]:rest) never fails {
     int64:acc = base;
     int64:i = 0i64;
-    while (i < rest.len) {
+    while (i < rest.len) decreases rest.len - i {
         acc = acc + rest[i];
         i = i + 1i64;
     }
@@ -27,7 +27,7 @@ async func:atotal = int64(int64:base, ..*int64[]:rest) {
     if (s.is_error) { }
     int64:acc = base;
     int64:i = 0i64;
-    while (i < rest.len) {
+    while (i < rest.len) decreases rest.len - i {
         acc = acc + rest[i];
         i = i + 1i64;
     }
@@ -69,6 +69,7 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds)      { exit 96i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 90i32;

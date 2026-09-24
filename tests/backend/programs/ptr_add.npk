@@ -9,7 +9,7 @@ error:E9;
 func:main = int32(cstring[]:_~argv) {
     wild int8->:buf = alloc(64i64);
     int32:i = 0i32;
-    while (i < 8i32) {
+    while (i < 8i32) decreases 8i32 - i {
         wild int64->:slot = #ptr_add<int64>(buf =>! wild int64->, i => int64);
         <-slot = (i => int64) * 100i64;
         i = i + 1i32;
@@ -34,6 +34,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 98i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault) { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*) { exit 99i32; }
     }
     exit 9i32;

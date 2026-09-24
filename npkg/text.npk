@@ -41,11 +41,11 @@ pub func:text_slice = string(string:s, int64:lo, int64:hi) never fails {
 pub func:text_trim = string(string:s) never fails {
     int64:lo = 0i64;
     int64:hi = s.len;
-    while (lo < hi) {
+    while (lo < hi) decreases hi - lo {
         if (!(raw text_is_ws(s.ptr[lo]))) { break; }
         lo = lo + 1i64;
     }
-    while (hi > lo) {
+    while (hi > lo) decreases hi - lo {
         if (!(raw text_is_ws(s.ptr[hi - 1i64]))) { break; }
         hi = hi - 1i64;
     }
@@ -77,7 +77,7 @@ pub func:text_index_from = int64(string:s, string:needle, int64:from) never fail
     if (needle.len > (s.len - from)) { pass (0i64 - 1i64); }
     int64:last = s.len - needle.len;
     int64:at = from;
-    while (at <= last) {
+    while (at <= last) decreases last - at {
         bool:hit = true;
         for (int64:i in 0i64...needle.len) {
             if (s.ptr[at + i] != needle.ptr[i]) { hit = false; break; }
@@ -98,7 +98,7 @@ pub func:text_contains = bool(string:s, string:needle) never fails {
 
 pub func:text_find_byte = int64(string:s, uint8:b, int64:from) never fails {
     int64:i = from;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         if (s.ptr[i] == b) { pass i; }
         i = i + 1i64;
     }
@@ -107,7 +107,7 @@ pub func:text_find_byte = int64(string:s, uint8:b, int64:from) never fails {
 
 pub func:text_rfind_byte = int64(string:s, uint8:b) never fails {
     int64:i = s.len;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (s.ptr[i] == b) { pass i; }
     }
@@ -126,14 +126,14 @@ pub func:text_file_name = string(string:p) never fails {
 pub func:text_split_ws = List<string>(string:s) never fails {
     List<string>:out = raw list_init::<string>(8i64);
     int64:i = 0i64;
-    while (i < s.len) {
-        while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
+        while (i < s.len) decreases s.len - i {
             if (!(raw text_is_ws(s.ptr[i]))) { break; }
             i = i + 1i64;
         }
         if (i >= s.len) { break; }
         int64:start = i;
-        while (i < s.len) {
+        while (i < s.len) decreases s.len - i {
             if (raw text_is_ws(s.ptr[i])) { break; }
             i = i + 1i64;
         }
@@ -150,7 +150,7 @@ pub func:text_lines = List<string>(string:s) never fails {
     List<string>:out = raw list_init::<string>(16i64);
     int64:start = 0i64;
     int64:i = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         if (s.ptr[i] == 10u8) {
             int64:stop = i;
             if (stop > start) { if (s.ptr[stop - 1i64] == 13u8) { stop = stop - 1i64; } }
@@ -183,7 +183,7 @@ pub func:text_int = int64(string:s) {
     if (i >= t.len) { fail ETextInt; }
     if ((t.len - i) > 18i64) { fail ETextInt; }
     int64:v = 0i64;
-    while (i < t.len) {
+    while (i < t.len) decreases t.len - i {
         uint8:c = t.ptr[i];
         if ((c < 48u8) || (c > 57u8)) { fail ETextInt; }
         v = (v * 10i64) + ((c - 48u8) => int64);
@@ -315,9 +315,9 @@ pub func:strlist_sorted = List<string>(List<string>:l) never fails {
     wild int64->:ix = raw_ix =>! wild int64->;
     for (int64:k in 0i64...n) { ix[k] = k; }
     int64:i = 1i64;
-    while (i < n) {
+    while (i < n) decreases n - i {
         int64:j = i;
-        while (j > 0i64) {
+        while (j > 0i64) decreases j {
             string:a = string_from_bytes(l[ix[j]].ptr, l[ix[j]].len);
             string:b = string_from_bytes(l[ix[j - 1i64]].ptr, l[ix[j - 1i64]].len);
             if (raw text_less(a, b)) {
@@ -375,7 +375,7 @@ pub func:text_replace_all = string(string:s, string:from, string:to) never fails
     if (from.len == 0i64) { pass (string_concat(s, "")); }
     string:out = "";
     int64:i = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         int64:p = raw text_index_from(s, from, i);
         if (p < 0i64) {
             out = string_concat(out, raw slice_proven(s, i, s.len));
@@ -401,13 +401,13 @@ pub func:text_replace_first_of = string(string:s, string:from, string:to) never 
 pub func:text_pad_right = string(string:s, int64:n) never fails {
     string:out = string_concat(s, "");
     int64:k = s.len;
-    while (k < n) { out = string_concat(out, " "); k = k + 1i64; }
+    while (k < n) decreases n - k { out = string_concat(out, " "); k = k + 1i64; }
     pass out;
 };
 
 pub func:text_pad_left = string(string:s, int64:n) never fails {
     string:out = "";
     int64:k = s.len;
-    while (k < n) { out = string_concat(out, " "); k = k + 1i64; }
+    while (k < n) decreases n - k { out = string_concat(out, " "); k = k + 1i64; }
     pass (string_concat(out, s));
 };

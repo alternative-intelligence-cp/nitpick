@@ -100,7 +100,7 @@ func:main = int32(cstring[]:_~argv) {
     DiagList:d6 = raw diaglist_init();
     Parser:p6 = raw parser_init(@t6, @ast, @d6, @it);
     int64:k = 0i64;
-    while (k < 6i64) {
+    while (k < 6i64) decreases 6i64 - k {
         discard(raw p_advance(@p6));
         k = k + 1i64;
     }
@@ -139,6 +139,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

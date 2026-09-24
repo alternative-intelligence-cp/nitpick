@@ -45,7 +45,7 @@ async func:sync_defer = int32(int32:v) {
 };
 
 async func:param_loop = int32(int32:n) {
-    while (n > 0i32) {
+    while (n > 0i32) decreases n {
         n = n - 1i32;
         discard(await leaf(n) ?| 0i32);
     }
@@ -69,6 +69,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

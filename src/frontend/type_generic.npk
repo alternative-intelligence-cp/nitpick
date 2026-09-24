@@ -218,7 +218,7 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) never fails {
     int32:decl = raw type_decl_of(r.types, t);
     int32:i = 0i32;
-    while (i < g.params_count) {
+    while (i < g.params_count) decreases g.params_count - i {
         if ((raw ast_id_at(r.ast, g.params_start, i)) == decl) {
             // AN UNSOLVED PARAMETER STAYS ITSELF. Inference reports what it could
             // not solve; substituting a zero here would turn every later mention
@@ -245,7 +245,7 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
     bool:changed = false;
-    while (i < n) {
+    while (i < n) decreases n - i {
         int32:was = raw ast_id_at(r.ast, start, i);
         int32:now = raw type_subst(r, was, g, at, fuel - 1i32, impls);
         if (now != was) { changed = true; }
@@ -355,7 +355,8 @@ pub func:check_instantiations_from = NIL(InstanceTable->:inst, ImplTable->:impls
                                          BoundTable->:bounds, TypeResolver->:r,
                                          int32:from) never fails {
     int32:i = from;
-    while (i < (raw inst_count(inst))) {
+    // a worklist over the instance table, re-read each trip: an instance this sweep records is swept too; it ends because `inst_record` dedups and a program's instances are finite (D-316)
+    while (i < (raw inst_count(inst))) unbounded {
         Instance:e = raw inst_at(inst, i);
         drop check_one_instance(impls, bounds, r, e);
         i = i + 1i32;
@@ -408,7 +409,7 @@ pub func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
     if ((raw type_kind(r.types, arg)) == (raw TY_COMPTIME())) { pass NIL; }
 
     int32:i = 0i32;
-    while (i < b.count) {
+    while (i < b.count) decreases b.count - i {
         int32:need = raw ast_id_at(r.ast, b.start, i);
         if (!(raw arg_satisfies(impls, bounds, r, arg, need))) {
             drop bound_unmet(r, arg, need, gpid, owner, at);

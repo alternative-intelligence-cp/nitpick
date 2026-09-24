@@ -725,14 +725,14 @@ pub func:ast_scratch_set = NIL(Ast->:ast, int32:mark, int32:i, int32:value) neve
 // parameters are parsed, and the header holding it comes first.
 pub func:ast_copy_window = NIL(Ast->:ast, IdSpan:w) never fails {
     int32:i = 0i32;
-    while (i < w.count) {
+    while (i < w.count) decreases w.count - i {
         drop ast_scratch_push(ast, raw ast_id_at(ast, w.start, i));
         i = i + 1i32;
     }
     pass NIL;
 };
 
-pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) never fails {
+pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) never fails pure {
     if (i < 0i32) { !!! BoundsWindow; }
     int32:at = start + i;
     if (at < 0i32) { !!! BoundsWindow; }

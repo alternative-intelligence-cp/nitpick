@@ -18,7 +18,7 @@ fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
 thread async func:bump = NIL(Mutex<int32, 3i32>->:m,
                              Channel<int32, 4i32, 4i64>:done) joins JOIN_2S {
     int32:i = 0i32;
-    while (i < 100i32) {
+    while (i < 100i32) decreases 100i32 - i {
         Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
         g.value = g.value + 1i32;
         i = i + 1i32;
@@ -76,6 +76,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

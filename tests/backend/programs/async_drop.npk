@@ -76,7 +76,7 @@ async func:cond_move = int32(bool:b) {
 async func:looped = int32() {
     int32:acc = 0i32;
     int32:i = 0i32;
-    while (i < 50i32) {
+    while (i < 50i32) decreases 50i32 - i {
         string:s = string_concat("abc", "");
         int32:r = relay await tick(s.len =>! int32);   // 4
         acc = acc + r;
@@ -121,6 +121,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 94i32; },
         (StackExhausted) { exit 95i32; },
         (MachineFault) { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
         (*) { exit 95i32; }
     }
     exit 96i32;

@@ -124,7 +124,7 @@ func:bs_is_named = bool(Ast->:ast, InternTable->:it, TypeId:ty, string:want) nev
 func:bs_ident_ok = bool(string:s) never fails {
     if (s.len == 0i64) { pass false; }
     int64:i = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         uint8:c = s.ptr[i];
         bool:ok = false;
         if (c >= 97u8)  { if (c <= 122u8) { ok = true; } }   // a-z
@@ -163,7 +163,8 @@ func:bs_hash_expr = string(uint64:h) never fails {
 
 pub func:bridge_apply = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
-    while (i < (raw graph_count(g))) {
+    int32:nmods = raw graph_count(g);
+    while (i < nmods) decreases nmods - i {
         ModuleEntry:e = raw graph_at(g, i);
         if (i != g.prelude) {
             drop bridge_in_module(g, DeclId{ index: e.root }, i);
@@ -240,7 +241,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     string:sig = "";
     int32:mi = 1i32;
     bool:bad = false;
-    while (mi < (pc - 1i32)) {
+    while (mi < (pc - 1i32)) decreases ((pc - 1i32)) - mi {
         DeclNode:pm = raw ast_decl(ast, raw extern_fn_param(ast, d, mi));
         int32:cls = raw bs_classify(ast, raw param_type(pm));
         bool:okc = false;
@@ -267,7 +268,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     t = raw bs_cat(move(t), raw bs_spell(rcls));
     t = raw bs_cat(move(t), "(Bridge->:b");
     int32:mj = 1i32;
-    while (mj < (pc - 1i32)) {
+    while (mj < (pc - 1i32)) decreases ((pc - 1i32)) - mj {
         int32:cls = ((sig.ptr[(mj - 1i32) => int64]) =>! int32) - 48i32;
         t = raw bs_cat(move(t), ", ");
         t = raw bs_cat(move(t), raw bs_spell(cls));
@@ -285,7 +286,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     // runtime in `aoff`.
     int32:slots = 0i32;
     int32:mk = 1i32;
-    while (mk < (pc - 1i32)) {
+    while (mk < (pc - 1i32)) decreases ((pc - 1i32)) - mk {
         int32:cls = ((sig.ptr[(mk - 1i32) => int64]) =>! int32) - 48i32;
         if (cls <= 2i32) { slots = slots + 1i32; }
         if (cls >= 3i32) { slots = slots + 2i32; }
@@ -296,7 +297,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     t = raw bs_cat(move(t), "i64;\n");
     int32:slot = 0i32;
     int32:mm = 1i32;
-    while (mm < (pc - 1i32)) {
+    while (mm < (pc - 1i32)) decreases ((pc - 1i32)) - mm {
         int32:cls = ((sig.ptr[(mm - 1i32) => int64]) =>! int32) - 48i32;
         string:pn = raw bs_cat("p", raw bs_num(mm => int64));
         if (cls == 1i32) {
@@ -394,7 +395,7 @@ func:bs_canon = string(Ast->:ast, InternTable->:it, DeclId:fnid) never fails {
     canon = raw bs_cat(move(canon), raw bs_spell(rcls));
     canon = raw bs_cat(move(canon), "(");
     int32:mi = 1i32;
-    while (mi < (pc - 1i32)) {
+    while (mi < (pc - 1i32)) decreases ((pc - 1i32)) - mi {
         DeclNode:pm = raw ast_decl(ast, raw extern_fn_param(ast, d, mi));
         int32:cls = raw bs_classify(ast, raw param_type(pm));
         bool:okc = false;
@@ -426,7 +427,7 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
                 int32:n = raw decl_win_count(d);
                 int32:k = 0i32;
                 bool:allok = true;
-                while (k < n) {
+                while (k < n) decreases n - k {
                     DeclId:fnid = DeclId{ index: raw ast_id_at(@g.ast,
                                               raw decl_win_start(d), k) };
                     string:stub = raw bs_one_method(@g.ast, g.interns, g.diags,

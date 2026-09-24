@@ -25,7 +25,7 @@ async func:main = int32(cstring[]:_~argv) {
     bool:have = false;
     int32:i = 0i32;
     int32:sum = 0i32;
-    while (i < 8i32) {
+    while (i < 8i32) decreases 8i32 - i {
         Channel<int32, 2i32, 4i64>:c = channel() ?! Unreachable;
         await c.send(i, raw duration_ms(50i64)) ?! E9;
         int32:g = await c.recv(raw duration_ms(50i64)) ?! E9;
@@ -60,6 +60,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

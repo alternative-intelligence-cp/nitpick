@@ -71,7 +71,8 @@ pub func:floor_loops = List<FLoop>(FFn->:f) never fails {
                 drop list_push(@work, s2);
             }
         }
-        while (work.count > 0i64) {
+        // a worklist over a loop's predecessors: a block joins the members once and is popped once, and the blocks are finite (D-316)
+        while (work.count > 0i64) unbounded {
             int64:b = raw list_pop(@work);
             // every predecessor p of b
             for (int64:p in 0i64...n) {
@@ -113,7 +114,8 @@ pub func:floor_rpo = List<int64>(FFn->:f, List<FLoop>->:loops) never fails {
     drop list_push(@stk, 0i64);
     drop list_push(@nxt, 0i64);
     state[0i64] = 1i32;
-    while (stk.count > 0i64) {
+    // an iterative depth-first search: each trip pops a finished block, advances a successor index or pushes an unvisited block once, and the blocks are finite (D-316)
+    while (stk.count > 0i64) unbounded {
         int64:top = stk.count - 1i64;
         int64:b = stk[top];
         int64:k = nxt[top];
@@ -200,7 +202,8 @@ pub func:loops_of_edges = List<FLoop>(FFn->:f, List<int64>:be_from, List<int64>:
                 drop list_push(@work, s2);
             }
         }
-        while (work.count > 0i64) {
+        // a worklist over a loop's predecessors: a block joins the members once and is popped once, and the blocks are finite (D-316)
+        while (work.count > 0i64) unbounded {
             int64:b2 = raw list_pop(@work);
             for (int64:pi in 0i64...preds[b2].count) {
                 int64:p = preds[b2][pi];
@@ -268,7 +271,7 @@ pub func:rename_in_line = string(string:line, string:from, string:to) never fail
     string:out = "";
     int64:i = 0i64;
     int64:start = 0i64;
-    while (i < line.len) {
+    while (i < line.len) decreases line.len - i {
         bool:hit = false;
         if ((i + from.len) <= line.len) {
             hit = true;
@@ -299,13 +302,13 @@ pub func:rename_all = string(string:line, List<string>:from, List<string>:to) ne
     string:out = "";
     int64:i = 0i64;
     int64:start = 0i64;
-    while (i < line.len) {
+    while (i < line.len) decreases line.len - i {
         uint8:c = line.ptr[i];
         if ((c == 37u8) || (c == 64u8)) {
             bool:word_before = false;
             if (i > 0i64) { word_before = raw is_ident_byte(line.ptr[i - 1i64]); }
             int64:k = i + 1i64;
-            while ((k < line.len) && (raw is_ident_byte(line.ptr[k]))) { k = k + 1i64; }
+            while ((k < line.len) && (raw is_ident_byte(line.ptr[k]))) decreases line.len - k { k = k + 1i64; }
             if ((k > i + 1i64) && (!word_before)) {
                 string:tok = raw text_slice(line, i, k);
                 for (int64:f in 0i64...from.count) {
@@ -364,7 +367,7 @@ pub func:rename_label_in_line = string(string:line, string:from, string:to) neve
     string:out = "";
     int64:i = 0i64;
     int64:start = 0i64;
-    while (i < line.len) {
+    while (i < line.len) decreases line.len - i {
         bool:hit = false;
         if ((i + f.len) <= line.len) {
             hit = true;
@@ -684,7 +687,7 @@ func:xfn_lcssa = NIL(XFn->:x, int64:li, int64:unroll_id) never fails {
         }
         // insert after E's existing phis
         int64:at = 0i64;
-        while (at < x.f.blocks[e2].lines.count) {
+        while (at < x.f.blocks[e2].lines.count) decreases x.f.blocks[e2].lines.count - at {
             FInstr:ei = raw floor_instr(raw strlist_view(x.f.blocks[e2].lines, at));
             if (!(raw text_eq(ei.op, "phi"))) { break; }
             at = at + 1i64;
@@ -720,7 +723,8 @@ func:reaches_any = bool(XFn->:x, int64:from, List<int64>:targets, List<int64>:av
     List<int64>:work = raw list_init::<int64>(8i64);
     drop list_push(@work, from);
     drop list_push(@seen, from);
-    while (work.count > 0i64) {
+    // a worklist over the successors: a block is pushed once (`seen`) and popped once, and the blocks are finite (D-316)
+    while (work.count > 0i64) unbounded {
         int64:b = raw list_pop(@work);
         if (raw has_int(targets, b)) { pass true; }
         for (int64:k in 0i64...x.f.blocks[b].succs.count) {
@@ -737,10 +741,10 @@ func:reaches_any = bool(XFn->:x, int64:from, List<int64>:targets, List<int64>:av
 // Does `line` mention the register `r` as a whole token?
 func:line_mentions = bool(string:line, string:r) never fails {
     int64:i = 0i64;
-    while (i < line.len) {
+    while (i < line.len) decreases line.len - i {
         if (line.ptr[i] == 37u8) {
             int64:k = i + 1i64;
-            while ((k < line.len) && (raw is_ident_byte(line.ptr[k]))) { k = k + 1i64; }
+            while ((k < line.len) && (raw is_ident_byte(line.ptr[k]))) decreases line.len - k { k = k + 1i64; }
             if (raw text_eq(raw text_slice(line, i, k), r)) { pass true; }
             i = k;
             continue;

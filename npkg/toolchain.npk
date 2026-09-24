@@ -78,7 +78,7 @@ pub func:which = string(string:name) {
     string:path_var = raw env_value("PATH");
     int64:start = 0i64;
     int64:i = 0i64;
-    while (i <= path_var.len) {
+    while (i <= path_var.len) decreases path_var.len - i {
         bool:at_end = (i == path_var.len);
         bool:sep = false;
         if (!at_end) { if (path_var.ptr[i] == 58u8) { sep = true; } }
@@ -150,14 +150,14 @@ func:version_after = string(string:text, string:marker) never fails {
     int64:p = raw text_index_of(text, marker);
     if (p < 0i64) { pass ""; }
     int64:i = p + marker.len;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         if (!(raw text_is_ws(text.ptr[i]))) { break; }
         i = i + 1i64;
     }
     int64:start = i;
     int64:dots = 0i64;
     bool:digit_since_dot = false;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         uint8:c = text.ptr[i];
         if (raw text_is_digit(c)) { digit_since_dot = true; i = i + 1i64; continue; }
         if (c == 46u8) {

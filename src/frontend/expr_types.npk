@@ -351,7 +351,7 @@ pub struct:PlaceRoot = {
 pub func:place_root = PlaceRoot(Ast->:ast, ExprId:id, int32:fuel) never fails {
     ExprId:cur = id;
     int32:left = fuel;
-    while (left > 0i32) {
+    while (left > 0i32) decreases left {
         if (raw expr_is_none(cur)) { pass PlaceRoot{ id: cur, exhausted: false }; }
         ExprNode:n = raw ast_expr(ast, cur);
 
@@ -434,7 +434,7 @@ pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) never fails {
 // a local crossing three awaits is one fact, not three.
 pub func:exprtypes_mark_crossing = NIL(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
-    while (i < t.cross.count) {
+    while (i < t.cross.count) decreases t.cross.count - i {
         if (t.cross[i] == stmt_index) { pass NIL; }
         i = i + 1i64;
     }
@@ -446,7 +446,7 @@ pub func:exprtypes_mark_crossing = NIL(ExprTypes->:t, int32:stmt_index) never fa
 // at the declaration site.
 pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
-    while (i < t.cross.count) {
+    while (i < t.cross.count) decreases t.cross.count - i {
         if (t.cross[i] == stmt_index) { pass true; }
         i = i + 1i64;
     }
@@ -511,7 +511,7 @@ pub func:exprtypes_alias_is_party = bool(ExprTypes->:t, int32:site) never fails 
 // Idempotent, like the crossing mark above.
 pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
-    while (i < t.odecl.count) {
+    while (i < t.odecl.count) decreases t.odecl.count - i {
         if (t.odecl[i] == stmt_index) { pass NIL; }
         i = i + 1i64;
     }
@@ -524,7 +524,7 @@ pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never
 // scope exit is a use no textual mention shows.
 pub func:exprtypes_owning_decl = bool(ExprTypes->:t, int32:stmt_index) never fails {
     int64:i = 0i64;
-    while (i < t.odecl.count) {
+    while (i < t.odecl.count) decreases t.odecl.count - i {
         if (t.odecl[i] == stmt_index) { pass true; }
         i = i + 1i64;
     }

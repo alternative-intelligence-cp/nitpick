@@ -127,7 +127,7 @@ func:lexer_span_from = Span(Lexer->:lx, int64:start, int32:line, int32:col) neve
 
 // Whitespace and both comment forms. Returns NIL; trivia produces no tokens.
 func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
-    while (true) {
+    while (true) decreases lx.text.len - lx.pos {
         uint8:c = raw lexer_peek(lx);
 
         if (raw is_space(c)) {
@@ -137,7 +137,7 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
                 uint8:d = raw lexer_peek2(lx);
 
                 if (d == 47u8) {                        // line comment
-                    while (true) {
+                    while (true) decreases lx.text.len - lx.pos {
                         uint8:e = raw lexer_peek(lx);
                         if (e == 0u8)  { pass NIL; }
                         if (e == 10u8) { break; }
@@ -154,7 +154,7 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
                         // That is a decision to preserve, not a limitation to
                         // fix: nesting makes an unterminated comment swallow
                         // the rest of the file silently.
-                        while (true) {
+                        while (true) decreases lx.text.len - lx.pos {
                             uint8:e = raw lexer_peek(lx);
                             if (e == 0u8) {
                                 Span:sp = raw lexer_span_from(lx, start, sl, sc);
@@ -232,7 +232,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         // Accumulate until ` or &{ . A part is emitted even when empty only if
         // nothing else follows, so `&{x}` produces no spurious empty part.
         int64:tstart = lx.pos;
-        while (true) {
+        while (true) decreases lx.text.len - lx.pos {
             uint8:t = raw lexer_peek(lx);
             if (t == 0u8) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
@@ -312,7 +312,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             discard(raw lexer_advance(lx));
             discard(raw lexer_advance(lx));
             int64:rstart = lx.pos;
-            while (true) {
+            while (true) decreases lx.text.len - lx.pos {
                 uint8:q = raw lexer_peek(lx);
                 if (q == 0u8) {
                     Span:sp = raw lexer_span_from(lx, start, line, col);
@@ -352,7 +352,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         }
 
         int64:sstart = lx.pos;
-        while (true) {
+        while (true) decreases lx.text.len - lx.pos {
             uint8:q = raw lexer_peek(lx);
             if (q == 0u8) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
@@ -418,7 +418,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             }
             cp = e.codepoint;
             int64:k = 0i64;
-            while (k < e.consumed) {
+            while (k < e.consumed) decreases e.consumed - k {
                 discard(raw lexer_advance(lx));
                 k = k + 1i64;
             }
@@ -437,7 +437,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             }
             cp = u.codepoint;
             int64:uk = 0i64;
-            while (uk < u.consumed) {
+            while (uk < u.consumed) decreases u.consumed - uk {
                 discard(raw lexer_advance(lx));
                 uk = uk + 1i64;
             }
@@ -456,7 +456,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                     // of `'ab'` is not re-lexed as a second, unterminated
                     // literal — one mistake, one diagnostic.
                     uint8:sk = raw lexer_peek(lx);
-                    while (sk != 0u8) {
+                    while (sk != 0u8) decreases lx.text.len - lx.pos {
                         if (sk == 10u8) { sk = 0u8; } else {
                             discard(raw lexer_advance(lx));
                             if (sk == 39u8) { sk = 0u8; } else { sk = raw lexer_peek(lx); }
@@ -479,7 +479,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         // decimal digit since D-147 (`0FFhex`, never `FFhex`), so the first
         // character decides; the run is still read whole, and numeric.npk
         // classifies it from the RIGHT (the base suffix).
-        while (raw is_ident_part(raw lexer_peek(lx))) {
+        while (raw is_ident_part(raw lexer_peek(lx))) decreases lx.text.len - lx.pos {
             discard(raw lexer_advance(lx));
         }
 
@@ -489,14 +489,14 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             if ((raw lexer_peek(lx)) == 46u8) {
                 if (raw is_digit(raw lexer_peek2(lx))) {
                     discard(raw lexer_advance(lx));                    // the dot
-                    while (raw is_ident_part(raw lexer_peek(lx))) {
+                    while (raw is_ident_part(raw lexer_peek(lx))) decreases lx.text.len - lx.pos {
                         discard(raw lexer_advance(lx));
                     }
                     // An exponent may carry a sign, which is not an ident part.
                     uint8:e = raw lexer_peek(lx);
                     if ((e == 43u8) || (e == 45u8)) {
                         discard(raw lexer_advance(lx));
-                        while (raw is_ident_part(raw lexer_peek(lx))) {
+                        while (raw is_ident_part(raw lexer_peek(lx))) decreases lx.text.len - lx.pos {
                             discard(raw lexer_advance(lx));
                         }
                     }
@@ -555,7 +555,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     OpMatch:om = raw op_match(lx.text, lx.pos);
     if (om.found) {
         int64:k = 0i64;
-        while (k < om.length) {
+        while (k < om.length) decreases om.length - k {
             discard(raw lexer_advance(lx));
             k = k + 1i64;
         }
@@ -571,7 +571,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     // and should read as one, not as three; and a lexer that reports per byte
     // buries the real first error under its own noise.
     discard(raw lexer_advance(lx));
-    while (true) {
+    while (true) decreases lx.text.len - lx.pos {
         uint8:r = raw lexer_peek(lx);
         if (r == 0u8) { break; }
         if (raw is_space(r)) { break; }
@@ -595,7 +595,13 @@ pub func:lex_all = TokenList(int32:file, string:text, InternTable->:interns,
                              DiagList->:diags) never fails {
     Lexer:lx = raw lexer_init(file, text);
     TokenList:out = raw tokenlist_init();
-    while (true) {
+    // THE MEASURE (1.5.8c step 3): every token consumes at least one byte
+    // except two -- Eof, which ends the loop, and the Error token an
+    // unterminated template answers AT the end of the text (`\`&{x}` then
+    // nothing), which consumes nothing and only closes template mode. So the
+    // bytes left count twice and an open template once: that trip shrinks it by
+    // one, every other by at least one.
+    while (true) decreases (2i64 * (lx.text.len - lx.pos)) + (is (lx.in_template) : 1i64 : 0i64) {
         Token:t = raw lexer_next(@lx, interns, diags);
         drop tokenlist_push(@out, t);
         if (raw token_is_eof(t)) {

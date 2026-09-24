@@ -102,7 +102,8 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
 
     DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
-    while (i < (raw item_member_count(@ast, mn))) {
+    int32:nmembers = raw item_member_count(@ast, mn);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:item = raw item_member(@ast, mn, i);
         DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
@@ -236,6 +237,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

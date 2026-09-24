@@ -154,7 +154,7 @@ func:escape_mark = NIL(Escape->:x, int32:stmt_index) never fails {
 // (`p = q; q = r; r = @x;`). Sixty-four links is far past anything a person writes
 // and still finite, which is what matters — an unbounded loop in a checker is not
 // a checker.
-pub func:ESCAPE_ROUNDS = int32() never fails { pass 64i32; };
+pub func:ESCAPE_ROUNDS = int32() never fails pure { pass 64i32; };
 
 pub func:escape_changed = bool(Escape->:x) never fails { pass x.changed; };
 
@@ -554,7 +554,7 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:scnt = raw expr_list_count(n);
         int32:si = 1i32;
-        while (si < scnt) {
+        while (si < scnt) decreases scnt - si {
             ExprId:sv = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) };
             if (!(raw borrows_all_rooted_at(x, sv, sym, d))) { pass false; }
             si = si + 2i32;
@@ -662,7 +662,7 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:scnt = raw expr_list_count(n);
         int32:si = 1i32;
-        while (si < scnt) {
+        while (si < scnt) decreases scnt - si {
             ExprId:sv = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) };
             if (!(raw borrows_only_param_rooted(x, sv, d))) { pass false; }
             si = si + 2i32;
@@ -776,7 +776,7 @@ func:view_root = ViewRoot(Escape->:x, ExprId:place) never fails {
     if (raw expr_is_none(place)) { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }
     ExprId:cur = place;
     int32:fuel = raw BORROW_FUEL();
-    while (fuel > 0i32) {
+    while (fuel > 0i32) decreases fuel {
         fuel = fuel - 1i32;
         PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
         if (r.exhausted) { pass ViewRoot{ id: raw expr_none(), kind: 1i32 }; }
@@ -1063,7 +1063,8 @@ func:place_is_wild = bool(Escape->:x, ExprId:id) never fails {
         DeclNode:sd = raw ast_decl(x.ast, did);
         int32:want = n.payload =>! int32;
         int32:i = 0i32;
-        while (i < (raw item_member_count(x.ast, sd))) {
+        int32:nmembers = raw item_member_count(x.ast, sd);
+        while (i < nmembers) decreases nmembers - i {
             DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, i));
             if (m.kind == DeclKind.DeclFieldDecl) {
                 if ((raw decl_name(m)) == want) {
@@ -1086,7 +1087,8 @@ func:field_named_is_wild = bool(Escape->:x, int32:sty, int32:fname) never fails 
     DeclId:did = DeclId{ index: raw type_decl(x.types, sty) };
     DeclNode:sd = raw ast_decl(x.ast, did);
     int32:i = 0i32;
-    while (i < (raw item_member_count(x.ast, sd))) {
+    int32:nmembers = raw item_member_count(x.ast, sd);
+    while (i < nmembers) decreases nmembers - i {
         DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             if ((raw decl_name(m)) == fname) {
@@ -1337,7 +1339,7 @@ func:collect_local_roots = NIL(Escape->:x, ExprId:id, int32:depth, List<int32>->
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:scnt = raw expr_list_count(n);
         int32:si = 1i32;
-        while (si < scnt) {
+        while (si < scnt) decreases scnt - si {
             drop collect_local_roots(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) }, d, out);
             si = si + 2i32;
         }
@@ -1688,7 +1690,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         // qualifier is readable right here. The window alternates NAME, VALUE.
         int32:lit_ty = raw exprtypes_get(x.etypes, id);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
             int32:fname = raw ast_id_at(x.ast, raw expr_list_start(n), i - 1i32);
             if (raw field_named_is_wild(x, lit_ty, fname)) {
@@ -1846,7 +1848,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
         }
     }
     int32:i = 0i32;
-    while (i < count) {
+    while (i < count) decreases count - i {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         if (raw escape_arg(x, a, depth)) {
             borrowed = borrowed + 1i32;
@@ -1863,7 +1865,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     if (local_borrows > 0i32) {
         if (raw arg_can_hold_one(x, recv, lb_tys, local_borrows)) { dests = dests + 1i32; }
         i = 0i32;
-        while (i < count) {
+        while (i < count) decreases count - i {
             ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, i) };
             if (raw arg_can_hold_one(x, a2, lb_tys, local_borrows)) { dests = dests + 1i32; }
             i = i + 1i32;
@@ -2006,7 +2008,7 @@ func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) never fails 
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:n = raw stmt_list_count(s);
         int32:i = 0i32;
-        while (i < n) {
+        while (i < n) decreases n - i {
             StmtId:sub = StmtId{ index: raw ast_id_at(x.ast,
                                      raw stmt_list_start(s), i) };
             if (raw stmt_gives_borrowy(x, sub, depth - 1i32)) { pass true; }
@@ -2113,7 +2115,8 @@ func:type_reachable_in = bool(Escape->:x, int32:t, int32:src,
         DeclNode:d = raw ast_decl(x.ast, did);
         int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
         int32:i = 0i32;
-        while (i < (raw item_member_count(x.ast, d))) {
+        int32:nmembers = raw item_member_count(x.ast, d);
+        while (i < nmembers) decreases nmembers - i {
             DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
             if (m.kind == DeclKind.DeclFieldDecl) {
                 FieldInfo:fi = raw struct_field(x.tr, src, raw decl_name(m), home);
@@ -2182,7 +2185,8 @@ func:can_connect = bool(Escape->:x, int32:holder, int32:src,
         DeclNode:d = raw ast_decl(x.ast, did);
         int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
         int32:i = 0i32;
-        while (i < (raw item_member_count(x.ast, d))) {
+        int32:nmembers = raw item_member_count(x.ast, d);
+        while (i < nmembers) decreases nmembers - i {
             DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
             if (m.kind == DeclKind.DeclFieldDecl) {
                 // A `wild` FIELD IS NOT A DESTINATION (D-223): BORROW-011
@@ -2478,7 +2482,7 @@ func:callee_is_async = bool(Escape->:x, ExprNode:n) never fails {
 
 pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:depth) never fails {
     int32:i = 0i32;
-    while (i < count) {
+    while (i < count) decreases count - i {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         // A BORROW OF A MUTEX IS THE SANCTIONED CROSSING (D-056, 1.1.11).
         // D-180's hazard is a mutation the holder cannot see at a suspension

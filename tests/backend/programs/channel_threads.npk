@@ -22,7 +22,7 @@ error:Sent;
 fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
 thread async func:worker = NIL(Channel<int32, 3i32, 64i64>:ch) joins JOIN_2S {
     int32:i = 0i32;
-    while (i < 50i32) {
+    while (i < 50i32) decreases 50i32 - i {
         await ch.send(1i32, raw duration_ms(500i64)) ?! Sent;
         i = i + 1i32;
     }
@@ -34,7 +34,7 @@ async func:main = int32(cstring[]:_~argv) {
     drop worker(ch);
     int32:got = 0i32;
     int32:sum = 0i32;
-    while (got < 100i32) {
+    while (got < 100i32) decreases 100i32 - got {
         Result<int32>:r = await ch.recv(raw duration_ms(2000i64));
         if (r.is_error) {
             if (r.err == DeadlineExceeded) { exit 71i32; }   // a lost message
@@ -58,6 +58,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 97i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

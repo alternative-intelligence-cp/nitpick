@@ -146,7 +146,7 @@ pub func:uint_to_decimal = string(uint64:v) never fails {
     if (v == 0u64) { pass "0"; }
     string:acc = "";
     uint64:n = v;
-    while (n > 0u64) {
+    while (n > 0u64) decreases n {
         string:d = raw digit_char(n % 10u64);
         acc = string_concat(d, acc);
         n = n / 10u64;
@@ -290,7 +290,7 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
     // take one into the numerator side.
     int32:k = 0i32;
     bool:go = true;
-    while (go) {
+    while (go) decreases (R + MP) / S {
         uint2048:hp = R + MP;
         bool:hi = false;
         if (hp > S) { hi = true; }
@@ -301,7 +301,7 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
         } else { go = false; }
     }
     go = true;
-    while (go) {
+    while (go) decreases S / (R + MP) {
         uint2048:hp = R + MP;
         uint2048:h10 = (hp << 3u2048) + (hp << 1u2048);
         bool:lo = false;
@@ -319,12 +319,12 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
     wild int8->:db = alloc(24i64);
     int64:dn = 0i64;
     bool:more = true;
-    while (more) {
+    while (more) decreases 20i64 - dn {
         R = (R << 3u2048) + (R << 1u2048);
         MP = (MP << 3u2048) + (MP << 1u2048);
         MM = (MM << 3u2048) + (MM << 1u2048);
         uint64:d = 0u64;
-        while (R >= S) {
+        while (R >= S) decreases R {
             R = R - S;
             d = d + 1u64;
         }
@@ -355,7 +355,7 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
     // one decimal position up.
     bool:overflowed = false;
     int64:ci = dn - 1i64;
-    while (ci >= 0i64) {
+    while (ci >= 0i64) decreases ci {
         if (db[ci] == 58i8) {
             db[ci] = 48i8;
             if (ci == 0i64) { overflowed = true; }
@@ -378,7 +378,7 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
         if (k <= 0i32) {
             out = "0.";
             int32:z = 0i32 - k;
-            while (z > 0i32) {
+            while (z > 0i32) decreases z {
                 out = string_concat(out, "0");
                 z = z - 1i32;
             }
@@ -393,7 +393,7 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
         if ((k > 0i32) && ((k => int64) >= dn)) {
             out = string_concat(out, digits);
             int64:z2 = (k => int64) - dn;
-            while (z2 > 0i64) {
+            while (z2 > 0i64) decreases z2 {
                 out = string_concat(out, "0");
                 z2 = z2 - 1i64;
             }
@@ -897,7 +897,7 @@ impl:string:Clone = { func:clone = string(string:self) {
 impl:string:Hash = { func:hash = uint64(string:self) never fails {
     uint64:h = raw fnv_offset();
     int64:i = 0i64;
-    while (i < self.len) {
+    while (i < self.len) decreases self.len - i {
         h = raw fnv_mix(h, self.ptr[i] => uint64);
         i = i + 1i64;
     }
@@ -919,7 +919,7 @@ impl:string:Ord = { func:cmp = Ordering(string:self, string:other) never fails {
     int64:n = self.len;
     if (other.len < n) { n = other.len; }
     int64:i = 0i64;
-    while (i < n) {
+    while (i < n) decreases n - i {
         if (self.ptr[i] < other.ptr[i]) { pass Ordering.Less; }
         if (self.ptr[i] > other.ptr[i]) { pass Ordering.Greater; }
         i = i + 1i64;
@@ -1122,7 +1122,7 @@ pub func:path_parse = Path(string:s) {
     int64:depth = 0i64;
     int64:i = 1i64;
     int64:seg = 1i64;
-    while (i <= s.len) {
+    while (i <= s.len) decreases s.len - i {
         bool:at_end = (i == s.len);
         uint8:c = 0u8;
         if (!at_end) {
@@ -1139,7 +1139,7 @@ pub func:path_parse = Path(string:s) {
                         // ".." above the root is not a path, it is an escape.
                         if (depth == 0i64) { fail BadPath; }
                         int64:j = out.len - 1i64;
-                        while (j >= 0i64) {
+                        while (j >= 0i64) decreases j {
                             if (out.ptr[j] == 47u8) { break; }
                             j = j - 1i64;
                         }
@@ -1229,7 +1229,8 @@ pub func:byte_writer_create = ByteWriter(Path:p, Duration:_~within) {
 impl:ByteReader:Reader = {
     async func:read = int64(ByteReader->:self, uint8[]:dest, Duration:within) {
         int64:give_up = (mono_now()) + within.ns;
-        while (true) {
+        // a retry loop over WouldBlock and Interrupted, bounded by the deadline `within` (DeadlineExceeded), not by a count (D-316)
+        while (true) unbounded {
             Result<int64>:r = read(self.src.value, dest.ptr, dest.len);
             if (!r.is_error) { pass r.value; }
             bool:retry = false;
@@ -1250,7 +1251,8 @@ impl:ByteReader:Reader = {
 impl:ByteWriter:Writer = {
     async func:write = int64(ByteWriter->:self, fixed uint8[]:wsrc, Duration:within) {
         int64:give_up = (mono_now()) + within.ns;
-        while (true) {
+        // a retry loop over WouldBlock and Interrupted, bounded by the deadline `within` (DeadlineExceeded), not by a count (D-316)
+        while (true) unbounded {
             Result<int64>:r = write(self.sink.value, wsrc.ptr, wsrc.len);
             if (!r.is_error) { pass r.value; }
             bool:retry = false;
@@ -1322,7 +1324,8 @@ pub func:line_buf_writer<BW: Writer> = LineBufWriter<BW>(move BW:inner) never fa
 async func:tw_write_all<W: Writer> = NIL(W->:sink, string:s, Duration:within) {
     int64:give_up = (mono_now()) + within.ns;
     int64:done = 0i64;
-    while (done < s.len) {
+    // each trip writes what the sink takes, and a sink that takes nothing is stopped by the deadline (DeadlineExceeded), not by a count (D-316)
+    while (done < s.len) unbounded {
         int64:rem = give_up - (mono_now());
         if (rem <= 0i64) { fail DeadlineExceeded; }
         string:sview = relay string_slice(s, done, s.len);
@@ -1349,7 +1352,7 @@ pub async func:text_write_str<W: Writer> = NIL(TextWriter<W>->:tw, string:s, Dur
     string:out = "";
     int64:i = 0i64;
     int64:seg = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         if (s.ptr[i] == 10u8) {
             string:part = relay string_slice(s, seg, i);
             out = string_concat(out, part);
@@ -1390,7 +1393,8 @@ pub async func:text_flush<W: Writer> = NIL(TextWriter<W>->:tw, Duration:within) 
 // `IoEof` only when nothing remains at all.
 pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:within) {
     int64:give_up = (mono_now()) + within.ns;
-    while (true) {
+    // a refill loop over the inner reader, bounded by the deadline `within` (DeadlineExceeded), not by a count (D-316)
+    while (true) unbounded {
         // a pending `\r` saw its `\n` arrive: consume the second half
         if (tr.pend_cr) {
             if (tr.pos < tr.acc.len) {
@@ -1400,7 +1404,7 @@ pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:w
         }
         // scan the unconsumed bytes for a break
         int64:i = tr.pos;
-        while (i < tr.acc.len) {
+        while (i < tr.acc.len) decreases tr.acc.len - i {
             uint8:c = tr.acc.ptr[i];
             if (c == 10u8) {
                 string:line = relay string_slice(tr.acc, tr.pos, i);
@@ -1459,7 +1463,7 @@ impl:<BW: Writer>:LineBufWriter<BW>:Writer = {
         self.pend = string_concat(self.pend, added);
         int64:nl = 0i64 - 1i64;
         int64:i = 0i64;
-        while (i < self.pend.len) {
+        while (i < self.pend.len) decreases self.pend.len - i {
             if (self.pend.ptr[i] == 10u8) { nl = i; }
             i = i + 1i64;
         }
@@ -1539,7 +1543,7 @@ pub func:tfp_render = string(bool:neg, uint256:ipart, uint256:frac,
     string:ip = "";
     if (ipart == 0u256) { ip = "0"; }
     uint256:n = ipart;
-    while (n != 0u256) {
+    while (n != 0u256) decreases n {
         uint256:q = n / 10u256;
         uint256:r = n - (q * 10u256);
         ip = string_concat(raw digit_char((r =>! uint64)), ip);
@@ -1550,7 +1554,7 @@ pub func:tfp_render = string(bool:neg, uint256:ipart, uint256:frac,
     int64:lastnz = 0i64;
     uint256:f = frac;
     uint256:mask = (1u256 << (fbits => uint256)) - 1u256;
-    while (emitted < (fbits =>! int64)) {
+    while (emitted < (fbits =>! int64)) decreases (fbits =>! int64) - emitted {
         if (f == 0u256) { emitted = fbits =>! int64; } else {
             uint256:t = f * 10u256;
             uint256:d = t >> (fbits => uint256);
@@ -1687,7 +1691,7 @@ func:frac_bad = FracParts() never fails {
 pub func:npk_gcd256 = int256(int256:a, int256:b) never fails {
     int256:x = a;
     int256:y = b;
-    while (y != 0i256) {
+    while (y != 0i256) decreases y {
         int256:t = x % y;
         x = y;
         y = t;
@@ -2145,7 +2149,7 @@ pub func:list_reserve<T> = NIL(List<T>->:l, int64:need) never fails {
         pass NIL;
     }
     int64:nc = l.cap;
-    while (nc < want) { nc = nc * 2i64; }
+    while (nc < want) decreases want - nc { nc = nc * 2i64; }
     wild int8->:bigger = ralloc(l.items =>! wild int8->, nc * #size_of<T>());
     l.items = bigger =>! wild T->;
     l.cap = nc;
@@ -2188,7 +2192,7 @@ pub func:list_pop<T> = T(List<T>->:l) never fails {
 pub func:list_truncate<T> = NIL(List<T>->:l, int64:n) never fails {
     if (n < 0i64) { !!! OutOfBounds; }
     if (n > l.count) { !!! OutOfBounds; }
-    while (l.count > n) {
+    while (l.count > n) decreases l.count - n {
         l.count = l.count - 1i64;
         discard(move(l.items[l.count]));
     }
@@ -2208,7 +2212,7 @@ pub func:list_insert<T> = NIL(List<T>->:l, int64:i, move T:v) never fails {
     if (i > l.count) { !!! OutOfBounds; }
     drop list_reserve(l, 1i64);
     int64:k = l.count;
-    while (k > i) {
+    while (k > i) decreases k - i {
         l.items[k] = move(l.items[k - 1i64]);
         k = k - 1i64;
     }
@@ -2224,7 +2228,7 @@ pub func:list_remove<T> = T(List<T>->:l, int64:i) never fails {
     if (i >= l.count) { !!! OutOfBounds; }
     T:out = move(l.items[i]);
     int64:k = i;
-    while ((k + 1i64) < l.count) {
+    while ((k + 1i64) < l.count) decreases l.count - k {
         l.items[k] = move(l.items[k + 1i64]);
         k = k + 1i64;
     }

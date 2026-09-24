@@ -146,7 +146,7 @@ pub func:u128_text = string(uint128:v) never fails {
     wild int8->:buf = alloc(48i64);
     int64:n = 0i64;
     uint128:x = v;
-    while (x > 0u128) {
+    while (x > 0u128) decreases x {
         buf[n] = ((x % 10u128) =>! int8) + 48i8;
         n = n + 1i64;
         x = x / 10u128;
@@ -169,7 +169,7 @@ pub func:u128_parse = bool(string:s, int64:bits, uint128->:out) never fails {
     if (i >= s.len) { pass false; }
     uint128:v = 0u128;
     uint128:cap = (raw u128_all_ones()) / 10u128;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         uint8:c = s.ptr[i];
         if (!(raw text_is_digit(c))) { pass false; }
         if (v > cap) { pass false; }
@@ -185,7 +185,7 @@ pub func:u128_parse = bool(string:s, int64:bits, uint128->:out) never fails {
 func:u128_bitlen = int64(uint128:v) never fails {
     int64:k = 0i64;
     uint128:x = v;
-    while (x > 0u128) { x = x / 2u128; k = k + 1i64; }
+    while (x > 0u128) decreases x { x = x / 2u128; k = k + 1i64; }
     pass k;
 };
 
@@ -194,7 +194,7 @@ func:u128_log2 = int64(uint128:v) never fails {
     if (v == 0u128) { pass (0i64 - 1i64); }
     int64:k = 0i64;
     uint128:x = v;
-    while ((x % 2u128) == 0u128) { x = x / 2u128; k = k + 1i64; }
+    while ((x % 2u128) == 0u128) decreases x { x = x / 2u128; k = k + 1i64; }
     if (x != 1u128) { pass (0i64 - 1i64); }
     pass k;
 };
@@ -660,11 +660,11 @@ func:is_sym_char = bool(uint8:c) never fails {
 pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
     List<string>:out = raw list_init::<string>(8i64);
     int64:i = 0i64;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         uint8:c = text.ptr[i];
         if (c == 124u8) {   // |quoted|
             int64:j = i + 1i64;
-            while ((j < text.len) && (text.ptr[j] != 124u8)) { j = j + 1i64; }
+            while ((j < text.len) && (text.ptr[j] != 124u8)) decreases text.len - j { j = j + 1i64; }
             if (j < text.len) {
                 string:q = raw text_slice(text, i, j + 1i64);
                 if ((raw strset_has(t.known, q)) && (!(raw strlist_contains(out, q)))) { drop strlist_push(@out, q); }
@@ -676,7 +676,7 @@ pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
         }
         if (raw is_sym_char(c)) {
             int64:k = i;
-            while ((k < text.len) && (raw is_sym_char(text.ptr[k]))) { k = k + 1i64; }
+            while ((k < text.len) && (raw is_sym_char(text.ptr[k]))) decreases text.len - k { k = k + 1i64; }
             string:w = raw text_slice(text, i, k);
             if (!(raw text_is_digit(w.ptr[0i64]))) {
                 if ((raw strset_has(t.known, w)) && (!(raw strlist_contains(out, w)))) { drop strlist_push(@out, w); }
@@ -763,7 +763,8 @@ func:trans_refs = List<string>(Tx->:t, string:sym) never fails {
     List<string>:work = raw list_init::<string>(8i64);
     drop strlist_push(@work, sym);
     int64:w = 0i64;
-    while (w < work.count) {
+    // a worklist of symbols: a symbol is pushed by its definition and taken once (`seen`), and the definitions are finite (D-316)
+    while (w < work.count) unbounded {
         string:cur = raw strlist_copy(work, w);
         w = w + 1i64;
         if (!(raw strset_add(@seen, cur))) { continue; }
@@ -825,7 +826,8 @@ pub func:tx_hyp_reaches = NIL(Tx->:t, string:sym) never fails {
     drop strlist_push(@work, sym);
     drop list_push(@depth, 0i64);
     int64:w = 0i64;
-    while (w < work.count) {
+    // a worklist of symbols two definitions deep: a symbol is taken once (`seen`), and the definitions are finite (D-316)
+    while (w < work.count) unbounded {
         string:cur = raw strlist_copy(work, w);
         int64:dp = depth[w];
         w = w + 1i64;
@@ -884,28 +886,28 @@ pub func:tx_mem_app = string(Tx->:t, string:memsym, string:addr) never fails {
 // texts, appended to the two lists; `A` is the balanced term after the name.
 func:apps_in = NIL(Tx->:t, string:text, List<string>->:ms, List<string>->:ats) never fails {
     int64:i = 0i64;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         if (text.ptr[i] != 40u8) { i = i + 1i64; continue; }   // (
         // the head token
         int64:j = i + 1i64;
         if (j < text.len) {
             if (text.ptr[j] == 124u8) {   // |quoted|
                 int64:k = j + 1i64;
-                while ((k < text.len) && (text.ptr[k] != 124u8)) { k = k + 1i64; }
+                while ((k < text.len) && (text.ptr[k] != 124u8)) decreases text.len - k { k = k + 1i64; }
                 if (k < text.len) { j = k + 1i64; }
             } else {
-                while ((j < text.len) && (raw is_sym_char(text.ptr[j]))) { j = j + 1i64; }
+                while ((j < text.len) && (raw is_sym_char(text.ptr[j]))) decreases text.len - j { j = j + 1i64; }
             }
         }
         string:head = raw text_slice(text, i + 1i64, j);
         if ((head.len > 0i64) && (raw strlist_contains(t.mem_syms, head))) {
             // one argument: a balanced term, then `)`
             int64:a = j;
-            while ((a < text.len) && (text.ptr[a] == 32u8)) { a = a + 1i64; }
+            while ((a < text.len) && (text.ptr[a] == 32u8)) decreases text.len - a { a = a + 1i64; }
             int64:e = a;
             int64:depth = 0i64;
             bool:quoted = false;
-            while (e < text.len) {
+            while (e < text.len) decreases text.len - e {
                 uint8:c = text.ptr[e];
                 if (c == 124u8) { quoted = !quoted; }
                 if (!quoted) {
@@ -990,7 +992,7 @@ pub func:tx_instantiate_templates = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x
     for (int64:h in 0i64...t.hyps.count) { drop apps_in(t, raw strlist_view(t.hyps, h), @ms, @ats); }
     for (int64:g in 0i64...t.row_goals.count) { drop apps_in(t, raw strlist_view(t.row_goals, g), @ms, @ats); }
     int64:i = 0i64;
-    while (i < ms.count) {
+    while (i < ms.count) decreases 20001i64 - i {
         string:m = raw strlist_copy(ms, i);
         string:a = raw strlist_copy(ats, i);
         i = i + 1i64;
@@ -1258,7 +1260,7 @@ func:const_bytes = List<int64>(FloorText->:ft, string:ty, string:init) never fai
     if (init.len == 0i64) { pass out; }
     if (init.ptr[0i64] == 99u8) {   // c"..."
         int64:i = 2i64;
-        while ((i < init.len) && (init.ptr[i] != 34u8)) {
+        while ((i < init.len) && (init.ptr[i] != 34u8)) decreases init.len - i {
             uint8:c = init.ptr[i];
             if ((c == 92u8) && ((i + 2i64) < init.len)) {
                 int64:hv = (raw hex_digit(init.ptr[i + 1i64]) * 16i64) + raw hex_digit(init.ptr[i + 2i64]);
@@ -1372,7 +1374,7 @@ func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, in
     if (oc0 >= 0i64) {
         int64:oc = s.nodes[oc0].first;
         oc = s.nodes[oc].next;
-        while (oc >= 0i64) {
+        while (oc >= 0i64) decreases s.nodes.count - oc {
             if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); break; }
             drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
             drop strlist_push(@lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
@@ -1385,7 +1387,7 @@ func:objects_facts = List<string>(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, in
     if (vc0 >= 0i64) {
         int64:vc = s.nodes[vc0].first;
         vc = s.nodes[vc].next;
-        while (vc >= 0i64) {
+        while (vc >= 0i64) decreases s.nodes.count - vc {
             // a view is `(lo len)`: the conditional form is an object's (no section needs a conditional view)
             if (!(raw sx_is_list(s, vc)) || ((raw sx_len(s, vc)) != 2i64)) { drop tx_problem(t, "a views range is not `(lo len)`"); break; }
             drop strlist_push(@los, raw render(t, ft, s, raw sx_nth(s, vc, 0i64), e, m));
@@ -1460,7 +1462,7 @@ func:const_table_ite = string(Tx->:t, FloorText->:ft, string:gname, string:idx, 
 // The index of the last space in `s`, or -1.
 func:text_last_space = int64(string:s) never fails {
     int64:i = s.len - 1i64;
-    while (i >= 0i64) { if (s.ptr[i] == 32u8) { pass i; } i = i - 1i64; }
+    while (i >= 0i64) decreases i { if (s.ptr[i] == 32u8) { pass i; } i = i - 1i64; }
     pass (0i64 - 1i64);
 };
 
@@ -1490,7 +1492,7 @@ func:divisor_cases = string(Tx->:t, string:text, List<string>->:vals) never fail
     string:msuf = string_concat(" ", w);
     msuf = string_concat(msuf, ")");
     int64:steps = 0i64;
-    while (steps < 8i64) {
+    while (steps < 8i64) decreases 8i64 - steps {
         steps = steps + 1i64;
         // a symbol: its definition
         if (!(raw text_starts_with(s, "("))) {
@@ -1554,7 +1556,7 @@ func:div_over_cases = string(Tx->:t, string:op, string:a, string:idx, List<strin
 func:objects_ranges = NIL(Tx->:t, FloorText->:ft, Sxs->:s, int64:oc0, REnv->:e, BMeta->:m, List<string>->:los, List<string>->:lens) never fails {
     int64:oc = s.nodes[oc0].first;
     oc = s.nodes[oc].next;
-    while (oc >= 0i64) {
+    while (oc >= 0i64) decreases s.nodes.count - oc {
         if (!(raw sx_is_list(s, oc)) || ((raw sx_len(s, oc)) != 2i64)) { drop tx_problem(t, "an objects range is not `(lo len)`"); break; }
         drop strlist_push(los, raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m));
         drop strlist_push(lens, raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m));
@@ -1598,7 +1600,7 @@ func:sx_mentions = bool(Sxs->:s, int64:node, string:name) never fails {
     if (node < 0i64) { pass false; }
     if (!(raw sx_is_list(s, node))) { pass (raw text_eq(raw sx_atom(s, node), name)); }
     int64:c = s.nodes[node].first;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (raw sx_mentions(s, c, name)) { pass true; }
         c = s.nodes[c].next;
     }
@@ -1619,7 +1621,7 @@ func:inv_conjuncts_over = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:inv, str
     string:out = "true";
     int64:c = s.nodes[body].first;
     c = s.nodes[c].next;   // past `and`
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (raw sx_mentions(s, c, name)) {
             string:r = raw render(t, ft, s, c, e, m);
             if (raw text_eq(out, "true")) { out = move(r); } else { out = string_concat(raw smt_app2("and", out, r), ""); }
@@ -1834,7 +1836,7 @@ func:wrap_text = string(string:x, int64:bits) never fails {
             // n atoms: below n times the width, so n-1 thresholds decide the multiple to take off
             string:out = raw smt_app2("-", x, raw smt_app2("*", int_to_string(parts.count - 1i64), w));
             int64:k = parts.count - 1i64;
-            while (k >= 1i64) {
+            while (k >= 1i64) decreases k - 1i64 {
                 string:thr = raw text_copy(w);
                 if (k > 1i64) { thr = raw smt_app2("*", int_to_string(k), w); }
                 string:val = raw text_copy(x);
@@ -2428,7 +2430,7 @@ pub func:spec_clause = int64(Sxs->:s, int64:sec, string:head, int64:k) never fai
     if (sec < 0i64) { pass (0i64 - 1i64); }
     int64:n = 0i64;
     int64:c = s.nodes[sec].first;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (raw sx_is_list(s, c)) {
             if (raw text_eq(raw sx_head(s, c), head)) {
                 if (n == k) { pass c; }
@@ -2442,7 +2444,7 @@ pub func:spec_clause = int64(Sxs->:s, int64:sec, string:head, int64:k) never fai
 
 pub func:spec_clause_count = int64(Sxs->:s, int64:sec, string:head) never fails {
     int64:n = 0i64;
-    while ((raw spec_clause(s, sec, head, n)) >= 0i64) { n = n + 1i64; }
+    while ((raw spec_clause(s, sec, head, n)) >= 0i64) decreases s.nodes.count - n { n = n + 1i64; }
     pass n;
 };
 
@@ -2453,7 +2455,7 @@ pub func:spec_has = bool(Sxs->:s, int64:sec, string:head) never fails {
 // The `(loop LABEL ...)` clause of a section, or -1.
 pub func:spec_loop = int64(Sxs->:s, int64:sec, string:label) never fails {
     int64:k = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - k {
         int64:c = raw spec_clause(s, sec, "loop", k);
         if (c < 0i64) { pass (0i64 - 1i64); }
         if (raw text_eq(raw sx_atom(s, raw sx_nth(s, c, 1i64)), label)) { pass c; }
@@ -2638,7 +2640,7 @@ func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e,
         if ((m.origin_fn.len > 0i64) && (!(raw text_eq(raw strlist_view_of(m.origin_fn), raw strlist_view_of(t.fn))))) {
             int64:osec = raw spec_section(s, raw strlist_view_of(m.origin_fn));
             int64:fk = 0i64;
-            while (osec >= 0i64) {
+            while (osec >= 0i64) decreases s.nodes.count - fk {
                 int64:fc = raw spec_clause(s, osec, "free", fk);
                 if (fc < 0i64) { break; }
                 fk = fk + 1i64;
@@ -2811,13 +2813,13 @@ func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e,
         List<string>:sa = raw list_init::<string>(len);
         int64:sc = s.nodes[node].first;
         sc = s.nodes[sc].next;
-        while (sc >= 0i64) { drop strlist_push(@sa, raw render(t, ft, s, sc, e, m)); sc = s.nodes[sc].next; }
+        while (sc >= 0i64) decreases s.nodes.count - sc { drop strlist_push(@sa, raw render(t, ft, s, sc, e, m)); sc = s.nodes[sc].next; }
         pass (raw sum_atoms_text(sa, ""));
     }
     string:out = "(";
     int64:c = s.nodes[node].first;
     bool:first = true;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!first) { out = string_concat(out, " "); }
         first = false;
         out = string_concat(out, raw render(t, ft, s, c, e, m));
@@ -3342,7 +3344,7 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
     }
     // the callee's free symbols: the caller's of the same name, else fresh
     int64:fk = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - fk {
         int64:fc = raw spec_clause(s, sec, "free", fk);
         if (fc < 0i64) { break; }
         fk = fk + 1i64;
@@ -3356,7 +3358,7 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
                          is_stop: false, bound: 0i64, exact: false, entry_of: "", cont_of: "" };
     // 1. requires: rows at the call
     int64:rk = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - rk {
         int64:rc = raw spec_clause(s, sec, "requires", rk);
         if (rc < 0i64) { break; }
         rk = rk + 1i64;
@@ -3501,7 +3503,7 @@ func:tx_summary_call = string(Tx->:t, FloorText->:ft, Sxs->:s, string:callee, FI
     e.mem2 = raw text_copy(mafter);
     // 5. the ensures, on the non-trapping paths
     int64:ek = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - ek {
         int64:ec = raw spec_clause(s, sec, "ensures", ek);
         if (ec < 0i64) { break; }
         ek = ek + 1i64;
@@ -3516,7 +3518,7 @@ func:frame_in_ranges = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:fr, REnv->:
     string:out = "false";
     int64:c = s.nodes[fr].first;
     c = s.nodes[c].next;   // past the head
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         // the atom `objects` narrows the claim to the caller's objects (`frame_names_objects`, `objects_in`)
         if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { c = s.nodes[c].next; continue; }
         if (!(raw sx_is_list(s, c)) || ((raw sx_len(s, c)) != 2i64)) { drop tx_problem(t, "a frame range is not `(lo len)` or the atom `objects`"); pass "false"; }
@@ -3536,7 +3538,7 @@ func:frame_in_ranges = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:fr, REnv->:
 func:frame_names_objects = bool(Sxs->:s, int64:fr) never fails {
     int64:c = s.nodes[fr].first;
     c = s.nodes[c].next;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if ((!(raw sx_is_list(s, c))) && (raw text_eq(raw sx_atom(s, c), "objects"))) { pass true; }
         c = s.nodes[c].next;
     }
@@ -3555,7 +3557,7 @@ func:views_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, BMe
     if (vc0 < 0i64) { pass out; }
     int64:vc = s.nodes[vc0].first;
     vc = s.nodes[vc].next;
-    while (vc >= 0i64) {
+    while (vc >= 0i64) decreases s.nodes.count - vc {
         if (!(raw sx_is_list(s, vc)) || ((raw sx_len(s, vc)) != 2i64)) { drop tx_problem(t, "a views range is not `(lo len)`"); pass "false"; }
         string:lo = raw render(t, ft, s, raw sx_nth(s, vc, 0i64), e, m);
         string:ln = raw render(t, ft, s, raw sx_nth(s, vc, 1i64), e, m);
@@ -3577,7 +3579,7 @@ func:objects_in = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:sec, REnv->:e, B
     if (oc0 >= 0i64) {
         int64:oc = s.nodes[oc0].first;
         oc = s.nodes[oc].next;
-        while (oc >= 0i64) {
+        while (oc >= 0i64) decreases s.nodes.count - oc {
             if (!(raw range_entry_ok(s, oc))) { drop tx_problem(t, "an objects range is not `(lo len)` or `(lo len apart-when COND)`"); pass "false"; }
             string:lo = raw render(t, ft, s, raw sx_nth(s, oc, 0i64), e, m);
             string:ln = raw render(t, ft, s, raw sx_nth(s, oc, 1i64), e, m);
@@ -4379,7 +4381,7 @@ func:tx_preserve_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fail
         // rendered first, then every symbol read as its expression --
         // `(inst j mid k j)` reads j as mid and k as the original j
         int64:ik = 0i64;
-        while (true) {
+        while (true) decreases s.nodes.count - ik {
             int64:ic = raw spec_clause(s, lclause, "inst", ik);
             if (ic < 0i64) { break; }
             ik = ik + 1i64;
@@ -4388,7 +4390,7 @@ func:tx_preserve_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fail
             REnv:ei = raw renv_new(cm, hmem, false, true);
             REnv:ei0 = raw renv_new(cm, hmem, false, true);
             int64:pair = 1i64;
-            while ((pair + 1i64) < iln) {
+            while ((pair + 1i64) < iln) decreases iln - pair {
                 string:isym = raw sx_atom(s, raw sx_nth(s, ic, pair));
                 string:iexp = raw render(t, ft, s, raw sx_nth(s, ic, pair + 1i64), @ei0, @x.meta[h]);
                 drop renv_add(@ei, isym, iexp);
@@ -4498,7 +4500,7 @@ func:tx_section_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:sec) 
     // requires: hypotheses over the entry state
     REnv:er = raw renv_new("mem", "", false, true);
     int64:rk = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - rk {
         int64:rc = raw spec_clause(s, sec, "requires", rk);
         if (rc < 0i64) { break; }
         rk = rk + 1i64;
@@ -4507,7 +4509,7 @@ func:tx_section_rows = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:sec) 
     // ensures: one row per clause, on the non-trapping paths
     REnv:ee = raw renv_new("mem", "mem2", true, true);
     int64:ek = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - ek {
         int64:ec = raw spec_clause(s, sec, "ensures", ek);
         if (ec < 0i64) { break; }
         ek = ek + 1i64;
@@ -4600,7 +4602,7 @@ func:meta_plain_of = BMeta(XFn->:x) never fails {
 func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
     int64:k = 0i64;
     bool:again = true;
-    while (again && (k < 256i64)) {
+    while (again && (k < 256i64)) decreases 256i64 - k {
         again = false;
         for (int64:b in 0i64...x.f.blocks.count) {
             for (int64:l in 0i64...x.f.blocks[b].lines.count) {
@@ -4636,7 +4638,7 @@ func:tx_transform = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x) never fails {
     if (k >= 256i64) { drop tx_problem(t, "inlining did not terminate: a cycle in the call graph"); pass NIL; }
     // unrolling, innermost first (the loop with the fewest members among the annotated)
     int64:guard = 0i64;
-    while (guard < 64i64) {
+    while (guard < 64i64) decreases 64i64 - guard {
         guard = guard + 1i64;   // also the unrolling's id in the copies' suffixes
         int64:chosen = 0i64 - 1i64;
         int64:chosen_n = 0i64;
@@ -4710,7 +4712,8 @@ func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
     // the definitions closes them; a hypothesis may name anything, so the
     // two passes alternate until nothing is new (two rounds in practice)
     bool:grew = true;
-    while (grew) {
+    // the cone's fixed point: a round that includes no new definition or hypothesis is the last, and both are finite (D-316)
+    while (grew) unbounded {
         grew = false;
         for (int64:dd in 0i64...t.defs.count) {
             int64:d = t.defs.count - 1i64 - dd;
@@ -4831,7 +4834,7 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
         drop tx_declare_reg(@t, pname, pty);
     }
     int64:fk = 0i64;
-    while (true) {
+    while (true) decreases s.nodes.count - fk {
         int64:fc = raw spec_clause(s, sec, "free", fk);
         if (fc < 0i64) { break; }
         fk = fk + 1i64;

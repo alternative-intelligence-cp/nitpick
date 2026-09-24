@@ -36,7 +36,7 @@ func:instr_none = FInstr() never fails {
 pub struct:Cur = { string:s; int64:i; };
 
 func:cur_ws = NIL(Cur->:c) never fails {
-    while (c.i < c.s.len) {
+    while (c.i < c.s.len) decreases c.s.len - c.i {
         if (!(raw text_is_ws(c.s.ptr[c.i]))) { break; }
         c.i = c.i + 1i64;
     }
@@ -54,7 +54,7 @@ func:cur_peek = uint8(Cur->:c) never fails {
 func:cur_word = string(Cur->:c) never fails {
     drop cur_ws(c);
     int64:s = c.i;
-    while (c.i < c.s.len) {
+    while (c.i < c.s.len) decreases c.s.len - c.i {
         uint8:ch = c.s.ptr[c.i];
         if (raw text_is_ws(ch)) { break; }
         if ((ch == 44u8) || (ch == 40u8) || (ch == 41u8) || (ch == 91u8) || (ch == 93u8)) { break; }
@@ -76,7 +76,7 @@ pub func:cur_type = string(Cur->:c) never fails {
     drop cur_ws(c);
     int64:s = c.i;
     int64:depth = 0i64;
-    while (c.i < c.s.len) {
+    while (c.i < c.s.len) decreases c.s.len - c.i {
         uint8:ch = c.s.ptr[c.i];
         if ((ch == 123u8) || (ch == 91u8)) { depth = depth + 1i64; }
         if ((ch == 125u8) || (ch == 93u8)) { depth = depth - 1i64; }
@@ -145,7 +145,7 @@ func:is_ordering = bool(string:w) never fails {
 // sits on `(`. Returns false on a malformed list.
 func:read_call_args = bool(Cur->:c, FInstr->:r) never fails {
     if (!(raw cur_expect(c, 40u8))) { pass false; }
-    while (true) {
+    while (true) decreases c.s.len - c.i {
         drop cur_ws(c);
         if ((raw cur_peek(c)) == 41u8) { c.i = c.i + 1i64; pass true; }
         string:ty = raw cur_type(c);
@@ -184,10 +184,10 @@ pub func:floor_instr = FInstr(string:line) never fails {
         }
     }
     string:op = raw cur_word(@c);
-    while (raw is_flag(op)) { op = raw cur_word(@c); }
+    while (raw is_flag(op)) decreases c.s.len - c.i { op = raw cur_word(@c); }
     if (raw is_binop(op)) {
         string:w = raw cur_word(@c);
-        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        while (raw is_flag(w)) decreases c.s.len - c.i { w = raw cur_word(@c); }
         // `w` is the type
         r.ty = string_concat(w, "");
         string:a = raw cur_value(@c);
@@ -199,7 +199,7 @@ pub func:floor_instr = FInstr(string:line) never fails {
     }
     if ((raw text_eq(op, "icmp")) || (raw text_eq(op, "fcmp"))) {
         string:pr = raw cur_word(@c);
-        while (raw is_flag(pr)) { pr = raw cur_word(@c); }
+        while (raw is_flag(pr)) decreases c.s.len - c.i { pr = raw cur_word(@c); }
         r.pred = string_concat(pr, "");
         r.ty = string_concat(raw cur_type(@c), "");
         string:a = raw cur_value(@c);
@@ -237,7 +237,7 @@ pub func:floor_instr = FInstr(string:line) never fails {
     if (raw text_eq(op, "load")) {
         string:w = raw cur_word(@c);
         if (raw text_eq(w, "atomic")) { r.atomic = true; w = raw cur_word(@c); }
-        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        while (raw is_flag(w)) decreases c.s.len - c.i { w = raw cur_word(@c); }
         // `w` began the type; re-read it as a type from its start
         c.i = c.i - w.len;
         r.ty = string_concat(raw cur_type(@c), "");
@@ -254,7 +254,7 @@ pub func:floor_instr = FInstr(string:line) never fails {
     if (raw text_eq(op, "store")) {
         string:w = raw cur_word(@c);
         if (raw text_eq(w, "atomic")) { r.atomic = true; w = raw cur_word(@c); }
-        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        while (raw is_flag(w)) decreases c.s.len - c.i { w = raw cur_word(@c); }
         c.i = c.i - w.len;
         r.ty = string_concat(raw cur_type(@c), "");
         string:v = raw cur_value(@c);
@@ -270,14 +270,14 @@ pub func:floor_instr = FInstr(string:line) never fails {
     }
     if (raw text_eq(op, "getelementptr")) {
         string:w = raw cur_word(@c);
-        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        while (raw is_flag(w)) decreases c.s.len - c.i { w = raw cur_word(@c); }
         c.i = c.i - w.len;
         r.gep_ty = string_concat(raw cur_type(@c), "");
         if (!(raw cur_expect(@c, 44u8))) { pass r; }
         string:pt = raw cur_word(@c);            // `ptr`
         string:base = raw cur_value(@c);
         drop strlist_push(@r.args, string_concat(base, ""));
-        while (raw cur_expect(@c, 44u8)) {
+        while (raw cur_expect(@c, 44u8)) decreases c.s.len - c.i {
             string:ity = raw cur_type(@c);
             string:iv = raw cur_value(@c);
             drop strlist_push(@r.tys, string_concat(ity, ""));
@@ -288,7 +288,7 @@ pub func:floor_instr = FInstr(string:line) never fails {
     }
     if (raw text_eq(op, "phi")) {
         r.ty = string_concat(raw cur_type(@c), "");
-        while (true) {
+        while (true) decreases c.s.len - c.i {
             drop cur_ws(@c);
             if (!(raw cur_expect(@c, 91u8))) { break; }
             string:v = raw cur_value(@c);
@@ -335,14 +335,14 @@ pub func:floor_instr = FInstr(string:line) never fails {
     if (raw text_eq(op, "unreachable")) { r.op = string_concat(op, ""); pass r; }
     if (raw text_eq(op, "call")) {
         string:w = raw cur_word(@c);
-        while (raw is_flag(w)) { w = raw cur_word(@c); }
+        while (raw is_flag(w)) decreases c.s.len - c.i { w = raw cur_word(@c); }
         c.i = c.i - w.len;
         r.ty = string_concat(raw cur_type(@c), "");
         drop cur_ws(@c);
         uint8:ch = raw cur_peek(@c);
         if (ch == 64u8) {                         // @callee(
             int64:s = c.i;
-            while ((c.i < c.s.len) && (c.s.ptr[c.i] != 40u8)) { c.i = c.i + 1i64; }
+            while ((c.i < c.s.len) && (c.s.ptr[c.i] != 40u8)) decreases c.s.len - c.i { c.i = c.i + 1i64; }
             r.callee = raw text_copy(raw text_slice(c.s, s, c.i));
             if (!(raw read_call_args(@c, @r))) { pass r; }
             r.op = string_concat(op, "");
@@ -350,7 +350,7 @@ pub func:floor_instr = FInstr(string:line) never fails {
         }
         if (ch == 37u8) {                         // %reg( -- an indirect call
             int64:s2 = c.i;
-            while ((c.i < c.s.len) && (c.s.ptr[c.i] != 40u8)) { c.i = c.i + 1i64; }
+            while ((c.i < c.s.len) && (c.s.ptr[c.i] != 40u8)) decreases c.s.len - c.i { c.i = c.i + 1i64; }
             r.callee = raw text_copy(raw text_slice(c.s, s2, c.i));
             if (!(raw read_call_args(@c, @r))) { pass r; }
             r.op = string_concat(op, "");

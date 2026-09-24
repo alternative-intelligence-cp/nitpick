@@ -46,10 +46,10 @@ pub func:dyn_sort_bounds = NIL(Ast->:ast, TypeTable->:tyt,
     // spellings of one thing, which is what the blueprint rule argues against.
     int32:n = (raw ast_scratch_mark(ast)) - mark;
     int32:i = 1i32;
-    while (i < n) {
+    while (i < n) decreases n - i {
         int32:v = raw ast_scratch_at(ast, mark, i);
         int32:j = i - 1i32;
-        while (j >= 0i32) {
+        while (j >= 0i32) decreases j {
             int32:w = raw ast_scratch_at(ast, mark, j);
             if (!(raw bound_before(ast, tyt, interns, v, w))) { break; }
             drop ast_scratch_set(ast, mark, j + 1i32, w);

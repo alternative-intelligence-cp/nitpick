@@ -29,7 +29,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // Growth past the initial capacity of 8 must not lose or corrupt entries.
     int32:i = 0i32;
-    while (i < 40i32) {
+    while (i < 40i32) decreases 40i32 - i {
         discard(raw srcmgr_add(@sm, "x.npk", "y"));
         i = i + 1i32;
     }
@@ -114,6 +114,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

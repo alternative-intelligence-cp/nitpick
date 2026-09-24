@@ -30,7 +30,8 @@ struct:Req = {
 async func:counter = NIL(Channel<Req, 3i32, 4i64>:inbox) {
     int32:total = 0i32;
     bool:running = true;
-    while (running) {
+    // the actor's inbox loop: it ends when the channel closes and drains (D-316)
+    while (running) unbounded {
         Result<Req>:m = await inbox.recv(raw duration_ms(2000i64));
         if (m.is_error) {
             running = false;                    // closed and drained: an end
@@ -49,7 +50,7 @@ async func:main = int32(cstring[]:_~argv) {
 
     int32:last = 0i32;
     int32:i = 0i32;
-    while (i < 4i32) {
+    while (i < 4i32) decreases 4i32 - i {
         await inbox.send(Req{ add: 10i32, reply: reply },
                          raw duration_ms(2000i64)) ?! E1;
         Result<int32>:r = await reply.recv(raw duration_ms(2000i64));
@@ -74,6 +75,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 97i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

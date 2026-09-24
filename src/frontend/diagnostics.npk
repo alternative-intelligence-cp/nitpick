@@ -117,7 +117,7 @@ pub func:diaglist_push = NIL(DiagList->:list, move Diagnostic:d) never fails {
 
 func:diaglist_has = bool(DiagList->:list, Diagnostic:d) never fails {
     int64:i = 0i64;
-    while (i < list.count) {
+    while (i < list.count) decreases list.count - i {
         Diagnostic->:e = $$i list.items[i];
         if (e.severity == d.severity) {
             if (e.span.file == d.span.file) {
@@ -182,7 +182,7 @@ pub func:diaglist_rehome = NIL(DiagList->:list, int64:i, Span:at,
 
 pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
     int64:i = 0i64;
-    while (i < list.count) {
+    while (i < list.count) decreases list.count - i {
         if (list.items[i].severity == 2i32) {
             pass true;
         }
@@ -208,10 +208,10 @@ pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
 // span never shifts.
 pub func:diaglist_sort = NIL(DiagList->:list) never fails {
     int64:i = 1i64;
-    while (i < list.count) {
+    while (i < list.count) decreases list.count - i {
         Diagnostic:cur = move(list.items[i]);      // the hole is at i
         int64:j = i;
-        while (j > 0i64) {
+        while (j > 0i64) decreases j {
             // THE VIEW ENDS BEFORE THE MOVE (D-286, 1.5.5 step 1): the shared
             // claim on `items[j-1]` lives for its block, and the move out of
             // that same element below is a conflict the aliasing analysis
@@ -285,7 +285,7 @@ pub func:sink_to_buffer = Sink(int64:cap) never fails {
 pub func:sink_write = NIL(Sink->:out, string:text) never fails {
     drop list_reserve(@out.v, text.len);
     int64:i = 0i64;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         drop list_push(@out.v, text.ptr[i] =>! int8);
         i = i + 1i64;
     }
@@ -341,7 +341,7 @@ pub func:sink_reset = NIL(Sink->:out) never fails {
 pub func:sink_append = NIL(Sink->:dst, Sink->:src) never fails {
     drop list_reserve(@dst.v, src.v.count);
     int64:i = 0i64;
-    while (i < src.v.count) {
+    while (i < src.v.count) decreases src.v.count - i {
         drop list_push(@dst.v, src.v[i]);
         i = i + 1i64;
     }

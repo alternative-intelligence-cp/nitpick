@@ -15,7 +15,8 @@
 // join deadline plus the stated 250ms grace, not twice the deadline.
 mod:executor_windup_trap;
 async func:stubborn = NIL(int32:n) {
-    while (n > 0i32) {
+    // sleeps until the wind-up trap ends the program -- the shape under test
+    while (n > 0i32) unbounded {
         await sleep(raw duration_secs(30i64)) ?| NIL;   // swallows the wind-up
     }
     pass NIL;
@@ -38,6 +39,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
         (IntOverflow) { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

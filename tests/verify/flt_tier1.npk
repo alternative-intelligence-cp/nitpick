@@ -2,7 +2,7 @@
 // expect-obligation: prove discharged 1
 // expect-obligation: limit open 2
 // expect-obligation: limit-subsume discharged 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 11
 // expect-obligation: exhaustive checker 1
 //
 // FLOATS, TIER 1 (D-281, 1.5.4b step 3): a `flt64` is a term of the IEEE
@@ -39,6 +39,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 96i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

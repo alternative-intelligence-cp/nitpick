@@ -400,7 +400,7 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
             }
             // root reached: reverse
             int64:k = rev.count;
-            while (k > 0i64) {
+            while (k > 0i64) decreases k {
                 k = k - 1i64;
                 drop list_push(out, rev[k]);
             }
@@ -944,7 +944,7 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
             drop refuse_holder_copy(x, v, 0i32);
             drop acc_expr(x, v, raw ACC_READ(), dd);

@@ -201,7 +201,7 @@ pub func:esc_byte_into = NIL(Sink->:out, uint8:b) never fails {
 // bodies are emitted, which is why the table and the writer are separate things.
 pub func:strtab_write_all = NIL(StrTable->:t, IrWriter->:w) never fails {
     int64:i = 0i64;
-    while (i < t.v.count) {
+    while (i < t.v.count) decreases t.v.count - i {
         string->:data = $$i t.v[i];
         // THE LINE AS ITS PIECES (1.5.1b step 3, DEF-1 axis 3): the escaped
         // bytes go straight into the module stream, never through a growing
@@ -213,7 +213,7 @@ pub func:strtab_write_all = NIL(StrTable->:t, IrWriter->:w) never fails {
         drop irw_write(w, " x i8] c\"");
         Sink->:es = raw irw_sink(w);
         int64:j = 0i64;
-        while (j < data.len) {
+        while (j < data.len) decreases data.len - j {
             drop esc_byte_into(es, data.ptr[j] => uint8);
             j = j + 1i64;
         }
@@ -339,7 +339,7 @@ pub func:gives_chan_count = int32(ExprEmitter->:x, int32:t) never fails {
     int32:nm = raw item_member_count(x.ast, sd);
     int32:kk = 0i32;
     int32:cnt = 0i32;
-    while (kk < nm) {
+    while (kk < nm) decreases nm - kk {
         DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, kk));
         if (m.kind == DeclKind.DeclFieldDecl) {
             // `struct_field` rather than a bare resolve: a generic
@@ -428,7 +428,7 @@ func:stash_gives_result = NIL(ExprEmitter->:x, ExprId:id, ExprNode:n,
     int32:nm = raw item_member_count(x.ast, sd);
     int32:kk = 0i32;
     int32:ford = 0i32;
-    while (kk < nm) {
+    while (kk < nm) decreases nm - kk {
         DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, kk));
         if (m.kind == DeclKind.DeclFieldDecl) {
             FieldInfo:finf = raw struct_field(x.tr, st, raw decl_name(m), x.scope);
@@ -1542,7 +1542,8 @@ func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) never fail
     DeclNode:idecl = raw ast_decl(x.ast, DeclId{ index: impl_decl });
     int32:m_decl = 0i32;
     int32:mi = 0i32;
-    while (mi < (raw impl_member_count(x.ast, idecl))) {
+    int32:nmembers = raw impl_member_count(x.ast, idecl);
+    while (mi < nmembers) decreases nmembers - mi {
         DeclId:mid = raw impl_member(x.ast, idecl, mi);
         DeclNode:m = raw ast_decl(x.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -1894,7 +1895,7 @@ func:widen_len_i64 = string(ExprEmitter->:x, string:ref, string:ll, int32:len_ti
 func:float_literal_body = string(ExprEmitter->:x, string:txt) never fails {
     int64:cut = txt.len;
     int64:fi = 0i64;
-    while (fi < txt.len) {
+    while (fi < txt.len) decreases txt.len - fi {
         if (txt.ptr[fi] == 102u8) { cut = fi; break; }   // 'f' opens the suffix
         fi = fi + 1i64;
     }
@@ -1902,7 +1903,7 @@ func:float_literal_body = string(ExprEmitter->:x, string:txt) never fails {
     bool:has_dot = false;
     int64:epos = body.len;
     int64:bi = 0i64;
-    while (bi < body.len) {
+    while (bi < body.len) decreases body.len - bi {
         uint8:bc = body.ptr[bi];
         if (bc == 46u8) { has_dot = true; }
         if (bc == 101u8) { epos = bi; break; }
@@ -2053,7 +2054,7 @@ func:emit_tern_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     int64:pw = 1i64;
     string:pcur = "1";
     int32:pi = 1i32;
-    while (pi < tdigits) {
+    while (pi < tdigits) decreases tdigits - pi {
         pw = pw * (tbase => int64);
         string:pc = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pc, " = icmp uge i64 ", ix64, ", ",
@@ -4800,7 +4801,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 func:ll_int_width = int64(string:ll) never fails {
     int64:n = 0i64;
     int64:i = 1i64;
-    while (i < ll.len) {
+    while (i < ll.len) decreases ll.len - i {
         n = (n * 10i64) + ((ll.ptr[i] => int64) - 48i64);
         i = i + 1i64;
     }
@@ -5278,7 +5279,8 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     // The deadline: the clause's constant, or the executor's default.
     string:jns = "";
     int32:ji = 0i32;
-    while (ji < (raw fn_contract_count(x.ast, cdecl))) {
+    int32:ncontracts = raw fn_contract_count(x.ast, cdecl);
+    while (ji < ncontracts) decreases ncontracts - ji {
         VerifyNode:jv = raw ast_verify(x.ast, raw fn_contract(x.ast, cdecl, ji));
         if (jv.kind == VerifyKind.VerifyJoinsWithin) {
             IrVal:jd = raw emit_expr(x, raw contract_cond(jv));
@@ -5665,7 +5667,7 @@ func:emit_simd_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     drop irw_line(x.fe.w, raw cat5(acc, " = extractelement ", rv.ll, " ",
                       string_concat(rv.ref, ", i64 0")));
     int32:i = 1i32;
-    while (i < lanes) {
+    while (i < lanes) decreases lanes - i {
         string:ei = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(ei, " = extractelement ", rv.ll, " ",
                           raw cat4(rv.ref, ", i64 ",
@@ -6760,7 +6762,8 @@ func:emit_dyn_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     int32:aord = 0i32;
     int32:fnidx = 0i32;
     int32:tk = 0i32;
-    while (tk < (raw item_member_count(x.ast, td))) {
+    int32:nmembers = raw item_member_count(x.ast, td);
+    while (tk < nmembers) decreases nmembers - tk {
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, tk));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             if (fnidx < ds.slot) {
@@ -7151,7 +7154,7 @@ func:va_fill = IrVal(ExprEmitter->:x, int32:elem, string:arrty, string:arrp,
                      int32:start, int32:count, int32:fixed_in_call,
                      Span:at) never fails {
     int32:k = 0i32;
-    while ((fixed_in_call + k) < count) {
+    while ((fixed_in_call + k) < count) decreases count - (fixed_in_call + k) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start,
                                         fixed_in_call + k) };
         IrVal:av = raw emit_expr(x, aid);
@@ -8025,7 +8028,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             if (count < 1i32) { pass (raw iv_broken(cnode.span)); }
             string:sargs = "";
             int32:si = 0i32;
-            while (si < count) {
+            while (si < count) decreases count - si {
                 ExprId:said = ExprId{ index: raw ast_id_at(x.ast, start, si) };
                 IrVal:sav = raw emit_expr(x, said);
                 if (!(raw iv_is_ok(sav))) { pass sav; }
@@ -8071,7 +8074,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                 sargs = raw cat3(sargs, "i64 ", sref);
                 si = si + 1i32;
             }
-            while (si < 7i32) {
+            while (si < 7i32) decreases 7i32 - si {
                 if (si > 0i32) { sargs = string_concat(sargs, ", "); }
                 sargs = string_concat(sargs, "i64 0");
                 si = si + 1i32;
@@ -8706,7 +8709,8 @@ func:pv_broken = PlaceVal(Span:at) never fails {
 func:fninst_for_call = int32(ExprEmitter->:x, int32:decl, ExprId:call) never fails {
     int32:ft = raw exprtypes_callee_ft(x.et, call);
     int32:i = 0i32;
-    while (i < (raw fninst_count(x.fninsts))) {
+    int32:ninsts = raw fninst_count(x.fninsts);
+    while (i < ninsts) decreases ninsts - i {
         FnInstance:e = raw fninst_at(x.fninsts, i);
         if (e.decl == decl) {
             if (raw fn_types_same(x, e.type_id, ft)) {
@@ -8732,7 +8736,7 @@ func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) ne
     if (x.fe.ctx.subst_params_count == 0i32) { pass e; }
     bool:shaped = false;
     int32:i = 0i32;
-    while (i < e.args_count) {
+    while (i < e.args_count) decreases e.args_count - i {
         if (raw type_mentions_param(x.fe.ctx.types, x.ast,
                                     raw ast_id_at(x.ast, e.args_start, i),
                                     64i32)) {
@@ -8744,7 +8748,7 @@ func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) ne
 
     int32:mark = raw ast_scratch_mark(x.ast);
     i = 0i32;
-    while (i < e.args_count) {
+    while (i < e.args_count) decreases e.args_count - i {
         drop ast_scratch_push(x.ast, raw subst_emitted_type(x.fe.ctx,
                                   raw ast_id_at(x.ast, e.args_start, i)));
         i = i + 1i32;
@@ -8759,13 +8763,14 @@ func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) ne
     // The recorded one — the first with these arguments, which is the one the
     // loop will emit and whose name the call must use.
     int32:k = 0i32;
-    while (k < (raw fninst_count(x.fninsts))) {
+    int32:ninsts = raw fninst_count(x.fninsts);
+    while (k < ninsts) decreases ninsts - k {
         FnInstance:r = raw fninst_at(x.fninsts, k);
         if (r.decl == e.decl) {
             if (r.args_count == w.count) {
                 bool:same = true;
                 int32:j = 0i32;
-                while (j < w.count) {
+                while (j < w.count) decreases w.count - j {
                     if ((raw ast_id_at(x.ast, r.args_start, j))
                             != (raw ast_id_at(x.ast, w.start, j))) {
                         same = false;
@@ -8789,7 +8794,7 @@ func:fninst_name_of = int32(ExprEmitter->:x, FnInstance:e) never fails {
     string:m = string_concat(
                    raw intern_get(x.interns, raw decl_name(d)), "<");
     int32:i = 0i32;
-    while (i < e.args_count) {
+    while (i < e.args_count) decreases e.args_count - i {
         if (i > 0i32) { m = string_concat(m, ", "); }
         m = string_concat(m,
                 raw type_display(x.fe.ctx.types, x.interns,
@@ -8943,7 +8948,8 @@ func:dyn_slot_of = DynSlot(ExprEmitter->:x, int32:dyn_ty, int32:decl) never fail
             DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
             int32:slot = 0i32;
             int32:k = 0i32;
-            while (k < (raw item_member_count(x.ast, td))) {
+            int32:nmembers = raw item_member_count(x.ast, td);
+            while (k < nmembers) decreases nmembers - k {
                 DeclId:mid = raw item_member(x.ast, td, k);
                 DeclNode:tm = raw ast_decl(x.ast, mid);
                 if (tm.kind == DeclKind.DeclFunctionDecl) {
@@ -9360,7 +9366,7 @@ func:impl_decl_for = int32(ExprEmitter->:x, int32:target, int32:trait_ty) never 
     wild ImplTable->:t = x.fe.ctx.impls;
     int32:tdecl = raw type_decl_of(x.fe.ctx.types, target);
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.trait_id == trait_ty) {
@@ -9380,7 +9386,7 @@ func:impl_decl_for = int32(ExprEmitter->:x, int32:target, int32:trait_ty) never 
         i = i + 1i32;
     }
     int32:j = 0i32;
-    while ((j => int64) < t.v.count) {
+    while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
         ImplEntry:b = raw impl_at(t, j);
         if (b.blanket) {
             if (b.trait_id == trait_ty) { pass b.decl; }
@@ -9397,7 +9403,7 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
     int32:cdecl = raw type_decl_of(x.fe.ctx.types, conc);
     if (cdecl == 0i32) { pass NIL; }
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.trait_id == trait_ty) {
@@ -9920,7 +9926,8 @@ pub func:variant_payload_slot_at = PayloadSlot(TypeResolver->:tr, TypeTable->:ty
     PayloadSlot:found = bad;
     bool:done = false;
     int32:i = 0i32;
-    while (i < (raw item_member_count(ast, d))) {
+    int32:nmembers = raw item_member_count(ast, d);
+    while (i < nmembers) decreases nmembers - i {
         if (done) { break; }
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
@@ -9931,7 +9938,7 @@ pub func:variant_payload_slot_at = PayloadSlot(TypeResolver->:tr, TypeTable->:ty
                     int32:pstart = raw variant_payload_start(m);
                     int64:off = 0i64;
                     int32:k = 0i32;
-                    while (k <= j) {
+                    while (k <= j) decreases j - k {
                         int32:pt = raw resolve_type(tr,
                                        TypeId{ index: raw ast_id_at(ast, pstart, k) },
                                        phome);
@@ -9981,7 +9988,8 @@ pub func:variant_info = VariantInfo(ExprEmitter->:x, int32:enum_tid, int32:name)
     DeclId:did = DeclId{ index: raw type_decl(x.fe.ctx.types, enum_tid) };
     DeclNode:d = raw ast_decl(x.ast, did);
     int32:i = 0i32;
-    while (i < (raw item_member_count(x.ast, d))) {
+    int32:nmembers = raw item_member_count(x.ast, d);
+    while (i < nmembers) decreases nmembers - i {
         DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == name) {
@@ -10708,7 +10716,8 @@ func:emit_global_struct_into = bool(ExprEmitter->:x, ExprId:eid,
     drop sink_write(out, "{ ");
     int32:emitted = 0i32;
     int32:fi = 0i32;
-    while (fi < (raw item_member_count(x.ast, sd))) {
+    int32:nmembers = raw item_member_count(x.ast, sd);
+    while (fi < nmembers) decreases nmembers - fi {
         DeclNode:fdecl = raw ast_decl(x.ast, raw item_member(x.ast, sd, fi));
         if (fdecl.kind == DeclKind.DeclFieldDecl) {
             int32:fname = raw decl_name(fdecl);
@@ -10716,7 +10725,7 @@ func:emit_global_struct_into = bool(ExprEmitter->:x, ExprId:eid,
             ExprId:vid = ExprId{ index: 0i32 };
             bool:found = false;
             int32:pi = 0i32;
-            while (pi < pairs) {
+            while (pi < pairs) decreases pairs - pi {
                 int32:lname = raw ast_id_at(x.ast, raw expr_list_start(n),
                                             pi * 2i32);
                 if (lname == fname) {
@@ -10772,7 +10781,7 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     string:acc = "zeroinitializer";
     int32:i = 0i32;
     int32:pairs = (raw expr_list_count(n)) / 2i32;
-    while (i < pairs) {
+    while (i < pairs) decreases pairs - i {
         int32:fname = raw ast_id_at(x.ast, raw expr_list_start(n), i * 2i32);
         ExprId:vid = ExprId{ index: raw ast_id_at(x.ast,
                                  raw expr_list_start(n), (i * 2i32) + 1i32) };
@@ -10817,7 +10826,8 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
     }
     string:acc = "zeroinitializer";
     int32:i = 0i32;
-    while (i < (raw expr_list_count(n))) {
+    int32:nelems = raw expr_list_count(n);
+    while (i < nelems) decreases nelems - i {
         ExprId:eid = ExprId{ index: raw ast_id_at(x.ast,
                                  raw expr_list_start(n), i) };
         IrVal:v = raw emit_expr(x, eid);

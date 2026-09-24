@@ -1,0 +1,643 @@
+# 1.5.8c step 3 -- THE READING (D-304 (6), P-3, D-316): every `while`/`when` loop the sweep tool
+# could not prove monotone, decided by a reader from the source. `decreases_sweep.py --write`
+# applies each line; the harness proves the result (a wrong measure traps DecreasesViolated the
+# first time the loop's head sees it). Line numbers are the tree's BEFORE the write. Directives:
+#   stable    FILE:LINE            the tool's shape applies; the bound is stable (read: nothing the body
+#                                  or its callees reaches grows it)
+#   hoist     FILE:LINE NAME       the bound (a call's result) is captured once before the loop
+#   measure   FILE:LINE EXPR       `decreases EXPR`
+#   unbounded FILE:LINE REASON     `unbounded`, the reason on the line above
+#   manual    FILE:LINE NOTE       restructured by hand; the clause is in the source
+# A `#` line is a comment; there are no inline comments (a measure may contain `#`).
+
+# --- src/frontend/parse*.npk, parser.npk: THE PARSER (55 loops). Every trip consumes at least one
+# token -- an `advance`, an `accept`, or the `p_sync` belt that advances when a rule consumed
+# nothing -- and `p_advance` never passes the Eof token, so the tokens left, `p_left(p)` (pure,
+# parser.npk), is every loop's measure. The two token-window scans are bounded by a constant.
+measure   src/frontend/parse_decl.npk:91 raw p_left(p)
+measure   src/frontend/parse_decl.npk:689 raw p_left(p)
+measure   src/frontend/parse_decl.npk:714 raw p_left(p)
+measure   src/frontend/parse_decl.npk:778 raw p_left(p)
+measure   src/frontend/parse_decl.npk:786 raw p_left(p)
+measure   src/frontend/parse_decl.npk:854 raw p_left(p)
+measure   src/frontend/parse_decl.npk:877 raw p_left(p)
+measure   src/frontend/parse_decl.npk:939 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1001 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1064 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1093 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1236 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1249 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1279 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1306 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1400 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1432 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1522 raw p_left(p)
+measure   src/frontend/parse_decl.npk:1559 raw p_left(p)
+measure   src/frontend/parse_decorate.npk:119 raw p_left(p)
+measure   src/frontend/parse_decorate.npk:136 raw p_left(p)
+measure   src/frontend/parse_decorate.npk:169 raw p_left(p)
+measure   src/frontend/parse_decorate.npk:273 raw p_left(p)
+measure   src/frontend/parse_decorate.npk:327 raw p_left(p)
+measure   src/frontend/parse_expr.npk:141 raw p_left(p)
+measure   src/frontend/parse_expr.npk:179 raw p_left(p)
+measure   src/frontend/parse_expr.npk:253 raw p_left(p)
+measure   src/frontend/parse_expr.npk:352 raw p_left(p)
+measure   src/frontend/parse_expr.npk:396 raw p_left(p)
+measure   src/frontend/parse_expr.npk:440 raw p_left(p)
+measure   src/frontend/parse_expr.npk:535 raw p_left(p)
+measure   src/frontend/parse_expr.npk:559 raw p_left(p)
+measure   src/frontend/parse_expr.npk:585 raw p_left(p)
+measure   src/frontend/parse_expr.npk:733 raw p_left(p)
+measure   src/frontend/parse_expr.npk:745 raw p_left(p)
+measure   src/frontend/parse_expr.npk:764 raw p_left(p)
+measure   src/frontend/parse_expr.npk:789 raw p_left(p)
+measure   src/frontend/parse_expr.npk:860 raw p_left(p)
+measure   src/frontend/parse_expr.npk:977 raw p_left(p)
+measure   src/frontend/parse_expr.npk:1049 raw p_left(p)
+measure   src/frontend/parse_pick.npk:213 raw p_left(p)
+measure   src/frontend/parse_pick.npk:231 raw p_left(p)
+measure   src/frontend/parse_pick.npk:246 raw p_left(p)
+measure   src/frontend/parse_pick.npk:329 raw p_left(p)
+measure   src/frontend/parse_stmt.npk:451 raw p_left(p)
+measure   src/frontend/parse_stmt.npk:845 raw p_left(p)
+measure   src/frontend/parse_type.npk:162 raw p_left(p)
+measure   src/frontend/parse_type.npk:211 raw p_left(p)
+measure   src/frontend/parse_type.npk:279 raw p_left(p)
+measure   src/frontend/parse_type.npk:299 raw p_left(p)
+measure   src/frontend/parser.npk:217 raw p_left(p)
+measure   src/frontend/parser.npk:313 raw p_left(p)
+measure   src/frontend/parser.npk:340 raw p_left(p)
+hoist     src/frontend/parse_decl.npk:391 scan_limit
+hoist     src/frontend/parse_stmt.npk:381 scan_limit
+
+# --- src/frontend/lexer.npk: THE LEXER (15 loops). A scan advances `lx.pos` by at least one byte per
+# trip or leaves, and `lexer_peek` answers 0 at the end before any scan advances, so the bytes
+# left are the measure. `lex_all` is the one exception (a token of zero width exists: the Error
+# token an unterminated template answers AT the end, after an `&{...}` closed on the last byte),
+# restructured by hand with a two-term measure. Three loops count a scanned run's length.
+measure   src/frontend/lexer.npk:459 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:130 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:140 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:157 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:235 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:315 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:355 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:574 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:482 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:492 lx.text.len - lx.pos
+measure   src/frontend/lexer.npk:499 lx.text.len - lx.pos
+manual    src/frontend/lexer.npk:604 the bytes left, twice, plus one while a template is open
+measure   src/frontend/lexer.npk:421 e.consumed - k
+measure   src/frontend/lexer.npk:440 u.consumed - uk
+measure   src/frontend/lexer.npk:558 om.length - k
+
+# --- src/frontend/type*.npk: THE TYPE CHECKER (75 loops). A walk over an AST window (a decl's members,
+# parameters, contracts, a dyn's operands) counts something the parser fixed: the count is hoisted
+# into a local. A walk over the impl table, the bounds table or the type table FINDS or CHECKS and
+# interns nothing: stable. Two worklists (an instance's check may record more; laying out a type may
+# intern more) are read below their functions.
+hoist     src/frontend/type_decls.npk:138 nparams
+hoist     src/frontend/type_decls.npk:225 nparams
+hoist     src/frontend/type_expr.npk:1227 naxes
+hoist     src/frontend/type_layout.npk:107 nmembers
+hoist     src/frontend/type_layout.npk:142 nmembers
+hoist     src/frontend/type_layout.npk:225 nmembers
+hoist     src/frontend/type_layout.npk:532 nmembers
+hoist     src/frontend/type_layout.npk:629 nmembers
+hoist     src/frontend/type_layout.npk:604 nmembers
+hoist     src/frontend/type_members.npk:1289 nmembers
+hoist     src/frontend/type_members.npk:1388 nmembers
+hoist     src/frontend/type_members.npk:2869 nmembers
+hoist     src/frontend/type_members.npk:2836 nimpls
+hoist     src/frontend/type_members.npk:2896 nmembers
+hoist     src/frontend/type_resolve.npk:2314 naxes
+hoist     src/frontend/type_resolve.npk:2819 nmembers
+hoist     src/frontend/type_resolve.npk:2741 nparams
+hoist     src/frontend/type_resolve.npk:2756 nargs
+hoist     src/frontend/type_resolve.npk:2845 nmembers
+hoist     src/frontend/type_stmt.npk:744 nmembers
+hoist     src/frontend/type_stmt.npk:2576 nparams
+hoist     src/frontend/type_stmt.npk:2783 nparams
+hoist     src/frontend/type_stmt.npk:2629 ncontracts
+hoist     src/frontend/type_stmt.npk:2727 ncontracts
+hoist     src/frontend/type_trait.npk:1694 nmembers
+hoist     src/frontend/type_trait.npk:1676 nmembers
+hoist     src/frontend/types.npk:839 naxes
+stable    src/frontend/type_generic.npk:412
+stable    src/frontend/type_members.npk:3009
+stable    src/frontend/type_members.npk:1701
+stable    src/frontend/type_members.npk:1825
+stable    src/frontend/type_members.npk:1888
+stable    src/frontend/type_members.npk:1741
+stable    src/frontend/type_resolve.npk:1628
+stable    src/frontend/type_resolve.npk:669
+stable    src/frontend/type_resolve.npk:825
+stable    src/frontend/type_trait.npk:280
+stable    src/frontend/type_trait.npk:284
+stable    src/frontend/type_trait.npk:522
+stable    src/frontend/type_trait.npk:706
+stable    src/frontend/type_trait.npk:724
+stable    src/frontend/type_trait.npk:919
+stable    src/frontend/type_trait.npk:1048
+stable    src/frontend/type_trait.npk:1738
+stable    src/frontend/type_trait.npk:1779
+stable    src/frontend/type_trait.npk:1962
+stable    src/frontend/type_trait.npk:2091
+stable    src/frontend/type_trait.npk:2177
+stable    src/frontend/type_trait.npk:2187
+stable    src/frontend/type_trait.npk:1806
+stable    src/frontend/type_trait.npk:2005
+stable    src/frontend/type_trait.npk:538
+stable    src/frontend/type_trait.npk:555
+stable    src/frontend/types.npk:900
+stable    src/frontend/types.npk:1133
+stable    src/frontend/types.npk:1190
+stable    src/frontend/types.npk:1504
+stable    src/frontend/types.npk:1536
+measure   src/frontend/type_expr.npk:3313 cnt - i
+measure   src/frontend/type_expr.npk:3394 cnt - i
+measure   src/frontend/type_expr.npk:676 ta.c - i
+measure   src/frontend/type_generic.npk:221 g.params_count - i
+measure   src/frontend/type_resolve.npk:198 g.params_count - i
+measure   src/frontend/type_resolve.npk:810 e.names.count - (i => int64)
+measure   src/frontend/types.npk:302 cap - c
+measure   src/frontend/types.npk:967 64i32 - al
+measure   src/frontend/types.npk:343 t.items.count - i
+measure   src/frontend/types.npk:877 t.unit_decls.count - (i => int64)
+measure   src/frontend/types.npk:1140 arg_count - k
+measure   src/frontend/types.npk:1196 count - k
+measure   src/frontend/types.npk:1510 args_count - k
+manual    src/frontend/type_members.npk:697 the impl count hoisted by hand: the early exit assigns it to the counter
+manual    src/frontend/types.npk:306 a probe counter bounds the open-addressed search by the table's size
+
+# The two worklists of the type checker re-read their count each trip BY DESIGN (each function's
+# comment says so), so a hoist would be wrong and no measure over the loop's state exists:
+unbounded src/frontend/type_generic.npk:359 a worklist over the instance table, re-read each trip: an instance this sweep records is swept too; it ends because `inst_record` dedups and a program's instances are finite (D-316)
+unbounded src/frontend/type_layout.npk:666 the count is re-read each trip: laying out a type may intern more, each laid out in turn; it ends because a program interns finitely many types (D-316)
+
+# --- src/frontend/analysis/*.npk: THE ANALYSES (33 loops). AST windows hoist; the walkers' own tables
+# (`x.rdecls`, `x.lstmt`, ...) are read, not grown, inside these loops; the bindings copies write
+# ELEMENTS of `dst`, never its count. Two worklists say why they end.
+hoist     src/frontend/analysis/bindings.npk:498 nmembers
+hoist     src/frontend/analysis/bindings.npk:445 nparams
+hoist     src/frontend/analysis/bindings.npk:486 nparams
+hoist     src/frontend/analysis/escape.npk:2119 nmembers
+hoist     src/frontend/analysis/escape.npk:2189 nmembers
+hoist     src/frontend/analysis/escape.npk:1067 nmembers
+hoist     src/frontend/analysis/escape.npk:1091 nmembers
+hoist     src/frontend/analysis/exhaust.npk:471 nstmts
+hoist     src/frontend/analysis/locks.npk:505 nstmts
+hoist     src/frontend/analysis/locks.npk:552 narms
+hoist     src/frontend/analysis/locks.npk:730 narms
+hoist     src/frontend/analysis/reach.npk:503 nstmts
+hoist     src/frontend/analysis/reach.npk:557 narms
+hoist     src/frontend/analysis/reach.npk:889 narms
+hoist     src/frontend/analysis/reach.npk:1027 nstmts
+hoist     src/frontend/analysis/reach.npk:1050 narms
+hoist     src/frontend/analysis/suspend.npk:910 nstmts
+hoist     src/frontend/analysis/suspend.npk:840 narms
+stable    src/frontend/analysis/reach.npk:226
+stable    src/frontend/analysis/reach.npk:998
+stable    src/frontend/analysis/reach.npk:1045
+stable    src/frontend/analysis/suspend.npk:159
+stable    src/frontend/analysis/suspend.npk:356
+stable    src/frontend/analysis/suspend.npk:361
+measure   src/frontend/analysis/bindings.npk:219 (dst.count => int64) - i
+measure   src/frontend/analysis/bindings.npk:271 (dst.count => int64) - i
+measure   src/frontend/analysis/bindings.npk:289 (dst.count => int64) - i
+measure   src/frontend/analysis/bindings.npk:848 (dst.count => int64) - i
+measure   src/frontend/analysis/bindings.npk:862 (dst.count => int64) - i
+measure   src/frontend/analysis/suspend.npk:365 x.slc[j] - w
+measure   src/frontend/analysis/suspend.npk:273 x.ldepth - i
+unbounded src/frontend/analysis/bindings.npk:1034 strips one pointer layer per trip, and a type's element is interned before the pointer to it: no type points to itself (D-316)
+unbounded src/frontend/analysis/reach.npk:945 the reach queue: a function reached pushes its callees, each once (`rdecls` dedups), and a program's functions are finite (D-316)
+
+# --- src/frontend/macro/*.npk (8 loops): the macro table and the sites are read; the module walks
+# hoist the graph's count (read below: neither walk adds a module).
+stable    src/frontend/macro/derive_gen.npk:1173
+stable    src/frontend/macro/expand.npk:166
+stable    src/frontend/macro/expand.npk:182
+stable    src/frontend/macro/expand.npk:200
+stable    src/frontend/macro/expand.npk:1613
+hoist     src/frontend/macro/expand.npk:1509 nexprs
+hoist     src/frontend/macro/derive_gen.npk:1049 nmods
+hoist     src/frontend/macro/bridge_stubs.npk:167 nmods
+
+# --- the rest of src/frontend (48 loops): finds over the graph, the symbol table, the source manager,
+# the interner and the expression-type table are stable; the two hash probes get a probe counter
+# (manual); a symbol chain and a scope chain walk toward SMALLER ids (a symbol is pushed at the head of
+# its bucket, a scope's parent is made before it), so the id is the measure; the module graph's two
+# worklists (the load walk, the import fixed point) say why they end.
+stable    src/frontend/ast.npk:728
+stable    src/frontend/diagnostics.npk:185
+stable    src/frontend/diagnostics.npk:288
+stable    src/frontend/expr_types.npk:437
+stable    src/frontend/expr_types.npk:514
+stable    src/frontend/expr_types.npk:354
+stable    src/frontend/expr_types.npk:449
+stable    src/frontend/module_graph.npk:147
+stable    src/frontend/module_graph.npk:400
+stable    src/frontend/module_graph.npk:438
+stable    src/frontend/module_graph.npk:1085
+stable    src/frontend/module_graph.npk:1186
+stable    src/frontend/module_graph.npk:1196
+stable    src/frontend/source.npk:127
+stable    src/frontend/symbols.npk:271
+stable    src/frontend/symbols.npk:285
+measure   src/frontend/diagnostics.npk:214 j
+measure   src/frontend/diagnostics.npk:120 list.count - i
+measure   src/frontend/diagnostics.npk:211 list.count - i
+measure   src/frontend/escapes.npk:183 content.len - i
+measure   src/frontend/intern.npk:111 cap - c
+measure   src/frontend/intern.npk:148 t.v.count - i
+measure   src/frontend/module_graph.npk:307 g.v.count - (i => int64)
+measure   src/frontend/module_graph.npk:347 g.v.count - (i => int64)
+measure   src/frontend/module_graph.npk:513 g.v.count - (mi => int64)
+measure   src/frontend/module_graph.npk:1039 g.v.count - (mi => int64)
+measure   src/frontend/numeric.npk:321 v
+measure   src/frontend/numeric.npk:340 text.len - i
+measure   src/frontend/numeric.npk:208 digits.len - i
+measure   src/frontend/paths.npk:37 i
+measure   src/frontend/paths.npk:204 base.len - i
+measure   src/frontend/symbols.npk:316 want - t.decl_home.count
+measure   src/frontend/symbols.npk:335 want - t.local_ord.count
+measure   src/frontend/symbols.npk:378 want - t.stmt_ord.count
+measure   src/frontend/symbols.npk:398 want - t.fn_slots.count
+measure   src/frontend/symbols.npk:433 cur
+measure   src/frontend/symbols.npk:450 cur
+measure   src/frontend/symbols.npk:621 cur
+measure   src/frontend/symbols.npk:632 cur
+hoist     src/frontend/resolve.npk:592 nparams
+hoist     src/frontend/resolve.npk:582 ngenerics
+hoist     src/frontend/resolve.npk:616 ncontracts
+hoist     src/frontend/resolve.npk:860 nexprs
+hoist     src/frontend/resolve.npk:881 nverify
+hoist     src/frontend/resolve_path.npk:151 nroots
+manual    src/frontend/intern.npk:115 a probe counter bounds the open-addressed search by the table's size
+unbounded src/frontend/module_graph.npk:781 the load walk: a module's imports load more modules behind it, each walked in turn; it ends because every file is loaded once (D-316)
+unbounded src/frontend/module_graph.npk:1183 the import fixed point (R-2): a round that binds no new name is the last, and a program's names are finite (D-316)
+
+# --- src/driver/pipeline.npk (19 loops): the module graph is complete after `graph_load_all`, so ONE
+# local `nmods` (hoisted by hand, once) bounds every module walk of `front_run_passes` and the tool
+# writes their clauses; the three fixed-point passes are bounded by their round constants (pure now);
+# the manifest search walks up an absolute path, which `path_dirname` shortens every trip.
+measure   src/driver/pipeline.npk:149 probe.len
+measure   src/driver/pipeline.npk:223 (raw EXPAND_ROUNDS()) - xr
+measure   src/driver/pipeline.npk:436 (raw ESCAPE_ROUNDS()) - round
+measure   src/driver/pipeline.npk:542 (raw LOCK_ROUNDS()) - lock_round
+hoist     src/driver/pipeline.npk:546 nmods
+
+# --- src/prelude/prelude.npk (19 loops): the numeric cores shrink their operand (a division by ten,
+# a subtraction of a positive divisor, a gcd on non-negative operands -- the one caller passes |n| and
+# d > 0); the Dragon4 scalings shrink an integer quotient by ten per trip; the I/O retry, refill and
+# write loops are bounded by their deadline (DeadlineExceeded), never by a count (D-316).
+measure   src/prelude/prelude.npk:1546 n
+measure   src/prelude/prelude.npk:1694 y
+measure   src/prelude/prelude.npk:2195 l.count - n
+measure   src/prelude/prelude.npk:2231 l.count - k
+measure   src/prelude/prelude.npk:293 (R + MP) / S
+measure   src/prelude/prelude.npk:304 S / (R + MP)
+measure   src/prelude/prelude.npk:322 20i64 - dn
+measure   src/prelude/prelude.npk:327 R
+measure   src/prelude/prelude.npk:149 n
+measure   src/prelude/prelude.npk:922 n - i
+measure   src/prelude/prelude.npk:1407 tr.acc.len - i
+measure   src/prelude/prelude.npk:1557 (fbits =>! int64) - emitted
+measure   src/prelude/prelude.npk:2152 want - nc
+stable    src/prelude/prelude.npk:358
+stable    src/prelude/prelude.npk:1466
+unbounded src/prelude/prelude.npk:1397 a refill loop over the inner reader, bounded by the deadline `within` (DeadlineExceeded), not by a count (D-316)
+unbounded src/prelude/prelude.npk:1233 a retry loop over WouldBlock and Interrupted, bounded by the deadline `within` (DeadlineExceeded), not by a count (D-316)
+unbounded src/prelude/prelude.npk:1255 a retry loop over WouldBlock and Interrupted, bounded by the deadline `within` (DeadlineExceeded), not by a count (D-316)
+unbounded src/prelude/prelude.npk:1328 each trip writes what the sink takes, and a sink that takes nothing is stopped by the deadline (DeadlineExceeded), not by a count (D-316)
+
+# --- src/backend (107 loops): AST windows hoist; the emitter's own tables (`fe.*`, `c.*`, `t.v`) are
+# read inside these loops; the four loops that re-read a growing count on purpose (late type headers,
+# the instances emitted while emitting, the drop registry, the trim's worklist) say why they end.
+hoist     src/backend/emit_program.npk:101 nmods
+hoist     src/backend/emit_program.npk:765 nmods
+hoist     src/backend/emit_program.npk:785 nmods
+hoist     src/backend/emit_program.npk:1228 nmods
+hoist     src/backend/emit_program.npk:215 nmembers
+hoist     src/backend/emit_program.npk:302 nmembers
+hoist     src/backend/emit_program.npk:335 nmembers
+hoist     src/backend/emit_program.npk:566 nmembers
+hoist     src/backend/emit_program.npk:1938 nmembers
+hoist     src/backend/emit_program.npk:2125 nmembers
+hoist     src/backend/emit_program.npk:702 ntypes
+hoist     src/backend/emit_program.npk:588 ninsts
+hoist     src/backend/emit_program.npk:1765 nvariants
+hoist     src/backend/emit_program.npk:1805 nvariants
+hoist     src/backend/emit_program.npk:2075 nvariants
+hoist     src/backend/emit_program.npk:627 nmembers
+hoist     src/backend/emit_program.npk:650 nitems
+hoist     src/backend/emit_program.npk:1239 nitems
+hoist     src/backend/emit_program.npk:186 nmembers
+hoist     src/backend/emit_program.npk:875 nmembers
+hoist     src/backend/emit_program.npk:887 nitems
+hoist     src/backend/emit_program.npk:928 nrt
+hoist     src/backend/emit_program.npk:1034 nwidths
+hoist     src/backend/emit_program.npk:1037 nfamilies
+hoist     src/backend/emit_program.npk:1127 nitems
+hoist     src/backend/ir/ir_expr.npk:6766 nmembers
+hoist     src/backend/ir/ir_expr.npk:8952 nmembers
+hoist     src/backend/ir/ir_expr.npk:9930 nmembers
+hoist     src/backend/ir/ir_expr.npk:9992 nmembers
+hoist     src/backend/ir/ir_expr.npk:10830 nelems
+hoist     src/backend/ir/ir_expr.npk:8713 ninsts
+hoist     src/backend/ir/ir_expr.npk:8767 ninsts
+hoist     src/backend/ir/ir_expr.npk:10720 nmembers
+hoist     src/backend/ir/ir_expr.npk:1546 nmembers
+hoist     src/backend/ir/ir_expr.npk:5283 ncontracts
+hoist     src/backend/ir/ir_stmt.npk:3328 nstmts
+hoist     src/backend/ir/ir_stmt.npk:3031 nelems
+hoist     src/backend/ir/ir_stmt.npk:3041 nelems
+hoist     src/backend/ir/ir_stmt.npk:3054 nelems
+hoist     src/backend/ir/ir_stmt.npk:3424 narms
+hoist     src/backend/ir/ir_stmt.npk:1467 nmembers
+hoist     src/backend/ir/ir_stmt.npk:1420 nimpls
+hoist     src/backend/ir/ir_stmt.npk:3183 narms
+hoist     src/backend/ir/ir_types.npk:1077 nmembers
+stable    src/backend/emit_program.npk:2176
+stable    src/backend/emit_program.npk:2231
+stable    src/backend/ir/ir_expr.npk:9369
+stable    src/backend/ir/ir_expr.npk:9389
+stable    src/backend/ir/ir_expr.npk:9406
+stable    src/backend/ir/ir_expr.npk:216
+stable    src/backend/ir/ir_func.npk:508
+stable    src/backend/ir/ir_func.npk:522
+stable    src/backend/ir/ir_func.npk:572
+stable    src/backend/ir/ir_func.npk:707
+stable    src/backend/ir/ir_func.npk:734
+stable    src/backend/ir/ir_func.npk:895
+stable    src/backend/ir/ir_func.npk:925
+stable    src/backend/ir/ir_func.npk:979
+stable    src/backend/ir/ir_func.npk:996
+stable    src/backend/ir/ir_func.npk:1038
+stable    src/backend/ir/ir_func.npk:1225
+stable    src/backend/ir/ir_func.npk:1235
+stable    src/backend/ir/ir_func.npk:1361
+stable    src/backend/ir/ir_func.npk:1389
+stable    src/backend/ir/ir_func.npk:1398
+stable    src/backend/ir/ir_func.npk:1501
+stable    src/backend/ir/ir_types.npk:253
+stable    src/backend/ir/ir_types.npk:421
+stable    src/backend/ir/ir_types.npk:207
+stable    src/backend/ir/ir_writer.npk:370
+measure   src/backend/emit_program.npk:594 args_count - j
+measure   src/backend/emit_program.npk:2187 inst.args_count - i
+measure   src/backend/emit_program.npk:2206 inst.args_count - i
+measure   src/backend/emit_program.npk:932 sig.argc - a
+measure   src/backend/emit_program.npk:1884 (raw item_member_count(ast, ld)) - lm
+measure   src/backend/emit_program.npk:1949 (raw item_member_count(ast, d)) - q
+measure   src/backend/ir/ir_expr.npk:7157 count - (fixed_in_call + k)
+measure   src/backend/ir/ir_expr.npk:8773 w.count - j
+measure   src/backend/ir/ir_expr.npk:204 t.v.count - i
+measure   src/backend/ir/ir_expr.npk:8739 e.args_count - i
+measure   src/backend/ir/ir_expr.npk:8751 e.args_count - i
+measure   src/backend/ir/ir_expr.npk:8797 e.args_count - i
+measure   src/backend/ir/ir_expr.npk:10728 pairs - pi
+measure   src/backend/ir/ir_func.npk:713 fe.cross_stmts.count - (i => int64)
+measure   src/backend/ir/ir_func.npk:746 fe.cross_stmts.count - (i => int64)
+measure   src/backend/ir/ir_stmt.npk:2980 x.fe.cross_stmts.count - (k => int64)
+measure   src/backend/ir/ir_stmt.npk:3014 x.fe.cross_stmts.count - (k2 => int64)
+measure   src/backend/ir/ir_writer.npk:217 hi - p
+measure   src/backend/ir/ir_writer.npk:335 def_hi[i] - d
+measure   src/backend/ir/ir_writer.npk:347 roots.count - r
+measure   src/backend/ir/ir_writer.npk:359 ref_hi[it] - q
+measure   src/backend/smt/smt_encode.npk:1938 p.s.len - p.pos
+measure   src/backend/smt/smt_encode.npk:1978 p.s.len - p.pos
+measure   src/backend/smt/smt_encode.npk:1954 p.s.len - p.pos
+measure   src/backend/smt/smt_encode.npk:1971 p.s.len - p.pos
+measure   src/backend/smt/smt_encode.npk:368 fuel
+measure   src/backend/smt/smt_table.npk:218 nl.len - p
+measure   src/backend/smt/smt_table.npk:135 ir.len - i
+measure   src/backend/smt/smt_writer.npk:121 x
+measure   src/backend/smt/smt_writer.npk:168 x.len - i
+unbounded src/backend/emit_program.npk:121 the type table is re-read each trip: emitting an instance's header may intern more, each given its header in turn; a program interns finitely many types (D-316)
+unbounded src/backend/emit_program.npk:2163 the type table is re-read each trip (the late headers): an instance interned while emitting gets its header here, and a program interns finitely many types (D-316)
+unbounded src/backend/emit_program.npk:1211 the instance table is re-read each trip: emitting a family vtable may record more instances, each emitted in turn; a program's instances are finite (D-316)
+unbounded src/backend/emit_program.npk:1301 the instance table is re-read each trip by design (1.0.7): emitting an instance records the ones its body calls, each emitted in turn; a program's instances are finite (D-316)
+unbounded src/backend/emit_program.npk:1395 the drop registry is re-read each trip: a drop body names its fields' drop bodies, which registers their types, each emitted in turn; a program's owning types are finite (D-316)
+unbounded src/backend/ir/ir_writer.npk:356 the trim's worklist: an item is pushed once (`kept` marks it) and popped once, and the items are finite (D-316)
+unbounded src/backend/smt/smt_encode.npk:6181 a fixed point over the hypotheses: a round that includes no new one is the last, and the hypotheses are finite (D-316)
+
+# --- npkg/ (129 loops): a walk along an s-expression's siblings goes toward LARGER node ids (a child is
+# pushed, then linked as the previous sibling's `next`), so `s.nodes.count - c` shrinks; a scan over a
+# line advances its cursor; the k-th clause searches are bounded by the node count; the worklists,
+# fixed points, tree-parent walks and breadth-first searches say why they end; the two hash probes get a
+# probe counter by hand.
+measure   npkg/elf.npk:101 (stroff + strsize) - stop
+measure   npkg/elf.npk:122 (stroff + strsize) - stop
+measure   npkg/elf.npk:135 (stroff + strsize) - stop
+measure   npkg/elf.npk:233 5i64 - n
+measure   npkg/explore.npk:159 lines.count - i
+measure   npkg/explore.npk:237 lines.count - i
+measure   npkg/explore.npk:168 lines.count - i
+measure   npkg/explore.npk:663 n - p
+measure   npkg/explore.npk:995 text.len - at
+measure   npkg/explore_req.npk:63 s.nodes.count - c
+measure   npkg/explore_req.npk:537 s.nodes.count - c
+measure   npkg/explore_req.npk:803 s.nodes.count - c
+measure   npkg/explore_req.npk:903 s.nodes.count - c
+measure   npkg/explore_req.npk:109 path.len - i
+measure   npkg/explore_req.npk:685 s.nodes.count - c
+measure   npkg/explore_req.npk:709 s.nodes.count - oe
+measure   npkg/explore_req.npk:715 s.nodes.count - ce
+measure   npkg/floor.npk:387 s.nodes.count - fk
+measure   npkg/floor.npk:274 s.nodes.count - c
+measure   npkg/floor.npk:471 line.len - from
+measure   npkg/floor.npk:316 s.nodes.count - lc
+measure   npkg/floor_cfg.npk:274 line.len - i
+measure   npkg/floor_cfg.npk:305 line.len - i
+measure   npkg/floor_cfg.npk:370 line.len - i
+measure   npkg/floor_cfg.npk:744 line.len - i
+measure   npkg/floor_cfg.npk:690 x.f.blocks[e2].lines.count - at
+measure   npkg/floor_explore.npk:409 s.nodes.count - c
+measure   npkg/floor_explore.npk:438 s.nodes.count - c
+measure   npkg/floor_explore.npk:331 s.nodes.count - c
+measure   npkg/floor_explore.npk:459 s.nodes.count - c
+measure   npkg/floor_explore.npk:473 s.nodes.count - sc
+measure   npkg/floor_explore.npk:442 s.nodes.count - v
+measure   npkg/floor_explore.npk:342 s.nodes.count - b
+measure   npkg/floor_explore.npk:499 s.nodes.count - mu
+measure   npkg/floor_instr.npk:39 c.s.len - c.i
+measure   npkg/floor_instr.npk:57 c.s.len - c.i
+measure   npkg/floor_instr.npk:79 c.s.len - c.i
+measure   npkg/floor_instr.npk:345 c.s.len - c.i
+measure   npkg/floor_instr.npk:353 c.s.len - c.i
+measure   npkg/floor_instr.npk:291 c.s.len - c.i
+measure   npkg/floor_instr.npk:187 c.s.len - c.i
+measure   npkg/floor_instr.npk:190 c.s.len - c.i
+measure   npkg/floor_instr.npk:202 c.s.len - c.i
+measure   npkg/floor_instr.npk:240 c.s.len - c.i
+measure   npkg/floor_instr.npk:257 c.s.len - c.i
+measure   npkg/floor_instr.npk:273 c.s.len - c.i
+measure   npkg/floor_instr.npk:338 c.s.len - c.i
+measure   npkg/floor_instr.npk:280 c.s.len - c.i
+measure   npkg/floor_instr.npk:148 c.s.len - c.i
+measure   npkg/floor_ir.npk:264 raw_lines.count - i
+measure   npkg/floor_ir.npk:284 raw_lines.count - i
+measure   npkg/floor_ir.npk:513 last.len - from
+measure   npkg/floor_ir.npk:212 rest.len - cl
+measure   npkg/floor_model.npk:147 s.nodes.count - c
+measure   npkg/floor_model.npk:189 s.nodes.count - c
+measure   npkg/floor_model.npk:268 s.nodes.count - c
+measure   npkg/floor_model.npk:320 s.nodes.count - c
+measure   npkg/floor_model.npk:345 s.nodes.count - c
+measure   npkg/floor_model.npk:364 s.nodes.count - sc
+measure   npkg/floor_model.npk:325 s.nodes.count - v
+measure   npkg/floor_model.npk:406 s.nodes.count - mut
+measure   npkg/floor_model.npk:820 line.len - from
+measure   npkg/floor_model.npk:161 tmpl.len - i
+measure   npkg/floor_shared.npk:176 line.len - from
+measure   npkg/floor_shared.npk:277 args.len - from
+measure   npkg/floor_shared.npk:512 sx.nodes.count - k
+measure   npkg/floor_shared.npk:282 args.len - e2
+measure   npkg/floor_shared.npk:337 args.len - e
+measure   npkg/floor_shared.npk:491 sx.nodes.count - e
+measure   npkg/floor_smt.npk:197 x
+measure   npkg/floor_smt.npk:2447 s.nodes.count - n
+measure   npkg/floor_smt.npk:4393 iln - pair
+measure   npkg/floor_smt.npk:3347 s.nodes.count - fk
+measure   npkg/floor_smt.npk:3361 s.nodes.count - rk
+measure   npkg/floor_smt.npk:3506 s.nodes.count - ek
+measure   npkg/floor_smt.npk:4384 s.nodes.count - ik
+measure   npkg/floor_smt.npk:4503 s.nodes.count - rk
+measure   npkg/floor_smt.npk:4512 s.nodes.count - ek
+measure   npkg/floor_smt.npk:4837 s.nodes.count - fk
+measure   npkg/floor_smt.npk:1603 s.nodes.count - c
+measure   npkg/floor_smt.npk:1624 s.nodes.count - c
+measure   npkg/floor_smt.npk:2433 s.nodes.count - c
+measure   npkg/floor_smt.npk:2822 s.nodes.count - c
+measure   npkg/floor_smt.npk:3541 s.nodes.count - c
+measure   npkg/floor_smt.npk:3521 s.nodes.count - c
+measure   npkg/floor_smt.npk:2458 s.nodes.count - k
+measure   npkg/floor_smt.npk:2816 s.nodes.count - sc
+measure   npkg/floor_smt.npk:1377 s.nodes.count - oc
+measure   npkg/floor_smt.npk:1559 s.nodes.count - oc
+measure   npkg/floor_smt.npk:3582 s.nodes.count - oc
+measure   npkg/floor_smt.npk:1390 s.nodes.count - vc
+measure   npkg/floor_smt.npk:3560 s.nodes.count - vc
+measure   npkg/floor_smt.npk:149 x
+measure   npkg/floor_smt.npk:188 x
+measure   npkg/floor_smt.npk:663 text.len - i
+measure   npkg/floor_smt.npk:995 20001i64 - i
+measure   npkg/floor_smt.npk:2643 s.nodes.count - fk
+measure   npkg/floor_spec.npk:137 s.nodes.count - c
+measure   npkg/floor_spec.npk:150 s.nodes.count - c
+measure   npkg/floor_spec.npk:66 text.len - i
+measure   npkg/irscan.npk:72 rest.len - from
+measure   npkg/irscan.npk:334 code.len - from
+measure   npkg/main.npk:65 probe.len
+measure   npkg/strset.npk:24 (want * 2i64) - cap
+measure   npkg/suites.npk:126 n - i
+measure   npkg/text.npk:320 j
+measure   npkg/text.npk:378 s.len - i
+measure   npkg/toml.npk:151 v.len - i
+measure   npkg/verify.npk:530 ir.len - from
+measure   npkg/verify.npk:1402 text.len - from
+measure   npkg/verify.npk:300 rows.count - next_row
+unbounded npkg/floor.npk:1020 a worklist over the floor's call graph: a callee is pushed once (`seen`) and popped once, and the functions are finite (D-316)
+unbounded npkg/floor.npk:440 a fixed point over the floor's functions: a round that marks no new one is the last, and the functions are finite (D-316)
+unbounded npkg/floor_cfg.npk:75 a worklist over a loop's predecessors: a block joins the members once and is popped once, and the blocks are finite (D-316)
+unbounded npkg/floor_cfg.npk:206 a worklist over a loop's predecessors: a block joins the members once and is popped once, and the blocks are finite (D-316)
+unbounded npkg/floor_cfg.npk:727 a worklist over the successors: a block is pushed once (`seen`) and popped once, and the blocks are finite (D-316)
+unbounded npkg/floor_cfg.npk:118 an iterative depth-first search: each trip pops a finished block, advances a successor index or pushes an unvisited block once, and the blocks are finite (D-316)
+unbounded npkg/floor_explore.npk:765 a shortest-path relaxation: a round that lowers no distance is the last, and the distances are bounded below (D-316)
+unbounded npkg/floor_explore.npk:718 a breadth-first search over the model's states: a state is keyed once (`seen`) and the space is capped at XP_STATE_CAP (D-316)
+unbounded npkg/floor_shared.npk:376 the dominator fixed point: a round that changes no entry is the last, and the entries are finite (D-316)
+unbounded npkg/floor_shared.npk:440 the coverage fixed point: a round that changes no entry is the last, and the entries are finite (D-316)
+unbounded npkg/floor_smt.npk:4716 the cone's fixed point: a round that includes no new definition or hypothesis is the last, and both are finite (D-316)
+unbounded npkg/floor_smt.npk:767 a worklist of symbols: a symbol is pushed by its definition and taken once (`seen`), and the definitions are finite (D-316)
+unbounded npkg/floor_smt.npk:830 a worklist of symbols two definitions deep: a symbol is taken once (`seen`), and the definitions are finite (D-316)
+unbounded npkg/floor_stack.npk:340 walks a search tree toward its root: `parent` was set by a search that visits each node once, so the chain has no cycle (D-316)
+unbounded npkg/floor_stack.npk:468 walks a search's predecessor links toward the start: each node has one, set once, so the chain has no cycle (D-316)
+manual    npkg/floor_explore.npk:629 a probe counter bounds the open-addressed insert by the table's size
+manual    npkg/floor_explore.npk:616 a probe counter bounds the open-addressed search by the table's size
+manual    npkg/strset.npk:36 a probe counter bounds the open-addressed search by the table's size
+
+# --- lib/ (15 loops): the I/O loops are bounded by their deadline (D-316); a read that returns bytes
+# advances `got`, and one that returns none is a fault or a retry under the deadline; the doubling
+# loops, the scans and the insertion sort shrink their operand.
+measure   lib/nfs.npk:122 (d.used + len) - na
+measure   lib/nfs.npk:223 (reclen - 19i64) - nlen
+measure   lib/nfs.npk:175 j
+measure   lib/nfs.npk:208 r.value - off
+stable    lib/nfs.npk:173
+measure   lib/nproc.npk:242 (c.len + n) - nc
+stable    lib/ntensor.npk:74
+unbounded lib/nbridge.npk:598 drains the driver's stderr until the read stops: a read that fails ends it, and the pipe is closed by the driver's death or the kill (D-316)
+unbounded lib/nbridge.npk:788 waits for the driver's death, bounded by the deadline `give_up` (the caller's), not by a count (D-316)
+unbounded lib/nbridge.npk:313 a read loop over the socket, bounded by the deadline `give_up` (EDriverDeadline): a zero read is a fault, a short one advances `got` (D-316)
+unbounded lib/nbridge.npk:725 a read loop over the control pipe, bounded by the deadline `give_up` (EDriverDeadline) and the driver's death (D-316)
+unbounded lib/nfs.npk:197 reads the directory until getdents64 answers nothing; each answer is consumed whole, and a directory is finite (D-316)
+unbounded lib/nio.npk:155 writes until the sink has taken every byte: a write that takes none ends it by its error, or the sink's own deadline (D-316)
+unbounded lib/nproc.npk:271 drains a pipe until it blocks or closes: each read consumes what it answers (D-316)
+unbounded lib/nproc.npk:336 waits on the child's two pipes, bounded by the deadline `give_up` (EProcDeadline), not by a count (D-316)
+
+# --- tests/ (59 loops): each test's loop is read against what the test exercises; a spin on the
+# monotonic clock and a channel drain are unbounded (D-316); a flag loop a rejection test writes to
+# show a shape is unbounded with the shape named.
+measure   tests/accept/moves.npk:188 need - n
+measure   tests/accept/views.npk:42 src.len - i
+measure   tests/backend/programs/view_in_frame.npk:20 src.len - i
+measure   tests/backend/programs/control_flow.npk:15 acc
+measure   tests/backend/programs/optional.npk:115 (2i64 * #size_of<int32?>()) - i
+measure   tests/backend/programs/optional.npk:120 (2i64 * #size_of<int32?>()) - i
+measure   tests/backend/programs/optional.npk:129 (2i64 * #size_of<Point?>()) - i
+measure   tests/backend/programs/optional.npk:134 (2i64 * #size_of<Point?>()) - i
+measure   tests/conformance/c14_alloc_growth.npk:45 400000i64 - cap
+measure   tests/frontend/expansion_output.npk:53 (raw EXPAND_ROUNDS()) - round
+manual    tests/frontend/resolve.npk:186 the expression count hoisted by hand (the counter is declared at two widths, so the tool declined)
+measure   tests/frontend/type_access.npk:737 87i32 - pad
+measure   tests/modules/resolvable.npk:46 LIMIT - total
+measure   tests/modules/resolvable.npk:60 LIMIT - total
+measure   tests/verify/path_when.npk:23 1i32 - d
+measure   tests/verify/path_while.npk:21 1i32 - d
+measure   tests/verify/path_while.npk:24 1i32 - k
+manual    tests/backend/ir_writer.npk:24 the writer's length hoisted by hand (`irw_length` is not pure)
+hoist     tests/backend/ir_stmt.npk:106 nmembers
+hoist     tests/frontend/type_access.npk:114 nmembers
+hoist     tests/frontend/type_generic.npk:96 nmembers
+hoist     tests/frontend/type_stmt.npk:90 nmembers
+hoist     tests/frontend/expr_types.npk:95 nexprs
+hoist     tests/frontend/expr_types.npk:213 nexprs
+hoist     tests/frontend/module_graph.npk:26 nmods
+hoist     tests/frontend/ast_storage.npk:105 kmax
+hoist     tests/frontend/type_stmt.npk:320 kmax
+hoist     tools/resolve_check.npk:94 nmods
+hoist     tools/resolve_check.npk:121 nmods
+unbounded tests/accept/definite_assignment.npk:95 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/accept/definite_assignment.npk:104 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/analysis/rejection/definite_assignment.npk:49 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/analysis/rejection/definite_assignment.npk:187 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/analysis/rejection/moves.npk:51 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/analysis/rejection/path_shapes.npk:107 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/analysis/rejection/path_shapes.npk:133 a flag loop that shows the analysis a shape; the flag never changes
+unbounded tests/backend/fixtures/mock_driver.npk:130 the mock driver's dispatch loop: it ends when the control pipe closes or a packet says shutdown (D-316)
+unbounded tests/backend/fixtures/mock_driver.npk:37 a read loop over the control pipe, bounded by io_ready's deadline, not by a count (D-316)
+unbounded tests/backend/fixtures/mock_driver.npk:59 a write loop over the control pipe, bounded by io_ready's deadline, not by a count (D-316)
+unbounded tests/backend/programs/actor.npk:34 the actor's inbox loop: it ends when the channel closes and drains (D-316)
+unbounded tests/backend/programs/thread_pool.npk:70 the worker's job loop: it ends when the channel closes and drains (D-316)
+unbounded tests/backend/programs/control_flow.npk:21 a labelled `break outer` from the inner loop is this loop's only exit -- the shape under test
+unbounded tests/backend/programs/control_flow.npk:23 exits by `break outer` on its first trip -- the shape under test
+unbounded tests/backend/programs/executor_windup_trap.npk:19 sleeps until the wind-up trap ends the program -- the shape under test
+unbounded tests/backend/programs/failsafe_alloc.npk:46 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/failsafe_alloc.npk:57 a spin on the monotonic clock until the trap ends it (D-316)
+unbounded tests/backend/programs/machine_fault_thread.npk:39 a spin on the monotonic clock until the stop parks it (D-316)
+unbounded tests/backend/programs/sync_prims.npk:36 waits on the condition variable until the value is set, each wait bounded by its own deadline (D-316)
+unbounded tests/backend/programs/trap_one_failsafe.npk:50 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/trap_one_failsafe.npk:67 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/trap_one_failsafe.npk:80 a spin on the monotonic clock until the trap lands (D-316)
+unbounded tests/backend/programs/trap_stops_runner.npk:46 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/trap_stops_runner.npk:57 a spin on the monotonic clock until the trap ends it (D-316)
+unbounded tests/backend/programs/trap_stops_runner.npk:72 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/trap_two_threads.npk:28 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/trap_two_threads.npk:39 a spin on the monotonic clock (D-316)
+unbounded tests/backend/programs/trap_two_threads.npk:46 a spin on the monotonic clock until the trap lands (D-316)
+unbounded tests/grammar/whole_grammar.npk:267 the grammar's sample of a labelled loop with an invariant; it breaks on its first trip
+unbounded tests/grammar/whole_grammar.npk:278 the grammar's sample of a `when` loop; `n` is never written
+unbounded tests/grammar/whole_grammar.npk:280 the grammar's sample of a labelled `when` with an invariant; `n` is never written
+unbounded tests/types/rejection/comptime_loop.npk:11 never ends by construction: the case the compile-time evaluator's fuel refuses
+

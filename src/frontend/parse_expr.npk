@@ -138,7 +138,7 @@ func:p_ternary = ExprId(Parser->:p) never fails {
                                  c.index, a.index, b.index, 0i64));
     }
     ExprId:lhs = raw p_coalesce(p);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:qsp = raw p_span(p);
         if (raw p_at(p, TokenKind.OpQuestionPipe)) {
             // `?|` IS the `Result` fallback (D-175, restoring the design and
@@ -176,7 +176,7 @@ func:p_ternary = ExprId(Parser->:p) never fails {
 // 17 -- null coalescing, and the ?-family that shares its shape
 func:p_coalesce = ExprId(Parser->:p) never fails {
     ExprId:lhs = raw p_binary(p, 16i32);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
         ExprKind:node = ExprKind.ExprNone;
@@ -250,7 +250,7 @@ func:p_binary = ExprId(Parser->:p, int32:level) never fails {
         pass (raw p_unary(p));
     }
     ExprId:lhs = raw p_binary(p, level - 1i32);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
         if (!(raw p_level_has(level, k))) { break; }
@@ -349,7 +349,7 @@ func:p_unary = ExprId(Parser->:p) never fails {
 // exist (D-021).
 func:p_cast = ExprId(Parser->:p) never fails {
     ExprId:e = raw p_pipeline(p);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
         ExprKind:node = ExprKind.ExprNone;
@@ -393,7 +393,7 @@ func:p_cast = ExprId(Parser->:p) never fails {
 // 3 -- pipelines
 func:p_pipeline = ExprId(Parser->:p) never fails {
     ExprId:e = raw p_result_unary(p);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
         bool:fwd = (k == TokenKind.OpPipeFwd);
@@ -437,7 +437,7 @@ func:p_result_unary = ExprId(Parser->:p) never fails {
 // 1 -- postfix chains
 func:p_postfix = ExprId(Parser->:p) never fails {
     ExprId:e = raw p_primary(p);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
 
@@ -532,7 +532,7 @@ func:p_postfix = ExprId(Parser->:p) never fails {
                         if (!(raw p_at(p, TokenKind.OpGt))) {
                             TypeId:g1 = raw p_parse_type_arg(p);
                             drop ast_scratch_push(p.ast, g1.index);
-                            while (raw p_accept(p, TokenKind.PComma)) {
+                            while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                                 TypeId:gn = raw p_parse_type_arg(p);
                                 drop ast_scratch_push(p.ast, gn.index);
                             }
@@ -556,7 +556,7 @@ func:p_method_call = ExprId(Parser->:p, ExprId:receiver, Span:sp, int64:method) 
     if (!(raw p_at(p, TokenKind.PRParen))) {
         ExprId:a1 = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
-        while (raw p_accept(p, TokenKind.PComma)) {
+        while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
             ExprId:argN = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, argN.index);
         }
@@ -582,7 +582,7 @@ func:p_call = ExprId(Parser->:p, ExprId:callee, Span:sp,
     if (!(raw p_at(p, TokenKind.PRParen))) {
         ExprId:a1 = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
-        while (raw p_accept(p, TokenKind.PComma)) {
+        while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
             ExprId:argN = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, argN.index);
         }
@@ -730,7 +730,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
             if (!(raw p_at(p, TokenKind.OpGt))) {
                 TypeId:g1 = raw p_parse_type_arg(p);
                 drop ast_scratch_push(p.ast, g1.index);
-                while (raw p_accept(p, TokenKind.PComma)) {
+                while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                     TypeId:gn = raw p_parse_type_arg(p);
                     drop ast_scratch_push(p.ast, gn.index);
                 }
@@ -742,7 +742,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
             if (!(raw p_at(p, TokenKind.PRParen))) {
                 ExprId:a1 = raw p_parse_expr(p);
                 drop ast_scratch_push(p.ast, a1.index);
-                while (raw p_accept(p, TokenKind.PComma)) {
+                while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                     ExprId:argN = raw p_parse_expr(p);
                     drop ast_scratch_push(p.ast, argN.index);
                 }
@@ -761,7 +761,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
         if (!(raw p_at(p, TokenKind.PRBracket))) {
             ExprId:e1 = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, e1.index);
-            while (raw p_accept(p, TokenKind.PComma)) {
+            while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                 if (raw p_at(p, TokenKind.PRBracket)) { break; }
                 ExprId:en = raw p_parse_expr(p);
                 drop ast_scratch_push(p.ast, en.index);
@@ -786,7 +786,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
     if (k == TokenKind.TemplateStart) {
         discard(raw p_advance(p));
         int32:mark = raw ast_scratch_mark(p.ast);
-        while (true) {
+        while (true) decreases raw p_left(p) {
             TokenKind:tk = raw p_kind(p);
             if (tk == TokenKind.TemplateEnd) { discard(raw p_advance(p)); break; }
             if (tk == TokenKind.Eof) { break; }
@@ -857,7 +857,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
             if (!(raw p_at(p, TokenKind.PRParen))) {
                 ExprId:c1 = raw p_parse_expr(p);
                 drop ast_scratch_push(p.ast, c1.index);
-                while (raw p_accept(p, TokenKind.PComma)) {
+                while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                     ExprId:cN = raw p_parse_expr(p);
                     drop ast_scratch_push(p.ast, cN.index);
                 }
@@ -974,7 +974,7 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
     int32:errv = 0i32;
     bool:saw_value = false;
     bool:saw_error = false;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
 
@@ -1046,7 +1046,7 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
 func:p_struct_literal = ExprId(Parser->:p, Span:sp, int64:name) never fails {
     discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (!(raw p_at(p, TokenKind.PRBrace))) {
+    while (!(raw p_at(p, TokenKind.PRBrace))) decreases raw p_left(p) {
         if (raw p_at_end(p)) { break; }
         Token:f = raw p_advance(p);
         discard(raw p_expect(p, TokenKind.PColon));

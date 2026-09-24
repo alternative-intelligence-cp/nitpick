@@ -1,10 +1,11 @@
 // expect-exit: 183
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 12
+// expect-obligation: failsafe-post discharged 13
 // expect-obligation: exhaustive checker 1
 // expect-obligation: overflow discharged 1
 // expect-obligation: overflow open 1
+// expect-obligation: terminate discharged 2
 //
 // A LOOP-CARRIED DIVISOR: the counter is invalidated at the body's entry
 // (its value there is any iteration's), and until 1.5.3 `100 / i` was `open`
@@ -20,7 +21,7 @@ mod:divz_loop;
 func:main = int32(cstring[]:_~argv) {
     int32:acc = 0i32;
     int32:i = 3i32;
-    while (i > 0i32) {
+    while (i > 0i32) decreases i {
         int32:q = 100i32 / i;        // 33, 50, 100
         acc = acc + q;
         i = i - 1i32;
@@ -40,6 +41,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 9i32; },
         (StackExhausted) { exit 9i32; },
         (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
         (*) { exit 9i32; }
     }
     exit 9i32;

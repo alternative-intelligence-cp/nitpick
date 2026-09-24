@@ -118,7 +118,7 @@ func:main = int32(cstring[]:_~argv) {
     // the fabrication has to be honest now.
     int32:fh_mark = raw ast_scratch_mark(@ast);
     int32:fh_i = 0i32;
-    while (fh_i < 7i32) { drop ast_scratch_push(@ast, 0i32); fh_i = fh_i + 1i32; }
+    while (fh_i < 7i32) decreases 7i32 - fh_i { drop ast_scratch_push(@ast, 0i32); fh_i = fh_i + 1i32; }
     IdSpan:fh_w = raw ast_scratch_commit(@ast, fh_mark);
     DeclId:fdecl = raw ast_add_decl(@ast, DeclKind.DeclFunctionDecl,
                                       raw span_none(), 0i32, fh_w.start, 7i32,
@@ -418,6 +418,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

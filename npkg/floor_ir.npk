@@ -117,10 +117,10 @@ func:global_decl = string(string:line, bool->:is_mutable, string->:ty) never fai
 // kept whole; "" when the text starts with neither a word nor a bracket.
 pub func:type_token = string(string:s) never fails {
     int64:i = 0i64;
-    while ((i < s.len) && (raw text_is_ws(s.ptr[i]))) { i = i + 1i64; }
+    while ((i < s.len) && (raw text_is_ws(s.ptr[i]))) decreases s.len - i { i = i + 1i64; }
     int64:start = i;
     int64:depth = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         uint8:ch = s.ptr[i];
         if ((ch == 123u8) || (ch == 91u8)) { depth = depth + 1i64; }
         if ((ch == 125u8) || (ch == 93u8)) { depth = depth - 1i64; }
@@ -170,7 +170,7 @@ func:gep_of = FGep(string:line) never fails {
     if (pp < 0i64) { pass none; }
     int64:bs = pp + 6i64;
     int64:be = bs;
-    while (be < rest.len) {
+    while (be < rest.len) decreases rest.len - be {
         uint8:c = rest.ptr[be];
         if ((c == 44u8) || (c == 32u8)) { break; }
         be = be + 1i64;
@@ -209,7 +209,7 @@ func:define_header = NIL(string:line, FFn->:f) never fails {
     if (op < 0i64) { pass NIL; }
     int64:cl = op + 1i64;
     int64:depth = 1i64;
-    while ((cl < rest.len) && (depth > 0i64)) {
+    while ((cl < rest.len) && (depth > 0i64)) decreases rest.len - cl {
         if (rest.ptr[cl] == 40u8) { depth = depth + 1i64; }
         if (rest.ptr[cl] == 41u8) { depth = depth - 1i64; }
         cl = cl + 1i64;
@@ -219,7 +219,7 @@ func:define_header = NIL(string:line, FFn->:f) never fails {
     int64:i = 0i64;
     int64:start = 0i64;
     int64:d2 = 0i64;
-    while (i <= inner.len) {
+    while (i <= inner.len) decreases inner.len - i {
         bool:cut = (i == inner.len);
         if (!cut) {
             uint8:c = inner.ptr[i];
@@ -237,7 +237,7 @@ func:define_header = NIL(string:line, FFn->:f) never fails {
                 string:pname = "";
                 if (pc >= 0i64) {
                     int64:pe = pc;
-                    while ((pe < after.len) && (!(raw text_is_ws(after.ptr[pe])))) { pe = pe + 1i64; }
+                    while ((pe < after.len) && (!(raw text_is_ws(after.ptr[pe])))) decreases after.len - pe { pe = pe + 1i64; }
                     pname = raw text_slice(after, pc, pe);
                 }
                 drop strlist_push(@f.params, pname);
@@ -261,7 +261,7 @@ pub func:floor_parse = FloorText(string:text) never fails {
     bool:in_fn = false;
     FFn:cur = raw ffn_empty();
     int64:i = 0i64 - 1i64;
-    while ((i + 1i64) < raw_lines.count) {
+    while ((i + 1i64) < raw_lines.count) decreases raw_lines.count - i {
         i = i + 1i64;
         string:rawl = raw strlist_view(raw_lines, i);
         // `module asm ".globl X"`: X is a symbol the assembler defines -- read
@@ -281,7 +281,7 @@ pub func:floor_parse = FloorText(string:text) never fails {
         // AN INSTRUCTION -- OR A DEFINE HEADER -- MAY CONTINUE ON THE NEXT LINE
         // (the clone's call and the string builders' parameter lists end a
         // line with a comma): join until the code part ends in neither `,` nor `(`
-        while ((in_fn || (raw text_starts_with(line, "define "))) && (line.len > 0i64) && ((line.ptr[line.len - 1i64] == 44u8) || (line.ptr[line.len - 1i64] == 40u8)) && ((i + 1i64) < raw_lines.count)) {
+        while ((in_fn || (raw text_starts_with(line, "define "))) && (line.len > 0i64) && ((line.ptr[line.len - 1i64] == 44u8) || (line.ptr[line.len - 1i64] == 40u8)) && ((i + 1i64) < raw_lines.count)) decreases raw_lines.count - i {
             i = i + 1i64;
             string:more = raw floor_code_part(raw strlist_view(raw_lines, i));
             line = string_concat(string_concat(line, " "), more);
@@ -397,20 +397,20 @@ func:asm_mov_nr = int64(string:a) never fails {
         }
     }
     int64:ws = i;
-    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) { i = i + 1i64; }
+    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) decreases a.len - i { i = i + 1i64; }
     if (i == ws) { pass (0i64 - 1i64); }
     if ((i >= a.len) || (a.ptr[i] != 36u8)) { pass (0i64 - 1i64); }
     i = i + 1i64;
     int64:ds = i;
     int64:v = 0i64;
-    while ((i < a.len) && ((i - ds) < 10i64) && (a.ptr[i] >= 48u8) && (a.ptr[i] <= 57u8)) {
+    while ((i < a.len) && ((i - ds) < 10i64) && (a.ptr[i] >= 48u8) && (a.ptr[i] <= 57u8)) decreases a.len - i {
         v = (v * 10i64) + ((a.ptr[i] - 48u8) => int64);
         i = i + 1i64;
     }
     if (((i - ds) == 0i64) || ((i - ds) > 9i64)) { pass (0i64 - 1i64); }
     if ((i >= a.len) || (a.ptr[i] != 44u8)) { pass (0i64 - 1i64); }
     i = i + 1i64;
-    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) { i = i + 1i64; }
+    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) decreases a.len - i { i = i + 1i64; }
     string:reg = raw text_slice(a, i, a.len);
     if ((raw text_eq(reg, "%eax")) || (raw text_eq(reg, "%rax"))) { pass v; }
     pass (0i64 - 1i64);
@@ -431,7 +431,7 @@ func:asm_call_operand = string(string:a) never fails {
         }
     }
     int64:ws = i;
-    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) { i = i + 1i64; }
+    while ((i < a.len) && (raw text_is_ws(a.ptr[i]))) decreases a.len - i { i = i + 1i64; }
     if (i == ws) { pass ""; }
     pass (raw text_slice(a, i, a.len));
 };
@@ -510,12 +510,12 @@ pub func:floor_finish = NIL(FFn->:f) never fails {
         string:last = raw strlist_view(f.blocks[b].lines, n - 1i64);
         if (!((raw text_starts_with(last, "br ")) || (raw text_starts_with(last, "switch ")))) { continue; }
         int64:from = 0i64;
-        while (true) {
+        while (true) decreases last.len - from {
             int64:p = raw text_index_from(last, "label %", from);
             if (p < 0i64) { break; }
             int64:s = p + 7i64;
             int64:e = s;
-            while (e < last.len) {
+            while (e < last.len) decreases last.len - e {
                 uint8:c = last.ptr[e];
                 if ((c == 44u8) || (c == 32u8)) { break; }
                 e = e + 1i64;
@@ -601,7 +601,7 @@ pub func:struct_fields = List<string>(string:ty) never fails {
     int64:i = 0i64;
     int64:start = 0i64;
     int64:depth = 0i64;
-    while (i < inner.len) {
+    while (i < inner.len) decreases inner.len - i {
         uint8:c = inner.ptr[i];
         if ((c == 123u8) || (c == 91u8)) { depth = depth + 1i64; }
         if ((c == 125u8) || (c == 93u8)) { depth = depth - 1i64; }

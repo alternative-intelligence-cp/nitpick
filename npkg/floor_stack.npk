@@ -336,7 +336,8 @@ func:rg_walk = NIL(RGraph->:g, int64:f, List<int64>->:state, List<int64>->:paren
             if (!(raw text_eq(raw strlist_view(g.names, t), "@npk_trap"))) {
                 List<int64>:up = raw list_init::<int64>(8i64);
                 int64:x = f;
-                while (true) {
+                // walks a search tree toward its root: `parent` was set by a search that visits each node once, so the chain has no cycle (D-316)
+                while (true) unbounded {
                     drop list_push(@up, x);
                     if (x == t) { break; }
                     if ((<-parent)[x] < 0i64) { break; }
@@ -344,7 +345,7 @@ func:rg_walk = NIL(RGraph->:g, int64:f, List<int64>->:state, List<int64>->:paren
                 }
                 string:cyc = "";
                 int64:j = up.count - 1i64;
-                while (j >= 0i64) {
+                while (j >= 0i64) decreases j {
                     cyc = string_concat(cyc, raw strlist_view(g.names, up[j]));
                     cyc = string_concat(cyc, " -> ");
                     j = j - 1i64;
@@ -463,7 +464,8 @@ pub func:reserve_measure = Reserve(string:floor_text, List<string>:sizes, string
         if (dv > worst) { worst = dv; wf = d; }
     }
     int64:x = wf;
-    while (x >= 0i64) {
+    // walks a search's predecessor links toward the start: each node has one, set once, so the chain has no cycle (D-316)
+    while (x >= 0i64) unbounded {
         drop strlist_push(@out.path, raw strlist_view(g.names, x));
         x = via[x];
     }

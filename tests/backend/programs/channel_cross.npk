@@ -31,7 +31,7 @@ async func:main = int32(cstring[]:_~argv) {
     drop producer(ch);
     int32:sum = 0i32;
     int32:n = 0i32;
-    while (n < 3i32) {
+    while (n < 3i32) decreases 3i32 - n {
         Result<int32>:r = await ch.recv(raw duration_ms(500i64));
         if (r.is_error) {
             if (r.err == ChannelClosed)    { exit 71i32; }
@@ -58,6 +58,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 97i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

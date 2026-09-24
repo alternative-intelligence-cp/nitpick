@@ -123,7 +123,7 @@ func:use_targets = List<string>(string:text) never fails {
     int64:n = raw tokenlist_count(@toks);
     int64:i = 0i64;
     bool:header_seen = false;
-    while ((i + 1i64) < n) {
+    while ((i + 1i64) < n) decreases n - i {
         Token:t = raw tokenlist_at(@toks, i);
         if (t.kind == TokenKind.KwUse) {
             Token:s = raw tokenlist_at(@toks, i + 1i64);
@@ -240,7 +240,7 @@ pub func:findings_of = List<Finding>(string:stderr) never fails {
         if ((raw text_find_byte(span, 58u8, 0i64)) < 0i64) { continue; }
         // `span.rstrip(":")`, then the LAST two fields
         int64:stop_at = span.len;
-        while (stop_at > 0i64) {
+        while (stop_at > 0i64) decreases stop_at {
             if (span.ptr[stop_at - 1i64] != 58u8) { break; }
             stop_at = stop_at - 1i64;
         }
@@ -253,7 +253,7 @@ pub func:findings_of = List<Finding>(string:stderr) never fails {
         } else {
             int64:prev = 0i64 - 1i64;
             int64:k = last;
-            while (k > 0i64) {
+            while (k > 0i64) decreases k {
                 k = k - 1i64;
                 if (sp.ptr[k] == 58u8) { prev = k; break; }
             }
@@ -732,7 +732,7 @@ pub func:stray_expectations = List<string>(string:text, string:path) never fails
         string:line = raw strlist_view(lines, i);
         // trimmed of leading blanks, does the line begin a comment?
         int64:w = 0i64;
-        while ((w < line.len) && ((line.ptr[w] == 32u8) || (line.ptr[w] == 9u8))) { w = w + 1i64; }
+        while ((w < line.len) && ((line.ptr[w] == 32u8) || (line.ptr[w] == 9u8))) decreases line.len - w { w = w + 1i64; }
         bool:is_comment = ((w + 1i64) < line.len) && (line.ptr[w] == 47u8) && (line.ptr[w + 1i64] == 47u8);
         if ((raw text_contains(line, "expect-error")) && (!is_comment)) {
             found = found + 1i64;
@@ -1065,12 +1065,12 @@ async func:run_runtime_stage = NIL(Ctx->:c, int64:t) {
         int64:at = raw text_index_of(head, "expect-exit:");
         if (at >= 0i64) {
             int64:q = at + 12i64;
-            while (q < head.len) {
+            while (q < head.len) decreases head.len - q {
                 if (!(raw text_is_ws(head.ptr[q]))) { break; }
                 q = q + 1i64;
             }
             int64:e = q;
-            while (e < head.len) {
+            while (e < head.len) decreases head.len - e {
                 if (!(raw text_is_digit(head.ptr[e]))) { break; }
                 e = e + 1i64;
             }
@@ -1560,7 +1560,7 @@ func:read_cost_unit = CostRead(string:text) never fails {
 // The wrapper every recipe carries: a `failsafe` naming every reachable
 // identity (REACH-002 otherwise) and still carrying `(*)` (PICK-003).
 func:cost_failsafe = string() never fails {
-    pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 91i32; },\n        (HeapOom)        { exit 92i32; },\n        (IntOverflow)    { exit 93i32; },\n        (OutOfBounds)    { exit 94i32; },\n        (Unreachable)    { exit 95i32; },\n        (WildLeak)       { exit 96i32; },\n        (StackExhausted) { exit 99i32; },\n        (MachineFault)   { exit 99i32; },\n        (*)              { exit 99i32; }\n    }\n    exit 9i32;\n};\n";
+    pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 91i32; },\n        (HeapOom)        { exit 92i32; },\n        (IntOverflow)    { exit 93i32; },\n        (OutOfBounds)    { exit 94i32; },\n        (Unreachable)    { exit 95i32; },\n        (WildLeak)       { exit 96i32; },\n        (StackExhausted) { exit 99i32; },\n        (MachineFault)   { exit 99i32; },\n        (DecreasesViolated) { exit 99i32; },\n        (*)              { exit 99i32; }\n    }\n    exit 9i32;\n};\n";
 };
 
 // DEF-1's three shapes, byte for byte the harness's `cost_recipe_text` (and

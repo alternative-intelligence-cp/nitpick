@@ -118,7 +118,7 @@ pub func:u64_decimal = string(uint64:v) never fails {
     wild int8->:buf = alloc(24i64);
     int64:n = 0i64;
     uint64:x = v;
-    while (x > 0u64) {
+    while (x > 0u64) decreases x {
         buf[n] = ((x % 10u64) =>! int8) + 48i8;
         n = n + 1i64;
         x = x / 10u64;
@@ -165,7 +165,7 @@ func:dec_double = NIL(Dec->:x) never fails {
 // x := x - 1, for x >= 1.
 func:dec_minus_one = NIL(Dec->:x) never fails {
     int64:i = 0i64;
-    while (i < x.len) {
+    while (i < x.len) decreases x.len - i {
         if (x.d[i] > 0i8) {
             x.d[i] = x.d[i] - 1i8;
             break;

@@ -365,7 +365,7 @@ func:region_leave = NIL(Encoder->:e) never fails {
 func:region_dominates = bool(Encoder->:e, int32:h, int32:o) never fails {
     int32:r = o;
     int32:fuel = 4096i32;
-    while ((r >= 0i32) && (fuel > 0i32)) {
+    while ((r >= 0i32) && (fuel > 0i32)) decreases fuel {
         if (r == h) { pass true; }
         r = e.region_parent[r => int64];
         fuel = fuel - 1i32;
@@ -744,7 +744,7 @@ func:version_next = int64(Encoder->:e, int32:name) never fails {
 
 func:bind_find = int64(Encoder->:e, int32:name) never fails {
     int64:i = e.binds.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (e.binds[i].name == name) { pass i; }
     }
@@ -1318,7 +1318,7 @@ func:enc_path = bool(Encoder->:e, ExprId:place, List<PStep>->:out) never fails {
         }
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             int64:k = rev.count;
-            while (k > 0i64) { k = k - 1i64; drop list_push(out, rev[k]); }
+            while (k > 0i64) decreases k { k = k - 1i64; drop list_push(out, rev[k]); }
             pass true;
         }
         pass false;
@@ -1935,7 +1935,7 @@ func:sxp_init = SxP(string:s) never fails {
 };
 
 func:sx_skip = NIL(SxP->:p) never fails {
-    while (p.pos < p.s.len) {
+    while (p.pos < p.s.len) decreases p.s.len - p.pos {
         if (p.s.ptr[p.pos] != 32u8) { break; }
         p.pos = p.pos + 1i64;
     }
@@ -1951,7 +1951,7 @@ func:sx_node = int64(SxP->:p) never fails {
         p.pos = p.pos + 1i64;
         List<int64>:mine = raw list_init::<int64>(4i64);
         bool:go = true;
-        while (go) {
+        while (go) decreases p.s.len - p.pos {
             drop sx_skip(p);
             if (p.pos >= p.s.len) { go = false; continue; }
             if (p.s.ptr[p.pos] == 41u8) { p.pos = p.pos + 1i64; go = false; continue; }
@@ -1968,14 +1968,14 @@ func:sx_node = int64(SxP->:p) never fails {
     if (c == 124u8) {
         p.pos = p.pos + 1i64;
         bool:go2 = true;
-        while (go2) {
+        while (go2) decreases p.s.len - p.pos {
             if (p.pos >= p.s.len) { go2 = false; continue; }
             uint8:d = p.s.ptr[p.pos];
             p.pos = p.pos + 1i64;
             if (d == 124u8) { go2 = false; }
         }
     } else {
-        while (p.pos < p.s.len) {
+        while (p.pos < p.s.len) decreases p.s.len - p.pos {
             uint8:d2 = p.s.ptr[p.pos];
             if ((d2 == 32u8) || (d2 == 40u8) || (d2 == 41u8)) { break; }
             p.pos = p.pos + 1i64;
@@ -2879,7 +2879,7 @@ func:limit_rule_of = int32(Encoder->:e, VerifyId:v) never fails {
 func:limited_root_name = int32(Encoder->:e, ExprId:id) never fails {
     ExprId:cur = id;
     int32:fuel = 64i32;
-    while (fuel > 0i32) {
+    while (fuel > 0i32) decreases fuel {
         fuel = fuel - 1i32;
         if (raw expr_is_none(cur)) { pass 0i32; }
         ExprNode:n = raw ast_expr(e.ast, cur);
@@ -3568,7 +3568,7 @@ func:loop_frame = int64(Encoder->:e, int32:label) never fails {
     if (e.loop_sids.count == 0i64) { pass (0i64 - 1i64); }
     if (label == 0i32) { pass (e.loop_sids.count - 1i64); }
     int64:i = e.loop_sids.count;
-    while (i > 0i64) {
+    while (i > 0i64) decreases i {
         i = i - 1i64;
         if (e.loop_labels[i] == label) { pass i; }
     }
@@ -4939,7 +4939,7 @@ func:collect_assigned_expr = NIL(Encoder->:e, ExprId:id, List<int32>->:out, int3
 func:place_root_name = int32(Encoder->:e, ExprId:id) never fails {
     ExprId:cur = id;
     int32:fuel = 64i32;
-    while (fuel > 0i32) {
+    while (fuel > 0i32) decreases fuel {
         fuel = fuel - 1i32;
         if (raw expr_is_none(cur)) { pass 0i32; }
         ExprNode:n = raw ast_expr(e.ast, cur);
@@ -5145,7 +5145,7 @@ func:walk_pick_arms = Term(Encoder->:e, int32:start, int32:count, Term:sel, int3
     Term:val = raw term_none();
     bool:have = false;
     int32:k = count;
-    while (k > 0i32) {
+    while (k > 0i32) decreases k {
         k = k - 1i32;
         if (!fts[k => int64]) { continue; }
         Term:gk = raw term_copy(give_terms[k => int64]);
@@ -5296,7 +5296,7 @@ func:merge_arms = NIL(Encoder->:e, List<Term>:conds, List<List<int32>>:snaps, Li
         bool:have = false;
         int64:k = arms;
         bool:broken = false;
-        while (k > 0i64) {
+        while (k > 0i64) decreases k {
             k = k - 1i64;
             if (!fts[k]) { continue; }
             int32:vk = snaps[k][b];
@@ -6177,7 +6177,8 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
         List<bool>:inc = raw list_init::<bool>(limit_h + 1i64);
         for (int64:h0 in 0i64...limit_h) { drop list_push(@inc, false); }
         bool:grew = true;
-        while (grew) {
+        // a fixed point over the hypotheses: a round that includes no new one is the last, and the hypotheses are finite (D-316)
+        while (grew) unbounded {
             grew = false;
             for (int64:h in 0i64...limit_h) {
                 if (inc[h]) { continue; }

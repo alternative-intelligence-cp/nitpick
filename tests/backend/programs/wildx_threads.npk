@@ -15,7 +15,7 @@ fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
 
 thread async func:churn = NIL(int32:_~v) joins JOIN_5S {
     int32:i = 0i32;
-    while (i < 300i32) {
+    while (i < 300i32) decreases 300i32 - i {
         wildx uint8->:p = wildx_alloc(64i64) =>! wildx uint8->;
         p[0i64] = 195u8;                              // `ret`: a real code page
         wildx_seal(p);
@@ -42,6 +42,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

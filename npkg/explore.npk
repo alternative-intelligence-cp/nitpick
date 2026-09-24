@@ -72,7 +72,7 @@ func:define_symbol = string(string:code) never fails {
     int64:at = raw text_find_byte(code, 64u8, 0i64);        // '@'
     if (at < 0i64) { pass ""; }
     int64:stop = at;
-    while (stop < code.len) {
+    while (stop < code.len) decreases code.len - stop {
         uint8:c = code.ptr[stop];
         if ((c == 40u8) || (c == 32u8)) { break; }             // '(' or ' '
         stop = stop + 1i64;
@@ -93,7 +93,7 @@ func:define_symbol_raw = string(string:line) never fails {
         pass (raw text_slice(line, at, close + 1i64));
     }
     int64:stop = at;
-    while (stop < line.len) {
+    while (stop < line.len) decreases line.len - stop {
         uint8:c = line.ptr[stop];
         if ((c == 40u8) || (c == 32u8)) { break; }             // '(' or ' '
         stop = stop + 1i64;
@@ -156,7 +156,7 @@ pub func:explore_transform = Explored(string:floor, string:spec) never fails {
     string:fn = "";
     int64:pending_call = 0i64 - 1i64;                 // a checker call owed at the next instruction
     int64:i = 0i64;
-    while (i < lines.count) {
+    while (i < lines.count) decreases lines.count - i {
         string:line = raw strlist_view(lines, i);
         string:code = raw floor_code_part(line);
         string:sym = raw define_symbol(code);
@@ -165,7 +165,7 @@ pub func:explore_transform = Explored(string:floor, string:spec) never fails {
             if (raw text_eq(fn, "@npk_thread_entry")) { saw_entry = true; }
             drop smtbuf_line(@out, line);
             // a header that continues on the next lines (a parameter list after a comma) ends at `{`
-            while ((!(raw text_ends_with(code, "{"))) && ((i + 1i64) < lines.count)) {
+            while ((!(raw text_ends_with(code, "{"))) && ((i + 1i64) < lines.count)) decreases lines.count - i {
                 i = i + 1i64;
                 line = raw strlist_view(lines, i);
                 code = raw floor_code_part(line);
@@ -234,7 +234,7 @@ pub func:explore_transform = Explored(string:floor, string:spec) never fails {
             saw_clone = true;
             drop smtbuf_line(@out, "  call void @npkx_prespawn()");
             string:whole = "";
-            while (true) {
+            while (true) decreases lines.count - i {
                 string:part = raw strlist_view(lines, i);
                 drop smtbuf_line(@out, part);
                 whole = string_concat(whole, raw floor_code_part(part));
@@ -315,7 +315,7 @@ pub func:explore_transform_program = Explored(string:prog) never fails {
     int64:nsite = raw PROGRAM_SITE_BASE();
     string:fn = "";
     int64:i = 0i64;
-    while (i < lines.count) {
+    while (i < lines.count) decreases lines.count - i {
         string:line = raw strlist_view(lines, i);
         string:code = raw floor_code_part(line);
         string:sym = raw define_symbol(code);
@@ -326,7 +326,7 @@ pub func:explore_transform_program = Explored(string:prog) never fails {
             }
             drop smtbuf_line(@out, line);
             // a header that continues on the next lines ends at `{`, as the floor's may
-            while ((!(raw text_ends_with(code, "{"))) && ((i + 1i64) < lines.count)) {
+            while ((!(raw text_ends_with(code, "{"))) && ((i + 1i64) < lines.count)) decreases lines.count - i {
                 i = i + 1i64;
                 line = raw strlist_view(lines, i);
                 code = raw floor_code_part(line);
@@ -443,21 +443,21 @@ func:unrouted_line = string(string:l, int64->:nr, bool->:ok) never fails {
     <-nr = 0i64;
     if ((l.len == 0i64) || (l.ptr[0i64] != 64u8)) { pass ""; }
     int64:i = 1i64;
-    while ((i < l.len) && (!(raw text_is_ws(l.ptr[i])))) { i = i + 1i64; }
+    while ((i < l.len) && (!(raw text_is_ws(l.ptr[i])))) decreases l.len - i { i = i + 1i64; }
     string:name = raw text_slice(l, 1i64, i);
     if (!(raw asm_is_name(name))) { pass ""; }
     int64:w1 = i;
-    while ((i < l.len) && (raw text_is_ws(l.ptr[i]))) { i = i + 1i64; }
+    while ((i < l.len) && (raw text_is_ws(l.ptr[i]))) decreases l.len - i { i = i + 1i64; }
     if (i == w1) { pass ""; }
     int64:ds = i;
     int64:v = 0i64;
-    while ((i < l.len) && ((i - ds) < 10i64) && (l.ptr[i] >= 48u8) && (l.ptr[i] <= 57u8)) {
+    while ((i < l.len) && ((i - ds) < 10i64) && (l.ptr[i] >= 48u8) && (l.ptr[i] <= 57u8)) decreases l.len - i {
         v = (v * 10i64) + ((l.ptr[i] - 48u8) => int64);
         i = i + 1i64;
     }
     if (((i - ds) == 0i64) || ((i - ds) > 9i64)) { pass ""; }
     int64:w2 = i;
-    while ((i < l.len) && (raw text_is_ws(l.ptr[i]))) { i = i + 1i64; }
+    while ((i < l.len) && (raw text_is_ws(l.ptr[i]))) decreases l.len - i { i = i + 1i64; }
     if ((i == w2) || (i >= l.len)) { pass ""; }
     <-nr = v;
     <-ok = true;
@@ -660,7 +660,7 @@ pub struct:TySize = { int64:size; int64:align; };
 
 func:pow2_ceil = int64(int64:n) never fails {
     int64:p = 1i64;
-    while (p < n) { p = p * 2i64; }
+    while (p < n) decreases n - p { p = p * 2i64; }
     pass p;
 };
 
@@ -992,7 +992,7 @@ func:apply_pairs = Patched(string:src, List<string>->:befores, List<string>->:af
         int64:n = 0i64;
         int64:at = raw text_index_of(text, before);
         int64:first = at;
-        while (at >= 0i64) {
+        while (at >= 0i64) decreases text.len - at {
             n = n + 1i64;
             at = raw text_index_from(text, before, at + 1i64);
         }

@@ -400,7 +400,7 @@ func:check_pick_view_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
     if (consuming) { pass NIL; }
     if (selt == 0i32) { pass NIL; }
     int32:i = 0i32;
-    while (i < count) {
+    while (i < count) decreases count - i {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:pid3 = raw arm_pattern(arm);
         if (!(raw pat_is_none(pid3))) {
@@ -475,7 +475,7 @@ func:type_pick_bindings = NIL(ExprTyper->:e, int32:selt, int32:start,
         if (sk != (raw TY_STRUCT())) { pass NIL; }
     }
     int32:i = 0i32;
-    while (i < count) {
+    while (i < count) decreases count - i {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:pid2 = raw arm_pattern(arm);
         if (!(raw pat_is_none(pid2))) {
@@ -599,7 +599,7 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
 // asked its identity, and an identity that names nothing is one sentence.
 func:check_error_arms = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
     int32:i = 0i32;
-    while (i < count) {
+    while (i < count) decreases count - i {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:apid = raw arm_pattern(arm);
         if (!(raw pat_is_none(apid))) {
@@ -740,7 +740,8 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     // (`struct_field`) applied to a payload.
     GenericScope:bsaved = raw bind_instance(@r, selt);
     int32:vi = 0i32;
-    while (vi < (raw item_member_count(e.ast, d))) {
+    int32:nmembers = raw item_member_count(e.ast, d);
+    while (vi < nmembers) decreases nmembers - vi {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
@@ -2448,7 +2449,7 @@ func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:pairs = (raw expr_list_count(n)) / 2i32;
         int32:i = 0i32;
-        while (i < pairs) {
+        while (i < pairs) decreases pairs - i {
             ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
                              raw expr_list_start(n), (i * 2i32) + 1i32) };
             if (!(raw is_const_initialiser(e, vid))) { pass false; }
@@ -2571,7 +2572,8 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
                 d.span));
         }
         int32:ppi = 0i32;
-        while (ppi < (raw fn_param_count(e.ast, d))) {
+        int32:nparams = raw fn_param_count(e.ast, d);
+        while (ppi < nparams) decreases nparams - ppi {
             DeclNode:ppd = raw ast_decl(e.ast, raw fn_param(e.ast, d, ppi));
             if (((raw param_quals(ppd)) & (raw QUAL_MOVE())) != 0i32) {
                 discard(raw te_error(e, raw TYPE_PURE_RULES(),
@@ -2623,7 +2625,8 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     // may only appear on a `thread`: a join deadline on a function that
     // creates no executor states a property of nothing.
     int32:jci = 0i32;
-    while (jci < (raw fn_contract_count(e.ast, d))) {
+    int32:ncontracts = raw fn_contract_count(e.ast, d);
+    while (jci < ncontracts) decreases ncontracts - jci {
         VerifyNode:jcv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, jci));
         if (jcv.kind == VerifyKind.VerifyJoinsWithin) {
             if (!(raw decl_has(d, raw DECL_THREAD()))) {
@@ -2721,7 +2724,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     // which is how a contract of any type at all was accepted.
     int32:cci = 0i32;
     int32:fn_measures = 0i32;
-    while (cci < (raw fn_contract_count(e.ast, d))) {
+    while (cci < ncontracts) decreases ncontracts - cci {
         VerifyNode:ccv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, cci));
         if (ccv.kind == VerifyKind.VerifyContractNode) {
             int32:ck = raw contract_kind(ccv);
@@ -2776,7 +2779,8 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     // A PARAMETER'S `limit<Rules>` (1.5.1, D-220): the rule's subject is the
     // parameter's own type, by identity. A type parameter is never it.
     int32:lpi = 0i32;
-    while (lpi < (raw fn_param_count(e.ast, d))) {
+    int32:nparams = raw fn_param_count(e.ast, d);
+    while (lpi < nparams) decreases nparams - lpi {
         DeclNode:lpd = raw ast_decl(e.ast, raw fn_param(e.ast, d, lpi));
         // a callable parameter may not take a builtin's name (D-296) -- of a
         // function, a method or a bodiless signature alike: one rule

@@ -277,11 +277,11 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
 // the point, and §2.6 already says the concrete one wins.
 pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:a = raw impl_at(t, i);
         if (a.trait_id != 0i32) {
             int32:j = i + 1i32;
-            while ((j => int64) < t.v.count) {
+            while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
                 ImplEntry:b = raw impl_at(t, j);
                 if (b.trait_id == a.trait_id) {
                     if (a.blanket) {
@@ -519,7 +519,7 @@ func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,
 // telling apart.
 pub func:bound_entry_of = BoundEntry(BoundTable->:t, int32:param) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         BoundEntry:e = raw bound_at(t, i);
         if (e.param == param) { pass e; }
         i = i + 1i32;
@@ -535,7 +535,7 @@ pub func:param_declares = bool(BoundTable->:t, int32:param, int32:trait_id,
                                Ast->:ast) never fails {
     BoundEntry:e = raw bound_entry_of(t, param);
     int32:i = 0i32;
-    while (i < e.count) {
+    while (i < e.count) decreases e.count - i {
         if ((raw ast_id_at(ast, e.start, i)) == trait_id) { pass true; }
         i = i + 1i32;
     }
@@ -552,7 +552,7 @@ func:find_in_bounds = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
     MethodFind:best = raw method_none();
     BoundEntry:e = raw bound_entry_of(bt, param);
     int32:i = 0i32;
-    while (i < e.count) {
+    while (i < e.count) decreases e.count - i {
         int32:trait_id = raw ast_id_at(ast, e.start, i);
         int32:decl = raw type_decl_of(types, trait_id);
         if (decl != 0i32) {
@@ -703,7 +703,7 @@ func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
     if (d.kind == DeclKind.DeclFunctionDecl) {
         int32:n = raw fn_generic_count(r.ast, d);
         int32:i = 0i32;
-        while (i < n) {
+        while (i < n) decreases n - i {
             drop collect_param_bounds(t, r, raw fn_generic(r.ast, d, i), scope);
             i = i + 1i32;
         }
@@ -721,7 +721,7 @@ func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
         // silently duck-typed.
         int32:mn = raw impl_member_count(r.ast, d);
         int32:j = 0i32;
-        while (j < mn) {
+        while (j < mn) decreases mn - j {
             drop collect_decl_bounds(t, r, raw impl_member(r.ast, d, j), scope);
             j = j + 1i32;
         }
@@ -916,7 +916,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
 
     MethodFind:best = raw method_none();
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         // A FAMILY IMPL MATCHES ANY INSTANCE OF ITS TARGET (1.0.4b).
         // `impl:<T>:Box<T>:Sized2` has target `Box<T>`; a call on `Box<int32>`
@@ -1045,7 +1045,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     // one name is the same ambiguity two concrete trait impls would be.
     if (!best.found) {
         int32:j = 0i32;
-        while ((j => int64) < t.v.count) {
+        while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
             ImplEntry:e = raw impl_at(t, j);
             if (e.blanket) {
                 if (raw blanket_applies(t, bt, ast, types, e, target,
@@ -1178,7 +1178,7 @@ func:assoc_required = bool(DeclNode:m) never fails {
 // has an answer.
 pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop check_one_impl_complete(r, e, e.scope);
@@ -1651,7 +1651,7 @@ pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
     if (base == 0i32)     { pass 0i32; }
     if (trait_decl == 0i32) { pass 0i32; }
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.target == base) {
@@ -1672,7 +1672,8 @@ pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
     if (sc.impl_decl != 0i32) {
         DeclNode:id = raw ast_decl(r.ast, DeclId{ index: sc.impl_decl });
         int32:i = 0i32;
-        while (i < (raw impl_member_count(r.ast, id))) {
+        int32:nmembers = raw impl_member_count(r.ast, id);
+        while (i < nmembers) decreases nmembers - i {
             DeclNode:m = raw ast_decl(r.ast, raw impl_member(r.ast, id, i));
             if (m.kind == DeclKind.DeclAssocTypeDecl) {
                 if ((raw decl_name(m)) == name) {
@@ -1689,7 +1690,8 @@ pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
     if (trait_decl != 0i32) {
         DeclNode:td = raw ast_decl(r.ast, DeclId{ index: trait_decl });
         int32:k = 0i32;
-        while (k < (raw item_member_count(r.ast, td))) {
+        int32:nmembers = raw item_member_count(r.ast, td);
+        while (k < nmembers) decreases nmembers - k {
             DeclNode:m2 = raw ast_decl(r.ast, raw item_member(r.ast, td, k));
             if (m2.kind == DeclKind.DeclAssocTypeDecl) {
                 if ((raw decl_name(m2)) == name) {
@@ -1733,7 +1735,7 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     if (fuel <= 0i32) { pass false; }
 
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.trait_id == trait_id) {
@@ -1774,7 +1776,7 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     }
 
     int32:j = 0i32;
-    while ((j => int64) < t.v.count) {
+    while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
         ImplEntry:e = raw impl_at(t, j);
         if (e.blanket) {
             if (e.trait_id == trait_id) {
@@ -1801,7 +1803,7 @@ pub func:blanket_applies = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     if (target == e.target) { pass false; }
     BoundEntry:b = raw bound_entry_of(bt, raw type_decl_of(types, e.target));
     int32:i = 0i32;
-    while (i < b.count) {
+    while (i < b.count) decreases b.count - i {
         int32:need = raw ast_id_at(ast, b.start, i);
         if (!(raw type_implements(t, bt, ast, types, target, need, fuel - 1i32))) {
             pass false;
@@ -1957,7 +1959,7 @@ pub func:family_bind = FamilyBind(Ast->:ast, TypeTable->:types, int32:impl_decl,
 // The resolved target of the impl declared at `impl_decl` -- the PATTERN -- or 0.
 pub func:impl_pattern_of = int32(ImplTable->:t, int32:impl_decl) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.decl == impl_decl) { pass e.target; }
         i = i + 1i32;
@@ -2000,7 +2002,7 @@ pub func:family_fit = FamilyFit(ImplTable->:t, BoundTable->:bt, Ast->:ast,
             // `check_arg_bounds` says); nothing to ask of it here.
             if (b.value_type == 0i32) {
                 int32:j = 0i32;
-                while (j < b.count) {
+                while (j < b.count) decreases b.count - j {
                     int32:need = raw ast_id_at(ast, b.start, j);
                     if (!(raw type_implements(t, bt, ast, types, bound, need,
                                               fuel - 1i32))) {
@@ -2086,7 +2088,7 @@ func:SUPER_FUEL = int32() never fails { pass 64i32; };
 pub func:check_supertraits = NIL(ImplTable->:t, BoundTable->:bt,
                                  TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop require_supers(t, bt, r, e, e.trait_id, e.scope,
@@ -2172,7 +2174,7 @@ func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:su
 // Inside ONE block a repeat is always wrong, whichever kind of block it is.
 pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while ((i => int64) < t.v.count) {
+    while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:a = raw impl_at(t, i);
         // INSIDE ONE BLOCK A REPEAT IS ALWAYS WRONG, and a blanket impl's block is
         // a block. It was skipped along with everything else that read a target.
@@ -2182,7 +2184,7 @@ pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) never fa
         // inherent (it must name a trait), so it does not reach this.
         if (a.trait_id == 0i32) {
             int32:j = i + 1i32;
-            while ((j => int64) < t.v.count) {
+            while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
                 ImplEntry:b = raw impl_at(t, j);
                 if (b.trait_id == 0i32) {
                     if (b.target == a.target) {
@@ -2219,7 +2221,7 @@ func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) never fails {
                     am.span));
             }
             int32:j = i + 1i32;
-            while (j < n) {
+            while (j < n) decreases n - j {
                 DeclId:bid = raw impl_member(r.ast, d, j);
                 DeclNode:bm = raw ast_decl(r.ast, bid);
                 if (bm.kind == DeclKind.DeclFunctionDecl) {

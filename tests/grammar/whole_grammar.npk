@@ -262,8 +262,9 @@ func:every_statement = NIL(int32:n) {
     else if (n == 1i32) { plain = 2i32; }
     else { plain = 3i32; }
 
-    while (n > 0i32) { n = n - 1i32; }
-    outer: while (n > 0i32) invariant n >= 0i32, plain >= 0i32 {
+    while (n > 0i32) decreases n { n = n - 1i32; }
+    // the grammar's sample of a labelled loop with an invariant; it breaks on its first trip
+    outer: while (n > 0i32) unbounded invariant n >= 0i32, plain >= 0i32 {
         break outer;
     }
 
@@ -273,8 +274,10 @@ func:every_statement = NIL(int32:n) {
     loop (0i64, 10i64, 1i64) { plain = plain + ($ => int32); }
     till (10i64, 2i64) invariant $ >= 0i64 { plain = plain + 1i32; }
 
-    when (n > 0i32) { plain = 1i32; } then { plain = 2i32; } end { plain = 3i32; }
-    tracked: when (n > 0i32) invariant n >= 0i32 { plain = 1i32; }
+    // the grammar's sample of a `when` loop; `n` is never written
+    when (n > 0i32) unbounded { plain = 1i32; } then { plain = 2i32; } end { plain = 3i32; }
+    // the grammar's sample of a labelled `when` with an invariant; `n` is never written
+    tracked: when (n > 0i32) unbounded invariant n >= 0i32 { plain = 1i32; }
 
     { plain = 9i32; }
 

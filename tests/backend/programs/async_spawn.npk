@@ -27,7 +27,7 @@ async func:noisy = NIL(int32:_~v) {
 };
 
 async func:swarm = int32(int32:n) {
-    while (n > 0i32) {
+    while (n > 0i32) decreases n {
         drop quiet(n);
         n = n - 1i32;
     }
@@ -73,6 +73,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 99i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault) { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*) { exit 99i32; }
     }
     exit 99i32;

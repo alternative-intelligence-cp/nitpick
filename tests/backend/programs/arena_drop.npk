@@ -34,7 +34,7 @@ func:scoped = int32() never fails {
 func:main = int32(cstring[]:_~argv) {
     int32:r = 0i32;
     int32:i = 0i32;
-    while (i < 100i32) {
+    while (i < 100i32) decreases 100i32 - i {
         r = raw scoped();                    // 100 arenas born and dropped
         i = i + 1i32;
     }
@@ -66,6 +66,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 98i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

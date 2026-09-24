@@ -88,7 +88,7 @@ pub func:DECL_THREAD = int32() never fails    { pass 512i32; };
 
 func:p_return_quals = int32(Parser->:p) never fails {
     int32:q = 0i32;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         TokenKind:k = raw p_kind(p);
         int32:bit = 0i32;
         if (k == TokenKind.KwWild)  { bit = raw DECL_RET_WILD(); }
@@ -111,14 +111,24 @@ func:p_return_quals = int32(Parser->:p) never fails {
 // halves of `c` are named by `global_quals`/`global_flags` below.
 pub func:decl_flags = int32(DeclNode:d) never fails {
     if (d.kind == DeclKind.DeclGlobalDecl) { pass ((d.c >> 16i32) & 65535i32); }
+    // A `Rules` DECLARATION KEEPS ITS FLAGS IN THE HIGH HALF OF ITS COUNT SLOT
+    // (DEF-93, 1.5.8c step 3): its `a` is the SUBJECT TYPE, and until this step
+    // `p_parse_rules` stored no flags at all, so whether `pub Rules<int64>:ListLen`
+    // was exported depended on the parity of the `int64` type node's index --
+    // the 1.4.8 global's defect, one kind over. It held by coincidence from
+    // 1.5.8b step 6c until step 3's clauses moved the prelude's nodes.
+    if (d.kind == DeclKind.DeclRuleDecl) { pass ((d.c >> 16i32) & 65535i32); }
     pass d.a;
 };
 pub func:decl_name = int32(DeclNode:d) never fails  { pass (d.payload =>! int32); };
 pub func:decl_has = bool(DeclNode:d, int32:bit) never fails { pass (((raw decl_flags(d)) & bit) != 0i32); };
 pub func:decl_win_start = int32(DeclNode:d) never fails { pass d.b; };
-pub func:decl_win_count = int32(DeclNode:d) never fails { pass d.c; };
+pub func:decl_win_count = int32(DeclNode:d) never fails {
+    if (d.kind == DeclKind.DeclRuleDecl) { pass (d.c & 65535i32); }   // the flags ride the high half (DEF-93)
+    pass d.c;
+};
 
-func:d_at = int32(Ast->:ast, DeclNode:d, int32:i) never fails {
+func:d_at = int32(Ast->:ast, DeclNode:d, int32:i) never fails pure {
     pass (raw ast_id_at(ast, d.b, i));
 };
 
@@ -138,7 +148,8 @@ func:d_at = int32(Ast->:ast, DeclNode:d, int32:i) never fails {
 func:ITEM_HDR = int32() never fails { pass 4i32; };
 
 pub func:item_generic_count = int32(Ast->:ast, DeclNode:d) never fails { pass (raw d_at(ast, d, 0i32)); };
-pub func:item_member_count = int32(Ast->:ast, DeclNode:d) never fails  { pass (raw d_at(ast, d, 1i32)); };
+// Pure (1.5.8c step 3): a loop's measure may count a decl's members (TYPE-060).
+pub func:item_member_count = int32(Ast->:ast, DeclNode:d) never fails pure { pass (raw d_at(ast, d, 1i32)); };
 pub func:item_attr_count = int32(Ast->:ast, DeclNode:d) never fails    { pass (raw d_at(ast, d, 2i32)); };
 pub func:item_extra_count = int32(Ast->:ast, DeclNode:d) never fails   { pass (raw d_at(ast, d, 3i32)); };
 
@@ -203,7 +214,7 @@ pub func:fn_contract = VerifyId(Ast->:ast, DeclNode:d, int32:i) never fails {
 pub func:fn_declares_never_fails = bool(Ast->:ast, DeclNode:d) never fails {
     int32:c = 0i32;
     int32:cn = raw fn_contract_count(ast, d);
-    while (c < cn) {
+    while (c < cn) decreases cn - c {
         VerifyNode:v = raw ast_verify(ast, raw fn_contract(ast, d, c));
         if (v.kind == VerifyKind.VerifyNeverFails) { pass true; }
         c = c + 1i32;
@@ -215,7 +226,7 @@ pub func:fn_declares_never_fails = bool(Ast->:ast, DeclNode:d) never fails {
 pub func:fn_declares_gives = bool(Ast->:ast, DeclNode:d) never fails {
     int32:c = 0i32;
     int32:cn = raw fn_contract_count(ast, d);
-    while (c < cn) {
+    while (c < cn) decreases cn - c {
         VerifyNode:v = raw ast_verify(ast, raw fn_contract(ast, d, c));
         if (v.kind == VerifyKind.VerifyGives) { pass true; }
         c = c + 1i32;
@@ -230,7 +241,7 @@ pub func:fn_declares_gives = bool(Ast->:ast, DeclNode:d) never fails {
 pub func:fn_declares_pure = bool(Ast->:ast, DeclNode:d) never fails {
     int32:c = 0i32;
     int32:cn = raw fn_contract_count(ast, d);
-    while (c < cn) {
+    while (c < cn) decreases cn - c {
         VerifyNode:v = raw ast_verify(ast, raw fn_contract(ast, d, c));
         if (v.kind == VerifyKind.VerifyPure) { pass true; }
         c = c + 1i32;
@@ -386,7 +397,8 @@ func:MACRO_BODY_SCAN = int64() never fails { pass 65536i64; };
 func:p_macro_body_has_decl = bool(Parser->:p) never fails {
     int64:i = 0i64;
     int32:depth = 0i32;
-    while (i < (raw MACRO_BODY_SCAN())) {
+    int64:scan_limit = raw MACRO_BODY_SCAN();
+    while (i < scan_limit) decreases scan_limit - i {
         Token:t = raw p_peek_at(p, i);
         if (t.kind == TokenKind.Eof) { pass false; }
         if (t.kind == TokenKind.PLBrace) { depth = depth + 1i32; }
@@ -684,7 +696,7 @@ func:p_parse_generics = IdSpan(Parser->:p) never fails {
         pass (raw ast_scratch_commit(p.ast, mark));
     }
     discard(raw p_advance(p));
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.OpGt)) { break; }
         if (raw p_at(p, TokenKind.OpShr)) { break; }
         if (raw p_at_end(p)) { break; }
@@ -709,7 +721,7 @@ func:p_parse_generics = IdSpan(Parser->:p) never fails {
                 int32:bmark = raw ast_scratch_mark(p.ast);
                 TypeId:b1 = raw p_parse_type(p);
                 drop ast_scratch_push(p.ast, b1.index);
-                while (raw p_accept(p, TokenKind.OpAmp)) {
+                while (raw p_accept(p, TokenKind.OpAmp)) decreases raw p_left(p) {
                     TypeId:bindN = raw p_parse_type(p);
                     drop ast_scratch_push(p.ast, bindN.index);
                 }
@@ -773,7 +785,7 @@ pub func:p_parse_decl = DeclId(Parser->:p) never fails {
 
     // Attributes come first and attach to whatever follows.
     int32:amark = raw ast_scratch_mark(p.ast);
-    while (raw p_at_attribute(p)) {
+    while (raw p_at_attribute(p)) decreases raw p_left(p) {
         DeclId:a = raw p_parse_attribute(p);
         drop ast_scratch_push(p.ast, a.index);
     }
@@ -781,7 +793,7 @@ pub func:p_parse_decl = DeclId(Parser->:p) never fails {
 
     int32:flags = 0i32;
     if (raw p_accept(p, TokenKind.KwPub)) { flags = flags | (raw DECL_PUB()); }
-    while (true) {
+    while (true) decreases raw p_left(p) {
         TokenKind:m = raw p_kind(p);
         int32:bit = 0i32;
         if (m == TokenKind.KwInline)   { bit = raw DECL_INLINE(); }
@@ -849,7 +861,7 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
         Token:s1 = raw p_advance(p);
         drop ast_scratch_push(p.ast, s1.payload =>! int32);
         segments = 1i32;
-        while (true) {
+        while (true) decreases raw p_left(p) {
             if (!(raw p_at(p, TokenKind.PDot))) { break; }
             if ((raw p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
             discard(raw p_advance(p));
@@ -872,7 +884,7 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
             } else {
                 if (raw p_accept(p, TokenKind.PLBrace)) {
                     kind = raw IMPORT_SELECTIVE();
-                    while (!(raw p_at(p, TokenKind.PRBrace))) {
+                    while (!(raw p_at(p, TokenKind.PRBrace))) decreases raw p_left(p) {
                         if (raw p_at_end(p)) { break; }
                         Token:n = raw p_advance(p);
                         drop ast_scratch_push(p.ast, n.payload =>! int32);
@@ -934,7 +946,7 @@ func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never
     discard(raw p_expect(p, TokenKind.PLParen));
     int32:pmark = raw ast_scratch_mark(p.ast);
     int32:variadic = 0i32;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRParen)) { break; }
         if (raw p_at_end(p)) { break; }
         if (raw p_at(p, TokenKind.OpDotDotStar)) {
@@ -996,7 +1008,7 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
     discard(raw p_expect(p, TokenKind.PLBrace));
 
     int32:imark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -1059,7 +1071,7 @@ func:p_parse_variant = DeclId(Parser->:p) never fails {
         if (!(raw p_at(p, TokenKind.PRParen))) {
             TypeId:t1 = raw p_parse_type(p);
             drop ast_scratch_push(p.ast, t1.index);
-            while (raw p_accept(p, TokenKind.PComma)) {
+            while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                 TypeId:tn = raw p_parse_type(p);
                 drop ast_scratch_push(p.ast, tn.index);
             }
@@ -1088,7 +1100,7 @@ func:p_parse_trait = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     discard(raw p_expect(p, TokenKind.OpAssign));
 
     int32:smark = raw ast_scratch_mark(p.ast);
-    while (!(raw p_at(p, TokenKind.PLBrace))) {
+    while (!(raw p_at(p, TokenKind.PLBrace))) decreases raw p_left(p) {
         if (raw p_at_end(p)) { break; }
         TypeId:s = raw p_parse_type(p);
         drop ast_scratch_push(p.ast, s.index);
@@ -1231,7 +1243,7 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     int32:refines = 0i32;
     int32:cmark = raw ast_scratch_mark(p.ast);
     int32:clauses = 0i32;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         if (raw p_at(p, TokenKind.KwLimit)) {
@@ -1244,7 +1256,7 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
         }
         if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         ExprId:c = raw p_parse_expr(p);
@@ -1261,8 +1273,10 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     drop ast_scratch_push(p.ast, clauses);
     drop ast_copy_window(p.ast, body);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    // THE FLAGS RIDE THE HIGH HALF OF THE COUNT (DEF-93): `a` is the subject
+    // type, so the count slot carries `pub` as a global's does (`decl_flags`).
     pass (raw ast_add_decl(p.ast, DeclKind.DeclRuleDecl, sp,
-                             subject.index, w.start, w.count, name.payload));
+                             subject.index, w.start, w.count | (flags << 16i32), name.payload));
 };
 
 // `macro:name = (params) { body };` (D-046). What expansion DOES with the body is
@@ -1274,7 +1288,7 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     discard(raw p_expect(p, TokenKind.OpAssign));
     discard(raw p_expect(p, TokenKind.PLParen));
     int32:pmark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRParen)) { break; }
         if (raw p_at_end(p)) { break; }
         Token:pn = raw p_advance(p);
@@ -1301,7 +1315,7 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     int32:elo = raw ast_expr_count(p.ast);
     bool:has_decl = raw p_macro_body_has_decl(p);
     discard(raw p_expect(p, TokenKind.PLBrace));
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -1340,7 +1354,7 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     // is right — a cloned body is program text now.
     int32:ehi = raw ast_expr_count(p.ast);
     int32:em = elo;
-    while (em < ehi) {
+    while (em < ehi) decreases ehi - em {
         drop ast_set_expr_flag(p.ast, ExprId{ index: em }, raw HYG_IN_MACRO());
         em = em + 1i32;
     }
@@ -1395,7 +1409,7 @@ func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.OpAssign));
     discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -1427,7 +1441,7 @@ func:p_parse_extern_fn = DeclId(Parser->:p) never fails {
     discard(raw p_expect(p, TokenKind.PLParen));
     int32:pmark = raw ast_scratch_mark(p.ast);
     int32:pcount = 0i32;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRParen)) { break; }
         if (raw p_at_end(p)) { break; }
         if (raw p_accept(p, TokenKind.OpDotDotStar)) {
@@ -1517,7 +1531,7 @@ func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
 func:p_parse_item_block = IdSpan(Parser->:p) never fails {
     discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -1554,7 +1568,7 @@ func:p_finish_item = DeclId(Parser->:p, Span:sp, DeclKind:kind, int32:flags,
 pub func:p_parse_module = DeclId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (!(raw p_at_end(p))) {
+    while (!(raw p_at_end(p))) decreases raw p_left(p) {
         int64:before = raw p_position(p);
         DeclId:item = raw p_parse_decl(p);
         drop ast_scratch_push(p.ast, item.index);

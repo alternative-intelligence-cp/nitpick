@@ -2,9 +2,11 @@
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-zero open 1
 // expect-obligation: div-min discharged 2
-// expect-obligation: failsafe-post discharged 16
+// expect-obligation: failsafe-post discharged 17
 // expect-obligation: exhaustive checker 1
 // expect-obligation: overflow open 3
+// expect-obligation: overflow discharged 4
+// expect-obligation: terminate discharged 4
 //
 // A LOOP'S CONDITION IS FALSE AFTER IT (1.5.4 step 1, L-4) when nothing
 // `break`s: after `while (d == 0i32) { d = 5i32; }` the exit was a head
@@ -16,10 +18,10 @@ error:E9;
 
 func:main = int32(cstring[]:argv) {
     int32:d = (argv.len =>! int32) - 1i32;
-    while (d == 0i32) { d = 5i32; }
+    while (d == 0i32) decreases 1i32 - d { d = 5i32; }
     int32:q = 100i32 / d;
     int32:k = 0i32;
-    while (k == 0i32) { k = 5i32; if (k > 0i32) { break; } }
+    while (k == 0i32) decreases 1i32 - k { k = 5i32; if (k > 0i32) { break; } }
     int32:r = 100i32 / k;
     exit (q + r - 20i32);
 };
@@ -40,6 +42,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)          { exit 96i32; },
         (StackExhausted)    { exit 99i32; },
         (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

@@ -19,7 +19,7 @@ error:Sent;
 async func:worker = NIL(Channel<int32, 3i32, 1i64>:a,
                         Channel<int32, 4i32, 1i64>:b) {
     int32:i = 0i32;
-    while (i < 500i32) {
+    while (i < 500i32) decreases 500i32 - i {
         Result<int32>:r = await a.recv(raw duration_ms(2000i64));
         if (r.is_error) { pass NIL; }
         await b.send(r.value + 1i32, raw duration_ms(2000i64)) ?! Sent;
@@ -34,7 +34,7 @@ async func:main = int32(cstring[]:_~argv) {
     int64:t0 = mono_now();
     int32:n = 0i32;
     int32:last = 0i32;
-    while (n < 500i32) {
+    while (n < 500i32) decreases 500i32 - n {
         await a.send(n, raw duration_ms(2000i64)) ?! Sent;
         Result<int32>:r = await b.recv(raw duration_ms(2000i64));
         if (r.is_error) { exit 71i32; }
@@ -59,6 +59,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 97i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

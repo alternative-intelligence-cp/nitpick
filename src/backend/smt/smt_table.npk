@@ -132,24 +132,24 @@ pub func:obl_index_text = string(ObTable->:t) never fails {
 func:ir_define_syms = List<string>(string:ir) never fails {
     List<string>:out = raw list_init::<string>(256i64);
     int64:i = 0i64;
-    while (i < ir.len) {
+    while (i < ir.len) decreases ir.len - i {
         int64:e = i;
-        while ((e < ir.len) && (ir.ptr[e] != 10u8)) { e = e + 1i64; }
+        while ((e < ir.len) && (ir.ptr[e] != 10u8)) decreases ir.len - e { e = e + 1i64; }
         bool:isdef = ((e - i) > 7i64) && (ir.ptr[i] == 100u8) && (ir.ptr[i + 1i64] == 101u8)
                      && (ir.ptr[i + 2i64] == 102u8) && (ir.ptr[i + 3i64] == 105u8)
                      && (ir.ptr[i + 4i64] == 110u8) && (ir.ptr[i + 5i64] == 101u8)
                      && (ir.ptr[i + 6i64] == 32u8);
         if (isdef) {
             int64:a = i;
-            while ((a < e) && (ir.ptr[a] != 64u8)) { a = a + 1i64; }
+            while ((a < e) && (ir.ptr[a] != 64u8)) decreases e - a { a = a + 1i64; }
             if (a < e) {
                 int64:b = a + 1i64;
                 if ((b < e) && (ir.ptr[b] == 34u8)) {
                     b = b + 1i64;
-                    while ((b < e) && (ir.ptr[b] != 34u8)) { b = b + 1i64; }
+                    while ((b < e) && (ir.ptr[b] != 34u8)) decreases e - b { b = b + 1i64; }
                     if (b < e) { b = b + 1i64; }
                 } else {
-                    while ((b < e) && (ir.ptr[b] != 40u8)) { b = b + 1i64; }
+                    while ((b < e) && (ir.ptr[b] != 40u8)) decreases e - b { b = b + 1i64; }
                 }
                 drop list_push(@out, string_slice(ir, a, b) ?| "");
             }
@@ -215,7 +215,7 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
                 // the fifth field is `encoded`: 1, 0 or c
                 int64:tabs = 0i64;
                 int64:p = 0i64;
-                while ((p < nl.len) && (tabs < 4i64)) { if (nl.ptr[p] == 9u8) { tabs = tabs + 1i64; } p = p + 1i64; }
+                while ((p < nl.len) && (tabs < 4i64)) decreases nl.len - p { if (nl.ptr[p] == 9u8) { tabs = tabs + 1i64; } p = p + 1i64; }
                 if (p < nl.len) {
                     if (nl.ptr[p] == 49u8) { t.encoded_rows = t.encoded_rows + 1i64; }
                     if (nl.ptr[p] == 48u8) { t.unencoded_rows = t.unencoded_rows + 1i64; }

@@ -9,7 +9,7 @@ func:sum = int32(int32[]:xs) never fails {
     int32:i = 0i32;
     int32:acc = 0i32;
 
-    while ((i => int64) < xs.len) {
+    while ((i => int64) < xs.len) decreases xs.len - (i => int64) {
         acc = acc + xs[i => int64];
         i = i + 1i32;
     }
@@ -39,6 +39,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

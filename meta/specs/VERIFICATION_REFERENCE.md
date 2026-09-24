@@ -526,6 +526,34 @@ while (true) unbounded { … }                                   // an event loo
   contract of kind `decreases` and refused as TYPE-075 until step 4 computes
   the recursive groups -- the measure is compared at a call inside the
   function's group, and until then the compiler sees none.
+- **The sweep (1.5.8c step 3, D-304 (6))**: every `while` and `when` of the
+  compiler's tree -- `src/`, the prelude, `lib/`, `npkg/`, the tools and the
+  tests, 977 loops as the parser counts them -- states its clause. A TOOL
+  (`meta/roadmap/1.5/tools/decreases_sweep.py`, over the parser-driven dump
+  `loop_dump.npk` writes) wrote the shape it can PROVE monotone (392): a
+  counter stepped by a positive literal against a bound nothing in the body or
+  its function writes or takes the address of, a widened counter `(v => T)`,
+  a `&&` conjunction with exactly one such comparison. Every other loop was
+  READ, and the reading is a committed file beside the tool,
+  `decreases_read.txt`, one line per loop: `stable` (the tool's shape after
+  a reader saw the bound is stable), `hoist NAME` (a call's result captured
+  once before the loop), `measure EXPR`, `unbounded REASON` (the reason goes
+  on the line above the loop, D-316) or `manual` (restructured by hand). The
+  idioms: a scan's measure is the bytes left, `len - pos`; a walk along a
+  chain built in order is `count - c`; a parser's is the tokens left
+  (`raw p_left(p)`, pure); a doubling `c = c * 2` under `c < cap` is
+  `cap - c`; a hash probe carries a counter bounded by the table's size;
+  `while (v > 0)` is `decreases v`; a worklist that grows as it drains, a
+  fixed point, a retry or refill loop bounded by a deadline, a spin on the
+  clock and an event loop are `unbounded` with the reason. A measure may
+  call a `pure never fails` function (TYPE-060), which is why `p_left`,
+  `tokenlist_count`, `item_member_count`, `d_at`, `ast_id_at` and the three
+  round constants are declared `pure`. The compile-time evaluator checks a
+  measure of a loop it runs (`fold_while`), as it evaluates a `prove` (1.5.4,
+  L-18): a measure that does not shrink, or a signed one below zero, is a
+  counterexample reported once as TYPE-069. Every `failsafe` in the tree
+  names `(DecreasesViolated)`, the runners' generated ones included, since
+  the prelude's loops reach nearly every program.
 
 ---
 

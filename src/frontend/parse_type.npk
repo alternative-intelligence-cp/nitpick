@@ -159,7 +159,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
         int32:mark = raw ast_scratch_mark(p.ast);
         TypeId:first = raw p_parse_type(p);
         drop ast_scratch_push(p.ast, first.index);
-        while (raw p_accept(p, TokenKind.OpAmp)) {
+        while (raw p_accept(p, TokenKind.OpAmp)) decreases raw p_left(p) {
             TypeId:more = raw p_parse_type(p);
             drop ast_scratch_push(p.ast, more.index);
         }
@@ -208,7 +208,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
         TypeId:ret = raw p_parse_type(p);
         discard(raw p_expect(p, TokenKind.PLParen));
         int32:mark = raw ast_scratch_mark(p.ast);
-        while (true) {
+        while (true) decreases raw p_left(p) {
             if (raw p_at(p, TokenKind.PRParen)) { break; }
             if (raw p_at_end(p)) { break; }
             TypeId:pt = raw p_parse_type(p);
@@ -276,7 +276,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
         if (!(raw p_at(p, TokenKind.OpGt))) {
             TypeId:a1 = raw p_parse_type_arg(p);
             drop ast_scratch_push(p.ast, a1.index);
-            while (raw p_accept(p, TokenKind.PComma)) {
+            while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
                 TypeId:argN = raw p_parse_type_arg(p);
                 drop ast_scratch_push(p.ast, argN.index);
             }
@@ -296,7 +296,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
 // pointers rather than a pointer to a slice.
 pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
     TypeId:cur = base;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
 
         // `T.Item` — AN ASSOCIATED TYPE, PROJECTED (D-164). It is a suffix

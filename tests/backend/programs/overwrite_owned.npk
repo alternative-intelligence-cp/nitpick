@@ -27,7 +27,7 @@ func:main = int32(cstring[]:_~argv) {
     fd:f0 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
     Holder:hold = Holder{ h: own_fd(f0), tag: "t" };
     int32:i = 0i32;
-    while (i < 2000i32) {
+    while (i < 2000i32) decreases 2000i32 - i {
         fd:fi = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
         hold.h = own_fd(fi);
         i = i + 1i32;
@@ -38,7 +38,7 @@ func:main = int32(cstring[]:_~argv) {
     fd:a1 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
     OwnedFd[2]:pair = [own_fd(a0), own_fd(a1)];
     int32:j = 0i32;
-    while (j < 2000i32) {
+    while (j < 2000i32) decreases 2000i32 - j {
         fd:fj = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
         pair[0i64] = own_fd(fj);
         j = j + 1i32;
@@ -61,6 +61,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 98i32; },
         (StackExhausted) { exit 99i32; },
         (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;

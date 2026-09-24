@@ -223,7 +223,7 @@ func:reach_callee = NIL(Reach->:x, ExprId:id, ExprNode:n) never fails {
 
 func:reach_add_decl = NIL(Reach->:x, int32:decl_index) never fails {
     int32:i = 0i32;
-    while ((i => int64) < x.rdecls.count) {
+    while ((i => int64) < x.rdecls.count) decreases x.rdecls.count - (i => int64) {
         if (x.rdecls[i => int64] == decl_index) { pass NIL; }
         i = i + 1i32;
     }
@@ -499,7 +499,8 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:i = 0i32;
-        while (i < (raw stmt_list_count(s))) {
+        int32:nstmts = raw stmt_list_count(s);
+        while (i < nstmts) decreases nstmts - i {
             drop reach_stmt(x, StmtId{ index: raw ast_id_at(x.ast,
                                 raw stmt_list_start(s), i) }, fuel - 1i32);
             i = i + 1i32;
@@ -552,7 +553,8 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     if (s.kind == StmtKind.StmtPickStmt) {
         drop reach_expr(x, raw pick_selector(s), fuel - 1i32);
         int32:j = 0i32;
-        while (j < (raw pick_arm_count(s))) {
+        int32:narms = raw pick_arm_count(s);
+        while (j < narms) decreases narms - j {
             drop reach_stmt(x, StmtId{ index: raw ast_id_at(x.ast,
                                 raw pick_arm_start(s), j) }, fuel - 1i32);
             j = j + 1i32;
@@ -839,7 +841,7 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         int32:i = 1i32;
         // THE LITERAL'S VALUE FOR A LIMITED FIELD IS A WRITE POINT (D-308).
         int32:lsty = raw exprtypes_get(x.ets, id);
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             drop reach_field_write(x, lsty, raw ast_id_at(x.ast, raw expr_list_start(n), i - 1i32), fuel);
             drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast,
                                 raw expr_list_start(n), i) }, fuel - 1i32);
@@ -883,7 +885,8 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
                                 a: n.a, b: n.b, c: n.c, payload: 0i64 };
         drop reach_expr(x, raw pick_selector(ps), fuel - 1i32);
         int32:j = 0i32;
-        while (j < (raw pick_arm_count(ps))) {
+        int32:narms = raw pick_arm_count(ps);
+        while (j < narms) decreases narms - j {
             drop reach_stmt(x, StmtId{ index: raw ast_id_at(x.ast,
                                 raw pick_arm_start(ps), j) }, fuel - 1i32);
             j = j + 1i32;
@@ -938,7 +941,8 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     // 1.5.8b step 6b): the queue holds every callee the module walk met that
     // its module's turn did not cover -- the prelude's functions above all --
     // and each walk may queue more.
-    while (x.queue.count > 0i64) {
+    // the reach queue: a function reached pushes its callees, each once (`rdecls` dedups), and a program's functions are finite (D-316)
+    while (x.queue.count > 0i64) unbounded {
         int32:qd = raw list_pop(@x.queue);
         drop reach_fn(x, DeclId{ index: qd });
     }
@@ -991,7 +995,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
         DeclNode:md = raw ast_decl(x.ast, DeclId{ index: x.main_decl });
         string:owed = "";
         int32:k = 0i32;
-        while ((k => int64) < x.rdecls.count) {
+        while ((k => int64) < x.rdecls.count) decreases x.rdecls.count - (k => int64) {
             DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: x.rdecls[k => int64] });
             if (k > 0i32) { owed = string_concat(owed, ", "); }
             if (x.rquals[k => int64] != 0i32) {
@@ -1019,7 +1023,8 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     int32:pick_at = 0i32;
     if (bn.kind == StmtKind.StmtBlockStmt) {
         int32:i = 0i32;
-        while (i < (raw stmt_list_count(bn))) {
+        int32:nstmts = raw stmt_list_count(bn);
+        while (i < nstmts) decreases nstmts - i {
             StmtId:sid = StmtId{ index: raw ast_id_at(x.ast,
                                      raw stmt_list_start(bn), i) };
             StmtNode:sn = raw ast_stmt(x.ast, sid);
@@ -1037,11 +1042,12 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     // The named coverage: every set member appears as a PatValue naming it.
     StmtNode:pn = raw ast_stmt(x.ast, StmtId{ index: pick_at });
     int32:i2 = 0i32;
-    while ((i2 => int64) < x.rdecls.count) {
+    while ((i2 => int64) < x.rdecls.count) decreases x.rdecls.count - (i2 => int64) {
         int32:want = x.rdecls[i2 => int64];
         bool:named = false;
         int32:a2 = 0i32;
-        while (a2 < (raw pick_arm_count(pn))) {
+        int32:narms = raw pick_arm_count(pn);
+        while (a2 < narms) decreases narms - a2 {
             StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                             raw pick_arm_start(pn), a2));
             PatNode:pat = raw ast_pat(x.ast, raw arm_pattern(arm));

@@ -33,7 +33,8 @@ func:SYS_FSTAT = int64() never fails { pass 5i64; };
 // shutdown signal); a deadline on the wait is EBadWire.
 async func:rd_exact = NIL(wild int8->:buf, int64:need) {
     int64:got = 0i64;
-    while (got < need) {
+    // a read loop over the control pipe, bounded by io_ready's deadline, not by a count (D-316)
+    while (got < need) unbounded {
         wild int8->:at = #ptr_add<int8>(buf, got);
         Result<int64>:r = read(3i32 =>! fd, at, need - got);
         if (!r.is_error) { got = got + r.value; }
@@ -54,7 +55,8 @@ async func:rd_exact = NIL(wild int8->:buf, int64:need) {
 // Write exactly `need` bytes to fd 3 — EPOLLOUT (4) readiness on the retry.
 async func:wr_exact = NIL(wild int8->:buf, int64:need) {
     int64:put = 0i64;
-    while (put < need) {
+    // a write loop over the control pipe, bounded by io_ready's deadline, not by a count (D-316)
+    while (put < need) unbounded {
         wild int8->:at = #ptr_add<int8>(buf, put);
         Result<int64>:r = write(3i32 =>! fd, at, need - put);
         if (!r.is_error) { put = put + r.value; }
@@ -124,7 +126,8 @@ async func:main = int32(cstring[]:_~argv) {
     if (wa.is_error) { exit 7i32; }
 
     // The dispatch loop.
-    while (true) {
+    // the mock driver's dispatch loop: it ends when the control pipe closes or a packet says shutdown (D-316)
+    while (true) unbounded {
         Result<NIL>:rn = await rd_exact(buf, 16i64);
         if (rn.is_error) {
             if (rn.err == IoEof) { exit 0i32; }   // ctrl closed: shutdown
@@ -216,6 +219,7 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds)      { exit 70i32; },
         (StackExhausted)   { exit 64i32; },
         (MachineFault)     { exit 64i32; },
+        (DecreasesViolated) { exit 64i32; },
         (*)                { exit 64i32; }
     }
     exit 60i32;

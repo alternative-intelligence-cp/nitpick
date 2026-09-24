@@ -309,7 +309,8 @@ pub struct:Bridge = {
 // remains). EOF mid-packet is the driver dying: EDriverFault.
 async func:read_exact = NIL(int64:sock, wild int8->:buf, int64:need, int64:give_up) {
     int64:got = 0i64;
-    while (got < need) {
+    // a read loop over the socket, bounded by the deadline `give_up` (EDriverDeadline): a zero read is a fault, a short one advances `got` (D-316)
+    while (got < need) unbounded {
         wild int8->:at = #ptr_add<int8>(buf, got);
         Result<int64>:r = read((sock =>! int32) =>! fd, at, need - got);
         if (!r.is_error) {
@@ -593,13 +594,14 @@ func:bridge_child_dead = bool(Bridge->:b) never fails {
 func:bridge_drain_stderr = NIL(Bridge->:b) never fails {
     wild int8->:tmp = alloc(512i64);
     bool:more = true;
-    while (more) {
+    // drains the driver's stderr until the read stops: a read that fails ends it, and the pipe is closed by the driver's death or the kill (D-316)
+    while (more) unbounded {
         Result<int64>:r = read(b.child_stderr.value, tmp, 512i64);
         if (r.is_error) { more = false; }   // WouldBlock, EOF, anything: drained
         if (!r.is_error) {
             int64:n = r.value;
             int64:i = 0i64;
-            while (i < n) {
+            while (i < n) decreases n - i {
                 <-(#ptr_add<int8>(b.errbuf, (b.err_w + i) & 8191i64)) =
                     <-(#ptr_add<int8>(tmp, i));
                 i = i + 1i64;
@@ -719,7 +721,8 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
 
     // WORK_COMPLETE { seq, result } — 16 bytes, exact, under the deadline.
     int64:got = 0i64;
-    while (got < 16i64) {
+    // a read loop over the control pipe, bounded by the deadline `give_up` (EDriverDeadline) and the driver's death (D-316)
+    while (got < 16i64) unbounded {
         wild int8->:at = #ptr_add<int8>(pkt, got);
         Result<int64>:r = read(b.ctrl.value, at, 16i64 - got);
         if (!r.is_error) { got = got + r.value; }
@@ -781,7 +784,8 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
 // ladder's rung shape: check, then wait readiness, then CHECK AGAIN, so a
 // spurious wake can never be mistaken for a death.
 async func:close_wait_dead = bool(Bridge->:b, int64:give_up) {
-    while (true) {
+    // waits for the driver's death, bounded by the deadline `give_up` (the caller's), not by a count (D-316)
+    while (true) unbounded {
         if (raw bridge_child_dead(b)) { pass true; }
         int64:rem = give_up - (mono_now());
         if (rem <= 0i64) { pass false; }

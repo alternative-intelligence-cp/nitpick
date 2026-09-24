@@ -2,10 +2,11 @@
 // expect-obligation: invariant discharged 2
 // expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
-// expect-obligation: failsafe-post discharged 15
+// expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
-// expect-obligation: overflow discharged 1
-// expect-obligation: overflow open 1
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 2
+// expect-obligation: terminate discharged 2
 //
 // A LOOP'S TWO ROWS (L-8) and THE POST-LOOP HYPOTHESIS (L-9): `d > 0` holds
 // at entry (`d` is 1) and is preserved (`d + 1 > 0`), so the head's check is
@@ -18,7 +19,7 @@ error:E9;
 func:main = int32(cstring[]:argv) {
     int32:d = 1i32;
     int32:n = argv.len =>! int32;
-    while (n < 5i32) invariant d > 0i32 {
+    while (n < 5i32) decreases 5i32 - n invariant d > 0i32 {
         d = d + 1i32;
         n = n + 1i32;
     }
@@ -41,6 +42,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)          { exit 96i32; },
         (StackExhausted)    { exit 99i32; },
         (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                 { exit 99i32; }
     }
     exit 9i32;

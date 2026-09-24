@@ -63,12 +63,12 @@ pub func:sx_parse = Sxs(string:text) never fails {
     int64:root_last = 0i64 - 1i64;
     int64:i = 0i64;
     int64:line = 1i64;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         uint8:c = text.ptr[i];
         if (c == 10u8) { line = line + 1i64; i = i + 1i64; continue; }
         if (raw text_is_ws(c)) { i = i + 1i64; continue; }
         if (c == 59u8) {
-            while ((i < text.len) && (text.ptr[i] != 10u8)) { i = i + 1i64; }
+            while ((i < text.len) && (text.ptr[i] != 10u8)) decreases text.len - i { i = i + 1i64; }
             continue;
         }
         int64:parent = 0i64 - 1i64;
@@ -100,7 +100,7 @@ pub func:sx_parse = Sxs(string:text) never fails {
         }
         if (c == 34u8) {
             int64:j = i + 1i64;
-            while ((j < text.len) && (text.ptr[j] != 34u8)) { j = j + 1i64; }
+            while ((j < text.len) && (text.ptr[j] != 34u8)) decreases text.len - j { j = j + 1i64; }
             if (j >= text.len) {
                 s.ok = false;
                 s.problem = string_concat("an unterminated string at line ", int_to_string(line));
@@ -114,7 +114,7 @@ pub func:sx_parse = Sxs(string:text) never fails {
             continue;
         }
         int64:k = i;
-        while ((k < text.len) && (!(raw is_delim(text.ptr[k])))) { k = k + 1i64; }
+        while ((k < text.len) && (!(raw is_delim(text.ptr[k])))) decreases text.len - k { k = k + 1i64; }
         string:at = raw text_slice(text, i, k);
         int64:nd3 = raw push_node(@s, raw SX_ATOM(), move(at));
         drop link(@s, parent, last, nd3);
@@ -134,7 +134,7 @@ pub func:sx_nth = int64(Sxs->:s, int64:list_node, int64:k) never fails {
     if (s.nodes[list_node].kind != (raw SX_LIST())) { pass (0i64 - 1i64); }
     int64:c = s.nodes[list_node].first;
     int64:n = 0i64;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (n == k) { pass c; }
         n = n + 1i64;
         c = s.nodes[c].next;
@@ -147,7 +147,7 @@ pub func:sx_len = int64(Sxs->:s, int64:list_node) never fails {
     if (s.nodes[list_node].kind != (raw SX_LIST())) { pass 0i64; }
     int64:c = s.nodes[list_node].first;
     int64:n = 0i64;
-    while (c >= 0i64) { n = n + 1i64; c = s.nodes[c].next; }
+    while (c >= 0i64) decreases s.nodes.count - c { n = n + 1i64; c = s.nodes[c].next; }
     pass n;
 };
 

@@ -75,7 +75,9 @@ pub func:tokenlist_push = NIL(TokenList->:l, Token:t) never fails {
     pass NIL;
 };
 
-pub func:tokenlist_count = int64(TokenList->:l) never fails {
+// Pure (1.5.8c step 3): the parser's measure, `p_left`, is a contract expression
+// and calls it (TYPE-060: a contract calls only a `pure never fails` function).
+pub func:tokenlist_count = int64(TokenList->:l) never fails pure {
     pass l.v.count;
 };
 

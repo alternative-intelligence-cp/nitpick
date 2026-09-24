@@ -81,7 +81,7 @@ async func:main = int32(cstring[]:argv) {
     string:elide_path = "";
     bool:no_wildx = false;
     int64:ai = 1i64;
-    while (ai < argv.len) {
+    while (ai < argv.len) decreases argv.len - ai {
         string:a = string_from_bytes(argv[ai].ptr, argv[ai].len);
         if (raw string_eq(a, "-o") || raw string_eq(a, "--obligations") || raw string_eq(a, "--elide")) {
             if ((ai + 1i64) >= argv.len) {
@@ -326,6 +326,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 3i32; },
         (MachineFault) { exit 3i32; },
         (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
         (*) { exit 3i32; }
     }
     exit 3i32;

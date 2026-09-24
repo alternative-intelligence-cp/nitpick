@@ -144,7 +144,7 @@ pub func:graph_at = ModuleEntry(ModuleGraph->:g, int32:i) never fails {
 // Already in the graph? Returns its index, or -1.
 pub func:graph_find = int32(ModuleGraph->:g, int32:file) never fails {
     int32:i = 0i32;
-    while ((i => int64) < g.v.count) {
+    while ((i => int64) < g.v.count) decreases g.v.count - (i => int64) {
         if (g.v[i => int64].file == file) {
             pass i;
         }
@@ -304,7 +304,7 @@ pub func:graph_load_prelude = int32(ModuleGraph->:g) never fails {
 // place to run before any of them is written down.
 pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
-    while ((i => int64) < g.v.count) {
+    while ((i => int64) < g.v.count) decreases g.v.count - (i => int64) {
         ModuleEntry:e = g.v[i => int64];
         DeclId:root = DeclId{ index: e.root };
         // past the header slot: a file's `mod:name;` binds nothing (D-248)
@@ -344,7 +344,7 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
 // is never consulted.
 func:graph_link_file_modules = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
-    while ((i => int64) < g.v.count) {
+    while ((i => int64) < g.v.count) decreases g.v.count - (i => int64) {
         if (i != g.prelude) {
             ModuleEntry:e = g.v[i => int64];
             DeclId:rootId = DeclId{ index: e.root };
@@ -397,7 +397,7 @@ func:link_one_file_module = NIL(ModuleGraph->:g, int32:scope, DeclId:item,
 // The entry a file-module import's declaration loaded, or -1.
 func:file_module_loaded = int32(ModuleGraph->:g, DeclId:item) never fails {
     int32:i = 0i32;
-    while ((i => int64) < g.links.count) {
+    while ((i => int64) < g.links.count) decreases g.links.count - (i => int64) {
         if (g.links[i => int64].decl == item.index) {
             pass g.links[i => int64].loaded;
         }
@@ -435,7 +435,7 @@ pub func:graph_apply_prelude = NIL(ModuleGraph->:g) never fails {
 
     int32:n = raw symtab_scope_count(@g.tab);
     int32:s = 1i32;
-    while (s < n) {
+    while (s < n) decreases n - s {
         if (s != pe.scope) {
             if ((raw scope_kind(@g.tab, s)) == (raw SCOPE_MODULE())) {
                 drop bind_prelude_into(g, s, pe.scope);
@@ -510,7 +510,7 @@ pub func:graph_check_owned_names = NIL(ModuleGraph->:g) never fails {
         pscope = pe.scope;
     }
     int32:mi = 0i32;
-    while ((mi => int64) < g.v.count) {
+    while ((mi => int64) < g.v.count) decreases g.v.count - (mi => int64) {
         if (mi != g.prelude) {
             ModuleEntry:e = raw graph_at(g, mi);
             drop owned_names_in_module(g, DeclId{ index: e.root }, pscope);
@@ -532,7 +532,7 @@ pub func:graph_check_owned_names = NIL(ModuleGraph->:g) never fails {
 // only the file the driver was given, at its top level, declares either.
 pub func:graph_check_entry_points = NIL(ModuleGraph->:g) never fails {
     int32:mi = 0i32;
-    while ((mi => int64) < g.v.count) {
+    while ((mi => int64) < g.v.count) decreases g.v.count - (mi => int64) {
         if (mi != g.prelude) {
             ModuleEntry:e = raw graph_at(g, mi);
             string:path = raw srcmgr_resolved_proven(@g.sm, e.file);
@@ -777,7 +777,8 @@ pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) never fails {
     // with no file behind it, so the same walk goes looking for `prelude.npk` on
     // disk and reports that it is missing.
     int32:i = 0i32;
-    while ((i => int64) < g.v.count) {
+    // the load walk: a module's imports load more modules behind it, each walked in turn; it ends because every file is loaded once (D-316)
+    while ((i => int64) < g.v.count) unbounded {
         if (i != g.prelude) { drop graph_load_imports(g, i); }
         i = i + 1i32;
     }
@@ -1035,7 +1036,7 @@ func:reaches_memo = bool(ModuleGraph->:g, int32:scope, int32:start,
 // result.
 pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) never fails {
     int32:mi = 0i32;
-    while ((mi => int64) < g.v.count) {
+    while ((mi => int64) < g.v.count) decreases g.v.count - (mi => int64) {
         ModuleEntry:e = raw graph_at(g, mi);
         DeclId:rootId = DeclId{ index: e.root };
         DeclNode:m = raw ast_decl(@g.ast, rootId);
@@ -1081,7 +1082,7 @@ pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) never fails {
 // name declared twice, and this is what makes it one.
 pub func:graph_check_dup_members = NIL(ModuleGraph->:g) never fails {
     int32:mi = 0i32;
-    while ((mi => int64) < g.v.count) {
+    while ((mi => int64) < g.v.count) decreases g.v.count - (mi => int64) {
         ModuleEntry:e = raw graph_at(g, mi);
         drop check_dup_in_module(g, DeclId{ index: e.root });
         mi = mi + 1i32;
@@ -1122,7 +1123,7 @@ func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) never fai
         int32:anode = raw decl_name(a);
         if (!(raw intern_is_none(anode))) {
             int32:j = i + 1i32;
-            while (j < n) {
+            while (j < n) decreases n - j {
                 DeclNode:b = raw ast_decl(@g.ast, raw item_member(@g.ast, d, j));
                 if ((raw decl_name(b)) == anode) {
                     string:nm = raw intern_get(g.interns, anode);
@@ -1178,10 +1179,11 @@ pub func:graph_find_by_path = int32(ModuleGraph->:g, string:path) never fails {
 // reaching one declaration by two routes is not a conflict. Diagnostics are held
 // back to a final pass, or every round would report the same collision again.
 pub func:graph_apply_imports = NIL(ModuleGraph->:g) never fails {
-    while (true) {
+    // the import fixed point (R-2): a round that binds no new name is the last, and a program's names are finite (D-316)
+    while (true) unbounded {
         int32:before = raw symtab_count(@g.tab);
         int32:i = 0i32;
-        while ((i => int64) < g.v.count) {
+        while ((i => int64) < g.v.count) decreases g.v.count - (i => int64) {
             drop module_apply_imports(g, i, false);
             i = i + 1i32;
         }
@@ -1191,7 +1193,7 @@ pub func:graph_apply_imports = NIL(ModuleGraph->:g) never fails {
     }
 
     int32:k = 0i32;
-    while ((k => int64) < g.v.count) {
+    while ((k => int64) < g.v.count) decreases g.v.count - (k => int64) {
         drop module_apply_imports(g, k, true);
         k = k + 1i32;
     }
@@ -1585,7 +1587,7 @@ pub func:module_basename_intern = int32(ModuleGraph->:g, int32:file,
     string:p = raw srcmgr_resolved_proven(@g.sm, file);
     int64:start = 0i64;
     int64:i = 0i64;
-    while (i < p.len) {
+    while (i < p.len) decreases p.len - i {
         if (p.ptr[i] == 47u8) { start = i + 1i64; }
         i = i + 1i64;
     }

@@ -124,7 +124,7 @@ pub func:srcmgr_count = int32(SourceManager->:m) never fails {
 // `./a/../b.npk` and `b.npk` must arrive here as the same text.
 pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
     int64:i = 0i64;
-    while (i < m.v.count) {
+    while (i < m.v.count) decreases m.v.count - i {
         if (raw string_eq(m.v[i].path, path)) {
             pass (raw srcmgr_id(i));
         }

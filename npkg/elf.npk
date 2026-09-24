@@ -98,7 +98,7 @@ pub func:elf_undefined = List<string>(string:obj_path) {
         if (name >= strsize) { fail EElf; }
         int64:at = stroff + name;
         int64:stop = at;
-        while (true) {
+        while (true) decreases (stroff + strsize) - stop {
             if (stop >= (stroff + strsize)) { fail EElf; }
             if ((relay byte_at(s, stop)) == 0i64) { break; }
             stop = stop + 1i64;
@@ -119,7 +119,7 @@ func:sec_name = string(string:s, int64:shoff, int64:shstr, int64:i) {
     if (name >= strsize) { fail EElf; }
     int64:at = stroff + name;
     int64:stop = at;
-    while (true) {
+    while (true) decreases (stroff + strsize) - stop {
         if (stop >= (stroff + strsize)) { fail EElf; }
         if ((relay byte_at(s, stop)) == 0i64) { break; }
         stop = stop + 1i64;
@@ -132,7 +132,7 @@ func:str_at = string(string:s, int64:stroff, int64:strsize, int64:name) {
     if (name >= strsize) { fail EElf; }
     int64:at = stroff + name;
     int64:stop = at;
-    while (true) {
+    while (true) decreases (stroff + strsize) - stop {
         if (stop >= (stroff + strsize)) { fail EElf; }
         if ((relay byte_at(s, stop)) == 0i64) { break; }
         stop = stop + 1i64;
@@ -230,7 +230,7 @@ pub func:elf_stack_sizes = List<string>(string:obj_path) {
         int64:size = 0i64;
         int64:mul = 1i64;
         int64:n = 0i64;
-        while (true) {
+        while (true) decreases 5i64 - n {
             int64:b = relay byte_at(s, at + n);
             size = size + ((b & 127i64) * mul);
             n = n + 1i64;
@@ -281,9 +281,9 @@ pub func:runtime_exports = List<string>(string:s) never fails {
         int64:g = raw text_index_from(ln, ".globl", 0i64);
         if ((g >= 0i64) && (raw text_starts_with(ln, "module asm"))) {
             int64:ns = g + 6i64;
-            while ((ns < ln.len) && (raw text_is_ws(ln.ptr[ns]))) { ns = ns + 1i64; }
+            while ((ns < ln.len) && (raw text_is_ws(ln.ptr[ns]))) decreases ln.len - ns { ns = ns + 1i64; }
             int64:ne = ns;
-            while (ne < ln.len) {
+            while (ne < ln.len) decreases ln.len - ne {
                 if (!(raw elf_sym_byte(ln.ptr[ne]))) { break; }
                 ne = ne + 1i64;
             }
@@ -294,13 +294,13 @@ pub func:runtime_exports = List<string>(string:s) never fails {
         int64:i = 6i64;
         if (i >= ln.len) { continue; }
         if (!(raw text_is_ws(ln.ptr[i]))) { continue; }
-        while ((i < ln.len) && (raw text_is_ws(ln.ptr[i]))) { i = i + 1i64; }
+        while ((i < ln.len) && (raw text_is_ws(ln.ptr[i]))) decreases ln.len - i { i = i + 1i64; }
         // An `internal` define is not an export.
         if (raw text_starts_with(raw text_slice(ln, i, ln.len), "internal ")) { continue; }
         int64:at = raw text_find_byte(ln, 64u8, i);
         if (at < 0i64) { continue; }
         int64:e = at + 1i64;
-        while (e < ln.len) {
+        while (e < ln.len) decreases ln.len - e {
             if (!(raw elf_sym_byte(ln.ptr[e]))) { break; }
             e = e + 1i64;
         }

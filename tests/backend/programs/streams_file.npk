@@ -66,7 +66,7 @@ async func:main = int32(cstring[]:_~argv) {
     // the drop IS the close: 1500 opens through owning scopes
     Path:devnull = path_parse("/dev/null") ?! E9;
     int32:i = 0i32;
-    while (i < 1500i32) {
+    while (i < 1500i32) decreases 1500i32 - i {
         {
             ByteReader:r2 = byte_reader_open(devnull, raw duration_ms(100i64)) ?! E9;
             if ((r2.src.value =>! int64) < 0i64) { exit 21i32; }
@@ -102,6 +102,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 98i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

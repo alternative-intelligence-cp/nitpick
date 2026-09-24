@@ -31,7 +31,7 @@ mod:nio;
 pub func:nio_normalize = string(string:s) {
     bool:seen_cr = false;
     int64:i = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         if (s.ptr[i] == 13u8) { seen_cr = true; break; }
         i = i + 1i64;
     }
@@ -46,7 +46,7 @@ pub func:nio_normalize = string(string:s) {
     wild int8->:out = alloc(s.len);
     int64:o = 0i64;
     i = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         uint8:b = s.ptr[i];
         if (b == 13u8) {
             out[o] = 10i8;
@@ -151,7 +151,8 @@ func:nio_byte = NIL(NioW->:w, int8:b) never fails {
 // returned) is all that remains below.
 pub func:nio_write_all = NIL(fd:sink, wild int8->:p, int64:n) {
     int64:off = 0i64;
-    while (off < n) {
+    // writes until the sink has taken every byte: a write that takes none ends it by its error, or the sink's own deadline (D-316)
+    while (off < n) unbounded {
         Result<int64>:w = write(sink, @p[off], n - off);
         if (w.is_error) { fail w.err; }
         off = off + w.value;
@@ -176,7 +177,7 @@ pub func:nio_flush = NIL(NioW->:w) {
 pub func:nio_put = NIL(NioW->:w, string:s) {
     bool:saw_nl = false;
     int64:i = 0i64;
-    while (i < s.len) {
+    while (i < s.len) decreases s.len - i {
         uint8:b = s.ptr[i];
         if (b == 10u8) {
             if (w.ending == NioEnding.CrLf) { drop nio_byte(w, 13i8); }

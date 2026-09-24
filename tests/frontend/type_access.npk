@@ -110,7 +110,8 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) never fails {
 
     DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
-    while (i < (raw item_member_count(@ast, mn))) {
+    int32:nmembers = raw item_member_count(@ast, mn);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:item = raw item_member(@ast, mn, i);
         DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
@@ -733,7 +734,7 @@ func:main = int32(cstring[]:_~argv) {
     {
         InternTable:ct = raw intern_init();
         int32:pad = raw intern_count(@ct);
-        while (pad < 87i32) {
+        while (pad < 87i32) decreases 87i32 - pad {
             discard(raw intern_add(@ct, string_concat("pad", int_to_string(pad => int64))));
             pad = raw intern_count(@ct);
         }
@@ -865,6 +866,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

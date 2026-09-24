@@ -43,7 +43,7 @@ func:every_form = int32(int32:n, Point:p) requires n > 0i32 ensures result > 0i3
     else { total = other; }
 
     // while, with an invariant
-    while (total < LIMIT) invariant total >= 0i32, other >= 0i32 {
+    while (total < LIMIT) decreases LIMIT - total invariant total >= 0i32, other >= 0i32 {
         total = total + 1i32;
     }
 
@@ -57,7 +57,7 @@ func:every_form = int32(int32:n, Point:p) requires n > 0i32 ensures result > 0i3
     till (4i64, 1i64) invariant total >= 0i32 { total = total + 1i32; }
 
     // when / then / end
-    when (total < LIMIT) invariant total >= 0i32 {
+    when (total < LIMIT) decreases LIMIT - total invariant total >= 0i32 {
         total = total + 1i32;
     } then {
         total = total + other;

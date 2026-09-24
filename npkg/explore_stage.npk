@@ -204,7 +204,7 @@ func:npkx_field = string(string:err, string:key) never fails {
         if (at < 0i64) { pass ""; }
         int64:p = at + key.len;
         int64:stop = p;
-        while (stop < ln.len) {
+        while (stop < ln.len) decreases ln.len - stop {
             uint8:ch = ln.ptr[stop];
             if ((ch < 48u8) || (ch > 57u8)) { break; }
             stop = stop + 1i64;

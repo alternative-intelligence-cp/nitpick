@@ -1,0 +1,40 @@
+// expect-exit: 3
+//
+// A `pub Rules` IS EXPORTED (DEF-93, 1.5.8c step 3): a rule declared `pub` in
+// an inline module is bound by `use m.{R};` and names a limit in the file, as a
+// `pub` struct would. Until this step the parser stored no flags on a `Rules`
+// declaration and `decl_flags` read its SUBJECT TYPE's node index as the word,
+// so whether the prelude's `pub Rules<int64>:ListLen` reached a program
+// depended on the parity of the `int64` type node's index -- the same defect a
+// global had at 1.4.8, one declaration kind over. `main` also names the
+// prelude's rule directly: `limit<ListLen>` resolved on the trees where the
+// parity happened to hold and was RESOLVE-002 where it did not.
+mod:rules_pub;
+error:E9;
+
+mod:m = {
+    pub Rules<int64>:R = { $ >= 0i64, $ <= 100i64 };
+};
+use m.{R};
+
+func:main = int32(cstring[]:argv) {
+    limit<R> int64:x = 2i64 + (argv.len - 1i64);
+    limit<ListLen> int64:n = x + 1i64;
+    exit (n =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 20i32; },
+        (LimitViolated)    { exit 41i32; },
+        (IntOverflow)      { exit 93i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

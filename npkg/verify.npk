@@ -297,7 +297,7 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
             }
             got = got + 1i64;
             // the next encoded row of this file
-            while (next_row < rows.count) {
+            while (next_row < rows.count) decreases rows.count - next_row {
                 bool:mine = raw text_eq(string_from_bytes((<-rows)[next_row].fno.ptr, (<-rows)[next_row].fno.len), fno);
                 if (mine && (<-rows)[next_row].encoded) { break; }
                 next_row = next_row + 1i64;
@@ -527,7 +527,7 @@ pub func:manifest_compare = string(move ObManifest:committed, move ObManifest:ru
 func:count_of = int64(string:ir, string:needle) never fails {
     int64:n = 0i64;
     int64:from = 0i64;
-    while (true) {
+    while (true) decreases ir.len - from {
         int64:p = raw text_index_from(ir, needle, from);
         if (p < 0i64) { pass n; }
         n = n + 1i64;
@@ -1399,7 +1399,7 @@ func:file_base = string(string:text) never fails {
 func:file_block = string(string:text, int64:k) never fails {
     int64:from = 0i64;
     int64:n = 0i64;
-    while (true) {
+    while (true) decreases text.len - from {
         int64:p = raw text_index_from(text, "(push)\n", from);
         if (p < 0i64) { pass ""; }
         n = n + 1i64;

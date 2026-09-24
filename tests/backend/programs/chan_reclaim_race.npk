@@ -21,7 +21,7 @@ thread async func:worker = NIL(Channel<Channel<int32, 2i32, 1i64>, 3i32, 1i64>:c
     Channel<int32, 2i32, 1i64>:inner = await ctl.recv(raw duration_ms(2000i64)) ?! ECtl;
     int32:tries = 0i32;
     int32:verdict = 43i32;                            // never saw the reclaim
-    while (tries < 200000i32) {
+    while (tries < 200000i32) decreases 200000i32 - tries {
         Result<NIL>:r = await inner.send(1i32, raw duration_ms(1i64));
         if (r.is_error) {
             if (r.err == StaleHandle) { verdict = 42i32; break; }
@@ -65,6 +65,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

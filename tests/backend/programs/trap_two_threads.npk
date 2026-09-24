@@ -24,7 +24,8 @@ thread async func:early = NIL(int32:zero) joins JOIN_5S {
 
 thread async func:late = NIL(int32:zero) joins JOIN_5S {
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 2000000i64) { }
+    // a spin on the monotonic clock (D-316)
+    while ((mono_now() - t0) < 2000000i64) unbounded { }
     discard(10i32 / zero);
     pass NIL;
 };
@@ -34,13 +35,15 @@ async func:main = int32(cstring[]:argv) {
     drop early(zero);
     drop late(zero);
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 400000000i64) { }
+    // a spin on the monotonic clock (D-316)
+    while ((mono_now() - t0) < 400000000i64) unbounded { }
     exit 0i32;                                        // neither thread trapped
 };
 
 func:failsafe = int32(Error:e) {
     int64:t0 = mono_now();
-    while ((mono_now() - t0) < 100000000i64) { }     // B's trap lands in here
+    // a spin on the monotonic clock until the trap lands (D-316)
+    while ((mono_now() - t0) < 100000000i64) unbounded { }     // B's trap lands in here
     pick (e) {
         (DivByZero)        { exit 41i32; },
         (DeadlineExceeded) { exit 43i32; },
@@ -53,6 +56,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 97i32; },
         (StackExhausted)   { exit 98i32; },
         (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
         (*)                { exit 98i32; }
     }
     exit 99i32;

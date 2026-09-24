@@ -112,12 +112,12 @@ func:main = int32(cstring[]:_~argv) {
     // the seed compiles it, and the seed refuses `Optional`.)
     wild int8->:bytes = alloc(2i64 * #size_of<int32?>());
     int64:i = 0i64;
-    while (i < 2i64 * #size_of<int32?>()) { bytes[i] = 0i8; i = i + 1i64; }
+    while (i < 2i64 * #size_of<int32?>()) decreases (2i64 * #size_of<int32?>()) - i { bytes[i] = 0i8; i = i + 1i64; }
     wild int32?->:qp = bytes =>! wild int32?->;
     qp[1] = 7i32;
     int64:first = 0i64 - 1i64;
     i = 0i64;
-    while (i < 2i64 * #size_of<int32?>()) {
+    while (i < 2i64 * #size_of<int32?>()) decreases (2i64 * #size_of<int32?>()) - i {
         if (bytes[i] != 0i8) { if (first < 0i64) { first = i; } }
         i = i + 1i64;
     }
@@ -126,12 +126,12 @@ func:main = int32(cstring[]:_~argv) {
 
     wild int8->:pb = alloc(2i64 * #size_of<Point?>());
     i = 0i64;
-    while (i < 2i64 * #size_of<Point?>()) { pb[i] = 0i8; i = i + 1i64; }
+    while (i < 2i64 * #size_of<Point?>()) decreases (2i64 * #size_of<Point?>()) - i { pb[i] = 0i8; i = i + 1i64; }
     wild Point?->:pq = pb =>! wild Point?->;
     pq[1] = Point{ x: 1i32, y: 1i32 };
     first = 0i64 - 1i64;
     i = 0i64;
-    while (i < 2i64 * #size_of<Point?>()) {
+    while (i < 2i64 * #size_of<Point?>()) decreases (2i64 * #size_of<Point?>()) - i {
         if (pb[i] != 0i8) { if (first < 0i64) { first = i; } }
         i = i + 1i64;
     }
@@ -152,6 +152,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

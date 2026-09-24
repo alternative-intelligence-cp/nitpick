@@ -16,7 +16,7 @@ thread async func:nothing = NIL(int32:_~v) joins JOIN_2S {
 
 async func:main = int32(cstring[]:_~argv) {
     int32:i = 0i32;
-    while (i < 1i32) {
+    while (i < 1i32) decreases 1i32 - i {
         drop nothing(1i32);                           // joined at the end of each pass
         i = i + 1i32;
     }
@@ -34,6 +34,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 99i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 100i32; },
         (*)                { exit 100i32; }
     }
     exit 101i32;

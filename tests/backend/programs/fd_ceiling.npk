@@ -17,7 +17,7 @@ error:E9;
 func:fill = int64(cstring:devnull) never fails {
     List<OwnedFd>:held = raw list_init::<OwnedFd>(64i64);
     int64:n = 0i64;
-    while (n < 5000i64) {
+    while (n < 5000i64) decreases 5000i64 - n {
         Result<fd>:r = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
         if (r.is_error) { break; }
         drop list_push(@held, own_fd(r.value));
@@ -46,6 +46,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 92i32; },
         (MachineFault)   { exit 92i32; },
         (LimitViolated) { exit 92i32; },
+        (DecreasesViolated) { exit 92i32; },
         (*)              { exit 92i32; }
     }
     exit 9i32;

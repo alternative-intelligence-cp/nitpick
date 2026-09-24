@@ -14,7 +14,7 @@ use "../../../lib/nio.npk".*;
 func:bytes_equal = bool(string:a, string:b) never fails {
     if (a.len != b.len) { pass false; }
     int64:i = 0i64;
-    while (i < a.len) {
+    while (i < a.len) decreases a.len - i {
         if (a.ptr[i] != b.ptr[i]) { pass false; }
         i = i + 1i64;
     }
@@ -87,6 +87,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

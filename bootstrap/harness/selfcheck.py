@@ -57,6 +57,7 @@ FAILSAFE = """func:failsafe = int32(Error:e) {
         (WildLeak) { exit 1i32; },
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;
@@ -1104,7 +1105,7 @@ def main():
            "        (DivOverflow) { exit 22i32; },\n        (HeapBadRequest) { exit 9i32; },\n"
            "        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n"
            "        (OutOfBounds) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n"
-           "        (WildLeak) { exit 9i32; },\n        (StackExhausted) { exit 9i32; },\n        (MachineFault) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
+           "        (WildLeak) { exit 9i32; },\n        (StackExhausted) { exit 9i32; },\n        (MachineFault) { exit 9i32; },\n        (DecreasesViolated) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
     # AND A LIMIT'S ROWS (1.5.2 step 3): a limited parameter's entry row is
     # `open` (nothing is known of the argument at the callee) and the call
     # site's `limit-subsume` row over an opaque argument is `open` too; a test
@@ -1121,15 +1122,15 @@ def main():
             "        (LimitViolated) { exit 31i32; },\n        (HeapBadRequest) { exit 9i32; },\n"
             "        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n"
             "        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n"
-            "        (StackExhausted) { exit 9i32; },\n        (MachineFault) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
+            "        (StackExhausted) { exit 9i32; },\n        (MachineFault) { exit 9i32; },\n        (DecreasesViolated) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
     for name, head, body, must_fail, why in (
-            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 13\n// expect-obligation: exhaustive checker 1\n",
              VDIV + VFS, True, "a verify test expecting `discharged` for an opaque divisor must fail"),
-            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 13\n// expect-obligation: exhaustive checker 1\n",
              VDIV + VFS, False, "a verify test naming its rows exactly must pass"),
-            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 11\n// expect-obligation: exhaustive checker 1\n",
+            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
              VLIM + VLFS, True, "a verify test expecting `discharged` for a limited parameter's entry must fail"),
-            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 11\n// expect-obligation: exhaustive checker 1\n",
+            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
              VLIM + VLFS, False, "a verify test naming a limit's rows exactly must pass"),
             # AN UNPROVEN `prove` REFUSES THE VERIFIED BUILD (1.5.4 step 4, L-21;
             # S-45): a unit whose `prove` is `open` and names no error must
@@ -1137,11 +1138,11 @@ def main():
             # NITPICK-VERIFY-001 passes -- the refusal is the expectation. And
             # a `checker` row is read as one: an `exhaustive` row named
             # `discharged` must fail. The texts are npkg's, byte for byte.
-            ("prove-open", "// expect-obligation: prove open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("prove-open", "// expect-obligation: prove open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 13\n// expect-obligation: exhaustive checker 1\n",
              VPROVE + VFS, True, "a verify unit whose `prove` is open and names no refusal must fail"),
-            ("prove-open-named", "// expect-error: NITPICK-VERIFY-001\n// expect-obligation: prove open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive checker 1\n",
+            ("prove-open-named", "// expect-error: NITPICK-VERIFY-001\n// expect-obligation: prove open 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 13\n// expect-obligation: exhaustive checker 1\n",
              VPROVE + VFS, False, "a verify unit naming the verified build's refusal of its open `prove` must pass"),
-            ("checker-row", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 12\n// expect-obligation: exhaustive discharged 1\n",
+            ("checker-row", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: overflow open 1\n// expect-obligation: failsafe-post discharged 13\n// expect-obligation: exhaustive discharged 1\n",
              VDIV + VFS, True, "a verify test naming a `checker` row `discharged` must fail")):
         # THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005), so the
         # hyphen in the case name becomes an underscore in both.

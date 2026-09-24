@@ -204,7 +204,7 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
 func:drop_type_register = NIL(LlCtx->:c, int32:dty) never fails {
     bool:seen = false;
     int64:i = 0i64;
-    while (i < c.drop_types.count) {
+    while (i < c.drop_types.count) decreases c.drop_types.count - i {
         if (c.drop_types[i] == dty) { seen = true; }
         i = i + 1i64;
     }
@@ -250,7 +250,7 @@ pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) ne
 // program-wide (TRAITS_REFERENCE 4.1), so the first match is the only one.
 pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) never fails {
     int32:i = 0i32;
-    while ((i => int64) < c.vt_self.count) {
+    while ((i => int64) < c.vt_self.count) decreases c.vt_self.count - (i => int64) {
         if (c.vt_self[i => int64] == self_ty) {
             if (c.vt_trait[i => int64] == trait_ty) {
                 pass (c.vt_sym[i => int64]);
@@ -418,7 +418,7 @@ pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) never fails {
     if ((raw type_kind(c.types, id)) != (raw TY_PARAM())) { pass id; }
     int32:pd = raw type_decl_of(c.types, id);
     int32:pi = 0i32;
-    while (pi < c.subst_params_count) {
+    while (pi < c.subst_params_count) decreases c.subst_params_count - pi {
         if ((raw ast_id_at(c.ast, c.subst_params_start, pi)) == pd) {
             pass (raw ast_id_at(c.ast, c.subst_args_start, pi));
         }
@@ -1073,7 +1073,8 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
     string:body = "";
     int32:n = 0i32;
     int32:i = 0i32;
-    while (i < (raw item_member_count(c.ast, d))) {
+    int32:nmembers = raw item_member_count(c.ast, d);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:mid = raw item_member(c.ast, d, i);
         DeclNode:m = raw ast_decl(c.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
@@ -1191,7 +1192,7 @@ pub func:ll_text_is_scalar_int = bool(string:text) never fails {
     if (text.len < 2i64) { pass false; }
     if (text.ptr[0i64] != 105u8) { pass false; }   // 'i'
     int64:i = 1i64;
-    while (i < text.len) {
+    while (i < text.len) decreases text.len - i {
         if (text.ptr[i] < 48u8) { pass false; }    // '0'
         if (text.ptr[i] > 57u8) { pass false; }    // '9'
         i = i + 1i64;

@@ -60,7 +60,7 @@ pub func:sx_text = string(Sxs->:s, int64:node) never fails {
     string:out = "(";
     int64:c = s.nodes[node].first;
     bool:first = true;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!first) { out = string_concat(out, " "); }
         out = string_concat(out, raw sx_text(s, c));
         first = false;
@@ -106,10 +106,10 @@ func:req_is_numeral = bool(string:a) never fails {
 func:req_leaf_indices = string(string:path) never fails {
     string:out = "";
     int64:i = 0i64;
-    while (i < path.len) {
+    while (i < path.len) decreases path.len - i {
         if (path.ptr[i] == 46u8) {                     // '.'
             int64:j = i + 1i64;
-            while ((j < path.len) && (path.ptr[j] != 46u8)) { j = j + 1i64; }
+            while ((j < path.len) && (path.ptr[j] != 46u8)) decreases path.len - j { j = j + 1i64; }
             if (out.len > 0i64) { out = string_concat(out, ", "); }
             out = string_concat(out, raw text_slice(path, i + 1i64, j));
             i = j;
@@ -534,7 +534,7 @@ func:req_section_translated = bool(Sxs->:s, int64:sec) never fails {
     bool:claims = false;
     bool:boundary = false;
     int64:c = s.nodes[sec].first;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (raw sx_is_list(s, c)) {
             string:h = raw sx_head(s, c);
             if ((raw text_eq(h, "ensures")) || (raw text_eq(h, "ensures-trap")) || (raw text_eq(h, "frame")) || (raw text_eq(h, "loop"))) { claims = true; }
@@ -682,7 +682,7 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
     int64:nchecked = 0i64;
     int64:nreg = 0i64;                                                   // fresh registers, across clauses
     int64:c = s.nodes[sec].first;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if (!(raw sx_is_list(s, c))) { c = s.nodes[c].next; continue; }
         string:h = raw sx_head(s, c);
         bool:is_req = raw text_eq(h, "requires");
@@ -706,13 +706,13 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
                 if (oc >= 0i64) {
                     int64:oe = s.nodes[oc].first;
                     oe = s.nodes[oe].next;
-                    while (oe >= 0i64) { drop list_push(@entries, oe); oe = s.nodes[oe].next; }
+                    while (oe >= 0i64) decreases s.nodes.count - oe { drop list_push(@entries, oe); oe = s.nodes[oe].next; }
                 }
                 first_view = entries.count;
             }
             int64:ce = s.nodes[c].first;
             ce = s.nodes[ce].next;
-            while (ce >= 0i64) { drop list_push(@entries, ce); ce = s.nodes[ce].next; }
+            while (ce >= 0i64) decreases s.nodes.count - ce { drop list_push(@entries, ce); ce = s.nodes[ce].next; }
             if (!is_view) { first_view = entries.count; }
             List<ReqFact>:rf = raw req_range_facts(@e, ft, s, @entries, first_view);
             // a views clause records only ITS ranges' facts; the objects' come first in `rf`
@@ -800,7 +800,7 @@ func:req_section = NIL(ReqGen->:g, SmtBuf->:ir, FloorText->:ft, Sxs->:s, int64:s
 // The first clause of `sec` with head `name`, or -1.
 func:req_find_clause = int64(Sxs->:s, int64:sec, string:name) never fails {
     int64:c = s.nodes[sec].first;
-    while (c >= 0i64) {
+    while (c >= 0i64) decreases s.nodes.count - c {
         if ((raw sx_is_list(s, c)) && (raw text_eq(raw sx_head(s, c), name))) { pass c; }
         c = s.nodes[c].next;
     }
@@ -900,7 +900,7 @@ func:req_expected_counts = NIL(Sxs->:s, List<string>->:syms, List<int64>->:count
         int64:oc = raw req_find_clause(s, root, "objects");
         if (oc >= 0i64) { nobj = (raw sx_len(s, oc)) - 1i64; }
         int64:c = s.nodes[root].first;
-        while (c >= 0i64) {
+        while (c >= 0i64) decreases s.nodes.count - c {
             if (raw sx_is_list(s, c)) {
                 string:h = raw sx_head(s, c);
                 if (raw text_eq(h, "requires")) { total = total + 1i64; }
@@ -995,7 +995,7 @@ pub func:explore_assumptions = List<string>(string:spec, string:explored, string
                 // the name: `@name` or `@"quoted.name"`, up to its `(`; the quotes dropped
                 int64:at = raw text_find_byte(code, 64u8, 0i64);
                 int64:stop = at;
-                while (stop < code.len) { uint8:ch = code.ptr[stop]; if ((ch == 40u8) || (ch == 32u8)) { break; } stop = stop + 1i64; }
+                while (stop < code.len) decreases code.len - stop { uint8:ch = code.ptr[stop]; if ((ch == 40u8) || (ch == 32u8)) { break; } stop = stop + 1i64; }
                 fn = raw text_replace_all(raw text_slice(code, at, stop), "\"", "");
                 if (raw text_starts_with(fn, "@npkx.req.")) { drop strlist_push(@defined, string_concat("@", raw text_slice(fn, 10i64, fn.len))); }
                 first = true;

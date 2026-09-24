@@ -50,7 +50,7 @@ func:expanded = Ex(string:src, InternTable->:it) never fails {
 
     int32:round = 0i32;
     bool:more = true;
-    while (more) {
+    while (more) decreases (raw EXPAND_ROUNDS()) - round {
         if (round >= (raw EXPAND_ROUNDS())) { break; }
         more = raw expand_module(@x, root);
         if (raw expander_blown(@x)) { break; }
@@ -79,7 +79,7 @@ func:has_member = bool(Ex->:e, InternTable->:it, DeclKind:kind, string:name) nev
     DeclNode:m = raw ast_decl(@e.ast, e.root);
     int32:n = raw item_member_count(@e.ast, m);
     int32:i = 0i32;
-    while (i < n) {
+    while (i < n) decreases n - i {
         DeclNode:d = raw ast_decl(@e.ast, raw item_member(@e.ast, m, i));
         if (d.kind == kind) {
             if (raw string_eq(raw intern_get(it, raw decl_name(d)), name)) {
@@ -219,6 +219,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 1i32; },
         (MachineFault) { exit 1i32; },
         (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

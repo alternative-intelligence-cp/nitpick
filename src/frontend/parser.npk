@@ -85,6 +85,16 @@ pub func:p_at_end = bool(Parser->:p) never fails {
     pass ((raw p_kind(p)) == TokenKind.Eof);
 };
 
+// THE TOKENS LEFT (1.5.8c step 3, D-304): every loop of the parser ends because
+// each trip consumes at least one token, and `p_advance` never passes the Eof
+// token -- so `p_left` is the measure every `while` here states
+// (`decreases raw p_left(p)`), and it is never below one. Pure, so a contract
+// may call it (TYPE-060); an uninterpreted function to the solver, so the rows
+// stay open and the check stays -- the check IS the argument, at run time.
+pub func:p_left = int64(Parser->:p) never fails pure {
+    pass ((raw tokenlist_count(p.tokens)) - p.pos);
+};
+
 pub func:p_span = Span(Parser->:p) never fails {
     Token:t = raw p_peek(p);
     pass t.span;
@@ -204,7 +214,7 @@ pub func:p_sync = NIL(Parser->:p) never fails {
         pass NIL;
     }
     discard(raw p_advance(p));
-    while (true) {
+    while (true) decreases raw p_left(p) {
         TokenKind:k = raw p_kind(p);
         if (k == TokenKind.Eof) { break; }
         if (raw is_sync_point(k)) { break; }
@@ -300,7 +310,7 @@ pub func:p_qualifier_bit = int32(TokenKind:k) never fails {
 // a qualifier refused here would be a parse error where the rule is semantic.
 pub func:p_qualifiers = int32(Parser->:p) never fails {
     int32:q = 0i32;
-    while (true) {
+    while (true) decreases raw p_left(p) {
         int32:bit = raw p_qualifier_bit(raw p_kind(p));
         if (bit == 0i32) { break; }
         discard(raw p_advance(p));
@@ -327,7 +337,7 @@ pub func:p_recover = NIL(Parser->:p) never fails {
     if (!p.panic) {
         pass NIL;
     }
-    while (true) {
+    while (true) decreases raw p_left(p) {
         if (raw p_at_end(p))        { break; }
         if (raw p_can_start_item(p)) { break; }
         discard(raw p_advance(p));

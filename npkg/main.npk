@@ -62,7 +62,7 @@ func:usage = string() never fails {
 func:find_root = string() {
     string:cw = relay sys_cwd();
     string:probe = raw path_normalise(cw);
-    while (true) {
+    while (true) decreases probe.len {
         Result<cstring>:cc = to_cstring(raw path_join(probe, "nitpick.toml"));
         if (!cc.is_error) {
             if (path_exists(cc.value)) { pass probe; }
@@ -96,7 +96,7 @@ async func:main = int32(cstring[]:argv) {
     List<string>:only = raw list_init::<string>(2i64);
     string:verdicts_path = "";
     int64:ai = 2i64;
-    while (ai < argv.len) {
+    while (ai < argv.len) decreases argv.len - ai {
         string:a = string_from_bytes(argv[ai].ptr, argv[ai].len);
         if (raw text_eq(a, "--selfcheck")) { selfcheck = true; ai = ai + 1i64; continue; }
         if (raw text_eq(a, "--record"))    { record = true; ai = ai + 1i64; continue; }
@@ -354,6 +354,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted)   { exit 3i32; },
         (MachineFault)     { exit 3i32; },
         (LimitViolated) { exit 3i32; },
+        (DecreasesViolated) { exit 3i32; },
         (*)                { exit 3i32; }
     }
     exit 3i32;

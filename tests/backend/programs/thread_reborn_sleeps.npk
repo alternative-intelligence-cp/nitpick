@@ -36,7 +36,7 @@ async func:main = int32(cstring[]:_~argv) {
     int64:rfd = fdi[0i64] => int64;
     dalloc(fds);
     int32:pass_n = 0i32;
-    while (pass_n < 2i32) {
+    while (pass_n < 2i32) decreases 2i32 - pass_n {
         // each pass's thread is joined at the end of the pass, so the second
         // is reborn into the slot the first one's join retired
         if (pass_n == 0i32) { drop arms(rfd); }
@@ -58,6 +58,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)         { exit 99i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 100i32; },
         (*)                { exit 100i32; }
     }
     exit 101i32;

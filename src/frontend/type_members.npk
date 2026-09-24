@@ -692,8 +692,9 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // qualified form exists to resolve.
     int32:mdecl = 0i32;
     int32:owner_impl = 0i32;
+    int32:nimpls = raw impl_count(e.impls);
     int32:i = 0i32;
-    while (i < (raw impl_count(e.impls))) {
+    while (i < nimpls) decreases nimpls - i {
         ImplEntry:en = raw impl_at(e.impls, i);
         if (en.trait_id != 0i32) {
             if ((raw type_decl_of(e.types, en.trait_id)) == trait_decl) {
@@ -715,7 +716,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                         md = raw trait_default_named(e.ast, e.interns, e.types,
                                  trait_ty, mname);
                     }
-                    if (md != 0i32) { mdecl = md; owner_impl = en.decl; i = raw impl_count(e.impls); }
+                    if (md != 0i32) { mdecl = md; owner_impl = en.decl; i = nimpls; }
                 }
             }
         }
@@ -1284,7 +1285,8 @@ func:type_ctor_named = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
     DeclId:did = DeclId{ index: raw type_decl(e.types, enum_ty) };
     DeclNode:d = raw ast_decl(e.ast, did);
     int32:i = 0i32;
-    while (i < (raw item_member_count(e.ast, d))) {
+    int32:nmembers = raw item_member_count(e.ast, d);
+    while (i < nmembers) decreases nmembers - i {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
@@ -1382,7 +1384,8 @@ func:enum_instance_for = int32(ExprTyper->:e, int32:decl, int32:ename, int32:vna
     // The variant, or the caller's "no member".
     int32:vidx = 0i32 - 1i32;
     int32:vi = 0i32;
-    while (vi < (raw item_member_count(e.ast, d))) {
+    int32:nmembers = raw item_member_count(e.ast, d);
+    while (vi < nmembers) decreases nmembers - vi {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) { vidx = vi; }
@@ -1695,7 +1698,7 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     TypeResolver:r = raw etyper_resolver(e);
     int32:mark = raw ast_scratch_mark(e.ast);
     int32:i = 0i32;
-    while (i < gp.count) {
+    while (i < gp.count) decreases gp.count - i {
         drop ast_scratch_push(e.ast, 0i32);
         i = i + 1i32;
     }
@@ -1735,7 +1738,7 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // the same function, that an annotation gets. A call and a type annotation
     // refusing the same thing for different reasons would be two rules.
     int32:k = 0i32;
-    while (k < args.count) {
+    while (k < args.count) decreases args.count - k {
         DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, k) };
         drop check_arg_bounds(e.impls, e.bounds, @r,
                               raw ast_id_at(e.ast, args.start, k), gpid, d,
@@ -1819,7 +1822,7 @@ func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
     if (k == (raw TY_PARAM())) {
         int32:decl = raw type_decl_of(e.types, declared);
         int32:i = 0i32;
-        while (i < gp.count) {
+        while (i < gp.count) decreases gp.count - i {
             if ((raw ast_id_at(e.ast, gp.start, i)) == decl) {
                 if ((raw ast_scratch_at(e.ast, mark, i)) == 0i32) {
                     drop ast_scratch_set(e.ast, mark, i, actual);
@@ -1882,7 +1885,7 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
                        Span:at) never fails {
     bool:ok = true;
     int32:i = 0i32;
-    while (i < gp.count) {
+    while (i < gp.count) decreases gp.count - i {
         int32:solved = 0i32;
         if (i < args.count) { solved = raw ast_id_at(e.ast, args.start, i); }
         if (solved == 0i32) {
@@ -2672,7 +2675,7 @@ func:builtin_arg_fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
 func:module_scope_of = int32(ExprTyper->:e, int32:scope) never fails {
     int32:cur = scope;
     int32:fuel = 4096i32;
-    while ((cur != 0i32) && (fuel > 0i32)) {
+    while ((cur != 0i32) && (fuel > 0i32)) decreases fuel {
         if ((raw scope_kind(e.tab, cur)) == (raw SCOPE_MODULE())) { pass cur; }
         cur = raw scope_parent(e.tab, cur);
         fuel = fuel - 1i32;
@@ -2829,7 +2832,8 @@ func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) never f
     int32:gd = raw type_decl_of(e.types, got);
     if (gd == 0i32) { pass 0i32; }
     int32:i = 0i32;
-    while (i < (raw impl_count(e.impls))) {
+    int32:nimpls = raw impl_count(e.impls);
+    while (i < nimpls) decreases nimpls - i {
         ImplEntry:en = raw impl_at(e.impls, i);
         if (!en.blanket) {
             if (en.trait_id == tr_id) {
@@ -2861,7 +2865,8 @@ func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) never f
 // This impl's own method called `name`, or 0 when it inherits the trait default.
 func:impl_own_member_idx = int32(Ast->:ast, DeclNode:d, int32:name) never fails {
     int32:i = 0i32;
-    while (i < (raw impl_member_count(ast, d))) {
+    int32:nmembers = raw impl_member_count(ast, d);
+    while (i < nmembers) decreases nmembers - i {
         DeclId:mid = raw impl_member(ast, d, i);
         DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -2887,7 +2892,8 @@ func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
     r.enclosing = g;
 
     int32:k = 0i32;
-    while (k < (raw item_member_count(e.ast, td))) {
+    int32:nmembers = raw item_member_count(e.ast, td);
+    while (k < nmembers) decreases nmembers - k {
         DeclId:tmid = raw item_member(e.ast, td, k);
         DeclNode:tm = raw ast_decl(e.ast, tmid);
         if (tm.kind == DeclKind.DeclFunctionDecl) {
@@ -3000,7 +3006,7 @@ func:bounds_note = string(ExprTyper->:e, int32:param) never fails {
     }
     string:m = "; its bounds are `";
     int32:i = 0i32;
-    while (i < b.count) {
+    while (i < b.count) decreases b.count - i {
         if (i > 0i32) { m = string_concat(m, " & "); }
         m = string_concat(m,
                 raw type_display(e.types, e.interns,

@@ -201,7 +201,7 @@ pub func:state_new = AssignState(int32:n) never fails {
 func:state_copy = AssignState(AssignState:src) never fails {
     AssignState:d = raw state_new(src.count);
     int64:i = 0i64;
-    while (i < (src.count => int64)) {
+    while (i < (src.count => int64)) decreases ((src.count => int64)) - i {
         d.must[i] = src.must[i];
         d.may[i] = src.may[i];
         d.moved[i] = src.moved[i];
@@ -216,7 +216,7 @@ func:state_copy = AssignState(AssignState:src) never fails {
 
 func:state_overwrite = NIL(AssignState:dst, AssignState:src) never fails {
     int64:i = 0i64;
-    while (i < (dst.count => int64)) {
+    while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = src.must[i];
         dst.may[i] = src.may[i];
         dst.moved[i] = src.moved[i];
@@ -268,7 +268,7 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
     // the second, so a shared helper taking one direction would be right about two
     // of the five and silently wrong about three.
     int64:i = 0i64;
-    while (i < (dst.count => int64)) {
+    while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = a.must[i] && b.must[i];
         dst.may[i] = a.may[i] || b.may[i];
         dst.moved[i] = a.moved[i] || b.moved[i];
@@ -286,7 +286,7 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
 // binding being written once per iteration.
 func:state_absorb_may = NIL(AssignState:dst, AssignState:body) never fails {
     int64:i = 0i64;
-    while (i < (dst.count => int64)) {
+    while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.may[i] = dst.may[i] || body.may[i];
         // A LOOP BODY THAT MOVES SOMETHING MOVES IT ON THE SECOND ITERATION TOO,
         // so what the body moved or freed survives the loop even though what it
@@ -441,7 +441,8 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         // Parameters first: they carry qualifiers and are declarations rather
         // than statements, so the statement walk below never saw them.
         int32:pi = 0i32;
-        while (pi < (raw fn_param_count(x.ast, d))) {
+        int32:nparams = raw fn_param_count(x.ast, d);
+        while (pi < nparams) decreases nparams - pi {
             DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, pi));
             drop check_nodrop_quals(x, raw param_quals(pd), pd.span, "a parameter", true);
             pi = pi + 1i32;
@@ -482,7 +483,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         // is not suddenly a read of the unassigned. Parameters are numbered
         // FIRST, in declaration order, so the ordinal is the index.
         int32:ps = 0i32;
-        while (ps < (raw fn_param_count(x.ast, d))) {
+        while (ps < nparams) decreases nparams - ps {
             drop state_mark(st, ps);
             ps = ps + 1i32;
         }
@@ -493,7 +494,8 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
     // A STRUCT'S FIELDS carry qualifiers too, and nothing walked them.
     if (d.kind == DeclKind.DeclStructDecl) {
         int32:fi = 0i32;
-        while (fi < (raw item_member_count(x.ast, d))) {
+        int32:nmembers = raw item_member_count(x.ast, d);
+        while (fi < nmembers) decreases nmembers - fi {
             DeclNode:fdec = raw ast_decl(x.ast, raw item_member(x.ast, d, fi));
             if (fdec.kind == DeclKind.DeclFieldDecl) {
                 drop check_nodrop_quals(x, raw field_quals(fdec), fdec.span, "a field", false);
@@ -843,7 +845,7 @@ func:assign_counted = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) n
 
 func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails {
     int64:i = 0i64;
-    while (i < (dst.count => int64)) {
+    while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = dst.must[i] && other.must[i];
         dst.moved[i] = dst.moved[i] || other.moved[i];
         dst.freed[i] = dst.freed[i] || other.freed[i];
@@ -857,7 +859,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails 
 
 func:state_take_must = NIL(AssignState:dst, AssignState:src) never fails {
     int64:i = 0i64;
-    while (i < (dst.count => int64)) {
+    while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = src.must[i];
         i = i + 1i64;
     }
@@ -1028,7 +1030,8 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
         // names — `p.f = v` through a pointer is the same write as `c.f = v`.
         if (tn.kind == ExprKind.ExprMemberAccessExpr) {
             int32:fb = raw exprtypes_get(x.etypes, raw expr_operand(tn));
-            while ((raw type_kind(x.types, fb)) == (raw TY_POINTER())) {
+            // strips one pointer layer per trip, and a type's element is interned before the pointer to it: no type points to itself (D-316)
+            while ((raw type_kind(x.types, fb)) == (raw TY_POINTER())) unbounded {
                 fb = raw type_elem(x.types, fb);
             }
             if (raw field_declares_fixed(x, fb, tn.payload =>! int32)) {
@@ -1149,7 +1152,7 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:cnt = raw expr_list_count(n);
         int32:i = 1i32;
-        while (i < cnt) {
+        while (i < cnt) decreases cnt - i {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
             drop assign_expr(x, st, v, d);
             i = i + 2i32;
@@ -1460,7 +1463,7 @@ func:callee_frees = bool(Assign->:x, ExprNode:n) never fails {
 func:place_crosses_pointer = bool(Assign->:x, ExprId:place) never fails {
     ExprId:cur = place;
     int32:left = raw BORROW_FUEL();
-    while (left > 0i32) {
+    while (left > 0i32) decreases left {
         if (raw expr_is_none(cur)) { pass false; }
         ExprNode:n = raw ast_expr(x.ast, cur);
         ExprId:base = ExprId{ index: 0i32 };

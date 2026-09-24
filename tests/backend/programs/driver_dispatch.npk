@@ -34,7 +34,7 @@ async func:main = int32(cstring[]:argv) {
     Bridge:b = br ?! E9;
 
     int64:i = 0i64;
-    while (i < 6i64) {
+    while (i < 6i64) decreases 6i64 - i {
         int64:kern = 30i64 + i;
         Result<int32>:r = await dispatch(@b, kern, 0i64, raw duration_secs(5i64));
         if (r.is_error) { exit 21i32; }
@@ -76,6 +76,7 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds)      { exit 86i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 90i32;

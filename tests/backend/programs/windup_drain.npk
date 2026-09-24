@@ -12,7 +12,7 @@
 // wind-up is survivable when the remaining work is finite.
 mod:windup_drain;
 async func:yielding = NIL(int32:n) {
-    while (n > 0i32) {
+    while (n > 0i32) decreases n {
         await sleep(raw duration_secs(30i64)) ?| NIL;   // swallowed each time
         n = n - 1i32;
     }
@@ -36,6 +36,7 @@ func:failsafe = int32(Error:e) {
         (DeadlineExceeded) { exit 95i32; },
         (StackExhausted)   { exit 99i32; },
         (MachineFault)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

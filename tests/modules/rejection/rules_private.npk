@@ -1,0 +1,28 @@
+// expect-error: NITPICK-RESOLVE-003
+//
+// A `Rules` WITHOUT `pub` IS PRIVATE TO ITS MODULE (DEF-93, 1.5.8c step 3):
+// `use m.{R};` on a rule its module did not export refuses as it does for a
+// private function or type. Before this step a rule's visibility was the
+// parity of its subject type's node index (the parser stored no flags), so a
+// private rule could be bound by coincidence and a public one refused.
+mod:rules_private;
+
+mod:m = {
+    Rules<int64>:R = { $ >= 0i64 };
+};
+use m.{R};
+
+// The mistake is the `use`; nothing names `R` after it, so the one report is
+// the binding's (D-240: one mistake, one report).
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted)   { exit 99i32; },
+        (MachineFault)     { exit 99i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

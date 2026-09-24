@@ -34,7 +34,7 @@ comptime func:add_one = int32(int32:n) { pass (n + 1i32); };
 comptime func:sum_to = int32(int32:n) {
     int32:total = 0i32;
     int32:i = 1i32;
-    while (i <= n) {
+    while (i <= n) decreases n - i {
         total = total + i;
         i = i + 1i32;
     }
@@ -147,7 +147,7 @@ func:failsafe = int32(Error:e) {
         (E9) { exit 80i32; }, (Unreachable) { exit 95i32; },
         (HeapOom) { exit 92i32; }, (HeapBadRequest) { exit 91i32; },
         (WildLeak) { exit 96i32; }, (IntOverflow) { exit 93i32; },
-        (BadStep) { exit 98i32; }, (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (*) { exit 99i32; }
+        (BadStep) { exit 98i32; }, (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; }
     }
     exit 9i32;
 };

@@ -1201,7 +1201,7 @@ where it was 250, and nothing else moved.
 subcycle" from the 1.5.6 close until then; the README's map was right
 throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
-(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix, so `src/`, the prelude and the tools may carry the clauses from step 3), `decreases`/`unbounded` with the
+(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`), `decreases`/`unbounded` with the
 `terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
@@ -2099,6 +2099,14 @@ that carried them retired at the cycle close):
   two reactor words: the epoll word stays as the join left it, and the eventfd
   is kept. So a new executor or TLS word must be written at the rebirth in
   `npk_thread_start`.
+- **A declaration's flags live where its kind says, and a slot read as a flag
+  word must BE one** (DEF-93, 1.5.8c step 3; the 1.4.8 global's lesson again):
+  `decl_flags` answers `d.a` for most kinds, a global's and a rule's `c` high
+  half. A `Rules` declaration's `pub` was never stored until this step, so its
+  export was the parity of its subject type's node index -- true by coincidence
+  for a cycle, false the day the prelude's AST moved. When a kind's `a` holds a
+  type or a window, give it a flags home before its first `pub` is written, and
+  test the visibility both ways (`rules_pub.npk`, `rules_private.npk`).
 - **An expectation is a `//` comment of its OWN LINE** (1.5.8b step 4): both
   runners read `// expect-error: CODE` and `// expect-error-at: N` only from a
   comment that is the whole line, and a file in a rejection suite with no
@@ -2261,6 +2269,38 @@ that carried them retired at the cycle close):
   coroutine's `while`/`when` with a checked `decreases` keeps the previous
   measure and the first-visit flag in the frame. Roles in use on a statement:
   0–7+, 20–25, 30+k (channel stashes), 41 (join mark), 42/43, 60+k (`old`).
+- **Every `while`/`when` in the tree states its clause, and a new one must**
+  (1.5.8c step 3; TYPE-072's `neither` shape refuses from step 4). Write the
+  measure with the loop: a counter's `bound - i`, a scan's bytes left
+  `len - pos`, a walk along a chain built in order `count - c`, the parser's
+  tokens left `raw p_left(p)`, a doubling under `c < cap` `cap - c`,
+  `while (v > 0)` is `decreases v`, a hash probe carries a probe counter
+  bounded by the table; a call as the bound is HOISTED into a local before
+  the loop (`int32:n = raw f(x); while (i < n) decreases n - i`), never
+  written as the measure unless the callee is `pure never fails` (TYPE-060:
+  `p_left`, `item_member_count`, `d_at`, `ast_id_at`, the round constants are).
+  A worklist that grows as it drains, a fixed point, a loop bounded by a
+  deadline, a spin on the clock and an event loop are `unbounded` with the
+  reason on the line above (D-316); a measure is never a trip budget. The
+  reader's record is `meta/roadmap/1.5/tools/decreases_read.txt`; the tool
+  (`decreases_sweep.py` over `loop_dump.npk`'s dump, built with `quickemit
+  --keep`) writes the provable shape and applies the record.
+- **A `decreases` in a `comptime` body is checked by the evaluator** (1.5.8c
+  step 3): `fold_while` evaluates the measure each trip and a violation is a
+  counterexample, TYPE-069 at the loop, as a `prove` there is (L-18).
+- **Every `failsafe` names `(DecreasesViolated)`** (1.5.8c step 3): the
+  prelude's loops carry measures, so nearly every program can reach it; the
+  runners' generated failsafes (harness.py, selfcheck.py, npkg/suites.npk,
+  npkg/selfcheck.npk) carry the arm too. REACH-002 names it where a root
+  forgot.
+- **Two hoisted counts in one scope collide** (1.5.8c step 3): the sweep's
+  `hoist` declares `T:NAME` before each loop it decides, and two loops over
+  the same window in one function are RESOLVE-001 -- keep the first local and
+  drop the second declaration; the loop then reuses it.
+- **The generated prelude is regenerated after a sweep of `src/prelude/`**
+  (1.5.8c step 3): the compiler embeds `prelude_source.npk`, so a compiler
+  built before `gen_tables.py` ran carried the UNSWEPT prelude and every
+  smoke run over it measured nothing about the prelude's loops.
 - **Emitting a branch to the label that follows does not mark the block
   terminated** (1.5.8c step 1): `x.fe.terminated = true` after a `br` makes the
   emitter skip everything up to the next `s_start`, and the elided measure

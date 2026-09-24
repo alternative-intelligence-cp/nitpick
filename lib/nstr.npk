@@ -21,7 +21,7 @@ mod:nstr;
 pub func:nstr_eq = bool(string:a, string:b) never fails {
     if (a.len != b.len) { pass false; }
     int64:i = 0i64;
-    while (i < a.len) {
+    while (i < a.len) decreases a.len - i {
         if (a.ptr[i] != b.ptr[i]) { pass false; }
         i = i + 1i64;
     }
@@ -31,7 +31,7 @@ pub func:nstr_eq = bool(string:a, string:b) never fails {
 pub func:nstr_starts_with = bool(string:s, string:prefix) never fails {
     if (prefix.len > s.len) { pass false; }
     int64:i = 0i64;
-    while (i < prefix.len) {
+    while (i < prefix.len) decreases prefix.len - i {
         if (s.ptr[i] != prefix.ptr[i]) { pass false; }
         i = i + 1i64;
     }
@@ -42,7 +42,7 @@ pub func:nstr_ends_with = bool(string:s, string:suffix) never fails {
     if (suffix.len > s.len) { pass false; }
     int64:base = s.len - suffix.len;
     int64:i = 0i64;
-    while (i < suffix.len) {
+    while (i < suffix.len) decreases suffix.len - i {
         if (s.ptr[base + i] != suffix.ptr[i]) { pass false; }
         i = i + 1i64;
     }
@@ -57,10 +57,10 @@ pub func:nstr_index_of = int64(string:s, string:needle) never fails {
     if (needle.len > s.len) { pass (0i64 - 1i64); }
     int64:last = s.len - needle.len;
     int64:at = 0i64;
-    while (at <= last) {
+    while (at <= last) decreases last - at {
         int64:i = 0i64;
         bool:hit = true;
-        while (i < needle.len) {
+        while (i < needle.len) decreases needle.len - i {
             if (s.ptr[at + i] != needle.ptr[i]) { hit = false; break; }
             i = i + 1i64;
         }

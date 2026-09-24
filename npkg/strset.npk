@@ -21,7 +21,7 @@ pub struct:StrSet = {
 
 pub func:strset_init = StrSet(int64:want) never fails {
     int64:cap = 16i64;
-    while (cap < (want * 2i64)) { cap = cap * 2i64; }
+    while (cap < (want * 2i64)) decreases (want * 2i64) - cap { cap = cap * 2i64; }
     pass StrSet{ keys: raw list_init::<string>(want + 1i64), slots: calloc(cap, 8i64), cap: cap };
 };
 
@@ -31,7 +31,10 @@ func:slot_of = int64(StrSet->:s, string:key) never fails {
     uint64:mask = (s.cap - 1i64) =>! uint64;
     int64:i = (h & mask) =>! int64;
     wild int64->:sl = s.slots =>! wild int64->;
-    while (true) {
+    // the probe is bounded by the table (1.5.8c step 3): it is grown before it fills, so an empty slot exists
+    int64:probes = 0i64;
+    while (true) decreases s.cap - probes {
+        probes = probes + 1i64;
         int64:v = sl[i];
         if (v == 0i64) { pass i; }
         int64:k = v - 1i64;

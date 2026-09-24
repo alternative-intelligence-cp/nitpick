@@ -2,7 +2,7 @@
 // expect-obligation: bounds discharged 2
 // expect-obligation: bounds open 1
 // expect-obligation: exhaustive checker 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 11
 //
 // A LENGTH TERM ENDS WHERE ITS BINDING IS WRITTEN (1.5.8b step 5). The reason a
 // loop over `xs.len` proves its own accesses is that a container's length is
@@ -42,6 +42,7 @@ func:failsafe = int32(Error:e) {
         (WildLeak)       { exit 96i32; },
         (StackExhausted) { exit 97i32; },
         (MachineFault)   { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
         (*)              { exit 99i32; }
     }
     exit 9i32;
