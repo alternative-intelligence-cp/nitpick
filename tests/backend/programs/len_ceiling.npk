@@ -1,0 +1,121 @@
+// expect-exit: 0
+//
+// THE TWO LENGTHS NO ALLOCATION MAKES ARE CHECKED (D-308 SS7, 1.5.8b step 6c).
+// `string_from_bytes(p, len)` and `#wild_slice<T>(p, len)` wrap a length the
+// CALLER supplies; every other producer of a `.len` gets it from a block the
+// floor holds at or below 2^47, or from a source that is. Each call is guarded
+// -- `0 <= len <= 2^47`, one unsigned compare -- and traps `OutOfBounds`,
+// because a length past the address space is a view out of bounds. Driven
+// from children of this program; the code `failsafe` chose is read back.
+//
+//   case 1  string_from_bytes(p, -1)          OutOfBounds
+//   case 2  string_from_bytes(p, 2^47 + 1)    OutOfBounds
+//   case 3  #wild_slice<uint8>(p, -1)         OutOfBounds
+//   case 4  #wild_slice<uint8>(p, 2^47 + 1)   OutOfBounds
+//   case 5  #wild_slice<uint8>(p, -1i32)      OutOfBounds -- a NARROW negative count is
+//                                             widened by its sign, never zero-extended
+//   case 6  string_from_bytes(p, 2^47)        silence: the edge is legal, `.len` reads it
+//   case 7  #wild_slice<uint8>(p, 2^47)       silence, `.len` reads it
+mod:len_ceiling;
+
+use "../../../lib/nproc.npk".*;
+
+error:E9;
+
+func:drive = int32(int64:which) never fails {
+    wild int8->:p = alloc(16i64);
+    wild uint8->:u = p =>! wild uint8->;
+    if (which == 1i64) { string:s1 = string_from_bytes(p, 0i64 -% 1i64); if (s1.len == 7i64) { pass 5i32; } pass 3i32; }
+    if (which == 2i64) { string:s2 = string_from_bytes(p, 140737488355329i64); if (s2.len == 7i64) { pass 5i32; } pass 3i32; }
+    if (which == 3i64) { uint8[]:v3 = #wild_slice<uint8>(u, 0i64 -% 1i64); if (v3.len == 7i64) { pass 5i32; } pass 3i32; }
+    if (which == 4i64) { uint8[]:v4 = #wild_slice<uint8>(u, 140737488355329i64); if (v4.len == 7i64) { pass 5i32; } pass 3i32; }
+    if (which == 5i64) { uint8[]:v5 = #wild_slice<uint8>(u, 0i32 -% 1i32); if (v5.len == 7i64) { pass 5i32; } pass 3i32; }
+    if (which == 6i64) {
+        string:s6 = string_from_bytes(p, 140737488355328i64);
+        if (s6.len != 140737488355328i64) { pass 6i32; }
+        dalloc(p);
+        pass 0i32;
+    }
+    if (which == 7i64) {
+        uint8[]:v7 = #wild_slice<uint8>(u, 140737488355328i64);
+        if (v7.len != 140737488355328i64) { pass 6i32; }
+        dalloc(p);
+        pass 0i32;
+    }
+    dalloc(p);
+    pass 4i32;
+};
+
+func:args_of = ProcArgs(string:exe, string:a) {
+    ProcArgs:pa = raw args_init();
+    args_push(@pa, exe) ?! E9;
+    args_push(@pa, a) ?! E9;
+    pass pa;
+};
+
+async func:child = int64(Path:self, ProcArgs->:env, string:which) {
+    ProcArgs:a = args_of(self.text, which) ?! E9;
+    Proc:p = proc_spawn(self, @a, env) ?! E9;
+    ProcExit:x = (await proc_wait(move(p), raw duration_secs(10i64))) ?! E9;
+    drop args_free(@a);
+    if (!x.exited) { pass 255i64; }
+    pass x.status;
+};
+
+func:case_of = int64(string:w) never fails {
+    if (string_equals(w, "1")) { pass 1i64; }
+    if (string_equals(w, "2")) { pass 2i64; }
+    if (string_equals(w, "3")) { pass 3i64; }
+    if (string_equals(w, "4")) { pass 4i64; }
+    if (string_equals(w, "5")) { pass 5i64; }
+    if (string_equals(w, "6")) { pass 6i64; }
+    if (string_equals(w, "7")) { pass 7i64; }
+    pass 0i64;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len == 2i64) {
+        string:w = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+        exit (raw drive(raw case_of(w)));
+    }
+    string:sp = string_from_bytes(argv[0i64].ptr, argv[0i64].len);
+    Path:self = path_parse(sp) ?! E9;
+    ProcArgs:env = raw args_init();
+    cstring[]:mine = environ();
+    for (int64:i in 0i64...mine.len) { args_push_cstring(@env, mine[i]) ?! E9; }
+
+    string[5]:bad = ["1", "2", "3", "4", "5"];
+    for (int64:c in 0i64...5i64) {
+        int64:r = (await child(self, @env, bad[c])) ?! E9;
+        if (r != 94i64) { exit ((10i64 + c) =>! int32); }   // OutOfBounds, read as 94
+    }
+    int64:e6 = (await child(self, @env, "6")) ?! E9;
+    if (e6 != 0i64) { exit 20i32; }
+    int64:e7 = (await child(self, @env, "7")) ?! E9;
+    if (e7 != 0i64) { exit 21i32; }
+    drop args_free(@env);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 61i32; },
+        (BadPath)          { exit 62i32; },
+        (EProcArgs)        { exit 63i32; },
+        (EProcSpawn)       { exit 64i32; },
+        (EProcDeadline)    { exit 65i32; },
+        (EProcWait)        { exit 66i32; },
+        (DeadlineExceeded) { exit 67i32; },
+        (DriverLeak)       { exit 68i32; },
+        (IntOverflow)      { exit 93i32; },
+        (OutOfBounds)      { exit 94i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 97i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

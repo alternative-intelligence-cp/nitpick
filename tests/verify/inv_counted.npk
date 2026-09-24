@@ -1,10 +1,19 @@
 // expect-exit: 34
-// expect-obligation: invariant open 2
+// expect-obligation: invariant discharged 1
+// expect-obligation: invariant open 1
 // expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
-// expect-obligation: overflow discharged 1
-// expect-obligation: overflow open 3
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 1
 //
+// [1.5.8b step 6c] `argv.len - 1i64` carries the built-in length fact (D-308 SS7: a
+// slice's `.len` lies in [0, 2^47]), so `k >= -1` is KNOWN: its own `overflow` row,
+// the two rows of `3i64 + k` (the head's check runs at the entry and at the back
+// edge, one row per context -- DEF-81) and the ENTRY invariant `0 < 3 + k` all
+// discharge where they were open. The preservation row `$ + 1 < 3 + k` under
+// `$ < 3 + k` stays open on the merits, and the head keeps its check -- which is
+// still what traps the violating iteration at 34. The paragraph below was written
+// when nothing bounded `k`; its second sentence is true of the preservation row only.
 // `$` IN AN INVARIANT has a term (1.5.4 step 3, L-11 -- opaque from 1.5.2's
 // L-19 until then), and both rows are `open` ON THE MERITS: `k` comes from
 // `argv` and nothing bounds it, so `0 < 3 + k` at entry and `$ + 1 < 3 + k`

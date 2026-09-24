@@ -121,8 +121,8 @@ missing from the numbers and from the rows that reach them.
 | `@memcpy` | pure | specified (5 discharged, 0 residue) |
 | `@memmove` | pure | specified (7 discharged, 0 residue) |
 | `@memset` | pure | specified (5 discharged, 0 residue) |
-| `@npk_aalloc` | syscall | boundary (the aligned entry: a power-of-two alignment or HeapBadRequest; at or below sixteen the ordinary path, above it a mapping through npk_large_new at that alignment under the heap mutex (initialised there, locked -- D-290); during a failsafe the region at the alignment (D-292)) |
-| `@npk_alloc_impl` | syscall | boundary (the allocator's core: during a failsafe a bump from the region with no mutex and no tables (D-292); otherwise, under the heap mutex, a slot of a small chunk for n <= the largest class or a fresh mapping through npk_large_new, the header stamped live, the stats counters noted; a request past the size ceiling is HeapBadRequest and a refused mapping HeapOom; alloc(0) is a real block (D-150)); modelled (trap-route) |
+| `@npk_aalloc` | syscall | boundary (the aligned entry: a request above 2^47 bytes (D-308's ceiling, checked here as well because the over-aligned path reaches npk_large_new without passing npk_alloc_impl's compare -- 1.5.8b step 6c) or a non-power-of-two alignment is HeapBadRequest; at or below sixteen the ordinary path, above it a mapping through npk_large_new at that alignment under the heap mutex (initialised there, locked -- D-290); during a failsafe the region at the alignment (D-292)) |
+| `@npk_alloc_impl` | syscall | boundary (the allocator's core: during a failsafe a bump from the region with no mutex and no tables (D-292); otherwise, under the heap mutex, a slot of a small chunk for n <= the largest class or a fresh mapping through npk_large_new, the header stamped live, the stats counters noted; a request above 2^47 bytes -- D-308's CEILING, the x86-64 user address space, one unsigned compare that reads a negative size as a huge one (1.5.8b step 6c) -- is HeapBadRequest and a refused mapping HeapOom; alloc(0) is a real block (D-150)); modelled (trap-route) |
 | `@npk_alloc_internal` | syscall | boundary (the managed heap's untracked entry: a block of n bytes, 16-aligned, disjoint from every live allocation, its header stamped live, or the heap trap on exhaustion; D-150's header/payload disjointness and validate-before-dereference are the invariants leg A (D-233) carries) |
 | `@npk_alloc_managed` | syscall | boundary (the managed entry (D-183): a block of n bytes from npk_alloc_impl with wild = 0 -- the drop walk's storage, never in the wild-live set, freed through dalloc like any managed body) |
 | `@npk_alloc` | syscall | boundary (the wild `alloc` entry (D-150, D-151): a block of n bytes from npk_alloc_impl with wild = 1, in the wild-live set until dalloc'd and counted by the exit check; alloc(0) is a real 16-byte block) |
@@ -171,7 +171,7 @@ missing from the numbers and from the rows that reach them.
 | `@npk_cv_broadcast` | syscall | boundary (wakes every waiter on the cv's list under the cv's futex (npk_ch_wake_all)) |
 | `@npk_cv_done` | syscall | boundary (unlinks the frame from the cv's waiter list under the cv's futex, on every completed path -- idempotent like every unlink) |
 | `@npk_cv_signal` | syscall | boundary (wakes one waiter on the cv's list under the cv's futex (npk_ch_wake_one)) |
-| `@npk_dalloc` | syscall | boundary (the free: a null or misaligned pointer is HeapBadRequest (dalloc(NULL) traps by D-150), a block whose header does not validate is HeapBadRequest, a small block returns to its chunk (npk_small_free) and a large one to the kernel (munmap) under the heap mutex; during a failsafe, after the null and alignment checks, a no-op (D-292)) |
+| `@npk_dalloc` | syscall | boundary (the free: a null or misaligned pointer is Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did) (dalloc(NULL) traps by D-150), a block whose header does not validate is Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did), a small block returns to its chunk (npk_small_free) and a large one to the kernel (munmap) under the heap mutex; during a failsafe, after the null and alignment checks, a no-op (D-292)) |
 | `@npk_driver_kill_all` | atomic | boundary (sends SIGKILL through the pidfd of every live driver in the registry (pidfd_send_signal: allocation-free, mask-independent, safe against pid reuse); reaping is nobody's business on the trap path; it writes no memory); modelled (driver-registry, trap-route) |
 | `@npk_driver_live_count` | atomic | modelled (driver-registry) |
 | `@npk_driver_retire` | atomic | modelled (driver-registry) |
@@ -186,7 +186,7 @@ missing from the numbers and from the rows that reach them.
 | `@npk_frame_drain` | pure | specified (4 discharged, 0 residue) |
 | `@npk_frame_exec_destroy` | syscall | boundary (unmaps the frame arena's chunks and frees its bucket arrays) |
 | `@npk_frame_exec_new` | syscall | boundary (a frame arena for an executor: one 64 KiB chunk mapped up front (the steady state never maps again), eight size buckets over two parallel managed arrays) |
-| `@npk_frame_free` | syscall | boundary (returns a frame: a null or misaligned pointer, or a header that does not validate as frame-live, is HeapBadRequest; a dedicated block goes back to the heap whole, a bucketed one is stamped frame-free and pushed on its size bucket's list, a new bucket appended (the parallel arrays grown by ralloc) when its size has none) |
+| `@npk_frame_free` | syscall | boundary (returns a frame: a null or misaligned pointer, or a header that does not validate as frame-live, is Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did); a dedicated block goes back to the heap whole, a bucketed one is stamped frame-free and pushed on its size bucket's list, a new bucket appended (the parallel arrays grown by ralloc) when its size has none) |
 | `@npk_frozen_get` | atomic | specified (2 discharged, 0 residue); modelled (trap-route) |
 | `@npk_fs_alloc` | syscall | boundary (a block of n bytes at the requested alignment bumped from the one-mebibyte failsafe region with the heap's [ size | 0 ] header before it, single-threaded by construction since every other thread is parked before failsafe runs (D-291); exhaustion is HeapOom inside failsafe, the re-entry rule's exit 70 (D-292)); modelled (trap-route) |
 | `@npk_fs_switch_call` | asm | trusted (module asm) |
@@ -204,7 +204,7 @@ missing from the numbers and from the rows that reach them.
 | `@npk_hs_put_dec` | pure | specified (23 discharged, 0 residue) |
 | `@npk_hs_put_str` | pure | specified (5 discharged, 0 residue) |
 | `@npk_hs_report` | syscall | boundary (the NPK_HEAP_STATS line, written to fd 2 exactly once per process at exit when the flag is armed: read without the heap mutex by design (a diagnostic, never a verdict; the shared-state exemption says why)); modelled (trap-route) |
-| `@npk_hunmap` | syscall | boundary (munmap of a mapping the heap made; a refusal means the table and the kernel disagree about what is mapped -- an integrity failure, HeapBadRequest, not an OOM) |
+| `@npk_hunmap` | syscall | boundary (munmap of a mapping the heap made; a refusal means the table and the kernel disagree about what is mapped -- an integrity failure, Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did), not an OOM) |
 | `@npk_in_fs` | atomic | a modelled primitive (1.5.6, the r6 verdict: model the primitive, never the whole executor) |
 | `@npk_int_to_string` | syscall | specified (7 discharged, 1 residue); residue (the digit bytes are the same computation as npk_hs_put_dec's, whose twenty rows state them; here the length, the capacity, the zero and the sign are rows -- and the sign row is not decided under the profile (unknown at ten times the budget): the sign byte reaches the block's base through the rehome copy's twenty unrolled loads, whose addresses the solver must relate to the sign store's wrapped one) |
 | `@npk_io_register` | atomic | modelled (park-unpark, reactor-io) |
@@ -619,8 +619,10 @@ Listed, not checked -- a clause the entry checker cannot evaluate over the entry
     it): a fresh block, its header included, is disjoint from every object
     the caller names, every live buffer its loops carry and every earlier
     block of the caller's, those objects are unchanged by the call, the
-    block's header word is the size asked, and a request at or past 2^63 is
-    the trap; a free changes the block, its header and the heap's own words
+    block's header word is the size asked, and a request above 2^47 -- the
+    address space, D-308's CEILING, one unsigned compare in `npk_alloc_impl`,
+    `npk_fs_alloc` and `npk_aalloc` that reads a negative size as a huge one
+    (1.5.8b step 6c; "at or past 2^63" until then) -- is the trap; a free changes the block, its header and the heap's own words
     and nothing the caller names. D-150's header/payload disjointness and
     validate-before-dereference over the whole heap are the invariants leg
     A (D-233) carries; `npk_small_check`'s section states what "validated"

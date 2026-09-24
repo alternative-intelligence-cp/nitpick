@@ -1,0 +1,34 @@
+// expect-error: NITPICK-REACH-002
+//
+// THE TWO PRODUCERS OF A CALLER-SUPPLIED LENGTH ARM `OutOfBounds` (D-308 SS7,
+// 1.5.8b step 6c): `string_from_bytes(p, len)` and `#wild_slice<T>(p, len)`
+// each check the length against the ceiling and trap `OutOfBounds` outside
+// it, so a program that calls either owes the arm -- this one has no index
+// of its own, calls both, and names no `(OutOfBounds)`. One identity, one
+// refusal.
+mod:reach_len;
+
+func:main = int32(cstring[]:argv) {
+    wild int8->:p = alloc(16i64);
+    wild uint8->:u = p =>! wild uint8->;
+    string:s = string_from_bytes(p, argv.len);
+    uint8[]:v = #wild_slice<uint8>(u, argv.len);
+    int64:n = s.len + v.len;
+    dalloc(p);
+    exit (n =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 9i32; },
+        (CastRange)      { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
+};

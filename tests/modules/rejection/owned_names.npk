@@ -64,7 +64,13 @@ func:wait<Duration> = int32(Duration:d) never fails {
 // THE PRELUDE'S OWN COLLECTION (D-247; 1.5.1b step 5b): `List` is a prelude
 // name now, refused at a program's declaration like every other.
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 69:5
+// expect-error-at: 71:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 76:1
 mod:as_list = {
     struct:List = { int64:n; };
 };
+// A prelude RULES name (D-239 reaches every type-namespace declaration; `ListLen`
+// is the prelude's since D-308 SS6, 1.5.8b step 6c): a program's own `ListLen`
+// would shadow the rule the prelude's `List` fields carry.
+Rules<int64>:ListLen = { $ >= 0i64 };

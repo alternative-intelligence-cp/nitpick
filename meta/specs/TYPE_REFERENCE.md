@@ -1083,6 +1083,20 @@ internal-defect refusal where a slice asking the same compiled).
   out-of-bounds detection comes from, and it is why pointers carry no bounds
   metadata (D-038).
 - **`.len`** is available on every slice.
+- **Every built-in length lies in `[0, 2^47]`, and the verifier knows it**
+  (D-308 §7; landed 1.5.8b step 6c). A `string`'s, a `cstring`'s, a slice's
+  and a `buffer`'s `.len` (and `.cap`) come from a block the allocator holds at
+  or below the CEILING (MEMORY_REFERENCE §3), from a source that is, or — for
+  the two producers that take the length FROM THE CALLER, `string_from_bytes`
+  and `#wild_slice` — from a guard the emitter writes at the call (`0 <= len <=
+  2^47`, one unsigned compare, trapping `OutOfBounds` outside it; a narrow count
+  is widened by its sign first). Because no program may write a header (§9.1.1,
+  D-313), the fact is sound, and the encoder pushes it at every read — so
+  `s.len + 1` cannot overflow an `int64` and its row discharges where an opaque
+  field read left it open. The prelude's `List` carries the same bound as a
+  field rule, `limit<ListLen>` on `count` and `cap` (D-308 §6), checked after
+  every write inside the prelude and a fact at every read; a program that
+  reaches those writes names `(LimitViolated)` in its `failsafe`.
 - **A slice is a second-class borrow** (D-004): it passes down the call stack and
   never up, cannot outlive the storage it views, and cannot cross a thread spawn
   or an `await`.

@@ -454,6 +454,21 @@ pub func:is_hash_builtin = bool(string:name) never fails {
     pass false;
 };
 
+// THE TWO PRODUCERS OF A LENGTH NO ALLOCATION BOUNDS (D-308 SS7, 1.5.8b step
+// 6c): every other builtin that hands out a `.len` gets it from a block the
+// floor made (which the allocator holds at or below 2^47, the CEILING) or from
+// a source that is; these two take the length FROM THE CALLER and wrapped it
+// unchecked. The emitter guards each call -- `0 <= len <= 2^47`, trapping
+// `OutOfBounds` -- the encoder records the guard's `bounds` row, and the reach
+// analysis arms the identity at the call. The reference's `**Caller-length**`
+// marker names them, generated. Measured at planning against every row of the
+// table: exactly two.
+pub func:builtin_caller_len = bool(string:name) never fails {
+    if (raw string_eq(name, "string_from_bytes")) { pass true; }
+    if (raw string_eq(name, "wild_slice")) { pass true; }
+    pass false;
+};
+
 // Every builtin whose REFERENCE ROW declares a `wild` (or `wildx`) return —
 // the whitelist D-223's BORROW-011 consults. Both tables feed it: a bare
 // builtin's Signature column and a `#`-sigil one's Return column, because a

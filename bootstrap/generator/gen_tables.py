@@ -182,13 +182,14 @@ class Param(object):
 
 
 class Row(object):
-    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure", "views", "prelude_only")
+    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure", "views", "prelude_only", "caller_len")
 
     def __init__(self, name, params, ret, never_fails, special, abi, pure=False, views=0,
-                 prelude_only=False):
+                 prelude_only=False, caller_len=False):
         self.pure = pure
         self.views = views
         self.prelude_only = prelude_only
+        self.caller_len = caller_len
         self.name, self.params, self.ret = name, params, ret
         self.never_fails, self.special, self.abi = never_fails, special, abi
 
@@ -372,7 +373,13 @@ def builtin_rows(path):
         # checker.
         rows[name] = Row(name, params, ret, never, special,
                          parse_abi(cells[3], where), purity == "pure", views_n,
-                         "**Prelude-only**" in cells[3])
+                         "**Prelude-only**" in cells[3],
+                         # THE CALLER-LENGTH MARKER (1.5.8b step 6c, D-308 SS7): a
+                         # row whose description carries `**Caller-length**` takes
+                         # a length FROM THE CALLER that no allocation bounds; the
+                         # emitter guards the call. Generated into
+                         # `builtin_caller_len` -- a table fact, never a name list.
+                         "**Caller-length**" in cells[3])
     missing = sorted(SPECIALS - set(rows))
     if missing:
         raise SystemExit("the generator's SPECIALS names builtins the reference "
@@ -1419,6 +1426,34 @@ pub func:is_keyword = bool(string:text) {
     bl.append("// somewhere it means nothing.")
     bl.append("pub func:is_hash_builtin = bool(string:name) {")
     for n in hnames:
+        bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
+
+    # THE TWO PRODUCERS OF A LENGTH NO ALLOCATION BOUNDS (D-308 SS7, 1.5.8b step
+    # 6c): the reference's `**Caller-length**` marker, on a bare row's Notes cell
+    # or a `#`-sigil row's Description cell, generated into `builtin_caller_len`.
+    # The emitter guards each such call (`0 <= len <= 2^47`, `OutOfBounds`), the
+    # encoder records the guard's `bounds` row, the reach analysis arms the
+    # identity. Both tables feed it, as `builtin_returns_wild` below is fed.
+    cl_names = [n for n in names if rows[n].caller_len]
+    if len(hsec) == 2:
+        for line in hsec[1].split("\n---", 1)[0].split("\n"):
+            hm = re.match(r'^\|\s*`#(\w+)[<(`]', line)
+            if hm and "**Caller-length**" in line and hm.group(1) not in cl_names:
+                cl_names.append(hm.group(1))
+    bl.append("")
+    bl.append("// THE TWO PRODUCERS OF A LENGTH NO ALLOCATION BOUNDS (D-308 SS7, 1.5.8b step")
+    bl.append("// 6c): every other builtin that hands out a `.len` gets it from a block the")
+    bl.append("// floor made (which the allocator holds at or below 2^47, the CEILING) or from")
+    bl.append("// a source that is; these two take the length FROM THE CALLER and wrapped it")
+    bl.append("// unchecked. The emitter guards each call -- `0 <= len <= 2^47`, trapping")
+    bl.append("// `OutOfBounds` -- the encoder records the guard's `bounds` row, and the reach")
+    bl.append("// analysis arms the identity at the call. The reference's `**Caller-length**`")
+    bl.append("// marker names them, generated. Measured at planning against every row of the")
+    bl.append("// table: exactly two.")
+    bl.append("pub func:builtin_caller_len = bool(string:name) {")
+    for n in cl_names:
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")

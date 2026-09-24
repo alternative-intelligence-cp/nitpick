@@ -1,0 +1,52 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 12
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 1
+// expect-obligation: bounds unencoded 1
+//
+// A `List`'S LENGTH IS A FACT (D-308 SS6, 1.5.8b step 6c): the prelude's `List`
+// declares `count` and `cap` limited to `[0, 2^47]` (`ListLen`), checked after
+// every write inside the prelude and a FACT at every read anywhere -- so
+// `l.count + 1` and `l.cap * 2` cannot overflow an `int64` and their rows
+// discharge, through a pointer (`p.count + 1`) as well, where an opaque field
+// read left them open. The control: `n + 1` over a plain parameter stays
+// `open`. The element access keeps its guard: `l` is address-taken by
+// `list_push`, so DEF-14 leaves it no length term (E-4 -- a frame problem,
+// not a solver one) and its `bounds` row is `unencoded` by design.
+mod:list_len;
+
+func:probe = int64(List<int32>->:p, int64:n) never fails {
+    int64:a = p.count + 1i64;
+    int64:ctl = n + 1i64;
+    discard(ctl);
+    pass a;
+};
+
+func:main = int32(cstring[]:argv) {
+    List<int32>:l = raw list_init::<int32>(4i64);
+    drop list_push(@l, 7i32);
+    drop list_push(@l, 9i32);
+    int64:a = l.count + 1i64;
+    int64:b = l.cap * 2i64;
+    int64:c = raw probe(@l, argv.len);
+    int32:first = l[0i64];
+    exit ((a +% b +% c +% (first => int64) -% 21i64) =>! int32);   // 3 + 8 + 3 + 7 - 21
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 9i32; },
+        (OutOfBounds)    { exit 9i32; },
+        (LimitViolated)  { exit 9i32; },
+        (CastRange)      { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
+};

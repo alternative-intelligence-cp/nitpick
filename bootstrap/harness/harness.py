@@ -170,7 +170,13 @@ def import_targets(text):
     return out
 
 # `pub func:TYPE_MISMATCH = string() { pass "NITPICK-TYPE-007"; };`
-CODE_DECL_RE = re.compile(r'pub func:(\w+) = string\(\)(?: never fails)?\s*\{\s*pass "([A-Z0-9\-]+)"')
+# A code has the `NITPICK-<STAGE>-<NNN>` shape, and `check_codes_centralised`
+# recognises a code literal by that prefix; this regex asked only for uppercase
+# letters, digits and hyphens, so a string function that answers a NUMERAL --
+# `len_ceiling_text` (1.5.8b step 6c: "140737488355328") -- was read as a code
+# that no test asserts, and the run went red on a rule that does not exist
+# (DEF-89). The declaration is recognised by the code's own shape now.
+CODE_DECL_RE = re.compile(r'pub func:(\w+) = string\(\)(?: never fails)?\s*\{\s*pass "(NITPICK-[A-Z]+-[0-9]+)"')
 
 
 # --- expectations ------------------------------------------------------------
@@ -646,6 +652,37 @@ def check_codes_centralised():
                                  "mistyped one at a call site invents a new code "
                                  "and says nothing"
                                  % (os.path.relpath(p, ROOT), i))
+    return fails
+
+
+def check_len_ceiling_agree():
+    """THE LENGTH CEILING IS ONE NUMBER IN FOUR PLACES (D-308 SS7, 1.5.8b step 6c).
+
+    2^47 -- the x86-64 user address space -- is spelled by the floor's three
+    allocator entries (`icmp ugt i64 %n, 140737488355328` in npk_alloc_impl,
+    npk_fs_alloc and npk_aalloc), by the prelude's `ListLen` rule, by
+    `cast_bounds.npk`'s `len_ceiling`/`len_ceiling_text` (the emitter's guard
+    and the encoder's row read that one), and by the floor spec's promise on
+    `npk_alloc_internal`. A stated bound nothing holds together is the next
+    stale document: this check counts each spelling and refuses a text that
+    says anything else.
+    """
+    fails = []
+    n = "140737488355328"
+    def count(path, needle):
+        with open(os.path.join(ROOT, path), encoding="utf-8") as fh:
+            return fh.read().count(needle)
+    floor = count("runtime/npkrt.ll", "icmp ugt i64 %n, " + n)
+    if floor != 3:
+        fails.append("runtime/npkrt.ll: %d allocator entries compare against the "
+                     "ceiling %s, expected 3 (npk_alloc_impl, npk_fs_alloc, "
+                     "npk_aalloc) -- D-308 SS7" % (floor, n))
+    if count("src/frontend/prelude_source.npk", "Rules<int64>:ListLen = { $ >= 0i64, $ <= %si64 }" % n) != 1:
+        fails.append("the prelude's `ListLen` does not spell the ceiling %s -- D-308 SS6" % n)
+    if count("src/backend/cast_bounds.npk", 'pass "%s"' % n) != 1 or count("src/backend/cast_bounds.npk", "pass %si64" % n) != 1:
+        fails.append("cast_bounds.npk's len_ceiling / len_ceiling_text do not both spell %s" % n)
+    if count("runtime/npkrt.spec", "(ensures (<= n %s))" % n) != 1:
+        fails.append("runtime/npkrt.spec: npk_alloc_internal's summary does not promise `n <= %s`" % n)
     return fails
 
 
@@ -5069,6 +5106,7 @@ def main(argv):
         failures += check_type_walkers_total()
         failures += check_decl_flags_unique()
         failures += check_generated_current()
+        failures += check_len_ceiling_agree()
         failures += check_one_renderer()
         failures += check_rung_names_open_cycle()
         failures += check_runtime_sigs_agree()

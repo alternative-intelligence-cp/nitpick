@@ -19,6 +19,11 @@ agree=0; disagree=0; skipped=0
 for f in $(grep -l '^// stress:' tests/backend/programs/*.npk | sort); do
   name=$(basename "$f" .npk)
   if grep -q '^// argv:\|^// fixture' "$f"; then skipped=$((skipped+1)); continue; fi
+  # A REAL-CHILD PROGRAM DIFFERS BY DESIGN (1.5.7 SS2.8; found at 1.5.8b step 6c): `driver_spawn_fail` carries
+  # `// stress:` and no `// argv:`, so the loop reached it, and its two shims disagreed on 6 to 8 of 20 seeds on
+  # the pre-6c floor and the 6c floor alike -- the child's real time decides the schedule. Skipped as the marker
+  # says, so a disagreement in the summary means a shim divergence and nothing else.
+  if grep -q '^// explore: no' "$f"; then skipped=$((skipped+1)); continue; fi
   build/npkc "$f" > "$OUT/$name.ll" 2> "$OUT/$name.err" || { echo "$name SKIP(compile)"; continue; }
   "$OUT/explored" --program "$OUT/$name.ll" "$OUT/$name.x.ll" "$OUT/$name.x.sites.txt" >> "$OUT/$name.err" 2>&1 || { echo "$name SKIP(transform)"; continue; }
   llc $LLC "$OUT/$name.x.ll" -o "$OUT/$name.o" 2>> "$OUT/$name.err" || { echo "$name SKIP(llc)"; continue; }

@@ -2093,10 +2093,18 @@ impl:complex<tfp64>:ToString = { func:to_string = string(complex<tfp64>:self) ne
 // from zero on its first reservation. The functions are here too (S-25): a
 // compiler-known type whose operations needed an import was one spelling in
 // the prelude and another at every use.
+// EVERY LENGTH THE PRELUDE HOLDS LIES IN [0, 2^47] (D-308 SS6, 1.5.8b step 6c):
+// 2^47 is the x86-64 user address space, so no block -- and no count of
+// elements in one -- can exceed it, and the floor refuses a larger request
+// (HeapBadRequest). A `List`'s `count` and `cap` carry the rule as a field
+// limit: checked after every write inside this module, a FACT at every read
+// anywhere -- which is what lets a row over `l.count + 1` decide.
+pub Rules<int64>:ListLen = { $ >= 0i64, $ <= 140737488355328i64 };
+
 pub struct:List<T> = {
     hidden wild T->:items;
-    sealed int64:count;
-    sealed int64:cap;
+    sealed limit<ListLen> int64:count;
+    sealed limit<ListLen> int64:cap;
 };
 
 // A capacity of zero would make the doubling in `list_reserve` a no-op

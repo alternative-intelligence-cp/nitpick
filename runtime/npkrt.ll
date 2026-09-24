@@ -5910,8 +5910,10 @@ entry:
 ; `failsafe`, which the re-entry rule ends at 70.
 define internal ptr @npk_fs_alloc(i64 %n, i64 %align) {
 entry:
-  %neg = icmp slt i64 %n, 0
-  br i1 %neg, label %badreq, label %norm
+  ; the ceiling, as npk_alloc_impl's (D-308 SS7): a bad request is a bad
+  ; request on the region path too, never an exhaustion
+  %big = icmp ugt i64 %n, 140737488355328
+  br i1 %big, label %badreq, label %norm
 badreq:
   call void @npk_heap_badreq()
   unreachable
@@ -5967,8 +5969,18 @@ init:
   call void @npk_heap_init()
   br label %sized
 sized:
-  %neg = icmp slt i64 %n, 0
-  br i1 %neg, label %badreq, label %norm
+  ; THE CEILING (D-308 SS7, 1.5.8b step 6c): a request above 2^47 bytes -- the
+  ; x86-64 user address space, so no block can be larger -- is a bad request,
+  ; and ONE unsigned compare says so; a negative size is a huge unsigned one,
+  ; so this is the sign check too (`icmp slt %n, 0` stood here until 6c). Every
+  ; length a program can hold is bounded by this line or by a source that is:
+  ; npk_alloc_internal's summary promises `n <= 140737488355328` to every
+  ; translated caller, and the emitted guards on `string_from_bytes` and
+  ; `#wild_slice` hold the two lengths no allocation makes. npk_fs_alloc and
+  ; npk_aalloc carry the same compare, since the aligned path reaches
+  ; npk_large_new without passing here.
+  %big = icmp ugt i64 %n, 140737488355328
+  br i1 %big, label %badreq, label %norm
 badreq:
   call void @npk_heap_badreq()
   unreachable
@@ -6273,8 +6285,10 @@ entry:
   ; secret and called npk_heap_init before taking the lock; the ordinary
   ; path's npk_alloc initialises under the mutex itself, and the over-aligned
   ; path below needs the large table, so it initialises there, locked.
-  %negn = icmp slt i64 %n, 0
-  br i1 %negn, label %badreq, label %alignck
+  ; the ceiling, as npk_alloc_impl's (D-308 SS7): the over-aligned path below
+  ; reaches npk_large_new without passing npk_alloc_impl's compare
+  %bign = icmp ugt i64 %n, 140737488355328
+  br i1 %bign, label %badreq, label %alignck
 alignck:
   %zeroa = icmp sle i64 %align, 0
   br i1 %zeroa, label %badreq, label %pow2

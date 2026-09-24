@@ -3,8 +3,11 @@
 // expect-obligation: err-exit open 3
 // expect-obligation: failsafe-post discharged 10
 // expect-obligation: exhaustive checker 1
-// expect-obligation: overflow open 3
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 2
 //
+// [1.5.8b step 6c] the arithmetic over `argv.len` discharges one `overflow` row on
+// the built-in length fact (D-308 SS7); the header moved by exactly that row.
 // THE `err-exit` ROW AT A CAST (D-144 as amended, D-278): leaving the family
 // traps ERR under BOTH spellings -- `out_checked` (`=>`) and `out_bang`
 // (`=>!`) discharge under `is_err`, `out_loose` is `open`; entering from an

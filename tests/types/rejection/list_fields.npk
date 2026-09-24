@@ -6,22 +6,22 @@
 // expect-error-at: 43
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 44
-// expect-error: NITPICK-TYPE-079
-// expect-error-at: 45
-// expect-error: NITPICK-TYPE-079
-// expect-error-at: 46
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 50
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 51
 // expect-error: NITPICK-TYPE-080
-// expect-error-at: 47
+// expect-error-at: 52
 // expect-error: NITPICK-TYPE-080
-// expect-error-at: 48
-// expect-error: NITPICK-TYPE-080
-// expect-error-at: 49
+// expect-error-at: 53
 // expect-error: NITPICK-TYPE-080
 // expect-error-at: 54
+// expect-error: NITPICK-TYPE-080
+// expect-error-at: 59
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 54
+// expect-error-at: 59
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 54
+// expect-error-at: 59
 //
 // THE PRELUDE `List`'s FIELDS ARE ITS OWN (D-313 §5, D-314 §3; 1.5.8b step 1b;
 // DEF-73, DEF-74). `items` is `hidden` and `count` and `cap` are `sealed`: outside
@@ -42,6 +42,11 @@ func:writes = NIL(List<int64>->:p) never fails {
     a.count = 3i64;
     a.count += 1i64;
     p.count = 0i64;
+    // `@` AND `$$m` OF A LIMITED FIELD ARE TYPE-063 SINCE 1.5.8b STEP 6c: `count`
+    // and `cap` carry `limit<ListLen>` (D-308 SS6), and a limited field has no
+    // address ANYWHERE -- inside the prelude too -- so that rule is asked first
+    // and the sealed rule (TYPE-079, about "outside") is never reached: one
+    // mistake, one report (D-240). Until 6c these two lines were TYPE-079.
     int64->:c = @a.count;
     drop poke($$m a.cap);
     a.items[0i64] = 5i64;

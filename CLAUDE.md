@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 314 decisions, D-001 through D-314 (this sentence said 240 from 1.4.8c until 1.5.8b's planning). The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 315 decisions, D-001 through D-315 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, and 314 until 1.5.8b step 6c). The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -1267,8 +1267,28 @@ armed program answers 55). Every resolved callee is walked once now, a trait-
 method callee reaches every impl of the trait, a function named as a value is
 reached; 20 of the tree's 502 roots gained an arm (13 `IntOverflow`, 7
 `OutOfBounds`, 4 `TbbErr`, 1 `ShiftRange`, 2 `BadPath`), no other diagnostic
-moved. The ceiling and the facts are step 6c, with the one-hop refresh the
-prelude's `limit<ListLen>` needs; `intern.npk`'s `*%` is 6d. **Step 3 LANDED 2026-09-19**: every plain-integer
+moved. **Step 6c LANDED 2026-09-23 (D-308 §§6–7; DEF-76, DEF-87 fixed; DEF-88 found; D-315)**: the
+CEILING — a request above 2^47 bytes is `HeapBadRequest` at every allocator
+entry, ONE unsigned compare in each of the allocator's three entries (the
+aligned entry bypasses the core), a PROMISE on `npk_alloc_internal`'s summary
+that every translated caller's rows consume (the core is `boundary`: nothing
+decides it; TCB.md §5 (10) accepts it; `alloc_ceiling.npk` tests it); the two
+lengths no allocation makes (`string_from_bytes`, `#wild_slice` — measured:
+exactly two) guarded by the EMITTER at the call, their `bounds` rows under the
+same key, `OutOfBounds` armed there, a narrow count widened by its sign
+(DEF-87: an `int32` variable count reached `llc` as a type error before); the
+built-in length FACT `[0, 2^47]` at every `.len`/`.cap` read, through a pointer
+too; the prelude's `pub Rules<int64>:ListLen` on `List`'s `count`/`cap` (so a
+program that pushes to a `List` names `(LimitViolated)` — 64 of 506 roots
+learned an arm); a one-hop refresh (stage2 == stage3, 26,612,308 bytes,
+`557ec18f…`); the manifest 3,634 obligations — `overflow` 949 → 1,102
+discharged, 1,113 → 964 open, the facts closing 149 rows of D-309's residue,
+the gate over 2,368 shared rows moving nothing; the floor's bytes moved (its
+first since `6340d5c`), its 388 rows unmoved, D-303's sweep 41 of 41 real
+programs agreeing (the one real-child program disagrees by design, on both
+floors, and is skipped by its marker now). `intern.npk`'s `*%` and DEF-88 (a
+lending `pick` arm `(Variant(_))` over an owning payload refused by the
+emitter, pre-existing) are 6d. **Step 3 LANDED 2026-09-19**: every plain-integer
 `+ - *` and negation is an `overflow` row at its guard's site (one over a
 `simd` operation's lanes, one with N−1 traps for an integer `.sum()`), a
 discharged row's branch becomes one `llvm.assume`, and the compiler's own
@@ -2172,6 +2192,48 @@ that carried them retired at the cycle close):
   When adding a construct the emitter may write more than once, ask what the
   belts will count — they compare the IR's traps and assumes against the rows,
   and they fail closed.
+- **Every length is at or below 2^47, and the allocator is why** (D-308 §7,
+  1.5.8b step 6c): a request above 140,737,488,355,328 bytes is `HeapBadRequest`
+  at every allocator entry — ONE unsigned compare in each of `npk_alloc_impl`,
+  `npk_fs_alloc` and `npk_aalloc` (the aligned entry bypasses the core, so a
+  single check would leave a hole), which is also the sign check. Exactly
+  2^47 is legal and the kernel answers `HeapOom`. The four spellings of the
+  number (the floor's three compares, the prelude's `ListLen`, `cast_bounds.npk`'s
+  `len_ceiling`, the spec's promise on `npk_alloc_internal`) are held to one
+  value by `check_len_ceiling_agree`. The allocator core is a `boundary`
+  symbol: the ceiling is a PROMISE kept by one instruction and accepted at
+  TCB.md §5 (10), never a row z3 decides — do not write "proven" of it.
+- **`string_from_bytes` and `#wild_slice` are guarded, and arm `OutOfBounds`**
+  (D-308 §7; K-18): the two producers of a length no allocation makes hold it
+  to `[0, 2^47]` at the CALL — the emitter's guard keyed on the call node, the
+  encoder's `bounds` row under the same key, REACH's arm through
+  `builtin_caller_len` (the one predicate all three read). A narrow count is
+  widened BY ITS SIGN first (DEF-87: an `int32` variable count reached `llc`
+  as a type error on every compiler before 6c). A program calling either
+  names `(OutOfBounds)`.
+- **A `List`'s `count` and `cap` carry `limit<ListLen>`, so a program that
+  pushes to one names `(LimitViolated)`** (D-308 §6, 1.5.8b step 6c): the
+  prelude's own writes are checked (they can never fire — `count < cap <=
+  2^47` by the ceiling — but REACH is syntactic, as it is for the program's
+  own `+`), and 63 of the tree's roots learned the arm at 6c. `ListLen` is a
+  prelude-owned name (D-239) and `pub`: a library container may carry it.
+- **A prelude RULE's predicate is an item** (found at 6c): `emit_program.npk`
+  brackets it as it brackets a function, or D-262's trim keeps
+  `@"npk.prelude.ListLen"` in a program that never touches a `List` and
+  `check_prelude_trimmed` fails on the first such program. Anything new the
+  prelude emits per module — a predicate, a vtable, a helper — needs the same
+  bracket.
+- **The encoder's length fact must look THROUGH a pointer** (found at 6c):
+  `b.cap` on a `buffer->` is auto-dereferenced (D-098), so the operand's type
+  is the pointer's; a fact keyed on `has_len_term(operand type)` missed it and
+  `b.cap + 1` stayed open. Any fact pushed at a member read should ask the
+  pointee's kind when the base is a pointer.
+- **A whole-tree sweep with the CHECKER sees no emitter refusal** (found at
+  6c): step 6b's sweep ran `tools/check` and reported nothing for
+  `tests/accept/moves.npk`; the same sweep with `npkc` found the file dying as
+  `EMIT-002` — pre-existing, since `tests/accept/` asks only the frontend
+  (DEF-88). Sweep with the full compiler when the question is "does it
+  compile".
 - **`failsafe` must name what the PRELUDE can raise on the program's behalf**
   (DEF-86, 1.5.8b step 6b): the reach analysis follows every resolved call into
   the prelude and every import, so a program that calls `list_pop`, formats a

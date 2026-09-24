@@ -105,3 +105,13 @@ pub func:cast_lo_smt_pred = string(int32:bits, bool:signed) never fails {
     if (raw string_eq(raw cast_lo_pred(bits, signed), "ogt")) { pass "fp.gt"; }
     pass "fp.geq";
 };
+
+// THE LENGTH CEILING (D-308 SS7, 1.5.8b step 6c), in both spellings: 2^47, the
+// x86-64 user address space. The floor's allocator refuses a larger request, so
+// every length a block gives is at or below it; the two lengths the CALLER
+// supplies (`string_from_bytes`, `#wild_slice`) are guarded against it by the
+// emitter and proven against it by the encoder, from this one number. The
+// prelude's `ListLen` rule spells the same number; the floor's three compares
+// spell it too, and the harness holds the four texts to one value.
+pub func:len_ceiling_text = string() never fails { pass "140737488355328"; };
+pub func:len_ceiling = int64() never fails { pass 140737488355328i64; };

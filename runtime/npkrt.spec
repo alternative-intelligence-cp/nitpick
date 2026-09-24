@@ -940,7 +940,7 @@
   (ensures (not (= result 0)))
   (ensures (= (mod result 16) 0))
   (ensures (<= (+ result n) 18446744073709551616))
-  (ensures (< n 9223372036854775808))
+  (ensures (<= n 140737488355328))   ; D-308's CEILING (1.5.8b step 6c): one compare in npk_alloc_impl, npk_fs_alloc and npk_aalloc; `n < 2^63` until then
   (ensures (=> (> n 0) (= (load64 mem2 (- result 16)) n)))
   (ensures-fresh (- result 16) (+ n 16)))
 
@@ -1106,9 +1106,9 @@
 (symbol @npk_alloc_managed
   (boundary "the managed entry (D-183): a block of n bytes from npk_alloc_impl with wild = 0 -- the drop walk's storage, never in the wild-live set, freed through dalloc like any managed body"))
 (symbol @npk_alloc_impl
-  (boundary "the allocator's core: during a failsafe a bump from the region with no mutex and no tables (D-292); otherwise, under the heap mutex, a slot of a small chunk for n <= the largest class or a fresh mapping through npk_large_new, the header stamped live, the stats counters noted; a request past the size ceiling is HeapBadRequest and a refused mapping HeapOom; alloc(0) is a real block (D-150)"))
+  (boundary "the allocator's core: during a failsafe a bump from the region with no mutex and no tables (D-292); otherwise, under the heap mutex, a slot of a small chunk for n <= the largest class or a fresh mapping through npk_large_new, the header stamped live, the stats counters noted; a request above 2^47 bytes -- D-308's CEILING, the x86-64 user address space, one unsigned compare that reads a negative size as a huge one (1.5.8b step 6c) -- is HeapBadRequest and a refused mapping HeapOom; alloc(0) is a real block (D-150)"))
 (symbol @npk_aalloc
-  (boundary "the aligned entry: a power-of-two alignment or HeapBadRequest; at or below sixteen the ordinary path, above it a mapping through npk_large_new at that alignment under the heap mutex (initialised there, locked -- D-290); during a failsafe the region at the alignment (D-292)"))
+  (boundary "the aligned entry: a request above 2^47 bytes (D-308's ceiling, checked here as well because the over-aligned path reaches npk_large_new without passing npk_alloc_impl's compare -- 1.5.8b step 6c) or a non-power-of-two alignment is HeapBadRequest; at or below sixteen the ordinary path, above it a mapping through npk_large_new at that alignment under the heap mutex (initialised there, locked -- D-290); during a failsafe the region at the alignment (D-292)"))
 (symbol @npk_calloc
   (boundary "count * size bytes, the multiply CHECKED (a wrap is HeapBadRequest, never an undersized block), the payload zeroed"))
 (symbol @npk_ralloc
@@ -1116,7 +1116,7 @@
 (symbol @npk_dalloc
   (summary)
   (free bad Int)
-  (boundary "the free: a null or misaligned pointer is HeapBadRequest (dalloc(NULL) traps by D-150), a block whose header does not validate is HeapBadRequest, a small block returns to its chunk (npk_small_free) and a large one to the kernel (munmap) under the heap mutex; during a failsafe, after the null and alignment checks, a no-op (D-292)")
+  (boundary "the free: a null or misaligned pointer is Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did) (dalloc(NULL) traps by D-150), a block whose header does not validate is Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did), a small block returns to its chunk (npk_small_free) and a large one to the kernel (munmap) under the heap mutex; during a failsafe, after the null and alignment checks, a no-op (D-292)")
   ; as a summary (the envelope symbols free a superseded buffer): the trap
   ; outcome under a condition nobody names (`bad`), the freed block's bytes
   ; the allocator's (poisoned), the caller's objects untouched
@@ -1142,7 +1142,7 @@
 (symbol @npk_hmap
   (boundary "an anonymous private read-write mapping of len bytes (mmap), or HeapOom when the kernel refuses (an answer past 2^64 - 4096)"))
 (symbol @npk_hunmap
-  (boundary "munmap of a mapping the heap made; a refusal means the table and the kernel disagree about what is mapped -- an integrity failure, HeapBadRequest, not an OOM"))
+  (boundary "munmap of a mapping the heap made; a refusal means the table and the kernel disagree about what is mapped -- an integrity failure, Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did), not an OOM"))
 (symbol @npk_wild_release_all
   (boundary "failsafe's controlled cleanup: every chunk and every large mapping returned to the kernel, the tables reset, the allocator left usable; after it only exit may follow (TYPE-062) -- anything still pointing into the heap points at unmapped pages"))
 (symbol @npk_cstr_slice
@@ -1162,7 +1162,7 @@
 (symbol @npk_frame_alloc
   (boundary "a coroutine frame of size bytes at align (at or below the heap's sixteen): the exact-size bucket's free list first (the common steady state), else a bump from the current chunk, else a dedicated heap block whose header carries the dedicated bit; the header stamped frame-live"))
 (symbol @npk_frame_free
-  (boundary "returns a frame: a null or misaligned pointer, or a header that does not validate as frame-live, is HeapBadRequest; a dedicated block goes back to the heap whole, a bucketed one is stamped frame-free and pushed on its size bucket's list, a new bucket appended (the parallel arrays grown by ralloc) when its size has none"))
+  (boundary "returns a frame: a null or misaligned pointer, or a header that does not validate as frame-live, is Unreachable (-4102 through npk_heap_bad, the integrity trap -- DEF-76: this sentence said HeapBadRequest until 1.5.8b step 6c, and the IR never did); a dedicated block goes back to the heap whole, a bucketed one is stamped frame-free and pushed on its size bucket's list, a new bucket appended (the parallel arrays grown by ralloc) when its size has none"))
 
 ; the waits and the wakes (the sync primitives over the cell's shape)
 (symbol @npk_ch_lock

@@ -1,0 +1,67 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+// expect-obligation: overflow discharged 6
+// expect-obligation: overflow open 1
+// expect-obligation: bounds discharged 4
+// expect-obligation: bounds open 1
+//
+// THE BUILT-IN LENGTH IS A FACT (D-308 SS7, 1.5.8b step 6c): a `.len` or `.cap`
+// of a string, a cstring, a slice or a buffer lies in [0, 2^47] wherever it is
+// read -- the allocator refuses a larger block, the two producers of a
+// caller-supplied length are guarded, and no program may write a header
+// (D-313) -- so `s.len + 1`, `s.len * 2`, `b.cap + 1` and `xs.len - 1` cannot
+// overflow an `int64`, and their rows DISCHARGE where an opaque field read
+// left them open; so do `v.len + w.len` and its `+ z.len` in `views`. The
+// control keeps the fact honest: `n + 1` over a plain parameter stays `open`.
+// And the producers' own rows: `string_from_bytes(p, s.len)` and
+// `#wild_slice<uint8>(u, xs.len)` discharge on the same fact;
+// `#wild_slice<uint8>(u, n)` over the plain parameter stays open and keeps
+// its guard. The two fixed-array range views are the other two `bounds`
+// discharges (DEF-22: a fixed array's length is its type's constant).
+mod:len_fact;
+
+func:grow = int64(string:s, buffer->:b, uint8[]:xs, int64:n) never fails {
+    int64:a = s.len + 1i64;
+    int64:m = s.len * 2i64;
+    int64:c = b.cap + 1i64;
+    int64:d = xs.len - 1i64;
+    int64:ctl = n + 1i64;
+    discard(m); discard(c); discard(d); discard(ctl);
+    pass a;
+};
+
+func:views = int64(string:s, uint8[]:xs, wild uint8->:u, int64:n) never fails {
+    string:v = string_from_bytes(s.ptr =>! wild int8->, s.len);
+    uint8[]:w = #wild_slice<uint8>(u, xs.len);
+    uint8[]:z = #wild_slice<uint8>(u, n);
+    pass (v.len + w.len + z.len);
+};
+
+func:main = int32(cstring[]:argv) {
+    string:s = "seven";
+    buffer:b = buffer_new(8i64);
+    uint8[3]:arr = [1u8, 2u8, 3u8];
+    wild int8->:p = alloc(16i64);
+    wild uint8->:u = p =>! wild uint8->;
+    int64:g = raw grow(s, @b, arr[0i64...3i64], argv.len);
+    int64:v = raw views(s, arr[0i64...3i64], u, 2i64);
+    dalloc(p);
+    exit ((g +% v -% 16i64) =>! int32);   // 6 + 10 - 16; wrapping, so no rows of main's own in the count
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 9i32; },
+        (OutOfBounds)    { exit 9i32; },
+        (CastRange)      { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault)   { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
+};

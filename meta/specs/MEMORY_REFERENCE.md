@@ -211,6 +211,20 @@ free(buffer);   // NITPICK-019 — use after move, and separately
 
 ## 3. Allocation Built-ins (NitpickAlloc)
 
+> **The allocation CEILING (D-308 §7; landed 1.5.8b step 6c).** A request above
+> 2^47 bytes (140,737,488,355,328 — the x86-64 user address space, so no block
+> can be larger) is a bad request at every entry of the allocator: `alloc`,
+> `alloc_managed`, `calloc`, `ralloc`, `aalloc` and the floor's own internal
+> entry all trap `HeapBadRequest`, by ONE unsigned compare in each of the
+> allocator's three entries (`npk_alloc_impl`, the failsafe region's
+> `npk_fs_alloc`, and `npk_aalloc`, whose over-aligned path reaches the large
+> allocator without passing the core) — a compare that reads a negative size as
+> a huge one, so it is the sign check as well. Exactly the ceiling is legal: a
+> request the kernel then refuses is `HeapOom`, not a bad request. The promise
+> `n <= 2^47` is the floor spec's on `npk_alloc_internal`, consumed as a fact by
+> every translated caller's rows and accepted at TCB.md §5 (10); it is what
+> bounds every built-in length (TYPE_REFERENCE §9.2.1).
+
 Nitpick provides raw, slab-backed compiler intrinsics for dynamic sizing. All return `wild int8->` and must be handled appropriately.
 *   **`alloc(size)`**: Allocate `size` uninitialized bytes.
 *   **`calloc(count, size)`**: Allocate zero-initialized memory.

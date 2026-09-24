@@ -19611,6 +19611,59 @@ control that writes the same out-of-range value to the UNLIMITED sibling and mus
 not trap, which is what proves the check is keyed to the field and not to the
 struct.]*
 
+*[2026-09-23, SS6 and SS7 LANDED at 1.5.8b step 6c — with two corrections to this
+decision's own wording, recorded here rather than rewritten above. (1) "Its spec
+promises it, and the promise is decided with the floor's rows": the allocator's core
+(`npk_alloc_impl`) is a `(boundary "…")` symbol and emits no rows, so the CEILING is
+a PROMISE — ONE unsigned compare in each of the allocator's three entries
+(`npk_alloc_impl`; the failsafe region's `npk_fs_alloc`; and `npk_aalloc`, whose
+over-aligned path reaches `npk_large_new` without passing the core, so a single
+check would have left a hole), a compare that reads a negative size as a huge one
+and so IS the sign check — stated on `npk_alloc_internal`'s summary as `(ensures (<=
+n 140737488355328))`, consumed as a fact by every translated caller's rows, accepted
+at TCB.md SS5 (10), and TESTED (`alloc_ceiling.npk`: the three entries, `calloc`'s
+unwrapped product, `ralloc`, the legal edge answered `HeapOom` under `RLIMIT_AS`, and
+the region path inside `failsafe` re-entering at 70). (2) "whatever else the plan
+enumerates by measurement": measured against every row of BUILTIN_REFERENCE, the two
+this decision names are the only producers of a length no allocation bounds — every
+other `.len` comes from a block the allocator holds at or below the ceiling, from a
+source that is, or from the kernel (`environ`, `argv`: `ARG_MAX`). Both are guarded
+BY THE EMITTER at the call (`0 <= len <= 2^47`, one unsigned compare, a narrow count
+widened by its sign — DEF-87: `#wild_slice` with an `int32` variable count reached
+`llc` as a type error on every compiler before this), trapping `OutOfBounds`; the
+encoder records the guard's `bounds` row under the call's own node; the reach
+analysis arms the identity there (`builtin_caller_len`, one predicate for all three).
+THE FACT: a `.len` or `.cap` of a `string`, a `cstring`, a slice or a `buffer` lies in
+`[0, 2^47]` at every read — pushed on the length symbol in the root region when it is
+minted, on the opaque term of any other read (through a POINTER too: `b.cap` on a
+`buffer->` is auto-dereferenced, and a fact keyed on the operand's type missed it
+until `len_fact.npk`'s row stayed open), never inside a proposition (DEF-33). SS6: the
+prelude declares `pub Rules<int64>:ListLen = { $ >= 0i64, $ <= 140737488355328i64 };`
+and `List`'s `count` and `cap` carry `sealed limit<ListLen>` — nine write sites
+checked inside the prelude, a fact at every read anywhere and on the length symbol at
+each read of `l.count`; `ListLen` is prelude-owned (D-239) and `pub`, so a library
+container may carry it. MEASURED on the compiler's own build (the manifest re-recorded
+under D-040, the gate over 2,368 shared rows: zero verdicts moved, zero discharged
+counts fell): `overflow` 949 → 1,102 discharged and 1,113 → 964 open — the facts
+closed 149 rows of D-309's residue, against planning's 167 predicted under an
+ASSUMPTION over every length; `bounds` 79 → 142 discharged (the producers' own rows,
+`string_from_bytes(x.ptr, x.len)` above all); 258 new `limit` rows at the prelude's
+`List` writes, 82 discharged and 176 open, each open one keeping its compare (D-309);
+`npkg verify`: 3,634 obligations, 1,678 discharged, 1,222 open, 0 budget, 729
+unencoded, 5 checker. THE ARMS (the reach fix of step 6b meeting this step): every
+program reaching a `List` write names `(LimitViolated)` and every caller of the two
+producers `(OutOfBounds)` — 64 of the tree's 506 roots gained one, with the code `(*)`
+already answered. THE FLOOR moved (its first bytes since `6340d5c`): the spec's
+promise and DEF-76's three sentences with it, `runtime/npkrt.obligations` re-recorded
+with no verdict moved (388 rows, 381 discharged, 7 budget), TCB.md regenerated, and
+D-303's alternating sweep run — 41 of the 42 programs it reaches agree on all 20
+seeds, the 42nd (`driver_spawn_fail`, a real-child program the sweep's loop reached
+because it carries `// stress:` and no `// argv:`) disagreeing identically on the
+pre-6c floor, so the sweep skips real-child programs by their marker now. A one-hop
+snapshot refresh carried the prelude's rule into the builder (stage2 == stage3,
+26,612,308 bytes, sha256 `557ec18f…`), and `build/npkc.ll`'s digest is the installed
+snapshot's. S-95, raised here, was settled the same day as D-315.]*
+
 ## D-309 — The overflow rows nothing proves keep their guards; no bound is written into the tree for a count's sake — **SETTLED (user decision, 2026-09-19: "those recommendations sound fine to me as well. Lets ratify those too."; S-89)**
 
 D-210 §4 reads "1.5 proves the traps away". Measured at 1.5.8b's planning, the
@@ -20131,3 +20184,36 @@ qualifiers land at step 1b.]*
   - `OutOfBounds` guards in the compiler's own emission, 13 → 765;
   - `IntOverflow` guards, 2,250 → 2,248;
   - the churn probe's peak equal to one round's (10,764 bytes; `tests/cost/list_ops.toml`).
+
+## D-315 — `#wild_slice`'s "legal only in `wild` context" is STRUCK: the `#wild_` spelling is the acknowledgement, and the length is checked — **SETTLED (user decision, 2026-09-23: "i am sure your recommendation is likely fine as long as it doesn't compromise on safety anywhere"; S-95)**
+
+Raised at 1.5.8b step 6c. BUILTIN_REFERENCE's `#wild_slice<T>(ptr, len)` row had
+said "**Legal only in `wild` context** (D-070)" since the builtin was written, and
+the subcycle's plan (§2.7) read it as a rule to enforce at 6c. Measured before
+enforcing: no such rule existed for `#wild_slice` or for `#wild_ptr`, no decision
+defined a "`wild` context" (a `wild`-qualified receiving binding? a function
+holding `wild` storage? a module importing `nsys`?), and the only context rule
+either builtin carries is TYPE-061 — neither may appear in a `pure` body (D-242),
+where an unverifiable extent could launder into a proof.
+
+**The decision.** The sentence is struck. The `#wild_` spelling IS the
+acknowledgement: D-019's `#wild_ptr` and D-070's `#wild_slice` are the greppable
+opt-outs the TOS system asks for (a construct the author writes to say "I vouch
+for this address / this extent"), and a rule keyed on where the value LANDS would
+be a second mechanism saying the same thing in a place the author does not write
+it — the blueprint philosophy's argument against two spellings of one meaning.
+What IS enforced, both before and after: TYPE-061 in `pure` bodies; and, from
+1.5.8b step 6c (D-308 §7), the LENGTH: `0 <= len <= 2^47` at every call, a
+narrow count widened by its sign, trapping `OutOfBounds` outside it, with its
+`bounds` row and its `failsafe` arm. Nothing that checked anything is removed;
+one check that did not exist is added.
+
+**The condition the user attached** — "as long as it doesn't compromise on safety
+anywhere" — is met exactly by that accounting: the struck sentence enforced
+nothing, so striking it changes no program's refusal, and the extent a
+`#wild_slice` claims over its pointer (the privilege the row's next sentence
+still names) is what the spelling has always acknowledged; the ceiling bounds
+it, the bounds check at each index trusts it, and a rule about the receiving
+binding's regime would not have changed either.
+
+Lands at 1.5.8b step 6c: the row's sentence, OPEN_DECISIONS S-95, this entry.

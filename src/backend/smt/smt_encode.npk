@@ -107,7 +107,8 @@ use "../../frontend/symbols.npk".*;   // a free call's callee, by its symbol (1.
 use "../../frontend/type_resolve.npk".*;
 use "../../../lib/nhash.npk".*;
 use "../ir/ir_types.npk".*;
-use "../cast_bounds.npk".*;   // D-306's bounds, in the SMT spelling (1.5.8b step 5)
+use "../cast_bounds.npk".*;   // D-306's bounds, in the SMT spelling (1.5.8b step 5); len_ceiling_text (D-308 SS7, step 6c)
+use "../../frontend/builtins.npk".*;   // builtin_caller_len (D-308 SS7, 1.5.8b step 6c)
 use "./smt_writer.npk".*;
 use "./smt_kinds.npk".*;
 
@@ -1062,6 +1063,14 @@ func:place_len_term = Term(Encoder->:e, ExprId:base, int32:bty) never fails {
         int32:preg = e.cur_region;
         e.cur_region = 0i32;
         int32:lsy = raw sym_new(e, lnm, raw tt_int(e.types, 64i32, true));
+        // THE CEILING IS A FACT ABOUT THE SYMBOL'S SORT (D-308 SS7, 1.5.8b step
+        // 6c), true on every path like its width's range, so it lives here in
+        // the root region too. A `List`'s length takes its rule at each read.
+        if (raw has_len_term(e, bty)) {
+            List<int32>:lsl = raw list_init::<int32>(1i64);
+            drop list_push(@lsl, lsy);
+            drop hyp_push(e, raw len_ceiling_goal(raw sym_text(e, lsy)), lsl);
+        }
         e.cur_region = preg;
         e.binds[bi].lensym = lsy;
     }
@@ -1103,6 +1112,48 @@ func:record_bounds = NIL(Encoder->:e, Term:idx, Term:len, int32:site, Span:at) n
     if (e.in_prop > 0i32) { drop prop_fact(e, goal, gs); pass NIL; }
     if (e.quiet > 0i32) { pass NIL; }
     drop hyp_push(e, goal, gs);
+    pass NIL;
+};
+
+// THE LENGTH CEILING'S ROW (D-308 SS7, 1.5.8b step 6c): `0 <= len <= 2^47` at a
+// call of `string_from_bytes` or `#wild_slice`, the emitter's guard read back
+// (one unsigned compare there, the two-sided Int form here), keyed on the
+// CALL's own node. A `bounds` row: a length past the address space is a view
+// out of bounds, and the guard traps `OutOfBounds`. The fact is a hypothesis
+// after the site; inside a proposition it is the proposition's (DEF-33).
+func:record_len_ceiling = NIL(Encoder->:e, Term:len, int32:site, Span:at) never fails {
+    if (!(len.ok && (!len.is_bool))) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_BOUNDS(), "", none, raw SITE_EXPR(), site, at, false);
+        if (e.in_prop > 0i32) { drop prop_opaque(e); }
+        pass NIL;
+    }
+    string:goal = raw len_ceiling_goal(len.text);
+    drop record(e, raw OK_BOUNDS(), goal, len.syms, raw SITE_EXPR(), site, at, true);
+    if (e.in_prop > 0i32) { drop prop_fact(e, goal, len.syms); pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, goal, len.syms);
+    pass NIL;
+};
+
+// The ceiling as a proposition over one term.
+func:len_ceiling_goal = string(string:t) never fails {
+    pass (raw smt_app2("and", raw smt_app2("<=", "0", t),
+                       raw smt_app2("<=", t, raw len_ceiling_text())));
+};
+
+// THE BUILT-IN LENGTH FACT (D-308 SS7, 1.5.8b step 6c): a `.len` or `.cap` of a
+// `string`, a `cstring`, a slice or a `buffer` lies in [0, 2^47] wherever it is
+// read, because the allocator refuses a larger block and the two producers of
+// a caller-supplied length are guarded -- and because nothing but the module
+// that makes a header may write one (D-313). Pushed at a READ, never inside a
+// proposition's own evaluation (DEF-33); a `List`'s `count` and `cap` carry the
+// same numbers as a field rule (`ListLen`) and ride D-308 SS3's mechanism.
+func:push_len_fact = NIL(Encoder->:e, Term:t) never fails {
+    if (!(t.ok && (!t.is_bool))) { pass NIL; }
+    if (e.in_prop > 0i32) { pass NIL; }
+    if (e.quiet > 0i32) { pass NIL; }
+    drop hyp_push(e, raw len_ceiling_goal(t.text), t.syms);
     pass NIL;
 };
 
@@ -3043,6 +3094,18 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
         drop list_push(@args, raw enc_expr(e, aid));
         drop list_push(@atys, raw ty_of(e, aid));
     }
+    // `string_from_bytes(p, len)` (D-308 SS7, 1.5.8b step 6c): the one runtime
+    // producer of a caller-supplied length -- its `bounds` row at the call's
+    // own node, over the argument term encoded above. The callee is the
+    // builtin's own name (D-294 keeps it from every other declaration).
+    if ((n.kind == ExprKind.ExprCallExpr) && (argc == 2i32) && (n.a != 0i32)) {
+        ExprNode:lcn = raw ast_expr(e.ast, ExprId{ index: n.a });
+        if (lcn.kind == ExprKind.ExprIdentifierExpr) {
+            if (raw builtin_caller_len(raw intern_get(e.interns, lcn.payload =>! int32))) {
+                drop record_len_ceiling(e, raw term_copy(args[1i64]), id.index, n.span);
+            }
+        }
+    }
     CallEnc:none = CallEnc{ cd: 0i32, coroutine: false, through_dyn: false,
                             names: raw list_init::<int32>(1i64), types: raw list_init::<int32>(1i64),
                             terms: raw list_init::<Term>(1i64) };
@@ -4643,11 +4706,28 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (mlen) {
             Term:lt2 = raw place_len_term(e, raw expr_operand(n), mbt2);
             if (lt2.ok) {
+                // A `List`'s `count` is limited (`ListLen`, D-308 SS6): the rule
+                // over the length SYMBOL, at this read, as at every read.
+                if (raw type_is_list(e.tr, mbt2)) {
+                    drop assert_field_rule(e, mbt2, n.payload =>! int32, lt2);
+                }
                 drop enc_alias_site(e, id);
                 pass lt2;
             }
         }
         drop enc_alias_site(e, id);
+        // A BUILT-IN LENGTH OR CAPACITY READ OFF ANYTHING ELSE -- a call's
+        // result, an element, an escaped name, a container behind a POINTER
+        // (`b.cap` on a `buffer->`: D-098 dereferences the read, so the
+        // operand's type is the pointer's) -- is opaque, and bounded by the
+        // ceiling (D-308 SS7, 1.5.8b step 6c).
+        int32:mvt = mbt2;
+        if ((raw type_kind(e.types, mvt)) == (raw TY_POINTER())) { mvt = raw type_elem(e.types, mvt); }
+        if ((raw has_len_term(e, mvt)) && ((raw string_eq(mfld, "len")) || (raw string_eq(mfld, "cap")))) {
+            Term:mo2 = raw term_opaque(e, ty);
+            drop push_len_fact(e, mo2);
+            pass mo2;
+        }
         // A LIMITED FIELD'S RULE IS A FACT AT EVERY READ (D-308 SS3; 1.5.8b
         // step 6): the read's own opaque term satisfies the rule, because
         // every write to the field was checked against it (or discharged
@@ -4667,6 +4747,17 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             if (!sq.ok) { sq = raw term_opaque(e, ty); }
             if (sq.ok && (!sq.is_bool)) {
                 pass (raw fp_make(e, "sqrt", ty, sq.text, "", raw smt_app2("fp.sqrt", "RNE", sq.text), sq.syms));
+            }
+            pass (raw term_opaque(e, ty));
+        }
+        // `#wild_slice<T>(p, len)` (D-308 SS7, 1.5.8b step 6c): the pointer a
+        // site, the count the ceiling's `bounds` row at the builtin's own node.
+        if (raw builtin_caller_len(bname)) {
+            int32:wg = raw builtin_generic_count(n);
+            if (n.c > (wg + 1i32)) {
+                Term:wp = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), wg) });
+                Term:wl = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), wg + 1i32) });
+                drop record_len_ceiling(e, wl, id.index, n.span);
             }
             pass (raw term_opaque(e, ty));
         }

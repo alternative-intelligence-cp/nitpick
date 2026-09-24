@@ -1839,6 +1839,54 @@ func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref,
     pass NIL;
 };
 
+// THE LENGTH CEILING'S GUARD (D-308 SS7, 1.5.8b step 6c): `0 <= len <= 2^47`
+// as ONE unsigned compare -- a negative length is a huge unsigned one -- at a
+// call of `string_from_bytes` or `#wild_slice`, the two producers of a length
+// no allocation bounds (every other `.len` comes from a block the allocator
+// holds at or below the ceiling, or from a source that is). Trapping
+// `OutOfBounds`: a length past the address space is a view out of bounds
+// (K-18). `site` is the CALL's own node, the key the encoder records the
+// `bounds` row under, and a discharged row elides the branch into one
+// `llvm.assume` exactly as an index's does.
+func:emit_len_ceiling_guard = NIL(ExprEmitter->:x, string:len64, int32:site,
+                                  Span:at) never fails {
+    string:ok_c = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ok_c, " = icmp ule i64 ", len64, ", ",
+                      raw len_ceiling_text()));
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_BOUNDS())) {
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", ok_c, ")"));
+        pass NIL;
+    }
+    string:trap_l = raw irw_new_label(x.fe.w, "len.oob");
+    string:ok_l = raw irw_new_label(x.fe.w, "len.ok");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", ok_c, ", label %", ok_l,
+                      string_concat(", label %", trap_l)));
+    drop irw_label(x.fe.w, trap_l);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4099)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, ok_l);
+    pass NIL;
+};
+
+// A length narrower than `i64`, widened BY ITS SIGN before the compare and the
+// header alike: a signed count sign-extends (so a negative `int32` count is a
+// negative length, refused), an unsigned one zero-extends. `#wild_slice`'s
+// count is any integer by the checker; `string_from_bytes`'s is `int64` by its
+// signature, and arrives here already coerced.
+func:widen_len_i64 = string(ExprEmitter->:x, string:ref, string:ll, int32:len_tid) never fails {
+    if (raw string_eq(ll, "i64")) { pass (string_concat(ref, "")); }
+    string:ext = "zext";
+    if ((raw type_kind(x.fe.ctx.types, len_tid)) == (raw TY_INT())) {
+        if (raw type_is_signed(x.fe.ctx.types, len_tid)) { ext = "sext"; }
+    }
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(w, raw cat3(" = ", ext, " "), ll, " ",
+                      raw cat3(ref, " to ", "i64")));
+    pass w;
+};
+
 // The literal text, made a valid LLVM decimal-FP constant: the type suffix is
 // cut, and a body with no '.' gets one ("1e10" is not LLVM grammar; "1.0e10"
 // is). The digits themselves pass through untouched — LLVM's own parser does
@@ -8060,6 +8108,11 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // closed for `sys` (a negative `int32` widened into an enormous positive
     // `int64`, silently, at every narrow argument the floor was ever given).
     string:args = "";
+    // THE ONE RUNTIME PRODUCER OF A LENGTH THE CALLER SUPPLIES (D-308 SS7,
+    // 1.5.8b step 6c): `string_from_bytes(p, len)`'s second argument is held
+    // to the ceiling before the call, at the call's own site.
+    bool:has_len = false;
+    string:len_ref = "";
     for (int32:i in 0i32...count) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
@@ -8102,9 +8155,14 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                 }
             }
         }
+        if ((i == 1i32) && (raw builtin_caller_len(name))) {
+            len_ref = raw widen_len_i64(x, ref, ll, atid);
+            has_len = true;
+        }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, ll, string_concat(" ", ref));
     }
+    if (has_len) { drop emit_len_ceiling_guard(x, len_ref, id.index, cnode.span); }
 
     if (raw string_eq(sig.ret, "void")) {
         drop irw_line(x.fe.w, raw cat5("call void ", sig.sym, "(", args, ")"));
@@ -10895,13 +10953,20 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (!(raw iv_is_ok(pv2))) { pass pv2; }
         IrVal:lv = raw emit_expr(x, lid);
         if (!(raw iv_is_ok(lv))) { pass lv; }
+        // THE CEILING (D-308 SS7, 1.5.8b step 6c): the count is widened by its
+        // sign and held to `0 <= len <= 2^47` before it becomes a header. The
+        // header took `lv.ref` as an `i64` whatever its width until 6c, so a
+        // narrower count -- any integer, by the checker -- reached `llc` as a
+        // type error (DEF-87).
+        string:len64 = raw widen_len_i64(x, lv.ref, lv.ll, lv.type_id);
+        drop emit_len_ceiling_guard(x, len64, id.index, n.span);
         string:a = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(a,
             " = insertvalue { ptr, i64 } zeroinitializer, ptr ",
             string_concat(pv2.ref, ", 0")));
         string:b = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
-                          ", i64 ", string_concat(lv.ref, ", 1")));
+                          ", i64 ", string_concat(len64, ", 1")));
         pass (raw iv("{ ptr, i64 }", move(b), raw exprtypes_get(x.et, id)));
     }
 

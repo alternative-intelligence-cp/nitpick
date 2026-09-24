@@ -2,8 +2,11 @@
 // expect-obligation: loop-step open 1
 // expect-obligation: failsafe-post discharged 16
 // expect-obligation: exhaustive checker 1
-// expect-obligation: overflow open 3
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 2
 //
+// [1.5.8b step 6c] `argv.len - 1i64`'s `overflow` row discharges on the built-in
+// length fact (D-308 SS7); the header moved by exactly that row.
 // THE STEP ROW (S-46, 1.5.4 step 3, L-13): a COMPUTED step is a `loop-step`
 // row whose guard is the compare at the loop's entry -- `open` here, since
 // `st` comes from `argv`, so the compare stays and the run without

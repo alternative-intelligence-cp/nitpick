@@ -1,0 +1,147 @@
+// expect-exit: 0
+//
+// THE ALLOCATION CEILING (D-308 SS7, 1.5.8b step 6c): a request above 2^47
+// bytes -- the x86-64 user address space, so no block can be larger -- is a
+// bad request (HeapBadRequest) at every entry of the allocator, decided by ONE
+// unsigned compare that reads a negative size as a huge one. This program
+// drives each entry from a child of itself and reads the code `failsafe`
+// chose; the parent's own address space is never touched.
+//
+//   case 1  alloc(2^47 + 1)             HeapBadRequest
+//   case 2  alloc(-1)                   HeapBadRequest -- the sign, by the same compare
+//   case 3  aalloc(2^47 + 1, 4096)      HeapBadRequest -- the over-aligned entry, which
+//                                       reaches npk_large_new WITHOUT npk_alloc_impl
+//   case 4  calloc(2^46, 4)             HeapBadRequest -- a product of 2^48 that does
+//                                       not wrap, refused past the ceiling
+//   case 5  ralloc(p, 2^47 + 1)         HeapBadRequest
+//   case 6  alloc(2^47) under RLIMIT_AS  HeapOom -- THE EDGE IS LEGAL: exactly the
+//                                       ceiling is not a bad request, and the kernel
+//                                       refuses it (256 MiB of address space)
+//   case 7  a request above the ceiling INSIDE `failsafe` (the region path, D-292)
+//                                       is a bad request there too: the trap
+//                                       re-enters, and the process ends at 70
+mod:alloc_ceiling;
+
+use "../../../lib/nproc.npk".*;
+
+error:E9;
+error:ELim;
+
+func:cap_address_space = NIL() {
+    wild int8->:buf = alloc(16i64);
+    wild int64->:rl = buf =>! wild int64->;
+    <-rl = 268435456i64;
+    <-(#ptr_add<int64>(rl, 1i64)) = 268435456i64;
+    discard(sys(160i64, 9i64, rl) ?! ELim);
+    dalloc(buf);
+    pass NIL;
+};
+
+func:drive = int32(int64:which) {
+    if (which == 1i64) { wild int8->:p1 = alloc(140737488355329i64); discard(p1); pass 3i32; }
+    if (which == 2i64) { wild int8->:p2 = alloc(0i64 -% 1i64); discard(p2); pass 3i32; }
+    if (which == 3i64) { wild int8->:p3 = aalloc(140737488355329i64, 4096i64); discard(p3); pass 3i32; }
+    if (which == 4i64) { wild int8->:p4 = calloc(70368744177664i64, 4i64); discard(p4); pass 3i32; }
+    if (which == 5i64) {
+        wild int8->:p5 = alloc(64i64);
+        wild int8->:q5 = ralloc(p5, 140737488355329i64);
+        discard(q5);
+        pass 3i32;
+    }
+    if (which == 6i64) {
+        cap_address_space() ?! E9;
+        wild int8->:p6 = alloc(140737488355328i64);
+        discard(p6);
+        pass 3i32;
+    }
+    if (which == 7i64) {
+        int32:z = (which - 7i64) =>! int32;
+        discard(10i32 / z);                 // DivByZero: failsafe runs, and asks too much
+        pass 3i32;
+    }
+    pass 4i32;
+};
+
+func:args_of = ProcArgs(string:exe, string:a) {
+    ProcArgs:pa = raw args_init();
+    args_push(@pa, exe) ?! E9;
+    args_push(@pa, a) ?! E9;
+    pass pa;
+};
+
+async func:child = int64(Path:self, ProcArgs->:env, string:which) {
+    ProcArgs:a = args_of(self.text, which) ?! E9;
+    Proc:p = proc_spawn(self, @a, env) ?! E9;
+    ProcExit:x = (await proc_wait(move(p), raw duration_secs(10i64))) ?! E9;
+    drop args_free(@a);
+    if (!x.exited) { pass 255i64; }
+    pass x.status;
+};
+
+func:case_of = int64(string:w) never fails {
+    if (string_equals(w, "1")) { pass 1i64; }
+    if (string_equals(w, "2")) { pass 2i64; }
+    if (string_equals(w, "3")) { pass 3i64; }
+    if (string_equals(w, "4")) { pass 4i64; }
+    if (string_equals(w, "5")) { pass 5i64; }
+    if (string_equals(w, "6")) { pass 6i64; }
+    if (string_equals(w, "7")) { pass 7i64; }
+    pass 0i64;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len == 2i64) {
+        string:w = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+        exit (drive(raw case_of(w)) ?! E9);
+    }
+    string:sp = string_from_bytes(argv[0i64].ptr, argv[0i64].len);
+    Path:self = path_parse(sp) ?! E9;
+    ProcArgs:env = raw args_init();
+    cstring[]:mine = environ();
+    for (int64:i in 0i64...mine.len) { args_push_cstring(@env, mine[i]) ?! E9; }
+
+    string[5]:bad = ["1", "2", "3", "4", "5"];
+    for (int64:c in 0i64...5i64) {
+        int64:r = (await child(self, @env, bad[c])) ?! E9;
+        if (r != 91i64) { exit ((10i64 + c) =>! int32); }   // HeapBadRequest, read as 91
+    }
+    int64:edge = (await child(self, @env, "6")) ?! E9;
+    if (edge != 92i64) { exit 20i32; }                       // HeapOom: the edge is legal
+    int64:infs = (await child(self, @env, "7")) ?! E9;
+    if (infs != 70i64) { exit 21i32; }                       // the re-entry exit
+    drop args_free(@env);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) {
+            // case 7: `failsafe` itself asks the region for more than the
+            // ceiling -- a bad request on that path too, and a trap inside
+            // failsafe is the re-entry exit 70
+            wild int8->:big = alloc(140737488355329i64);
+            discard(big);
+            exit 77i32;
+        },
+        (DivOverflow)      { exit 78i32; },
+        (E9)               { exit 61i32; },
+        (ELim)             { exit 60i32; },
+        (BadPath)          { exit 62i32; },
+        (EProcArgs)        { exit 63i32; },
+        (EProcSpawn)       { exit 64i32; },
+        (EProcDeadline)    { exit 65i32; },
+        (EProcWait)        { exit 66i32; },
+        (DeadlineExceeded) { exit 67i32; },
+        (DriverLeak)       { exit 68i32; },
+        (IntOverflow)      { exit 93i32; },
+        (OutOfBounds)      { exit 94i32; },
+        (HeapBadRequest)   { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (StackExhausted)   { exit 97i32; },
+        (MachineFault)     { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

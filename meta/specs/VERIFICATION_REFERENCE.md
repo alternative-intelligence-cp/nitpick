@@ -622,7 +622,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142); a `simd` division's any-lane guard is ONE row over the lanes' conjunction (D-282) | yes | 1.5.0 |
 | `div-min` | a signed division is not `INT_MIN / -1` (D-142); one row over the lanes for a signed-element `simd` (D-282) | yes | 1.5.0 |
 | `overflow` | a plain-integer `+ - *` or negation stays in range (D-210): the intrinsic's overflow bit at the guard's own site (K-9) -- a binary node's, a compound's target's, a negation's own node; ONE row over the lanes for a `simd` integer operation, and ONE with N-1 traps for an integer `.sum()`; a node the folder writes as its constant has no guard and no row (D-310) | yes | 1.5.8b step 3 |
-| `bounds` | an index is inside its array, slice, buffer or `List` (D-070, D-314): `0 <= i < len` at every checked element access, and ONE row for a range slice's pair (`lo <= hi <= len`) at the RANGE's node; the length is the term `(|npk.len| base)` wherever it is named, so a loop written over `xs.len` or `l.count` proves the accesses inside it; a fixed array's length is its type's constant | yes | 1.5.8b step 5 |
+| `bounds` | an index is inside its array, slice, buffer or `List` (D-070, D-314): `0 <= i < len` at every checked element access, and ONE row for a range slice's pair (`lo <= hi <= len`) at the RANGE's node; the length is the term `(|npk.len| base)` wherever it is named, so a loop written over `xs.len` or `l.count` proves the accesses inside it; a fixed array's length is its type's constant | yes | 1.5.8b step 5 — and, since 1.5.8b step 6c (D-308 §7), ONE row at each call of `string_from_bytes(p, len)` and `#wild_slice<T>(p, len)`, the two producers of a length no allocation bounds: `0 <= len <= 2^47`, the emitter's guard read back, keyed on the call's own node; a discharged row elides the guard into one `llvm.assume` |
 | `cast-range` | a float's `=>!` cast to an integer has an integer meaning (D-306): the value is not NaN or an infinity, and its truncation toward zero lies inside the target -- the two ordered compares before the conversion, `CastRange`; a `simd` cast's any-lane guard is one row over the lanes | yes | 1.5.8b step 5 |
 | `exhaustive` | a `pick` covers its domain (checker-discharged) | no | 1.5.4 |
 | `requires` | a callee's precondition holds at the call (D-221) | yes | 1.5.3 |
@@ -1550,7 +1550,8 @@ slot, a non-negative one the value with error 0; their allocator calls are
 `(summary)` calls of `npk_alloc_internal` — a boundary symbol whose
 clauses are its promise: a fresh 16-aligned block of `n` bytes disjoint
 from the caller's objects, its loop objects and its earlier blocks, those
-objects unchanged, the block's header word `n`, `n` below the size ceiling,
+objects unchanged, the block's header word `n`, `n` at most 2^47 — D-308's
+CEILING, the one compare in the allocator's three entries (1.5.8b step 6c) —,
 or the trap outcome under a condition nobody names — and a superseded
 buffer's return is a `(summary)` call of `npk_dalloc` (the block's bytes
 and the heap's the allocator's, the caller's objects kept, the trap outcome

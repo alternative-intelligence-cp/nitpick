@@ -1,13 +1,25 @@
 // expect-exit: 29
 //
-// OOM IS A TRAP, NOT AN EXIT CODE (0.10.1, the C-3 obligation): mmap refuses
-// four exbibytes, and the allocator routes -4103 through a path that
-// allocates nothing -- failsafe runs with preallocated state, because
-// allocation just failed.
-
+// OOM IS A TRAP, NOT AN EXIT CODE (0.10.1, the C-3 obligation): the allocator
+// routes -4103 through a path that allocates nothing -- failsafe runs with
+// preallocated state, because allocation just failed. DETERMINISTIC SINCE
+// 1.5.8b step 6c (K-16): this program caps its OWN address space at 256 MiB
+// (setrlimit RLIMIT_AS, as thread_stack_release.npk does) and asks for one
+// gibibyte -- a LEGAL request, below D-308's 2^47 ceiling, that the kernel
+// must refuse. Until 6c it asked for four exbibytes, which the ceiling now
+// refuses as a bad request before any mapping is tried (alloc_ceiling.npk).
 mod:oom;
+error:ELim;
+
 func:main = int32(cstring[]:_~argv) {
-    wild int8->:p = alloc(4611686018427387904i64);
+    // struct rlimit { rlim_cur, rlim_max }: 256 MiB both ways, RLIMIT_AS = 9
+    wild int8->:buf = alloc(16i64);
+    wild int64->:rl = buf =>! wild int64->;
+    <-rl = 268435456i64;
+    <-(#ptr_add<int64>(rl, 1i64)) = 268435456i64;
+    discard(sys(160i64, 9i64, rl) ?! ELim);
+    dalloc(buf);
+    wild int8->:p = alloc(1073741824i64);
     discard(p);
     exit 0i32;
 };
@@ -15,6 +27,7 @@ func:main = int32(cstring[]:_~argv) {
 func:failsafe = int32(Error:e) {
     pick (e) {
         (HeapOom) { exit 29i32; },
+        (ELim) { exit 8i32; },
         (HeapBadRequest) { exit 9i32; },
         (Unreachable) { exit 9i32; },
         (WildLeak) { exit 9i32; },

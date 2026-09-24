@@ -33,6 +33,7 @@ use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;   // limit_target (1.5.2, D-251)
 use "../types.npk".*;
+use "../builtins.npk".*;       // builtin_caller_len (D-308 SS7, 1.5.8b step 6c)
 use "../expr_types.npk".*;
 use "../type_resolve.npk".*;     // struct_field_decl_of: a limited field's write point (D-308, 1.5.8b step 6)
 use "../type_trait.npk".*;       // ImplTable: a trait-method callee reaches every impl (DEF-86, 1.5.8b step 6b)
@@ -820,6 +821,18 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
     }
     if (n.kind == ExprKind.ExprCallExpr) {
         drop reach_callee(x, id, n);
+        // `string_from_bytes(p, len)` checks its length against the ceiling and
+        // traps `OutOfBounds` (D-308 SS7, 1.5.8b step 6c): the callee is the
+        // builtin's own name, which D-294 keeps from every other declaration.
+        ExprId:bce = raw expr_callee(n);
+        if (!(raw expr_is_none(bce))) {
+            ExprNode:bcn = raw ast_expr(x.ast, bce);
+            if (bcn.kind == ExprKind.ExprIdentifierExpr) {
+                if (raw builtin_caller_len(raw intern_get(x.interns, bcn.payload =>! int32))) {
+                    x.saw_index = true;
+                }
+            }
+        }
         drop reach_expr(x, raw expr_callee(n), fuel - 1i32);
         drop reach_expr_window(x, (raw expr_list_start(n))
                   + (raw expr_generic_count(n)),
@@ -827,6 +840,11 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
+        // `#wild_slice<T>(p, len)` checks its length against the ceiling and
+        // traps `OutOfBounds` (D-308 SS7, 1.5.8b step 6c).
+        if (raw builtin_caller_len(raw intern_get(x.interns, raw builtin_name(n)))) {
+            x.saw_index = true;
+        }
         drop reach_expr_window(x, (raw expr_list_start(n))
                   + (raw builtin_generic_count(n)),
                   (raw expr_list_count(n)) - (raw builtin_generic_count(n)), fuel);

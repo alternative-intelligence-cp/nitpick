@@ -1241,7 +1241,14 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             // defect in a clause is found before the rule has a user (V-6's
             // eager typing, for the same reason).
             if (d.kind == DeclKind.DeclRuleDecl) {
+                // A PRELUDE RULE'S PREDICATE IS AN ITEM (D-262; found at 1.5.8b
+                // step 6c by `check_prelude_trimmed` on the first program that
+                // used no `List`): `ListLen` is generated into every module and
+                // referenced only where a `List`'s `count` or `cap` is written,
+                // so the trim must be free to drop it as it drops a function.
+                if (pre) { drop irw_item_begin(w); }
                 IrVal:rr = raw emit_rule_fn(@x, item);
+                if (pre) { drop irw_item_end(w); }
                 if (!(raw iv_is_ok(rr))) { drop refuse(diags, rr); }
             }
             if (d.kind == DeclKind.DeclImplDecl) {

@@ -216,6 +216,12 @@ the builtin surface is typed from a signature table.
 | ~~**S-93**~~ | **D-313** | **SETTLED (user, 2026-09-19: "Lets go with A. As far as keyword, I think sealed is fine. ... i'd rather overlap some than come up with some word that doesn't accurately represent what is happening."); LANDS at 1.5.8b step 1.** ~~OPEN (raised by 1.5.8b's planning, 2026-09-19; DEF-72, DEF-73).~~ Nitpick had no field visibility, and two confirmed memory-safety holes followed (a string's `.len` writable; the prelude `List`'s `cap` writable, corrupting the heap). RECOMMENDED and settled: a `sealed` field qualifier, meaning read anywhere and written only by the declaring module, with struct literals, moves out and write-capable addresses counting as writes (TYPE-079). The compiler-known containers' headers are sealed by definition, the prelude `List`'s three fields are sealed, and `src/`'s direct writes move to checked prelude operations with a bridging refresh. Declined: special-casing only the compiler-known containers, run-time validation only, and read-and-write privacy. |
 | ~~**S-94**~~ | **D-314** | **SETTLED (user, 2026-09-19: "hidden sounds fine to me. it says what it does. i like it"); LANDS at 1.5.8b step 1 with D-313.** ~~OPEN (raised by 1.5.8b's planning, 2026-09-19; DEF-74).~~ `List` element access is raw wild-pointer indexing through `items` in any module, unchecked, with no opt-out at the site (about 1,700 sites). RECOMMENDED and settled: a `hidden` field qualifier, neither read nor written outside the declaring module (TYPE-080), completing `sealed`. `List<T>` is indexed `l[i]`, bounds-checked against `count` with the slice's guard and row. The prelude `List`'s `items` is hidden and `count`/`cap` sealed, it gains checked pop/truncate/clear/insert/remove/swap_remove, and the sites move to `l[i]`. Declined: a List-only special case, a `wild` acknowledgement at every raw index, and `private`. |
 
+## 2e-bis. ~~A language question 1.5.8b step 6c raised~~ SETTLED the same day as D-315
+
+| # | Item | Recommendation |
+|---|---|---|
+| ~~**S-95**~~ | **SETTLED as D-315 (user, 2026-09-23: "i am sure your recommendation is likely fine as long as it doesn't compromise on safety anywhere" — and it compromises none: the sentence enforced nothing, and 6c added the ceiling check). LANDED at 1.5.8b step 6c.** ~~What does "legal only in `wild` context" mean for `#wild_slice` (and `#wild_ptr`)?~~ BUILTIN_REFERENCE's `#wild_slice<T>(ptr, len)` row has said it since D-070, and 1.5.8b's plan (§2.7) read it as a rule to enforce at step 6c "as TYPE-054's rule for a builtin's call context". Measured at 6c: no such rule exists for either builtin, and the phrase has no checkable definition anywhere — the only context rule either carries is TYPE-061 (neither may appear in a `pure` body, D-242), and neither the checker nor any decision defines a "`wild` context" (a `wild`-qualified receiving binding? a function that holds `wild` storage? a module that imports `nsys`?). What 6c DID enforce is the ceiling: both producers' lengths are held to `[0, 2^47]` and trap `OutOfBounds` outside it (D-308 §7). | **Strike the sentence.** The `#wild_` spelling IS the acknowledgement — the greppable opt-out the TOS system asks for (D-019 for `#wild_ptr`, D-070 for `#wild_slice`) — and TYPE-061 already bars both from the one context where an unverifiable extent could launder into a proof. A rule keyed on the RECEIVING binding's regime would be a second mechanism saying the same thing in a place the author does not write it, which the blueprint philosophy argues against. If a rule is wanted, the one that fits the language is the existing spelling: the call itself. Until settled, the row keeps the sentence with a note pointing here, and nothing enforces it — as nothing ever did. |
+
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
 
 Raised 2026-09-03 by the `nitpick-libs` orchestrator (`nitpick-time` cycle
@@ -1712,6 +1718,53 @@ holds both directions — an open row whose guard is written twice and a
 discharged one whose two copies are both elided — and it FAILS against the
 pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
 -4099 traps for 1 retained".]*
+
+**DEF-88 — OPEN, owned by the compiler seat, scheduled at 1.5.8b step 6d: A
+LENDING `pick` ARM WITH `_` OVER AN OWNING PAYLOAD IS REFUSED BY THE EMITTER.**
+(found 2026-09-23 by `nitpick-compiler_s12`: step 6c's whole-tree sweep ran the
+FULL compiler over every root, where step 6b's had run the checker alone.)
+`tests/accept/moves.npk:223` — `pick (r) { (MvokRes.Note(_)) { pass 1i64; }, … }`
+over an enum whose payload is a `string` — is admitted by the checker (D-266: `_`
+binds nothing, so the lending form takes no copy and no view) and dies as
+`NITPICK-EMIT-002` in the emitter, on the compiler at `c5ba885` and on every one
+before it that carried the construct. Nobody ran it: `tests/accept/` is the one
+suite for every stage and asks the FRONTEND for silence, so an emitter refusal of
+an accepted file is invisible there — which is a gap in the suite's shape as much
+as in the emitter (the same file's `pick (move(r))` twin lowers). Not a safety
+hole: a refusal, never a miscompile. The fix belongs with the emitter's lending
+`pick` arms (`ir_stmt.npk`, the payload-pattern binding of 1.5.2h) and lands at
+step 6d beside `intern.npk`'s `*%`, with a program test that RUNS the arm;
+whether `tests/accept/` should also be emitted (not run) is the same question
+1.5.1b step 3c answered for library units with the `object` stage, and step 7
+records it.
+
+**DEF-87 — FIXED at 1.5.8b step 6c: `#wild_slice` WITH A NARROW COUNT REACHED
+`llc` AS A TYPE ERROR.** (found 2026-09-23 by `nitpick-compiler_s12`, writing the
+ceiling guard.) The checker admits any integer as the count (`type_is_integer`), and
+the emitter wrote it into the `{ ptr, i64 }` header as an `i64` whatever its width:
+a LITERAL count passed, because a constant has no type in the emitted text, and a
+narrow VARIABLE count -- `#wild_slice<uint8>(u, c)` with `int32:c` -- was refused by
+`llc` on every compiler since the builtin was written (measured on `c5ba885`: "llc
+REJECTED the IR"). The count is widened BY ITS SIGN now (`widen_len_i64`: a signed
+count sign-extends, so a negative `int32` is a negative length and the ceiling
+guard refuses it; an unsigned one zero-extends), and the header takes the widened
+value. `len_ceiling.npk`'s case 5 drives the narrow negative count to `OutOfBounds`.
+
+**DEF-76 — FIXED at 1.5.8b step 6c: THREE FLOOR SPEC SENTENCES NAMED
+`HeapBadRequest` WHERE THE IR TRAPS `Unreachable`.** (found 2026-09-19 by
+`nitpick-compiler_s11`, planning 1.5.8b; scheduled to the step that edits the
+allocator's spec.) `npk_dalloc`, `npk_hunmap` and `npk_frame_free` reach their
+refusals through `npk_heap_bad`, which traps -4102 (`Unreachable`, D-141's integrity
+class: a null or misaligned free, a header that does not validate, a mapping the
+kernel and the table disagree about), and each `(boundary "...")` sentence said
+`HeapBadRequest` (-4104, `npk_heap_badreq`: a negative or oversized request, a
+`calloc` product that wraps, a bad alignment). Measured over every boundary
+sentence that names `HeapBadRequest` against the helper each symbol's IR actually
+calls: exactly those three were wrong; `npk_alloc_impl`, `npk_aalloc`, `npk_calloc`
+and `npk_ralloc` were right (`ralloc` calls both, for its two refusals). The three
+sentences name `Unreachable (-4102 through npk_heap_bad)` now. A boundary sentence
+is a promise a reader accepts (TCB.md SS5), so a wrong identity in one is a wrong
+acceptance; nothing decided by rows was affected.
 
 **DEF-86 — FIXED at 1.5.8b step 6b: THE REACH ANALYSIS DID NOT SEE A RAISE, A
 GUARD OR A `fail` INSIDE THE PRELUDE.** (found 2026-09-23 by `nitpick-compiler_s12`,
