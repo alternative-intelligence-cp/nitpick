@@ -20490,3 +20490,118 @@ guards `failsafe`'s exhaustiveness, whose defect mode is reaching too few impls,
 gain. **The re-open trigger** is measured: a library or app root that must name an identity its
 instantiations can never raise in MORE THAN ONE arm. Until then an arm the fan-out demands is
 added with the code `(*)` would have answered, as DEF-86's record says.
+
+## D-319 — NIKOS is the IKOS candidate of the 1.6.0 gate, weighed as any tool, decided out if it loses — **SETTLED (user decision, 2026-09-25: "i like those recommendations. lets ratify them."; S-99)**
+
+**The history.** D-217 (ratified for the 1.5 hand-off) struck NIKOS from cycle 1.5 — "an
+in-house IKOS fork before then duplicates that evidence class while consuming pre-trial time"
+— because Astrée was to be the abstract-interpretation evidence of the one-shot trial, and kept
+`[verify.nikos]` in the manifest, refused by name, "until a post-1.6 cycle picks it up". D-233
+(2026-09-01) removed Astrée, moved the evidence to the emitted IR, and named leg A's two
+candidates, Clam/Crab and IKOS — "adopting it means the port the toolchain plan always called
+NIKOS" — with the recorded prediction that Clam is likely first-green because IKOS sat at LLVM
+14 across the opaque-pointer break.
+
+**The fact, measured at 1.6.0's planning (`meta/roadmap/1.6/1.6.0.md` §1).** The port exists:
+`alternative-intelligence-cp/nikos`, "a fork of IKOS … ported from LLVM 14 to LLVM 20 and
+extended with additional checkers", 79 commits from 2026-06-13, tag **v2.4.0 at
+`94b54c2cf63964c34f3b0c4284714a921cf25b5a`** (2026-09-02), on this workbench under
+`REPOS/nikos`, built against `llvm-20-dev` 20.1.2 — the tree's own pin. Nothing in this tree
+had recorded it. The user's account of why it exists is the reason it is the right candidate:
+IKOS "is stuck to such an old version of LLVM" that "some distros don't even have it in the
+repos anymore", and used on current LLVM output it "was basically useless for verification …
+as there were so many transforms that had to be done to get the new stuff to work with the old
+that you weren't really verifying your actual shit but rather whatever the transforms happened
+to do. Astree was a bust for a similar reason" — C/C++ source "would once again require a
+transform that would invalidate the findings". The port REMOVES a transform where the survey's
+candidate would have added one; and v2.4.0 (2026-09-02) was an agent's pass over the fork for
+defects and upstream updates, which is why the user asks for it to be checked at the gate, not
+trusted.
+
+**The decision.**
+1. NIKOS at `94b54c2c` IS the IKOS candidate of the gate. IKOS v3.5 at LLVM 14 is not run:
+   its assembler refuses our text at the first `ptr` (measured), and a downgrade of the
+   emission to reach it would be exactly the transform this decision's reason forbids.
+2. It is measured under the same inputs, rows and rule as Clam (D-320). Ownership is not a
+   criterion in either direction. Its port items — what §1 found: no model of
+   `llvm.*.with.overflow` (2,810 call sites in the compiler's emission) or of `llvm.assume`;
+   pointers typed from debug information our emission does not carry; the entry through the
+   executor's run queue — are sized at the gate and, if NIKOS wins, land in the nikos
+   repository under a NEW pinned commit the tree records (the same commit-and-digest pin as
+   any engine's), never as patches carried in this tree.
+3. If it loses, it is decided out as the 1.6 map says of the loser, with its scorecard kept
+   in the record; `[verify.nikos]`'s disposition follows the outcome — kept and filled by
+   1.6.1 if NIKOS wins, struck by 1.6.1 for the winner's own key if not (the manifest key is
+   the engine's name; one meaning).
+
+**The rule underneath it, stated once so the gate and 1.6.1 apply it uniformly:** a transform
+between the artifact and what an analyzer reads makes the evidence about the transform's output.
+So the engines are measured on the emission AS IT IS (the plan's P-1), and every preprocessing
+step an engine runs on our IR — `ikos-pp`'s optimisation level, `clam-pp`'s passes, an intrinsic
+lowering, the text concatenation of the floor — is recorded in the run's profile and either
+shown semantics-preserving for our vocabulary or avoided; none is assumed harmless because a
+tool's documentation recommends it.
+
+## D-320 — The gate's decision rule, ratified before its numbers exist — **SETTLED (user decision, 2026-09-25, the same sentence; S-100)**
+
+The scorecard of `meta/roadmap/1.6/1.6.0.md` §2.3 has one column per engine and these rows:
+ingestion (with LLVM 18's reading of our 20-emitted text held to LLVM 20's by a round-trip
+belt), soundness on the planted controls of §2.4, reach, alarm quality by cause, port distance,
+determinism, cost. The rule:
+
+1. An engine that REFUSES to read a plain emission or MISSES a planted defect under a check it
+   claims is disqualified in that class; disqualified in `bounds`, `null` and `div-zero` — leg
+   A's three named properties — it loses.
+2. Among the rest, the engine that gives MORE evidence about our IR wins: reach times the
+   fraction of its alarms that are real or remediable by the enumerated floor model alone. An
+   alarm whose cause is the engine losing a value the IR states (a `with.overflow` result, a
+   pointer inside a by-value aggregate) counts against the engine; one the floor model will
+   answer counts against neither.
+3. The winner must be deterministic under a fixed profile (two runs from two directories, byte
+   for byte after normalisation; one thread; no clock in a verdict) — a verdict source that
+   cannot be is not one (D-218 (2) as D-233 generalises it) and loses regardless of rule 2.
+4. Cost breaks ties. Port distance never decides: it becomes 1.6.1's step list for the winner,
+   and the loser's is kept in the record.
+5. The loser is DECIDED OUT (D-233: one engine, fewer mechanisms) with its scorecard kept, and
+   the decision names the measurement that decided.
+
+If both are disqualified under rule 1, the gate picks nothing: the record states which classes
+each fails and the smaller port to a passing state by reading, and the user chooses the port.
+The rule precedes the numbers because a rule chosen after the measurements is a rule the
+measurements chose (1.5's lesson 3: a fixture that claims a property is evidence of nothing
+until something decides it).
+
+## D-321 — Alive2's budget is a resource limit, its solver is the pinned z3 commit, and a workbench tool may carry a recorded patch applied only by its build script — **SETTLED (user decision, 2026-09-25, the same sentence; S-101)**
+
+**The history.** D-218 (2) makes z3's profile fixed seeds, NO wall-clock timeout and `rlimit`
+as the sole budget (`lp.dio=false` since S-71), because a verdict that depends on the clock
+differs between machines; both runners refuse a `timeout=` entry by name. D-233 extends the law
+to every verdict source ("a verdict is a function of (input, tool build, budget), never of
+machine load"). D-265 keeps a toolchain pin a VERSION and a solver pin a DIGEST, because a
+solver's output is a committed verdict. Alive2 as shipped offers only `--smt-to=<ms>` — Z3's
+global `timeout` parameter (`smt/ctx.cpp`) — and `--smt-random-seed`; the workbench's existing
+build links the system z3 4.8.12, a second solver build under the campaign.
+
+**The decision.**
+1. **The budget is a resource limit.** A one-line patch at the pinned commit (`02ec3af8`, the
+   last before Alive2 replaced `nocapture` with `captures(none)` on 2025-01-31 — LLVM 20.1.2's
+   `opt` still writes `nocapture`) sets Z3's `rlimit` from a new `--smt-rlimit` option in place
+   of `timeout`. It lives at `meta/roadmap/1.6/tools/alive2-rlimit.patch`, is applied by
+   `engines.sh`, and its sha256 is part of Alive2's pin. A leg-C invocation that carries a
+   wall-clock knob is refused by name by the runners 1.6.2 builds, exactly as a z3 one is; a
+   query that exhausts the limit is residue, never a verdict.
+2. **The solver is the tree's.** Alive2 links statically against `libz3.a` built from
+   `Z3Prover/z3` `ddb49568d3520e99799e364fb22f35fc67d887b1` (`z3-4.16.0`, the commit whose
+   binary `[verify] z3-sha256` pins), with `-DZ3_BUILD_LIBZ3_SHARED=OFF`; the library's sha256
+   is recorded beside the binary's. One solver commit for every verdict of the campaign, two
+   builds of it, both pinned by digest.
+3. **The patch rule.** A workbench tool may carry a patch only as part of its pin (commit +
+   patch sha256), kept under `meta/roadmap/1.6/tools/`, applied by the build script and by
+   nothing else, with its purpose stated in the plan that introduces it. The rule also covers
+   the gate's one other admitted patch class: the demotion of an engine's abort to a warning
+   that marks the region unknown, where the abort hides every number behind it (the plan's
+   P-8); the results with and without such a patch are both recorded.
+
+The alternative for (1) — accepting wall-clock timeouts as residue — is sound (a timeout is
+never "verified") and was declined because it lets the ledger differ between machines, the
+exact failure D-218 (2) was written against.

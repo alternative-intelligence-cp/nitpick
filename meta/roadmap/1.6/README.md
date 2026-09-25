@@ -89,6 +89,22 @@ and not a deferral — D-233 states the rule.
 | 1.6.2 | **Leg C as a standing stage** — Alive2 over the opt-O2 leg's pre/post pairs, per-pass where the whole-module diff is outside its competence; its own ledger with the inter-procedural blind spot (inlining) recorded per program; the exit-code opt-O2 leg RETAINED as the end-to-end net. A refinement failure here is a stop-the-line miscompile finding, the 1.3.8 class with a proof attached. | 1.6.0 |
 | 1.6.3 | **The dry run and the evidence package** — a full analyzer pass over npkc's own emission (its cadence decided here by measured runtime, not assumed into every harness run), then the package assembled: leg-A verdicts + alarm ledger, the D-218 obligation manifest and elision rows, leg-C's ledger, TCB.md's enumerated floor, and the toolchain/tool pins — the verified-middle-end-plus-validated-floor claim (C-17.11) restated over the new evidence set. Escalation criteria for the depth tools evaluated against the ledger ONCE, with the answer recorded either way. Docs synced; cycle to `done/`. | 1.6.1, 1.6.2 |
 
+> **[1.6.0 step 0 (2026-09-25).]** The gate is planned execution-grade in
+> `1.6.0.md`, measured first, and its three questions were ratified the day
+> they were asked (D-319…D-321). Two corrections to the 1.6.0 row above,
+> from measurement: the IKOS candidate is **NIKOS v2.4.0**
+> (`alternative-intelligence-cp/nikos`, the user's own port of IKOS to LLVM
+> 20, on this workbench since June and recorded nowhere in the tree until
+> now; D-319) — the "NIKOS-shaped port" is done and the row's LLVM-14 hazard
+> is gone; and the 18→20 textual gap for Clam is measured NIL at the reader
+> (LLVM 18's assembler accepts every emission unchanged), while Clam's
+> memory analysis aborts on our by-value aggregate arguments — its port
+> distance lies elsewhere than the row guessed. The decision rule (D-320) and
+> Alive2's budget and solver pin (D-321) are settled before any number exists.
+> The whole compiler is reachable only through the floor's executor (`main`
+> is a coroutine handed to `npk_run_until`), so the plan defines the
+> whole-program form by text and measures both procedurality modes.
+
 ## Watch for
 
 - **Version drift between the two pins.** The LLVM toolchain pin (20.1.2)
