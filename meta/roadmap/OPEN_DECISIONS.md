@@ -1720,6 +1720,29 @@ discharged one whose two copies are both elided — and it FAILS against the
 pre-fix accounting, measured: "3 `llvm.assume` for 2 elided guards" and "2
 -4099 traps for 1 retained".]*
 
+**DEF-94 — FIXED at 1.5.8d step 0: THE ENCODER'S ESCAPE SET NEVER HELD THE IMPLICIT POINTER
+RECEIVER, SO A `Self->` METHOD CALL ON A SCALAR LEFT THE CALLER'S VERSION STANDING.**
+(found 2026-09-25 by `nitpick-compiler_s14`, by the first probe of 1.5.8d step 0 -- D-317's
+design rests on the escape set, and the plan named "an implicit `Self->` receiver" as one of its
+members; the probe asked whether it was.) A method whose parameter 0 is a pointer takes the
+receiver's ADDRESS when the receiver expression is not itself a pointer (the emitter's
+`emit_method_call`, 1.0.9b; the checker's DEF-24 rule for a limited or `fixed` receiver), so
+`drop x.bump()` with `impl:int32:Bump { func:bump = NIL(int32->:self) ... }` writes the caller's
+`x`. DEF-14's set (`@`, `$$i`, `$$m`, through any place path) never saw it: the encoder kept
+`x.1 = 6` past the call that stored 5, z3 proved `100i32 / (x - 5i32)`'s divisor nonzero, the
+`div-zero` row was DISCHARGED, and the elided build under that manifest divided by zero -- exit 98
+through D-307's `MachineFault` net -- where the plain build reaches `failsafe` with `DivByZero`
+(40). Measured end to end on `624d71f`. Latent since 1.5.0 for scalars (a scalar with a user
+`Self->` impl is rare, which is why no row of the compiler's own build moved), and the case
+D-317's aggregates would have made common. THE FIX: `collect_escaped_expr` adds the receiver
+place's root for every method call whose callee's parameter 0 is a pointer type node while the
+receiver's recorded type is not a pointer -- decided off the callee declaration's own parameter
+node, which needs no scope to read -- excluding the namespace form (D-273) and the
+trait-qualified form `Trait.method(recv, …)` (D-172: the receiver is argument 0 and an address
+there is written `@recv`). `tests/verify/recv_escape.npk` pins it: `div-zero open 1`, the guard
+kept, both builds exiting 40. The last net (D-307) is what made the unsound elision a controlled
+stop rather than a silent wrong answer; it is not what makes the encoding sound.
+
 **DEF-93 — FIXED at 1.5.8c step 3: A `Rules` DECLARATION'S `pub` WAS NEVER STORED, AND
 `decl_flags` READ ITS SUBJECT TYPE'S NODE INDEX AS THE FLAG WORD.**
 (found 2026-09-24 by `nitpick-compiler_s13`: step 3's second full harness had
@@ -2044,7 +2067,9 @@ defect declares a `DEF-` in §2f.
 > re-derive it, and so the 722 are read as a scheduled residue (D-309: measured, guarded,
 > reported) rather than as a hole. Owner: the compiler seat at 1.6.
 
-> **[1.5.8b step 6b (2026-09-23) — E-5, owned by the compiler seat: A BOUND CALL'S REACH
+> **SETTLED 2026-09-25 as D-318: DECIDED OUT, the design kept, the re-open trigger measured (a
+> root paying more than one arm).** **[1.5.8b step 6b (2026-09-23) — E-5, owned by the compiler
+> seat: A BOUND CALL'S REACH
 > CAN BE NARROWED TO THE INSTANTIATED IMPLS.]** DEF-86 made the reach analysis follow
 > calls into the prelude, and a callee that is a trait's own method — a `dyn` receiver, or
 > a bound inside a generic body — reaches EVERY impl of the trait, because the walk sees a
@@ -2062,7 +2087,9 @@ defect declares a `DEF-` in §2f.
 > DECIDE IT OUT with the design kept here, since the over-approximation is sound and the
 > narrowing is a generic-chain walk inside a safety analysis for no safety gain.]*
 
-> **[1.5.8c step 5 (2026-09-24) — E-6, owned by the compiler seat: A BY-VALUE AGGREGATE HAS
+> **SETTLED 2026-09-25 as D-317 (the user: "lets go with your recommendations for those two
+> questions. they look fine to me."); lands at 1.5.8d step 0.** **[1.5.8c step 5 (2026-09-24) —
+> E-6, owned by the compiler seat: A BY-VALUE AGGREGATE HAS
 > NO VALUE TERM, SO ITS FIELD IS A FRESH TERM AT EVERY READ.]** Found by the `terminate`
 > residue report (`meta/roadmap/1.5/tools/residue.py`; VERIFICATION_REFERENCE §4b's last
 > bullet). `while (i < (src.count => int64)) decreases (src.count => int64) - i` with

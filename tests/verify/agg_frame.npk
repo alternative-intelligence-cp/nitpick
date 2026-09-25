@@ -1,0 +1,76 @@
+// expect-exit: 14
+// expect-obligation: prove discharged 14
+// expect-obligation: terminate discharged 2
+// expect-obligation: overflow discharged 4
+// expect-obligation: overflow open 3
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// THE AGGREGATE TERMS (D-317, 1.5.8d step 0), each shape a `prove` the
+// VERIFIED build refuses unless it holds: a struct literal defines its
+// fields; a field write states the UPDATE FRAME (the written field equal to
+// the value, every other field equal to its previous version's); a copy
+// makes the identities equal; a nested write frames each level; an `if`
+// that writes in one arm merges the versions as an identity choice; a
+// compound `+=` through a field reads the current value; and a loop bounded
+// by a field discharges its measure. (A `move` out of a field vacates it and
+// bumps the version too, but MOVE-001 refuses every later read of the
+// binding, so nothing observes that frame.) Nothing here is a bound written to help the solver
+// (D-309): every fact is the program's own. The rows: fourteen `prove`s
+// discharged (the last, `n >= a.y`, on the loop's negated condition over the
+// SAME field term the condition read -- the loop wrote nothing of `a`); the
+// loop's two `terminate` rows; `overflow` -- `t.n += 3i32` known, the measure
+// `a.y - n` open at the entry (a havoced `n`) and discharged at the back
+// edge, `n + 1i32`, and the exit's sums: `a.x + a.y` known, the two that add
+// `n` and `bx.p.x` after it open, since `n` is only bounded below after the
+// loop (4 and 3).
+mod:agg_frame;
+error:E9;
+
+struct:Pt = { int32:x; int32:y; bool:ok; };
+struct:Box = { Pt:p; int32:k; };
+struct:Tag = { string:name; int32:n; };
+
+func:main = int32(cstring[]:argv) {
+    Pt:a = Pt{ x: 1i32, y: 2i32, ok: true };
+    prove(a.x == 1i32);
+    a.y = 5i32;
+    prove(a.x == 1i32);
+    prove(a.y == 5i32);
+    prove(a.ok);
+    Pt:b = a;
+    prove(b.x == 1i32);
+    prove(b.y == a.y);
+    Box:bx = Box{ p: a, k: 7i32 };
+    bx.p.x = 3i32;
+    prove(bx.k == 7i32);
+    prove(bx.p.y == 5i32);
+    prove(bx.p.x == 3i32);
+    prove(a.x == 1i32);
+    if (argv.len > 5i64) { a.x = 9i32; }
+    prove((a.x == 1i32) || (a.x == 9i32));
+    prove(a.y == 5i32);
+    Tag:t = Tag{ name: string_concat("ab", "c"), n: 4i32 };
+    t.n += 3i32;
+    prove(t.n == 7i32);
+    int32:n = 0i32;
+    while (n < a.y) decreases a.y - n { n = n + 1i32; }
+    prove(n >= a.y);
+    exit (a.x + a.y + n + bx.p.x);   // 1 + 5 + 5 + 3 = 14
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

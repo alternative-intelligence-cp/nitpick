@@ -19852,6 +19852,13 @@ cost 1,183,912,107 instructions, **0.19% of the compile**, about a million
 executions per site. A trapping guard is a predictable branch, and the residue
 D-309 leaves in place costs a fifth of a percent of the compiler's own work.
 
+> **Note (2026-09-25, 1.5.8d step 0 — D-317).** The encoder grew — a by-value
+> aggregate's identity and its fields' functions — and no bound was written
+> into the tree: the compiler's own `overflow` rows moved 1,589 discharged /
+> 1,549 open / 1 budget → 1,630 / 1,515 / 0, the "sum or difference of two
+> unknowns" residue 753 → 719 sites, every one that stays keeping its guard.
+> The residue is D-309's shape still: measured, guarded, reported by shape.
+
 ## D-310 — An integer `+ - *` or negation whose operands are compile-time constants is folded, and refused when its value does not fit (TYPE-076) — **SETTLED (user decision, 2026-09-19: "those recommendations sound fine to me as well. Lets ratify those too."; S-90)**
 
 Found at 1.5.8b's planning (DEF-70). A negated integer literal (`-1i32`) lowers
@@ -20412,3 +20419,74 @@ record with their reasons.
 > measure over their round constant, now `pure`, as the decision's last
 > sentence asks.
 
+## D-317 — An unescaped by-value aggregate carries a term of its own in the encoder, and a field read of it is an uninterpreted function of that term — **SETTLED (user decision, 2026-09-25: "lets go with your recommendations for those two questions. they look fine to me."; S-97, lead E-6)**
+
+Found by 1.5.8c step 5's measurement of the `terminate` residue (VERIFICATION_REFERENCE §4b's
+last bullet; `meta/roadmap/1.5/tools/residue.py`): of the compiler's 499 open `terminate` row
+sites, 79 read a field of a BY-VALUE aggregate and 116 put a `pure never fails` call over one in
+the measure — 195 rows with one cause. An aggregate value has no term in the encoder, so
+`src.count` in a loop's condition and `src.count` in its measure are two unrelated opaque
+symbols (`state_copy`'s file: `|_.2|` and `|_.3|`), and a pure call over an aggregate argument
+(1.5.3's uninterpreted function of the arguments' TERMS) is fresh at every read.
+
+**The decision.** A binding of aggregate type (a struct or an enum, a by-value local or
+parameter) whose name is NOT escaped — never `@s`, `$$i s`, `$$m s`, never an implicit
+`Self->` receiver; the set DEF-14 computes — carries a versioned Int-sorted symbol `s.k`, an
+IDENTITY term about which nothing is asserted. A scalar field read `s.f` is the uninterpreted
+function `(|npk.f.<TYPEID>.<field>| s.k)`; nested reads compose; a `List` field's `count` keeps
+its length symbol; a field of a kind the fragment does not hold (a `dyn`, a channel) stays
+opaque; a limited field's rule (D-308) is asserted over the applied term at each read. A write
+to a field bumps the version and states the update frame (the written field equal to the
+value's term when it has one, every other field of the type equal to its previous value); a
+whole assignment, a `move`, a `pass` out of a field, a loop head's havoc and a `pick` arm's
+merge bump it as they bump a scalar's; a PLAIN call argument changes nothing, because the
+callee's parameter is its own binding — MEASURED before this decision by two probes committed
+beside the tools (`meta/roadmap/1.5/tools/e6_probe_byval.npk`, `e6_probe_own.npk`, both exit
+19: the caller's field is unchanged after the callee writes its copy, in the copyable and the
+owning case alike). Sound because no alias to an unescaped by-value binding exists (D-004: a
+pointer to a local needs `@`). The pointee of a pointer is NOT covered (E-4, 1.6 leg B).
+
+**What it is not.** No bound written into the source to close a row (D-309 stands); nothing
+language-visible; a change in what the VERIFIED build proves, so the manifest is re-recorded in
+the landing (D-040) and gated over the shared rows.
+
+Lands at 1.5.8d step 0, before the close's refresh (the plan's P-1: a compiler lead lands before
+the refresh or not in this cycle). The design in full: `meta/roadmap/1.5/1.5.8d.md` §2.1.
+
+> **Note (2026-09-25, 1.5.8d step 0 — landed).** Built as designed, with three
+> readings recorded in the plan's step-0 record: a FLOAT field stays opaque per
+> read (the tier-2 translation reads named float definitions, D-281); a `pure
+> never fails` call takes an aggregate argument's identity ONLY for PLAIN DATA
+> (no pointer, container, enum or stateful kind inside, transitively) — the
+> decision's text admits any aggregate, and the reading is stricter because a
+> pure function may read the heap through a reference its argument holds, and
+> the heap is not part of the identity; an ESCAPED aggregate gets no identity,
+> not even an anonymous one (DEF-14's rule kept whole: an anonymous term nothing
+> holds buys no fact and would have turned E-4's `unencoded` `bounds` rows into
+> `open` ones over an opaque — measured: 825 → 0 on the first build, 825 → 796
+> on the landed one, the 29 being genuine). The step's first probe of the escape
+> set found **DEF-94** — the implicit pointer receiver was never an escape, a
+> soundness hole the fix closes for scalars and aggregates alike. THE NUMBERS:
+> `npkg verify` on the compiler's own program: 6,149 obligations -- 2,998 discharged, 2,350 open, 0 budget, 796 unencoded, 5 checker -- the manifest matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved. `nitpick.obligations` 5,861 -> 5,890 rows; the gate against `624d71f`'s manifest: 4,320 shared rows, ZERO verdicts moved, ZERO (symbol, kind) discharged counts fell; discharged 2,608 -> 2,747 (+139), open 2,422 -> 2,342, unencoded 825 -> 796, budget 1 -> 0. By kind: `terminate` 675 discharged / 499 open -> 744 / 435 (the five new rows are the step's own two loops, all discharged); `overflow` 1,589 / 1,549 / 1 budget -> 1,630 / 1,515 / 0 (the one `budget` row, `tt_index_slot`'s bit-vector subtraction, decides `open` within the rlimit under its new text); `bounds` 147 / 45 / 825 unencoded -> 171 / 70 / 796 (the 29 that left `unencoded` are element accesses through a NAMED by-value aggregate's container field, whose length is the field image's now); `shift-range` 4 / 28 -> 9 / 22 (a shift amount read from a field carries its type's range axiom); `div-zero` 45 / 6 -> 45 / 5 and `div-min` 65 / 2 -> 65 / 1 (two rows of `fold_binary` COALESCED by hash -- their texts became identical -- with the sites unchanged, 4 and 2 in `rows.txt`); `limit` 82 / 177 unchanged; `stack-depth` 116 -> 117 (`is_plain_data`'s self-recursion, open, unmeasured as every recursion in `src/` is). THE RESIDUE by cause (`residue.py` over the final build): `terminate` 1,188 row sites, 753 discharged, 435 open; the by-value shape 79 open -> 15 (137 discharged where 73 were): of the 15, nine are E-4's class (`@roots`, `@lx`, `@st` escaped -- five; `reach_settle`'s `Reach->:x`, four, which the tool's text heuristic had filed under by-value), two read a `Result`'s `.value` (`dir_list`), four are open on their merits (`decode_string` advances by a decoded width, `path_normalise` by a segment, `ir_define_syms` by an inner scan, `front_set_root` reassigns its string in the body). The 116 "pure call" rows are unchanged and were never E-6's: 109 `raw p_left(p)` and 4 `item_member_count(ast, …)` over a POINTER argument (a pure function of a pointer reads the pointee; an application over the address would equate two reads across a body that advanced the parser -- E-4's class, 1.6 leg B), and the three `*_ROUNDS()` constants whose loops are conditioned on a flag, not on the counter. `overflow`: "sum or difference of two unknowns" 753 -> 719 sites, discharged 1,761 -> 1,801. No bound was written into the source to close a row (D-309). `tests/verify/
+> terminate_field.npk`, `agg_frame.npk` and `recv_escape.npk` pin the shapes.
+
+## D-318 — The reach analysis's bound-call fan-out stands: a trait-method callee reaches every impl of its trait, and the narrowing to the instantiated impls is decided out with its design kept — **SETTLED (user decision, 2026-09-25, the same sentence; S-98, lead E-5)**
+
+DEF-86 (1.5.8b step 6b) made a trait-method callee — a `dyn` receiver, or a parameter under a
+bound inside a generic body — reach every impl of its trait, in the sound direction: an arm the
+program cannot enter costs a line, where a raise no arm names lands in `(*)`. Its measured cost
+is four test files paying one `TbbErr` arm each (derive and dispatch tests whose generics never
+instantiate at a twisted type), unchanged since it was measured, and no program in the tree, the
+libraries or the apps has paid more than an arm.
+
+**The decision.** The over-approximation stands. The narrowing — bind the bound parameter per
+instantiation of the enclosing generic (`FnInstTable` for a generic function, `InstanceTable`
+and `family_unify` for a generic impl's method), reach only `find_method(...)`'s impl at the
+concrete type, follow an argument that is itself an enclosing generic's parameter through that
+generic's instances, keep every impl for a `dyn` receiver, a `Self` in a trait's default body
+and a chain that reaches no concrete type — is recorded (`meta/roadmap/1.5/1.5.8d.md` §2.2;
+OPEN_DECISIONS §4's E-5 note) and NOT built: a generic-chain walk inside the analysis that
+guards `failsafe`'s exhaustiveness, whose defect mode is reaching too few impls, for no safety
+gain. **The re-open trigger** is measured: a library or app root that must name an identity its
+instantiations can never raise in MORE THAN ONE arm. Until then an arm the fan-out demands is
+added with the code `(*)` would have answered, as DEF-86's record says.

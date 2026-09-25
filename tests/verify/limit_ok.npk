@@ -1,7 +1,7 @@
 // expect-exit: 0
-// expect-obligation: limit discharged 3
-// expect-obligation: limit open 5
-// expect-obligation: limit unencoded 6
+// expect-obligation: limit discharged 4
+// expect-obligation: limit open 6
+// expect-obligation: limit unencoded 4
 // expect-obligation: limit-subsume discharged 2
 // expect-obligation: limit-subsume unencoded 1
 // expect-obligation: failsafe-post discharged 15
@@ -17,11 +17,15 @@
 // `move` string parameter, a struct's field store, an array's element store,
 // a limited local reassigned by a loop, a generic function's limited concrete
 // parameter at two instances, and a limited value passed by value. Fourteen
-// `limit` rows -- the inventory rule (P-12) made visible: three discharged
-// (`b = a` under a stronger rule, `acc`'s literal, and `acc = acc + one` in
+// `limit` rows -- the inventory rule (P-12) made visible: four discharged
+// (`b = a` under a stronger rule, `acc`'s literal, `acc = acc + one` in
 // the loop, because `a = one` under `r_small` makes `one > 0` a fact the cone
-// reaches through the definition chain), five open, six
-// `unencoded` (the string, the struct and the array subjects, L-6); and the
+// reaches through the definition chain, and -- since D-317, 1.5.8d step 0 --
+// the struct literal `Point{ x: one, y: 1i32 }`, whose rule reads the fields
+// as functions of the struct's identity and finds `one > 0` the same way),
+// six open (the field store `p.y = c` among them: `c` is a call's value, so
+// `y >= 0` is nobody's fact and the guard stays), four
+// `unencoded` (the string and the array subjects, L-6); and the
 // three calls with limited parameters are `limit-subsume` rows -- `bump(b)`
 // and `scale(7, acc)` discharged by the arguments' own rules, `owns` over a
 // string `unencoded`.

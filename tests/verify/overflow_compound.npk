@@ -1,18 +1,24 @@
 // expect-exit: 0
 // expect-obligation: failsafe-post discharged 10
 // expect-obligation: exhaustive checker 1
-// expect-obligation: overflow discharged 3
-// expect-obligation: overflow open 3
+// expect-obligation: overflow discharged 6
+// expect-obligation: overflow open 1
 //
 // THE COMPOUND FORMS (D-210; 1.5.8b step 3): `x op= v` is the guard of
 // `x op v` at the TARGET's site, the key the emitter elides under. On a local
 // the current value is the local's latest version, so inside the branch's
-// bounds `+=`, `*=` and `-=` are all discharged. On a field the current
-// value is opaque to the encoder, so `a.n += 1` is `open` and its guard
-// stays.
+// bounds `+=`, `*=` and `-=` are all discharged. On a field of a BY-VALUE
+// struct the current value is a function of the struct's identity since
+// D-317 (1.5.8d step 0) -- `Acc{ n: k }` defines it -- so `a.n += 1` and the
+// exit's two sums are discharged too (until then the field was opaque and
+// `a.n += 1` was `open`). On a field reached THROUGH A POINTER the value is
+// still a fresh term per read (E-4), so `bump`'s `p.n += 1` is `open` and its
+// guard stays: the contrast the test pins.
 mod:overflow_compound;
 
 struct:Acc = { int32:n; };
+
+func:bump = NIL(Acc->:p) never fails { p.n += 1i32; pass NIL; };
 
 func:main = int32(cstring[]:argv) {
     int32:k = argv.len =>! int32;
@@ -23,6 +29,8 @@ func:main = int32(cstring[]:argv) {
     x -= 12i32;                  // x in 10..30
     Acc:a = Acc{ n: k };
     a.n += 1i32;
+    Acc:b = Acc{ n: k };
+    drop bump(@b);
     exit (x + a.n - 2i32);       // k = 1: x = 0, a.n = 2
 };
 

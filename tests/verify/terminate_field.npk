@@ -1,0 +1,114 @@
+// expect-exit: 0
+// expect-obligation: terminate discharged 7
+// expect-obligation: terminate open 3
+// expect-obligation: overflow discharged 8
+// expect-obligation: overflow open 16
+// expect-obligation: bounds discharged 1
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// A BY-VALUE AGGREGATE'S FIELD AS A LOOP'S BOUND (D-317, 1.5.8d step 0; lead
+// E-6). `count_up`: `w.count` read in the condition and in the measure is ONE
+// term, `(|npk.f.T.count| w.1)`, so the entry row follows from the condition
+// and the preservation row outright -- both discharged, the two compares
+// assumes. `count_ptr`: the same loop over the struct THROUGH A POINTER stays
+// open (E-4: a pointee is a fresh term per read), the check kept. `count_moving`:
+// the body writes the field between the reads, so the version moves and the
+// preservation row is open (`start` unbounded) while the entry row holds --
+// had the write been ignored, `count - (i + 1) < count - i` would have proved a
+// measure that can grow. `count_span`: a `pure never fails` call over a
+// PLAIN-DATA struct is one uninterpreted-function term at both reads.
+// `count_name`: a container held in a field of an aggregate has its length
+// off the field's image, `(|npk.len| (|npk.f.T.name| t.1))`. `sum_items`: a
+// `List` field's `count` bounds its elements' `bounds` row the same way.
+//
+// The rows, read one by one: `terminate` -- `count_up` 2 discharged,
+// `count_ptr` 2 open, `count_moving` entry discharged and preservation open,
+// `count_span` 2 discharged, `count_name` 2 discharged (7 and 3); `overflow`
+// -- each measure's `- i` open at the entry and discharged at the back edge
+// (DEF-81's two contexts; `count_ptr`'s both open, since a fresh pointee read
+// bounds nothing), every `i + 1` discharged under the condition, `span`'s
+// `count - start`, `count_moving`'s `count + start` and `sum_items`'s
+// `s + h.items[i]` open on their merits, `main`'s six open (8 and 16); one
+// `bounds` discharged; `failsafe`'s 13; the `pick`.
+mod:terminate_field;
+error:E9;
+
+struct:Window = { int32:start; int32:count; };
+struct:Tag = { string:name; int32:n; };
+struct:Holder = { List<int32>:items; int32:n; };
+
+func:count_up = int32(Window:w) never fails {
+    int32:i = 0i32;
+    while (i < w.count) decreases w.count - i { i = i + 1i32; }
+    pass i;
+};
+
+func:count_ptr = int32(Window->:w) never fails {
+    int32:i = 0i32;
+    while (i < w.count) decreases w.count - i { i = i + 1i32; }
+    pass i;
+};
+
+func:count_moving = int32(Window:w) never fails {
+    int32:i = 0i32;
+    while (i < w.count) decreases w.count - i {
+        i = i + 1i32;
+        w.count = w.count + w.start;
+    }
+    pass i;
+};
+
+func:span = int32(Window:w) never fails pure { pass w.count - w.start; };
+
+func:count_span = int32(Window:w) never fails {
+    int32:i = 0i32;
+    while (i < raw span(w)) decreases raw span(w) - i { i = i + 1i32; }
+    pass i;
+};
+
+func:count_name = int64(Tag:t) never fails {
+    int64:i = 0i64;
+    while (i < t.name.len) decreases t.name.len - i { i = i + 1i64; }
+    pass i;
+};
+
+func:sum_items = int32(Holder:h) never fails {
+    int32:s = 0i32;
+    for (int64:i in 0i64...h.items.count) { s = s + h.items[i]; }
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Window:w = Window{ start: 1i32, count: 3i32 };
+    int32:a = raw count_up(w);                                     // 3
+    int32:b = raw count_ptr(@w);                                   // 3
+    int32:c = raw count_moving(Window{ start: 0i32, count: 2i32 }); // 2
+    int32:d = raw count_span(w);                                   // span = 2
+    Tag:t = Tag{ name: string_concat("abcd", ""), n: 1i32 };
+    int64:e = raw count_name(t);                                   // 4
+    List<int32>:l = raw list_init::<int32>(4i64);
+    drop list_push(@l, 5i32);
+    drop list_push(@l, 6i32);
+    Holder:h = Holder{ items: move(l), n: 0i32 };
+    int32:f = raw sum_items(h);                                    // 11
+    exit (a + b + c + d + (e =>! int32) + f - 25i32);              // 3+3+2+2+4+11-25 = 0
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DecreasesViolated) { exit 41i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (LimitViolated)     { exit 97i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

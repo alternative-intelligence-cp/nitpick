@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has ONE subcycle left — 1.5.8d, the cycle's close, PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`: two leads decided before the refresh, the refresh, the docs, the archive); 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits; COMPLETE 2026-09-23) and 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows; COMPLETE 2026-09-24) have landed, the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has ONE subcycle left — 1.5.8d, the cycle's close, UNDERWAY (step 0 LANDED 2026-09-25: D-317 — a by-value aggregate's identity and its fields as uninterpreted functions of it in the encoder, 64 of the compiler's 79 by-value `terminate` rows and 139 rows in all newly discharged with no verdict moved and no bound written; D-318 — E-5's bound-call fan-out stands, decided out; DEF-94 — the implicit pointer receiver was never an escape, a soundness hole the step's first probe found and fixed), PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`: two leads decided before the refresh, the refresh, the docs, the archive); 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits; COMPLETE 2026-09-23) and 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows; COMPLETE 2026-09-24) have landed, the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 316 decisions, D-001 through D-316 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, and 314 until 1.5.8b step 6c). The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 318 decisions, D-001 through D-318 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, 314 until 1.5.8b step 6c, and 316 until 1.5.8d step 0). The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -1201,7 +1201,10 @@ where it was 250, and nothing else moved.
 subcycles" from 2026-09-17 until 1.5.8c's close): ONE subcycle — 1.5.8d, the
 cycle's close, PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`:
 S-97/S-98 the two leads decided before the refresh, then the refresh, the doc
-sync, the archive to `done/1.5/` and the 1.6.0 briefing). 1.5.8b, the
+sync, the archive to `done/1.5/` and the 1.6.0 briefing). **Step 0 LANDED
+2026-09-25** (D-317, D-318, DEF-94; the numbers in `1.5.8d.md`'s record and
+D-317's landing note); steps 1–3 remain — the refresh from this `src/`, the doc
+sync and the archive, ONE commit under one full harness. 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, is COMPLETE (2026-09-23,
 `meta/roadmap/1.5/1.5.8b.md`), and 1.5.8c is COMPLETE (2026-09-24, seven
 landings — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`; step 4 landed 2026-09-24: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`) with TYPE-074/075, a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners, DEF-92 found by measuring the sweep's cost; step 4b landed 2026-09-24: DEF-92 fixed — `tt_instance`'s linear scan, 85% of the frontend, replaced by an instance index, the checker 5.4x faster and every program's emission byte-identical; step 5 landed 2026-09-24: the `terminate` residue measured by cause with `meta/roadmap/1.5/tools/residue.py` — 684 of 1,183 row sites in the compiler's own build discharged, 240 open through a pointer (E-4), 195 through a by-value aggregate's missing value term (lead E-6, OPEN_DECISIONS §4), 64 on their merits, the 116 `stack-depth` rows `open` as D-304 (5) accepted — the docs synced, `1.5.8d.md` planned). **1.5.8b's
@@ -2376,6 +2379,25 @@ that carried them retired at the cycle close):
   `EMIT-002` — pre-existing, since `tests/accept/` asks only the frontend
   (DEF-88). Sweep with the full compiler when the question is "does it
   compile".
+- **A by-value struct's field is one term while nothing writes the binding**
+  (D-317, 1.5.8d step 0): `w.count` in a loop's condition and in its
+  `decreases` are the same `(|npk.f.T.count| w.1)`, so the measure decides
+  and the rows over `w.count - i` follow; a field write bumps the version with
+  the update frame (the other fields keep their values), a whole assignment,
+  a `move` out of a field and a loop that writes any part of it bump it too.
+  What ends the term for the whole function is an ESCAPE: `@s`, `$$i s`,
+  `$$m s`, `list_push(@s.items, …)` — and, since DEF-94, a method call whose
+  receiver is a pointer (`s.bump()` with `bump = NIL(Self->:self)`), because
+  the emitter passes `@s`. A pointee's fields (`x.count` with `Reach->:x`)
+  stay fresh per read (E-4, 1.6's). A `pure never fails` call takes a struct
+  argument's identity only when the struct is PLAIN DATA (no pointer, no
+  container, no enum inside): a pure function may read the heap through a
+  reference its argument holds. A `prove` over a struct's fields is the way
+  to see what the encoder knows (`tests/verify/agg_frame.npk`). **An encoder
+  change moves EXISTING verify tests' rows** (three at this step, each read
+  one by one), and `--only` cannot reach the verify suite: run `vprog.py`
+  over every file of `tests/verify/` before the harness (twenty minutes
+  against three hours).
 - **`failsafe` must name what the PRELUDE can raise on the program's behalf**
   (DEF-86, 1.5.8b step 6b): the reach analysis follows every resolved call into
   the prelude and every import, so a program that calls `list_pop`, formats a

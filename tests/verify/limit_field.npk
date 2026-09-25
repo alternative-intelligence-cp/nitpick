@@ -1,14 +1,23 @@
 // expect-exit: 31
-// expect-obligation: limit unencoded 2
+// expect-obligation: limit discharged 1
+// expect-obligation: limit open 1
 // expect-obligation: failsafe-post discharged 15
 // expect-obligation: exhaustive checker 1
-// expect-obligation: overflow open 2
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 1
 //
 // A RULE OVER AN AGGREGATE (D-251): a store to a FIELD of a limited struct is
 // a write to the binding, and the root's whole value is re-checked after it.
 // The initialiser satisfies `r_q1`; the field store of one minus five does
-// not. Two rows, both `unencoded`: a struct subject is outside the 1.5.0
-// fragment (L-6), so the guard stays whatever step 3 does.
+// not. Until 1.5.8d step 0 both rows were `unencoded` (a struct subject was
+// outside the fragment, L-6); since D-317 the struct has an identity and the
+// rule reads its fields as functions of it: the initialiser's row is
+// DISCHARGED (`x = 1`, `y = 2` from the literal), the field store's is OPEN
+// (`x` is the cast's value minus five, unbounded below), its guard stays and
+// fires — exit 31. The `overflow` rows: the subtraction open (the cast is
+// opaque), and the exit's `p.x + p.y` discharged, because the subtraction
+// guard's own fact bounds `x` above and the rule bounds it below while `y`
+// is the literal's 2 through the update frame.
 mod:limit_field;
 error:E9;
 struct:Point = { int32:x; int32:y; };

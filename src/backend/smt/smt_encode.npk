@@ -77,6 +77,34 @@
 // `loop-step` row (S-46), its compare the guard; a literal step is the
 // checker's and has neither.
 //
+// THE AGGREGATES (D-317, 1.5.8d step 0; lead E-6): a struct or an enum held
+// BY VALUE in an unescaped binding carries a versioned Int-sorted symbol of
+// its own, `s.k`, an IDENTITY about which nothing is asserted but equalities
+// -- a copy (`P:t = s`), a merge (`(ite c s.2 s.1)`), a struct literal's
+// fields. A scalar field read of it is the uninterpreted function
+// `(|npk.f.<TYPEID>.<field>| s.k)`, one function symbol per (struct type id,
+// field name), of the field's sort; a nested read composes; a container
+// field's image is Int-sorted too and its length is `(|npk.len| image)`. A
+// write to a field bumps the version and states the UPDATE FRAME: the
+// written field equal to the value's term when it has one of the field's
+// sort, every other field of the type equal to its previous version's, a
+// nested write framing each level, an element write keeping the container's
+// length. A whole assignment, a `move` out of a field, a loop head's havoc
+// and a `pick` arm's merge bump it as they bump a scalar's; a PLAIN call
+// argument changes nothing, because the callee's parameter is its own binding
+// (measured before the decision: `meta/roadmap/1.5/tools/e6_probe_{byval,own}.npk`).
+// Sound because no alias to an unescaped by-value binding exists (D-004) and
+// every write to its bytes is a version bump; the escape set (DEF-14) is what
+// keeps it so, and DEF-94 -- found by the first probe of this step -- put the
+// IMPLICIT POINTER RECEIVER into that set: a method whose parameter 0 is a
+// pointer takes `@recv`, and `drop x.bump()` on a scalar with a `Self->`
+// impl had left `x.1 = 6` standing past the call that wrote 5. A `pure never
+// fails` call takes an aggregate argument's identity ONLY when the type is
+// PLAIN DATA (no pointer, no container, no enum, transitively): a pure
+// function may read the heap through a reference its argument holds, and
+// the heap is not part of the identity. A pointee's fields are NOT covered
+// (E-4, 1.6 leg B): `x.count` with `Reach->:x` stays a fresh term per read.
+//
 // THE CONE (P-4): an obligation's canonical text is the relevance closure of
 // its goal over the hypotheses that DOMINATE it -- recorded before it, in a
 // branch region on the path from the function's entry to the site. Later
@@ -327,6 +355,10 @@ pub struct:Encoder = {
     // a walk never encodes an expression twice (its rows would double).
     List<int32>:memo_ids;
     List<Term>:memo_terms;
+    // THE FIELD APPLICATIONS WHOSE RANGE AXIOM IS PUSHED (D-317): by text,
+    // once each, in the root region -- `place_len_term`'s rule for a fact
+    // about a sort.
+    List<string>:fapp_axioms;
 };
 
 // Branch regions (the dominance rule): a then-arm, an else-arm, a loop body,
@@ -425,7 +457,8 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   loop_mstart: raw list_init::<Term>(4i64),
                   loop_msigned: raw list_init::<bool>(4i64),
                   memo_ids: raw list_init::<int32>(8i64),
-                  memo_terms: raw list_init::<Term>(8i64) };
+                  memo_terms: raw list_init::<Term>(8i64),
+                  fapp_axioms: raw list_init::<string>(8i64) };
 };
 
 // --- types -----------------------------------------------------------------------------
@@ -511,6 +544,66 @@ func:is_termed = bool(Encoder->:e, int32:ty) never fails {
     if (raw is_scalar(e, ty)) { pass true; }
     if (raw is_bool(e, ty)) { pass true; }
     pass (raw is_float(e, ty));
+};
+
+// AN AGGREGATE WITH AN IDENTITY (D-317, 1.5.8d step 0): a struct or an enum
+// by value -- the prelude's `List` among them, a struct like any other.
+// `is_named` is everything a binding gets a SYMBOL for: a termed kind, or an
+// aggregate; the aggregate's symbol is Int-sorted and carries no axiom.
+func:is_agg = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    int32:k = raw type_kind(e.types, ty);
+    if (k == (raw TY_STRUCT())) { pass true; }
+    pass (k == (raw TY_ENUM()));
+};
+
+func:is_named = bool(Encoder->:e, int32:ty) never fails {
+    if (raw is_termed(e, ty)) { pass true; }
+    pass (raw is_agg(e, ty));
+};
+
+// A CONTAINER WITH A LENGTH OF ITS OWN (D-317): a slice, a `string`, a
+// `cstring`, a `buffer`, a `List` -- the kinds whose image off an aggregate
+// is Int-sorted so that `(|npk.len| image)` can name their length. A fixed
+// array's length is its type's constant and it gets no image.
+func:is_container = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    if ((raw type_kind(e.types, ty)) == (raw TY_ARRAY())) { pass false; }
+    if (raw has_len_term(e, ty)) { pass true; }
+    pass (raw type_is_list(e.tr, ty));
+};
+
+// PLAIN DATA (D-317): a value whose meaning is its own bytes -- a scalar, a
+// `char`, a kernel id, an `Error`, a `simd`, a fixed array of plain data, a
+// struct of plain data. A pointer, a container, a `dyn`, a channel, an
+// atomic, an arena and an enum (conservatively) are not. Only a plain-data
+// aggregate is handed to a `pure never fails` callee as its identity: the
+// callee may read the heap through a reference its argument holds, and the
+// heap is not part of the identity.
+func:is_plain_data = bool(Encoder->:e, int32:ty, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (ty == 0i32) { pass false; }
+    if (raw is_termed(e, ty)) { pass true; }
+    int32:k = raw type_kind(e.types, ty);
+    if (k == (raw TY_CHAR()))   { pass true; }
+    if (k == (raw TY_KERNEL())) { pass true; }
+    if (k == (raw TY_FLOAT()))  { pass true; }
+    if (k == (raw TY_ERROR()))  { pass true; }
+    if (k == (raw TY_SIMD()))   { pass true; }
+    if (k == (raw TY_ARRAY()))  { pass (raw is_plain_data(e, raw type_elem(e.types, ty), fuel - 1i32)); }
+    if (k != (raw TY_STRUCT())) { pass false; }
+    int32:sd = raw type_decl_of(e.types, ty);
+    if (sd == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: sd });
+    int32:cnt = raw item_member_count(e.ast, d);
+    for (int32:i in 0i32...cnt) {
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
+        if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+        FieldInfo:fi = raw struct_field(e.tr, ty, raw decl_name(m), e.scope);
+        if (!fi.found) { pass false; }
+        if (!(raw is_plain_data(e, raw subst_emitted_param(e.ctx, fi.type_id), fuel - 1i32))) { pass false; }
+    }
+    pass true;
 };
 
 // Does `s` contain `needle`? (The tier of a row is read off its canonical text.)
@@ -685,6 +778,23 @@ func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
     pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(nm), syms: move(one) };
 };
 
+// A FRESH IDENTITY FOR AN AGGREGATE VALUE (D-317): a struct literal's, and
+// nothing else's -- an aggregate read the walk cannot name (through a
+// pointer, out of an element, an escaped binding) gets NO term, because an
+// anonymous identity nothing holds buys no fact and would turn every
+// `unencoded` length row of E-4's residue into an `open` one over an opaque.
+// A binding's identity comes from `bind_define`/`bind_assign` (a fresh
+// version when the initialiser has no term).
+func:term_fresh_agg = Term(Encoder->:e, int32:ty) never fails {
+    if (!(raw is_agg(e, ty))) { pass (raw term_none()); }
+    e.anon = e.anon + 1i32;
+    string:nm = raw smt_sym("_", e.anon => int64);
+    int32:idx = raw sym_new(e, nm, ty);
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, idx);
+    pass Term{ ok: true, is_bool: false, text: move(nm), syms: move(one) };
+};
+
 func:term_none = Term() never fails {
     pass Term{ ok: false, is_bool: false, text: "", syms: raw list_init::<int32>(1i64) };
 };
@@ -780,7 +890,7 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
                        bool:substitution) never fails {
     int32:sym = 0i32 - 1i32;
-    bool:named = raw is_termed(e, ty);   // a flag word (D-279), a twisted value (D-278) and a float (D-281) are named too
+    bool:named = raw is_named(e, ty);   // a flag word (D-279), a twisted value (D-278), a float (D-281) and an aggregate (D-317) are named too
     if ((!substitution) && (raw is_escaped(e, name))) { named = false; }
     if (named) {
         string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
@@ -809,7 +919,7 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     if (i < 0i64) { pass NIL; }
     e.binds[i].lensym = 0i32 - 1i32;   // a write ends the length symbol (1.5.8b step 5)
     int32:ty = e.binds[i].type_id;
-    if (!(raw is_termed(e, ty))) { pass NIL; }
+    if (!(raw is_named(e, ty))) { pass NIL; }
     if (raw is_escaped(e, name)) { pass NIL; }
     string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
     int32:sym = raw sym_new(e, nm, ty);
@@ -840,7 +950,7 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
             e.binds[i].lanes = raw lane_syms_new(e, names[k], ty);
             continue;
         }
-        if (!(raw is_termed(e, ty))) { continue; }
+        if (!(raw is_named(e, ty))) { continue; }
         if (raw is_escaped(e, names[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names[k]),
                                 raw version_next(e, names[k]));
@@ -848,6 +958,25 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         // A LIMITED NAME KEEPS ITS RULE ACROSS A MERGE (L-7): the fresh
         // version is "the value after the construct", and every write inside
         // was guarded by the rule -- the hypothesis, no obligation.
+        drop assert_rule(e, i);
+    }
+    pass NIL;
+};
+
+// THE AGGREGATES A CONSTRUCT WRITES THROUGH A FIELD OR AN ELEMENT (D-317): a
+// fresh identity for each named one -- the whole value after the construct,
+// no frame -- as `invalidate` gives a scalar a fresh version. The length
+// symbol and the lanes are not touched: an element write changes no length,
+// and a `List` root's `count` reads its own symbol.
+func:invalidate_aggs = NIL(Encoder->:e, List<int32>:roots) never fails {
+    for (int64:k in 0i64...roots.count) {
+        int64:i = raw bind_find(e, roots[k]);
+        if (i < 0i64) { continue; }
+        int32:ty = e.binds[i].type_id;
+        if (!(raw is_agg(e, ty))) { continue; }
+        if (e.binds[i].sym < 0i32) { continue; }
+        string:nm = raw smt_sym(raw intern_get(e.interns, roots[k]), raw version_next(e, roots[k]));
+        e.binds[i].sym = raw sym_new(e, nm, ty);
         drop assert_rule(e, i);
     }
     pass NIL;
@@ -1136,6 +1265,234 @@ func:has_len_term = bool(Encoder->:e, int32:bty) never fails {
     if (k == (raw TY_CSTRING())) { pass true; }
     if (k == (raw TY_BUFFER()))  { pass true; }
     pass false;
+};
+
+// THE LENGTH OF A CONTAINER, BY NAME OR BY IMAGE (D-317): the binding's own
+// length symbol when the base is a bare name (`place_len_term`), else
+// `(|npk.len| image)` when the base is a container held in a field of an
+// aggregate with a term -- `s.items.count`, `t.name.len` -- bounded by the
+// ceiling as every length is. `term_none` for anything else, as before.
+func:container_len = Term(Encoder->:e, ExprId:base, Term:base_term, int32:bty) never fails {
+    Term:t = raw place_len_term(e, base, bty);
+    if (t.ok) { pass t; }
+    if (!(raw is_container(e, bty))) { pass (raw term_none()); }
+    if (!(base_term.ok && (!base_term.is_bool))) { pass (raw term_none()); }
+    Term:lt = raw len_term(e, raw term_copy(base_term), bty);
+    drop push_len_fact(e, lt);
+    pass lt;
+};
+
+// THE FIELD FUNCTION (D-317): `|npk.f.<TYPEID>.<field>|`, `(Int) <sort>`, one
+// per (struct type id, field name), declared on first use -- the type id is
+// the INSTANCE's, so `Pair<int32>.a` and `Pair<bool>.a` never share a sort.
+// -1 for a field whose value the fragment holds no term for: a float (opaque
+// per read, as before this step -- the tier-2 translation reads named float
+// definitions, and a raw application is not one), a pointer, a `char`, a
+// fixed array, a `dyn`, a channel, an atomic, a lock.
+func:field_fun = int32(Encoder->:e, int32:sty, int32:fname, int32:fty) never fails {
+    bool:rb = false;
+    bool:okf = false;
+    if (raw is_bool(e, fty)) { rb = true; okf = true; }
+    if ((raw is_word(e, fty)) || (raw is_twisted(e, fty))) { okf = true; }
+    if (raw is_agg(e, fty)) { okf = true; }
+    if (raw is_container(e, fty)) { okf = true; }
+    if (!okf) { pass (0i32 - 1i32); }
+    string:nm = string_concat("|npk.f.", int_to_string(sty => int64));
+    nm = string_concat(nm, ".");
+    nm = string_concat(nm, raw intern_get(e.interns, fname));
+    nm = string_concat(nm, "|");
+    pass (raw sym_new_fun(e, nm, "(Int)", rb, ""));
+};
+
+// THE RANGE AXIOM OF A FIELD APPLICATION, once per text, in the ROOT region
+// (`place_len_term`'s rule: a fact about a sort is true on every path, and a
+// hypothesis reaches a row's cone only from a region that dominates it).
+func:field_axiom = NIL(Encoder->:e, int32:fty, Term:t) never fails {
+    bool:isw = raw is_word(e, fty);
+    bool:ist = raw is_twisted(e, fty);
+    if (!(isw || ist)) { pass NIL; }
+    for (int64:i in 0i64...e.fapp_axioms.count) {
+        if (string_equals(e.fapp_axioms[i], t.text)) { pass NIL; }
+    }
+    drop list_push(@e.fapp_axioms, string_concat(t.text, ""));
+    int32:preg = e.cur_region;
+    e.cur_region = 0i32;
+    if (isw) {
+        drop hyp_push(e, raw smt_range_axiom(t.text, raw word_bits(e, fty), raw word_signed(e, fty)), t.syms);
+    } else {
+        drop hyp_push(e, raw twisted_axiom(e, t.text, fty), t.syms);
+    }
+    e.cur_region = preg;
+    pass NIL;
+};
+
+// A FIELD READ OFF AN IDENTITY (D-317): `(|npk.f.T.f| base)`, of the field's
+// sort, its range axiom pushed; `term_none` when the field has no function.
+func:field_app = Term(Encoder->:e, int32:sty, int32:fname, int32:fty, Term:base) never fails {
+    if (!(base.ok && (!base.is_bool))) { pass (raw term_none()); }
+    int32:fi = raw field_fun(e, sty, fname, fty);
+    if (fi < 0i32) { pass (raw term_none()); }
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, fi);
+    Term:t = Term{ ok: true, is_bool: raw is_bool(e, fty),
+                   text: raw smt_app1(raw sym_text(e, fi), base.text),
+                   syms: raw syms_union(base.syms, one) };
+    drop field_axiom(e, fty, t);
+    pass t;
+};
+
+// THE UPDATE FRAME'S SIBLINGS (D-317): every field of `sty` but `except`
+// equal, at the new base, to its value at the old one -- for the fields that
+// have a function; a field without one was opaque per read and stays so.
+func:frame_siblings = NIL(Encoder->:e, int32:sty, int32:except, Term:nb, Term:ob) never fails {
+    if ((raw type_kind(e.types, sty)) != (raw TY_STRUCT())) { pass NIL; }
+    int32:sd = raw type_decl_of(e.types, sty);
+    if (sd == 0i32) { pass NIL; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: sd });
+    int32:cnt = raw item_member_count(e.ast, d);
+    for (int32:i in 0i32...cnt) {
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
+        if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+        int32:g = raw decl_name(m);
+        if (g == except) { continue; }
+        FieldInfo:fi = raw struct_field(e.tr, sty, g, e.scope);
+        if (!fi.found) { continue; }
+        int32:gty = raw subst_emitted_param(e.ctx, fi.type_id);
+        Term:gn = raw field_app(e, sty, g, gty, raw term_copy(nb));
+        if (!gn.ok) { continue; }
+        Term:go = raw field_app(e, sty, g, gty, raw term_copy(ob));
+        Term:eq = raw term_app2("=", gn, go, true);
+        drop hyp_push(e, eq.text, eq.syms);
+    }
+    pass NIL;
+};
+
+// A PLACE PATH DOWN TO ITS ROOT (D-317): the steps from the written or read
+// place to the identifier, top-down -- a field step (kind 1: the base's
+// struct type and the field's name) through an aggregate BY VALUE, an element
+// step (kind 2: the container's type) through a container that is not a
+// pointer. A step through a pointer, a slice of a pointer or anything else
+// ends the walk with `ok` false: that storage is not the binding's own.
+pub struct:AggPath = { int32:root; List<int32>:kinds; List<int32>:btys; List<int32>:fnames; bool:ok; };
+
+func:agg_path = AggPath(Encoder->:e, ExprId:place) never fails {
+    AggPath:p = AggPath{ root: 0i32, kinds: raw list_init::<int32>(4i64), btys: raw list_init::<int32>(4i64),
+                         fnames: raw list_init::<int32>(4i64), ok: false };
+    ExprId:cur = place;
+    for (int32:fuel in 0i32...64i32) {
+        if (raw expr_is_none(cur)) { pass p; }
+        ExprNode:n = raw ast_expr(e.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            p.root = n.payload =>! int32;
+            p.ok = (p.kinds.count > 0i64);
+            pass p;
+        }
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            int32:bt = raw ty_of(e, raw expr_operand(n));
+            if (!(raw is_agg(e, bt))) { pass p; }
+            drop list_push(@p.kinds, 1i32);
+            drop list_push(@p.btys, bt);
+            drop list_push(@p.fnames, n.payload =>! int32);
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            int32:ibt = raw ty_of(e, raw expr_lhs(n));
+            if (ibt == 0i32) { pass p; }
+            if ((raw type_kind(e.types, ibt)) == (raw TY_POINTER())) { pass p; }
+            drop list_push(@p.kinds, 2i32);
+            drop list_push(@p.btys, ibt);
+            drop list_push(@p.fnames, 0i32);
+            cur = raw expr_lhs(n);
+            continue;
+        }
+        pass p;
+    }
+    pass p;
+};
+
+// A WRITE THROUGH A PLACE OF AN AGGREGATE WITH A TERM (D-317): the root's new
+// version, then the frame from the root outward -- at each field step the
+// siblings kept and the field's image descended; at the written field its
+// value when the term has the field's sort; at an element step the
+// container's length kept and nothing below it said (an element's value is
+// nobody's fact). A root that is escaped, unnamed or not an aggregate
+// changes nothing here (its reads were opaque already).
+func:agg_write = NIL(Encoder->:e, ExprId:target, Term:val) never fails {
+    AggPath:p = raw agg_path(e, target);
+    if (!p.ok) { pass NIL; }
+    int64:bi = raw bind_find(e, p.root);
+    if (bi < 0i64) { pass NIL; }
+    int32:rty = e.binds[bi].type_id;
+    if (!(raw is_agg(e, rty))) { pass NIL; }
+    if (e.binds[bi].sym < 0i32) { pass NIL; }
+    Term:ob = raw bind_term(e, bi);
+    string:nm = raw smt_sym(raw intern_get(e.interns, p.root), raw version_next(e, p.root));
+    e.binds[bi].sym = raw sym_new(e, nm, rty);
+    Term:nb = raw bind_term(e, bi);
+    int64:j = p.kinds.count;
+    while (j > 0i64) decreases j {
+        j = j - 1i64;
+        int32:bt = p.btys[j];
+        if (p.kinds[j] == 1i32) {
+            int32:fnm = p.fnames[j];
+            drop frame_siblings(e, bt, fnm, raw term_copy(nb), raw term_copy(ob));
+            FieldInfo:fi = raw struct_field(e.tr, bt, fnm, e.scope);
+            if (!fi.found) { pass NIL; }
+            int32:fty = raw subst_emitted_param(e.ctx, fi.type_id);
+            if (j == 0i64) {
+                if (val.ok) {
+                    Term:fa = raw field_app(e, bt, fnm, fty, raw term_copy(nb));
+                    if (fa.ok && (fa.is_bool == val.is_bool)) {
+                        Term:eq = raw term_app2("=", fa, val, true);
+                        drop hyp_push(e, eq.text, eq.syms);
+                    }
+                }
+                pass NIL;
+            }
+            Term:nn = raw field_app(e, bt, fnm, fty, raw term_copy(nb));
+            Term:oo = raw field_app(e, bt, fnm, fty, raw term_copy(ob));
+            if (!(nn.ok && oo.ok)) { pass NIL; }
+            nb = move(nn);
+            ob = move(oo);
+            continue;
+        }
+        if (raw is_container(e, bt)) {
+            Term:ln = raw len_term(e, raw term_copy(nb), bt);
+            Term:lo = raw len_term(e, raw term_copy(ob), bt);
+            if (ln.ok && lo.ok) {
+                Term:le = raw term_app2("=", ln, lo, true);
+                drop hyp_push(e, le.text, le.syms);
+            }
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// THE CURRENT VALUE OF A FIELD PATH, QUIETLY (D-317): the composed application
+// over the root's current version -- no site, no row -- for a compound
+// assignment's left operand, whose rows the statement records itself.
+// `term_none` for an element (nobody's fact) or a root without a term.
+func:agg_read_quiet = Term(Encoder->:e, ExprId:place) never fails {
+    AggPath:p = raw agg_path(e, place);
+    if (!p.ok) { pass (raw term_none()); }
+    if (p.kinds[0i64] != 1i32) { pass (raw term_none()); }
+    int64:bi = raw bind_find(e, p.root);
+    if (bi < 0i64) { pass (raw term_none()); }
+    if (!(raw is_agg(e, e.binds[bi].type_id))) { pass (raw term_none()); }
+    Term:b = raw bind_term(e, bi);
+    int64:j = p.kinds.count;
+    while (j > 0i64) decreases j {
+        j = j - 1i64;
+        if (p.kinds[j] != 1i32) { pass (raw term_none()); }
+        FieldInfo:fi = raw struct_field(e.tr, p.btys[j], p.fnames[j], e.scope);
+        if (!fi.found) { pass (raw term_none()); }
+        Term:nx = raw field_app(e, p.btys[j], p.fnames[j], raw subst_emitted_param(e.ctx, fi.type_id), raw term_copy(b));
+        if (!nx.ok) { pass (raw term_none()); }
+        b = move(nx);
+    }
+    pass b;
 };
 
 // THE `bounds` ROW (D-070; 1.5.8b step 5): the index is inside its bound --
@@ -3401,14 +3758,21 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     if (ce.coroutine) { pass (raw term_none()); }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if (!(raw fn_is_pure_never_fails(e, cdn))) { pass (raw term_none()); }
-    if (!(raw is_termed(e, ty))) { pass (raw term_none()); }
+    if (!(raw is_named(e, ty))) { pass (raw term_none()); }
     string:sorts = "(";
     string:app = "";
     List<int32>:syms = raw list_init::<int32>(4i64);
     for (int64:i in 0i64...ce.terms.count) {
         if (!ce.terms[i].ok) { pass (raw term_none()); }
         int32:pt = ce.types[i];
-        if (!(raw is_termed(e, pt))) { pass (raw term_none()); }
+        // AN AGGREGATE ARGUMENT'S IDENTITY (D-317): admitted only for PLAIN
+        // DATA -- a struct holding a pointer or a container hands the callee
+        // a way to read the heap, and the heap is not part of the identity,
+        // so two calls between which nothing wrote the binding could still
+        // differ. Every other aggregate keeps the call opaque, as before.
+        bool:pok = raw is_termed(e, pt);
+        if ((!pok) && (raw is_agg(e, pt)) && (raw is_plain_data(e, pt, 16i32))) { pok = true; }
+        if (!pok) { pass (raw term_none()); }
         if (ce.terms[i].is_bool != (raw is_bool(e, pt))) { pass (raw term_none()); }
         if (i > 0i64) { sorts = string_concat(sorts, " "); app = string_concat(app, " "); }
         if (raw is_bool(e, pt)) { sorts = string_concat(sorts, "Bool"); }
@@ -3933,7 +4297,8 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
                      int32:label, Counter:ctr, VerifyId:meas) never fails {
     StmtNode:s = raw ast_stmt(e.ast, sid);
     List<int32>:assigned = raw list_init::<int32>(4i64);
-    drop collect_assigned(e, body, @assigned);
+    List<int32>:aroots = raw list_init::<int32>(4i64);
+    drop collect_assigned(e, body, @assigned, @aroots);
     // THE COUNTER (L-11, L-12): a `for` binding is an assigned name of its
     // loop (havoced with the rest); `$` starts at its start for the entry row.
     if (ctr.kind == 1i32) { drop list_push(@assigned, ctr.name); }
@@ -3957,6 +4322,7 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
         }
     }
     drop invalidate(e, assigned);
+    drop invalidate_aggs(e, aroots);
     drop region_enter(e);
     // THE COUNTER IN THE BODY (L-11, L-12): a fresh `$` inside its range; a
     // range binding's havoced version inside its bounds.
@@ -4088,6 +4454,7 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     }
     drop region_leave(e);
     drop invalidate(e, assigned);
+    drop invalidate_aggs(e, aroots);
     bool:no_break = !(raw loop_has_break(e, body, label, false, 64i32));
     // THE COUNTER AFTER THE LOOP (L-11, L-12): `$`'s exit value; a range
     // binding's fresh version exactly at its bound (`ite (< lo hi) hi lo`).
@@ -4417,6 +4784,13 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                            text: raw sym_text(e, si), syms: move(one) };
             }
         }
+        // AN ESCAPED AGGREGATE HAS NO IDENTITY, NOT EVEN AN ANONYMOUS ONE
+        // (D-317 under DEF-14's rule): a fresh symbol per read would buy no
+        // fact and would turn every `bounds` row of an address-taken `List`
+        // -- E-4's residue, `unencoded` by 1.5.8b step 5's accounting -- into
+        // an `open` row over an opaque length, a weaker statement of the same
+        // guard. Its field reads stay opaque per read, as before this step.
+        if ((bi >= 0i64) && (raw is_agg(e, ty))) { pass (raw term_none()); }
         // A `fixed` GLOBAL IS ITS CONSTANT (1.5.4b step 1): the folder's value
         // as a numeral wherever it is read, so a flag member or a named mask
         // takes the Int forms of D-279. A local the folder cannot fold (every
@@ -4696,6 +5070,10 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     }
     if (n.kind == ExprKind.ExprMoveExpr) {
         Term:mt = raw enc_expr(e, raw expr_operand(n));
+        // A MOVE OUT OF A PLACE LEAVES THE VACANT VALUE THERE (S-26): a write
+        // to the root's aggregate (D-317), after the moved value was read.
+        ExprNode:mon = raw ast_expr(e.ast, raw expr_operand(n));
+        if (mon.kind != ExprKind.ExprIdentifierExpr) { drop agg_write(e, raw expr_operand(n), raw term_none()); }
         if (mt.ok) { pass mt; }
         pass (raw term_opaque(e, ty));
     }
@@ -4795,7 +5173,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
         Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
-        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && (raw is_termed(e, ty))) { pass pval; }
+        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && (raw is_named(e, ty))) { pass pval; }
         pass (raw term_opaque(e, ty));
     }
     // `simd(a, ...)` (D-282): the lanes are the arguments' terms, a splat's
@@ -4879,7 +5257,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             }
             Term:rlen = raw term_none();
             if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
-                rlen = raw place_len_term(e, raw expr_lhs(n), bty2);
+                rlen = raw container_len(e, raw expr_lhs(n), ibase, bty2);
             }
             drop record_bounds_range(e, rlo, rhi, rlen, (raw expr_rhs(n)).index, n.span);
             drop enc_alias_site(e, id);
@@ -4889,7 +5267,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         drop memo_put(e, (raw expr_rhs(n)).index, iidx);
         Term:ilen = raw term_none();
         if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
-            ilen = raw place_len_term(e, raw expr_lhs(n), bty2);
+            ilen = raw container_len(e, raw expr_lhs(n), ibase, bty2);
         }
         // A POINTER's element has no bound at all (D-038: pointers are thin),
         // and the emitter guards nothing there -- so no row either.
@@ -4913,7 +5291,9 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         bool:mlen = ((raw string_eq(mfld, "len")) && (raw has_len_term(e, mbt2)));
         if ((raw string_eq(mfld, "count")) && (raw type_is_list(e.tr, mbt2))) { mlen = true; }
         if (mlen) {
-            Term:lt2 = raw place_len_term(e, raw expr_operand(n), mbt2);
+            // BY NAME, OR BY IMAGE (D-317): a container held in a field of an
+            // aggregate with a term has its length off the field's image.
+            Term:lt2 = raw container_len(e, raw expr_operand(n), mbase2, mbt2);
             if (lt2.ok) {
                 // A `List`'s `count` is limited (`ListLen`, D-308 SS6): the rule
                 // over the length SYMBOL, at this read, as at every read.
@@ -4936,6 +5316,25 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             Term:mo2 = raw term_opaque(e, ty);
             drop push_len_fact(e, mo2);
             pass mo2;
+        }
+        // A FIELD OFF AN AGGREGATE WITH A TERM (D-317, 1.5.8d step 0): the
+        // uninterpreted function of the identity -- the same term at every
+        // read while nothing writes the binding, which is what lets a loop's
+        // condition over `w.count` bound its measure over `w.count`. The
+        // field's resolved type decides the function's sort, so every read and
+        // every frame of one (type, field) agree by construction.
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) && (raw is_agg(e, mbt2)) && mbase2.ok && (!mbase2.is_bool)) {
+            if ((raw type_kind(e.types, mbt2)) == (raw TY_STRUCT())) {
+                FieldInfo:mfi = raw struct_field(e.tr, mbt2, n.payload =>! int32, e.scope);
+                if (mfi.found) {
+                    Term:fa = raw field_app(e, mbt2, n.payload =>! int32,
+                                            raw subst_emitted_param(e.ctx, mfi.type_id), raw term_copy(mbase2));
+                    if (fa.ok) {
+                        drop assert_field_rule(e, mbt2, n.payload =>! int32, fa);
+                        pass fa;
+                    }
+                }
+            }
         }
         // A LIMITED FIELD'S RULE IS A FACT AT EVERY READ (D-308 SS3; 1.5.8b
         // step 6): the read's own opaque term satisfies the rule, because
@@ -4978,12 +5377,28 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     // value stays opaque.
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:lpairs = n.c / 2i32;
+        // THE LITERAL'S IDENTITY (D-317): a fresh symbol, each named field with
+        // a term of the field's sort defined equal to it -- a nested literal's
+        // identity composes -- so `P:s = P{ a: 1i32 }` knows `s.a`.
+        Term:lid = raw term_fresh_agg(e, ty);
+        bool:lst = ((raw type_kind(e.types, ty)) == (raw TY_STRUCT()));
         for (int32:li in 0i32...lpairs) {
             int32:lfn = raw ast_id_at(e.ast, n.b, li * 2i32);
             ExprId:lvid = ExprId{ index: raw ast_id_at(e.ast, n.b, (li * 2i32) + 1i32) };
             Term:lv = raw enc_expr(e, lvid);
             drop record_field_limit(e, ty, lfn, lv, lvid.index, n.span);
+            if (lid.ok && lv.ok && lst) {
+                FieldInfo:lfi = raw struct_field(e.tr, ty, lfn, e.scope);
+                if (lfi.found) {
+                    Term:lfa = raw field_app(e, ty, lfn, raw subst_emitted_param(e.ctx, lfi.type_id), raw term_copy(lid));
+                    if (lfa.ok && (lfa.is_bool == lv.is_bool)) {
+                        Term:leq = raw term_app2("=", lfa, lv, true);
+                        drop hyp_push(e, leq.text, leq.syms);
+                    }
+                }
+            }
         }
+        if (lid.ok) { pass lid; }
         pass (raw term_opaque(e, ty));
     }
     // Everything else: the value is opaque, the children are still sites.
@@ -4995,7 +5410,11 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
 
 // Names an assignment statement inside `sid` targets (recursively), so a
 // construct's exit can invalidate exactly what it may have changed.
-func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out) never fails {
+// `out` takes the names assigned AS A WHOLE; `roots` the roots of the places
+// written THROUGH a field or an element, and of the places a `move` vacates
+// (D-317): the first havoc a scalar's version and end a container's length
+// symbol, the second bump an aggregate's identity and nothing else.
+func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out, List<int32>->:roots) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
     // THE STATEMENT'S EXPRESSIONS FIRST (DEF-26, 1.5.4 step 0): a pick
@@ -5005,67 +5424,77 @@ func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out) never fa
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(e.ast, s, @xs);
     for (int64:xi in 0i64...xs.count) {
-        drop collect_assigned_expr(e, ExprId{ index: xs[xi] }, out, 64i32);
+        drop collect_assigned_expr(e, ExprId{ index: xs[xi] }, out, roots, 64i32);
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
         ExprNode:t = raw ast_expr(e.ast, raw stmt_target(s));
-        if (t.kind == ExprKind.ExprIdentifierExpr) { drop list_push(out, t.payload =>! int32); }
+        if (t.kind == ExprKind.ExprIdentifierExpr) { drop list_push(out, t.payload =>! int32); pass NIL; }
+        int32:pr = raw place_root_name(e, raw stmt_target(s));
+        if (pr != 0i32) { drop list_push(roots, pr); }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtBlockStmt) {
         for (int32:i in 0i32...(raw stmt_list_count(s))) {
-            drop collect_assigned(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) }, out);
+            drop collect_assigned(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) }, out, roots);
         }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
-        drop collect_assigned(e, raw stmt_then(s), out);
-        drop collect_assigned(e, raw stmt_else(s), out);
+        drop collect_assigned(e, raw stmt_then(s), out, roots);
+        drop collect_assigned(e, raw stmt_else(s), out, roots);
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtWhileStmt) { drop collect_assigned(e, raw stmt_body(e.ast, s), out); pass NIL; }
-    if (s.kind == StmtKind.StmtForStmt)   { drop collect_assigned(e, raw stmt_for_body(e.ast, s), out); pass NIL; }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop collect_assigned(e, raw stmt_body(e.ast, s), out, roots); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt)   { drop collect_assigned(e, raw stmt_for_body(e.ast, s), out, roots); pass NIL; }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
-        drop collect_assigned(e, raw stmt_counted_body(s), out);
+        drop collect_assigned(e, raw stmt_counted_body(s), out, roots);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
-        drop collect_assigned(e, raw stmt_when_body(e.ast, s), out);
-        drop collect_assigned(e, raw stmt_when_then(e.ast, s), out);
-        drop collect_assigned(e, raw stmt_when_end(e.ast, s), out);
+        drop collect_assigned(e, raw stmt_when_body(e.ast, s), out, roots);
+        drop collect_assigned(e, raw stmt_when_then(e.ast, s), out, roots);
+        drop collect_assigned(e, raw stmt_when_end(e.ast, s), out, roots);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
         for (int32:a in 0i32...(raw pick_arm_count(s))) {
             StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
-            drop collect_assigned(e, raw arm_body(arm), out);
+            drop collect_assigned(e, raw arm_body(arm), out, roots);
         }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtDeferStmt) {
-        drop collect_assigned(e, StmtId{ index: (raw stmt_target(s)).index }, out);
+        drop collect_assigned(e, StmtId{ index: (raw stmt_target(s)).index }, out, roots);
         pass NIL;
     }
     pass NIL;
 };
 
 // A PICK EXPRESSION'S ARMS assign like a statement's (DEF-26): every arm's
-// body collected, its guard and the selector searched for nested ones.
-func:collect_assigned_expr = NIL(Encoder->:e, ExprId:id, List<int32>->:out, int32:fuel) never fails {
+// body collected, its guard and the selector searched for nested ones. A
+// `move` out of a place vacates it (S-26): its root goes to `roots` (D-317).
+func:collect_assigned_expr = NIL(Encoder->:e, ExprId:id, List<int32>->:out, List<int32>->:roots, int32:fuel) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (fuel <= 0i32) { pass NIL; }
     ExprNode:n = raw ast_expr(e.ast, id);
     if (n.kind == ExprKind.ExprPickExpr) {
         for (int32:a in 0i32...n.c) {
             StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, n.b, a));
-            drop collect_assigned_expr(e, raw arm_guard(arm), out, fuel - 1i32);
-            drop collect_assigned(e, raw arm_body(arm), out);
+            drop collect_assigned_expr(e, raw arm_guard(arm), out, roots, fuel - 1i32);
+            drop collect_assigned(e, raw arm_body(arm), out, roots);
+        }
+    }
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        ExprNode:mo = raw ast_expr(e.ast, raw expr_operand(n));
+        if (mo.kind != ExprKind.ExprIdentifierExpr) {
+            int32:mr = raw place_root_name(e, raw expr_operand(n));
+            if (mr != 0i32) { drop list_push(roots, mr); }
         }
     }
     List<int32>:kids = raw list_init::<int32>(4i64);
     drop expr_children(e, n, @kids);
     for (int64:i in 0i64...kids.count) {
-        drop collect_assigned_expr(e, ExprId{ index: kids[i] }, out, fuel - 1i32);
+        drop collect_assigned_expr(e, ExprId{ index: kids[i] }, out, roots, fuel - 1i32);
     }
     pass NIL;
 };
@@ -5098,6 +5527,35 @@ func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
         int32:root = raw place_root_name(e, raw expr_operand(n));
         if (root != 0i32) { drop list_push(@e.escaped, root); }
     }
+    // THE IMPLICIT RECEIVER ADDRESS (DEF-94, 1.5.8d step 0): a method whose
+    // parameter 0 is a pointer takes `@recv` when the receiver expression is
+    // not itself a pointer -- the emitter's own test (`emit_method_call`) and
+    // the checker's (DEF-24) -- under an `await` and a spawn as well, since
+    // the node is the same. The set never had it: `drop x.bump()` on a
+    // scalar with a `Self->` impl left `x.1 = 6` standing past the call that
+    // wrote 5, a `div-zero` row after it was DISCHARGED against a divisor the
+    // call had made zero, and the elided build divided by zero where the plain
+    // build reached `failsafe` (`tests/verify/recv_escape.npk`). Decided off
+    // the callee's own parameter node, which needs no scope to read.
+    if ((n.kind == ExprKind.ExprMethodCallExpr) && (n.a != 0i32)) {
+        if (((raw exprtypes_ns_decl(e.et, id)) == 0i32) && (!(raw is_trait_qualified(e, n)))) {
+            int32:mcd = raw exprtypes_callee(e.et, id);
+            if (mcd != 0i32) {
+                DeclNode:mdn = raw ast_decl(e.ast, DeclId{ index: mcd });
+                if ((mdn.kind == DeclKind.DeclFunctionDecl) && ((raw fn_param_count(e.ast, mdn)) > 0i32)) {
+                    DeclNode:p0d = raw ast_decl(e.ast, raw fn_param(e.ast, mdn, 0i32));
+                    TypeNode:p0t = raw ast_type(e.ast, raw param_type(p0d));
+                    int32:rxt = raw ty_of(e, ExprId{ index: n.a });
+                    bool:rx_ptr = false;
+                    if (rxt != 0i32) { if ((raw type_kind(e.types, rxt)) == (raw TY_POINTER())) { rx_ptr = true; } }
+                    if ((p0t.kind == TypeKind.TypePointerType) && (!rx_ptr)) {
+                        int32:rroot = raw place_root_name(e, ExprId{ index: n.a });
+                        if (rroot != 0i32) { drop list_push(@e.escaped, rroot); }
+                    }
+                }
+            }
+        }
+    }
     // A PICK EXPRESSION's arms are statements (DEF-26): walked as a statement's.
     if (n.kind == ExprKind.ExprPickExpr) {
         for (int32:a in 0i32...n.c) {
@@ -5110,6 +5568,21 @@ func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
     drop expr_children(e, n, @kids);
     for (int64:i in 0i64...kids.count) { drop collect_escaped_expr(e, ExprId{ index: kids[i] }); }
     pass NIL;
+};
+
+// `Trait.method(recv, …)` (D-172): the operand names a trait, the receiver is
+// argument 0 and passes as a plain argument -- an address there is written
+// `@recv` and collected as one. The emitter's `emit_is_trait_qualified`.
+func:is_trait_qualified = bool(Encoder->:e, ExprNode:n) never fails {
+    ExprId:bid = raw expr_operand(n);
+    if (raw expr_is_none(bid)) { pass false; }
+    ExprNode:bn = raw ast_expr(e.ast, bid);
+    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (bn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(e.tab, bn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: s.origin });
+    pass (d.kind == DeclKind.DeclTraitDecl);
 };
 
 func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
@@ -5267,11 +5740,13 @@ func:walk_pick_arms = Term(Encoder->:e, int32:start, int32:count, Term:sel, int3
     bool:mergeable = all_ok && (!any_guard) && (!any_fall) && (!nested_give);
     if (nested_give) {
         List<int32>:pa = raw list_init::<int32>(4i64);
+        List<int32>:pr = raw list_init::<int32>(4i64);
         for (int32:a2 in 0i32...count) {
             StmtNode:arm2 = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a2));
-            drop collect_assigned(e, raw arm_body(arm2), @pa);
+            drop collect_assigned(e, raw arm_body(arm2), @pa, @pr);
         }
         drop invalidate(e, pa);
+        drop invalidate_aggs(e, pr);
         pass (raw term_none());
     }
     drop merge_arms(e, conds, snaps, fts, snap, mergeable);
@@ -5462,6 +5937,10 @@ func:merge_arms = NIL(Encoder->:e, List<Term>:conds, List<List<int32>>:snaps, Li
 // the first arm.
 func:pattern_cond = Term(Encoder->:e, PatNode:p, Term:sel, int32:sel_ty, List<Term>:prior, bool:prior_ok) never fails {
     if (!sel.ok) { pass (raw term_none()); }
+    // AN AGGREGATE SELECTOR'S IDENTITY (D-317) is not a value a pattern
+    // compares with: an enum's variant is a tag, not an Int; a struct's
+    // destructure binds. No condition, as before the identity existed.
+    if (raw is_agg(e, sel_ty)) { pass (raw term_none()); }
     if (p.kind == PatKind.PatValue) {
         Term:v = raw enc_pattern_value(e, raw pat_value(p), sel_ty);
         if (!(v.ok && (v.is_bool == sel.is_bool))) { pass (raw term_none()); }
@@ -5688,8 +6167,15 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
         if (tn.kind != ExprKind.ExprIdentifierExpr) {
             // A field, element or pointee write: its own subexpressions are
-            // sites; no local symbol changes (an address-taken local is never
-            // defined, so a write through a pointer invalidates nothing here).
+            // sites; no SCALAR symbol changes (an address-taken local is never
+            // defined, so a write through a pointer invalidates nothing here),
+            // and the AGGREGATE the place is rooted at, when it has a term, gets
+            // its new version and the update frame at the end (D-317,
+            // `agg_write`): the value written is `agg_val` -- the right-hand
+            // side of a plain `=`, the arithmetic's result of `+= -= *=`, none
+            // for the rest (the field's image is fresh).
+            Term:agg_val = raw term_none();
+            if (op == TokenKind.OpAssign) { agg_val = raw term_copy(rhs); }
             // THE TARGET'S OWN INDEX IS MEMOISED AND THE TARGET IS A GUARD
             // SITE WHEN MARKED (D-286, 1.5.5 step 2): the children are walked
             // once, the top node's index kept for the `disjoint` row.
@@ -5721,7 +6207,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                 if ((raw type_kind(e.types, tbty)) != (raw TY_POINTER())) {
                     Term:tlen = raw term_none();
                     if ((raw has_len_term(e, tbty)) || (raw type_is_list(e.tr, tbty))) {
-                        tlen = raw place_len_term(e, raw expr_lhs(tn), tbty);
+                        tlen = raw container_len(e, raw expr_lhs(tn), tbase, tbty);
                     }
                     drop record_bounds(e, tidx, tlen, (raw expr_rhs(tn)).index, s.span);
                 }
@@ -5732,7 +6218,10 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
             if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
                 int32:pt = raw ty_of(e, target);
                 if (raw is_int(e, pt)) {
-                    Term:cur = raw term_opaque(e, pt);
+                    // THE CURRENT VALUE (D-317): the field's application when the
+                    // place is rooted at an aggregate with a term, opaque otherwise.
+                    Term:cur = raw agg_read_quiet(e, target);
+                    if (!cur.ok) { cur = raw term_opaque(e, pt); }
                     drop record_division(e, pt, cur, rhs, target.index, s.span);
                 }
                 // A `simd` PLACE's compound division (D-284, 1.5.4e step 0;
@@ -5753,13 +6242,18 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                 int32:pt3 = raw ty_of(e, target);
                 TokenKind:fbop = raw arith_base(op);
                 if (raw is_int(e, pt3)) {
-                    Term:fcur = raw term_opaque(e, pt3);
+                    // THE CURRENT VALUE (D-317): the field's application when the
+                    // place is rooted at an aggregate with a term -- so `s.n += 1`
+                    // under a rule on `n` decides -- opaque otherwise, as before.
+                    Term:fcur = raw agg_read_quiet(e, target);
+                    if (!fcur.ok) { fcur = raw term_opaque(e, pt3); }
                     Term:ft = raw term_none();
                     if (rhs.ok && (!rhs.is_bool)) {
                         if (fbop == TokenKind.OpPlus)  { ft = raw term_app2("+", fcur, rhs, false); }
                         if (fbop == TokenKind.OpMinus) { ft = raw term_app2("-", fcur, rhs, false); }
                         if (fbop == TokenKind.OpStar)  { e.nonlinear = true; ft = raw term_app2("*", fcur, rhs, false); }
                     }
+                    agg_val = raw term_copy(ft);
                     drop record_overflow(e, pt3, ft, target.index, s.span);
                     // ... and the limited FIELD's row over the same result.
                     if (tn.kind == ExprKind.ExprMemberAccessExpr) {
@@ -5792,10 +6286,13 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                     drop record_shift_lanes(e, raw type_elem(e.types, pt2), plb2, target.index, s.span);
                 }
             }
+            // THE AGGREGATE'S NEW VERSION AND ITS FRAME (D-317), before the
+            // root's own write point below reads the version it asserts over.
+            drop agg_write(e, target, agg_val);
             // THE SECOND WRITE POINT through a field or element (D-251): the
             // ROOT's rule over the root's whole value -- `unencoded` while the
-            // root's type is outside the fragment (L-6), and no hypothesis
-            // (the root has no symbol to assert over).
+            // root's type is outside the fragment (L-6); over the root's
+            // identity since D-317 (a rule about a struct reads its fields).
             drop after_write(e, raw limited_root_name(e, target), raw SITE_STMT(), sid.index, s.span);
             pass NIL;
         }
@@ -5967,7 +6464,8 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         // its pre-loop version. The condition over the pre-loop versions is
         // encoded QUIET (its sites are the body region's, once).
         List<int32>:ka = raw list_init::<int32>(4i64);
-        drop collect_assigned(e, sid, @ka);
+        List<int32>:kr = raw list_init::<int32>(4i64);
+        drop collect_assigned(e, sid, @ka, @kr);
         e.quiet = e.quiet + 1i32;
         Term:cpre = raw enc_expr(e, raw stmt_cond(s));
         e.quiet = e.quiet - 1i32;

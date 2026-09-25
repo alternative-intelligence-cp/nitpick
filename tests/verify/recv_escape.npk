@@ -1,0 +1,46 @@
+// expect-exit: 40
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: overflow open 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// DEF-94 (1.5.8d step 0): THE IMPLICIT RECEIVER ADDRESS IS AN ESCAPE. A method
+// whose parameter 0 is a pointer takes `@x` (the emitter's `emit_method_call`,
+// the checker's DEF-24 rule), so `drop x.bump()` writes the caller's `x`. The
+// encoder's escape set (DEF-14) had `@`, `$$i` and `$$m` and not this, so
+// `x.1 = 6` stood past the call, z3 proved the divisor below nonzero, the
+// `div-zero` row was DISCHARGED, and the verified build divided by zero --
+// exit 98 through the MachineFault net -- where the plain build reaches
+// `failsafe` with `DivByZero` (40). Measured end to end on 624d71f before the
+// fix. Now `x` is escaped: every read of it is a fresh opaque term, the row
+// is `open`, the guard stays, and both builds exit 40. `div-min` discharges
+// on the literal dividend, `x - 5i32` is open over the opaque `x`.
+mod:recv_escape;
+trait:Bump = { func:bump = NIL(Self->:self) never fails; };
+impl:int32:Bump = {
+    func:bump = NIL(int32->:self) never fails { <-self = 5i32; pass NIL; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:x = 6i32;
+    drop x.bump();
+    int32:d = 100i32 / (x - 5i32);
+    exit d;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)         { exit 40i32; },
+        (DivOverflow)       { exit 41i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

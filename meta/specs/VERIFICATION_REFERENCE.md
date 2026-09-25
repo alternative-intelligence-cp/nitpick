@@ -647,6 +647,21 @@ while (true) unbounded { … }                                   // an event loo
   walk's 7) — no member states a measure, which is the figure D-304 (5)
   accepted when it made the function measure optional. The report is
   reproducible from a tree's `build/verify/obl` and its manifest.
+  **[1.5.8d step 0 (2026-09-25), D-317 landed: the by-value aggregate carries
+  an identity and its fields are functions of it.]** After it, over the
+  compiler's own build: 1,188 `terminate` row sites, 753 discharged, 435 open.
+  The by-value shape went 79 open → 15, and the 15 are read one by one in the
+  step's record: nine are E-4's class (an escaped root — `@roots`, `@lx`,
+  `@st` — or a pointer the text heuristic had misread), two read a
+  `Result`'s `.value`, four are open on their merits. **The bullet's "116 put
+  a pure call in the measure" was misfiled**: 113 of them are pure calls over
+  a POINTER argument (`raw p_left(p)` with `Parser->:p`, `item_member_count(ast,
+  …)` with `Ast->:ast`) — a pure function of a pointer reads the pointee, so an
+  application over the address would equate two reads across a body that
+  advanced the parser, the false equality E-4 exists to refuse; they belong to
+  E-4's class (1.6 leg B), and the three `*_ROUNDS()` rows are loops
+  conditioned on a flag rather than on their counter. `stack-depth`: 117, all
+  open (the step's own `is_plain_data` recursion joined the 116).
 
 ---
 
@@ -1234,6 +1249,25 @@ holds compute in floats or vectors.
 > renumbered in order. A row's hash is its problem text, so no hash or verdict
 > moves, and the compiler's own manifest loses exactly the rows of the prelude
 > functions it does not reference.
+
+> **The function symbols of a row's text (1.5.3 step 2; 1.5.8b step 5;
+> D-317, 1.5.8d step 0).** Besides its constants (`|name.k|`, a binding's
+> k-th version; `|_.k|`, an anonymous opaque; `|len.name.k|`, a container
+> binding's length) a row's canonical text may declare uninterpreted
+> functions: `|uf.<name>.<decl>|` for a `pure never fails` callee (1.5.3),
+> `|npk.len|` of sort `(Int) Int` for the length of a container image
+> (1.5.8b step 5), and since D-317 `|npk.f.<TYPEID>.<field>|` of sort
+> `(Int) <field sort>` -- one per (struct type id, field name), the type id
+> the INSTANCE's so two instantiations never share a sort -- applied to the
+> IDENTITY of a by-value aggregate (`|s.k|`, Int-sorted, no axiom of its own;
+> a struct literal's is a fresh `|_.k|` with its fields defined). A field
+> application of a word or a twisted kind carries its range axiom, pushed
+> once per text in the root region; a container field's image is Int-sorted
+> and its length is `(|npk.len| image)`. The encoder's own comment ("THE
+> AGGREGATES") is the rule's full statement: what bumps the identity, what
+> the update frame states, which arguments a pure call may take as an
+> identity (plain data only), and what stays a fresh term per read (a
+> pointee's fields -- E-4, 1.6 leg B).
 
 > **The elision word by ROLE since 1.5.3 (L-13):** the compiler's
 > `rows.txt` (`--obligations`) names each row's site (`space:index`), its

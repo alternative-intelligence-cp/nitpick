@@ -42,6 +42,14 @@ by hand with `.internal/quickemit/npkc FILE --obligations D` and then
 (CLAUDE.md's verification leg); a row with a Real-interval twin has
 `D/NNNN.t2.smt2` beside it, named in `D/index.t2.txt`.
 
+## The programs 1.5.8d step 0 added (the aggregate terms, D-317; DEF-94)
+
+| program | what it pins |
+|---|---|
+| `terminate_field.npk` | D-317's payoff: a by-value struct's field as a loop's bound (`w.count` one term in the condition and the measure — both `terminate` rows discharged, the compares assumes); the same loop through a POINTER open (E-4); the field written in the body — the version moves, the preservation row open where an ignored write would have proved a growing measure; a `pure never fails` call over a PLAIN-DATA struct one term at both reads; a `string` field's `.len` and a `List` field's `count` off the field's image (the `bounds` row discharged) |
+| `agg_frame.npk` | the update frame, as `prove`s the verified build refuses unless they hold: a literal's fields, a write keeping its siblings, a copy, a nested write framing each level, an `if` writing in one arm merged as an identity choice, a compound `+=` through a field, a loop bounded by a field |
+| `recv_escape.npk` | DEF-94: the implicit pointer receiver is an escape — `drop x.bump()` on a scalar with a `Self->` impl; `div-zero open 1`, the guard kept, both builds 40 (before the fix: the row discharged and the elided build divided by zero, exit 98) |
+
 ## The programs 1.5.4b added (the theories, D-277…D-282)
 
 | program | what it pins |
