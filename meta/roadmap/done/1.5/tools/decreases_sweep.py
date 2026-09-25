@@ -395,7 +395,7 @@ def main():
     report = None
     if "--report" in args:
         i = args.index("--report"); report = args[i + 1]; del args[i:i + 2]
-    dirs = args or ["src", "lib", "npkg", "tools", "tests", "meta/roadmap/1.5/tools"]   # the dump tool sweeps itself
+    dirs = args or ["src", "lib", "npkg", "tools", "tests", "meta/roadmap/done/1.5/tools"]   # the dump tool sweeps itself
     files = []
     for d in dirs:
         for dp, _, fns in os.walk(os.path.join(ROOT, d)):

@@ -7,7 +7,7 @@ every `// expect-error-at:` / `// expect-note-at:` pin in that file by one --
 D-237's exact matching then proves the shift complete, since a missed pin fails
 by name. Kept with the plan for the record; `--dry-run` reports only.
 
-    python3 meta/roadmap/1.5/tools/add_headers.py [--dry-run]
+    python3 meta/roadmap/done/1.5/tools/add_headers.py [--dry-run]
 """
 import os, re, sys
 

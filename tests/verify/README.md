@@ -82,7 +82,7 @@ by hand with `.internal/quickemit/npkc FILE --obligations D` and then
 | `divz_none.npk` | (1.5.0's; re-expected at step 4b) a float and a twisted division: no row, and since DEF-37 no arm |
 
 The earlier programs are indexed by the subcycle that wrote them
-(`meta/roadmap/1.5/1.5.0.md` … `1.5.4.md`, each step's "Tests" paragraph).
+(`meta/roadmap/done/1.5/1.5.0.md` … `1.5.4.md`, each step's "Tests" paragraph).
 
 ## The programs 1.5.5 added (the aliasing half of D-004, D-286)
 

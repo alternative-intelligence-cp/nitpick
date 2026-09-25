@@ -17,6 +17,53 @@ on the workbench, and run as a standing instrument.
 > empty citation row, and its SMACK "complete path coverage" claim is
 > wrong for this language (digest note 4).
 
+> **At the 1.5 close (1.5.8d, 2026-09-25) — for the executor who starts
+> here.** Cycle 1.5 is archived (`../done/1.5/`); every kind of the
+> obligation catalogue (VERIFICATION_REFERENCE §7b) is live, the snapshot is
+> refreshed from the final tree (`bootstrap/seed/STAMP`), and "What cycle 1.5
+> taught" at the end of `../done/1.5/README.md` is the cycle's account of
+> itself. What 1.5 leaves this cycle, measured on the close's tree:
+> - **Leg B's rows are recorded and their residue is by cause.** The
+>   compiler's own manifest: 5,890 rows — 2,747 discharged, 2,342 open, 796
+>   `unencoded`, 5 checker, 0 budget. The 796 `unencoded` are ONE shape: a
+>   `bounds` row of a `List` element whose container is address-taken by
+>   every `list_push(@l, …)` or read through a `List<T>->`, so DEF-14 leaves
+>   it no length term — E-4, the FRAME problem ("nothing in this region
+>   writes this object"), which is exactly leg A's effect analysis over the
+>   emitted IR, not a better query. The open `terminate` rows: 435, of which
+>   240 read a field THROUGH A POINTER (E-4's again), 116 are pure calls over
+>   a pointer argument (the same class: a pure function of a pointer reads
+>   the pointee), 15 are by-value shapes read one by one in `1.5.8d.md`'s
+>   step-0 record, 55 two locals and the rest on their merits. The open
+>   `overflow` rows by shape are `residue.py`'s report (`done/1.5/tools/`;
+>   719 "sum or difference of two unknowns", 298 the prelude's numeric cores,
+>   288 a name ± a constant). D-309 stands: no bound is written into the tree
+>   to close a row; a proof-power change is a compiler change.
+> - **`stack-depth`: 117 rows, all open** — the compiler's cyclic groups
+>   state no measure (D-304 (5)'s accepted figure); a measured group is a
+>   `decreases` on each member, the check at every call inside the group.
+> - **Leg A's model of the floor is TCB.md's**: the membership table with
+>   each symbol's class and disposition, the syscall boundary, the
+>   kernel-effect table (VERIFICATION_REFERENCE §9.2, one generated
+>   authority held to the running kernel by a probe), §4d's caller coverage,
+>   and §5's numbered acceptances — what the evidence does not cover, each a
+>   sentence.
+> - **The `llvm.assume` channel (D-218.9)** is how leg B's discharged facts
+>   reach the IR leg A reads: one assume per elided guard, counted by both
+>   runners' belts against `rows.txt`; `nsw`/`nuw` are never emitted.
+> - **The explorer is a standing instrument** (VERIFICATION_REFERENCE §10):
+>   every `// stress:` program says `// explore: N` or its reason, and any
+>   change to the floor, the shim or the transformer re-runs D-303's sweep.
+> - **The snapshot carries every emitter change through 1.5**; a feature
+>   enters `src/` only after a snapshot that understands it (D-205,
+>   `bootstrap/seed/README.md`), and the proof of a refresh is its harness.
+> Read, in this order: `CLAUDE.md`'s status, `../done/1.5/README.md`'s "What
+> cycle 1.5 taught", `../ORCHESTRATION.md` (D-228, normative),
+> `bootstrap/seed/README.md`, this file's legs and map, then write `1.6.0.md`
+> execution-grade before touching code. Both runners run until
+> `meta/SWITCH.md`; the harness's result is the one that means the suite is
+> green.
+
 ## The three legs (D-233's architecture)
 
 | Leg | Evidence class | Owner |

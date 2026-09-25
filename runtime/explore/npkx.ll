@@ -26,7 +26,7 @@
 ; same schedule hash on every run and every machine.
 ;
 ; THE BEHAVIOURAL REFERENCE is the planning prototype's C shim
-; (meta/roadmap/1.5/tools/explore_prototype/npkx.c, D-303): this file is held
+; (meta/roadmap/done/1.5/tools/explore_prototype/npkx.c, D-303): this file is held
 ; to it schedule hash for schedule hash (`hashcmp.sh` beside it), so every
 ; decision below is the prototype's decision in the prototype's order.
 ;

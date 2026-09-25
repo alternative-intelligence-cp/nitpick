@@ -1,5 +1,5 @@
 """The schedule explorer's belts -- the harness's side (1.5.7; D-212, X-1, X-9
-in meta/roadmap/1.5/1.5.7.md).
+in meta/roadmap/done/1.5/1.5.7.md).
 
 THE EXPLORED FLOOR IS THE REAL FLOOR, TRANSFORMED: `npkg/explore.npk` is the ONE
 transformer (a scheduling point before every atomic step line, every

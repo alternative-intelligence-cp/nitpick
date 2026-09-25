@@ -3,7 +3,7 @@
 Nitpick fundamentally rejects unsafe behavior. To achieve this, it deeply integrates with the Z3 SMT solver to mathematically prove the correctness of the code before it is allowed to execute.
 
 > **The pipeline is real since 1.5.0 (2026-09-03; D-218, D-219; the record is
-> `meta/roadmap/1.5/1.5.0.md`).** The compiler emits every function's proof
+> `meta/roadmap/done/1.5/1.5.0.md`).** The compiler emits every function's proof
 > obligations as SMT-LIB2 text (`npkc --obligations DIR`) and reads a
 > manifest of verdicts (`npkc --elide nitpick.obligations`); `npkg verify`
 > spawns the pinned z3 — one fresh process per function under the pinned
@@ -15,7 +15,10 @@ Nitpick fundamentally rejects unsafe behavior. To achieve this, it deeply integr
 > STRUCK (§5): verification is a property of the project, in `[verify]`,
 > never of a command line (D-077, D-219). 1.5.0 produces the D-007 division
 > pair; `limit`, contracts, `prove`, overflow and the rest follow in
-> 1.5.1–1.5.8.
+> 1.5.1–1.5.8. *(At the 1.5 close, 2026-09-25: every kind of §7b's catalogue that
+> 1.5 owns is live — the "landed" column is the proof — and the compiler's own
+> manifest holds 5,890 rows, its residue reported by cause in §4b and by shape
+> by `meta/roadmap/done/1.5/tools/residue.py`.)*
 
 ## 1. Formal Proofs (`prove` and `assert_static`)
 
@@ -26,7 +29,7 @@ The `assert_static` builtin allows developers to encode compile-time logic check
 assert_static(1i32 == 1i32);
 ```
 
-> **Live since 1.5.4 (L-17, L-18; `meta/roadmap/1.5/1.5.4.md`).** The
+> **Live since 1.5.4 (L-17, L-18; `meta/roadmap/done/1.5/1.5.4.md`).** The
 > proposition must FOLD to a constant `bool` through 0.6's evaluator: one
 > that reads a value the evaluator cannot see is refused
 > (`NITPICK-TYPE-069` — `prove` is the claim about a run-time value), and
@@ -51,7 +54,7 @@ if (x > 0i32) {
 **Path Condition Accumulation:**
 The `prove` keyword is path-condition-aware. Branch guards from enclosing `if`, `while`, and other control flow are accumulated and asserted as Z3 axioms before checking the proof obligation. This means `prove(x != 0i32)` inside `if (x > 0i32)` automatically benefits from the guard `x > 0i32`.
 
-> **Live since 1.5.4 (L-1…L-16; S-45/D-269, S-48/D-272; `meta/roadmap/1.5/1.5.4.md`).**
+> **Live since 1.5.4 (L-1…L-16; S-45/D-269, S-48/D-272; `meta/roadmap/done/1.5/1.5.4.md`).**
 > THE PATH CONDITIONS the encoder accumulates, for every obligation and not
 > only a `prove`'s: an `if`'s condition inside its then-arm and its negation
 > inside the else-arm; after an arm that never falls through (a syntactic
@@ -102,7 +105,7 @@ func:main = int32() {
 };
 ```
 
-> **Typed since 1.5.1 (D-220; `meta/roadmap/1.5/1.5.1.md`).** The rule name in
+> **Typed since 1.5.1 (D-220; `meta/roadmap/done/1.5/1.5.1.md`).** The rule name in
 > `limit<…>` RESOLVES like any name — a typo is `NITPICK-RESOLVE-002`, a
 > name that is not a `Rules` block `NITPICK-RESOLVE-011` — at a local, a
 > parameter, and a refinement. A `Rules` body types eagerly: `$` is the
@@ -124,7 +127,7 @@ at runtime, and a violation **traps to `failsafe`**.
 > that **proving a constraint removes its runtime check**, so `--verify` is also
 > the mechanism by which constrained code reaches the speed of unconstrained code.
 
-> **Live since 1.5.2 (D-251, D-252; `meta/roadmap/1.5/1.5.2.md`).** THE
+> **Live since 1.5.2 (D-251, D-252; `meta/roadmap/done/1.5/1.5.2.md`).** THE
 > WRITE POINTS: a limited binding is checked AFTER every write, over its
 > whole current value — its initialiser (a declaration without one is not a
 > write point: the vacant value is never read), every assignment to it or to
@@ -184,7 +187,7 @@ func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[8]:arr)
 };
 ```
 
-> **Landed at 1.5.5 (D-286, D-287; `meta/roadmap/1.5/1.5.5.md`).** The
+> **Landed at 1.5.5 (D-286, D-287; `meta/roadmap/done/1.5/1.5.5.md`).** The
 > example above is in the OPERATOR form, which is the language's: `$$i` and
 > `$$m` are unary operators yielding a pointer (`T->`), and the
 > declaration-qualifier spelling the prototype text carried (`$$m int32:a =
@@ -314,7 +317,7 @@ func:divide = int32(int32:a, int32:b)
 
 When you compile with the `--verify-contracts` flag, the compiler translates these contracts into Z3 assertions to prove they are mathematically valid. If you don't use the static verifier, Nitpick automatically enforces these contracts at runtime.
 
-> **Typed since 1.5.1 (D-221, D-241…D-245; `meta/roadmap/1.5/1.5.1.md`).**
+> **Typed since 1.5.1 (D-221, D-241…D-245; `meta/roadmap/done/1.5/1.5.1.md`).**
 > Every proposition — `requires`, `ensures`, each `invariant` conjunct,
 > `prove`, `assert_static` — is a `bool` (`NITPICK-TYPE-007`). **`result`**
 > is a keyword with its own node: the SUCCESS value, typed `T`, legal in
@@ -349,7 +352,7 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 > store that reaches memory the caller can see, no manufactured view. An
 > impl keeps its trait method's `pure`. Purity never rides a function type.
 
-> **Live since 1.5.3 (D-221, D-267, D-268; `meta/roadmap/1.5/1.5.3.md`).**
+> **Live since 1.5.3 (D-221, D-267, D-268; `meta/roadmap/done/1.5/1.5.3.md`).**
 > A contract violation is a TRAP: `RequiresViolated` (−4112),
 > `EnsuresViolated` (−4113), `InvariantViolated` (−4114), through the D-142
 > route with the origin chain restarted at the clause that failed, reaching
@@ -590,7 +593,7 @@ while (true) unbounded { … }                                   // an event loo
 - **The sweep (1.5.8c step 3, D-304 (6))**: every `while` and `when` of the
   compiler's tree -- `src/`, the prelude, `lib/`, `npkg/`, the tools and the
   tests, 977 loops as the parser counts them -- states its clause. A TOOL
-  (`meta/roadmap/1.5/tools/decreases_sweep.py`, over the parser-driven dump
+  (`meta/roadmap/done/1.5/tools/decreases_sweep.py`, over the parser-driven dump
   `loop_dump.npk` writes) wrote the shape it can PROVE monotone (392): a
   counter stepped by a positive literal against a bound nothing in the body or
   its function writes or takes the address of, a widened counter `(v => T)`,
@@ -616,7 +619,7 @@ while (true) unbounded { … }                                   // an event loo
   names `(DecreasesViolated)`, the runners' generated ones included, since
   the prelude's loops reach nearly every program.
 - **The measurement (1.5.8c step 5, 2026-09-24; D-309's shape, by
-  `meta/roadmap/1.5/tools/residue.py` over the compiler's own emission at
+  `meta/roadmap/done/1.5/tools/residue.py` over the compiler's own emission at
   `d7a8092`)**. 1,183 `terminate` row sites in the compiler's own build
   (1,174 distinct manifest rows): 684 discharged, 499 open, none `budget`,
   none `unencoded`. What discharges is the shape the sweep tool writes and
@@ -1223,7 +1226,7 @@ holds compute in floats or vectors.
 
 ## 8. The SMT elimination manifest
 
-> **The schema is D-218's since 1.5.0 (P-10 in `meta/roadmap/1.5/1.5.0.md`):**
+> **The schema is D-218's since 1.5.0 (P-10 in `meta/roadmap/done/1.5/1.5.0.md`):**
 > the file is `nitpick.obligations` at the manifest root, committed, written
 > only by `npkg verify --record` (D-040's "generated when absent" row is
 > amended: a file that governs the artifact is written on purpose or not at
@@ -2053,7 +2056,7 @@ controls. 1.5.7's synthetic EPOLLIN drives this same path over the real code.
 **What the bounds cover, measured (1.5.6b step 2).** A row holds to its K and
 its D and no further, and "the smallest depth that decides with a margin" says
 nothing about how much of the model that depth reaches. An explicit-state
-reading of the same model texts (`meta/roadmap/1.5/tools/model_bfs.py`: the
+reading of the same model texts (`meta/roadmap/done/1.5/tools/model_bfs.py`: the
 unroller's semantics mirrored, then breadth-first search with no depth bound,
 no preemption bound and no solver — a MEASUREMENT, outside every gate; its
 table is in 1.5.6b's record) says: the models are small — 68 to 1,086
@@ -2303,7 +2306,7 @@ the defect they planted. A control proves sight of its OWN defect only when the
 schedule that finds it goes through that defect.
 
 **The reference (D-303).** The planning prototype's C shim is kept outside
-every gate, under `meta/roadmap/1.5/tools/explore_prototype/`, as the IR shim's
+every gate, under `meta/roadmap/done/1.5/tools/explore_prototype/`, as the IR shim's
 behavioural reference. `hashcmp.sh` runs both shims alternately on every
 explorable program and requires the same exit, step count, schedule hash and
 verdict word per seed. At 1.5.7's close all 39 agree on 20 seeds each;

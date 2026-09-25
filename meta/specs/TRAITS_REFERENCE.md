@@ -202,7 +202,7 @@ body; `Debug` reaches a member through its `debug`; `ToString` through
 interpolation, which IS the member's `to_string`.
 
 > The old story — "what a derived body asks of `T` is what the operators ask"
-> — ended with the measurements in `meta/roadmap/1.5/1.5.2b.md` §4: the checker
+> — ended with the measurements in `meta/roadmap/done/1.5/1.5.2b.md` §4: the checker
 > admitted `!=` on an opaque `T` and the emitter met it at `Box<Point>`
 > (EMIT-002), a derived `partial_cmp` over a float answered `Equal` for `nan`,
 > and a derived `Clone` over `Box<string>` aliased one body under two headers,

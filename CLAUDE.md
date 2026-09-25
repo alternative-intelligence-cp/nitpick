@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has ONE subcycle left — 1.5.8d, the cycle's close, UNDERWAY (step 0 LANDED 2026-09-25: D-317 — a by-value aggregate's identity and its fields as uninterpreted functions of it in the encoder, 64 of the compiler's 79 by-value `terminate` rows and 139 rows in all newly discharged with no verdict moved and no bound written; D-318 — E-5's bound-call fan-out stands, decided out; DEF-94 — the implicit pointer receiver was never an escape, a soundness hole the step's first probe found and fixed), PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`: two leads decided before the refresh, the refresh, the docs, the archive); 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits; COMPLETE 2026-09-23) and 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows; COMPLETE 2026-09-24) have landed, the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycles 1.4 (self-hosting) and **1.5 (verification) COMPLETE** — 1.5 closed 2026-09-25 at 1.5.8d (`meta/roadmap/done/1.5/`: every kind of the obligation catalogue live, the floor specified, modelled, read twice and explored, the snapshot refreshed from the final tree — stage2 == stage3, 28,111,929 bytes, `4029fc70efbe9cd3da26b7fb379b477b5dc9417bba3cb0359d5dd25126a1f337`); **NEXT: cycle 1.6, the LLVM-native analyzer evidence (D-233)** — `meta/roadmap/1.6/README.md` is the map and its opening note says what 1.5 left it, 1.6.0 the bring-up gate (Clam/Crab vs IKOS over three emissions, decided by measurement). The history this sentence carried until the close: 1.5.8d's step 0 LANDED 2026-09-25 ( D-317 — a by-value aggregate's identity and its fields as uninterpreted functions of it in the encoder, 64 of the compiler's 79 by-value `terminate` rows and 139 rows in all newly discharged with no verdict moved and no bound written; D-318 — E-5's bound-call fan-out stands, decided out; DEF-94 — the implicit pointer receiver was never an escape, a soundness hole the step's first probe found and fixed), PLANNED execution-grade 2026-09-24 (`meta/roadmap/done/1.5/1.5.8d.md`: two leads decided before the refresh, the refresh, the docs, the archive); 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits; COMPLETE 2026-09-23) and 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows; COMPLETE 2026-09-24) have landed, the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 318 decisions, D-001 through D-318 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, 314 until 1.5.8b step 6c, and 316 until 1.5.8d step 0). The **plan is in `meta/roadmap/`**,
@@ -545,7 +545,7 @@ settled by D-231, the width measurement into ORCHESTRATION §4), retired
 HANDOFF.md into ROADMAP's and the 1.4 README's "What cycle 1.4 taught" (every
 part re-homed; `1.4.9.md` has the map), and archived the folder. **Next: cycle
 1.5 (verification)** — its batch D-217…D-221 is ratified,
-`meta/roadmap/1.5/README.md` is the map (its opening says where to start), and
+`meta/roadmap/done/1.5/README.md` is the map (its opening says where to start), and
 1.5.0 is the skeleton: the SMT-LIB2 writer, z3 spawned through `lib/nproc.npk`
 under the determinism profile, the obligation manifest, `TCB.md` drafted.
 **1.5.0 IS COMPLETE (2026-09-03)**: the pipeline is real — obligations as
@@ -554,7 +554,7 @@ profile, `nitpick.obligations` committed (141 rows, 116 discharged), `llvm.assum
 elision, the D-007 division pair proven end to end, the verified compiler
 rebuilding itself, the `undef` ban a check, TCB.md drafted.
 **1.5.1 IS COMPLETE (2026-09-03) — the verification surface TYPES**
-(`meta/roadmap/1.5/1.5.1.md`, five steps, each under a full harness). A
+(`meta/roadmap/done/1.5/1.5.1.md`, five steps, each under a full harness). A
 `limit<name>` RESOLVES at all three sites (a typo is the identifier's own
 RESOLVE-002, a non-`Rules` name RESOLVE-011, a refinement cycle RESOLVE-006,
 and the resolved rule is written onto the node); a `Rules` body types over `$`
@@ -588,7 +588,7 @@ nonzero `npkg test` exit). No obligation rows moved (141), no rung retired
 (1.5.2/1.5.3/1.5.4 own them), no snapshot refresh (frontend only; `src/`
 adopts none of it until a snapshot understands it — D-205).
 **1.5.1b IS COMPLETE (2026-09-04) — the workbench's findings, fixed before
-planned work** (`meta/roadmap/1.5/1.5.1b.md`; nine landings, each a
+planned work** (`meta/roadmap/done/1.5/1.5.1b.md`; nine landings, each a
 cumulative prefix validated by a full harness, D-228). The floor keeps four
 allocator words and prints them under `NPK_HEAP_STATS`, and the `cost` stage
 runs in both runners over `tests/cost/` (step 0); every file's first
@@ -622,7 +622,7 @@ refreshed the snapshot and set `tests/cost/self.toml`'s ceiling; its first
 harness found the diagnostic sort reading slots it had moved out of (DEF-13,
 step 5c: byte identity of the fixpoint is not behavioural identity — the
 refresh's own harness is the proof, and the seed README says so).
-**1.5.2 (`limit<Rules>` live) IS COMPLETE (2026-09-04; `meta/roadmap/1.5/
+**1.5.2 (`limit<Rules>` live) IS COMPLETE (2026-09-04; `meta/roadmap/done/1.5/
 1.5.2.md`, planned and closed the same day, every question ratified the day
 it was asked — S-24…S-30 as D-251…D-255, a D-247 note and the README's
 1.5.4b row; six landings, each a cumulative prefix under a full harness,
@@ -659,7 +659,7 @@ body; the belt counts defines, tail calls and direct calls in both runners
 step's first harness found the belt counting nothing — with the
 `bypass-counted`/`-missing`/`-as-value` cases in both self-checks);
 the docs. `nitpick.obligations` never moved. **1.5.2b (derived impls over generic subjects) IS COMPLETE
-(2026-09-05; `meta/roadmap/1.5/1.5.2b.md`, planned, ratified — D-256…D-259 — and
+(2026-09-05; `meta/roadmap/done/1.5/1.5.2b.md`, planned, ratified — D-256…D-259 — and
 closed the same day; six landings, each a cumulative prefix under a full
 harness, D-228).** Step 0: `DECL_THREAD` is 512 and `check_decl_flags_unique`
 refuses a shared `DECL_*` value, a value that is not one bit, or a row it
@@ -710,7 +710,7 @@ takes 14% longer; `nitpick.obligations` never moved. **The two findings were
 ratified the same day as D-260 (a `pick` does not select on an `Optional`,
 TYPE-065) and D-261 (generic enums are IN, a family as a generic struct is)
 and landed as 1.5.2c.** **1.5.2c IS COMPLETE (2026-09-05;
-`meta/roadmap/1.5/1.5.2c.md`, planned, ratified and closed the same day; three
+`meta/roadmap/done/1.5/1.5.2c.md`, planned, ratified and closed the same day; three
 landings, each a cumulative prefix under a full harness, D-228).** Step 0
 (D-260): a `pick`'s selector may not be an `Optional` — TYPE-065 at the
 selector, statement and expression form, before the arms are read; `pick (o ??
@@ -735,7 +735,7 @@ ONE function now, `type_pick_rules`, called by both forms
 (`pick_expr_bindings.npk` pins the four rules that became live). Two `pick`
 binding sites in `ir_stmt.npk` that resolved the payload node by hand read
 `variant_payload_slot` now. Step 2: the docs. `nitpick.obligations` never
-moved. **1.5.2d IS COMPLETE (2026-09-05; `meta/roadmap/1.5/1.5.2d.md`; the
+moved. **1.5.2d IS COMPLETE (2026-09-05; `meta/roadmap/done/1.5/1.5.2d.md`; the
 library workbench's S-38, ratified the same day as D-262; four landings, each
 a cumulative prefix under a full harness).** The workbench measured a fixed
 per-program cost at the 1.5.2c close — a floor-only program at +388,765 bytes
@@ -778,7 +778,7 @@ emitted. Found writing its test and recorded as **S-39** (the user): an owning
 `List<T>` local alive in `main` at `exit 0` is a `WildLeak` by construction --
 `exit` runs joins and defers and no drops (D-183's amendment), and a List's
 buffer is the one managed storage D-151 counts. `nitpick.obligations` never
-moved. **1.5.2e IS COMPLETE (2026-09-05; `meta/roadmap/1.5/1.5.2e.md`; three
+moved. **1.5.2e IS COMPLETE (2026-09-05; `meta/roadmap/done/1.5/1.5.2e.md`; three
 landings under full harnesses).** S-39 ratified as **D-263**: the prelude's
 `List<T>` stores through `alloc_managed`, the managed heap's untracked entry,
 PRELUDE-ONLY by the reference's `**Prelude-only**` marker (generated into
@@ -788,7 +788,7 @@ free), `ralloc` keeping a block's role — a `List` alive in `main` at `exit 0`
 exits 0 where it exited 94, and the exit path stays free of the drop walk as
 D-183 decided. DEF-22 (the workbench's O-N18): `.len` on a fixed-size array
 lowers to the constant its type carries. **1.5.2f IS COMPLETE (2026-09-05;
-`meta/roadmap/1.5/1.5.2f.md`; two landings under full harnesses).** S-40, the
+`meta/roadmap/done/1.5/1.5.2f.md`; two landings under full harnesses).** S-40, the
 workbench's O-N19, ratified as **D-264**: a bare type parameter — and `Self` in
 a trait's default body — is MOVE-ONLY in the body that names it, because a
 generic body is checked once for every type it is instantiated at;
@@ -802,7 +802,7 @@ linked and ran with two owners of one heap body — a use-after-free that exited
 say `move T:v` and `move(v)` now; nothing else refuses anew. **Left open:
 S-41**, a borrowing `pick` binding form — settled the next day as D-266
 (1.5.2h). **1.5.2g IS COMPLETE (2026-09-06;
-`meta/roadmap/1.5/1.5.2g.md`; two landings under full harnesses).** S-42, the
+`meta/roadmap/done/1.5/1.5.2g.md`; two landings under full harnesses).** S-42, the
 library workbench's first CI finding — the pinned commit's `build/npkc`
 differed between this machine and GitHub's runner while `npkrt.o` did not —
 ratified as **D-265**: D-204's toolchain pin is a VERSION and stays one (a
@@ -814,7 +814,7 @@ defect), every `npkg` ladder run prints one `sha256` line per intermediate
 in ladder order with the harness's `parity` stage holding each to an
 independent digest, and every pin notice quotes the lines with the
 emission's named. **1.5.2h IS COMPLETE (2026-09-06;
-`meta/roadmap/1.5/1.5.2h.md`; three landings under full harnesses).** S-41
+`meta/roadmap/done/1.5/1.5.2h.md`; three landings under full harnesses).** S-41
 ratified as **D-266**: a lending `pick (v)` binds VIEWS — each binding the
 payload in place, read-only, typed as itself, no copy at the bind, no address
 (TYPE-066: an assignment, `@`/`$$i`/`$$m`, a pointer-receiver call, a stateful
@@ -831,7 +831,7 @@ not the implicit address a pointer-receiver method call takes — a limited
 struct written through `Self->` with no trap — fixed at step 0, the site views
 then mirror. Found on the way: `drop` over a refused operand reported TYPE-042
 as a second sentence; it has the `raw` arm's D-240 short-circuit now.
-**1.5.2i IS COMPLETE (2026-09-06; `meta/roadmap/1.5/1.5.2i.md`; two landings
+**1.5.2i IS COMPLETE (2026-09-06; `meta/roadmap/done/1.5/1.5.2i.md`; two landings
 under full harnesses).** DEF-25, the library workbench's report: `string_concat`
 of two empties allocated a real 16-byte block (D-150's answer to a zero
 request) and returned it with cap 0, so its drop never freed it — 16 bytes per
@@ -840,7 +840,7 @@ empty string and the compiler's own `string_concat(x, "")` copy idiom
 included; the runtime's concat takes the branch `string_slice` has carried
 since D-186, and `tests/cost/empty_concat.toml` holds the empty loop's peak to
 the one-byte loop's (a factor of millions on the old runtime).
-**1.5.3 (contracts live) IS COMPLETE (2026-09-06; `meta/roadmap/1.5/1.5.3.md`;
+**1.5.3 (contracts live) IS COMPLETE (2026-09-06; `meta/roadmap/done/1.5/1.5.3.md`;
 S-43 and S-44 ratified the same day as D-267 and D-268; four landings, each a
 cumulative prefix under a full harness, D-228).** Step 0: the three trap
 identities (`RequiresViolated` −4112, `EnsuresViolated` −4113,
@@ -873,7 +873,7 @@ way: the rung test `inline_mod.npk`'s hidden construct was a `requires` (a
 `prove` now); every verify test names its `failsafe`'s rows, since every
 `failsafe` has them (`expect-obligation: none` names no program any more).
 **1.5.4 (path conditions, the counters, `prove`/`assert_static`) IS COMPLETE
-(2026-09-06; `meta/roadmap/1.5/1.5.4.md`; six landings, each a cumulative
+(2026-09-06; `meta/roadmap/done/1.5/1.5.4.md`; six landings, each a cumulative
 prefix under a full harness, D-228; S-45…S-48 landed under their
 recommendations and were ratified 2026-09-07 as D-269…D-272).** Step 0 fixed five
 findings: DEF-26 (a division inside a pick EXPRESSION's arm had no
@@ -913,7 +913,7 @@ declares it (`use nested.*;` is RESOLVE-002, `nested.fetch(...)` is
 TYPE-007), found when the rung file became a positive program; which
 spelling should reach them is a language question — ratified as D-273 and
 landed as 1.5.4c. **1.5.4c (a module symbol means one thing, D-273) IS
-COMPLETE (2026-09-09; `meta/roadmap/1.5/1.5.4c.md`; three landings, each a
+COMPLETE (2026-09-09; `meta/roadmap/done/1.5/1.5.4c.md`; three landings, each a
 cumulative prefix under a full harness, D-228).** The qualified call `m.f(x)`
 is a DIRECT call of the member — an inline module's, an alias's, a nested
 path's — through ONE walk (`namespace_path`, with the visibility rule at every
@@ -947,7 +947,7 @@ error constant declared inside an inline module hashes under the FILE's name,
 so its `failsafe` arm is `(file.Name)` and `(nested.Name)` matches nothing —
 recommended: the file qualifies, and an arm's first segment is checked
 against the module names the program knows). **Both ratified 2026-09-10 as
-D-274 and D-275 and LANDED the same day as 1.5.4d** (`meta/roadmap/1.5/
+D-274 and D-275 and LANDED the same day as 1.5.4d** (`meta/roadmap/done/1.5/
 1.5.4d.md`; four landings, each a cumulative prefix under a full harness,
 D-228): a member-less `mod:name;` import carries the loaded file's scope —
 `graph_load_file_module` records the entry it loaded and `graph_collect_all`
@@ -976,7 +976,7 @@ the loader, the import pass and the file-module link are one walk shape now
 and descend into inline modules under the same rounds and refusals as at
 file level (`inline_imports.npk`). `nitpick.obligations` never moved.
 **1.5.4b (the remaining theories, D-218 items 4 and 5) IS COMPLETE
-(2026-09-10; `meta/roadmap/1.5/1.5.4b.md`; S-52…S-57 ratified the day they
+(2026-09-10; `meta/roadmap/done/1.5/1.5.4b.md`; S-52…S-57 ratified the day they
 were raised as D-277…D-282; seven landings — steps 0–4, 4b, 5 — each a
 cumulative prefix under a full harness, D-228).** Step 0 (D-277): a shift's
 amount is DEFINED for `0 ≤ n < width` and nothing else — a known amount
@@ -1040,7 +1040,7 @@ DEF-36 (a program's `?! DivByZero` and a guard's trap share one text, so
 the runners' belts count it — an `npk_raise` floor entry is the recommended
 fix, D-203's). The compiler's own set: 368 rows in 197 function files,
 decided in 3.9 s under the profile. **1.5.4e (the 1.5.4b close's three) IS COMPLETE (2026-09-11;
-`meta/roadmap/1.5/1.5.4e.md`; ratified 2026-09-10 as D-283…D-285; three
+`meta/roadmap/done/1.5/1.5.4e.md`; ratified 2026-09-10 as D-283…D-285; three
 landings, each a cumulative prefix under a full harness, D-228).** Step 0
 (D-284): a `simd` integer lane's `+ - *` computes through
 `llvm.{s,u}{add,sub,mul}.with.overflow.<N x iW>` — legal at every lane
@@ -1065,7 +1065,7 @@ no re-entry guard, no driver kill — and `trap_stmt_reentry.npk` exits 70
 where it exited 33 through a second `failsafe`. `npkrt.o`'s digest moved for
 the first time since DEF-25's fix; the notice to the library listener named
 both. Step 2: the docs. `nitpick.obligations` never moved.
-**1.5.5 (the aliasing half of D-004) IS COMPLETE (2026-09-11; `meta/roadmap/1.5/
+**1.5.5 (the aliasing half of D-004) IS COMPLETE (2026-09-11; `meta/roadmap/done/1.5/
 1.5.5.md`; planned execution-grade on `cb8cbb0`, S-60…S-62 ratified the same day
 as D-286 and D-287; four landings, each a cumulative prefix under a full
 harness, D-228).** Measured first: nothing decided aliasing — two `$$m` of one
@@ -1096,7 +1096,7 @@ values), and the compiler's own `failsafe` cannot name a new prelude identity
 until a snapshot refresh (D-205). `nitpick.obligations` did not move; no
 snapshot refresh.
 **1.5.6 (the floor's spec and the executor primitives) IS COMPLETE
-(2026-09-12; `meta/roadmap/1.5/1.5.6.md`; S-63…S-70 ratified the day they
+(2026-09-12; `meta/roadmap/done/1.5/1.5.6.md`; S-63…S-70 ratified the day they
 were asked as D-288…D-292; six landings, each a cumulative prefix under a
 full harness, D-228).** The floor had been the one part of the artifact with
 no evidence of its own: hand-written LLVM IR, permanent by D-203, trusted
@@ -1130,7 +1130,7 @@ every `(pop)`, so a row that answered `unsat` in 8 s returned 200 s later
 and a larger one not within 22 minutes, a wedged solver under P-13 with only
 the runners' hang net to catch it; off, no verdict moves anywhere.
 **1.5.6b (the floor's evidence, re-examined by measurement) IS COMPLETE
-(2026-09-17; `meta/roadmap/1.5/1.5.6b.md`; planned execution-grade the day of
+(2026-09-17; `meta/roadmap/done/1.5/1.5.6b.md`; planned execution-grade the day of
 the s6→s7 hand-off, S-72…S-76 ratified the day each was asked as D-293…D-296
 and an amendment to D-288; nine landings — steps 0–4, 4b, 4c, 4d, 5 — each a
 cumulative prefix under a full harness, D-228).** The outgoing seat named four
@@ -1172,7 +1172,7 @@ acceptances are narrowed. `runtime/npkrt.obligations`: 379 rows, 372
 discharged, 7 `budget`, 0 open; `nitpick.obligations` never moved; the floor's
 bytes moved once.
 **1.5.6c (what the floor's spec ASSUMES of its callers) IS COMPLETE
-(2026-09-17; `meta/roadmap/1.5/1.5.6c.md`; approved by the user to run before
+(2026-09-17; `meta/roadmap/done/1.5/1.5.6c.md`; approved by the user to run before
 1.5.7's plan; five landings, each a cumulative prefix under a full harness,
 D-228).** A section's `requires` and `(objects …)` are HYPOTHESES of its rows,
 and nothing checks the callers no row covers. **Two were FALSE for a legal
@@ -1197,17 +1197,16 @@ landing, before 1.5.7 step 0:** the net is `120 + 10·checks + 60·B` seconds pe
 file in both runners, B the file's rows the committed manifest records `budget`
 (B = checks with no manifest to trust); `npk_small_free` is decided under 610 s
 where it was 250, and nothing else moved.
-**WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-24; this file said "THREE
-subcycles" from 2026-09-17 until 1.5.8c's close): ONE subcycle — 1.5.8d, the
-cycle's close, PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`:
+**CYCLE 1.5 IS COMPLETE (closed 2026-09-25 at 1.5.8d, `meta/roadmap/done/1.5/1.5.8d.md`)**: step 0 (`c93d80d`) landed D-317, D-318 and DEF-94; steps 1–3 landed as ONE commit — the one-hop refresh from the final `src/` (stage2 == stage3, 28,111,929 bytes, sha256 `4029fc70efbe9cd3da26b7fb379b477b5dc9417bba3cb0359d5dd25126a1f337`, 3,392 defines every one `"split-stack"`, zero absolute site paths), the doc sync (`done/1.5/README.md`'s "What cycle 1.5 taught", ROADMAP's compact form, the 1.6 README's start-here note, 87 living citations re-pointed at `done/1.5/`) and the archive; the harness green, 52/52, `parity` 1,711 verdicts agreeing, npkc byte-identical, `check_decisions_current` silent with 1.5 under `done/`. What remains of Phase C is cycle 1.6. **The paragraph below is the close's record of what the sentence said before it (kept for the history it carries):** ONE subcycle — 1.5.8d, the
+cycle's close, PLANNED execution-grade 2026-09-24 (`meta/roadmap/done/1.5/1.5.8d.md`:
 S-97/S-98 the two leads decided before the refresh, then the refresh, the doc
 sync, the archive to `done/1.5/` and the 1.6.0 briefing). **Step 0 LANDED
 2026-09-25** (D-317, D-318, DEF-94; the numbers in `1.5.8d.md`'s record and
 D-317's landing note); steps 1–3 remain — the refresh from this `src/`, the doc
 sync and the archive, ONE commit under one full harness. 1.5.8b, the
 `overflow`, `bounds` and `cast-range` rows, is COMPLETE (2026-09-23,
-`meta/roadmap/1.5/1.5.8b.md`), and 1.5.8c is COMPLETE (2026-09-24, seven
-landings — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`; step 4 landed 2026-09-24: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`) with TYPE-074/075, a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners, DEF-92 found by measuring the sweep's cost; step 4b landed 2026-09-24: DEF-92 fixed — `tt_instance`'s linear scan, 85% of the frontend, replaced by an instance index, the checker 5.4x faster and every program's emission byte-identical; step 5 landed 2026-09-24: the `terminate` residue measured by cause with `meta/roadmap/1.5/tools/residue.py` — 684 of 1,183 row sites in the compiler's own build discharged, 240 open through a pointer (E-4), 195 through a by-value aggregate's missing value term (lead E-6, OPEN_DECISIONS §4), 64 on their merits, the 116 `stack-depth` rows `open` as D-304 (5) accepted — the docs synced, `1.5.8d.md` planned). **1.5.8b's
+`meta/roadmap/done/1.5/1.5.8b.md`), and 1.5.8c is COMPLETE (2026-09-24, seven
+landings — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/done/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`; step 4 landed 2026-09-24: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`) with TYPE-074/075, a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners, DEF-92 found by measuring the sweep's cost; step 4b landed 2026-09-24: DEF-92 fixed — `tt_instance`'s linear scan, 85% of the frontend, replaced by an instance index, the checker 5.4x faster and every program's emission byte-identical; step 5 landed 2026-09-24: the `terminate` residue measured by cause with `meta/roadmap/done/1.5/tools/residue.py` — 684 of 1,183 row sites in the compiler's own build discharged, 240 open through a pointer (E-4), 195 through a by-value aggregate's missing value term (lead E-6, OPEN_DECISIONS §4), 64 on their merits, the 116 `stack-depth` rows `open` as D-304 (5) accepted — the docs synced, `1.5.8d.md` planned). **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
 overflow rows nothing proves stay guarded, measured and reported (D-309). A
@@ -1354,7 +1353,7 @@ key (the row read `discharged` while the guard stayed), the length symbol's
 sentinel was 0 where `sym_new` hands out ids from 0 (DEF-69's rule again), and
 a shared symbol's range axiom sat in the region of its first read, so two
 functions lost discharged rows the gate then refused. The old 1.5.8 was PLANNED 2026-09-18 by
-`nitpick-compiler_s11` as those four (`meta/roadmap/1.5/1.5.8.md` §0),
+`nitpick-compiler_s11` as those four (`meta/roadmap/done/1.5/1.5.8.md` §0),
 because planning MEASURED first and found three of its five kinds standing on
 uncontrolled stops: DEF-58 (a float's `=>!` cast to an integer was LLVM poison
 — one program exits 3 at `-O0` and 9 after `opt -O2`), DEF-59 (a stack
@@ -1392,7 +1391,7 @@ took every stderr write), and the reactor's "none" is −1 at every site — 0 i
 a descriptor once a program closes its stdin. The plan's execution record says
 what each step found.
 **1.5.7 (D-212's schedule-exploration harness) IS COMPLETE (2026-09-18;
-`meta/roadmap/1.5/1.5.7.md`; eight landings, steps 0–7, each a cumulative
+`meta/roadmap/done/1.5/1.5.7.md`; eight landings, steps 0–7, each a cumulative
 prefix under a full harness, D-228; seats s8 then s10)**: the REAL floor and
 each concurrency test's own IR transformed, every synchronization step a
 point of a seeded PCT schedule, the blocking syscalls virtual, quiescence
@@ -1401,7 +1400,7 @@ and the explorer's first floor find, DEF-57 (VERIFICATION_REFERENCE §10 is
 the whole of it; TCB.md §5's seventeenth acceptance says what it does not
 cover). The record, step by step: planned and measured by s7 with a throw-away prototype, approved
 by the user 2026-09-17 in one sentence (S-77…S-83 → D-297…D-303), and its
-**step 0 LANDED 2026-09-18** (`meta/roadmap/1.5/1.5.7.md`): the ONE
+**step 0 LANDED 2026-09-18** (`meta/roadmap/done/1.5/1.5.7.md`): the ONE
 transformer (`npkg/explore.npk`; `tools/explored.npk` is the harness's
 snapshot-built entry — a program cannot hold two modules named `explore`) puts
 a scheduling point before each of the floor's 78 atomic step lines and routes
@@ -1415,7 +1414,7 @@ the IR shim's behavioural reference (D-303). **Step 1 LANDED 2026-09-18**:
 futex/epoll/clock, PCT with ordered bands and the fairness bound, exact
 replay by seed), held to the C reference SCHEDULE HASH FOR SCHEDULE HASH on
 all 30 signal-free programs × 20 seeds under a twelve-process load
-(`meta/roadmap/1.5/tools/explore_prototype/hashcmp.sh`) — and the port found
+(`meta/roadmap/done/1.5/tools/explore_prototype/hashcmp.sh`) — and the port found
 X-13: the floor's `mmap` trims made a step count depend on an ADDRESS, so
 both shims now place anonymous mappings at a 64 KiB-aligned bump pointer
 with `MAP_FIXED_NOREPLACE`; the `explore` stage in both runners (a
@@ -1967,7 +1966,7 @@ that carried them retired at the cycle close):
   modelled at all. Read a model against the code CASE BY CASE. A row's budget
   margin is `(get-info :rlimit)` after each `(check-sat)` of the emitted file
   (the runners' push/pop mode; the rlimit is per check), and
-  `meta/roadmap/1.5/tools/model_bfs.py` reads a model's whole reachable space
+  `meta/roadmap/done/1.5/tools/model_bfs.py` reads a model's whole reachable space
   with no bound — a measurement, outside the gates.
 - **A builtin's name is the compiler's** (D-294, D-296; 1.5.6b steps 4, 4b):
   a module-level `func:` — or an `extern` METHOD, whose stub is one — named
@@ -2054,7 +2053,7 @@ that carried them retired at the cycle close):
   /proc/self/environ, first match wins), and `NPKX_TRACE=2` prints every step
   as `thread site` for diffing two schedules. After ANY change to the floor,
   the shim or the transformer, run D-303's alternating sweep
-  (`meta/roadmap/1.5/tools/explore_prototype/hashcmp.sh`, the harness-built
+  (`meta/roadmap/done/1.5/tools/explore_prototype/hashcmp.sh`, the harness-built
   tool in OUT): it found X-13 and X-19, where the replay belt could not.
 - **A control proves sight of its OWN defect only when the schedule that finds
   it goes through that defect** (DEF-57, 1.5.7 step 4): two directed controls
@@ -2312,7 +2311,7 @@ that carried them retired at the cycle close):
   A worklist that grows as it drains, a fixed point, a loop bounded by a
   deadline, a spin on the clock and an event loop are `unbounded` with the
   reason on the line above (D-316); a measure is never a trip budget. The
-  reader's record is `meta/roadmap/1.5/tools/decreases_read.txt`; the tool
+  reader's record is `meta/roadmap/done/1.5/tools/decreases_read.txt`; the tool
   (`decreases_sweep.py` over `loop_dump.npk`'s dump, built with `quickemit
   --keep`) writes the provable shape and applies the record.
 - **A measure decides only over STABLE terms, so write the bound as a local**
@@ -2323,7 +2322,7 @@ that carried them retired at the cycle close):
   idiom — `int64:n = x.count;` before the loop where the body cannot change
   it, `decreases n - i` — is what the solver can read; a measure the check
   keeps is still a correct measure, only unproven. The residue by cause is
-  `python3 meta/roadmap/1.5/tools/residue.py ROOT OUT.txt` over a tree's
+  `python3 meta/roadmap/done/1.5/tools/residue.py ROOT OUT.txt` over a tree's
   `build/verify/obl`.
 - **A `decreases` in a `comptime` body is checked by the evaluator** (1.5.8c
   step 3): `fold_while` evaluates the measure each trip and a violation is a

@@ -5,6 +5,15 @@ SMT-LIB2, and NIKOS's disposition. The cycle that makes Layer 1 real — the
 mathematical prevention of invalid states that is the first line of the safety
 architecture.
 
+> **CLOSED 2026-09-25 (1.5.8d).** Every row below landed; every kind of
+> the obligation catalogue is live, the floor is specified, modelled, read
+> twice and explored, the snapshot is refreshed from the final tree (`1.5.8d.md`
+> has the numbers), and "What cycle 1.5 taught" at the end of this file is
+> the cycle's account of itself. The Python harness did NOT retire — D-206:
+> both runners run through 1.6, the harness's result is the one that means
+> the suite is green, and retirement is `meta/SWITCH.md`'s. The next cycle's
+> map is `../1.6/README.md`, whose opening note says what 1.5 left it.
+
 > Detailed **map**, upgraded at the 1.4-era research pass, evidence-backed
 > by the R-5/R-8 deep research (`../research/digests/r5r8-digest.md` —
 > read its reliability notes before citing further). **The decision batch
@@ -250,7 +259,7 @@ is the clean strike.
 | 1.5.8 | **The runtime's uncontrolled stops, closed — DONE (2026-09-19; ten landings, steps 0, 1, 1b, 2, 2b, 2c, 3, 3b, 3c, 4, each a cumulative prefix under a full harness, D-228) — PLANNED 2026-09-18** (`1.5.8.md`; planned execution-grade by `nitpick-compiler_s11` on `e3bf48c`, S-84…S-87 ratified the same day — "go with all four" — as **D-304…D-307**). *[This row read, until 2026-09-18: "Overflow obligations (G-1's static leg) + close-out", with a 2026-09-17 note that VERIFICATION_REFERENCE §7b assigns 1.5.8 five kinds — `overflow`, `bounds`, `cast-range`, `terminate`, `stack-depth` — and that `terminate` had no surface. Planning measured first, and found three of the five kinds standing on uncontrolled stops, so the work became four subcycles in the order the user ratified.]* This one: the four identities declared together (`CastRange` 4117, `StackExhausted` 4118, `DecreasesViolated` 4119, `MachineFault` 4120), every `failsafe` REACH checks naming the two universal ones, and one bridging snapshot refresh (step 0); **DEF-58** — a float's `=>!` cast to an integer was LLVM poison (a program exits 3 at `-O0` and 9 after `opt -O2`) — fixed by the `CastRange` guard, and **DEF-61** — float↔`int128` casts lowered to compiler-rt calls — by hand-lowered wide conversions (step 1); **DEF-59**/**DEF-60** — a stack overflow killed with no `failsafe`, and a large frame could jump a thread's one guard page — fixed by LLVM's split-stack prologue on every emitted function, every thread's stack the floor's, signal stacks, and `failsafe` on a stack of its own (step 2); the last net for every other hardware fault (D-307, step 3); the refresh that carries the stack check into the builder, the docs (step 4). Three instrument defects on the way (DEF-62…DEF-64). *[At execution, four more found and fixed as their own steps: a joined thread's stack never released (DEF-65, step 1b), a kept explorer seed gone stale with no signal (DEF-67, step 2c: the HOLD directive), a SIGPIPE that killed the process (DEF-68, in step 3), a thread's TLS block and executor never freed (DEF-66, step 3b: per-slot pools), and a standard descriptor closed at startup (DEF-69, step 3c).]* | 1.5.7 |
 | 1.5.8b | **The guarded kinds' rows — DONE through step 7 (steps 0–6 landed 2026-09-19/20 by `nitpick-compiler_s11`; 6b, 6c, 6d and 7 landed 2026-09-23 by `nitpick-compiler_s12`: DEF-86 the reach analysis follows calls into the prelude, D-308 §§6–7 the ceiling and the length facts with a one-hop refresh and the floor's first move since `6340d5c`, D-315, DEF-87/DEF-88, `intern.npk`'s `*%`; the close with `1.5.8c.md` planned)** (`1.5.8b.md`; planned execution-grade by `nitpick-compiler_s11` on 1.5.8's close `35ad9e1`, measured first with a throw-away prototype; seven questions settled by the user the day they were asked, D-308…D-314: a struct field's `limit<Rules>`, the residue kept guarded, a certain constant overflow refused (TYPE-076), `uint64`'s upper half built with bit operations, the wrapping family `+% -% *%`, the `sealed` field, which closes two memory-safety holes planning found (DEF-72, DEF-73), and the `hidden` field with checked `l[i]` indexing, which closes the third (DEF-74)). *[This row read, until 2026-09-19:]* `overflow` (D-210 §4: "1.5 proves the traps away"; 2,250 of the 2,519 guard sites in the compiler's own emission at `e3bf48c`, in 790 functions — a long tail, so discharges must come from general facts), `bounds` (15 sites there), `cast-range` (step 1's guard); their elision through `llvm.assume`; the runners' kind tables; the compiler's own manifest re-recorded. Planned execution-grade at 1.5.8's close. | 1.5.8 |
 | 1.5.8c | **`decreases` and `unbounded` (D-304) — DONE (2026-09-24; seven landings, steps 0–5 and 4b, each a cumulative prefix under a full harness, D-228; seats s12 then s13; step 5 measured the `terminate` residue by cause — 684 of 1,183 row sites discharged, 240 open through a pointer (E-4), 195 through a by-value aggregate's missing term (lead E-6), 64 on their merits, the 116 `stack-depth` rows `open` as D-304 (5) accepted — and planned `1.5.8d.md` execution-grade). The record as it grew: steps 0–4 landed 2026-09-24 (the mechanism; the `terminate` rows; the one-hop refresh; THE SWEEP -- every `while`/`when` of the tree states its clause, 392 by the tool, 563 by the reading in `tools/decreases_read.txt`, 72 `unbounded` with their reasons; step 4: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`, TYPE-074/075), a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners -- the compiler's own all `open`, its recursion stating no measure; DEF-92 found by measuring the sweep's cost: `tt_instance` is a linear scan and 85% of the frontend)** (`1.5.8c.md`, execution-grade by `nitpick-compiler_s12` at 1.5.8b step 7, measured first with a loop census: 851 loops, ~550 a tool writes, ~300 read; S-96 settled by the user as D-316 — an event loop says `unbounded` with its reason; step 0 declared TYPE-072…075) — the surface on `while`/`when` and functions, the check in every build (`DecreasesViolated`), the `terminate` rows (loops and recursive calls) and the `stack-depth` rows (D-305 (7): reported, never eliding), the sweep of ~925 loops in the tree, then the refusal (TYPE-072; TYPE-073/074/075 as D-304 states them). Planned execution-grade at 1.5.8b's close. | 1.5.8b |
-| 1.5.8d | **The cycle's close — UNDERWAY (step 0 landed 2026-09-25: D-317, the by-value aggregate's identity and field functions in the encoder — 64 of the 79 by-value `terminate` rows and 139 rows in all newly discharged, the gate moving nothing; D-318, E-5 decided out; DEF-94 found by the step's first probe and fixed — the implicit pointer receiver is an escape; steps 1–3, the refresh, the doc sync and the archive, remain as one commit)** — NIKOS's disposition executed per D-217-as-annotated; C-19 closed by D-233 (no external gate remains); the docs synced; the cycle to `done/1.5/`. | 1.5.8c |
+| 1.5.8d | **The cycle's close — DONE (2026-09-25; `1.5.8d.md`)**: step 0 (c93d80d) landed D-317 — a by-value aggregate's identity and its fields as uninterpreted functions of it in the encoder, 64 of the 79 by-value `terminate` rows and 139 rows in all newly discharged, the gate moving nothing, no bound written — and D-318 (E-5 decided out), with DEF-94 (the implicit pointer receiver was never an escape, a soundness hole) found by the step's first probe and fixed; then, in one commit under one full harness: the one-hop refresh from the final `src/` (stage2 == stage3, 28,111,929 bytes, sha256 `4029fc70efbe9cd3da26b7fb379b477b5dc9417bba3cb0359d5dd25126a1f337`, 3,392 defines every one `"split-stack"`, zero absolute site paths), the doc sync (this file's account, ROADMAP's compact form, the 1.6 README's start-here note, 87 living citations re-pointed at `done/1.5/`, DECISIONS' 42 left as written), and the archive. NIKOS's disposition held through the cycle (`[verify.nikos]` declared, not run — D-217 as annotated; 1.6.0's gate names the engine); C-19 closed by D-233 (no external gate). green, 52/52; `parity` 1,711 verdicts agreeing, npkc byte-identical. | 1.5.8c |
 
 ## Watch for
 
@@ -283,3 +292,177 @@ is the clean strike.
 - **The obligation catalogue must absorb every carried obligation** from
   0.9.0 onward or the manifest's `kind` column has holes — the carried list
   lives in this README's catalogue row and OPEN_DECISIONS' history.
+
+## What cycle 1.5 taught
+
+Recorded at the close (1.5.8d, 2026-09-25), gathered from the
+twenty-seven subcycle records' "found on the way" paragraphs and from the
+gotchas CLAUDE.md accumulated as the cycle ran. Each entry names the incident
+behind it. The rules of working that generalise are repeated compactly in
+`ROADMAP.md` ("What cycle 1.5 taught").
+
+1. **Measure before attributing a cost, a count or a cause.** The prelude's
+   +0.75 s per program read as the price of D-257's 348 generated impls and
+   was, to five sixths, the bindings analysis sizing its state by the whole
+   program (1.5.2d: the compiler's own build 242 s → 20 s and 13.4 GB →
+   113 MB once measured). The `decreases` sweep's +21 s read as the price of
+   977 clauses and was `tt_instance`'s linear scan, 85% of the frontend
+   (1.5.8c step 4b: 5.4× once indexed, no type id moved).
+   `npk_hardware_concurrency` answered 1008 on a 48-thread machine because the
+   raw `sched_getaffinity` writes 8 of the 128 bytes asked and the zero-fill is
+   glibc's, which this runtime has none of (1.5.6b, DEF-52). And 1.5.8's
+   planning found three of its five obligation kinds standing on uncontrolled
+   stops — a float cast that was LLVM poison, a stack overflow with no
+   `failsafe`, a guard page a frame could jump — by TRYING them, not by
+   reading the specs that said otherwise (DEF-58…DEF-60). The step-0 measurement
+   of this close found the plan's "116 pure-call rows" to be pointer-bound
+   (below, item 14).
+
+2. **A proposition holds only where its evaluation does not trap.** A guard
+   met inside a clause — a shift's amount, a division's pair, a twisted
+   operand — is part of the proposition, never a free hypothesis. The encoder
+   pushed such facts from inside clauses and proved two clauses from
+   themselves: a call-site contract row proved `n < 32` from its own guard,
+   and `requires (1i32 << n) != 0i32` was discharged of itself and its check
+   elided (DEF-33, 1.5.4b step 2). One rule closed both faces and is the
+   meaning of a proposition from there on.
+
+3. **A fixture that claims a property is evidence of nothing until something
+   decides it.** The runner self-check's toy protocol model was commented
+   safe for a cycle and was unsafe in two steps — found the day the models
+   were read a SECOND way, by exhaustive explicit-state search beside the
+   solver's bounded rows (D-295, 1.5.6b step 4d), which also found three of
+   seven models' depths smaller than their diameters. A model's meaning had
+   had one reader.
+
+4. **A spec clause is a hypothesis about the caller, and nothing checks the
+   callers no row covers.** Two `(objects …)` clauses of the floor's spec
+   were FALSE for a legal caller — `npk_string_concat` assumed its two inputs
+   apart while `string_concat(s, s)` is in the tree twice, and
+   `npk_small_free` assumed a chunk apart from the head of the list it was
+   on, the ordinary LIFO free — neither a behavioural defect, both evidence
+   that said nothing where it looked like it spoke, and no solver could have
+   said so: they were found by READING (1.5.6c). Then they were EXECUTED: the
+   explorer evaluates 236 of the spec's 240 caller hypotheses at every call
+   of every explored schedule, and the spec control that plants 1.5.6's false
+   clause sees it on `drop_string`'s 27th step (D-302, 1.5.7 step 5).
+
+5. **"Correct by accident" again, and this time the accidents were proofs.**
+   DEF-14: an address-taken local kept a stable symbol, a definition in terms
+   of it outlived the call that wrote through the pointer, z3 discharged a
+   `div-zero` row the program defeats, and the elided build died with a
+   floating-point exception where the plain build reached `failsafe`
+   (1.5.2 step 0). DEF-81: a guard inside a loop's invariant was elided on
+   the proof for the head's FIRST visit (1.5.8b step 3). DEF-94: the
+   implicit pointer receiver was never an escape, so `drop x.bump()` left
+   `x.1 = 6` standing past a call that stored 5 and the verified build divided
+   by zero (1.5.8d step 0). DEF-93: a `Rules` declaration's `pub` was the
+   parity of a node index, flipped by the sweep's clauses (1.5.8c step 3).
+   DEF-69: the reactor's "none" was 0, "safe because fd 0 is stdin", and
+   nothing kept stdin open (1.5.8 step 3c). DEF-57: an executor that merely
+   watched a trap could win the failsafe holder — forty stress runs never
+   reached the two-instruction window, seed 371 did (1.5.7 step 4). Every one
+   was a right answer standing on a fact nobody had asserted; the verified
+   build is where such a fact becomes an elided guard, which is why every
+   soundness finding of this cycle was measured END TO END — the plain build,
+   the elided build, both exit codes — before it was called one.
+
+6. **A control proves sight of its own defect only through that defect's
+   route.** Two directed explorer controls had been reaching their verdicts
+   through DEF-57's window and went blind the moment it was fixed (1.5.7 step
+   4); a kept seed goes stale with no signal when a step is added before its
+   one-point window (DEF-67, 1.5.8 step 2c — the HOLD directive finds such a
+   window without a seed). Read a control's ROUTE, not only its verdict, and
+   re-run every control after any change that moves a schedule.
+
+7. **A rule written for one spelling of a construct is owed to the other.**
+   The `pick` EXPRESSION form typed no arm binding from 1.0.9c until 1.5.2c
+   while the statement form did: `give t.x` over a bound `t` was accepted
+   unchecked, a struct given where an `int32` was expected passed the fit
+   check against nothing, and an owning payload could be copied out of a
+   lending pick expression (1.5.2c step 1). `type_pick_rules` is the one
+   function now, and the standing instruction is to grep for the twin —
+   statement and expression `pick`, `=>`/`=>!`, `?!`/`?|` — before calling a
+   rule landed.
+
+8. **A whole-tree sweep is checked by the rejection suites and both
+   self-checks before its harness, and the string-literal fixtures with
+   them.** 1.5.8c step 3's sweep of 977 loops produced six reds on its first
+   full run — a hoisted bound declared twice in `tools/resolve_check.npk`
+   (built by the SNAPSHOT, never by the smoke), two expected line numbers
+   shifted by an inserted arm, the very arm a reach test asserted absent, and
+   both self-checks' generated `failsafe` texts gaining a row — and step 4's
+   refusal found eight loops embedded as STRINGS in three unit tests that no
+   file-level sweep reads. The close's step 0 learned the encoder's twin: an
+   encoder that proves more moves EXISTING verify tests' rows, and the verify
+   suite is out of `--only`'s reach — `vprog.py` over every file of
+   `tests/verify/` before the harness (twenty minutes), not over the new
+   files alone (three tests, three hours). The in-process checks (`inproc_checks.py`, item
+   11) and a rejection-suite pass are ten minutes; a harness is three hours.
+
+9. **A red under load is read, not re-run.** A deadline is a hang net, never
+   a verdict: `failsafe_alloc.npk`'s five-second join missed once in forty
+   under three concurrent harnesses and answered the re-entry exit — sixty
+   seconds now, chosen as the solver's net (D-297) and the explorer control's
+   (DEF-83) were chosen, so that only a real hang reaches it (DEF-85). A
+   literal `/tmp/npk_<name>` is shared by every concurrent run of that
+   program: `fs_basic` and `dyn_stream` answered their own `(E9)` through a
+   file the other copy had truncated, 11 and 20 of 60 in pairs and never
+   alone (DEF-91: the pid is in every such name). A wedged solver reads
+   exactly like a hang: z3's Diophantine sub-solver undid its terms at every
+   `(pop)`, so a row that answered in 8 s returned 200 s later (S-71 →
+   `lp.dio=false`, no verdict moving with it).
+
+10. **A rewritten function's rows leave with it, so the manifest gate reads
+    (symbol, kind) discharged counts and not row identity alone.** A row's
+    hash is its problem text; `tt_instance`'s scan rows left the manifest
+    with the scan and the index's probe loops brought their own (1.5.8c step
+    4b), and 1.5.8d step 0's identities changed the text of every row whose
+    cone reads a struct's field — 4,320 of 5,861 rows shared, zero moved,
+    zero discharged counts fell. The gate's counts BY VERDICT are a signal
+    too: the same step's first build turned 825 `unencoded` rows into `open`
+    ones over an opaque length — a weaker statement of the same guard and a
+    false signal for 1.6's handover — and the "moved" line said nothing,
+    because no shared row had moved.
+
+11. **The `--only` filter reaches the unit tests alone, so the belts run
+    in-process before a harness.** Three of s12's five reds and two of s13's
+    were whole-tree checks that cost minutes in-process and hours in a full
+    run; `inproc_checks.py` became the standing practice of every landing
+    from 1.5.8c step 1 on, and every step of the close ran it before its
+    harness.
+
+12. **The blueprint test for a new symbol, and the census for a new
+    keyword.** `+% -% *%` was chosen because `%` states the result — "add
+    modulo 2^N" — where Swift's `&+` is a convention (D-312, the user's own
+    question); an operator must DESCRIBE what happens to the data. A keyword
+    is measured against the tree for the identifier first: `unbounded` cost
+    one rename, `sealed`/`hidden` fourteen (the compiler had a local and a
+    field named `sealed`), `decreases` none.
+
+13. **A design that names a member of a set is owed a probe that the set
+    holds it.** D-317's soundness rests on the escape set, and the plan named
+    "an implicit `Self->` receiver" among the escapes as though it were
+    there; the first act of the step was to ask, and it was not (DEF-94, item
+    5). The probe cost a minute; the hole was as old as the encoder.
+
+14. **A residue tool's classification is a text heuristic; read the row's
+    function before naming its cause.** `residue.py` filed 116 open
+    `terminate` rows under "a pure call over a by-value aggregate", and 113 of
+    them were `raw p_left(p)` and `item_member_count(ast, …)` over a POINTER
+    argument — E-4's class, which no identity of the aggregate can close,
+    since a pure function of a pointer reads the pointee. The measured target
+    of E-6 was 79 rows, not 195, and 64 of the 79 closed.
+
+15. **What the cycle leaves as standing instruments, kept because each found
+    something on its first run.** The manifest gate over shared rows (1.5.4b
+    on); the residue report by shape and cause (1.5.8b step 3, 1.5.8c step 5);
+    the schedule explorer with its oracles, controls and executed
+    hypotheses (1.5.7); the floor's spec, models, kernel-effect table and
+    generated TCB regions (1.5.6, 1.5.6b, 1.5.6c); the emission comparison of
+    two compilers over every program (`emit_cmp.sh`, the cheap decisive test
+    for "the walk never touches the writer"); the in-process whole-tree
+    checks; and the verify suite's rule that every row of a program is named
+    by its header. The proof of a refresh is its harness, not its fixpoint
+    (`bootstrap/seed/README.md`), and D-309's rule that no bound is written
+    into the tree to close a row held through 3,000 new rows.

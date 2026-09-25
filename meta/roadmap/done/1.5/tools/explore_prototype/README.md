@@ -1,7 +1,7 @@
 # The schedule explorer's planning prototype — a BEHAVIOURAL REFERENCE, outside every gate (D-303, 1.5.7)
 
 **What this is.** The throw-away prototype `nitpick-compiler_s7` built on 2026-09-17 to MEASURE 1.5.7's design
-before it was a plan (`meta/roadmap/1.5/1.5.7.md` §1 carries the numbers): a text transform of the real floor
+before it was a plan (`meta/roadmap/done/1.5/1.5.7.md` §1 carries the numbers): a text transform of the real floor
 (`transform.py` — a scheduling point before every atomic step line, every `@npk_sys6(` call routed to a shim,
 the thread lifecycle hooked) and a C shim (`npkx.c`) that runs one thread at a time under a baton, virtualizes
 the futex, `epoll_pwait` and the clock, schedules by PCT with ordered priority bands and a fairness bound, replays
@@ -81,10 +81,10 @@ sweep after it: 40 of 40 explorable programs agree, `machine_fault_thread` the f
 **Running it by hand** (a measurement, never a verdict):
 
 ```
-python3 meta/roadmap/1.5/tools/explore_prototype/transform.py runtime/npkrt.ll /tmp/x/npkrt.explore.ll /tmp/x/sites.txt
-bash meta/roadmap/1.5/tools/explore_prototype/build.sh "$PWD" tests/backend/programs/mutex_basic.npk /tmp/x
+python3 meta/roadmap/done/1.5/tools/explore_prototype/transform.py runtime/npkrt.ll /tmp/x/npkrt.explore.ll /tmp/x/sites.txt
+bash meta/roadmap/done/1.5/tools/explore_prototype/build.sh "$PWD" tests/backend/programs/mutex_basic.npk /tmp/x
 (ulimit -n 1024; NPKX_SEED=1 NPKX_TRACE=1 /tmp/x/mutex_basic.x < /dev/null; echo "exit $?")
-bash meta/roadmap/1.5/tools/explore_prototype/sweep.sh "$PWD" /tmp/x 100
+bash meta/roadmap/done/1.5/tools/explore_prototype/sweep.sh "$PWD" /tmp/x 100
 ```
 
 `build/npkc` must exist (`npkg build`). Environment: `NPKX_SEED` (the schedule), `NPKX_POLICY` (0 PCT, 1 random

@@ -16,10 +16,10 @@ counted over the real steps only; bad predicates are read at ticks 1..K -- and a
 tick 1, so the initial state is read too.
 
 Not a belt and not a verdict: the rows are z3's. Written at 1.5.6b step 2 (lead E-3), where its table for all seven
-models is recorded (meta/roadmap/1.5/1.5.6b.md); whether it becomes a standing belt in both runners is S-75
+models is recorded (meta/roadmap/done/1.5/1.5.6b.md); whether it becomes a standing belt in both runners is S-75
 (OPEN_DECISIONS SS2e). Kept here for the record, as this directory's other script is.
 
-usage: python3 meta/roadmap/1.5/tools/model_bfs.py runtime/models/*.model
+usage: python3 meta/roadmap/done/1.5/tools/model_bfs.py runtime/models/*.model
 """
 import sys
 from collections import deque

@@ -3188,7 +3188,7 @@ def stage_runtime(t, s):
     print("  %-11s %2d runtime-floor test(s)" % (t["name"], n))
 
 
-# --- the verification leg (1.5.0, D-218; the plan is meta/roadmap/1.5/1.5.0.md) -----
+# --- the verification leg (1.5.0, D-218; the plan is meta/roadmap/done/1.5/1.5.0.md) -----
 #
 # The compiler EMITS obligations (`--obligations DIR`: one SMT-LIB2 file per
 # function instance, index.txt, rows.txt) and READS a manifest (`--elide`);
