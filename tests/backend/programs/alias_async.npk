@@ -20,7 +20,7 @@ async func:hold_across = int32(int32:seed) {
     pass (arr[2i64] + arr[0i64]);
 };
 
-async func:main = int32() {
+async func:main = int32(cstring[]:_~argv) {
     Result<int32>:r = await hold_across(41i32);
     if (r.is_error) { exit 4i32; }
     if (r.value != 42i32) { exit 3i32; }

@@ -518,3 +518,11 @@ pub func:TYPE_MEASURE_GROUP = string() never fails { pass "NITPICK-TYPE-074"; };
 // no call to be checked at. Until step 4 computes the groups, EVERY function
 // measure is this refusal.
 pub func:TYPE_MEASURE_NO_RECURSION = string() never fails { pass "NITPICK-TYPE-075"; };
+// `main` TAKES EXACTLY ONE `cstring[]` AND RETURNS `int32` (D-089 §4 -- an
+// entry point's signature is FIXED, `failsafe`'s under TYPE-044 since D-179).
+// The floor hands `main` ONE argument list and calls it as `i32`: a second
+// parameter reads whatever its register holds (DEF-96, the library
+// listener's finding at 1.6.0 -- `int32:argc` read the argv pointer's low
+// word and a program's `argc == 0` never held), and a wider return is
+// truncated in silence. Both shapes compiled and ran until 1.6.0 step 3c.
+pub func:TYPE_MAIN_SIG = string() never fails { pass "NITPICK-TYPE-083"; };

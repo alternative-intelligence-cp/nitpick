@@ -2696,9 +2696,41 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
                 if (!(raw type_is_invalid(e.types, fspt))) { fs_ok = false; }
             }
         }
+        // ... AND RETURNS `int32` (D-179's signature, checked since 1.6.0 step 3c
+        // with `main`'s): the floor calls `@npk_failsafe` as `i32`.
+        if (!(raw type_is_invalid(e.types, sg.success))) {
+            if (sg.success != (raw tt_int(e.types, 32i32, true))) { fs_ok = false; }
+        }
         if (!fs_ok) {
             discard(raw te_error(e, raw TYPE_FAILSAFE_SIG(),
-                "`failsafe` takes exactly one `Error` (D-179): `func:failsafe = int32(Error:e) { … }` — the runtime routes every uncaught failure through it",
+                "`failsafe` takes exactly one `Error` and returns `int32` (D-179): `func:failsafe = int32(Error:e) { … }` — the runtime routes every uncaught failure through it",
+                d.span));
+        }
+    }
+
+    // `main` TAKES EXACTLY ONE `cstring[]` AND RETURNS `int32` (D-089 §4): the
+    // floor's `npk_start_main` hands `main` ONE argument list and calls it as
+    // `i32`, so a second parameter reads whatever its register holds and a
+    // wider return is truncated in silence -- both compiled and ran until
+    // 1.6.0 step 3c (DEF-96: `int32:argc` read the argv pointer's low word).
+    // Checked here, beside `failsafe`'s, because the function's identity is
+    // already in hand; the two entry points are one rule (D-089 §4).
+    if (raw string_eq(raw intern_get(e.interns, raw decl_name(d)), "main")) {
+        bool:mn_ok = ((raw fn_param_count(e.ast, d)) == 1i32);
+        if (mn_ok) {
+            DeclNode:mnp = raw ast_decl(e.ast, raw fn_param(e.ast, d, 0i32));
+            TypeResolver:mnr = raw etyper_resolver(e);
+            int32:mnpt = raw resolve_type(@mnr, raw param_type(mnp), e.scope);
+            if (mnpt != (raw tt_slice(e.types, e.types.t_cstring))) {
+                if (!(raw type_is_invalid(e.types, mnpt))) { mn_ok = false; }
+            }
+        }
+        if (!(raw type_is_invalid(e.types, sg.success))) {
+            if (sg.success != (raw tt_int(e.types, 32i32, true))) { mn_ok = false; }
+        }
+        if (!mn_ok) {
+            discard(raw te_error(e, raw TYPE_MAIN_SIG(),
+                "`main` takes exactly one `cstring[]` and returns `int32` (D-089): `func:main = int32(cstring[]:argv) { … }` — the entry point hands `main` one argument list, so a second parameter would read whatever its register holds, and the floor calls `main` as `int32`",
                 d.span));
         }
     }

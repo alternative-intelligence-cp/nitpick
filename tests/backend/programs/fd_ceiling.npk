@@ -26,7 +26,7 @@ func:fill = int64(cstring:devnull) never fails {
     pass n;
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     cstring:devnull = to_cstring("/dev/null") ?! E9;
     int64:n = raw fill(devnull);
     if (n > 1024i64) { exit 5i32; }    // the ceiling never reached this process

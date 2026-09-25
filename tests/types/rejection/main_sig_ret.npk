@@ -1,0 +1,9 @@
+// expect-error: NITPICK-TYPE-083
+//
+// D-089: `main` returns `int32`. The floor calls `main` as `i32`, so a wider
+// declared return compiled to `define i64 @main` and was read truncated, in
+// silence, until 1.6.0 step 3c.
+mod:main_sig_ret;
+
+func:main = int64(cstring[]:_~argv) { exit 0i64; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

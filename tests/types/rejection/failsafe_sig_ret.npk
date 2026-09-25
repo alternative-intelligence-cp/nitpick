@@ -1,0 +1,9 @@
+// expect-error: NITPICK-TYPE-044
+//
+// D-179: `failsafe` returns `int32` as it takes exactly one `Error` -- the floor
+// calls `@npk_failsafe` as `i32`. The return half of the rule is checked since
+// 1.6.0 step 3c, with `main`'s (D-089 §4: entry-point signatures are fixed).
+mod:failsafe_sig_ret;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int64(Error:_~e) { exit 1i64; };

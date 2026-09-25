@@ -1,0 +1,10 @@
+// expect-error: NITPICK-TYPE-083
+//
+// D-089 §4: `main` takes exactly one `cstring[]`. The prototype's two-parameter
+// form compiled and RAN until 1.6.0 step 3c (DEF-96): the floor hands `main` one
+// argument list, so `argc` read the argv pointer's low word -- a value unrelated
+// to the argument count -- and `argv` sat in registers nobody wrote.
+mod:main_sig_two;
+
+func:main = int32(int32:_~argc, cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

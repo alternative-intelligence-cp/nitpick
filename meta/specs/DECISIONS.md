@@ -6342,6 +6342,12 @@ shape — the author asserting something a reviewer can rely on.
 
 ---
 
+**[1.6.0 step 3c (2026-09-25): CHECKED. §4's "fixed, not optional" had no check behind it — `failsafe`'s
+shape was TYPE-044 since D-179, `main` was tested by name alone, and the prototype's two-parameter form
+compiled to a `define i32 @main(i32, { ptr, i64 })` whose `argc` read the argv pointer's low word (DEF-96,
+the library listener's finding). `main` is `NITPICK-TYPE-083` unless it is exactly `int32(cstring[]:argv)`;
+TYPE-044 covers `failsafe`'s `int32` return too. One rule, both of them, as §4 says.]**
+
 ## D-090 — Nitpick is nominally typed, and types are interned — **SETTLED**
 
 `TYPE_REFERENCE.md` gives every type a layout and **no identity rule**. That is

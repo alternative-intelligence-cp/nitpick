@@ -2141,6 +2141,20 @@ defect declares a `DEF-` in §2f.
 > archived `loop_dump.npk`'s `use` paths (one level short after the archive) and TYPE_REFERENCE §9.1.2's example
 > (`limit` before `sealed`, which the parser refuses) — are fixed in the same landing.
 
+> **DEF-96 — FIXED at 1.6.0 step 3c (2026-09-25). A TWO-PARAMETER `main` COMPILED, AND ITS FIRST PARAMETER READ
+> A REGISTER NOBODY WROTE.** Found by the library listener (`nitpick-libs_s6`, on `c3bdae2`; six `nitpick-regex`
+> files use the prototype's two-parameter form and discard both) and measured here on `91a7d99`:
+> `func:main = int32(int32:argc, cstring[]:argv)` compiled with no diagnostic to `define i32 @main(i32 %a0,
+> { ptr, i64 } %a1)`, while the floor's `npk_start_main` passes ONE `{ ptr, i64 }` — so `argc` held the argv
+> pointer's low word and a program's `argc == 0` never held (exit 7 with no arguments and with three). The
+> checker fixed `failsafe`'s shape (TYPE-044, D-179) and tested `main` by NAME alone (`fn_is_terminal`), never
+> its arity, its parameter's type or its return; a `func:main = int64(…)` compiled to `define i64 @main` and
+> worked by register accident. D-089 §4 says the signature is FIXED and the two entry points are one rule:
+> `main` is now `NITPICK-TYPE-083` unless it takes exactly one `cstring[]` and returns `int32`, and TYPE-044
+> covers `failsafe`'s `int32` return as well (`type_stmt.npk`, beside the `failsafe` check;
+> `tests/types/rejection/main_sig_{two,none,type,ret}.npk`, `failsafe_sig_ret.npk`). A REFUSAL ADDED, announced
+> in advance (NOTICES F8): the listener moves its six files to `cstring[]:_~argv` when it lands.
+
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/done/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
 > **1.5.0 LANDED (2026-09-03)** — the skeleton with the D-007 division pair end to end (D-218/D-219; `meta/roadmap/done/1.5/1.5.0.md`). C-17→D-218's items (1)–(11) are all implemented or scoped: the SMT emitter, the determinism profile, per-function processes, the integer encoding, the ownership-trusting memory model, the content-hash identity, `llvm.assume` elision, the `undef` ban, and TCB.md. The catalogue's remaining kinds land 1.5.1–1.5.8.

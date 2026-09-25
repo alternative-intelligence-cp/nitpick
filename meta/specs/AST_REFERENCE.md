@@ -89,7 +89,7 @@ GenericParam
   kept: `cstring[]:_~argv` still says what the slot is, which a `_` placeholder
   would not. **Reading a discarded parameter is an error**, because an unchecked
   claim is decoration.
-- **`main` has a fixed signature: `func:main = int32(cstring[]:argv)`** (D-089).
+- **`main` has a fixed signature: `func:main = int32(cstring[]:argv)`** (D-089; checked as `NITPICK-TYPE-083` since 1.6.0 step 3c — the arity, the parameter's type and the `int32` return; `failsafe`'s shape is `NITPICK-TYPE-044`).
   One parameter, always — `failsafe` sets the same precedent with `tbb32:err`, so
   entry-point signatures are fixed and `_~` covers the unused case. There is no
   `argc`: a slice carries its length (D-070), and a second copy of that fact is

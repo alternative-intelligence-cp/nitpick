@@ -1,0 +1,9 @@
+// expect-error: NITPICK-TYPE-083
+//
+// D-089 §3: the parameter's type is `cstring[]` -- kernel-supplied, NUL-terminated,
+// not ours. An owned `string[]` would allocate before `main` runs, and anything
+// else would read the argument list's two words as something they are not.
+mod:main_sig_type;
+
+func:main = int32(string[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };
