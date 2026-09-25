@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has THREE subcycles left — 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits), 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows) and 1.5.8d (the close), the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE and cycle 1.5 (verification) has ONE subcycle left — 1.5.8d, the cycle's close, PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`: two leads decided before the refresh, the refresh, the docs, the archive); 1.5.8b (the `overflow`/`bounds`/`cast-range` rows, `sealed`/`hidden`, the constants, the wrapping family and field limits; COMPLETE 2026-09-23) and 1.5.8c (`decreases`/`unbounded` with the `terminate` and `stack-depth` rows; COMPLETE 2026-09-24) have landed, the old 1.5.8 having been planned 2026-09-18 as four under D-304…D-307: 1.5.0–1.5.8 have landed (1.5.8, COMPLETE 2026-09-19: the runtime's uncontrolled stops closed — a poisoned float cast, a stack overflow with no `failsafe`, a guard page a frame could jump, the last net for every other fault), the floor itself is specified, modelled, its models read twice, its spec's caller assumptions written down and EXECUTED, every synchronization step of the floor and of each concurrency test run under the schedule explorer (1.5.7), and TCB.md is finalized
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 316 decisions, D-001 through D-316 (this sentence said 240 from 1.4.8c until 1.5.8b's planning, and 314 until 1.5.8b step 6c). The **plan is in `meta/roadmap/`**,
@@ -1197,12 +1197,14 @@ landing, before 1.5.7 step 0:** the net is `120 + 10·checks + 60·B` seconds pe
 file in both runners, B the file's rows the committed manifest records `budget`
 (B = checks with no manifest to trust); `npk_small_free` is decided under 610 s
 where it was 250, and nothing else moved.
-**WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-17 — this file said "its last
-subcycle" from the 1.5.6 close until then; the README's map was right
-throughout): THREE subcycles since 1.5.8's close (2026-09-19) — 1.5.8b, the
-`overflow`, `bounds` and `cast-range` rows, PLANNED 2026-09-19
-(`meta/roadmap/1.5/1.5.8b.md`), 1.5.8c (UNDERWAY — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`; step 4 landed 2026-09-24: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`) with TYPE-074/075, a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners, DEF-92 found by measuring the sweep's cost), `decreases`/`unbounded` with the
-`terminate` and `stack-depth` rows, and 1.5.8d, the cycle's close. **1.5.8b's
+**WHAT REMAINS OF CYCLE 1.5 (corrected 2026-09-24; this file said "THREE
+subcycles" from 2026-09-17 until 1.5.8c's close): ONE subcycle — 1.5.8d, the
+cycle's close, PLANNED execution-grade 2026-09-24 (`meta/roadmap/1.5/1.5.8d.md`:
+S-97/S-98 the two leads decided before the refresh, then the refresh, the doc
+sync, the archive to `done/1.5/` and the 1.6.0 briefing). 1.5.8b, the
+`overflow`, `bounds` and `cast-range` rows, is COMPLETE (2026-09-23,
+`meta/roadmap/1.5/1.5.8b.md`), and 1.5.8c is COMPLETE (2026-09-24, seven
+landings — step 0 landed 2026-09-24: the four codes declared; step 1 landed 2026-09-24: the mechanism, TYPE-072 dormant for the `neither` shape; step 2 landed 2026-09-24: the one-hop snapshot refresh — the committed builder parses `decreases`/`unbounded` and carries DEF-90's fix; step 3 landed 2026-09-24: THE SWEEP — every `while`/`when` of the tree states its clause, 977 loops: 392 written by the tool from the shape it proves, 563 by the reading committed as `meta/roadmap/1.5/tools/decreases_read.txt`, 72 of them `unbounded` with a reason (D-316), the evaluator checking a measure it runs, every `failsafe` naming `(DecreasesViolated)`; step 4 landed 2026-09-24: TYPE-072's `neither` shape LIVE, the recursive groups (`analysis/recursion.npk`) with TYPE-074/075, a FUNCTION's `decreases` checked at every call inside its group through the generated `<sym>.measure` predicate, the `terminate` call rows, the `stack-depth` rows derived by both runners, DEF-92 found by measuring the sweep's cost; step 4b landed 2026-09-24: DEF-92 fixed — `tt_instance`'s linear scan, 85% of the frontend, replaced by an instance index, the checker 5.4x faster and every program's emission byte-identical; step 5 landed 2026-09-24: the `terminate` residue measured by cause with `meta/roadmap/1.5/tools/residue.py` — 684 of 1,183 row sites in the compiler's own build discharged, 240 open through a pointer (E-4), 195 through a by-value aggregate's missing value term (lead E-6, OPEN_DECISIONS §4), 64 on their merits, the 116 `stack-depth` rows `open` as D-304 (5) accepted — the docs synced, `1.5.8d.md` planned). **1.5.8b's
 planning measured first, and the user settled SEVEN questions the day each was
 asked (D-308…D-314).** A struct field may carry `limit<Rules>` (D-308). The
 overflow rows nothing proves stay guarded, measured and reported (D-309). A
@@ -2310,6 +2312,16 @@ that carried them retired at the cycle close):
   reader's record is `meta/roadmap/1.5/tools/decreases_read.txt`; the tool
   (`decreases_sweep.py` over `loop_dump.npk`'s dump, built with `quickemit
   --keep`) writes the provable shape and applies the record.
+- **A measure decides only over STABLE terms, so write the bound as a local**
+  (1.5.8c step 5's measurement): `x.count - i` with `x` a POINTER parameter is
+  a fresh opaque term at every read (DEF-14: a callee holding the pointer may
+  write it), and so is a field of a BY-VALUE aggregate or a `raw f(s)` over
+  one, because an aggregate has no value term yet (E-6). The sweep's `hoist`
+  idiom — `int64:n = x.count;` before the loop where the body cannot change
+  it, `decreases n - i` — is what the solver can read; a measure the check
+  keeps is still a correct measure, only unproven. The residue by cause is
+  `python3 meta/roadmap/1.5/tools/residue.py ROOT OUT.txt` over a tree's
+  `build/verify/obl`.
 - **A `decreases` in a `comptime` body is checked by the evaluator** (1.5.8c
   step 3): `fold_while` evaluates the measure each trip and a violation is a
   counterexample, TYPE-069 at the loop, as a `prove` there is (L-18).

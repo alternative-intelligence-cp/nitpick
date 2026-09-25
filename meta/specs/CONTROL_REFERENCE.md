@@ -99,11 +99,21 @@ int32:max = is (a > b) : a : b;
 
 Nitpick supports `break;` to exit the innermost loop, and `continue;` to skip to the next iteration across all loop types.
 
+> **Every `while` and `when` says why it ends (D-304, 1.5.8c).** The head
+> carries exactly one of `decreases E` — a plain integer that is at least zero
+> and smaller on every trip, checked at the top of the body in every build
+> (`DecreasesViolated`) and proven where it can be (the `terminate` rows) — and
+> `unbounded`, the greppable acknowledgment that the loop may not end (an event
+> loop, a read-to-end-of-input loop), with its reason on the line above
+> (D-316). The clause comes BEFORE `invariant`. A `while`/`when` with neither,
+> or both, is `NITPICK-TYPE-072`; `for`, `loop` and `till` are bounded by
+> construction and take neither. VERIFICATION_REFERENCE §4b is the whole of it.
+
 ### 2.1 `while` Loop
 Standard condition-based loop.
 
 ```nitpick
-while (x < 10i32) {
+while (x < 10i32) decreases 10i32 - x {
     x += 1i32;
 }
 ```
@@ -112,7 +122,7 @@ while (x < 10i32) {
 A specialized `while` loop that inherently tracks **whether the body ever executed**. It eliminates the need for external state-tracking boolean flags.
 
 ```nitpick
-when (x > 0i32) {
+when (x > 0i32) decreases x {
     // Loop body
     x -= 1i32;
 } then {
@@ -242,9 +252,11 @@ loop(10i32, 0i32, 1i32) {
 > direction from the bounds now, exactly as the emitter does, so a `comptime`
 > function's value is its run-time twin's.
 
-**There is no `loop { }` infinite form and no do-while construct.** `while (true)`
-is the idiom for an unbounded loop. `FORMAL_DRAFT` 05 §5.4.3–5.4.4 defines `till`
-as do-while and `loop` as infinite; that reading is **struck** (D-022).
+**There is no `loop { }` infinite form and no do-while construct.** `while (true)
+unbounded` is the idiom for an unbounded loop — the keyword is the
+acknowledgment D-304 (4) asks for, with the reason on the line above (D-316).
+`FORMAL_DRAFT` 05 §5.4.3–5.4.4 defines `till` as do-while and `loop` as
+infinite; that reading is **struck** (D-022).
 
 ### 2.5 Loop Labels
 
@@ -252,8 +264,10 @@ To break out of nested loops, a loop may be labelled with an identifier and a
 colon:
 
 ```nitpick
-outer: while (true) {
-    while (true) {
+// the outer loop runs until the inner one breaks out of it
+outer: while (true) unbounded {
+    // the inner loop ends only through `break outer`
+    while (true) unbounded {
         if (fatal_error) {
             break outer;
         }

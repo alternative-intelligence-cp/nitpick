@@ -68,7 +68,12 @@ VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
 ; the contract position after a parameter list (D-163, D-181, D-221):
 ;   Contracts ::= ( "requires" Expr | "ensures" Expr
 ;                 | "acquires" ["<="] Expr | "never" "fails"
-;                 | "joins" Expr | "pure" )*
+;                 | "joins" Expr | "pure" | "decreases" Expr )*
+; `decreases Expr` on a FUNCTION (D-304 (5), 1.5.8c) is the measure a recursive
+; call compares -- at most once, a plain integer of at most 64 bits, checked at
+; every call inside the function's recursive group; on a `while`/`when` LOOP the
+; clause is part of the loop head, before `invariant` (`while (c) decreases E`,
+; `while (c) unbounded` -- exactly one of the two, TYPE-072).
 ; `pure` is a marker clause (1.5.1, D-221): the body is a function of its
 ; arguments and nothing else -- no allocation, no I/O, no suspension, no
 ; store the caller can see -- checked in the body, and read by name at a
@@ -159,6 +164,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `NIL` added to `BuiltinType` | It is a type as well as a value — `func:reset = NIL(Ast->:a)` — and was listed only among the sentinels, so the type parser refused a spelling the compiler's own sources use on nearly every mutating function (0.2.5) |
 | `cstring` added to `BuiltinType` | D-049 — `AST_REFERENCE.md` §4 declares a `CStringType` node and `TYPE_REFERENCE.md` §3.2.1 writes `cstring:cs = "Hello";`, but the production never listed it, so `cstring` lexed as an identifier, the node was unreachable, and a user type of that name would have silently shadowed the builtin (0.2.8) |
 | `old`, `result` added to `VerificationKeyword` | D-221 (1.5.1, S-16/S-18) — `old(expr)` is the operand's value at the function's ENTRY, a keyword operator with a parenthesised operand (`move(place)`'s shape, `is_err`'s reason: a call that is not a call confuses every reader, D-096), legal in `ensures` and `invariant`; `result` is the SUCCESS value in `ensures`, a leaf like `$`. The prototype reserved `result`; this grammar had left it an identifier "given meaning by the verifier", so a parameter named `result` shadowed the return value inside its own postcondition, and 1.5.3's encoder would have met an unbound name to re-match by context. `result`'s token is `KwResultValue`, the one keyword whose token name is not its spelling (`Result` owns `KwResult`). Measured before adding: `old` was two locals and `result` one field name, all renamed. |
+| `decreases`, `unbounded` added to `VerificationKeyword` | D-304 (1.5.8c) — every `while`/`when` states exactly one of `decreases E` (a plain integer that is at least zero and smaller on every trip: checked in every build, `DecreasesViolated`; proven by the `terminate` rows) and `unbounded` (the acknowledgment that the loop may not end, its reason on the line above — D-316); a FUNCTION may carry `decreases E` among its contracts, checked at every call inside its recursive group (D-304 (5)). The tree's one identifier of either name (`func:unbounded<U>`, a test) was renamed. |
 | `pure` added to `VerificationKeyword` | D-221 (1.5.1, S-15) — purity is DECLARED, never inferred: a marker clause in the contract window (`never fails`'s shape), checked in the body (no allocation, no I/O, no suspension, no store the caller can see, no callee that is not itself `pure` and named) and read by name at direct call sites, because a contract expression admits only `never fails` `pure` callees and the verifier encodes such a call as an uninterpreted function per KNOWN symbol. Inference was rejected for the reasons D-163 rejected it for `never fails`: implicit, non-modular, unreadable at the declaration. `pure` never rides a function TYPE — an indirect callee is refused where purity matters — so D-163 rule 8's identity question does not reopen. Measured before adding: no identifier `pure` anywhere in the tree. |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
 

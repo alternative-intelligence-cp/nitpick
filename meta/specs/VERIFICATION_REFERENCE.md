@@ -426,7 +426,7 @@ func:main = int32() {
 
 ## 4. Loop Invariants (`invariant`)
 
-Loop constructs (`loop`, `while`, `till`, `when`) support an `invariant` clause specifying conditions that must hold at every iteration boundary.
+Loop constructs (`loop`, `while`, `till`, `when`) support an `invariant` clause specifying conditions that must hold at every iteration boundary. A `while`/`when` also states why it ends — `decreases E` or `unbounded`, BEFORE the invariant (§4b, D-304).
 
 ```nitpick
 func:sum_range = int32(int32:n)
@@ -435,7 +435,7 @@ func:sum_range = int32(int32:n)
 {
     int32:total = 0i32;
     int32:i = 0i32;
-    while (i < n) invariant total >= 0i32, i >= 0i32 {
+    while (i < n) decreases n - i invariant total >= 0i32, i >= 0i32 {
         total = total + 1i32;
         i = i + 1i32;
     }
@@ -615,6 +615,38 @@ while (true) unbounded { … }                                   // an event loo
   counterexample reported once as TYPE-069. Every `failsafe` in the tree
   names `(DecreasesViolated)`, the runners' generated ones included, since
   the prelude's loops reach nearly every program.
+- **The measurement (1.5.8c step 5, 2026-09-24; D-309's shape, by
+  `meta/roadmap/1.5/tools/residue.py` over the compiler's own emission at
+  `d7a8092`)**. 1,183 `terminate` row sites in the compiler's own build
+  (1,174 distinct manifest rows): 684 discharged, 499 open, none `budget`,
+  none `unencoded`. What discharges is the shape the sweep tool writes and
+  the reader's plainest idiom — 508 rows of `bound - v` over two locals, 89
+  of `while (v > 0) decreases v`, 73 of a `List`'s `count` read off a local
+  against a counter. What stays open, by cause, each read off the row's
+  own goal: **240 read a field THROUGH A POINTER** (`x.count - i` with
+  `Reach->:x`, the lexer's `lx.text.len - lx.pos`, 116 of them behind a
+  widening cast) — a fresh opaque term per read under DEF-14, since a call
+  in the body may write the pointee; that is E-4's frame problem, 1.6 leg
+  B's. **79 read a field of a BY-VALUE aggregate** (`AssignState:src`'s
+  `src.count`, read once in the condition and once in the measure as two
+  unrelated terms) and **116 put a `pure never fails` call in the measure**
+  whose argument is such an aggregate (`raw item_member_count(ast, ld)`
+  with `DeclNode:ld`: the aggregate has no value term, so the call's term
+  is fresh per read) — one cause, recorded as lead E-6 (OPEN_DECISIONS
+  §4): an unescaped by-value aggregate can carry a versioned term of its
+  own, with each field an uninterpreted function of it. **55 over two
+  locals** are open on their own merits — a doubling `cap - c` under `c =
+  c * 2` needs `c > 0` as an invariant, `def_hi[i] - d` reads an element
+  (nobody's fact), the prelude's `list_reserve` grows `nc` by doubling — and
+  8 `decreases v` rows and one `64i32 - al` are the same. No bound was
+  written into the tree to close a row (D-309). The **`stack-depth`** rows:
+  116, all `open` — 116 cyclic groups over 268 function files, 79 of one
+  member (a self-recursion), 18 of two, 6 of three, 5 of four, and six
+  larger ones (the expression emitter's 30, the type parser's 21, the
+  encoder's 20, the type resolver's 14, the member typer's 12, the reach
+  walk's 7) — no member states a measure, which is the figure D-304 (5)
+  accepted when it made the function measure optional. The report is
+  reproducible from a tree's `build/verify/obl` and its manifest.
 
 ---
 

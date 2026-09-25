@@ -53,10 +53,11 @@ or moves the floor; it is unnumbered and names the number the landing will take.
 | 42 | 2026-09-24 | `68b6e05` | 1.5.8c step 0 (the plan and the codes) | no language change |
 | 43 | 2026-09-24 | `f578e6b` | 1.5.8c step 1 (the mechanism: the two keywords, the loop and function clauses, the check, the `terminate` rows; DEF-90) | sent by `nitpick-compiler_s13` (the seat after s12) |
 | 44 | 2026-09-24 | `5ea6053` | 1.5.8c step 2 (the one-hop snapshot refresh: the committed builder parses the clauses and carries DEF-90's fix; the builder rows move) | carries the SWEEP RECIPE for the libraries (step 3's tool and idioms; D-316) |
-| 45 | 2026-09-24 | | 1.5.8c step 3 (the sweep of our tree: every `while`/`when` clausal, 392 by the tool, 563 by the reading, 72 `unbounded`; the evaluator checks a measure; every failsafe names `(DecreasesViolated)`) | no language change; the record `decreases_read.txt` is the libraries' worked example |
+| 45 | 2026-09-24 | `275442f` | 1.5.8c step 3 (the sweep of our tree: every `while`/`when` clausal, 392 by the tool, 563 by the reading, 72 `unbounded`; the evaluator checks a measure; every failsafe names `(DecreasesViolated)`) | no language change; the record `decreases_read.txt` is the libraries' worked example |
 | — | 2026-09-24 | — | ADVANCE for 1.5.8c step 4: TYPE-072's `neither` shape becomes a refusal; a FUNCTION's `decreases` is live (the recursive groups, TYPE-074/075, TYPE-073's 64-bit width for a function measure, the check at every call inside the group, the `terminate` call rows, the `stack-depth` rows derived by both runners); `index.txt` gains two fields and `rows.txt`'s fifth admits `d`; DEF-92 named | sent to `nitpick-libs_s5` by `nitpick-compiler_s13` before the landing |
-| 46 | 2026-09-24 | | 1.5.8c step 4 (the refusal, the groups, the function measure, the `stack-depth` rows) | the landing the advance above announced |
-| 47 | 2026-09-24 | | 1.5.8c step 4b (DEF-92: the generic-instance interner's index -- the frontend 5.4x faster, every program's emission byte-identical) | no language change; a re-pin gets a faster compiler and nothing else |
+| 46 | 2026-09-24 | `def2728` | 1.5.8c step 4 (the refusal, the groups, the function measure, the `stack-depth` rows) | the landing the advance above announced |
+| 47 | 2026-09-24 | `d7a8092` | 1.5.8c step 4b (DEF-92: the generic-instance interner's index -- the frontend 5.4x faster, every program's emission byte-identical) | no language change; a re-pin gets a faster compiler and nothing else |
+| 48 | 2026-09-24 | | 1.5.8c step 5 (the subcycle's close: the residue report over `terminate` and `stack-depth`, the docs, `1.5.8d.md` planned) | no language change; the commit cell is filled at 1.5.8d, the next landing in the tree |
 
 The messages themselves are not kept here; each seat keeps the text it sent in its
 own `.internal/handoff_*/` scratch for as long as that survives, and this table is

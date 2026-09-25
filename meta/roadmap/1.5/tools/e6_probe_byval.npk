@@ -1,0 +1,26 @@
+// E-6's probe (1.5.8d §2.1 (4)): does a callee's write to a BY-VALUE struct
+// parameter reach the caller's binding? 19 = value semantics (the caller's
+// `p.a` still 1, the callee's copy 9); 99 = the write reached the caller.
+mod:e6_probe_byval;
+
+struct:P = { int32:a; };
+
+func:poke = int32(P:p) never fails {
+    p.a = 9i32;
+    pass p.a;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    P:p = P{ a: 1i32 };
+    int32:r = raw poke(p);
+    exit (p.a * 10i32 + r);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 93i32; }, (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

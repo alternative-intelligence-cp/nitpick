@@ -19436,6 +19436,22 @@ Lands at 1.5.8c. The library listener was told before anything landed
 > (`decreases_recursion.npk`). The compiler's own recursion states no measure,
 > so its `stack-depth` rows are all `open` (the count in 1.5.8c step 4's
 > record), which is the honest figure D-304's alternatives paragraph accepted.
+>
+> **LANDED WHOLE (2026-09-24, 1.5.8c step 5 — the close; `meta/roadmap/1.5/
+> 1.5.8c.md`).** (1)–(6) are live in the compiler that builds itself: the
+> clauses (step 1), the committed builder that parses them (step 2), the
+> sweep of every `while`/`when` in the tree — 977 loops, 72 `unbounded` with
+> their reasons (step 3, D-316) — the refusal and the function measure with
+> the recursive groups (step 4), and DEF-92's index found by measuring the
+> sweep's cost (step 4b). The measurement of what the `terminate` rows
+> prove, by cause, is VERIFICATION_REFERENCE §4b's last bullet: 684 of 1,183
+> row sites in the compiler's own build discharged; of the 499 open, 240
+> read a field through a pointer (E-4, 1.6 leg B), 195 read a by-value
+> aggregate's field or pass one to a pure call in the measure (a fresh term
+> per read — lead E-6, OPEN_DECISIONS §4), 64 are open on their merits; the
+> 116 `stack-depth` rows are `open` as (5) accepted. D-309's rule held: no
+> bound was written into the tree to close a row. The reserved words
+> `decreases` and `unbounded` cost the tree one renamed identifier.
 
 ## D-305 — A stack overflow is a controlled trap: LLVM's split-stack prologue on every emitted function, `StackExhausted` (4118), `failsafe` on a stack of its own; the check is never elided — **SETTLED (user decision, 2026-09-18: "go with all four"; S-85)**
 

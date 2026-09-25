@@ -1,0 +1,26 @@
+// E-6's probe, the OWNING case: a struct with a string field passed PLAIN (a
+// lend under D-004); the callee writes a scalar field. Refused by the checker?
+// If accepted: 19 = the caller's field unchanged, 99 = the write reached it.
+mod:e6_probe_own;
+
+struct:Q = { string:s; int32:a; };
+
+func:poke = int32(Q:q) never fails {
+    q.a = 9i32;
+    pass q.a;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Q:q = Q{ s: string_concat("ab", "c"), a: 1i32 };
+    int32:r = raw poke(q);
+    exit (q.a * 10i32 + r);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 93i32; }, (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

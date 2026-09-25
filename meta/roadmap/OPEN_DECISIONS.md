@@ -2057,6 +2057,40 @@ defect declares a `DEF-` in §2f.
 > over-approximation in more than an arm it cannot enter, or at 1.5.8d's close, whichever
 > comes first. (This section's E-4 shares its number with §2g's closed E-4 — two leads, one
 > number, since step 5; step 7 disambiguated both in place rather than renumbering.)
+> *[1.5.8c step 5 (2026-09-24): its disposition at the close is 1.5.8d's question S-98 —
+> the measurement stands at four tests paying one arm each, and the recommendation is to
+> DECIDE IT OUT with the design kept here, since the over-approximation is sound and the
+> narrowing is a generic-chain walk inside a safety analysis for no safety gain.]*
+
+> **[1.5.8c step 5 (2026-09-24) — E-6, owned by the compiler seat: A BY-VALUE AGGREGATE HAS
+> NO VALUE TERM, SO ITS FIELD IS A FRESH TERM AT EVERY READ.]** Found by the `terminate`
+> residue report (`meta/roadmap/1.5/tools/residue.py`; VERIFICATION_REFERENCE §4b's last
+> bullet). `while (i < (src.count => int64)) decreases (src.count => int64) - i` with
+> `AssignState:src` a BY-VALUE parameter reads `src.count` as `|_.2|` in the condition and
+> `|_.3|` in the measure (`state_copy`'s file), so the entry row `src.count - i >= 0` cannot
+> follow from `i < src.count`; and `(raw item_member_count(ast, ld)) - lm` with `DeclNode:ld`
+> a by-value local reads the pure call as `|_.60|` and `|_.61|` — a `pure never fails` callee
+> is an uninterpreted function of its arguments' TERMS (1.5.3), and an aggregate argument has
+> none, so the application is opaque and fresh. Measured over the compiler's own build at
+> `d7a8092`: 79 open `terminate` row sites read a by-value aggregate's field, 116 put a pure
+> call over one in the measure — 195 of the 499 open, against 240 that read through a
+> pointer (E-4's class, which this lead does NOT touch: a pointee may be written by any
+> callee holding the pointer). THE DESIGN: an unescaped by-value aggregate binding (never
+> `@s`, `$$i s`, `$$m s`, never a pointer receiver — the encoder's existing `is_escaped`)
+> carries a versioned term of its own, `s.k`, as a scalar local does; a field read `s.f` is
+> the uninterpreted function `(|npk.f.<type>.<field>| s.k)` (nested `s.a.b` composes; a
+> `List` field's `count` keeps its length symbol); a write to a field bumps the version and
+> states `(= (|f| s.k+1) v)` with every other field of the type equal to its previous value
+> (the standard update frame, bounded by the field count); a whole assignment, a `move`, a
+> `pass` out of a field and a loop head's havoc bump it as they bump a scalar; a by-value
+> argument to a call changes nothing, since the callee cannot write the caller's binding
+> (D-004's model — TO BE MEASURED FIRST by a probe, since a lent owning aggregate travels by
+> address). A limited field's rule (D-308) is asserted over the applied term at each read,
+> as it is over the opaque one today. Sound because no alias to such a binding exists.
+> Expected: the 195 rows discharge and a share of the 1,554 open `overflow` rows of the shape
+> "sum or difference of two unknowns" with it; the gate over shared rows moves nothing.
+> Its disposition is 1.5.8d's question S-97 (recommended: land it as 1.5.8d step 0, before
+> the close's refresh, under its own harness and manifest re-record).
 
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
