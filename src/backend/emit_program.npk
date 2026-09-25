@@ -689,7 +689,7 @@ func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
         body = raw ll_struct_body(tr, c, t, scope);
     }
     if (!(raw ll_is_ok(body))) { pass NIL; }
-    drop irw_raw(w, raw cat4(name.text, " = type ", body.text, ""));
+    drop irw_type_def(w, raw cat4(name.text, " = type ", body.text, ""));
     pass NIL;
 };
 
@@ -734,7 +734,7 @@ func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
         body = raw ll_struct_body(tr, c, t, scope);
     }
     if (!(raw ll_is_ok(body))) { pass NIL; }
-    drop irw_raw(w, raw cat4(name.text, " = type ", body.text, ""));
+    drop irw_type_def(w, raw cat4(name.text, " = type ", body.text, ""));
     pass NIL;
 };
 
@@ -2158,11 +2158,11 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
 func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                              DiagList->:diags, ModuleGraph->:g, int32:from) never fails {
     int32:t = from;
-    bool:some = false;
     // the type table is re-read each trip (the late headers): an instance interned while emitting gets its header here, and a program interns finitely many types (D-316)
+    // (DEF-97, 1.6.0 step 3d: each header goes AHEAD of every function through
+    // `irw_type_def`, not into the tail after the bodies that use it)
     while (t < (raw tt_count(c.types))) unbounded {
         if ((raw type_args_count_of(c.types, t)) > 0i32) {
-            if (!some) { drop irw_blank(w); some = true; }
             drop emit_instance_header(w, tr, c, diags, g, t);
         }
         t = t + 1i32;

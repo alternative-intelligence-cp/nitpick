@@ -1,0 +1,45 @@
+// expect-exit: 0
+//
+// DEF-97 (1.6.0 step 3d, the library listener's finding): a generic struct
+// instance used ONLY inside a generic function -- `Pair<int64>`, interned while
+// `mk<int64>`'s body is being emitted -- had its type definition written into
+// the module's TAIL, after the alloca that uses it, and `llc` refused the
+// module ("Cannot allocate unsized type"). A definition written once a function
+// has begun goes ahead of every function now (`irw_type_def`). Both shapes here
+// are late: a struct with plain fields and one whose field is the parameter;
+// neither instance is named anywhere but inside its helper.
+mod:late_instance;
+
+struct:Pair<T> = { int64:a; int64:b; };
+struct:Box<T> = { T:v; };
+
+func:mk<T> = int64(int64:n) never fails {
+    Pair<T>:p = Pair{ a: n, b: n };
+    pass p.a;
+};
+
+func:unbox<T> = T(move T:v) never fails {
+    Box<T>:b = Box{ v: move(v) };
+    pass move(b.v);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:c = raw mk::<int64>(4i64);
+    if (c != 4i64) { exit 23i32; }
+    int64:d = raw unbox::<int64>(7i64);
+    if (d != 7i64) { exit 24i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

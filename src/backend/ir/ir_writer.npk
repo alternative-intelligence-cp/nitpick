@@ -417,6 +417,25 @@ pub func:irw_frame_type = NIL(IrWriter->:w, string:line) never fails {
     pass NIL;
 };
 
+// A TYPE DEFINITION (1.6.0 step 3d, DEF-97): into the head while no function
+// has begun -- where every header written before the first function has
+// always gone -- and into the sink that splices ahead of every function once
+// one has. An instance interned while a body was being emitted (a generic
+// body's `Pair<T>` local at its first `::<int64>`) had its header written by
+// `irw_raw` into the TAIL, after the alloca that used it, and `llc` refused
+// the module ("Cannot allocate unsized type"): a named type's definition must
+// precede its instruction uses, while definitions among themselves may come in
+// any order, so the frame types' sink is the right place.
+pub func:irw_type_def = NIL(IrWriter->:w, string:line) never fails {
+    if (w.seen_fn) {
+        drop sink_write(@w.types, line);
+        drop sink_write(@w.types, "\n");
+        pass NIL;
+    }
+    drop irw_raw(w, line);
+    pass NIL;
+};
+
 // OPEN A FUNCTION'S BUFFERS (1.0.9a). The define line and `entry:` label are
 // written to `out` BEFORE this, so allocas and body land after them at close.
 pub func:irw_open_fn = NIL(IrWriter->:w) never fails {
