@@ -348,6 +348,26 @@ pub func:refuse_move_out_of_limited = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     pass NIL;
 };
 
+// A `move` OR `pass` OUT OF A `fixed` BINDING, OR ANY PART OF ONE, WHEN THE
+// VALUE OWNS (DEF-99, 1.6.0 step 3f; D-287's twin): the vacant value the move
+// leaves behind (D-254) is a write to storage declared immutable -- a `fixed`
+// module binding is read-only memory (D-211) and the store faulted, a `fixed`
+// local kept its bytes and a second owner existed. The whole binding is refused
+// as well as its parts, unlike a limited binding's (a `fixed` value never dies
+// by a move). A copyable value is copied out and nothing is written.
+pub func:refuse_move_out_of_fixed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
+                                        Span:at) never fails {
+    if (ty == 0i32) { pass NIL; }
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (!(raw place_fixed(e, id, 64i32))) { pass NIL; }
+    TypeResolver:r = raw etyper_resolver(e);
+    if (!(raw type_drops(@r, ty, e.scope, 64i32))) { pass NIL; }
+    discard(raw te_error(e, raw TYPE_FIXED_MOVE(),
+        "a `fixed` binding cannot be moved out of when it owns (D-287): the vacant value a move leaves behind is a write to immutable storage -- a `fixed` module binding is read-only memory and the store faults -- so take a copy with `.clone()`, or declare the binding plain",
+        at));
+    pass NIL;
+};
+
 // --- D-266 (1.5.2h): VIEWS AND THE FROZEN SELECTOR --------------------------------
 //
 // THE ROOT SYMBOL OF A PLACE, FOLLOWED THROUGH VIEWS: a lending `pick`'s binding
@@ -3984,6 +4004,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop refuse_move_of_borrowed(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_limited(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_sealed(e, raw expr_operand(n), mvt, n.span);
+        drop refuse_move_out_of_fixed(e, raw expr_operand(n), mvt, n.span);
         pass mvt;
     }
 

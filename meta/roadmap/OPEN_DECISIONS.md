@@ -2181,6 +2181,20 @@ defect declares a `DEF-` in §2f.
 > `tests/backend/programs/block_string_quotes.npk` runs them (a wrong length is the exit). `src/` itself may
 > not spell a `""` inside a block string until a snapshot carries the fix (D-205).
 
+> **DEF-99 — FIXED at 1.6.0 step 3f (2026-09-25). A MOVE OUT OF `fixed` STORAGE HOLDING AN OWNING VALUE
+> COMPILED, AND THE PROGRAM FAULTED.** Found by the library listener (`nitpick-libs_s6`; nitpick-time's 0.1.3
+> planner, their O-N20) and read here: `fixed string[2]:NAMES` is emitted as an LLVM `constant` global (D-211),
+> and `string:s = move(NAMES[1i64])` stores the vacant value into it — `MachineFault` at -O0, and at -O2 the
+> store deleted as the UB it is and the moved string's drop stopping as `Unreachable`; `pass NAMES[i]` (the
+> implicit move) and `move(V)` of a `fixed string` (a local: no vacancy written, two owners) reach the same
+> end. Measured by the listener at every pin since `0dfddac`; a `.clone()` runs clean. The copy out of such
+> storage was already TYPE-046, and D-287 had refused the ADDRESS of a `fixed` binding (TYPE-071) for exactly
+> this reason — a write path no rule sees — while the move's own write went unasked. `refuse_move_out_of_fixed`
+> (type_expr.npk, beside the limited and sealed twins) refuses at the `move` operator and at `pass` when the
+> place is `fixed`-rooted (`place_fixed`) and the value OWNS: `NITPICK-TYPE-084`; a copyable value moved out
+> is a plain copy and stays. `tests/types/rejection/fixed_move_out.npk` holds the three shapes and the clone
+> control. A refusal ADDED, announced in advance (NOTICES F9, naming 58); the listener's exposure is none.
+
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/done/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
 > **1.5.0 LANDED (2026-09-03)** — the skeleton with the D-007 division pair end to end (D-218/D-219; `meta/roadmap/done/1.5/1.5.0.md`). C-17→D-218's items (1)–(11) are all implemented or scoped: the SMT emitter, the determinism profile, per-function processes, the integer encoding, the ownership-trusting memory model, the content-hash identity, `llvm.assume` elision, the `undef` ban, and TCB.md. The catalogue's remaining kinds land 1.5.1–1.5.8.

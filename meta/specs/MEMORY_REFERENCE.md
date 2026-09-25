@@ -205,7 +205,11 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   argument of, or the scope of the pointer local holding it); a static
   overlap is refused (`NITPICK-BORROW-013`), a computed-index overlap is
   guarded at run time (`BorrowOverlap`) and proven away by the verified build.
-  A `fixed` binding has no address (D-287, `NITPICK-TYPE-071`): the pointer
+  A `fixed` binding has no address (D-287, `NITPICK-TYPE-071`), and one that owns
+  cannot be moved out of — `move(...)` or the implicit move at `pass`, of the
+  binding or any part of it — since the vacant value a move leaves behind is a
+  write to immutable storage (`NITPICK-TYPE-084`, 1.6.0 step 3f; `.clone()` is
+  the reading): the pointer
   type carries no mutability, so an address of an immutable would be a write
   path no rule sees.
 

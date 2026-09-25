@@ -18447,7 +18447,13 @@ pointer to a `fixed` through every call is the analysis D-286 declines for
 
 > Lands at **1.5.5** step 1 (`meta/roadmap/1.5/1.5.5.md`).
 
-
+**[1.6.0 step 3f (2026-09-25): THE WRITE A MOVE MAKES, asked at last — DEF-99, the library listener's
+finding. `move(NAMES[1i64])` out of `fixed string[2]:NAMES`, and `pass NAMES[i]` (the implicit move),
+compiled and stored the vacant value into the `constant` global this decision's reason names: the
+program faulted (`MachineFault` at -O0; at -O2 the store deleted as UB and the drop stopping as
+`Unreachable`), at every pin the listener keeps. `NITPICK-TYPE-084` refuses a move out of a `fixed`
+binding or any part of one when the value owns, at the `move` operator and at `pass`, as TYPE-046
+refuses the copy and TYPE-071 the address; a copyable value moved out is a plain copy and stays.]**
 ## D-288 — the floor's obligations: the evidence beside the floor, the program's theory, loops by invariant or by a stated bound, the residue named, TCB.md generated — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-63, S-64, S-65, S-68; lands at 1.5.6 steps 3, 4 and 6)**
 
 Planned 1.5.6 (`meta/roadmap/1.5/1.5.6.md`, 2026-09-11, on `149dbf6`) under

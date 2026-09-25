@@ -1,0 +1,36 @@
+// expect-error: NITPICK-TYPE-084
+//
+// DEF-99 (1.6.0 step 3f, the library listener's finding): a MOVE out of `fixed`
+// storage holding an owning value compiled, and the program faulted -- the
+// vacant value the move leaves behind is a write, and a `fixed` module binding
+// is read-only memory (D-211). The copy was already TYPE-046; the move -- the
+// explicit `move(...)` and the implicit move at `pass` -- is TYPE-084 now, for
+// an element, a scalar and a pass alike. A `.clone()` out of the same storage
+// is the way to read it (the control below carries no code).
+mod:fixed_move_out;
+
+fixed string:V = "2026c";
+fixed string[2]:NAMES = ["alpha", "beta"];
+
+func:elem_move = int64() never fails {
+    string:s = move(NAMES[1i64]);
+    pass s.len;
+};
+
+func:elem_pass = string(int64:i) never fails {
+    pass NAMES[i];
+};
+
+func:scalar_move = int64() never fails {
+    string:s = move(V);
+    pass s.len;
+};
+
+func:control = int64() {
+    string:a = V.clone() ?! HeapOom;
+    string:b = NAMES[0i64].clone() ?! HeapOom;
+    pass a.len + b.len;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

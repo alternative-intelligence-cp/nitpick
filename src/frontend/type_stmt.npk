@@ -2037,6 +2037,8 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     drop refuse_pass_of_pointee_owned(e, v, got, s.span);
     // AND OUT OF A LIMITED BINDING'S FIELD OR ELEMENT (1.5.2 step 1, D-251).
     drop refuse_move_out_of_limited(e, v, got, s.span);
+    // AND OUT OF A `fixed` BINDING WHEN THE VALUE OWNS (DEF-99, 1.6.0 step 3f).
+    drop refuse_move_out_of_fixed(e, v, got, s.span);
     // AND OUT OF AN OWNING `sealed` FIELD FROM OUTSIDE ITS MODULE (D-313).
     drop refuse_move_out_of_sealed(e, v, got, s.span);
     if (!(raw fits(e, want, got))) {
