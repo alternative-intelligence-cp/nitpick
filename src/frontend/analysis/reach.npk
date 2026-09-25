@@ -8,7 +8,9 @@
 // in every program's floor), division's two only where division or
 // remainder appears, `OutOfBounds` only where indexing or slicing does,
 // `TbbErr` only where a `tbb` type is touched, `BadStep` only where a
-// counted loop runs, `StaleHandle` only where arena verbs appear, and
+// counted loop's STEP IS COMPUTED (a literal step is TYPE-068's at compile
+// time and the emitter writes it no guard -- DEF-95, 1.6.0 step 3b),
+// `StaleHandle` only where arena verbs appear, and
 // `DeadlineExceeded` only where the deadline machinery can be reached.
 // Over-approximation is the safe direction: the walk may require an arm the
 // backend's emitted guards never fire, never the reverse.
@@ -536,14 +538,20 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     if (s.kind == StmtKind.StmtLoopStmt) {
         drop reach_invariant(x, raw stmt_counted_invariant(x.ast, s), fuel - 1i32);
         drop reach_measure(x, raw stmt_counted_measure(x.ast, s), fuel - 1i32);
-        x.saw_counted = true;
+        // DEF-95: the `BadStep` guard exists only for a COMPUTED step -- the emitter
+        // asks `counted_step_literal` before writing it (ir_stmt.npk), and so does this
+        // walk; a literal step is checked by TYPE-068 and can raise nothing.
+        if (!(raw counted_step_literal(x.ast, s)).is_lit) { x.saw_counted = true; }
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtTillStmt) {
         drop reach_invariant(x, raw stmt_counted_invariant(x.ast, s), fuel - 1i32);
         drop reach_measure(x, raw stmt_counted_measure(x.ast, s), fuel - 1i32);
-        x.saw_counted = true;
+        // DEF-95: the `BadStep` guard exists only for a COMPUTED step -- the emitter
+        // asks `counted_step_literal` before writing it (ir_stmt.npk), and so does this
+        // walk; a literal step is checked by TYPE-068 and can raise nothing.
+        if (!(raw counted_step_literal(x.ast, s)).is_lit) { x.saw_counted = true; }
         drop reach_counted(x, s, fuel);
         pass NIL;
     }

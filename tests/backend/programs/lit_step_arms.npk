@@ -1,0 +1,29 @@
+// expect-exit: 15
+//
+// DEF-95 (1.6.0 step 3b): a counted loop with a LITERAL step needs no `(BadStep)`
+// arm. The emitter writes the `BadStep` guard only for a computed step (the
+// `loop-step` row; a literal step is TYPE-068's at compile time), and the reach
+// analysis armed the identity for every counted loop regardless -- so this
+// program, whose two loops step by literals, was refused for not naming an
+// identity nothing could raise. It compiles and answers 10 + 5.
+mod:lit_step_arms;
+
+func:main = int32(cstring[]:argv) {
+    int32:acc = (argv.len =>! int32) - 1i32;
+    till (10i32, 1i32) { acc = acc + 1i32; }
+    loop (0i32, 5i32, 1i32) { acc = acc + 1i32; }
+    exit (acc & 63i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

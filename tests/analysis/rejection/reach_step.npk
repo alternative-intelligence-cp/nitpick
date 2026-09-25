@@ -1,0 +1,28 @@
+// expect-error: NITPICK-REACH-002
+//
+// A counted loop with a COMPUTED step arms `BadStep` (D-022; the `loop-step`
+// row): the guard at the loop's entry traps a step that is not positive, and
+// the identity can reach `failsafe`, so a `failsafe` that does not name it
+// refuses here. DEF-95's twin (1.6.0 step 3b): the literal-step program
+// `tests/backend/programs/lit_step_arms.npk` needs no such arm.
+mod:reach_step;
+
+func:main = int32(cstring[]:argv) {
+    int32:step = (argv.len =>! int32);
+    int32:acc = 0i32;
+    till (10i32, step) { acc = acc + 1i32; }
+    exit (acc & 63i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

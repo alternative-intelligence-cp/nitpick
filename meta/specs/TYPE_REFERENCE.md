@@ -1003,7 +1003,7 @@ qualifiers, before the type:
 Rules<int64>:r_level = { $ >= 0i64, $ <= 100i64 };
 
 struct:Tank = {
-    limit<r_level> sealed int64:n;
+    sealed limit<r_level> int64:n;
     int64:serial;
 };
 ```
