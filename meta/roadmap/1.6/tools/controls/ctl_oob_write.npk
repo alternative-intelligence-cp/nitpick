@@ -1,0 +1,22 @@
+mod:ctl_oob_write;
+// 1.6.0 control (b): an out-of-bounds WRITE of a fixed array, the same shape as (a) with a store.
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:main = int32(cstring[]:argv) {
+    int32[8]:a = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32];
+    int64:i = ((raw zero(argv)) => int64) + 1048576i64;
+    a[i] = 7i32;
+    exit (a[0i64] & 63i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 95i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)         { exit 94i32; },
+        (HeapBadRequest)  { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

@@ -1,0 +1,15 @@
+; (g) use after free: the read through p moves after the npk_dalloc call. The floor poisons a freed block with
+; 0xAA, so the planted program answers 0xAA & 63 = 42 where the plain one answers 5.
+program: ctl_uaf.npk
+expect-plain: 5
+expect-planted: 42
+old:
+  %t12 = load i32, ptr %t11
+  store i32 %t12, ptr %t10
+  %t13 = load ptr, ptr %t1
+  call void @npk_dalloc(ptr %t13)
+new:
+  %t13 = load ptr, ptr %t1
+  call void @npk_dalloc(ptr %t13)
+  %t12 = load i32, ptr %t11
+  store i32 %t12, ptr %t10

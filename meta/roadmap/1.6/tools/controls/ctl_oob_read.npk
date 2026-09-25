@@ -1,0 +1,24 @@
+mod:ctl_oob_read;
+// 1.6.0 control (a): an out-of-bounds READ of a fixed array. The index is argument-derived, so nothing folds;
+// the guard traps OutOfBounds in every build (exit 95). The PLANT removes the guard's compare-and-branch
+// from the emission, and the planted program reads a million elements past the frame: MachineFault (exit 99).
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:main = int32(cstring[]:argv) {
+    int32[8]:a = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32];
+    int64:i = ((raw zero(argv)) => int64) + 1048576i64;
+    int32:v = a[i];
+    exit (v & 63i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 95i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)         { exit 94i32; },
+        (HeapBadRequest)  { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

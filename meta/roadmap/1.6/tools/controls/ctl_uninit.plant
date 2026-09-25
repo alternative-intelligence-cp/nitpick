@@ -1,0 +1,10 @@
+; (e) uninitialised read: the store that seeds `a` with sixty-four zeros is removed -- a[3] reads whatever
+; `smear` left on the stack (0x41414141 + 0), the branch is not taken, and the program dereferences NULL.
+program: ctl_uninit.npk
+expect-plain: 7
+expect-planted: 99
+old:
+  store [64 x i32] %t65, ptr %t1
+  %t66 = icmp ult i64 3, 64
+new:
+  %t66 = icmp ult i64 3, 64

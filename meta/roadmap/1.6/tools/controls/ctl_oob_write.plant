@@ -1,0 +1,8 @@
+; (b) out-of-bounds WRITE: the store's bounds guard becomes unconditional (the second guard, on a[0], stays).
+program: ctl_oob_write.npk
+expect-plain: 95
+expect-planted: 99
+old:
+  br i1 %t19, label %idx.ok3, label %idx.oob2
+new:
+  br label %idx.ok3

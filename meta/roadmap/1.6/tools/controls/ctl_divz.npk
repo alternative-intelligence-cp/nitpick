@@ -1,0 +1,24 @@
+mod:ctl_divz;
+// 1.6.0 control (d): a division by zero. The divisor is argument-derived (0); the guard traps DivByZero in
+// every build (exit 94). The PLANT removes the guard, and the planted program divides by zero: SIGFPE,
+// MachineFault (exit 99).
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:main = int32(cstring[]:argv) {
+    int32:d = raw zero(argv);
+    int32:v = 100i32 / d;
+    exit (v & 63i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)        { exit 94i32; },
+        (DivOverflow)      { exit 93i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)         { exit 94i32; },
+        (HeapBadRequest)  { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

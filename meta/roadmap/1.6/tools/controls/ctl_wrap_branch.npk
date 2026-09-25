@@ -1,0 +1,30 @@
+mod:ctl_wrap_branch;
+// 1.6.0 control (f): WRAPPED arithmetic decides a branch. `x` is 250 +% 9 = 3 at run time; unbounded-integer
+// reasoning reads it as 259, finds the branch dead and sees nothing inside it. Inside, an index a million past
+// the frame: the guard traps OutOfBounds in every build (exit 95). The PLANT removes the guard, and the
+// planted program faults (exit 99). An engine that reasons in mathematical integers reports nothing.
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:main = int32(cstring[]:argv) {
+    uint8:seed = 9u8 + ((raw zero(argv)) =>! uint8);
+    uint8:x = 250u8 +% seed;
+    int32[8]:a = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32];
+    int32:v = 1i32;
+    if (x < 8u8) {
+        int64:i = (x => int64) + 1048576i64;
+        v = a[i];
+    }
+    exit (v & 63i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 95i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)         { exit 94i32; },
+        (HeapBadRequest)  { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

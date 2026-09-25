@@ -26,7 +26,18 @@ library the gate ran (`pins.txt`, P-4). 1.6.1's pinned-tool table in
 ```
 python3 meta/roadmap/1.6/tools/census.py build/npkc.ll            # opcodes, intrinsics, attributes, dbg/datalayout
 python3 meta/roadmap/1.6/tools/census.py --assemble FILE.ll       # plus: which of llvm-as-14/18/20 accepts it
+bash    meta/roadmap/1.6/tools/engines.sh build|check|paths       # the pinned engines (step 1), pins.txt
+python3 meta/roadmap/1.6/tools/gate_inputs.py                     # the input set into .internal/gate/inputs/ (step 2)
+python3 meta/roadmap/1.6/tools/gate_controls.py                   # the seven controls, plain and planted, RUN (step 2)
+python3 meta/roadmap/1.6/tools/plant.py X.plant IN.ll OUT.ll      # one plant by hand
 ```
+
+`controls/` holds the seven planted-defect programs (`ctl_*.npk`) and their plants
+(`ctl_*.plant`: the program, the exits the plain and the planted binaries must
+answer, and `old:`/`new:` blocks each of which must occur exactly once in the
+emission — the explorer's `.ctl` rule). A plant is tied to the emission of the
+compiler under test at the gate's commit; a later emitter change that renames a
+register makes `plant.py` refuse it by name, which is the intended signal.
 
 Every number in the plan's §1 has its command in `PROBES_2026-09-25.md`;
 a number you cannot re-derive from a command there is one to distrust.

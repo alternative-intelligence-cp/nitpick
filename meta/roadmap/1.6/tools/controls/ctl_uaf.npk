@@ -1,0 +1,24 @@
+mod:ctl_uaf;
+// 1.6.0 control (g): a USE AFTER FREE. The program reads the block, then frees it (exit 5 in every build). The
+// PLANT moves the load after the `npk_dalloc` call in the emission; the freed block is poisoned 0xAA by the
+// floor, so the planted program answers 42 (0xAA & 63) deterministically -- a use after free that does not die.
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:main = int32(cstring[]:argv) {
+    wild int32->:p = alloc(4i64) =>! wild int32->;
+    <-p = 5i32 + (raw zero(argv));
+    int32:v = <-p;
+    dalloc(p);
+    exit (v & 63i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (WildLeak)         { exit 92i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (Unreachable)      { exit 91i32; },
+        (*)                { exit 97i32; }
+    }
+};

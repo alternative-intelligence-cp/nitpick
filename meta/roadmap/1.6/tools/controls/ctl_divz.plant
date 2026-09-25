@@ -1,0 +1,8 @@
+; (d) division by zero: the div-zero guard's branch becomes unconditional -- `sdiv i32 100, 0` executes (SIGFPE).
+program: ctl_divz.npk
+expect-plain: 94
+expect-planted: 99
+old:
+  br i1 %t7, label %div.zero2, label %div.chk1
+new:
+  br label %div.chk1

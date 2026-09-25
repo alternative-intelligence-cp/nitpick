@@ -1,0 +1,40 @@
+mod:ctl_uninit;
+// 1.6.0 control (e): an UNINITIALISED read. The language refuses a read of an unassigned local (ASSIGN-001,
+// D-010), so `a` is written as sixty-four zeros and the program exits 7 in every build. The PLANT removes the
+// zero store from the emission; `smear` has just written 0x41 over the same stack region, so the planted program reads garbage, takes
+// the other branch and dereferences NULL: MachineFault (exit 99). A control that answers 7 when planted is
+// blind and says so.
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:smear = int32(int32:z) never fails {
+    int32[64]:junk = [0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32,
+                      0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32,
+                      0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32,
+                      0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32];
+    for (int64:i in 0i64...64i64) { junk[i] = 1094795585i32 + z; }
+    pass junk[63i64];
+};
+func:read_vacant = int32(int32:z) never fails {
+    int32[64]:a = [0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32, 0i32];
+    pass (a[3i64] + z);
+};
+func:main = int32(cstring[]:argv) {
+    int32:z = raw zero(argv);
+    int32:s = raw smear(z);
+    int32:r = raw read_vacant(z);
+    if (r == 0i32) { exit 7i32; }
+    wild int32->:p = #wild_ptr<int32>(z => int64);
+    exit ((<-p) & 63i32) + (s & 0i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 95i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)         { exit 94i32; },
+        (HeapBadRequest)  { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

@@ -1,0 +1,24 @@
+mod:ctl_null;
+// 1.6.0 control (c): a NULL dereference. The address is argument-derived (0), the pointer is made from it in the
+// wild regime, and the source guards the read with `!= NULL` (exit 3 in every build). The PLANT removes the
+// guard's branch, and the planted program reads through NULL: MachineFault (exit 99).
+func:zero = int32(cstring[]:argv) never fails { pass ((argv.len =>! int32) - 1i32); };
+func:main = int32(cstring[]:argv) {
+    int64:addr = (raw zero(argv)) => int64;
+    wild int32->:p = #wild_ptr<int32>(addr);
+    int32:v = 3i32;
+    if (p != NULL) { v = <-p; }
+    exit (v & 63i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)         { exit 94i32; },
+        (HeapBadRequest)  { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

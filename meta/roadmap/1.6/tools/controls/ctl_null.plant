@@ -1,0 +1,8 @@
+; (c) NULL dereference: the `p != NULL` branch is taken unconditionally -- `<-p` reads address 0.
+program: ctl_null.npk
+expect-plain: 3
+expect-planted: 99
+old:
+  br i1 %t13, label %if.then0, label %if.done1
+new:
+  br label %if.then0

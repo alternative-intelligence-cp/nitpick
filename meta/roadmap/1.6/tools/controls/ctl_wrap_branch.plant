@@ -1,0 +1,9 @@
+; (f) wrapped arithmetic decides a branch: the bounds guard INSIDE the branch becomes unconditional. The branch
+; is entered at run time (x = 250 +% 9 = 3 < 8); unbounded-integer reasoning finds it dead (259 < 8 is false).
+program: ctl_wrap_branch.npk
+expect-plain: 95
+expect-planted: 99
+old:
+  br i1 %t33, label %idx.ok7, label %idx.oob6
+new:
+  br label %idx.ok7

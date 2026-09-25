@@ -1,0 +1,8 @@
+; (a) out-of-bounds READ: the bounds guard's branch becomes unconditional -- the read of a[i] proceeds at i = 2^20.
+program: ctl_oob_read.npk
+expect-plain: 95
+expect-planted: 99
+old:
+  br i1 %t20, label %idx.ok3, label %idx.oob2
+new:
+  br label %idx.ok3
