@@ -20595,6 +20595,15 @@ build links the system z3 4.8.12, a second solver build under the campaign.
    binary `[verify] z3-sha256` pins), with `-DZ3_BUILD_LIBZ3_SHARED=OFF`; the library's sha256
    is recorded beside the binary's. One solver commit for every verdict of the campaign, two
    builds of it, both pinned by digest.
+
+   > **[1.6.0 step 1 (2026-09-25).]** The link is SHARED, not static: a static link fails with
+   > `multiple definition of smt::context::init()` — z3's internal `smt::context` and Alive2's
+   > own `smt::context` (`smt/ctx.cpp`) carry the same mangled names, and only the shared
+   > library hides z3's internals behind its exported C API. `engines.sh` builds `libz3.so`
+   > from the same commit, links Alive2 with an rpath to the pinned prefix, refuses a binary
+   > whose `libz3` resolves anywhere else, and pins the real file behind the soname links by
+   > digest (`pins.txt`). The substance stands: one solver commit, digest-pinned, never the
+   > system's.
 3. **The patch rule.** A workbench tool may carry a patch only as part of its pin (commit +
    patch sha256), kept under `meta/roadmap/1.6/tools/`, applied by the build script and by
    nothing else, with its purpose stated in the plan that introduces it. The rule also covers

@@ -1,0 +1,127 @@
+# alive2-rlimit.patch -- D-321 (1.6.0): Alive2's SMT budget is Z3's deterministic resource counter (rlimit),
+# not a wall clock. Applies at commit 02ec3af8 (2025-01-17). --smt-to defaults to 0 (no timeout) and stays for
+# hand use only; --smt-rlimit (default 20000000) is the budget the runners pass; an exhausted limit is Alive2's
+# TIMEOUT verdict (residue), never an error. Applied only by engines.sh; its sha256 is part of Alive2's pin.
+diff --git a/llvm_util/cmd_args_def.h b/llvm_util/cmd_args_def.h
+index f1c473df..77e17227 100644
+--- a/llvm_util/cmd_args_def.h
++++ b/llvm_util/cmd_args_def.h
+@@ -14,6 +14,7 @@ config::tgt_is_asm = opt_tgt_is_asm;
+ config::fail_if_src_is_ub = opt_fail_if_src_is_ub;
+ config::symexec_print_each_value = opt_se_verbose;
+ smt::set_query_timeout(to_string(opt_smt_to));
++smt::set_query_rlimit(to_string(opt_smt_rlimit));
+ smt::set_memory_limit((uint64_t)opt_smt_max_mem * 1024 * 1024);
+ smt::set_random_seed(to_string(opt_smt_random_seed));
+ config::skip_smt = opt_smt_skip;
+diff --git a/llvm_util/cmd_args_list.h b/llvm_util/cmd_args_list.h
+index b732ec92..4c8fa805 100644
+--- a/llvm_util/cmd_args_list.h
++++ b/llvm_util/cmd_args_list.h
+@@ -59,8 +59,13 @@ llvm::cl::opt<bool> opt_se_verbose(LLVM_ARGS_PREFIX "se-verbose",
+   llvm::cl::init(false), llvm::cl::cat(alive_cmdargs));
+ 
+ llvm::cl::opt<unsigned> opt_smt_to(LLVM_ARGS_PREFIX "smt-to",
+-  llvm::cl::desc("Timeout for SMT queries in ms (default=10000)"),
+-  llvm::cl::init(10000), llvm::cl::value_desc("ms"),
++  llvm::cl::desc("Wall-clock timeout for SMT queries in ms (default=0: none; the budget is --smt-rlimit)"),
++  llvm::cl::init(0), llvm::cl::value_desc("ms"),
++  llvm::cl::cat(alive_cmdargs));
++
++llvm::cl::opt<unsigned> opt_smt_rlimit(LLVM_ARGS_PREFIX "smt-rlimit",
++  llvm::cl::desc("Resource limit for SMT queries (Z3 rlimit, machine-independent; default=20000000; 0: none)"),
++  llvm::cl::init(20000000), llvm::cl::value_desc("n"),
+   llvm::cl::cat(alive_cmdargs));
+ 
+ llvm::cl::opt<unsigned> opt_smt_max_mem(LLVM_ARGS_PREFIX "smt-max-mem",
+diff --git a/smt/ctx.cpp b/smt/ctx.cpp
+index e399bd08..0d9f4316 100644
+--- a/smt/ctx.cpp
++++ b/smt/ctx.cpp
+@@ -34,6 +34,7 @@ void context::init() {
+   Z3_global_param_set("smtlib2_compliant", "true");
+   Z3_global_param_set("smt.random_seed", get_random_seed());
+   Z3_global_param_set("timeout", get_query_timeout());
++  Z3_global_param_set("rlimit", get_query_rlimit());
+   Z3_global_param_set("memory_high_watermark", "2147483648"); // 2 GBs
+   // Disable Z3's use of UFs for NaNs when converting FPs to BVs
+   // They generate incorrect formulas when quantifiers are involved
+diff --git a/smt/smt.cpp b/smt/smt.cpp
+index 1f72aeb8..eabbba2b 100644
+--- a/smt/smt.cpp
++++ b/smt/smt.cpp
+@@ -40,7 +40,8 @@ void smt_initializer::destroy() {
+ }
+ 
+ 
+-static string query_timeout = "10000";
++static string query_timeout = "0";      // 0: no wall-clock timeout (D-218 (2), D-321)
++static string query_rlimit = "20000000"; // z3's deterministic resource counter, the sole budget
+ static string rand_seed = "0";
+ 
+ void set_query_timeout(string ms) {
+@@ -55,6 +56,14 @@ const char* get_query_timeout() {
+   return query_timeout.c_str();
+ }
+ 
++void set_query_rlimit(string n) {
++  query_rlimit = std::move(n);
++}
++
++const char* get_query_rlimit() {
++  return query_rlimit.c_str();
++}
++
+ const char *get_random_seed() {
+   return rand_seed.c_str();
+ }
+diff --git a/smt/smt.h b/smt/smt.h
+index a3339053..d3894e20 100644
+--- a/smt/smt.h
++++ b/smt/smt.h
+@@ -21,6 +21,8 @@ private:
+ 
+ void set_query_timeout(std::string ms);
+ const char* get_query_timeout();
++void set_query_rlimit(std::string n);
++const char* get_query_rlimit();
+ void set_random_seed(std::string seed);
+ const char *get_random_seed();
+ 
+diff --git a/smt/solver.cpp b/smt/solver.cpp
+index afb59d79..87d3eace 100644
+--- a/smt/solver.cpp
++++ b/smt/solver.cpp
+@@ -518,7 +518,8 @@ Result Solver::check(const char *query_name, bool dont_skip) const {
+     return Z3_solver_get_model(ctx(), s);
+   case Z3_L_UNDEF: {
+     string_view reason = Z3_solver_get_reason_unknown(ctx(), s);
+-    if (reason == "timeout") {
++    if (reason == "timeout" || reason == "max. resource limit exceeded" ||
++        reason == "canceled") {
+       ++num_timeout;
+       return Result::TIMEOUT;
+     }
+diff --git a/tools/alive.cpp b/tools/alive.cpp
+index 1ca919f2..4dfd8b07 100644
+--- a/tools/alive.cpp
++++ b/tools/alive.cpp
+@@ -27,7 +27,8 @@ static void show_help() {
+           " -root-only\t\tCheck the expression's root only\n"
+           " -v\t\t\tVerbose mode\n"
+           " -smt-stats\t\tShow SMT statistics\n"
+-          " -smt-to:x\t\tTimeout for SMT queries in ms\n"
++          " -smt-to:x\t\tWall-clock timeout for SMT queries in ms (default 0: none)\n"
++          " -smt-rlimit:x\tResource limit for SMT queries (Z3 rlimit; default 20000000)\n"
+           " -smt-random-seed:x\tRandom seed for the SMT solver\n"
+           " -max-mem:x\t\tMax memory consumption in MB (approx)\n"
+           " -smt-verbose\t\tPrint all SMT queries\n"
+@@ -59,6 +60,8 @@ int main(int argc, char **argv) {
+       show_smt_stats = true;
+     else if (arg.compare(0, 8, "-smt-to:") == 0 && arg.size() > 8)
+       smt::set_query_timeout(arg.substr(8).data());
++    else if (arg.compare(0, 12, "-smt-rlimit:") == 0 && arg.size() > 12)
++      smt::set_query_rlimit(arg.substr(12).data());
+     else if (arg.compare(0, 17, "-smt-random-seed:") == 0 && arg.size() > 17)
+       smt::set_random_seed(arg.substr(17).data());
+     else if (arg.compare(0, 9, "-max-mem:") == 0 && arg.size() > 9)
