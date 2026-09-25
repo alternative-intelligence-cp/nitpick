@@ -71,6 +71,13 @@ func:lexer_peek2 = uint8(Lexer->:lx) never fails {
     pass lx.text.ptr[lx.pos + 1i64] => uint8;
 };
 
+func:lexer_peek3 = uint8(Lexer->:lx) never fails {
+    if ((lx.pos + 2i64) >= lx.text.len) {
+        pass 0u8;
+    }
+    pass lx.text.ptr[lx.pos + 2i64] => uint8;
+};
+
 func:lexer_advance = uint8(Lexer->:lx) never fails {
     uint8:c = raw lexer_peek(lx);
     lx.pos = lx.pos + 1i64;
@@ -362,8 +369,16 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 pass (raw token_make(TokenKind.Error, sp, 0i64));
             }
             if (block) {
+                // A block string ends at the first `"""` and nowhere sooner
+                // (LEXICAL_REFERENCE 6.3: `(SourceCharacter - '"""')*`), so a
+                // `""` inside the body is two body characters. The close was
+                // read on TWO quotes until 1.6.0 step 3e (DEF-98, the library
+                // listener's finding): `"""a""b"""` closed at `""b`, ate the `b`
+                // as the third quote, and the rest was an unclosed literal.
                 if (q == 34u8) {
-                    if ((raw lexer_peek2(lx)) == 34u8) { break; }
+                    if ((raw lexer_peek2(lx)) == 34u8) {
+                        if ((raw lexer_peek3(lx)) == 34u8) { break; }
+                    }
                 }
             } else {
                 // A newline inside a plain string is an error: the closing quote

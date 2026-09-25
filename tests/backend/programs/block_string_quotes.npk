@@ -1,0 +1,28 @@
+// expect-exit: 0
+//
+// DEF-98 (1.6.0 step 3e, the library listener's finding): a block string ends at
+// the FIRST `"""` (LEXICAL_REFERENCE 6.3), so `""` inside the body is two body
+// characters. The lexer closed on two quotes until this step, and the first
+// literal below was NITPICK-PARSE-003 (unclosed) where it is four characters.
+mod:block_string_quotes;
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = """a""b""";
+    if (s.len != 4i64) { exit 23i32; }
+    string:t = """x"y""";
+    if (t.len != 3i64) { exit 24i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

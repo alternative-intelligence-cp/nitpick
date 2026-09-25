@@ -2169,6 +2169,18 @@ defect declares a `DEF-` in §2f.
 > emission has no late header (213 type definitions, all before its first `define`), so no compiler byte moves;
 > `tests/backend/programs/late_instance.npk` exits 0 where it was refused by `llc`.
 
+> **DEF-98 — FIXED at 1.6.0 step 3e (2026-09-25). THE LEXER CLOSED A BLOCK STRING ON TWO QUOTES WHERE THE
+> GRAMMAR CLOSES IT ON THREE.** Found by the library listener (`nitpick-libs_s6`; nitpick-regex's probe
+> `probe15_block_string_close.npk`) and read here: LEXICAL_REFERENCE §6.3 says `BlockStringLiteral ::= '"""'
+> (SourceCharacter - '"""')* '"""'`, so `""` inside the body is two body characters, while `lexer.npk`'s close
+> tested `q == '"'` and the NEXT character only, then skipped three — `"""a""b"""` closed at `""b`, ate the
+> `b` as the third quote, and the rest was NITPICK-PARSE-003. The ruling: the grammar stands (the reference
+> is the language; the lexer deviated) — the close reads three quotes (`lexer_peek3`), and a body may hold
+> any run of quotes shorter than three; `"""ab""""` is the body `ab`, the closer, and a stray `"`, exactly as
+> the grammar reads it. `tests/frontend/lexer_strings.npk` gains two cases and
+> `tests/backend/programs/block_string_quotes.npk` runs them (a wrong length is the exit). `src/` itself may
+> not spell a `""` inside a block string until a snapshot carries the fix (D-205).
+
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/done/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
 > **1.5.0 LANDED (2026-09-03)** — the skeleton with the D-007 division pair end to end (D-218/D-219; `meta/roadmap/done/1.5/1.5.0.md`). C-17→D-218's items (1)–(11) are all implemented or scoped: the SMT emitter, the determinism profile, per-function processes, the integer encoding, the ownership-trusting memory model, the content-hash identity, `llvm.assume` elision, the `undef` ban, and TCB.md. The catalogue's remaining kinds land 1.5.1–1.5.8.

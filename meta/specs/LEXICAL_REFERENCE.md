@@ -374,7 +374,9 @@ CharacterLiteral   ::= "'" ((SourceCharacter - ("'" | "\")) | EscapeSequence) "'
 > both as current, and raw strings matter for regex patterns and paths.
 >
 > `RawStringLiteral` performs **no** escape processing. `BlockStringLiteral`
-> preserves newlines and indentation verbatim.
+> preserves newlines and indentation verbatim, and ends at the FIRST `"""`: a `"`
+> or a `""` inside the body is body text, as the production says (the lexer closed on
+> two quotes until 1.6.0 step 3e, DEF-98; it reads three now).
 
 ### 6.4 Template Literals
 

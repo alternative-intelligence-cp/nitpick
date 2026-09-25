@@ -61,6 +61,18 @@ func:main = int32(cstring[]:_~argv) {
     TokenList:s6 = raw lex_all(0i32, "\"\"", @it, @dg);
     if ((raw kind_at(@s6, 0i64)) != TokenKind.StringLit)      { exit 32i32; }
 
+    // A block string ends at the FIRST `"""` (LEXICAL_REFERENCE 6.3): one or
+    // two quotes inside the body are body text (DEF-98, 1.6.0 step 3e -- the
+    // close read two quotes and `"""a""b"""` was an unclosed literal).
+    TokenList:s7 = raw lex_all(0i32, "\"\"\"a\"\"b\"\"\"", @it, @dg);
+    if ((raw kind_at(@s7, 0i64)) != TokenKind.MultiStringLit) { exit 33i32; }
+    string:v7 = raw text_at(@s7, @it, 0i64);
+    if (v7.len != 4i64)                                       { exit 34i32; }  // a " " b
+    TokenList:s8 = raw lex_all(0i32, "\"\"\"a\"b\"\"\"", @it, @dg);
+    if ((raw kind_at(@s8, 0i64)) != TokenKind.MultiStringLit) { exit 35i32; }
+    string:v8 = raw text_at(@s8, @it, 0i64);
+    if (v8.len != 3i64)                                       { exit 36i32; }  // a " b
+
     // --- characters ---------------------------------------------------------
     TokenList:c1 = raw lex_all(0i32, "'x' '\\n'", @it, @dg);
     Token:ch0 = raw tokenlist_at(@c1, 0i64);
