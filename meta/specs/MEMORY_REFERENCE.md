@@ -252,6 +252,17 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   overwrites refuses at the store (`NITPICK-BORROW-002`). End the view's block
   before writing its root, or make the view a copy (`.clone()`,
   `string_concat("", …)`).
+  **A spawn lends its sanctioned crossing until the block's join** (DEF-148,
+  1.6.1e step 1): `drop f(@s)` with `s` a `shared_arena<T>` or one of the four
+  locks (D-180's five kinds) is a lent party on `s` from the spawn to the end of
+  the enclosing block, whose exit joins the task (D-207), and every
+  write-capable access of `s` before the join refuses (`NITPICK-BORROW-016`):
+  `destroy()`, an assignment over it, a `move` out, `$$m`, `@s` to a callee
+  whose summary stores over the pointee, and the spawned task's own body if it
+  stores over what it was lent. The kind's own concurrent operations (`alloc`/
+  `get`; `acquire`/`read`/`write`/`timedwait`/`signal`/`broadcast`/`arrive`),
+  `$$i`, a second spawn and a helper that only allocates stay. Destroy it after
+  the block, or join first.
   A by-value parameter's frame storage — its address, an inline array's range —
   cannot travel up (`NITPICK-BORROW-001`, DEF-109, 1.6.1 step 0: it is the callee's
   own slot), while a view of the heap bytes a `string`, `List` or slice parameter
@@ -431,7 +442,13 @@ The set is `alloc() -> Handle<T>`, `get(h) -> Result<T>`,
 D-004 refuses everywhere — mutation is spelled `put`. A stale handle fails
 `get`/`put`/`free` with **`-4106` in `Result.err`**, never a trap.
 `destroy` CONSUMES the arena (a compile-time move, like `dalloc`), and an
-un-destroyed arena is a wild-role leak the exit-time check names (D-151).
+un-destroyed arena is a wild-role leak the exit-time check names (D-151). Its
+receiver is storage the function OWNS — a binding, or a field or element of
+one reached through no pointer — never a pointer's pointee or a temporary
+(`NITPICK-TYPE-091`, DEF-157, 1.6.1e step 1: through a pointer there is no
+flag to clear, and the owner freed the arena again); a destroyed FIELD is
+vacated as a moved-out field is (D-254), so the aggregate stays live and drops
+its siblings (DEF-158).
 
 > Note the operator: `?` takes a **fallback value**; `?!` takes a **failsafe error
 > code** and traps (D-009). An earlier revision of this section wrote

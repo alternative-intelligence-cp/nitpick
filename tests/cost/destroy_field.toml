@@ -1,0 +1,12 @@
+# DEF-158 (1.6.1e step 1): `destroy` on an arena FIELD cleared the whole
+# aggregate's drop flag, so every owning sibling leaked -- `destroy_field_churn.npk`
+# destroys the arena field of a struct holding a string two thousand times;
+# `destroy_field_once.npk` does it once. Under NPK_HEAP_STATS the churn's peak
+# must stay within `bound` times the once's: before the fix the churn's peak
+# grew by the sibling string's body every round (7,792 bytes against 628 over
+# two hundred rounds, measured on 3235308).
+kind    = "probe"
+program = "tests/backend/programs/destroy_field_churn.npk"
+against = "tests/backend/programs/destroy_field_once.npk"
+bound   = 2
+expect  = "pass"

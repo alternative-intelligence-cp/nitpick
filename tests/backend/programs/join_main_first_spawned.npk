@@ -1,0 +1,53 @@
+// expect-exit: 82
+// stress: 40
+// explore: 1000
+//
+// A BARE FUNCTION'S JOIN (`main`'s) RELAYS THE SAME CHILD'S ERROR (DEF-146,
+// 1.6.1e step 1): `main` has no result slot, so its join entered `failsafe`
+// with the FIRST error the LIFO walk met -- the last-spawned child's -- and
+// never joined the rest. It joins every child now and enters `failsafe` with
+// the earliest-spawned child's error: `slow_fail` (E2), spawned before
+// `fast_fail` (E1). `failsafe` maps E2 to 82.
+mod:join_main_first_spawned;
+error:E1;
+error:E2;
+error:E3;
+error:E9;
+
+async func:fast_fail = NIL() { fail E1; };
+async func:slow_fail = NIL() {
+    await sleep(raw duration_ms(20i64)) ?| NIL;
+    fail E2;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    {
+        drop slow_fail();
+        drop fast_fail();
+    }
+    exit 30i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (E2) { exit 82i32; },
+        (E3) { exit 83i32; },
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (StaleHandle) { exit 92i32; },
+        (ChannelClosed) { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

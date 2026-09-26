@@ -1,0 +1,94 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// AN EXPIRED `timedwait` IS `DeadlineExceeded`, THE GUARD SPENT (DEF-147,
+// 1.6.1e step 1; the library listener's F-021; D-056's amendment). Nothing
+// recorded that phase 0 ended by the deadline: a wait no one signalled resumed
+// at the deadline, re-acquired an uncontended mutex at once and returned
+// SUCCESS after the full wait. The emitted wait reads the clock at its resume
+// now: at or past the deadline it fails without re-acquiring, and the lent
+// guard is nulled -- its drop releases nothing, and the caller re-acquires. A
+// signal before the deadline still succeeds with the guard whole.
+mod:condvar_expiry;
+error:E1;
+error:E2;
+error:E3;
+error:E9;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+
+thread async func:signaller = NIL(Mutex<int32, 3i32>->:m, CondVar<4i32>->:cv, bool:all) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+        g.value = 2i32;
+    }
+    if (all) { discard(cv.broadcast() ?| NIL); } else { discard(cv.signal() ?| NIL); }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Mutex<int32, 3i32>:m = mutex(0i32) ?! E1;
+    CondVar<4i32>:cv = condvar() ?! E1;
+    // 1. no signaller: the wait expires, the answer is the error and the guard
+    //    is spent -- so a fresh acquire succeeds at once (the mutex was not held)
+    {
+        Guard<int32>:g = await m.acquire(raw duration_ms(100i64)) ?! E2;
+        Result<NIL>:w = await cv.timedwait(g, raw duration_ms(50i64));
+        if (!w.is_error) { exit 10i32; }
+        if (w.err != DeadlineExceeded) { exit 11i32; }
+    }
+    {
+        Guard<int32>:g2 = await m.acquire(raw duration_ms(100i64)) ?! E3;
+        if (g2.value != 0i32) { exit 12i32; }
+        g2.value = 1i32;
+    }
+    // 2. a signal before the deadline: success, the guard whole, the predicate seen
+    {
+        drop signaller(@m, @cv, false);
+        Guard<int32>:g3 = await m.acquire(raw duration_ms(100i64)) ?! E2;
+        int32:tries = 0i32;
+        while ((g3.value != 2i32) && (tries < 20i32)) decreases 20i32 - tries {
+            await cv.timedwait(g3, raw duration_ms(1000i64)) ?! E9;
+            tries = tries + 1i32;
+        }
+        if (g3.value != 2i32) { exit 13i32; }
+        g3.value = 0i32;
+    }
+    // 3. a broadcast, the same shape
+    {
+        drop signaller(@m, @cv, true);
+        Guard<int32>:g4 = await m.acquire(raw duration_ms(100i64)) ?! E2;
+        int32:tries2 = 0i32;
+        while ((g4.value != 2i32) && (tries2 < 20i32)) decreases 20i32 - tries2 {
+            await cv.timedwait(g4, raw duration_ms(1000i64)) ?! E9;
+            tries2 = tries2 + 1i32;
+        }
+        if (g4.value != 2i32) { exit 14i32; }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (E2) { exit 82i32; },
+        (E3) { exit 83i32; },
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (StaleHandle) { exit 92i32; },
+        (ChannelClosed) { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

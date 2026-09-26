@@ -1,0 +1,50 @@
+// expect-exit: 0
+//
+// THE CHURN TWIN of `destroy_field_once.npk` (DEF-158, 1.6.1e step 1): a struct
+// holding a string and a shared arena, its ARENA FIELD destroyed, two thousand
+// times. `tests/cost/destroy_field.toml` holds this program's peak to the
+// once's: before the fix `app.store.destroy()` cleared the whole struct's drop
+// flag, so the sibling string leaked on every round (36 bytes a round, the
+// peak growing with the count). `destroy` vacates the field now, as a move out
+// of it would, and the aggregate drops its siblings.
+mod:destroy_field_churn;
+
+struct:App = { string:name; shared_arena<int64>:store; };
+
+func:mk = string() never fails { pass string_concat("abcdefghijklmnopqrstuvwxyz", "0123456789"); };
+func:once = int32() never fails {
+    App:app = App{ name: raw mk(), store: shared_arena_make(8i64) };
+    Handle<int64>:h = app.store.alloc(5i64);
+    if ((app.store.get(h) ?! Unreachable) != 5i64) { pass 3i32; }
+    if (string_byte_length(app.name) != 36i64) { pass 4i32; }
+    // the move analysis retires `app` whole here (D-152's consuming destroy);
+    // the scope exit still drops `app.name`, which is what the peak measures
+    app.store.destroy();
+    pass 22i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = 0i32;
+    for (int32:i in 0i32...2000i32) {
+        r = raw once();
+        if (r != 22i32) { exit r; }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 90i32; },
+        (StaleHandle) { exit 92i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

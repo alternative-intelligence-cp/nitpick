@@ -4309,8 +4309,44 @@ pub func:escape_capture = NIL(Escape->:x, ExprId:id, int32:depth) never fails {
 //
 // THERE IS NO SPAWN IN THE LANGUAGE YET. Concurrency lowers in cycle 1.1, and when
 // a spawn arrives it is this function that its argument list goes through.
+// THE SANCTIONED SPAWN CROSSINGS (D-180, D-154/D-207): a pointer to one of
+// these five kinds crosses a spawn, and the spawn LENDS its root until the
+// scope's join (DEF-148, 1.6.1e step 1). The aliasing walk reads both
+// predicates; the spawn rule below reads the first.
+pub func:spawn_crossing_kind = bool(int32:kind) never fails {
+    if (kind == (raw TY_MUTEX()))        { pass true; }
+    if (kind == (raw TY_RWLOCK()))       { pass true; }
+    if (kind == (raw TY_CONDVAR()))      { pass true; }
+    if (kind == (raw TY_BARRIER()))      { pass true; }
+    if (kind == (raw TY_SHARED_ARENA())) { pass true; }
+    pass false;
+};
+
+// THE OPERATIONS A CROSSING'S CONTRACT PERMITS WHILE A TASK HOLDS IT: what the
+// type exists to do concurrently -- a lock's acquisitions and signals (D-056),
+// a shared arena's `alloc` and `get` (D-154: a slot is written once, before its
+// handle escapes). `destroy` is not one: it ends the value's life.
+pub func:crossing_concurrent_method = bool(int32:kind, string:m) never fails {
+    if (kind == (raw TY_MUTEX()))   { pass (raw string_eq(m, "acquire")); }
+    if (kind == (raw TY_RWLOCK())) {
+        if (raw string_eq(m, "read"))  { pass true; }
+        pass (raw string_eq(m, "write"));
+    }
+    if (kind == (raw TY_CONDVAR())) {
+        if (raw string_eq(m, "timedwait")) { pass true; }
+        if (raw string_eq(m, "signal"))    { pass true; }
+        pass (raw string_eq(m, "broadcast"));
+    }
+    if (kind == (raw TY_BARRIER())) { pass (raw string_eq(m, "arrive")); }
+    if (kind == (raw TY_SHARED_ARENA())) {
+        if (raw string_eq(m, "alloc")) { pass true; }
+        pass (raw string_eq(m, "get"));
+    }
+    pass false;
+};
+
 // Does this call reach an `async` function? The spawn's whole identity.
-func:callee_is_async = bool(Escape->:x, ExprNode:n) never fails {
+pub func:callee_is_async = bool(Escape->:x, ExprNode:n) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
     ExprNode:cn = raw ast_expr(x.ast, c);
@@ -4341,10 +4377,7 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
             if ((raw type_kind(x.types, aty)) == (raw TY_POINTER())) {
                 int32:apel = raw type_elem(x.types, aty);
                 int32:apk = raw type_kind(x.types, apel);
-                bool:sanctioned = (apk == (raw TY_MUTEX()));
-                if (apk == (raw TY_RWLOCK()))  { sanctioned = true; }
-                if (apk == (raw TY_CONDVAR())) { sanctioned = true; }
-                if (apk == (raw TY_BARRIER())) { sanctioned = true; }
+                bool:sanctioned = raw spawn_crossing_kind(apk);
                 // A `shared_arena<T>->` IS THE FIFTH (D-154/D-207, 1.4.4),
                 // and it meets this rule's stated test more plainly than the
                 // locks do: the hazard named above is a MUTATION the holder
@@ -4364,7 +4397,6 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
                 // scope exit JOIN before it drops. The borrow dies after
                 // every task that could hold it, which is the guarantee the
                 // four locks above ride.
-                if (apk == (raw TY_SHARED_ARENA())) { sanctioned = true; }
                 if (sanctioned) {
                     i = i + 1i32;
                     continue;

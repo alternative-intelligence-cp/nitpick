@@ -1,0 +1,48 @@
+// expect-exit: 0
+//
+// A CHARACTER LITERAL HAS A WIDTH (DEF-145, 1.6.1e step 1; the library
+// listener's F-019; TYPE_REFERENCE §2.3): the `'\u{…}'` escape is a `char32`
+// literal whatever its value, a source character above U+00FF is one too, and
+// a plain character or a `\x` escape is a `char8`. Until this step every
+// character literal was `char8` and `'\u{1F641}'` was `'A'`, its low byte.
+mod:char_literal_width;
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    char32:c = '\u{1F600}';
+    if ((c => int32) != 128512i32) { exit 10i32; }
+    if (c != 128512char32) { exit 11i32; }         // the numeric spelling is the other one
+    char32:e = '\u{E9}';
+    if ((e => int32) != 233i32) { exit 12i32; }    // a small code point is still a char32 through the escape
+    char32:hi = '😀';
+    if (hi != c) { exit 13i32; }                    // a source character above U+00FF is a char32
+    char8:a = 'é';
+    if (a != '\xE9') { exit 14i32; }               // a source character below U+0100 stays a byte (1.0.8)
+    char8:b = '\x41';
+    if (b != 'A') { exit 15i32; }
+    int32:seen = 0i32;
+    pick (c) {
+        ('\u{1F641}') { seen = 1i32; },
+        ('\u{1F600}') { seen = 2i32; },
+        (*) { seen = 3i32; }
+    }
+    if (seen != 2i32) { exit 16i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

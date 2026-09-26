@@ -3830,6 +3830,14 @@ other readers share, and so each an unsynchronized mutation. It is now asked by
 D-313's write walk at every write form, with the same code (TYPE-007) and the
 same sentence.
 
+*[2026-09-26, 1.6.1e step 1 — a dated note (DEF-147).]* The amendment's "on DeadlineExceeded the
+guard is SPENT" had no expiry to spend it on: a `timedwait` no one signalled resumed at its deadline,
+re-acquired an uncontended mutex at once (the floor's acquire reads the clock only when it must park)
+and returned SUCCESS after the full wait (the library listener's F-021). The emitted wait reads the
+clock at its resume: at or past the absolute deadline it fails `DeadlineExceeded` without
+re-acquiring, the guard nulled and the frame off the condvar's list; a signal before the deadline
+succeeds with the guard whole. No floor byte.
+
 ## D-057 — Macro hygiene and expansion order — **SETTLED**
 
 The macro system is far larger than either document describes, and **its
@@ -3933,6 +3941,16 @@ and it needs its own design rather than a pattern form that is inconsistent with
 the expansion order.
 
 ---
+
+*[2026-09-26, 1.6.1e step 1 — a dated note (DEF-144).]* The RESOLVER kept this decision and the
+EMITTER did not: a macro body's free name was bound to the module binding it was written against
+and recorded on the node, and the emitter then looked the name up in the function's local table BY
+NAME, innermost first, reading the caller's local of the same name whenever there was one (the
+library listener's F-018: `lvl` read 3 where the module says 7; the arithmetic twin read 7 because
+the constant folder reads the symbol). The emitter resolves an identifier node by the resolver's
+symbol now (`ident_slot`: a local by its declaring statement, a parameter by the prologue's binding,
+a function, a constant or a global to its own emission before any local is consulted). Two readers of
+one name disagreed exactly where hygiene matters; there is one now.
 
 ## D-058 — `Future<T>` is an internal lowering artifact, not surface syntax — **SETTLED**
 
@@ -10695,6 +10713,16 @@ growth, staleness, reuse, reset, chaining, and the leak-checked wholesale
 drop; `types/rejection/arena.npk` and `analysis/rejection/arena_destroy.npk`
 lock the refusals.
 
+*[2026-09-26, 1.6.1e step 1 — a dated note (DEF-157, DEF-158).]* "`destroy` consumes the arena
+(a move)" needs storage this function owns to consume: through a pointer parameter there was no
+drop flag to clear, and `kill(shared_arena<int64>->:s) { s.destroy(); }` freed the arena the owner's
+scope exit freed again (`MachineFault` in safe code; a plain arena's slab freed twice as well). The
+receiver of `destroy` is a binding of this function, or a field or element of one reached through no
+pointer — `NITPICK-TYPE-091` otherwise, a temporary included. And a destroyed FIELD cleared its whole
+aggregate's drop flag, leaking every owning sibling; `destroy` vacates its place as a move out of it
+does (D-254), so the aggregate stays live and drops its siblings, and a whole binding's slot is zeroed
+beside its flag clear.
+
 ## D-153 — The executor frame allocator, distinct and fixed — **SETTLED**
 
 Cycle 0.10.3. The allocator D-034 actually needs, built where the heap
@@ -11705,6 +11733,15 @@ describe the licence.
 - `PROTOTYPE_DELTA.md`; `CLAUDE.md`'s "what it refuses" list; `SUBSET_1.md`
   where it describes `raw` / `drop` / statement calls.
 
+*[2026-09-26, 1.6.1e step 1 — a dated note (DEF-146; S-115).]* "The first child error" of the
+exception paragraph above was relayed as the LAST-spawned child's: the scope's join walks a LIFO
+chain and kept the first error it met (the library listener's F-020). "First" is SPAWN ORDER from
+this step — the earliest-spawned child that failed, a function of the program's text and the same
+under every schedule the explorer runs; "first in time" would need a stamp the floor does not keep
+and would let one program relay two errors on two runs — landed under S-115's recommendation and
+ratified the same day as D-334. The function's own error still wins over every child's (D-207), and `main`'s
+join joins every child before it enters `failsafe` with the same child's error.
+
 ## D-164 — Projecting an associated type: `T.Item`, a dotted type suffix — **SETTLED**
 
 OPEN_DECISIONS C-20, raised at 1.0.6 when D-160's own clause did not survive
@@ -12630,6 +12667,15 @@ what made C-8 urgent.
 `@` stays second-class (D-004 rules 1–3 untouched): a borrow still may not be
 returned, stored in anything outliving the frame, or given to an `extern`.
 The borrow-checker deep dive's obs. #1 closes with this.
+
+*[2026-09-26, 1.6.1e step 1 — a dated note (DEF-148).]* The sanctioned crossing is a LOAN, and
+the aliasing walk knows it now: `drop f(@s)` with `s` one of the five kinds makes a lent party on
+`s` from the spawn to the end of the enclosing block, whose exit joins the task (D-207); every
+write-capable access of `s` before the join is `NITPICK-BORROW-016`, except the receiver of an
+operation in the kind's own concurrent set (a shared arena's `alloc`/`get`, a lock's acquisitions,
+waits and signals — one table beside this decision's five kinds, in escape.npk) and `@s` handed to
+a callee whose summary writes nothing through it. The listener's F-022 — the arena destroyed while
+a spawned thread held it, the thread allocating in freed memory — is the shape this refuses.
 
 ## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
 
@@ -14993,6 +15039,16 @@ not a deferral.
 > `type_drops`), which forecloses handing one to a worker by value. Raised as
 > a follow-on question rather than decided here; see
 > `meta/roadmap/1.4/1.4.4.md`.
+
+*[2026-09-26, 1.6.1e step 1 — a dated note (DEF-146, DEF-148).]* Two things this decision's
+order rested on, fixed: (1) the arbitration "the first child error stands as the function's own
+unless the function already failed" read the LIFO chain's first error, the last-spawned child's;
+"first" is spawn order now (S-115's recommendation, D-163's note). (2) "joined before freed" was a
+promise the OWNER could break: `s.destroy()` between a spawn and the block's join ended the arena a
+task still held (the listener's F-022, a use-after-free in safe code). A spawn LENDS its sanctioned
+crossing until the block's join — `NITPICK-BORROW-016` on `destroy`, an assignment over the root, a
+`move` out, `$$m` or `@root` to a callee that stores over the pointee; the kind's own concurrent
+operations and a second spawn stay (D-180's note).
 
 ## D-208 — loop-carried moved-from states — **SETTLED (1.4.0 batch, user-ratified)**
 
@@ -21488,3 +21544,27 @@ ownership under the send's `move`).
 with 1.6.1d step 3b (DEF-122), where the shape changes; nothing in the tree sends one today,
 so the alternative — keeping the refusal — cost nothing either, and one rule for the two
 string kinds is D-328's own principle.
+
+## D-334 — the scope's join relays the EARLIEST-SPAWNED child's error: "first" in D-163's exception is spawn order — **SETTLED (user decision, 2026-09-26: "I am fine with the s-115 thing. go with what we have unless there is a compelling case not to do so."; S-115, DEF-146)**
+
+**The history.** D-163's exception paragraph (settled with the user at 1.1's planning;
+C-7/C-9) and CONCURRENCY_REFERENCE §2.2 say a `drop f(…)` task's error "reaches the
+enclosing scope's D-062 join, which relays the first child error, verbatim (D-080), after
+every child has finished"; D-207 (1.4.4) moved the join into the scope's unwind and kept
+the arbitration reading one slot. No text defined "first". The emitter relayed the LAST-
+spawned child's error: the join walks a LIFO chain and kept the first error it met (the
+library listener's F-020, DEF-146: `fast_fail` spawned before `slow_fail`, E2 relayed).
+
+**The two readings.** SPAWN ORDER — the earliest-spawned child that failed, whatever order
+the failures occurred in: a function of the program's text, the same under every schedule
+the explorer runs. TIME ORDER — the first failure to occur: needs a stamp the floor does not
+keep, and lets one program relay two different errors on two runs, which is the class of
+nondeterminism the explorer exists to find. The two differ exactly where a child spawned
+earlier fails later (the listener's `ctl_j3`).
+
+**The decision.** "First" is spawn order. The join relays the error of the earliest-
+spawned child that failed; the function's own error still wins over every child's (D-207);
+`main`'s join, a bare function's, joins every child before it enters `failsafe` with the
+same child's error (it entered `failsafe` at the first error it met, the last-spawned's).
+Landed at 1.6.1e step 1 under the recommendation, ratified the same day: `join_first_spawned.npk`
+and `join_main_first_spawned.npk` pin it; the listener's `ctl_j3` answers E2 by the rule.

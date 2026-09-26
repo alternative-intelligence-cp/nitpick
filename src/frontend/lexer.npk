@@ -421,8 +421,19 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     if (c == 39u8) {
         discard(raw lexer_advance(lx));
         int64:cp = 0i64;
+        // A CHARACTER LITERAL HAS A WIDTH (DEF-145, 1.6.1e step 1): the
+        // `\u{...}` escape is the `char32` spelling (TYPE_REFERENCE §2.3),
+        // whatever its value, and a source character above U+00FF is
+        // `char32` too -- until this step every character literal was typed
+        // `char8` and `'\u{1F641}'` was `'A'`, its low byte, in silence. A
+        // plain character, a `\x` escape and the one-byte escapes stay
+        // `char8`; `'é'` (233) is a byte as it has been since 1.0.8.
+        NumWidth:cw = NumWidth.WChar8;
         uint8:q = raw lexer_peek(lx);
         if (q == 92u8) {
+            if ((lx.pos + 1i64) < lx.text.len) {
+                if ((lx.text.ptr[lx.pos + 1i64] => uint8) == 117u8) { cw = NumWidth.WChar32; }
+            }
             EscapeResult:e = raw escape_decode(lx.text, lx.pos);
             if (!(e.valid)) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
@@ -484,9 +495,9 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             pass (raw token_make(TokenKind.Error, sp, 0i64));
         }
         discard(raw lexer_advance(lx));
+        if (cp > 255i64) { cw = NumWidth.WChar32; }
         pass (raw token_numeric(TokenKind.CharLit,
-                  raw lexer_span_from(lx, start, line, col), cp,
-                  NumWidth.WNone));
+                  raw lexer_span_from(lx, start, line, col), cp, cw));
     }
 
     if ((raw is_ident_start(c)) || (raw is_digit(c))) {

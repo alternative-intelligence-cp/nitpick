@@ -116,6 +116,17 @@ pub func:borrow_is_mut = bool(ExprNode:e) never fails { pass (e.payload != 0i64)
 // which is what makes the literal contextually typed (D-092).
 pub func:expr_num_width = NumWidth(ExprNode:e) never fails { pass e.width; };
 
+// A CHARACTER LITERAL'S WIDTH (DEF-145, 1.6.1e step 1): the lexer marks a
+// `'\u{...}'` escape, and a source character whose code point exceeds 0xFF,
+// `WChar32`; every other character literal is `WChar8` (TYPE_REFERENCE §2.2).
+// A node with no width -- one built by hand -- is the byte form. Here and not
+// in num_width.npk, which the generator writes whole.
+pub func:char_lit_bits = int32(NumWidth:w) never fails {
+    if (w == NumWidth.WChar32) { pass 32i32; }
+    if (w == NumWidth.WChar16) { pass 16i32; }
+    pass 8i32;
+};
+
 // --- entry -------------------------------------------------------------------
 
 pub func:p_parse_expr = ExprId(Parser->:p) never fails {
@@ -640,8 +651,10 @@ func:p_primary = ExprId(Parser->:p) never fails {
     }
     if (k == TokenKind.CharLit) {
         Token:t = raw p_advance(p);
-        pass (raw ast_add_expr(p.ast, ExprKind.ExprCharLiteral, sp,
-                                 0i32, 0i32, 0i32, t.payload));
+        // THE WIDTH RIDES WITH THE CODE POINT (DEF-145): `WChar8` or
+        // `WChar32`, as the lexer decided it.
+        pass (raw ast_add_expr_w(p.ast, ExprKind.ExprCharLiteral, sp,
+                                   0i32, 0i32, 0i32, t.payload, t.width));
     }
     if (k == TokenKind.StringLit) {
         Token:t = raw p_advance(p);

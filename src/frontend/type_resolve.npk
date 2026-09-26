@@ -1197,7 +1197,7 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
         pass (raw cv_bool(r.types.t_bool, e.payload != 0i64));
     }
     if (e.kind == ExprKind.ExprCharLiteral) {
-        pass (raw cv_char(raw tt_char(r.types, 8i32), e.payload));
+        pass (raw cv_char(raw tt_char(r.types, raw char_lit_bits(e.width)), e.payload));
     }
     if (e.kind == ExprKind.ExprStringLiteral) {
         pass (raw cv_str(r.types.t_string, raw intern_get(r.interns,

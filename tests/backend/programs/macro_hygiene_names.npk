@@ -1,0 +1,130 @@
+// expect-exit: 0
+//
+// A MACRO BODY'S FREE NAME READS WHERE THE MACRO WAS WRITTEN (D-057; DEF-144,
+// 1.6.1e step 1; the library listener's F-018). The resolver bound the body's
+// `lvl` to the module's `fixed` binding correctly and recorded the symbol on
+// the node; the EMITTER looked the name up in the function's local table by
+// NAME, innermost first, so a caller's local of the same name won -- the lone
+// identifier and the comparison operand read 3 where the module says 7, while
+// the arithmetic twin read 7 because the constant folder reads the symbol. The
+// emitter resolves an identifier by the resolver's symbol now (`ident_slot`).
+// Every shape twice: in a sync body and in a coroutine (frame slots).
+mod:macro_hygiene_names;
+error:E1;
+error:E2;
+error:E3;
+error:E9;
+
+func:v32 = int32(int32:x) never fails { pass x; };
+func:f = int32() never fails { pass 40i32; };
+fixed int32:lvl = 7i32;
+fixed int64:big = 700i64;
+
+macro:m1 = () { lvl; };                                   // the lone identifier (h1)
+macro:m3 = () { if (lvl == 3i32) { pass 10i32; } if (lvl != 7i32) { pass 11i32; } };   // a comparison's operand in a statement macro (h2)
+macro:m4 = () { int32:t = lvl + 0i32; if (t != 7i32) { pass 12i32; } };                 // the arithmetic control (ctl_h4)
+macro:m5 = () { raw f(); };                               // a module FUNCTION under a caller local `f`
+macro:m6 = () { big; };                                   // a module binding of a DIFFERENT width than the caller's `big`
+macro:m7 = () { #caller(lvl) + lvl; };                    // the escape and the bare name differ
+// A STATEMENT MACRO whose body declares its OWN `lvl` beside an escape to the
+// caller's PARAMETER `lvl`: the parameter is found by the prologue's binding,
+// never by name (by name, the body's local would shadow it: 200, not 103).
+macro:m8 = () { int32:lvl = 100i32; if ((#caller(lvl) + lvl) != 103i32) { pass 40i32; } };
+
+func:with_param = int32(int32:lvl) never fails {
+    #m8();
+    if (lvl != 3i32) { pass 41i32; }
+    pass 0i32;
+};
+
+// A `for` BINDING NAMED AFTER A PARAMETER is a `DeclParamDecl` node in the
+// loop's block scope: inside the loop it is the binding, after it the
+// parameter (the first form of the resolver took the parameter's slot in both
+// places -- npkg's `xfn_inline` had exactly this shape).
+func:for_shadows_param = int64(int64:li) never fails {
+    int64:acc = 0i64;
+    for (int64:li in 0i64...4i64) {
+        acc = acc + li;          // 0 + 1 + 2 + 3
+    }
+    if (acc != 6i64) { pass 50i64; }
+    if (li != 7i64) { pass 51i64; }
+    pass (acc + li);             // 13
+};
+
+func:sync_twin = int32() never fails {
+    int32:lvl = raw v32(3i32);
+    int32:f = raw v32(5i32);
+    int8:big = 3i8;
+    int32:c1 = #m1();
+    if (c1 != 7i32) { pass 20i32; }
+    #m3();
+    #m4();
+    int32:c5 = #m5();
+    if (c5 != 40i32) { pass 21i32; }
+    int64:c6 = #m6();
+    if (c6 != 700i64) { pass 22i32; }
+    int32:c7 = #m7();
+    if (c7 != 10i32) { pass 23i32; }
+    if (lvl != 3i32) { pass 24i32; }
+    if (f != 5i32) { pass 25i32; }
+    if (big != 3i8) { pass 26i32; }
+    pass 0i32;
+};
+
+async func:coro_twin = int32() {
+    int32:lvl = raw v32(3i32);
+    int32:f = raw v32(5i32);
+    int8:big = 3i8;
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    int32:c1 = #m1();
+    if (c1 != 7i32) { pass 30i32; }
+    #m3();
+    #m4();
+    int32:c5 = #m5();
+    if (c5 != 40i32) { pass 31i32; }
+    int64:c6 = #m6();
+    if (c6 != 700i64) { pass 32i32; }
+    int32:c7 = #m7();
+    if (c7 != 10i32) { pass 33i32; }
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    if (lvl != 3i32) { pass 34i32; }
+    if (f != 5i32) { pass 35i32; }
+    if (big != 3i8) { pass 36i32; }
+    pass 0i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:s = raw sync_twin();
+    if (s != 0i32) { exit s; }
+    int32:wp = raw with_param(3i32);
+    if (wp != 0i32) { exit wp; }
+    int64:fs = raw for_shadows_param(7i64);
+    if (fs != 13i64) { exit (fs =>! int32); }
+    int32:c = await coro_twin() ?! E9;
+    if (c != 0i32) { exit c; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (E2) { exit 82i32; },
+        (E3) { exit 83i32; },
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (StaleHandle) { exit 92i32; },
+        (ChannelClosed) { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

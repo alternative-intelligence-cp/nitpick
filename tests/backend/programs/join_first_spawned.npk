@@ -1,0 +1,95 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE JOIN RELAYS THE EARLIEST-SPAWNED CHILD'S ERROR (DEF-146, 1.6.1e step 1;
+// the library listener's F-020; S-115). D-163's exception and CONCURRENCY
+// §2.2 say the scope's join relays "the first child error"; the join walks a
+// LIFO chain, so it relayed the LAST-spawned child's. "First" is spawn order
+// -- a function of the program's text, the same under every schedule -- and
+// the function's own error still wins over every child's (D-207). Thread
+// children join the same way.
+mod:join_first_spawned;
+error:E1;
+error:E2;
+error:E3;
+error:E9;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+
+async func:fast_fail = NIL() { fail E1; };
+async func:slow_fail = NIL() {
+    await sleep(raw duration_ms(20i64)) ?| NIL;
+    fail E2;
+};
+async func:ok_child = NIL() {
+    await sleep(raw duration_ms(5i64)) ?| NIL;
+    pass NIL;
+};
+async func:third_fail = NIL() {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    fail E3;
+};
+thread async func:tfast = NIL() joins J2 { fail E1; };
+thread async func:tslow = NIL() joins J2 {
+    await sleep(raw duration_ms(20i64)) ?| NIL;
+    fail E2;
+};
+
+async func:fast_then_slow = int32() { drop fast_fail(); drop slow_fail(); pass 5i32; };
+async func:slow_then_fast = int32() { drop slow_fail(); drop fast_fail(); pass 5i32; };
+async func:single = int32() { drop fast_fail(); pass 5i32; };
+async func:three = int32() { drop fast_fail(); drop ok_child(); drop third_fail(); pass 5i32; };
+async func:own_wins = int32() { drop fast_fail(); drop slow_fail(); fail E9; };
+async func:threads = int32() { drop tfast(); drop tslow(); pass 5i32; };
+async func:none_fail = int32() { drop ok_child(); drop ok_child(); pass 5i32; };
+
+async func:main = int32(cstring[]:_~argv) {
+    Result<int32>:r1 = await fast_then_slow();
+    if (!r1.is_error) { exit 10i32; }
+    if (r1.err != E1) { exit 11i32; }
+    // the earliest-SPAWNED child, not the first to fail in time: `slow_fail`
+    // is spawned first here and fails last
+    Result<int32>:r2 = await slow_then_fast();
+    if (!r2.is_error) { exit 12i32; }
+    if (r2.err != E2) { exit 13i32; }
+    Result<int32>:r3 = await single();
+    if (!r3.is_error) { exit 14i32; }
+    if (r3.err != E1) { exit 15i32; }
+    Result<int32>:r4 = await three();
+    if (!r4.is_error) { exit 16i32; }
+    if (r4.err != E1) { exit 17i32; }
+    Result<int32>:r5 = await own_wins();
+    if (!r5.is_error) { exit 18i32; }
+    if (r5.err != E9) { exit 19i32; }
+    Result<int32>:r6 = await threads();
+    if (!r6.is_error) { exit 20i32; }
+    if (r6.err != E1) { exit 21i32; }
+    Result<int32>:r7 = await none_fail();
+    if (r7.is_error) { exit 22i32; }
+    if (r7.value != 5i32) { exit 23i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (E2) { exit 82i32; },
+        (E3) { exit 83i32; },
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (StaleHandle) { exit 92i32; },
+        (ChannelClosed) { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

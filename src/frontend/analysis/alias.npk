@@ -101,6 +101,12 @@ pub func:PARTY_EXCLUSIVE = int32() never fails { pass 2i32; };
 // -- held by the binding that holds the view for its whole scope, or live for
 // the call a view expression is an argument of.
 pub func:PARTY_VIEW = int32() never fails      { pass 3i32; };
+// A LENT CROSSING (DEF-148, 1.6.1e step 1): a spawn's `@s` of one of D-180's
+// five kinds, live from the spawn to the end of its block (the join) -- every
+// write-capable access of the root refused (BORROW-016) except the receiver of
+// an operation in the kind's concurrent set, and `@s` to a callee judged, as a
+// view's is, by what the callee's summary writes.
+pub func:PARTY_LENT = int32() never fails      { pass 4i32; };
 pub func:ACC_READ = int32() never fails        { pass 0i32; };
 pub func:ACC_WRITE = int32() never fails       { pass 1i32; };
 pub func:ACC_SHARED = int32() never fails      { pass 2i32; };
@@ -143,6 +149,12 @@ pub struct:Alias = {
     // THE SYMBOL A DECLARATION MADE (a parameter), by declaration index.
     wild int32->:decl_sym;
     int32:decl_count;
+    // THE SPAWN BEING WALKED (DEF-148): the call under a `drop` whose callee is
+    // `async`, while its arguments are walked; none otherwise.
+    ExprId:spawn_call;
+    // THE RECEIVER OF A CONCURRENT-SET OPERATION is checked against every party
+    // but the lent ones (DEF-148), for that one access.
+    bool:skip_lent;
 };
 
 pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
@@ -175,7 +187,8 @@ pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                 frames: raw list_init::<int64>(16i64),
                 pre: raw list_init::<Party>(16i64),
                 call_marks: raw list_init::<int64>(8i64),
-                stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc };
+                stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc,
+                spawn_call: raw expr_none(), skip_lent: false };
 };
 
 // The symbol a declaration (a parameter) made, or 0.
@@ -738,7 +751,7 @@ func:party_word = string(Alias->:x, Party:p) never fails {
 // Does an access of this kind conflict with a party of that kind?
 func:conflicts = bool(int32:pkind, int32:akind) never fails {
     if (pkind == (raw PARTY_EXCLUSIVE())) { pass true; }
-    if ((pkind == (raw PARTY_SHARED())) || (pkind == (raw PARTY_VIEW()))) {
+    if ((pkind == (raw PARTY_SHARED())) || (pkind == (raw PARTY_VIEW())) || (pkind == (raw PARTY_LENT()))) {
         pass ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE())));
     }
     // a plain address: only a claim conflicts
@@ -757,7 +770,8 @@ func:access_word = string(int32:akind) never fails {
 // its call and is not its own conflict).
 pub func:CHECK_ALL = int32() never fails    { pass 0i32; };
 pub func:CHECK_CLAIMS = int32() never fails { pass 1i32; };   // the claims and plain addresses, never a view party
-pub func:CHECK_VIEWS = int32() never fails  { pass 2i32; };   // the view parties alone
+pub func:CHECK_VIEWS = int32() never fails  { pass 2i32; };   // the view AND lent parties: those a callee's summary judges (D-325, DEF-148)
+pub func:CHECK_LENT = int32() never fails   { pass 3i32; };   // the lent parties alone (a spawn's own arguments, DEF-148)
 
 func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, Span:at) never fails {
     drop check_access_ex(x, place, 0i32, akind, self_site, at, raw CHECK_ALL());
@@ -797,12 +811,17 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         Party:p = x.live[i];
         if (p.root != root) { continue; }
         if (p.site.index == self_site.index) { continue; }
-        if ((mode == (raw CHECK_VIEWS())) && (p.kind != (raw PARTY_VIEW()))) { continue; }
-        if ((mode == (raw CHECK_CLAIMS())) && (p.kind == (raw PARTY_VIEW()))) { continue; }
-        // A PARTY NEVER CONFLICTS WITH THE ACCESS THAT MADE IT: a range view's
-        // own creation is the write-capable access of its base (D-249) and
-        // the view party's site at once.
-        if ((p.place.index == place.index) && (extra == 0i32)) { continue; }
+        bool:summary_judged = ((p.kind == (raw PARTY_VIEW())) || (p.kind == (raw PARTY_LENT())));
+        if ((mode == (raw CHECK_VIEWS())) && (!summary_judged)) { continue; }
+        if ((mode == (raw CHECK_CLAIMS())) && summary_judged) { continue; }
+        if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
+        if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
+        // A VIEW PARTY NEVER CONFLICTS WITH THE ACCESS THAT MADE IT: a range
+        // view's own creation is the write-capable access of its base (D-249)
+        // and the view party's site at once. A LENT party's place IS the
+        // spawn's own `@s` operand, and the spawn's callee is read against it
+        // on purpose (DEF-148: a task that stores over what it was lent).
+        if ((p.kind == (raw PARTY_VIEW())) && (p.place.index == place.index) && (extra == 0i32)) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);
         if (!(raw party_steps(x, p, @pp))) { continue; }
@@ -811,7 +830,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // moves the name, not the storage (the pointee is another owner's;
         // D-286: the pointee is no named root). A write INTO the pointee --
         // `b.s = …`, a path below the root -- is the hazard and stays refused.
-        if ((p.kind == (raw PARTY_VIEW())) && p.root_ptr && (ap.count == 0i64)) { continue; }
+        if (summary_judged && p.root_ptr && (ap.count == 0i64)) { continue; }
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
         // A COMPUTED PAIR IS A GUARD SITE (D-286, 1.5.5 step 2): the emitter
@@ -821,12 +840,16 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // site meets is recorded, and the site keeps its one guard.
         // A VIEW'S EXTENT HAS NO GUARD (D-325): a computed pair against a view
         // party refuses statically, the closed direction.
-        if ((cls == (raw OV_COMPUTED())) && (p.kind != (raw PARTY_VIEW()))) {
+        if ((cls == (raw OV_COMPUTED())) && (!summary_judged)) {
             drop exprtypes_mark_alias(x.etypes, place.index, p.site.index, p.holder);
             continue;
         }
         if (p.kind == (raw PARTY_VIEW())) {
             drop report_view_conflict(x, p, akind, root, ap, cls, at);
+            pass true;
+        }
+        if (p.kind == (raw PARTY_LENT())) {
+            drop report_lent_conflict(x, p, akind, root, ap, at);
             pass true;
         }
         ExprNode:pn = raw ast_expr(x.ast, p.site);
@@ -881,6 +904,24 @@ func:report_view_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, Lis
     }
     m = string_concat(m, " -- a view's root is FROZEN while the view is live (D-325): a write that frees or rewrites the viewed bytes would leave the view reading freed memory. End the view's block before writing its root, or make the view a copy (`.clone()`, `string_concat(\"\", …)`)");
     drop alias_err(x, raw BORROW_VIEW_ROOT(), move(m), at);
+    pass NIL;
+};
+
+// A WRITE-CAPABLE ACCESS OF A LENT ROOT (DEF-148, BORROW-016): the message names
+// the access, the spawn, the block whose exit joins it, why, and the fix.
+func:report_lent_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, List<Step>:ap,
+                                Span:at) never fails {
+    ExprNode:pn = raw ast_expr(x.ast, p.site);
+    string:m = string_concat(raw access_word(akind), " of `");
+    m = string_concat(m, raw render_place(x, root, ap));
+    m = string_concat(m, "` conflicts with the task spawned at ");
+    m = string_concat(m, int_to_string(pn.span.line => int64));
+    m = string_concat(m, ":");
+    m = string_concat(m, int_to_string(pn.span.col => int64));
+    m = string_concat(m, ", which holds `");
+    m = string_concat(m, raw intern_get(x.it, (raw symtab_get(x.tab, root)).name));
+    m = string_concat(m, "` until the end of this block, whose exit joins it (D-180, D-207): `destroy`, an assignment, a `move` or `$$m` before the join would end a value the task still holds -- destroy it after the block, or join first; the kind's own concurrent operations and `$$i` stay");
+    drop alias_err(x, raw BORROW_LENT_ROOT(), move(m), at);
     pass NIL;
 };
 
@@ -1091,13 +1132,19 @@ func:admit_written = NIL(Alias->:x, ExprId:site, int32:callee, int32:pos) never 
 // at position `pos`: nothing when it writes nothing; the whole place when the
 // escape analysis could not read it; each written path otherwise.
 func:check_written = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, Span:at) never fails {
+    drop check_written_mode(x, place, callee, pos, at, raw CHECK_VIEWS());
+    pass NIL;
+};
+
+func:check_written_mode = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, Span:at,
+                              int32:mode) never fails {
     int32:e = raw escape_mut_first(x.esc, callee, pos);
     if (e == (0i32 - 2i32)) {
-        drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), raw expr_none(), at, raw CHECK_VIEWS());
+        drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), raw expr_none(), at, mode);
         pass NIL;
     }
     while (e >= 0i32) decreases e + 1i32 {
-        if (raw check_access_reported(x, place, raw escape_mut_path(x.esc, e), raw ACC_WRITE(), raw expr_none(), at, raw CHECK_VIEWS())) { pass NIL; }
+        if (raw check_access_reported(x, place, raw escape_mut_path(x.esc, e), raw ACC_WRITE(), raw expr_none(), at, mode)) { pass NIL; }
         e = raw escape_mut_next(x.esc, e);
     }
     pass NIL;
@@ -1373,6 +1420,22 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
                       (raw expr_list_count(n)) - (raw expr_generic_count(n)), raw expr_callee(n), dd);
         pass NIL;
     }
+    // A SPAWN (DEF-148): `drop f(…)` on an `async` callee -- the escape
+    // analysis's own reading of the spawn (`callee_is_async`) -- is remembered
+    // while the call's arguments are walked, so `acc_call` can lend them.
+    if (n.kind == ExprKind.ExprDropExpr) {
+        ExprId:sp_op = raw expr_operand(n);
+        ExprId:saved_spawn = x.spawn_call;
+        if (!(raw expr_is_none(sp_op))) {
+            ExprNode:sp_n = raw ast_expr(x.ast, sp_op);
+            if (sp_n.kind == ExprKind.ExprCallExpr) {
+                if (raw callee_is_async(x.esc, sp_n)) { x.spawn_call = sp_op; }
+            }
+        }
+        drop acc_expr(x, sp_op, raw ACC_READ(), dd);
+        x.spawn_call = saved_spawn;
+        pass NIL;
+    }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         ExprId:recv = raw expr_operand(n);
         if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { recv = raw expr_none(); }
@@ -1512,6 +1575,19 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         if (recv_is_ptr) { ptr_recv = false; }
         if (ptr_recv) { rk = raw ACC_WRITE(); }
         int32:rcallee = raw escape_call_fn(x.esc, id);
+        // THE RECEIVER OF AN OPERATION IN A CROSSING KIND'S CONCURRENT SET
+        // (DEF-148): a builtin method of one of D-180's five kinds that the
+        // type's contract permits while a task holds it -- `s.alloc(v)`,
+        // `m.acquire(d)` -- is checked against every party but the LENT ones.
+        // `destroy`, an operation outside the set, keeps every party.
+        bool:lent_ok = false;
+        if ((ft == 0i32) && (rcallee == 0i32) && (rxt != 0i32) && (n.kind == ExprKind.ExprMethodCallExpr)) {
+            int32:rxk = raw type_kind(x.types, rxt);
+            if (rxk == (raw TY_POINTER())) { rxk = raw type_kind(x.types, raw type_elem(x.types, rxt)); }
+            if (raw spawn_crossing_kind(rxk)) {
+                lent_ok = raw crossing_concurrent_method(rxk, raw intern_get(x.it, n.payload =>! int32));
+            }
+        }
         if (ptr_recv && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
             // the implicit `@recv`: what the method writes through it
             drop acc_indices(x, recv, depth);
@@ -1519,7 +1595,13 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             drop check_access_ex(x, recv, 0i32, raw ACC_WRITE(), raw expr_none(), rvn.span, raw CHECK_CLAIMS());
             drop check_written(x, recv, rcallee, 0i32, rvn.span);
         } else {
-            drop acc_expr(x, recv, rk, depth);
+            if (lent_ok && (raw is_place_chain(x, recv))) {
+                x.skip_lent = true;
+                drop acc_place(x, recv, rk, raw expr_none(), depth);
+                x.skip_lent = false;
+            } else {
+                drop acc_expr(x, recv, rk, depth);
+            }
         }
     }
     // Every ordinary argument as an access against the outer parties and all
@@ -1571,6 +1653,46 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                                        place: raw expr_operand(an3), view_kind: 0i32, root_ptr: false, path: 0i32 });
     }
     drop list_truncate(@x.live, mark);
+    // A SPAWN LENDS ITS CROSSINGS UNTIL THE BLOCK'S JOIN (DEF-148, 1.6.1e
+    // step 1): each argument that is a pointer to one of D-180's five kinds --
+    // `@s` of a binding, or a pointer binding handed on -- becomes a LENT
+    // party on its root, sited at the call, live until the enclosing block's
+    // `frame_pop`. The party is pushed after the call's own parties are gone,
+    // and the callee's mutation summary is then read against it for the
+    // spawn's own `@s`: a task that writes or moves out what it was lent is
+    // refused at the spawn, as a later `destroy` by the owner is.
+    if (id.index == x.spawn_call.index) {
+        if (!(raw expr_is_none(x.spawn_call))) { drop lend_spawn_args(x, id, start, count, pos_base, callee_fn); }
+    }
+    pass NIL;
+};
+
+func:lend_spawn_args = NIL(Alias->:x, ExprId:id, int32:start, int32:count, int32:pos_base,
+                           int32:callee_fn) never fails {
+    for (int32:i in 0i32...count) {
+        ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        int32:aty = raw exprtypes_get(x.etypes, a);
+        if (aty == 0i32) { continue; }
+        if ((raw type_kind(x.types, aty)) != (raw TY_POINTER())) { continue; }
+        if (!(raw spawn_crossing_kind(raw type_kind(x.types, raw type_elem(x.types, aty))))) { continue; }
+        ExprNode:an = raw ast_expr(x.ast, a);
+        ExprId:place = raw expr_none();
+        bool:root_ptr = false;
+        if (an.kind == ExprKind.ExprAddressOfExpr) {
+            place = raw expr_operand(an);
+        } else {
+            if (an.kind != ExprKind.ExprIdentifierExpr) { continue; }
+            place = a;
+            root_ptr = true;
+        }
+        int32:root = raw place_root_symbol(x, place);
+        if (root == 0i32) { continue; }
+        drop list_push(@x.live, Party{ site: id, kind: raw PARTY_LENT(), root: root, holder: 0i32,
+                                       place: place, view_kind: 0i32, root_ptr: root_ptr, path: 0i32 });
+        if ((an.kind == ExprKind.ExprAddressOfExpr) && (callee_fn > 0i32)) {
+            drop check_written_mode(x, place, callee_fn, pos_base + i, an.span, raw CHECK_LENT());
+        }
+    }
     pass NIL;
 };
 

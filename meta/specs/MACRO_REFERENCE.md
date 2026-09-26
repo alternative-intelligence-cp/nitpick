@@ -146,6 +146,12 @@ impl:Box:Pair = { #emit_methods(); };
 **An identifier in a macro body resolves in the scope where the macro was
 written. Always.**
 
+> *[2026-09-26, 1.6.1e step 1 — a dated note (DEF-144).]* The resolver kept this rule and the
+> emitter did not: a body's free name was emitted as the CALLER's local of the same name whenever
+> the caller had one (a lone identifier, a comparison's operand — arithmetic read right by the
+> constant folder's accident). The emitter reads the resolver's symbol now; the rule holds in the
+> emitted program as it held in the checked one.
+
 **A macro is invocable only in the module that declares it** (D-124). It is not
 exported, `use` does not bind it, `pub` on it changes nothing, and a module nested
 inside the declaring one cannot reach it. That is what makes the sentence above

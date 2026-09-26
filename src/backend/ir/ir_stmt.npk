@@ -143,6 +143,27 @@ func:emit_scope_join = IrVal(ExprEmitter->:x, int64:f) never fails {
     string:lset = raw irw_new_label(x.fe.w, "jn.set");
     string:lend = raw irw_new_label(x.fe.w, "jn.end");
 
+    // THE EARLIEST-SPAWNED CHILD'S ERROR (DEF-146, 1.6.1e step 1; S-115): the
+    // chain is a LIFO, the last-spawned child at its head, and the first error
+    // this walk meets is the NEWEST child's -- so "the first child error"
+    // (D-163's exception, CONCURRENCY_REFERENCE §2.2) was relayed as the last-
+    // spawned child's. "First" is spawn order: a function of the program's
+    // text, the same under every schedule the explorer runs. So a child's
+    // error OVERWRITES one a previous child of this walk stored, and never the
+    // function's own (stored at the seam before the unwind, D-207): `jtook`
+    // says whether the slot's error is a child's. The walk pumps the executor
+    // synchronously and never suspends this frame, so an alloca is right in a
+    // coroutine too. A bare function (`main`) has no result slot: its own
+    // `jbare` word takes each child's error the same way, and the walk enters
+    // `failsafe` with the earliest-spawned child's error once every child has
+    // finished -- one rule for both shapes.
+    string:jtook = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, jtook, "i8");
+    drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", jtook, ""));
+    string:jbare = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, jbare, "i32");
+    drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", jbare, ""));
+
     drop s_br(x, lhead);
     drop s_start(x, lhead);
     string:jh = raw irw_temp(x.fe.w);
@@ -268,14 +289,11 @@ func:emit_scope_join = IrVal(ExprEmitter->:x, int64:f) never fails {
     x.fe.terminated = true;
     drop s_start(x, lerr);
     if (x.fe.bare) {
-        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
-                          int_to_string(x.fe.fn_site => int64), ")"));
-        string:jmf = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(jmf, " = call i32 @npk_failsafe(i32 ",
-                          string_concat(jerr2, ")")));
-        drop irw_line(x.fe.w, raw cat3("call void @npk_exit(i32 ", jmf, ")"));
-        drop irw_line(x.fe.w, "unreachable");
-        x.fe.terminated = true;
+        // A CHILD'S ERROR IS TAKEN, AND THE WALK GOES ON: the last one taken
+        // is the earliest spawned (the chain is a LIFO). `failsafe` after
+        // `jn.end`, once every child has finished.
+        drop irw_line(x.fe.w, raw cat4("store i32 ", jerr2, ", ptr ", jbare));
+        drop s_br(x, lhead);
     } else {
         string:jcur = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(jcur, " = load ", x.fe.ret_ll,
@@ -285,24 +303,71 @@ func:emit_scope_join = IrVal(ExprEmitter->:x, int64:f) never fails {
         string:jce = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(jce, " = extractvalue ", x.fe.ret_ll,
                           " ", string_concat(jcur, jslot)));
-        string:jown = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(jown, " = icmp ne i32 ",
+        // The slot's error is the FUNCTION'S OWN exactly when it is non-zero
+        // and no child of this walk stored it: then it wins (D-207); a
+        // child's stored error is overwritten by this earlier-spawned one.
+        string:jfull = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(jfull, " = icmp ne i32 ",
                           string_concat(jce, ", 0")));
+        string:jtk = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(jtk, " = load i8, ptr ", jtook, ""));
+        string:jtkz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(jtkz, " = icmp eq i8 ",
+                          string_concat(jtk, ", 0")));
+        string:jown = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(jown, " = and i1 ", jfull, ", ", jtkz));
         drop irw_line(x.fe.w, raw cat5("br i1 ", jown, ", label %", lhead,
                           raw cat3(", label %", lset, "")));
         x.fe.terminated = true;
         drop s_start(x, lset);
+        // The origin chain records this function ONCE per walk, at the first
+        // child error taken: an overwrite changes which child's error the
+        // slot holds, not the path the walk relays it along.
+        string:lchain = raw irw_new_label(x.fe.w, "jn.chain");
+        string:lstore = raw irw_new_label(x.fe.w, "jn.store");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", jtkz, ", label %", lchain,
+                          raw cat3(", label %", lstore, "")));
+        x.fe.terminated = true;
+        drop s_start(x, lchain);
         drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
                           int_to_string(x.fe.fn_site => int64), ")"));
+        drop s_br(x, lstore);
+        drop s_start(x, lstore);
         string:jna = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(jna, " = insertvalue ", x.fe.ret_ll,
                           " zeroinitializer, i32 ",
                           string_concat(jerr2, jslot)));
         drop irw_line(x.fe.w, raw cat5("store ", x.fe.ret_ll, " ", jna,
                           string_concat(", ptr ", x.fe.result_gep)));
+        drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", jtook, ""));
         drop s_br(x, lhead);
     }
     drop s_start(x, lend);
+    if (x.fe.bare) {
+        // EVERY CHILD HAS FINISHED: the earliest-spawned child's error, if
+        // any, enters `failsafe` -- the trap path a bare function's join has
+        // always had, now after the whole walk.
+        string:lbfail = raw irw_new_label(x.fe.w, "jn.bfail");
+        string:lbend = raw irw_new_label(x.fe.w, "jn.bend");
+        string:jbv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(jbv, " = load i32, ptr ", jbare, ""));
+        string:jbb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(jbb, " = icmp ne i32 ",
+                          string_concat(jbv, ", 0")));
+        drop irw_line(x.fe.w, raw cat5("br i1 ", jbb, ", label %", lbfail,
+                          raw cat3(", label %", lbend, "")));
+        x.fe.terminated = true;
+        drop s_start(x, lbfail);
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
+                          int_to_string(x.fe.fn_site => int64), ")"));
+        string:jmf = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(jmf, " = call i32 @npk_failsafe(i32 ",
+                          string_concat(jbv, ")")));
+        drop irw_line(x.fe.w, raw cat3("call void @npk_exit(i32 ", jmf, ")"));
+        drop irw_line(x.fe.w, "unreachable");
+        x.fe.terminated = true;
+        drop s_start(x, lbend);
+    }
     pass (raw iv_nil());
 };
 
@@ -817,7 +882,7 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
-    int64:li = raw fnem_lookup_idx(x.fe, rn.payload =>! int32);
+    int64:li = raw ident_slot(x, rn);   // by the resolver's symbol (DEF-144)
     if (li < 0i64) { pass NIL; }
     string->:fl = raw fnem_local_flag_at(x.fe, li);
     if (fl.len == 0i64) { pass NIL; }
@@ -999,7 +1064,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                                   string_concat("(ptr ", place.addr), ")"));
             }
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
-                int64:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);
+                int64:tli = raw ident_slot(x, tgt);   // by the resolver's symbol (DEF-144)
                 if (tli >= 0i64) {
                     string->:tfl = raw fnem_local_flag_at(x.fe, tli);
                     if (tfl.len > 0i64) {

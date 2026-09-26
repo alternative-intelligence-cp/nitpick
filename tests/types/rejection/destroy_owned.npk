@@ -1,0 +1,73 @@
+// expect-error: NITPICK-TYPE-091
+// expect-error-at: 24:6
+// expect-error: NITPICK-TYPE-091
+// expect-error-at: 30:6
+// expect-error: NITPICK-TYPE-091
+// expect-error-at: 36:10
+// expect-error: NITPICK-TYPE-091
+// expect-error-at: 42:12
+// expect-error: NITPICK-TYPE-091
+// expect-error-at: 49:15
+//
+// DEF-157 (1.6.1e step 1): `destroy` CONSUMES ITS ARENA (D-152), SO ITS RECEIVER
+// IS STORAGE THIS FUNCTION OWNS -- a binding, or a field or element of one
+// reached through no pointer. Through a pointer there is no drop flag to clear,
+// and `kill(shared_arena<T>->:s) { s.destroy(); }` freed the arena the owner's
+// scope exit freed again (measured on 3235308: MachineFault, exit 107, in safe
+// code); a temporary's `destroy` is freed a second time at the statement's end.
+mod:destroy_owned;
+
+struct:Box = { string:name; shared_arena<int64>:store; };
+
+// 1. a shared arena through a pointer parameter
+func:kill_shared = NIL(shared_arena<int64>->:s) never fails {
+    s.destroy();
+    pass NIL;
+};
+
+// 2. a plain arena through a pointer parameter
+func:kill_plain = NIL(arena<int64>->:a) never fails {
+    a.destroy();
+    pass NIL;
+};
+
+// 3. through an explicit dereference
+func:kill_deref = NIL(shared_arena<int64>->:s) never fails {
+    (<-s).destroy();
+    pass NIL;
+};
+
+// 4. a field of a pointee
+func:kill_field = NIL(Box->:b) never fails {
+    b.store.destroy();
+    pass NIL;
+};
+
+// 5. a temporary
+func:mk = shared_arena<int64>() never fails { pass shared_arena_make(4i64); };
+func:kill_temporary = NIL() never fails {
+    (raw mk()).destroy();
+    pass NIL;
+};
+
+// --- the controls: silent ------------------------------------------------------
+
+func:own_binding = NIL() never fails {
+    shared_arena<int64>:s = shared_arena_make(4i64);
+    s.destroy();
+    arena<int64>:a = arena_make(4i64);
+    a.destroy();
+    pass NIL;
+};
+func:own_field = NIL() never fails {
+    Box:b = Box{ name: "", store: shared_arena_make(4i64) };
+    b.store.destroy();
+    pass NIL;
+};
+func:moved_in = NIL(move shared_arena<int64>:s) never fails {
+    s.destroy();
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

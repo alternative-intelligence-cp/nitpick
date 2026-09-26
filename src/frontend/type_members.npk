@@ -3709,6 +3709,9 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
             pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`destroy` takes no arguments", n.span));
         }
+        if (!(raw destroy_receiver_owned(e, raw expr_operand(n)))) {
+            pass (raw refuse_destroy_not_owned(e, n));
+        }
         pass (e.types.t_nil);
     }
     string:m1 = string_concat("`", m);
@@ -3742,6 +3745,61 @@ func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) never fails {
 // is what makes concurrent `get` race-free with no per-slot machinery. The
 // receiver is a VALUE (one pointer, shareable by reference), so no place is
 // required.
+// THE RECEIVER OF `destroy` IS STORAGE THIS FUNCTION OWNS (DEF-157, 1.6.1e
+// step 1; TYPE-091): a binding of this function -- a local, or a by-value or
+// `move` parameter -- or a field or element of one reached through bases that
+// are not pointers. A dereference, a pointer-typed base or root, and anything
+// that is not a place (a call's result: a temporary) are refused, because the
+// consuming half of `destroy` has no flag to clear there and the owner frees
+// the arena again.
+func:destroy_receiver_owned = bool(ExprTyper->:e, ExprId:id) never fails {
+    ExprId:cur = id;
+    int32:fuel = 64i32;
+    while (fuel > 0i32) decreases fuel {
+        fuel = fuel - 1i32;
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(e.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            if (n.a == 0i32) { pass false; }
+            int32:t = raw exprtypes_get(e.expr_types, cur);
+            if (t == 0i32) { pass false; }
+            if ((raw type_kind(e.types, t)) == (raw TY_POINTER())) { pass false; }
+            Symbol:s = raw symtab_get(e.tab, n.a);
+            if (s.origin_kind == (raw SYM_STMT())) { pass true; }
+            if (s.origin_kind == (raw SYM_DECL())) {
+                DeclNode:d = raw ast_decl(e.ast, DeclId{ index: s.origin });
+                pass (d.kind == DeclKind.DeclParamDecl);
+            }
+            pass false;
+        }
+        ExprId:base = ExprId{ index: 0i32 };
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+            base = raw expr_operand(n);
+        } else {
+            if (n.kind == ExprKind.ExprIndexExpr) {
+                base = raw expr_lhs(n);
+            } else {
+                pass false;
+            }
+        }
+        if (raw expr_is_none(base)) { pass false; }
+        int32:bt = raw exprtypes_get(e.expr_types, base);
+        if (bt == 0i32) { pass false; }
+        int32:bk = raw type_kind(e.types, bt);
+        if (bk == (raw TY_POINTER())) { pass false; }
+        if (bk == (raw TY_SLICE())) { pass false; }
+        if (bk == (raw TY_HANDLE())) { pass false; }
+        cur = base;
+    }
+    pass false;
+};
+
+func:refuse_destroy_not_owned = int32(ExprTyper->:e, ExprNode:n) never fails {
+    pass (raw te_error(e, raw TYPE_DESTROY_NOT_OWNED(),
+        "`destroy` consumes its arena (D-152), so its receiver is storage this function owns -- a binding, or a field or element of one reached through no pointer -- never a pointer's pointee or a temporary: the owner's scope exit frees what it still holds, and a `destroy` through a pointer parameter freed the arena the owner freed again (DEF-157). Destroy it where it is owned, after every task that holds it has been joined",
+        n.span));
+};
+
 func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                                 int32:name, int32:start, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);
@@ -3779,6 +3837,9 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         if (count != 0i32) {
             pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`destroy` takes no arguments", n.span));
+        }
+        if (!(raw destroy_receiver_owned(e, raw expr_operand(n)))) {
+            pass (raw refuse_destroy_not_owned(e, n));
         }
         pass (e.types.t_nil);
     }

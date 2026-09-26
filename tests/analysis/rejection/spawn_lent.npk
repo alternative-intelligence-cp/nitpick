@@ -1,0 +1,172 @@
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 61:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 70:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 78:34
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 87:19
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 95:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 103:34
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 114:19
+//
+// DEF-148 (1.6.1e step 1; the library listener's F-022): A SPAWN LENDS ITS
+// SANCTIONED CROSSING UNTIL THE BLOCK'S JOIN. `drop f(@s)` hands a task a
+// `shared_arena<T>->` (or a lock's pointer, D-180's five kinds), and the task
+// holds it until the enclosing block's exit joins it (D-207). Until then the
+// owner keeps the type's own concurrent operations and may lend the value to
+// another spawn or to a helper that only allocates; ending the value's life or
+// identity -- `destroy`, an assignment over it, a `move` out of it, `1789121m`, or
+// `@s` to a callee whose summary stores over what it is handed -- is refused
+// as BORROW-016. Measured on 3235308: the arena destroyed while the thread
+// held it, the thread allocating in freed memory (WildLeak at exit 0).
+mod:spawn_lent;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+thread async func:locker = NIL(Mutex<int32, 3i32>->:m) joins J2 {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    g.value = g.value + 1i32;
+    pass NIL;
+};
+func:fill_one = NIL(shared_arena<int64>->:p) never fails {
+    Handle<int64>:h = p.alloc(1i64);
+    discard(h);
+    pass NIL;
+};
+func:replace = NIL(shared_arena<int64>->:p) never fails {
+    (<-p) = shared_arena_make(4i64);   // stores over the pointee: the old arena is dropped (DEF-120)
+    pass NIL;
+};
+func:take_shared = NIL(shared_arena<int64>->:p) never fails {
+    Handle<int64>:h = p.alloc(2i64);
+    discard(h);
+    pass NIL;
+};
+
+// 1. destroyed while the task holds it (the listener's a1)
+async func:destroy_while_lent = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    s.destroy();
+    await sleep(raw duration_ms(50i64)) ?| NIL;
+    pass NIL;
+};
+
+// 2. assigned over while lent
+async func:assign_while_lent = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    s = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 3. moved out while lent
+async func:move_while_lent = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    shared_arena<int64>:t = move(s);
+    t.destroy();
+    pass NIL;
+};
+
+// 4. an exclusive claim while lent
+async func:exclusive_while_lent = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    drop fill_one($$m s);
+    pass NIL;
+};
+
+// 5. `@s` to a callee that stores over the pointee
+async func:replaced_while_lent = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    drop replace(@s);
+    pass NIL;
+};
+
+// 6. a lock moved while a task holds it
+async func:mutex_moved_while_lent = NIL() {
+    Mutex<int32, 3i32>:m = mutex(0i32) ?! E1;
+    drop locker(@m);
+    Mutex<int32, 3i32>:m2 = move(m);
+    pass NIL;
+};
+
+// 7. the task itself stores over what it was lent: refused at the spawn
+thread async func:replacer = NIL(shared_arena<int64>->:s) joins J2 {
+    (<-s) = shared_arena_make(4i64);
+    pass NIL;
+};
+async func:task_replaces = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop replacer(@s);
+    pass NIL;
+};
+
+// --- the controls: silent ------------------------------------------------------
+
+// the owner's own concurrent operations while lent, a second spawn, a helper
+// that only allocates, a shared claim, and `destroy` after the block (a2)
+async func:owner_uses_while_lent = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop filler(@s);
+        Handle<int64>:h = s.alloc(7i64);
+        int64:v = s.get(h) ?! E1;
+        if (v != 7i64) { fail E1; }
+        drop filler(@s);
+        drop fill_one(@s);
+        drop take_shared($$i s);
+    }
+    s.destroy();
+    pass NIL;
+};
+
+// a lock acquired by the owner while a task holds it
+async func:owner_locks_while_lent = NIL() {
+    Mutex<int32, 3i32>:m = mutex(0i32) ?! E1;
+    drop locker(@m);
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    g.value = g.value + 1i32;
+    pass NIL;
+};
+
+// no task at all (a3)
+async func:destroy_no_task = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    Handle<int64>:h = s.alloc(1i64);
+    discard(h);
+    s.destroy();
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (StaleHandle) { exit 92i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (IntOverflow) { exit 90i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

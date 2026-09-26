@@ -3581,7 +3581,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprIntLiteral)   { pass (raw type_numeric_literal(e, n, "42i32")); }
     if (n.kind == ExprKind.ExprFloatLiteral) { pass (raw type_numeric_literal(e, n, "1.5f64")); }
     if (n.kind == ExprKind.ExprBoolLiteral)  { pass (e.types.t_bool); }
-    if (n.kind == ExprKind.ExprCharLiteral)  { pass (raw tt_char(e.types, 8i32)); }
+    if (n.kind == ExprKind.ExprCharLiteral)  { pass (raw tt_char(e.types, raw char_lit_bits(n.width))); }
     if (n.kind == ExprKind.ExprStringLiteral)      { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (e.types.t_string); }

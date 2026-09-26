@@ -79,7 +79,11 @@ drop work();        // runs concurrently; VALUE discarded, ERROR joined (D-163)
 > the enclosing scope's D-062 join, which relays the **first child error,
 > verbatim (D-080), after every child has finished**, as the enclosing `async`
 > function's own error; a task wound up by the join's deadline reports its wind-up
-> code the same way. A spawned task's error is observable or the program does not
+> code the same way. **"First" is SPAWN ORDER** (DEF-146, 1.6.1e step 1; S-115):
+> the earliest-spawned child that failed, whatever the order the failures occurred
+> in — a function of the program's text, the same under every schedule — and the
+> function's own error wins over every child's (D-207). `main`'s join enters
+> `failsafe` with the same child's error, after every child has finished. A spawned task's error is observable or the program does not
 > compile — structured concurrency's rule, the natural completion of D-062's
 > lexical task lifetime. (An `async` function can never be `never fails`, so the
 > D-163 licence never applies to the spawn form.)
@@ -319,7 +323,14 @@ drops per-slot `free` so slots are never reused while the arena is live, which
 removes the need for epochs, hazard pointers, or reference counting (D-017).
 
 `destroy` on a shared arena requires that no thread still holds handles. That is
-ownership, not synchronization: the owner destroys it after joining.
+ownership, not synchronization: the owner destroys it after joining — and the
+compiler holds it to that (DEF-148, 1.6.1e step 1): a spawn LENDS the arena (or a
+lock) it is handed until the end of the block whose exit joins it, and `destroy`,
+an assignment over the binding, a `move` out of it, `$$m` or `@s` to a callee that
+stores over it before the join is `NITPICK-BORROW-016`; `alloc` and `get` by the
+owner, a second spawn and a helper that only allocates stay. `destroy` takes the
+owning binding (or a field of one reached through no pointer): through a pointer
+there is nothing to consume, `NITPICK-TYPE-091` (DEF-157).
 
 ### 5.3 What this adds up to
 
@@ -424,7 +435,9 @@ with a zero deadline, which asks and acts atomically.
   ONCE to an absolute `CLOCK_MONOTONIC` timepoint at suspension entry
   (`mono_now()`, the floor's clock), so re-arms cannot drift. Expiry is
   `DEADLINE_EXCEEDED` (−4107): a catchable `Result` error at a `recv`/
-  `acquire`, the JOIN's trap code when a task outlives its bound.
+  `acquire`/`timedwait` (an expired `timedwait` fails without re-acquiring and
+  its guard is SPENT — DEF-147, 1.6.1e step 1; until then it returned success
+  after the full wait), the JOIN's trap code when a task outlives its bound.
 - **Deadlines are mandatory** (D-056). There is no unbounded `recv`, and a zero
   deadline expresses "do not wait" — which is why `try_send` and `try_recv` do not
   exist as separate operations.
@@ -565,7 +578,7 @@ it removes the second counter that made it expressible.
 |---|---|---|
 | Mutex | `Mutex<T, LEVEL>` | owns its data (D-056); no recursive variant |
 | Read/write lock | `RwLock<T, LEVEL>` | owns its data |
-| Condition variable | `CondVar<LEVEL>` | **`wait` is removed** — `timedwait` is the only form (D-056) |
+| Condition variable | `CondVar<LEVEL>` | **`wait` is removed** — `timedwait` is the only form (D-056); an expired wait is `DeadlineExceeded` with the lent guard SPENT and the mutex not re-acquired (DEF-147, 1.6.1e step 1) |
 | Barrier | `Barrier<N, LEVEL>` | reimplemented natively; LEVELLED like every blocking primitive (D-056's own rule — amended at 1.1.11b from the unlevelled `Barrier<N>` this table first wrote) |
 
 Every acquisition is **`async`**, deadline-bounded, and returns `Result`. There is

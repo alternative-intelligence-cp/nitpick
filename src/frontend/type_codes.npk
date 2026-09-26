@@ -589,3 +589,15 @@ pub func:TYPE_GUARD_MOVES_BINDING = string() never fails { pass "NITPICK-TYPE-08
 // identifier's own RESOLVE-002 (DEF-140: it was an EMIT-002, a compiler-defect
 // report for a program mistake).
 pub func:TYPE_FALL_INTO_BINDING = string() never fails { pass "NITPICK-TYPE-090"; };
+
+// `destroy` THROUGH A POINTER, OR OF A TEMPORARY (DEF-157, 1.6.1e step 1):
+// `destroy` CONSUMES its arena (D-152) -- the move analysis retires the
+// binding and the emitter clears its drop flag -- and both halves need the
+// receiver to be storage THIS function owns: a binding, or a field or element
+// reached from one through no pointer. Through a pointer parameter there is no
+// flag to clear, so `kill(shared_arena<T>->:s) { s.destroy(); }` freed the
+// arena and the owner's scope exit freed it again (measured: `MachineFault`,
+// exit 107, in safe code); a temporary's `destroy` is freed a second time at
+// the statement's end (D-246). The receiver is a place rooted at a binding of
+// this function through member and index steps whose bases are not pointers.
+pub func:TYPE_DESTROY_NOT_OWNED = string() never fails { pass "NITPICK-TYPE-091"; };

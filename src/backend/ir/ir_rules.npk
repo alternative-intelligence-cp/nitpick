@@ -360,7 +360,7 @@ pub func:place_root_local = int64(ExprEmitter->:x, ExprId:id) never fails {
         if (raw expr_is_none(cur)) { pass (0i64 - 1i64); }
         ExprNode:n = raw ast_expr(x.ast, cur);
         if (n.kind == ExprKind.ExprIdentifierExpr) {
-            pass (raw fnem_lookup_idx(x.fe, n.payload =>! int32));
+            pass (raw ident_slot(x, n));   // by the resolver's symbol (DEF-144)
         }
         ExprId:base = ExprId{ index: 0i32 };
         if (n.kind == ExprKind.ExprMemberAccessExpr) {

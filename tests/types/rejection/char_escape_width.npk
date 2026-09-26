@@ -1,0 +1,24 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 15:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 16:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 17:5
+//
+// DEF-145 (1.6.1e step 1; the library listener's F-019): a `'\u{…}'` escape is a
+// `char32` literal whatever its value (TYPE_REFERENCE §2.3), so a `char8` or a
+// `char16` slot refuses it as it refuses any mismatch. Until this step the escape
+// was typed `char8` and truncated to its low byte in silence.
+mod:char_escape_width;
+
+func:main = int32(cstring[]:_~argv) {
+    char8:a = '\u{1F641}';
+    char8:b = '\u{41}';
+    char16:c = '\u{41}';
+    discard(a);
+    discard(b);
+    discard(c);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:_~err) { exit 1i32; };

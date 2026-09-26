@@ -1033,6 +1033,20 @@ pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:l
     pass slot;
 };
 
+// A PARAMETER BY NAME (DEF-144, 1.6.1e step 1): the parameters are the first
+// bindings of the table, bound in the prologue before any local, so a forward
+// search over that prefix finds the parameter and never a local that shadows
+// its name -- a macro expansion's own local, say, under a `#caller(name)` that
+// names the caller's parameter.
+pub func:fnem_lookup_param = int64(FnEmitter->:fe, int32:name) never fails {
+    int64:n = fe.pnames.count;
+    if (n > fe.lnames.count) { n = fe.lnames.count; }
+    for (int64:i in 0i64...n) {
+        if (fe.lnames[i => int64] == name) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
 // BACKWARD, so the innermost binding of a name wins — which is what shadowing
 // means. Forward search would resolve every shadowed name to its OUTERMOST
 // declaration, silently, in exactly the programs the frontend went out of its way

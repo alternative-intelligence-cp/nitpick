@@ -157,6 +157,23 @@ pub func:BORROW_CLAIM_POSITION = string() never fails { pass "NITPICK-BORROW-014
 // pair refuses (a view's extent has no run-time guard).
 pub func:BORROW_VIEW_ROOT = string() never fails { pass "NITPICK-BORROW-015"; };
 
+// --- DEF-148 (1.6.1e step 1): a spawn LENDS its crossing until the scope's join --
+//
+// A `drop f(…)` that hands a task a `shared_arena<T>->` or a lock's pointer
+// (D-180's five crossings) LENDS the root binding to the task until the
+// enclosing block's exit, whose join precedes every drop (D-207). Until then
+// the owner may do what the type's concurrency contract exists for -- a shared
+// arena's `alloc` and `get` (D-154), a lock's `acquire`/`read`/`write`/
+// `timedwait`/`signal`/`broadcast`/`arrive` -- and may lend the same value to
+// another spawn; it may NOT end the value's life or identity: `destroy()`, an
+// assignment over the root, a `move` out of it, `$$m`, or `@root` to a callee
+// whose summary writes what the contract does not. Measured on 3235308: an
+// arena destroyed while a spawned thread held it, the thread allocating in the
+// freed arena a hundred milliseconds later (`WildLeak` at `exit 0`, a
+// use-after-free in safe code). The fix is in the sentence: destroy it after
+// the block, or join first.
+pub func:BORROW_LENT_ROOT = string() never fails { pass "NITPICK-BORROW-016"; };
+
 // --- D-010: definite assignment (0.5.2) ---------------------------------------
 //
 // D-010 chose "no implicit default" over poisoning every scalar with `ERR`, on the

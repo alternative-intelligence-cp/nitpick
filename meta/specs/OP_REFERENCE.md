@@ -326,7 +326,8 @@ value is ERR, so the taint cannot cross silently. See D-008.
 > too (D-325, 1.6.1 step 0): a view-maker's result, a range view, or a call
 > result whose callee views what it was handed is a shared claim on its root
 > for its holder's scope or its call, and a write-capable access of the viewed
-> storage while it lives is `NITPICK-BORROW-015` — what a callee writes through
+> storage while it lives is `NITPICK-BORROW-015` (and a spawn's sanctioned crossing is
+> LENT until the block's join, `NITPICK-BORROW-016`, DEF-148) — what a callee writes through
 > `@x` is read off its own body, so `@x` handed to a function that writes
 > nothing through it conflicts with no view of `x`.
 

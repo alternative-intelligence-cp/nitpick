@@ -278,7 +278,17 @@ char8:backslash = '\\';
 char8:quote = '\'';
 char8:hex = '\x41';      // Hex escape (= 'A')
 char32:emoji = '\u{1F600}';  // Unicode escape (char32 only)
+char32:wide = '😀';          // a source character above U+00FF is char32 too
 ```
+
+A character literal has a width (DEF-145, 1.6.1e step 1): the `\u{…}` escape is
+`char32` whatever its value (`'\u{41}'` in a `char8` slot is `NITPICK-TYPE-007`,
+as any mismatch is), a source character whose code point exceeds 0xFF is `char32`,
+and a plain character, a `\x` escape or a one-character escape is `char8`
+(`'é'`, 233, is a byte as it has been since 1.0.8). A `char16` literal has no
+spelling; the numeric form with its suffix (`128512char32`) is the other spelling
+of every width. Until this step every character literal was `char8` and
+`'\u{1F641}'` was `'A'`, its low byte.
 
 ### 2.3 Character Arrays
 

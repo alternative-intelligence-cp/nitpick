@@ -276,7 +276,7 @@ already does."
 | **SETTLED as D-331 (2026-09-26).** ~~**S-112**~~ — a constant division that cannot succeed (DEF-133's d7, the listener's F-017). The recap: D-310 (1.5.8b) refuses a certain constant `+ - *` overflow wherever the folder decides an operand pair (TYPE-076 at the node); OP_REFERENCE §1.1 promises the same for a constant division by zero and `MIN / −1` (TYPE-004), and the compiler keeps that promise only where the folder is ASKED — a `fixed` initialiser, `comptime` — while a local `int32:x = 5i32 / 0i32;` compiles and traps `DivByZero` at run time. Asked 2026-09-26 (`1.6.1d.md` §2.15). | OPEN — 1.6.1d step 4's DEF-133 (d7). | **D-310's reach extended to `/` and `%`**: a certain constant division by zero or `MIN / −1` is `NITPICK-TYPE-004` at the node wherever the folder decides the pair; a refusal added, announced in advance. The alternative is the sentence moving to "where the folder is asked". |
 | **SETTLED as D-332 (2026-09-26).** ~~**S-113**~~ — a rejection test's silent site (found by 1.6.1d step 1's sweep). D-237 (1.4.8b) holds a rejection file to the SET of codes it names, so a site the checker never reports is invisible whenever its code appears elsewhere in the file: `tests/analysis/rejection/aliasing.npk`'s "a write THROUGH a shared claim's holder" case carried its `expect-error: NITPICK-BORROW-013` line since 1.5.5 and was never reported until DEF-123's fix — the exact hazard the listener's F-008 found, documented in our own suite for a cycle. Asked 2026-09-26. | OPEN — a runner rule (both runners and their self-checks); no step of 1.6.1d waits on it. | **Both runners also hold the COUNT of reported sites per code to the count of `expect-error` lines naming it** (the files already write one line per site), so a silent site fails by name; a file that means several sites under one line is re-spelled. |
 | **SETTLED as D-333 (2026-09-26).** ~~**S-114**~~ — a `cstring` across a channel or a spawn after D-328 (asked by the compiler seat 2026-09-26 with the step-3 report). The recap: D-235 (1.4.7b) decided every kind as a channel element and `cstring` refuses as a BORROW beside pointers and slices (`type_contains_borrow_recorded`), because its bytes were never its own; D-328 gives it `string`'s shape and rule — an owned body at `cap > 0`, a borrowed one at `cap == 0` only of a literal or an `argv`/`environ()` element, both process-immortal, exactly `string`'s two cases, and `string` rides. The user, 2026-09-26: "go with your recommendations on those two questions. they look fine to me." | SETTLED — lands with 1.6.1d step 3b (DEF-122). | **A `cstring` rides a channel and crosses a spawn as a `string` does**, D-235's row amended; the alternative (keeping the refusal) cost nothing today, since nothing in the tree sends one. |
-| **S-115** — which child's error a scope's join relays (DEF-146, the library listener's F-020). The recap: D-163's exception paragraph (settled with the user at 1.1's planning; C-7/C-9) and CONCURRENCY_REFERENCE §2.2:79 say the enclosing scope's join relays "the first child error, verbatim (D-080), after every child has finished"; D-207 (1.4.4) moved the join into the scope's unwind and kept the arbitration reading one slot; the emitter relays the LAST-spawned child's error (the join walks the LIFO chain and keeps the first error it meets). "First" is defined nowhere: spawn order (the program's text; the same under every schedule) or first in time (a stamp the floor does not keep; two runs of one program could relay two errors under the explorer). Asked by the compiler seat 2026-09-26 (`1.6.1e.md` §2.3, §3). | OPEN — 1.6.1e step 1's DEF-146 lands under the recommendation unless the user says otherwise. | **Spawn order**: the earliest-spawned child that failed, the function's own error still winning over every child's. |
+| **S-115** — which child's error a scope's join relays (DEF-146, the library listener's F-020). The recap: D-163's exception paragraph (settled with the user at 1.1's planning; C-7/C-9) and CONCURRENCY_REFERENCE §2.2:79 say the enclosing scope's join relays "the first child error, verbatim (D-080), after every child has finished"; D-207 (1.4.4) moved the join into the scope's unwind and kept the arbitration reading one slot; the emitter relays the LAST-spawned child's error (the join walks the LIFO chain and keeps the first error it meets). "First" is defined nowhere: spawn order (the program's text; the same under every schedule) or first in time (a stamp the floor does not keep; two runs of one program could relay two errors under the explorer). Asked by the compiler seat 2026-09-26 (`1.6.1e.md` §2.3, §3). | **SETTLED as D-334** (the user, 2026-09-26: "I am fine with the s-115 thing. go with what we have unless there is a compelling case not to do so."); 1.6.1e step 1 landed under the recommendation the same day (`join_first_spawned.npk` pins spawn order; the listener's `ctl_j3`, slow spawned before fast and expecting E1, answers E2 by the rule — the two readings differ exactly there). | **Spawn order**: the earliest-spawned child that failed, the function's own error still winning over every child's. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -2732,28 +2732,68 @@ defect declares a `DEF-` in §2f.
 > traps, then the two tables), its first step goes BEFORE 1.6.1d steps 3b and 4 — the user, 2026-09-26: "the order you
 > proposed is fine with me". PLANNED execution-grade 2026-09-26: `meta/roadmap/1.6/1.6.1e.md`.**
 
-> **DEF-144 — OPEN (F-018; owner: the compiler seat, 1.6.1e). A MACRO'S FREE NAME, STANDING ALONE OR AS A
+> **DEF-144 — FIXED at 1.6.1e step 1 (2026-09-26; F-018). A MACRO'S FREE NAME, STANDING ALONE OR AS A
 > COMPARISON'S OPERAND, READS THE CALL SITE'S LOCAL INSTEAD OF THE MODULE BINDING** it names at the definition
 > (inside arithmetic it reads the right one) — a hygiene hole in the expansion (D-057/D-127's rule that a macro's
-> names bind in its defining scope), a silent wrong answer.
+> names bind in its defining scope), a silent wrong answer. **The fix (1.6.1e step 1):** the RESOLVER had it right
+> (the body's name bound to the module binding, the symbol recorded on the node); the EMITTER looked the name up in
+> the function's local table by NAME, innermost first, and read the caller's local. `ident_slot` (ir_expr.npk)
+> resolves an identifier node to its storage by the resolver's symbol — a `SYM_STMT` symbol by its declaring
+> statement, a parameter by the prologue's binding, every other declaration (a function, an error constant, a
+> global) to `emit_decl_value` before any local is consulted — and the six sites that asked the name ask it.
+> `macro_hygiene_names.npk`: the listener's four shapes, a module function under a caller local of its name, a
+> module binding under a caller local of another width, `#caller(lvl)` beside the bare name, each in a sync body
+> and in a coroutine.
 
-> **DEF-145 — OPEN (F-019; owner: the compiler seat, 1.6.1e). A `'\u{…}'` ESCAPE IS TYPED `char8` AND TRUNCATED TO
+> **DEF-145 — FIXED at 1.6.1e step 1 (2026-09-26; F-019). A `'\u{…}'` ESCAPE IS TYPED `char8` AND TRUNCATED TO
 > ITS LOW BYTE** (`'\u{1F641}' == 'A'` is true), and a `char32` cannot take it (TYPE-007) — a silent wrong answer in
-> the lexer's or the literal typer's reading of a scalar above U+00FF.
+> the lexer's or the literal typer's reading of a scalar above U+00FF. **The fix (1.6.1e step 1):** a character
+> literal has a WIDTH, carried as the numeric literals carry theirs (the token's and the node's `width`, `WChar8` or
+> `WChar32`, one token kind and one node kind): the `\u{…}` escape is `char32` whatever its value (TYPE_REFERENCE
+> §2.2), a source character above U+00FF is `char32` too (a code point that does not fit a byte was never a `char8`;
+> the truncation was the defect), a plain character or a `\x` escape stays `char8`; the typer, the folder and the
+> emitter read the width (`char_lit_bits`). `char_literal_width.npk` (both legs), `char_escape_width.npk`
+> (exactly {TYPE-007}: a `\u{…}` escape in a `char8` and a `char16` slot).
 
-> **DEF-146 — OPEN (F-020; owner: the compiler seat, 1.6.1e). THE SCOPE-EXIT JOIN RELAYS THE LAST-SPAWNED
+> **DEF-146 — FIXED at 1.6.1e step 1 (2026-09-26; F-020; under S-115's recommendation). THE SCOPE-EXIT JOIN RELAYS THE LAST-SPAWNED
 > CHILD'S ERROR, NOT THE FIRST CHILD ERROR** CONCURRENCY_REFERENCE:79 promises — D-136's first-child-error
-> arbitration read against the join walk (D-207): a silent wrong answer in which error a caller sees.
+> arbitration read against the join walk (D-207): a silent wrong answer in which error a caller sees. **The fix
+> (1.6.1e step 1):** "first" is SPAWN ORDER — the earliest-spawned child that failed, a function of the program's
+> text and the same under every schedule the explorer runs (S-115, recommended and ratified the same day as D-334) — so a child's
+> error OVERWRITES one a previous child of the walk stored (the chain is a LIFO: the last stored is the earliest
+> spawned) and never the function's own; `main`'s join (a bare function) joins every child before it enters
+> `failsafe` with the same child's error, where it entered `failsafe` at the first error it met. The origin chain
+> records the function once per walk. `join_first_spawned.npk` (six shapes, thread children among them; explored)
+> and `join_main_first_spawned.npk` (82). The listener's `ctl_j3` (slow spawned first, fast second, expecting E1)
+> answers E2 by the rule: its expectation was the first-in-TIME reading, and the file is theirs to re-spell.
 
-> **DEF-147 — OPEN (F-021; owner: the compiler seat, 1.6.1e). A `timedwait` THAT EXPIRES WITH NO SIGNAL RETURNS
+> **DEF-147 — FIXED at 1.6.1e step 1 (2026-09-26; F-021). A `timedwait` THAT EXPIRES WITH NO SIGNAL RETURNS
 > SUCCESS AFTER THE FULL WAIT** — an error path (the deadline, `DeadlineExceeded` or the spent guard of 1.1.11)
-> becomes a success: a silent wrong answer in a synchronisation primitive.
+> becomes a success: a silent wrong answer in a synchronisation primitive. **The fix (1.6.1e step 1):** nothing
+> recorded that phase 0 ended by the deadline, and the floor's `npk_mutex_acquire_wait` reads the clock only when it
+> must park — so the resumed frame took an uncontended mutex at once. The emitted wait reads the clock at its resume
+> (`emit_condvar_wait`'s `reacq`): at or past the absolute deadline it is `DeadlineExceeded` without re-acquiring,
+> the lent guard nulled (SPENT, D-056's amendment) and the frame off the condvar's list; a signal before the
+> deadline succeeds with the guard whole. No floor byte. `condvar_expiry.npk` (an expiry with the mutex then
+> re-acquired at once, a signal, a broadcast; explored); the listener's `t1` answers 0.
 
-> **DEF-148 — OPEN (F-022; owner: the compiler seat, 1.6.1e, FIRST). A `shared_arena` CAN BE DESTROYED WHILE A
+> **DEF-148 — FIXED at 1.6.1e step 1 (2026-09-26; F-022). A `shared_arena` CAN BE DESTROYED WHILE A
 > SPAWNED THREAD HOLDS IT; the thread then allocates in it and the program ends in `WildLeak` (96)** — a
 > use-after-free in safe code; destroying after the join is clean. D-180 sanctions the `shared_arena<T>->` spawn
 > crossing on the ground that the join precedes the free (1.4.4's order); `.destroy()` inside the holder's scope
 > defeats the order, so `.destroy()` on a borrowed-across-a-spawn arena is the shape to refuse or to sequence.
+> **The fix (1.6.1e step 1):** a spawn LENDS its crossing until the block's join — `NITPICK-BORROW-016`. A `drop
+> f(…)` on an `async` callee that hands a task a pointer to one of D-180's five kinds pushes a fifth party kind of
+> the aliasing walk (`PARTY_LENT`, alias.npk) on the argument's root, sited at the call, live until the enclosing
+> block's exit; every write-capable access of the root refuses — `destroy()`, an assignment over it, a `move` out,
+> `$$m`, `@root` to a callee whose mutation summary stores over the pointee, and the spawn's own callee read against
+> its own lent party (a task that stores over what it was lent is refused at the spawn) — while the kind's own
+> concurrent operations (`alloc`/`get`; `acquire`/`read`/`write`/`timedwait`/`signal`/`broadcast`/`arrive`, ONE
+> table in escape.npk beside D-180's kinds), `$$i`, a second spawn and a helper that only allocates stay. The
+> escape analysis's summaries needed no change: a builtin method records no write, and `destroy` through a pointer
+> is TYPE-091 now (DEF-157). `spawn_lent.npk` (seven BORROW-016 sites, the controls silent), `spawn_lent_ok.npk`
+> (the owner and two tasks allocating in one arena, destroyed after the join; explored); the listener's `a1`
+> refused, `a2`/`a3` run.
 
 > **DEF-149 — OPEN (F-023; owner: the compiler seat, 1.6.1e). AN UN-AWAITED ASYNC METHOD CALL (`r.read(…)`) IS
 > ACCEPTED**; npkc exits 0 and emits a call to an undefined symbol, which `llc` and `opt` refuse — the free-function
@@ -2784,6 +2824,47 @@ defect declares a `DEF-` in §2f.
 > tensor/matrix, `Stream`, `Actor`, `#align_of`, `--seccomp`, `--extra-picky=no-sys` and `no-wild`), stale spellings
 > and codes, examples that do not compile, rules changed by D-180, D-222, D-177 and D-197, self-contradictions
 > (`await` yielding `Result<T>` against `T`; `requires` on `never fails`), and emission and encoding misdescribed.
+
+> **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
+> same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
+> (107) in safe code, measured on 3235308: `kill(shared_arena<int64>->:s) { s.destroy(); }` called with `@s` from
+> a function that returns. `destroy` CONSUMES its arena (D-152): the move analysis retires the receiver's binding
+> and the emitter clears its drop flag — through a pointer parameter there is no flag to clear, so the owner's drop
+> ran `npk_sarena_destroy` on a freed structure (a plain `arena`'s destroy is idempotent, its slab freed twice all
+> the same); a temporary's `destroy` is freed again at the statement's end (D-246). **The fix:** the receiver of
+> `destroy` is storage THIS function owns — a local or a by-value/`move` parameter, or a field or element of one
+> reached through no pointer, slice or handle — else `NITPICK-TYPE-091` at the call (`destroy_receiver_owned`,
+> type_members.npk, both arena kinds). No program of the tree or the listener's repositories destroyed through a
+> pointer (the census: every receiver a binding or a local struct's field). `destroy_owned.npk` (a pointer
+> parameter of each kind, a dereference, a pointee's field, a temporary; the controls: a binding, a local's
+> field, a `move` parameter).
+
+> **DEF-158 — FIXED at 1.6.1e step 1 (2026-09-26; found by the same probes). `destroy` ON AN ARENA FIELD CLEARED
+> THE WHOLE AGGREGATE'S DROP FLAG, SO EVERY OWNING SIBLING LEAKED** — `app.store.destroy()` on `App{ string:name;
+> shared_arena<int64>:store; }` left `app.name`'s body live at every scope exit (measured on 3235308 under
+> NPK_HEAP_STATS: peak 72,592 bytes over 2,000 rounds against 628 for one). **The fix:** `destroy` VACATES its
+> place as a move out of it does (D-254, S-26; `destroy_vacate`, ir_expr.npk): the type's all-zero vacant value
+> stored (the null slab a shared arena's drop tests, the empty arena `npk_arena_destroy` frees nothing of) and the
+> vacant helper called, so the aggregate stays live and drops its siblings; a WHOLE binding keeps the flag clear
+> as its fast path and is zeroed too, so a held `@s` that stores over it (DEF-120's drop of the old pointee) meets
+> a vacant value and not the freed arena. The move analysis retires the aggregate whole after a field's `destroy`
+> as it does after a field's `move` (its coarseness, not the emitter's); the drop at the scope exit is what the
+> fix corrects. `tests/cost/destroy_field.toml` (`destroy_field_churn.npk` against `destroy_field_once.npk`,
+> peak 628 and 628 on both legs; 72,592 before).
+
+> **DEF-159 — OPEN (owner: the compiler seat; found by 1.6.1e step 1's probes of DEF-120's own shape, 2026-09-26).
+> A VALUE STORED THROUGH A HELD `@x` AFTER `move(x)` LEAKS**: `string->:p = @x; string:t = move(x); (<-p) = v;` —
+> the shape DEF-120's record calls legal (a held `@` is D-286's plain party, and `move(x)` is not its conflict) —
+> clears `x`'s drop flag at the move and stores a live `v` into the vacated slot through `p`; the scope exit reads
+> the flag and drops nothing (measured on this step's compiler under NPK_HEAP_STATS: peak 7,236 bytes over 200
+> rounds against 36 for the control that stores nothing — one body per round), and the move analysis holds `x`
+> moved-from, so no read of `x` can reach the value either. The cause is the drop FLAG standing beside the vacant
+> value: since DEF-120 every moved-out place holds the canonical vacant value, whose drop is a no-op (D-225's
+> invariant), so the flag's one remaining job — the fast path — is what hides a value written back through a
+> pointer. **Recommended:** the scope-exit drop of a binding whose slot a held `@` can reach runs unconditionally
+> over the slot (a drop of a vacant value is a no-op; a re-initialised one is dropped), the flag kept as the fast
+> path for a binding no address of which is taken — the emitter already knows which bindings are address-taken
+> (the frame-residency scan, D-191); measured on the tree before it lands. Its own landing, after 1.6.1e.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

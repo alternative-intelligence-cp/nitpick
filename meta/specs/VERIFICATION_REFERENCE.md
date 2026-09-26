@@ -219,7 +219,8 @@ func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[8]:arr)
 > root — held by the binding that holds the view from its declaration to the
 > end of the block that declares it, or live for the call a view expression
 > is an argument of — and a write-capable access of the viewed storage while
-> it lives is `NITPICK-BORROW-015`, with no runtime guard for a computed pair
+> it lives is `NITPICK-BORROW-015` (a spawn's lent crossing `NITPICK-BORROW-016`, DEF-148,
+> the same way), with no runtime guard for a computed pair
 > (a view's extent has no compare; the pair refuses). What a binding views is
 > the ESCAPE analysis's provenance, computed at its fixpoint: per binding, and
 > per pointer parameter's pointee, the (root, place, kind, path) references its

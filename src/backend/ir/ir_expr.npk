@@ -716,6 +716,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         pass (raw iv("i8", "0", 0i32));
     }
     if (n.kind == ExprKind.ExprCharLiteral) {
+        // `i8` or `i32` BY THE LITERAL'S WIDTH (DEF-145): `i8 128577` was
+        // what LLVM truncated to `'A'`.
+        if ((raw char_lit_bits(n.width)) == 32i32) {
+            pass (raw iv("i32", int_to_string(n.payload), 0i32));
+        }
+        if ((raw char_lit_bits(n.width)) == 16i32) {
+            pass (raw iv("i16", int_to_string(n.payload), 0i32));
+        }
         pass (raw iv("i8", int_to_string(n.payload), 0i32));
     }
     if (n.kind == ExprKind.ExprSentinelLiteral) {
@@ -1648,8 +1656,70 @@ func:emit_decl_value = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:decl,
     pass (raw iv_broken(at));
 };
 
+// THE SLOT AN IDENTIFIER NODE NAMES (DEF-144, 1.6.1e step 1): by the SYMBOL
+// the resolver recorded on the node, never by the name alone. The emitter's
+// local table was searched by name, innermost first, and consulted the node's
+// symbol only when no local carried the name -- so a macro body's free name,
+// resolved by the resolver to the MODULE binding it was written against
+// (D-057), was emitted as the caller's local of the same name whenever the
+// caller had one (`lvl` read 3 where the module says 7; the arithmetic twin
+// read right because the constant folder reads the symbol). One resolver of a
+// node to its storage, used by every site that had asked the name:
+//   a `SYM_STMT` symbol  -> the slot its declaring statement bound
+//                           (`fnem_lookup_decl`, D-286's by-declaration
+//                           lookup), by name only where no slot is recorded
+//                           under the statement (a `for` binding);
+//   a parameter          -> the prologue's binding (`fnem_lookup_param`);
+//   any other `SYM_DECL` -> no slot: a function, an error constant or a
+//                           global is `emit_decl_value`'s, BEFORE any local
+//                           of that name is consulted;
+//   a `SYM_PAT` symbol   -> the arm's binding, by name (bound at the arm);
+//   no symbol            -> a bare builtin's name: the name lookup as before.
+pub func:ident_slot = int64(ExprEmitter->:x, ExprNode:n) never fails {
+    int32:name = n.payload =>! int32;
+    if (n.a != 0i32) {
+        Symbol:s = raw symtab_get(x.tab, n.a);
+        if (s.origin_kind == (raw SYM_STMT())) {
+            int64:di = raw fnem_lookup_decl(x.fe, s.origin);
+            if (di >= 0i64) { pass di; }
+            pass (raw fnem_lookup_idx(x.fe, name));
+        }
+        if (s.origin_kind == (raw SYM_DECL())) {
+            DeclNode:d = raw ast_decl(x.ast, DeclId{ index: s.origin });
+            if (d.kind == DeclKind.DeclParamDecl) {
+                // A PARAMETER OF THIS FUNCTION IS DECLARED IN ITS FUNCTION
+                // SCOPE. A `for` binding is a `DeclParamDecl` node too
+                // (resolve.npk declares it as one, in the loop's BLOCK scope),
+                // and the first form of this resolver read it as a parameter
+                // and handed `for (int64:li in …)` the prologue's slot of the
+                // parameter `li` it shadows -- npkg's `xfn_inline`, caught by
+                // the re-based commit's harness (the runner's `verify` trapped)
+                // where the emission comparison against the parent compiler
+                // had shown three loads moved. The scope decides.
+                if ((raw scope_kind(x.tab, s.scope)) == (raw SCOPE_FUNCTION())) {
+                    int64:pi = raw fnem_lookup_param(x.fe, name);
+                    if (pi >= 0i64) { pass pi; }
+                }
+                pass (raw fnem_lookup_idx(x.fe, name));
+            }
+            // A DECLARATION AS A VALUE -- the three kinds `emit_decl_value`
+            // lowers -- has no slot. Every other declaration kind a symbol
+            // can name (a variadic collector's spec, D-191's `..*T[]:rest`,
+            // bound by the prologue under its name) keeps the name lookup:
+            // the safe default is the reading that was right before this
+            // resolver existed (DEF-54's lesson, enumerate and default safe).
+            if ((d.kind == DeclKind.DeclFunctionDecl) || (d.kind == DeclKind.DeclErrorDecl)
+                || (d.kind == DeclKind.DeclGlobalDecl)) {
+                pass (0i64 - 1i64);
+            }
+            pass (raw fnem_lookup_idx(x.fe, name));
+        }
+    }
+    pass (raw fnem_lookup_idx(x.fe, name));
+};
+
 func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
-    int64:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
+    int64:si = raw ident_slot(x, n);
     if (si < 0i64) {
         // A DECLARATION AS A VALUE: a function, an error constant, a global.
         if (n.a != 0i32) {
@@ -6204,6 +6274,32 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                       string_concat(mw2, " to ptr")));
     string:dab2 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(dab2, " = load i64, ptr ", dslot, ""));
+    // AN EXPIRED WAIT FAILS BEFORE IT RE-ACQUIRES (DEF-147, 1.6.1e step 1).
+    // Nothing recorded that phase 0 ended by the deadline: a wait no one
+    // signalled resumed at the deadline, took an uncontended mutex at once
+    // (the floor's acquire checks the clock only when it must park) and
+    // returned SUCCESS after the full wait -- the error path become a success.
+    // The clock is read here, once, at the resume: at or past the absolute
+    // deadline the wait took phase 0's deadline path, and the answer is
+    // `DeadlineExceeded` with the guard SPENT (D-056's amendment: holding a
+    // lock past an expired deadline is the unbounded acquire it forbids) --
+    // `fin` steps off the condvar's list and nulls the lent guard, as the
+    // wind-up path does, and the mutex is not touched. A signal that lands at
+    // the deadline is late by the deadline's rule; the caller re-checks its
+    // predicate after re-acquiring, as every waiter does.
+    string:rnow = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(rnow, " = call i64 @npk_mono_now()", ""));
+    string:rlate = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rlate, " = icmp sge i64 ", rnow, ", ", dab2));
+    string:expd = raw irw_new_label(x.fe.w, "cv.expired");
+    string:tryq = raw irw_new_label(x.fe.w, "cv.try");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", rlate, ", label %", expd,
+                      string_concat(", label %", tryq)));
+    x.fe.terminated = true;
+    drop s_start(x, expd);
+    drop irw_line(x.fe.w, raw cat3("store i32 -4107, ptr ", eslot, ""));
+    drop s_br(x, fin);
+    drop s_start(x, tryq);
     string:rc = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(rc, " = call i32 @npk_mutex_acquire_wait(ptr ",
                       mp2, ", i64 ",
@@ -8389,6 +8485,36 @@ func:arena_stride_text = string(ExprEmitter->:x, int32:arena_tid) never fails {
 };
 
 // `a.alloc()` / `a.get(h)` / `a.put(h, v)` / `a.free(h)` / `a.reset()` /
+// WHAT A DESTROYED PLACE KEEPS (DEF-158, 1.6.1e step 1): the type's canonical
+// vacant value -- all zeroes, the null slab a shared arena's drop tests and
+// the empty arena `npk_arena_destroy` frees nothing of -- stored as
+// `emit_move_out` stores it for a moved-out place (D-254, S-26), so the
+// aggregate a destroyed FIELD belongs to stays live and drops its siblings.
+// Until this step `destroy` cleared the ROOT's drop flag whatever the place
+// was: `app.store.destroy()` retired `app` whole, and every owning sibling
+// leaked (measured: 36 bytes per round, the sibling string's body). A WHOLE
+// binding keeps the flag clear as its fast path; its slot is zeroed too, so
+// a held `@s` that stores over it (DEF-120's drop of the old pointee) meets a
+// vacant value and not the freed arena.
+func:destroy_vacate = NIL(ExprEmitter->:x, ExprId:recv) never fails {
+    if (raw expr_is_none(recv)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, recv);
+    PlaceVal:place = raw addr_of(x, recv);
+    if (place.state == (raw LL_OK())) {
+        int32:pty = raw subst_emitted_type(x.fe.ctx, place.type_id);
+        LlType:ll = raw ll_type(x.fe.ctx, pty);
+        if (raw ll_is_ok(ll)) {
+            drop irw_line(x.fe.w, raw cat5("store ", ll.text, " zeroinitializer, ptr ", place.addr, ""));
+            if (raw type_drops_recorded(x.fe.ctx.types, pty, 64i32)) {
+                drop irw_line(x.fe.w, raw cat5("call void ", raw vacant_fn_sym(x.fe.ctx, pty),
+                                  "(ptr ", place.addr, ")"));
+            }
+        }
+    }
+    if (rn.kind == ExprKind.ExprIdentifierExpr) { drop clear_root_flag(x, recv); }
+    pass NIL;
+};
+
 // `a.destroy()` — the D-152 lowering. One runtime address helper serves get
 // and put (`@npk_arena_at` returns the slot pointer or null); the LOAD or
 // STORE through it is emitted here, where the element's layout is known. A
@@ -8441,7 +8567,10 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         // anyway and leant on `npk_arena_destroy` being idempotent; one
         // mechanism for "this binding no longer owns it" is better than two,
         // and `shared_arena`'s teardown cannot be idempotent on its own.
-        drop clear_root_flag(x, raw expr_operand(n));
+        // THE PLACE IS VACATED AS A MOVED-OUT PLACE IS (DEF-158, 1.6.1e
+        // step 1): a destroyed FIELD cleared its whole aggregate's flag, and
+        // every owning sibling leaked.
+        drop destroy_vacate(x, raw expr_operand(n));
         pass (raw iv("i32", "0", 0i32));
     }
 
@@ -8607,7 +8736,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (raw string_eq(m, "destroy")) {
         drop irw_line(x.fe.w, raw cat3("call void @npk_sarena_destroy(ptr ",
                           sa, ")"));
-        drop clear_root_flag(x, raw expr_operand(n));
+        drop destroy_vacate(x, raw expr_operand(n));   // DEF-158
         pass (raw iv("i32", "0", 0i32));
     }
 
@@ -9686,7 +9815,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     }
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        int64:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
+        int64:si = raw ident_slot(x, n);
         if (si < 0i64) {
             // A MODULE-LEVEL BINDING'S PLACE IS ITS GLOBAL (D-165, 1.0.9d): the
             // address is the D-156 symbol itself, so a global struct's field and
