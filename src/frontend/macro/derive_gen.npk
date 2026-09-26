@@ -49,7 +49,8 @@ pub func:DERIVE_CLONE = int32() never fails      { pass 4i32; };
 pub func:DERIVE_HASH = int32() never fails       { pass 5i32; };
 pub func:DERIVE_TO_STRING = int32() never fails  { pass 6i32; };
 pub func:DERIVE_DEBUG = int32() never fails      { pass 7i32; };
-pub func:DERIVE_MAX = int32() never fails        { pass 7i32; };
+pub func:DERIVE_COPY = int32() never fails       { pass 8i32; };   // D-327 (1.6.1c): a marker, no body
+pub func:DERIVE_MAX = int32() never fails        { pass 8i32; };
 
 pub func:derive_of_name = int32(string:n) never fails {
     if (raw string_eq(n, "Eq"))         { pass (raw DERIVE_EQ()); }
@@ -59,6 +60,7 @@ pub func:derive_of_name = int32(string:n) never fails {
     if (raw string_eq(n, "Hash"))       { pass (raw DERIVE_HASH()); }
     if (raw string_eq(n, "ToString"))   { pass (raw DERIVE_TO_STRING()); }
     if (raw string_eq(n, "Debug"))      { pass (raw DERIVE_DEBUG()); }
+    if (raw string_eq(n, "Copy"))       { pass (raw DERIVE_COPY()); }
     pass (raw DERIVE_NONE());
 };
 
@@ -82,19 +84,19 @@ pub struct:DeriveSet = {
     // ONE FLAG PER DERIVE, indexed by the constants above. A count would answer
     // "how many" and this has to answer "which", and a duplicate is a question
     // about one of them rather than about the total.
-    bool[8]:wanted;
+    bool[9]:wanted;
     int32:count;
 };
 
 pub func:deriveset_none = DeriveSet() never fails {
-    // EIGHT `false`S, WRITTEN OUT. The fill loop this replaces was refused by
+    // NINE `false`S, WRITTEN OUT (eight until `Copy`, D-327). The fill loop this replaces was refused by
     // definite assignment (a loop that happens to cover every index is coverage
     // the analysis cannot see), and `[]` — D-139's zero array — is not usable
     // HERE yet: this module is seed-compiled until 1.3, and the seed lowers an
     // empty literal for a sized array wrongly. The explicit literal means the
     // same thing under both compilers.
     DeriveSet:s = DeriveSet{ wanted: [false, false, false, false,
-                                      false, false, false, false],
+                                      false, false, false, false, false],
                              count: 0i32 };
     pass s;
 };
@@ -164,7 +166,7 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
         if (which == (raw DERIVE_NONE())) {
             string:m1 = string_concat("`", tname);
             string:m2 = string_concat(m1,
-                "` is not one of the seven traits `#[derive]` can generate: Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug. A trait the program declares is implemented by writing an `impl`, because the compiler has no way to know what its methods should do");
+                "` is not one of the eight traits `#[derive]` can generate: Eq, Ord, PartialOrd, Clone, Copy, Hash, ToString, Debug. A trait the program declares is implemented by writing an `impl`, because the compiler has no way to know what its methods should do");
             drop diaglist_push(diags, raw diag_error(raw DERIVE_UNKNOWN(), move(m2), ae.span));
             i = i + 1i32;
             continue;
@@ -443,6 +445,7 @@ func:dv_refusal = string(Ast->:ast, int32:cls, TypeId:t, int32:which,
     if (which == (raw DERIVE_ORD()))         { comparison = true; }
     if (which == (raw DERIVE_PARTIAL_ORD())) { comparison = true; }
     bool:is_clone = (which == (raw DERIVE_CLONE()));
+    bool:is_copy = (which == (raw DERIVE_COPY()));
     if (cls == (raw DVC_REFUSED())) {
         pass "no derived body can be written for that spelling -- an owning or erased type is compared, hashed, rendered or copied by a rule only its author can choose";
     }
@@ -452,15 +455,20 @@ func:dv_refusal = string(Ast->:ast, int32:cls, TypeId:t, int32:which,
     // D-266 both classes were refused under `Eq`, `Ord`, `PartialOrd` and
     // `Clone` (D-250; D-264, 1.5.2f), since a lending binding was a COPY and a
     // copy of an owning payload a second owner.
-    if (cls == (raw DVC_STRING())) { pass ""; }
+    // A `string` MEMBER UNDER `Copy` (D-327, 1.6.1c): it owns its bytes, so a
+    // copy of the struct would be a second owner; it clones, it does not copy.
+    if (cls == (raw DVC_STRING())) {
+        if (is_copy) { pass "a `string` owns its bytes: it clones, it does not copy"; }
+        pass "";
+    }
     if (cls == (raw DVC_PARAM()))  { pass ""; }
     if (cls == (raw DVC_POINTER())) {
         if (which == (raw DERIVE_EQ())) { pass ""; }
-        if (is_clone) { pass ""; }
+        if (is_clone || is_copy) { pass ""; }
         pass "a pointer has identity and nothing else to derive from: it compares and copies by address, and has no order, hash or rendering of its own";
     }
     if (cls == (raw DVC_ARRAY())) {
-        if (is_clone) {
+        if (is_clone || is_copy) {
             if (raw dv_array_of_scalars(ast, t)) { pass ""; }
             pass "an array copies under `Clone` only when its elements are scalars; anything else needs its own clone rule";
         }
@@ -472,6 +480,7 @@ func:dv_refusal = string(Ast->:ast, int32:cls, TypeId:t, int32:which,
 // What the refused derive would have had to decide -- the message's last clause.
 func:dv_meaning = string(int32:which) never fails {
     if (which == (raw DERIVE_CLONE()))     { pass "the copy"; }
+    if (which == (raw DERIVE_COPY()))      { pass "the copy"; }
     if (which == (raw DERIVE_HASH()))      { pass "the hash"; }
     if (which == (raw DERIVE_TO_STRING())) { pass "the rendering"; }
     if (which == (raw DERIVE_DEBUG()))     { pass "the rendering"; }
@@ -1188,6 +1197,18 @@ func:derive_one = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
             string:hc = raw dv_head(ast, interns, d, is_enum, raw DERIVE_CLONE(), "Clone");
             if (is_enum) { drop gen_clone_enum(ast, interns, d, tn, bare, hc, out); }
             else { drop gen_clone_struct(ast, interns, d, tn, bare, hc, out); }
+        }
+    }
+    // `Copy` (D-327, 1.6.1c) is a MARKER: the head with `: Copy` on exactly the
+    // parameters a member mentions, and an empty body -- the checker judges the
+    // impl (TYPE-087) as it judges a hand-written one; `dv_admissible` refuses at
+    // the declaration what no copy can be written for (a `string`, an owning or
+    // erased spelling), naming the member (D-258, D-259).
+    if (raw derive_wants(want, raw DERIVE_COPY())) {
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_COPY(), "Copy")) {
+            out.trait_name = raw intern_add(interns, "Copy");
+            string:hcp = raw dv_head(ast, interns, d, is_enum, raw DERIVE_COPY(), "Copy");
+            drop dv_put(out, raw dvc3(hcp, tn, ":Copy = { };\n"));
         }
     }
     if (raw derive_wants(want, raw DERIVE_EQ())) {

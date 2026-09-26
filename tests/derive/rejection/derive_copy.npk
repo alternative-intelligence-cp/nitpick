@@ -1,0 +1,39 @@
+// `Copy` IS DERIVABLE (D-327, 1.6.1c) OVER MEMBERS THAT ARE THEIR OWN COPY -- a
+// scalar, a pointer, a `simd`, an array of scalars, a named `Copy` type, a
+// parameter (which the head then bounds: `impl:<T: Copy>:Box<T>:Copy`) -- and
+// refuses at the user's declaration, naming the member, what no copy can be
+// written for (D-258, D-259): a `string` owns its bytes, a `List` owns its
+// storage, an owning payload owns. The controls at the end carry no code.
+mod:derive_copy;
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 11:1
+#[derive(Copy)]
+struct:Named = { string:s; int32:n; };
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 16:1
+#[derive(Copy)]
+struct:Bag = { List<int32>:items; };
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 21:1
+#[derive(Copy)]
+enum:Tagged = { Text(string); None; };
+
+// CONTROLS: scalars, a pointer, a `simd`, an array of scalars, a generic subject
+// (the family form with the bound), a named `Copy` member, an enum of scalars.
+#[derive(Copy)]
+struct:Point = { int32:x; int32:y; };
+#[derive(Copy)]
+struct:Ref = { int32->:p; int32:k; };
+#[derive(Copy)]
+struct:Lanes = { simd<int32, 4>:v; };
+#[derive(Copy)]
+struct:Grid = { int32[4]:cells; };
+#[derive(Copy)]
+struct:Box<T> = { T:v; };
+#[derive(Copy)]
+struct:Pair = { Point:a; Point:b; };
+#[derive(Copy)]
+enum:Shape = { Dot; Line(int32, int32); Box(Point); };

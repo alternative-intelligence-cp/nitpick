@@ -1,0 +1,69 @@
+// expect-error: NITPICK-TYPE-087
+// expect-error-at: 27:1
+// expect-error: NITPICK-TYPE-087
+// expect-error-at: 31:1
+// expect-error: NITPICK-TYPE-087
+// expect-error-at: 36:1
+// expect-error: NITPICK-TYPE-087
+// expect-error-at: 40:1
+// expect-error: NITPICK-TYPE-017
+// expect-error-at: 47:23
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 53:5
+//
+// D-327 (1.6.1c): `Copy` IS A CLAIM THAT A COPY IS NOT A SECOND OWNER, judged
+// at the impl (`NITPICK-TYPE-087`): (1) an owning builtin; (2) an owning
+// struct; (3) a member that is not `Copy` -- `Point` chose not to be; (4) a bare
+// parameter no bound licenses. And the two rules around it: (5) the bound is
+// judged at the instantiation -- a `List<string>` read out by value is
+// `NITPICK-TYPE-017` naming `Copy` -- and (6) D-264 is unchanged: a copy of a
+// bare `T` with no bound is still `NITPICK-TYPE-046`. The controls at the end
+// carry no code: the same copy under `T: Copy`, a bounded family impl, a
+// hand-written impl on a struct of scalars, a derived one, and a struct whose
+// named member IS `Copy`.
+mod:copy_rules;
+
+// (1) an owning builtin
+impl:string:Copy = { };
+
+// (2) an owning struct
+struct:Own = { string:s; };
+impl:Own:Copy = { };
+
+// (3) a member that is not `Copy`
+struct:Point = { flt64:x; flt64:y; };
+struct:Pair = { Point:p; int32:n; };
+impl:Pair:Copy = { };
+
+// (4) a bare parameter no bound licenses
+struct:Gen<T> = { T:v; };
+impl:<T>:Gen<T>:Copy = { };
+
+// (5) the bound unmet at the instantiation (an owning struct with NO impl: the
+// refused impls above still sit in the table, so `string` would satisfy it here)
+struct:Own2 = { string:s; };
+func:first<T: Copy> = T(List<T>->:l) never fails { pass (raw list_get(l, 0i64)); };
+func:read_owning = int64(List<Own2>->:l) never fails {
+    Own2:o = raw first(l);
+    pass o.s.len;
+};
+
+// (6) D-264 unchanged: a copy of a bare `T` without the bound
+func:peek<T> = T(List<T>->:l) never fails {
+    T:x = (<-l)[0i64];
+    pass x;
+};
+
+// CONTROLS, carrying no code
+func:peek_copy<T: Copy> = T(List<T>->:l) never fails {
+    T:x = (<-l)[0i64];
+    pass x;
+};
+struct:Gen2<T> = { T:v; };
+impl:<T: Copy>:Gen2<T>:Copy = { };
+struct:Pt = { flt64:x; flt64:y; };
+impl:Pt:Copy = { };
+#[derive(Copy)]
+struct:Sc = { int32:a; bool:b; char8:c; };
+struct:WithPt = { Pt:p; int32:n; };
+impl:WithPt:Copy = { };

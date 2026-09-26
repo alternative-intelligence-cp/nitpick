@@ -9157,6 +9157,10 @@ for a second `impl` they never wrote.
 > (OPEN_DECISIONS DEF-18) — and a derived `Debug` reaches a named or
 > parameter member through `debug`. The prelude implements the seven for
 > every scalar it can name (D-257). `Hash`'s tag-only enum rule is unchanged.
+>
+> **[Eight since 1.6.1c (2026-09-26; D-327).]** `Copy` is derivable — a marker, so the derive
+> writes an empty impl with `dv_head`'s bounds and the checker judges it (TYPE-087); the
+> prelude implements it for every scalar in the generated region.
 
 ## D-124 — A macro's reach is exactly its module, and hygiene is what decides it — **SETTLED**
 
@@ -16491,6 +16495,10 @@ sentence carries the extension. Landed at 1.4.8c.
 > (`tests/modules/rejection/std_declared.npk`): a `use std.…` path resolves to
 > the standard library before any module symbol is looked up, so a program's
 > module of that name could never be reached by the path that spells it.
+>
+> **[`Copy` and `list_get` are the prelude's since 1.6.1c (2026-09-26; D-327).]** Reserved
+> by this rule the moment the prelude declared them; the census before the landing found no
+> declaration of either in the tree or the library listener's repositories (F16).
 
 ## D-240 — where a sharper refusal fires, the generic one it was written to replace stays silent — **SETTLED (user decision, 2026-09-02)**
 
@@ -17582,6 +17590,11 @@ finding. `refuse_move_of_borrowed` (TYPE-047) and the new `place_lent_owning` (T
 false for an unsubstituted `T`, so `func:id<T> = T(T:x) { pass x; }` passed a lent value out at every
 instantiation where its `string` twin was refused. Both ask `type_owns_for_move` now: a bare `T` owns for
 every question about ownership, exactly as this decision says for the copy.]**
+
+> **[A bound licenses the copy since 1.6.1c (2026-09-26; D-327).]** `type_owns_for_move` answers
+> false for a `TY_PARAM` whose bounds declare the prelude's `Copy` (`param_is_copy`): under
+> `T: Copy` a plain copy of a `T` is a copy, and the prelude's `list_get` reads a `List<T>`
+> element out by value. A bare `T` stays move-only, and so does `Self`.
 ## D-265 — the toolchain pin is a version; the emission is the cross-machine identity claim — **SETTLED (user decision, 2026-09-06: "lets go with your recommendation on S-42 and ratify it"; OPEN_DECISIONS S-42; lands at 1.5.2g)**
 
 Found by the library workbench's first CI run (`nitpick-time`, 2026-09-06):
@@ -21210,3 +21223,32 @@ tests, TRAITS_REFERENCE and the prelude's reference; an ADVANCE notice to the li
 listener before it lands (the name `Copy` is reserved in every program by D-239, so the
 census of the name across the tree and the listener's repositories precedes the landing —
 the rule of 1.5.6b step 4).
+
+> **[LANDED at 1.6.1c (2026-09-26).]** The prelude declares `pub trait:Copy = { };` after
+> `Clone` and implements it by hand for `Ordering`, `Duration`, `Whence`, `Fcmd`, `Advice`,
+> `LineEnding`, `FracParts` and the four complex cores; the generated region carries one
+> `impl:<scalar>:Copy = { };` per scalar target (`gen_tables.py`: `"Copy"` in every family
+> tuple, 348 → 431 rows). The derive reader has `DERIVE_COPY` (the eighth; `DeriveSet` grew a
+> slot), writes `<head>Copy = { };` with `dv_head`'s bounds, and refuses a `string` member by
+> name and the owning/erased spellings as before. The checker: `type_owns_for_move` asks
+> `param_is_copy` for a `TY_PARAM` — `param_declares(bounds, decl, Copy)` over the prelude's
+> `Copy` found by `prelude_trait_named` (the symbol table's `prelude_scope`, `tt_trait`
+> re-interned idempotently) — so `T:x = (<-l)[i];` under the bound is a copy and TYPE-046
+> stays for a bare `T`; `check_impls_complete` (now handed the `BoundTable`) runs
+> `check_copy_impl` on every impl of `Copy`: the target's `type_drops` first, then every field
+> and payload of the target's declaration resolved under `bind_instance` — a `TY_PARAM` must
+> declare `Copy`, the structural kinds pass, anything else must `type_implements` it —
+> `NITPICK-TYPE-087` naming the member. `list_get<T: Copy>` sits beside `list_pop`. Tests:
+> `tests/types/rejection/copy_rules.npk` (four TYPE-087 shapes — an owning builtin, an owning
+> struct, a member that is not `Copy`, an unbounded `T` — the bound unmet at a call TYPE-017,
+> D-264's TYPE-046 unchanged, five controls; found writing it: a REFUSED impl still sits in the
+> impl table, so the TYPE-017 case reads a `List<Own2>` with no impl anywhere in the file),
+> `tests/derive/rejection/derive_copy.npk` (three DERIVE-006, seven controls including the
+> family form and an enum of scalars), `tests/backend/programs/copy_list_get.npk` (the
+> checksum of `list_get` over `List<int32>` and `List<Point>`, a `never fails` generic `first`
+> and a bounded copy, `Box<int32>` under the family impl, a struct with a pointer field — exit
+> 0 on both legs) and `copy_list_get_oob.npk` (exit 44 through `failsafe`'s `(OutOfBounds)`);
+> `owned_names.npk` gained `trait:Copy` and a module-scope `list_get`, both RESOLVE-001. The
+> compiler checks itself: the eleven hand impls pass the rule. `npkg verify --record` at this tree: 6,466 obligations — 3,116 discharged, 2,503 open, 0 budget, 842 unencoded, 5 checker — matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved; `nitpick.obligations` 6,199 rows before and after (no new row: `list_get`'s two raises are no guard and the checker's new loops are `for`s), 5,685 shared, ZERO verdicts moved among shared rows, ZERO (symbol, kind) discharged counts fell; the 514 rows that re-keyed are a MOVE of names (the same (symbol, kind, verdict) multiset on both sides — D-317's type-id field-function names shifted by the prelude's new trait and 94 impls, as at landing 71). The emission comparison (every program of the tree under 1.6.1b's compiler and this one): every emission's TEXT moves in two renumberings — the type-id-named symbols (`@"npk.drop.<id>"`, `@"npk.vacant.<id>"`: the prelude's trait and 94 impls shift every later type id) and D-179's site table's prelude line numbers (`@npk.site.lines`: the prelude grew by 22 lines before its guarded functions) — and in NOTHING ELSE: with both normalised, 490 of 490 identical, 0 different, 0 newly refused (the two base-refused files are the new programs); the plan's "no emission change" expectation was wrong by exactly these two renumberings, and F16 says so. The runner self-check green. The census at the landing
+> tree: no declaration of `Copy` or `list_get` anywhere in the tree or the listener's
+> repositories; F16 carried it. The record is `meta/roadmap/1.6/1.6.1c.md`.

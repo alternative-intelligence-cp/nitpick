@@ -171,8 +171,8 @@ struct:Config = {
 };
 ```
 
-Supported, and there are **seven** (D-123): `PartialOrd`, `ToString`, `Eq`,
-`Hash`, `Clone`, `Debug`, `Ord`.
+Supported, and there are **eight** (D-123; `Copy` since D-327, 1.6.1c): `PartialOrd`,
+`ToString`, `Eq`, `Hash`, `Clone`, `Debug`, `Ord`, `Copy`.
 
 `Ord` compares **in declaration order**, so reordering a struct's fields is a
 semantic change. `Hash` combines with **FNV-1a** — specified rather than left to
@@ -181,6 +181,23 @@ something a verified compiler can have. Real cryptography is `ncrypto`, a
 separately audited artifact; this is a hash for a map.
 
 A refusal **names the field that blocks it**, not the type.
+
+**`Copy` is a MARKER** (D-327, 1.6.1c): no method. Deriving it writes
+`impl:<T: Copy…>:Name<…>:Copy = { };` with `: Copy` on exactly the parameters a
+member mentions, and the CHECKER judges every impl of `Copy`, derived or
+hand-written, the same way — `NITPICK-TYPE-087` where a copy would be a second
+owner: the target drops (a `string`, a `List`, a `dyn`, an owning struct or
+enum), a named member does not implement `Copy` (`Point` chose not to be), or a
+bare `T` member has no `: Copy` bound; a pointer, a `simd`, an array, a slice,
+an `Optional`, a function value, a `cstring` or `any` member passes by kind,
+since none owns. The derive refuses at the declaration what no copy can be
+written for — a `string`, an owning or erased spelling — naming the member
+(`DERIVE-006`). The prelude implements `Copy` for every scalar in its generated
+region and, by hand, for `Ordering`, `Duration`, `Whence`, `Fcmd`, `Advice`,
+`LineEnding` and its numeric cores. A `Copy` type still clones, by returning
+itself; no `never fails` clone exists for an owning type, since an allocation
+can fail. What the marker BUYS is in §3.1: the bound `T: Copy` licenses a plain
+copy of a `T`, and `list_get` reads a `List<T: Copy>` out by value.
 
 **On a generic subject, derive writes the family form** (D-161, as corrected at
 1.0.4c). `#[derive(Eq)]` on `struct:Box<T>` synthesizes `impl:<T>:Box<T>:Eq` —
@@ -191,7 +208,7 @@ neither valid nor reportable against source the author could see.
 generic subject's derive carries that trait as a bound** (D-258, 1.5.2b; this
 ended D-161's no-bound story and D-250's operator form for builtins). A builtin
 scalar member is reached through the PRELUDE's impl (D-257: the prelude
-implements the seven for every scalar it can name, as a generated region —
+implements the eight for every scalar it can name, as a generated region —
 `raw`, the region's bodies being `never fails`), a named type or a parameter
 through its own (`relay`), a `string` field through the prelude's four, a
 `simd` by `.any()` under `Eq` and by copy under `Clone`, a pointer by address
@@ -218,7 +235,7 @@ interpolation, which IS the member's `to_string`.
 
 ### What each one is
 
-The seven are declared in the **prelude** (D-132) — `src/prelude/prelude.npk`,
+The eight are declared in the **prelude** (D-132; `Copy` since D-327) — `src/prelude/prelude.npk`,
 ordinary Nitpick that every module has bound into it the way `use "prelude.npk".*`
 would bind it. They are not magic; they are an import nobody has to write, and a
 program may not declare a name the prelude declares — at module scope, as an
@@ -434,6 +451,14 @@ func:process<T: Renderable & Serializable> = NIL(T:item) {
 > which no other declaration in the language does. Struck (D-030). Chapter 13
 > never shows a bounded generic at all, so the form above is written rather than
 > adopted.
+
+**A bound licenses what the body may do with a `T`** (D-064), and one bound
+licenses a COPY (D-327, 1.6.1c): under `T: Copy` a plain copy of a `T` is a copy —
+`T:x = (<-l)[i];`, no `move`, no `.clone()` — where a bare `T` is move-only
+(D-264, `NITPICK-TYPE-046`). The prelude's `list_get<T: Copy>(l, i)` reads a
+`List<T>` element out by value, `never fails`, the index checked as `l[i]`'s is;
+a `List<string>` handed to it is `NITPICK-TYPE-017` at the call, naming `Copy`.
+`Self` in a trait's default body is not licensed (a later question).
 
 ### 3.1.1 Value parameters
 

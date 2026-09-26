@@ -84,6 +84,7 @@ A list is used through two mechanisms:
 - **The checked operations** change a list:
   - `list_push`, `list_reserve`;
   - `list_pop` (the last element, moved out);
+  - `list_get(l, i)` (the element BY VALUE, for a `T: Copy` — D-327, 1.6.1c; `i` in `[0, count)`);
   - `list_truncate(l, n)` (drops `n…count−1`);
   - `list_clear`;
   - `list_insert(l, i, v)` (`i` in `[0, count]`);

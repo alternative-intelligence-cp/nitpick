@@ -45,6 +45,7 @@ use "./parse_type.npk".*;
 use "./symbols.npk".*;
 use "./type_resolve.npk".*;
 use "./type_decls.npk".*;
+use "./type_layout.npk".*;   // type_drops, bind_instance: the `Copy` impl rule (D-327, 1.6.1c)
 use "./parser.npk".*;   // QUAL_MOVE: a parameter's ownership is part of the signature (DEF-116)
 
 // One `impl` block. The TARGET IS ALWAYS SLOT ONE (D-031), with or without a
@@ -1177,12 +1178,13 @@ func:assoc_required = bool(DeclNode:m) never fails {
 // target was a zero, and a zero cannot be compared against anything; now it is the
 // parameter type, so `Self` substitutes to the parameter and every question below
 // has an answer.
-pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) never fails {
+pub func:check_impls_complete = NIL(ImplTable->:t, BoundTable->:bounds, TypeResolver->:r) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop check_one_impl_complete(r, e, e.scope);
+            drop check_copy_impl(t, bounds, r, e);
         }
         i = i + 1i32;
     }
@@ -1243,6 +1245,115 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) n
             }
         }
     }
+    pass NIL;
+};
+
+// THE PRELUDE'S TRAIT OF THIS NAME, or 0 (D-327, 1.6.1c: `Copy` is found this way
+// by the typer's move-only rule and by the impl check below). The prelude's
+// scope is the symbol table's (`prelude_scope`); the trait's type id is its
+// interned TY_TRAIT, which `tt_trait` finds again (interning is idempotent).
+pub func:prelude_trait_named = int32(SymbolTable->:tab, InternTable->:interns,
+                                     TypeTable->:types, Ast->:ast, string:name) never fails {
+    if (tab.prelude_scope == 0i32) { pass 0i32; }
+    int32:nm = raw intern_add(interns, string_concat(name, ""));
+    int32:sym = raw scope_lookup_local(tab, tab.prelude_scope, nm);
+    if (sym == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(tab, sym);
+    if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    DeclNode:d = raw ast_decl(ast, DeclId{ index: s.origin });
+    if (d.kind != DeclKind.DeclTraitDecl) { pass 0i32; }
+    pass (raw tt_trait(types, s.origin, raw decl_name(d)));
+};
+
+// AN IMPL OF THE PRELUDE'S `Copy` (D-327, 1.6.1c) IS REFUSED WHERE A COPY WOULD BE
+// A SECOND OWNER -- `NITPICK-TYPE-087`, at the impl: (1) the target DROPS; (2) a
+// field or payload of the target's declaration, resolved with the target's
+// arguments bound, is a bare parameter no bound licenses (`T` without `: Copy`
+// on the impl); (3) it is a named type, an instance or a scalar that does not
+// implement `Copy`. A pointer, a `simd`, an array, a slice, an `Optional`, a
+// function value, a `cstring` or `any` passes by kind once (1) holds: none owns.
+// One judge for a hand-written impl and a derived one; the derive's own refusals
+// (DERIVE-006) are the subset it can state at the declaration.
+func:check_copy_impl = NIL(ImplTable->:impls, BoundTable->:bounds, TypeResolver->:r,
+                           ImplEntry:e) never fails {
+    int32:copy_id = raw prelude_trait_named(r.tab, r.interns, r.types, r.ast, "Copy");
+    if (copy_id == 0i32) { pass NIL; }
+    if (e.trait_id != copy_id) { pass NIL; }
+    DeclNode:idl = raw ast_decl(r.ast, DeclId{ index: e.decl });
+    if (raw type_drops(r, e.target, e.scope, 64i32)) {
+        string:m1 = string_concat("`", raw type_display(r.types, r.interns, e.target));
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_COPY_OWNS(),
+            string_concat(m1, "` owns what it holds, so a copy of it would be a second owner: it cannot implement `Copy` (D-327); implement `Clone`, and read a generic element out with `.clone()`"),
+            idl.span));
+        pass NIL;
+    }
+    int32:decl = raw type_decl_of(r.types, e.target);
+    if (decl == 0i32) { pass NIL; }
+    DeclNode:td = raw ast_decl(r.ast, DeclId{ index: decl });
+    if ((td.kind != DeclKind.DeclStructDecl) && (td.kind != DeclKind.DeclEnumDecl)) { pass NIL; }
+    int32:home = raw symtab_home_scope(r.tab, decl, e.scope);
+    GenericScope:saved = raw bind_instance(r, e.target);
+    int32:n = raw item_member_count(r.ast, td);
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, td, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            int32:ft = raw resolve_type(r, raw field_type(m), home);
+            if (!(raw copy_member_ok(impls, bounds, r, ft, copy_id))) {
+                drop copy_member_error(r, e, idl, raw intern_get(r.interns, raw decl_name(m)), "field", ft);
+                r.generics = saved;
+                pass NIL;
+            }
+        }
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            int32:pc = raw variant_payload_count(m);
+            for (int32:pi in 0i32...pc) {
+                int32:pt = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast, raw variant_payload_start(m), pi) }, home);
+                if (!(raw copy_member_ok(impls, bounds, r, pt, copy_id))) {
+                    drop copy_member_error(r, e, idl, raw intern_get(r.interns, raw decl_name(m)), "payload of the variant", pt);
+                    r.generics = saved;
+                    pass NIL;
+                }
+            }
+        }
+    }
+    r.generics = saved;
+    pass NIL;
+};
+
+func:copy_member_ok = bool(ImplTable->:impls, BoundTable->:bounds, TypeResolver->:r,
+                           int32:ty, int32:copy_id) never fails {
+    if (ty == 0i32) { pass true; }
+    if (raw type_is_invalid(r.types, ty)) { pass true; }
+    int32:k = raw type_kind(r.types, ty);
+    if (k == (raw TY_PARAM())) {
+        int32:pd = raw type_decl_of(r.types, ty);
+        if (pd == 0i32) { pass false; }
+        pass (raw param_declares(bounds, pd, copy_id, r.ast));
+    }
+    if (k == (raw TY_SELF()))          { pass true; }
+    if (k == (raw TY_POINTER()))       { pass true; }
+    if (k == (raw TY_SIMD()))          { pass true; }
+    if (k == (raw TY_ARRAY()))         { pass true; }
+    if (k == (raw TY_SLICE()))         { pass true; }
+    if (k == (raw TY_OPTIONAL()))      { pass true; }
+    if (k == (raw TY_FUNC()))          { pass true; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass true; }
+    if (k == (raw TY_CSTRING()))       { pass true; }
+    if (k == (raw TY_ANY()))           { pass true; }
+    pass (raw type_implements(impls, bounds, r.ast, r.types, ty, copy_id, raw IMPL_FUEL()));
+};
+
+func:copy_member_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:idl, string:member,
+                             string:what, int32:ty) never fails {
+    string:m1 = string_concat("the ", what);
+    string:m2 = string_concat(m1, " `");
+    string:m3 = string_concat(m2, member);
+    string:m4 = string_concat(m3, "` of `");
+    string:m5 = string_concat(m4, raw type_display(r.types, r.interns, e.target));
+    string:m6 = string_concat(m5, "` is a `");
+    string:m7 = string_concat(m6, raw type_display(r.types, r.interns, ty));
+    string:tail = "` that does not implement `Copy`, so the whole cannot (D-327): derive or implement `Copy` for it first, or bound the parameter (`impl:<T: Copy>:…`)";
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_COPY_OWNS(), string_concat(m7, tail), idl.span));
     pass NIL;
 };
 

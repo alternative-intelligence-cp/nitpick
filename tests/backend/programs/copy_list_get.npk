@@ -1,0 +1,84 @@
+// D-327 (1.6.1c): `Copy` -- the marker, its generated impls for every scalar, its
+// derivable form, and the bound that licenses a plain copy of a `T` where D-264
+// demands a move -- with `list_get` reading a `List<T: Copy>` out by value in a
+// `never fails` generic body. Every read is summed into one checksum; a wrong
+// total is the exit. The reach analysis follows `list_get` into the prelude
+// (DEF-86), so `failsafe` names `(OutOfBounds)`.
+mod:copy_list_get;
+
+#[derive(Copy)]
+struct:Point = { int32:x; int32:y; };
+#[derive(Copy)]
+struct:Box<T> = { T:v; };
+#[derive(Copy)]
+struct:Ref = { int32->:p; int32:k; };
+
+// a `never fails` generic body reading a `Copy` element out by value
+func:first<T: Copy> = T(List<T>->:l) never fails { pass (raw list_get(l, 0i64)); };
+
+// a generic body copying a `T` under the bound (D-264 refuses this of a bare `T`)
+func:second_copy<T: Copy> = T(List<T>->:l) never fails {
+    T:x = (<-l)[1i64];
+    pass x;
+};
+
+func:sum_ints = int64() never fails {
+    List<int32>:l = raw list_init::<int32>(4i64);
+    drop list_push(@l, 3i32);
+    drop list_push(@l, 4i32);
+    drop list_push(@l, 5i32);
+    int64:s = 0i64;
+    for (int64:i in 0i64...l.count) { s = s + ((raw list_get(@l, i)) => int64); }
+    int32:f = raw first(@l);
+    int32:g = raw second_copy(@l);
+    pass s + (f => int64) + (g => int64);           // 12 + 3 + 4 = 19
+};
+
+func:sum_points = int64() never fails {
+    List<Point>:l = raw list_init::<Point>(2i64);
+    drop list_push(@l, Point{ x: 1i32, y: 2i32 });
+    drop list_push(@l, Point{ x: 3i32, y: 4i32 });
+    Point:p = raw list_get(@l, 1i64);
+    Point:q = raw first(@l);
+    Point:r = raw second_copy(@l);
+    pass ((p.x + p.y + q.x + q.y + r.x + r.y) => int64);   // 7 + 3 + 7 = 17
+};
+
+func:boxed = int64() never fails {
+    Box<int32>:b = Box{ v: 7i32 };
+    Box<int32>:c = b;                                // `Box<int32>` is `Copy` (the family impl at `int32`)
+    List<Box<int32>>:l = raw list_init::<Box<int32>>(2i64);
+    drop list_push(@l, b);
+    drop list_push(@l, c);
+    Box<int32>:d = raw first(@l);
+    pass ((b.v + c.v + d.v) => int64);               // 21
+};
+
+func:with_ptr = int64() never fails {
+    int32:cell = 5i32;
+    Ref:r = Ref{ p: @cell, k: 2i32 };
+    Ref:r2 = r;                                      // a struct with a pointer field derives `Copy`
+    pass ((r2.k + (<-r2.p)) => int64);              // 7
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:t = raw sum_ints() + raw sum_points() + raw boxed() + raw with_ptr();
+    if (t != 64i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds)      { exit 90i32; },
+        (DecreasesViolated){ exit 89i32; },
+        (LimitViolated)    { exit 88i32; },
+        (*)                { exit 97i32; }
+    }
+};

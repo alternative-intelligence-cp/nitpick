@@ -650,9 +650,22 @@ pub func:type_owns_for_move = bool(ExprTyper->:e, int32:ty) never fails {
     TypeResolver:mr = raw etyper_resolver(e);
     if (raw type_drops(@mr, ty, e.scope, 64i32)) { pass true; }
     int32:k = raw type_kind(e.types, ty);
-    if (k == (raw TY_PARAM())) { pass true; }
+    // A TYPE PARAMETER BOUNDED BY `Copy` IS ITS OWN COPY (D-327, 1.6.1c): the
+    // bound licenses what D-264 refuses of a bare `T`. `Self` is not licensed
+    // (a trait's default body: 1.6.1c's plan section 3).
+    if (k == (raw TY_PARAM())) { pass (!(raw param_is_copy(e, ty))); }
     if (k == (raw TY_SELF())) { pass true; }
     pass false;
+};
+
+// Does this parameter's bound window name the prelude's `Copy` (a supertrait of
+// a bound counts: `param_declares` reads the stored closure)?
+func:param_is_copy = bool(ExprTyper->:e, int32:ty) never fails {
+    int32:copy_id = raw prelude_trait_named(e.tab, e.interns, e.types, e.ast, "Copy");
+    if (copy_id == 0i32) { pass false; }
+    int32:decl = raw type_decl_of(e.types, ty);
+    if (decl == 0i32) { pass false; }
+    pass (raw param_declares(e.bounds, decl, copy_id, e.ast));
 };
 
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,

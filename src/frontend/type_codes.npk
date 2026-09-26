@@ -562,3 +562,8 @@ pub func:TYPE_LOAN_READ_ONLY = string() never fails { pass "NITPICK-TYPE-085"; }
 // made. Every write form asks it through `refuse_write_path`; the two forms the
 // bindings analysis reports keep their ASSIGN-002 (D-240).
 pub func:TYPE_FIXED_WRITE = string() never fails { pass "NITPICK-TYPE-086"; };
+
+// D-327 (1.6.1c): an impl of the prelude's `Copy` on a type that owns, or whose
+// member is not itself `Copy` (a named type without the impl, a bare `T` no
+// bound licenses) -- a copy of it would be a second owner.
+pub func:TYPE_COPY_OWNS = string() never fails { pass "NITPICK-TYPE-087"; };

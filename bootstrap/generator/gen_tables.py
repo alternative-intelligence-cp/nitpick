@@ -1665,19 +1665,19 @@ def scalar_families(spec, flags, not_scalar):
 # `tfp`, `frac` or `complex` (a canonical-ERR rule): a program that hashes
 # those writes the impl and says what it means.
 FAMILY_TRAITS = {
-    "INT":           ("Eq", "Ord", "PartialOrd", "Clone", "HashMech"),
-    "CHAR":          ("Eq", "Ord", "PartialOrd", "Clone"),
-    "TFP":           ("Eq", "Ord", "PartialOrd", "Clone"),
-    "TERN":          ("Eq", "Ord", "PartialOrd", "Clone", "HashGuarded"),
-    "FRAC":          ("Eq", "Ord", "PartialOrd", "Clone"),
-    "FLOAT":         ("Eq", "PartialOrdNan", "Clone"),
-    "FLOAT_STORAGE": ("Clone",),
-    "TBB":           ("Eq", "Clone", "HashGuarded"),
-    "BOOL":          ("Eq", "Clone"),
-    "KERNEL":        ("Eq", "Clone"),
-    "FLAGS":         ("Eq", "Clone", "HashFlags"),
-    "COMPLEX":       ("Eq", "Clone"),
-    "DIM":           ("Eq", "Ord", "PartialOrd", "Clone"),
+    "INT":           ("Eq", "Ord", "PartialOrd", "Clone", "Copy", "HashMech"),
+    "CHAR":          ("Eq", "Ord", "PartialOrd", "Clone", "Copy"),
+    "TFP":           ("Eq", "Ord", "PartialOrd", "Clone", "Copy"),
+    "TERN":          ("Eq", "Ord", "PartialOrd", "Clone", "Copy", "HashGuarded"),
+    "FRAC":          ("Eq", "Ord", "PartialOrd", "Clone", "Copy"),
+    "FLOAT":         ("Eq", "PartialOrdNan", "Clone", "Copy"),
+    "FLOAT_STORAGE": ("Clone", "Copy"),
+    "TBB":           ("Eq", "Clone", "Copy", "HashGuarded"),
+    "BOOL":          ("Eq", "Clone", "Copy"),
+    "KERNEL":        ("Eq", "Clone", "Copy"),
+    "FLAGS":         ("Eq", "Clone", "Copy", "HashFlags"),
+    "COMPLEX":       ("Eq", "Clone", "Copy"),
+    "DIM":           ("Eq", "Ord", "PartialOrd", "Clone", "Copy"),
 }
 
 FAMILY_NOTE = {
@@ -1794,6 +1794,9 @@ def scalar_impl_row(target, kind):
         return _impl_line(target, "PartialOrd", "partial_cmp", "Ordering?",
                           "if (!(self == self)) { pass NIL; } if (!(other == other)) { pass NIL; } "
                           + three_way)
+    if kind == "Copy":
+        # a MARKER (D-327, 1.6.1c): no method; the checker judges the impl
+        return "impl:%s:Copy = { };" % target
     if kind == "Clone":
         return _impl_line(target, "Clone", "clone", target, "pass self;")
     if kind == "Debug":
@@ -1811,11 +1814,11 @@ def scalar_impl_row(target, kind):
     raise SystemExit("gen_tables.py: unknown scalar impl kind %s" % kind)
 
 TRAIT_OF_KIND = {"Eq": "Eq", "Ord": "Ord", "PartialOrd": "PartialOrd",
-                 "PartialOrdNan": "PartialOrd", "Clone": "Clone", "Debug": "Debug",
+                 "PartialOrdNan": "PartialOrd", "Clone": "Clone", "Copy": "Copy", "Debug": "Debug",
                  "HashMech": "Hash", "HashGuarded": "Hash", "HashFlags": "Hash"}
 
 HAND_IMPL_RE = re.compile(r"^impl:([A-Za-z_][A-Za-z0-9_]*(?:<[A-Za-z0-9_, ]+>)?):"
-                          r"(Eq|Ord|PartialOrd|Clone|Hash|ToString|Debug)\b", re.M)
+                          r"(Eq|Ord|PartialOrd|Clone|Copy|Hash|ToString|Debug)\b", re.M)
 
 def scalar_impls_region(hand_text, fams):
     """The generated rows, from the classification and the hand-written text

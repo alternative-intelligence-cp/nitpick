@@ -74,3 +74,15 @@ mod:as_list = {
 // is the prelude's since D-308 SS6, 1.5.8b step 6c): a program's own `ListLen`
 // would shadow the rule the prelude's `List` fields carry.
 Rules<int64>:ListLen = { $ >= 0i64 };
+// A prelude TRAIT name (D-327, 1.6.1c): `Copy` is the prelude's marker trait, and
+// a program's own `Copy` -- as a trait, or under any other kind -- is refused
+// like `List` and `ListLen` above; `list_get` at module scope is the prelude
+// export clash `bind_prelude_into` has reported since 0.3 (the same code).
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 86:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 88:1
+mod:as_copy = {
+    trait:Copy = { func:dup = Self(Self:self); };
+};
+func:list_get = int32(int32:i) never fails { pass i; };

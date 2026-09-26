@@ -1,0 +1,29 @@
+// D-327 (1.6.1c): `list_get` checks its index as `l[i]` does (D-314) -- outside
+// `[0, count)` it traps `OutOfBounds`, one name for one mistake, and the reach
+// analysis (DEF-86) demands the arm of every program that calls it. The read
+// past the end is the program's exit: 44 through `failsafe`.
+// expect-exit: 44
+mod:copy_list_get_oob;
+
+func:main = int32(cstring[]:_~argv) {
+    List<int32>:l = raw list_init::<int32>(2i64);
+    drop list_push(@l, 1i32);
+    int32:v = raw list_get(@l, 9i64);
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)      { exit 44i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (DecreasesViolated){ exit 89i32; },
+        (LimitViolated)    { exit 88i32; },
+        (*)                { exit 97i32; }
+    }
+};
