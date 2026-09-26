@@ -249,6 +249,14 @@ caller's storage through the copy. `NITPICK-TYPE-085` refuses every write path i
 such a parameter — assignment, `@`, `$$i`, `$$m`, a pointer-receiver call, a stateful operation — the
 view's rule (D-266) applied to the loan; a copyable parameter keeps every write, and a callee that must
 change an owning value takes it as `move T:p`.]**
+
+> **[Rule A's marking reads the callee's provenance summary since 1.6.1b (2026-09-26; D-326).]**
+> A call's result is a borrow of an argument exactly when the callee's summary (D-325's, per
+> function at the escape fixpoint) says the result may VIEW or CARRY what that argument handed it;
+> the shape rule this decision wrote — any `@`/`$$` argument and a result that can carry a pointer
+> — is the reading for a callee the analysis cannot see alone (a `dyn` method, a function value, a
+> `#` builtin). Rules 2, 3 and B and the freeze are unchanged; a bare builtin's result is the
+> reference's `Views` column's (D-249). The landing note under D-326 has the measurements.
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
@@ -16713,6 +16721,11 @@ Three programs changed hands: `srcmgr_text_proven` returns the view it
 already held, `lexer_init` returns its literal directly, and `npkg`'s
 `ctx_init` copies the root of its `move` parameter instead of viewing it.)*
 
+> **[1.6.1b (2026-09-26; D-326).]** The marking of a USER callee's result reads the callee's
+> provenance summary now (D-325's), so a callee that builds its result from a view it was handed
+> — `string_concat("", string_from_bytes(k.buf.ptr, k.buf.len))` — hands back an owned copy the
+> caller may return; a view-maker's own verdict is unchanged (the `Views` column).
+
 ## D-250 — derived comparisons over NAMED types and payload enums — **SETTLED (user decision, 2026-09-03: "ratify S-23 as recommended"; 1.5.1b step 3b)**
 
 The workbench's DEF-4 (their O-N10): `#[derive(Ord)]` on an enum with a payload
@@ -21135,7 +21148,33 @@ compiler session, above, records it.
 before step 2: the marking in `escape.npk` off the summaries, the tree's and the library
 listener's exposure measured before the landing (a relaxation needs no advance notice —
 D-239's rule is for refusals added — the landing notice carries the measurement), a dated
-note under D-004 and D-249, and `BORROWS_AND_LIFETIMES`'s rule A text corrected.
+note under D-004 and D-249, and MEMORY_REFERENCE's borrow paragraph corrected.
+
+> **[LANDED at 1.6.1b (2026-09-26).]** `escape_call_like`'s rule-A verdict (`escape.npk`) is
+> `call_result_holds`: the refs the result may carry under the callee's summary
+> (`collect_call_refs` — every bit set for a `dyn` method or a function value, nothing for a
+> builtin method), any one rooted at a FRAME-OWNED binding (`ref_root_is_frame_owned`: a local, a
+> pattern binding, a by-value parameter) of ANY kind — a view, a carried address (`pass @b.s`
+> under the PASS bit), a carried by-value parameter — because rule 2's question is whether the
+> result may LEAVE, and an address leaves as a view does (the freeze filters to the view kinds for
+> its own reason: an address is D-286's plain party there). Two things the first build taught,
+> both in the landing's tests: a bare or `#` builtin keeps the shape's verdict (it has no summary;
+> the reference's `Views` column is its reading, and `escape_expr` discards a bare builtin's
+> rule-A verdict anyway — read as an unknown callee it walked its arguments and reported an inner
+> `string_concat(name, ": ")` handed to an outer one as a view of a temporary, BORROW-012, in
+> `npkg/suites.npk`), and the predicate reads QUIETLY (`x.reporting` off for the walk): the
+> collector's BORROW-012 report belongs where a result's refs are collected for something that
+> outlives its statement — a binding's initialiser, a returned value — and not at every call with a
+> borrowy argument, where a temporary read inside its own statement is D-246's and fine. What the
+> new reading admits and refuses is pinned shape by shape: `tests/backend/programs/
+> borrow_provenance_ok.npk` (six callees that BUILD their result — the bound and the temporary
+> forms, a copy of a view, a nested copy, a pointer-receiver method's rendering, a trait's copying
+> impl — returned from the frame that owns their argument, exit 0 on both legs; every one
+> BORROW-001 under the compiler before this landing, measured) and `tests/analysis/rejection/
+> borrow_provenance.npk` (seven that STAY refused: a returned view, a returned address, a view
+> carried in a struct, a function value, a `dyn` method, an impl that views its receiver, and the
+> trait's method through a bound where the union of the impls' summaries views — with the accepted
+> shapes as controls carrying no code). The sweep under both checkers (`sweep_1b.sh`: the checker at landing 71's tree and this one, over the tree's 801 units and every listener file that exists — nitpick-time, nitpick-regex, nitpick-fuzz, the workbench's tools and nitpick-posix; nitpick-parse, nitpick-sockets and nitpick-tui hold manifests and no source yet — 2,121 files at the baseline, 2,157 after, the 36 added being nitpick-fuzz's findings the workbench committed between the two runs, swept under both checkers back to back and identical): ZERO sites vanished and ZERO appeared outside the two new tests — the relaxation admits nothing the tree or the listener's current code writes (their O-N27 sites were re-spelled in their trees before this landing, as they said), and no existing rejection expectation moved; every code's count is the baseline's plus the new tests' seven `BORROW-001`. The emission comparison (every program of the tree — `tests/backend/programs`, `tests/verify`, `tests/conformance`, `lib/`, `npkg/main.npk`, `tools/check.npk` — under the E-8 compiler and this one): 489 identical, 0 different, 0 newly refused; the one file the E-8 compiler refuses and this one accepts is the new positive test itself (the six `BORROW-001` it reported at each wrapper's `pass`, measured). `npkg verify --record` at this tree: 6,466 obligations — 3,116 discharged, 2,503 open, 0 budget, 842 unencoded, 5 checker — matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved; `nitpick.obligations` 6,198 → 6,199 rows: the one new row is `call_result_holds`'s `bounds` row over `refs[i]`, `unencoded` as every `List` element access is (E-4, DEF-14); 6,061 shared, ZERO verdicts moved among shared rows, ZERO (symbol, kind) discharged counts fell; checker 5, discharged 2,857, open 2,495 on both sides; the 137 rows that re-keyed are a MOVE of names over 34 symbols (the same (symbol, kind, verdict) multiset on both sides — D-317's type-id field-function names shifted by the new function's interned types, 1.6.1 step 1's finding again). The record is `meta/roadmap/1.6/1.6.1b.md`.
 
 ## D-327 — A prelude marker trait `Copy` over the copyable scalars, with a derivable form for a struct of copyables, and a `never fails` `list_get` under it; no `never fails` clone for owning types — **SETTLED (user decision, 2026-09-26, the same sentence; S-108, the library listener's design input beside O-N28)**
 

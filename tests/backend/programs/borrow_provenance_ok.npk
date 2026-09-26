@@ -1,0 +1,138 @@
+// D-326 (1.6.1b): A CALL'S RESULT HOLDS A BORROW OF AN ARGUMENT EXACTLY WHEN
+// THE CALLEE'S PROVENANCE SUMMARY SAYS THE RESULT MAY VIEW OR CARRY IT. Every
+// callee here BUILDS its result from what it is handed -- a fresh string, a
+// copy of a view, a method's rendering, a nested copy -- so its summary carries
+// nothing of the frame's storage and the caller may return the result. Each of
+// these was `NITPICK-BORROW-001` until D-326, by D-004 rule A's SHAPE (an `@`
+// argument and a result that can carry a pointer): the library listener's
+// O-N27, a false reject. The controls at the end compiled before D-326 too.
+// The results are consumed in RETURNING functions, so every drop runs (`exit`
+// runs no drops); a wrong total is the exit.
+mod:borrow_provenance_ok;
+
+struct:Box = { string:s; };
+struct:Sink = { string:buf; int64:n; };
+struct:Other = { int64:k; };
+
+// a fresh string built from what it is handed: no VIEW entry, no PASS bit for `b`
+func:make = string(Box->:b) never fails {
+    pass string_concat("made:", b.s);
+};
+
+// a COPY of a view: `string_concat` returns an owned copy (the reference's `Views` column)
+func:take = string(Sink->:k) never fails {
+    pass string_concat("", string_from_bytes(k.buf.ptr, k.buf.len));
+};
+
+// the nested form: a callee that calls a known callee that copies
+func:relabel = string(Box->:b) never fails {
+    string:m = raw make(b);
+    pass string_concat(m, "!");
+};
+
+// a pointer-receiver method: the implicit `@recv` is position 0 of the summary
+impl:Box = {
+    func:render = string(Self->:self) never fails {
+        pass string_concat("<", string_concat(self.s, ">"));
+    };
+};
+
+// one trait, two impls: the COPYING impl's result may be returned (the
+// rejection twin refuses the viewing impl's, `borrow_provenance.npk`)
+trait:Peek = { func:peek = string(Self->:self) never fails; };
+impl:Other:Peek = {
+    func:peek = string(Self->:self) never fails { pass string_concat("k=", int_to_string(self.k)); };
+};
+
+// (1) the bound form
+func:wrap_bound = string() never fails {
+    Box:b = Box{ s: string_concat("one", "") };
+    string:r = raw make(@b);
+    pass r;
+};
+
+// (2) the temporary form
+func:wrap_temp = string() never fails {
+    Box:b = Box{ s: string_concat("two", "") };
+    pass raw make(@b);
+};
+
+// (3) the copy of a view
+func:wrap_take = string() never fails {
+    Sink:k = Sink{ buf: string_concat("three", ""), n: 3i64 };
+    string:t = raw take(@k);
+    pass t;
+};
+
+// (4) the nested form
+func:wrap_nested = string() never fails {
+    Box:b = Box{ s: string_concat("four", "") };
+    pass raw relabel(@b);
+};
+
+// (5) the method form
+func:wrap_method = string() never fails {
+    Box:b = Box{ s: string_concat("five", "") };
+    string:v = raw b.render();
+    pass v;
+};
+
+// (6) the copying impl of a trait
+func:wrap_peek = string() never fails {
+    Other:o = Other{ k: 6i64 };
+    string:p = raw o.peek();
+    pass p;
+};
+
+// the controls: a pointer parameter passed by value is not borrowy, and the
+// string built inline in the owning frame holds nothing
+func:wrap_p = string(Box->:b) never fails { pass raw make(b); };
+func:wrap_inline = string() never fails {
+    Box:b = Box{ s: string_concat("six", "") };
+    string:r = string_concat("made:", b.s);
+    pass r;
+};
+
+func:total = int64() never fails {
+    int64:n = 0i64;
+    string:a = raw wrap_bound();
+    n = n + a.len;                                   // "made:one"    8
+    string:c = raw wrap_temp();
+    n = n + c.len;                                   // "made:two"    8
+    string:d = raw wrap_take();
+    n = n + d.len;                                   // "three"       5
+    string:e = raw wrap_nested();
+    n = n + e.len;                                   // "made:four!"  10
+    string:f = raw wrap_method();
+    n = n + f.len;                                   // "<five>"      6
+    string:g = raw wrap_peek();
+    n = n + g.len;                                   // "k=6"         3
+    Box:h = Box{ s: string_concat("seven", "") };
+    string:i = raw wrap_p(@h);
+    n = n + i.len;                                   // "made:seven"  10
+    string:j = raw wrap_inline();
+    n = n + j.len;                                   // "made:six"    8
+    pass n;                                          // 58
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:n = raw total();
+    if (n != 58i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds)      { exit 90i32; },
+        (DecreasesViolated){ exit 89i32; },
+        (LimitViolated)    { exit 88i32; },
+        (*)                { exit 97i32; }
+    }
+};

@@ -1,0 +1,148 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 63:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 69:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 75:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 82:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 88:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 94:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 100:10
+//
+// D-326 (1.6.1b): A CALL'S RESULT HOLDS A BORROW OF AN ARGUMENT EXACTLY WHEN
+// THE CALLEE'S PROVENANCE SUMMARY SAYS THE RESULT MAY VIEW OR CARRY IT, or when
+// the callee cannot be seen. The seven shapes below MUST STAY refused
+// (`NITPICK-BORROW-001` at the `pass`), each for its own reason: (1) a callee
+// that returns a VIEW of what it is handed (a VIEW entry); (2) one that returns
+// the ADDRESS (the PASS bit); (3) one that returns a struct CARRYING the view (a
+// VIEW entry at a path); (4) a function VALUE (an unknown callee: the shape rule
+// stands); (5) a `dyn` method (the same); (6) a trait's impl that views its
+// receiver (the implicit `@recv` is position 0 of the summary); (7) the trait's
+// method through a BOUND, where the summary is the UNION of the impls' and one
+// of them views (D-326 keeps the over-approximation). The accepted twins --
+// every callee that BUILDS its result -- run in `tests/backend/programs/
+// borrow_provenance_ok.npk`; two of them stand here as controls carrying no
+// code.
+mod:borrow_provenance;
+
+struct:Box = { string:s; };
+struct:Other = { int64:k; };
+struct:Holder = { string:v; };
+
+// the copying callee (the control's)
+func:make = string(Box->:b) never fails { pass string_concat("made:", b.s); };
+
+// (1) a VIEW of the pointee: the summary's VIEW entry for parameter 0
+func:view = string(Box->:b) never fails { pass string_from_bytes(b.s.ptr, b.s.len); };
+
+// (2) the ADDRESS, carried back: the summary's PASS bit for parameter 0
+func:addr = string->(Box->:b) never fails { pass @b.s; };
+
+// (3) the view carried inside a struct: a VIEW entry at the field's path
+func:hold = Holder(Box->:b) never fails { pass Holder{ v: string_from_bytes(b.s.ptr, b.s.len) }; };
+
+trait:Peek = { func:peek = string(Self->:self) never fails; };
+// (6) the impl that views its receiver
+impl:Box:Peek = {
+    func:peek = string(Self->:self) never fails { pass string_from_bytes(self.s.ptr, self.s.len); };
+};
+// the impl that copies (the control's, and one of the union's)
+impl:Other:Peek = {
+    func:peek = string(Self->:self) never fails { pass string_concat("k=", int_to_string(self.k)); };
+};
+// (7) through a bound: the trait's method, the union of the impls' summaries
+func:pk<T: Peek> = string(T->:t) never fails { pass raw t.peek(); };
+
+func:wrap_view = string() never fails {
+    Box:b = Box{ s: string_concat("one", "") };
+    string:v = raw view(@b);
+    pass v;
+};
+
+func:wrap_addr = string->() never fails {
+    Box:b = Box{ s: string_concat("two", "") };
+    string->:p = raw addr(@b);
+    pass p;
+};
+
+func:wrap_hold = Holder() never fails {
+    Box:b = Box{ s: string_concat("three", "") };
+    Holder:h = raw hold(@b);
+    pass h;
+};
+
+func:wrap_value = string() never fails {
+    Box:b = Box{ s: string_concat("four", "") };
+    func string(Box->) never fails:f = make;
+    string:r = raw f(@b);
+    pass r;
+};
+
+func:wrap_dyn = string() never fails {
+    dyn Peek:d = Other{ k: 5i64 };
+    string:s = raw d.peek();
+    pass s;
+};
+
+func:wrap_peek_view = string() never fails {
+    Box:b = Box{ s: string_concat("six", "") };
+    string:s = raw b.peek();
+    pass s;
+};
+
+func:wrap_bound = string() never fails {
+    Other:o = Other{ k: 7i64 };
+    string:s = raw pk(@o);
+    pass s;
+};
+
+// CONTROLS, carrying no code: the copying callee's result may be returned, in
+// the bound and the temporary forms (D-326), and the copying impl's too.
+func:ctl_bound = string() never fails {
+    Box:b = Box{ s: string_concat("eight", "") };
+    string:r = raw make(@b);
+    pass r;
+};
+func:ctl_temp = string() never fails {
+    Box:b = Box{ s: string_concat("nine", "") };
+    pass raw make(@b);
+};
+func:ctl_peek_copy = string() never fails {
+    Other:o = Other{ k: 10i64 };
+    string:p = raw o.peek();
+    pass p;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    string:a = raw wrap_view();
+    string->:b = raw wrap_addr();
+    Holder:c = raw wrap_hold();
+    string:d = raw wrap_value();
+    string:e = raw wrap_dyn();
+    string:f = raw wrap_peek_view();
+    string:g = raw wrap_bound();
+    string:h = raw ctl_bound();
+    string:i = raw ctl_temp();
+    string:j = raw ctl_peek_copy();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds)      { exit 90i32; },
+        (DecreasesViolated){ exit 89i32; },
+        (LimitViolated)    { exit 88i32; },
+        (*)                { exit 97i32; }
+    }
+};

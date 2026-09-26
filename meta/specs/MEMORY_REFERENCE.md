@@ -232,7 +232,13 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   method, a trait's method as the UNION of every impl's body (and its default's),
   which is what a `dyn` may hold or a bound may name — while a callee it cannot
   see (a function value) is read by D-223's shape rule, every destination that
-  could hold the borrow. A `dyn` holder and a bare type parameter are read in the
+  could hold the borrow. **What a call's RESULT holds is read the same way** (D-326,
+  1.6.1b): a result holds a borrow of an argument exactly when the callee's summary
+  says it may view or carry what that argument handed it — a callee that BUILDS its
+  result (a fresh string, a copy of a view, a method's rendering) hands back nothing of
+  the frame, and the caller may return it — and by the shape rule alone for a callee
+  the analysis cannot see (a `dyn` method, a function value); a bare builtin's result
+  is the reference's `Views` column's (D-249). A `dyn` holder and a bare type parameter are read in the
   closed direction (DEF-113, 1.6.1 step 0): either may hold any pointer. A
   BY-VALUE parameter that a call stores a borrow of this frame's storage into —
   a `move`, a `move dyn`, a copyable struct — HOLDS it from that call (DEF-114)

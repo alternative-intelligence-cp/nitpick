@@ -3657,10 +3657,55 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     drop record_dest_refs(x, id, recv, auto_ref, start, count, depth);
     drop record_mut_of_call(x, id, recv, auto_ref, start, count);
 
-    // RULE A.
+    // RULE A, BY PROVENANCE (D-326, 1.6.1b). The result holds a borrow of this
+    // frame's storage exactly when the callee's summary says it may VIEW or
+    // CARRY what a borrowy argument handed it -- the reading the freeze and the
+    // store matrix already trust (D-325) -- and by the shape rule alone for a
+    // callee the analysis cannot see (a `dyn` method, a function value, a `#`
+    // builtin: every bit set). Until D-326 the verdict was the shape's: any
+    // borrowy argument and a result that can carry a pointer, which refused a
+    // callee that BUILDS its result from what it is handed (the library
+    // listener's O-N27: `string:r = raw make(@b); pass r;`). A bare builtin's
+    // verdict is the reference's `Views` column and never this one (D-249:
+    // `escape_expr` discards it).
     if (borrowed == 0i32) { pass false; }
-    pass (raw carries_pointer(x, raw exprtypes_get(x.etypes, id),
-                                raw CARRY_FUEL()));
+    if (!(raw carries_pointer(x, raw exprtypes_get(x.etypes, id), raw CARRY_FUEL()))) { pass false; }
+    // A BARE OR `#` BUILTIN keeps the shape's verdict: it has no summary, the
+    // reference's `Views` column is its reading, and `escape_expr` discards a
+    // bare builtin's rule-A verdict anyway -- reading the summary here would
+    // walk its arguments as an unknown callee's.
+    if (raw call_is_bare_builtin(x, id)) { pass true; }
+    pass (raw call_result_holds(x, id, recv, start, count, depth));
+};
+
+// DOES THIS CALL'S RESULT HOLD A BORROW OF THIS FRAME'S STORAGE (D-326)? The
+// refs the result may carry under the callee's summary (`collect_call_refs`:
+// every bit set for an unknown callee, nothing for a builtin method), rooted
+// at a frame-owned binding -- a local, a pattern binding, a by-value parameter
+// (`ref_root_is_frame_owned`) -- of ANY kind: a direct or laundered VIEW, an
+// ADDRESS the result carries (`pass @b.s` under the PASS bit), a carried
+// by-value parameter. The freeze filters to the view kinds because an address
+// is D-286's plain party there; rule 2's question is whether the result may
+// LEAVE, and an address or a carried value leaves as a view does. A ref rooted
+// at a pointer parameter's pointee is the caller's business (D-138), as rule B
+// has always read it.
+// READ QUIETLY: the collector reports a view of a TEMPORARY through a call
+// (BORROW-012) as it walks an argument, and that report belongs where a
+// result's refs are collected for something that outlives the statement -- a
+// binding's initialiser, a returned value -- not here, where every call with a
+// borrowy argument is asked (a temporary read inside its own statement is
+// D-246's, and fine). `reporting` is restored on the way out.
+func:call_result_holds = bool(Escape->:x, ExprId:call, ExprId:recv, int32:start,
+                              int32:count, int32:depth) never fails {
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    bool:was_reporting = x.reporting;
+    x.reporting = false;
+    drop collect_call_refs(x, call, recv, start, count, depth, @refs);
+    x.reporting = was_reporting;
+    for (int64:i in 0i64...refs.count) {
+        if (raw ref_root_is_frame_owned(x, refs[i])) { pass true; }
+    }
+    pass false;
 };
 
 // The receiver of a pointer-receiver call as a destination: its own type is
