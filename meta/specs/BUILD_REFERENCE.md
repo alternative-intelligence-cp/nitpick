@@ -33,7 +33,7 @@ name        = "nlibc"
 version     = "0.1.0"
 description = "Nitpick-native C standard library replacement"
 authors     = ["Randy"]
-target      = "library"          # "library" | "executable"
+target      = "library"          # "library" | "executable" -- PLANNED, read by nothing today (see the note below the block)
 
 [build]
 entry     = "src/lib.npk"
@@ -62,6 +62,12 @@ domain = "interval"
 [limits]                         # 1.5.1b step 5
 nofile = 1024                    # the soft RLIMIT_NOFILE both runners stand under (§7.1)
 ```
+
+> **Status (2026-09-25, DEF-100 — the library listener's report):** `target` is READ BY
+> NOTHING: `npkg`'s `Manifest` stores no `target`, and every build is one executable from
+> `[build] entry`. A library build and one artifact per build are the workbench's O-N2 and
+> O-N5, open; the key is the manifest's planned shape, not a switch. What works is stated
+> as such in each section below; what is planned says so.
 
 - **`[project]` is identity, `[build]` is settings.** `npkg`'s split is adopted;
   `entry` does not live in `[project]`.
@@ -148,6 +154,12 @@ A `use` path resolves in exactly one way, decided by its first character:
 
 A dependency named `nfs` declared at `../nfs` roots at **`../nfs/src/`**, so
 `use "nfs/path.npk"` is `../nfs/src/path.npk`.
+
+> **Status (2026-09-25, DEF-100):** the dependency-root form is PLANNED, not
+> implemented — `npkg` stores no dependency (`rootlist_add` has no caller outside a
+> unit test), a `[dependencies]` entry binds nothing, and `use "dep/thing.npk"` is
+> `NITPICK-RESOLVE-005` today (measured by the listener at `c3bdae2`). The relative
+> forms and the standard library resolve exactly as the table says.
 
 **An ambiguous path is an error, not a first match.** If two dependencies both
 supply `x/y.npk`, the build fails and names both. Resolution order must never be
@@ -435,7 +447,7 @@ even for edits at the very bottom of the language.
 |---|---|
 | `npkg build` | reads lock + vendored source; never resolves, never fetches; prints the ladder's `sha256` report — one line per intermediate, the emission's the cross-machine claim (D-265 §3) |
 | `npkg test` | builds the compiler (§6's ladder), runs the runner self-check (§7.1), then every `[[test]]` entry in manifest order — the real-parser sweep, the five rejection suites, the fixtures, the backend programs with their `opt -O2` re-run, the runtime floor's tests and the acceptance suite are entries, not code (D-238). A test's diagnostics are the child compiler's stderr, captured through the supervised spawn (`lib/nproc.npk`, D-206) and compared on codes and spans — D-075's `dyn Writer` capture was superseded by D-229 and, for a child process, by the pipe. The `cost` stage (1.5.1b step 0) spawns the compiler and the probe programs with `NPK_HEAP_STATS` added to the environment and reads the runtime's `heap:` line from the same pipe. `--only SUBSTR` narrows to the compile-stage `[[test]]` files whose path holds it and skips every other stage, saying so; `--selfcheck` runs the self-check alone; `--verdicts PATH` writes every unit's verdict, the list the parity stage diffs (D-206 §5) |
-| `npkg update` | the **only** command that resolves versions; writes `nitpick.lock` and vendors source |
+| `npkg update` | PLANNED — refused today by name (`npkg update: refused -- there is nothing to resolve in a single-repository world`, npkg/main.npk; DEF-100's note, 2026-09-25); the design: the **only** command that resolves versions, writes `nitpick.lock` and vendors source |
 | `npkg verify` | the ladder, then the VERIFIED build (1.5.0; D-218, D-219): `[build] entry` is compiled with `--obligations`, every function's D-218 obligations are decided by the pinned z3 under the pinned profile (one fresh process per function, D-218.3), the rows are held to the committed `nitpick.obligations` — absent or different is a failure by name; **`--record`** writes it, on purpose, the deliberate re-baseline — then the entry is compiled again with `--elide nitpick.obligations`, every guard the manifest discharged giving way to `llvm.assume` (D-218.9), the verified IR cross-checked (an `assume` per discharged site, a trap per retained one), assembled, closed-world linked to `build/verify/npkc`, and shown to rebuild the compiler byte-identically (D-202 over the verified build). **`--explain`** adds `build/verify/explain.txt`: a model per open row, the reason per budget row, an unsat core per discharged one — never on the gate path (P-7). `[verify.nikos]` is declared and not run until 1.6.0's gate names an engine (D-217, D-233). **The floor's leg** (1.5.6, D-288; VERIFICATION_REFERENCE §9) follows the verified fixpoint: the belts over `runtime/npkrt.spec` (the shared-state classification, the spec against the floor, TCB.md's table), the translator writing `build/verify/floor/`, z3 over it, the verdict rule (an `open` floor row is a failure by name), and the floor's manifest held to `runtime/npkrt.obligations` — `--record` writes both manifests in one run, `--explain` covers the floor's rows in `build/verify/explain-floor.txt`. **`--floor-only`** runs the floor's leg alone (no ladder) for iterating on the spec and says PARTIAL |
 
 ### 7.1 Test targets

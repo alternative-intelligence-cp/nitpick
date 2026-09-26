@@ -17594,6 +17594,12 @@ all; nothing is opened on the binary's difference alone. Mechanics at 1.5.2g.
 > to `3d15ac9` against the six digests the same night and found the floor
 > series flat (14 defines at `aaffb87` and at `3d15ac9`).
 
+**[2026-09-25, measured across machines for the first time (the library listener, `nitpick-libs_s6`,
+reading `nitpick-regex`'s CI job logs through the jobs API): the emission's digest on GitHub's runners
+equals the one recorded on this machine at two pins — `c3bdae2` (`4029fc70…`, notice 50's row) and
+`3d15ac9` (`05457db4…`, the value the library recorded at that pin). "A pin is a version, and the
+emission is what holds across machines" is a measurement now, at two points, not an argument.]**
+
 ## D-266 — a lending `pick` binds views; the selector is frozen while a view is live — **SETTLED (user decision, 2026-09-06: "yes, ratify it as stated with the frozen-selector rule"; OPEN_DECISIONS S-41; lands at 1.5.2h)**
 
 The question D-264 left. A `pick` binds a payload to a name in its arm, and
@@ -20653,3 +20659,16 @@ build links the system z3 4.8.12, a second solver build under the campaign.
 The alternative for (1) — accepting wall-clock timeouts as residue — is sound (a timeout is
 never "verified") and was declined because it lets the ledger differ between machines, the
 exact failure D-218 (2) was written against.
+
+**[2026-09-25, the smoke's `incorrect` verdicts SETTLED (the user: "lets proceed as you recommend but
+just make sure we record that well somewhere"): §2.6 of the 1.6.0 plan reads an `incorrect` Alive2
+transformation as a stop-the-line miscompile finding until read. At step 3 the smoke over the two
+programs' opt pairs reported sixteen: fifteen are the optimiser replacing calls with the callee's
+known constant return (IPSCCP), which a per-function checker cannot use because it treats the
+callee as opaque — measured to persist with the inliner disabled, on the binaries the harness's
+opt-O2 leg has executed since 1.3.8 — and one is an `inbounds` inference on a drop body whose
+counterexample needs a base pointer ten bytes before its object, which no emitted caller passes.
+None is a miscompile; the gate proceeds with the reading in its step-3 record, and the class is
+re-examined in the testing-and-benchmarking phase the user plans after cycle 1.6, so that nothing
+comes to a stop on a finding that has been read and found benign. E-7 (the emitter stating what it
+knows of a pointer parameter) goes to 1.6.2's plan by the same decision.]**

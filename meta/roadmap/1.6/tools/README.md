@@ -30,6 +30,7 @@ bash    meta/roadmap/1.6/tools/engines.sh build|check|paths       # the pinned e
 python3 meta/roadmap/1.6/tools/gate_inputs.py                     # the input set into .internal/gate/inputs/ (step 2)
 python3 meta/roadmap/1.6/tools/gate_controls.py                   # the seven controls, plain and planted, RUN (step 2)
 python3 meta/roadmap/1.6/tools/plant.py X.plant IN.ll OUT.ll      # one plant by hand
+python3 meta/roadmap/1.6/tools/gate_run.py [--quick] [--jobs N]    # the runs (step 3): every engine over every input, twice; report.md
 ```
 
 `controls/` holds the seven planted-defect programs (`ctl_*.npk`) and their plants

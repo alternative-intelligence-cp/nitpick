@@ -1,0 +1,9 @@
+; (c') NULL dereference through a KNOWN null: the `p != NULL` branch is taken unconditionally -- `<-p` reads
+; address 0, which the emission states as `inttoptr i64 0 to ptr`.
+program: ctl_null_known.npk
+expect-plain: 3
+expect-planted: 99
+old:
+  br i1 %t13, label %if.then2, label %if.done3
+new:
+  br label %if.then2

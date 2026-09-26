@@ -2195,6 +2195,24 @@ defect declares a `DEF-` in §2f.
 > is a plain copy and stays. `tests/types/rejection/fixed_move_out.npk` holds the three shapes and the clone
 > control. A refusal ADDED, announced in advance (NOTICES F9, naming 58); the listener's exposure is none.
 
+> **DEF-100 — FIXED at 1.6.0 step 3 (2026-09-25; a document). BUILD_REFERENCE DESCRIBED THREE `npkg` FEATURES
+> AS WORKING THAT `npkg` DOES NOT HAVE.** The library listener's registry audit (`nitpick-libs_s6`, the shape of
+> its old O-N12 on the subject of its O-N2/O-N5): §7's table said `npkg update` is "the only command that
+> resolves versions" while `npkg/main.npk` refuses it by name; §1's example manifest carried `target =
+> "library"` and §3 the dependency-root form `use "nfs/path.npk"`, neither with a status, while the `Manifest`
+> stores no `target` and no dependency (`rootlist_add` has no caller outside a unit test; a `[dependencies]`
+> entry with `use "dep/thing.npk"` is NITPICK-RESOLVE-005). The three passages carry dated status notes now —
+> PLANNED, with what works stated beside it — as TYPE_REFERENCE and BUILTIN_REFERENCE do since O-N12. The
+> features themselves stay the workbench's O-N2 and O-N5, open, with nothing waiting on them this cycle.
+
+> **DEF-101 — FIXED at 1.6.0 step 3 (2026-09-25; a document). TYPE_REFERENCE §9.3's ENUM-CAST SENTENCE WAS
+> STATED FOR EVERY SHAPE.** The library listener (nitpick-time's 0.1.3 worker, measured by `nitpick-libs_s6`
+> at `c3bdae2`): "`intN => enum` is impossible in both spellings (D-140)" is true of a payload-carrying enum
+> (both spellings TYPE-032) and false of a tag-only one, where `intN =>! enum` manufactures a tag — D-140's
+> stated contract, the compiler's own `payload =>! TokenKind` sites among its users — and `intN => enum` is
+> TYPE-009. The sentence sat under "Tagged enums with payloads" but said "at every shape"; it is scoped by
+> shape now, with both codes named.
+
 > **DEF-102 — FIXED at 1.6.0 step 3g (2026-09-25). AN ASSIGNMENT TO AN OWNING FIELD OF A LENT PARAMETER DROPPED
 > THE CALLER'S VALUE; `@p` OF ONE LET A CALLEE FREE OR GROW THE CALLER'S STORAGE.** Found by the library listener
 > (`nitpick-libs_s6`; nitpick-regex's 0.0.4d planner, their O-N21) and reproduced here at `6fb85d3`: `func:overwrite
@@ -2274,6 +2292,34 @@ everything from *typing* through *Z3* is not. Five decisions, plus the Astrée g
 | **B-7** | *(instrument, no decision — LANDS at 1.4.1)* | **A new TYPE KIND places an obligation on every type walker, and nothing checks it.** Five of stage 1.1.10-D's seven defects were exactly this: `atomic<T>` and `Channel<T, LEVEL, CAP>` were added in this cycle, and `type_subst`, `type_mentions_param`, `field_holds_ptr`, the escape analysis's pointer question and the vtable emitter had each been written before them. None failed loudly. `type_subst` made a generic function taking a channel uninstantiable; `type_mentions_param` let a channel be opened with a zero-byte element, so a generic pool's jobs all arrived blank with nothing reporting it; `field_holds_ptr` called every struct holding an endpoint pointer-bearing. **None was found by a test of the feature that broke** — each surfaced only when an ordinary program used two features together, which is precisely the failure class `check_kinds_lowered_or_refused` was built for on the expression side. Build the companion: enumerate the `TY_*` constants and require each named walker to mention every one, or to carry a stated reason for its default. The existing seven whole-tree checks each found something on their first run. | before 1.4 | 1.1.10-D |
 
 ---
+
+> **[1.6.0 step 3 (2026-09-25) — E-7, for 1.6.2 (leg C), owned by the user: THE EMISSION
+> STATES NOTHING OF WHAT THE COMPILER KNOWS ABOUT A POINTER PARAMETER, AND A PER-FUNCTION
+> CHECKER CAN HOLD THE OPTIMISER ONLY TO WHAT THE IR STATES.]** Found by the Alive2 smoke's
+> no-inlining twin (`meta/roadmap/1.6/1.6.0.md`, the step-3 record): the string drop body
+> `npk.drop.3` takes `ptr %v` with no attribute; `opt -O2` infers `nonnull` on the parameter
+> and `inbounds` on the `getelementptr` of the header's `cap` field (a load through it must
+> be dereferenceable), and Alive2 refutes the pair with a base pointer ten bytes BEFORE a
+> fifteen-byte object — the source's plain `getelementptr` reads inside the object, the
+> target's `inbounds` one is poison. No emitted caller passes a drop body, a `Self->`
+> receiver or a coroutine frame anything but the address of the object itself, so no
+> program of ours is miscompiled by the inference; but the IR does not SAY so
+> (`dereferenceable` appears nowhere in `build/npkc.ll`), and every translation-validation
+> verdict over such a function is bounded by that silence. The lead: the emitter states
+> `nonnull`, `noundef` and `dereferenceable(<the pointee's size>)` on every pointer parameter
+> whose argument it constructs itself — drop bodies, pointer receivers (DEF-24's and DEF-94's
+> `@recv`), a resume's frame pointer, the lent parameters of `.req`/`.measure` predicates —
+> and `dereferenceable_or_null` where the vacant value is `null` (D-225). Safety-positive on
+> every leg: A's points-to and null checks read the same facts, B's encoder may use them,
+> C's per-function pairs become verifiable. Not 1.6.0's (no emission change at the gate,
+> §2.7): its cost is one emission change under a snapshot refresh, its measurement the twin
+> re-run. The same smoke's fifteen INTER-PROCEDURAL verdicts (IPSCCP's constant returns
+> absorbed into the callers, unchanged with the inliner off) are 1.6.2's design question —
+> a per-pass `tv` plugin run, or a pipeline whose inter-procedural passes are validated by
+> another means — recorded in the step-3 record, not a lead of their own. **SETTLED 2026-09-25
+> (the user: "1.6.2 is fine with me. wherever you think is the most logical place for it to go"):
+> E-7 is a step of 1.6.2's plan, written at 1.6.0 step 5; the fifteen inter-procedural verdicts and
+> this one are re-examined in the testing-and-benchmarking phase the user plans after cycle 1.6.**
 
 ## 4b. ~~The cycle-1.3 batch~~ RATIFIED as D-194…D-200 (user: "go with your recommendations" — Kleene on `&`/`|`, `unit:` declarations in)
 

@@ -5,12 +5,15 @@
   <name>.plain.ll          the three plain emissions as the harness assembles them (-O0)
   <name>.whole.ll          each plain emission with the floor appended BY TEXT (P-7): the program's
                            `declare`s of floor-defined symbols and the floor's `declare`s of
-                           program-defined symbols removed, one `target triple` kept
+                           program-defined or -declared symbols removed, one `target triple` kept,
+                           the floor's roots given external linkage (an analyzer's DCE keeps them)
   <name>.whole.roots.txt   the entry points of the whole-program form: `main` and every floor function
                            whose address escapes to the assembly or the kernel, read off runtime/npkrt.ll
   npkc.verified.ll         the compiler's emission under `--elide nitpick.obligations` (the llvm.assume channel)
   *.dl.ll                  the datalayout twin of every input above (P-5)
   <name>.opt.ll            the opt pair's post file (nitpick.toml's opt-flags) for dyn_slots and extern_c_driver
+  <name>.opt.noinline.ll   the same pipeline with the inliner off (`-inline-threshold=-100000000`): the twin that
+                           tells an inlining verdict from an inter-procedural one at the Alive2 smoke (step 3)
   inputs.txt               one line per file: sha256, bytes, defines, name -- and the assembler belt's verdicts
 
 Every .ll must assemble under LLVM 18 and LLVM 20 (the belt; a refusal is a red run by name).
@@ -89,7 +92,15 @@ def whole_program(prog_text, floor_text):
         if l.startswith("target triple"):
             continue
         keep_floor.append(l)
-    return "\n".join(keep_prog).rstrip("\n") + "\n\n" + "\n".join(keep_floor).rstrip("\n") + "\n"
+    text = "\n".join(keep_prog).rstrip("\n") + "\n\n" + "\n".join(keep_floor).rstrip("\n") + "\n"
+    # The roots are the analysis's entry points, and a root the assembly reaches is `internal` to the
+    # floor: an analyzer's dead-code elimination (ikos-pp -opt=basic, measured at step 3: 215 -> 190
+    # defines, one root of four kept) removes it before the analysis starts. The whole form gives the
+    # roots EXTERNAL linkage -- the one edit beyond concatenation, linkage only, no body touched, so
+    # that "entry point" means to the tool what it means to the floor. Recorded in 1.6.0.md (step 3).
+    for name in floor_roots(floor_text):
+        text = re.sub(r'^define internal (.*@' + re.escape(name) + r'\()', r'define \1', text, count=1, flags=re.M)
+    return text
 
 
 def with_datalayout(text):
@@ -130,8 +141,17 @@ def main():
     for name, text in files.items():
         open(os.path.join(out, name), "w").write(text)
     for p in PROGRAMS:
-        sh([os.path.join(LLVM["20"], "opt")] + opt_flags() + [os.path.join(out, p + ".plain.ll"),
-            "-o", os.path.join(out, p + ".opt.ll")])
+        # `opt` writes its input's PATH into the output (`; ModuleID = '<path>'`, `source_filename`), so an
+        # opt pair produced from an absolute path carries the directory it was made in and its digest is
+        # path-dependent (measured at step 3: the same plain file re-derived in another directory gave a
+        # post file differing in exactly those lines) -- D-236's class. Run from the input directory on
+        # the bare name, and the embedded path is the name.
+        sh([os.path.join(LLVM["20"], "opt")] + opt_flags() + [p + ".plain.ll", "-o", p + ".opt.ll"], cwd=out)
+        # the no-inlining twin: Alive2 verifies one function pair at a time and treats every callee as
+        # opaque, so a target that absorbed a callee's body or its return value refutes for a reason that
+        # is not a miscompile; this twin separates the inliner's share of that from IPSCCP's (step 3)
+        sh([os.path.join(LLVM["20"], "opt")] + opt_flags() + ["-inline-threshold=-100000000",
+            p + ".plain.ll", "-o", p + ".opt.noinline.ll"], cwd=out)
     lines = []
     red = 0
     for name in sorted(os.listdir(out)):
@@ -145,7 +165,7 @@ def main():
             # leg C's and carry LLVM 20's newer attribute syntax) assemble under LLVM 18 as well
             verdicts = []
             for v, b in LLVM.items():
-                if v == "18" and name.endswith(".opt.ll"):
+                if v == "18" and ".opt." in name:
                     continue
                 rr = subprocess.run([os.path.join(b, "llvm-as"), path, "-o", "/dev/null"],
                                     capture_output=True, text=True)

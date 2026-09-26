@@ -14,7 +14,7 @@ import os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
-CONTROLS = ["ctl_oob_read", "ctl_oob_write", "ctl_null", "ctl_divz", "ctl_uninit", "ctl_wrap_branch", "ctl_uaf"]
+CONTROLS = ["ctl_oob_read", "ctl_oob_write", "ctl_null", "ctl_null_known", "ctl_divz", "ctl_uninit", "ctl_wrap_branch", "ctl_uaf"]
 LLVM20 = "/usr/lib/llvm-20/bin"
 
 

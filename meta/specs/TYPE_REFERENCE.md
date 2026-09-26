@@ -1137,8 +1137,11 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 ; payload's alignment in bits, N covering the widest size (0.9.2) — making the
 ; element BE the alignment is what keeps an 8-byte payload off odd addresses;
 ; the earlier [4 x i8]+[16 x i8] example had struct align 4 and was misaligned.
-; `enum =>! intN` reads the TAG (slot 0) at every shape; `intN => enum` is
-; impossible in both spellings (D-140).
+; `enum =>! intN` reads the TAG (slot 0) at every shape. The other direction is
+; SCOPED BY SHAPE (D-140; scoped here 2026-09-25, DEF-101): a TAG-ONLY enum takes
+; `intN =>! enum`, which manufactures a tag (an assertion, hence the bang; `=>`
+; is TYPE-009), while a PAYLOAD-CARRYING enum like this `Shape` admits neither
+; spelling (TYPE-032) -- there is no payload to manufacture.
 ; Note: The compiler explicitly inserts padding arrays to ensure that 
 ; payload extraction does not cause unaligned reads/segfaults on strict architectures.
 ```
