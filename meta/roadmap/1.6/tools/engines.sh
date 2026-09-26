@@ -25,7 +25,7 @@ PATCH="$ALIVE2_PATCH"                            # (1.6.0 step 4 read Clam's cel
                                                  #  sound one: the abort is the pinned code's sound behaviour, so no second patch exists)
 
 NIKOS_REPO=https://github.com/alternative-intelligence-cp/nikos.git
-NIKOS_SHA=94b54c2cf63964c34f3b0c4284714a921cf25b5a          # tag v2.4.0
+NIKOS_SHA=db47f9da0308ef44d8440178e7daca206f3e5401          # the `nitpick-port` branch's head (D-324; 1.6.1 step 0): v2.4.0 (94b54c2) + the three commits of the step-4 reading -- the inttoptr constraint added, i128 sampled into the AR data layout, the coroutine intrinsics in every switch
 CLAM_REPO=https://github.com/seahorn/clam.git
 CLAM_SHA=e80f974582904365123076f40ee1da569d829f18           # master, 2026-09-10 (targets LLVM 18.1)
 CRAB_REPO=https://github.com/seahorn/crab.git

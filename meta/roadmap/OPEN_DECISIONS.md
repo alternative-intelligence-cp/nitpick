@@ -2568,6 +2568,24 @@ everything from *typing* through *Z3* is not. Five decisions, plus the Astrée g
 > aligns `i128` to 16 the AR size of `{ i128, i1 }` — the result type of
 > `llvm.sadd.with.overflow.i128` — is 24 against LLVM's 32 and the module is refused ("llvm
 > type and ar type alloc size are different"); one token, or ~15 lines for every `i<N>:` spec.
+> **[1.6.1 step 0 (2026-09-26, `nitpick-compiler_s16`) — the three landed in the user's NIKOS tree as
+> the `nitpick-port` branch (D-324), three commits on `v2.4.0` (`94b54c2`), pushed to `origin/nitpick-port`
+> and never to `main`: `070247c` (the `inttoptr` constraint ADDED — two `this->_csts.add(...)` wraps),
+> `c712a3e` (128 sampled into the AR integer-alignment table — AR's `find_alignment_info` answers an
+> unsampled width with the first larger entry, else the largest, LLVM's own rule, so the two agree once
+> every width LLVM specifies is in the table), `db47f9d` (the coroutine intrinsics in the
+> pointer-constraint switch and the five checkers, modelled as the engine already models them). MEASURED
+> with the port build against the pinned one, by hand and then under the gate's runner: the compiler's
+> datalayout twin (`npkc.plain.dl`) is READ where it was refused (3,325 functions defined, `main`'s the
+> one with checks — the executor wall, as the plain form); the eight controls' inter-mode counts are
+> identical, and in intra mode the `inttoptr` fix does what the reading said — `uninit.plain` 124 → 137
+> `ok` with 75 → 66 `unreachable`, `uninit.planted` 109 → 122 with 81 → 72, `null.planted` 39 → 41 —
+> every planted defect's verdict unchanged (7 of 8 in both modes). Found on the way: a module that CALLS
+> `llvm.coro.begin`/`llvm.coro.free` is refused by the importer earlier, for its `token` operands
+> ("unsupported llvm type"), on the pinned build and the port alike — the `library_function.cpp` mapping
+> to `LibcppCoroAlloc`/`Free` is reached by no legal module today; the switches are total for the day it
+> is, and the maintainer's tree is told so in the commit. The pin moves with landing 68 (`pins.txt`,
+> `engines.sh`'s `NIKOS_SHA`).]**
 
 ## 4b. ~~The cycle-1.3 batch~~ RATIFIED as D-194…D-200 (user: "go with your recommendations" — Kleene on `&`/`|`, `unit:` declarations in)
 
