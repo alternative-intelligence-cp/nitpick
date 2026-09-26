@@ -1,0 +1,38 @@
+// expect-exit: 0
+//
+// THE CHURN TWIN of `cstring_once.npk` (D-328, 1.6.1d step 3b; the library listener's
+// F-007): a path converted by `to_cstring` four thousand times. `tests/cost/to_cstring.toml`
+// holds this program's peak to the once's: before the fix every conversion leaked
+// `len + 1` bytes (40,000 live after 4,000), because the result had no owner.
+mod:cstring_churn;
+error:E9;
+func:conv = int64() {
+    cstring:dn = to_cstring("/dev/null") ?! E9;
+    pass dn.len;
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:acc = 0i64;
+    for (int32:i in 0i32...4000i32) {
+        acc = acc + (conv() ?! E9);
+    }
+    if (acc != 4000i64 * 9i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

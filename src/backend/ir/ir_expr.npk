@@ -799,7 +799,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, stid, n.span)); }
         pass (raw iv(move(sll.text), move(smn), stid));
     }
-    if (n.kind == ExprKind.ExprStringLiteral) { pass (raw emit_string(x, n)); }
+    if (n.kind == ExprKind.ExprStringLiteral) { pass (raw emit_string(x, id, n)); }
     if (n.kind == ExprKind.ExprIdentifierExpr){ pass (raw emit_ident(x, id, n)); }
     if (n.kind == ExprKind.ExprUnaryExpr)     { pass (raw emit_unary(x, id, n)); }
     if (n.kind == ExprKind.ExprBinaryExpr)    { pass (raw emit_binary(x, id, n)); }
@@ -839,8 +839,8 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
 
     // A raw or block string differs from a plain one in LEXING only; by here all
     // three are an intern index of decoded bytes.
-    if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (raw emit_string(x, n)); }
-    if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (raw emit_string(x, n)); }
+    if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (raw emit_string(x, id, n)); }
+    if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (raw emit_string(x, id, n)); }
 
     // --- classified refusals, one rung each ---------------------------------
     if (n.kind == ExprKind.ExprMethodCallExpr) {
@@ -1590,9 +1590,21 @@ func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) never fail
     pass (raw iv("{ ptr, i64, i64 }", move(sv), 0i32));
 };
 
-func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
+func:emit_string = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:data = raw intern_get(x.interns, n.payload =>! int32);
-    string:g = raw strtab_add(x.strs, string_concat(data, ""));
+    // A LITERAL IN `cstring` POSITION (D-049, D-328; 1.6.1d step 3b): the
+    // checker typed it `cstring` after refusing an interior NUL, so the
+    // constant carries a terminator byte past its length -- the kernel reads
+    // to the NUL, the program reads `len`. The trio is the string's, `cap 0`:
+    // a module constant is nobody's to free.
+    string:body = string_concat(data, "");
+    int32:lt = raw exprtypes_get(x.et, id);
+    if (lt > 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_CSTRING())) {
+            body = string_concat(data, "\0");
+        }
+    }
+    string:g = raw strtab_add(x.strs, move(body));
     string:len = int_to_string(data.len);
     string:a = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(a,
@@ -9669,6 +9681,10 @@ func:builtin_field_index = int32(ExprEmitter->:x, int32:kind, int32:name) never 
     if (raw string_eq(f, "ptr")) { pass 0i32; }
     if (raw string_eq(f, "len")) { pass 1i32; }
     if (kind == (raw TY_STRING())) {
+        if (raw string_eq(f, "cap")) { pass 2i32; }
+    }
+    // A `cstring` carries the string's trio (D-328).
+    if (kind == (raw TY_CSTRING())) {
         if (raw string_eq(f, "cap")) { pass 2i32; }
     }
     // A buffer carries the string's trio (D-200/§23).

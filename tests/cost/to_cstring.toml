@@ -1,0 +1,10 @@
+# DEF-122 (1.6.1d step 3b; the library listener's F-007): `to_cstring`'s result had
+# no owner and every conversion leaked `len + 1` bytes -- 40,000 live after 4,000
+# (measured on 9126350). A `cstring` is string-shaped and owns its copy now (D-328):
+# `cstring_churn.npk` converts a path four thousand times, `cstring_once.npk` once,
+# and under NPK_HEAP_STATS the churn's peak must stay within `bound` times the once's.
+kind    = "probe"
+program = "tests/backend/programs/cstring_churn.npk"
+against = "tests/backend/programs/cstring_once.npk"
+bound   = 2
+expect  = "pass"

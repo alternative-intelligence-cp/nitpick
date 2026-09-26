@@ -30,7 +30,7 @@ pub error:EProcWait;      // the reap itself failed after the pidfd signalled �
 //
 // What execve reads: a NULL-terminated array of pointers to NUL-terminated
 // bytes. Both are copies this block OWNS — `wild` storage, freed by
-// `args_free` — never a `to_cstring` (whose copy is internal and immortal) and
+// `args_free` — never a `to_cstring` (whose copy is the value's own, dropped at its scope exit since D-328) and
 // never a pointer into a caller's string, which the caller may drop before the
 // clone. `ptrs` holds `cap` slots; slot `count` is always the NULL.
 pub struct:ProcArgs = {

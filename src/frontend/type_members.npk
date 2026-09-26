@@ -461,6 +461,7 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
     if (k == (raw TY_CSTRING())) {
         string:f = raw intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
+        if (raw string_eq(f, "cap")) { pass (raw tt_int(e.types, 64i32, true)); }   // the ownership bit (D-328)
         if (raw string_eq(f, "ptr")) {
             pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, false)));
         }

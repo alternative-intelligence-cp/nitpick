@@ -584,6 +584,7 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     // sender's frame — `type_contains_borrow` is layout's transitive answer,
     // with `string`'s owned body excepted and `dyn` refused as erased.
     if (k == (raw TY_STRING()))  { pass true; }
+    if (k == (raw TY_CSTRING())) { pass true; }   // D-333: as a string
     // A buffer transfers whole exactly as a string does (D-200/§23): the
     // owned body's pointer crosses WITH its ownership under the send's move.
     if (k == (raw TY_BUFFER()))  { pass true; }
@@ -694,9 +695,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
 
     if (k == (raw TY_STRING()))   { pass (raw ll_ok("{ ptr, i64, i64 }")); }
 
-    // NUL-terminated, `{ptr, i64}`, and NO capacity (D-049): a `cstring` is never
-    // grown and is not ours to free — `argv` comes from the kernel.
-    if (k == (raw TY_CSTRING()))  { pass (raw ll_ok("{ ptr, i64 }")); }
+    // NUL-terminated, and STRING-SHAPED (D-049, D-328): `{ ptr, len, cap }`, the
+    // cap the ownership bit -- 0 for an `argv`/`environ()` element or a literal
+    // (the kernel's, a module constant), `len + 1` for `to_cstring`'s copy.
+    if (k == (raw TY_CSTRING()))  { pass (raw ll_ok("{ ptr, i64, i64 }")); }
 
     // THIN, ONE WORD, NO BOUNDS METADATA (D-038) — whatever it points at, which is
     // why this does not recurse and why `any->` lowers while bare `any` does not.

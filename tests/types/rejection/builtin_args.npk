@@ -43,7 +43,8 @@ func:spread_into_builtin = NIL() never fails {
 // not one. This is the shape that compiled, ran, and lost the kernel's error.
 // expect-error: NITPICK-TYPE-007
 func:string_where_cstring = NIL() {
-    Result<NIL>:w = write_file("/tmp/npk_builtin_args_probe", "payload");
+    string:p = string_concat("/tmp/npk_builtin_args_probe", "");   // a string VALUE: a literal in `cstring` position is a `cstring` since D-328
+    Result<NIL>:w = write_file(p, "payload");
     if (w.is_error) { }
     pass NIL;
 };
@@ -87,7 +88,7 @@ func:raw_over_builtin = NIL() never fails {
 // VALUE" stayed silent here from D-240 on -- a bare `NIL` is no value, and the
 // type rule has already said what is wrong.
 // expect-error: NITPICK-TYPE-007
-// expect-error-at: 93:5
+// expect-error-at: 94:5
 func:drop_over_builtin = NIL() never fails {
     wild int8->:p = alloc(8i64);
     drop dalloc(p);

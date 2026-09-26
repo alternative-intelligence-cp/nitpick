@@ -860,7 +860,6 @@ DROPS_DEFAULT_OK = {
     "TY_KERNEL":    "a kernel identifier is a number (D-042)",
     "TY_FLAGS":     "a flag set is a word (D-044/D-230)",
     "TY_ERROR":     "a code word, not an address (D-179)",
-    "TY_CSTRING":   "the kernel's storage (argv), never ours to free (D-049)",
     "TY_POINTER":   "a pointer is not an owner; `wild` memory is manual, via "
                     "`defer`/`dalloc`, which is what makes the regime explicit",
     "TY_SLICE":     "a borrow (D-070)",
@@ -1059,7 +1058,7 @@ WALKER_DEFAULT_OK = {
         "TY_CHAR": _NOT_REGISTERED, "TY_FLOAT": _NOT_REGISTERED,
         "TY_TBB": _NOT_REGISTERED, "TY_KERNEL": _NOT_REGISTERED,
         "TY_FLAGS": _NOT_REGISTERED,
-        "TY_CSTRING": _NOT_REGISTERED, "TY_ANY": _NOT_REGISTERED,
+        "TY_ANY": _NOT_REGISTERED,
         "TY_POINTER": _NOT_REGISTERED, "TY_SLICE": _NOT_REGISTERED,
         "TY_TRAIT": _NOT_REGISTERED, "TY_FUNC": _NOT_REGISTERED,
         "TY_SELF": _NOT_REGISTERED, "TY_PARAM": _NOT_REGISTERED,
@@ -1098,7 +1097,8 @@ WALKER_DEFAULT_OK = {
         "TY_FLAGS": _NOT_REGISTERED,
         "TY_STRING": ("`cap == 0` IS the not-mine bit, so a zero fill is literally "
                      "the unowned value (D-183/D-200)"),
-        "TY_CSTRING": _NOT_REGISTERED,
+        "TY_CSTRING": ("the string's trio since D-328: `cap == 0` is the unowned "
+                       "value, a zero fill (1.6.1d step 3b)"),
         "TY_ANY": _NOT_REGISTERED,
         "TY_POINTER": _NOT_REGISTERED,
         "TY_SLICE": _NOT_REGISTERED,

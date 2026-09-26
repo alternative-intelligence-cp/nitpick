@@ -17,19 +17,20 @@ func:main = int32(cstring[]:argv) {
     // the command line is otherwise empty.
     if (argv.len < 1i64)          { exit 10i32; }
 
-    cstring:prog = argv[0i64];
-
     // A cstring carries its length, measured once at the process boundary
-    // (D-049). Nothing here scans for a NUL.
-    if (prog.len == 0i64)         { exit 11i32; }
+    // (D-049). Nothing here scans for a NUL. Read in place: a `cstring` owns
+    // its body (D-328), so `cstring:prog = argv[0i64];` would be a second
+    // owner (TYPE-046); an element of `argv` is borrowed at `cap == 0`.
+    if (argv[0i64].len == 0i64)   { exit 11i32; }
+    if (argv[0i64].cap != 0i64)   { exit 13i32; }
 
     // The path ends in ".npk"-derived binary name, so at minimum it has a `/`
     // -- the harness runs it by absolute path. Checking a BYTE rather than the
     // whole string keeps this a runtime test and not a string-library test.
     bool:found_slash = false;
     int64:i = 0i64;
-    while (i < prog.len) decreases prog.len - i {
-        if (prog.ptr[i] == 47u8) { found_slash = true; }
+    while (i < argv[0i64].len) decreases argv[0i64].len - i {
+        if (argv[0i64].ptr[i] == 47u8) { found_slash = true; }
         i = i + 1i64;
     }
     if (!found_slash)             { exit 12i32; }

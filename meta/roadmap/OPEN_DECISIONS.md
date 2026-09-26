@@ -2551,10 +2551,16 @@ defect declares a `DEF-` in §2f.
 > `tests/backend/programs/pick_binding_churn.npk`/`pick_binding_once.npk` under `tests/cost/pick_binding.toml`. The
 > arm scope's probes found DEF-138 … DEF-141 below, fixed with it.
 
-> **DEF-122 — OPEN (registered 2026-09-26; F-007; owner: the compiler seat, 1.6.1d step 3b under D-328 -- the floor's `cstring` layout moves, with a two-floor snapshot refresh). `to_cstring`'S BUFFER
+> **DEF-122 — FIXED at 1.6.1d step 3b (2026-09-26; registered the same day; F-007; under D-328, the floor's `cstring` layout moved with a two-floor snapshot refresh). `to_cstring`'S BUFFER
 > IS NEVER FREED: every call leaks `len + 1` bytes (1,000 calls hold 10,000 B live at exit).** The `cstring`
 > result is a view-shaped value whose backing block nothing owns; the fix is the builtin's row (its `Views`/drop
 > column) and the drop of what it allocates, or an owning result. Evidence: `findings/F-007-to-cstring-leak/`.
+> **The fix (1.6.1d step 3b, D-328):** a `cstring` is string-shaped — `{ ptr, len, cap }`, `cap == 0` a borrowed
+> body (a literal, an `argv`/`environ()` element), `cap > 0` the owned copy `to_cstring` makes — with the string's
+> drop body, move-only, `.clone()` for a copy; the floor's six symbols take and build the trio; the literal in
+> `cstring` position lands with it (TYPE-092 for an interior NUL); `tests/cost/to_cstring.toml` holds the churn's
+> peak to the once's (40,000 bytes live after 4,000 conversions before). No call site of `to_cstring` changed
+> its spelling; the four binding-to-binding copies of an `argv` element in the tree read the element in place.
 
 > **DEF-123 — FIXED at 1.6.1d step 1 (2026-09-26; registered the same day: F-008). A WRITE THROUGH A
 > `$$i` CLAIM'S HOLDER, OR THROUGH AN ARGUMENT HOLDING IT, COMPILES AND RUNS (0/22/22); the reference names it

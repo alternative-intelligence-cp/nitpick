@@ -158,7 +158,7 @@ LL_OF = {
     "NIL": "void", "bool": "i8",
     "int8": "i8", "int16": "i16", "int32": "i32", "int64": "i64",
     "uint8": "i8", "uint16": "i16", "uint32": "i32", "uint64": "i64",
-    "string": "{ ptr, i64, i64 }", "cstring": "{ ptr, i64 }",
+    "string": "{ ptr, i64, i64 }", "cstring": "{ ptr, i64, i64 }",
     "buffer": "{ ptr, i64, i64 }",
     # The five kernel identifiers are one register-width number each (D-042).
     "fd": "i32", "pid": "i32", "tid": "i32", "uid": "i32", "gid": "i32",

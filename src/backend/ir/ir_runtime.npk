@@ -154,11 +154,11 @@ pub func:rt_sig = RtSig(string:name) never fails {
     }
     if (raw string_eq(name, "open")) {
         pass (raw rt("@npk_open", "{ i32, i32 }", true, "i32", 3i32,
-                     "{ ptr, i64 }", "i64", "i64", ""));
+                     "{ ptr, i64, i64 }", "i64", "i64", ""));
     }
     if (raw string_eq(name, "path_exists")) {
         pass (raw rt("@npk_path_exists", "i8", false, "", 1i32,
-                     "{ ptr, i64 }", "", "", ""));
+                     "{ ptr, i64, i64 }", "", "", ""));
     }
     if (raw string_eq(name, "ralloc")) {
         pass (raw rt("@npk_ralloc", "ptr", false, "", 2i32,
@@ -170,7 +170,7 @@ pub func:rt_sig = RtSig(string:name) never fails {
     }
     if (raw string_eq(name, "read_file")) {
         pass (raw rt("@npk_read_file", "{ { ptr, i64, i64 }, i32 }", true, "{ ptr, i64, i64 }", 1i32,
-                     "{ ptr, i64 }", "", "", ""));
+                     "{ ptr, i64, i64 }", "", "", ""));
     }
     if (raw string_eq(name, "read_stdin")) {
         pass (raw rt("@npk_read_stdin", "{ { ptr, i64, i64 }, i32 }", true, "{ ptr, i64, i64 }", 0i32,
@@ -209,7 +209,7 @@ pub func:rt_sig = RtSig(string:name) never fails {
                      "{ ptr, i64, i64 }", "i64", "i64", ""));
     }
     if (raw string_eq(name, "to_cstring")) {
-        pass (raw rt("@npk_to_cstring", "{ { ptr, i64 }, i32 }", true, "{ ptr, i64 }", 1i32,
+        pass (raw rt("@npk_to_cstring", "{ { ptr, i64, i64 }, i32 }", true, "{ ptr, i64, i64 }", 1i32,
                      "{ ptr, i64, i64 }", "", "", ""));
     }
     if (raw string_eq(name, "wild_live_count")) {
@@ -242,7 +242,7 @@ pub func:rt_sig = RtSig(string:name) never fails {
     }
     if (raw string_eq(name, "write_file")) {
         pass (raw rt("@npk_write_file", "{ i32 }", true, "", 2i32,
-                     "{ ptr, i64 }", "{ ptr, i64, i64 }", "", ""));
+                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", "", ""));
     }
     RtSig:none = RtSig{ found: false, sym: "", ret: "", wrapped: false,
                         inner: "", argc: 0i32, a0: "", a1: "", a2: "", a3: "" };

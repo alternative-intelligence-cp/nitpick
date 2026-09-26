@@ -1034,10 +1034,10 @@
   (objects (s.0 s.1))
   (requires (<= (+ s.0 s.1) 18446744073709551616))
   (loop scan (invariant (and (<= 0 i) (<= i s.1) (=> (and (<= 0 j) (< j i)) (not (= (load8 mem (+ s.0 j)) 0))))))
-  (ensures (=> (= result.1 0) (and (not (= result.0.0 0)) (= result.0.1 s.1) (= (load8 mem2 (+ result.0.0 s.1)) 0)
+  (ensures (=> (= result.1 0) (and (not (= result.0.0 0)) (= result.0.1 s.1) (= result.0.2 (+ s.1 1)) (= (load8 mem2 (+ result.0.0 s.1)) 0)
                                    (=> (and (<= 0 j) (< j s.1)) (= (load8 mem2 (+ result.0.0 j)) (load8 mem (+ s.0 j)))))))
   (ensures (=> (= result.1 0) (=> (and (<= 0 j) (< j s.1)) (not (= (load8 mem (+ s.0 j)) 0)))))
-  (ensures (=> (not (= result.1 0)) (and (= result.1 4294967274) (= result.0.0 0) (= result.0.1 0))))
+  (ensures (=> (not (= result.1 0)) (and (= result.1 4294967274) (= result.0.0 0) (= result.0.1 0) (= result.0.2 0))))
   (frame objects))
 
 (symbol @npk_string_concat
@@ -1146,7 +1146,7 @@
 (symbol @npk_wild_release_all
   (boundary "failsafe's controlled cleanup: every chunk and every large mapping returned to the kernel, the tables reset, the allocator left usable; after it only exit may follow (TYPE-062) -- anything still pointing into the heap points at unmapped pages"))
 (symbol @npk_cstr_slice
-  (boundary "the bytes of a NUL-terminated string the kernel wrote (argv, envp) as {ptr, len}: a strlen over the kernel's memory, the bytes themselves never copied"))
+  (boundary "the bytes of a NUL-terminated string the kernel wrote (argv, envp) as {ptr, len, cap 0} (D-328: the kernel's bytes, nobody's to free): a strlen over the kernel's memory, the bytes themselves never copied"))
 
 ; the arenas and the frame arena
 (symbol @npk_arena_make

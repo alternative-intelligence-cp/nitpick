@@ -166,7 +166,7 @@ missing from the numbers and from the rows that reach them.
 | `@npk_clone_exec` | atomic | modelled (driver-registry) |
 | `@npk_clone_raw` | asm | trusted (module asm) |
 | `@npk_close` | syscall | specified (3 discharged, 0 residue) |
-| `@npk_cstr_slice` | syscall | boundary (the bytes of a NUL-terminated string the kernel wrote (argv, envp) as {ptr, len}: a strlen over the kernel's memory, the bytes themselves never copied) |
+| `@npk_cstr_slice` | syscall | boundary (the bytes of a NUL-terminated string the kernel wrote (argv, envp) as {ptr, len, cap 0} (D-328: the kernel's bytes, nobody's to free): a strlen over the kernel's memory, the bytes themselves never copied) |
 | `@npk_cv_begin` | syscall | boundary (the CondVar wait's entry: the frame linked on the cv's waiter list under the cv's futex, the guard's mutex released (the ordinary guard release), the frame due at the caller's absolute deadline -- the park itself is the executor's) |
 | `@npk_cv_broadcast` | syscall | boundary (wakes every waiter on the cv's list under the cv's futex (npk_ch_wake_all)) |
 | `@npk_cv_done` | syscall | boundary (unlinks the frame from the cv's waiter list under the cv's futex, on every completed path -- idempotent like every unlink) |

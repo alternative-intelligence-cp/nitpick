@@ -1,0 +1,81 @@
+// expect-exit: 0
+//
+// A `cstring` OWNS THE BODY `to_cstring` MADE (D-328, 1.6.1d step 3b; the library
+// listener's F-007, DEF-122): string-shaped, `cap == 0` a body it does not own -- a
+// literal in `cstring` position (D-049's compile-time form, live from this step), an
+// `argv` element -- `cap > 0` the copy `to_cstring` made, dropped at the scope exit like
+// any owner; move-only, cloned by `.clone()`; the kernel's calls take the trio and read
+// its first word. The leak is measured by `tests/cost/to_cstring.toml`.
+mod:cstring_owner;
+error:E9;
+
+struct:Holder = { string:name; cstring:path; };
+
+func:convert = int64(string:s) {
+    cstring:c = relay to_cstring(s);
+    if (c.cap != c.len + 1i64) { pass 30i64; }      // the block's size, the ownership bit
+    if (c.ptr[c.len] != 0u8) { pass 31i64; }        // the terminator past the length
+    pass c.len;                                     // `c` dropped here
+};
+
+func:take = NIL(move cstring:c) never fails {
+    if (c.len != 9i64) { !!! Unreachable; }
+    pass NIL;                                       // dropped here: the consumer's
+};
+
+func:main = int32(cstring[]:argv) {
+    // 1. the literal: a module constant at cap 0, NUL past its length
+    cstring:lit = "/dev/null";
+    if (lit.len != 9i64) { exit 10i32; }
+    if (lit.cap != 0i64) { exit 11i32; }
+    if (lit.ptr[lit.len] != 0u8) { exit 12i32; }
+    if (lit.ptr[0i64] != 47u8) { exit 13i32; }
+    // 2. the kernel through it: exists, opened and read (empty)
+    if (!path_exists(lit)) { exit 14i32; }
+    string:body = read_file(lit) ?! E9;
+    if (body.len != 0i64) { exit 15i32; }
+    // 3. the converted copy: owned, and its owner's scope frees it
+    int64:n = convert("/dev/null") ?! E9;
+    if (n != 9i64) { exit 16i32; }
+    // 4. an argv element is borrowed at cap 0, read in place
+    if (argv.len < 1i64) { exit 17i32; }
+    if (argv[0i64].cap != 0i64) { exit 18i32; }
+    if (argv[0i64].len == 0i64) { exit 19i32; }
+    // 5. a clone is an owned copy of the same bytes
+    cstring:cl = lit.clone() ?! E9;
+    if (cl.cap != 10i64) { exit 20i32; }
+    if (cl.len != 9i64) { exit 21i32; }
+    if (cl.ptr[cl.len] != 0u8) { exit 22i32; }
+    if (cl.ptr[5i64] != lit.ptr[5i64]) { exit 23i32; }
+    // 6. moved into a struct, dropped with it; moved into a consumer
+    {
+        Holder:h = Holder{ name: string_concat("a", "b"), path: move(cl) };
+        if (h.path.len != 9i64) { exit 24i32; }
+        if (!path_exists(h.path)) { exit 25i32; }
+    }
+    cstring:c2 = to_cstring("/dev/null") ?! E9;
+    drop take(move(c2));
+    // 7. a converted path through `open`
+    cstring:c3 = to_cstring("/dev/null") ?! E9;
+    fd:f = open(c3, 0i64, 0i64) ?! E9;
+    discard(f);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

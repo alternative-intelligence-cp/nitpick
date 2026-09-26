@@ -997,6 +997,13 @@ impl:string:Clone = { func:clone = string(string:self) {
     pass (string_concat(self, ""));
 }; };
 
+// A `cstring` CLONES AS A STRING DOES (D-328, 1.6.1d step 3b): an owned copy of
+// its bytes with the terminator, through `to_cstring` -- which cannot refuse
+// what a `cstring` holds (no interior NUL by construction).
+impl:cstring:Clone = { func:clone = cstring(cstring:self) {
+    pass (relay to_cstring(string_from_bytes(self.ptr, self.len)));
+}; };
+
 // A string HASHES ITS BYTES (D-123) -- FNV-1a is over bytes, and self.ptr[i] walks
 // them.
 impl:string:Hash = { func:hash = uint64(string:self) never fails {

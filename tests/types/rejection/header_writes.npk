@@ -23,8 +23,6 @@
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 121
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 126
-// expect-error: NITPICK-TYPE-079
 // expect-error-at: 127
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 128
@@ -37,7 +35,7 @@
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 132
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 137
+// expect-error-at: 133
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 138
 // expect-error: NITPICK-TYPE-079
@@ -51,7 +49,7 @@
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 143
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 149
+// expect-error-at: 144
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 150
 // expect-error: NITPICK-TYPE-079
@@ -73,11 +71,13 @@
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 159
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 164
+// expect-error-at: 160
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 165
 // expect-error: NITPICK-TYPE-079
 // expect-error-at: 166
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 167
 //
 // A COMPILER-KNOWN VALUE'S HEADER IS SEALED BY DEFINITION (D-313 §4, S-93;
 // 1.5.8b step 1; DEF-72, DEF-78). `ptr`, `len` and `cap` of a string, a
@@ -122,7 +122,8 @@ func:strings = NIL() never fails {
     pass NIL;
 };
 
-func:cstrings = NIL(cstring:c) never fails {
+func:cstrings = NIL() never fails {
+    cstring:c = "abc";   // a LOCAL: a lent `cstring` parameter is read-only before its header is sealed (TYPE-085, D-328)
     c.ptr = NULL;
     c.len = 1i64;
     c.len += 1i64;

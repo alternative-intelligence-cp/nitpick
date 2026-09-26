@@ -329,7 +329,7 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 | `string` | `string<char8>` | `{ptr, i64, i64}` | 24 bytes | 8 |
 | `string<char16>` | — | `{ptr, i64, i64}` | 24 bytes | 8 |
 | `string<char32>` | — | `{ptr, i64, i64}` | 24 bytes | 8 |
-| `cstring` | — | `{ptr, i64}` | 16 bytes | 8 |
+| `cstring` | — | `{ptr, i64, i64}` | 24 bytes | 8 |
 
 > **Superseded claim.** `FULL_specs.txt` §15.1.3 states that *"the `string` type
 > guarantees internal null-termination for zero-cost abstraction when interfacing
@@ -403,10 +403,17 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 handed to a syscall. `cstring` is the type that can.
 
 ```
-cstring   { ptr: wild char8->, len: int64 }
+cstring   { ptr: wild char8->, len: int64, cap: int64 }
 ```
 
-The buffer is `len + 1` bytes with `buf[len] == 0u8`. **The length is retained**,
+**String-shaped since D-328 (1.6.1d step 3b):** `cap == 0` is a body the value does
+not own — a literal in `cstring` position, an element of `argv` or `environ()` —
+and `cap > 0` (`len + 1`, the block's size) is the copy `to_cstring` made, which
+the value OWNS: dropped at its scope's exit like a `string`, move-only (a
+binding-to-binding copy is `TYPE-046`; `.clone()` makes an owned copy, `move`
+transfers), a plain parameter of it a loan. Until that step it was `{ ptr, len }`,
+a view with no owner anywhere, and every path conversion leaked its block
+(DEF-122). The buffer is `len + 1` bytes with `buf[len] == 0u8`. **The length is retained**,
 so `nlibc` never calls `strlen` — the unbounded "scan until NUL" read is absent
 from every path and name in the library, which is what makes these calls
 tractable for the analyzers of the evidence campaign (D-233).
@@ -421,7 +428,7 @@ Two ways to obtain one:
 
 | Source | Checked | Cost |
 |---|---|---|
-| string literal in `cstring` position | compile time — interior NUL is a compile error | zero |
+| string literal in `cstring` position | compile time — interior NUL is `NITPICK-TYPE-092` at the literal (live since 1.6.1d step 3b; the literal is `cap == 0`, its constant NUL-terminated) | zero |
 | `to_cstring(s)` on a runtime `string` | runtime — interior NUL is `Result.err` | one scan |
 
 This literal-checked-at-compile-time mechanism was shared with `fmt` (D-045)

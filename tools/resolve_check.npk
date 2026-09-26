@@ -58,8 +58,9 @@ async func:main = int32(cstring[]:argv) {
         await diag_say("usage: resolve_check <root.npk>") ?| NIL;
         exit 2i32;
     }
-    cstring:arg = argv[1i64];
-    string:root = string_from_bytes(arg.ptr, arg.len);
+    // READ IN PLACE, NOT COPIED (D-328): a `cstring` owns its body now, and a
+    // binding-to-binding copy would be a second owner (TYPE-046).
+    string:root = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
 
     InternTable:it = raw intern_init();
     DiagList:diags = raw diaglist_init();

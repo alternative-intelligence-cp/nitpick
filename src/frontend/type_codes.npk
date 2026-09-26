@@ -601,3 +601,9 @@ pub func:TYPE_FALL_INTO_BINDING = string() never fails { pass "NITPICK-TYPE-090"
 // the statement's end (D-246). The receiver is a place rooted at a binding of
 // this function through member and index steps whose bases are not pointers.
 pub func:TYPE_DESTROY_NOT_OWNED = string() never fails { pass "NITPICK-TYPE-091"; };
+
+// A STRING LITERAL IN `cstring` POSITION HOLDS AN INTERIOR NUL (D-049, D-328;
+// 1.6.1d step 3b): the literal is the compile-time way to a `cstring` --
+// `cstring:cs = "Hello";` -- and a NUL inside it is the poison-NUL bypass
+// `to_cstring` refuses at run time, refused here at the literal instead.
+pub func:TYPE_CSTRING_LITERAL_NUL = string() never fails { pass "NITPICK-TYPE-092"; };

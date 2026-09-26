@@ -88,6 +88,36 @@ snapshot installed — that run is the first time the new compiler's semantics
 compile the suite's tools — and a red there is a `src/` defect written against
 the old semantics, never a reason to keep the old snapshot.
 
+### The two-floor variant: a floor ABI change the snapshot's own binary calls (1.6.1d step 3b)
+
+When a change moves the LAYOUT of a value a floor symbol takes or returns -- 1.6.1d
+step 3b made `cstring` a trio, and `npk_to_cstring`, `npk_open`, `npk_read_file`,
+`npk_write_file`, `npk_path_exists` and the startup's two slices moved with it -- the
+committed snapshot's own BINARY calls those symbols with the OLD shape, so linking it
+against the new floor corrupts every such call (an envelope returned through a slot
+eight bytes short overruns the caller's frame). The one-hop rule is applied hop by hop
+against the floor each binary was compiled for:
+
+```sh
+git show <parent>:runtime/npkrt.ll > /tmp/npkrt_old.ll         # the OLD floor
+llc -O0 -filetype=obj -relocation-model=static /tmp/npkrt_old.ll -o /tmp/npkrt_old.o
+llc -O0 -filetype=obj -relocation-model=static runtime/npkrt.ll -o /tmp/npkrt_new.o
+llc -O0 -filetype=obj -relocation-model=static bootstrap/seed/stage1.ll -o /tmp/b.o
+ld.lld -static -o /tmp/builder /tmp/b.o /tmp/npkrt_old.o        # the old builder on the OLD floor
+/tmp/builder src/npkc.npk -o /tmp/stage1.new.ll                 # a body of the old ABI, an emitter of the new
+llc -O0 -filetype=obj -relocation-model=static /tmp/stage1.new.ll -o /tmp/s2.o
+ld.lld -static -o /tmp/npkc2 /tmp/s2.o /tmp/npkrt_old.o         # still the OLD floor: its body is the old ABI
+/tmp/npkc2 src/npkc.npk > /tmp/stage2.ll                        # body and emitter both the new ABI
+llc -O0 -filetype=obj -relocation-model=static /tmp/stage2.ll -o /tmp/s3.o
+ld.lld -static -o /tmp/npkc3 /tmp/s3.o /tmp/npkrt_new.o         # the NEW floor from here on
+/tmp/npkc3 src/npkc.npk > /tmp/stage3.ll
+cmp /tmp/stage2.ll /tmp/stage3.ll                                # MUST be silent; install stage2
+```
+
+Everything `npkc2` compiles links against the NEW floor (its emitter writes the new
+shape); `quickemit.py`, which links the builder with the tree's floor, is wrong for the
+whole of such a step and is not used in it.
+
 ### The bridging variant: a prelude addition `src/` already uses (1.5.1b step 5b)
 
 The prelude is EMBEDDED in a compiler when that compiler is built

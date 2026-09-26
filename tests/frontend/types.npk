@@ -78,9 +78,11 @@ func:main = int32(cstring[]:_~argv) {
     // why the pointer does not carry them.
     int32:sl = raw tt_slice(@t, i32a);
     if ((raw type_size(@t, sl)) != 16i64)                 { exit 55i32; }
-    // A cstring is {ptr, i64} and NOT a string -- no capacity, because it is
-    // never grown and is not ours to free (D-049).
-    if ((raw type_size(@t, t.t_cstring)) != 16i64)        { exit 56i32; }
+    // A cstring is {ptr, i64 len, i64 cap} since D-328 (1.6.1d step 3b): the
+    // string's shape, `cap == 0` a body it does not own (a literal, an `argv`
+    // element), `cap > 0` the copy `to_cstring` made -- and still NOT a string:
+    // its own type id (D-049's promises stand).
+    if ((raw type_size(@t, t.t_cstring)) != 24i64)        { exit 56i32; }
     if (t.t_cstring == t.t_string)                        { exit 57i32; }
 
     // NIL is ZERO-SIZED (D-084): the absence of a value, not a value that

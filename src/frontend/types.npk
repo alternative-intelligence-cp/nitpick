@@ -631,6 +631,8 @@ pub func:type_drops_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never f
     // is how it says so (D-183) — the drop is conditional, but the TYPE needs
     // one either way.
     if (k == (raw TY_STRING()))   { pass true; }
+    // A `cstring` owns the body `to_cstring` made, at `cap > 0` (D-328).
+    if (k == (raw TY_CSTRING()))  { pass true; }
     if (k == (raw TY_ARRAY()))    {
         pass (raw type_drops_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
@@ -1495,7 +1497,12 @@ pub func:typetable_init = TypeTable() never fails {
     // `{ptr, len, cap}` and NOT NUL-terminated, which is the entire reason
     // `cstring` exists as a separate type (D-049).
     t.t_string = raw tt_intern(@t, raw TY_STRING(), 0i32, 0i32, 0i32, 24i64, 8i32, 0i32);
-    t.t_cstring = raw tt_intern(@t, raw TY_CSTRING(), 0i32, 0i32, 0i32, 16i64, 8i32, 0i32);
+    // A `cstring` TAKES THE STRING'S SHAPE (D-328, 1.6.1d step 3b): `{ ptr, len, cap }`,
+    // `cap == 0` a body it does not own (a literal in `cstring` position, an
+    // `argv`/`environ()` element), `cap > 0` the body `to_cstring` made -- the
+    // one rule for the two string kinds. It was `{ ptr, len }`, a view with no
+    // owner anywhere, and every path conversion leaked `len + 1` bytes (DEF-122).
+    t.t_cstring = raw tt_intern(@t, raw TY_CSTRING(), 0i32, 0i32, 0i32, 24i64, 8i32, 0i32);
 
     // `any` is the type-erased pointer. It has a layout because `any->` needs one;
     // a BARE `any` is a type error, and 0.4.1 is where that is said.
@@ -1698,7 +1705,6 @@ pub func:type_contains_borrow_recorded = bool(TypeTable->:t, int32:id, int32:fue
     if (k == (raw TY_POINTER())) { pass true; }
     if (k == (raw TY_SLICE()))   { pass true; }
     if (k == (raw TY_DYN()))     { pass true; }
-    if (k == (raw TY_CSTRING())) { pass true; }
     if (k == (raw TY_ANY()))     { pass true; }
     // A GUARD borrows its mutex's cell — it may not outrun the mutex, and a
     // task boundary is exactly where it would.
@@ -1710,6 +1716,8 @@ pub func:type_contains_borrow_recorded = bool(TypeTable->:t, int32:id, int32:fue
     // reasoning: the boundary is where the closing scope would be outrun.
     if (k == (raw TY_OWNEDFD())) { pass true; }
     if (k == (raw TY_STRING()))  { pass false; }
+    // A `cstring` owns its body as a string does (D-328, D-333).
+    if (k == (raw TY_CSTRING())) { pass false; }
     // A buffer owns its body like a string owns its (D-200/§23): it
     // transfers whole under `move` — stated per the B-7 walker discipline.
     if (k == (raw TY_BUFFER()))  { pass false; }
@@ -1865,7 +1873,6 @@ pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fue
     // The decided refusals, direct.
     if (k == (raw TY_POINTER())) { pass (raw CHAN_ELEM_BORROW()); }
     if (k == (raw TY_SLICE()))   { pass (raw CHAN_ELEM_BORROW()); }
-    if (k == (raw TY_CSTRING())) { pass (raw CHAN_ELEM_BORROW()); }
     if (k == (raw TY_ANY()))     { pass (raw CHAN_ELEM_BORROW()); }
     if (k == (raw TY_DYN()))     { pass (raw CHAN_ELEM_DYN()); }
     if (k == (raw TY_OWNEDFD())) { pass (raw CHAN_ELEM_FD()); }
@@ -1924,6 +1931,9 @@ pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fue
     if (k == (raw TY_FUNC_VARIADIC())) { pass (raw CHAN_ELEM_OK()); }
     // ... the owning cells, which cross WITH their ownership (D-183, D-200) ...
     if (k == (raw TY_STRING()))  { pass (raw CHAN_ELEM_OK()); }
+    // A `cstring` rides as a `string` does (D-333, 1.6.1d step 3b): its owned
+    // body crosses with its ownership, its borrowed one is process-immortal.
+    if (k == (raw TY_CSTRING())) { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_BUFFER()))  { pass (raw CHAN_ELEM_OK()); }
     // ... and the handles, which exist BECAUSE they cross without an address.
     if (k == (raw TY_HANDLE()))  { pass (raw CHAN_ELEM_OK()); }

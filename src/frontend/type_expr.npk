@@ -3582,7 +3582,25 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprFloatLiteral) { pass (raw type_numeric_literal(e, n, "1.5f64")); }
     if (n.kind == ExprKind.ExprBoolLiteral)  { pass (e.types.t_bool); }
     if (n.kind == ExprKind.ExprCharLiteral)  { pass (raw tt_char(e.types, raw char_lit_bits(n.width))); }
-    if (n.kind == ExprKind.ExprStringLiteral)      { pass (e.types.t_string); }
+    if (n.kind == ExprKind.ExprStringLiteral) {
+        // IN `cstring` POSITION THE LITERAL IS A `cstring` (D-049, D-328; 1.6.1d
+        // step 3b): the compile-time way to one, at `cap == 0`; an interior NUL
+        // is refused here, once, where `to_cstring` would refuse it at run time.
+        if (e.expected == e.types.t_cstring) {
+            string:lit = raw intern_get(e.interns, n.payload =>! int32);
+            int64:li = 0i64;
+            while (li < lit.len) decreases lit.len - li {
+                if (lit.ptr[li] == 0u8) {
+                    pass (raw te_error(e, raw TYPE_CSTRING_LITERAL_NUL(),
+                        "this literal holds an interior NUL, so it cannot be a `cstring` (D-049): the kernel would read a shorter string than the program named -- `to_cstring` refuses the same at run time",
+                        n.span));
+                }
+                li = li + 1i64;
+            }
+            pass (e.types.t_cstring);
+        }
+        pass (e.types.t_string);
+    }
     if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprTemplateLiteral)    { pass (raw type_template(e, n)); }

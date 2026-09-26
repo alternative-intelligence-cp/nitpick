@@ -48,8 +48,8 @@ async func:main = int32(cstring[]:argv) {
 
     // argv arrives as `cstring` -- kernel-supplied and NUL-terminated (D-089).
     // The source manager works in `string`, so the path converts once, here.
-    cstring:arg = argv[1i64];
-    string:path = string_from_bytes(arg.ptr, arg.len);
+    // Read in place, not copied (D-328): a `cstring` owns its body now.
+    string:path = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
 
     SourceManager:sm = raw srcmgr_init();
     // `raw`, not `relay`: `main` returns a bare int32 and leaves through `exit`,

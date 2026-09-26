@@ -225,7 +225,7 @@ count:                                            ; preds = %entry, %count
   br i1 %atend, label %sized, label %count
 
 sized:                                            ; preds = %count
-  %bytes = mul i64 %n, 16                         ; sizeof(cstring) = {ptr,i64}
+  %bytes = mul i64 %n, 24                         ; sizeof(cstring) = {ptr,i64,i64} (D-328)
   %b4095 = add i64 %bytes, 4095
   %msz0 = and i64 %b4095, -4096
   %empty = icmp eq i64 %msz0, 0
@@ -253,10 +253,13 @@ slen:                                             ; preds = %body, %slen
   br i1 %atnul, label %store, label %slen
 
 store:                                            ; preds = %slen
-  %pf = getelementptr { ptr, i64 }, ptr %buf, i64 %i, i32 0
+  %pf = getelementptr { ptr, i64, i64 }, ptr %buf, i64 %i, i32 0
   store ptr %s, ptr %pf
-  %lf = getelementptr { ptr, i64 }, ptr %buf, i64 %i, i32 1
+  %lf = getelementptr { ptr, i64, i64 }, ptr %buf, i64 %i, i32 1
   store i64 %k, ptr %lf
+  ; cap 0: the kernel's bytes, nobody's to free (D-328)
+  %cf = getelementptr { ptr, i64, i64 }, ptr %buf, i64 %i, i32 2
+  store i64 0, ptr %cf
   br label %next
 
 next:                                             ; preds = %store
@@ -4367,8 +4370,8 @@ define i128 @__modti3(i128 %a, i128 %b) {
 ; refused at compile time; the zero is defence in depth, not the contract.
 ; ---------------------------------------------------------------------------
 
-define { i32, i32 } @npk_open({ ptr, i64 } %path, i64 %flags, i64 %mode) {
-  %pp = extractvalue { ptr, i64 } %path, 0
+define { i32, i32 } @npk_open({ ptr, i64, i64 } %path, i64 %flags, i64 %mode) {
+  %pp = extractvalue { ptr, i64, i64 } %path, 0
   %ppi = ptrtoint ptr %pp to i64
   ; openat(AT_FDCWD = -100, path, flags, mode)
   %r = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 %flags, i64 %mode, i64 0, i64 0)
@@ -4478,7 +4481,11 @@ err:
 ; Positive codes are the program's (`fail`), and 0 is ok.
 ; ---------------------------------------------------------------------------
 
-define { { ptr, i64 }, i32 } @npk_to_cstring({ ptr, i64, i64 } %s) {
+; THE RESULT IS AN OWNER (D-328, 1.6.1d step 3b): string-shaped, `cap = len + 1`
+; the block's size, dropped by the string's drop body at the caller's scope
+; exit. It was `{ ptr, len }` with no owner anywhere, and every conversion
+; leaked the block (DEF-122).
+define { { ptr, i64, i64 }, i32 } @npk_to_cstring({ ptr, i64, i64 } %s) {
 entry:
   %p = extractvalue { ptr, i64, i64 } %s, 0
   %n = extractvalue { ptr, i64, i64 } %s, 1
@@ -4506,18 +4513,16 @@ copy:                                     ; preds = %scan
   call ptr @memcpy(ptr %buf, ptr %p, i64 %n)
   %end = getelementptr i8, ptr %buf, i64 %n
   store i8 0, ptr %end
-  %c0 = insertvalue { ptr, i64 } zeroinitializer, ptr %buf, 0
-  %c1 = insertvalue { ptr, i64 } %c0, i64 %n, 1
-  %r0 = insertvalue { { ptr, i64 }, i32 } zeroinitializer, { ptr, i64 } %c1, 0
-  %r1 = insertvalue { { ptr, i64 }, i32 } %r0, i32 0, 1
-  ret { { ptr, i64 }, i32 } %r1
+  %c0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %buf, 0
+  %c1 = insertvalue { ptr, i64, i64 } %c0, i64 %n, 1
+  %c2 = insertvalue { ptr, i64, i64 } %c1, i64 %sz, 2
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %c2, 0
+  %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %r1
 
 interior:                                 ; preds = %check
-  %e0 = insertvalue { ptr, i64 } zeroinitializer, ptr null, 0
-  %e1 = insertvalue { ptr, i64 } %e0, i64 0, 1
-  %q0 = insertvalue { { ptr, i64 }, i32 } zeroinitializer, { ptr, i64 } %e1, 0
-  %q1 = insertvalue { { ptr, i64 }, i32 } %q0, i32 -22, 1
-  ret { { ptr, i64 }, i32 } %q1
+  %q1 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, i32 -22, 1
+  ret { { ptr, i64, i64 }, i32 } %q1
 }
 
 ; Can this path be opened for reading?
@@ -4529,9 +4534,9 @@ interior:                                 ; preds = %check
 ;
 ; It tests READABILITY rather than existence, which is the question actually
 ; being asked: a file that exists and cannot be opened is not a candidate.
-define i8 @npk_path_exists({ ptr, i64 } %path) {
+define i8 @npk_path_exists({ ptr, i64, i64 } %path) {
 entry:
-  %pp = extractvalue { ptr, i64 } %path, 0
+  %pp = extractvalue { ptr, i64, i64 } %path, 0
   %ppi = ptrtoint ptr %pp to i64
   %fd = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 0, i64 0, i64 0, i64 0)
   %bad = icmp slt i64 %fd, 0
@@ -4597,9 +4602,9 @@ no:
   ret i8 0
 }
 
-define { i32 } @npk_write_file({ ptr, i64 } %path, { ptr, i64, i64 } %data) {
+define { i32 } @npk_write_file({ ptr, i64, i64 } %path, { ptr, i64, i64 } %data) {
 entry:
-  %pp = extractvalue { ptr, i64 } %path, 0
+  %pp = extractvalue { ptr, i64, i64 } %path, 0
   %ppi = ptrtoint ptr %pp to i64
   ; openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC, 0644). 577 = 1|64|512.
   %fd = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 577, i64 420, i64 0, i64 0)
@@ -4656,9 +4661,9 @@ closefail:
   ret { i32 } %lr0
 }
 
-define { { ptr, i64, i64 }, i32 } @npk_read_file({ ptr, i64 } %path) {
+define { { ptr, i64, i64 }, i32 } @npk_read_file({ ptr, i64, i64 } %path) {
 entry:
-  %pp = extractvalue { ptr, i64 } %path, 0
+  %pp = extractvalue { ptr, i64, i64 } %path, 0
   %ppi = ptrtoint ptr %pp to i64
   ; openat(AT_FDCWD, path, O_RDONLY, 0). AT_FDCWD is -100.
   %fd = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 0, i64 0, i64 0, i64 0)

@@ -3148,6 +3148,14 @@ reinterpretation of existing bytes, which this is not. This also matches the
 
 ---
 
+*[2026-09-26, 1.6.1d step 3b — a dated note (D-328, DEF-122).]* The type keeps every promise
+above and gains an owner: `cstring` is `{ ptr, len, cap }` from that step, `cap == 0` a body it
+does not own (a literal in `cstring` position — the compile-time form this decision named, live
+now, an interior NUL `NITPICK-TYPE-092` at the literal — or an `argv`/`environ()` element) and
+`cap > 0` the copy `to_cstring` makes, dropped at the caller's scope exit. Every path conversion
+had leaked its block since 0.6 (the library listener's F-007): the result was a view of storage
+nothing owned.
+
 ## D-050 — Line endings are a property of a stream, never of a string — **SETTLED**
 
 A `string` holds the bytes it holds. Whether those bytes contain `\n` or `\r\n`
@@ -21453,6 +21461,22 @@ whose result has no owner" by the TYPE, not by every caller remembering two line
 at 1.6.1d step 3, with an advance notice to the library listener (a language change) and
 the census of `cstring` copies.
 
+*[2026-09-26, 1.6.1d step 3b — the landing note.]* Landed as decided: the type table's layout
+(24 bytes), `type_drops_recorded`, the string's drop body (`cap != 0` frees), the `cap` member,
+move-only under TYPE-046 and no longer a `Copy` member; the six floor symbols take and build the
+trio (`npk_to_cstring` returns `cap = len + 1`, `npk_cstr_slice` builds 24-byte elements at `cap
+0`, `npk_open`/`npk_read_file`/`npk_write_file`/`npk_path_exists` read the first word), the spec's
+`npk_to_cstring` rows carry the third word; the literal in `cstring` position types as a
+`cstring` (TYPE-092 for an interior NUL) and its constant carries the terminator; the prelude's
+`impl:cstring:Clone`; the tools and one conformance test read `argv`'s elements in place; the
+two-floor snapshot refresh (the record in `1.6.1d.md`). The census before it: 127 `to_cstring`
+call sites in the tree (none re-spelled), four binding-to-binding copies of an `argv` element
+(re-spelled), one `cstring` field (a parse-only fixture); the listener's repositories: nitpick-time
+holds fifteen binding-to-binding copies in eight test files (`cstring:e = env[k];` of an
+`environ()` element, `cstring:s = c.value;` of `to_cstring`'s result) that are TYPE-046 from this
+step — named in F20 with their spellings (read in place, `move(c.value)`, `.clone()`) — and nothing
+else of the listener's holds a `cstring` beyond `main`'s parameter.
+
 ## D-329 — A range value keeps its spelling: `range<T>` is `{ lo, hi, inclusive }`, D-145's half-open normalisation amended — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-110, DEF-128)**
 
 **The history.** D-145 (0.9.6) normalised every range value half-open at construction — the
@@ -21544,6 +21568,11 @@ ownership under the send's `move`).
 with 1.6.1d step 3b (DEF-122), where the shape changes; nothing in the tree sends one today,
 so the alternative — keeping the refusal — cost nothing either, and one rule for the two
 string kinds is D-328's own principle.
+
+*[2026-09-26, 1.6.1d step 3b — the landing note.]* Landed with D-328: `chan_elem_verdict_recorded`
+and the emitter's element belt read a `cstring` as a `string` (`CHAN_ELEM_OK`), and
+`type_contains_borrow_recorded` no longer names it a borrow. `cstring_owner.npk` moves one into a
+struct and into a consuming parameter; nothing in the tree sends one yet.
 
 ## D-334 — the scope's join relays the EARLIEST-SPAWNED child's error: "first" in D-163's exception is spawn order — **SETTLED (user decision, 2026-09-26: "I am fine with the s-115 thing. go with what we have unless there is a compelling case not to do so."; S-115, DEF-146)**
 
