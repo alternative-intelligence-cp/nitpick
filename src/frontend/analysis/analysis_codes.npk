@@ -138,6 +138,25 @@ pub func:BORROW_CONFLICT = string() never fails { pass "NITPICK-BORROW-013"; };
 // greppable, never silent).
 pub func:BORROW_CLAIM_POSITION = string() never fails { pass "NITPICK-BORROW-014"; };
 
+// --- D-325 (1.6.1 step 0): a view's root is frozen while the view is live -------
+//
+// A VIEW -- a view-maker's result (`string_bytes`, `string_from_bytes`), a range
+// view (`l[lo...hi]`), or the result of a call that received `@root`, `$$ root`
+// or a view of it and can carry a pointer (the callee may have viewed through
+// what it was handed, D-004 rule A) -- held by a binding is a SHARED PARTY on
+// its root from the binding's declaration to the end of the block that declares
+// it, and for its call when it is a call's argument: every write-capable access
+// of the root (an assignment into it or any part of it, `@root` or `$$m root`
+// handed on, a pointer-receiver call, a stateful operation, a `move` out of it,
+// a second range view) refuses here, because a write that frees or rewrites the
+// viewed bytes leaves the view reading freed memory -- measured at 1.6.0 step 5b
+// and here on c970483 in five shapes, every one a use-after-free in safe code
+// (DEF-107). Reads and `$$i` stay. The fix is in the sentence: end the view's
+// block before writing its root, or make the view a copy (`.clone()`,
+// `string_concat("", …)`). Statically disjoint paths are nothing; a computed
+// pair refuses (a view's extent has no run-time guard).
+pub func:BORROW_VIEW_ROOT = string() never fails { pass "NITPICK-BORROW-015"; };
+
 // --- D-010: definite assignment (0.5.2) ---------------------------------------
 //
 // D-010 chose "no implicit default" over poisoning every scalar with `ERR`, on the

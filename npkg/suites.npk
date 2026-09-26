@@ -619,13 +619,16 @@ func:files_of = List<string>(Ctx->:c, List<string>:paths, bool:recursive, string
 // build, else its path). A tool that did not build is one recorded failure,
 // and every stage that needs it skips. Returns "" when there is no tool.
 async func:tool_for = string(Ctx->:c, string:which) {
-    string:have = "";
-    if (raw text_eq(which, "parse_check"))   { have = string_from_bytes(c.parse_check.ptr, c.parse_check.len); }
-    if (raw text_eq(which, "resolve_check")) { have = string_from_bytes(c.resolve_check.ptr, c.resolve_check.len); }
-    if (raw text_eq(which, "check"))         { have = string_from_bytes(c.check.ptr, c.check.len); }
-    if (have.len > 0i64) {
-        if (raw text_eq(have, "!")) { pass ""; }
-        pass (raw text_copy(have));
+    // THE VIEW'S BLOCK ENDS BEFORE THE FIELDS ARE WRITTEN BELOW (D-325).
+    {
+        string:have = "";
+        if (raw text_eq(which, "parse_check"))   { have = string_from_bytes(c.parse_check.ptr, c.parse_check.len); }
+        if (raw text_eq(which, "resolve_check")) { have = string_from_bytes(c.resolve_check.ptr, c.resolve_check.len); }
+        if (raw text_eq(which, "check"))         { have = string_from_bytes(c.check.ptr, c.check.len); }
+        if (have.len > 0i64) {
+            if (raw text_eq(have, "!")) { pass ""; }
+            pass (raw text_copy(have));
+        }
     }
     string:src = raw in_root(c, string_concat(string_concat("tools/", which), ".npk"));
     Result<Step>:st = await build_tool(c, src, which);
@@ -1496,7 +1499,7 @@ func:read_cost_unit = CostRead(string:text) never fails {
     if (raw text_eq(string_from_bytes(u.kind.ptr, u.kind.len), "probe"))  { known = true; }
     if (raw text_eq(string_from_bytes(u.kind.ptr, u.kind.len), "self"))   { known = true; }
     if (!known) { pass (raw cost_refuse("`kind` must be one of recipe, probe, self")); }
-    string:kind = string_from_bytes(u.kind.ptr, u.kind.len);
+    string:kind = raw text_copy(string_from_bytes(u.kind.ptr, u.kind.len));   // a copy: `u` is moved out below while `kind` lives (D-325)
     int64:ne = raw toml_entry_count(d);
     for (int64:i in 0i64...ne) {
         string:key = string_from_bytes(d.entries[i].key.ptr, d.entries[i].key.len);

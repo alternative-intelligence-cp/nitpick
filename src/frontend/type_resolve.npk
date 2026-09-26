@@ -824,13 +824,17 @@ func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
     int32:i = 0i32;
     while ((i => int64) < e.names.count) decreases e.names.count - (i => int64) {
         if (e.names[i => int64] == name) {
-            // Deep-viewed (D-183): the env owns the text; the caller's copy views.
+            // AN OWNED COPY, NOT A VIEW (DEF-110, 1.6.1 step 0; found by D-325's
+            // analysis on this file): the env owns the text, and `foldenv_set`
+            // DROPS the entry it overwrites -- so a view handed out here and
+            // stored back (`s = raw id(s)` in a `comptime` body: the argument is
+            // read out as a view, passed through, and set over the entry that
+            // owned its bytes) read freed memory at the next read of `s`. A
+            // copy per variable read is the price; the folder is not hot.
             ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
                                     type_id: e.vals[i => int64].type_id,
                                     num: e.vals[i => int64].num,
-                                    text: string_from_bytes(
-                                        e.vals[i => int64].text.ptr,
-                                        e.vals[i => int64].text.len) };
+                                    text: string_concat("", e.vals[i => int64].text) };
             pass cv;
         }
         i = i + 1i32;

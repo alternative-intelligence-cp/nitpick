@@ -214,7 +214,28 @@ func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[8]:arr)
 > write-capable access under `$$m`, a write-capable access under `$$i`, a
 > claim on storage a held `@` reaches, a write through a shared claim's
 > holder, a call's arguments among themselves: a STATIC conflict is
-> `NITPICK-BORROW-013` naming the claim, its site and its lifetime. A
+> `NITPICK-BORROW-013` naming the claim, its site and its lifetime. THE VIEW
+> PARTIES (D-325, 1.6.1 step 0): a view of a binding is a shared party on its
+> root — held by the binding that holds the view from its declaration to the
+> end of the block that declares it, or live for the call a view expression
+> is an argument of — and a write-capable access of the viewed storage while
+> it lives is `NITPICK-BORROW-015`, with no runtime guard for a computed pair
+> (a view's extent has no compare; the pair refuses). What a binding views is
+> the ESCAPE analysis's provenance, computed at its fixpoint: per binding, and
+> per pointer parameter's pointee, the (root, place, kind, path) references its
+> initialiser and every assignment carry — a view-maker's or a range view's
+> operand directly, a call result through the callee's SUMMARY: per function,
+> the (parameter, field path) views its result may hold, the parameters whose
+> value it carries, the views and values its body may STORE into each pointer
+> parameter's pointee, and the paths it WRITES below each. A call with no
+> recorded declaration (a `dyn` method, a function value) is read with every
+> bit set; a builtin method intercept views nothing; a bare builtin's aliasing
+> is the reference's `Views` column. The path is what makes `r.interns.v[…].ptr`
+> viewed by a folder's result disjoint from `r.fold_counting` written after,
+> and the mutation summary what makes `@r` handed to a callee that writes
+> nothing through it conflict with no view of `r`. The prelude `List`'s
+> `count`, `cap` and `items` are its header: disjoint from a body view through
+> an element's `ptr`, overlapping a slice of its storage. A
 > COMPUTED conflict is a RUNTIME GUARD in every build (D-068's shape): at
 > the access the emitter compares the storage it names and every party's
 > as BYTE RANGES — `p < q+size_q && q < p+size_p` on `ptr` operands, exact

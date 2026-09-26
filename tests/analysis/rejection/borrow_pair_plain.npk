@@ -1,4 +1,7 @@
 // expect-error: NITPICK-BORROW-001
+// expect-error-at: 45:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 60:10
 //
 // THE COUNTERWEIGHT to `tests/accept/borrow_pair_wild.npk` (D-223): the same
 // shape, one word different, and it must still refuse.
@@ -6,12 +9,23 @@
 // Two borrows of locals passed together, then one of them copied out in a
 // returned struct. In the accept case every pointer slot the destinations
 // carry is `wild`, so BORROW-011 already forbids a borrow reaching one and
-// nothing is a destination. Here `Box`'s slot is PLAIN, so `touch` can store
+// nothing is a destination. Here `Box`'s slot is PLAIN, so a callee can store
 // `@b`'s interior — or `@b` itself — into it, and `Pair{ b: b, … }` copies it
 // out of the frame.
 //
 // This is what stops the D-223 repair from being a blanket relaxation: the
 // difference between the two files is `wild`, and it decides the verdict.
+//
+// SINCE D-325 (1.6.1 step 0) the verdict has two readings, and this file
+// carries both. (1) A callee the analysis CANNOT SEE — here a function value —
+// is read by the shape rule as it always was: every destination that could
+// hold the borrow is marked, and the `wild`/plain word decides. (2) A callee it
+// CAN see is read by its own body (the store matrix): an empty `touch` stores
+// nothing and connects nothing, so the accept twin's shape now passes for that
+// reason too, and the refusal here needs a body that launders the borrow —
+// `wire` returns the address of a field of one parameter's pointee, which
+// `touch` stores into the other's (the direct store `bp.p = @op.k` is refused
+// inside `touch` as BORROW-002, so the return is the one laundry left).
 
 mod:borrow_pair_plain;
 struct:Box  = { int32->:p; int32:n; };
@@ -21,10 +35,27 @@ func:touch = NIL(Box->:bp, Pair->:op) never fails {
     pass NIL;
 };
 
+// (1) an UNKNOWN callee: the shape rule, the plain slot the destination.
 func:make = Pair() never fails {
     Box:b = Box{ p: NULL, n: 1i32 };
     Pair:tmp = Pair{ b: b, k: 0i32 };
-    drop touch(@b, @tmp);
+    func NIL(Box->, Pair->) never fails:f = touch;
+    drop f(@b, @tmp);
+    Pair:out = Pair{ b: b, k: 7i32 };
+    pass out;
+};
+
+// (2) a KNOWN callee whose body launders a borrow of one parameter's pointee
+// into the other's through a returned pointer: the matrix says so.
+func:wire = int32->(Pair->:y) never fails { pass @y.k; };
+func:touch_wired = NIL(Box->:bp, Pair->:op) never fails {
+    bp.p = raw wire(op);
+    pass NIL;
+};
+func:make_wired = Pair() never fails {
+    Box:b = Box{ p: NULL, n: 1i32 };
+    Pair:tmp = Pair{ b: b, k: 0i32 };
+    drop touch_wired(@b, @tmp);
     Pair:out = Pair{ b: b, k: 7i32 };
     pass out;
 };

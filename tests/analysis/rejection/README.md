@@ -36,6 +36,7 @@ Silence has no stage.
 | `REACH-002` | D-286 (1.5.5 step 2) — a guard site arms `BorrowOverlap`, which `failsafe` must name | `reach_alias.npk` |
 | `REACH-002` | D-306 (1.5.8 step 1) — a float's `=>!` cast to an integer arms `CastRange`, which `failsafe` must name | `reach_cast_range.npk` |
 | `BORROW-014` | D-286 (1.5.5 step 1) — a claim where the analysis cannot follow it: a literal, a `pass` value, a nested expression, a non-local assignment target, an argument of a pointer-carrying call (rule A), a copy of a holder | `aliasing.npk` |
+| `BORROW-015` | D-325 (1.6.1 step 0) — a write-capable access of storage a live VIEW names: the root reassigned, `@d` handed to a callee that writes through it, `$$m d`, a `List` pushed while a range view of it lives, a view through a call that views its pointee, a view moved through a call, a view assigned into an outer local inside a loop, a field written while another field views it, a view pushed into a `List` | `view_freeze.npk`, with `BORROW-002` (a view of the storage a store overwrites), `BORROW-001` (a by-value parameter's address returned, DEF-109) and `BORROW-012` (a temporary handed to a callee that views it) |
 | `BORROW-003` | D-004 rule 4 — nor cross an `extern` call | `borrows.npk`, `path_shapes.npk` |
 | `BORROW-007` | the derivation walk ran out of fuel | `too_deep.npk` |
 | `BORROW-009` | a borrow reaches a binding the analysis cannot follow — a `for` binding, when the iterated element type can carry a pointer (a range's integers or a `uint8[]`'s bytes cannot, whatever the bound's operands hold; 1.5.1b step 2) | `borrows.npk` |
@@ -43,6 +44,8 @@ Silence has no stage.
 | `BORROW-011` | D-223 — a borrow entering a `wild` slot | `wild_store.npk` |
 | `BORROW-012` | D-249 — a view of a temporary (1.5.1b step 2) | `view_escape.npk` |
 | `BORROW-001`, `BORROW-002` | D-249 — a view (`string_bytes`, `string_from_bytes`, `arr[lo...hi]`) returned, held in a literal, or stored through a pointer parameter, as `@` of its operand (1.5.1b step 2; the workbench's DEF-3 contrast set) | `view_escape.npk` |
+| `BORROW-001`, `BORROW-002` | D-223 read in the closed direction for a `dyn` holder and a type parameter (DEF-113), a by-value parameter that holds (DEF-114), a lent `dyn`'s cell (DEF-115), and a trait's method as the union of its impls (1.6.1 step 0): a `dyn` local written by its impl and returned, a bound call in a generic body, a trait method with a default body, a lent `dyn` written with a local's address, a `move dyn` and a `move` struct written through a method and returned | `dyn_dest.npk` |
+| `BORROW-001` | D-223's counterweight, read both ways since D-325: an UNKNOWN callee (a function value) by the shape rule, where the plain slot decides; a KNOWN callee by its body, which launders a borrow of one parameter's pointee into the other's through a returned pointer | `borrow_pair_plain.npk` |
 | `ASSIGN-001` | D-010 — read before written | `definite_assignment.npk`, ten forms |
 | `ASSIGN-002` | `fixed` / `const` assigned twice | `definite_assignment.npk` |
 | `ASSIGN-003` | the walk ran out of depth | `too_deep.npk` |

@@ -1,0 +1,113 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 47:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 60:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 76:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 84:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 93:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 104:10
+//
+// A `dyn` HOLDER, A TYPE PARAMETER, AND A TRAIT'S OWN METHOD AS THE CALLEE are
+// each read in the CLOSED direction by rule B (D-223's "failing closed on
+// generics and unknowns", made true at 1.6.1 step 0):
+//
+//   - DEF-113: a `dyn` owns a cell holding a concrete value whose type is
+//     erased here, so it may hold any pointer -- it is a destination. Before
+//     the fix `can_connect` answered false for a `dyn`, and (1) compiled: the
+//     impl's `put` stored the address of the frame's `k` into the cell and the
+//     cell travelled up with the `dyn` (measured on c970483: the value read
+//     through it after the frame died was neither the local's nor the next
+//     frame's -- a dead address).
+//   - A trait's own method reached through a BOUND in a generic body, or through
+//     a `dyn`, is dispatched elsewhere: the declaration the checker records is
+//     the trait's (a signature with no body, or a default any impl may
+//     override), so D-325's summaries read the call as an UNKNOWN callee --
+//     every bit set -- and the shape rule of D-117/D-223 decides at the caller,
+//     as it always did. (2) and (3) are the two spellings; each compiled for a
+//     day under the summaries' first form, which read the bodiless signature as
+//     a known callee that stores nothing.
+//   - (4): a `dyn` PARAMETER's cell is a destination that outlives the frame, so
+//     a local borrow handed to a method through it refuses at the call.
+
+mod:dyn_dest;
+struct:Box  = { int32->:p; int32:n; };
+struct:Pair = { Box:b; int32:k; };
+trait:Sink = { func:put = NIL(Self->:self, int32->:v) never fails; };
+impl:Box:Sink = { func:put = NIL(Self->:self, int32->:v) never fails { self.p = v; pass NIL; }; };
+
+// (1) DEF-113: the dyn's cell holds a borrow of `k`, and the dyn is returned.
+func:make_dyn = dyn Sink() never fails {
+    int32:k = 7i32;
+    dyn Sink:d = Box{ p: NULL, n: 1i32 };
+    drop d.put(@k);
+    pass move(d);
+};
+
+// (2) a bound call in a generic body: `put` is the trait's, the impl is Box's.
+func:touch<T: Sink> = NIL(T->:bp, Pair->:op) never fails {
+    drop bp.put(@op.k);
+    pass NIL;
+};
+func:make_bound = Pair() never fails {
+    Box:b = Box{ p: NULL, n: 1i32 };
+    Pair:tmp = Pair{ b: b, k: 0i32 };
+    drop touch::<Box>(@b, @tmp);
+    Pair:out = Pair{ b: b, k: 7i32 };
+    pass out;
+};
+
+// (3) the same through a trait method that HAS a default body (an impl may
+// override it: Box's does).
+trait:Sink2 = { func:put2 = NIL(Self->:self, int32->:v) never fails { pass NIL; }; };
+impl:Box:Sink2 = { func:put2 = NIL(Self->:self, int32->:v) never fails { self.p = v; pass NIL; }; };
+func:touch2<T: Sink2> = NIL(T->:bp, Pair->:op) never fails {
+    drop bp.put2(@op.k);
+    pass NIL;
+};
+func:make_default = Pair() never fails {
+    Box:b = Box{ p: NULL, n: 1i32 };
+    Pair:tmp = Pair{ b: b, k: 0i32 };
+    drop touch2::<Box>(@b, @tmp);
+    Pair:out = Pair{ b: b, k: 7i32 };
+    pass out;
+};
+
+// (4) a LENT `dyn` parameter's cell is the caller's: a destination that
+// outlives this frame (the one owning-by-cell kind a loan may write, through
+// its methods -- TYPE-085's `dyn` exemption).
+func:fill = NIL(dyn Sink:dp) never fails {
+    int32:k = 1i32;
+    drop dp.put(@k);
+    pass NIL;
+};
+
+// (5) a `move dyn` parameter is this frame's: its cell may hold the borrow,
+// and the dyn then cannot travel up.
+func:fill_move = dyn Sink(move dyn Sink:d) never fails {
+    int32:k = 1i32;
+    drop d.put(@k);
+    pass move(d);
+};
+
+// (6) the same for a `move` struct written through a pointer-receiver method
+// (the direct store `b.p = @k` has been BORROW-002 since 0.5.1; the method
+// call reached the parameter through the matrix and nothing marked it).
+struct:Stash = { int32->:p; string:s; };
+impl:Stash = { func:set = NIL(Self->:self, int32->:v) never fails { self.p = v; pass NIL; }; };
+func:keep = Stash(move Stash:b) never fails {
+    int32:k = 1i32;
+    drop b.set(@k);
+    pass move(b);
+};
+
+// CONTROLS, each carrying no code: a dyn call with no borrow among its
+// arguments, a bound call whose argument is a copy, a `move dyn` that holds
+// a borrow and is DROPPED here, and a lent `dyn` written with the caller's
+// own pointer.
+func:copy_in = NIL(dyn Sink:dp, int32->:v) never fails { drop dp.put(v); pass NIL; };
+func:plain_bound<T: Sink> = NIL(T->:bp, int32->:v) never fails { drop bp.put(v); pass NIL; };
+func:fill_drop = NIL(move dyn Sink:d) never fails { int32:k = 1i32; drop d.put(@k); pass NIL; };

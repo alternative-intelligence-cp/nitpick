@@ -205,6 +205,40 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   argument of, or the scope of the pointer local holding it); a static
   overlap is refused (`NITPICK-BORROW-013`), a computed-index overlap is
   guarded at run time (`BorrowOverlap`) and proven away by the verified build.
+  **A view's root is frozen while the view is live** (D-325, 1.6.1 step 0): a
+  view of a binding — a view-maker's result (`string_bytes`, `string_from_bytes`),
+  a range view (`l[lo...hi]`), the result of a call whose own body views what
+  it was handed (`@d`, or a `string` passed by value), a view moved through a
+  call or pushed into a `List` — is a shared party on its root from the holder's
+  declaration to the end of its block, or for its call when it is a call's
+  argument, and every write-capable access of what it views refuses
+  (`NITPICK-BORROW-015`): an assignment into it, `@root`/`$$m root` handed to a
+  callee that writes through it, a pointer-receiver call, a `move` out of it,
+  `list_push` on the viewed list. Reads, `$$i`, a disjoint field, a disjoint
+  numeral range, a callee that writes nothing through what it is handed, and a
+  pointer root's own reassignment stay. A struct field viewing another field of
+  its own struct freezes that field; a view of the very storage a store
+  overwrites refuses at the store (`NITPICK-BORROW-002`). End the view's block
+  before writing its root, or make the view a copy (`.clone()`,
+  `string_concat("", …)`).
+  A by-value parameter's frame storage — its address, an inline array's range —
+  cannot travel up (`NITPICK-BORROW-001`, DEF-109, 1.6.1 step 0: it is the callee's
+  own slot), while a view of the heap bytes a `string`, `List` or slice parameter
+  references may, and the caller's freeze then holds the argument; a temporary
+  handed to a callee that views what it is given is a view of a temporary
+  (`NITPICK-BORROW-012`).
+  **What a call stores is read off the callee's own body** (D-325's summaries):
+  a callee the analysis can see connects only what it stores — a direct call, a
+  method, a trait's method as the UNION of every impl's body (and its default's),
+  which is what a `dyn` may hold or a bound may name — while a callee it cannot
+  see (a function value) is read by D-223's shape rule, every destination that
+  could hold the borrow. A `dyn` holder and a bare type parameter are read in the
+  closed direction (DEF-113, 1.6.1 step 0): either may hold any pointer. A
+  BY-VALUE parameter that a call stores a borrow of this frame's storage into —
+  a `move`, a `move dyn`, a copyable struct — HOLDS it from that call (DEF-114)
+  and cannot travel up; a LENT `dyn`'s cell is the caller's (the one owning-by-cell
+  kind a loan may write, through its methods), so a borrow stored into it refuses
+  at the call (`NITPICK-BORROW-002`, DEF-115).
   A plain by-value parameter of an OWNING type is a loan and is read-only (D-004,
   D-266; `NITPICK-TYPE-085`, 1.6.0 step 3g): no assignment to it or into it, no
   `@`/`$$i`/`$$m`, no pointer-receiver call, no stateful operation — a callee that

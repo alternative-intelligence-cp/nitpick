@@ -15561,6 +15561,16 @@ analysis in between, and the no-deferral rule bars the "separately".
 
 ---
 
+*[2026-09-26, 1.6.1 step 0 — a dated note (D-325's landing).]* Rule B's
+"the caller assumes the connection was made" is, for a callee the analysis has a
+declaration for, replaced by what that callee's own body stores (its STORE
+MATRIX, computed at the escape fixpoint: the views and the values, addresses
+included, it stores into each pointer parameter's pointee, through a direct
+store, a store through a pointer local it holds, a call it hands the parameter
+on to, or a pointer-receiver call); the shape rule stays for a `dyn` method or a
+function value. The `wild`-field exclusion stays for hand-written wild slots;
+the prelude `List` is a destination for what its element type is (DEF-112).
+
 ## D-224 — `exit` means process exit in every body, async included — **SETTLED (user decision, 2026-08-30)**
 
 Raised by 1.4.7 step 1. Routing the diagnostic renderers through `dyn Writer`
@@ -20880,3 +20890,167 @@ written while the view is live and a view meant to outlive a mutation is a copy.
 use-after-free reachable in safe code; the floor of this language is memory safety of Rust's
 kind and more, and a rule the compiler can decide is never left to the reader (D-004's premise,
 D-249's and D-266's precedent).
+
+*[2026-09-26, 1.6.1 step 0 — LANDED.]* How it was built, and what the measurement
+changed, in the order the work found it:
+
+- **The home is the aliasing walk** (`src/frontend/analysis/alias.npk`), not the
+  typer's write-path helper the plan named: D-286's parties already live there with
+  lexical lifetimes, per-block frames, the `defer` rule and every write-capable
+  access classified, and the plan's mark on the typer's frozen list would have
+  missed the shape that matters — a view assigned into an OUTER local inside a
+  loop, whose root is written earlier in the body and reached again on the next
+  trip. A VIEW is a fourth party kind (`PARTY_VIEW`, the shared claim's row of the
+  conflict table: readers and `$$i` fine, every write-capable access refused),
+  held by the binding that holds the view from its DECLARATION to the end of the
+  block that declares it — D-286's rule for a claim assigned later — or live for
+  the call a view expression is an argument of. One code, `NITPICK-BORROW-015`
+  (the plan and the advance discussion said `TYPE-087`; the home decided the
+  family). A range view's own creation is a read for the view parties (a second
+  view beside a view frees nothing) and stays write-capable against the claims.
+- **What a binding views is the escape analysis's, at its fixpoint**: per
+  declaring statement, and per pointer PARAMETER's pointee, a chain of
+  (root, place, kind, path) references — DIRECT (a view-maker's or a range view's
+  operand), LAUNDERED (through a call), and the inert PASS and ADDR kinds — from
+  `collect_view_refs`, the set-valued twin of `borrows_all_rooted_at`'s walk,
+  recorded at the initialiser and at every assignment into the binding and grown
+  with the marks. A PATH is the interned text of the steps below the place
+  (`f<name>`, `i<n>`, `x`, `r<lo>:<hi>`, `R`), decoded by the aliasing walk into
+  the steps its overlap rule already reads, so a view of `r.interns.v[…].ptr` is
+  disjoint from a write of `r.fold_counting`.
+- **Provenance through calls, measured against D-004 rule A's shape.** The first
+  build froze the roots of every `@x` handed to a call whose result can carry a
+  pointer — rule A read as a freeze — and refused 235 sites of the compiler's own
+  source, every one a constructor keeping the ADDRESS (`escape_init(@ast, …)`);
+  the library listener's O-N27 (registered at this step, OPEN_DECISIONS §4) is the
+  same shape as a false reject. So every function carries a SUMMARY, grown to the
+  same fixpoint: VIEW entries (k, path) — the result may view the bytes at `path`
+  below parameter k's value; a PASS bit per k — the result carries k's value or
+  address; a STORE MATRIX per pointer parameter j — the views and values the body
+  may store into j's pointee, by an assignment into it, a call handing it on, a
+  pointer-receiver call on it; and a MUTATION summary per pointer parameter k — the
+  paths the body writes below k's pointee. A call with no recorded function
+  declaration (a `dyn` method, a function value) is read with every bit set; a
+  builtin METHOD intercept (`c.re()`, `s.eq(t)`, `.clone()`) reads its receiver by
+  value and views nothing; a bare builtin's aliasing is the reference's `Views`
+  column alone. `@r` handed to `fold_gave_up`, which writes nothing through it,
+  conflicts with no view of `r`; handed to `fold_const`, which writes
+  `r.fold_counting`, only with a view of that. With the matrix and the paths the
+  compiler's own source refused at ZERO sites; the shape-based `holds` marking of
+  rule A is UNCHANGED (O-N27's false reject stands, and the same summaries could
+  refine it — S-107, the user's).
+- **DEF-109, found by the first probe.** D-004's parameter exemption — "a
+  parameter's target outlives the frame by construction" — is a fact about POINTER
+  parameters: `pass @x` of an `int32:x` compiled (the address of a dead frame
+  slot), and a view of a lent `string:x`'s bytes travelled up unseen by the caller,
+  which passed no `@` for rule A to mark. Now a by-value parameter's FRAME storage
+  (its address, an inline array's range) cannot travel up (`BORROW-001`) and is this
+  frame's for rule B; a view of the HEAP bytes it references (`string_from_bytes
+  (x.ptr, n)`, `string_bytes(x)`, a range view of a `List`, a string or a slice)
+  may, under the summary's VIEW entry, and the caller's freeze then holds the
+  argument — the compiler's own `lexer_init(file, string:text)` returning a Lexer
+  over `text`'s bytes is that shape; a TEMPORARY handed to such a callee is a view
+  of a temporary (`BORROW-012`).
+- **A view stored into a struct.** A store of a view of the very storage it
+  overwrites (`d.text = string_from_bytes(d.text.ptr, n)`) refuses at the store
+  (`BORROW-002`: the old body is freed by that write); a view of ANOTHER part is
+  held by the struct at that part's path — a party on the holder, a local's or a
+  pointer parameter's pointee — so the later write to the viewed field refuses,
+  through a pointer parameter and in one frame alike (the self-wiring D-004
+  admits for a POINTER held at a field, which lives as long as the struct, is not
+  the case of a view of a field's heap body). A view pushed into a `List` reaches
+  the list through `list_push`'s matrix: the prelude `List` is a destination for a
+  view of its element type, and its `count`, `cap` and `items` are its header —
+  disjoint from a body view through an element's `ptr` (interning more strings
+  frees none the earlier views name), overlapping a slice of its storage (a
+  reallocation frees it).
+- **Rule B for a KNOWN callee is the matrix's** (a dated note on D-117 and D-223
+  says so): a view OR AN ADDRESS of this frame's storage that a callee's own body
+  stores into what a pointer parameter points at, or into a pointer binding whose
+  target cannot be named, refuses at the call (`BORROW-002`, `BORROW-009`); stored
+  into a local, the local holds a borrow (rules 2 and 3 guard it) and the refs.
+  The matrix reads a plain `@place` value as an ADDRESS ref (inert for the freeze
+  -- D-286's plain party -- and the summaries' business), and attributes a store
+  through a pointer LOCAL to whatever that local may point at (its own refs). The
+  shape-based rule B of D-117 -- every destination that COULD hold the borrow --
+  is the reading for a callee the analysis cannot see (a `dyn` method, a function
+  value) alone. What made this necessary: making the prelude `List` a destination
+  (it never was, D-223's `wild`-field exclusion — DEF-112: `list_push(@ps, @x)`
+  then `pass ps` carried the address of a dead frame out, measured on c970483)
+  under the shape rule refused four sites of the runner's floor tools where the
+  callee reads (`floor_fn_index(ft, sym)`), and the matrix knows it reads.
+- **Found on the way.** DEF-112: a `List`'s storage was invisible to rule B (its
+  `items` is `wild`, and D-223 excluded wild slots because BORROW-011 refuses a
+  borrow entering one — but the prelude's push stores a `T` it cannot see as a
+  borrow), so an address or a view pushed into a list escaped the frame with the
+  list; the matrix and `can_connect`'s List arm close it. DEF-110: the constant folder's environment handed out a
+  "deep-viewed" copy of a text it later overwrote (`foldenv_get` viewed,
+  `foldenv_set` dropped the entry it replaced) — latent, since no folded text is
+  owned today; an owned copy now. DEF-111: rule B's `can_connect` resolved struct
+  field types by name through the scope chain on every query — 88% of the checker's
+  instructions over a medium module once the views asked it at every
+  pointer-receiver call, and the escape pass's hidden cost before — memoised per
+  type pair: the checker over `src/npkc.npk` 27.3 s → 9.8 s.
+- **A trait's method is the union of its impls** (found by the sweep, before
+  the landing). The sweep's one baseline change was D-223's counterweight
+  (`borrow_pair_plain.npk`): its `touch` has an empty body, so the matrix
+  connected nothing where the shape rule had refused — the intended reading —
+  and the probes that measured the shapes it stands for found a bound method
+  call in a generic body and a `dyn` dispatch read as a KNOWN callee with the
+  TRAIT's bodiless declaration as its body. Read as unknown instead, every bound
+  `write` of the prelude's writers refused. So a trait method's summary is the
+  UNION of every impl's that implements it and of its own default's
+  (`override_of` from the impl table, `merge_summary` after each impl method's
+  walk, the fixpoint carrying it) — the reach analysis's reading of the same
+  question (DEF-86), sound by the closed world and exact for the prelude: no
+  impl of `Writer.write` stores what it is handed. A path composed through a
+  cycle of callees (`TextWriter<W>.write` → `text_write_str` → `tw_write_all(@
+  (tw.inner))` → `Writer.write` ∋ `TextWriter<W>.write`) grew a step per round
+  and the analysis never settled; a composed path is cut to eight steps
+  (`PATH_MAX_STEPS`), a broader place, the closed direction for every reader.
+  The counterweight now carries both readings of D-223's verdict: an unknown
+  callee (a function value) by the shape rule, where the plain slot decides,
+  and a known callee by its body, laundering a borrow of one parameter's
+  pointee into the other's through a returned pointer.
+- **Three more, found by the same probes** (OPEN_DECISIONS §4): DEF-113 — a
+  `dyn` holder was never a destination (`can_connect` fell to `false` for it:
+  `d.put(@k)` on a `dyn Sink:d` whose impl stores its argument, then
+  `pass move(d)`, compiled on c970483 and the returned cell held a dead frame's
+  address, exit 3 through it); a `dyn` and a bare type parameter are read in
+  the closed direction now, D-223's own words. DEF-114 — a by-value parameter
+  could not HOLD a borrow (the `holds` table is keyed by a local's declaring
+  statement), so `b.set(@k); pass move(b);` over a `move Stash:b` compiled
+  where the direct store `b.p = @k` had been BORROW-002 since 0.5.1; `pholds`,
+  keyed by declaration, marks one from the call that stores into it. DEF-115 —
+  a LENT `dyn` parameter's cell is the caller's, and `fill(dyn Sink:dp) { dp.put
+  (@k); }` compiled, the caller's dyn then holding a dead address (exit 2
+  through it); the store refuses at the call (`BORROW-002`) where a `move dyn`
+  holds (DEF-114). `tests/analysis/rejection/dyn_dest.npk` pins the six shapes.
+- **The manifest**: `npkg verify --record` at this tree; the gate over the
+  shared rows moved no verdict. Three (symbol, kind) pairs read as fallen and
+  are MOVES, not regressions: `can_connect`'s and `type_reachable_in`'s
+  `overflow`/`terminate` rows moved with their bodies to `can_connect_walk` and
+  `type_reachable_in_walk` (the memo wrappers keep the names; every discharged
+  row is discharged under the new symbol, one more than before), and
+  `foldenv_get`'s one discharged `bounds` row was the `string_from_bytes` length
+  guard DEF-110's copy removed with the call. `cc_probe`'s first spelling sent
+  one row to the bit-vector budget (a mask over an opaque field); the mask is
+  the numeral 65535 and the row decides.
+- **The measurement** (the tree and the library listener's three repositories,
+  swept with the rule built and diffed per file and per code against the same
+  sweep on `c970483`'s checker): 1,030 files — the tree's 799 (`src/npkc.npk`,
+  `npkg/main.npk`, every `lib/`, `tools/` and test file) and the listener's 231
+  — and not one site moved outside the three new tests and the rewritten
+  counterweight: no new code in `src/`, `npkg/`, `lib/`, `tools/`, the tests or
+  the listener's repositories (their exposure is zero), no trap, no timeout.
+  Before the summaries the same rule refused sites of the compiler's own code
+  where a callee only READS through the pointer it is handed (the runner's
+  floor tools, the driver, the diagnostic writer) — the matrix is what made
+  the rule land at zero.
+- **Tests**: `tests/analysis/rejection/view_freeze.npk` (seventeen sites: thirteen
+  `BORROW-015`, one `BORROW-002`, two `BORROW-001`, one `BORROW-012`, and seven
+  controls that carry no code), `tests/analysis/rejection/dyn_dest.npk` (six
+  sites: five `BORROW-001`, one `BORROW-002`, four controls),
+  `tests/analysis/rejection/borrow_pair_plain.npk` (D-223's counterweight, both
+  readings) and `tests/backend/programs/view_freeze_ok.npk` (the corrected
+  twins, exit 0 on both legs).

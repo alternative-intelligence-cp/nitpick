@@ -242,6 +242,34 @@ the builtin surface is typed from a signature table.
 | ~~**S-105**~~ **SETTLED as D-324.** | **The stage's scope and cadence.** Every real-backend program's plain emission and the compiler's plain emission (7 s at the gate) on every full run; the two gate programs' whole-program forms in the gate's runner as the executor-wall measurement; the compiler's whole form at 1.6.3's measured cadence. | As stated: a run's cost is not a reason to hesitate (the user's standing view), and the whole form's cadence is decided by measurement at 1.6.3 as the README row says. |
 | ~~**S-106**~~ **SETTLED as D-325.** | **DEF-107: is a view's root FROZEN while the view is live?** The recap: D-249 (1.5.1b, S-22) made a view-maker's result a borrow for the escape analysis — a view cannot leave its frame — after the workbench returned one and read the free poison; D-286 (1.5.5, S-60…S-62) decided the aliasing half of D-004 as LEXICAL claims (`$$m` excludes, `$$i` shares, `@` claims nothing, non-lexical lifetimes and two-phase borrows OUT) and its conflict table names claims and held `@`s, never a view; D-266 (1.5.2h, S-41) froze a lending `pick`'s SELECTOR while an arm's view is live (TYPE-067) because the same hazard was found there. A view-maker's view (`string_from_bytes`, `string_bytes`) and a range view (`l[lo...hi]`, `s[lo...hi]`) have the escape rule and no freeze: a write to the root — an assignment, `@root` handed to a callee, a `$$m`, a pointer-receiver call, a stateful operation — while the view is live compiles, and the view then reads rewritten or freed memory (measured, six lines, both legs). | **Recommendation:** freeze the view's root for the view's LEXICAL lifetime — from the view local's declaration to the end of its block, exactly D-286's shape for a held claim and D-266's for a pick arm — refusing every write-capable access to the root in that span with one code (the view is a borrow; the rule is D-286's table with the view as a third party), measured on the tree first (the sites where a view of a binding is followed by a write to it in the same block are expected to be few, and each is a real hazard). The alternative — the programmer's contract, documented — leaves a use-after-free reachable in safe code, which the floor forbids. A plan step of 1.6.1's size, its own subcycle if the measurement says so; the listener writes its views as copies until it lands. |
 
+## 2e-quinquies. A question 1.6.1 step 0 raised — S-107, the library listener's O-N27 (registered 2026-09-26; a design input, not a defect)
+
+The listener's text, verbatim (nitpick-libs_s6, 2026-09-26; their `meta/OPEN_QUESTIONS.md`, `RECORD.md`, `BOARD.md`):
+"A low-priority design input for S-106 (DEF-107), registered here as O-N27. It is not a soundness defect: the
+borrow tracker taints a call's RESULT by SIGNATURE, so it refuses a correct program. From nitpick-libs_s6. Three
+of our agents met this independently: nitpick-regex's triage at 3d15ac9, and nitpick-time's 0.1.4b planner and
+worker at c3bdae2. Reproduced here at c3bdae2: struct:Box = { string:s; }; func:make = string(Box->:b) never
+fails { pass string_concat("small", "!"); }; // cannot alias b — wrap(): Box:b = …; pass raw make(@b); ->
+NITPICK-BORROW-001 "a borrow cannot travel up" (D-004 rule 2) — wrap(): Box:b = …; string:r = raw make(@b);
+pass r; -> BORROW-001, the same — CONTROLS: the box as a PARAMETER of the returning frame (`wrap_p(Box->:b) {
+pass raw make(b); }`) compiles and runs 0; the same string built inline in the owning frame compiles and runs
+0. So any `f(Container->) -> string` that BUILDS its result, rather than borrowing it, cannot be returned from
+the frame that owns the container, whatever its body does. It is sound, because it accepts nothing unsafe, but
+it costs a whole class of constructor. Our libraries meet it at nitpick-time's cycle 0.4 (a formatter's `pass
+raw bytes_take(@sink)` wrapper, refused even with a copying take) and at nitpick-regex's cycle 0.6 (replacement
+text). WHY NOW: DEF-107 and this are the two faces of the same thing, D-249's view rule keyed on a call's SHAPE
+rather than on the value's PROVENANCE. DEF-107 is a false accept (a view outlives its root's mutation). This is
+a false reject (an owned copy treated as a view). Regex's triage recommended fixing them as one idea back on
+2026-09-06: track where a result came from, not what the signature could allow. If S-106's freeze is decided
+with provenance in view, it may settle both. If only one can be had, DEF-107 first: a false accept is a
+use-after-free, a false reject an inconvenience. Nothing of ours waits on it today. The working shapes (build
+and consume in one frame, or take the container as a parameter and return one level up) are what our code
+already does."
+
+| Question | Where it stands | Recommendation |
+|---|---|---|
+| **S-107 — should D-004 rule A's `holds` marking read the callee's summary instead of the call's shape?** The recap: D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$` argument when the result can carry a pointer (rule A, "`launder` closed"), a SHAPE rule because the escape analysis never looked into callees; D-249 (1.5.1b) extended it to views; 1.6.1 step 0 built, for the freeze (D-325), exactly the provenance the listener asked for — per-function summaries at the escape fixpoint: what a result may VIEW (with field paths), what it CARRIES (a pass bit), what a body STORES through each pointer parameter, what it WRITES — and used them for the view parties only, leaving rule A's marking as it was. So `string:r = raw make(@b)` with `make` returning an owned copy is refused at `pass r` today (BORROW-001) while the summaries know `make` views nothing of `b`. | The mechanism exists and is measured; the marking's refinement is a RELAXATION of an accepted refusal (fewer programs refused; nothing unsafe admitted, since a summary's absence — a `dyn` method, a function value — keeps rule A's shape), which changes what the language accepts and so is the user's to ratify, with a D-004 dated note. | **Recommendation: refine rule A's marking by the summaries** — a call's result holds a borrow of `x` when the callee's summary says it may VIEW or CARRY `x` (its value or address), or when the callee is unknown; the tree's and the listener's exposure measured before landing (a relaxation needs no advance notice, D-239's rule is for refusals added). One idea settles both faces, as the listener said. A step of 1.6.1's size, after step 0's harness. |
+
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
 Raised 2026-09-03 by the `nitpick-libs` orchestrator (`nitpick-time` cycle
@@ -2304,8 +2332,9 @@ defect declares a `DEF-` in §2f.
 > `tests/types/rejection/fixed_write.npk` holds the seven shapes and the read/clone control. A REFUSAL ADDED,
 > announced in advance (NOTICES F11).
 
-> **DEF-107 — OPEN, registered at 1.6.0 step 5b (2026-09-25); a language question, S-106 below. A VIEW'S ROOT
-> MAY BE WRITTEN WHILE THE VIEW IS LIVE, AND THE VIEW THEN READS FREED MEMORY — in safe code, on both legs.**
+> **DEF-107 — FIXED at 1.6.1 step 0 (2026-09-26; D-325, `NITPICK-BORROW-015`). Registered at 1.6.0 step 5b as a
+> language question (S-106). A VIEW'S ROOT MAY BE WRITTEN WHILE THE VIEW IS LIVE, AND THE VIEW THEN READS FREED
+> MEMORY — in safe code, on both legs.**
 > Raised by the library listener (`nitpick-libs_s6`, nitpick-time's 0.1.4b planning) as a question, not a
 > claim: their `bytes_take(Bytes->:b)` returned `string_from_bytes(b.body.ptr, b.len)` — a view of the sink,
 > typed `string` — and the caller's `string:s = raw bytes_take(@d); drop bytes_clear(@d); drop
@@ -2323,7 +2352,18 @@ defect declares a `DEF-` in §2f.
 > reachable without `wild` or `=>!`, the class the language's floor excludes. Not a defect of the listener's
 > library (its fix is right) and not of 1.6.0; owned by the user through S-106.
 > **SETTLED 2026-09-26 as D-325: the freeze of a view's root for the view's lexical lifetime, measured on the tree
-> first and landed as 1.6.1 step 0 with an advance notice naming its code.**
+> first and landed as 1.6.1 step 0 with an advance notice naming its code.** THE FIX, AS LANDED (D-325's landing
+> note has the design): the six lines were ONE of five reachable faces, each measured reading the free poison on
+> c970483 — the direct view; a view of a POINTEE returned through `@d` (the listener's own case); a view of a
+> by-value parameter's bytes returned up one frame (the compiler's lexer idiom); a view local moved through a
+> pass-through call; a range view of a `List` then a push; and three more found probing — a field viewing another
+> field of its own struct (in one frame and through a pointer parameter), a view stored through a pointer-receiver
+> method, a view pushed into a `List`. A view is a PARTY of the aliasing walk (D-286's table, the shared row), held
+> by its binding from the declaration to the block's end; what a binding views is the escape analysis's
+> provenance through calls — per-function summaries grown to its fixpoint (view entries with field paths, a
+> pass bit, a store matrix, a mutation summary) in place of D-004 rule A's shape, which refused 235 sites of the
+> compiler's own source when read as a freeze. Tests `tests/analysis/rejection/view_freeze.npk` and
+> `tests/backend/programs/view_freeze_ok.npk`. A REFUSAL ADDED, announced in advance (NOTICES F13).
 
 > **DEF-108 — FIXED at 1.6.0 step 5c (2026-09-26). A FUNCTION THAT FALLS OFF ITS END COMPILED AND RETURNED A ZERO
 > VALUE; A FALLIBLE ONE RETURNED A SILENT SUCCESS; `main` EXITED 0 WITHOUT `exit`.** Found by the library listener's
@@ -2338,6 +2378,103 @@ defect declares a `DEF-` in §2f.
 > missing path, a `NIL` function without `pass NIL`, a fallible function with a missing path — exactly {FLOW-001},
 > four sites; the controls — both arms leaving, every pick arm leaving, an infinite loop with no `break`, a trap,
 > `pass NIL` — carry no code). A REFUSAL ADDED, announced in advance (NOTICES F12).
+
+> **DEF-109 — FIXED at 1.6.1 step 0 (2026-09-26). A BORROW OF A BY-VALUE PARAMETER'S STORAGE TRAVELLED UP ONE
+> FRAME.** Found by D-325's first probe. D-004's exemption for a parameter-rooted borrow — "a parameter's target
+> outlives the frame by construction" (0.8.1, `root_is_param`) — is a fact about POINTER parameters; a by-value
+> parameter is the callee's copy in the callee's entry slot. Measured on c970483: `func:addr = int32->(int32:x)
+> never fails { pass @x; }` compiled (the address of a dead frame slot, read back by luck), and `func:take2 =
+> string(string:x) never fails { pass string_from_bytes(x.ptr, 5i64); }` handed the caller a view of its own `d`'s
+> bytes that the caller — which passed no `@` for rule A to mark — then freed by reassigning `d`: exit 12, both
+> legs. THE FIX: a by-value parameter's FRAME storage (its address, an inline array's range, a view of an inline
+> part) cannot travel up (`BORROW-001`) and is this frame's for rule B; a view of the HEAP bytes it references
+> (`string_from_bytes(x.ptr, n)`, `string_bytes(x)`, a range view of a `List`, a string or a slice) may, under the
+> callee's summary VIEW entry, and the caller's freeze (D-325) then holds the argument -- the compiler's own
+> `lexer_init(file, string:text)` returning a `Lexer` over `text`'s bytes is that shape and stays; a TEMPORARY
+> handed to such a callee is a view of a temporary (`BORROW-012`). The tree held one site of the address shape
+> (none) and the lexer idiom; `tests/analysis/rejection/view_freeze.npk` (11) and (12) pin it.
+
+> **DEF-110 — FIXED at 1.6.1 step 0 (2026-09-26). THE CONSTANT FOLDER'S ENVIRONMENT HANDED OUT A VIEW OF A TEXT IT
+> LATER OVERWROTE.** Found by D-325's analysis on `src/frontend/type_resolve.npk`: `foldenv_get` built a
+> "deep-viewed" `ConstVal` whose `text` viewed the environment's own entry (D-183's comment: "the env owns the
+> text; the caller's copy views"), and `foldenv_set` DROPS the entry it overwrites — so a value read out as a view
+> and set back over the entry that owned its bytes (`s = raw id(move(s))` in a `comptime` body) would read freed
+> memory at the next read. LATENT: no folded text is owned today (every string constant is a view of the interner,
+> `string_concat` does not fold), so the drop frees nothing and the probe could not be written; the code's own
+> claim was false and the analysis was right to refuse it. `foldenv_get` hands out an owned copy now (a copy per
+> variable read; the folder is not hot).
+
+> **DEF-112 — FIXED at 1.6.1 step 0 (2026-09-26). AN ADDRESS OR A VIEW PUSHED INTO A `List` ESCAPED THE FRAME
+> WITH THE LIST.** Found by D-325's probes: `list_push(@ps, @x); pass ps;` with `int32:x` a local compiled on
+> c970483 (the caller read 42 by luck of the stack), and a view pushed the same way (`string_from_bytes(d.ptr,
+> n)`) escaped too. The `List`'s `items` is `wild`, and D-223 excluded wild slots from rule B's destinations
+> because BORROW-011 refuses a borrow entering one -- true of a hand-written wild container, false of the prelude's
+> push, which stores a `T` it cannot see as a borrow. THE FIX: `list_push`'s own store matrix (D-325's) names the
+> value flowing into the list, so the list holds the borrow and cannot travel up (`BORROW-001`); and for the shape
+> rule that remains for unknown callees, `can_connect` reads a `List<T>` as a destination for what a `T` slot holds.
+> `tests/analysis/rejection/view_freeze.npk` (13) pins the address shape, its (9) and `p9b` the view shape.
+
+> **DEF-111 — FIXED at 1.6.1 step 0 (2026-09-26). RULE B'S CONNECTION PREDICATE RE-RESOLVED STRUCT FIELD TYPES BY
+> NAME ON EVERY QUERY.** Found by measuring the freeze's cost (the rule of 1.5.2d): the checker over
+> `src/npkc.npk` went 27.3 s → 89.8 s with the view parties, and `callgrind` over a medium module put 88% of the
+> instructions in `can_connect` → `struct_field` → `resolve_named` → `scope_lookup_local` — D-223's
+> derivation-aware destination test walks a struct's fields and resolves each field's declared type through the
+> scope chain, and answers a question of two TYPES that never changes; the views asked it at every
+> pointer-receiver call and every `move(w)` argument, which multiplied a cost the escape pass had carried since
+> D-223. Memoised per (kind, holder, src) in an open-addressing table on the analysis (an answer reached by
+> exhausting the fuel is not kept): the checker over `src/npkc.npk` 27.3 s → 9.8 s — faster than before the
+> freeze by 2.8×, the rule B cost having been the escape pass's hidden majority all along.
+
+> **DEF-113 — FIXED at 1.6.1 step 0 (2026-09-26). A `dyn` HOLDER WAS NEVER A DESTINATION FOR A BORROW.** Found by
+> the probes the D-223 counterweight prompted (below, DEF-114): rule B's `can_connect` fell to its final `false` for
+> a `dyn` -- a cell holding a concrete value whose type is erased -- so `d.put(@k)` on a `dyn Sink:d` whose impl
+> stores its argument, then `pass move(d)`, compiled on c970483, and the returned cell held the address of a dead
+> frame's `k`: measured, a program reading through it after the frame died exited 3 (neither the local's 7 nor
+> the next frame's 99). A `dyn` and a bare type parameter are read in the CLOSED direction now (D-223's own
+> words for generics and unknowns): `can_connect` and `type_reachable_in` answer true for either, a `dyn` passed
+> BY VALUE is a destination (its cell, the one caller-owned storage a loan may write, through its methods --
+> TYPE-085's exemption), and `escape_connect` marks the binding under it. `tests/analysis/rejection/dyn_dest.npk`
+> (1) pins it; `(4)` its lent-parameter face (DEF-115).
+
+> **DEF-114 — FIXED at 1.6.1 step 0 (2026-09-26). A BY-VALUE PARAMETER COULD NOT HOLD A BORROW, SO ONE STORED
+> INTO IT THROUGH A CALL TRAVELLED UP WITH IT.** The escape analysis's `holds` table is keyed by a local's
+> declaring STATEMENT; a parameter is a declaration, and nothing could mark one. The direct store `b.p = @k` into
+> a `move Stash:b` has been BORROW-002 since 0.5.1 (rule 3 sees the store), but the same through a
+> pointer-receiver method -- `b.set(@k); pass move(b);` with `set` storing `v` into `self.p` -- reached the
+> parameter through the call and marked nothing, in the shape rule's day (the receiver is no pointer argument,
+> so `arg_can_hold_one` answered false) and in the matrix's (the destination's root was a parameter the marker
+> skipped): compiled on c970483, the caller's copy pointing into the dead frame (measured: the slot still read 7
+> by luck of the stack, as DEF-112's did 42). A by-value parameter -- a `move`, a copyable struct, a `move dyn` --
+> is this frame's storage (DEF-109) and HOLDS from the call that stores into it (`pholds`, keyed by declaration;
+> `escape_binding` and `ident_holds` read it, `escape_mark_place` and the matrix's marker write it), so rules 2
+> and 3 guard it as they guard a local. `dyn_dest.npk` (5) and (6); a `move dyn` that holds and is DROPPED here
+> is the control that carries no code.
+
+> **DEF-115 — FIXED at 1.6.1 step 0 (2026-09-26). A LENT `dyn` PARAMETER'S CELL -- THE CALLER'S -- RECEIVED A
+> BORROW OF THE CALLEE'S LOCAL.** `fill(dyn Sink:dp) { int32:k; dp.put(@k); }` compiled on c970483, and the
+> caller's `dyn` then held a dead address (measured: reading through it after `fill` returned answered the next
+> frame's bytes -- exit 2). A plain by-value parameter of an owning type is a LOAN (D-004, TYPE-085), and a `dyn`
+> is the one owning-by-cell kind whose loan may be WRITTEN, through its methods (TYPE-085's exemption: the call
+> passes the caller's object), so the cell is a destination that outlives the frame exactly as a pointer
+> parameter's pointee is: the matrix's marker refuses the store (`BORROW-002`, naming the lent cell) where a
+> `move dyn` parameter, this frame's own, holds (DEF-114). `dyn_dest.npk` (4).
+
+> **THE SUMMARY OF A TRAIT'S METHOD IS THE UNION OF ITS IMPLS' (1.6.1 step 0; not a numbered defect: the
+> summaries never shipped).** The counterweight `tests/analysis/rejection/borrow_pair_plain.npk` stopped refusing
+> under the first form of D-325's summaries, and the probes that measured why found a bound method call in a
+> generic body (`touch<T: Sink>(T->:bp, Pair->:op) { bp.put(@op.k); }`) and a `dyn` dispatch read as a KNOWN
+> callee whose body stores nothing -- the checker records the TRAIT's declaration (a signature with no body, or
+> a default any impl may override) as the callee, and its slots were empty. Read as an UNKNOWN callee (every bit
+> set), every bound `write` of the prelude's writers refused (a view of a local beside `self.inner`, a `W->`). The
+> reading that is both sound and exact is the reach analysis's (DEF-86): the trait method's summary is the UNION
+> of every impl's that implements it (`override_of` from the impl table, `merge_summary` after each impl method's
+> walk, the fixpoint carrying it) and of its own default body's -- so `Writer.write`, none of whose impls stores
+> what it is handed, connects nothing, and `Sink.put`, whose one impl stores `v` into `self.p`, connects `@op.k`
+> to `*bp`. Found on the way: a summary composed through a CYCLE of callees grew a path step per round without
+> a bound (`TextWriter<W>.write` → `text_write_str` → `tw_write_all(@(tw.inner))` → `Writer.write` ∋
+> `TextWriter<W>.write`: `inner`, `inner/inner`, …) and the analysis never settled (BORROW-010 on the prelude);
+> a composed path is cut to its first `PATH_MAX_STEPS` (8) steps, a broader place -- the closed direction for
+> every reader. `dyn_dest.npk` (2) and (3); `borrow_pair_plain.npk` carries both readings of D-223's verdict.
 
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/done/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >

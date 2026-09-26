@@ -96,6 +96,11 @@ pub func:ALIAS_DEPTH = int32() never fails { pass 256i32; };
 pub func:PARTY_PLAIN = int32() never fails     { pass 0i32; };
 pub func:PARTY_SHARED = int32() never fails    { pass 1i32; };
 pub func:PARTY_EXCLUSIVE = int32() never fails { pass 2i32; };
+// A VIEW (D-325, 1.6.1 step 0): a shared party the language makes for the author
+// -- readers fine, every write-capable access of the root refused (BORROW-015)
+// -- held by the binding that holds the view for its whole scope, or live for
+// the call a view expression is an argument of.
+pub func:PARTY_VIEW = int32() never fails      { pass 3i32; };
 pub func:ACC_READ = int32() never fails        { pass 0i32; };
 pub func:ACC_WRITE = int32() never fails       { pass 1i32; };
 pub func:ACC_SHARED = int32() never fails      { pass 2i32; };
@@ -107,10 +112,14 @@ pub func:OV_STATIC = int32() never fails   { pass 1i32; };
 pub func:OV_COMPUTED = int32() never fails { pass 2i32; };
 
 pub struct:Party = {
-    ExprId:site;       // the `$$i`/`$$m`/`@` expression
+    ExprId:site;       // the `$$i`/`$$m`/`@` expression, or the view expression
     int32:kind;        // PARTY_*
     int32:root;        // the root symbol
     int32:holder;      // the holder's symbol, or 0 for a call-duration party
+    ExprId:place;      // the claimed or viewed PLACE (the operand of a claim; a view's viewed place)
+    int32:view_kind;   // a VIEW party's provenance (VIEW_DIRECT / VIEW_LAUNDERED), 0 otherwise
+    bool:root_ptr;     // the root is a POINTER binding: its own reassignment leaves the viewed pointee alone
+    int32:path;        // a VIEW party's steps BELOW its place, the escape analysis's interned path (0: none)
 };
 
 pub struct:Alias = {
@@ -121,6 +130,7 @@ pub struct:Alias = {
     InternTable->:it;
     DiagList->:diags;
     TypeResolver->:tr;
+    Escape->:esc;              // the view references a binding holds (D-325), computed at the escape fixpoint
     int32:scope;               // the module scope the function is folded in
     List<Party>:live;          // the live parties, a stack
     List<int64>:frames;        // the block marks into `live`
@@ -130,30 +140,49 @@ pub struct:Alias = {
     // may be shadowed, so the origin decides): built once from the table.
     wild int32->:stmt_sym;
     int32:stmt_count;
+    // THE SYMBOL A DECLARATION MADE (a parameter), by declaration index.
+    wild int32->:decl_sym;
+    int32:decl_count;
 };
 
 pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                             ExprTypes->:etypes, InternTable->:it, DiagList->:diags,
-                            TypeResolver->:tr) never fails {
+                            TypeResolver->:tr, Escape->:esc) never fails {
     int32:sc = raw ast_stmt_count(ast);
     if (sc < 1i32) { sc = 1i32; }
     wild int8->:mem = alloc((sc => int64) * #size_of<int32>());
     wild int32->:map = mem =>! wild int32->;
     for (int64:i in 0i64...(sc => int64)) { map[i] = 0i32; }
+    int32:dc = raw ast_decl_count(ast);
+    if (dc < 1i32) { dc = 1i32; }
+    wild int8->:dmem = alloc((dc => int64) * #size_of<int32>());
+    wild int32->:dmap = dmem =>! wild int32->;
+    for (int64:di in 0i64...(dc => int64)) { dmap[di] = 0i32; }
     int32:n = raw symtab_count(tab);
     for (int32:si in 1i32...n) {
         Symbol:s = raw symtab_get(tab, si);
         if (s.origin_kind == (raw SYM_STMT())) {
             if ((s.origin >= 0i32) && (s.origin < sc)) { map[s.origin => int64] = si; }
         }
+        if (s.origin_kind == (raw SYM_DECL())) {
+            if ((s.origin >= 0i32) && (s.origin < dc)) { dmap[s.origin => int64] = si; }
+        }
     }
     pass Alias{ ast: ast, tab: tab, types: types, etypes: etypes, it: it, diags: diags, tr: tr,
+                esc: esc,
                 scope: 0i32,
                 live: raw list_init::<Party>(16i64),
                 frames: raw list_init::<int64>(16i64),
                 pre: raw list_init::<Party>(16i64),
                 call_marks: raw list_init::<int64>(8i64),
-                stmt_sym: map, stmt_count: sc };
+                stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc };
+};
+
+// The symbol a declaration (a parameter) made, or 0.
+func:decl_symbol_of = int32(Alias->:x, int32:decl) never fails {
+    if (decl < 0i32) { pass 0i32; }
+    if (decl >= x.decl_count) { pass 0i32; }
+    pass x.decl_sym[decl => int64];
 };
 
 func:alias_err = NIL(Alias->:x, move string:code, move string:msg, Span:sp) never fails {
@@ -211,6 +240,26 @@ func:alias_fn = NIL(Alias->:x, DeclNode:d, StmtId:body) never fails {
     drop list_clear(@x.pre);
     drop list_clear(@x.call_marks);
     drop prescan_stmt(x, body, raw ALIAS_DEPTH());
+    // A PARAMETER'S POINTEE MAY HOLD VIEWS (D-325): a struct field viewing
+    // another field, wired through this pointer here or by a caller -- the
+    // parties are the parameter's, live for the whole body.
+    int32:npar = raw fn_param_count(x.ast, d);
+    for (int32:pi in 0i32...npar) {
+        DeclId:pdid = raw fn_param(x.ast, d, pi);
+        int32:psym = raw decl_symbol_of(x, pdid.index);
+        if (psym == 0i32) { continue; }
+        int32:e = raw escape_param_view_ref_first(x.esc, pdid.index);
+        while (e >= 0i32) decreases e + 1i32 {
+            ViewRef:vr = raw escape_view_ref(x.esc, e);
+            e = raw escape_view_ref_next(x.esc, e);
+            if (vr.root == 0i32) { continue; }
+            if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
+            ExprId:place = ExprId{ index: vr.place };
+            drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_VIEW(), root: vr.root, holder: psym,
+                                          place: place, view_kind: vr.kind, root_ptr: raw root_ident_is_pointer(x, place),
+                                          path: vr.path });
+        }
+    }
     // A parameter holder's scope is the function: its parties are live at entry.
     for (int64:i in 0i64...x.pre.count) {
         Party:pp = x.pre[i];
@@ -236,11 +285,12 @@ func:prescan_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
     int32:dd = depth - 1i32;
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         ExprId:init = raw stmt_decl_init(x.ast, s);
+        int32:hsym = raw decl_symbol(x, id, raw stmt_name(s));
         int32:pk = raw party_kind_of(x, init);
         if (pk >= 0i32) {
-            int32:hsym = raw decl_symbol(x, id, raw stmt_name(s));
             drop prescan_party(x, init, pk, hsym);
         }
+        drop prescan_view_parties(x, id, hsym);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
@@ -304,8 +354,53 @@ func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never
     ExprNode:n = raw ast_expr(x.ast, site);
     int32:root = raw place_root_symbol(x, raw expr_operand(n));
     if (root == 0i32) { pass NIL; }   // no named root: BORROW-014 at the walk
-    drop list_push(@x.pre, Party{ site: site, kind: kind, root: root, holder: holder });
+    drop list_push(@x.pre, Party{ site: site, kind: kind, root: root, holder: holder,
+                                  place: raw expr_operand(n), view_kind: 0i32, root_ptr: false, path: 0i32 });
     pass NIL;
+};
+
+// THE VIEW PARTIES A DECLARED BINDING HOLDS (D-325): one per view reference the
+// escape fixpoint recorded on the declaring statement -- from its initialiser
+// and from every assignment into it, so the party is live from the DECLARATION
+// as a claim assigned later is. A POINTER binding holds addresses, D-286's plain
+// party, and freezes nothing.
+func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails {
+    if (holder == 0i32) { pass NIL; }
+    if (raw escape_holder_is_pointer(x.esc, sid.index)) { pass NIL; }
+    int32:i = raw escape_view_ref_first(x.esc, sid.index);
+    while (i >= 0i32) decreases i + 1i32 {
+        ViewRef:vr = raw escape_view_ref(x.esc, i);
+        i = raw escape_view_ref_next(x.esc, i);
+        if (vr.root == 0i32) { continue; }
+        // ONLY A VIEW IS A PARTY: a carried parameter value or an address the
+        // result kept (D-286's plain party) freezes nothing.
+        if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
+        ExprId:place = ExprId{ index: vr.place };
+        drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_VIEW(), root: vr.root, holder: holder,
+                                      place: place, view_kind: vr.kind, root_ptr: raw root_ident_is_pointer(x, place),
+                                      path: vr.path });
+    }
+    pass NIL;
+};
+
+// Is the identifier at a place's root (through views) a pointer binding?
+func:root_ident_is_pointer = bool(Alias->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass false; }
+        if (raw expr_is_none(r.id)) { pass false; }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+        if (rn.a == 0i32) { pass false; }
+        if (!(raw sym_is_view(x.tab, x.ast, rn.a))) {
+            int32:t = raw exprtypes_get(x.etypes, r.id);
+            if (t == 0i32) { pass false; }
+            pass ((raw type_kind(x.types, t)) == (raw TY_POINTER()));
+        }
+        cur = ExprId{ index: (raw symtab_get(x.tab, rn.a)).link };
+    }
+    pass false;
 };
 
 // The symbol a var-decl statement declared, from the map built at init.
@@ -356,8 +451,9 @@ pub struct:Step = {
     int32:kind;      // 0 field, 1 index, 2 range
     int32:name;
     ExprId:index;
-    bool:numeral;
-    int64:value;
+    bool:numeral;    // an index the folder knows; a range whose BOTH bounds it knows
+    int64:value;     // the index; a range's first element
+    int64:hi;        // a range's one-past-the-last element (exclusive, whichever spelling)
 };
 
 // The steps of a place, root-outward, through views. False when the walk
@@ -369,7 +465,7 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
         if (raw expr_is_none(cur)) { pass false; }
         ExprNode:n = raw ast_expr(x.ast, cur);
         if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
-            drop list_push(@rev, Step{ kind: 0i32, name: (raw expr_name(n)) =>! int32, index: raw expr_none(), numeral: false, value: 0i64 });
+            drop list_push(@rev, Step{ kind: 0i32, name: (raw expr_name(n)) =>! int32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
             cur = raw expr_operand(n);
             continue;
         }
@@ -377,11 +473,20 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
             ExprId:ix = raw expr_rhs(n);
             ExprNode:ixn = raw ast_expr(x.ast, ix);
             if (ixn.kind == ExprKind.ExprRangeExpr) {
-                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: ix, numeral: false, value: 0i64 });
+                // A RANGE WITH BOTH BOUNDS KNOWN is an interval the overlap
+                // question can decide (1.6.1 step 0, for the view parties):
+                // `..` includes its last element, `...` excludes it
+                // (LEXICAL_REFERENCE §5.1; the node's payload says which).
+                ConstVal:lo = raw fold_const(x.tr, raw expr_lhs(ixn), x.scope);
+                ConstVal:hi = raw fold_const(x.tr, raw expr_rhs(ixn), x.scope);
+                bool:rnum = ((lo.kind == (raw CV_INT())) && (hi.kind == (raw CV_INT())));
+                int64:hiv = hi.num;
+                if (rnum) { if (ixn.payload != 0i64) { hiv = hi.num + 1i64; } }
+                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: ix, numeral: rnum, value: lo.num, hi: hiv });
             } else {
                 ConstVal:cv = raw fold_const(x.tr, ix, x.scope);
                 bool:num = (cv.kind == (raw CV_INT()));
-                drop list_push(@rev, Step{ kind: 1i32, name: 0i32, index: ix, numeral: num, value: cv.num });
+                drop list_push(@rev, Step{ kind: 1i32, name: 0i32, index: ix, numeral: num, value: cv.num, hi: 0i64 });
             }
             cur = raw expr_lhs(n);
             continue;
@@ -394,7 +499,7 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
             // a part of the selector nobody can name here, so it overlaps every
             // part of it (conservative).
             if (raw sym_is_view(x.tab, x.ast, n.a)) {
-                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64 });
+                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
                 cur = ExprId{ index: (raw symtab_get(x.tab, n.a)).link };
                 continue;
             }
@@ -432,12 +537,147 @@ func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
             computed = true;
             continue;
         }
-        // A range view against anything at this position, or a field against
-        // an index (which typing does not admit): the extent overlaps.
+        // TWO RANGES, OR A RANGE AND AN INDEX, BOTH KNOWN: intervals decide
+        // (1.6.1 step 0). `l[0...2]` against `l[3]` or `l[2...4]` is disjoint;
+        // a bound the folder does not know keeps the conservative answer
+        // below -- the extent overlaps -- never a guard site, since a view's
+        // extent has no run-time compare.
+        if ((sa.kind == 2i32) && (sb.kind == 2i32)) {
+            if (sa.numeral && sb.numeral) {
+                if ((sa.hi <= sb.value) || (sb.hi <= sa.value)) { pass (raw OV_DISJOINT()); }
+            }
+            continue;
+        }
+        if ((sa.kind == 2i32) && (sb.kind == 1i32)) {
+            if (sa.numeral && sb.numeral) {
+                if ((sb.value < sa.value) || (sb.value >= sa.hi)) { pass (raw OV_DISJOINT()); }
+            }
+            continue;
+        }
+        if ((sa.kind == 1i32) && (sb.kind == 2i32)) {
+            if (sa.numeral && sb.numeral) {
+                if ((sa.value < sb.value) || (sa.value >= sb.hi)) { pass (raw OV_DISJOINT()); }
+            }
+            continue;
+        }
+        // A FIELD AGAINST AN INDEX OR A RANGE at one position: only the prelude's
+        // `List` admits both, and its `count` and `cap` are its header, not an
+        // element -- disjoint from every element access. Its `items` is the
+        // buffer the elements live in: a write to it (a reallocation) frees a
+        // slice's storage (`l[lo...hi]`) and overlaps it, and moves an
+        // element's HEADER without touching the heap body behind its `ptr` --
+        // a view of that body (`l[i].ptr` and below) is disjoint from it
+        // (D-325, 1.6.1 step 0: interning more strings does not free the
+        // earlier ones a view names). Any other field against an element:
+        // the extent overlaps, the closed direction.
+        if ((sa.kind == 0i32) && (sb.kind != 0i32)) {
+            if (raw header_field_disjoint(x, sa.name, b, i + 1i64, sb.kind)) { pass (raw OV_DISJOINT()); }
+            continue;
+        }
+        if ((sb.kind == 0i32) && (sa.kind != 0i32)) {
+            if (raw header_field_disjoint(x, sb.name, a, i + 1i64, sa.kind)) { pass (raw OV_DISJOINT()); }
+            continue;
+        }
         continue;
     }
     if (computed) { pass (raw OV_COMPUTED()); }
     pass (raw OV_STATIC());
+};
+
+// A PATH DECODED (D-325): the escape analysis's interned text of steps below a
+// place -- `f<name>`, `i<n>`, `x`, `r<lo>:<hi>`, `R`, `/`-separated -- appended
+// as `Step`s to a list. A token this reader does not know is an opaque range
+// (overlaps everything at its position: the closed direction).
+func:decode_path = NIL(Alias->:x, int32:path, List<Step>->:out) never fails {
+    if (path == 0i32) { pass NIL; }
+    string:t = raw intern_get(x.it, path);
+    uint8[]:b = string_bytes(t);
+    int64:i = 0i64;
+    while (i < b.len) decreases b.len - i {
+        int64:j = i;
+        while (j < b.len) decreases b.len - j {
+            if (b[j] == 47u8) { break; }   // '/'
+            j = j + 1i64;
+        }
+        drop decode_step(x, b, i, j, out);
+        i = j + 1i64;
+    }
+    pass NIL;
+};
+
+func:decode_step = NIL(Alias->:x, uint8[]:b, int64:lo, int64:hi, List<Step>->:out) never fails {
+    if (lo >= hi) { pass NIL; }
+    uint8:c = b[lo];
+    if (c == 102u8) {   // 'f'
+        drop list_push(out, Step{ kind: 0i32, name: (raw decode_int(b, lo + 1i64, hi)) =>! int32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+        pass NIL;
+    }
+    if (c == 105u8) {   // 'i'
+        drop list_push(out, Step{ kind: 1i32, name: 0i32, index: raw expr_none(), numeral: true, value: raw decode_int(b, lo + 1i64, hi), hi: 0i64 });
+        pass NIL;
+    }
+    if (c == 120u8) {   // 'x'
+        drop list_push(out, Step{ kind: 1i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+        pass NIL;
+    }
+    if (c == 114u8) {   // 'r' lo:hi
+        int64:colon = lo + 1i64;
+        while (colon < hi) decreases hi - colon {
+            if (b[colon] == 58u8) { break; }
+            colon = colon + 1i64;
+        }
+        if (colon >= hi) {
+            drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+            pass NIL;
+        }
+        drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: true,
+                                  value: raw decode_int(b, lo + 1i64, colon), hi: raw decode_int(b, colon + 1i64, hi) });
+        pass NIL;
+    }
+    drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+    pass NIL;
+};
+
+// A decimal integer (a leading '-' allowed) between two byte offsets.
+func:decode_int = int64(uint8[]:b, int64:lo, int64:hi) never fails {
+    int64:v = 0i64;
+    bool:neg = false;
+    int64:i = lo;
+    if (i < hi) { if (b[i] == 45u8) { neg = true; i = i + 1i64; } }
+    while (i < hi) decreases hi - i {
+        uint8:c = b[i];
+        if ((c < 48u8) || (c > 57u8)) { break; }
+        v = (v * 10i64) + ((c - 48u8) => int64);
+        i = i + 1i64;
+    }
+    if (neg) { pass (0i64 - v); }
+    pass v;
+};
+
+// A PARTY'S STEPS: its place's, then its path's (D-325).
+func:party_steps = bool(Alias->:x, Party:p, List<Step>->:out) never fails {
+    if (!(raw path_steps(x, p.place, out))) { pass false; }
+    drop decode_path(x, p.path, out);
+    pass true;
+};
+
+// Is this field, met against an element step of the other path, one of the
+// `List` header fields the element access leaves alone? `other` is the other
+// path, `next` the position after its element step, `ekind` that step's kind.
+func:header_field_disjoint = bool(Alias->:x, int32:name, List<Step>:other, int64:next, int32:ekind) never fails {
+    string:fname = raw intern_get(x.it, name);
+    if (raw string_eq(fname, "count")) { pass true; }
+    if (raw string_eq(fname, "cap"))   { pass true; }
+    if (raw string_eq(fname, "items")) {
+        // a slice of the elements' storage dies with the buffer; an element's
+        // own heap body (through its `ptr`) does not
+        if (ekind == 2i32) { pass false; }
+        if (next >= other.count) { pass false; }
+        Step:after = other[next];
+        if (after.kind != 0i32) { pass false; }
+        pass (raw string_eq(raw intern_get(x.it, after.name), "ptr"));
+    }
+    pass false;
 };
 
 // The spelling of a place for a diagnostic: `arr[3]`, `a.b[…]`.
@@ -458,7 +698,17 @@ func:render_place = string(Alias->:x, int32:root, List<Step>:steps) never fails 
                 s = string_concat(s, "[…]");
             }
         }
-        if (st.kind == 2i32) { s = string_concat(s, "[…]"); }
+        if (st.kind == 2i32) {
+            if (st.numeral) {
+                s = string_concat(s, "[");
+                s = string_concat(s, int_to_string(st.value));
+                s = string_concat(s, "...");
+                s = string_concat(s, int_to_string(st.hi));
+                s = string_concat(s, "]");
+            } else {
+                s = string_concat(s, "[…]");
+            }
+        }
     }
     pass s;
 };
@@ -467,15 +717,19 @@ func:party_spelling = string(Alias->:x, Party:p) never fails {
     string:pre = "@";
     if (p.kind == (raw PARTY_SHARED())) { pre = "$$i "; }
     if (p.kind == (raw PARTY_EXCLUSIVE())) { pre = "$$m "; }
-    ExprNode:n = raw ast_expr(x.ast, p.site);
+    if (p.kind == (raw PARTY_VIEW())) { pre = ""; }
     List<Step>:ps = raw list_init::<Step>(4i64);
-    if (!(raw path_steps(x, raw expr_operand(n), @ps))) { pass (string_concat(pre, "…")); }
+    if (!(raw party_steps(x, p, @ps))) { pass (string_concat(pre, "…")); }
     pass (string_concat(pre, raw render_place(x, p.root, ps)));
 };
 
 func:party_word = string(Alias->:x, Party:p) never fails {
     if (p.kind == (raw PARTY_SHARED())) { pass "the shared claim"; }
     if (p.kind == (raw PARTY_EXCLUSIVE())) { pass "the exclusive claim"; }
+    if (p.kind == (raw PARTY_VIEW())) {
+        if (p.view_kind == (raw VIEW_LAUNDERED())) { pass "the possible view (through a call that was handed the place, D-004 rule A) of"; }
+        pass "the view of";
+    }
     pass "the plain address held by a binding";
 };
 
@@ -484,7 +738,7 @@ func:party_word = string(Alias->:x, Party:p) never fails {
 // Does an access of this kind conflict with a party of that kind?
 func:conflicts = bool(int32:pkind, int32:akind) never fails {
     if (pkind == (raw PARTY_EXCLUSIVE())) { pass true; }
-    if (pkind == (raw PARTY_SHARED())) {
+    if ((pkind == (raw PARTY_SHARED())) || (pkind == (raw PARTY_VIEW()))) {
         pass ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE())));
     }
     // a plain address: only a claim conflicts
@@ -501,13 +755,34 @@ func:access_word = string(int32:akind) never fails {
 // AN ACCESS OF A PLACE: classified against every live party of the same root.
 // `self_site` excludes the access's own party (a claim argument is live for
 // its call and is not its own conflict).
+pub func:CHECK_ALL = int32() never fails    { pass 0i32; };
+pub func:CHECK_CLAIMS = int32() never fails { pass 1i32; };   // the claims and plain addresses, never a view party
+pub func:CHECK_VIEWS = int32() never fails  { pass 2i32; };   // the view parties alone
+
 func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, Span:at) never fails {
+    drop check_access_ex(x, place, 0i32, akind, self_site, at, raw CHECK_ALL());
+    pass NIL;
+};
+
+// AN ACCESS OF A PLACE, `extra` a path BELOW it (D-325: what a callee writes
+// through what it was handed), `mode` which parties are asked.
+func:check_access_ex = NIL(Alias->:x, ExprId:place, int32:extra, int32:akind, ExprId:self_site, Span:at,
+                           int32:mode) never fails {
+    discard(raw check_access_reported(x, place, extra, akind, self_site, at, mode));
+    pass NIL;
+};
+
+// The same, answering whether a conflict was reported (one mistake, one
+// report: a callee's several written paths stop at the first conflict).
+func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:akind, ExprId:self_site, Span:at,
+                                  int32:mode) never fails {
     int32:root = raw place_root_symbol(x, place);
-    if (root == 0i32) { pass NIL; }
+    if (root == 0i32) { pass false; }
     List<Step>:ap = raw list_init::<Step>(8i64);
-    if (!(raw path_steps(x, place, @ap))) { pass NIL; }
+    if (!(raw path_steps(x, place, @ap))) { pass false; }
+    drop decode_path(x, extra, @ap);
     // A WRITE THROUGH A SHARED CLAIM'S HOLDER: shared means readers.
-    if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
+    if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_VIEWS()))) {
         for (int64:h in 0i64...x.live.count) {
             Party:hp = x.live[h];
             if ((hp.kind == (raw PARTY_SHARED())) && (hp.holder == root)) {
@@ -516,7 +791,7 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
                 m = string_concat(m, raw party_spelling(x, hp));
                 m = string_concat(m, " (a SHARED claim: readers only, D-286) -- claim it `$$m` to write through it");
                 drop alias_err(x, raw BORROW_CONFLICT(), move(m), at);
-                pass NIL;
+                pass true;
             }
         }
     }
@@ -524,10 +799,21 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
         Party:p = x.live[i];
         if (p.root != root) { continue; }
         if (p.site.index == self_site.index) { continue; }
+        if ((mode == (raw CHECK_VIEWS())) && (p.kind != (raw PARTY_VIEW()))) { continue; }
+        if ((mode == (raw CHECK_CLAIMS())) && (p.kind == (raw PARTY_VIEW()))) { continue; }
+        // A PARTY NEVER CONFLICTS WITH THE ACCESS THAT MADE IT: a range view's
+        // own creation is the write-capable access of its base (D-249) and
+        // the view party's site at once.
+        if ((p.place.index == place.index) && (extra == 0i32)) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
-        ExprNode:pn = raw ast_expr(x.ast, p.site);
         List<Step>:pp = raw list_init::<Step>(8i64);
-        if (!(raw path_steps(x, raw expr_operand(pn), @pp))) { continue; }
+        if (!(raw party_steps(x, p, @pp))) { continue; }
+        // A POINTER ROOT'S OWN REASSIGNMENT LEAVES THE VIEWED POINTEE ALONE:
+        // a view through `Box->:b` is of the pointee's bytes, and `b = other`
+        // moves the name, not the storage (the pointee is another owner's;
+        // D-286: the pointee is no named root). A write INTO the pointee --
+        // `b.s = …`, a path below the root -- is the hazard and stays refused.
+        if ((p.kind == (raw PARTY_VIEW())) && p.root_ptr && (ap.count == 0i64)) { continue; }
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
         // A COMPUTED PAIR IS A GUARD SITE (D-286, 1.5.5 step 2): the emitter
@@ -535,10 +821,17 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
         // the encoder records the `disjoint` row the verified build elides.
         // A claim's own site is never a guard site of ITSELF; every party the
         // site meets is recorded, and the site keeps its one guard.
-        if (cls == (raw OV_COMPUTED())) {
+        // A VIEW'S EXTENT HAS NO GUARD (D-325): a computed pair against a view
+        // party refuses statically, the closed direction.
+        if ((cls == (raw OV_COMPUTED())) && (p.kind != (raw PARTY_VIEW()))) {
             drop exprtypes_mark_alias(x.etypes, place.index, p.site.index, p.holder);
             continue;
         }
+        if (p.kind == (raw PARTY_VIEW())) {
+            drop report_view_conflict(x, p, akind, root, ap, cls, at);
+            pass true;
+        }
+        ExprNode:pn = raw ast_expr(x.ast, p.site);
         string:m1 = string_concat(raw access_word(akind), " of `");
         m1 = string_concat(m1, raw render_place(x, root, ap));
         m1 = string_concat(m1, "` conflicts with ");
@@ -558,8 +851,38 @@ func:check_access = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, 
         }
         m1 = string_concat(m1, " (D-286): end the claim's scope with a block, or spell `@` for an address that claims nothing");
         drop alias_err(x, raw BORROW_CONFLICT(), move(m1), at);
-        pass NIL;
+        pass true;
     }
+    pass false;
+};
+
+// A WRITE-CAPABLE ACCESS OF A VIEWED ROOT (D-325, BORROW-015): the message names
+// the access, the view, its holder and lifetime, why it is refused, and the fix.
+func:report_view_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, List<Step>:ap,
+                                int32:cls, Span:at) never fails {
+    ExprNode:pn = raw ast_expr(x.ast, p.site);
+    string:m = string_concat(raw access_word(akind), " of `");
+    m = string_concat(m, raw render_place(x, root, ap));
+    m = string_concat(m, "` conflicts with ");
+    m = string_concat(m, raw party_word(x, p));
+    m = string_concat(m, " `");
+    m = string_concat(m, raw party_spelling(x, p));
+    m = string_concat(m, "` at ");
+    m = string_concat(m, int_to_string(pn.span.line => int64));
+    m = string_concat(m, ":");
+    m = string_concat(m, int_to_string(pn.span.col => int64));
+    if (p.holder != 0i32) {
+        m = string_concat(m, ", held by `");
+        m = string_concat(m, raw intern_get(x.it, (raw symtab_get(x.tab, p.holder)).name));
+        m = string_concat(m, "` until the end of the block that declares it");
+    } else {
+        m = string_concat(m, ", live for the call it is an argument of");
+    }
+    if (cls == (raw OV_COMPUTED())) {
+        m = string_concat(m, " (a computed index: the view's extent has no run-time guard, so the pair refuses)");
+    }
+    m = string_concat(m, " -- a view's root is FROZEN while the view is live (D-325): a write that frees or rewrites the viewed bytes would leave the view reading freed memory. End the view's block before writing its root, or make the view a copy (`.clone()`, `string_concat(\"\", …)`)");
+    drop alias_err(x, raw BORROW_VIEW_ROOT(), move(m), at);
     pass NIL;
 };
 
@@ -754,6 +1077,34 @@ func:admit_value = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never f
     pass NIL;
 };
 
+// A PLAIN ADDRESS ADMITTED AS AN ARGUMENT OF A KNOWN CALLEE (D-325): the claims
+// see the whole place as D-286 says; the view parties see the paths the callee
+// writes below it, each an access of its own.
+func:admit_written = NIL(Alias->:x, ExprId:site, int32:callee, int32:pos) never fails {
+    ExprNode:n = raw ast_expr(x.ast, site);
+    ExprId:place = raw expr_operand(n);
+    drop acc_indices(x, place, raw ALIAS_DEPTH());
+    drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), site, n.span, raw CHECK_CLAIMS());
+    drop check_written(x, place, callee, pos, n.span);
+    pass NIL;
+};
+
+// The view parties against what a callee writes through a place handed to it
+// at position `pos`: nothing when it writes nothing; the whole place when the
+// escape analysis could not read it; each written path otherwise.
+func:check_written = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, Span:at) never fails {
+    int32:e = raw escape_mut_first(x.esc, callee, pos);
+    if (e == (0i32 - 2i32)) {
+        drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), raw expr_none(), at, raw CHECK_VIEWS());
+        pass NIL;
+    }
+    while (e >= 0i32) decreases e + 1i32 {
+        if (raw check_access_reported(x, place, raw escape_mut_path(x.esc, e), raw ACC_WRITE(), raw expr_none(), at, raw CHECK_VIEWS())) { pass NIL; }
+        e = raw escape_mut_next(x.esc, e);
+    }
+    pass NIL;
+};
+
 // A HOLDER IS USED, NOT COPIED (D-286): a value that is a bare identifier
 // holding a live claim, or a literal carrying one, cannot initialise or be
 // assigned to another binding.
@@ -775,7 +1126,10 @@ func:sym_holds_claim = bool(Alias->:x, int32:sym) never fails {
     if (sym == 0i32) { pass false; }
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
-        if ((p.holder == sym) && (p.kind != (raw PARTY_PLAIN()))) { pass true; }
+        if (p.holder != sym) { continue; }
+        // A CLAIM, not a view: a view is a VALUE and is copied and passed
+        // freely (D-325 freezes its root, never its holder's uses).
+        if ((p.kind == (raw PARTY_SHARED())) || (p.kind == (raw PARTY_EXCLUSIVE()))) { pass true; }
     }
     pass false;
 };
@@ -893,7 +1247,16 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
             if (ixn.kind == ExprKind.ExprRangeExpr) {
                 drop acc_expr(x, raw expr_lhs(ixn), raw ACC_READ(), dd);
                 drop acc_expr(x, raw expr_rhs(ixn), raw ACC_READ(), dd);
-                drop acc_place(x, id, raw ACC_WRITE(), raw expr_none(), dd);
+                // ... against the CLAIMS; a second view of storage a view already
+                // covers is a reader beside a reader for the view parties
+                // (D-325): making it frees nothing.
+                if (raw is_place_chain(x, id)) {
+                    drop acc_indices(x, id, dd);
+                    ExprNode:rvn = raw ast_expr(x.ast, id);
+                    drop check_access_ex(x, id, 0i32, raw ACC_WRITE(), raw expr_none(), rvn.span, raw CHECK_CLAIMS());
+                } else {
+                    drop acc_place(x, id, raw ACC_WRITE(), raw expr_none(), dd);
+                }
                 pass NIL;
             }
         }
@@ -1016,7 +1379,13 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
     for (int32:i in 0i32...count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         int32:pk = raw party_kind_of(x, a);
-        if (pk < 0i32) { continue; }
+        if (pk < 0i32) {
+            // A VIEW EXPRESSION AS A WHOLE ARGUMENT (D-325): a view party of its
+            // viewed place for the call -- `f(string_from_bytes(d.ptr, n), @d)`
+            // hands a callee a view and a way to free what it views.
+            drop push_call_view_party(x, a);
+            continue;
+        }
         if (pk == (raw PARTY_PLAIN())) { continue; }
         ExprNode:an = raw ast_expr(x.ast, a);
         if (result_carries) {
@@ -1027,7 +1396,8 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         }
         int32:root = raw place_root_symbol(x, raw expr_operand(an));
         if (root == 0i32) { continue; }   // refused below as a claim without a root
-        drop list_push(@x.live, Party{ site: a, kind: pk, root: root, holder: 0i32 });
+        drop list_push(@x.live, Party{ site: a, kind: pk, root: root, holder: 0i32,
+                                       place: raw expr_operand(an), view_kind: 0i32, root_ptr: false, path: 0i32 });
     }
     // The receiver.
     if (!(raw expr_is_none(recv))) {
@@ -1046,15 +1416,35 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { ptr_recv = false; }
         }
         if (ptr_recv) { rk = raw ACC_WRITE(); }
-        drop acc_expr(x, recv, rk, depth);
+        int32:rcallee = raw escape_call_fn(x.esc, id);
+        if (ptr_recv && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
+            // the implicit `@recv`: what the method writes through it
+            drop acc_indices(x, recv, depth);
+            ExprNode:rvn = raw ast_expr(x.ast, recv);
+            drop check_access_ex(x, recv, 0i32, raw ACC_WRITE(), raw expr_none(), rvn.span, raw CHECK_CLAIMS());
+            drop check_written(x, recv, rcallee, 0i32, rvn.span);
+        } else {
+            drop acc_expr(x, recv, rk, depth);
+        }
     }
     // Every ordinary argument as an access against the outer parties and all
-    // of the call's claims.
+    // of the call's claims. A PLAIN ADDRESS handed to a KNOWN callee is, for the
+    // view parties, an access of exactly what that callee WRITES through it
+    // (its mutation summary, D-325): `@r` handed to `fold_gave_up` writes
+    // nothing and conflicts with no view of `r`; handed to `fold_const` it
+    // writes `r.fold_counting` and conflicts only with a view of that. The
+    // claims keep D-286's whole-argument rule.
+    int32:callee_fn = raw escape_call_fn(x.esc, id);
+    int32:pos_base = 0i32;
+    if (!(raw expr_is_none(recv))) { pos_base = 1i32; }
     for (int32:j in 0i32...count) {
         ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, j) };
         int32:pk2 = raw party_kind_of(x, a2);
         if (pk2 >= 0i32) {
-            if (pk2 == (raw PARTY_PLAIN())) { drop admit_value(x, a2, pk2, 0i32); }
+            if (pk2 == (raw PARTY_PLAIN())) {
+                if (callee_fn > 0i32) { drop admit_written(x, a2, callee_fn, pos_base + j); }
+                else { drop admit_value(x, a2, pk2, 0i32); }
+            }
             continue;
         }
         drop refuse_holder_copy_arg(x, a2, result_carries);
@@ -1073,9 +1463,30 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         ExprNode:an3 = raw ast_expr(x.ast, a3);
         int32:root3 = raw place_root_symbol(x, raw expr_operand(an3));
         if (root3 == 0i32) { continue; }
-        drop list_push(@x.live, Party{ site: a3, kind: pk3, root: root3, holder: 0i32 });
+        drop list_push(@x.live, Party{ site: a3, kind: pk3, root: root3, holder: 0i32,
+                                       place: raw expr_operand(an3), view_kind: 0i32, root_ptr: false, path: 0i32 });
     }
     drop list_truncate(@x.live, mark);
+    pass NIL;
+};
+
+// A view expression standing as a whole call argument -- a view-maker's call
+// (`string_bytes(s)`, `string_from_bytes(p, n)`), a `#` view builtin, or a
+// range view (`l[lo...hi]`) -- is a VIEW party of its viewed place for the
+// call (D-325). Anything else is an ordinary argument; a view NESTED inside
+// one (`f(g(string_bytes(s)))`) is a temporary the escape walk already reads.
+func:push_call_view_party = NIL(Alias->:x, ExprId:a) never fails {
+    if (raw expr_is_none(a)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, a);
+    ExprId:vp = raw escape_view_place(x.esc, n);
+    if (raw expr_is_none(vp)) { pass NIL; }
+    ExprId:place = vp;
+    if (n.kind == ExprKind.ExprIndexExpr) { place = a; }   // the range step is part of the path
+    int32:root = raw place_root_symbol(x, place);
+    if (root == 0i32) { pass NIL; }
+    drop list_push(@x.live, Party{ site: a, kind: raw PARTY_VIEW(), root: root, holder: 0i32,
+                                   place: place, view_kind: raw VIEW_DIRECT(),
+                                   root_ptr: raw root_ident_is_pointer(x, place), path: 0i32 });
     pass NIL;
 };
 

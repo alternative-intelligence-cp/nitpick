@@ -1,0 +1,139 @@
+// D-325 (1.6.1 step 0): the CORRECTED twins of the shapes `tests/analysis/
+// rejection/view_freeze.npk` refuses, each running clean on both legs -- a copy
+// instead of a view, a view whose block ends before the write, a read and a
+// disjoint field under a live view, disjoint numeral ranges, a pointer root's
+// own reassignment, a constructor that keeps an ADDRESS (no view, so `d` may be
+// written), a callee's view ended before its write, and a `List` of copies. A
+// wrong value is the exit.
+mod:view_freeze_ok;
+
+struct:Box = { string:s; int32:t; };
+struct:Ctx = { Box->:b; };
+func:ctx_init = Ctx(Box->:b) never fails { pass Ctx{ b: b }; };
+func:read_len = int64(string:v) never fails { pass v.len; };
+
+// (a) the copy: the root may be rewritten, the copy keeps the old bytes
+func:copy_then_write = int32() never fails {
+    string:d = string_concat("hello", " world");
+    string:c = string_concat("", string_from_bytes(d.ptr, 5i64));
+    d = string_concat("xyzzy", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    if (c.len != 5i64) { pass 1i32; }
+    if (!(c.eq("hello") ?| false)) { pass 2i32; }
+    pass 0i32;
+};
+
+// (b) the view in an inner block, read there, the root written after
+func:inner_block = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int64:n = 0i64;
+    { string:s = string_from_bytes(d.ptr, 5i64); n = s.len; }
+    d = string_concat("xyzzy", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    if (n != 5i64) { pass 3i32; }
+    if (d.len < 6i64) { pass 4i32; }
+    pass 0i32;
+};
+
+// (c) reads of the root and a disjoint field written while a view lives
+func:reads_stay = int32() never fails {
+    Box:d = Box{ s: string_concat("hello", " world"), t: 1i32 };
+    string:v = string_from_bytes(d.s.ptr, 5i64);
+    int64:n = d.s.len;
+    int64:m = raw read_len(d.s);
+    d.t = 5i32;
+    if ((n != 11i64) || (m != 11i64)) { pass 5i32; }
+    if (d.t != 5i32) { pass 6i32; }
+    if (!(v.eq("hello") ?| false)) { pass 7i32; }
+    pass 0i32;
+};
+
+// (d) disjoint numeral ranges, an element outside the viewed ranges written
+func:disjoint_ranges = int32() never fails {
+    List<int32>:l = raw list_init::<int32>(4i64);
+    drop list_push(@l, 1i32);
+    drop list_push(@l, 2i32);
+    drop list_push(@l, 3i32);
+    drop list_push(@l, 4i32);
+    int32[]:a = l[0i64...2i64];
+    int32[]:b = l[2i64...3i64];
+    l[3i64] = 9i32;
+    if ((a[0i64] != 1i32) || (a[1i64] != 2i32) || (b[0i64] != 3i32)) { pass 8i32; }
+    if (l[3i64] != 9i32) { pass 9i32; }
+    pass 0i32;
+};
+
+// (e) a pointer root's own reassignment: the view still reads the old pointee
+func:pointer_root = int32(Box->:b, Box->:other) never fails {
+    string:v = string_from_bytes(b.s.ptr, 5i64);
+    b = other;
+    if (!(v.eq("hello") ?| false)) { pass 10i32; }
+    if (b.t != 2i32) { pass 11i32; }
+    pass 0i32;
+};
+
+// (f) a constructor that keeps the ADDRESS: `d` may be written while `c` lives
+func:address_kept = int32() never fails {
+    Box:d = Box{ s: string_concat("hello", " world"), t: 1i32 };
+    Ctx:c = raw ctx_init(@d);
+    d.t = 2i32;
+    if (c.b.t != 2i32) { pass 12i32; }
+    pass 0i32;
+};
+
+// (g) a callee's view of the pointee, ended before the callee writes it
+func:callee_view_ok = int32(Box->:b) never fails {
+    int64:n = 0i64;
+    { string:v = string_from_bytes(b.s.ptr, 5i64); n = v.len; }
+    b.s = string_concat("new", "!");
+    if (n != 5i64) { pass 13i32; }
+    if (!(b.s.eq("new!") ?| false)) { pass 14i32; }
+    pass 0i32;
+};
+
+// (h) a `List` of COPIES: the root may be rewritten
+func:list_of_copies = int32() never fails {
+    string:d = string_concat("hello", " world");
+    List<string>:vs = raw list_init::<string>(2i64);
+    drop list_push(@vs, string_concat("", string_from_bytes(d.ptr, 5i64)));
+    d = string_concat("xyzzy", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    if (vs.count != 1i64) { pass 15i32; }
+    if (!(vs[0i64].eq("hello") ?| false)) { pass 16i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = raw copy_then_write();
+    if (r != 0i32) { exit r; }
+    r = raw inner_block();
+    if (r != 0i32) { exit r; }
+    r = raw reads_stay();
+    if (r != 0i32) { exit r; }
+    r = raw disjoint_ranges();
+    if (r != 0i32) { exit r; }
+    Box:one = Box{ s: string_concat("hello", " world"), t: 1i32 };
+    Box:two = Box{ s: string_concat("other", ""), t: 2i32 };
+    r = raw pointer_root(@one, @two);
+    if (r != 0i32) { exit r; }
+    r = raw address_kept();
+    if (r != 0i32) { exit r; }
+    r = raw callee_view_ok(@one);
+    if (r != 0i32) { exit r; }
+    r = raw list_of_copies();
+    if (r != 0i32) { exit r; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds)      { exit 90i32; },
+        (DecreasesViolated){ exit 89i32; },
+        (LimitViolated)    { exit 88i32; },
+        (*)                { exit 97i32; }
+    }
+};

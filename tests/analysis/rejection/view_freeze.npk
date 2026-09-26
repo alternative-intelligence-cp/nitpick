@@ -1,0 +1,273 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 75:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 83:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 91:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 100:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 108:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 117:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 126:47
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 137:9
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 148:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 160:8
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 165:6
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 170:5
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 179:55
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 208:10
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 185:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 191:5
+// expect-error: NITPICK-BORROW-012
+// expect-error-at: 196:44
+//
+// D-325 (1.6.1 step 0; DEF-107, the library listener's finding at 1.6.0 step
+// 5b, and DEF-109 found fixing it): A VIEW'S ROOT IS FROZEN WHILE THE VIEW IS
+// LIVE. A view of a binding -- a view-maker's result (`string_from_bytes`,
+// `string_bytes`), a range view (`l[lo...hi]`), the result of a call whose
+// SUMMARY says it views the pointee of the `@d` it was handed, a view moved
+// through a call, a view pushed into a `List` -- is a party on its root from
+// the holder's declaration to the end of its block, or for its call when it
+// is a call's argument, and every write-capable access of the root refuses
+// (NITPICK-BORROW-015): the six-line reproducer read the free poison of the
+// body a reassignment dropped, on both legs. A struct field viewing another
+// field of its own struct freezes that field (a view of the storage a store
+// overwrites refuses at the store, BORROW-002), the ADDRESS of a by-value
+// parameter cannot travel up
+// (BORROW-001, DEF-109: it is the callee's dead frame), a view of the bytes it
+// references may and the CALLER's freeze then holds (BORROW-015), and a
+// temporary handed to such a callee is a view of a temporary (BORROW-012), and a
+// `List` of addresses of locals cannot travel up (BORROW-001, DEF-112). The
+// controls at the end
+// carry no code: a copy, an inner block, reads and `$$i`, a disjoint field,
+// disjoint numeral ranges, a pointer root's own reassignment, a constructor
+// that keeps the ADDRESS (`@d` handed to it makes no view), a callee's view
+// whose block ends before the write.
+mod:view_freeze;
+
+struct:Box = { string:s; int32:t; };
+struct:Doc = { string:text; string:cur; };
+struct:Lex = { string:text; };
+struct:Ctx = { Box->:b; };
+func:take = string(Box->:b) never fails { pass string_from_bytes(b.s.ptr, 5i64); };
+func:through = string(move string:x) never fails { pass x; };
+func:bump = NIL(string->:p) never fails { <-p = string_concat("x", "y"); pass NIL; };
+func:pair = NIL(string:v, string->:p) never fails { <-p = string_concat("x", "y"); pass NIL; };
+func:read_len = int64(string:v) never fails { pass v.len; };
+func:ctx_init = Ctx(Box->:b) never fails { pass Ctx{ b: b }; };
+
+// (1) the six lines of 1.6.0 step 5b: the root reassigned while the view lives
+func:reassign = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:s = string_from_bytes(d.ptr, 5i64);
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+
+// (2) `@d` handed to a callee while the view lives
+func:address_out = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:s = string_from_bytes(d.ptr, 5i64);
+    drop bump(@d);
+    pass NIL;
+};
+
+// (3) `$$m d` while the view lives
+func:exclusive = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:s = string_from_bytes(d.ptr, 5i64);
+    drop bump($$m d);
+    pass NIL;
+};
+
+// (4) a range view of a List, then a push that may reallocate
+func:range_push = NIL() never fails {
+    List<int32>:l = raw list_init::<int32>(2i64);
+    drop list_push(@l, 7i32);
+    int32[]:v = l[0i64...1i64];
+    drop list_push(@l, 8i32);
+    pass NIL;
+};
+
+// (5) a view through a call whose summary views the pointee (the listener's case)
+func:laundered = NIL() never fails {
+    Box:d = Box{ s: string_concat("hello", " world"), t: 1i32 };
+    string:v = raw take(@d);
+    d.s = string_concat("xyzzy", "!");
+    pass NIL;
+};
+
+// (6) a view local moved through a pass-through call, the root written after
+func:moved_through = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:w = string_from_bytes(d.ptr, 5i64);
+    string:v = raw through(move(w));
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+
+// (7) a call-argument view beside `@d` handed to a callee that WRITES through
+// it: live for the call (a callee writing nothing through `@d` conflicts with
+// no view, by its mutation summary)
+func:call_arg = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    drop pair(string_from_bytes(d.ptr, 5i64), @d);
+    pass NIL;
+};
+
+// (8) a view assigned into an OUTER local inside a loop: the party is live
+// from the holder's declaration (D-286's rule), so the write that precedes the
+// assignment in the body -- reached again on the second trip -- refuses
+func:loop_outer = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:s = string_concat("", "");
+    for (int32:i in 0i32...2i32) {
+        d = string_concat("abc", "def");
+        s = string_from_bytes(d.ptr, 3i64);
+    }
+    pass NIL;
+};
+
+// (9) a view pushed into a `List`, then the root written
+func:pushed = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    List<string>:vs = raw list_init::<string>(2i64);
+    drop list_push(@vs, string_from_bytes(d.ptr, 5i64));
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+
+// (10) a struct field viewing another field of the same struct: the store is
+// admitted and the struct then holds the view at the viewed field's path, so
+// the later write to that field refuses -- in one frame, and through a pointer
+// parameter (the parameter's pointee holds the view); a store of a view of the
+// very storage it overwrites refuses at the store (BORROW-002)
+func:self_wire = NIL() never fails {
+    Doc:doc = Doc{ text: string_concat("hello", " world"), cur: string_concat("", "") };
+    doc.cur = string_from_bytes(doc.text.ptr, 5i64);
+    doc.text = string_concat("xyzzy", "!");
+    pass NIL;
+};
+func:self_wire_ptr = NIL(Doc->:d) never fails {
+    d.cur = string_from_bytes(d.text.ptr, 5i64);
+    d.text = string_concat("xyzzy", "!");
+    pass NIL;
+};
+func:self_overwrite = NIL() never fails {
+    Doc:doc = Doc{ text: string_concat("hello", " world"), cur: string_concat("", "") };
+    doc.text = string_from_bytes(doc.text.ptr, 5i64);
+    pass NIL;
+};
+
+// (11) DEF-109: the ADDRESS of a by-value parameter is the callee's dead frame
+// and cannot travel up; a view of the HEAP BYTES a by-value `string` parameter
+// references may (it is the caller's storage), and the caller's freeze then
+// protects the argument through the callee's summary -- the compiler's own
+// lexer idiom -- so the two callees below carry no code and their CALLERS do
+func:byval_addr = int32->(int32:x) never fails { pass @x; };
+func:byval_view = string(string:x) never fails { pass string_from_bytes(x.ptr, 5i64); };
+func:byval_literal = Lex(string:text) never fails { pass Lex{ text: string_from_bytes(text.ptr, text.len) }; };
+func:byval_caller = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:v = raw byval_view(d);
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+func:byval_literal_caller = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    Lex:lx = raw byval_literal(d);
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+// (12) a TEMPORARY handed to a callee that views the bytes of what it is given
+func:temp_viewed = NIL() never fails {
+    string:v = raw byval_view(string_concat("hello", " world"));
+    pass NIL;
+};
+
+// (13) DEF-112: an ADDRESS of a local pushed into a `List` and the list returned
+// -- the list's storage was no destination to rule B (its `items` is `wild`);
+// `list_push`'s own body says the value lands in the list, so the list holds
+// the borrow and cannot travel up
+func:list_of_addresses = List<int32->>() never fails {
+    int32:x = 42i32;
+    List<int32->>:ps = raw list_init::<int32->>(2i64);
+    drop list_push(@ps, @x);
+    pass ps;
+};
+
+// --- controls, no code -------------------------------------------------------------
+
+// (a) the copy, then the write
+func:copy_then_write = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    string:c = string_concat("", string_from_bytes(d.ptr, 5i64));
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+
+// (b) the view in an inner block, the write after it
+func:inner_block = NIL() never fails {
+    string:d = string_concat("hello", " world");
+    { string:s = string_from_bytes(d.ptr, 5i64); int64:n = s.len; }
+    d = string_concat("xyzzy", "!");
+    pass NIL;
+};
+
+// (c) a read of the root, a lent read of it, and a disjoint field written
+func:reads_stay = NIL() never fails {
+    Box:d = Box{ s: string_concat("hello", " world"), t: 1i32 };
+    string:v = string_from_bytes(d.s.ptr, 5i64);
+    int64:n = d.s.len;
+    int64:m = raw read_len(d.s);
+    d.t = 5i32;
+    pass NIL;
+};
+
+// (d) two disjoint numeral ranges, and an element outside the viewed ranges
+func:disjoint_ranges = NIL() never fails {
+    List<int32>:l = raw list_init::<int32>(4i64);
+    drop list_push(@l, 1i32);
+    drop list_push(@l, 2i32);
+    drop list_push(@l, 3i32);
+    drop list_push(@l, 4i32);
+    int32[]:a = l[0i64...2i64];
+    int32[]:b = l[2i64...3i64];
+    l[3i64] = 9i32;
+    pass NIL;
+};
+
+// (e) a pointer root's own reassignment leaves the viewed pointee alone
+func:pointer_root = NIL(Box->:b, Box->:other) never fails {
+    string:v = string_from_bytes(b.s.ptr, 5i64);
+    b = other;
+    pass NIL;
+};
+
+// (f) a constructor that keeps the ADDRESS makes no view: `@d` handed to it,
+// `d` written after (the compiler's own idiom, 235 sites of it)
+func:address_kept = NIL() never fails {
+    Box:d = Box{ s: string_concat("hello", " world"), t: 1i32 };
+    Ctx:c = raw ctx_init(@d);
+    d.t = 2i32;
+    pass NIL;
+};
+
+// (g) a callee's view of the pointee, its block ended before the write
+func:callee_view_ok = NIL(Box->:b) never fails {
+    { string:v = string_from_bytes(b.s.ptr, 5i64); int64:n = v.len; }
+    b.s = string_concat("new", "!");
+    pass NIL;
+};

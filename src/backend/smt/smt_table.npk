@@ -210,8 +210,11 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
     List<int32>:fgroups = raw list_init::<int32>(t.files.count + 1i64);
     List<bool>:fmeasured = raw list_init::<bool>(t.files.count + 1i64);
     for (int64:i in 0i64...t.files.count) {
-        string:sym = string_from_bytes(t.file_syms[i].ptr, t.file_syms[i].len);
-        if (!(raw sym_held(defs, sym))) { continue; }
+        // THE VIEW ENDS BEFORE THE MOVE (D-325): `sym` views the element the
+        // push below moves out, so its block closes first.
+        bool:held = false;
+        { string:sym = string_from_bytes(t.file_syms[i].ptr, t.file_syms[i].len); held = raw sym_held(defs, sym); }
+        if (!held) { continue; }
         drop list_push(@olds, raw file_number(i + 1i64));
         drop list_push(@news, raw file_number(files.count + 1i64));
         drop list_push(@files, move(t.files[i]));

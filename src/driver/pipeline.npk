@@ -431,7 +431,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // only ever go unset-to-set, so the rounds converge; the bound is there
     // because an unbounded loop in a checker is not a checker.
     Escape:esc = raw escape_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.diags,
-                                 @tr);
+                                 @tr, @f.im);
     int32:round = 0i32;
     bool:settling = true;
     while (settling) decreases (raw ESCAPE_ROUNDS()) - round {
@@ -451,7 +451,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // THE ALIASING HALF OF D-004 (D-286, 1.5.5 step 1): `$$m` excludes, `$$i`
     // shares, `@` claims nothing. One forward walk per function, no fixpoint
     // -- a holder is never copied, so every party has one admission site.
-    Alias:als = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags, @tr);
+    Alias:als = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags, @tr, @esc);
     int32:ya = 0i32;
     while (ya < nmods) decreases nmods - ya {
         ModuleEntry:ea = raw graph_at(@f.g, ya);

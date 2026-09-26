@@ -51,6 +51,8 @@ use "../types.npk".*;
 use "../type_resolve.npk".*;
 use "../type_layout.npk".*;
 use "../expr_types.npk".*;
+use "../type_members.npk".*;   // type_param_at_of: the receiver's parameter (D-325)
+use "../type_trait.npk".*;     // ImplTable: a trait method's summary is the union of its impls' (D-325, 1.6.1 step 0)
 use "./analysis_codes.npk".*;
 
 // How deep an expression tree this walk will follow. Every walk in this compiler
@@ -106,23 +108,1499 @@ pub struct:Escape = {
     // is the direction a borrow checker is allowed to be wrong in.
     bool:reporting;
     bool:changed;
+
+    // THE VIEW REFERENCES A LOCAL HOLDS (D-325, 1.6.1 step 0; DEF-107). Beside
+    // `holds` -- which says only THAT a binding holds a borrow -- this says
+    // WHICH storage a binding may VIEW: per declaring statement, a chain of
+    // (root symbol, viewed place, kind) triples, collected from the binding's
+    // initialiser and from every assignment into it (`collect_view_refs`, the
+    // set-valued twin of `borrows_all_rooted_at`'s walk) and grown to the same
+    // fixpoint the marks reach, since a ref is never removed. The aliasing walk
+    // (alias.npk) turns each ref into a VIEW PARTY live for the holder's whole
+    // scope -- D-286's shape for a held claim -- and refuses every write-capable
+    // access of the root while it lives. A kind says where the view came from:
+    // DIRECT (a view-maker's or a range view's own operand) or LAUNDERED (the
+    // result of a call that received `@root`, `$$ root` or a view of it -- the
+    // callee may have made a view through what it was handed, D-004 rule A).
+    // `vr_ptr` says the holder is a POINTER binding, whose held address is
+    // D-286's plain party and freezes nothing.
+    wild int32->:vr_head;
+    wild bool->:vr_ptr;
+    List<int32>:vr_root;
+    List<int32>:vr_place;
+    List<int32>:vr_kind;
+    List<int32>:vr_path;       // the interned path (see `path_rel`) from the place to the viewed bytes; 0 = the place itself
+    List<int32>:vr_next;
+    wild int32->:vp_head;      // the same chains for a PARAMETER's pointee, by the parameter's declaration index
+    int32:scope;               // the module scope being walked (the folder's, for numeral steps)
+    wild int32->:path_memo;    // per expression: its `path_rel` + 1, or 0 when not yet computed (a path is a function of the tree)
+    int32:expr_count;
+    // THE CONNECTION MEMO (1.6.1 step 0): `can_connect` and `type_reachable_in`
+    // answer a question of two TYPES that never changes, and each answer walks
+    // struct fields resolving their declared types by name through the scope
+    // chain -- 88% of the checker's instructions over a medium module once the
+    // views asked the question at every pointer-receiver call. Open addressing
+    // over (kind, holder, src); an answer reached by exhausting the fuel is not
+    // kept (it is the closed direction's guess, not the pair's answer).
+    wild int64->:cc_keys;
+    wild int8->:cc_vals;       // 0 empty, 1 false, 2 true
+    int64:cc_size;
+    int64:cc_used;
+    bool:cc_exhausted;
+
+    // THE PROVENANCE SUMMARY OF EVERY FUNCTION (D-325, 1.6.1 step 0): per
+    // declaration, two words of bits, one bit per parameter (bit 31 for the
+    // 32nd and beyond, and for the variadic slot -- "any") -- `sum_view`: the
+    // result may VIEW storage reached through parameter k (a view of a pointer
+    // parameter's pointee, of a slice's, of a view's; through a callee's own
+    // summary); `sum_pass`: the result may CARRY parameter k's value itself (a
+    // pointer parameter handed back inside a struct, a by-value view passed
+    // through). Read at every call with a recorded callee, so that `@d` handed
+    // to a constructor that keeps the ADDRESS makes no view of `d` (D-286's
+    // plain party) while `@d` handed to one that views the pointee does -- the
+    // provenance the library listener's O-N27 asked for, in place of D-004
+    // rule A's shape. A call with no recorded callee (`dyn`, a function value)
+    // is read as if every bit were set. Grown to the escape fixpoint with the
+    // marks and the refs; measured at this step: rule A's shape alone froze 235
+    // sites of the compiler's own source, every one a constructor keeping an
+    // address.
+    // The VIEW summary is a chain per declaration of (parameter k, PATH): the
+    // result may view the bytes at that path below parameter k's value -- the
+    // path is what lets a caller's `cv = fold_const(@r, …)` hold a view of
+    // `r.interns.v[…].ptr` and leave `r.fold_counting = …` a disjoint write.
+    wild int32->:sv_head;
+    List<int32>:sv_param;
+    List<int32>:sv_path;
+    List<int32>:sv_next;
+    wild int32->:sum_pass;
+    // THE STORE MATRIX (D-325): per declaration and per pointer parameter j
+    // (32 slots, the 32nd for the rest), the parameters k whose views (a
+    // chain of (k, path) per (declaration, j)) or whose values and addresses
+    // (`flow_pass`, a bit per k) the body may STORE into j's pointee -- an
+    // assignment into it, a call handing it on as a destination, a
+    // pointer-receiver call on it. Read at every call for each
+    // destination-shaped argument, so `list_push(@vs, view)` records the view
+    // on `vs` and `alias_init(@ast, …, @esc)` records nothing on `esc` (it
+    // stores `esc` into what it RETURNS, the summary's business).
+    wild int32->:fv_head;
+    List<int32>:fv_param;
+    List<int32>:fv_path;
+    List<int32>:fv_next;
+    wild int32->:flow_pass;
+    // THE MUTATION SUMMARY (D-325): per (declaration, pointer parameter k), the
+    // chain of PATHS below k's pointee the body may write -- an assignment, a
+    // `move` out, `@k.p`/`$$m k.p` handed to a callee that writes (its own
+    // summary composed), a pointer-receiver call on a part -- so that `@r`
+    // handed to `fold_gave_up` (which writes nothing) conflicts with no view
+    // of `r`, and handed to `fold_const` (which writes `r.fold_counting`)
+    // conflicts only with a view of what it writes. An unknown callee is
+    // read as writing the whole pointee.
+    wild int32->:mu_head;
+    List<int32>:mu_param;      // the chain helper's first column (unused here: the slot already names the parameter)
+    List<int32>:mu_path;
+    List<int32>:mu_next;
+    // THE TRAIT METHOD AN IMPL'S METHOD IMPLEMENTS, by declaration index (0:
+    // none). A callee that is a TRAIT's own method is dispatched elsewhere -- a
+    // `dyn` receiver, a parameter under a bound -- so its declaration's body (a
+    // signature with none, or a default any impl may override) is not what the
+    // call runs. Its summary is therefore THE UNION OF ITS IMPLS' (and of its
+    // default's, walked as a body of its own), merged into the trait method's
+    // own slots after each impl method's walk (`merge_summary`, the fixpoint
+    // carrying it) -- so every reader of a callee's summary reads a trait
+    // method as the set of bodies it may run, the reach analysis's reading
+    // (DEF-86) for the same question. Found by the counterweight test of D-223
+    // (1.6.1 step 0): `touch<T: Sink>(T->:bp, Pair->:op) { bp.put(@op.k); }`
+    // read the trait's bodiless `put` as a known callee that stores nothing;
+    // read as an UNKNOWN callee instead, every bound `write` of the prelude's
+    // writers refused (a view of a local beside `self.inner`, a `W->`).
+    wild int32->:override_of;
+    ImplTable->:impls;
+    // DOES THIS BY-VALUE PARAMETER HOLD A BORROW of this frame's storage,
+    // stored into it by a call (its matrix, or the shape rule)? `holds` is
+    // keyed by a local's declaring statement; a parameter is a declaration.
+    // Until 1.6.1 step 0 nothing could mark one: `b.set(@k); pass move(b);`
+    // over a `move Stash:b` compiled, the returned struct pointing into the
+    // dead frame (the direct store `b.p = @k` had been BORROW-002 all along).
+    wild bool->:pholds;
+    int32:decl_count;
+    int32:cur_fn;         // the function whose body is being walked, or -1
 };
+
+pub func:VIEW_DIRECT = int32() never fails    { pass 1i32; };   // a view-maker's or a range view's operand
+pub func:VIEW_LAUNDERED = int32() never fails { pass 2i32; };   // through a call: `@p` where the callee views the pointee
+pub func:REF_PASS = int32() never fails       { pass 3i32; };   // a parameter's value carried (inert for the freeze)
+pub func:REF_ADDR = int32() never fails       { pass 4i32; };   // an address carried through a call (inert for the freeze)
+
+pub struct:ViewRef = { int32:root; int32:place; int32:kind; int32:path; };
 
 pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                               ExprTypes->:etypes, DiagList->:diags,
-                              TypeResolver->:tr) never fails {
+                              TypeResolver->:tr, ImplTable->:impls) never fails {
     int64:size = (raw ast_stmt_count(ast)) => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:mem = alloc(size * #size_of<bool>());
+    wild int8->:hmem = alloc(size * #size_of<int32>());
+    wild int8->:pmem = alloc(size * #size_of<bool>());
+    int64:dsize = (raw ast_decl_count(ast)) => int64;
+    if (dsize < 1i64) { dsize = 1i64; }
+    wild int8->:svmem = alloc(dsize * #size_of<int32>());
+    wild int8->:spmem = alloc(dsize * #size_of<int32>());
+    wild int8->:fvmem = alloc(dsize * 32i64 * #size_of<int32>());
+    wild int8->:fpmem = alloc(dsize * 32i64 * #size_of<int32>());
+    wild int8->:mumem = alloc(dsize * 32i64 * #size_of<int32>());
+    wild int8->:vpmem = alloc(dsize * #size_of<int32>());
+    wild int8->:ovmem = alloc(dsize * #size_of<int32>());
+    wild int8->:phmem = alloc(dsize * #size_of<bool>());
+    int64:esize = (raw ast_expr_count(ast)) => int64;
+    if (esize < 1i64) { esize = 1i64; }
+    wild int8->:pmmem = alloc(esize * #size_of<int32>());
+    int64:ccsize = 65536i64;   // `cc_probe`'s mask 65535 is this minus one, as a numeral
+    wild int8->:cckmem = alloc(ccsize * #size_of<int64>());
+    wild int8->:ccvmem = alloc(ccsize * #size_of<int8>());
 
     Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
                        diags: diags, tr: tr, holds: mem =>! wild bool->,
                        holds_count: size =>! int32,
-                       reporting: false, changed: false };
+                       reporting: false, changed: false,
+                       vr_head: hmem =>! wild int32->, vr_ptr: pmem =>! wild bool->,
+                       vr_root: raw list_init::<int32>(64i64),
+                       vr_place: raw list_init::<int32>(64i64),
+                       vr_kind: raw list_init::<int32>(64i64),
+                       vr_path: raw list_init::<int32>(64i64),
+                       vr_next: raw list_init::<int32>(64i64),
+                       vp_head: vpmem =>! wild int32->,
+                       scope: 0i32,
+                       path_memo: pmmem =>! wild int32->, expr_count: esize =>! int32,
+                       cc_keys: cckmem =>! wild int64->, cc_vals: ccvmem =>! wild int8->,
+                       cc_size: ccsize, cc_used: 0i64, cc_exhausted: false,
+                       sv_head: svmem =>! wild int32->,
+                       sv_param: raw list_init::<int32>(64i64),
+                       sv_path: raw list_init::<int32>(64i64),
+                       sv_next: raw list_init::<int32>(64i64),
+                       sum_pass: spmem =>! wild int32->,
+                       fv_head: fvmem =>! wild int32->,
+                       fv_param: raw list_init::<int32>(64i64),
+                       fv_path: raw list_init::<int32>(64i64),
+                       fv_next: raw list_init::<int32>(64i64),
+                       flow_pass: fpmem =>! wild int32->,
+                       mu_head: mumem =>! wild int32->,
+                       mu_param: raw list_init::<int32>(64i64),
+                       mu_path: raw list_init::<int32>(64i64),
+                       mu_next: raw list_init::<int32>(64i64),
+                       override_of: ovmem =>! wild int32->, impls: impls,
+                       pholds: phmem =>! wild bool->,
+                       decl_count: dsize =>! int32, cur_fn: 0i32 - 1i32 };
     for (int64:i in 0i64...size) {
         x.holds[i] = false;
+        x.vr_head[i] = 0i32 - 1i32;
+        x.vr_ptr[i] = false;
+    }
+    for (int64:j in 0i64...dsize) {
+        x.sv_head[j] = 0i32 - 1i32;
+        x.sum_pass[j] = 0i32;
+        x.vp_head[j] = 0i32 - 1i32;
+        x.override_of[j] = 0i32;
+        x.pholds[j] = false;
+    }
+    // EVERY IMPL METHOD'S TRAIT METHOD, from the impl table (the reach
+    // analysis's walk inverted, DEF-86): an impl of a trait names the trait's
+    // declaration through its resolved type, and each of its methods
+    // implements the trait's member of the same name -- every module's impls,
+    // the prelude's included.
+    int32:nd = raw ast_decl_count(ast);
+    int32:ic = raw impl_count(impls);
+    for (int32:i in 0i32...ic) {
+        ImplEntry:ie = raw impl_at(impls, i);
+        if (ie.trait_id == 0i32) { continue; }
+        int32:tdecl = raw type_decl_of(types, ie.trait_id);
+        if ((tdecl <= 0i32) || (tdecl >= nd)) { continue; }
+        DeclNode:td = raw ast_decl(ast, DeclId{ index: tdecl });
+        if (td.kind != DeclKind.DeclTraitDecl) { continue; }
+        if ((ie.decl <= 0i32) || (ie.decl >= nd)) { continue; }
+        DeclNode:idn = raw ast_decl(ast, DeclId{ index: ie.decl });
+        if (idn.kind != DeclKind.DeclImplDecl) { continue; }
+        int32:mn = raw impl_member_count(ast, idn);
+        for (int32:j in 0i32...mn) {
+            DeclId:mid = raw impl_member(ast, idn, j);
+            if ((mid.index <= 0i32) || (mid.index >= nd)) { continue; }
+            DeclNode:mm = raw ast_decl(ast, mid);
+            if (mm.kind != DeclKind.DeclFunctionDecl) { continue; }
+            int32:mname = raw decl_name(mm);
+            int32:tn = raw item_member_count(ast, td);
+            for (int32:k in 0i32...tn) {
+                DeclId:tmid = raw item_member(ast, td, k);
+                if ((tmid.index <= 0i32) || (tmid.index >= nd)) { continue; }
+                DeclNode:tm = raw ast_decl(ast, tmid);
+                if (tm.kind != DeclKind.DeclFunctionDecl) { continue; }
+                if ((raw decl_name(tm)) == mname) { x.override_of[mid.index => int64] = tmid.index; break; }
+            }
+        }
+    }
+    for (int64:pe in 0i64...esize) { x.path_memo[pe] = 0i32; }
+    for (int64:ce in 0i64...ccsize) { x.cc_keys[ce] = 0i64; x.cc_vals[ce] = 0i8; }
+    for (int64:m in 0i64...(dsize * 32i64)) {
+        x.fv_head[m] = 0i32 - 1i32;
+        x.flow_pass[m] = 0i32;
+        x.mu_head[m] = 0i32 - 1i32;
     }
     pass x;
+};
+
+// --- paths (D-325) --------------------------------------------------------------------
+//
+// A PATH is the interned text of the steps from a place to the bytes a view
+// names below it, root-outward, `/`-separated: `f<name>` a field (its intern
+// index), `i<n>` an index the folder knows, `x` a computed index, `r<lo>:<hi>`
+// a range with both bounds known (hi exclusive), `R` a computed range or a
+// `pick` binding's opaque step. The empty text (index 0) is the place itself.
+// The aliasing walk decodes a path into its `Step`s and appends them to the
+// place's own, so a summary's view of `t.v[i].ptr` handed back through `@r`
+// becomes the party `r` + `finterns/fv/x/fptr` -- disjoint from `r.env`.
+
+func:path_intern = int32(Escape->:x, move string:text) never fails {
+    if (text.len == 0i64) { pass 0i32; }
+    pass (raw intern_add(x.tr.interns, move(text)));
+};
+
+func:path_text = string(Escape->:x, int32:path) never fails {
+    if (path == 0i32) { pass ""; }
+    pass (raw intern_get(x.tr.interns, path));
+};
+
+// A COMPOSED PATH IS AT MOST `PATH_MAX_STEPS` DEEP (1.6.1 step 0): a summary
+// composed through a cycle of callees grows a step per round without a bound
+// -- the prelude's `TextWriter<W>.write` calls `text_write_str`, which hands
+// `@(tw.inner)` to `tw_write_all`, which calls `Writer.write`, whose union
+// holds `TextWriter<W>.write`'s own paths: `inner`, then `inner/inner`, and
+// the analysis never settled (BORROW-010 on the prelude, the first build).
+// A path cut to its first steps names a BROADER place -- the closed direction
+// for every reader: a broader view, a broader write, more conflicts.
+pub func:PATH_MAX_STEPS = int32() never fails pure { pass 8i32; };
+
+// `a/b`, either side possibly empty, cut to the first `PATH_MAX_STEPS` steps.
+func:path_join = int32(Escape->:x, int32:a, int32:b) never fails {
+    if (a == 0i32) { pass b; }
+    if (b == 0i32) { pass a; }
+    string:t = string_concat(raw path_text(x, a), "/");
+    string:joined = string_concat(t, raw path_text(x, b));
+    // count the steps; cut at the separator that would begin the ninth
+    int64:steps = 1i64;
+    int64:cut = joined.len;
+    for (int64:i in 0i64...joined.len) {
+        if (joined.ptr[i] == 47u8) {   // '/'
+            steps = steps + 1i64;
+            if (steps > ((raw PATH_MAX_STEPS()) => int64)) { cut = i; break; }
+        }
+    }
+    if (cut < joined.len) { pass (raw path_intern(x, string_slice(joined, 0i64, cut) ?! ProvenSlice)); }
+    pass (raw path_intern(x, move(joined)));
+};
+
+// THE STEPS FROM A ROOT TO A PLACE, encoded: `place` walked inward to the
+// identifier at its root (through `pick` views as an opaque `R`), the steps
+// reversed. Every step the aliasing walk's `path_steps` takes, in its words.
+func:path_rel = int32(Escape->:x, ExprId:place) never fails {
+    if (raw expr_is_none(place)) { pass 0i32; }
+    // MEMOISED PER EXPRESSION: the path is a function of the tree, and this is
+    // asked at every store through a pointer parameter in every round.
+    if ((place.index >= 0i32) && (place.index < x.expr_count)) {
+        int32:got = x.path_memo[place.index => int64];
+        if (got != 0i32) { pass (got - 1i32); }
+    }
+    int32:computed = raw path_rel_compute(x, place);
+    if ((place.index >= 0i32) && (place.index < x.expr_count)) {
+        x.path_memo[place.index => int64] = computed + 1i32;
+    }
+    pass computed;
+};
+
+func:path_rel_compute = int32(Escape->:x, ExprId:place) never fails {
+    List<string>:rev = raw list_init::<string>(4i64);
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { break; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+            drop list_push(@rev, string_concat("f", int_to_string((raw expr_name(n)) =>! int32 => int64)));
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprId:ix = raw expr_rhs(n);
+            ExprNode:ixn = raw ast_expr(x.ast, ix);
+            if (ixn.kind == ExprKind.ExprRangeExpr) {
+                ConstVal:lo = raw fold_const(x.tr, raw expr_lhs(ixn), x.scope);
+                ConstVal:hi = raw fold_const(x.tr, raw expr_rhs(ixn), x.scope);
+                if ((lo.kind == (raw CV_INT())) && (hi.kind == (raw CV_INT()))) {
+                    int64:hiv = hi.num;
+                    if (ixn.payload != 0i64) { hiv = hi.num + 1i64; }
+                    string:rs = string_concat("r", int_to_string(lo.num));
+                    rs = string_concat(rs, ":");
+                    drop list_push(@rev, string_concat(rs, int_to_string(hiv)));
+                } else {
+                    drop list_push(@rev, string_concat("R", ""));
+                }
+            } else {
+                ConstVal:cv = raw fold_const(x.tr, ix, x.scope);
+                if (cv.kind == (raw CV_INT())) { drop list_push(@rev, string_concat("i", int_to_string(cv.num))); }
+                else { drop list_push(@rev, string_concat("x", "")); }
+            }
+            cur = raw expr_lhs(n);
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            if (n.a == 0i32) { break; }
+            if (raw sym_is_view(x.tab, x.ast, n.a)) {
+                drop list_push(@rev, string_concat("R", ""));
+                cur = ExprId{ index: (raw symtab_get(x.tab, n.a)).link };
+                continue;
+            }
+            break;
+        }
+        break;
+    }
+    string:out = "";
+    int64:k = rev.count;
+    while (k > 0i64) decreases k {
+        k = k - 1i64;
+        if (out.len > 0i64) { out = string_concat(out, "/"); }
+        out = string_concat(out, rev[k]);
+    }
+    pass (raw path_intern(x, move(out)));
+};
+
+// DO TWO PATHS OVERLAP (D-325)? Step by step: two fields that differ are
+// disjoint; anything else at a position overlaps (an index or a range against
+// anything -- the closed direction); a path that ends is a prefix of the other
+// and overlaps it.
+func:paths_overlap = bool(Escape->:x, int32:a, int32:b) never fails {
+    if ((a == 0i32) || (b == 0i32)) { pass true; }
+    string:ta = raw path_text(x, a);
+    string:tb = raw path_text(x, b);
+    uint8[]:ba = string_bytes(ta);
+    uint8[]:bb = string_bytes(tb);
+    int64:i = 0i64;
+    int64:j = 0i64;
+    while ((i < ba.len) && (j < bb.len)) decreases (ba.len - i) + (bb.len - j) {
+        int64:ie = i;
+        while (ie < ba.len) decreases ba.len - ie { if (ba[ie] == 47u8) { break; } ie = ie + 1i64; }
+        int64:je = j;
+        while (je < bb.len) decreases bb.len - je { if (bb[je] == 47u8) { break; } je = je + 1i64; }
+        if ((ba[i] == 102u8) && (bb[j] == 102u8)) {   // 'f' / 'f': compare the names' text
+            int64:la = ie - i;
+            int64:lb = je - j;
+            bool:same = (la == lb);
+            if (same) {
+                int64:q = 0i64;
+                while (q < la) decreases la - q {
+                    if (ba[i + q] != bb[j + q]) { same = false; break; }
+                    q = q + 1i64;
+                }
+            }
+            if (!same) { pass false; }
+        } else {
+        // A FIELD AGAINST AN ELEMENT STEP: the `List` header rule of the
+        // aliasing walk's `overlap_class` (its `count`/`cap` are disjoint
+        // from every element; `items` from a body view through an element's
+        // `ptr`, not from a slice).
+        if ((ba[i] == 102u8) && (bb[j] != 102u8)) {
+            if (raw header_field_disjoint_text(x, ba, i + 1i64, ie, bb, j, je + 1i64)) { pass false; }
+        }
+        if ((bb[j] == 102u8) && (ba[i] != 102u8)) {
+            if (raw header_field_disjoint_text(x, bb, j + 1i64, je, ba, i, ie + 1i64)) { pass false; }
+        }}
+        i = ie + 1i64;
+        j = je + 1i64;
+    }
+    pass true;
+};
+
+// The field named by the intern index between `lo` and `hi` of `f`, met
+// against the element step at `ei` of `other` (whose next step begins at
+// `enext`): a `List` header field the element leaves alone?
+func:header_field_disjoint_text = bool(Escape->:x, uint8[]:f, int64:lo, int64:hi, uint8[]:other,
+                                       int64:ei, int64:enext) never fails {
+    int64:id = 0i64;
+    int64:q = lo;
+    while (q < hi) decreases hi - q {
+        uint8:c = f[q];
+        if ((c < 48u8) || (c > 57u8)) { break; }
+        id = (id * 10i64) + ((c - 48u8) => int64);
+        q = q + 1i64;
+    }
+    string:fname = raw intern_get(x.tr.interns, id =>! int32);
+    if (raw string_eq(fname, "count")) { pass true; }
+    if (raw string_eq(fname, "cap"))   { pass true; }
+    if (raw string_eq(fname, "items")) {
+        if ((other[ei] == 114u8) || (other[ei] == 82u8)) { pass false; }   // 'r' / 'R': a slice
+        if (enext >= other.len) { pass false; }
+        if (other[enext] != 102u8) { pass false; }
+        // the next field's intern id must be `ptr`
+        int64:nid = 0i64;
+        int64:w = enext + 1i64;
+        while (w < other.len) decreases other.len - w {
+            uint8:d = other[w];
+            if ((d < 48u8) || (d > 57u8)) { break; }
+            nid = (nid * 10i64) + ((d - 48u8) => int64);
+            w = w + 1i64;
+        }
+        pass (raw string_eq(raw intern_get(x.tr.interns, nid =>! int32), "ptr"));
+    }
+    pass false;
+};
+
+// A chain of (param, path) entries: add if new, moving the fixpoint.
+func:chain_add = bool(List<int32>->:params, List<int32>->:paths, List<int32>->:nexts,
+                      wild int32->:heads, int64:slot, int32:param, int32:path) never fails {
+    int32:i = heads[slot];
+    while (i >= 0i32) decreases i + 1i32 {
+        if (((<-params)[i => int64] == param) && ((<-paths)[i => int64] == path)) { pass false; }
+        i = (<-nexts)[i => int64];
+    }
+    int32:at = params.count =>! int32;
+    drop list_push(params, param);
+    drop list_push(paths, path);
+    drop list_push(nexts, heads[slot]);
+    heads[slot] = at;
+    pass true;
+};
+
+// --- the summaries' readers and writers ----------------------------------------------
+
+// THE SUMMARY OF A TRAIT'S METHOD IS THE UNION OF ITS IMPLS' (D-325, 1.6.1 step
+// 0): after an impl method's walk, every entry of its four summaries -- the
+// view entries, the pass word, the store matrix, the mutation paths -- joins
+// the trait method's own slots. A new entry moves the fixpoint, so a caller
+// walked before the impl in a round reads the union in the next; the default
+// body's own walk fills the same slots first. Sound by the closed world (every
+// impl a `dyn` may hold or a bound may name is in this table), and exact for
+// the prelude's writers: no impl of `Writer.write` stores what it is handed.
+func:merge_summary = NIL(Escape->:x, int32:from, int32:into) never fails {
+    if ((from <= 0i32) || (into <= 0i32)) { pass NIL; }
+    if ((from >= x.decl_count) || (into >= x.decl_count)) { pass NIL; }
+    if (from == into) { pass NIL; }
+    int32:pw = x.sum_pass[from => int64];
+    if ((x.sum_pass[into => int64] | pw) != x.sum_pass[into => int64]) {
+        x.sum_pass[into => int64] = x.sum_pass[into => int64] | pw;
+        x.changed = true;
+    }
+    int32:e = x.sv_head[from => int64];
+    while (e >= 0i32) decreases e + 1i32 {
+        int32:ep = x.sv_param[e => int64];
+        int32:et = x.sv_path[e => int64];
+        if (raw chain_add(@x.sv_param, @x.sv_path, @x.sv_next, x.sv_head, into => int64, ep, et)) { x.changed = true; }
+        e = x.sv_next[e => int64];
+    }
+    for (int32:j in 0i32...32i32) {
+        int64:fs = raw flow_slot(from, j);
+        int64:ts = raw flow_slot(into, j);
+        int32:fp = x.flow_pass[fs];
+        if ((x.flow_pass[ts] | fp) != x.flow_pass[ts]) {
+            x.flow_pass[ts] = x.flow_pass[ts] | fp;
+            x.changed = true;
+        }
+        int32:f = x.fv_head[fs];
+        while (f >= 0i32) decreases f + 1i32 {
+            int32:fpar = x.fv_param[f => int64];
+            int32:fpath = x.fv_path[f => int64];
+            if (raw chain_add(@x.fv_param, @x.fv_path, @x.fv_next, x.fv_head, ts, fpar, fpath)) { x.changed = true; }
+            f = x.fv_next[f => int64];
+        }
+        int32:m = x.mu_head[fs];
+        while (m >= 0i32) decreases m + 1i32 {
+            int32:mpath = x.mu_path[m => int64];
+            if (raw chain_add(@x.mu_param, @x.mu_path, @x.mu_next, x.mu_head, ts, 0i32, mpath)) { x.changed = true; }
+            m = x.mu_next[m => int64];
+        }
+    }
+    pass NIL;
+};
+
+// The view summary of the current function grows an entry.
+func:sv_add = NIL(Escape->:x, int32:k, int32:path) never fails {
+    if (x.cur_fn < 0i32) { pass NIL; }
+    if (x.cur_fn >= x.decl_count) { pass NIL; }
+    int32:kk = k;
+    if (kk > 31i32) { kk = 31i32; }
+    if (raw chain_add(@x.sv_param, @x.sv_path, @x.sv_next, x.sv_head, x.cur_fn => int64, kk, path)) { x.changed = true; }
+    pass NIL;
+};
+
+// The store matrix of the current function grows an entry: a view at `path`
+// below parameter k stored into parameter j's pointee.
+func:fv_add = NIL(Escape->:x, int32:j, int32:k, int32:path) never fails {
+    if (x.cur_fn < 0i32) { pass NIL; }
+    if (x.cur_fn >= x.decl_count) { pass NIL; }
+    int32:kk = k;
+    if (kk > 31i32) { kk = 31i32; }
+    if (raw chain_add(@x.fv_param, @x.fv_path, @x.fv_next, x.fv_head, raw flow_slot(x.cur_fn, j), kk, path)) { x.changed = true; }
+    pass NIL;
+};
+
+// The mutation summary of the current function grows an entry: the body may
+// write `path` below parameter k's pointee.
+func:mu_add = NIL(Escape->:x, int32:k, int32:path) never fails {
+    if (x.cur_fn < 0i32) { pass NIL; }
+    if (x.cur_fn >= x.decl_count) { pass NIL; }
+    if (raw chain_add(@x.mu_param, @x.mu_path, @x.mu_next, x.mu_head, raw flow_slot(x.cur_fn, k), 0i32, path)) { x.changed = true; }
+    pass NIL;
+};
+
+// THE MUTATION SUMMARY, for the aliasing walk: the first written path of a
+// callee's parameter k (or -1 -- the callee writes nothing through it; -2 --
+// the callee is unknown and may write the whole pointee), the next after one,
+// and the path at an entry.
+pub func:escape_mut_first = int32(Escape->:x, int32:callee, int32:k) never fails {
+    if (callee <= 0i32) { pass (0i32 - 2i32); }
+    if (callee >= x.decl_count) { pass (0i32 - 2i32); }
+    pass x.mu_head[raw flow_slot(callee, k)];
+};
+pub func:escape_mut_next = int32(Escape->:x, int32:i) never fails {
+    if (i < 0i32) { pass (0i32 - 1i32); }
+    if ((i => int64) >= x.mu_next.count) { pass (0i32 - 1i32); }
+    pass x.mu_next[i => int64];
+};
+pub func:escape_mut_path = int32(Escape->:x, int32:i) never fails {
+    if (i < 0i32) { pass 0i32; }
+    if ((i => int64) >= x.mu_path.count) { pass 0i32; }
+    pass x.mu_path[i => int64];
+};
+// A callee's function declaration for the aliasing walk (0 when unknown).
+pub func:escape_call_fn = int32(Escape->:x, ExprId:call) never fails { pass (raw call_callee_fn(x, call)); };
+
+// --- the provenance summary (D-325) -------------------------------------------------
+
+// The bit for parameter k: one per parameter up to the 31st, bit 31 for the rest.
+func:param_bit = int32(int32:k) never fails {
+    if (k < 0i32) { pass 0i32; }
+    if (k >= 31i32) { pass (1i32 << 31i32); }
+    pass (1i32 << k);
+};
+
+func:sum_has = bool(int32:word, int32:k) never fails {
+    if ((word & (1i32 << 31i32)) != 0i32) { pass true; }   // "any": a variadic slot, or a parameter past the 31st
+    pass ((word & (raw param_bit(k))) != 0i32);
+};
+
+// A PASS bit set on the CURRENT function; a new bit moves the fixpoint.
+func:pass_set = NIL(Escape->:x, int32:k) never fails {
+    if (x.cur_fn < 0i32) { pass NIL; }
+    if (x.cur_fn >= x.decl_count) { pass NIL; }
+    int32:bit = raw param_bit(k);
+    if (bit == 0i32) { pass NIL; }
+    int64:at = x.cur_fn => int64;
+    if ((x.sum_pass[at] & bit) != 0i32) { pass NIL; }
+    x.sum_pass[at] = x.sum_pass[at] | bit;
+    x.changed = true;
+    pass NIL;
+};
+
+// The index of a parameter symbol among the current function's parameters, the
+// variadic slot as 31, or -1 when the symbol is no parameter of it.
+func:param_index_of = int32(Escape->:x, int32:sym) never fails {
+    if (sym == 0i32) { pass (0i32 - 1i32); }
+    if (x.cur_fn < 0i32) { pass (0i32 - 1i32); }
+    Symbol:sy = raw symtab_get(x.tab, sym);
+    if (sy.origin_kind != (raw SYM_DECL())) { pass (0i32 - 1i32); }
+    DeclNode:fdecl = raw ast_decl(x.ast, DeclId{ index: x.cur_fn });
+    if (fdecl.kind != DeclKind.DeclFunctionDecl) { pass (0i32 - 1i32); }
+    int32:n = raw fn_param_count(x.ast, fdecl);
+    for (int32:i in 0i32...n) {
+        if ((raw fn_param(x.ast, fdecl, i)).index == sy.origin) { pass i; }
+    }
+    DeclId:vs = raw fn_variadic(x.ast, fdecl);
+    if (!(raw decl_is_none(vs))) { if (vs.index == sy.origin) { pass 31i32; } }
+    pass (0i32 - 1i32);
+};
+
+// A ref's path RELATIVE TO ITS ROOT: the place's steps from the root, then the
+// ref's own path below the place.
+func:ref_full_path = int32(Escape->:x, ViewRef:r) never fails {
+    pass (raw path_join(x, raw path_rel(x, ExprId{ index: r.place }), r.path));
+};
+
+// THE SUMMARY OF A RETURNED VALUE: every ref of it rooted at a parameter of the
+// current function -- a view (direct, or through a callee) an entry (k, path)
+// of the view summary, a carried value or address the PASS bit.
+func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
+    if (raw expr_is_none(v)) { pass NIL; }
+    if (x.cur_fn < 0i32) { pass NIL; }
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, v, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:r = refs[i];
+        int32:k = raw param_index_of(x, r.root);
+        if (k < 0i32) { continue; }
+        if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
+            drop sv_add(x, k, raw ref_full_path(x, r));
+        } else {
+            drop pass_set(x, k);
+        }
+    }
+    pass NIL;
+};
+
+// A METHOD CALL THE CHECKER INTERCEPTS ON A BUILTIN KIND -- `c.re()`, `s.eq(t)`,
+// `v.sum()`, `t.trit(i)`, `.clone()` -- has no declaration and no function
+// type: the receiver is read BY VALUE and the result is a scalar or an owned
+// copy (the reference's `Views` column has no method row), so the call views,
+// stores and writes nothing (1.6.1 step 0; found on the prelude's `complex`
+// renderings, where the unknown-callee reading froze `self` against itself).
+// A BARE BUILTIN CALL (`sys`, `alloc`, `string_from_bytes`) or a `#` builtin.
+func:call_is_bare_builtin = bool(Escape->:x, ExprId:call) never fails {
+    if (raw expr_is_none(call)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, call);
+    if (n.kind == ExprKind.ExprBuiltinExpr) { pass true; }
+    if (n.kind != ExprKind.ExprCallExpr) { pass false; }
+    pass ((raw bare_builtin_name(x, n)).len > 0i64);
+};
+
+func:call_is_builtin_method = bool(Escape->:x, ExprId:call) never fails {
+    if (raw expr_is_none(call)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, call);
+    if (n.kind != ExprKind.ExprMethodCallExpr) { pass false; }
+    if ((raw exprtypes_ns_decl(x.etypes, call)) != 0i32) { pass false; }
+    if ((raw call_callee_fn(x, call)) != 0i32) { pass false; }
+    pass ((raw exprtypes_callee_ft(x.etypes, call)) == 0i32);
+};
+
+// The recorded callee of a call, when it is a function declaration this walk
+// can read; 0 for a `dyn` call, a function value, or anything else.
+func:call_callee_fn = int32(Escape->:x, ExprId:call) never fails {
+    // The call graph's edge (1.5.8c step 4) names every resolved callee --
+    // direct, method, qualified, awaited, spawned; the method-call record is
+    // the older second source.
+    int32:c = raw exprtypes_call_to(x.etypes, call);
+    if (c <= 0i32) { c = raw exprtypes_callee(x.etypes, call); }
+    if (c <= 0i32) { pass 0i32; }
+    if (c >= x.decl_count) { pass 0i32; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: c });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+    // A TRAIT'S OWN METHOD is a known callee whose summary is the UNION of its
+    // impls' and its default's (`override_of`, `merge_summary`).
+    pass c;
+};
+
+// The slot of parameter j in a function's store or mutation matrix.
+func:flow_slot = int64(int32:fn, int32:j) never fails {
+    int32:jj = j;
+    if (jj < 0i32) { jj = 0i32; }
+    if (jj > 31i32) { jj = 31i32; }
+    pass (((fn => int64) * 32i64) + (jj => int64));
+};
+
+// The pass word of a callee's store matrix for parameter j; every bit when
+// the callee is unknown.
+func:flow_pass_word = int32(Escape->:x, int32:callee, int32:j) never fails {
+    if (callee <= 0i32) { pass (0i32 - 1i32); }
+    if (callee >= x.decl_count) { pass (0i32 - 1i32); }
+    pass x.flow_pass[raw flow_slot(callee, j)];
+};
+
+func:flow_pass_set = NIL(Escape->:x, int32:j, int32:k) never fails {
+    if (x.cur_fn < 0i32) { pass NIL; }
+    if (x.cur_fn >= x.decl_count) { pass NIL; }
+    int32:bit = raw param_bit(k);
+    if (bit == 0i32) { pass NIL; }
+    int64:at = raw flow_slot(x.cur_fn, j);
+    if ((x.flow_pass[at] & bit) != 0i32) { pass NIL; }
+    x.flow_pass[at] = x.flow_pass[at] | bit;
+    x.changed = true;
+    pass NIL;
+};
+
+// THE POINTEE A DESTINATION-SHAPED ARGUMENT NAMES: `@place` or `$$ place` -- the
+// place; a pointer-typed NAME (a binding whose pointee the callee may write) --
+// the name; the implicit `@recv` -- the receiver. None otherwise.
+func:dest_place = ExprId(Escape->:x, ExprId:a, bool:auto_ref) never fails {
+    if (raw expr_is_none(a)) { pass (raw expr_none()); }
+    if (auto_ref) { pass a; }
+    ExprNode:an = raw ast_expr(x.ast, a);
+    if ((an.kind == ExprKind.ExprAddressOfExpr) || (an.kind == ExprKind.ExprBorrowExpr)) { pass (raw expr_operand(an)); }
+    if (an.kind == ExprKind.ExprIdentifierExpr) {
+        int32:t = raw exprtypes_get(x.etypes, a);
+        if (t == 0i32) { pass (raw expr_none()); }
+        if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { pass a; }
+    }
+    pass (raw expr_none());
+};
+
+// The refs argument `a` contributes for ONE view entry (k, path) of a callee:
+// an `@p`/`$$ p` or the implicit `@recv` -- a LAUNDERED view at `path` below
+// `p`; a place-chain value -- the same below the place; a temporary -- refused
+// (its bytes die at the statement's end); a value's own refs travel.
+// The PLACE an argument names when it is a chain of `.`/`[]` steps (through
+// casts) down to a name -- a local, a parameter, a pattern binding; none for
+// a call, a literal, a `move`, an operator.
+func:arg_place_chain = ExprId(Escape->:x, ExprId:a) never fails {
+    ExprId:cur = a;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass (raw expr_none()); }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
+            || (n.kind == ExprKind.ExprIndexExpr) || (n.kind == ExprKind.ExprIdentifierExpr)) {
+            PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+            if (r.exhausted) { pass (raw expr_none()); }
+            if (raw expr_is_none(r.id)) { pass (raw expr_none()); }
+            ExprNode:rn = raw ast_expr(x.ast, r.id);
+            if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (raw expr_none()); }
+            pass cur;
+        }
+        pass (raw expr_none());
+    }
+    pass (raw expr_none());
+};
+
+func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:depth,
+                         List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(a)) { pass NIL; }
+    if (auto_ref) { drop push_view_ref_at(x, a, raw VIEW_LAUNDERED(), path, out); pass NIL; }
+    ExprNode:an = raw ast_expr(x.ast, a);
+    if ((an.kind == ExprKind.ExprAddressOfExpr) || (an.kind == ExprKind.ExprBorrowExpr)) {
+        drop push_view_ref_at(x, raw expr_operand(an), raw VIEW_LAUNDERED(), path, out);
+        pass NIL;
+    }
+    int32:at = raw exprtypes_get(x.etypes, a);
+    bool:carries = true;
+    if (at != 0i32) { carries = raw type_holds_pointer(x.types, at, 8i32); }
+    if (!carries) { pass NIL; }
+    ExprId:place = raw arg_place_chain(x, a);
+    if (!(raw expr_is_none(place))) {
+        drop push_view_ref_at(x, place, raw VIEW_LAUNDERED(), path, out);
+    } else {
+    if ((an.kind == ExprKind.ExprCallExpr) || (an.kind == ExprKind.ExprMethodCallExpr)
+        || (an.kind == ExprKind.ExprBuiltinExpr) || (an.kind == ExprKind.ExprStructLiteralExpr)
+        || (an.kind == ExprKind.ExprArrayLiteralExpr) || (an.kind == ExprKind.ExprPickExpr)) {
+        if (raw expr_is_none(raw view_place(x, an))) {
+            drop escape_err(x, raw BORROW_VIEW_OF_TEMPORARY(),
+                "a view of a temporary through a call (D-325): the callee views the bytes of what it is handed here, and this argument has no name and dies when its statement ends (D-246) -- bind it first, so the view is a view of that binding, checked like any other",
+                an.span);
+        }
+    }}
+    // The value's own refs: a carried parameter is viewed through.
+    List<ViewRef>:tmp = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, a, depth, @tmp);
+    for (int64:i in 0i64...tmp.count) {
+        ViewRef:r = tmp[i];
+        if ((r.kind == (raw REF_PASS())) || (r.kind == (raw REF_ADDR()))) {
+            if (!(raw expr_is_none(place))) { continue; }
+            drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path) });
+            continue;
+        }
+        drop list_push(out, r);
+    }
+    pass NIL;
+};
+
+// The refs argument `a` contributes under a PASS bit: an `@p`/`$$ p` an ADDRESS
+// the result carries (inert for the freeze, D-286's plain party); a value's
+// own refs as they are.
+func:arg_refs_pass = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:depth, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(a)) { pass NIL; }
+    if (auto_ref) { drop push_view_ref(x, a, raw REF_ADDR(), out); pass NIL; }
+    ExprNode:an = raw ast_expr(x.ast, a);
+    if ((an.kind == ExprKind.ExprAddressOfExpr) || (an.kind == ExprKind.ExprBorrowExpr)) {
+        drop push_view_ref(x, raw expr_operand(an), raw REF_ADDR(), out);
+        pass NIL;
+    }
+    drop collect_view_refs(x, a, depth, out);
+    pass NIL;
+};
+
+// WHAT A CALL MAY STORE INTO EACH DESTINATION IT IS HANDED (D-325): for every
+// destination-shaped argument at position j, the refs the callee's store
+// matrix names for j, recorded on the destination's binding; and, when the
+// destination is rooted at a pointer parameter of the CURRENT function,
+// folded into this function's own matrix (the transitive step).
+func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref, int32:start,
+                            int32:count, int32:depth) never fails {
+    if (raw call_is_builtin_method(x, call)) { pass NIL; }
+    // A BARE BUILTIN stores no view of one argument into another: the
+    // reference's `Views` column is the whole of its aliasing (D-249).
+    if (raw call_is_bare_builtin(x, call)) { pass NIL; }
+    int32:callee = raw call_callee_fn(x, call);
+    int32:base = 0i32;
+    if (!(raw expr_is_none(recv))) { base = 1i32; }
+    int32:total = base + count;
+    if (callee > 0i32) {
+        // A KNOWN CALLEE THAT STORES NOTHING THROUGH ANY ARGUMENT: nothing to
+        // record (the common case).
+        bool:has_flow = false;
+        for (int32:q in 0i32...total) {
+            if (x.fv_head[raw flow_slot(callee, q)] >= 0i32) { has_flow = true; break; }
+            if (x.flow_pass[raw flow_slot(callee, q)] != 0i32) { has_flow = true; break; }
+        }
+        if (!has_flow) { pass NIL; }
+    }
+    for (int32:j in 0i32...total) {
+        int32:fp = raw flow_pass_word(x, callee, j);
+        if (callee > 0i32) {
+            if ((fp == 0i32) && (x.fv_head[raw flow_slot(callee, j)] < 0i32)) { continue; }
+        }
+        ExprId:aj = recv;
+        bool:aj_auto = auto_ref;
+        if (j >= base) { aj = ExprId{ index: raw ast_id_at(x.ast, start, j - base) }; aj_auto = false; }
+        ExprId:dp = raw dest_place(x, aj, aj_auto);
+        if (raw expr_is_none(dp)) { continue; }
+        List<ViewRef>:got = raw list_init::<ViewRef>(4i64);
+        for (int32:k in 0i32...total) {
+            ExprId:ak = recv;
+            bool:ak_auto = auto_ref;
+            if (k >= base) { ak = ExprId{ index: raw ast_id_at(x.ast, start, k - base) }; ak_auto = false; }
+            // the view entries (k, path) of the callee's matrix for j
+            if (callee <= 0i32) {
+                drop arg_refs_view(x, ak, ak_auto, 0i32, depth, @got);
+            } else {
+                int32:e = x.fv_head[raw flow_slot(callee, j)];
+                while (e >= 0i32) decreases e + 1i32 {
+                    int32:ek = x.fv_param[e => int64];
+                    if ((ek == k) || ((ek == 31i32) && (k >= 31i32))) {
+                        drop arg_refs_view(x, ak, ak_auto, x.fv_path[e => int64], depth, @got);
+                    }
+                    e = x.fv_next[e => int64];
+                }
+            }
+            if (raw sum_has(fp, k)) { drop arg_refs_pass(x, ak, ak_auto, depth, @got); }
+        }
+        if (got.count == 0i64) { continue; }
+        drop refuse_view_escape_into(x, dp, aj, aj_auto, @got);
+        drop record_view_refs_at_place(x, dp, @got);
+        drop fold_flow_into_param(x, dp, @got);
+    }
+    pass NIL;
+};
+
+// RULE B FOR VIEWS, BY THE MATRIX (D-325): a view of THIS FRAME's storage that
+// the callee stores into a destination outliving the frame -- a pointer
+// parameter's pointee, or a pointer binding whose target the analysis cannot
+// name -- is the escape rule 2 refuses at a return, and it refuses here: the
+// callee's own body said the store happens (its matrix), so this is not the
+// shape-based rule B of D-117 but its exact reading. A local destination is
+// marked as holding a borrow (rule 2 and 3 then guard it) and keeps the refs.
+func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_ref, List<ViewRef>->:got) never fails {
+    bool:frame_view = false;
+    for (int64:i in 0i64...got.count) {
+        ViewRef:r = (<-got)[i];
+        if (r.kind == (raw REF_PASS())) { continue; }   // a parameter's value carried: older than this frame
+        if (raw ref_root_is_frame_owned(x, r)) { frame_view = true; }
+    }
+    if (!frame_view) { pass NIL; }
+    ExprId:rid = raw root_ident_id(x, dp);
+    if (raw expr_is_none(rid)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:sy = raw symtab_get(x.tab, rn.a);
+    ExprNode:an = raw ast_expr(x.ast, arg);
+    if (sy.origin_kind == (raw SYM_DECL())) {
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sy.origin });
+        if (pd.kind == DeclKind.DeclParamDecl) {
+            int32:pt = raw exprtypes_get(x.etypes, rid);
+            if (pt != 0i32) { if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) {
+                drop escape_err(x, raw BORROW_STORED(),
+                    "a view of this frame's storage is stored by this call into what the parameter points at (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and that memory outlives the frame the view names -- store a copy (`.clone()`, `string_concat(\"\", …)`)",
+                    an.span);
+                pass NIL;
+            }}
+            // A BY-VALUE PARAMETER (1.6.1 step 0). A `dyn` this frame was LENT
+            // owns a cell that is the CALLER's -- the one owning-by-cell kind a
+            // loan may write, through its methods (TYPE-085's `dyn` exemption)
+            // -- so what this call stores into it escapes the frame here. Any
+            // other by-value parameter (a `move dyn`, a `move` struct, a
+            // copyable struct) is this frame's storage and HOLDS the borrow
+            // from here, as a local would (rules 2 and 3 then guard it).
+            if (pt != 0i32) { if ((raw type_kind(x.types, pt)) == (raw TY_DYN())) {
+                if (((raw param_quals(pd)) & (raw QUAL_MOVE())) == 0i32) {
+                    drop escape_err(x, raw BORROW_STORED(),
+                        "a view of this frame's storage is stored by this call into the cell of a `dyn` this frame was lent (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and that cell is the caller's -- store a copy, or take the `dyn` as `move`",
+                        an.span);
+                    pass NIL;
+                }
+            }}
+            drop escape_mark_param(x, sy.origin);
+            pass NIL;
+        }
+    }
+    // a pointer BINDING handed by value: its target cannot be named
+    if (!auto_ref) {
+        if (an.kind == ExprKind.ExprIdentifierExpr) {
+            int32:at = raw exprtypes_get(x.etypes, arg);
+            if (at != 0i32) { if ((raw type_kind(x.types, at)) == (raw TY_POINTER())) {
+                drop escape_err(x, raw BORROW_UNTRACKED(),
+                    "a view of this frame's storage is stored by this call into what this pointer binding points at (D-325: the callee's own body stores what it is handed here), and the target of the binding cannot be named -- store a copy, or hand the callee `@place` of a binding this frame owns",
+                    an.span);
+                pass NIL;
+            }}
+        }
+    }
+    // a local: it holds a borrow now (rules 2 and 3 guard it), and the refs
+    if (sy.origin_kind == (raw SYM_STMT())) { drop escape_mark(x, sy.origin); }
+    pass NIL;
+};
+
+// Is a ref's root frame-owned -- a local, a pattern binding, or a by-value
+// parameter (whose storage is this frame's)?
+func:ref_root_is_frame_owned = bool(Escape->:x, ViewRef:r) never fails {
+    if (r.root == 0i32) { pass false; }
+    Symbol:rs = raw symtab_get(x.tab, r.root);
+    if ((rs.origin_kind == (raw SYM_STMT())) || (rs.origin_kind == (raw SYM_PAT()))) { pass true; }
+    if (rs.origin_kind == (raw SYM_DECL())) {
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: rs.origin });
+        if (pd.kind == DeclKind.DeclParamDecl) {
+            ExprId:rid = raw root_ident_id(x, ExprId{ index: r.place });
+            if (raw expr_is_none(rid)) { pass true; }
+            int32:pt = raw exprtypes_get(x.etypes, rid);
+            if (pt == 0i32) { pass true; }
+            pass ((raw type_kind(x.types, pt)) != (raw TY_POINTER()));
+        }
+    }
+    pass false;
+};
+
+// A store into a place rooted at a pointer parameter of the current function
+// folds the stored refs into this function's matrix for that parameter.
+func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs) never fails {
+    ExprId:rid = raw root_ident_id(x, dest);
+    if (raw expr_is_none(rid)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    int32:j = raw param_index_of(x, rn.a);
+    if (j < 0i32) { pass NIL; }
+    int32:rt = raw exprtypes_get(x.etypes, rid);
+    if (rt == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, rt)) != (raw TY_POINTER())) { pass NIL; }
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:r = (<-refs)[i];
+        int32:k = raw param_index_of(x, r.root);
+        if (k < 0i32) { continue; }
+        if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
+            drop fv_add(x, j, k, raw ref_full_path(x, r));
+        } else {
+            drop flow_pass_set(x, j, k);
+        }
+    }
+    pass NIL;
+};
+
+// A store's target rooted at a pointer parameter's pointee -- `dst.f = v`,
+// `dst.items[i] = v`, `<-dst = v` -- folds the value's refs into the matrix.
+func:record_flow_of_store = NIL(Escape->:x, ExprId:tgt, ExprId:val) never fails {
+    if (raw expr_is_none(tgt)) { pass NIL; }
+    ExprId:t = tgt;
+    ExprNode:tn = raw ast_expr(x.ast, tgt);
+    if (tn.kind == ExprKind.ExprDerefExpr) { t = raw expr_operand(tn); }
+    // THE WRITE ITSELF is the mutation summary's business: this path below the
+    // parameter's pointee is written by the body.
+    drop record_mut_of_place(x, t, 0i32);
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
+    if (refs.count == 0i64) { pass NIL; }
+    drop fold_flow_into_param(x, t, @refs);
+    // A STORE THROUGH A POINTER LOCAL lands wherever the local may point (its
+    // own refs: `slot = @dst.f`, `slot = raw find(dst, k)`): each ref rooted at
+    // a pointer parameter is a store into that parameter's pointee.
+    ExprId:rid = raw root_ident_id(x, t);
+    if (raw expr_is_none(rid)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:sy = raw symtab_get(x.tab, rn.a);
+    if (sy.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:rt = raw exprtypes_get(x.etypes, rid);
+    if (rt == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, rt)) != (raw TY_POINTER())) { pass NIL; }
+    int32:e = raw escape_view_ref_first(x, sy.origin);
+    while (e >= 0i32) decreases e + 1i32 {
+        ViewRef:pr = raw escape_view_ref(x, e);
+        e = raw escape_view_ref_next(x, e);
+        int32:j = raw param_index_of(x, pr.root);
+        if (j < 0i32) { continue; }
+        drop mu_add(x, j, raw ref_full_path(x, pr));
+        for (int64:i in 0i64...refs.count) {
+            ViewRef:r = refs[i];
+            int32:k = raw param_index_of(x, r.root);
+            if (k < 0i32) { continue; }
+            if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
+                drop fv_add(x, j, k, raw ref_full_path(x, r));
+            } else {
+                drop flow_pass_set(x, j, k);
+            }
+        }
+    }
+    pass NIL;
+};
+
+// A WRITE-CAPABLE ACCESS of a place rooted at a pointer parameter of the current
+// function, `sub` the path written below the place (0: the place itself),
+// recorded in the mutation summary.
+func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails {
+    if (raw expr_is_none(place)) { pass NIL; }
+    ExprId:rid = raw root_ident_id(x, place);
+    if (raw expr_is_none(rid)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    int32:k = raw param_index_of(x, rn.a);
+    if (k < 0i32) { pass NIL; }
+    int32:rt = raw exprtypes_get(x.etypes, rid);
+    if (rt == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, rt)) != (raw TY_POINTER())) { pass NIL; }
+    drop mu_add(x, k, raw path_join(x, raw path_rel(x, place), sub));
+    pass NIL;
+};
+
+// THE MUTATIONS A CALL MAKES THROUGH WHAT IT IS HANDED, folded into the current
+// function's summary where the argument is rooted at a pointer parameter: an
+// `@p.q`/`$$m p.q` argument, a pointer VALUE `p.q`, the implicit `@recv` -- each
+// composed with the callee's written paths for that position (the whole place
+// for an unknown callee; nothing for a callee that writes nothing through it).
+func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref, int32:start,
+                              int32:count) never fails {
+    if (raw call_is_builtin_method(x, call)) { pass NIL; }
+    if (x.cur_fn < 0i32) { pass NIL; }
+    int32:callee = raw call_callee_fn(x, call);
+    int32:base = 0i32;
+    if (!(raw expr_is_none(recv))) { base = 1i32; }
+    int32:total = base + count;
+    for (int32:j in 0i32...total) {
+        if (callee > 0i32) { if (x.mu_head[raw flow_slot(callee, j)] < 0i32) { continue; } }
+        ExprId:aj = recv;
+        bool:aj_auto = auto_ref;
+        if (j >= base) { aj = ExprId{ index: raw ast_id_at(x.ast, start, j - base) }; aj_auto = false; }
+        if (raw expr_is_none(aj)) { continue; }
+        ExprNode:an = raw ast_expr(x.ast, aj);
+        // a shared claim admits readers only: the callee cannot write through it
+        if ((an.kind == ExprKind.ExprBorrowExpr) && (!(raw borrow_is_mut(an)))) { continue; }
+        ExprId:dp = raw dest_place(x, aj, aj_auto);
+        if (raw expr_is_none(dp)) { continue; }
+        if (callee <= 0i32) { drop record_mut_of_place(x, dp, 0i32); continue; }
+        int32:e = x.mu_head[raw flow_slot(callee, j)];
+        while (e >= 0i32) decreases e + 1i32 {
+            drop record_mut_of_place(x, dp, x.mu_path[e => int64]);
+            e = x.mu_next[e => int64];
+        }
+    }
+    pass NIL;
+};
+
+// --- the view references (D-325) ---------------------------------------------------
+
+// A ref appended to a statement's chain when it is new there; a new entry moves
+// the fixpoint, a repeated one does not (the `escape_mark` discipline).
+func:escape_add_view_ref = NIL(Escape->:x, int32:stmt, ViewRef:r) never fails {
+    if (r.root == 0i32)           { pass NIL; }
+    // A PARAMETER'S CHAIN is keyed by its declaration, spelled -(decl + 1).
+    if (stmt < 0i32) {
+        int32:pd = (0i32 - stmt) - 1i32;
+        if (pd >= x.decl_count) { pass NIL; }
+        int32:pi = x.vp_head[pd => int64];
+        while (pi >= 0i32) decreases pi + 1i32 {
+            if ((x.vr_root[pi => int64] == r.root) && (x.vr_place[pi => int64] == r.place)
+                && (x.vr_kind[pi => int64] == r.kind) && (x.vr_path[pi => int64] == r.path)) { pass NIL; }
+            pi = x.vr_next[pi => int64];
+        }
+        int32:pat = x.vr_root.count =>! int32;
+        drop list_push(@x.vr_root, r.root);
+        drop list_push(@x.vr_place, r.place);
+        drop list_push(@x.vr_kind, r.kind);
+        drop list_push(@x.vr_path, r.path);
+        drop list_push(@x.vr_next, x.vp_head[pd => int64]);
+        x.vp_head[pd => int64] = pat;
+        x.changed = true;
+        pass NIL;
+    }
+    if (stmt >= x.holds_count)    { pass NIL; }
+    // A chain's `next` is always smaller than its entry (an entry links to the
+    // head that was there when it was pushed), so `i` itself is the measure.
+    int32:i = x.vr_head[stmt => int64];
+    while (i >= 0i32) decreases i + 1i32 {
+        if ((x.vr_root[i => int64] == r.root) && (x.vr_place[i => int64] == r.place)
+            && (x.vr_kind[i => int64] == r.kind) && (x.vr_path[i => int64] == r.path)) { pass NIL; }
+        i = x.vr_next[i => int64];
+    }
+    int32:at = x.vr_root.count =>! int32;
+    drop list_push(@x.vr_root, r.root);
+    drop list_push(@x.vr_place, r.place);
+    drop list_push(@x.vr_kind, r.kind);
+    drop list_push(@x.vr_path, r.path);
+    drop list_push(@x.vr_next, x.vr_head[stmt => int64]);
+    x.vr_head[stmt => int64] = at;
+    x.changed = true;
+    pass NIL;
+};
+
+// THE READERS, for the aliasing walk: the first ref of a declaring statement (or
+// -1), the next ref after one (or -1), the ref itself, and whether the holder
+// declared by the statement is a pointer binding.
+pub func:escape_view_ref_first = int32(Escape->:x, int32:stmt) never fails {
+    if (stmt < 0i32)           { pass (0i32 - 1i32); }
+    if (stmt >= x.holds_count) { pass (0i32 - 1i32); }
+    pass x.vr_head[stmt => int64];
+};
+
+// The first view ref of a PARAMETER's pointee, by its declaration index.
+pub func:escape_param_view_ref_first = int32(Escape->:x, int32:decl) never fails {
+    if (decl < 0i32)           { pass (0i32 - 1i32); }
+    if (decl >= x.decl_count)  { pass (0i32 - 1i32); }
+    pass x.vp_head[decl => int64];
+};
+
+pub func:escape_view_ref_next = int32(Escape->:x, int32:i) never fails {
+    if (i < 0i32) { pass (0i32 - 1i32); }
+    if ((i => int64) >= x.vr_next.count) { pass (0i32 - 1i32); }
+    pass x.vr_next[i => int64];
+};
+
+pub func:escape_view_ref = ViewRef(Escape->:x, int32:i) never fails {
+    if (i < 0i32) { pass ViewRef{ root: 0i32, place: 0i32, kind: 0i32, path: 0i32 }; }
+    if ((i => int64) >= x.vr_root.count) { pass ViewRef{ root: 0i32, place: 0i32, kind: 0i32, path: 0i32 }; }
+    pass ViewRef{ root: x.vr_root[i => int64], place: x.vr_place[i => int64], kind: x.vr_kind[i => int64], path: x.vr_path[i => int64] };
+};
+
+pub func:escape_holder_is_pointer = bool(Escape->:x, int32:stmt) never fails {
+    if (stmt < 0i32)           { pass false; }
+    if (stmt >= x.holds_count) { pass false; }
+    pass x.vr_ptr[stmt => int64];
+};
+
+// The view refs of a value written into the binding a statement declares,
+// recorded on that statement; the holder's pointer-ness read off the value's
+// type, which is the binding's kind at the one site where it is known.
+func:record_view_refs = NIL(Escape->:x, int32:stmt, ExprId:val) never fails {
+    if (raw expr_is_none(val)) { pass NIL; }
+    if (stmt < 0i32)           { pass NIL; }
+    if (stmt >= x.holds_count) { pass NIL; }
+    int32:vt = raw exprtypes_get(x.etypes, val);
+    if (vt != 0i32) {
+        if ((raw type_kind(x.types, vt)) == (raw TY_POINTER())) { x.vr_ptr[stmt => int64] = true; }
+    }
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        drop escape_add_view_ref(x, stmt, refs[i]);
+    }
+    pass NIL;
+};
+
+// The refs of a list recorded on the binding under a place (rule B's
+// destination, D-325): the callee may have stored any view it was handed
+// into what the destination points at.
+func:record_view_refs_at_place = NIL(Escape->:x, ExprId:place, List<ViewRef>->:refs) never fails {
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, rn.a);
+    int32:key = 0i32 - 1i32;
+    if (s.origin_kind == (raw SYM_STMT())) { key = s.origin; }
+    if (s.origin_kind == (raw SYM_DECL())) {
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: s.origin });
+        if (pd.kind == DeclKind.DeclParamDecl) { key = (0i32 - s.origin) - 1i32; }
+    }
+    if (key == (0i32 - 1i32)) { pass NIL; }
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:vr = (<-refs)[i];
+        // A VIEW OF THE DESTINATION ITSELF is held by it at its own path (a
+        // struct whose field views another of its fields): the later write to
+        // the viewed field is what the party refuses.
+        drop escape_add_view_ref(x, key, vr);
+    }
+    pass NIL;
+};
+
+// A DIRECT view ref of a viewed place, when the place has a named root.
+func:push_view_ref = NIL(Escape->:x, ExprId:place, int32:kind, List<ViewRef>->:out) never fails {
+    drop push_view_ref_at(x, place, kind, 0i32, out);
+    pass NIL;
+};
+
+func:push_view_ref_at = NIL(Escape->:x, ExprId:place, int32:kind, int32:path, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(place)) { pass NIL; }
+    int32:r = raw root_symbol(x, place);
+    if (r == 0i32) { pass NIL; }
+    drop list_push(out, ViewRef{ root: r, place: place.index, kind: kind, path: path });
+    pass NIL;
+};
+
+// The refs a binding's chain holds, appended: a name that holds views carries
+// them wherever it is read (the transitive step; the chain is complete at the
+// fixpoint).
+func:push_binding_refs = NIL(Escape->:x, int32:sym, List<ViewRef>->:out) never fails {
+    if (sym == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, sym);
+    if (s.origin_kind == (raw SYM_DECL())) {
+        int32:pi = raw escape_param_view_ref_first(x, s.origin);
+        while (pi >= 0i32) decreases pi + 1i32 {
+            drop list_push(out, raw escape_view_ref(x, pi));
+            pi = raw escape_view_ref_next(x, pi);
+        }
+        pass NIL;
+    }
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:i = raw escape_view_ref_first(x, s.origin);
+    while (i >= 0i32) decreases i + 1i32 {
+        drop list_push(out, raw escape_view_ref(x, i));
+        i = raw escape_view_ref_next(x, i);
+    }
+    pass NIL;
+};
+
+// WHAT STORAGE MAY A VALUE VIEW -- the (root, place, kind) refs inside an
+// expression, mirroring the carrying rules of `escape_expr` shape for shape:
+// a view-maker's or a range view's operand is a DIRECT ref (and the viewed
+// place is walked, since a view of a holder carries what the holder holds); a
+// name carries its binding's refs, or its own value when it is a parameter
+// (a PASS ref, which the function's summary reads); reaching into a value
+// carries what the value carries; a cast, an unwrap, a `move`, an `await`
+// carry their operand's; a literal carries its values'; a `pick` expression
+// its `give`s'; and a CALL whose result can carry a pointer carries, per
+// argument, what the callee's SUMMARY admits (`collect_call_refs`). A bare
+// builtin's result carries what the reference's `Views` column says and
+// nothing else (`string_concat` of a view is an owned copy); a plain `@`/`$$`
+// outside a call is D-286's held address and no view. Exhaustion is silent
+// here as in `collect_local_roots`: the escape walk refused the same value.
+func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (depth <= 0i32) { pass NIL; }
+    // A VALUE WHOSE TYPE HOLDS NO POINTER CARRIES NO VIEW (the verdict filter
+    // of `verdict_borrowy`, applied at every node): `s.len` is a length, an
+    // `int64` local initialised from it holds nothing of `s`'s root, a call
+    // returning a scalar hands back none of what it was given. An unrecorded
+    // type fails closed.
+    int32:vt = raw exprtypes_get(x.etypes, id);
+    if (vt != 0i32) { if (!(raw type_holds_pointer(x.types, vt, 8i32))) { pass NIL; } }
+    int32:d = depth - 1i32;
+    ExprNode:n = raw ast_expr(x.ast, id);
+
+    // A PLAIN ADDRESS OR A CLAIM AS A VALUE is an ADDRESS ref of its place: inert
+    // for the freeze (D-286: `@` claims nothing), read by the summaries -- a
+    // pointer local `p = @dst.f` handed on, a store through it, a `pass @b.s`.
+    if ((n.kind == ExprKind.ExprAddressOfExpr) || (n.kind == ExprKind.ExprBorrowExpr)) {
+        drop push_view_ref(x, raw expr_operand(n), raw REF_ADDR(), out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass NIL; }
+        Symbol:isy = raw symtab_get(x.tab, n.a);
+        if (isy.origin_kind == (raw SYM_DECL())) {
+            DeclNode:idl = raw ast_decl(x.ast, DeclId{ index: isy.origin });
+            if (idl.kind == DeclKind.DeclParamDecl) {
+                drop list_push(out, ViewRef{ root: n.a, place: id.index, kind: raw REF_PASS(), path: 0i32 });
+            }
+            pass NIL;
+        }
+        drop push_binding_refs(x, n.a, out);
+        pass NIL;
+    }
+    if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
+        drop collect_view_refs(x, raw expr_operand(n), d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        ExprId:vp2 = raw view_place(x, n);
+        if (!(raw expr_is_none(vp2))) {
+            // THE RANGE VIEW'S PLACE IS THE INDEX EXPRESSION ITSELF: its path
+            // ends in the range step, so a write to an element the range does
+            // not cover is disjoint (alias.npk's `overlap_class`).
+            drop push_view_ref(x, id, raw VIEW_DIRECT(), out);
+        }
+        drop collect_view_refs(x, raw expr_lhs(n), d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprDerefExpr) { pass NIL; }
+    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)
+        || (n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprRelayExpr)
+        || (n.kind == ExprKind.ExprAwaitExpr) || (n.kind == ExprKind.ExprMoveExpr)) {
+        drop collect_view_refs(x, raw expr_operand(n), d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprDropExpr) {
+        ExprId:sp_op = raw expr_operand(n);
+        ExprNode:sp_n = raw ast_expr(x.ast, sp_op);
+        if (sp_n.kind == ExprKind.ExprCallExpr) {
+            if (raw callee_is_async(x, sp_n)) { pass NIL; }
+        }
+        drop collect_view_refs(x, sp_op, d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        if ((raw bare_builtin_name(x, n)).len > 0i64) {
+            ExprId:vpb = raw view_place(x, n);
+            if (raw expr_is_none(vpb)) { pass NIL; }
+            drop push_view_ref(x, vpb, raw VIEW_DIRECT(), out);
+            drop collect_view_refs(x, vpb, d, out);
+            pass NIL;
+        }
+        if (!(raw carries_pointer(x, raw exprtypes_get(x.etypes, id), raw CARRY_FUEL()))) { pass NIL; }
+        int32:gc = raw expr_generic_count(n);
+        drop collect_call_refs(x, id, raw expr_none(), (raw expr_list_start(n)) + gc,
+                               (raw expr_list_count(n)) - gc, d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        if (!(raw carries_pointer(x, raw exprtypes_get(x.etypes, id), raw CARRY_FUEL()))) { pass NIL; }
+        ExprId:mrecv = raw expr_operand(n);
+        if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { mrecv = raw expr_none(); }
+        drop collect_call_refs(x, id, mrecv, raw expr_list_start(n), raw expr_list_count(n), d, out);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        ExprId:vp = raw view_place(x, n);
+        if (!(raw expr_is_none(vp))) {
+            drop push_view_ref(x, vp, raw VIEW_DIRECT(), out);
+            drop collect_view_refs(x, vp, d, out);
+            pass NIL;
+        }
+        // NOT A VIEW: carries what its arguments carry, as the escape walk reads
+        // it (`#ptr_add<T>(p, k)` is `p`'s borrow through arithmetic).
+        int32:bgc = raw builtin_generic_count(n);
+        int32:bstart = (raw expr_list_start(n)) + bgc;
+        int32:bcount = (raw expr_list_count(n)) - bgc;
+        for (int32:bi in 0i32...bcount) {
+            drop collect_view_refs(x, ExprId{ index: raw ast_id_at(x.ast, bstart, bi) }, d, out);
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:scnt = raw expr_list_count(n);
+        int32:si = 1i32;
+        while (si < scnt) decreases scnt - si {
+            drop collect_view_refs(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) }, d, out);
+            si = si + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        for (int32:pi in 0i32...(raw pickx_arm_count(n))) {
+            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, raw pickx_arm_start(n), pi));
+            drop collect_gives_refs(x, raw arm_body(parm), d, out);
+        }
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF()))   { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE()))   { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        for (int32:li in 0i32...(raw expr_list_count(n))) {
+            drop collect_view_refs(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), li) }, d, out);
+        }
+        pass NIL;
+    }
+    drop collect_view_refs(x, raw expr_lhs(n), d, out);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        for (int32:oi in 0i32...(raw expr_list_count(n))) {
+            drop collect_view_refs(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), oi) }, d, out);
+        }
+        pass NIL;
+    }
+    drop collect_view_refs(x, raw expr_rhs(n), d, out);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop collect_view_refs(x, raw expr_third(n), d, out);
+    pass NIL;
+};
+
+// WHAT A CALL'S RESULT MAY VIEW, argument by argument under the callee's
+// summary (D-325): position k is the receiver when the call has one, then the
+// arguments in order. An `@p`/`$$ p` argument under a VIEW bit is a LAUNDERED
+// view of `p` (the callee views its pointee); under a PASS bit alone an
+// ADDRESS the result carries (inert for the freeze, D-286's plain party). A
+// value argument's own refs travel under either bit, a carried parameter
+// becoming a LAUNDERED view under a VIEW bit (the callee viewed through it).
+// The implicit `@recv` of a pointer-receiver call is `@p` at position 0. A
+// call with no recorded function declaration -- a `dyn` method, a function
+// value -- is read with every bit set.
+func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, int32:count,
+                              int32:depth, List<ViewRef>->:out) never fails {
+    if (raw call_is_builtin_method(x, call)) { pass NIL; }
+    int32:callee = raw call_callee_fn(x, call);
+    int32:spass = 0i32 - 1i32;
+    if (callee > 0i32) {
+        spass = x.sum_pass[callee => int64];
+        // A KNOWN CALLEE THAT HANDS NOTHING BACK: no argument need be read (the
+        // common case, and the cost of the walk over the compiler's own source).
+        if ((spass == 0i32) && (x.sv_head[callee => int64] < 0i32)) { pass NIL; }
+    }
+    int32:base = 0i32;
+    if (!(raw expr_is_none(recv))) { base = 1i32; }
+    int32:total = base + count;
+    bool:recv_auto = false;
+    if (base == 1i32) { recv_auto = raw recv_is_auto_ref(x, call, recv); }
+    for (int32:k in 0i32...total) {
+        ExprId:a = recv;
+        bool:a_auto = recv_auto;
+        if (k >= base) { a = ExprId{ index: raw ast_id_at(x.ast, start, k - base) }; a_auto = false; }
+        if (callee <= 0i32) {
+            drop arg_refs_view(x, a, a_auto, 0i32, depth, out);
+        } else {
+            int32:e = x.sv_head[callee => int64];
+            while (e >= 0i32) decreases e + 1i32 {
+                int32:ek = x.sv_param[e => int64];
+                if ((ek == k) || ((ek == 31i32) && (k >= 31i32))) {
+                    drop arg_refs_view(x, a, a_auto, x.sv_path[e => int64], depth, out);
+                }
+                e = x.sv_next[e => int64];
+            }
+        }
+        if (raw sum_has(spass, k)) { drop arg_refs_pass(x, a, a_auto, depth, out); }
+    }
+    pass NIL;
+};
+
+// IS A METHOD CALL'S RECEIVER THE IMPLICIT `@recv` (the auto-ref the checker
+// performs, 1.0.9b; DEF-94's twin in this analysis): the callee's first
+// parameter is a pointer and the receiver expression is not one. An unknown
+// callee answers yes, the closed direction.
+func:recv_is_auto_ref = bool(Escape->:x, ExprId:call, ExprId:recv) never fails {
+    int32:rxt = raw exprtypes_get(x.etypes, recv);
+    if (rxt != 0i32) {
+        if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { pass false; }
+    }
+    if (raw call_is_builtin_method(x, call)) { pass false; }
+    int32:ft = raw exprtypes_callee_ft(x.etypes, call);
+    if (ft == 0i32) { pass true; }
+    if ((raw type_param_count_of(x.types, ft)) <= 0i32) { pass false; }
+    int32:p0 = raw type_param_at_of(x.ast, x.types, ft, 0i32);
+    pass ((raw type_kind(x.types, p0)) == (raw TY_POINTER()));
+};
+
+// The `give` values under an arm body (the shapes `collect_gives_roots` walks).
+func:collect_gives_refs = NIL(Escape->:x, StmtId:sid, int32:depth, List<ViewRef>->:out) never fails {
+    if (depth <= 0i32) { pass NIL; }
+    if (sid.index == 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, sid);
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        drop collect_view_refs(x, raw stmt_operand(s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop collect_gives_refs(x, StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) }, depth - 1i32, out);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop collect_gives_refs(x, raw stmt_body(x.ast, s), depth - 1i32, out);
+        drop collect_gives_refs(x, raw stmt_else(s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:i in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, raw pick_arm_start(s), i));
+            drop collect_gives_refs(x, raw arm_body(parm), depth - 1i32, out);
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// THE VIEW-MAKER CLASSIFICATION, for the aliasing walk (one definition of "what
+// a view-maker views", D-249's): the viewed place of a node, or none.
+pub func:escape_view_place = ExprId(Escape->:x, ExprNode:n) never fails {
+    pass (raw view_place(x, n));
 };
 
 // NOTHING IS REPORTED WHILE MARKING. The marking rounds walk the same code and
@@ -179,6 +1657,38 @@ func:escape_holds = bool(Escape->:x, int32:stmt_index) never fails {
     pass (x.holds[stmt_index => int64]);
 };
 
+// A BY-VALUE PARAMETER that holds a borrow of this frame's storage (the
+// `pholds` table; see the field): marked as a local is, read wherever a
+// binding's holding is asked.
+func:escape_mark_param = NIL(Escape->:x, int32:decl) never fails {
+    if (decl < 0i32)             { pass NIL; }
+    if (decl >= x.decl_count)    { pass NIL; }
+    if (x.pholds[decl => int64]) { pass NIL; }
+    x.pholds[decl => int64] = true;
+    x.changed = true;
+    pass NIL;
+};
+
+func:escape_param_holds = bool(Escape->:x, int32:decl) never fails {
+    if (decl < 0i32)          { pass false; }
+    if (decl >= x.decl_count) { pass false; }
+    pass (x.pholds[decl => int64]);
+};
+
+// Is this symbol a BY-VALUE parameter (not a pointer one)? A pointer
+// parameter's target is the caller's and is never marked; a by-value one is
+// this frame's storage and may hold a borrow (DEF-109).
+func:sym_is_value_param = bool(Escape->:x, Symbol:sy, int32:ident) never fails {
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    if ((sy.origin <= 0i32) || (sy.origin >= x.decl_count)) { pass false; }
+    DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sy.origin });
+    if (pd.kind != DeclKind.DeclParamDecl) { pass false; }
+    if (ident == 0i32) { pass true; }
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: ident });
+    if (pt == 0i32) { pass true; }
+    pass ((raw type_kind(x.types, pt)) != (raw TY_POINTER()));
+};
+
 // --- declarations ------------------------------------------------------------
 //
 // The same walk `check_module` makes, for the same reason: a function inside an
@@ -188,6 +1698,14 @@ func:escape_holds = bool(Escape->:x, int32:stmt_index) never fails {
 // whole cycle is written against.
 
 pub func:escape_module = NIL(Escape->:x, DeclId:mod_id, int32:scope) never fails {
+    int32:saved_scope = x.scope;
+    x.scope = scope;
+    drop escape_module_in(x, mod_id, scope);
+    x.scope = saved_scope;
+    pass NIL;
+};
+
+func:escape_module_in = NIL(Escape->:x, DeclId:mod_id, int32:scope) never fails {
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     for (int32:i in 0i32...n) {
@@ -202,7 +1720,15 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) never fails {
     if (d.kind == DeclKind.DeclFunctionDecl) {
         StmtId:body = raw fn_body(x.ast, d);
         if (!(raw stmt_is_none(body))) {
+            int32:saved_fn = x.cur_fn;
+            x.cur_fn = id.index;
             drop escape_stmt(x, body);
+            x.cur_fn = saved_fn;
+            // an impl's method: its summary joins its trait method's
+            if ((id.index > 0i32) && (id.index < x.decl_count)) {
+                int32:ov = x.override_of[id.index => int64];
+                if (ov != 0i32) { drop merge_summary(x, id.index, ov); }
+            }
         }
         pass NIL;
     }
@@ -298,6 +1824,11 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
                     drop escape_mark(x, id.index);
                 }
             }
+            // THE VIEWS THIS BINDING MAY HOLD (D-325), whatever the marks say:
+            // a view of a pointer parameter's pointee is exempt from the
+            // marks above (its target outlives the frame) and is still a
+            // view whose root must not be written while it lives.
+            drop record_view_refs(x, id.index, init);
         }
         pass NIL;
     }
@@ -426,6 +1957,9 @@ func:escape_counted = NIL(Escape->:x, StmtNode:s) never fails {
 func:escape_return_value = NIL(Escape->:x, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
     if (raw expr_is_none(v)) { pass NIL; }
+    // THE FUNCTION'S SUMMARY (D-325) grows from what it hands back, whatever
+    // the verdict below says of it.
+    drop record_summary(x, v);
     if (raw verdict_borrowy(x, v, raw escape_expr(x, v, raw ESCAPE_DEPTH()))) {
         // A SECOND LOOK BEFORE REFUSING (0.8.1): a value whose borrows are all
         // rooted at PARAMETERS may travel up one frame — a parameter's target
@@ -609,7 +2143,7 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
         if ((raw bare_builtin_name(x, n)).len > 0i64) {
             ExprId:vpb = raw view_place(x, n);
             if (raw expr_is_none(vpb)) { pass true; }
-            if (raw view_is_frame_borrow(x, vpb)) { pass (raw root_is_param(x, raw view_root_ident(x, vpb))); }
+            if (raw view_is_frame_borrow(x, vpb)) { pass (raw view_root_is_param(x, n, vpb)); }
             pass (raw borrows_only_param_rooted(x, vpb, d));
         }
         int32:gcount = raw expr_generic_count(n);
@@ -639,13 +2173,13 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
             }
             pass true;
         }
-        if (raw view_is_frame_borrow(x, vp)) { pass (raw root_is_param(x, raw view_root_ident(x, vp))); }
+        if (raw view_is_frame_borrow(x, vp)) { pass (raw view_root_is_param(x, n, vp)); }
         pass (raw borrows_only_param_rooted(x, vp, d));
     }
     if (n.kind == ExprKind.ExprIndexExpr) {
         ExprId:vp2 = raw view_place(x, n);
         if (raw expr_is_none(vp2)) { pass false; }
-        if (raw view_is_frame_borrow(x, vp2)) { pass (raw root_is_param(x, raw view_root_ident(x, vp2))); }
+        if (raw view_is_frame_borrow(x, vp2)) { pass (raw view_root_is_param(x, n, vp2)); }
         pass (raw borrows_only_param_rooted(x, vp2, d));
     }
     if (n.kind == ExprKind.ExprIdentifierExpr) {
@@ -873,8 +2407,76 @@ func:view_verdict = bool(Escape->:x, ExprId:place, Span:at) never fails {
     pass (vk == 1i32);
 };
 
+// MAY A VIEW ROOTED AT A PARAMETER TRAVEL UP ONE FRAME (DEF-109, D-325)? A
+// pointer parameter's pointee is the caller's or older: yes. A BY-VALUE
+// parameter is the callee's copy -- its header, its inline bytes -- so a view
+// of its FRAME storage (a range view of an inline array, an address) may not;
+// but a view of the HEAP bytes it references (`string_from_bytes(x.ptr, n)`
+// of a `string:x`, `string_bytes(x)`, a range view of a `List`, a slice or a
+// string) is a view of the storage the caller handed in, which the caller
+// keeps and which the caller's freeze protects through the summary's VIEW bit
+// -- the compiler's own `lexer_init(file, string:text)` returning a Lexer over
+// `text`'s bytes is that shape. A `move` parameter is the callee's own
+// (dropped at its exit): no.
+func:view_root_is_param = bool(Escape->:x, ExprNode:viewnode, ExprId:vp) never fails {
+    // the view walk's root: through casts and `#ptr_add` (the tree's
+    // substring idiom), as `view_root` reads them
+    ExprId:rid = raw view_root_ident(x, vp);
+    if (raw expr_is_none(rid)) { pass false; }
+    if ((raw ast_expr(x.ast, rid)).kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    if (rn.a == 0i32) { pass false; }
+    Symbol:sy = raw symtab_get(x.tab, rn.a);
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
+    if (d.kind != DeclKind.DeclParamDecl) { pass false; }
+    if (((raw param_quals(d)) & (raw QUAL_MOVE())) != 0i32) { pass false; }
+    int32:pt = raw exprtypes_get(x.etypes, rid);
+    if (pt == 0i32) { pass false; }
+    if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) { pass true; }
+    pass (raw heap_backed_view(x, viewnode, vp));
+};
+
+// DOES THIS VIEW NAME HEAP BYTES rather than the frame storage under its root?
+// A range view: its base is a `List`, a string, a slice or a buffer (heap or
+// pointee) -- an array is inline. A view-maker: its viewed place is a header's
+// `.ptr` (the heap body), or a pointer value (the pointee).
+func:heap_backed_view = bool(Escape->:x, ExprNode:viewnode, ExprId:vp) never fails {
+    if (viewnode.kind == ExprKind.ExprIndexExpr) {
+        int32:bt = raw exprtypes_get(x.etypes, raw expr_lhs(viewnode));
+        if (bt == 0i32) { pass false; }
+        int32:bk = raw type_kind(x.types, bt);
+        if (bk == (raw TY_STRING())) { pass true; }
+        if (bk == (raw TY_SLICE()))  { pass true; }
+        if (bk == (raw TY_BUFFER())) { pass true; }
+        if (bk == (raw TY_STRUCT())) { pass (raw type_is_list(x.tr, bt)); }
+        pass false;
+    }
+    if (raw expr_is_none(vp)) { pass false; }
+    int32:vt = raw exprtypes_get(x.etypes, vp);
+    if (vt != 0i32) { if ((raw type_kind(x.types, vt)) == (raw TY_POINTER())) { pass true; } }
+    ExprNode:pn = raw ast_expr(x.ast, vp);
+    if (pn.kind == ExprKind.ExprMemberAccessExpr) {
+        if (raw string_eq(raw intern_get(x.tr.interns, (raw expr_name(pn)) =>! int32), "ptr")) {
+            int32:ot = raw exprtypes_get(x.etypes, raw expr_operand(pn));
+            if (ot == 0i32) { pass false; }
+            int32:ok = raw type_kind(x.types, ot);
+            if (ok == (raw TY_STRING()))  { pass true; }
+            if (ok == (raw TY_CSTRING())) { pass true; }
+            if (ok == (raw TY_SLICE()))   { pass true; }
+            if (ok == (raw TY_BUFFER()))  { pass true; }
+        }
+    }
+    // `string_bytes(s)`: the viewed place is the string itself
+    if (vt != 0i32) { if ((raw type_kind(x.types, vt)) == (raw TY_STRING())) { pass true; } }
+    pass false;
+};
+
 func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
-    int32:sym = raw root_symbol(x, id);
+    ExprId:rid = raw root_ident_id(x, id);
+    if (raw expr_is_none(rid)) { pass false; }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    int32:sym = rn.a;
     if (sym == 0i32) { pass false; }
     Symbol:sy = raw symtab_get(x.tab, sym);
     if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
@@ -885,7 +2487,36 @@ func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
     // into freed storage exactly as a borrow of a local would. Found writing
     // the view rule; `@` of one had the same hole.
     if (((raw param_quals(d)) & (raw QUAL_MOVE())) != 0i32) { pass false; }
-    pass true;
+    // ONLY A POINTER PARAMETER'S TARGET OUTLIVES THE FRAME (DEF-109, 1.6.1
+    // step 0). The exemption's reason -- "a pointer parameter never points
+    // into the callee's own frame" -- is a fact about POINTERS: a by-value
+    // parameter is the callee's copy in the callee's own entry slot, so `@x`
+    // of an `int32:x` is the address of a dead frame once returned, and a
+    // view of a lent `string:x`'s bytes is a view of the CALLER's storage the
+    // caller cannot see (it passed no `@`, so rule A marks nothing) and may
+    // free while the view lives. Both compiled and read freed memory,
+    // measured on c970483. A by-value parameter is a local of this frame for
+    // every borrow question; the type is the identifier's recorded one, and
+    // an unrecorded one fails closed.
+    int32:pt = raw exprtypes_get(x.etypes, rid);
+    if (pt == 0i32) { pass false; }
+    pass ((raw type_kind(x.types, pt)) == (raw TY_POINTER()));
+};
+
+// The identifier node at a place's root, through views (the walk `root_symbol`
+// makes, answering the NODE rather than its symbol), or none.
+func:root_ident_id = ExprId(Escape->:x, ExprId:id) never fails {
+    ExprId:cur = id;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass (raw expr_none()); }
+        if (raw expr_is_none(r.id)) { pass (raw expr_none()); }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (raw expr_none()); }
+        if (!(raw sym_is_view(x.tab, x.ast, rn.a))) { pass r.id; }
+        cur = ExprId{ index: (raw symtab_get(x.tab, rn.a)).link };
+    }
+    pass (raw expr_none());
 };
 
 // The SYMBOL at a place's root, or 0 — `f.g.ast` roots at `f`.
@@ -929,6 +2560,8 @@ func:root_is = bool(Escape->:x, ExprId:id, int32:sym) never fails {
 func:ident_holds = bool(Escape->:x, int32:sym_index) never fails {
     if (sym_index == 0i32) { pass true; }   // unresolved: cannot vouch
     Symbol:sy = raw symtab_get(x.tab, sym_index);
+    // a by-value parameter marked by a call's store into it (1.6.1 step 0)
+    if (sy.origin_kind == (raw SYM_DECL())) { pass (raw escape_param_holds(x, sy.origin)); }
     if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
     if (sy.origin < 0i32)           { pass true; }   // cannot vouch
     if (sy.origin >= x.holds_count) { pass true; }   // cannot vouch
@@ -1145,6 +2778,64 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     discard(raw escape_expr(x, tgt, raw ESCAPE_DEPTH()));
 
     if (raw expr_is_none(val)) { pass NIL; }
+
+    // THE VIEWS THE ASSIGNED VALUE CARRIES join a bare local target's chain on
+    // its DECLARATION (D-325), BEFORE the borrow verdict below: a view of a
+    // pointer parameter's pointee is no borrow of this frame to that verdict
+    // (its target outlives the frame) and is still a view whose root must not
+    // be written while it lives. The aliasing walk makes the party live from
+    // the declaration, D-286's rule for a claim assigned later -- a loop
+    // reaches every statement after the declaration again.
+    ExprNode:tn0 = raw ast_expr(x.ast, tgt);
+    if (tn0.kind == ExprKind.ExprIdentifierExpr) {
+        if (tn0.a != 0i32) {
+            Symbol:sym0 = raw symtab_get(x.tab, tn0.a);
+            if (sym0.origin_kind == (raw SYM_STMT())) { drop record_view_refs(x, sym0.origin, val); }
+        }
+    }
+
+    // A STORE INTO A POINTER PARAMETER'S POINTEE feeds the function's store
+    // matrix (D-325): what the caller handed as that parameter may now hold
+    // what this value carries.
+    drop record_flow_of_store(x, tgt, val);
+
+    // A VIEW WIRED INTO ITS OWN STRUCT (D-325, 1.6.1 step 0), asked BEFORE the
+    // borrow verdict below because a view through a POINTER parameter is no
+    // borrow of this frame to that verdict: `f.g = graph_init($$m f.it, …)`
+    // holds a pointer at a FIELD, which lives as long as `f` does (the
+    // self-wiring the verdict admits), but `d.cur = string_from_bytes(
+    // d.text.ptr, n)` holds a view of a field's HEAP BODY, which the next
+    // write to `d.text` frees -- measured reading the free poison on c970483,
+    // through a pointer parameter and in one frame alike. A view of the
+    // struct's own storage cannot be stored in it, whoever owns the struct.
+    if ((tn0.kind == ExprKind.ExprMemberAccessExpr) || (tn0.kind == ExprKind.ExprIndexExpr)) {
+        int32:tsym0 = raw root_symbol(x, tgt);
+        if (tsym0 != 0i32) {
+            int32:tpath = raw path_rel(x, tgt);
+            List<ViewRef>:sw = raw list_init::<ViewRef>(4i64);
+            drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @sw);
+            List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
+            for (int64:wi in 0i64...sw.count) {
+                ViewRef:wr = sw[wi];
+                if (wr.root != tsym0) { continue; }
+                if ((wr.kind != (raw VIEW_DIRECT())) && (wr.kind != (raw VIEW_LAUNDERED()))) { continue; }
+                // THE STORE FREES WHAT IT OVERWRITES: a view of the very storage
+                // written (`d.text = string_from_bytes(d.text.ptr, n)`) dangles
+                // at once -- refused here. A view of ANOTHER part (`d.cur = …
+                // (d.text.ptr, n)`) is held by the struct at that part's path,
+                // and the later write to that part is the party's refusal.
+                if (raw paths_overlap(x, raw ref_full_path(x, wr), tpath)) {
+                    drop escape_err(x, raw BORROW_STORED(),
+                        "a view of the storage this store overwrites cannot be stored in it (D-004 rule 3, D-325): the field's old body is freed by this very write, and the stored view would then read freed memory -- store a copy (`.clone()`, `string_concat(\"\", …)`)",
+                        s.span);
+                    pass NIL;
+                }
+                drop list_push(@held, wr);
+            }
+            if (held.count > 0i64) { drop record_view_refs_at_place(x, tgt, @held); }
+        }
+    }
+
     if (!(raw verdict_borrowy(x, val,
               raw escape_expr(x, val, raw ESCAPE_DEPTH())))) { pass NIL; }
 
@@ -1162,6 +2853,8 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
         if (tsym != 0i32) {
             if (raw borrows_all_rooted_at(x, val, tsym,
                                             raw ESCAPE_DEPTH())) {
+                // (A view of the struct's own storage was refused above, before
+                // the verdict; what reaches here holds pointers at fields.)
                 pass NIL;
             }
         }
@@ -1677,6 +3370,12 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (n.kind == ExprKind.ExprAwaitExpr) {
         pass (raw escape_expr(x, raw expr_operand(n), d));
     }
+    // `move(place)` VACATES the place: a write through a pointer parameter's
+    // pointee, for the mutation summary (D-325).
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        drop record_mut_of_place(x, raw expr_operand(n), 0i32);
+        pass (raw escape_expr(x, raw expr_operand(n), d));
+    }
 
     // A STRUCT LITERAL'S WINDOW ALTERNATES NAME, VALUE — the names are field
     // intern indices and only the odd entries are expressions. A literal CONTAINS
@@ -1766,6 +3465,8 @@ func:escape_untracked = NIL(Escape->:x, ExprId:id, move string:msg) never fails 
 func:escape_binding = bool(Escape->:x, ExprNode:n) never fails {
     if (n.a == 0i32) { pass false; }
     Symbol:s = raw symtab_get(x.tab, n.a);
+    // a by-value parameter marked by a call's store into it (1.6.1 step 0)
+    if (s.origin_kind == (raw SYM_DECL())) { pass (raw escape_param_holds(x, s.origin)); }
     if (s.origin_kind != (raw SYM_STMT())) { pass false; }
     pass (raw escape_holds(x, s.origin));
 };
@@ -1838,6 +3539,24 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     // receiver plus `count` arguments — so there is nothing to cap.
     int32:lb_cap = count + 1i32;
     wild int32->:lb_tys = (alloc((lb_cap => int64) * 4i64)) =>! wild int32->;
+    // THE IMPLICIT `@recv` OF A POINTER-RECEIVER CALL IS A BORROW ARGUMENT AND
+    // A DESTINATION (D-325, 1.6.1 step 0; DEF-94's twin in this analysis): the
+    // checker passes the receiver's address, so `st.keep(string_bytes(s))` with
+    // `keep = NIL(Self->:self, string:v)` storing `v` into `self` leaves `st`
+    // holding a view -- unmarked and unfrozen until now, since the receiver
+    // expression `st` is no `@st` in the tree.
+    bool:auto_ref = false;
+    if (!(raw expr_is_none(recv))) { auto_ref = raw recv_is_auto_ref(x, id, recv); }
+    if (auto_ref) {
+        discard(raw escape_expr(x, recv, depth));
+        borrowed = borrowed + 1i32;
+        if (raw arg_root_is_local(x, recv)) {
+            if (local_borrows < lb_cap) {
+                lb_tys[local_borrows => int64] = raw exprtypes_get(x.etypes, recv);
+            }
+            local_borrows = local_borrows + 1i32;
+        }
+    } else {
     if (raw escape_arg(x, recv, depth)) {
         borrowed = borrowed + 1i32;
         if (raw arg_root_is_local(x, recv)) {
@@ -1846,7 +3565,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
             }
             local_borrows = local_borrows + 1i32;
         }
-    }
+    }}
     int32:i = 0i32;
     while (i < count) decreases count - i {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
@@ -1854,7 +3573,12 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
             borrowed = borrowed + 1i32;
             if (raw arg_root_is_local(x, a)) {
                 if (local_borrows < lb_cap) {
-                    lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, a);
+                    int32:apt = raw arg_pointee_ty(x, a);
+                    // A HOLDER OF A VIEW passed by value or moved is stored as
+                    // itself (D-249, D-325): its own type is what a destination
+                    // must be able to hold.
+                    if (apt == 0i32) { if (raw arg_carries_view(x, a)) { apt = raw exprtypes_get(x.etypes, a); } }
+                    lb_tys[local_borrows => int64] = apt;
                 }
                 local_borrows = local_borrows + 1i32;
             }
@@ -1863,7 +3587,12 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     }
     int32:dests = 0i32;
     if (local_borrows > 0i32) {
+        if (auto_ref) {
+            // The receiver's own storage is the destination: its type is the pointee.
+            if (raw recv_can_hold_one(x, recv, lb_tys, local_borrows)) { dests = dests + 1i32; }
+        } else {
         if (raw arg_can_hold_one(x, recv, lb_tys, local_borrows)) { dests = dests + 1i32; }
+        }
         i = 0i32;
         while (i < count) decreases count - i {
             ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, i) };
@@ -1889,6 +3618,14 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     if (local_borrows >= 1i32) {
         if (dests >= 1i32) { rule_b = true; }
     }
+    // A KNOWN CALLEE'S STORES ARE ITS MATRIX'S (D-325, 1.6.1 step 0): what it
+    // stores into each destination it is handed is read off its own body, so
+    // the shape rule below -- every destination that COULD hold the borrow --
+    // is the reading for a callee the analysis cannot see (a `dyn` method, a
+    // function value) alone; `record_dest_refs` below applies the matrix to
+    // every call, refusing the escape into a parameter's pointee or an
+    // unnamed pointer and marking a local destination.
+    if (rule_b) { if ((raw call_callee_fn(x, id)) > 0i32) { rule_b = false; } }
     // A PARAMETER-ROOTED DESTINATION IS THE ESCAPE ITSELF (F-1's second half):
     // the callee may store the borrow through it, and the parameter's pointee
     // outlives this frame — there is no local binding to mark and watch, so
@@ -1907,17 +3644,35 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
         }
     }
     if (rule_b) {
-        drop escape_connect(x, recv);
+        if (auto_ref) { drop escape_mark_place(x, recv); } else { drop escape_connect(x, recv); }
         for (int32:j in 0i32...count) {
             ExprId:b = ExprId{ index: raw ast_id_at(x.ast, start, j) };
             drop escape_connect(x, b);
         }
     }
 
+    // WHAT THE CALL MAY HAVE STORED INTO EACH DESTINATION (D-325): the callee's
+    // store matrix, argument by argument -- independent of rule B's type test,
+    // which decides the MARKS (an escape question), not the views.
+    drop record_dest_refs(x, id, recv, auto_ref, start, count, depth);
+    drop record_mut_of_call(x, id, recv, auto_ref, start, count);
+
     // RULE A.
     if (borrowed == 0i32) { pass false; }
     pass (raw carries_pointer(x, raw exprtypes_get(x.etypes, id),
                                 raw CARRY_FUEL()));
+};
+
+// The receiver of a pointer-receiver call as a destination: its own type is
+// the pointee (`arg_can_hold_one` asks a pointer-typed expression).
+func:recv_can_hold_one = bool(Escape->:x, ExprId:recv, wild int32->:lb_tys, int32:lbn) never fails {
+    if (raw expr_is_none(recv)) { pass false; }
+    int32:t = raw exprtypes_get(x.etypes, recv);
+    if (t == 0i32) { pass false; }
+    for (int32:i in 0i32...lbn) {
+        if (raw can_connect(x, t, lb_tys[i => int64], raw CARRY_FUEL())) { pass true; }
+    }
+    pass false;
 };
 
 // Refuse every parameter-rooted destination in this call (F-1): a borrow
@@ -1958,12 +3713,43 @@ func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
 // pick binding — rather than a parameter? Frame-owned targets die with the
 // frame; parameter-rooted ones outlive it, which is the whole distinction
 // F-1's refusal turns on.
+// Does this argument's VALUE carry a view of FRAME-OWNED storage (D-325) -- a
+// direct or laundered view ref rooted at a local, a pattern binding or a
+// by-value parameter? A view of a pointer parameter's pointee is the caller's
+// business, as rule B has always read a parameter-rooted borrow.
+func:arg_carries_view = bool(Escape->:x, ExprId:a) never fails {
+    if (raw expr_is_none(a)) { pass false; }
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, a, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:r = refs[i];
+        if ((r.kind != (raw VIEW_DIRECT())) && (r.kind != (raw VIEW_LAUNDERED()))) { continue; }
+        Symbol:rs = raw symtab_get(x.tab, r.root);
+        if ((rs.origin_kind == (raw SYM_STMT())) || (rs.origin_kind == (raw SYM_PAT()))) { pass true; }
+        if (rs.origin_kind == (raw SYM_DECL())) {
+            DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: rs.origin });
+            if (pd.kind == DeclKind.DeclParamDecl) {
+                // THE ROOT'S OWN TYPE decides (a view through `g.ast` with
+                // `ModuleGraph->:g` is the pointee's, not this frame's).
+                ExprId:rid = raw root_ident_id(x, ExprId{ index: r.place });
+                if (raw expr_is_none(rid)) { pass true; }
+                int32:pt = raw exprtypes_get(x.etypes, rid);
+                if (pt == 0i32) { pass true; }
+                if ((raw type_kind(x.types, pt)) != (raw TY_POINTER())) { pass true; }
+            }
+        }
+    }
+    pass false;
+};
+
 func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
     if (raw expr_is_none(a)) { pass false; }
     ExprId:pl = a;
     ExprNode:top = raw ast_expr(x.ast, a);
     if (top.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(top); }
     if (top.kind == ExprKind.ExprBorrowExpr)    { pl = raw expr_operand(top); }
+    // `move(w)` hands the callee `w`'s value; the roots are `w`'s.
+    if (top.kind == ExprKind.ExprMoveExpr)      { pl = raw expr_operand(top); top = raw ast_expr(x.ast, pl); }
     // a view (D-249) roots at the identifier the view walk finds -- through
     // casts and pointer arithmetic, the steps `place_root` does not take
     ExprId:vpa = raw view_place(x, top);
@@ -1980,6 +3766,21 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
     Symbol:sym = raw symtab_get(x.tab, rn.a);
     if (sym.origin_kind == (raw SYM_STMT())) { pass true; }
     if (sym.origin_kind == (raw SYM_PAT()))  { pass true; }
+    // A BY-VALUE PARAMETER'S FRAME STORAGE IS THIS FRAME'S (DEF-109): its
+    // address or an inline view of it beside a destination can escape exactly
+    // as a local's can; a view of the HEAP bytes it references is the
+    // caller's storage, as `view_root_is_param` reads it for a return. A
+    // pointer parameter's target is older.
+    if (sym.origin_kind == (raw SYM_DECL())) {
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sym.origin });
+        if (pd.kind == DeclKind.DeclParamDecl) {
+            int32:pt = raw exprtypes_get(x.etypes, r.id);
+            if (pt == 0i32) { pass true; }
+            if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) { pass false; }
+            if (!(raw expr_is_none(vpa))) { pass (!(raw heap_backed_view(x, top, vpa))); }
+            pass true;
+        }
+    }
     pass false;
 };
 
@@ -2069,8 +3870,14 @@ func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
     // keeps compiling because TypeTable's pointer slots are all wild.
     int32:t = raw exprtypes_get(x.etypes, a);
     if (t == 0i32) { pass false; }
-    if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
-    int32:pointee = raw type_elem(x.types, t);
+    int32:tk = raw type_kind(x.types, t);
+    int32:pointee = 0i32;
+    if (tk == (raw TY_POINTER())) { pointee = raw type_elem(x.types, t); }
+    // A `dyn` HANDED BY VALUE is a loan of its cell, writable through its
+    // methods (TYPE-085's one exemption; 1.6.1 step 0): the cell is the
+    // destination, and its type is the `dyn` itself.
+    if (tk == (raw TY_DYN())) { pointee = t; }
+    if (pointee == 0i32) { pass false; }
     for (int32:i in 0i32...lbn) {
         if (raw can_connect(x, pointee, lb_tys[i => int64],
                               raw CARRY_FUEL())) { pass true; }
@@ -2086,13 +3893,71 @@ func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
 // plants is an `int32->`, not a `Point->`, so an exact-type match saw no
 // destination and `probe_derive` was accepted while planting a frame address
 // in caller-owned memory.
+// --- the connection memo ------------------------------------------------------------
+
+func:cc_key = int64(int32:kind, int32:a, int32:b) never fails {
+    // never 0 (the empty slot): the kind occupies the top bits
+    pass ((((kind => int64) + 1i64) << 56i64) | ((a => int64) << 28i64) | (b => int64));
+};
+
+func:cc_probe = int64(Escape->:x, int64:key) never fails {
+    // THE TABLE IS 65536 SLOTS (`escape_init`'s `ccsize`), and the mask is
+    // spelled as the NUMERAL 65535 so the rows here decide: a low-bits mask
+    // by a numeral is a fact the encoder reads (D-279), where `cc_size - 1`
+    // over an opaque field sent the `h + i` row to the bit-vector budget.
+    // The mixed key's low sixteen bits are in [0, 65535] whatever the sign of
+    // the product (an arithmetic shift, then the mask), so `h + i` fits.
+    int64:h = ((key *% 1099511628211i64) >> 20i64) & 65535i64;
+    for (int64:i in 0i64...65536i64) {
+        int64:at = (h + i) & 65535i64;
+        if (x.cc_keys[at] == 0i64) { pass at; }
+        if (x.cc_keys[at] == key) { pass at; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// The memoised answer (1 false, 2 true) or 0.
+func:cc_get = int8(Escape->:x, int32:kind, int32:a, int32:b) never fails {
+    int64:at = raw cc_probe(x, raw cc_key(kind, a, b));
+    if (at < 0i64) { pass 0i8; }
+    if (x.cc_keys[at] == 0i64) { pass 0i8; }
+    pass x.cc_vals[at];
+};
+
+func:cc_put = NIL(Escape->:x, int32:kind, int32:a, int32:b, bool:answer) never fails {
+    if (x.cc_used >= (x.cc_size / 2i64)) { pass NIL; }   // the table stays half empty; a full one is a bound, not a bug
+    int64:key = raw cc_key(kind, a, b);
+    int64:at = raw cc_probe(x, key);
+    if (at < 0i64) { pass NIL; }
+    if (x.cc_keys[at] == 0i64) { x.cc_used = x.cc_used + 1i64; }
+    x.cc_keys[at] = key;
+    if (answer) { x.cc_vals[at] = 2i8; } else { x.cc_vals[at] = 1i8; }
+    pass NIL;
+};
+
 func:type_reachable_in = bool(Escape->:x, int32:t, int32:src,
                               int32:fuel) never fails {
-    if (fuel <= 0i32) { pass true; }          // fail closed
+    if (fuel <= 0i32) { x.cc_exhausted = true; pass true; }
+    int8:memo = raw cc_get(x, 1i32, t, src);
+    if (memo != 0i8) { pass (memo == 2i8); }
+    bool:saved_ex = x.cc_exhausted;
+    x.cc_exhausted = false;
+    bool:ans = raw type_reachable_in_walk(x, t, src, fuel);
+    if (!x.cc_exhausted) { drop cc_put(x, 1i32, t, src, ans); }
+    x.cc_exhausted = saved_ex || x.cc_exhausted;
+    pass ans;
+};
+
+func:type_reachable_in_walk = bool(Escape->:x, int32:t, int32:src,
+                                   int32:fuel) never fails {
+    if (fuel <= 0i32) { x.cc_exhausted = true; pass true; }          // fail closed
     if (t == 0i32) { pass false; }
     if (src == 0i32) { pass false; }
     if (t == src) { pass true; }
     int32:k = raw type_kind(x.types, src);
+    // a `dyn` or a type parameter may contain anything (the closed direction)
+    if (k == (raw TY_DYN()))   { pass true; }
+    if (k == (raw TY_PARAM())) { pass true; }
     if (k == (raw TY_ARRAY()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_SLICE()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_OPTIONAL())) { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
@@ -2100,6 +3965,12 @@ func:type_reachable_in = bool(Escape->:x, int32:t, int32:src,
     if (k == (raw TY_ARENA()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_SHARED_ARENA())) { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_STRUCT())) {
+        // The prelude's `List<T>` reaches its `T` (D-325; see `can_connect`).
+        if (raw type_is_list(x.tr, src)) {
+            int32:lel = raw list_elem_type(x.tr, src);
+            if (lel == 0i32) { pass true; }
+            pass (raw type_reachable_in(x, t, lel, fuel - 1i32));
+        }
         // THE DECL INDEX IS CHECKED BEFORE IT IS USED. `ast_decl` traps
         // `BoundsId` on an out-of-range one, and not every interned TY_STRUCT
         // carries a decl this Ast holds — the `extern` path SYNTHESIZES source
@@ -2149,12 +4020,34 @@ func:type_reachable_in = bool(Escape->:x, int32:t, int32:src,
 // destinations, so the capture-shaped sites still refuse.
 func:can_connect = bool(Escape->:x, int32:holder, int32:src,
                         int32:fuel) never fails {
-    if (fuel <= 0i32) { pass true; }          // fail closed
+    if (fuel <= 0i32) { x.cc_exhausted = true; pass true; }
+    int8:memo = raw cc_get(x, 2i32, holder, src);
+    if (memo != 0i8) { pass (memo == 2i8); }
+    bool:saved_ex = x.cc_exhausted;
+    x.cc_exhausted = false;
+    bool:ans = raw can_connect_walk(x, holder, src, fuel);
+    if (!x.cc_exhausted) { drop cc_put(x, 2i32, holder, src, ans); }
+    x.cc_exhausted = saved_ex || x.cc_exhausted;
+    pass ans;
+};
+
+func:can_connect_walk = bool(Escape->:x, int32:holder, int32:src,
+                             int32:fuel) never fails {
+    if (fuel <= 0i32) { x.cc_exhausted = true; pass true; }          // fail closed
     if (holder == 0i32) { pass false; }
     // Target 0 is a VALUE-held borrow (rule A's conservative marking): no frame
     // pointee to dangle, so it drives no destination refusal.
     if (src == 0i32) { pass false; }
     int32:k = raw type_kind(x.types, holder);
+    // A `dyn` HOLDS A CONCRETE VALUE OF A TYPE ERASED HERE, and a bare type
+    // parameter is every type the body is instantiated at (D-264's reading):
+    // either may hold any pointer, so both are destinations -- the closed
+    // direction D-223 states for generics and unknowns. `dyn` fell to the
+    // final `false` until 1.6.1 step 0 (DEF-113: `d.put(@tmp.k)` on a `dyn
+    // Sink:d` whose impl stores its argument, then `pass move(d)`, compiled
+    // and returned a cell holding a dead frame's address).
+    if (k == (raw TY_DYN()))   { pass true; }
+    if (k == (raw TY_PARAM())) { pass true; }
     if (k == (raw TY_POINTER())) {
         int32:el = raw type_elem(x.types, holder);
         // `any->` erases the type and so matches every borrow.
@@ -2178,6 +4071,20 @@ func:can_connect = bool(Escape->:x, int32:holder, int32:src,
     if (k == (raw TY_STRUCT())) {
         // The layout's pointer-presence bit prunes the walk outright.
         if (!(raw type_holds_pointer(x.types, holder, fuel))) { pass false; }
+        // THE PRELUDE'S `List<T>` HOLDS A `T` (D-247, D-263; 1.6.1 step 0): its
+        // storage is a `wild` field by implementation and OWNED by the
+        // language, so the wild-field exemption below does not describe it --
+        // `list_push(@vs, string_from_bytes(d.ptr, n))` stored a view of a
+        // local into it and `pass vs` carried the view out of the frame,
+        // measured on c970483.
+        if (raw type_is_list(x.tr, holder)) {
+            int32:lel = raw list_elem_type(x.tr, holder);
+            if (lel == 0i32) { pass true; }   // unknown element: fail closed
+            // an element slot holds what a `T` slot holds: a view of exactly
+            // `T` (a string, a slice), or what `T`'s own slots hold -- never a
+            // POINTER to a `T`, which needs a `T->` slot
+            pass (raw can_connect(x, lel, src, fuel - 1i32));
+        }
         int32:hdi = raw type_decl(x.types, holder);
         if (hdi < 0i32) { pass false; }
         if (hdi >= (raw ast_decl_count(x.ast))) { pass false; }
@@ -2230,6 +4137,8 @@ func:escape_connect = NIL(Escape->:x, ExprId:a) never fails {
     // borrow. The pair arm now marks only the arguments `can_connect` picked
     // out, so this walks what it is given.
     int32:aty = raw exprtypes_get(x.etypes, a);
+    // a `dyn` handed by value: the binding under it holds from here (its cell)
+    if ((raw type_kind(x.types, aty)) == (raw TY_DYN())) { drop escape_mark_place(x, a); pass NIL; }
     if ((raw type_kind(x.types, aty)) != (raw TY_POINTER())) { pass NIL; }
 
     // `@place` — the binding under the place is what may now hold a borrow, and it
@@ -2269,6 +4178,9 @@ func:escape_mark_place = NIL(Escape->:x, ExprId:place) never fails {
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, rn.a);
+    // a BY-VALUE parameter is this frame's storage and holds from here (a
+    // pointer parameter's target is the caller's: the shape rule refuses it)
+    if (raw sym_is_value_param(x, s, r.id.index)) { drop escape_mark_param(x, s.origin); pass NIL; }
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
     drop escape_mark(x, s.origin);
     pass NIL;

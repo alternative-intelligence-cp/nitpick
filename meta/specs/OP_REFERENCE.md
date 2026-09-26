@@ -322,7 +322,13 @@ value is ERR, so the taint cannot cross silently. See D-008.
 > a live claim statically is `NITPICK-BORROW-013`; one through computed
 > indices is guarded at run time (`BorrowOverlap`, −4116) and proven away by
 > the verified build (the `disjoint` row, VERIFICATION §2.1). A `fixed`
-> binding has no address at all (D-287, `NITPICK-TYPE-071`).
+> binding has no address at all (D-287, `NITPICK-TYPE-071`). A VIEW is a party
+> too (D-325, 1.6.1 step 0): a view-maker's result, a range view, or a call
+> result whose callee views what it was handed is a shared claim on its root
+> for its holder's scope or its call, and a write-capable access of the viewed
+> storage while it lives is `NITPICK-BORROW-015` — what a callee writes through
+> `@x` is read off its own body, so `@x` handed to a function that writes
+> nothing through it conflicts with no view of `x`.
 
 > **`#` is no longer the pin operator.** Pinning existed to stop the garbage
 > collector relocating memory; with no collector (D-003) nothing relocates
