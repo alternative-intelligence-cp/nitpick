@@ -32,7 +32,8 @@ opt-level = 0
 # separate because it is a CHECK, not the build.
 #
 # NOT PINNED, deliberately:
-#   -mcpu — the emitted .ll carries `target triple` and we pass no `-mcpu`, so
+#   -mcpu — the emitted .ll carries `target triple` (and, since 1.6.1 step 1,
+#     `target datalayout`, both pinned below) and we pass no `-mcpu`, so
 #     llc uses the triple's generic CPU. R-4 recommends an explicit `-mcpu`
 #     when build hosts vary; pinning a specific microarchitecture would change
 #     today's byte-identical output, so it is a recorded question rather than a
@@ -43,6 +44,24 @@ opt-level = 0
 #     the one spelling never to use here.
 [toolchain]
 llvm          = "20.1.2"
+# THE TWO HEADER LINES EVERY MODULE OF OURS STATES (E-8, D-322 (5); 1.6.1 step 1).
+# An analyzer that reads a module as it is lays every aggregate out under the
+# layout the module STATES, and under LLVM's default when it states none: at
+# 1.6.0's gate NIKOS read every emission that way, and `{ i32, i64 }` was 12
+# bytes to it where the binary has 16. `opt` and `llc` derive this same layout
+# from the triple, so stating it moves no object (measured at 1.6.1 step 1:
+# a program's, the floor's and the shim's objects byte-identical either way).
+# The strings are the COMPILER's, not a project's (the emitter's inline
+# assembly and split-stack prologue are x86-64): the emitter writes them as
+# its constants, the floor and the explorer shim carry them by hand, and
+# these two rows are the PINS both runners hold every module to -- and hold
+# to the pinned `opt`: the layout must equal what `opt -S` derives from the
+# triple, because `opt` keeps a wrong layout line as written and `llc`
+# accepts one in silence, so the line proves nothing about itself. The layout
+# is the FULL canonical string: `llvm-as` completes a partial one on the way
+# through, so a shorter spelling would assemble and fail the belt.
+triple        = "x86_64-unknown-linux-gnu"
+datalayout    = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 llc-flags     = ["-O0", "-filetype=obj", "-relocation-model=static"]
 llc-opt-flags = ["-O2", "-filetype=obj", "-relocation-model=static"]
 opt-flags     = ["-O2", "-S"]

@@ -222,6 +222,70 @@ pub async func:toolchain_pin_check = List<string>(string:llc, string:opt, string
     pass out;
 };
 
+// THE LAYOUT PIN IS HELD TO WHAT THE PINNED `opt` DERIVES (E-8, D-322 (5);
+// 1.6.1 step 1), message for message the harness's `check_datalayout_pin`:
+// every module of ours states `target datalayout` and `target triple` -- the
+// emitter's two header lines, the floor's and the explorer shim's hand-written
+// ones -- because an analyzer that reads a module as it is lays every
+// aggregate out under the layout it states, and under LLVM's default when it
+// states none (NIKOS did, at 1.6.0's gate). The two strings are pinned in
+// [toolchain]; the layout must equal what `opt -S` derives over a module
+// stating only the triple, because `opt` keeps a wrong layout as written and
+// `llc` accepts one in silence: a stated line proves nothing about itself.
+// The probe module is written under build/ (`probe_path`): a tool takes a
+// file. `opt` is required here -- nothing else derives the layout.
+pub async func:datalayout_pin_check = List<string>(string:opt, ProcArgs:env, string:triple,
+                                                   string:datalayout, string:probe_path) {
+    List<string>:out = raw list_init::<string>(2i64);
+    if (triple.len == 0i64) {
+        drop strlist_push(@out, "nitpick.toml has no [toolchain] triple pin -- every module of ours states the target it assumes (E-8, D-322 (5)), and an unpinned header is a stated string nothing checks");
+        pass out;
+    }
+    if (datalayout.len == 0i64) {
+        drop strlist_push(@out, "nitpick.toml has no [toolchain] datalayout pin -- every module of ours states the layout it assumes (E-8, D-322 (5)), and an unpinned header is a stated string nothing checks");
+        pass out;
+    }
+    if (opt.len == 0i64) {
+        drop strlist_push(@out, "opt is not on PATH -- the layout pin is held to what opt derives from the triple (D-322 (5)), and nothing else can derive it");
+        pass out;
+    }
+    string:probe = string_concat("target triple = \"", string_concat(triple, "\"\n"));
+    Result<cstring>:pc = to_cstring(probe_path);
+    if (pc.is_error) { fail pc.err; }
+    Result<NIL>:w = write_file(pc.value, probe);
+    if (w.is_error) { fail w.err; }
+    List<string>:args = raw list_init::<string>(2i64);
+    drop strlist_push(@args, "-S");
+    drop strlist_push(@args, probe_path);
+    Result<Run>:r = await run_argv(opt, args, env, raw duration_secs(30i64));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) {
+        drop strlist_push(@out, "opt -S over the triple probe did not finish in 30 s");
+        pass out;
+    }
+    string:marker = "target datalayout = \"";
+    int64:p = raw text_index_of(run.x.out, marker);
+    int64:b = 0i64 - 1i64;
+    if (p >= 0i64) { b = raw text_find_byte(run.x.out, 34u8, p + marker.len); }
+    if ((p < 0i64) || (b < 0i64)) {
+        string:m0 = string_concat("opt -S over a module stating only the pinned triple wrote no `target datalayout` line: ", raw text_head(run.x.out, 160i64));
+        drop list_push(@out, move(m0));
+        pass out;
+    }
+    string:got = raw text_slice(run.x.out, p + marker.len, b);
+    if (!(raw text_eq(got, datalayout))) {
+        string:m2 = string_concat("nitpick.toml pins the layout ", datalayout);
+        m2 = string_concat(m2, " but opt derives ");
+        m2 = string_concat(m2, got);
+        m2 = string_concat(m2, " from the triple ");
+        m2 = string_concat(m2, triple);
+        m2 = string_concat(m2, " -- the layout every module states must be the one the toolchain lays the binary out under (E-8, D-322 (5)); update the pin AND the emitter's, the floor's and the shim's header lines in the same change, with a snapshot refresh");
+        drop list_push(@out, move(m2));
+    }
+    pass out;
+};
+
 // --- the solver pin (D-218.1/D-218.2, 1.5.0) ----------------------------------------
 //
 // D-204's refusal for z3, message for message the harness's `check_verify_pin`.

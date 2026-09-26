@@ -50,6 +50,11 @@
 ; read off the REAL state -- a lost wakeup here is lateness an exit code cannot
 ; see; NPKX_ORACLE=0 turns them off, for comparison only.
 
+; THE LAYOUT THIS MODULE ASSUMES, STATED (E-8, D-322 (5); 1.6.1 step 1): the string `opt` and
+; `llc` derive from the triple, pinned in nitpick.toml's [toolchain] and held there by both
+; runners; an analyzer that reads this text as it is lays every aggregate out under it. The
+; object does not move for it (measured at the step).
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 ; SPLIT-STACK AWARE, AS THE FLOOR IS (D-305, 1.5.8 step 2): the program's own

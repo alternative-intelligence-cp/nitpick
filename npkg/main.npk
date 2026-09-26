@@ -189,6 +189,22 @@ async func:main = int32(cstring[]:argv) {
         for (int64:i in 0i64...pins.count) { drop say_err(raw strlist_view(pins, i)); }
         exit 2i32;
     }
+    // THE LAYOUT PIN (E-8, D-322 (5); 1.6.1 step 1): held to what the pinned
+    // `opt` derives from the pinned triple before anything is emitted or
+    // judged -- a stated layout proves nothing about itself. The probe module
+    // lives under build/, so build/ exists from here on.
+    Result<NIL>:bd = ensure_dir(raw path_join(string_from_bytes(m.root.ptr, m.root.len), "build"));
+    if (bd.is_error) { drop say_err("npkg: build/ could not be created"); exit 2i32; }
+    Result<List<string>>:dlp = await datalayout_pin_check(string_from_bytes(t.opt.ptr, t.opt.len), t.env,
+                                                           string_from_bytes(m.triple.ptr, m.triple.len),
+                                                           string_from_bytes(m.datalayout.ptr, m.datalayout.len),
+                                                           raw path_join(string_from_bytes(m.root.ptr, m.root.len), "build/datalayout_probe.ll"));
+    if (dlp.is_error) { drop say_err("npkg: opt could not be asked for the triple's layout"); exit 2i32; }
+    List<string>:dls = move(dlp.value);
+    if (dls.count > 0i64) {
+        for (int64:i in 0i64...dls.count) { drop say_err(raw strlist_view(dls, i)); }
+        exit 2i32;
+    }
     Ctx:c = raw ctx_init(move(m), move(t));
 
     // THE FLOOR'S LEG ALONE (1.5.6 step 0 the belts, step 3 the leg): for

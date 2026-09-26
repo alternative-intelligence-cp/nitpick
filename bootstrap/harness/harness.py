@@ -133,6 +133,12 @@ def _load_manifest():
 MANIFEST = _load_manifest()
 _TC = MANIFEST.get("toolchain", {})
 LLVM_PIN = _TC.get("llvm", "")
+# THE TWO HEADER LINES every module of ours states, pinned here and READ
+# (E-8, D-322 (5); 1.6.1 step 1): `check_datalayout_pin` holds the layout to
+# what the pinned `opt` derives from the triple, `check_module_header` holds
+# every emission, the floor and the explorer shim to the two.
+TRIPLE_PIN = _TC.get("triple", "")
+DATALAYOUT_PIN = _TC.get("datalayout", "")
 LLC_FLAGS = list(_TC.get("llc-flags", []))
 LLC_OPT_FLAGS = list(_TC.get("llc-opt-flags", []))
 OPT_FLAGS = list(_TC.get("opt-flags", []))
@@ -2439,6 +2445,9 @@ def emit_and_object(binary, path, name, base, allow):
     pt = check_prelude_trimmed(ir_text, name)
     if pt:
         return pt
+    hd = check_module_header(ir_text, name)
+    if hd:
+        return hd
     r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -2642,6 +2651,81 @@ def check_toolchain_pin():
                          "regenerate every expected hash in the same change"
                          % (tool, m.group(1), LLVM_PIN))
     return fails
+
+
+def check_datalayout_pin():
+    """The pinned layout is what the pinned `opt` derives from the pinned triple
+    (E-8, D-322 (5); 1.6.1 step 1).
+
+    Every module of ours states `target datalayout` and `target triple` -- the
+    emitter's two header lines, the floor's and the explorer shim's hand-written
+    ones -- because an analyzer that reads a module as it is lays every
+    aggregate out under the layout it states, and under LLVM's default when it
+    states none (NIKOS did, at 1.6.0's gate: `{ i32, i64 }` at 12 bytes where
+    the binary has 16). The two strings are pinned in `[toolchain]` and the
+    layout is held HERE to what `opt -S` derives over a module stating only
+    the triple: `opt` keeps a wrong layout line as written and `llc` accepts
+    one in silence (measured at the step), so a stated line proves nothing
+    about itself, and a stale string would optimise under one layout and link
+    under another. `opt` is required here: nothing else derives the layout.
+    """
+    if not TRIPLE_PIN:
+        return ["nitpick.toml has no [toolchain] triple pin -- every module of ours "
+                "states the target it assumes (E-8, D-322 (5)), and an unpinned "
+                "header is a stated string nothing checks"]
+    if not DATALAYOUT_PIN:
+        return ["nitpick.toml has no [toolchain] datalayout pin -- every module of "
+                "ours states the layout it assumes (E-8, D-322 (5)), and an unpinned "
+                "header is a stated string nothing checks"]
+    opt = shutil.which("opt")
+    if not opt:
+        return ["opt is not on PATH -- the layout pin is held to what opt derives "
+                "from the triple (D-322 (5)), and nothing else can derive it"]
+    probe = 'target triple = "%s"\n' % TRIPLE_PIN
+    try:
+        r = subprocess.run([opt, "-S", "-"], input=probe, capture_output=True,
+                           text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        return ["opt -S over the triple probe failed: %s" % e]
+    m = re.search(r'^target datalayout = "([^"]*)"$', r.stdout, re.M)
+    if r.returncode != 0 or not m:
+        return ["opt -S over a module stating only the pinned triple wrote no "
+                "`target datalayout` line: %r" % (r.stderr or r.stdout).strip()[:160]]
+    if m.group(1) != DATALAYOUT_PIN:
+        return ["nitpick.toml pins the layout %s but opt derives %s from the triple "
+                "%s -- the layout every module states must be the one the toolchain "
+                "lays the binary out under (E-8, D-322 (5)); update the pin AND the "
+                "emitter's, the floor's and the shim's header lines in the same "
+                "change, with a snapshot refresh" % (DATALAYOUT_PIN, m.group(1), TRIPLE_PIN)]
+    return []
+
+
+_TARGET_LINE_RE = re.compile(r"^target .*$", re.M)
+
+
+def check_module_header(ll_text, name):
+    """Every module of ours states the pinned layout and triple, once each, in
+    that order (E-8, D-322 (5); 1.6.1 step 1): the emitter's two header lines,
+    and the floor's and the explorer shim's hand-written ones.
+
+    The pin is held to `opt`'s derivation in `check_datalayout_pin`; this holds
+    each module to the pin, so the emitter's constants, the floor's text and the
+    manifest cannot drift apart in silence. A `target` line is one that BEGINS
+    the line: a string constant sits on an `@` line and a comment on a `;` line.
+    Asked of what the compiler under test emits, of the floor and of the shim --
+    not of the snapshot's emissions (the tools, the runner self-check's cases),
+    the rule every emitted-IR belt keeps (1.5.2d).
+    """
+    want = ['target datalayout = "%s"' % DATALAYOUT_PIN,
+            'target triple = "%s"' % TRIPLE_PIN]
+    got = _TARGET_LINE_RE.findall(ll_text)
+    if got == want:
+        return []
+    shown = ("`" + "`, `".join(got) + "`") if got else "no `target` line"
+    return ["%s: the module's header is not the pinned one -- expected `%s` and "
+            "`%s` (nitpick.toml [toolchain]), got %s (E-8, D-322 (5): every module "
+            "of ours states the layout it assumes, and the runners hold it to the "
+            "pin)" % (name, want[0], want[1], shown)]
 
 
 _Z3_FORBIDDEN = (("timeout=", "a wall-clock timeout"), ("-T:", "a wall-clock timeout"),
@@ -3624,6 +3708,9 @@ def check_verify_program(path, name, exp, tmp):
     fails = check_prelude_trimmed(plain.decode("utf-8", "replace"), name)
     if fails:
         return fails
+    fails = check_module_header(plain.decode("utf-8", "replace"), name)
+    if fails:
+        return fails
     full, fails = z3_verdicts(obl, name)
     if fails:
         return fails
@@ -3664,7 +3751,8 @@ def check_verify_program(path, name, exp, tmp):
             return ["%s: the --elide run computed different rows than the --obligations run -- the walk depends on something it must not (P-3)" % name]
     with open(base + ".v.ll", encoding="utf-8", errors="replace") as fh:
         vir = fh.read()
-    fails = check_no_undef(vir, name + " (verified)") + elided_ir_checks(full, vir, name)
+    fails = check_no_undef(vir, name + " (verified)") + check_module_header(vir, name + " (verified)") \
+        + elided_ir_checks(full, vir, name)
     if fails:
         return fails
     for tag, llc_flags, src in (("v", LLC_FLAGS, base + ".v.ll"), ("v.opt", LLC_OPT_FLAGS, base + ".v.opt.ll")):
@@ -3809,7 +3897,8 @@ def check_verify_compiler(tmp, stage1_ir):
             return ["verify: the --elide run computed different rows than the --obligations run (P-3)"]
     with open(os.path.join(vdir, "npkc.v.ll"), encoding="utf-8", errors="replace") as fh:
         vir = fh.read()
-    fails += check_no_undef(vir, "npkc.v.ll") + check_symbols_unique(vir, "npkc.v.ll") + check_allocas_hoisted(vir, "npkc.v.ll")
+    fails += check_no_undef(vir, "npkc.v.ll") + check_module_header(vir, "npkc.v.ll") \
+        + check_symbols_unique(vir, "npkc.v.ll") + check_allocas_hoisted(vir, "npkc.v.ll")
     fails += elided_ir_checks(full, vir, "verify")
     if fails:
         return fails
@@ -4039,7 +4128,8 @@ def _explored_objects(tmp, tools):
         return None, None, ["explore: runtime/explore/npkx.ll is missing -- the shim is part of the tree (D-298)"], ""
     with open(shim, encoding="utf-8") as fh:
         sh = fh.read()
-    fails = check_no_undef(sh, "runtime/explore/npkx.ll") + check_allocas_hoisted(sh, "runtime/explore/npkx.ll") \
+    fails = check_no_undef(sh, "runtime/explore/npkx.ll") + check_module_header(sh, "runtime/explore/npkx.ll") \
+        + check_allocas_hoisted(sh, "runtime/explore/npkx.ll") \
         + floor.check_stack(sh, "explore")
     # THE ORACLE'S OFFSETS (step 3; D-301): the three words the quiescence
     # oracle reads off the floor's structs, held to the floor's type lines
@@ -5132,6 +5222,7 @@ def main(argv):
     # suite in one loop, and the pin belongs before the loop.)
     if not filtering:
         failures += check_toolchain_pin()
+        failures += check_datalayout_pin()
         failures += check_verify_pin()
 
     # EVERY SUITE, IN MANIFEST ORDER (D-238, 1.4.8b). The table in nitpick.toml
@@ -5242,6 +5333,12 @@ def main(argv):
             floor_text = fh.read()
         failures += check_no_undef(floor_text, "runtime/npkrt.ll")
         failures += check_allocas_hoisted(floor_text, "runtime/npkrt.ll")
+        # ...AND STATES THE PINNED LAYOUT AND TRIPLE (E-8, D-322 (5); 1.6.1
+        # step 1), as every emission does: the floor is linked into every
+        # artifact, and an artifact whose emitted half states its layout while
+        # its hand-written half inherits one at link time is two spellings of
+        # one fact.
+        failures += check_module_header(floor_text, "runtime/npkrt.ll")
 
 
 
@@ -5423,6 +5520,17 @@ def main(argv):
                           "IR is referenced; %d prelude function(s) kept"
                           % ("prelude-trim",
                              len(_PRELUDE_DEFINE_RE.findall(s1_text))))
+                # EVERY MODULE STATES THE PINNED LAYOUT AND TRIPLE (E-8, D-322
+                # (5); 1.6.1 step 1): the compiler's own IR here, every emission
+                # of the run at its stage, the floor and the shim at theirs; the
+                # pin itself was held to `opt`'s derivation at the run's start.
+                hd = check_module_header(s1_text, "the compiler's own IR")
+                if hd:
+                    failures.append(hd[0])
+                else:
+                    print("  %-11s every module states the pinned layout and "
+                          "triple (nitpick.toml [toolchain]); opt derives the "
+                          "pinned layout from the triple" % ("datalayout",))
 
             # --- REPRODUCIBILITY, TESTED (D-204, 1.4.5) --------------
             #

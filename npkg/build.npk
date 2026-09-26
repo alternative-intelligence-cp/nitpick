@@ -292,6 +292,12 @@ pub async func:build_floor = Step(Ctx->:c) {
     // outside their entry blocks, two of them inside loops.
     List<string>:fah = raw ir_allocas_hoisted(ftext.value, "runtime/npkrt.ll");
     if (fah.count > 0i64) { pass (raw step_bad(raw strlist_view(fah, 0i64))); }
+    // ...AND STATES THE PINNED LAYOUT AND TRIPLE (E-8, D-322 (5); 1.6.1 step
+    // 1), as every emission does: an artifact whose emitted half states its
+    // layout while its hand-written half inherits one at link time is two
+    // spellings of one fact.
+    List<string>:fhd = raw ir_module_header(ftext.value, "runtime/npkrt.ll", string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
+    if (fhd.count > 0i64) { pass (raw step_bad(raw strlist_view(fhd, 0i64))); }
     string:obj = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "npkrt.o");
     Result<Step>:s = await llc_obj(c, c.m.llc_flags, rt, obj);
     if (s.is_error) { fail s.err; }
@@ -501,6 +507,8 @@ pub async func:emit_and_object = List<string>(Ctx->:c, string:compiler, string:p
     if (!(raw text_eq(compiler, string_from_bytes(c.builder.ptr, c.builder.len)))) {
         List<string>:pt = raw ir_prelude_trimmed(run.x.out, name);
         if (pt.count > 0i64) { pass pt; }
+        List<string>:hd = raw ir_module_header(run.x.out, name, string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
+        if (hd.count > 0i64) { pass hd; }
     }
     string:obj = string_concat(base, ".o");
     Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, ll, obj);

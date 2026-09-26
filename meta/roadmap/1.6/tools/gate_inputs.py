@@ -10,7 +10,8 @@
   <name>.whole.roots.txt   the entry points of the whole-program form: `main` and every floor function
                            whose address escapes to the assembly or the kernel, read off runtime/npkrt.ll
   npkc.verified.ll         the compiler's emission under `--elide nitpick.obligations` (the llvm.assume channel)
-  *.dl.ll                  the datalayout twin of every input above (P-5)
+  (the *.dl.ll datalayout twins of the gate retired at 1.6.1 step 1, E-8: the plain form states
+   its own layout and IS the twin)
   <name>.opt.ll            the opt pair's post file (nitpick.toml's opt-flags) for dyn_slots and extern_c_driver
   <name>.opt.noinline.ll   the same pipeline with the inliner off (`-inline-threshold=-100000000`): the twin that
                            tells an inlining verdict from an inter-procedural one at the Alive2 smoke (step 3)
@@ -25,8 +26,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
 PROGRAMS = ["dyn_slots", "extern_c_driver"]
 LLVM = {"18": "/usr/lib/llvm-18/bin", "20": "/usr/lib/llvm-20/bin"}
-DATALAYOUT = ('target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-'
-              'n8:16:32:64-S128"')
 DECL_RE = re.compile(r'^declare[^@\n]*@("?[\w.$:<>,]+"?)\(', re.M)
 DEF_RE = re.compile(r'^define[^@\n]*@("?[\w.$:<>,]+"?)\(', re.M)
 
@@ -78,7 +77,8 @@ def whole_program(prog_text, floor_text):
     program declares the floor's exports; the floor declares `main`), and a `declare` the program
     already carries -- the intrinsics both sides declare, `llvm.umul.with.overflow.i64` among them --
     is dropped from the floor (an identical second `declare` is "invalid redefinition" to llvm-as).
-    One `target triple`."""
+    One header: the program's `target datalayout` and `target triple` (the floor's two, hand-written
+    since 1.6.1 step 1, are dropped)."""
     prog_defs = set(DEF_RE.findall(prog_text))
     floor_defs = set(DEF_RE.findall(floor_text))
     prog_decls = set(DECL_RE.findall(prog_text))
@@ -89,7 +89,7 @@ def whole_program(prog_text, floor_text):
         m = DECL_RE.match(l)
         if m and (m.group(1) in prog_defs or m.group(1) in prog_decls):
             continue
-        if l.startswith("target triple"):
+        if l.startswith("target "):   # the program's header governs: one triple, one layout (E-8)
             continue
         keep_floor.append(l)
     text = "\n".join(keep_prog).rstrip("\n") + "\n\n" + "\n".join(keep_floor).rstrip("\n") + "\n"
@@ -101,10 +101,6 @@ def whole_program(prog_text, floor_text):
     for name in floor_roots(floor_text):
         text = re.sub(r'^define internal (.*@' + re.escape(name) + r'\()', r'define \1', text, count=1, flags=re.M)
     return text
-
-
-def with_datalayout(text):
-    return re.sub(r'^(target triple = .*)$', DATALAYOUT + "\n\\1", text, count=1, flags=re.M)
 
 
 def main():
@@ -134,9 +130,8 @@ def main():
     for p in PROGRAMS + ["npkc"]:
         files[p + ".whole.ll"] = whole_program(files[p + ".plain.ll"], floor)
         files[p + ".whole.roots.txt"] = "\n".join(["main"] + roots) + "\n"
-    # 4. the datalayout twins
-    for name in [n for n in list(files) if n.endswith(".ll")]:
-        files[name[:-3] + ".dl.ll"] = with_datalayout(files[name])
+    # (4. the datalayout twins retired at 1.6.1 step 1, E-8: every emission states its own layout,
+    #  pinned in nitpick.toml's [toolchain] and held there by both runners -- the plain form IS the twin)
     # write, then the opt pairs and the belt
     for name, text in files.items():
         open(os.path.join(out, name), "w").write(text)

@@ -42,6 +42,8 @@ opt-level = 2
 
 [toolchain]                      # D-204; landed 1.4.5
 llvm          = "20.1.2"
+triple        = "x86_64-unknown-linux-gnu"   # E-8, D-322 (5); landed 1.6.1 step 1: the two header lines every module states
+datalayout    = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 llc-flags     = ["-O0", "-filetype=obj", "-relocation-model=static"]
 llc-opt-flags = ["-O2", "-filetype=obj", "-relocation-model=static"]
 opt-flags     = ["-O2", "-S"]
@@ -80,11 +82,29 @@ nofile = 1024                    # the soft RLIMIT_NOFILE both runners stand und
   consumes is a document that goes stale in silence. `llc-opt-flags` is the
   optimised re-run every program goes through as a check (1.3.8), kept separate
   from the build's own `llc-flags` because it is an instrument. Two keys are
-  deliberately absent: `-mcpu` (the emitted IR carries `target triple` and no
-  `-mcpu` is passed, so llc uses the triple's generic CPU; an explicit
-  `-mcpu=x86-64` is the fix if cross-machine divergence is ever observed,
-  applied everywhere at once) and `--build-id`, whose `uuid` form injects
-  entropy by design.
+  deliberately absent: `-mcpu` (the emitted IR carries `target triple` and
+  `target datalayout` and no `-mcpu` is passed, so llc uses the triple's generic
+  CPU; an explicit `-mcpu=x86-64` is the fix if cross-machine divergence is ever
+  observed, applied everywhere at once) and `--build-id`, whose `uuid` form
+  injects entropy by design. **[2026-09-26, 1.6.1 step 1 (E-8, D-322 (5)):]** two
+  keys ARE pinned that no tool is passed: `triple` and `datalayout`, the two header
+  lines every module of ours states — the emitter's constants, and the floor's and
+  the explorer shim's hand-written lines. An analyzer that reads a module as it is
+  lays every aggregate out under the layout it states, and under LLVM's default when
+  it states none (NIKOS did, at 1.6.0's gate), so the artifact says what layout it
+  assumes; `opt` and `llc` derive the same layout from the triple, so the object does
+  not move for it (measured: a program's, the floor's and the shim's objects
+  byte-identical either way). Both runners refuse a manifest without the two rows BY
+  NAME, hold the layout to what the pinned `opt` derives over a module stating only
+  the triple (`opt` keeps a wrong layout line as written and `llc` accepts one in
+  silence, so the line proves nothing about itself; `llvm-as` completes a partial
+  string, so the pin is the full canonical one), and hold every emission of the
+  compiler under test, the floor and the shim to the two (`check_datalayout_pin` and
+  `check_module_header` in the harness, `datalayout_pin_check` and `ir_module_header`
+  in `npkg`; eight self-check cases each). The strings are the COMPILER's, not a
+  project's — its inline assembly and split-stack prologue are x86-64 — so a
+  library's manifest carries the same two rows as this one: checked, never chosen,
+  as `llvm` is a pin `llc` never reads.
 - **`[verify]` belongs in the manifest**, not on the command line. The flags a
   project must be verified under are a property of the project, not of whoever
   typed the command. `npkc-native`'s existing `[nikos]` table established this and

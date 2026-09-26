@@ -1137,6 +1137,8 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     if (s3.count > 0i64) { pass (raw step_bad(raw strlist_view(s3, 0i64))); }
     List<string>:s3b = raw ir_prelude_trimmed(vir.value, "npkc.v.ll");
     if (s3b.count > 0i64) { pass (raw step_bad(raw strlist_view(s3b, 0i64))); }
+    List<string>:s3c = raw ir_module_header(vir.value, "npkc.v.ll", string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
+    if (s3c.count > 0i64) { pass (raw step_bad(raw strlist_view(s3c, 0i64))); }
     List<string>:s4 = raw elided_ir_checks(rows, vir.value, "verify");
     if (s4.count > 0i64) { pass (raw step_bad(raw strlist_view(s4, 0i64))); }
     string:vobj = raw path_join(vdir, "npkc.v.o");

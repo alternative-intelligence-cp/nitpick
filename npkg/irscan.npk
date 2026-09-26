@@ -176,6 +176,51 @@ pub func:ir_prelude_trimmed = List<string>(string:ir, string:name) never fails {
     pass fl;
 };
 
+// EVERY MODULE STATES THE PINNED LAYOUT AND TRIPLE, ONCE EACH, IN THAT ORDER
+// (E-8, D-322 (5); 1.6.1 step 1) -- the harness's `check_module_header`, byte
+// for byte: the emitter's two header lines, and the floor's and the explorer
+// shim's hand-written ones. The layout line is what an analyzer that reads
+// the module as it is lays every aggregate out under (NIKOS did, at 1.6.0's
+// gate, and read every emission under LLVM's default for want of one); `opt`
+// and `llc` derive the same string from the triple, so the object does not
+// move for it. The line proves nothing about itself -- `opt` keeps a wrong one
+// as written and `llc` accepts one in silence -- which is why the pin is held
+// to `opt`'s derivation (`datalayout_pin_check`) and every module to the pin
+// here. A `target` line is one that BEGINS the line: a string constant sits
+// on an `@` line and a comment on a `;` line. Asked of what the compiler
+// under test emits, of the floor and of the shim -- not of the snapshot's
+// emissions, the rule every emitted-IR belt keeps (1.5.2d).
+pub func:ir_module_header = List<string>(string:ir, string:name, string:triple, string:datalayout) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(ir);
+    List<string>:targets = raw list_init::<string>(2i64);
+    for (int64:i in 0i64...lines.count) {
+        string:line = raw strlist_view(lines, i);
+        if (raw text_starts_with(line, "target ")) { drop strlist_push(@targets, raw text_copy(line)); }
+    }
+    string:want0 = string_concat("target datalayout = \"", string_concat(datalayout, "\""));
+    string:want1 = string_concat("target triple = \"", string_concat(triple, "\""));
+    bool:ok = (targets.count == 2i64);
+    if (ok) { ok = raw text_eq(raw strlist_view(targets, 0i64), want0); }
+    if (ok) { ok = raw text_eq(raw strlist_view(targets, 1i64), want1); }
+    if (ok) { pass fl; }
+    string:m = string_concat(name, ": the module's header is not the pinned one -- expected `");
+    m = string_concat(m, want0);
+    m = string_concat(m, "` and `");
+    m = string_concat(m, want1);
+    m = string_concat(m, "` (nitpick.toml [toolchain]), got ");
+    if (targets.count == 0i64) { m = string_concat(m, "no `target` line"); }
+    for (int64:k in 0i64...targets.count) {
+        if (k > 0i64) { m = string_concat(m, ", "); }
+        m = string_concat(m, "`");
+        m = string_concat(m, raw strlist_view(targets, k));
+        m = string_concat(m, "`");
+    }
+    m = string_concat(m, " (E-8, D-322 (5): every module of ours states the layout it assumes, and the runners hold it to the pin)");
+    drop list_push(@fl, move(m));
+    pass fl;
+};
+
 // Every `alloca` is in its function's entry block (D-173).
 pub func:ir_allocas_hoisted = List<string>(string:ir, string:name) never fails {
     List<string>:bad = raw list_init::<string>(1i64);

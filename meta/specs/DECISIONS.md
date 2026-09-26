@@ -14745,6 +14745,13 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
 > tracking"; what the stage asserts instead is the snapshot's STAMP integrity,
 > with "can the snapshot still build `src/`" as the continuous anti-rot check.
 > The reasoning is under D-203's landing note.
+>
+> **Two more keys at 1.6.1 step 1 (2026-09-26; E-8, D-322 (5)).** `[toolchain]`
+> carries `triple` and `datalayout`, the two header lines every module of ours
+> states — pinned AND READ in point 1's sense: neither is passed to a tool; both
+> are what the runners hold every emission, the floor and the explorer shim to,
+> and the layout is held to what the pinned `opt` derives from the triple, so a
+> stale string cannot stand. The measurements are under D-322's landing note.
 
 ## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
 
@@ -20808,6 +20815,37 @@ one by one into four classes with a remedy each. The alternative — carrying bo
 one's port finished — is the "two mechanisms for one job" the blueprint philosophy forbids and
 D-233 already decided against.
 
+> **[Point 5 LANDED at 1.6.1 step 1 (2026-09-26): every module of ours states its layout and
+> triple.]** The emitter writes `target datalayout = "…"` as the first line of every module and
+> `target triple = "…"` as the second (`emit_program.npk`, `opt`'s own order), and
+> `runtime/npkrt.ll` and `runtime/explore/npkx.ll` carry the same two lines by hand: the
+> whole-program form links the emission with the floor, and an artifact whose emitted half
+> states its layout while its hand-written half inherits one at link time is two spellings of
+> one fact. The strings are pinned as `[toolchain] triple` and `datalayout` in `nitpick.toml`,
+> two rows both runners refuse a manifest without, and are held two ways. The layout is held
+> to what the pinned `opt` derives from the pinned triple over a module stating only the
+> triple (`check_datalayout_pin`, `datalayout_pin_check`) — MEASURED at the step: `opt` keeps a
+> DIFFERENT layout line as written with no warning and `llc` accepts one in silence, so a
+> stated line proves nothing about itself, and `llvm-as` completes a PARTIAL string on the way
+> through (the pointer-space specs and `i128:128`, not `f80:128`), so the pin is the full
+> canonical string. And every emission of the compiler under test, the floor and the shim are
+> held to the two (`check_module_header`, `ir_module_header`; the runner self-checks carry the
+> eight failure and pass cases each). Two departures from the point's letter, each for its
+> reason: the TRIPLE is pinned beside the layout, because the belt derives the layout FROM the
+> triple and an unpinned triple would be a constant of each belt's own; and the emitter keeps
+> both as CONSTANTS rather than reading the manifest, because the compiler does not parse
+> `nitpick.toml` and the strings are the compiler's, not a project's (its inline assembly and
+> split-stack prologue are x86-64) — a manifest row is a pin the runners check, as
+> `llvm = "20.1.2"` is a pin `llc` never reads. The user's word, 2026-09-26, in the compiler session, on both departures (put to him with the recommendation, s16 concurring): "the recommendations from earlier you asked about are fine. go with those." Measured: with one file name, a
+> program's, the floor's and the shim's objects are byte-identical with and without the line at
+> -O0 and after `opt -O2`; the snapshot refreshed in one hop (stage2 == stage3,
+> `ec29f358c08dfe8075f3a22a6f30d110dd402132f058b484935a8f0bbd46395f`, 28,872,936 bytes, 3,507
+> defines every one `"split-stack"`, zero absolute site paths); the ladder's `npkrt.o` unchanged,
+> `builder.o` and `builder` moved with the snapshot, `npkc.ll`, `npkc.o` and `npkc` with the two
+> lines and the emitter's own constants; the floor's 388 rows unmoved (`npkg verify --floor-only` on the new floor: 381 discharged, 7 budget, 0 open, `runtime/npkrt.obligations` matching, both readings of the models holding, the reserve 1,712 of 16,384 bytes); D-303's alternating sweep 41 of 41 explorable programs
+> agreeing on 20 seeds; the gate's datalayout twins retired from `gate_inputs.py` (the plain
+> form IS the twin) and 38 of 38 tasks identical to the base in ingestion, counts and every alarm (the three retired twins absent), every task deterministic; each program's plain form's site list IDENTICAL to its twin's in the base — `dyn_slots` 53 context rows, `extern_c_driver` 2, `npkc` 2, the compiler's own plain form analysed under the binary's layout for the first time as itself — and the eight controls 7 of 8 in both modes as at landing 68 (`uaf` missed: the floor model, step 4). `npkg verify --record` at this tree: 6,465 obligations — 3,116 discharged, 2,503 open, 0 budget, 841 unencoded, 5 checker (landing 69's three discharged rows and nothing else new) — matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved; `nitpick.obligations` 6,198 rows before and after, 5,987 shared, ZERO verdicts moved among shared rows, ZERO (symbol, kind) discharged counts fell, checker 5 / discharged 2,857 / open 2,495 / unencoded 841 on both sides. The 211 rows that left and the 211 that arrived are ONE MOVE OF NAMES, measured over all 1,125 obligation files against the same source compiled by landing 69's compiler: the only difference is D-317's field-function names, `|npk.f.<type id>.<field>|`, where every type id above 3123 is one higher — one more type interned while the changed statement of `emit_all` was compiled — 44 of the 97 types the rows name keep their id, 53 move by one, every field set identical, no other line differs; a row's hash is its text, so the rows re-keyed with their verdicts intact. The record is `meta/roadmap/1.6/1.6.1.md`, step 1.
+
 ## D-323 — Every path of a function ends in `pass`, `fail`, `exit` or a trap; there is no implicit return — **SETTLED (user decision, 2026-09-26: "that situation should not even compile as even NIL (our void) functions return NIL as the value"; DEF-108)**
 
 **The history.** The emitter's `fnem_close` (`src/backend/ir/ir_func.npk`) has written a fall-off
@@ -21062,3 +21100,74 @@ changed, in the order the work found it:
   `tests/analysis/rejection/borrow_pair_plain.npk` (D-223's counterweight, both
   readings) and `tests/backend/programs/view_freeze_ok.npk` (the corrected
   twins, exit 0 on both legs).
+
+## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
+
+**The history.** D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$`
+argument when the result can carry a pointer — rule A, "`launder` closed" — a SHAPE rule,
+because the escape analysis never looked into callees. D-249 (1.5.1b) extended the same
+marking to views. D-325 (1.6.1 step 0) built, for the freeze of a view's root, exactly the
+provenance the shape rule lacked: per-function SUMMARIES at the escape fixpoint — what a
+result may VIEW (which parameter's bytes, at which path), what it CARRIES (the pass bit),
+what a body STORES through each pointer parameter, what it WRITES — read off each callee's
+own body, a trait's method the union of its impls', the shape rule of D-117/D-223 kept for a
+callee the analysis cannot see; and used them for the view parties only, leaving rule A's
+marking as it was. So `string:r = raw make(@b);` with `make = string(Box->:b)` building a
+fresh string is refused at `pass r` (BORROW-001) while the summary knows `make` views nothing
+of `b`. The library listener met the refusal at nitpick-time's cycle 0.4 (a formatter's
+`pass raw bytes_take(@sink)` wrapper, refused even with a copying take) and nitpick-regex's
+cycle 0.6 (replacement text), and reported it 2026-09-26 as O-N27: a false REJECT, the other
+face of DEF-107's false accept — both D-249's view rule keyed on a call's SHAPE rather than
+on the value's PROVENANCE.
+
+**The decision.** Rule A's `holds` marking reads the callee's summary: a call's result holds
+a borrow of an argument `x` exactly when the summary says the result may VIEW `x` (its value
+or its address, at any path) or CARRY it, or when the callee is unknown — a function value,
+a `dyn` method — where the shape rule stands. The other rules of D-004 are untouched.
+
+**Why.** A RELAXATION of an accepted refusal: fewer programs refused, nothing unsafe admitted,
+since the summary is what the freeze already trusts. One idea settles both faces, as the
+listener's triage recommended on 2026-09-06. The listener put the question to the user with
+this recommendation as written and relayed his approval (1.6.1 step 0c); his word in the
+compiler session, above, records it.
+
+**What lands.** Subcycle **1.6.1b**, planned execution-grade after 1.6.1 step 1 and landed
+before step 2: the marking in `escape.npk` off the summaries, the tree's and the library
+listener's exposure measured before the landing (a relaxation needs no advance notice —
+D-239's rule is for refusals added — the landing notice carries the measurement), a dated
+note under D-004 and D-249, and `BORROWS_AND_LIFETIMES`'s rule A text corrected.
+
+## D-327 — A prelude marker trait `Copy` over the copyable scalars, with a derivable form for a struct of copyables, and a `never fails` `list_get` under it; no `never fails` clone for owning types — **SETTLED (user decision, 2026-09-26, the same sentence; S-108, the library listener's design input beside O-N28)**
+
+**The history.** D-264 (1.5.2f) made a bare `T` MOVE-ONLY in a generic body — a generic body
+is checked once for every type it is instantiated at, and before the rule `T:x = s[i]` at an
+owning `T` compiled, linked and ran with two owners of one heap body — naming `.clone()`
+under `Clone` as the way to read one out. The prelude's `Clone.clone` is fallible
+(`Result<Self>`: a clone of an owning value allocates, and an allocation can fail), so in a
+`never fails` generic body a clone is `relay`-less and unusable, and `List<T>` has no by-value
+get. The library listener's design input (2026-09-26, with O-N28): nitpick-regex answers
+with its own `Pod` marker trait, so that `vec_get<T: Pod>` reads through a `pod_copy` — a
+shape every container library would otherwise write for itself.
+
+**The decision.** The PRELUDE declares a marker trait `Copy` — the name is the reading, and
+D-239 owns it: a program cannot declare `Copy` — with an `impl` for every copyable scalar in
+the generated `scalar-impls` region (D-257's region, `gen_tables.py`) and a DERIVABLE form
+(`#[derive(Copy)]`, D-258's reader) for a struct whose members are all `Copy`; and the
+prelude's `List<T: Copy>` gains `list_get(l, i)` returning `T` `never fails` — a copy of the
+element, the index checked as `l[i]`'s is. One rule: a copy is a copy; no second clone. A
+`never fails` clone for OWNING types is not offered, since an allocation can fail.
+
+**Why.** The bound `T: Copy` says in the signature what D-264 enforces in the body, so a
+generic container can read an element out without a `Result` where the element cannot fail
+to copy — the explicitness the language sells — and the listener's `Pod` retires into the
+prelude's one name. The listener put the question to the user with this recommendation as
+written and relayed his approval (1.6.1 step 0c); his word in the compiler session, above,
+records it.
+
+**What lands.** Subcycle **1.6.1c**, planned execution-grade after 1.6.1 step 1 and landed
+before step 2: the trait in the prelude with its generated region and its derive arm, the
+checker's `T: Copy` bound, `list_get`, the reach analysis's arm for its index guard, the
+tests, TRAITS_REFERENCE and the prelude's reference; an ADVANCE notice to the library
+listener before it lands (the name `Copy` is reserved in every program by D-239, so the
+census of the name across the tree and the listener's repositories precedes the landing —
+the rule of 1.5.6b step 4).

@@ -113,6 +113,8 @@ pub async func:explored_objects = ExploredObjects(Ctx->:c) {
     for (int64:k1 in 0i64...nu.count) { drop strlist_push(@x.findings, raw strlist_view(nu, k1)); }
     List<string>:ho = raw ir_allocas_hoisted(stx.value, "runtime/explore/npkx.ll");
     for (int64:k2 in 0i64...ho.count) { drop strlist_push(@x.findings, raw strlist_view(ho, k2)); }
+    List<string>:hd = raw ir_module_header(stx.value, "runtime/explore/npkx.ll", string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
+    for (int64:k4 in 0i64...hd.count) { drop strlist_push(@x.findings, raw strlist_view(hd, k4)); }
     List<string>:sk = raw floor_stack_check(stx.value, "explore");
     for (int64:k3 in 0i64...sk.count) { drop strlist_push(@x.findings, raw strlist_view(sk, k3)); }
     // THE ORACLE'S OFFSETS (step 3; D-301): the three words the quiescence oracle

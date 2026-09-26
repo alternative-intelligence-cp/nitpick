@@ -18,6 +18,9 @@ against cases where it MUST report a failure:
   - a z3 whose sha256 is not the pinned one, no z3 pin at all, and a
     profile carrying a wall-clock knob (D-218.1, D-218.2)
   - a verify test expecting `discharged` where the divisor is opaque (P-22)
+  - a layout pin that is not what opt derives from the triple, no layout pin,
+    no triple pin, and a module whose header is not the pinned one (E-8,
+    D-322 (5))
 
 and five where it must NOT: a correct expectation, the real toolchain, the
 word `undef` in a comment or a string constant rather than as a token, the
@@ -1031,6 +1034,65 @@ def main():
         print("  %-26s %-4s  %s" % ("toolchain-restored", "ok",
                                     "the pinned toolchain that is installed "
                                     "must pass"))
+
+    # THE LAYOUT PIN REPORTS A MISMATCH (E-8, D-322 (5); 1.6.1 step 1): the
+    # layout pin moved, no layout pin, no triple pin -- and the real pins
+    # pass. Driven by moving the pins, the only half of the comparison this
+    # can move; the pinned `opt` is the other half.
+    real_dl, real_tr = harness.DATALAYOUT_PIN, harness.TRIPLE_PIN
+    try:
+        harness.DATALAYOUT_PIN = (real_dl + "-S64") if real_dl else "e-m:e"
+        dl_mismatch = harness.check_datalayout_pin()
+        harness.DATALAYOUT_PIN = ""
+        dl_unpinned = harness.check_datalayout_pin()
+        harness.DATALAYOUT_PIN = real_dl
+        harness.TRIPLE_PIN = ""
+        tr_unpinned = harness.check_datalayout_pin()
+    finally:
+        harness.DATALAYOUT_PIN, harness.TRIPLE_PIN = real_dl, real_tr
+    for name, fails, why in (
+            ("datalayout-mismatch", dl_mismatch,
+             "a layout pin that is not what opt derives from the triple must fail"),
+            ("datalayout-unpinned", dl_unpinned,
+             "no [toolchain] datalayout pin at all must fail"),
+            ("triple-unpinned", tr_unpinned,
+             "no [toolchain] triple pin at all must fail")):
+        ok = bool(fails)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      check_datalayout_pin accepted it; it should not have")
+    dl_still = harness.check_datalayout_pin()
+    if dl_still:
+        bad += 1
+        print("  %-26s %-4s  %s" % ("datalayout-restored", "BAD",
+                                    "the real pins must pass: %s" % dl_still[0]))
+    else:
+        print("  %-26s %-4s  %s" % ("datalayout-restored", "ok",
+                                    "the pinned layout is what the pinned opt "
+                                    "derives from the pinned triple"))
+    # EVERY MODULE STATES THE PINNED HEADER (the belt's failure path): no
+    # layout line, a wrong layout, the two lines swapped -- and the pinned
+    # header passes.
+    tail = "\n\ndefine i32 @f() {\n  ret i32 0\n}\n"
+    hdr_ok = 'target datalayout = "%s"\ntarget triple = "%s"' % (real_dl, real_tr) + tail
+    hdr_missing = 'target triple = "%s"' % real_tr + tail
+    hdr_wrong = 'target datalayout = "e-m:e-i64:64-n8:16:32:64-S128"\ntarget triple = "%s"' % real_tr + tail
+    hdr_order = 'target triple = "%s"\ntarget datalayout = "%s"' % (real_tr, real_dl) + tail
+    for name, text, must_fail, why in (
+            ("header-missing", hdr_missing, True, "a module stating no layout must fail"),
+            ("header-wrong", hdr_wrong, True, "a module stating a layout that is not the pinned one must fail"),
+            ("header-order", hdr_order, True, "the two lines in the other order must fail"),
+            ("header-pinned", hdr_ok, False, "the pinned header must pass")):
+        fails = harness.check_module_header(text, name)
+        ok = bool(fails) if must_fail else not fails
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      check_module_header %s it; it should not have"
+                  % ("accepted" if must_fail else "rejected"))
 
     # THE SOLVER PIN REPORTS A MISMATCH (D-218.1/D-218.2, 1.5.0): the sha moved,
     # the pin absent, a wall-clock knob in the profile -- and the real pin

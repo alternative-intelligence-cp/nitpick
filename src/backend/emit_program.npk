@@ -1177,6 +1177,22 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     drop build_modmap(g, @c);
     drop build_vtmap(g, tr, @c);
     StrTable:st = raw strtab_init();
+    // THE MODULE STATES ITS OWN LAYOUT (E-8, D-322 (5); 1.6.1 step 1). An
+    // analyzer that reads this text as it is lays every aggregate out under
+    // the layout it finds, and under LLVM's DEFAULT when it finds none:
+    // NIKOS did, at 1.6.0's gate, and `{ i32, i64 }` was 12 bytes to it
+    // where the binary has 16. `opt` and `llc` derive this same string from
+    // the triple, so the object does not move for it (measured). The two
+    // strings are the COMPILER's, not a project's (the inline assembly and
+    // the split-stack prologue are x86-64), so they are constants here and
+    // PINS in nitpick.toml's [toolchain] (`triple`, `datalayout`), which both
+    // runners hold this header to -- and hold to what the pinned `opt`
+    // derives from the triple, because `opt` keeps a wrong layout as written
+    // and `llc` accepts one in silence: the line proves nothing about
+    // itself. The layout is the FULL canonical string (`llvm-as` completes
+    // a partial one on the way through). The floor and the explorer shim
+    // carry the same two lines by hand.
+    drop irw_raw(w, "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"");
     drop irw_raw(w, "target triple = \"x86_64-unknown-linux-gnu\"");
     drop irw_blank(w);
     drop emit_type_headers(w, tr, @c, diags, g);

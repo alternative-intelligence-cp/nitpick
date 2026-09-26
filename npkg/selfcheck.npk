@@ -569,6 +569,71 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         drop strlist_push(@report, raw case_line("toolchain-restored", true, "the pinned toolchain that is installed must pass"));
     }
 
+    // THE LAYOUT PIN REPORTS A MISMATCH (E-8, D-322 (5); 1.6.1 step 1): the
+    // layout pin moved, no layout pin, no triple pin -- and the real pins
+    // pass. Driven by moving the pins, the only half of the comparison this
+    // can move; the pinned `opt` is the other half.
+    string:real_tr = string_from_bytes(c.m.triple.ptr, c.m.triple.len);
+    string:real_dl = string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len);
+    string:probe = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "datalayout_probe.ll");
+    List<string>:dl_mis = relay await datalayout_pin_check(opt, c.t.env, real_tr, string_concat(real_dl, "-S64"), probe);
+    List<string>:dl_unp = relay await datalayout_pin_check(opt, c.t.env, real_tr, "", probe);
+    List<string>:tr_unp = relay await datalayout_pin_check(opt, c.t.env, "", real_dl, probe);
+    List<string>:dl_ok = relay await datalayout_pin_check(opt, c.t.env, real_tr, real_dl, probe);
+    bool:okd1 = (dl_mis.count > 0i64);
+    if (!okd1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("datalayout-mismatch", okd1, "a layout pin that is not what opt derives from the triple must fail"));
+    if (!okd1) { drop strlist_push(@report, "      the layout pin check accepted it; it should not have"); }
+    bool:okd2 = (dl_unp.count > 0i64);
+    if (!okd2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("datalayout-unpinned", okd2, "no [toolchain] datalayout pin at all must fail"));
+    if (!okd2) { drop strlist_push(@report, "      the layout pin check accepted it; it should not have"); }
+    bool:okd3 = (tr_unp.count > 0i64);
+    if (!okd3) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("triple-unpinned", okd3, "no [toolchain] triple pin at all must fail"));
+    if (!okd3) { drop strlist_push(@report, "      the layout pin check accepted it; it should not have"); }
+    bool:okd4 = (dl_ok.count == 0i64);
+    if (!okd4) {
+        bad = bad + 1i64;
+        drop strlist_push(@report, raw case_line("datalayout-restored", false,
+            string_concat("the real pins must pass: ", raw strlist_view(dl_ok, 0i64))));
+    } else {
+        drop strlist_push(@report, raw case_line("datalayout-restored", true, "the pinned layout is what the pinned opt derives from the pinned triple"));
+    }
+    // EVERY MODULE STATES THE PINNED HEADER (the belt's failure path): no
+    // layout line, a wrong layout, the two lines swapped -- and the pinned
+    // header passes.
+    string:hdr_tail = "\n\ndefine i32 @f() {\n  ret i32 0\n}\n";
+    string:hdr_ok = string_concat("target datalayout = \"", string_concat(real_dl, "\"\ntarget triple = \""));
+    hdr_ok = string_concat(hdr_ok, string_concat(real_tr, string_concat("\"", hdr_tail)));
+    string:hdr_missing = string_concat("target triple = \"", string_concat(real_tr, string_concat("\"", hdr_tail)));
+    string:hdr_wrong = string_concat("target datalayout = \"e-m:e-i64:64-n8:16:32:64-S128\"\ntarget triple = \"", string_concat(real_tr, string_concat("\"", hdr_tail)));
+    string:hdr_order = string_concat("target triple = \"", string_concat(real_tr, "\"\ntarget datalayout = \""));
+    hdr_order = string_concat(hdr_order, string_concat(real_dl, string_concat("\"", hdr_tail)));
+    List<string>:hdrf1 = raw ir_module_header(hdr_missing, "header-missing", real_tr, real_dl);
+    List<string>:hdrf2 = raw ir_module_header(hdr_wrong, "header-wrong", real_tr, real_dl);
+    List<string>:hdrf3 = raw ir_module_header(hdr_order, "header-order", real_tr, real_dl);
+    List<string>:hdrf4 = raw ir_module_header(hdr_ok, "header-pinned", real_tr, real_dl);
+    bool:okhdr1 = (hdrf1.count > 0i64);
+    if (!okhdr1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("header-missing", okhdr1, "a module stating no layout must fail"));
+    if (!okhdr1) { drop strlist_push(@report, "      the header belt accepted it; it should not have"); }
+    bool:okhdr2 = (hdrf2.count > 0i64);
+    if (!okhdr2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("header-wrong", okhdr2, "a module stating a layout that is not the pinned one must fail"));
+    if (!okhdr2) { drop strlist_push(@report, "      the header belt accepted it; it should not have"); }
+    bool:okhdr3 = (hdrf3.count > 0i64);
+    if (!okhdr3) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("header-order", okhdr3, "the two lines in the other order must fail"));
+    if (!okhdr3) { drop strlist_push(@report, "      the header belt accepted it; it should not have"); }
+    bool:okhdr4 = (hdrf4.count == 0i64);
+    if (!okhdr4) {
+        bad = bad + 1i64;
+        drop strlist_push(@report, raw case_line("header-pinned", false, string_concat("the pinned header must pass: ", raw strlist_view(hdrf4, 0i64))));
+    } else {
+        drop strlist_push(@report, raw case_line("header-pinned", true, "the pinned header must pass"));
+    }
+
     // THE SOLVER PIN REPORTS A MISMATCH (D-218.1/D-218.2, 1.5.0): the sha
     // moved, the pin absent, a wall-clock knob in the profile -- and the real
     // pin passes. Driven by moving the pin and the options.

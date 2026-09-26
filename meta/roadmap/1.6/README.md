@@ -105,6 +105,15 @@ and not a deferral — D-233 states the rule.
 > is a coroutine handed to `npk_run_until`), so the plan defines the
 > whole-program form by text and measures both procedurality modes.
 
+> **[1.6.1 step 1 (2026-09-26).]** E-8 landed (the emission, the floor and the explorer shim
+> state the pinned layout and triple; `1.6.1.md`'s step-1 record), and the two questions the
+> library listener relayed at step 0c were ratified in the compiler session as **D-326** (S-107:
+> rule A's `holds` marking read off the provenance summaries) and **D-327** (S-108: the prelude
+> `Copy` marker with a derivable form and a `never fails` `list_get`). Each is a subcycle of
+> its own — **1.6.1b** and **1.6.1c**, planned execution-grade next and landed BEFORE 1.6.1
+> step 2: both are language-side work that every library waits on, and D-233's rule puts what
+> enters the language before the evidence campaign closes, not after a leg of it.
+
 ## Watch for
 
 - **Version drift between the two pins.** The LLVM toolchain pin (20.1.2)

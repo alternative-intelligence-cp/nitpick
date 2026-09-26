@@ -332,7 +332,7 @@ def main():
         forms.append((n + ".plain", n + ".plain.ll", ["main"]))
         roots = open(os.path.join(inputs, n + ".whole.roots.txt")).read().split()
         forms.append((n + ".whole", n + ".whole.ll", roots))
-        forms.append((n + ".plain.dl", n + ".plain.dl.ll", ["main"]))
+        # (the .plain.dl twin retired at 1.6.1 step 1, E-8: the plain form states its own layout)
     if not quick:
         forms.append(("npkc.verified", "npkc.verified.ll", ["main"]))
     for c in CONTROLS:

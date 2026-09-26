@@ -48,6 +48,8 @@ pub struct:Manifest = {
     string:output;           // [build] output, relative to the root
     int64:opt_level;         // [build] opt-level: 0 (no `opt`) or 2 (the pinned -O2 lists)
     string:llvm;             // [toolchain] llvm, the exact patch release
+    string:triple;           // [toolchain] triple: what the compiler targets -- the header every module of ours states (E-8, D-322 (5))
+    string:datalayout;       // [toolchain] datalayout: the layout those modules state, held to what the pinned opt derives from the triple
     List<string>:llc_flags;
     List<string>:llc_opt_flags;
     List<string>:opt_flags;
@@ -64,6 +66,7 @@ pub struct:Manifest = {
 
 func:blank = Manifest(string:root) never fails {
     pass Manifest{ root: raw text_copy(root), entry: "", output: "", opt_level: 0i64, llvm: "",
+                   triple: "", datalayout: "",
                    llc_flags: raw list_init::<string>(4i64),
                    llc_opt_flags: raw list_init::<string>(4i64),
                    opt_flags: raw list_init::<string>(4i64),
@@ -101,6 +104,8 @@ func:schema_allows = bool(string:section, string:key) never fails {
     }
     if (raw text_eq(section, "toolchain")) {
         if (raw text_eq(key, "llvm"))          { pass true; }
+        if (raw text_eq(key, "triple"))        { pass true; }
+        if (raw text_eq(key, "datalayout"))    { pass true; }
         if (raw text_eq(key, "llc-flags"))     { pass true; }
         if (raw text_eq(key, "llc-opt-flags")) { pass true; }
         if (raw text_eq(key, "opt-flags"))     { pass true; }
@@ -200,6 +205,16 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
     Result<string>:llvm = need_string(d, "toolchain", "llvm");
     if (llvm.is_error) { pass (raw refuse(root, "nitpick.toml has no [toolchain] llvm pin -- D-204 makes the toolchain a build INPUT, and an unpinned input is not one")); }
     m.llvm = move(llvm.value);
+    // THE TWO HEADER LINES EVERY MODULE OF OURS STATES (E-8, D-322 (5); 1.6.1
+    // step 1), pinned here and READ: `datalayout_pin_check` holds the layout to
+    // what the pinned `opt` derives from the triple, `ir_module_header` holds
+    // every emission, the floor and the explorer shim to the two.
+    Result<string>:tr = need_string(d, "toolchain", "triple");
+    if (tr.is_error) { pass (raw refuse(root, "nitpick.toml has no [toolchain] triple pin -- every module of ours states the target it assumes (E-8, D-322 (5)), and an unpinned header is a stated string nothing checks")); }
+    m.triple = move(tr.value);
+    Result<string>:dl = need_string(d, "toolchain", "datalayout");
+    if (dl.is_error) { pass (raw refuse(root, "nitpick.toml has no [toolchain] datalayout pin -- every module of ours states the layout it assumes (E-8, D-322 (5)), and an unpinned header is a stated string nothing checks")); }
+    m.datalayout = move(dl.value);
     Result<List<string>>:f1 = need_strings(d, "toolchain", "llc-flags");
     if (f1.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] llc-flags is missing or is not an array of strings")); }
     m.llc_flags = move(f1.value);
