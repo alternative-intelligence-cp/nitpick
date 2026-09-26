@@ -45,6 +45,7 @@ use "./parse_type.npk".*;
 use "./symbols.npk".*;
 use "./type_resolve.npk".*;
 use "./type_decls.npk".*;
+use "./parser.npk".*;   // QUAL_MOVE: a parameter's ownership is part of the signature (DEF-116)
 
 // One `impl` block. The TARGET IS ALWAYS SLOT ONE (D-031), with or without a
 // trait, so `inherent` is `trait_id == 0` rather than a different shape.
@@ -1452,6 +1453,42 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
             raw diag_error(raw TYPE_ASYNC_IMPL(),
                 string_concat(as1, as2), im.span));
         pass NIL;
+    }
+    // A PARAMETER'S OWNERSHIP IS PART OF THE SIGNATURE (DEF-116, 1.6.1 step 0c;
+    // the library listener's O-N28). `move T:p` is a CONSUMING parameter (D-183):
+    // the caller spends its argument exactly where the callee's declaration says
+    // `move`, and a call through a bound or a `dyn` reads the TRAIT's
+    // declaration. So an impl whose parameter is `move` where the trait's is lent
+    // frees what the caller still owns (a double free at the caller's drop --
+    // measured on c970483), and one whose parameter is lent where the trait's is
+    // `move` never drops what the caller spent (a leak D-151 cannot see). The
+    // function TYPE carries no `move`, so `same_signature` cannot compare it;
+    // the two DECLARATIONS are compared here, parameter by parameter, in both
+    // directions, before the shape.
+    int32:tpn = raw fn_param_count(r.ast, tf);
+    int32:ipn = raw fn_param_count(r.ast, f);
+    if (tpn == ipn) {
+        for (int32:pi in 0i32...tpn) {
+            DeclNode:tp = raw ast_decl(r.ast, raw fn_param(r.ast, tf, pi));
+            DeclNode:ip = raw ast_decl(r.ast, raw fn_param(r.ast, f, pi));
+            bool:t_move = ((raw param_quals(tp)) & (raw QUAL_MOVE())) != 0i32;
+            bool:i_move = ((raw param_quals(ip)) & (raw QUAL_MOVE())) != 0i32;
+            if (t_move != i_move) {
+                string:mv1 = string_concat("`",
+                    raw intern_get(r.interns, raw decl_name(f)));
+                string:mv2 = string_concat(mv1, "`'s parameter `");
+                string:mv3 = string_concat(mv2, raw intern_get(r.interns, raw decl_name(ip)));
+                string:mv4 = "";
+                if (i_move) {
+                    mv4 = string_concat(mv3, "` is `move` where the trait's is lent: a parameter's ownership is part of the signature (DEF-116) -- the caller spends its argument only where the TRAIT says `move`, so this impl would free what the caller still owns; declare it as the trait does, or take a `.clone()` inside");
+                } else {
+                    mv4 = string_concat(mv3, "` is lent where the trait's is `move`: a parameter's ownership is part of the signature (DEF-116) -- the caller spends its argument where the TRAIT says `move`, so this impl would leak what it was given; declare it `move` as the trait does");
+                }
+                drop diaglist_push(r.diags,
+                    raw diag_error(raw TYPE_IMPL_INCOMPLETE(), move(mv4), ip.span));
+                pass NIL;
+            }
+        }
     }
     SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
     if (raw same_signature(r, want, got, sc)) { pass NIL; }

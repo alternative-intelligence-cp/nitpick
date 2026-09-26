@@ -1,0 +1,41 @@
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 24:39
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 28:40
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 32:32
+//
+// A PARAMETER'S OWNERSHIP IS PART OF THE SIGNATURE (DEF-116, 1.6.1 step 0c; the
+// library listener's O-N28). `move T:p` is a consuming parameter (D-183): the
+// caller spends its argument exactly where the callee's declaration says
+// `move`, and a call through a bound or a `dyn` reads the TRAIT's declaration.
+// An impl whose parameter is `move` where the trait's is lent frees what the
+// caller still owns (a double free at the caller's drop, measured on c970483 --
+// (1)); one whose parameter is lent where the trait's is `move` never drops what
+// the caller spent (a leak, (2)); a prelude trait is a trait like any other
+// ((3), `Eq`'s `other`). The controls at the end carry no code: `move` on both
+// sides, and lent on both sides.
+
+mod:impl_move_sig;
+struct:Named = { string:name; };
+
+// (1) the trait lends `self`; the impl takes it by `move`
+trait:Dup = { func:dup = Self(Self:self) never fails; };
+impl:string:Dup = { func:dup = string(move string:self) never fails { pass self; }; };
+
+// (2) the trait consumes `self`; the impl lends it
+trait:Take = { func:take = int64(move Self:self) never fails; };
+impl:string:Take = { func:take = int64(string:self) never fails { pass self.len; }; };
+
+// (3) the prelude's `Eq` lends `other`; the impl consumes it
+impl:Named:Eq = {
+    func:eq = bool(Named:self, move Named:other) never fails {
+        pass (self.name.len == other.name.len);
+    };
+};
+
+// --- controls, no code -------------------------------------------------------------
+trait:Swallow = { func:swallow = int64(move Self:self) never fails; };
+impl:string:Swallow = { func:swallow = int64(move string:self) never fails { pass self.len; }; };
+trait:Peek = { func:peek = int64(Self:self) never fails; };
+impl:string:Peek = { func:peek = int64(string:self) never fails { pass self.len; }; };

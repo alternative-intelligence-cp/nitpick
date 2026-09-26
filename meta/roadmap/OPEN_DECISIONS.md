@@ -269,6 +269,7 @@ already does."
 | Question | Where it stands | Recommendation |
 |---|---|---|
 | **S-107 — should D-004 rule A's `holds` marking read the callee's summary instead of the call's shape?** The recap: D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$` argument when the result can carry a pointer (rule A, "`launder` closed"), a SHAPE rule because the escape analysis never looked into callees; D-249 (1.5.1b) extended it to views; 1.6.1 step 0 built, for the freeze (D-325), exactly the provenance the listener asked for — per-function summaries at the escape fixpoint: what a result may VIEW (with field paths), what it CARRIES (a pass bit), what a body STORES through each pointer parameter, what it WRITES — and used them for the view parties only, leaving rule A's marking as it was. So `string:r = raw make(@b)` with `make` returning an owned copy is refused at `pass r` today (BORROW-001) while the summaries know `make` views nothing of `b`. | The mechanism exists and is measured; the marking's refinement is a RELAXATION of an accepted refusal (fewer programs refused; nothing unsafe admitted, since a summary's absence — a `dyn` method, a function value — keeps rule A's shape), which changes what the language accepts and so is the user's to ratify, with a D-004 dated note. | **Recommendation: refine rule A's marking by the summaries** — a call's result holds a borrow of `x` when the callee's summary says it may VIEW or CARRY `x` (its value or address), or when the callee is unknown; the tree's and the listener's exposure measured before landing (a relaxation needs no advance notice, D-239's rule is for refusals added). One idea settles both faces, as the listener said. A step of 1.6.1's size, after step 0's harness. |
+| **S-108 — a `never fails` by-value read of a generic container: a prelude `Copy`-like marker, or a `never fails` `clone` for the types whose clone cannot fail?** The recap: D-264 (1.5.2f) made a bare `T` move-only in a generic body, naming `.clone()` under `Clone` as the way to read one out; the prelude's `Clone.clone` is fallible (`Result<Self>`), so in a `never fails` generic body a clone is `relay`-less and unusable, and `List<T>` has no by-value get. The library listener's design input (2026-09-26, with O-N28): nitpick-regex answers with its own `Pod` marker trait, so that `vec_get<T: Pod>` reads through a `pod_copy`. **Recommendation:** a prelude marker trait `Copy` (the name is the reading, D-239 would own it) with `impl` for every copyable scalar in the generated `scalar-impls` region and a derivable form for a struct of copyables, and `List<T: Copy>`'s `list_get(l, i)` returning `T` `never fails` — one rule (a copy is a copy), no second clone; a `never fails` clone for owning types is not offered, since an allocation can fail. A language question, the user's. | **the user** |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -2282,6 +2283,13 @@ defect declares a `DEF-` in §2f.
 > `T[0]` is a supported type — is a statement, not a defect: TYPE_REFERENCE §9.2 says so now, with
 > `zero_len_array.npk` and `zero_len_owning.npk` as its measurement.
 
+> **[A dated note, 2026-09-26 (1.6.1 step 0c): the library listener CORRECTED the exposure figure it gave for this
+> defect — "our exposure in src/ none" was wrong, because its sweep looked for lent bare-`T` PARAMETERS alone while
+> the switched gates also reach a `T` PLACE read out of a lent or pointed-to container: at c970483 nitpick-regex's
+> `vec_get` (`pass v.items[i]` on a lent `Vec<T>`) and `vec_pop` (through a pointer) are refused TYPE-047 and 78 of
+> its 223 importers go red. The refusal is correct (the same shape the 3g sweep found in this tree's own getters),
+> and their adoption re-spells both; nothing moves in the compiler.]**
+>
 > **DEF-104 — FIXED at 1.6.0 step 3g (2026-09-25, riding with DEF-102 by the listener's request). A LENT `T` IN A
 > GENERIC BODY ESCAPED BOTH LOAN GATES.** Found by the library listener (nitpick-regex's fifth audit, N-25; their
 > O-N22) while 3g was in its harness, and read against 3g's own source: `refuse_move_of_borrowed` (TYPE-047: a
@@ -2458,6 +2466,31 @@ defect declares a `DEF-` in §2f.
 > passes the caller's object), so the cell is a destination that outlives the frame exactly as a pointer
 > parameter's pointee is: the matrix's marker refuses the store (`BORROW-002`, naming the lent cell) where a
 > `move dyn` parameter, this frame's own, holds (DEF-114). `dyn_dest.npk` (4).
+
+> **DEF-116 — FIXED at 1.6.1 step 0c (2026-09-26). AN IMPL COULD DECLARE `move` ON A PARAMETER ITS TRAIT LENDS, OR
+> LEND ONE ITS TRAIT CONSUMES, AND THE RESULT WAS A DOUBLE FREE OR A LEAK.** The library listener's O-N28, from
+> nitpick-regex's adoption planning; reproduced on c970483: `trait:Dup = { func:dup = Self(Self:self) never
+> fails; }` implemented as `string(move string:self) { pass self; }` compiled, and `twice<T: Dup>(T:x) { pass raw
+> x.dup(); }` over a string handed the caller a second owner of one heap body (the second drop trapped through the
+> trap route; a lent `self` written as declared is TYPE-047 at the `pass`, the control); the reverse — a trait's
+> `move Self:self` implemented with a lent `string:self` — ran and never dropped what the caller had spent, a leak
+> D-151 cannot see (managed storage). The mechanism was the listener's reading: `same_signature`
+> (`type_trait.npk`) compares each parameter's TYPE through `same_after_self`, and a function type carries no
+> `move`; TRAITS_REFERENCE §2 said an impl must have the trait's signature and the checker enforced the contract
+> half (TYPE-041, `pure`, `async`) and never ownership. THE FIX: `check_signature` compares the two DECLARATIONS
+> parameter by parameter — an impl's parameter is `move` exactly where the trait's is, in both directions,
+> `NITPICK-TYPE-014` at the parameter naming the direction — before the shape comparison; a call through a bound
+> or a `dyn` reads the trait's declaration and spends its argument where IT says `move`, which is the reason the
+> rule has no exception. `tests/types/rejection/impl_move_sig.npk` pins both directions and the prelude's `Eq`;
+> the tree and the listener's repositories hold no such impl (the sweep below).
+
+> **DEF-117 — FIXED at 1.6.1 step 0c (2026-09-26). AT A GENERIC CALL WHOSE ARGUMENT WAS REFUSED, `T` WAS REPORTED
+> AS UNINFERRABLE TOO.** The library listener's observation beside O-N28: `poke(@b)` with `poke<T>(T->:p)` and a
+> lent owning `b` reports TYPE-085 at the `@` — and TYPE-022 ("`T` cannot be inferred") at the call, a second
+> sentence about one mistake (D-240). A refused argument's type is 0, as a context-dependent argument's is, so the
+> inference could not tell the two apart; it reads the diagnostics written while the arguments were typed now,
+> and an unsolved parameter after a refused argument is reported by nothing (`all_solved`'s `report` flag).
+> `tests/types/rejection/lent_generic_infer.npk`: exactly {TYPE-085}.
 
 > **THE SUMMARY OF A TRAIT'S METHOD IS THE UNION OF ITS IMPLS' (1.6.1 step 0; not a numbered defect: the
 > summaries never shipped).** The counterweight `tests/analysis/rejection/borrow_pair_plain.npk` stopped refusing

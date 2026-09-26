@@ -1,0 +1,17 @@
+// expect-error: NITPICK-TYPE-085
+// expect-error-at: 15:15
+//
+// ONE MISTAKE, ONE REPORT (D-240; DEF-117, 1.6.1 step 0c; the library listener's
+// observation): at a generic call whose argument is refused -- here `@b` of a
+// lent owning parameter, TYPE-085 -- the inference of `T` used to report
+// TYPE-022 ("`T` cannot be inferred") at the same call, a second sentence about
+// the one mistake. An argument the checker refused teaches the inference
+// nothing, and the inference is silent about it now.
+
+mod:lent_generic_infer;
+struct:Box = { string:s; };
+func:poke<T> = NIL(T->:p) never fails { pass NIL; };
+func:use_it = NIL(Box:b) never fails {
+    drop poke(@b);
+    pass NIL;
+};

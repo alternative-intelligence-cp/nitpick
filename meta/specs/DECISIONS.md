@@ -13057,6 +13057,14 @@ rule is implemented and gated meanwhile.
 
 ### `move T:p` — the consuming parameter, and what it narrows in D-065
 
+> **[A dated note, 2026-09-26 (1.6.1 step 0c; DEF-116, the library listener's O-N28): `move` on a parameter is
+> PART OF A TRAIT'S SIGNATURE. An impl's parameter is `move` exactly where the trait's is, in both directions
+> (`NITPICK-TYPE-014`, at the parameter, naming the direction), because the caller spends its argument where the
+> callee's DECLARATION says `move`, and a call through a bound or a `dyn` reads the trait's — so an impl that
+> added `move` to a lent parameter freed what the caller still owned (a double free, measured on c970483), and one
+> that lent a parameter its trait consumed leaked what the caller spent. `same_signature` compared types, which
+> carry no `move`; `check_signature` compares the declarations now. TRAITS_REFERENCE §2 carries the sentence.]**
+
 The marker is spelled **`move`**, in declaration position on a parameter: the
 same word the call site already writes for the same event, at the other end of
 it. `f(move(x))` transfers, and `func:f = R(move T:p)` is where it arrives.

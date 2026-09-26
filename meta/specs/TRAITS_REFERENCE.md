@@ -60,7 +60,15 @@ contract** (D-163, checked since 1.1.0): an impl may not drop a trait method's
 trait relies on the trait's promise. The reverse is fine — an impl may be
 `never fails` where its trait is not, and the guarantee is then visible on the
 concrete receiver only. `#[derive]`-generated impls carry whatever the trait
-declares.
+declares. **And including each parameter's OWNERSHIP** (DEF-116, 1.6.1 step 0c):
+an impl's parameter is `move` exactly where the trait's is, in both directions
+(`NITPICK-TYPE-014`, naming the parameter and the direction), because `move
+T:p` is a consuming parameter (D-183) and the caller spends its argument where
+the TRAIT's declaration says `move` — a call through a bound or a `dyn` reads
+nothing else. An impl that adds `move` to a lent parameter frees what the caller
+still owns (a double free at the caller's drop); one that lends a parameter its
+trait consumes leaks what the caller spent. The function type carries no
+`move`, so the two declarations are compared, parameter by parameter.
 
 ### 2.1 Default Methods
 

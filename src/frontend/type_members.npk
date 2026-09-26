@@ -1719,7 +1719,14 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         }
     }
 
+    // AN ARGUMENT THE CHECKER REFUSED TEACHES THE INFERENCE NOTHING (DEF-117,
+    // 1.6.1 step 0c; D-240): its type is 0, as a context-dependent argument's
+    // is, and the unsolved `T` that follows is the refusal's consequence, not a
+    // second mistake. The diagnostics written while the arguments were typed
+    // say which case this is.
+    int64:diags_before = raw diaglist_count(e.diags);
     drop infer_from_args(e, @r, n, gp, generic_ft, mark, start, count);
+    bool:arg_refused = (raw diaglist_count(e.diags)) > diags_before;
 
     IdSpan:args = raw ast_scratch_commit(e.ast, mark);
     GenericScope:g = GenericScope{ params_start: gp.start, params_count: gp.count,
@@ -1738,7 +1745,7 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // that has a type of its own; the ones it skipped are the context-dependent
     // ones, which have nothing to be checked against precisely because `T` is
     // unknown.
-    if (!(raw all_solved(e, d, gp, args, n.span))) { pass 0i32; }
+    if (!(raw all_solved(e, d, gp, args, n.span, !arg_refused))) { pass 0i32; }
 
     // AND EVERY SOLVED ARGUMENT MUST SATISFY ITS BOUNDS -- the same check, from
     // the same function, that an annotation gets. A call and a type annotation
@@ -1887,8 +1894,10 @@ func:same_instance_decl = bool(ExprTyper->:e, int32:a, int32:b) never fails {
     pass ((raw type_decl_of(e.types, a)) == (raw type_decl_of(e.types, b)));
 };
 
+// `report`: false when an argument was refused while the arguments were typed
+// (DEF-117) -- the unsolved parameter is then reported by nothing here.
 func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
-                       Span:at) never fails {
+                       Span:at, bool:report) never fails {
     bool:ok = true;
     int32:i = 0i32;
     while (i < gp.count) decreases gp.count - i {
@@ -1896,6 +1905,7 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
         if (i < args.count) { solved = raw ast_id_at(e.ast, args.start, i); }
         if (solved == 0i32) {
             ok = false;
+            if (!report) { i = i + 1i32; continue; }
             DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, i) };
             DeclNode:gpn = raw ast_decl(e.ast, gpid);
             string:m1 = string_concat("`",
