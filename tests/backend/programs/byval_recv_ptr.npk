@@ -1,0 +1,57 @@
+// expect-exit: 0
+//
+// DEF-134 (1.6.1d step 1; found by `tests/accept/shared_holder_reads.npk`): A
+// BY-VALUE RECEIVER METHOD CALLED ON A POINTER RECEIVES THE POINTEE. `q.peek()`
+// with `Box->:q` and `peek = int64(Box:self)` is the auto-dereference `.`
+// promises (D-098): the checker fits the pointee's type, and until this step
+// the emitter passed the POINTER's bits where the callee expects the struct,
+// so `self.n` read the pointer's low word (3 at -O0, garbage at -O2). Every
+// shape: a struct with an owning field through `@bx`, a `$$i` holder, a
+// pointer parameter, a UFCS free function, a generic instance, and the
+// pointer-receiver twin as the control.
+mod:byval_recv_ptr;
+error:E9;
+
+struct:Box = { string:s; int64:n; };
+impl:Box = {
+    func:peek = int64(Box:self) never fails { pass self.n; };
+    func:bump = NIL(Box->:self) never fails { self.n = self.n + 1i64; pass NIL; };
+};
+struct:Pair<T> = { T:a; int64:k; };
+impl:<T>:Pair<T> = { func:key = int64(Pair<T>:self) never fails { pass self.k; }; };
+func:len_plus = int64(Box:b, int64:d) never fails { pass string_byte_length(b.s) + d; };
+func:via_param = int64(Box->:p) never fails { pass raw p.peek() + raw p.len_plus(10i64); };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+
+func:main = int32(cstring[]:_~argv) {
+    Box:bx = Box{ s: raw mk(), n: 4i64 };
+    Box->:q = @bx;
+    if (raw q.peek() != 4i64) { exit 1i32; }            // through a plain address
+    if (raw bx.peek() != 4i64) { exit 2i32; }           // the value receiver itself
+    if (raw q.len_plus(10i64) != 13i64) { exit 3i32; }  // a UFCS free function through the pointer
+    if (raw via_param(q) != 17i64) { exit 4i32; }       // through a pointer parameter
+    drop q.bump();                                      // the control: a pointer receiver, auto-ref's dual
+    if (raw q.peek() != 5i64) { exit 5i32; }
+    if (bx.n != 5i64) { exit 6i32; }
+    {
+        Box:by = Box{ s: raw mk(), n: 7i64 };
+        Box->:h = $$i by;
+        if (raw h.peek() != 7i64) { exit 7i32; }        // a shared holder's pointee, read
+    }
+    Pair<int64>:pr = Pair{ a: 1i64, k: 9i64 };
+    Pair<int64>->:pp = @pr;
+    if (raw pp.key() != 9i64) { exit 8i32; }            // a generic instance
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

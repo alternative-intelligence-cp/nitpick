@@ -510,6 +510,14 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, ExprId:sel, int32:scope) neve
             int32:psym = raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
                                             raw SYM_PAT(), id.index, 0i32);
             drop symtab_set_link(r.tab, psym, sel.index);
+            // ITS SLOT ORDINAL (DEF-118, 1.6.1d step 1): a pattern binding
+            // enters the function's dense numbering as a local does, so the
+            // move analysis reaches it -- a consuming arm's binding was -1
+            // there, and a read after its move read the free poison.
+            if (psym > 0i32) {
+                drop symtab_set_local_ord(r.tab, psym, r.local_next);
+                r.local_next = r.local_next + 1i32;
+            }
         }
         pass NIL;
     }
@@ -524,6 +532,10 @@ func:bind_pattern_names = NIL(Resolver->:r, PatId:id, ExprId:sel, int32:start,
         int32:fsym = raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
                                         raw SYM_PAT(), id.index, 0i32);
         drop symtab_set_link(r.tab, fsym, sel.index);
+        if (fsym > 0i32) {   // the ordinal, as above (DEF-118)
+            drop symtab_set_local_ord(r.tab, fsym, r.local_next);
+            r.local_next = r.local_next + 1i32;
+        }
     }
     pass NIL;
 };

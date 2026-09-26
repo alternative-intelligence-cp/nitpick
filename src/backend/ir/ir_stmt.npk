@@ -1306,7 +1306,23 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 // `for (T:x in iterable)` (0.9.7): a range walks its half-open span with the
 // BINDING as the value; a slice or array walks its elements by index, copying
 // each into the binding — a value per iteration, exactly what a binding is.
+// THE BINDING ENDS WITH ITS LOOP (DEF-127, 1.6.1d step 1; the library
+// listener's F-011): every arm binds the loop variable through
+// `for_bind_slot` -- an alloca in a sync body, the frame slot in a coroutine
+// -- into the name table, and nothing released it, so a later use of an OUTER
+// binding of the same name read the loop's slot (3 for 100), an outer array
+// indexed the loop's 4-byte slot and read past it (-O0 and -O2 disagreeing),
+// an outer `string` reached `llc` as an `i64`. The checker ended the scope at
+// the loop (a use after it is RESOLVE-002 without the outer name); the
+// emitter now does what `emit_block` does for a block's declarations.
 func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
+    int64:mark = raw fnem_mark(x.fe);
+    IrVal:r = raw emit_for_arms(x, s, sid);
+    drop fnem_release(x.fe, mark);
+    pass r;
+};
+
+func:emit_for_arms = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:finv = raw stmt_for_invariant(x.ast, s);   // checked at each head (1.5.3)
     ExprId:iter = raw stmt_for_iter(x.ast, s);
     int32:itid = raw exprtypes_get(x.et, iter);

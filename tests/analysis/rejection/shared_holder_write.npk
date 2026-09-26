@@ -1,0 +1,104 @@
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 44:10
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 50:25
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 56:20
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 62:15
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 67:20
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 73:20
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 79:14
+//
+// DEF-123 (1.6.1d step 1; the library listener's F-008): A WRITE THROUGH A
+// SHARED CLAIM'S HOLDER, AND A SHARED CLAIM HANDED TO A WRITER, ARE BORROW-013
+// (D-286: `$$i` shares, readers only). Two arms of one rule: (a) a
+// write-capable access whose place bottoms in a DEREFERENCE of the holder --
+// the store `(<-p) = v`, `move(<-p)`, `@(<-p)` handed on, a pointer-receiver
+// call on `<-p` -- where the root-rooted forms (`p.f = v`, the root's own
+// write) were refused all along; (b) the claim, or a pointer holding it,
+// handed to a callee whose mutation summary writes through that position --
+// `store($$i x)`, `store(h)` with `h = $$i x`, `s.bump()` with `s` a pointer
+// holding a claim and `bump` taking `Self->`. The `$$m` twins and a reading
+// callee are the controls; `tests/accept/shared_holder_reads.npk` runs the
+// reads.
+mod:shared_holder_write;
+error:E9;
+
+struct:Box = { string:s; };
+impl:Box = { func:bump = NIL(Box->:self) never fails { self.s = string_concat(self.s, "!"); pass NIL; }; };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:nw = string() never fails { pass string_concat("xy", "z"); };
+func:store = NIL(string->:p) never fails { (<-p) = raw nw(); pass NIL; };
+func:reads = int64(string->:p) never fails { pass string_byte_length(<-p); };
+
+func:main = int32(cstring[]:_~argv) {
+    // (a1) the store through the holder
+    {
+        string:x = raw mk();
+        string->:p = $$i x;
+        (<-p) = raw nw();
+    }
+    // (a2) a move out through the holder
+    {
+        string:x = raw mk();
+        string->:q = $$i x;
+        string:t = move(<-q);
+    }
+    // (a3) the pointee's address handed to a writer
+    {
+        string:x = raw mk();
+        string->:r = $$i x;
+        drop store(@(<-r));
+    }
+    // (a4) a pointer-receiver call on the pointee
+    {
+        Box:bx = Box{ s: raw mk() };
+        Box->:s = $$i bx;
+        drop (<-s).bump();
+    }
+    // (b1) the claim itself handed to a writer
+    {
+        string:x = raw mk();
+        drop store($$i x);
+    }
+    // (b2) a pointer holding the claim, handed by value to a writer
+    {
+        string:x = raw mk();
+        string->:h = $$i x;
+        drop store(h);
+    }
+    // (b3) the pointer value as the receiver of a `Self->` method
+    {
+        Box:bx = Box{ s: raw mk() };
+        Box->:s2 = $$i bx;
+        drop s2.bump();
+    }
+    // CONTROLS: the `$$m` twins, and a reading callee
+    {
+        string:y = raw mk();
+        string->:m = $$m y;
+        (<-m) = raw nw();
+        string:y2 = raw mk();
+        int64:n = raw reads($$i y2);
+        string->:h2 = $$i y2;
+        int64:n2 = raw reads(h2);
+        if ((n + n2) != 6i64) { exit 2i32; }
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

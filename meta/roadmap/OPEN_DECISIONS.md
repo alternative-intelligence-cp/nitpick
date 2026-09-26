@@ -270,6 +270,11 @@ already does."
 |---|---|---|
 | **SETTLED as D-326 (2026-09-26).** ~~**S-107**~~ — should D-004 rule A's `holds` marking read the callee's summary instead of the call's shape? The recap: D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$` argument when the result can carry a pointer (rule A, "`launder` closed"), a SHAPE rule because the escape analysis never looked into callees; D-249 (1.5.1b) extended it to views; 1.6.1 step 0 built, for the freeze (D-325), exactly the provenance the listener asked for — per-function summaries at the escape fixpoint: what a result may VIEW (with field paths), what it CARRIES (a pass bit), what a body STORES through each pointer parameter, what it WRITES — and used them for the view parties only, leaving rule A's marking as it was. So `string:r = raw make(@b)` with `make` returning an owned copy is refused at `pass r` today (BORROW-001) while the summaries know `make` views nothing of `b`. | The mechanism exists and is measured; the marking's refinement is a RELAXATION of an accepted refusal (fewer programs refused; nothing unsafe admitted, since a summary's absence — a `dyn` method, a function value — keeps rule A's shape), which changes what the language accepts and so is the user's to ratify, with a D-004 dated note. | **Recommendation: refine rule A's marking by the summaries** — a call's result holds a borrow of `x` when the callee's summary says it may VIEW or CARRY `x` (its value or address), or when the callee is unknown; the tree's and the listener's exposure measured before landing (a relaxation needs no advance notice, D-239's rule is for refusals added). One idea settles both faces, as the listener said. A step of 1.6.1's size, after step 0's harness. **RELAYED APPROVAL, 2026-09-26** (the library listener put the question to him with the recommendation as written and quoted his answer: "as far as I can tell your recommendations for all the questions you asked was fine. Please proceed with them."); the D-number waits for his word in the compiler session, where ratifications are recorded. **SETTLED 2026-09-26 as D-326** (the user, in the compiler session: "the recommendations from earlier you asked about are fine. go with those."); lands as **1.6.1b**, planned execution-grade after 1.6.1 step 1. **LANDED at 1.6.1b (2026-09-26): 2,157 files of the tree and the listener's repositories under both checkers, zero sites moved outside the two new tests** |
 | **SETTLED as D-327 (2026-09-26).** ~~**S-108**~~ — a `never fails` by-value read of a generic container: a prelude `Copy`-like marker, or a `never fails` `clone` for the types whose clone cannot fail? The recap: D-264 (1.5.2f) made a bare `T` move-only in a generic body, naming `.clone()` under `Clone` as the way to read one out; the prelude's `Clone.clone` is fallible (`Result<Self>`), so in a `never fails` generic body a clone is `relay`-less and unusable, and `List<T>` has no by-value get. The library listener's design input (2026-09-26, with O-N28): nitpick-regex answers with its own `Pod` marker trait, so that `vec_get<T: Pod>` reads through a `pod_copy`. **Recommendation:** a prelude marker trait `Copy` (the name is the reading, D-239 would own it) with `impl` for every copyable scalar in the generated `scalar-impls` region and a derivable form for a struct of copyables, and `List<T: Copy>`'s `list_get(l, i)` returning `T` `never fails` — one rule (a copy is a copy), no second clone; a `never fails` clone for owning types is not offered, since an allocation can fail. A language question, the user's. **RELAYED APPROVAL, 2026-09-26** (the same relay and the same words cover this row: the `Copy` marker with a derivable form and a `never fails` `list_get` under it, no `never fails` clone for owning types); the D-number waits for his word in the compiler session. **SETTLED 2026-09-26 as D-327** (the same sentence); lands as **1.6.1c**, planned execution-grade after 1.6.1 step 1, with an ADVANCE notice (the name is D-239's). **LANDED at 1.6.1c (2026-09-26): 6,199 rows before and after, 5,685 shared, zero verdicts moved, zero pairs fell; the 514 re-keyed rows a move of type-id names.** | ~~the user~~ D-327 |
+| **S-109** — who owns `to_cstring`'s block (DEF-122, the library listener's F-007: every call leaks `len + 1` bytes). The recap: D-049 (0.6) made `cstring` a distinct NUL-terminated type so no unterminated bytes reach a syscall and an interior NUL is a refusal, and left it a VIEW of two words (`{ ptr: wild char8->, len }`, TYPE_REFERENCE §3.2.1; no arm in `type_drops_recorded`); D-183 (1.2) gave every owner a drop and `string` its borrowed case at `cap == 0`; D-186 made `string_slice` an owned copy. `to_cstring` is a producer of a fresh copy (`npk_alloc_internal`, managed storage, invisible to D-151) whose result has no owner anywhere: a leak by construction in every program that converts a path. Two shapes, either a language change with an advance notice: (a) `cstring` becomes string-shaped — `{ ptr, len, cap }`, `cap == 0` a borrowed body (a literal, an `argv`/`environ()` element), `cap > 0` `to_cstring`'s, the string's drop body, move-only (TYPE-046); the floor's five `cstring` entries and `_start`'s two slices change layout (24-byte elements), their spec rows move, every `cstring` binding becomes move-only (a binding-to-binding copy is `.clone()`), no call site re-spelled; (b) `to_cstring → Result<buffer>` plus `cstring_of(buffer) → cstring` (a view by the reference's `Views` column, the buffer's root frozen while it lives), no floor layout change, every one of the 126 call sites in the tree and every one in the listener's repositories re-spelled to two lines. Asked by the compiler seat 2026-09-26 (`1.6.1d.md` §3). | OPEN — blocks 1.6.1d step 3's DEF-122. | **(a)**: one rule for the two string kinds (a `cstring` is to the kernel what a `string` is to the program, and a `string` already carries its ownership bit and its literal case); the class "a producer of storage whose result has no owner" closed by the TYPE, not by every caller remembering two lines. |
+| **S-110** — the range value keeps its spelling (DEF-128, the listener's F-012: `for (uint8:i in 0u8..255u8)` and `for (int8:i in 0i8..127i8)` run ZERO times, silently; an unsigned range across the sign bit likewise). The recap: D-145 (0.9.6) normalised every range value half-open at construction — `lo..hi` stores `hi + 1` — so no consumer asks which spelling built it, and accepted that "an inclusive range ending at the carrier's maximum wraps under the +1 and the bounds guard traps it — a loud outcome for a corner with no honest answer"; true of a SLICE (its guard fires), false of a `for` (no guard: zero trips in silence), and the corner is the everyday byte loop. The other cause, the head's fixed signed compare, is the emitter's and needs no decision. Asked 2026-09-26 (`1.6.1d.md` §2.5, §3). | OPEN — blocks 1.6.1d step 2's DEF-128 (DEF-129 and DEF-130 land without it). | **`range<T>` is `{ T:lo; T:hi; bool:inclusive }`**, built by the literal from its own payload with no `+ 1`, read by every consumer with the flag; D-145 amended on the representation alone (the slice reads the same value). A wider `hi` fails at `uint64`, a `{lo, count}` pair at a count of 2^64, and refusing `lo..MAX` refuses the byte loop. |
+| **S-111** — `<=>` on floats (DEF-131, the listener's F-015: the operator was never lowered; the checker types it `int32` over any ordered pair). Landing it asks what a NaN answers: `-1`, `0` or `1` cannot say "unordered", and `0` would claim equality. Asked 2026-09-26 (`1.6.1d.md` §2.13). | OPEN — blocks nothing but the float arm of 1.6.1d step 4's DEF-131. | **Refused for floats** (a new code at the operator, "no total order — compare with `<`, `==`, `>` and decide the unordered case yourself"); lowered for every other ordered kind, the twisted kinds through their compare-trap path. |
+| **S-112** — a constant division that cannot succeed (DEF-133's d7, the listener's F-017). The recap: D-310 (1.5.8b) refuses a certain constant `+ - *` overflow wherever the folder decides an operand pair (TYPE-076 at the node); OP_REFERENCE §1.1 promises the same for a constant division by zero and `MIN / −1` (TYPE-004), and the compiler keeps that promise only where the folder is ASKED — a `fixed` initialiser, `comptime` — while a local `int32:x = 5i32 / 0i32;` compiles and traps `DivByZero` at run time. Asked 2026-09-26 (`1.6.1d.md` §2.15). | OPEN — 1.6.1d step 4's DEF-133 (d7). | **D-310's reach extended to `/` and `%`**: a certain constant division by zero or `MIN / −1` is `NITPICK-TYPE-004` at the node wherever the folder decides the pair; a refusal added, announced in advance. The alternative is the sentence moving to "where the folder is asked". |
+| **S-113** — a rejection test's silent site (found by 1.6.1d step 1's sweep). D-237 (1.4.8b) holds a rejection file to the SET of codes it names, so a site the checker never reports is invisible whenever its code appears elsewhere in the file: `tests/analysis/rejection/aliasing.npk`'s "a write THROUGH a shared claim's holder" case carried its `expect-error: NITPICK-BORROW-013` line since 1.5.5 and was never reported until DEF-123's fix — the exact hazard the listener's F-008 found, documented in our own suite for a cycle. Asked 2026-09-26. | OPEN — a runner rule (both runners and their self-checks); no step of 1.6.1d waits on it. | **Both runners also hold the COUNT of reported sites per code to the count of `expect-error` lines naming it** (the files already write one line per site), so a silent site fails by name; a file that means several sites under one line is re-spelled. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -2492,22 +2497,22 @@ defect declares a `DEF-` in §2f.
 > and an unsolved parameter after a refused argument is reported by nothing (`all_solved`'s `report` flag).
 > `tests/types/rejection/lent_generic_infer.npk`: exactly {TYPE-085}.
 
-> **DEF-118 — OPEN (registered 2026-09-26; nitpick-fuzz M9's F-003, the library listener's report; owner: the compiler
-> seat, scheduled as 1.6.1d step 1). A CONSUMING `pick`'S BINDING ESCAPES THE MOVE RULES: a read after its move
+> **DEF-118 — FIXED at 1.6.1d step 1 (2026-09-26; registered the same day: nitpick-fuzz M9's F-003, the library
+> listener's report). A CONSUMING `pick`'S BINDING ESCAPES THE MOVE RULES: a read after its move
 > compiles and reads the 0xAA poison (npkc 0, exit 70 at -O0 and -O2), and a second move compiles and double-frees
 > (exit 95, `Unreachable`); the local-variable twins are refused MOVE-001.** Reproduced by the listener at
 > `c3bdae2`, `c970483` and `9f6f370` (landing 70's compiler, matched by digest); the evidence is
 > `nitpick-libs/nitpick-fuzz/findings/F-003-consuming-pick-move-rules/` (README, minimised programs, controls,
 > VERDICTS.txt; nitpick-fuzz main `88e6355`). A memory fault in safe code: the move analysis (D-208, 1.4.3;
-> D-216's consuming `pick (move(v))`) tracks locals and parameters and not the bindings a consuming arm introduces.
+> D-216's consuming `pick (move(v))`) tracks locals and parameters and not the bindings a consuming arm introduces. **The fix (1.6.1d step 1):** the resolver numbers a `SYM_PAT` symbol as a local, `symbol_slot` answers it, `assign_pick` marks an arm's bindings assigned; `tests/analysis/rejection/pick_binding_moves.npk` (three MOVE-001 sites, the struct destructure among them), `tests/backend/programs/pick_binding_moves_ok.npk`.
 
-> **DEF-119 — OPEN (registered 2026-09-26; F-004; owner: the compiler seat, 1.6.1d step 1). A GAP IN DEF-107's FIX:
+> **DEF-119 — FIXED at 1.6.1d step 1 (2026-09-26; registered the same day: F-004). A GAP IN DEF-107's FIX:
 > while a view of `x` is live (`uint8[]:v = string_bytes(x);`), `@x` or `$$i x` handed to a callee that MOVES the
 > value out through its pointer (`string:t = move(<-p);`) compiles, and the view reads freed bytes (0/70/70).**
 > At `9f6f370` the neighbours are refused BORROW-015 — `$$m x` to the same callee, `@x` to an overwriting callee,
 > a direct `move(x)` — so the freeze's mutation summary records a WRITE through the pointee and not a MOVE OUT of it
 > (`record_mut_of_call`/the mutation paths of D-325: a `move(<-p)` empties the pointee as an assignment would).
-> Evidence: `findings/F-004-view-root-freed-through-callee/`. A memory fault in safe code.
+> Evidence: `findings/F-004-view-root-freed-through-callee/`. A memory fault in safe code. **The fix (1.6.1d step 1):** `record_mut_of_place` peels one leading dereference; `tests/analysis/rejection/view_root_moved_through_callee.npk`.
 
 > **DEF-120 — OPEN (registered 2026-09-26; F-005; owner: the compiler seat, 1.6.1d step 2). `(<-p) = v` NEVER
 > DROPS THE OLD VALUE: an assignment through a pointer dereference to an owning pointee leaks it — 121 grid cells,
@@ -2526,11 +2531,11 @@ defect declares a `DEF-` in §2f.
 > result is a view-shaped value whose backing block nothing owns; the fix is the builtin's row (its `Views`/drop
 > column) and the drop of what it allocates, or an owning result. Evidence: `findings/F-007-to-cstring-leak/`.
 
-> **DEF-123 — OPEN (registered 2026-09-26; F-008; owner: the compiler seat, 1.6.1d step 1). A WRITE THROUGH A
+> **DEF-123 — FIXED at 1.6.1d step 1 (2026-09-26; registered the same day: F-008). A WRITE THROUGH A
 > `$$i` CLAIM'S HOLDER, OR THROUGH AN ARGUMENT HOLDING IT, COMPILES AND RUNS (0/22/22); the reference names it
 > BORROW-013, and the write to the ROOT itself is refused BORROW-013.** D-286's conflict table reaches the root's
 > accesses; a write THROUGH the shared holder is the case its "a write through a shared holder" sentence names and
-> the walk does not check. Evidence: `findings/F-008-shared-claim-holder-write/`.
+> the walk does not check. Evidence: `findings/F-008-shared-claim-holder-write/`. **The fix (1.6.1d step 1):** `refuse_shared_holder_write` (a rootless place bottoming in `<-p`, and `acc_expr`'s dereference case) and `refuse_shared_to_writer` (the callee's mutation summary at the claim's position; an unseen callee refuses, a builtin admits) in alias.npk; `tests/analysis/rejection/shared_holder_write.npk` (seven sites), `tests/accept/shared_holder_reads.npk`.
 
 > **DEF-124 — OPEN (registered 2026-09-26; F-009; owner: the compiler seat, 1.6.1d step 3). A `move` PARAMETER
 > RE-INITIALISED AFTER A MOVE CANNOT BE READ (MOVE-001); its local twin compiles.** D-208's loop-carried states
@@ -2551,13 +2556,77 @@ defect declares a `DEF-` in §2f.
 > the two names in one message are equal. Found by M8: 12 grid cells gained TYPE-007 at 1.6.0 step 3h (DEF-105's
 > fix). Reproduced by the listener at `c970483`.
 
-> **The subcycle 1.6.1d** (planned execution-grade by the compiler seat before 1.6.1 step 2; the README row): step 1
-> the memory faults and the unenforced rule (DEF-118, DEF-119, DEF-123), step 2 the leaks (DEF-120, DEF-121,
-> DEF-122), step 3 the over-restrictions and the diagnostic (DEF-124, DEF-125, DEF-126) — each reproduced from the
-> listener's minimised programs first, its fix measured by the fuzzer's own recipe (npkc, llc at -O0 and after
-> opt -O2, ld.lld -static, NPK_HEAP_STATS), and the compiler tree's and the listener's exposure swept under both
-> checkers where a refusal moves. The user's standing rule puts the two faults first: an unsafe program the
-> compiler accepts is the failure class this language exists to prevent.
+> **DEF-127 — FIXED at 1.6.1d step 1 (2026-09-26; registered the same day: nitpick-fuzz M10's F-011, the library
+> listener's report). A `for` BINDING OUTLIVES ITS LOOP IN THE EMITTER: after `for (int64:i in …)` a
+> later use of an OUTER local named `i` reads the LOOP's slot (3, not 100); with an outer `int32[4]:v` and a loop
+> `int32:v`, `v[3]` after the loop indexes the loop's 4-byte slot as the array and reads 12 bytes past it (-O0 and
+> -O2 disagree: 11 / 10); with an outer `string:i`, npkc exits 0 and `llc` refuses the module.** The checker ends
+> the binding's scope at the loop (`ctl_no_outer` is RESOLVE-002); the emitter's `for_bind_slot` binds the name
+> through `fnem_local`/`fnem_bind` with no mark and no release around the loop, in all three arms and the
+> coroutine path. A memory fault in safe code, present at `c3bdae2`, `9126350` and `9f6f370`. Evidence:
+> `findings/F-011-for-binding-outlives-loop/` (nitpick-fuzz main `626c22d`). **The fix (1.6.1d step 1):** `emit_for` is a mark/release wrapper over its arms, sync and coroutine alike; `tests/backend/programs/for_binding_scope.npk` (every shape at both legs, a nested shadowing loop and the coroutine twin included).
+
+> **DEF-128 — OPEN (registered 2026-09-26; F-012; owner: the compiler seat, 1.6.1d step 2, under S-110). A `for`
+> OVER A RANGE RUNS ZERO TIMES AT ITS TYPE'S EDGES: a signed inclusive range ending at the type's maximum
+> (`int8` `0..127`, `125..127`; `int32`/`int64` `max-2..max`) and an unsigned range crossing the sign bit
+> (`uint8` `100..200`, `100...200`; `uint32` across 2^31) each run zero times, silently.** Two causes: the range
+> literal builds the value HALF-OPEN by a plain `add …, 1` (D-145), which wraps at the maximum so `lo..MAX` has no
+> representation at its width; and the head compares `icmp slt` whatever the element's signedness. The fix needs
+> the range value to keep its spelling (S-110, the user's; recommended `{ T, T, bool }`). A silent wrong answer
+> in the everyday byte loop. Evidence: `findings/F-012-for-range-head-signed-and-wrapping/`.
+
+> **DEF-129 — OPEN (registered 2026-09-26; F-013; owner: the compiler seat, 1.6.1d step 2). `loop` AND `till`
+> WIDEN AN UNSIGNED BOUND BY ITS SIGN: `loop(100u8, 200u8, 1u8)` counts DOWN from 100 to −55, 156 times;
+> `till(200u8, 1u8)` 56 times down to −55; a `uint32` loop across 2^31 traps `IntOverflow`.** `loop_i64` widens
+> every operand with `sext`, and the direction and the head compare signed. D-192's class (the blind `zext` of
+> 1.4.2), on the counted loop's side. Evidence: `findings/F-013-counted-loop-unsigned-bound-sign-extended/`.
+
+> **DEF-130 — OPEN (registered 2026-09-26; F-014; owner: the compiler seat, 1.6.1d step 2). `till(-3, 1)` RUNS
+> THREE TIMES COUNTING DOWN where CONTROL_REFERENCE §2.4 and D-022's table say zero (`till` ascends from 0;
+> `limit <= 0` is zero iterations).** `emit_counted` infers the direction from the bounds for `till` as for
+> `loop`; the compile-time evaluator's `fold_counted` does the same (DEF-29's fix kept the inference), so both
+> agree on the wrong answer. Evidence: `findings/F-014-till-negative-limit-counts-down/`.
+
+> **DEF-131 — OPEN (registered 2026-09-26; F-015; owner: the compiler seat, 1.6.1d step 4, under S-111). `<=>`
+> IS REFUSED BY THE EMITTER (`NITPICK-EMIT-002`) IN EVERY FORM, two `int32` literals included; the checker types
+> it `int32` over any ordered pair and no arm lowers it.** Lowered at step 4 for every ordered kind but the
+> floats, which are refused by the checker (no total order; S-111). Evidence:
+> `findings/F-015-spaceship-not-lowered/`.
+
+> **DEF-132 — OPEN (registered 2026-09-26; F-016; owner: the compiler seat, 1.6.1d step 4). A `pick` RANGE
+> PATTERN WITH A NEGATIVE BOUND (`(-5i32..-2i32)`, `(-5i32..2i32)`, `(-5i32...-2i32)`) IS `NITPICK-EMIT-002`
+> where the value pattern `(-3i32)` lowers since DEF-35: the chain reads a bound's payload as a literal and
+> answers `iv_broken` for the negated form.** Evidence: `findings/F-016-negative-range-pattern-not-lowered/`.
+
+> **DEF-133 — OPEN (registered 2026-09-26; F-017; owner: the compiler seat, 1.6.1d step 4). SEVEN REFERENCE
+> SENTENCES THE COMPILER CONTRADICTS, the compiler right or safe in each: TYPE_REFERENCE §3.2's `s.length` and
+> `s[0]` (d1, d2: the language's are `s.len` and `string_bytes(s)[i]`), §28's `!=` row (`fcmp one` for the
+> emitted `une`, d3), §28's ternary row (`select` for the branches the emitter writes, d4), §4's D-037 wrapping
+> sentence for the wide integers (they trap, D-210, d5), CONTROL_REFERENCE §2.3 naming `TYPE-033` for the
+> binding-type rule that reports `TYPE-007` (d6), and OP_REFERENCE §1.1 promising a compile-time refusal of a
+> constant division by zero or `MIN / −1` that the compiler makes only where the folder is asked (d7 — S-112:
+> recommended, D-310's reach extended to `/` and `%`).** Evidence:
+> `findings/F-017-reference-sentences-the-compiler-contradicts/`.
+
+> **DEF-134 — FIXED at 1.6.1d step 1 (2026-09-26; found and fixed the same day by the step's own accept file
+> `tests/accept/shared_holder_reads.npk`, not by a test of the thing that broke). A BY-VALUE RECEIVER METHOD CALLED ON A POINTER RECEIVES THE POINTER'S BITS: `q.peek()` with `Box->:q`
+> and `peek = int64(Box:self)` is admitted by the checker as the one-level auto-dereference `.` promises (D-098;
+> the receiver it fits is the pointee's type), and the emitter passed the POINTER where the callee expects the
+> struct by value, so `self.n` read the pointer's low word -- 3 at -O0, garbage at -O2 (measured on `0902e48`).**
+> The emitter's rule "the receiver's own type decides the form: a pointer is passed, anything else by value"
+> (1.0.4) had the auto-ref dual for a `Self->` method on a value (1.0.9b) and no load for a `Self` method on a
+> pointer. A silent wrong answer, and a read of a register as a struct, in safe code -- through `@x`, a `$$i`
+> holder, a pointer parameter, a UFCS free function and a generic instance alike. **The fix (1.6.1d step 1):** the load in `emit_method_call`'s value branch (a pointer receiver and a parameter that is neither a pointer nor a `dyn`); `tests/backend/programs/byval_recv_ptr.npk`. D-098's dated note.
+
+> **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
+> before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,
+> DEF-123, DEF-127, DEF-134), step 2 the silent wrong loop counts (DEF-128 under S-110, DEF-129, DEF-130), step 3 the leaks
+> (DEF-120, DEF-121, DEF-122 under S-109), step 4 the over-restrictions, the refusals of what the reference
+> promises and the documentation (DEF-124, DEF-125, DEF-126, DEF-131 under S-111, DEF-132, DEF-133 under S-112) —
+> each reproduced from the listener's minimised programs first, its fix measured by the fuzzer's own recipe
+> (npkc, llc at -O0 and after opt -O2, ld.lld -static, NPK_HEAP_STATS), and the compiler tree's and the
+> listener's exposure swept under both checkers where a refusal moves. The user's standing rule puts the faults
+> first: an unsafe program the compiler accepts is the failure class this language exists to prevent.
 
 > **THE SUMMARY OF A TRAIT'S METHOD IS THE UNION OF ITS IMPLS' (1.6.1 step 0; not a numbered defect: the
 > summaries never shipped).** The counterweight `tests/analysis/rejection/borrow_pair_plain.npk` stopped refusing

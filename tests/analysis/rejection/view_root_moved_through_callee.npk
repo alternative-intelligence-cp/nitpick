@@ -1,0 +1,69 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 32:25
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 39:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 46:25
+//
+// DEF-119 (1.6.1d step 1; the library listener's F-004): A `move` OUT THROUGH
+// A POINTER IS A MUTATION OF THE POINTEE. `move(<-p)` vacates the whole
+// pointee, and the callee's mutation summary records it (the dereference is
+// peeled where the root is asked, as an assignment's already was) -- so `@x`
+// handed to such a callee while a view of `x` is live is BORROW-015 (D-325's
+// freeze), as the overwriting callee's twin always was; `$$i x` handed to it
+// is BORROW-013 (D-286: readers only; DEF-123's rule). A callee that moves a
+// FIELD out was recorded all along and stays refused; a callee that only reads
+// through its pointer is the control.
+mod:view_root_moved_through_callee;
+error:E9;
+
+struct:Box = { string:s; };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:take_whole = NIL(string->:p) never fails { string:t = move(<-p); pass NIL; };
+func:take_field = NIL(Box->:b) never fails { string:t = move(b.s); pass NIL; };
+func:read_only = int64(string->:p) never fails { pass string_byte_length(<-p); };
+
+func:main = int32(cstring[]:_~argv) {
+    // (1) `@x` to the callee that moves the whole pointee out: BORROW-015
+    {
+        string:x = raw mk();
+        uint8[]:v = string_bytes(x);
+        drop take_whole(@x);
+        if (v[0i64] == 170u8) { exit 70i32; }
+    }
+    // (2) `$$i y` to the same callee: BORROW-013
+    {
+        string:y = raw mk();
+        uint8[]:w = string_bytes(y);
+        drop take_whole($$i y);
+        if (w[0i64] == 170u8) { exit 70i32; }
+    }
+    // (3) `@bx` to a callee that moves a FIELD out: BORROW-015 (unchanged)
+    {
+        Box:bx = Box{ s: raw mk() };
+        uint8[]:u = string_bytes(bx.s);
+        drop take_field(@bx);
+        if (u[0i64] == 170u8) { exit 70i32; }
+    }
+    // (4) CONTROL: a callee that only reads through its pointer
+    {
+        string:z = raw mk();
+        uint8[]:zz = string_bytes(z);
+        int64:n = raw read_only(@z);
+        if (zz[0i64] == 170u8) { exit 70i32; }
+        if (n != 3i64) { exit 2i32; }
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

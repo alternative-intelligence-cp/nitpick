@@ -1,0 +1,111 @@
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 34:29
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 49:40
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 89:29
+//
+// DEF-118 (1.6.1d step 1; the library listener's F-003): A CONSUMING `pick`'S
+// BINDING IS IN THE MOVE RULES. The resolver numbers a pattern binding as it
+// numbers a local, so a second move of the binding and a read after its move
+// are MOVE-001 exactly as a local's are -- before this step the binding was
+// -1 to the analysis, the second move compiled and double-freed, the read
+// compiled and read the free poison. The accepted shapes stand as controls:
+// arms are exclusive (a move in one, a read in another), and a loop's arm
+// re-binds the name each iteration (the mark clears the carried `moved`).
+mod:pick_binding_moves;
+error:E9;
+
+enum:Opt = { Non; Som(string); };
+enum:Two = { A(string); B(string); };
+struct:Pair = { string:a; int64:n; };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:truth = bool(int64:n) never fails { pass n > 0i64; };
+func:len_of = int64(string:v) never fails { pass string_byte_length(v); };
+
+// (1) a second move of the binding: MOVE-001 at the second `move(x)`
+func:twice = int64() never fails {
+    Opt:e = Opt.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            string:a = move(x);
+            string:b = move(x);
+            total = raw len_of(a) + raw len_of(b);
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+// (2) a read after a conditional move: MOVE-001 at the read
+func:cond = int64() never fails {
+    Opt:e = Opt.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            if (raw truth(1i64)) { string:a = move(x); total = raw len_of(a); }
+            total = total + raw len_of(x);
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+// (3) CONTROL: arms are exclusive -- a move in one arm, a read of the same
+// name in another (F-6's repair: every arm starts from the pristine state)
+func:arms = int64() never fails {
+    Two:t = Two.A(raw mk());
+    int64:total = 0i64;
+    pick (move(t)) {
+        (A(x)) { string:a = move(x); total = raw len_of(a); },
+        (B(x)) { total = raw len_of(x); }
+    }
+    pass total;
+};
+
+// (4) CONTROL: the arm re-binds the name every iteration, so the move of the
+// previous iteration's binding is cleared at the bind
+func:looped = int64() never fails {
+    int64:total = 0i64;
+    for (int64:i in 0i64...3i64) {
+        Opt:e = Opt.Som(raw mk());
+        pick (move(e)) {
+            (Som(x)) { string:a = move(x); total = total + raw len_of(a); },
+            (*) { }
+        }
+    }
+    pass total;
+};
+
+// (5) a struct destructure's binding moved twice: MOVE-001 at the second move
+func:destructure = int64() never fails {
+    Pair:p = Pair{ a: raw mk(), n: 1i64 };
+    int64:total = 0i64;
+    pick (move(p)) {
+        (Pair { a, n }) {
+            string:s = move(a);
+            string:t = move(a);
+            total = n + raw len_of(s) + raw len_of(t);
+        }
+    }
+    pass total;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:s = raw twice() + raw cond() + raw arms() + raw looped() + raw destructure();
+    if (s == 0i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

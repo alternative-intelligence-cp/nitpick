@@ -1,0 +1,50 @@
+// D-286 used legally under DEF-123's rule (1.6.1d step 1): every READ through a
+// `$$i` holder -- a dereference in an expression, a member read through the
+// pointee, the holder handed to a callee whose mutation summary writes nothing
+// through it, the holder passed on by value to such a callee, and a
+// pointer-receiver-free method through it. A file here must produce NO
+// diagnostics at all: the bound on the rule's conservatism.
+
+mod:shared_holder_reads;
+error:E9;
+
+struct:Box = { string:s; int64:n; };
+impl:Box = { func:peek = int64(Box:self) never fails { pass self.n; }; };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:reads = int64(string->:p) never fails { pass string_byte_length(<-p); };
+func:reads_box = int64(Box->:b) never fails { pass b.n + string_byte_length(b.s); };
+func:through = int64(Box->:b) never fails { pass raw reads_box(b); };
+
+func:main = int32(cstring[]:_~argv) {
+    string:x = raw mk();
+    string->:p = $$i x;
+    int64:a = string_byte_length(<-p);
+    int64:b = raw reads(p);
+    int64:c = raw reads($$i x);
+    Box:bx = Box{ s: raw mk(), n: 4i64 };
+    Box->:q = $$i bx;
+    int64:d = q.n + string_byte_length(q.s);
+    int64:e = raw reads_box(q);
+    int64:f = raw through(q);
+    int64:g = raw q.peek();
+    if (a != 3i64) { exit 1i32; }
+    if (b != 3i64) { exit 2i32; }
+    if (c != 3i64) { exit 3i32; }
+    if (d != 7i64) { exit 4i32; }
+    if (e != 7i64) { exit 5i32; }
+    if (f != 7i64) { exit 6i32; }
+    if (g != 4i64) { exit 7i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

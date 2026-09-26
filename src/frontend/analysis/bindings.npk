@@ -156,15 +156,46 @@ pub struct:Assign = {
     // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop_body`. The
     // first walk is silent, and this is what silences it.
     bool:quiet;
+
+    // THE BINDINGS A PATTERN DECLARES (DEF-118, 1.6.1d step 1): per pattern node,
+    // the chain of its `SYM_PAT` symbols, built once from one scan of the symbol
+    // table (the shape `alias_init` uses for its statement map) -- never a scan
+    // per arm (1.5.2d's scaling lesson). An arm marks each of them ASSIGNED
+    // when it starts: the construct assigned them, and the mark clears a
+    // `moved` carried round a loop into the arm's next binding of the name.
+    wild int32->:pat_first;   // per pattern id: the first symbol, or 0
+    wild int32->:pat_next;    // per symbol id: the next symbol of the same pattern, or 0
+    int32:pat_count;
+    int32:sym_count;
 };
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
                               InternTable->:interns, TypeTable->:types,
                               ExprTypes->:etypes, DiagList->:diags,
                               TypeResolver->:tyres) never fails {
+    int32:pc = raw ast_pat_count(ast);
+    if (pc < 1i32) { pc = 1i32; }
+    wild int8->:pm = alloc((pc => int64) * #size_of<int32>());
+    wild int32->:pfirst = pm =>! wild int32->;
+    for (int64:pi in 0i64...(pc => int64)) { pfirst[pi] = 0i32; }
+    int32:sc = raw symtab_count(tab);
+    if (sc < 1i32) { sc = 1i32; }
+    wild int8->:nm = alloc((sc => int64) * #size_of<int32>());
+    wild int32->:pnext = nm =>! wild int32->;
+    for (int64:ni in 0i64...(sc => int64)) { pnext[ni] = 0i32; }
+    for (int32:si in 1i32...sc) {
+        Symbol:s = raw symtab_get(tab, si);
+        if (s.origin_kind == (raw SYM_PAT())) {
+            if ((s.origin >= 0i32) && (s.origin < pc)) {
+                pnext[si => int64] = pfirst[s.origin => int64];
+                pfirst[s.origin => int64] = si;
+            }
+        }
+    }
     Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
                        etypes: etypes, diags: diags, tyres: tyres,
-                       quiet: false };
+                       quiet: false,
+                       pat_first: pfirst, pat_next: pnext, pat_count: pc, sym_count: sc };
     pass x;
 };
 
@@ -1027,6 +1058,21 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
         StmtNode:arm = raw ast_stmt(x.ast, aid);
 
         AssignState:one = raw state_copy(pristine);
+        // THE ARM'S BINDINGS ARE ASSIGNED BY THE CONSTRUCT (DEF-118): marked
+        // before the guard and the body read them, which also clears a
+        // `moved` the loop carried round from the arm's previous binding.
+        PatId:apid = raw arm_pattern(arm);
+        if (!(raw pat_is_none(apid))) {
+            if ((apid.index >= 0i32) && (apid.index < x.pat_count)) {
+                int32:ps = x.pat_first[apid.index => int64];
+                int32:pguard = x.sym_count;
+                while ((ps > 0i32) && (pguard > 0i32)) decreases pguard {
+                    drop state_mark(one, raw symbol_slot(x, ps));
+                    ps = x.pat_next[ps => int64];
+                    pguard = pguard - 1i32;
+                }
+            }
+        }
         if (et.found) {
             // `pick (r.is_error) { (true) { … }, (false) { HERE } }` — the same
             // refinement an `if` gets, on the arm that matched the safe value.
@@ -1773,6 +1819,12 @@ pub func:symbol_slot = int32(Assign->:x, int32:sym) never fails {
     if (sym <= 0i32) { pass (0i32 - 1i32); }
     Symbol:s = raw symtab_get(x.tab, sym);
     if (s.origin_kind == (raw SYM_STMT())) { pass (raw symtab_local_ord(x.tab, sym)); }
+    // A `pick` PATTERN'S BINDING (DEF-118, 1.6.1d step 1): numbered by the
+    // resolver as a local is, so every rule here reaches it -- until this
+    // step a consuming arm's binding was -1, a read after its move read the
+    // free poison and a second move double-freed (the local twins were
+    // MOVE-001 all along; the library listener's F-003).
+    if (s.origin_kind == (raw SYM_PAT())) { pass (raw symtab_local_ord(x.tab, sym)); }
     // A parameter's symbol is a `SYM_DECL` like a function's or a struct's, so
     // the kind alone does not identify one — the DECLARATION's kind does.
     if (s.origin_kind == (raw SYM_DECL())) {

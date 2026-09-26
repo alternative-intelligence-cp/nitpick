@@ -7007,6 +7007,17 @@ to reach into and `p =>! T->` comes first (D-095).
 ---
 
 
+*[2026-09-26, 1.6.1d step 1 — a dated note (DEF-134).]* The one-level auto-dereference
+covers a METHOD CALL's receiver on both sides now. The checker had always fitted a
+pointer receiver's POINTEE against a by-value `Self` parameter (`q.peek()` with `Box->:q`
+and `peek = int64(Box:self)` is admitted), and the emitter had the dual for the other
+direction alone — a `Self->` method on a value takes `@b` (1.0.9b) — while a `Self` method on
+a pointer was handed the POINTER's bits as the struct: `self.n` read the pointer's low word
+at -O0 and garbage at -O2, in safe code, at every compiler that ever existed. The emitter
+LOADS the pointee for that shape (`emit_method_call`'s value branch), one level, exactly as
+`.` reads a field through a pointer. Found by 1.6.1d step 1's own accept file, not by the
+library listener's fuzzer; `tests/backend/programs/byval_recv_ptr.npk` pins every shape.
+
 ## D-099 — `NIL` is the empty `Optional`; `Some` and `Optional{…}` are both struck
 
 **Settled in cycle 0.4.5.** `Result` gained its constructor in D-097 and the same
@@ -14991,6 +15002,15 @@ enlarges the code the analysis must be right about.
 > own correct code from building in four places, with no spelling that could
 > clear the state. Details in `meta/roadmap/1.4/1.4.3.md`.
 
+*[2026-09-26, 1.6.1d step 1 — a dated note (DEF-118).]* The move analysis reaches a
+`pick` PATTERN's bindings: the resolver hands a `SYM_PAT` symbol a slot ordinal as it hands
+one to a local, `symbol_slot` answers it, and an arm marks its bindings assigned when it
+starts (which clears a `moved` carried round a loop into the arm's next binding of the
+name). Until this step a consuming arm's binding was −1 to every rule here — 1.4.3's lesson
+about parameters, a third time — so `string:b = move(x)` after `string:a = move(x)` in the
+arm compiled and double-freed, and a read after a conditional move read the free poison
+(the library listener's F-003).
+
 ## D-209 — the adoption scope — **SETTLED (1.4.0 batch, user-ratified)**
 
 What `src/` adopts at 1.4.7, as a list rather than an ambition. **In**:
@@ -15203,6 +15223,14 @@ the loop-carried move analysis it interacts with.
 > `move`, `a` carries only its own, and nothing else would free payload 1.
 > Measured: `pick_lend_wild_churn.npk` peaks where `pick_lend_wild.npk` peaks
 > (21 bytes) over two thousand rounds and 6,001 allocations.
+
+*[2026-09-26, 1.6.1d step 1 — a dated note (DEF-118).]* The consuming form's bindings
+are in the move rules now (D-208's dated note of the same day): a second `move` of a bound
+payload, or a read after its move, is MOVE-001 as the local twins have always been. The
+drop of the binding at the arm's end — the emitter's half, D-216's "the arms own the
+payloads they bind and drop them at their exits" — is 1.6.1d step 3's (DEF-121: the
+binding's flag was set and nothing ever read it, because the arm was not a scope in the
+emitter).
 
 ## D-217 — NIKOS struck from 1.5 — **SETTLED (user-ratified; B-5)**
 
@@ -18507,6 +18535,18 @@ parameter exclusive would refuse the compiler's own architecture. (7)
 
 > Lands at **1.5.5** steps 1 and 2 (`meta/roadmap/1.5/1.5.5.md`).
 
+*[2026-09-26, 1.6.1d step 1 — a dated note (DEF-123).]* "A write through a shared
+claim's holder" and "a write-capable access under `$$i`" are checked in the two places the
+walk had not reached (the library listener's F-008): (a) a write-capable access whose place
+bottoms in a DEREFERENCE of the holder — `(<-p) = v`, `move(<-p)`, `@(<-p)` handed on, a
+pointer-receiver call on `<-p` — where only a place ROOTED at the holder (`p.f = v`) was
+asked; and (b) a `$$i` claim, or a pointer holding one, handed to a callee whose mutation
+summary (D-325) writes through that position — `store($$i x)`, `store(h)` with
+`h = $$i x`, `p.m()` with `m` taking `Self->` — a known callee that writes nothing admits, a
+callee the analysis cannot see refuses (the closed direction), a bare or `#` builtin admits.
+Both are BORROW-013, this decision's code. The tree's own `aliasing.npk` had documented (a)
+since 1.5.5 and the checker had never reported it.
+
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
 Found planning 1.5.5 (2026-09-11, on `cb8cbb0`; DEF-43). `fixed int32:x =
@@ -21126,6 +21166,14 @@ changed, in the order the work found it:
   `tests/analysis/rejection/borrow_pair_plain.npk` (D-223's counterweight, both
   readings) and `tests/backend/programs/view_freeze_ok.npk` (the corrected
   twins, exit 0 on both legs).
+
+*[2026-09-26, 1.6.1d step 1 — a dated note (DEF-119).]* A `move` OUT through a pointer
+is a mutation of the pointee in the callee's summary: `record_mut_of_place` peels one
+leading dereference before asking the root (as the assignment's recorder already did), so
+`string:t = move(<-p);` inside a callee records a write of the whole pointee, and `@x`
+handed to it while a view of `x` is live is BORROW-015 — the freeze's gap the library
+listener's F-004 found (the overwriting twin `(<-p) = v` had been refused all along). The
+`$$i x` face of the same program is BORROW-013 under D-286's dated note of the same day.
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 

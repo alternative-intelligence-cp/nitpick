@@ -671,6 +671,14 @@ pub func:escape_mut_path = int32(Escape->:x, int32:i) never fails {
 };
 // A callee's function declaration for the aliasing walk (0 when unknown).
 pub func:escape_call_fn = int32(Escape->:x, ExprId:call) never fails { pass (raw call_callee_fn(x, call)); };
+// Is this call a BARE builtin's (`string_concat(...)`), for the aliasing walk
+// (DEF-123): it has no summary, and the reference's row is its reading.
+pub func:escape_call_is_bare_builtin = bool(Escape->:x, ExprId:call) never fails {
+    if (raw expr_is_none(call)) { pass false; }
+    ExprNode:cn = raw ast_expr(x.ast, call);
+    if (cn.kind != ExprKind.ExprCallExpr) { pass false; }
+    pass ((raw bare_builtin_name(x, cn)).len > 0i64);
+};
 
 // --- the provenance summary (D-325) -------------------------------------------------
 
@@ -1137,7 +1145,16 @@ func:record_flow_of_store = NIL(Escape->:x, ExprId:tgt, ExprId:val) never fails 
 // recorded in the mutation summary.
 func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails {
     if (raw expr_is_none(place)) { pass NIL; }
-    ExprId:rid = raw root_ident_id(x, place);
+    // THROUGH ONE DEREFERENCE (DEF-119, 1.6.1d step 1): `place_root` stops at
+    // `<-p` (the pointee is no named root), so `move(<-p)` -- a WRITE of the
+    // whole pointee, the vacant value stored -- recorded nothing here while
+    // `record_flow_of_store` peeled the deref itself for `(<-p) = v`; the
+    // caller's freeze then let `@x` reach a callee that freed the viewed body.
+    // Peeled here, once, so every caller agrees.
+    ExprId:pl = place;
+    ExprNode:pn0 = raw ast_expr(x.ast, pl);
+    if (pn0.kind == ExprKind.ExprDerefExpr) { pl = raw expr_operand(pn0); }
+    ExprId:rid = raw root_ident_id(x, pl);
     if (raw expr_is_none(rid)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     int32:k = raw param_index_of(x, rn.a);
@@ -1145,7 +1162,7 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
     int32:rt = raw exprtypes_get(x.etypes, rid);
     if (rt == 0i32) { pass NIL; }
     if ((raw type_kind(x.types, rt)) != (raw TY_POINTER())) { pass NIL; }
-    drop mu_add(x, k, raw path_join(x, raw path_rel(x, place), sub));
+    drop mu_add(x, k, raw path_join(x, raw path_rel(x, pl), sub));
     pass NIL;
 };
 

@@ -777,23 +777,21 @@ func:check_access_ex = NIL(Alias->:x, ExprId:place, int32:extra, int32:akind, Ex
 func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:akind, ExprId:self_site, Span:at,
                                   int32:mode) never fails {
     int32:root = raw place_root_symbol(x, place);
-    if (root == 0i32) { pass false; }
+    if (root == 0i32) {
+        // NO NAMED ROOT: a place that bottoms in a DEREFERENCE of a shared
+        // holder (`@(<-r)` handed to a writer, DEF-123 (a)) is the holder's
+        // storage written through it; every other rootless place is nobody's.
+        if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_VIEWS()))) {
+            pass (raw refuse_shared_holder_write(x, raw deref_holder_of(x, place), at));
+        }
+        pass false;
+    }
     List<Step>:ap = raw list_init::<Step>(8i64);
     if (!(raw path_steps(x, place, @ap))) { pass false; }
     drop decode_path(x, extra, @ap);
     // A WRITE THROUGH A SHARED CLAIM'S HOLDER: shared means readers.
     if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_VIEWS()))) {
-        for (int64:h in 0i64...x.live.count) {
-            Party:hp = x.live[h];
-            if ((hp.kind == (raw PARTY_SHARED())) && (hp.holder == root)) {
-                string:m = string_concat("a write-capable access through `", raw intern_get(x.it, (raw symtab_get(x.tab, root)).name));
-                m = string_concat(m, "`, which holds ");
-                m = string_concat(m, raw party_spelling(x, hp));
-                m = string_concat(m, " (a SHARED claim: readers only, D-286) -- claim it `$$m` to write through it");
-                drop alias_err(x, raw BORROW_CONFLICT(), move(m), at);
-                pass true;
-            }
-        }
+        if (raw refuse_shared_holder_write(x, root, at)) { pass true; }
     }
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
@@ -1134,6 +1132,80 @@ func:sym_holds_claim = bool(Alias->:x, int32:sym) never fails {
     pass false;
 };
 
+// A WRITE-CAPABLE ACCESS THROUGH A SHARED CLAIM'S HOLDER (D-286: shared means
+// readers), asked of the holder's symbol wherever a write reaches its storage:
+// a place ROOTED at it (`p.f = v`, the rule's first home) and, since DEF-123
+// (1.6.1d step 1; the library listener's F-008), a DEREFERENCE of it -- `(<-p) =
+// v`, `move(<-p)`, `@(<-p)`, a pointer-receiver call on `<-p` -- which bottoms
+// in no named root and was walked as a read of `p`. True when reported.
+func:refuse_shared_holder_write = bool(Alias->:x, int32:holder, Span:at) never fails {
+    if (holder == 0i32) { pass false; }
+    for (int64:h in 0i64...x.live.count) {
+        Party:hp = x.live[h];
+        if ((hp.kind == (raw PARTY_SHARED())) && (hp.holder == holder)) {
+            string:m = string_concat("a write-capable access through `", raw intern_get(x.it, (raw symtab_get(x.tab, holder)).name));
+            m = string_concat(m, "`, which holds ");
+            m = string_concat(m, raw party_spelling(x, hp));
+            m = string_concat(m, " (a SHARED claim: readers only, D-286) -- claim it `$$m` to write through it");
+            drop alias_err(x, raw BORROW_CONFLICT(), move(m), at);
+            pass true;
+        }
+    }
+    pass false;
+};
+
+// THE HOLDER A PLACE BOTTOMS IN: the bare pointer binding under a chain of
+// `.`/`[]` steps whose bottom is `<-p` (`(<-p)`, `(<-p).f`, `(<-p)[i]`), or 0.
+func:deref_holder_of = int32(Alias->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass 0i32; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        if (n.kind == ExprKind.ExprDerefExpr) { pass (raw bare_local_symbol(x, raw expr_operand(n))); }
+        pass 0i32;
+    }
+    pass 0i32;
+};
+
+func:sym_holds_shared_claim = bool(Alias->:x, int32:sym) never fails {
+    if (sym == 0i32) { pass false; }
+    for (int64:i in 0i64...x.live.count) {
+        Party:p = x.live[i];
+        if (p.holder != sym) { continue; }
+        if (p.kind == (raw PARTY_SHARED())) { pass true; }
+    }
+    pass false;
+};
+
+// A SHARED CLAIM, OR A POINTER HOLDING ONE, HANDED TO A CALLEE THAT WRITES
+// THROUGH THAT POSITION (DEF-123 (b)): the callee's mutation summary (D-325)
+// decides -- a known callee that writes nothing through it admits the reader
+// it is; a written path refuses; a callee the analysis cannot see (a `dyn`
+// method, a function value) refuses, the closed direction every walk here
+// takes; a bare or `#` builtin has no summary and the reference's row is its
+// reading, so it admits. `holder` names the pointer binding when the claim
+// travels through one (`f(p)`, `p.m()`), 0 for the claim spelled as the argument.
+func:refuse_shared_to_writer = NIL(Alias->:x, ExprId:call, int32:pos, int32:holder, Span:at) never fails {
+    if (raw escape_call_is_bare_builtin(x.esc, call)) { pass NIL; }
+    ExprNode:cn = raw ast_expr(x.ast, call);
+    if (cn.kind == ExprKind.ExprBuiltinExpr) { pass NIL; }
+    int32:cf = raw escape_call_fn(x.esc, call);
+    int32:e = raw escape_mut_first(x.esc, cf, pos);
+    if (e == (0i32 - 1i32)) { pass NIL; }
+    string:m = "a `$$i` claim";
+    if (holder != 0i32) {
+        m = string_concat("`", raw intern_get(x.it, (raw symtab_get(x.tab, holder)).name));
+        m = string_concat(m, "`, which holds a `$$i` claim,");
+    }
+    m = string_concat(m, " is handed to a callee that may write through it (a SHARED claim: readers only, D-286)");
+    if (cf <= 0i32) { m = string_concat(m, " -- the callee cannot be read here (a `dyn` method or a function value), so the closed answer stands"); }
+    m = string_concat(m, " -- claim it `$$m`, or hand the callee `@` for an address that claims nothing");
+    drop alias_err(x, raw BORROW_CONFLICT(), move(m), at);
+    pass NIL;
+};
+
 // --- expressions ---------------------------------------------------------------------
 
 // The index expressions inside a place are READS of their own.
@@ -1179,18 +1251,21 @@ func:acc_place = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, int
     // NOT A CHAIN DOWN TO A NAME (a call's result, a dereference, an operator
     // at the bottom): no named root, so the CHILDREN are walked as reads --
     // never the node itself, which would be this walk calling itself.
+    // A write to a PART is a write-capable access of what holds it, so the
+    // access kind travels down to the bottom -- where a dereference of a shared
+    // holder refuses it (DEF-123); a call or an operator there ignores it.
     if (!(raw is_place_chain(x, place))) {
         ExprNode:pn = raw ast_expr(x.ast, place);
         if ((pn.kind == ExprKind.ExprMemberAccessExpr) || (pn.kind == ExprKind.ExprSafeNavExpr)) {
-            drop acc_expr(x, raw expr_operand(pn), raw ACC_READ(), depth);
+            drop acc_expr(x, raw expr_operand(pn), akind, depth);
             pass NIL;
         }
         if (pn.kind == ExprKind.ExprIndexExpr) {
-            drop acc_expr(x, raw expr_lhs(pn), raw ACC_READ(), depth);
+            drop acc_expr(x, raw expr_lhs(pn), akind, depth);
             drop acc_expr(x, raw expr_rhs(pn), raw ACC_READ(), depth);
             pass NIL;
         }
-        drop acc_expr(x, place, raw ACC_READ(), depth);
+        drop acc_expr(x, place, akind, depth);
         pass NIL;
     }
     // `.len` OF AN ARRAY, A SLICE, A STRING OR A BUFFER READS NO ELEMENT.
@@ -1282,8 +1357,13 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
         drop acc_place(x, raw expr_operand(n), raw ACC_WRITE(), raw expr_none(), dd);
         pass NIL;
     }
-    // `<-p` reads the pointer binding; the pointee is no named root.
+    // `<-p` reads the pointer binding; the pointee is no named root -- but a
+    // SHARED holder's pointee is readers-only storage, and a write-capable
+    // access through it is D-286's refusal (DEF-123).
     if (n.kind == ExprKind.ExprDerefExpr) {
+        if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
+            discard(raw refuse_shared_holder_write(x, raw deref_holder_of(x, id), n.span));
+        }
         drop acc_expr(x, raw expr_operand(n), raw ACC_READ(), dd);
         pass NIL;
     }
@@ -1372,6 +1452,8 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                     ExprId:callee, int32:depth) never fails {
     drop acc_expr(x, callee, raw ACC_READ(), depth);
     int64:mark = x.live.count;
+    int32:pos_base = 0i32;   // the receiver is position 0 of the callee's summary
+    if (!(raw expr_is_none(recv))) { pos_base = 1i32; }
     bool:result_carries = false;
     int32:rty = raw exprtypes_get(x.etypes, id);
     if (rty != 0i32) { result_carries = raw carries_pointer_type(x.types, rty); }
@@ -1396,6 +1478,8 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         }
         int32:root = raw place_root_symbol(x, raw expr_operand(an));
         if (root == 0i32) { continue; }   // refused below as a claim without a root
+        // A SHARED CLAIM TO A CALLEE THAT WRITES THROUGH IT (DEF-123 (b)).
+        if (pk == (raw PARTY_SHARED())) { drop refuse_shared_to_writer(x, id, pos_base + i, 0i32, an.span); }
         drop list_push(@x.live, Party{ site: a, kind: pk, root: root, holder: 0i32,
                                        place: raw expr_operand(an), view_kind: 0i32, root_ptr: false, path: 0i32 });
     }
@@ -1412,9 +1496,20 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             }
         }
         int32:rxt = raw exprtypes_get(x.etypes, recv);
+        bool:recv_is_ptr = false;
         if (rxt != 0i32) {
-            if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { ptr_recv = false; }
+            if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { recv_is_ptr = true; }
         }
+        // THE POINTER VALUE PASSED AS THE RECEIVER (DEF-123 (b)): `p.m()` with
+        // `p` a pointer holding a SHARED claim and `m` taking `Self->` writes
+        // through the claim as `f(p)` does.
+        if (ptr_recv && recv_is_ptr) {
+            int32:rsym = raw bare_local_symbol(x, recv);
+            if (rsym != 0i32) { if (raw sym_holds_shared_claim(x, rsym)) {
+                drop refuse_shared_to_writer(x, id, 0i32, rsym, (raw ast_expr(x.ast, recv)).span);
+            } }
+        }
+        if (recv_is_ptr) { ptr_recv = false; }
         if (ptr_recv) { rk = raw ACC_WRITE(); }
         int32:rcallee = raw escape_call_fn(x.esc, id);
         if (ptr_recv && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
@@ -1435,8 +1530,6 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
     // writes `r.fold_counting` and conflicts only with a view of that. The
     // claims keep D-286's whole-argument rule.
     int32:callee_fn = raw escape_call_fn(x.esc, id);
-    int32:pos_base = 0i32;
-    if (!(raw expr_is_none(recv))) { pos_base = 1i32; }
     for (int32:j in 0i32...count) {
         ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, j) };
         int32:pk2 = raw party_kind_of(x, a2);
@@ -1446,6 +1539,17 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                 else { drop admit_value(x, a2, pk2, 0i32); }
             }
             continue;
+        }
+        // A POINTER HOLDING A SHARED CLAIM, HANDED BY VALUE (DEF-123 (b)): the
+        // callee writes through the value as it would through the claim itself.
+        int32:hsym2 = raw bare_local_symbol(x, a2);
+        if (hsym2 != 0i32) {
+            int32:ht2 = raw exprtypes_get(x.etypes, a2);
+            if (ht2 != 0i32) { if ((raw type_kind(x.types, ht2)) == (raw TY_POINTER())) {
+                if (raw sym_holds_shared_claim(x, hsym2)) {
+                    drop refuse_shared_to_writer(x, id, pos_base + j, hsym2, (raw ast_expr(x.ast, a2)).span);
+                }
+            } }
         }
         drop refuse_holder_copy_arg(x, a2, result_carries);
         drop acc_expr(x, a2, raw ACC_READ(), depth);

@@ -9227,6 +9227,29 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
             if (rp.state != (raw LL_OK())) { pass (raw iv_from_place(move(rp))); }
             args = string_concat("ptr ", rp.addr);
         } else {
+            // A VALUE RECEIVER THROUGH A POINTER IS THE POINTEE, LOADED (DEF-134,
+            // 1.6.1d step 1): `q.peek()` with `Box->:q` and `peek = int64(Box:self)`
+            // is the auto-dereference `.` promises (D-098), which the checker
+            // applies (the receiver type it fits is the pointee's) and the
+            // emitter never did -- the POINTER's bits were passed where the
+            // callee expects the struct, so `self.n` read the pointer's low
+            // word (3 at -O0, garbage at -O2; the accept file
+            // `shared_holder_reads.npk` found it). The dual of the auto-ref
+            // above: a pointer receiver and a by-value parameter load one level.
+            if (p0w != 0i32) {
+                if ((raw type_kind(x.fe.ctx.types, rv.type_id)) == (raw TY_POINTER())) {
+                    int32:p0s = raw subst_emitted_param(x.fe.ctx, p0w);
+                    int32:p0sk = raw type_kind(x.fe.ctx.types, p0s);
+                    if ((p0sk != (raw TY_POINTER())) && (p0sk != (raw TY_DYN()))) {
+                        int32:pte = raw type_elem(x.fe.ctx.types, rv.type_id);
+                        LlType:pll = raw ll_type(x.fe.ctx, pte);
+                        if (!(raw ll_is_ok(pll))) { pass (raw iv_from_ll_at(x, pll, pte, n.span)); }
+                        string:ld = raw irw_temp(x.fe.w);
+                        drop irw_line(x.fe.w, raw cat5(ld, " = load ", pll.text, ", ptr ", rv.ref));
+                        rv = raw iv(string_concat(pll.text, ""), move(ld), pte);
+                    }
+                }
+            }
             // THE RECEIVER IS FIT TO PARAMETER 0 (1.0.8) — a UFCS call on a free
             // function whose first parameter is a `T?` or a `dyn` takes the same
             // wrap or widening `f(p)` would. Not on the erased path above: there

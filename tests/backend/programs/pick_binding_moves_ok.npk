@@ -1,0 +1,66 @@
+// expect-exit: 0
+//
+// DEF-118 (1.6.1d step 1): the ACCEPTED shapes of a consuming `pick`'s binding
+// under the move rules, run -- a binding moved out once, a move in one arm and
+// a read in another, and a loop whose arm re-binds the name every iteration
+// (the rejection twin is `tests/analysis/rejection/pick_binding_moves.npk`).
+mod:pick_binding_moves_ok;
+error:E9;
+
+enum:Opt = { Non; Som(string); };
+enum:Two = { A(string); B(string); };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:len_of = int64(string:v) never fails { pass string_byte_length(v); };
+
+func:once = int64() never fails {
+    Opt:e = Opt.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) { string:a = move(x); total = raw len_of(a); },
+        (*) { }
+    }
+    pass total;
+};
+
+func:arms = int64(bool:first) never fails {
+    Two:t = Two.B(raw mk());
+    if (first) { t = Two.A(raw mk()); }
+    int64:total = 0i64;
+    pick (move(t)) {
+        (A(x)) { string:a = move(x); total = raw len_of(a) + 10i64; },
+        (B(x)) { total = raw len_of(x) + 20i64; }
+    }
+    pass total;
+};
+
+func:looped = int64() never fails {
+    int64:total = 0i64;
+    for (int64:i in 0i64...100i64) {
+        Opt:e = Opt.Som(raw mk());
+        pick (move(e)) {
+            (Som(x)) { string:a = move(x); total = total + raw len_of(a); },
+            (*) { }
+        }
+    }
+    pass total;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if (raw once() != 3i64) { exit 1i32; }
+    if (raw arms(true) != 13i64) { exit 2i32; }
+    if (raw arms(false) != 23i64) { exit 3i32; }
+    if (raw looped() != 300i64) { exit 4i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
