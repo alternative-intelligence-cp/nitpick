@@ -331,6 +331,17 @@ Two checks that the compiler enforces aggressively:
     original code in **0 of 19** such sites, substituting `fail 1;`.
 *   **`return Result{ … };`** — the literal form, the only way to return a value
     *and* an error simultaneously.
+*   **Every path of a function body ends in one of these, or in `exit` (in
+    `main` and `failsafe`) or a trap** (D-323, 1.6.0 step 5c; `NITPICK-FLOW-001`
+    at the function). A body that can reach its own closing brace is refused: a
+    `NIL` function passes `NIL`, a fallible function names its failure on every
+    path, `main` exits. There is no implicit return and no implicit value — until
+    1.6.0 step 5c the emitter silently returned a zero (for a fallible function a
+    SUCCESS carrying zero), which is what the rule exists to refuse. The flow
+    walk is conservative towards refusal: an `if` without `else` completes, an
+    `if`/`else` completes if either arm does, a `pick` if any arm's body does (an
+    arm ending in `fall` continues into the next arm), a `while (true)` with no
+    `break` never completes, every other loop and `when` completes as a whole.
 
 > `FORMAL_DRAFT` 05 §5.7 describes `pass` as sugar for `return ok(expr);` and
 > `fail` as `return err(expr);`. **Both are wrong.** `ok()` is the taint-clearing

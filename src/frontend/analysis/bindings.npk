@@ -488,6 +488,17 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
             ps = ps + 1i32;
         }
         drop assign_stmt(x, st, body, raw ASSIGN_DEPTH());
+        // EVERY PATH ENDS IN `pass`, `fail`, `exit` OR A TRAP (DEF-108, 1.6.0 step
+        // 5c; the library listener's fuzzer, the user's rule): a body that can reach
+        // its own closing brace was accepted and the emitter returned a zero value
+        // -- a fallible function's SUCCESS carrying zero, a `main`'s exit 0 -- under
+        // a comment that sources "always return explicitly". A `NIL` function passes
+        // `NIL`; `main` and `failsafe` `exit`; an infinite loop or a trap ends a path.
+        if (raw stmt_completes(x, body, raw ASSIGN_DEPTH())) {
+            drop assign_err(x, raw FLOW_FALLS_OFF(),
+                "this function can reach the end of its body without `pass`, `fail`, `exit` or a trap, and the value it would return is nothing the program computed (a zero; for a fallible function a SUCCESS carrying zero) -- end every path with `pass`/`fail` (`pass NIL;` in a `NIL` function), `exit` in `main` and `failsafe`",
+                d.span);
+        }
         pass NIL;
     }
 
@@ -623,6 +634,110 @@ func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) never fails {
 };
 
 // --- statements --------------------------------------------------------------
+
+// --- may this statement COMPLETE NORMALLY, reaching the statement after it? -----
+//
+// THE TWIN OF `stmt_exits` WITH THE OPPOSITE CONSERVATISM (DEF-108, 1.6.0 step 5c).
+// Wrong towards `false` here ACCEPTS a body that falls off its end, which the
+// emitter turns into a zero value (a fallible function's SUCCESS carrying zero);
+// wrong towards `true` costs the author one `pass`. So the answer is `true` for
+// everything not listed, and each `false` is a statement control provably never
+// steps past: the five leavers; a block one of whose statements never completes;
+// an `if` with an `else` neither of whose arms completes; a `pick` none of whose
+// arms completes (the arms cover the selector -- the checker's exhaustiveness --
+// and an arm that ends in `fall` continues into the NEXT arm, which is read on
+// its own, so `fall` itself never completes); a `while (true)` with no `break` at
+// its own level. `break` and `continue` never complete either -- control goes to
+// the loop, and a loop with a condition completes as a whole. `when` and every
+// counted loop complete as a whole.
+func:stmt_completes = bool(Assign->:x, StmtId:id, int32:depth) never fails {
+    if (depth <= 0i32)        { pass true; }
+    if (raw stmt_is_none(id)) { pass true; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+    if (s.kind == StmtKind.StmtPassStmt)     { pass false; }
+    if (s.kind == StmtKind.StmtFailStmt)     { pass false; }
+    if (s.kind == StmtKind.StmtReturnStmt)   { pass false; }
+    if (s.kind == StmtKind.StmtExitStmt)     { pass false; }
+    if (s.kind == StmtKind.StmtTrapStmt)     { pass false; }
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass false; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass false; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass false; }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(s);
+        for (int32:i in 0i32...n) {
+            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            if (!(raw stmt_completes(x, sub, depth - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        StmtId:else_id = raw stmt_else(s);
+        if (raw stmt_is_none(else_id)) { pass true; }
+        if (raw stmt_completes(x, raw stmt_then(s), depth - 1i32)) { pass true; }
+        pass (raw stmt_completes(x, else_id, depth - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        int32:start = raw pick_arm_start(s);
+        int32:cnt = raw pick_arm_count(s);
+        if (cnt == 0i32) { pass true; }
+        for (int32:i in 0i32...cnt) {
+            StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+            if (raw stmt_completes(x, raw arm_body(arm), depth - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        ExprId:c = raw stmt_cond(s);
+        if (!(raw expr_is_none(c))) {
+            ExprNode:cn = raw ast_expr(x.ast, c);
+            if (cn.kind == ExprKind.ExprBoolLiteral) {
+                if (cn.payload != 0i64) {
+                    if (!(raw stmt_has_break(x, raw stmt_body(x.ast, s), depth - 1i32))) { pass false; }
+                }
+            }
+        }
+        pass true;
+    }
+    pass true;
+};
+
+// DOES THIS STATEMENT HOLD A `break` AT ITS OWN LOOP LEVEL? Into blocks, `if`
+// arms and `pick` arms; never into a nested loop, whose `break` is its own.
+// Unknown means "yes" (the conservative answer for the caller above).
+func:stmt_has_break = bool(Assign->:x, StmtId:id, int32:depth) never fails {
+    if (depth <= 0i32)        { pass true; }
+    if (raw stmt_is_none(id)) { pass false; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+    if (s.kind == StmtKind.StmtBreakStmt) { pass true; }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(s);
+        for (int32:i in 0i32...n) {
+            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            if (raw stmt_has_break(x, sub, depth - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (raw stmt_has_break(x, raw stmt_then(s), depth - 1i32)) { pass true; }
+        pass (raw stmt_has_break(x, raw stmt_else(s), depth - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        int32:start = raw pick_arm_start(s);
+        int32:cnt = raw pick_arm_count(s);
+        for (int32:i in 0i32...cnt) {
+            StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+            if (raw stmt_has_break(x, raw arm_body(arm), depth - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { pass false; }
+    if (s.kind == StmtKind.StmtForStmt)   { pass false; }
+    if (s.kind == StmtKind.StmtLoopStmt)  { pass false; }
+    if (s.kind == StmtKind.StmtTillStmt)  { pass false; }
+    if (s.kind == StmtKind.StmtWhenStmt)  { pass false; }
+    if (s.kind == StmtKind.StmtDeferStmt) { pass false; }
+    pass false;
+};
 
 func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }

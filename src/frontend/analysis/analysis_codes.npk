@@ -316,3 +316,18 @@ pub func:REACH_NO_FAILSAFE = string() never fails { pass "NITPICK-REACH-003"; };
 // `Result.err` convention's. A computed operand is the `failsafe-post` row's
 // and the guard's (1.5.3 steps 1-2), never this rule's.
 pub func:REACH_FAILSAFE_EXIT = string() never fails { pass "NITPICK-REACH-004"; };
+
+// --- the flow rule (DEF-108, 1.6.0 step 5c) ----------------------------------------
+//
+// EVERY PATH THROUGH A FUNCTION ENDS IN `pass`, `fail`, `exit` OR A TRAP. A body
+// that can reach its own closing brace had been accepted since the first
+// backend, and the emitter then returned a ZERO VALUE -- `0`, the empty string,
+// `false`, and for a fallible function a `Result` whose code is 0: a forgotten
+// error path became a SUCCESS carrying zero, and a `main` that forgot to `exit`
+// on some path reported success (found by the library listener's fuzzer, the
+// user's rule: "that situation should not even compile as even NIL functions
+// return NIL as the value"). The walk is `stmt_completes` in bindings.npk, the
+// twin of `stmt_exits` with the opposite conservatism: unknown means "may
+// complete", so a wrong answer is a refusal the author answers with a `pass`,
+// never an accepted fall-through.
+pub func:FLOW_FALLS_OFF = string() never fails { pass "NITPICK-FLOW-001"; };

@@ -1,0 +1,67 @@
+// expect-error: NITPICK-FLOW-001
+//
+// DEF-108 (1.6.0 step 5c; the library listener's fuzzer, the user's rule): a
+// function whose body can reach its own closing brace without `pass`, `fail`,
+// `exit` or a trap compiled, and the emitter returned a ZERO value -- for a
+// fallible function a SUCCESS carrying zero, for `main` an exit 0. Every path
+// ends in a leaver now: the four shapes below refuse; the controls -- an
+// `if`/`else` both of whose arms leave, a `pick` every arm of which leaves, an
+// infinite loop with no `break`, a trap, and a `NIL` function that passes `NIL`
+// -- carry no code.
+mod:falls_off;
+
+func:empty_body = int64() never fails { };
+
+func:missing_path = int64(int64:x) never fails {
+    if (x > 0i64) { pass 7i64; }
+};
+
+func:nil_no_pass = NIL() never fails {
+    int64:y = 2i64;
+};
+
+func:fallible_missing = int64(int64:x) {
+    if (x > 0i64) { pass 7i64; }
+};
+
+func:ctl_if_else = int64(int64:x) never fails {
+    if (x > 0i64) { pass 1i64; } else { pass 2i64; }
+};
+
+func:ctl_pick = int64(int64:x) never fails {
+    pick (x) {
+        (0i64) { pass 10i64; },
+        (*) { pass 20i64; }
+    }
+};
+
+func:ctl_loop = int64(int64:x) never fails {
+    int64:i = x;
+    while (true) unbounded {
+        i = i + 1i64;
+        if (i > 100i64) { pass i; }
+    }
+};
+
+func:ctl_trap = int64() never fails {
+    !!! Unreachable;
+};
+
+func:ctl_nil = NIL() never fails {
+    int64:z = 3i64;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)    { exit 2i32; },
+        (IntOverflow)    { exit 3i32; },
+        (StackExhausted) { exit 4i32; },
+        (MachineFault)   { exit 5i32; },
+        (WildLeak)       { exit 6i32; },
+        (HeapOom)        { exit 7i32; },
+        (HeapBadRequest) { exit 8i32; },
+        (*)              { exit 1i32; }
+    }
+};

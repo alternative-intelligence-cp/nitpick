@@ -20789,3 +20789,94 @@ floor-model class the enumerated floor answers; and its alarms on the two progra
 one by one into four classes with a remedy each. The alternative — carrying both engines until
 one's port finished — is the "two mechanisms for one job" the blueprint philosophy forbids and
 D-233 already decided against.
+
+## D-323 — Every path of a function ends in `pass`, `fail`, `exit` or a trap; there is no implicit return — **SETTLED (user decision, 2026-09-26: "that situation should not even compile as even NIL (our void) functions return NIL as the value"; DEF-108)**
+
+**The history.** The emitter's `fnem_close` (`src/backend/ir/ir_func.npk`) has written a fall-off
+return since the first backend — `ret 0` for a bare function, `ret … zeroinitializer` for an
+envelope — under the comment "subset-1 sources always return explicitly, and this keeps the IR
+well-formed regardless", and nothing had ever checked the sentence. The library listener's
+cloud fuzzer (nitpick-fuzz) found the consequence and logged it as an observation, the user read
+the reasoning and named it a defect, and the listener measured it at c3bdae2 (their O-N26):
+`func:f = int64() never fails { }` compiles and a caller reads 0; `func:g = int64(int64:x) never
+fails { if (x > 0i64) { pass 7i64; } }` returns 0 for `g(-1)` — a MISSING PATH; a `string` result
+the empty string, a `bool` false; and the serious face — `func:k = int64(int64:x) { if (x > 0i64)
+{ pass 7i64; } }`, a fallible function, returns `is_error == false` with value 0 for `k(-1)`: a
+forgotten error path becomes a SUCCESS carrying zero; and a `main` that forgets to `exit` on
+some path reports success. Reproduced on de7ba7a, both legs (1.6.0 step 5c).
+
+**The decision.** A function body must not be able to reach its own closing brace: every path
+ends in `pass`, `fail`, `return Result{…}`, `exit` (in `main` and `failsafe`) or a trap (`!!!`).
+There is no implicit return and no implicit value, for ANY result type — a `NIL` function passes
+`NIL` (the user's word: "even NIL functions return NIL as the value"), and the uniformity is the
+point (the blueprint philosophy: one rule, no context-dependent exception for the "void" case).
+The refusal is `NITPICK-FLOW-001` at the function's declaration, decided by the bindings
+analysis's `stmt_completes` beside its `stmt_exits` — the twin with the OPPOSITE conservatism:
+unknown means "may complete", so a wrong answer is a refusal the author answers with a `pass`,
+never an accepted fall-through. What completes: an `if` without `else`; an `if`/`else` if either
+arm does; a `pick` if any arm's body does (an arm that ends in `fall` continues into the next
+arm, which is read on its own); every loop with a condition, every counted loop and `when`, as
+a whole; `defer` and every other statement. What never completes: the five leavers, `break`,
+`continue`, `fall`, a block one of whose statements never completes, and a `while (true)` with
+no `break` at its own level. The emitter's fall-off return stays as the belt it always was — a
+body the checker admits never reaches it — and becomes `unreachable` the day an emission
+change is scheduled for it (a snapshot refresh; not this step's).
+
+**Why not the narrower rule.** "Every path through a function with a non-`NIL` result" (the
+listener's phrasing) would make `NIL` the one type whose functions may fall off the end — a
+second meaning for a function's end that depends on its type, which is exactly the
+context-dependence D-001's philosophy forbids, and it would leave a `NIL` function's `pass
+NIL` optional where every other function's leaver is not.
+
+## D-324 — 1.6.1's process and stage: the NIKOS port on a `nitpick-port` branch the user merges, the second decider on by default, the stage over every plain emission on every run — **SETTLED (user decision, 2026-09-26: "both of your recommendations sound fine to me. lets ratify those."; S-103, S-104, S-105)**
+
+Asked at 1.6.0 step 5 with `meta/roadmap/1.6/1.6.1.md` §3, each with its recommendation, on the
+recap D-319, D-320 and D-322 require. **S-103 — where the NIKOS commits live:** the port's commits
+are written by the compiler seat, one item per commit, on a branch `nitpick-port` of the user's
+repository (`alternative-intelligence-cp/nikos`); each is pinned in this tree by commit and
+digest (D-322 (6)) and measured by the gate's runner before adoption; the user merges the branch
+to NIKOS's main at the subcycle's close — the user's repository keeps the user's merge, the pin
+keeps the evidence honest either way. **S-104 — the second decider, on by default:** with
+`llvm.assume` imported, the verified build's elided guards become assumptions NIKOS trusts; asked
+through the assert prover first, NIKOS DECIDES each one and a refuted assume is a ledger class of
+its own (`assume-refuted`, a stop sign) — leg A independently re-deciding leg B's discharges;
+`[verify.nikos] assume-check = true`, with the plain form (no assumes) and the verified form both
+analysed so the trusting reading is never the only one. **S-105 — the stage's scope and cadence:**
+every real-backend program's plain emission and the compiler's plain emission on every full run;
+the two gate programs' whole-program forms in the gate's runner as the executor-wall measurement;
+the compiler's whole form at 1.6.3's measured cadence. A run's cost is not a reason to hesitate.
+
+## D-325 — A view's root is FROZEN while the view is live: no write-capable access to it for the view's lexical lifetime — **SETTLED (user decision, 2026-09-26, the same sentence; S-106, DEF-107)**
+
+**The history.** D-249 (1.5.1b) made a view-maker's result — `string_from_bytes`, `string_bytes`,
+and the range view `l[lo...hi]` by kind — a BORROW for the escape analysis, after the workbench
+returned one out of its frame and read the free poison: a view cannot leave its frame, be stored
+or laundered (BORROW-001, BORROW-012). D-286 (1.5.5) decided the aliasing half of D-004 as
+LEXICAL claims — `$$m` excludes, `$$i` shares, `@` claims nothing, non-lexical lifetimes and
+two-phase borrows OUT — and its conflict table names claims and held `@`s, never a view. D-266
+(1.5.2h) froze a LENDING `pick`'s selector while an arm's view is live (TYPE-067) because the
+same hazard was found there, for that construct alone. So a view-maker's or a range view had the
+escape rule and no freeze: the library listener's `bytes_take` (nitpick-time, 0.1.4b) returned a
+view of its sink typed `string`, and the caller's `bytes_clear(@d)` / `bytes_extend_str(@d, …)`
+rewrote (exit 13) or freed (exit 12) what the view read; reproduced at 1.6.0 step 5b in six
+lines on both legs — a `string_from_bytes` view of `d`, then `d` reassigned, D-186's drop frees
+the body, the view reads its poison. A use-after-free reachable without `wild` or `=>!`
+(DEF-107), the class the language's floor excludes.
+
+**The decision.** A view's ROOT — the binding a view-maker's argument or a range view's operand
+is rooted at, followed through views as `root_sym_through_views` does — is frozen from the view
+local's declaration to the end of its block: every write-capable access to the root in that span
+refuses — an assignment into it or any part of it, `@root` or `$$m root` handed on, a
+pointer-receiver call, a stateful operation, a `move` out of it — with one code, D-286's shape for
+a held claim and D-266's for a pick arm (the view is a borrow; the rule is D-286's conflict table
+with the view as a third party). A view that is not bound to a local (a call argument) lives for
+its call, as a claim does. `$$i` reads and plain reads stay. Measured on the tree first — the
+sites where a view of a binding is followed by a write to it in the same block are expected to be
+few, and each is a real hazard — and landed as a step of 1.6.1 (its step 0, before E-8), with an
+advance notice to the library listener naming the code; until it lands, a view's root is not
+written while the view is live and a view meant to outlive a mutation is a copy.
+
+**Why not the programmer's contract.** The alternative documents the hazard and leaves a
+use-after-free reachable in safe code; the floor of this language is memory safety of Rust's
+kind and more, and a rule the compiler can decide is never left to the reader (D-004's premise,
+D-249's and D-266's precedent).
