@@ -18860,6 +18860,15 @@ instead of forbidding what a `failsafe` is for.
 > Lands at **1.5.6** step 2 (`meta/roadmap/1.5/1.5.6.md`); D-014 gains a
 > dated landing note there.
 
+**[1.6.0 step 5b (2026-09-25), the library listener's report (nitpick-time's 0.1.4b planning): THE SENTENCE
+"`NPK_HEAP_STATS` counts region bytes as allocated" DOES NOT DESCRIBE THE RUNTIME.** 1.5.6's landing departed
+from it, and its record says so ("Departures from the plan", `meta/roadmap/done/1.5/1.5.6.md`): the four
+counters are heap-mutex words (D-290's classification) and the region path holds no mutex by design, so
+counting region bytes would be the `shared-outside-lock` finding the belt exists for; and a `failsafe`'s
+allocations are not the program's cost. `npk_fs_alloc` touches no `npk_hs_*` word (runtime/npkrt.ll), and
+`heap: allocated=… peak_live=…` never includes the failsafe region. A harness that bounds `peak_live` must
+exclude the region; the decision's sentence stands as the plan's, this note as what landed.]**
+
 ## D-293 — `hardware_concurrency()` is a builtin: D-181 §4's promise kept — **SETTLED (user decision, 2026-09-17: "the recommendations you had for those questions looks fine to me"; S-72)**
 
 D-181 §4 settled that "`hardware_concurrency` is `sched_getaffinity` (the
