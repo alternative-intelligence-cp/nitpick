@@ -317,8 +317,10 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
             pass (raw ns_yes(raw fn_type(@r, mdid, ms.name, e.scope)));
         }
         if (md.kind == DeclKind.DeclGlobalDecl) {
+            // In the declaration's HOME scope (D-137; DEF-105, 1.6.0 step 3h),
+            // as the identifier arm resolves it.
             TypeId:ty = TypeId{ index: md.a };
-            pass (raw ns_yes(raw resolve_type(@r, ty, e.scope)));
+            pass (raw ns_yes(raw resolve_type(@r, ty, raw symtab_home_scope(e.tab, mdid.index, e.scope))));
         }
         // AN ERROR CONSTANT IS A VALUE OF TYPE `Error` (D-179), qualified as
         // it is bare.

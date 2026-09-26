@@ -9875,6 +9875,13 @@ the first whole-graph self-check (`npkc src/main.npk`) surfaced fifteen instance
 in one run. This is the blueprint rule — meaning does not change with context —
 applied to name lookup.
 
+
+**[1.6.0 step 3h (2026-09-25): THE MODULE BINDINGS OBEYED THIS RULE LAST — DEF-105, the library
+listener's finding. The 0.8.1 home table gave signatures and field types their declaring scope; a
+`DeclGlobalDecl`'s annotation was still resolved where the USE sat, so an imported `fixed Row[2]:ROWS`
+was "no type named `Row`" from an importer without `Row` and bound the importer's own `Row` from one
+that declared it (a 24-byte stride over 16-byte rows, read past the table). Both checker sites ask
+`symtab_home_scope` now, and the emitter follows the record.]**
 ## D-138 — The escape analysis: one narrowing, three relaxations — **SETTLED**
 
 D-004's decision text pre-authorised relaxation: *"if real compiler code needs

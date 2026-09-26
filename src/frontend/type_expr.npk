@@ -2406,8 +2406,15 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
             pass (raw extern_fn_type(@r, dnode, e.scope));
         }
         if (dnode.kind == DeclKind.DeclGlobalDecl) {
+            // A MODULE BINDING'S ANNOTATION MEANS WHAT IT MEANS WHERE IT WAS
+            // WRITTEN (D-137; the 0.8.1 home table, asked here since 1.6.0 step
+            // 3h -- DEF-105, the library listener's finding): resolved in the
+            // USE's scope, an imported `fixed Row[2]:ROWS` was "no type named
+            // `Row`" from an importer that did not import `Row`, and bound the
+            // IMPORTER's same-named `Row` from one that declared its own -- a
+            // 24-byte stride over 16-byte rows, read past the table's end.
             TypeId:ty = TypeId{ index: dnode.a };
-            pass (raw resolve_type(@r, ty, e.scope));
+            pass (raw resolve_type(@r, ty, raw symtab_home_scope(e.tab, did.index, e.scope)));
         }
         // A DECLARED ERROR CONSTANT IS A VALUE OF TYPE `Error` (D-179) — the
         // only way such a value comes to exist.

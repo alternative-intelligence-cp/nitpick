@@ -1,0 +1,28 @@
+// expect-exit: 0
+//
+// DEF-105's loud form: importing `ROWS` alone, with no `Row` in scope here, was
+// NITPICK-TYPE-001 "there is no type named `Row`" reported at the fixture's own
+// line -- the table's type looked up in the importer. It compiles now, the
+// binding's annotation resolving in its home module (D-137).
+mod:import_scope_loud;
+use "./import_scope_lib.npk".{ROWS};
+
+func:main = int32(cstring[]:_~argv) {
+    if (ROWS[1i64].x != 3i64) { exit 10i32; }
+    if (ROWS.len != 2i64) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds) { exit 96i32; },
+        (*)                { exit 97i32; }
+    }
+};

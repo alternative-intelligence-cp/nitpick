@@ -1,0 +1,37 @@
+// expect-exit: 0
+//
+// DEF-105 (1.6.0 step 3h, the library listener's finding): an imported `fixed`
+// binding's declared type resolved in the IMPORTER's scope, not its home
+// module's (D-137). Importing `ROWS` alone beside an importer's own `Row` with
+// swapped fields and a third one bound the importer's `Row` -- a 24-byte stride
+// over 16-byte rows, row 1 read partly past the table's end (exit 10 at every
+// pin the listener kept). The annotation resolves where it was written now:
+// `ROWS[1i64].x` is 3, `ONE.x` is 5, and the importer's `Row` is its own.
+mod:import_scope_table;
+use "./import_scope_lib.npk".{ROWS, ONE};
+
+struct:Row = { int64:y; int64:x; int64:z; };
+
+func:main = int32(cstring[]:_~argv) {
+    if (ROWS[1i64].x != 3i64) { exit 10i32; }
+    if (ROWS[0i64].y != -2i64) { exit 11i32; }
+    if (ONE.x != 5i64) { exit 12i32; }
+    Row:r = Row{ y: 1i64, x: 2i64, z: 3i64 };
+    if (r.z != 3i64) { exit 13i32; }
+    if (#size_of<Row>() != 24i64) { exit 14i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds) { exit 96i32; },
+        (*)                { exit 97i32; }
+    }
+};
