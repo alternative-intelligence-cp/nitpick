@@ -33,7 +33,7 @@ build too.
 | Leg | Evidence class | Instrument | Where it lands |
 |---|---|---|---|
 | B | per-obligation proof — every D-218 obligation decided by z3 under the determinism profile, the verdicts committed as `nitpick.obligations`, a discharged guard elided through `llvm.assume` | `npkg verify`, the harness's `verify` stages | 1.5.0 (the D-007 division pair); the rest of the catalogue through 1.5.8 |
-| A | whole-program runtime-error absence over the emitted IR by abstract interpretation | Clam/Crab or IKOS, chosen at 1.6.0's gate | 1.6 |
+| A | whole-program runtime-error absence over the emitted IR by abstract interpretation | NIKOS (D-322, chosen at 1.6.0's gate 2026-09-25; Clam/Crab decided out with its scorecard kept) | 1.6 |
 | C | optimizer integrity — the pinned `opt -O2` pipeline does not remove a guarantee | Alive2 beside the opt-O2 harness leg, which stays as the end-to-end net | 1.6 |
 
 The harness's standing instruments are TESTS on the boundaries the legs do
@@ -53,7 +53,7 @@ call. Its first floor find was DEF-57.
 | LLVM 20.1.2 `llc`, `ld.lld` (and `opt` on the -O2 path) | `nitpick.toml` `[toolchain]`, an exact patch release, every invocation built from its flag lists (D-204) | the translation of IR to machine code is outside the verified boundary (D-067); every verified toolchain short of CompCert has one. Leg C (1.6) validates the optimizer's passes; the opt-O2 leg tests the whole; `llc` itself is not validated |
 | the Linux kernel's syscall ABI (x86_64) | the floor's one trampoline, `@npk_sys6`, and the `module asm` clone | the boundary at which a value becomes a syscall argument; the floor's `syscall` rows below are specified AT this boundary (1.5.6), never past it. **§4b enumerates the surface**: which symbol issues which number, and which numbers each reaches on its own paths. What the kernel PROMISES for each number is the kernel-effect table the translator applies (`npkg/floor_smt.npk`, one row per number, listed in VERIFICATION_REFERENCE §9.2); a number the floor issues without a row there fails the run, so the trust is enumerated rather than assumed |
 | z3 4.16.0, the workbench build of tag `z3-4.16.0` | `[verify]` `z3-sha256` (the binary's hash), `z3-version`, `z3-options` (D-218.1/D-218.2) | an EVIDENCE tool: a solver defect is a wrong verdict, and a wrong `discharged` elides a guard. Mitigations: the pin (one build, one hash), the profile (a verdict is a function of the obligation, the build and the budget; the Diophantine sub-solver is off since 1.5.6 step 4 — S-71 — because its undo at `(pop)` was the one place the pinned build did not return), the committed manifest (a verdict that moves is a red run), `--explain`'s unsat cores on request; proof certificates are D-040's opt-in for certification runs |
-| the leg-A analyzer and Alive2 (1.6) | commit hash, built on the workbench | the same doctrine as z3's (D-233): pinned, auditable, verdicts committed, a new alarm on an unchanged tree a stop sign |
+| NIKOS (leg A, D-322) and Alive2 (leg C) (1.6) | commit hash, built on the workbench | the same doctrine as z3's (D-233): pinned, auditable, verdicts committed, a new alarm on an unchanged tree a stop sign |
 | the floor's volatile bottom | this file's table, class `asm` | inline assembly and the clone: the seL4 precedent — handwritten assembly and volatile accesses are documented as the bottom of the TCB, not proven |
 
 ## 4. The floor, enumerated

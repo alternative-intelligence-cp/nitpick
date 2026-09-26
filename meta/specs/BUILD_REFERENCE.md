@@ -88,7 +88,10 @@ nofile = 1024                    # the soft RLIMIT_NOFILE both runners stand und
 - **`[verify]` belongs in the manifest**, not on the command line. The flags a
   project must be verified under are a property of the project, not of whoever
   typed the command. `npkc-native`'s existing `[nikos]` table established this and
-  becomes `[verify.nikos]`.
+  becomes `[verify.nikos]`. **[2026-09-25, D-322:]** the key is NIKOS's for good — 1.6.0's
+  gate named the engine — and 1.6.1 fills it with the pinned-tool rows (the commit, the
+  three binaries' digests, the option list every invocation is BUILT from, `entry-points`,
+  `assume-check`) and the `analyze` stage that reads them (`meta/roadmap/1.6/1.6.1.md` §2.1).
 - **The solver is an INPUT like the toolchain** (D-218.1/D-218.2; 1.5.0). When
   `z3 = true`, the exact release, the sha256 of the binary `z3` resolves to on
   PATH, and the determinism profile are all required, and every z3 invocation

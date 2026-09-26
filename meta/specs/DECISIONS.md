@@ -20698,3 +20698,85 @@ with an INSTRUMENT — the thirteen lines built into a copy of the binary outsid
 clam.py's own `CLAM` environment variable, run over the light inputs alone — whose output is a cost and an
 alarm volume and never a row (`meta/roadmap/1.6/1.6.0.md`, the step-4 record). The rule stands as written;
 this note records its first application.
+
+## D-322 — Leg A's engine is NIKOS; Clam/Crab is decided out; the emission states its own data layout — **SETTLED (user decision, 2026-09-25: "i have looked at those things and read your recommendations and i think they are fine. lets go with those."; S-102 and E-8)**
+
+**The history.** D-233 (2026-09-01) moved the analyzer evidence to the emitted IR and named
+two candidates for leg A — Clam/Crab and IKOS — to be decided by a measured gate, one engine
+winning and the other decided out ("fewer mechanisms"). 1.6.0 planned that gate execution-grade
+(`meta/roadmap/1.6/1.6.0.md`): D-319 made NIKOS v2.4.0 — the user's own port of IKOS to LLVM 20
+(`alternative-intelligence-cp/nikos`) — the IKOS candidate, and stated that a transform between
+the artifact and the analyzer invalidates the evidence; D-320 fixed the decision rule before any
+number existed; D-321 pinned Alive2's budget and solver and admitted a recorded patch only as part
+of a pin. Steps 1–4 built both engines at pinned commits (`meta/roadmap/1.6/tools/engines.sh`,
+`pins.txt`), produced one fixed input set (the two programs' plain, whole-program and datalayout
+forms, the compiler's four, the eight planted controls), ran every engine over every input twice
+(316 tasks), and READ each engine's port distance in its pinned source, file and line.
+
+**What decided (the step-3 and step-4 records of `1.6.0.md`; the scorecard is the step-4
+record's last section).** Under D-320's rule 1: NIKOS reads every plain emission and finds
+SEVEN OF EIGHT planted defects in both procedurality modes — `oob_read`, `oob_write`,
+`null_known` and `wrap_branch` precisely, `null`, `divz` and `uninit` imprecisely — and misses
+`uaf` alone, because the runtime's free is an external callee its name table does not know (an
+allocator-entry model of 100–150 lines, sized by reading); it is disqualified in `uaf`, which is
+not one of leg A's three named properties, and passes. Clam reads every input, and its eight
+memory settings ABORT on every one of them at sea-dsa's cell mapping: our by-value aggregate
+arguments are never paired with their actuals by sea-dsa's call resolution, which the abort
+guards SOUNDLY — no demotion of it to "unknown" exists, the D-321 class is empty for it, and an
+unsound instrument run past it dies in Crab's typed regions on the whole-program form; Clam has
+no `div-zero` check at all, reads no wrap flag, havocs no memory at an external call, and its
+binary transforms the module unconditionally before analysing it. Clam has no result in `bounds`
+and `null` and no check to claim in `div-zero`: disqualified in all three, it loses. Rule 3 holds
+for NIKOS (every finished task deterministic). Rule 4 is not reached. The measurement that
+decided is ROW 2 — seven of eight planted defects found by the one engine that analysed memory
+at all.
+
+**The decision.**
+1. **NIKOS is leg A's engine.** The evidence class of D-233's leg A — whole-program
+   runtime-error absence over the emitted IR by sound abstract interpretation — is produced by
+   NIKOS, pinned by commit and digest, built on the workbench by `engines.sh`, its verdicts
+   committed, a new alarm on an unchanged tree a stop sign (TCB.md §3's doctrine).
+2. **Clam/Crab is DECIDED OUT**, with its scorecard kept in the step-3 and step-4 records and
+   its port distance beside it (the sea-dsa aggregate-argument port of 150–250 lines, the
+   typed-region wall behind it, "traps ⇒ in range" 120–180, the external-call havoc TODO). It is
+   not an escalation and not a reserve: SeaHorn and SAW/Crux remain the named escalations of
+   the 1.6 README, Clam is not among them.
+3. **`[verify.nikos]` is the manifest key**, kept as `npkc-native`'s `[nikos]` table established
+   (BUILD_REFERENCE §7); 1.6.1 fills it with the pinned-tool rows — the commit, the digests of
+   `ikos-analyzer`, `ikos-pp` and `ikos-import`, the option profile every invocation is BUILT
+   from — and the harness stage that reads it.
+4. **The port list is 1.6.1's step list**, in the user's own NIKOS tree, each item measurable
+   alone against the gate's controls and rows (the step-4 record, row 5): the three defects found
+   by reading first (the `inttoptr` pre-pass constraint never added; the coroutine intrinsics
+   missing from five switches; the five-width integer-alignment table), then the executor wall,
+   the allocator-entry model, the entry seeding, the overflow-intrinsic model, `llvm.assume`
+   with the optional second decider of each z3 discharge, the signedness from the operation,
+   and the native import of `select`, `switch` and the atomics so that NO transform stands
+   between the emission and the analyzer (D-319's rule, measured at the gate: `-opt=none`
+   still transforms, and `-opt=basic` removed one and eight sites of covered classes).
+5. **E-8, settled in the same sentence: THE EMISSION STATES ITS OWN DATA LAYOUT.** Measured at
+   1.6.0 steps 3 and 4: `opt` and `llc` derive the x86-64 layout from the target triple our
+   emission carries, but NIKOS does not — its three tools read the module as it is and take
+   `module.getDataLayout()`, so every NIKOS row of the gate over a plain form was computed under
+   LLVM's DEFAULT layout (`i64` ABI-aligned to 4: `{ i32, i64 }` at 12 bytes with the field at
+   4, where the binary has 16 and 8), and a verdict on such an access describes a layout the
+   artifact does not have. The emitter writes `target datalayout = "…"` beside the triple — ONE
+   string, pinned in `nitpick.toml`'s `[toolchain]` (D-204's authority) and held by a belt to
+   what `opt` derives from the triple, so a stale string cannot stand — as 1.6.1's first step,
+   landed with NIKOS's one-token alignment fix and a snapshot refresh (the emission's text moves;
+   the binary does not, since `llc` derived the same string all along). The datalayout twins of
+   the gate retire: the plain form IS the twin.
+6. **A NIKOS change is a pin move.** Every port commit in the NIKOS tree moves `pins.txt` and
+   `[verify.nikos]`'s commit and digests together, in the compiler tree's commit that adopts it,
+   measured by the controls and the rows before it lands; the gate's runner, inputs and controls
+   (`meta/roadmap/1.6/tools/`) are the standing instrument that measures each one.
+
+**Why this and not the other reading.** Rule 1 was written before the numbers so that the
+numbers could not choose it, and it decided cleanly: an engine whose memory analyses never ran
+on the artifact has no soundness result to offer, and its port is not a demotion but an engine
+change in a dependency it does not own (sea-dsa). NIKOS's wall — the executor's resume call — is
+real and is sized at 150–250 lines in files the user's tree owns; its misses are of the
+floor-model class the enumerated floor answers; and its alarms on the two programs were read
+one by one into four classes with a remedy each. The alternative — carrying both engines until
+one's port finished — is the "two mechanisms for one job" the blueprint philosophy forbids and
+D-233 already decided against.
