@@ -26,12 +26,20 @@ library the gate ran (`pins.txt`, P-4). 1.6.1's pinned-tool table in
 ```
 python3 meta/roadmap/1.6/tools/census.py build/npkc.ll            # opcodes, intrinsics, attributes, dbg/datalayout
 python3 meta/roadmap/1.6/tools/census.py --assemble FILE.ll       # plus: which of llvm-as-14/18/20 accepts it
-bash    meta/roadmap/1.6/tools/engines.sh build|check|paths       # the pinned engines (step 1), pins.txt
+bash    meta/roadmap/1.6/tools/engines.sh build [ENGINE..]|check|paths  # the pinned engines (step 1), pins.txt; `build clam` rebuilds one and re-pins all
 python3 meta/roadmap/1.6/tools/gate_inputs.py                     # the input set into .internal/gate/inputs/ (step 2)
 python3 meta/roadmap/1.6/tools/gate_controls.py                   # the seven controls, plain and planted, RUN (step 2)
 python3 meta/roadmap/1.6/tools/plant.py X.plant IN.ll OUT.ll      # one plant by hand
 python3 meta/roadmap/1.6/tools/gate_run.py [--quick] [--jobs N]    # the runs (step 3): every engine over every input, twice; report.md
 ```
+
+`engines.sh check` verifies every recorded patch pins.txt names against the file
+beside the script and refuses a `.patch` file the pin does not name (D-321 (3): a
+patch is part of a pin or it does not exist). An INSTRUMENT binary — a build
+outside the pin for a measurement outside every gate, such as 1.6.0 step 4's
+unsound demotion of Clam's cell-mapping abort — is selected by clam.py's own
+`CLAM=<binary>` environment variable and never by these scripts; its rows go to a
+scratch `--out`, never to `.internal/gate/runs`.
 
 `controls/` holds the seven planted-defect programs (`ctl_*.npk`) and their plants
 (`ctl_*.plant`: the program, the exits the plain and the planted binaries must

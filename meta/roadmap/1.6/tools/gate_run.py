@@ -203,6 +203,13 @@ def run_clam(paths, ll, mode, out):
         return {"ingest": "llvm-as-18 refused: " + r.stderr.strip()[:200], "rc": r.returncode}
     env = dict(os.environ, PATH=paths["LLVM18_BIN"] + ":" + os.environ["PATH"])
     cmd = [sys.executable, os.path.join(paths["CLAM_BIN"], "clam.py"), bc] + CLAM_SETTINGS[mode] + [
+        # `--crab-lower-with-overflow-intrinsics` STAYS, read at step 4 (CfgBuilder.cc:3497-3556): index 0
+        # becomes the unbounded operation and index 1 is assigned FALSE ("assume always 0 (i.e., no
+        # overflow)"). For C code that continues past an overflow that is unsound, and clam.py's help says
+        # so; for OUR emission, whose guard TRAPS on the overflow edge, the ok edge's abstract state keeps
+        # every real ok-edge state (and the values that would have trapped: an over-approximation) and the
+        # trap edge carries no check, so the reading is sound and more precise than the default's havoc.
+        # What it does not give: the in-range fact on the ok edge, and a PROOF that the trap edge is dead.
         "--crab-dom=zones", "--crab-lower-with-overflow-intrinsics", "--crab-check-verbose=1",
         "--crab-print-invariants=false", "-o", os.path.join(out, "out.bc")]
     rc, secs, kb, o, e = timed(cmd, out, env=env, log=os.path.join(out, "clam.log"), timeout=6 * 3600)

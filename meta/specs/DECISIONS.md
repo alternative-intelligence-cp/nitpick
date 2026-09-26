@@ -20672,3 +20672,18 @@ None is a miscompile; the gate proceeds with the reading in its step-3 record, a
 re-examined in the testing-and-benchmarking phase the user plans after cycle 1.6, so that nothing
 comes to a stop on a finding that has been read and found benign. E-7 (the emitter stating what it
 knows of a pointer parameter) goes to 1.6.2's plan by the same decision.]**
+
+**[2026-09-25, 1.6.0 step 4 — the second admitted patch class, READ for Clam's abort and found EMPTY.]** Rule (3)
+admits "the demotion of an engine's abort to a warning that marks the region unknown (top)". Step 4 read
+Clam's cell-mapping abort (`lib/Clam/SeaDsaHeapAbstraction.cc:416`) against that condition: the smallest
+well-formed demotion — a placeholder region pushed at the aborting position so the callee's and the
+callsite's lists stay aligned, thirteen lines — marks the region INITIALISED, not top (a dropped region
+becomes body-local and gets Crab's `region_init`: "no references owned, no stores, no deallocated
+objects", so a use-after-free through it passes vacuously; the caller's copy is never havoced; and no
+Clam patch can pair an aggregate formal with its actual, since sea-dsa's call resolution filters to
+pointer-typed formals in every mode). The abort is the pinned code's SOUND behaviour, so no patch of the
+admitted class exists for it, none joined the pin, and the "with" measurement the rule asks for was made
+with an INSTRUMENT — the thirteen lines built into a copy of the binary outside the pin, selected by
+clam.py's own `CLAM` environment variable, run over the light inputs alone — whose output is a cost and an
+alarm volume and never a row (`meta/roadmap/1.6/1.6.0.md`, the step-4 record). The rule stands as written;
+this note records its first application.

@@ -4,8 +4,12 @@
 # `pins.txt`, which records the sha256 of every binary and library the gate runs (P-4: an evidence tool's
 # output is a verdict, so its binary is pinned by digest beside its commit -- D-265's asymmetry, applied).
 #
-#   engines.sh build     clone each repository at its commit under ~/.local/src/1.6/<name>-<sha7>/, build Release,
-#                        install, apply Alive2's recorded patch (D-321), and write pins.txt beside this script
+#   engines.sh build [ENGINE...]
+#                        clone each repository at its commit under ~/.local/src/1.6/<name>-<sha7>/, build Release,
+#                        install, apply each RECORDED PATCH (D-321 (3): a patch is part of the pin, lives beside this
+#                        script, and is applied by this script and by nothing else), and write pins.txt beside this
+#                        script. With ENGINE names (z3 alive2 nikos clam) only those are rebuilt; pins.txt is rewritten
+#                        from every install
 #   engines.sh check     recompute every digest pins.txt records and report each line that differs (a C++ build is
 #                        not byte-reproducible by contract: the pin is the COMMIT, the digest says what RAN)
 #   engines.sh paths     print the tool paths the gate scripts use (one per line, NAME=PATH)
@@ -16,7 +20,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${ENGINES_ROOT:-$HOME/.local/src/1.6}"
 JOBS="${ENGINES_JOBS:-$(( $(nproc) < 40 ? $(nproc) : 40 ))}"
 PINS="$HERE/pins.txt"
-PATCH="$HERE/alive2-rlimit.patch"
+ALIVE2_PATCH="$HERE/alive2-rlimit.patch"        # D-321 (1): Z3's rlimit as Alive2's budget -- the ONE recorded patch
+PATCH="$ALIVE2_PATCH"                            # (1.6.0 step 4 read Clam's cell-mapping abort for the S-101 demotion and found no
+                                                 #  sound one: the abort is the pinned code's sound behaviour, so no second patch exists)
 
 NIKOS_REPO=https://github.com/alternative-intelligence-cp/nikos.git
 NIKOS_SHA=94b54c2cf63964c34f3b0c4284714a921cf25b5a          # tag v2.4.0
@@ -41,9 +47,10 @@ short() { echo "${1:0:7}"; }
 say()   { echo "engines.sh: $*"; }
 die()   { echo "engines.sh: $*" >&2; exit 2; }
 
-# clone_at REPO SHA DIR -- a fresh clone checked out at exactly SHA (a branch name is never a pin)
+# clone_at REPO SHA DIR [PATCH] -- a fresh clone checked out at exactly SHA (a branch name is never a pin); a
+# modified tree is tolerated only when its modification IS the recorded patch (D-321 (3))
 clone_at() {
-  local repo=$1 sha=$2 dir=$3
+  local repo=$1 sha=$2 dir=$3 patch=${4:-}
   if [ -d "$dir/.git" ]; then
     say "$dir exists; verifying its commit"
   else
@@ -52,7 +59,24 @@ clone_at() {
   git -C "$dir" checkout -q "$sha" 2>/dev/null || { git -C "$dir" fetch -q origin; git -C "$dir" checkout -q "$sha"; }
   local head; head=$(git -C "$dir" rev-parse HEAD)
   case "$head" in "$sha"*) ;; *) die "$dir is at $head, not $sha";; esac
-  git -C "$dir" status --short --untracked-files=no | grep -q . && die "$dir has local modifications" || true   # build/ and install/ are untracked by design
+  if git -C "$dir" status --short --untracked-files=no | grep -q .; then   # build/ and install/ are untracked by design
+    if [ -n "$patch" ] && [ -f "$patch" ] && git -C "$dir" apply --check --reverse "$patch" 2>/dev/null; then
+      say "$dir carries the recorded patch $(basename "$patch")"
+    else
+      die "$dir has local modifications that are not a recorded patch"
+    fi
+  fi
+}
+
+# apply_recorded_patch DIR PATCH LABEL -- apply PATCH at DIR unless it is already applied; a patch that neither
+# applies nor reverses cleanly is a pin that does not match its commit, which stops the build
+apply_recorded_patch() {
+  local dir=$1 patch=$2 label=$3
+  [ -f "$patch" ] || return 0
+  if git -C "$dir" apply --check --reverse "$patch" 2>/dev/null; then say "$label: $(basename "$patch") already applied"; return 0; fi
+  git -C "$dir" apply --check "$patch" || die "$label: the recorded patch $(basename "$patch") does not apply at $(git -C "$dir" rev-parse --short HEAD)"
+  git -C "$dir" apply "$patch"
+  say "$label: applied $(basename "$patch")"
 }
 
 need() { for t in "$@"; do command -v "$t" >/dev/null || die "missing tool: $t"; done; }
@@ -78,9 +102,8 @@ build_alive2() {
   git -C "$dir" checkout -q -- . 2>/dev/null || true
   git -C "$dir" checkout -q "$ALIVE2_SHORT"
   ALIVE2_SHA=$(git -C "$dir" rev-parse HEAD)
-  [ -f "$PATCH" ] || die "missing $PATCH (D-321)"
-  git -C "$dir" apply --check "$PATCH" || die "alive2: the recorded patch does not apply at $ALIVE2_SHA"
-  git -C "$dir" apply "$PATCH"
+  [ -f "$ALIVE2_PATCH" ] || die "missing $ALIVE2_PATCH (D-321)"
+  apply_recorded_patch "$dir" "$ALIVE2_PATCH" alive2
   rm -rf "$dir/build"; mkdir -p "$dir/build"
   ( cd "$dir/build" && cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$LLVM20/lib/cmake/llvm" -DBUILD_TV=1 \
       -DZ3_INCLUDE_DIR="$Z3_PREFIX/include" -DZ3_LIBRARIES="$Z3_PREFIX/lib/libz3.so" \
@@ -142,7 +165,9 @@ write_pins() {
     echo "commit llvm-seahorn $LLVMSEA_SHA"
     echo "commit alive2 $ALIVE2_SHA"
     echo "commit z3 $Z3_SHA"
-    echo "patch alive2-rlimit.patch $(sha256sum "$PATCH" | cut -c1-64) $(stat -c %s "$PATCH")"
+    for pf in "$ALIVE2_PATCH"; do
+      echo "patch $(basename "$pf") $(sha256sum "$pf" | cut -c1-64) $(stat -c %s "$pf")"
+    done
     pin_line z3/libz3.so "$(readlink -f "$Z3_PREFIX/lib/libz3.so")"   # the real file behind the soname links
     pin_line alive2/alive-tv "$ALIVE2_DIR/build/alive-tv"
     pin_line alive2/alive-exec "$ALIVE2_DIR/build/alive-exec"
@@ -161,10 +186,19 @@ case "$cmd" in
     [ -d "$LLVM20/lib/cmake/llvm" ] || die "no LLVM 20 cmake package at $LLVM20 (llvm-20-dev)"
     [ -d "$LLVM18/lib/cmake/llvm" ] || die "no LLVM 18 cmake package at $LLVM18 (llvm-18-dev)"
     mkdir -p "$ROOT/logs"
-    build_z3;     say "z3 library: $(readlink -f "$Z3_PREFIX/lib/libz3.so")"
-    build_alive2; say "alive2: $ALIVE2_DIR/build/alive-tv ($ALIVE2_SHA)"
-    build_nikos;  say "nikos: $NIKOS_DIR/install/bin"
-    build_clam;   say "clam: $CLAM_DIR/install/bin"
+    shift; which_engines="${*:-z3 alive2 nikos clam}"
+    # the dirs every pin line reads, whether or not this invocation rebuilds the engine (a partial build re-pins ALL)
+    Z3_PREFIX="$ROOT/z3-$(short $Z3_SHA)/install"; ALIVE2_DIR="$ROOT/alive2-$ALIVE2_SHORT"
+    NIKOS_DIR="$ROOT/nikos-$(short $NIKOS_SHA)"; CLAM_DIR="$ROOT/clam-$(short $CLAM_SHA)"
+    for e in $which_engines; do
+      case "$e" in
+        z3)     build_z3;     say "z3 library: $(readlink -f "$Z3_PREFIX/lib/libz3.so")";;
+        alive2) build_alive2; say "alive2: $ALIVE2_DIR/build/alive-tv ($ALIVE2_SHA)";;
+        nikos)  build_nikos;  say "nikos: $NIKOS_DIR/install/bin";;
+        clam)   build_clam;   say "clam: $CLAM_DIR/install/bin";;
+        *) die "unknown engine '$e' (z3 alive2 nikos clam)";;
+      esac
+    done
     write_pins
     ;;
   check)
@@ -178,8 +212,16 @@ case "$cmd" in
       got=$(sha256sum "$f" | cut -c1-64)
       if [ "$got" != "$sha" ]; then echo "DIFFERS  $name: pinned $sha, found $got"; rc=1; else echo "ok       $name"; fi
     done < "$PINS"
-    p=$(grep '^patch ' "$PINS" | awk '{print $3}')
-    [ "$(sha256sum "$PATCH" | cut -c1-64)" = "$p" ] && echo "ok       alive2-rlimit.patch" || { echo "DIFFERS  alive2-rlimit.patch"; rc=1; }
+    # every recorded patch: the digest pins.txt carries against the file beside this script, and a patch file
+    # present here but absent from pins.txt is a patch outside the pin (D-321 (3))
+    while read -r _ pname psha _; do
+      f="$HERE/$pname"
+      if [ ! -f "$f" ]; then echo "MISSING  patch $pname"; rc=1; continue; fi
+      [ "$(sha256sum "$f" | cut -c1-64)" = "$psha" ] && echo "ok       patch $pname" || { echo "DIFFERS  patch $pname"; rc=1; }
+    done < <(grep '^patch ' "$PINS")
+    for pf in "$HERE"/*.patch; do
+      [ -f "$pf" ] && ! grep -q "^patch $(basename "$pf") " "$PINS" && { echo "UNPINNED $(basename "$pf") (a patch outside the pin)"; rc=1; }
+    done
     exit $rc
     ;;
   paths)
@@ -190,5 +232,5 @@ case "$cmd" in
     echo "LLVM18_BIN=$LLVM18/bin"
     echo "LLVM20_BIN=$LLVM20/bin"
     ;;
-  *) echo "usage: engines.sh build|check|paths" >&2; exit 2;;
+  *) echo "usage: engines.sh build [z3|alive2|nikos|clam ...]|check|paths" >&2; exit 2;;
 esac

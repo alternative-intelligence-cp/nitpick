@@ -2321,6 +2321,49 @@ everything from *typing* through *Z3* is not. Five decisions, plus the Astrée g
 > E-7 is a step of 1.6.2's plan, written at 1.6.0 step 5; the fifteen inter-procedural verdicts and
 > this one are re-examined in the testing-and-benchmarking phase the user plans after cycle 1.6.**
 
+> **[1.6.0 step 4 (2026-09-25) — E-8, for 1.6.1 (leg A), owned by the user: THE EMISSION
+> CARRIES A TARGET TRIPLE AND NO `target datalayout`, AND AN ANALYZER THAT READS IT AS IT IS
+> LAYS EVERY STRUCT OUT UNDER LLVM'S DEFAULT.]** Measured at step 3 and read at step 4
+> (`meta/roadmap/1.6/1.6.0.md`, the two records): `opt` and `llc` DERIVE the x86-64 layout from
+> the triple — `opt -O2` over our emission writes the string into its output, `{ i32, i64 }` is
+> 16 bytes with the `i64` at 8, as the binary has it — but NIKOS does not: its three tools call
+> `llvm::parseIRFile` with the default callbacks and its importer takes `module.getDataLayout()`
+> as it is, so every NIKOS row of step 3 over a plain, whole or verified form was computed under
+> LLVM's DEFAULT layout (`i64` ABI-aligned to 4: `{ i32, i64 }` at 12 bytes with the field at 4,
+> `{ i8, i256, i256, i256 }` at 100 bytes where the binary has 112), and a verdict on such an
+> access describes a layout the artifact does not have; the two programs' datalayout TWINS
+> (step 2's `.dl` forms) gave site lists byte-identical to their plain forms', so the programs'
+> rows stand, and the compiler's twin was REFUSED by NIKOS's five-width integer-alignment table
+> (a one-token NIKOS fix, `frontend/llvm/src/import/data_layout.cpp:75`, 1.6.1's port list).
+> A module with neither line is laid out under the default by `opt` too (measured), which no
+> module of ours is. The lead: the emitter writes `target datalayout = "…"` — the x86-64 string
+> `llc` derives — beside the triple, pinned as ONE string in `nitpick.toml`'s `[toolchain]`
+> (D-204's authority: a stated string nothing consumes is the next stale document, so a belt
+> holds it to what `opt` derives from the triple), so that the ARTIFACT says what layout it
+> has and any analyzer reads the binary's layout with no transform (D-319) and no twin. The
+> binary does not move (`llc` derives the same string; the harness's opt-O2 leg already ran
+> under it), the emission's text does (a re-pin notice, the ladder rows), the datalayout twins
+> retire (the plain form IS the twin), and the cost is one emission change under a snapshot
+> refresh. Not 1.6.0's (§2.7: no emission change at the gate). **Recommendation:** 1.6.1's
+> first step, landed with NIKOS's one-token fix and measured by the compiler's own form
+> analysed under the binary's layout for the first time; the user decides at S-102's asking.
+
+> **[1.6.0 step 4 (2026-09-25) — three defects of NIKOS found by READING its pinned source,
+> owed to the user's NIKOS tree (`REPOS/nikos`), each a first commit of 1.6.1's port if NIKOS
+> wins the gate; the step-4 record has the lines.]** (1) The pointer pre-analysis BUILDS the
+> `inttoptr` constraint and never ADDS it (`analyzer/include/ikos/analyzer/analysis/pointer/
+> constraint.hpp:386-399`, against `484-492` which adds), so under `--proc=intra` — the only
+> mode that runs the pre-pass — a pointer loaded from integer-derived memory is BOTTOM and
+> everything after the load is "unreachable", which means unchecked; two lines. (2) The
+> `LibcppCoroAlloc`/`LibcppCoroFree` intrinsics exist in the name table, the intrinsic table
+> and the engine and are missing from `constraint.hpp`'s switch and four checkers' switches
+> whose default is `ikos_unreachable` — undefined behaviour for a module using `llvm.coro.*`
+> (ours has none). (3) The integer-alignment table is filled for the widths {1, 8, 16, 32,
+> 64} alone (`frontend/llvm/src/import/data_layout.cpp:75`), so under a datalayout that
+> aligns `i128` to 16 the AR size of `{ i128, i1 }` — the result type of
+> `llvm.sadd.with.overflow.i128` — is 24 against LLVM's 32 and the module is refused ("llvm
+> type and ar type alloc size are different"); one token, or ~15 lines for every `i<N>:` spec.
+
 ## 4b. ~~The cycle-1.3 batch~~ RATIFIED as D-194…D-200 (user: "go with your recommendations" — Kleene on `&`/`|`, `unit:` declarations in)
 
 The exotic-tier surface, proposed at cycle open with recommendations —
