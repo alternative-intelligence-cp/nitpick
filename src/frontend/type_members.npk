@@ -2032,7 +2032,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             if ((raw type_kind(e.types, rxt0)) == (raw TY_POINTER())) { rx0_ptr = true; }
         }
         if (!rx0_ptr) {
-            if (raw refuse_write_path(e, raw expr_operand(n), "operation on a stateful value", n.span)) {
+            // A LENT OWNING PARAMETER IS READ-ONLY (DEF-102, TYPE-085) -- except
+            // that a method call through a `dyn` receiver passes the caller's
+            // OBJECT, not the address of the callee's copy of the header, and
+            // changes no ownership; a `dyn` parameter's one purpose stays.
+            bool:dyn_recv0 = ((raw type_kind(e.types, recv)) == (raw TY_DYN()));
+            if (raw refuse_write_path_ex(e, raw expr_operand(n), "operation on a stateful value", n.span, dyn_recv0)) {
                 pass 0i32;
             }
             // EVERY OPERATION ON A STATEFUL VALUE WRITES THROUGH ITS ADDRESS, as
@@ -2436,7 +2441,14 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             }
             // A VIEW HAS NO ADDRESS EITHER, AND A FROZEN SELECTOR LENDS ITS
             // (D-266, 1.5.2h): the same implicit address, the same question.
-            if (raw refuse_write_path(e, raw expr_operand(n), "call through a pointer receiver", n.span)) {
+            // A LENT OWNING PARAMETER IS READ-ONLY (DEF-102, TYPE-085) -- except
+            // that a method call through a `dyn` receiver passes the caller's
+            // OBJECT, not the address of the callee's copy, and stays.
+            bool:dyn_recv = false;
+            if (rxt != 0i32) {
+                if ((raw type_kind(e.types, rxt)) == (raw TY_DYN())) { dyn_recv = true; }
+            }
+            if (raw refuse_write_path_ex(e, raw expr_operand(n), "call through a pointer receiver", n.span, dyn_recv)) {
                 pass 0i32;
             }
             // A `sealed` FIELD OR A CONTAINER'S HEADER IS NOT HANDED TO A

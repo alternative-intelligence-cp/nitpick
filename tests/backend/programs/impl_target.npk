@@ -34,7 +34,7 @@ impl:N:Base = { func:base = int32(N:self) { pass self.v; }; };
 struct:Box<T> = { T:v; };
 impl:<T>:Box<T> = {
     func:set = NIL(Box<T>->:self, move T:v) never fails { self.v = move(v); pass NIL; };   // D-264
-    func:get = T(Box<T>:self) never fails          { pass self.v; };
+    func:get = T(Box<T>->:self) never fails        { pass move(self.v); };   // D-264; DEF-104
 };
 
 func:main = int32(cstring[]:_~argv) {

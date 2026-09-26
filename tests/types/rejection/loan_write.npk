@@ -1,0 +1,30 @@
+// expect-error: NITPICK-TYPE-085
+//
+// DEF-102 (1.6.0 step 3g, the library listener's finding): a plain by-value
+// parameter of an OWNING type is LENT (D-004) -- the callee holds a copy of the
+// header and none of the ownership -- so every write path into it is refused as
+// a view's is (D-266): an assignment to it or into it, its address by `@`, `$$i`
+// or `$$m`, a pointer-receiver call, a stateful operation. Before the rule, the
+// field write dropped the CALLER's body (D-186's overwrite drop by a non-owner)
+// and `@p` let a callee free or grow the caller's storage. A copyable parameter
+// keeps every write (`plain_ok`), and a `move` parameter owns (`moved_ok`).
+mod:loan_write;
+
+struct:Box = { string:s; int64:n; };
+struct:Pt = { int64:x; int64:y; };
+
+trait:Bump = { func:bump = NIL(Self->:self) never fails; };
+impl:Box:Bump = { func:bump = NIL(Box->:self) never fails { self.n = self.n + 1i64; pass NIL; }; };
+
+func:field_write = NIL(Box:b) never fails { b.s = string_concat("x", "y"); pass NIL; };
+func:whole_write = NIL(Box:b) never fails { b = Box{ s: string_concat("x", "y"), n: 0i64 }; pass NIL; };
+func:addr = NIL(Box:b) never fails { Box->:p = @b; discard(p.n); pass NIL; };
+func:shared = NIL(Box:b) never fails { Box->:p = $$i b; discard(p.n); pass NIL; };
+func:exclusive = NIL(Box:b) never fails { Box->:p = $$m b; discard(p.n); pass NIL; };
+func:receiver = NIL(Box:b) never fails { drop b.bump(); pass NIL; };
+func:element = NIL(List<int64>:xs) never fails { xs[0i64] = 5i64; pass NIL; };
+func:plain_ok = int64(Pt:p) never fails { p.x = 7i64; Pt->:q = @p; pass q.x + p.y; };
+func:moved_ok = int64(move Box:b) never fails { b.s = string_concat("m", "n"); pass b.n; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

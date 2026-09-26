@@ -1065,6 +1065,13 @@ access:
   %val = load i32, ptr %elem_ptr
 ```
 
+**A zero-length fixed array `T[0]` is a supported type** (stated 2026-09-25 at the
+library listener's request, measured at 1.6.0 step 3g): accepted wherever `T[N]`
+is, zero bytes wide (`[0 x T]`), and OWNING when `T` owns — a struct with a
+`hidden string[0]` field is move-only (TYPE-046 on a copy) at no cost in bytes,
+while `int64[0]` copies freely. That is how a library marks a struct move-only
+without paying for a field.
+
 `arr.len` is the count the type carries — an `int64` constant, no load
 (DEF-22, 1.5.2e: the checker typed it since the array kind existed and the
 emitter had no arm for it, so a local `uint8[20]` asking its length was an

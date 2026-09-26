@@ -240,6 +240,15 @@ lifetime to track.
 
 ---
 
+
+**[1.6.0 step 3g (2026-09-25): THE LOAN IS READ-ONLY WHEN IT OWNS — DEF-102, the library listener's
+finding. A plain by-value parameter of an owning type is lent (this decision's rule 2 as the borrow
+checker reads it), and a callee that assigned to one of its OWNING FIELDS ran D-186's overwrite drop on
+the caller's body (the caller read the free poison), while `@p` of one let a callee free or grow the
+caller's storage through the copy. `NITPICK-TYPE-085` refuses every write path into a place rooted at
+such a parameter — assignment, `@`, `$$i`, `$$m`, a pointer-receiver call, a stateful operation — the
+view's rule (D-266) applied to the loan; a copyable parameter keeps every write, and a callee that must
+change an owning value takes it as `move T:p`.]**
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
@@ -17522,6 +17531,12 @@ consuming one.
 > place is still `move(...)`, a plain copy at a scalar, or `.clone()`;
 > `generic_owning_copy.npk`'s `peek` is a control now.
 
+
+**[1.6.0 step 3g (2026-09-25): THIS PREDICATE IS THE LOAN GATES' TOO — DEF-104, the library listener's
+finding. `refuse_move_of_borrowed` (TYPE-047) and the new `place_lent_owning` (TYPE-085) asked `type_drops`,
+false for an unsubstituted `T`, so `func:id<T> = T(T:x) { pass x; }` passed a lent value out at every
+instantiation where its `string` twin was refused. Both ask `type_owns_for_move` now: a bare `T` owns for
+every question about ownership, exactly as this decision says for the copy.]**
 ## D-265 — the toolchain pin is a version; the emission is the cross-machine identity claim — **SETTLED (user decision, 2026-09-06: "lets go with your recommendation on S-42 and ratify it"; OPEN_DECISIONS S-42; lands at 1.5.2g)**
 
 Found by the library workbench's first CI run (`nitpick-time`, 2026-09-06):
@@ -17681,6 +17696,11 @@ the rule and traps nothing (exit 7), while `drop bump(@p);` is refused at the
 > `_` binds nothing and keeps its position; a lending arm of wildcards needs no
 > selector address. `pick_lend_wild.npk` runs it.
 
+
+**[1.6.0 step 3g (2026-09-25): the view's rule reaches the LOAN — a plain by-value parameter of an
+owning type admits no write path either (`NITPICK-TYPE-085`, DEF-102), for the reason this decision
+gave a view: the value was lent, not given. A `pick` view and a lent parameter are two loans under one
+rule now.]**
 ## D-267 — `failsafe`'s postcondition has a runtime guard — **SETTLED (user decision, 2026-09-06: "ratify both as recommended"; OPEN_DECISIONS S-43; lands at 1.5.3 steps 0–2)**
 
 D-014 §3.3: a `failsafe` that returns 0 — conventionally success — is a

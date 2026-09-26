@@ -27,7 +27,7 @@ struct:Box<T> = { T:v; };
 // own D-108 spelling — `@"npk.generics.identity<int32>"` beside
 // `@"npk.generics.identity<int64>"` — and each call reaches the specialization
 // for ITS arguments. The declaration itself emits nothing: it is a template.
-func:identity<T> = T(T:x) { pass x; };
+func:identity<T> = T(move T:x) { pass move(x); };   // a bare `T` is move-only (D-264; DEF-104)
 
 func:main = int32(cstring[]:_~argv) {
     Container<int32>:a = Container{ item: 7i32, tag: 1i32 };

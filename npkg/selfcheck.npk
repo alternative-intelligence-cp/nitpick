@@ -801,7 +801,7 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         Sxs:fsx = raw sx_parse(fspec);
         string:fdir = raw path_join(dir, raw text_replace_byte(fname, 45u8, 95u8));
         List<MModel>:no_models = raw list_init::<MModel>(1i64);
-        List<string>:ffl = raw floor_emit(@flt, @fsx, no_models, fdir);
+        List<string>:ffl = raw floor_emit(@flt, @fsx, @no_models, fdir);
         if (ffl.count == 0i64) {
             Result<List<VRow>>:frows = read_rows(fdir);
             if (frows.is_error) { fail frows.err; }
@@ -856,7 +856,7 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             drop list_push(@cms, move(cm));
             Sxs:csx = raw sx_parse("(symbol @f (ensures (= result (mod (+ a 1) 18446744073709551616))))\n");
             string:cdir = raw path_join(dir, raw text_replace_byte(cname, 45u8, 95u8));
-            List<string>:cef = raw floor_emit(@flt, @csx, cms, cdir);
+            List<string>:cef = raw floor_emit(@flt, @csx, @cms, cdir);
             for (int64:ei in 0i64...cef.count) { drop strlist_push(@cfl, raw strlist_view(cef, ei)); }
             if (cef.count == 0i64) {
                 Result<List<string>>:cdf = await controls_decide(c, z3p, cdir);

@@ -1,0 +1,23 @@
+// expect-error: NITPICK-TYPE-047
+// expect-error: NITPICK-TYPE-085
+//
+// DEF-104 (1.6.0 step 3g, the library listener's finding): both loan gates asked
+// `type_drops`, which is false for an unsubstituted `T`, so a generic body
+// escaped them where its instantiation at `string` was refused -- `id::<string>(a)`
+// passed the lent value out and the caller freed it twice (exit 95), and `@x` of
+// a lent `T:x` was the loan's generic face. Both gates ask D-264's predicate
+// now: a bare `T` owns for this question. The controls carry no code: a `move T`
+// parameter is given, not lent, and a copyable instantiation never reaches here.
+mod:lent_generic;
+
+func:id<T> = T(T:x) never fails { pass x; };
+func:addr<T> = NIL(T:x) never fails { T->:p = @x; discard(p); pass NIL; };
+func:moved<T> = T(move T:x) never fails { pass move(x); };
+
+func:main = int32(cstring[]:_~argv) {
+    string:a = string_concat("a", "b");
+    string:b = raw moved::<string>(move(a));
+    if (b.len != 2i64) { exit 5i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:_~e) { exit 1i32; };

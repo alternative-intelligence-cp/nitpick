@@ -536,3 +536,16 @@ pub func:TYPE_MAIN_SIG = string() never fails { pass "NITPICK-TYPE-083"; };
 // already TYPE-046. A copyable value moved out is a plain copy and is not
 // refused. Take a copy with `.clone()`, or declare the binding plain.
 pub func:TYPE_FIXED_MOVE = string() never fails { pass "NITPICK-TYPE-084"; };
+// A LENT PARAMETER THAT OWNS IS READ-ONLY (DEF-102, the library listener's
+// finding at 1.6.0 step 3g; D-004's loan and D-266's view, one rule). A plain
+// by-value parameter is LENT (D-004): the callee holds a copy of the header and
+// none of the ownership, so a write into it that changes what the shared body
+// is owned by is a write the caller cannot see -- an assignment to an owning
+// field dropped the CALLER's body (D-186's overwrite drop by a non-owner: the
+// caller read the free poison, or freed the body a second time), and `@p` or
+// `$$m p` handed a callee a way to free or grow the caller's container through
+// the copy. So a place rooted at a lent parameter whose type owns admits no
+// assignment, no address (`@`, `$$i`, `$$m`), no pointer-receiver call and no
+// stateful operation -- the view's rule (TYPE-066) for the loan. A copyable
+// parameter is a copy and keeps every write; `move T:p` owns and keeps them.
+pub func:TYPE_LOAN_READ_ONLY = string() never fails { pass "NITPICK-TYPE-085"; };

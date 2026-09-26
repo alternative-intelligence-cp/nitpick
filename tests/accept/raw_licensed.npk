@@ -11,7 +11,7 @@ mod:raw_licensed;
 
 func:nf = int32(int32:v) never fails { pass v; };
 func:nf_effect = NIL(int32:_~v) never fails { pass NIL; };
-func:nf_id<T> = T(T:x) never fails { pass x; };
+func:nf_id<T> = T(move T:x) never fails { pass move(x); };   // a bare `T` is move-only (D-264; DEF-104)
 
 trait:Loud = {
     func:speak = int32(Self:self) never fails;

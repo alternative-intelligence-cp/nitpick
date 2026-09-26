@@ -26,12 +26,12 @@ impl:<T: Ord>:Box<T>:Ord = { pub func:cmp = Ordering(Box<T>:self, Box<T>:other) 
 
 struct:Pair<T, U> = { T:a; U:b; };
 // The parameters in the OTHER order: `second` is the struct's `b`, of type `T`.
-impl:<T, U>:Pair<U, T> = { func:second = T(Pair<U, T>:self) never fails { pass self.b; }; };
+impl:<T, U>:Pair<U, T> = { func:second = T(Pair<U, T>->:self) never fails { pass move(self.b); }; };   // a bare `T` is move-only (D-264; DEF-104): out of the pointee by `move`
 // A concrete first argument: a member of `Pair<int32, _>` and of nothing else.
-impl:<T>:Pair<int32, T> = { func:tail = T(Pair<int32, T>:self) never fails { pass self.b; }; };
+impl:<T>:Pair<int32, T> = { func:tail = T(Pair<int32, T>->:self) never fails { pass move(self.b); }; };
 // A parameter nested inside another instance.
 struct:Cell<X> = { X:v; };
-impl:<T>:Cell<Pair<T, int32>> = { func:inner = T(Cell<Pair<T, int32>>:self) never fails { pass self.v.a; }; };
+impl:<T>:Cell<Pair<T, int32>> = { func:inner = T(Cell<Pair<T, int32>>->:self) never fails { pass move(self.v.a); }; };
 
 func:main = int32(cstring[]:_~argv) {
     Box<Point>:a = Box{ v: Point{ x: 1i32 } };

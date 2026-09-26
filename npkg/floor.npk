@@ -93,7 +93,7 @@ func:fno = string(int64:n) never fails {
 // model (1.5.6 step 5), `index.txt` and `rows.txt` in the compiler's shape,
 // and `controls.txt` -- one line per control, `cNNNN\tmodel:NAME\tCONTROL\tBAD`,
 // each a file `cNNNN.smt2` that must answer `sat`; the problems by name.
-pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models, string:dir) never fails {
+pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>->:models, string:dir) never fails {
     List<string>:fl = raw list_init::<string>(4i64);
     Result<NIL>:d = floor_ensure_dir(dir);
     if (d.is_error) { drop strlist_push(@fl, string_concat("floor: cannot create ", dir)); pass fl; }
@@ -150,7 +150,7 @@ pub func:floor_emit = List<string>(FloorText->:ft, Sxs->:s, List<MModel>:models,
     string:controls = "";
     int64:cn = 0i64;
     for (int64:mi in 0i64...models.count) {
-        MModel->:m = @models[mi];
+        MModel->:m = @(<-models)[mi];
         ModelFile:mf = raw model_emit(m);
         n = n + 1i64;
         string:mno = raw fno(n);

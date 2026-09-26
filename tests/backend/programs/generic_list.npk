@@ -52,7 +52,7 @@ func:growable_push<T> = NIL(Growable<T>->:l, move T:v) {
 func:list_at<T> = T(Growable<T>->:l, int64:i) {
     if (i < 0i64)     { fail E4; }
     if (i >= l.count) { fail E4; }
-    pass l.items[i];
+    pass move(l.items[i]);   // a bare `T` is move-only (D-264; DEF-104): out of the pointee by `move`
 };
 
 // THE OPTIONAL ACCESSOR: out of range is `NIL`, not an error — the caller asked
@@ -60,7 +60,7 @@ func:list_at<T> = T(Growable<T>->:l, int64:i) {
 func:growable_get<T> = T?(Growable<T>->:l, int64:i) {
     if (i < 0i64)     { pass NIL; }
     if (i >= l.count) { pass NIL; }
-    pass l.items[i];
+    pass move(l.items[i]);
 };
 
 // A generic struct built inside a generic body and RETURNED, at a type no

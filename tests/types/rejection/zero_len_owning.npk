@@ -1,0 +1,16 @@
+// expect-error: NITPICK-TYPE-046
+//
+// A struct with a `hidden string[0]` field OWNS (the array's element type does),
+// so a by-value read of it is the move-only refusal -- at zero bytes: the
+// library listener's move-only marker (TYPE_REFERENCE §9.2, 1.6.0 step 3g).
+mod:zero_len_owning;
+
+struct:Marker = { hidden string[0]:mo; int64:n; };
+
+func:main = int32(cstring[]:_~argv) {
+    Marker:m = Marker{ mo: [], n: 4i64 };
+    Marker:c = m;
+    if (c.n != 4i64) { exit 5i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:_~e) { exit 1i32; };

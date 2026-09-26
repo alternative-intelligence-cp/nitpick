@@ -664,7 +664,7 @@ async func:run_compile = NIL(Ctx->:c, int64:t, List<string>:only) {
     List<string>:run_paths = raw list_init::<string>(paths.count + 1i64);
     for (int64:i in 0i64...paths.count) {
         string:p = raw strlist_view(paths, i);
-        if (raw strset_has(skip, p)) { continue; }
+        if (raw strset_has(@skip, p)) { continue; }
         drop strlist_push(@run_paths, p);
     }
     drop strset_free(@skip);
@@ -936,7 +936,7 @@ async func:run_program = NIL(Ctx->:c, int64:t) {
     int64:count = 0i64;
     for (int64:k in 0i64...paths.count) {
         string:p2 = raw strlist_view(paths, k);
-        if (raw strset_has(skip, p2)) { continue; }
+        if (raw strset_has(@skip, p2)) { continue; }
         string:text = relay read_text(p2);
         Expect:exp = raw expect_read(text);
         string:name = raw rel_to_root(c, p2);
@@ -981,7 +981,7 @@ async func:run_explore = NIL(Ctx->:c, int64:t) {
     int64:n_no = 0i64;
     for (int64:k in 0i64...paths.count) {
         string:p2 = raw strlist_view(paths, k);
-        if (raw strset_has(skip, p2)) { continue; }
+        if (raw strset_has(@skip, p2)) { continue; }
         string:text = relay read_text(p2);
         Expect:exp = raw expect_read(text);
         string:name = raw rel_to_root(c, p2);

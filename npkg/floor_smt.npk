@@ -667,7 +667,7 @@ pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
             while ((j < text.len) && (text.ptr[j] != 124u8)) decreases text.len - j { j = j + 1i64; }
             if (j < text.len) {
                 string:q = raw text_slice(text, i, j + 1i64);
-                if ((raw strset_has(t.known, q)) && (!(raw strlist_contains(out, q)))) { drop strlist_push(@out, q); }
+                if ((raw strset_has(@t.known, q)) && (!(raw strlist_contains(out, q)))) { drop strlist_push(@out, q); }
                 i = j + 1i64;
                 continue;
             }
@@ -679,7 +679,7 @@ pub func:syms_in = List<string>(Tx->:t, string:text) never fails {
             while ((k < text.len) && (raw is_sym_char(text.ptr[k]))) decreases text.len - k { k = k + 1i64; }
             string:w = raw text_slice(text, i, k);
             if (!(raw text_is_digit(w.ptr[0i64]))) {
-                if ((raw strset_has(t.known, w)) && (!(raw strlist_contains(out, w)))) { drop strlist_push(@out, w); }
+                if ((raw strset_has(@t.known, w)) && (!(raw strlist_contains(out, w)))) { drop strlist_push(@out, w); }
             }
             i = k;
             continue;
@@ -1063,7 +1063,7 @@ func:tx_reg = bool(Tx->:t, string:ir, string:sym, string:sort, int64:bits) never
         drop tx_problem(t, string_concat("a register is defined twice: ", ir));
         pass false;
     }
-    if (raw strset_has(t.known, sym)) {
+    if (raw strset_has(@t.known, sym)) {
         string:w = string_concat("the register ", ir);
         w = string_concat(w, " collides with another symbol of the translation: ");
         w = string_concat(w, sym);
@@ -1711,7 +1711,7 @@ func:addr_in_object = bool(Tx->:t, string:prefix, uint128:total) never fails {
 
 // An object's address facts (globals and allocas).
 func:tx_object = NIL(Tx->:t, string:sym, int64:size) never fails {
-    if (raw strset_has(t.known, sym)) {
+    if (raw strset_has(@t.known, sym)) {
         drop tx_problem(t, string_concat("an object's address symbol collides with another symbol: ", sym));
         pass NIL;
     }
@@ -2615,14 +2615,14 @@ func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e,
         }
         if (raw text_eq(a, "result") || raw text_starts_with(a, "result.")) {
             if (!e.allow_result) { drop rproblem(t, e, "`result` in a clause that has no result (a requires or an invariant)"); pass "false"; }
-            if (!(raw strset_has(t.known, a))) { drop rproblem(t, e, string_concat("no such result field: ", a)); pass "false"; }
+            if (!(raw strset_has(@t.known, a))) { drop rproblem(t, e, string_concat("no such result field: ", a)); pass "false"; }
             pass a;
         }
         if (raw text_eq(a, "exec") || raw text_eq(a, "tls")) {
             // the per-thread constants: an object of the struct's size, introduced
             // here when a clause names one before the body's call does (an objects
             // clause is rendered before the blocks)
-            if (!(raw strset_has(t.known, a))) {
+            if (!(raw strset_has(@t.known, a))) {
                 string:cty = "%npk.exec";
                 if (raw text_eq(a, "tls")) { cty = "%npk.tls"; }
                 drop tx_object(t, a, raw ty_size(ft, cty));
@@ -2631,7 +2631,7 @@ func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e,
             pass a;
         }
         if (raw text_eq(a, "trap") || raw text_eq(a, "trap_code")) {
-            if (!(raw strset_has(t.known, a))) { drop rproblem(t, e, string_concat("a clause names a symbol the translation has not introduced: ", a)); pass "false"; }
+            if (!(raw strset_has(@t.known, a))) { drop rproblem(t, e, string_concat("a clause names a symbol the translation has not introduced: ", a)); pass "false"; }
             pass a;
         }
         if (raw strlist_contains(t.free_syms, a)) { pass (raw spec_sym(a)); }
@@ -2646,7 +2646,7 @@ func:render_node = string(Tx->:t, FloorText->:ft, Sxs->:s, int64:node, REnv->:e,
                 fk = fk + 1i64;
                 if (raw text_eq(raw sx_atom(s, raw sx_nth(s, fc, 1i64)), a)) {
                     string:fsym = raw spec_sym(a);
-                    if (!(raw strset_has(t.known, fsym))) { drop tx_declare(t, fsym, "Int"); drop strlist_push(@t.free_syms, a); }
+                    if (!(raw strset_has(@t.known, fsym))) { drop tx_declare(t, fsym, "Int"); drop strlist_push(@t.free_syms, a); }
                     pass fsym;
                 }
             }
@@ -4138,7 +4138,7 @@ func:tx_block = NIL(Tx->:t, FloorText->:ft, Sxs->:s, XFn->:x, int64:b) never fai
                 string:cs = "exec";
                 string:cty = "%npk.exec";
                 if (raw text_eq(callee, "@npk_tls_self")) { cs = "tls"; cty = "%npk.tls"; }
-                if (!(raw strset_has(t.known, cs))) {
+                if (!(raw strset_has(@t.known, cs))) {
                     drop tx_object(t, cs, raw ty_size(ft, cty));
                     drop tx_range(t, cs, 64i64);
                 }
@@ -4718,7 +4718,7 @@ func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
         for (int64:dd in 0i64...t.defs.count) {
             int64:d = t.defs.count - 1i64 - dd;
             if (din[d]) { continue; }
-            if (!(raw strset_has(syms, raw strlist_view(t.def_names, d)))) { continue; }
+            if (!(raw strset_has(@syms, raw strlist_view(t.def_names, d)))) { continue; }
             din[d] = true;
             for (int64:r in 0i64...t.def_refs[d].count) {
                 if (raw strset_add(@syms, raw strlist_view(t.def_refs[d], r))) { grew = true; }
@@ -4729,7 +4729,7 @@ func:tx_cone = FloorRow(Tx->:t, int64:ri) never fails {
             if (excl.len > 0i64) { if (raw text_eq(raw strlist_view(t.hyp_tags, h), excl)) { continue; } }
             if ((!bv_goal) && (raw text_eq(raw strlist_view(t.hyp_tags, h), "bv"))) { continue; }
             bool:touch = false;
-            for (int64:q in 0i64...t.hyp_syms[h].count) { if (raw strset_has(syms, raw strlist_view(t.hyp_syms[h], q))) { touch = true; break; } }
+            for (int64:q in 0i64...t.hyp_syms[h].count) { if (raw strset_has(@syms, raw strlist_view(t.hyp_syms[h], q))) { touch = true; break; } }
             if (!touch) { continue; }
             hin[h] = true;
             grew = true;
@@ -4844,7 +4844,7 @@ pub func:floor_translate = FloorFile(FloorText->:ft, Sxs->:s, int64:fi, int64:se
         bool:is_addr = raw text_eq(fsort, "Addr");
         if (!(is_addr || (raw text_eq(fsort, "Int")))) { drop tx_problem(@t, "a free symbol's sort must be Int or Addr"); break; }
         string:fsym = raw spec_sym(fname);
-        if (raw strset_has(t.known, fsym)) { drop tx_problem(@t, string_concat("a free symbol collides with a register or parameter: ", fname)); break; }
+        if (raw strset_has(@t.known, fsym)) { drop tx_problem(@t, string_concat("a free symbol collides with a register or parameter: ", fname)); break; }
         drop strlist_push(@t.free_syms, fname);
         drop tx_declare(@t, fsym, "Int");
         // an Addr ranges over the address space: a universal over addresses (an

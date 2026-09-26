@@ -35,7 +35,7 @@ func:main = int32(cstring[]:argv) {
             string:dir = string_from_bytes(argv[3i64].ptr, argv[3i64].len);
             FloorInputs:inp = raw floor_read(root);
             if (!inp.ok) { drop say(inp.problem); exit 1i32; }
-            List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, inp.models, dir);
+            List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, @inp.models, dir);
             for (int64:i in 0i64...ef.count) { drop say(raw strlist_view(ef, i)); }
             if (ef.count > 0i64) { drop say(string_concat(int_to_string(ef.count), " finding(s)")); exit 1i32; }
             drop say(string_concat("floor: obligations written to ", dir));

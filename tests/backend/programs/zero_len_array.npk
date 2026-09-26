@@ -1,0 +1,35 @@
+// expect-exit: 0
+//
+// A zero-length fixed array `T[0]` is a supported type (TYPE_REFERENCE §9.2,
+// stated at 1.6.0 step 3g at the library listener's request): zero bytes wide,
+// copyable when `T` is, owning when `T` owns. `Plain` copies through its
+// `int64[0]`; `Marker` with a `hidden string[0]` is eight bytes and move-only
+// (the copy is `zero_len_owning.npk`'s TYPE-046).
+mod:zero_len_array;
+
+struct:Marker = { hidden string[0]:mo; int64:n; };
+struct:Plain = { int64[0]:z; int64:n; };
+
+func:main = int32(cstring[]:_~argv) {
+    Plain:p = Plain{ z: [], n: 3i64 };
+    Plain:q = p;
+    if (q.n != 3i64) { exit 5i32; }
+    if (#size_of<Marker>() != 8i64) { exit 6i32; }
+    if (#size_of<Plain>() != 8i64) { exit 7i32; }
+    Marker:m = Marker{ mo: [], n: 4i64 };
+    if (m.n != 4i64) { exit 8i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (*)                { exit 97i32; }
+    }
+};

@@ -678,12 +678,12 @@ pub func:line_is_step = bool(string:line) never fails {
 
 // Every step names blocks that exist, and every atomic operation or syscall
 // of a symbol any model names sits in a block some step names.
-pub func:floor_models_current = List<string>(FloorText->:ft, List<MModel>:models) never fails {
+pub func:floor_models_current = List<string>(FloorText->:ft, List<MModel>->:models) never fails {
     List<string>:fl = raw list_init::<string>(4i64);
     List<string>:named_syms = raw list_init::<string>(16i64);
     List<string>:named_pairs = raw list_init::<string>(64i64);   // "@sym:block"
     for (int64:mi in 0i64...models.count) {
-        MModel->:m = @models[mi];
+        MModel->:m = @(<-models)[mi];
         if (!m.ok) { drop strlist_push(@fl, raw strlist_view_of(m.problem)); continue; }
         for (int64:si in 0i64...m.steps.count) {
             MStep->:st = @m.steps[si];

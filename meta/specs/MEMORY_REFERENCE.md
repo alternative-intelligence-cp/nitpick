@@ -205,6 +205,11 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   argument of, or the scope of the pointer local holding it); a static
   overlap is refused (`NITPICK-BORROW-013`), a computed-index overlap is
   guarded at run time (`BorrowOverlap`) and proven away by the verified build.
+  A plain by-value parameter of an OWNING type is a loan and is read-only (D-004,
+  D-266; `NITPICK-TYPE-085`, 1.6.0 step 3g): no assignment to it or into it, no
+  `@`/`$$i`/`$$m`, no pointer-receiver call, no stateful operation — a callee that
+  changes an owning value takes it as `move T:p`, one that reads the whole of it
+  takes `.clone()`; a copyable parameter is a copy and keeps every write.
   A `fixed` binding has no address (D-287, `NITPICK-TYPE-071`), and one that owns
   cannot be moved out of — `move(...)` or the implicit move at `pass`, of the
   binding or any part of it — since the vacant value a move leaves behind is a

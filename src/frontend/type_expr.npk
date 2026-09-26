@@ -307,7 +307,10 @@ pub func:refuse_pass_of_pointee_owned = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
     TypeResolver:or = raw etyper_resolver(e);
-    if (!(raw type_drops(@or, ty, e.scope, 64i32))) { pass NIL; }
+    // A bare `T` owns for this question (D-264's predicate; DEF-104, 1.6.0
+    // step 3g): `pass self.v` through a `Box<T>->` receiver copied the pointee's
+    // owning part out at every instantiation, checked once.
+    if (!(raw type_owns_for_move(e, ty))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
     PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
@@ -427,7 +430,52 @@ pub func:refuse_frozen = bool(ExprTyper->:e, ExprId:place, string:what, Span:at)
 // question every write asks -- an assignment, an address, a borrow, a
 // pointer-receiver call, a stateful operation. True when reported; the caller
 // then types as invalid and says nothing more (D-240).
+// A PLACE ROOTED AT A LENT PARAMETER WHOSE TYPE OWNS (DEF-102, 1.6.0 step 3g):
+// a plain by-value parameter of an owning type (not `move`, not a pointer --
+// a pointee is the callee's to write) is a LOAN of the caller's value, and the
+// callee holds a copy of its header with none of the ownership.
+pub func:place_lent_owning = bool(ExprTyper->:e, ExprId:place) never fails {
+    PlaceRoot:r = raw place_root(e.ast, place, raw BORROW_FUEL());
+    if (r.exhausted) { pass false; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:rn = raw ast_expr(e.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (rn.a == 0i32) { pass false; }
+    Symbol:sy = raw symtab_get(e.tab, rn.a);
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:pd = raw ast_decl(e.ast, DeclId{ index: sy.origin });
+    if (pd.kind != DeclKind.DeclParamDecl) { pass false; }
+    if (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32) { pass false; }
+    int32:pt = raw exprtypes_get(e.expr_types, r.id);
+    if (pt == 0i32) { pass false; }
+    if (raw type_is_invalid(e.types, pt)) { pass false; }
+    if ((raw type_kind(e.types, pt)) == (raw TY_POINTER())) { pass false; }
+    // A bare `T` owns for this question too (D-264's predicate; DEF-104): a
+    // generic body is checked once, and `@x` of a lent `T:x` is the loan's
+    // generic face.
+    pass (raw type_owns_for_move(e, pt));
+};
+
 pub func:refuse_write_path = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    pass (raw refuse_write_path_ex(e, place, what, at, false));
+};
+
+// The same question with the loan rule SWITCHED OFF for one caller: a method
+// call through a `dyn` receiver. A `dyn` owns its heap cell (D-183), so a lent
+// `dyn Speaks:s` is a loan -- but `s.say()` hands the method the OBJECT the
+// caller owns, not the address of the callee's copy of a header, and changes
+// no ownership; refusing it would refuse `dyn`'s one purpose (thirteen sites
+// in the tree, every one a method call). `@s` of a lent `dyn` stays refused:
+// `<-p = other` would drop the caller's cell.
+pub func:refuse_write_path_ex = bool(ExprTyper->:e, ExprId:place, string:what, Span:at,
+                                     bool:skip_loan) never fails {
+    if ((!skip_loan) && (raw place_lent_owning(e, place))) {
+        string:l1 = string_concat("a plain parameter of an owning type is LENT (D-004): the callee holds a copy of its header and none of the ownership, so this ", what);
+        discard(raw te_error(e, raw TYPE_LOAN_READ_ONLY(),
+            string_concat(l1, " would write what the caller still owns -- an assignment into it dropped the caller's value, an address of it let a callee free or grow the caller's storage. Read it, `.clone()` the part you change, or take it as `move T:p` and let the caller write `move(...)`"),
+            at));
+        pass true;
+    }
     if (raw place_is_view(e, place)) {
         string:m1 = string_concat("a lending `pick`'s binding is a read-only VIEW of the payload in place (D-266), and this ", what);
         discard(raw te_error(e, raw TYPE_VIEW_READ_ONLY(),
@@ -511,8 +559,14 @@ pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                    Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
-    TypeResolver:pr = raw etyper_resolver(e);
-    if (!(raw type_drops(@pr, ty, e.scope, 64i32))) { pass NIL; }
+    // A BARE TYPE PARAMETER OWNS FOR THIS QUESTION (D-264's predicate, asked
+    // here since 1.6.0 step 3g -- DEF-104, the library listener's finding):
+    // `type_drops` is false for an unsubstituted `T`, and a generic body is
+    // checked once, so `func:id<T> = T(T:x) { pass x; }` passed a lent value
+    // out at every instantiation -- a double free at `id::<string>(a)` -- where
+    // the same function at `string` was refused. `type_owns_for_move` treats
+    // `T` and `Self` as owning, as TYPE-046 has since D-264.
+    if (!(raw type_owns_for_move(e, ty))) { pass NIL; }
     PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }

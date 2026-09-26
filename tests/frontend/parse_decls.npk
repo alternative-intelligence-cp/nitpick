@@ -50,6 +50,27 @@ func:main = int32(cstring[]:_~argv) {
         if (!(raw stmt_is_none(raw fn_body(@a2, n2))))            { exit 16i32; }
     }
 
+    // --- a declared name is an identifier (DEF-103, 1.6.0 step 3g) --------------
+    // `release` is a keyword wherever it is USED, so a function so named could be
+    // declared and never called; the declaration refuses now (PARSE-001), as a
+    // keyword-named binding already did. A keyword the lexer interns as a name
+    // after a `.` (`acquire`) stays a legal method name.
+    {
+        TokenList:k7 = raw lex_all(0i32, "func:release = int32(int32:x) never fails { pass x; };", @it, @ld);
+        Ast:a7 = raw ast_init();
+        DiagList:g7 = raw diaglist_init();
+        Parser:p7 = raw parser_init(@k7, @a7, @g7, @it);
+        discard(raw p_parse_decl(@p7));
+        if (raw diaglist_count(@g7) != 1i64)                      { exit 17i32; }
+        TokenList:k8 = raw lex_all(0i32, "func:acquire = int32(int32:x) never fails { pass x; };", @it, @ld);
+        Ast:a8 = raw ast_init();
+        DiagList:g8 = raw diaglist_init();
+        Parser:p8 = raw parser_init(@k8, @a8, @g8, @it);
+        DeclNode:n8 = raw ast_decl(@a8, raw p_parse_decl(@p8));
+        if (n8.kind != DeclKind.DeclFunctionDecl)                 { exit 18i32; }
+        if (raw diaglist_count(@g8) != 0i64)                      { exit 19i32; }
+    }
+
     // --- generics come AFTER the name (D-030) ----------------------------------
     {
         TokenList:k3 = raw lex_all(0i32,

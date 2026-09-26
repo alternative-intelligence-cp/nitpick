@@ -26,7 +26,7 @@ func:take_str = string(Holder<string>->:h, int64:i) never fails {
 };
 
 func:read_at<T> = T(Holder<T>->:h, int64:i) never fails {
-    pass h.items[i];
+    pass move(h.items[i]);   // a bare `T` is move-only (D-264; DEF-104): a copy out at an owning T was two owners
 };
 
 func:put<T> = NIL(Holder<T>->:h, move T:v) {

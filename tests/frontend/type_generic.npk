@@ -541,14 +541,14 @@ func:main = int32(cstring[]:_~argv) {
     // type it was called with. Both halves show up as an assignment: the return
     // type is what the local is checked against.
     Gx:g1 = raw gx(
-        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) never fails { pass c.value; }; func:f = NIL(Container<int32>:c) never fails { int32:v = raw extract(c); pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:extract<T> = T(move Container<T>:c) never fails { pass move(c.value); }; func:f = NIL(Container<int32>:c) never fails { int32:v = raw extract(move(c)); pass NIL; };",
         @it);
     if (raw errs(@g1) != 0i64)                                  { exit 80i32; }
 
     // …and the inferred type is the ARGUMENT's, not merely something that
     // typechecks. `Container<string>` gives `string`, from the same declaration.
     Gx:g2 = raw gx(
-        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) never fails { pass c.value; }; func:f = NIL(Container<string>:c) never fails { int32:v = raw extract(c); pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:extract<T> = T(move Container<T>:c) never fails { pass move(c.value); }; func:f = NIL(move Container<string>:c) never fails { int32:v = raw extract(move(c)); pass NIL; };",
         @it);
     if (raw errs(@g2) != 1i64)                                  { exit 81i32; }
     if (!(raw string_eq(raw code0(@g2), raw TYPE_MISMATCH())))   { exit 82i32; }
@@ -556,7 +556,7 @@ func:main = int32(cstring[]:_~argv) {
     // THE TURBOFISH IS THE ONLY EXPRESSION-POSITION FORM (D-064). What it
     // supplies is not inferred, so it decides even where inference could have.
     Gx:g3 = raw gx(
-        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL(int32:n) never fails { int32:v = raw identity::<int32>(n); pass NIL; };",
+        "func:identity<T> = T(move T:x) never fails { pass move(x); }; func:f = NIL(int32:n) never fails { int32:v = raw identity::<int32>(move(n)); pass NIL; };",
         @it);
     if (raw errs(@g3) != 0i64)                                  { exit 83i32; }
 
@@ -564,7 +564,7 @@ func:main = int32(cstring[]:_~argv) {
     // FROM the parameter it fills — so it cannot also supply it. The honest
     // message is that `T` could not be inferred, and the fix is the turbofish.
     Gx:g4 = raw gx(
-        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL() never fails { int32:v = raw identity(5); pass NIL; };",
+        "func:identity<T> = T(move T:x) never fails { pass move(x); }; func:f = NIL() never fails { int32:v = raw identity(5); pass NIL; };",
         @it);
     if (raw errs(@g4) != 1i64)                                  { exit 84i32; }
     if (!(raw string_eq(raw code0(@g4), raw TYPE_CANNOT_INFER()))) { exit 85i32; }
@@ -572,7 +572,7 @@ func:main = int32(cstring[]:_~argv) {
     // …and with the turbofish the same call is fine, which is what makes the
     // case above an inference limit rather than a refusal of literals.
     Gx:g5 = raw gx(
-        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL() never fails { int32:v = raw identity::<int32>(5); pass NIL; };",
+        "func:identity<T> = T(move T:x) never fails { pass move(x); }; func:f = NIL() never fails { int32:v = raw identity::<int32>(5); pass NIL; };",
         @it);
     if (raw errs(@g5) != 0i64)                                  { exit 86i32; }
 
@@ -595,7 +595,7 @@ func:main = int32(cstring[]:_~argv) {
     // a bare one does. A rule that only matched bare parameters would make the
     // shape of the signature decide whether inference works.
     Gx:g8 = raw gx(
-        "struct:Point = { int32:x; }; func:first<T> = T(T[]:xs) never fails { pass xs[0i64]; }; func:f = NIL(Point[]:ps) never fails { Point:p = raw first(ps); pass NIL; };",
+        "struct:Point = { int32:x; }; func:first<T> = int64(T[]:xs) never fails { pass xs.len; }; func:f = NIL(Point[]:ps) never fails { int64:n = raw first(ps); pass NIL; };",
         @it);
     if (raw errs(@g8) != 0i64)                                  { exit 90i32; }
 
@@ -611,7 +611,7 @@ func:main = int32(cstring[]:_~argv) {
     // TOO MANY TYPE ARGUMENTS names both counts, the same shape the value-argument
     // arity message uses.
     Gx:g10 = raw gx(
-        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL(int32:n) never fails { int32:v = raw identity::<int32, string>(n); pass NIL; };",
+        "func:identity<T> = T(move T:x) never fails { pass move(x); }; func:f = NIL(int32:n) never fails { int32:v = raw identity::<int32, string>(move(n)); pass NIL; };",
         @it);
     if (raw errs(@g10) != 1i64)                                 { exit 93i32; }
     if (!(raw string_eq(raw code0(@g10), raw TYPE_GENERIC_ARITY()))) { exit 94i32; }

@@ -1,0 +1,45 @@
+// expect-exit: 0
+//
+// DEF-102 (1.6.0 step 3g): the two spellings that stay after a loan became
+// read-only. A callee that must change an owning field takes the value as
+// `move T:p` and the caller writes `move(...)` (the caller has given it away);
+// a callee that must read the whole thing takes a copy with `.clone()`. Before
+// the rule, `overwrite(b)` on a plain `Box:b` dropped the caller's string and
+// the caller read the free poison (exit 70 in the listener's reproduction).
+mod:loan_clone;
+
+struct:Box = { string:s; };
+
+func:overwrite = Box(move Box:b) never fails {
+    b.s = string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w");
+    pass move(b);
+};
+
+func:peek = int64(Box:b) never fails {
+    string:c = b.s.clone() ?! HeapOom;
+    pass c.len;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Box:b = Box{ s: string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c") };
+    if (raw peek(b) != 45i64) { exit 20i32; }
+    if (b.s.ptr[0i64] != 97u8) { exit 21i32; }
+    Box:c = raw overwrite(move(b));
+    if (c.s.len != 43i64) { exit 22i32; }
+    if (c.s.ptr[0i64] != 120u8) { exit 23i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 96i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 99i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 94i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (OutOfBounds) { exit 96i32; },
+        (*)                { exit 97i32; }
+    }
+};

@@ -2195,6 +2195,49 @@ defect declares a `DEF-` in §2f.
 > is a plain copy and stays. `tests/types/rejection/fixed_move_out.npk` holds the three shapes and the clone
 > control. A refusal ADDED, announced in advance (NOTICES F9, naming 58); the listener's exposure is none.
 
+> **DEF-102 — FIXED at 1.6.0 step 3g (2026-09-25). AN ASSIGNMENT TO AN OWNING FIELD OF A LENT PARAMETER DROPPED
+> THE CALLER'S VALUE; `@p` OF ONE LET A CALLEE FREE OR GROW THE CALLER'S STORAGE.** Found by the library listener
+> (`nitpick-libs_s6`; nitpick-regex's 0.0.4d planner, their O-N21) and reproduced here at `6fb85d3`: `func:overwrite
+> = NIL(Box:b) never fails { b.s = string_concat(…); }` on a plain `Box:b`, then the caller reading its string's
+> first byte — 0xAA, the allocator's free poison (exit 70) — because D-186's overwrite drop ran in a callee that does
+> not own the struct (D-004: a plain by-value parameter is LENT — a copy of the header, none of the ownership); a
+> whole-binding assignment to a lent parameter was safe by the drop flag while a FIELD had none. The second face,
+> the planner's: `@p` or `$$m p` of a lent container handed a callee a way to free or grow the caller's body
+> through the copy (a double free at the caller's own drop, or a stale header). THE RULE: a place rooted at a lent
+> parameter whose type owns admits no write path — no assignment to it or into it, no `@`, `$$i` or `$$m`, no
+> pointer-receiver call, no stateful operation — `NITPICK-TYPE-085` from the one helper every write path asks
+> (`refuse_write_path`), the view's rule (D-266, TYPE-066) applied to the loan; a copyable parameter is a copy and
+> keeps every write, a `move T:p` owns and keeps them, and the callee that must change an owning value takes it as
+> `move`. MEASURED: the compiler's own `src/` has no such site; `npkg` had four (`strset_has`, `floor_emit`,
+> `floor_models_current`, `row_function_held` — each taking `@` of a lent set or list to READ), re-spelled as
+> pointer parameters with their callers passing `@`; the tree sweep: thirteen sites in tests/, every one a method call through a lent `dyn` parameter, admitted by the exemption; zero sites after it, over 700 files of tests/, lib/ and tools/. Tests:
+> `tests/types/rejection/loan_write.npk` (seven write paths, one code), `tests/backend/programs/loan_clone.npk`
+> (the two spellings that remain, exit 0). A refusal ADDED, announced in advance (NOTICES F10, naming 59).
+
+> **DEF-103 — FIXED at 1.6.0 step 3g (2026-09-25). A KEYWORD WAS ACCEPTED AS A DECLARED FUNCTION OR TYPE NAME.**
+> The library listener's item: `func:release = int32(int32:x) …` declared, and every call to it was PARSE-002
+> "expected an expression", since `release` is a keyword wherever it is used — a name that could be declared and
+> never named, where a keyword-named BINDING was already refused at its declaration. `p_declared_name`
+> (parse_decl.npk) reads the name at the function, trait-method and record sites and refuses a keyword with
+> PARSE-001; the four keywords the lexer interns as a name after a `.` (`acquire`, `any`, `trit`, `nit`) stay legal
+> method names (the prelude's `Mutex.acquire`). Fields, variants and parameters are unchanged (reached after a `.`
+> or never by a bare name). `tests/frontend/parse_decls.npk` gains the pair. The listener's other item — whether
+> `T[0]` is a supported type — is a statement, not a defect: TYPE_REFERENCE §9.2 says so now, with
+> `zero_len_array.npk` and `zero_len_owning.npk` as its measurement.
+
+> **DEF-104 — FIXED at 1.6.0 step 3g (2026-09-25, riding with DEF-102 by the listener's request). A LENT `T` IN A
+> GENERIC BODY ESCAPED BOTH LOAN GATES.** Found by the library listener (nitpick-regex's fifth audit, N-25; their
+> O-N22) while 3g was in its harness, and read against 3g's own source: `refuse_move_of_borrowed` (TYPE-047: a
+> lent parameter is not passed or moved out) and 3g's new `place_lent_owning` (TYPE-085) both gated on
+> `type_drops`, which is FALSE for an unsubstituted `T`, and a generic body is checked once — so
+> `func:id<T> = T(T:x) never fails { pass x; }` passed the lent value out at `id::<string>(a)` (the caller freed
+> it twice, exit 95; returned and read, the free poison) where `func:idstr = string(string:x) { pass x; }` was
+> refused, and `@x` of a lent `T:x` was the loan's generic face. D-264 settled the predicate for TYPE-046 at
+> 1.5.2f: `type_owns_for_move` treats a bare `T` and `Self` as owning. Both gates ask it now. Measured: the
+> compiler's own `src/` and `npkg` build under it; `tests/types/rejection/lent_generic.npk` reports exactly
+> {TYPE-047, TYPE-085} with a `move T` control carrying none. A THIRD gate of the same class, found by reading beside the two: `refuse_pass_of_pointee_owned` (a pointee's owning part passed out through a pointer, `pass self.v` on a `Box<T>->` receiver) asked `type_drops` too, and asks the predicate now. The switch found SEVEN sites in the tree's tests, every one a generic identity or a by-value-receiver getter returning a lent `T` (`nf_id<T>`, `identity<T>`, `scale<T>`, `Pair<U, T>.second`/`.tail`, `Cell<Pair<T, int32>>.inner`, `Box<T>.get`) — instantiated only at copyable types, where the copy was harmless and the generic body was the hole — re-spelled in D-264's forms: `move T:x` with `pass move(x)`, and a pointer receiver with `pass move(self.field)` (a move within the pointee, the vacant value left behind), and three more getters of the same shape (`list_at<T>`, `growable_get<T>`, `read_at<T>`) under the third gate — ten in all; every program answers its expected exit, `limit_ok.npk`'s rows are unchanged (vprog PASS), and the sweep after them reports only `lent_generic.npk`'s own two lines. The re-pin the listener holds after notices 59
+> and 60 closes the generic face with the rest.
+
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/done/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
 > **1.5.0 LANDED (2026-09-03)** — the skeleton with the D-007 division pair end to end (D-218/D-219; `meta/roadmap/done/1.5/1.5.0.md`). C-17→D-218's items (1)–(11) are all implemented or scoped: the SMT emitter, the determinism profile, per-function processes, the integer encoding, the ownership-trusting memory model, the content-hash identity, `llvm.assume` elision, the `undef` ban, and TCB.md. The catalogue's remaining kinds land 1.5.1–1.5.8.

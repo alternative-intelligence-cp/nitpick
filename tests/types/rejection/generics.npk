@@ -43,7 +43,7 @@ func:not_constant = NIL(int32:n) never fails { Lock<Point, (n)>:m; pass NIL; };
 // AN UNSUFFIXED LITERAL CANNOT SOLVE A PARAMETER, because it takes its type FROM
 // the parameter it fills. The fix is the turbofish, which is the only
 // expression-position form for an explicit type argument.
-func:identity<V> = V(V:x) { pass x; };
+func:identity<V> = V(move V:x) { pass move(x); };
 // expect-error: NITPICK-TYPE-022
 func:cannot_infer = NIL() never fails { int32:v = identity(5) ?! E9; pass NIL; };
 

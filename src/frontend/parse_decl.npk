@@ -940,11 +940,31 @@ func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     pass (raw p_finish_item(p, sp, DeclKind.DeclModuleDecl, flags,
                               name.payload, none, members, none, none));
 };
+// A DECLARED NAME IS AN IDENTIFIER (DEF-103, 1.6.0 step 3g; the library
+// listener's item): `func:release = …` declared, and every call to it was
+// PARSE-002 "expected an expression", because `release` is a KEYWORD wherever
+// it is used -- a name that can be declared and never named. Refused where it
+// is written, as a keyword-named binding already was. The four keywords the
+// lexer interns as a name after a `.` (`acquire`, `any`, `trit`, `nit`) stay
+// legal method names: the prelude's `Mutex.acquire` is one.
+func:p_declared_name = Token(Parser->:p) never fails {
+    Token:name = raw p_advance(p);
+    if (name.kind == TokenKind.Ident) { pass name; }
+    if (name.kind == TokenKind.KwAcquire) { pass name; }
+    if (name.kind == TokenKind.KwAny) { pass name; }
+    if (name.kind == TokenKind.KwTrit) { pass name; }
+    if (name.kind == TokenKind.KwNit) { pass name; }
+    drop p_error_at(p, raw PARSE_EXPECTED(),
+        "expected a name: a keyword cannot be declared as a function or type name, since it could never be named where it is used",
+        name.span);
+    pass name;
+};
+
 
 func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never fails {
     discard(raw p_expect(p, TokenKind.KwFunc));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);
     IdSpan:generics = raw p_parse_generics(p);
 
     discard(raw p_expect(p, TokenKind.OpAssign));
@@ -1015,7 +1035,7 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
                              bool:is_struct) never fails {
     discard(raw p_advance(p));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);
     IdSpan:generics = raw p_parse_generics(p);
     discard(raw p_expect(p, TokenKind.OpAssign));
     discard(raw p_expect(p, TokenKind.PLBrace));
@@ -1447,7 +1467,7 @@ func:p_parse_extern_fn = DeclId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     discard(raw p_expect(p, TokenKind.KwFunc));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);
     discard(raw p_expect(p, TokenKind.OpAssign));
     int32:flags = raw p_return_quals(p);
     TypeId:ret = raw p_parse_type(p);

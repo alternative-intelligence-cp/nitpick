@@ -591,7 +591,7 @@ func:count_of = int64(string:ir, string:needle) never fails {
 // for an ASYNC function, its resume (`@"npk.resume.M.f"` is the define of
 // `@"npk.M.f"`, D-177), or its checked entry's `.body` twin (D-252). The
 // harness's `_row_function_held`, byte for byte.
-func:row_function_held = bool(StrSet:defined, string:sym) never fails {
+func:row_function_held = bool(StrSet->:defined, string:sym) never fails {
     if (raw strset_has(defined, sym)) { pass true; }
     if (raw text_starts_with(sym, "@\"npk.")) {
         string:rest = raw text_slice(sym, 6i64, sym.len);
@@ -750,7 +750,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         string:ckind = string_from_bytes(rows[ci0].kind.ptr, rows[ci0].kind.len);
         if (!((raw text_eq(ckind, "invariant")) || (raw text_eq(ckind, "ensures")))) { continue; }
         string:csym = string_from_bytes(rows[ci0].symbol.ptr, rows[ci0].symbol.len);
-        if (!(raw row_function_held(defined, csym))) { continue; }
+        if (!(raw row_function_held(@defined, csym))) { continue; }
         bool:cd = (rows[ci0].verdict == (raw OV_DISCHARGED()));
         int64:cslot = 0i64 - 1i64;
         for (int64:cj in 0i64...csyms.count) {
@@ -798,7 +798,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     List<int64>:atraps = raw list_init::<int64>(16i64);
     for (int64:i in 0i64...rows.count) {
         string:sym = string_from_bytes(rows[i].symbol.ptr, rows[i].symbol.len);
-        if (!(raw row_function_held(defined, sym))) { continue; }
+        if (!(raw row_function_held(@defined, sym))) { continue; }
         // THE GUARDS OF AN ELIDED CHECK ARE GONE WITH IT (DEF-81).
         if (rows[i].ctx != 0i64) {
             bool:gone = false;
@@ -1242,7 +1242,7 @@ pub func:floor_belts = List<string>(Ctx->:c, FloorInputs->:inp) never fails {
     if (inp.models.count == 0i64) {
         drop strlist_push(@fl, "floor: runtime/models is missing, unreadable or holds no model -- the floor's protocol models are part of the tree (D-289)");
     }
-    List<string>:mfl = raw floor_models_current(@inp.ft, inp.models);
+    List<string>:mfl = raw floor_models_current(@inp.ft, @inp.models);
     for (int64:mi in 0i64...mfl.count) { drop strlist_push(@fl, raw strlist_view(mfl, mi)); }
     if (fl.count > 0i64) { pass fl; }
     string:root = string_from_bytes(c.m.root.ptr, c.m.root.len);
@@ -1316,7 +1316,7 @@ pub async func:floor_leg = Step(Ctx->:c, string:z3, string:vdir, bool:record, bo
     List<string>:bl = raw floor_belts(c, @inp);
     if (bl.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(bl, 0i64), ""))); }
     string:fdir = raw path_join(vdir, "floor");
-    List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, inp.models, fdir);
+    List<string>:ef = raw floor_emit(@inp.ft, @inp.spec, @inp.models, fdir);
     if (ef.count > 0i64) { pass (raw step_bad(string_concat(raw strlist_view(ef, 0i64), ""))); }
     Result<List<VRow>>:rows_r = read_rows(fdir);
     if (rows_r.is_error) { pass (raw step_bad("the floor's obligation directory could not be read (rows.txt)")); }
