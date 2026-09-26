@@ -1,0 +1,61 @@
+// expect-exit: 0
+// expect-obligation: err-exit discharged 2
+// expect-obligation: err-exit open 1
+// expect-obligation: overflow discharged 3
+// expect-obligation: overflow open 1
+// expect-obligation: failsafe-post discharged 14
+// expect-obligation: exhaustive checker 1
+//
+// THE COUNTED LOOP'S OPERAND ROWS (1.6.1d step 2; DEF-129, DEF-135): a twisted
+// bound holding ERR traps `TbbErr` at the head and a `uint64` bound past 2^63
+// traps `IntOverflow`; each guard is a row at the operand -- `err-exit` with
+// the goal "not ERR", `overflow` with the goal "below 2^63" -- discharged where
+// the path says so (an `is_err` test, a compare against a literal) and open for
+// a bare parameter, whose guard the verified build keeps. The literal step
+// `1u64` is a constant term and discharges on its own, and `main`'s `3i32 =>
+// tbb32` is the checked crossing's own `err-exit` row (D-278), discharged.
+mod:counted_bounds;
+error:E9;
+
+func:guarded_tbb = int64(tbb32:lim) never fails {
+    if (is_err(lim)) { pass -1i64; }
+    int64:last = -1i64;
+    loop (0i64, lim, 1i64) { last = $; }
+    pass last;
+};
+func:bare_tbb = int64(tbb32:lim) never fails {
+    int64:last = -1i64;
+    loop (0i64, lim, 1i64) { last = $; }
+    pass last;
+};
+func:guarded_u64 = int64(uint64:n) never fails {
+    if (n >= 100u64) { pass -1i64; }
+    int64:last = -1i64;
+    till (n, 1u64) { last = $; }
+    pass last;
+};
+func:bare_u64 = int64(uint64:n) never fails {
+    int64:last = -1i64;
+    till (n, 1u64) { last = $; }
+    pass last;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    tbb32:three = 3i32 => tbb32;
+    if (raw guarded_tbb(three) != 2i64) { exit 1i32; }
+    if (raw bare_tbb(three) != 2i64) { exit 2i32; }
+    if (raw guarded_u64(5u64) != 4i64) { exit 3i32; }
+    if (raw bare_u64(5u64) != 4i64) { exit 4i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

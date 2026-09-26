@@ -1560,6 +1560,23 @@ and magnitude in others.
 
 ---
 
+*[2026-09-26, 1.6.1d step 2 — a dated note (DEF-129, DEF-130, DEF-135, DEF-136).]* Four
+things the counted loop's lowering had never kept of this decision, found by the library
+listener's fuzzer (F-013, F-014) and by the step's own probes of the operand kinds:
+(1) `till` NEVER infers a direction — "`limit <= 0` | zero iterations — `till` ascends from
+`0`" is the table's row, and the emitter had inferred `till`'s direction from `0 < limit`
+as `loop`'s, running `till(-3, 1)` three times down to −2; the compile-time evaluator had
+copied the inference at DEF-29 (1.5.4), so the two agreed on the wrong answer; both ascend
+by construction now. (2) An operand is widened to the `int64` counter BY ITS OWN
+SIGNEDNESS: every operand was sign-extended, so `loop(100u8, 200u8, 1u8)` read `200` as
+−56 and counted down 156 times. (3) A `uint64` bound past 2^63 has no `int64` value and
+traps `IntOverflow` at the head (D-210's rule for a value that does not fit), the guard
+carrying its `overflow` row; a twisted bound holding ERR traps `TbbErr` (the table's own
+row, which the emitter had never written — the loop ran zero times in silence), the guard
+carrying its `err-exit` row. (4) A bound is an integer of at most 64 bits or a `tbb` of at
+most 64: a 128-bit bound reached `llc` as `sext i128 to i64`, and a float, a bool or a
+char was typed and never refused — `NITPICK-TYPE-068` at the operand now (DEF-136).
+
 ## D-023 — `for` is range-form only, with a typed binding — **SETTLED**
 
 Resolves `GRAMMAR_ADOPTION_CONFLICTS.md` A3. The C-style three-clause form shown
@@ -10203,6 +10220,14 @@ shared an id; nothing consumed function types until values of them existed);
 the func type's return slot is the SUCCESS type, spelled exactly as a
 declaration spells it, with every call — named or indirect — typing as
 `Result<success>` by one wrap in one place.
+
+*[2026-09-26, 1.6.1d step 2 — a dated note (D-329; DEF-128).]* The representation is
+amended: a range value is `{ lo, hi, inclusive }`, the bounds as written and the spelling,
+because the half-open pair could not hold an inclusive range to the type's maximum — the
+"+1 wraps and the bounds guard traps it" sentence above was true of a slice and false of a
+`for`, which has no guard and ran `0u8..255u8` zero times in silence (the library
+listener's F-012). The rule that one value serves both spellings stands: the `for` reads
+the flag, the slice view reads its expression's children as before.
 
 ## D-146 — The borrow discipline's four repairs — **SETTLED; F-1's matcher amended by D-223 (exact-type `dest_can_hold` becomes derivation-aware `can_connect`)**
 
@@ -21300,3 +21325,91 @@ the rule of 1.5.6b step 4).
 > compiler checks itself: the eleven hand impls pass the rule. `npkg verify --record` at this tree: 6,466 obligations — 3,116 discharged, 2,503 open, 0 budget, 842 unencoded, 5 checker — matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved; `nitpick.obligations` 6,199 rows before and after (no new row: `list_get`'s two raises are no guard and the checker's new loops are `for`s), 5,685 shared, ZERO verdicts moved among shared rows, ZERO (symbol, kind) discharged counts fell; the 514 rows that re-keyed are a MOVE of names (the same (symbol, kind, verdict) multiset on both sides — D-317's type-id field-function names shifted by the prelude's new trait and 94 impls, as at landing 71). The emission comparison (every program of the tree under 1.6.1b's compiler and this one): every emission's TEXT moves in two renumberings — the type-id-named symbols (`@"npk.drop.<id>"`, `@"npk.vacant.<id>"`: the prelude's trait and 94 impls shift every later type id) and D-179's site table's prelude line numbers (`@npk.site.lines`: the prelude grew by 22 lines before its guarded functions) — and in NOTHING ELSE: with both normalised, 490 of 490 identical, 0 different, 0 newly refused (the two base-refused files are the new programs); the plan's "no emission change" expectation was wrong by exactly these two renumberings, and F16 says so. The runner self-check green. The census at the landing
 > tree: no declaration of `Copy` or `list_get` anywhere in the tree or the listener's
 > repositories; F16 carried it. The record is `meta/roadmap/1.6/1.6.1c.md`.
+
+## D-328 — `cstring` is string-shaped and owns the block `to_cstring` makes; a literal and an `argv`/`environ()` element are borrowed at `cap == 0` — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-109, DEF-122)**
+
+**The history.** D-049 (0.6) made `cstring` a distinct NUL-terminated type so that no
+unterminated bytes reach a syscall and an interior NUL is a refusal, and left it a VIEW of
+two words (`{ ptr: wild char8->, len }`, TYPE_REFERENCE §3.2.1; no arm in
+`type_drops_recorded`), with `to_cstring` a fallible producer of a fresh copy. D-183 (1.2)
+gave every owner a drop and `string` its borrowed case at `cap == 0`; D-186 made
+`string_slice` an owned copy so a view could not be freed from under itself. Nothing ever
+said who frees the copy `to_cstring` makes (`npk_alloc_internal`, managed storage,
+invisible to D-151), and nothing did: every path conversion leaked `len + 1` bytes — the
+library listener's F-007, DEF-122.
+
+**The decision.** `cstring` takes `string`'s shape and rule: `{ ptr, len, cap }`, `cap == 0`
+a body the value does not own (a literal in `cstring` position, an element of `argv` or
+`environ()`), `cap > 0` a body it owns (`to_cstring`'s), the string's shared drop body,
+move-only under TYPE-046 as every owner is, a plain parameter of it a loan (TYPE-085).
+`to_cstring`'s result is dropped at scope exit like any owner; no call site changes its
+spelling; a binding-to-binding copy of a `cstring` is `.clone()` or a move. The floor's
+five `cstring` entries (`to_cstring`, `read_file`, `write_file`, `path_exists`, `open`) and
+`_start`'s two slices take and build the trio (24-byte elements), their spec rows move with
+them. The alternative — `to_cstring → Result<buffer>` plus a view-maker `cstring_of(buffer)`
+— kept the floor's layout and re-spelled every one of the 126 call sites in the tree and
+every one in the listener's repositories to two lines; one rule for the two string kinds
+(a `cstring` is to the kernel what a `string` is to the program, and a `string` already
+carries its ownership bit and its literal case) closes the class "a producer of storage
+whose result has no owner" by the TYPE, not by every caller remembering two lines. Lands
+at 1.6.1d step 3, with an advance notice to the library listener (a language change) and
+the census of `cstring` copies.
+
+## D-329 — A range value keeps its spelling: `range<T>` is `{ lo, hi, inclusive }`, D-145's half-open normalisation amended — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-110, DEF-128)**
+
+**The history.** D-145 (0.9.6) normalised every range value half-open at construction — the
+inclusive `lo..hi` stored `hi + 1` — so that no consumer asks which spelling built it, and
+accepted that "an inclusive range ending at the carrier's maximum wraps under the +1 and
+the bounds guard traps it — a loud outcome for a corner with no honest answer". True of a
+SLICE, whose guard fires; false of a `for`, which has no guard: `for (uint8:i in
+0u8..255u8)` and `for (int8:i in 0i8..127i8)` ran ZERO times in silence (the library
+listener's F-012, DEF-128), and the corner is the everyday byte loop. The head's fixed
+signed compare (`icmp slt` for every element) was the same finding's other half, the
+emitter's own.
+
+**The decision.** `range<T>` is `{ T:lo; T:hi; bool:inclusive }` — the two bounds AS
+WRITTEN and the spelling — built by the literal from its own payload with no `+ 1`, and read
+by every consumer with the flag: the `for` is empty when `lo > hi` (inclusive) or `lo >= hi`
+(exclusive), by the element's signedness, and otherwise runs from `lo` to `last` (`hi`, or
+`hi − 1` for the exclusive spelling, which exists because the range is not empty), its
+increment testing `cur == last` before it adds — no compare and no add can wrap. The slice
+view keeps reading the range EXPRESSION's own children (unchanged). `#size_of<range<T>>`
+moves by one byte and its alignment. The alternatives each fail a value the language
+spells: a wider `hi` has no width above `uint64`, a `{lo, count}` pair no count for
+`0u64..MAX`, and refusing `lo..MAX` refuses the byte loop. D-145's rule that one value
+serves both spellings stands; its representation is amended. Landed at 1.6.1d step 2.
+
+## D-330 — `<=>` is lowered for every ordered kind but the floats, which it refuses — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-111, DEF-131)**
+
+**The history.** OP_REFERENCE §0.1 and §3 and TYPE_REFERENCE §28 state the three-way
+comparison (`-1`, `0`, `1` as `int32`); the checker typed it over any ordered pair since
+its operator table was written, and no emitter arm ever lowered it — every use was
+`NITPICK-EMIT-002` (the library listener's F-015). Landing it asks what a NaN answers:
+`-1`, `0` and `1` cannot say "unordered", and `0` would claim equality of two values
+`==` calls unequal.
+
+**The decision.** `<=>` lowers as the emitter's own `<` and `>` over operands evaluated once
+— an integer by its signedness, a `char8`, a kernel identifier, a `string` where `<` is
+admitted, a twisted operand through the compare path that traps `TbbErr` on ERR — composed
+into `-1`/`0`/`1`; the encoder gives an integer pair the exact `ite` term. A FLOAT operand
+is refused by the checker with its own code (`NITPICK-TYPE-088`: `<=>` needs a total order,
+and floats have none — compare with `<`, `==` and `>` and decide the unordered case
+yourself); `<` and `>` on floats stay the ordered IEEE compares they are. Lands at 1.6.1d
+step 4.
+
+## D-331 — A certain constant division by zero, or `MIN / −1`, is refused wherever the folder decides the pair: D-310's reach extended to `/` and `%` — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-112, DEF-133's d7)**
+
+**The history.** D-310 (1.5.8b) refuses a certain constant `+ - *` overflow at every node
+the folder decides an operand pair (TYPE-076); OP_REFERENCE §1.1 promised the same for a
+constant division by zero and `MIN / −1` (TYPE-004), and the compiler kept that promise
+only where the folder was ASKED — a `fixed` initialiser, a `comptime` body — while a local
+`int32:x = 5i32 / 0i32;` compiled and trapped `DivByZero` at run time (the library
+listener's F-017, d7). A compile-time answer the reference states and a run-time trap the
+compiler gives are two behaviours for one sentence.
+
+**The decision.** The reach of D-310 extends to `/` and `%`: a division or remainder whose
+operands the folder decides is refused at the node when the divisor is zero or the pair is
+the signed minimum over −1 — `NITPICK-TYPE-004`, one report (D-240), where TYPE-076 reports
+the overflow of the other three operators. A refusal added, announced to the library
+listener in advance; the alternative was the sentence moving to "where the folder is
+asked". Lands at 1.6.1d step 4.

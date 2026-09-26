@@ -25,7 +25,7 @@ func:scrub = NIL(Path:p) never fails {
 async func:roundtrip = int32() {
     // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
     // this program at once -- two harnesses in two worktrees -- never share a file.
-    string:me = int_to_string(sys(raw SYS_GETPID()) ?! E9);
+    string:me = sys_pid_tag() ?! E9;   // fixed-width (DEF-137)
     Path:p = path_parse(string_concat("/tmp//./gone/../npk_streams_file.", string_concat(me, ".tmp"))) ?! E9;
     if (!(string_equals(p.text, string_concat("/tmp/npk_streams_file.", string_concat(me, ".tmp"))))) { pass 10i32; }
 

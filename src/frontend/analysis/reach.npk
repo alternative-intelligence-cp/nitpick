@@ -542,6 +542,7 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         // asks `counted_step_literal` before writing it (ir_stmt.npk), and so does this
         // walk; a literal step is checked by TYPE-068 and can raise nothing.
         if (!(raw counted_step_literal(x.ast, s)).is_lit) { x.saw_counted = true; }
+        drop reach_counted_bounds(x, s);
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
@@ -552,6 +553,7 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         // asks `counted_step_literal` before writing it (ir_stmt.npk), and so does this
         // walk; a literal step is checked by TYPE-068 and can raise nothing.
         if (!(raw counted_step_literal(x.ast, s)).is_lit) { x.saw_counted = true; }
+        drop reach_counted_bounds(x, s);
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
@@ -659,6 +661,21 @@ func:reach_operand_expr = NIL(Reach->:x, StmtNode:s, int32:fuel) never fails {
     ExprId:v = raw stmt_operand(s);
     if (raw expr_is_none(v)) { pass NIL; }
     drop reach_expr(x, v, fuel - 1i32);
+    pass NIL;
+};
+
+// A `uint64` BOUND PAST 2^63 TRAPS `IntOverflow` AT THE HEAD (1.6.1d step 2,
+// DEF-129): the counter is `int64`, and a value that does not fit it is D-210's
+// trap; a twisted bound's `TbbErr` is armed by the operand's own type (the
+// expression walk sees it), so only the overflow needs naming here.
+func:reach_counted_bounds = NIL(Reach->:x, StmtNode:s) never fails {
+    for (int32:i in 0i32...(raw stmt_counted_argc(x.ast, s))) {
+        int32:t = raw exprtypes_get(x.ets, raw stmt_counted_arg(x.ast, s, i));
+        if (t == 0i32) { continue; }
+        if (raw type_is_integer(x.types, t)) {
+            if ((!(raw type_is_signed(x.types, t))) && ((raw type_int_bits(x.types, t)) == 64i32)) { x.saw_ovf = true; }
+        }
+    }
     pass NIL;
 };
 

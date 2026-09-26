@@ -1,0 +1,47 @@
+// expect-exit: 0
+//
+// DEF-130 (1.6.1d step 2; the library listener's F-014): `till` ASCENDS FROM
+// ZERO AND NEVER INFERS A DIRECTION (D-022's table: `limit <= 0` is zero
+// iterations). `till(-3i64, 1i64)` ran three times down to -2, at run time
+// and in the compile-time evaluator alike (DEF-29's fix copied the emitter's
+// inference). Each shape at run time and its `comptime` twin, held equal.
+mod:till_negative;
+error:E9;
+
+comptime func:ct_till = int64(int64:lim) {
+    int64:t = 0i64; int64:n = 0i64;
+    till (lim, 1i64) { t = t + $; n = n + 1i64; }
+    pass (n * 1000i64) + t;
+};
+func:rt_till = int64(int64:lim) never fails {
+    int64:t = 0i64; int64:n = 0i64;
+    till (lim, 1i64) { t = t + $; n = n + 1i64; }
+    pass (n * 1000i64) + t;
+};
+func:k = int64(int64:v) never fails { pass v; };
+
+func:main = int32(cstring[]:_~argv) {
+    if (raw rt_till(raw k(-3i64)) != 0i64) { exit 1i32; }
+    if (raw rt_till(-3i64) != 0i64) { exit 2i32; }
+    if (raw rt_till(0i64) != 0i64) { exit 3i32; }
+    if (raw rt_till(3i64) != 3003i64) { exit 4i32; }
+    if (comptime(raw ct_till(-3i64)) != 0i64) { exit 5i32; }
+    if (comptime(raw ct_till(0i64)) != 0i64) { exit 6i32; }
+    if (comptime(raw ct_till(3i64)) != 3003i64) { exit 7i32; }
+    // `loop` keeps its inference: down from 0 to -3 is three trips
+    int64:n = 0i64;
+    loop (0i64, raw k(-3i64), 1i64) { n = n + 1i64; }
+    if (n != 3i64) { exit 8i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (BadStep) { exit 112i32; }, (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

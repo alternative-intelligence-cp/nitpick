@@ -234,6 +234,8 @@ loop(10i32, 0i32, 1i32) {
 | `start == limit` | zero iterations |
 | `till` with `limit <= 0` | zero iterations — `till` ascends from `0` |
 | a bound is `tbb` holding ERR | traps to `failsafe` — a loop bound is a control-flow decision (D-008 §5) |
+| a `uint64` bound at or above 2^63 | traps to `failsafe` with `IntOverflow` — the counter `$` is `int64`, and a value that does not fit it is D-210's trap (1.6.1d step 2) |
+| a bound wider than 64 bits, or not an integer | refused, `NITPICK-TYPE-068` — a bound is `int8`…`int64`, `uint8`…`uint64`, or a `tbb` up to 64 bits; nothing else has a counter (1.6.1d step 2) |
 
 `till` and `loop` are **not redundant**: `till` ascends from zero only, while
 `loop` handles arbitrary start points and both directions.

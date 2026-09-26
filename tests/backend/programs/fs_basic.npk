@@ -26,7 +26,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
     // this program at once -- two harnesses in two worktrees -- never share a file.
-    string:dn = string_concat("npk_fs_basic_dir.", int_to_string(sys(raw SYS_GETPID()) ?! E9));
+    string:dn = string_concat("npk_fs_basic_dir.", sys_pid_tag() ?! E9);   // fixed-width (DEF-137)
     Path:tmp = path_parse("/tmp") ?! E9;
     fd:tmpd = dir_open(tmp) ?! E9;
 

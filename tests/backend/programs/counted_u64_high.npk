@@ -1,0 +1,29 @@
+// expect-exit: 93
+//
+// DEF-129 (1.6.1d step 2): A `uint64` BOUND PAST 2^63 DOES NOT FIT THE `int64`
+// COUNTER AND TRAPS `IntOverflow` AT THE HEAD (D-210: a value that does not
+// fit traps) -- until this step it read as a negative limit and `till`
+// counted the wrong way without end. The first loop fits (ten trips); the
+// second's limit is 2^63 + 5 and reaches `failsafe`.
+mod:counted_u64_high;
+error:E9;
+func:big = uint64(uint64:v) never fails { pass v; };
+func:main = int32(cstring[]:_~argv) {
+    int64:c = 0i64;
+    loop (0u64, raw big(10u64), 1u64) { c = c + 1i64; }
+    if (c != 10i64) { exit 20i32; }
+    uint64:hi = raw big((1u64 << 63u64) | 5u64);
+    till (hi, 1u64) { c = c + 1i64; if (c > 20i64) { exit 21i32; } }
+    exit ((c =>! int32) + 30i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (BadStep) { exit 112i32; }, (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

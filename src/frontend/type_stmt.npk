@@ -914,7 +914,30 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
             s.span));
     }
     for (int32:i in 0i32...n) {
-        discard(raw type_of_expr(e, raw stmt_counted_arg(e.ast, s, i)));
+        ExprId:cai = raw stmt_counted_arg(e.ast, s, i);
+        int32:cat = raw type_of_expr(e, cai);
+        // A BOUND FITS THE `int64` COUNTER (D-022; 1.6.1d step 2, DEF-136): `$`
+        // is `int64` and the machinery works at 64 bits, so a bound is an
+        // integer of at most 64 bits or a `tbb` of at most 64 -- a wider one
+        // reached `llc` as a `sext i128 to i64`, which is no instruction, and a
+        // float, a bool or a char never had a counter. A `uint64` is admitted:
+        // a value past 2^63 traps `IntOverflow` at the head (D-210), a `tbb`
+        // holding ERR traps `TbbErr` (CONTROL_REFERENCE §2.4's table).
+        if (cat != 0i32) { if (!(raw type_is_invalid(e.types, cat))) {
+            bool:cfits = false;
+            if (raw type_is_integer(e.types, cat)) {
+                if ((raw type_int_bits(e.types, cat)) <= 64i32) { cfits = true; }
+            }
+            if ((raw type_kind(e.types, cat)) == (raw TY_TBB())) {
+                if ((raw type_int_bits(e.types, cat)) <= 64i32) { cfits = true; }
+            }
+            if (!cfits) {
+                string:cm1 = string_concat("a counted loop's bound is an integer that fits the `int64` counter `$` (D-022) -- `int8`..`int64`, `uint8`..`uint64` (a `uint64` past 2^63 traps `IntOverflow`), or a `tbb` up to 64 bits (ERR traps `TbbErr`) -- and this one is `", raw type_display(e.types, e.interns, cat));
+                discard(raw te_error(e, raw TYPE_LOOP_HEAD(),
+                    string_concat(cm1, "`, which has no counter"),
+                    (raw ast_expr(e.ast, cai)).span));
+            }
+        } }
     }
     // A LITERAL STEP IS POSITIVE (D-022; DEF-28): a zero step never reaches
     // the bound and a negative one puts the sign in the wrong clause. What

@@ -22,8 +22,9 @@ fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
 fixed string:ONE = "x";
 
 func:probe_path = string() {
-    int64:me = relay sys(raw SYS_GETPID());
-    pass (string_concat("/tmp/npk_trap_stops_runner.", int_to_string(me)));
+    // FIXED-WIDTH (DEF-137): the path's length must not follow the pid's digits.
+    string:me = relay sys_pid_tag();
+    pass (string_concat("/tmp/npk_trap_stops_runner.", me));
 };
 
 thread async func:runner = NIL(int32:_~v) joins JOIN_5S {

@@ -6412,6 +6412,42 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         for (int32:ai in 0i32...argc) {
             drop list_push(@args, raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai)));
         }
+        // THE OPERANDS' GUARDS (1.6.1d step 2; DEF-129, DEF-135): a twisted
+        // bound holding ERR traps `TbbErr` at the head -- the `err-exit` row at
+        // the operand, its goal the operand not ERR -- and a `uint64` bound past
+        // 2^63 traps `IntOverflow` (it does not fit the `int64` counter) -- the
+        // `overflow` row at the operand, its goal the operand below 2^63; each a
+        // fact after the head, as `loop-step`'s is. The emitter elides the guard
+        // where the manifest discharged the row (`counted_trap_if`).
+        for (int32:gi in 0i32...argc) {
+            ExprId:gai = raw stmt_counted_arg(e.ast, s, gi);
+            int32:gty = raw exprtypes_get(e.et, gai);
+            if (gty == 0i32) { continue; }
+            Term:gt = raw term_copy(args[gi => int64]);
+            ExprNode:gan = raw ast_expr(e.ast, gai);
+            if (raw is_twisted(e, gty)) {
+                if (gt.ok) {
+                    Term:ge = raw term_app2("=", gt, raw term_lit(raw tw_min(e, gty), false), true);
+                    drop record_err_exit(e, raw smt_app1("not", ge.text), ge.syms, gai.index, gan.span);
+                } else {
+                    List<int32>:gnone = raw list_init::<int32>(1i64);
+                    drop record(e, raw OK_ERR_EXIT(), "", gnone, raw SITE_EXPR(), gai.index, gan.span, false);
+                }
+                continue;
+            }
+            if (raw type_is_integer(e.types, gty)) {
+                if ((!(raw type_is_signed(e.types, gty))) && ((raw type_int_bits(e.types, gty)) == 64i32)) {
+                    if (gt.ok) {
+                        Term:gl = raw term_app2("<", gt, raw term_lit("9223372036854775808", false), true);
+                        drop record(e, raw OK_OVERFLOW(), gl.text, gl.syms, raw SITE_EXPR(), gai.index, gan.span, true);
+                        if (e.quiet == 0i32) { drop hyp_push(e, gl.text, gl.syms); }
+                    } else {
+                        List<int32>:gnone2 = raw list_init::<int32>(1i64);
+                        drop record(e, raw OK_OVERFLOW(), "", gnone2, raw SITE_EXPR(), gai.index, gan.span, false);
+                    }
+                }
+            }
+        }
         Term:st = raw term_lit("0", false);
         Term:li = raw term_none();
         Term:sp = raw term_none();

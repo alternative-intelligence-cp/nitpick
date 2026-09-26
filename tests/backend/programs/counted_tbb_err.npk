@@ -1,0 +1,30 @@
+// expect-exit: 110
+//
+// DEF-135 (1.6.1d step 2): A TWISTED BOUND HOLDING ERR TRAPS `TbbErr` AT THE
+// HEAD (CONTROL_REFERENCE §2.4's table, D-008 §5). Until this step the loop
+// ran zero times in silence: the carrier's MIN sign-extended into the counter
+// and the head compared it like any number. The first loop's bounds are
+// valid (three trips); the second's limit is ERR and reaches `failsafe`.
+mod:counted_tbb_err;
+error:E9;
+func:mk = tbb32(int32:n) never fails { tbb32:a = n => tbb32; pass a; };
+func:main = int32(cstring[]:_~argv) {
+    tbb32:z = raw mk(0i32);
+    int64:c = 0i64;
+    loop (z, raw mk(3i32), raw mk(1i32)) { c = c + 1i64; }
+    if (c != 3i64) { exit 20i32; }
+    tbb32:err = ERR;
+    loop (z, err, raw mk(1i32)) { c = c + 1i64; }
+    exit ((c =>! int32) + 30i32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (BadStep) { exit 112i32; }, (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

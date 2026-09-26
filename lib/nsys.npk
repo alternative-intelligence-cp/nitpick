@@ -217,3 +217,49 @@ pub func:sys_nofile_soft = NIL(int64:soft) {
     if (r.is_error) { fail r.err; }
     pass NIL;
 };
+
+// THE PROCESS'S PID AS A FIXED-WIDTH TAG (DEF-137, 1.6.1d step 2): eight decimal
+// digits, zero-padded, built with CONSTANT WORK -- one eight-byte buffer, eight
+// digit stores, one view, one copy -- for a per-process temp path (DEF-91's rule)
+// whose length AND whose making must not depend on the pid. An explored
+// program's schedule hash counts the allocator's steps: a path one byte longer
+// crossed a size class, and a padding loop that allocated once per pad digit
+// did as much work as the pid had digits missing (the first fix, measured
+// against a one-digit pid in a pid namespace); when the pid counter wrapped from
+// seven digits to fewer between two replays of one seed, `trap_stops_runner`
+// gave two hashes and the replay belt called the explored build nondeterministic
+// (harness 72's red, 2026-09-26). A pid is at most `pid_max` (4,194,304): seven
+// digits fit, eight leave a margin.
+//
+// THE DIGITS BY SUBTRACTION, NOT DIVISION (the re-base of this step, 2026-09-26):
+// the reach analysis walks every function of an imported module (DEF-86), so a
+// `/` or a `%` here asked every program importing this module -- through
+// nbridge, nproc, nfs and nio -- for `(DivByZero)` and `(DivOverflow)` arms it
+// had no division of its own for (nineteen of the tree's programs refused
+// REACH-002 at this step's first harness, the library listener's importers
+// with them). At most nine subtractions per digit and no allocation: the
+// constant work DEF-137 needs, with nothing new for a `failsafe` to name.
+func:pid_digit = int8(int64->:v, int64:p) never fails {
+    int8:d = 48i8;
+    while ((<-v) >= p) decreases <-v {
+        (<-v) = (<-v) - p;
+        d = d + 1i8;
+    }
+    pass d;
+};
+
+pub func:sys_pid_tag = string() {
+    int64:me = relay sys(raw SYS_GETPID());
+    wild int8->:b = alloc(8i64);
+    defer { dalloc(b); }
+    int64:v = me;
+    b[0i64] = raw pid_digit(@v, 10000000i64);
+    b[1i64] = raw pid_digit(@v, 1000000i64);
+    b[2i64] = raw pid_digit(@v, 100000i64);
+    b[3i64] = raw pid_digit(@v, 10000i64);
+    b[4i64] = raw pid_digit(@v, 1000i64);
+    b[5i64] = raw pid_digit(@v, 100i64);
+    b[6i64] = raw pid_digit(@v, 10i64);
+    b[7i64] = raw pid_digit(@v, 1i64);
+    pass (string_concat(string_from_bytes(b, 8i64), ""));
+};

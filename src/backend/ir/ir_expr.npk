@@ -1077,9 +1077,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // int, bool and char are one numeric constant at the node's width.
         pass (raw iv(move(ct.text), int_to_string(cv.num), ctid));
     }
-    // A range VALUE (0.9.6, D-145): `{ T, T }`, normalized HALF-OPEN at
-    // construction — the inclusive `..` stores hi+1, so every consumer sees
-    // one convention and none asks which spelling built it.
+    // A range VALUE (0.9.6, D-093; D-329 at 1.6.1d step 2): `{ T, T, i8 }` --
+    // `lo` and `hi` AS WRITTEN and the spelling in the third word (1 for the
+    // inclusive `..`, 0 for `...`). D-145 normalised the pair half-open here
+    // (`..` stored `hi + 1`), which wrapped an inclusive range to the type's
+    // maximum into an empty one: `for (uint8:i in 0u8..255u8)` ran zero times
+    // (the library listener's F-012, DEF-128). The consumer that reads a range
+    // -- the `for` -- reads the flag.
     if (n.kind == ExprKind.ExprRangeExpr) {
         int32:rtid = raw exprtypes_get(x.et, id);
         LlType:rll = raw ll_type(x.fe.ctx, rtid);
@@ -1088,21 +1092,19 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (!(raw iv_is_ok(rlo))) { pass rlo; }
         IrVal:rhi = raw emit_expr(x, raw expr_rhs(n));
         if (!(raw iv_is_ok(rhi))) { pass rhi; }
-        string:hi_ref = string_concat(rhi.ref, "");
-        if (n.payload == 1i64) {
-            string:bump = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(bump, " = add ", rhi.ll, " ",
-                              string_concat(rhi.ref, ", 1")));
-            hi_ref = move(bump);
-        }
+        string:incl = "0";
+        if (n.payload == 1i64) { incl = "1"; }
         string:ra = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(ra, " = insertvalue ", rll.text,
                           " zeroinitializer, ", raw cat5(rlo.ll, " ", rlo.ref, ", 0", "")));
         string:rb = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(rb, " = insertvalue ", rll.text, " ",
                           raw cat5(ra, ", ", rhi.ll, " ",
-                              string_concat(hi_ref, ", 1"))));
-        pass (raw iv(move(rll.text), move(rb), rtid));
+                              string_concat(rhi.ref, ", 1"))));
+        string:rc = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(rc, " = insertvalue ", rll.text, " ",
+                          raw cat4(rb, ", i8 ", incl, ", 2")));
+        pass (raw iv(move(rll.text), move(rc), rtid));
     }
     if (n.kind == ExprKind.ExprSpreadExpr) {
         // A `..^` outside a variadic call's tail is refused by the CHECKER

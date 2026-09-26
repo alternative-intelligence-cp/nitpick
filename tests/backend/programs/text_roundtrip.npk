@@ -24,7 +24,7 @@ func:scrub = NIL(Path:p) never fails {
 async func:work = int32() {
     // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
     // this program at once -- two harnesses in two worktrees -- never share a file.
-    Path:p = path_parse(string_concat("/tmp/npk_text_roundtrip.", string_concat(int_to_string(sys(raw SYS_GETPID()) ?! E9), ".tmp"))) ?! E9;
+    Path:p = path_parse(string_concat("/tmp/npk_text_roundtrip.", string_concat(sys_pid_tag() ?! E9, ".tmp"))) ?! E9;   // fixed-width (DEF-137)
     {
         ByteWriter:bw = byte_writer_create(p, raw duration_ms(500i64)) ?! E9;
         TextWriter<ByteWriter>:tw = raw text_writer(move(bw), LineEnding.CrLf);

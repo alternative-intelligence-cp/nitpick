@@ -873,16 +873,17 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
         pass (raw ll_broken());
     }
 
-    // `lo..hi` IS A TYPED VALUE (D-093): `{ T, T }`, ALWAYS HALF-OPEN — the
-    // inclusive spelling was normalized away at construction (D-145), so no
-    // consumer ever asks which kind it holds.
+    // `lo..hi` IS A TYPED VALUE (D-093): `{ T, T, i8 }` -- the two bounds AS
+    // WRITTEN and the spelling (1 for `..`, 0 for `...`), since 1.6.1d step 2
+    // (D-329, amending D-145's half-open normalisation, which could not hold
+    // an inclusive range to the type's maximum). The `for` reads the flag.
     if (k == (raw TY_RANGE())) {
         LlType:rel = raw ll_type(c, raw type_elem(c.types, id));
         if (rel.state != (raw LL_OK())) { pass rel; }
         string:ra = string_concat("{ ", rel.text);
         ra = string_concat(ra, ", ");
         ra = string_concat(ra, rel.text);
-        ra = string_concat(ra, " }");
+        ra = string_concat(ra, ", i8 }");
         pass (raw ll_ok(move(ra)));
     }
 

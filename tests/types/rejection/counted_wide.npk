@@ -1,0 +1,44 @@
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 27:11
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 27:18
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 27:26
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 28:11
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 28:19
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 29:11
+// expect-error: NITPICK-TYPE-068
+// expect-error-at: 31:11
+//
+// DEF-136 (1.6.1d step 2): A COUNTED LOOP'S BOUND FITS THE `int64` COUNTER
+// (D-022): `int8`..`int64`, `uint8`..`uint64`, or a `tbb` up to 64 bits. A
+// 128-bit bound compiled to `sext i128 to i64`, which is no instruction, and
+// `llc` refused the module; a float, a bool and a `tbb128` never had a
+// counter. Each operand is TYPE-068 at its own span (seven sites); the admitted widths run in
+// `tests/backend/programs/counted_unsigned.npk` and `counted_tbb_err.npk`.
+mod:counted_wide;
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    int64:n = 0i64;
+    loop (0u128, 10u128, 1u128) { n = n + 1i64; }
+    till (3.0f64, 1.0f64) { n = n + 1i64; }
+    till (true, 1i32) { n = n + 1i64; }
+    tbb128:w = 5i32 => tbb128;
+    till (w, 1i32) { n = n + 1i64; }
+    exit (n =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (BadStep) { exit 112i32; }, (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

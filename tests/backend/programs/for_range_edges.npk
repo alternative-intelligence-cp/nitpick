@@ -1,0 +1,122 @@
+// expect-exit: 0
+//
+// DEF-128 (1.6.1d step 2; D-329, the library listener's F-012): A `for` OVER A
+// RANGE AT ITS TYPE'S EDGES. A signed inclusive range ending at the type's
+// maximum and an unsigned range crossing the sign bit each ran ZERO times: the
+// range value was normalised half-open at construction (D-145: `..` stored
+// `hi + 1`, which wraps at the maximum) and the head compared signed whatever
+// the element. The value keeps its spelling now (`{ lo, hi, inclusive }`), the
+// head compares by the element's signedness, and the increment tests `last`
+// before it adds. Every shape counts its trips; the coroutine twin suspends
+// inside the loop (the frame-slot path). `range_type.npk` keeps the value's
+// other uses.
+mod:for_range_edges;
+error:E9;
+
+func:i8v = int8(int8:v) never fails { pass v; };
+func:u8v = uint8(uint8:v) never fails { pass v; };
+func:i32v = int32(int32:v) never fails { pass v; };
+func:i64v = int64(int64:v) never fails { pass v; };
+func:u32v = uint32(uint32:v) never fails { pass v; };
+
+func:sync_shapes = int32() never fails {
+    int64:n = 0i64;
+    for (int8:a in raw i8v(125i8)..raw i8v(127i8)) { n = n + 1i64; }
+    if (n != 3i64) { pass 1i32; }
+    n = 0i64;
+    for (int8:b in raw i8v(0i8)..raw i8v(127i8)) { n = n + 1i64; }
+    if (n != 128i64) { pass 2i32; }
+    n = 0i64;
+    for (int32:c in raw i32v(2147483645i32)..raw i32v(2147483647i32)) { n = n + 1i64; }
+    if (n != 3i64) { pass 3i32; }
+    n = 0i64;
+    for (int64:d in raw i64v(9223372036854775805i64)..raw i64v(9223372036854775807i64)) { n = n + 1i64; }
+    if (n != 3i64) { pass 4i32; }
+    n = 0i64;
+    for (uint8:e in raw u8v(100u8)..raw u8v(200u8)) { n = n + 1i64; }
+    if (n != 101i64) { pass 5i32; }
+    n = 0i64;
+    for (uint8:f in raw u8v(100u8)...raw u8v(200u8)) { n = n + 1i64; }
+    if (n != 100i64) { pass 6i32; }
+    n = 0i64;
+    for (uint32:g in raw u32v(2147483640u32)...raw u32v(2147483650u32)) { n = n + 1i64; }
+    if (n != 10i64) { pass 7i32; }
+    n = 0i64; int64:sum = 0i64;
+    for (uint8:h in raw u8v(0u8)..raw u8v(255u8)) { n = n + 1i64; sum = sum + (h => int64); }
+    if (n != 256i64) { pass 8i32; }
+    if (sum != 32640i64) { pass 9i32; }
+    n = 0i64;
+    for (uint8:k in raw u8v(250u8)..raw u8v(255u8)) { n = n + 1i64; }
+    if (n != 6i64) { pass 10i32; }
+    // the controls below the edges
+    n = 0i64;
+    for (int8:m in raw i8v(125i8)..raw i8v(126i8)) { n = n + 1i64; }
+    if (n != 2i64) { pass 11i32; }
+    n = 0i64;
+    for (uint8:p in raw u8v(10u8)..raw u8v(20u8)) { n = n + 1i64; }
+    if (n != 11i64) { pass 12i32; }
+    // the empty shapes
+    n = 0i64;
+    for (int32:q in raw i32v(5i32)..raw i32v(4i32)) { n = n + 1i64; }
+    for (int32:r in raw i32v(5i32)...raw i32v(5i32)) { n = n + 1i64; }
+    for (uint8:s in raw u8v(0u8)...raw u8v(0u8)) { n = n + 1i64; }
+    for (int8:t in raw i8v(-127i8)...raw i8v(-127i8)) { n = n + 1i64; }
+    if (n != 0i64) { pass 13i32; }
+    // a range VALUE bound first and iterated, both spellings
+    range<uint8>:whole = 0u8..255u8;
+    range<uint8>:excl = 0u8...255u8;
+    n = 0i64;
+    for (uint8:u in whole) { n = n + 1i64; }
+    if (n != 256i64) { pass 14i32; }
+    n = 0i64;
+    for (uint8:v in excl) { n = n + 1i64; }
+    if (n != 255i64) { pass 15i32; }
+    pass 0i32;
+};
+
+async func:coroutine_shapes = int32() {
+    int64:n = 0i64;
+    for (uint8:a in raw u8v(253u8)..raw u8v(255u8)) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        n = n + 1i64;
+    }
+    if (n != 3i64) { pass 21i32; }
+    n = 0i64;
+    for (int8:b in raw i8v(126i8)..raw i8v(127i8)) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        n = n + 1i64;
+    }
+    if (n != 2i64) { pass 22i32; }
+    n = 0i64;
+    for (uint8:c in raw u8v(126u8)...raw u8v(130u8)) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        n = n + 1i64;
+    }
+    if (n != 4i64) { pass 23i32; }
+    n = 0i64;
+    for (int32:d in raw i32v(3i32)...raw i32v(3i32)) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        n = n + 1i64;
+    }
+    if (n != 0i64) { pass 24i32; }
+    pass 0i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = raw sync_shapes();
+    if (a != 0i32) { exit a; }
+    int32:b = await coroutine_shapes() ?! E9;
+    if (b != 0i32) { exit b; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; }, (DeadlineExceeded) { exit 112i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

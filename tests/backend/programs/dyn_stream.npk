@@ -33,7 +33,7 @@ async func:work = int32() {
     // sink 1: raw bytes — "\n" stays "\n"
     // A PER-PROCESS PATH (DEF-91, 1.5.8b step 7): the pid in the name, so two runs of
     // this program at once -- two harnesses in two worktrees -- never share a file.
-    string:me = int_to_string(relay sys(raw SYS_GETPID()));
+    string:me = relay sys_pid_tag();   // fixed-width (DEF-137)
     Path:p1 = path_parse(string_concat("/tmp/npk_dyn_stream_raw.", string_concat(me, ".tmp"))) ?! E9;
     {
         ByteWriter:b1 = byte_writer_create(p1, raw duration_ms(500i64)) ?! E9;

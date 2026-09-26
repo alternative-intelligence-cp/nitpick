@@ -1,0 +1,65 @@
+// expect-exit: 0
+//
+// DEF-129 (1.6.1d step 2; the library listener's F-013): A COUNTED LOOP'S
+// OPERANDS ARE WIDENED BY THEIR OWN SIGNEDNESS. `loop(100u8, 200u8, 1u8)`
+// counted DOWN 156 times to -55 (the `uint8` 200 sign-extended read as -56),
+// `till(200u8, 1u8)` 56 times, and a `uint32` across 2^31 trapped. Every
+// unsigned shape here, the counter's values checked, and the descending and
+// signed twins as controls.
+mod:counted_unsigned;
+error:E9;
+
+func:u8v = uint8(uint8:v) never fails { pass v; };
+func:u32v = uint32(uint32:v) never fails { pass v; };
+
+func:main = int32(cstring[]:_~argv) {
+    int64:n = 0i64; int64:first = -1i64; int64:last = -1i64;
+    loop (raw u8v(100u8), raw u8v(200u8), 1u8) { if (first < 0i64) { first = $; } last = $; n = n + 1i64; }
+    if (n != 100i64) { exit 1i32; }
+    if (first != 100i64) { exit 2i32; }
+    if (last != 199i64) { exit 3i32; }
+    n = 0i64; first = -1i64; last = -1i64;
+    till (raw u8v(200u8), 1u8) { if (first < 0i64) { first = $; } last = $; n = n + 1i64; }
+    if (n != 200i64) { exit 4i32; }
+    if (first != 0i64) { exit 5i32; }
+    if (last != 199i64) { exit 6i32; }
+    n = 0i64;
+    loop (raw u32v(2147483640u32), raw u32v(2147483650u32), 1u32) { n = n + 1i64; }
+    if (n != 10i64) { exit 7i32; }
+    n = 0i64;
+    loop (raw u8v(250u8), raw u8v(255u8), 1u8) { n = n + 1i64; }
+    if (n != 5i64) { exit 8i32; }
+    n = 0i64;
+    till (raw u8v(255u8), 1u8) { n = n + 1i64; }
+    if (n != 255i64) { exit 9i32; }
+    n = 0i64; first = -1i64; last = -1i64;
+    loop (raw u8v(200u8), raw u8v(100u8), 1u8) { if (first < 0i64) { first = $; } last = $; n = n + 1i64; }
+    if (n != 100i64) { exit 10i32; }
+    if (first != 200i64) { exit 11i32; }
+    if (last != 101i64) { exit 12i32; }
+    n = 0i64;
+    loop (0u64, 10u64, 1u64) { n = n + 1i64; }
+    if (n != 10i64) { exit 13i32; }
+    n = 0i64;
+    till (4294967296u64, 1073741824u64) { n = n + 1i64; }
+    if (n != 4i64) { exit 14i32; }
+    // the controls: below the sign bit, and the signed reading of 200u8's bits
+    n = 0i64;
+    loop (raw u8v(10u8), raw u8v(20u8), 1u8) { n = n + 1i64; }
+    if (n != 10i64) { exit 15i32; }
+    n = 0i64;
+    loop (100i8, -56i8, 1i8) { n = n + 1i64; }
+    if (n != 156i64) { exit 16i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (BadStep) { exit 112i32; }, (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1831,6 +1831,11 @@ func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:f
     // runtime runs ten times -- a compile-time value that differed from the
     // same function's run-time value.
     bool:asc = (lo < hi);
+    // `till` NEVER INFERS (D-022's table: `limit <= 0` is zero iterations, it
+    // ascends from 0; 1.6.1d step 2, DEF-130): the emitter's inference had been
+    // copied here at DEF-29, so `till(-3, 1)` folded to three trips down to -2
+    // exactly as the run time ran them -- the same wrong answer twice.
+    if (is_till) { asc = true; }
 
     bool:saved_counting = r.fold_counting;
     int64:saved_counter = r.fold_counter;
