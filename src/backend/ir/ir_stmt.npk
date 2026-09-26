@@ -46,6 +46,7 @@ use "../../frontend/type_resolve.npk".*;
 use "../../frontend/type_decls.npk".*;
 use "../../frontend/type_trait.npk".*;   // impl_count/impl_at, method_symbol_name (D-166)
 use "../../frontend/type_names.npk".*;   // method_symbol_name (D-166)
+use "../../frontend/analysis/wild_places.npk".*;   // expr_wild_provenance: a store through a pointer drops a MANAGED pointee (DEF-120, 1.6.1d step 3)
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
@@ -843,28 +844,36 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
 // drop, or a place with no address, takes the old path.
 pub func:emit_move_out = IrVal(ExprEmitter->:x, ExprId:vid) never fails {
     ExprNode:opn = raw ast_expr(x.ast, vid);
-    if (opn.kind != ExprKind.ExprIdentifierExpr) {
-        int32:vt = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, vid));
-        if (vt > 0i32) {
-            if (raw type_drops(x.tr, vt, x.scope, 64i32)) {
-                PlaceVal:place = raw addr_of(x, vid);
-                if (place.state == (raw LL_OK())) {
-                    // THE PLACE'S TYPE THROUGH THE SPECIALIZATION (1.5.2e, the
-                    // workbench's O-N17): inside `take<T>` the element's recorded
-                    // type is `T`; `ll_type` substitutes it on its own, but the
-                    // vacant helper's SYMBOL was built from the raw id, naming a
-                    // body the drop registry could never emit -- `llc` refused
-                    // the module where npkc had accepted it.
-                    int32:pty = raw subst_emitted_type(x.fe.ctx, place.type_id);
-                    LlType:ll = raw ll_type(x.fe.ctx, pty);
-                    if (raw ll_is_ok(ll)) {
-                        string:t = raw irw_temp(x.fe.w);
-                        drop irw_line(x.fe.w, raw cat5(t, " = load ", ll.text, ", ptr ", place.addr));
-                        drop irw_line(x.fe.w, raw cat5("store ", ll.text, " zeroinitializer, ptr ", place.addr, ""));
-                        drop irw_line(x.fe.w, raw cat5("call void ", raw vacant_fn_sym(x.fe.ctx, pty),
-                                          "(ptr ", place.addr, ")"));
-                        pass (raw iv(string_concat(ll.text, ""), move(t), pty));
-                    }
+    // A WHOLE BINDING IS VACATED TOO (DEF-120, 1.6.1d step 3). The flag alone
+    // was enough while nothing read the slot after a move; the deref store's
+    // drop reads it through a held `@`: `p = @x; t = move(x); (<-p) = v;` is
+    // legal (a held `@` is D-286's plain party, and `move(x)` is not its
+    // conflict), and the stale header left in `x`'s slot would have freed
+    // `t`'s body at the store. So every moved-out place keeps the type's
+    // canonical vacant value (D-225, S-26) -- the binding beside the field
+    // and the element -- and the flag clear stays as the scope-exit drop's
+    // fast path.
+    int32:vt = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, vid));
+    if (vt > 0i32) {
+        if (raw type_drops(x.tr, vt, x.scope, 64i32)) {
+            PlaceVal:place = raw addr_of(x, vid);
+            if (place.state == (raw LL_OK())) {
+                // THE PLACE'S TYPE THROUGH THE SPECIALIZATION (1.5.2e, the
+                // workbench's O-N17): inside `take<T>` the element's recorded
+                // type is `T`; `ll_type` substitutes it on its own, but the
+                // vacant helper's SYMBOL was built from the raw id, naming a
+                // body the drop registry could never emit -- `llc` refused
+                // the module where npkc had accepted it.
+                int32:pty = raw subst_emitted_type(x.fe.ctx, place.type_id);
+                LlType:ll = raw ll_type(x.fe.ctx, pty);
+                if (raw ll_is_ok(ll)) {
+                    string:t = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat5(t, " = load ", ll.text, ", ptr ", place.addr));
+                    drop irw_line(x.fe.w, raw cat5("store ", ll.text, " zeroinitializer, ptr ", place.addr, ""));
+                    drop irw_line(x.fe.w, raw cat5("call void ", raw vacant_fn_sym(x.fe.ctx, pty),
+                                      "(ptr ", place.addr, ")"));
+                    if (opn.kind == ExprKind.ExprIdentifierExpr) { drop clear_root_flag(x, vid); }
+                    pass (raw iv(string_concat(ll.text, ""), move(t), pty));
                 }
             }
         }
@@ -920,8 +929,24 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // RHS is already computed — `s = string_concat(s, "x")` has loaned
         // the old body and finished with it — so the old value's drop sits
         // between evaluation and the store. A FLAGGED whole-local target
-        // guards its drop with the flag; a pointer target is somebody
-        // else's value and is left alone.
+        // guards its drop with the flag.
+        //
+        // A DEREFERENCE TARGET DROPS A MANAGED POINTEE (DEF-120, 1.6.1d step
+        // 3; the library listener's F-005): `(<-p) = v` was the one store
+        // shape that dropped nothing -- "a pointer target is somebody else's
+        // value and is left alone" stood here from D-183 -- and every value
+        // stored over through a pointer leaked (46,043 bytes live after a
+        // thousand stores; an `OwnedFd` stored over stayed open). A plain
+        // `T->` names a LIVE managed value by the language's contract (a
+        // binding's, a field's, an element's, a moved-out place's VACANT
+        // value), so the old pointee is dropped before the store exactly as
+        // a field is -- unless the pointer names MANUAL storage, which holds
+        // no value until the author writes one: a `wild`-qualified binding,
+        // parameter or field, an `=>! wild` cast, `#ptr_add`, an allocator's
+        // result. That reading is `expr_wild_provenance`, the escape
+        // analysis's own (D-223), so a shape either side forgot would be a
+        // leak on one and a bad free on the other. The closed direction for
+        // a wrong free is no free.
         //
         // A FIELD OR MANAGED-ELEMENT TARGET DROPS UNCONDITIONALLY (D-186,
         // closing D-183's partial-place item): a live struct's fields are
@@ -959,9 +984,18 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                     }
                 }
             }
+            if (tgt.kind == ExprKind.ExprDerefExpr) {
+                int32:dpty = raw subst_emitted_type(x.fe.ctx, place.type_id);
+                if (raw type_drops_recorded(x.fe.ctx.types, dpty, 64i32)) {
+                    if (!(raw expr_wild_provenance(x.ast, x.tab, x.interns, x.et, x.fe.ctx.types,
+                                                   raw expr_operand(tgt), raw BORROW_FUEL()))) {
+                        tgt_drops_old = true;
+                    }
+                }
+            }
             if (tgt_drops_old) {
                 drop irw_line(x.fe.w, raw cat4("call void ",
-                                  raw drop_fn_sym(x.fe.ctx, place.type_id),
+                                  raw drop_fn_sym(x.fe.ctx, raw subst_emitted_type(x.fe.ctx, place.type_id)),
                                   string_concat("(ptr ", place.addr), ")"));
             }
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
@@ -2640,12 +2674,27 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         StmtNode:arm = raw ast_stmt(x.ast, armid);
         drop s_start(x, labels[i => int64]);
         int64:mark = raw fnem_mark(x.fe);
+        // THE ARM IS A SCOPE (DEF-121, 1.6.1d step 3): its frame opens
+        // BEFORE the bindings, so a consuming binding falls inside its
+        // locals window and is dropped at the arm's end as at every exit.
+        drop fnem_defer_frame_push(x.fe);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span,
                                     raw pick_is_consuming(x, s), sel_addr);
         if (!(raw iv_is_ok(bp))) { pass bp; }
         IrVal:b = raw emit_stmt(x, raw arm_body(arm));
         if (!(raw iv_is_ok(b))) { pass b; }
+        // THE ARM'S OWN EXIT (DEF-121): its consuming bindings, flag-tested,
+        // when the body did not leave by an exit of its own -- a `pass`,
+        // `break`, `give` or `fall` inside it walked the frames and dropped
+        // them there. The read-only arm was the leak: it completed normally
+        // and its binding was released by nothing (the library listener's
+        // F-006, 46 bytes per `pick`).
+        if (!x.fe.terminated) {
+            IrVal:ar = raw run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i64);
+            if (!(raw iv_is_ok(ar))) { pass ar; }
+        }
+        drop fnem_defer_frame_pop(x.fe);
         drop fnem_release(x.fe, mark);
         drop s_br(x, done_l);
         i = i + 1i32;
@@ -2696,6 +2745,14 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         }
         drop s_start(x, test_l);
         int64:mark = raw fnem_mark(x.fe);
+        // THE ARM IS A SCOPE (DEF-121): the frame opens before the test, so
+        // a binding made in the guard's prep block or at the body's entry
+        // falls inside it. A guard that FAILS branches on without running
+        // the frame's exit: the abandoned copy of the payload is dropped by
+        // nothing, rightly -- the value is still the selector's, and the arm
+        // that finally binds it (or the wildcard's whole-value drop, DEF-88)
+        // owns it once.
+        drop fnem_defer_frame_push(x.fe);
 
         // --- the pattern's truth -------------------------------------------
         string:hit = "";
@@ -2819,6 +2876,17 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         }
         IrVal:b = raw emit_stmt(x, raw arm_body(arm));
         if (!(raw iv_is_ok(b))) { pass b; }
+        // THE ARM'S OWN EXIT (DEF-121): its consuming bindings, flag-tested,
+        // when the body did not leave by an exit of its own -- a `pass`,
+        // `break`, `give` or `fall` inside it walked the frames and dropped
+        // them there. The read-only arm was the leak: it completed normally
+        // and its binding was released by nothing (the library listener's
+        // F-006, 46 bytes per `pick`).
+        if (!x.fe.terminated) {
+            IrVal:ar = raw run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i64);
+            if (!(raw iv_is_ok(ar))) { pass ar; }
+        }
+        drop fnem_defer_frame_pop(x.fe);
         drop fnem_release(x.fe, mark);
         drop s_br(x, done_l);
     }
@@ -2977,8 +3045,21 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
     // is it.
     if (consuming) {
         if (raw type_drops_recorded(x.fe.ctx.types, bind_tid, 64i32)) {
-            string:bfl = raw irw_temp(x.fe.w);
-            drop irw_alloca(x.fe.w, bfl, "i8");
+            // IN A COROUTINE THE FLAG IS A FRAME BYTE (DEF-121, 1.6.1d step
+            // 3): role `50 + ordinal` on the arm's statement, reserved by
+            // `scan_pick_binds` beside the slot at `7 + ordinal`. An alloca
+            // dies at a suspension inside the arm, and the arm's exit reads
+            // the flag after one. No seed: the bind stores 1 before any exit
+            // of the arm can read it.
+            string:bfl = "";
+            if (x.fe.is_async) {
+                int64:fci = raw fnem_cross_find(x.fe, arm_idx, 50i32 + ordinal);
+                if (fci < 0i64) { pass ""; }
+                bfl = raw fnem_cross_gep(x.fe, fci);
+            } else {
+                bfl = raw irw_temp(x.fe.w);
+                drop irw_alloca(x.fe.w, bfl, "i8");
+            }
             drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", bfl, ""));
             drop fnem_flag_last(x.fe, move(bfl));
         }
@@ -3236,6 +3317,12 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, ExprId:sel_id, int32:sel_tid,
                         if (view) { fslot_ll = "ptr"; }
                         drop fnem_cross_add(x.fe, armid.index, 7i32 + si,
                                             fi.type_id, move(fslot_ll));
+                        // the consuming binding's flag byte (DEF-121)
+                        if (!view) {
+                            if (raw type_drops_recorded(x.fe.ctx.types, fi.type_id, 64i32)) {
+                                drop fnem_cross_add(x.fe, armid.index, 50i32 + si, 0i32, "i8");
+                            }
+                        }
                     }
                 }
             }
@@ -3259,6 +3346,11 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, ExprId:sel_id, int32:sel_tid,
                                 if (view) { pslot_ll = "ptr"; }
                                 drop fnem_cross_add(x.fe, armid.index, 7i32,
                                                     pty, move(pslot_ll));
+                                if (!view) {   // the flag byte (DEF-121)
+                                    if (raw type_drops_recorded(x.fe.ctx.types, pty, 64i32)) {
+                                        drop fnem_cross_add(x.fe, armid.index, 50i32, 0i32, "i8");
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -3274,6 +3366,11 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, ExprId:sel_id, int32:sel_tid,
                                     if (view) { bslot_ll = "ptr"; }
                                     drop fnem_cross_add(x.fe, armid.index,
                                         7i32 + bi, bs.type_id, move(bslot_ll));
+                                    if (!view) {   // the flag byte (DEF-121)
+                                        if (raw type_drops_recorded(x.fe.ctx.types, bs.type_id, 64i32)) {
+                                            drop fnem_cross_add(x.fe, armid.index, 50i32 + bi, 0i32, "i8");
+                                        }
+                                    }
                                 }
                             }
                         }

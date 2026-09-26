@@ -1,0 +1,48 @@
+// expect-exit: 0
+//
+// THE ONCE TWIN of `deref_store_churn.npk` (DEF-120, 1.6.1d step 3): the same
+// two stores through a pointer, once. Its peak is the bound the churn is held to.
+mod:deref_store_once;
+
+func:mk = string() never fails { pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c"); };
+func:nw = string() never fails { pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w"); };
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+func:store_s = NIL(string->:p) never fails { (<-p) = raw nw(); pass NIL; };
+func:store_l = NIL(List<int64>->:p) never fails { (<-p) = raw mkl(777777i64); pass NIL; };
+func:once = int32() never fails {
+    string:x = raw mk();
+    drop store_s(@x);
+    List<int64>:l = raw mkl(424242i64);
+    drop store_l(@l);
+    if (l[0i64] != 777777i64) { pass 3i32; }
+    pass raw obs_s(x);   // 22
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = raw once();
+    if (r != 22i32) { exit r; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

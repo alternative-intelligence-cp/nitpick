@@ -1,0 +1,13 @@
+# DEF-120 (1.6.1d step 3; the library listener's F-005): `(<-p) = v` drops the
+# old pointee when the pointer names managed storage -- the one store shape
+# that dropped nothing since D-183. `deref_store_churn.npk` stores a string and
+# a List over through a pointer parameter two thousand times;
+# `deref_store_once.npk` does it once. Under NPK_HEAP_STATS the churn's peak
+# must stay within `bound` times the once's: before the fix the churn's peak
+# grew with the count (46,043 bytes live after a thousand stores against the
+# once's 89 -- a factor of five hundred).
+kind    = "probe"
+program = "tests/backend/programs/deref_store_churn.npk"
+against = "tests/backend/programs/deref_store_once.npk"
+bound   = 2
+expect  = "pass"

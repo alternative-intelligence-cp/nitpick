@@ -1,0 +1,13 @@
+# DEF-121 (1.6.1d step 3; the library listener's F-006): a consuming `pick`'s
+# binding is dropped at its arm's end -- the arm is a scope in the emitter, as
+# it always was in the resolver. `pick_binding_churn.npk` runs eleven arm shapes
+# two thousand times (a read-only arm among them, the one that leaked: its
+# binding completed the arm and was released by nothing); `pick_binding_once.npk`
+# runs them once. Under NPK_HEAP_STATS the churn's peak must stay within `bound`
+# times the once's: a payload any arm left unfreed would peak thousands of
+# times it.
+kind    = "probe"
+program = "tests/backend/programs/pick_binding_churn.npk"
+against = "tests/backend/programs/pick_binding_once.npk"
+bound   = 2
+expect  = "pass"

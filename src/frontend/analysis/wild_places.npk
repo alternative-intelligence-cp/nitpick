@@ -1,0 +1,183 @@
+// WILD PROVENANCE, THE ONE READING (D-223; 1.6.1d step 3).
+//
+// Written in subset 1 (meta/SUBSET_1.md §4).
+//
+// QUALIFIERS ARE NOT PART OF THE TYPE (`parse_type.npk`'s second header fact):
+// `wild int32->` and `int32->` are one type id, so whether a place or a value
+// is MANUAL storage is read off declarations and producers, never off a type.
+// The escape analysis asked this question first, for D-223's rule that a
+// borrow never enters a `wild` slot (BORROW-011); the emitter asks the same
+// question at 1.6.1d step 3, in the other direction: a store through a
+// pointer drops the old pointee ONLY when the pointer names managed storage
+// (DEF-120), because the manual regime's storage holds no value until the
+// author writes one, and the closed direction for a wrong free is no free.
+// Two readers, ONE predicate: a shape either side forgot would be a leak on
+// one side and a bad free on the other.
+//
+// WILD PROVENANCE IS A WHITELIST, not a borrow blacklist: `=>! wild …->`, a
+// read of a `QUAL_WILD` place, a builtin whose signature hands back wild
+// storage, a user function declaring a wild return, or `NULL`. Everything else
+// — a plain pointer parameter, a plain-slot read, a call this walk cannot see
+// through — is provenance-UNKNOWN and answers `false`. For the escape analysis
+// `false` refuses (fail closed); for the emitter `false` means "a managed
+// pointee, dropped before it is overwritten" — a plain `T->` names a LIVE
+// managed value by the language's contract, and a `wild` block laundered into
+// a plain pointer by `=>! T->` is the author's assertion of exactly that.
+mod:wild_places;
+
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_decl.npk".*;
+use "../parser.npk".*;      // QUAL_WILD / QUAL_WILDX (D-223)
+use "../builtins.npk".*;    // builtin_returns_wild (D-223)
+use "../types.npk".*;
+use "../expr_types.npk".*;
+
+// Does this EXPRESSION's value come from manual storage?
+pub func:expr_wild_provenance = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
+                                     ExprTypes->:etypes, TypeTable->:types,
+                                     ExprId:id, int32:d) never fails {
+    if (raw expr_is_none(id)) { pass true; }        // nothing stored
+    if (d <= 0i32) { pass false; }
+    ExprNode:n = raw ast_expr(ast, id);
+
+    // `v =>! wild T->` — the explicit surrender of tracking (D-019).
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) {
+        if (((raw expr_cast_quals(n)) & (raw QUAL_WILD())) != 0i32) { pass true; }
+        if (((raw expr_cast_quals(n)) & (raw QUAL_WILDX())) != 0i32) { pass true; }
+        pass false;
+    }
+    // NULL is no address at all, so it cannot be a frame address (D-006).
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
+    // A builtin that HANDS BACK wild storage is the origin of every legitimate
+    // wild pointer: `alloc`, `ralloc`, `aalloc`, the wildx family. Read off the
+    // one signature table (D-201) rather than a name list here.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        ExprId:cal = raw expr_callee(n);
+        if (!(raw expr_is_none(cal))) {
+            ExprNode:cn = raw ast_expr(ast, cal);
+            if (cn.kind == ExprKind.ExprIdentifierExpr) {
+                // A BARE BUILTIN: the generated signature table carries the
+                // qualifier in its return text.
+                if (cn.a == 0i32) {
+                    if (raw builtin_returns_wild(raw intern_get(interns,
+                            cn.payload =>! int32))) { pass true; }
+                }
+                // A USER FUNCTION DECLARING A WILD RETURN. `func:grow =
+                // wild int32->(…)` states its result is unmanaged storage as
+                // plainly as a builtin's signature does — D-002's own example
+                // is `func:malloc = wild any->(int64:size)`, and the language
+                // has recorded it since 0.4 as `DECL_RET_WILD` on the
+                // declaration, because qualifiers are not part of the type.
+                // Restricting wild provenance to BUILTINS would refuse every
+                // allocator written in Nitpick and push an `=>!` onto each of
+                // its call sites, which is how an opt-out becomes a habit.
+                if (cn.a != 0i32) {
+                    Symbol:cs = raw symtab_get(tab, cn.a);
+                    if (cs.origin_kind == (raw SYM_DECL())) {
+                        DeclNode:cd = raw ast_decl(ast, DeclId{ index: cs.origin });
+                        if (cd.kind == DeclKind.DeclFunctionDecl) {
+                            if (raw decl_has(cd, raw DECL_RET_WILD())) { pass true; }
+                            if (raw decl_has(cd, raw DECL_RET_WILDX())) { pass true; }
+                        }
+                    }
+                }
+            }
+        }
+        pass false;
+    }
+    // THE SIGIL FORM `#name<T>(…)` IS A BUILTIN TOO. `ExprBuiltinExpr` is a
+    // separate node kind from `ExprCallExpr`, and a whitelist that checked
+    // only the latter refused every `#ptr_add<T>(p, i)` in the tree —
+    // pointer arithmetic on wild storage, which is the one thing the manual
+    // regime is FOR.
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw builtin_returns_wild(raw intern_get(interns, n.payload =>! int32)));
+    }
+    // A READ OF A WILD PLACE keeps its provenance: `fe.dframes` is wild
+    // storage, and moving it to another wild slot moves wild storage.
+    if (n.kind == ExprKind.ExprIdentifierExpr)   { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    if (n.kind == ExprKind.ExprIndexExpr)        { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    // `move(p)`, `raw f()` and `relay f()` pass the operand's provenance through unchanged.
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        pass (raw expr_wild_provenance(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) {
+        pass (raw expr_wild_provenance(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if (n.kind == ExprKind.ExprRelayExpr) {
+        pass (raw expr_wild_provenance(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    pass false;
+};
+
+// Is this PLACE a `wild`-qualified slot? A local's qualifier rides its
+// declaration, a parameter's its parameter, a field's the field decl — the
+// three spellings a store site can see. An element is its array's.
+pub func:place_wild = bool(Ast->:ast, SymbolTable->:tab, ExprTypes->:etypes,
+                           TypeTable->:types, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(ast, id);
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        pass (raw place_wild(ast, tab, etypes, types, raw expr_lhs(n)));
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass false; }
+        Symbol:sy = raw symtab_get(tab, n.a);
+        if (sy.origin_kind == (raw SYM_STMT())) {
+            StmtNode:ds = raw ast_stmt(ast, StmtId{ index: sy.origin });
+            if (ds.kind != StmtKind.StmtVarDeclStmt) { pass false; }
+            pass (((raw stmt_quals(ast, ds)) & (raw QUAL_WILD())) != 0i32);
+        }
+        // A `wild`-QUALIFIED PARAMETER IS A WILD PLACE TOO. Found by the D-223
+        // audit itself, in `llctx_set_impls(LlCtx->:c, wild ImplTable->:t, …)`
+        // storing `t` into a wild field: wild provenance arrives through a
+        // parameter as readily as through a local, and reading only the
+        // declaring STATEMENT missed every one of them.
+        if (sy.origin_kind == (raw SYM_DECL())) {
+            DeclNode:pd = raw ast_decl(ast, DeclId{ index: sy.origin });
+            if (pd.kind == DeclKind.DeclParamDecl) {
+                pass (((raw param_quals(pd)) & (raw QUAL_WILD())) != 0i32);
+            }
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:base = raw exprtypes_get(etypes, raw expr_operand(n));
+        if (base == 0i32) { pass false; }
+        if ((raw type_kind(types, base)) == (raw TY_POINTER())) {
+            base = raw type_elem(types, base);
+        }
+        if ((raw type_kind(types, base)) != (raw TY_STRUCT())) { pass false; }
+        pass (raw field_named_wild(ast, types, base, n.payload =>! int32));
+    }
+    pass false;
+};
+
+// Is the named field of this struct type `wild`-qualified? The literal's
+// window carries field NAMES as intern indices, so the lookup is by name
+// rather than through a place expression.
+pub func:field_named_wild = bool(Ast->:ast, TypeTable->:types, int32:sty,
+                                 int32:fname) never fails {
+    if (sty == 0i32) { pass false; }
+    if ((raw type_kind(types, sty)) != (raw TY_STRUCT())) { pass false; }
+    DeclId:did = DeclId{ index: raw type_decl(types, sty) };
+    DeclNode:sd = raw ast_decl(ast, did);
+    int32:i = 0i32;
+    int32:nmembers = raw item_member_count(ast, sd);
+    while (i < nmembers) decreases nmembers - i {
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, sd, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            if ((raw decl_name(m)) == fname) {
+                pass (((raw field_quals(m)) & (raw QUAL_WILD())) != 0i32);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};

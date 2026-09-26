@@ -110,6 +110,36 @@ of an OWNING field or element of a `limit<Rules>` binding refuses
 (NITPICK-TYPE-063) — the vacant value it would leave (D-254) is a write no
 rule can be asked to admit; move the whole binding, or copy the part.
 
+**A moved-out whole binding is VACANT, not stale (DEF-120, 1.6.1d step 3).** The
+emitter used to clear the binding's drop flag and leave the old header in the
+slot; since a store through a held pointer drops what it finds (below), the slot
+holds the type's canonical vacant value after `move(x)` or `pass x`, exactly as
+a moved-out field or element does (D-254): `p = @x; string:t = move(x); (<-p) =
+v;` frees nothing of `t`'s.
+
+### 1.1d The four store shapes, and what each drops (D-186, DEF-120)
+
+Assigning over an owning value releases the old one first, after the right-hand
+side is computed. The four shapes:
+
+| Store | The old value | Since |
+|---|---|---|
+| `x = v` (a whole binding) | dropped, guarded by the binding's flag | D-183 |
+| `s.f = v` (an owning field) | dropped unconditionally — a live struct's fields are live or vacant | D-186 |
+| `a[i] = v`, `l[i] = v` (a managed array's or `List`'s element) | dropped unconditionally | D-186, D-247 |
+| `(<-p) = v` (through a pointer) | dropped when `p` names MANAGED storage; left alone when `p` is `wild` | DEF-120 |
+
+"`p` is wild" is the escape analysis's own wild-provenance reading (D-223,
+`src/frontend/analysis/wild_places.npk` — one predicate for the analysis and the
+emitter): a `wild`-qualified binding, parameter or field, an element of one, an
+`=>! wild T->` cast, `#ptr_add`/`#wild_slice`, an allocator's or a
+wild-returning function's result. Manual storage holds no value until the
+author writes one, and the closed direction for a wrong free is no free. A plain
+`T->` names a live managed value by the language's contract — a binding's, a
+field's, an element's, a vacant one after a move — and a `wild` block cast to a
+plain pointer by `=>! T->` is the author's assertion of exactly that: spell the
+cast `=>! wild T->` for storage that holds no value yet.
+
 ### 1.2 `stack`
 Forces explicit allocation onto the hardware call stack. Extremely fast (just a pointer bump), with memory reclaimed exactly at the scope's exit.
 ```nitpick

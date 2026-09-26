@@ -1,0 +1,171 @@
+// expect-exit: 0
+//
+// THE ONCE TWIN of `pick_binding_churn.npk` (DEF-121, 1.6.1d step 3): the
+// eleven arm shapes, once. Its peak is the bound the churn is held to.
+mod:pick_binding_once;
+
+enum:Opt = { Non; Som(string); };
+enum:Pair = { Two(string, string); One(string); };
+struct:Box = { string:s; int64:n; };
+
+func:mk = string() never fails { pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c"); };
+func:nw = string() never fails { pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w"); };
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+async func:tick = int32() { pass 1i32; };
+
+// (a) the read-only arm, completing normally: the leak F-006 found
+func:arm_read = int32(move Opt:e) never fails {
+    int32:acc = 0i32;
+    pick (move(e)) {
+        (Som(x)) { acc = raw obs_s(x); },
+        (Opt.Non) { acc = 0i32; }
+    }
+    pass acc;
+};
+// (b) the moved-out arm: the binding owns nothing at the arm's end
+func:arm_moved = int32(move Opt:e) never fails {
+    int32:acc = 0i32;
+    pick (move(e)) {
+        (Som(x)) { string:y = move(x); acc = raw obs_s(y); },
+        (Opt.Non) { acc = 0i32; }
+    }
+    pass acc;
+};
+// (c) the lending arm: a view, the selector still the caller's
+func:arm_lend = int32(Opt:e) never fails {
+    int32:acc = 0i32;
+    pick (e) {
+        (Som(x)) { acc = raw obs_s(x); },
+        (Opt.Non) { acc = 0i32; }
+    }
+    pass acc;
+};
+// (d) the wildcard arm: the whole value dropped at the bind (DEF-88)
+func:arm_wild = int32(move Opt:e) never fails {
+    int32:acc = 0i32;
+    pick (move(e)) {
+        (Som(_)) { acc = 21i32; },
+        (Opt.Non) { acc = 0i32; }
+    }
+    pass acc;
+};
+// (e) a guarded arm whose guard FAILS, then the arm that binds the payload
+func:arm_guarded = int32(move Opt:e) never fails {
+    int32:acc = 0i32;
+    pick (move(e)) {
+        (Som(x)) where (x.len > 1000i64) { acc = 5i32; },
+        (Som(y)) { acc = raw obs_s(y); },
+        (Opt.Non) { acc = 0i32; }
+    }
+    pass acc;
+};
+// (f) an arm left by `break`, out of the loop that holds the pick
+func:arm_break = int32() never fails {
+    int32:acc = 0i32;
+    for (int32:i in 0i32...3i32) {
+        Opt:e = Opt.Som(raw mk());
+        pick (move(e)) {
+            (Som(x)) { acc = acc + raw obs_s(x); break; },
+            (Opt.Non) { }
+        }
+    }
+    pass acc;
+};
+// (g) an arm left by `pass`
+func:arm_pass = int32(move Opt:e) never fails {
+    pick (move(e)) {
+        (Som(x)) { pass raw obs_s(x); },
+        (Opt.Non) { pass 0i32; }
+    }
+};
+// (h) a value pick whose arm binds and gives something else: dropped at the `give`
+func:arm_give = int32(move Opt:e) never fails {
+    int32:v = pick (move(e)) {
+        (Som(x)) { give raw obs_s(x); },
+        (Opt.Non) { give 0i32; }
+    };
+    pass v;
+};
+// (i) two payloads bound, both dropped at the arm's end; the `One` arm too
+func:arm_two = int32(move Pair:p) never fails {
+    int32:acc = 0i32;
+    pick (move(p)) {
+        (Two(a, b)) { acc = raw obs_s(a) + raw obs_s(b); },
+        (One(s)) { acc = raw obs_s(s); }
+    }
+    pass acc;
+};
+// (j) a struct destructure, consuming: the owning field bound and dropped
+func:arm_struct = int32(move Box:b) never fails {
+    int32:acc = 0i32;
+    pick (move(b)) {
+        (Box{ s, n }) { acc = raw obs_s(s) + (n =>! int32); }
+    }
+    pass acc;
+};
+// (k) THE COROUTINE: a suspension inside the arm, the binding read after it,
+//     the arm completing normally -- its flag is a frame byte (role 50 + ordinal)
+async func:arm_await = int32(move Opt:e) {
+    int32:acc = 0i32;
+    pick (move(e)) {
+        (Som(x)) {
+            discard(await tick() ?| 0i32);
+            acc = raw obs_s(x);
+        },
+        (Opt.Non) { acc = 0i32; }
+    }
+    pass acc;
+};
+
+// Every shape once; 21 + 21 + 21 + 21 + 21 + 21 + 21 + 21 + 43 + 26 + 21 = 258.
+async func:round = int32() {
+    int32:acc = 0i32;
+    Opt:a = Opt.Som(raw mk());
+    acc = acc + raw arm_read(move(a));
+    Opt:b = Opt.Som(raw mk());
+    acc = acc + raw arm_moved(move(b));
+    Opt:c = Opt.Som(raw mk());
+    acc = acc + raw arm_lend(c);
+    Opt:d = Opt.Som(raw mk());
+    acc = acc + raw arm_wild(move(d));
+    Opt:f = Opt.Som(raw mk());
+    acc = acc + raw arm_guarded(move(f));
+    acc = acc + raw arm_break();
+    Opt:g = Opt.Som(raw mk());
+    acc = acc + raw arm_pass(move(g));
+    Opt:h = Opt.Som(raw mk());
+    acc = acc + raw arm_give(move(h));
+    Pair:p = Pair.Two(raw mk(), raw nw());
+    acc = acc + raw arm_two(move(p));
+    Box:bx = Box{ s: raw mk(), n: 5i64 };
+    acc = acc + raw arm_struct(move(bx));
+    Opt:k = Opt.Som(raw mk());
+    int32:kk = await arm_await(move(k)) ?| 0i32;   // the await first in its statement (D-178)
+    acc = acc + kk;
+    pass acc;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:r = await round() ?| 0i32;
+    if (r != 258i32) { exit r; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

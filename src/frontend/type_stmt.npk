@@ -579,7 +579,228 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
     }
     drop type_pick_bindings(e, selt, start, count);
     drop check_pick_view_binds(e, selt, consuming, start, count);
+    drop check_arm_control(e, selid, start, count);
     pass (PickRules{ ok: true, consuming: consuming });
+};
+
+// --- the arm's control: a guard that spends, a `fall` that binds (1.6.1d step 3) --
+//
+// Two rules the arm scope of a consuming `pick` (DEF-121) made visible, both
+// found by the step's probes before the scope landed:
+//
+// A `where` GUARD DECIDES AND DOES NOT CONSUME (DEF-138): the bindings a guard
+// reads were copied out of the selector BEFORE the arm was chosen, and a
+// failing guard hands the selector to the next arm, which binds the same
+// payload again. A `move` of the arm's own binding inside its guard therefore
+// spends a payload another arm will own -- a double free in safe code
+// (measured: exit 95 through the heap's integrity trap). A move of anything
+// else in a guard is a conditional move the move analysis already tracks; a
+// LENDING arm's bindings are views TYPE-047 never lets move.
+//
+// A `fall` LANDS ON AN ARM THAT BINDS NOTHING (DEF-139): `fall label;` enters
+// the labelled arm's body without matching its pattern, and that arm extracts
+// its bindings from the selector at the body's entry -- from a payload of
+// whatever variant the selector holds (measured: a `Non` fell into `(Som(x))`
+// and `x` read the empty payload area). And it names an arm of ITS OWN `pick`
+// (DEF-140): the emitter resolved the label against the innermost pick and
+// reported an unknown one as EMIT-002, a compiler-defect report for a program
+// mistake; the identifier's own RESOLVE-002 says it now. A nested `pick`'s
+// `fall`s are that pick's, checked when it is typed, so the walk does not
+// descend into one; a nested pick's MOVES are walked, since they too run
+// before the enclosing guard decides.
+func:check_arm_control = NIL(ExprTyper->:e, ExprId:selid, int32:start, int32:count) never fails {
+    for (int32:i in 0i32...count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
+        drop guard_move_of_binding(e, raw arm_guard(arm), selid, 64i32);
+        drop fall_targets_in(e, raw arm_body(arm), start, count, 64i32);
+    }
+    pass NIL;
+};
+
+// The guard's expression, walked for a `move` rooted at one of this pick's
+// pattern bindings -- a `SYM_PAT` symbol linked to this selector (D-266). The
+// descent is the AST's shape table, as the suspend analysis's guard walk is.
+func:guard_move_of_binding = NIL(ExprTyper->:e, ExprId:id, ExprId:selid, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        int32:root = raw root_sym_through_views(e, raw expr_operand(n), 64i32);
+        if (root != 0i32) {
+            Symbol:rs = raw symtab_get(e.tab, root);
+            if (rs.origin_kind == (raw SYM_PAT())) {
+                if (rs.link == selid.index) {
+                    string:m1 = string_concat("`move` of `", raw intern_get(e.interns, rs.name));
+                    drop diaglist_push(e.diags, raw diag_error(raw TYPE_GUARD_MOVES_BINDING(),
+                        string_concat(m1, "` inside its own arm's `where` guard spends the payload before the arm is chosen: when the guard fails, the next arm binds the same payload from the selector and frees it a second time (DEF-138) -- decide in the guard, move in the body"),
+                        n.span));
+                    pass NIL;
+                }
+            }
+        }
+        drop guard_move_of_binding(e, raw expr_operand(n), selid, fuel - 1i32);
+        pass NIL;
+    }
+    // A value-`pick` inside the guard: its selector, its arms' guards and bodies.
+    if (n.kind == ExprKind.ExprPickExpr) {
+        StmtNode:ps = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
+                                a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        drop guard_move_of_binding(e, raw pick_selector(ps), selid, fuel - 1i32);
+        int32:narms = raw pick_arm_count(ps);
+        for (int32:j in 0i32...narms) {
+            StmtNode:parm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(ps), j));
+            drop guard_move_of_binding(e, raw arm_guard(parm), selid, fuel - 1i32);
+            drop stmt_moves_binding(e, raw arm_body(parm), selid, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) decreases cnt - i {
+            drop guard_move_of_binding(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), i) },
+                                       selid, fuel - 1i32);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop guard_move_of_binding(e, raw expr_callee(n), selid, fuel - 1i32);
+        drop guard_move_window(e, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                               (raw expr_list_count(n)) - (raw expr_generic_count(n)), selid, fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        drop guard_move_window(e, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                               (raw expr_list_count(n)) - (raw builtin_generic_count(n)), selid, fuel);
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF()))   { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop guard_move_window(e, raw expr_list_start(n), raw expr_list_count(n), selid, fuel);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE()))   { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass NIL; }
+    drop guard_move_of_binding(e, raw expr_lhs(n), selid, fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop guard_move_window(e, raw expr_list_start(n), raw expr_list_count(n), selid, fuel);
+        pass NIL;
+    }
+    drop guard_move_of_binding(e, raw expr_rhs(n), selid, fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop guard_move_of_binding(e, raw expr_third(n), selid, fuel - 1i32);
+    pass NIL;
+};
+
+func:guard_move_window = NIL(ExprTyper->:e, int32:start, int32:count, ExprId:selid,
+                             int32:fuel) never fails {
+    for (int32:i in 0i32...count) {
+        drop guard_move_of_binding(e, ExprId{ index: raw ast_id_at(e.ast, start, i) }, selid, fuel - 1i32);
+    }
+    pass NIL;
+};
+
+// A statement inside a guard's value-`pick`: its expressions, then its children.
+func:stmt_moves_binding = NIL(ExprTyper->:e, StmtId:sid, ExprId:selid, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop guard_move_of_binding(e, raw pick_selector(s), selid, fuel - 1i32);
+        int32:narms = raw pick_arm_count(s);
+        for (int32:j in 0i32...narms) {
+            StmtNode:parm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), j));
+            drop guard_move_of_binding(e, raw arm_guard(parm), selid, fuel - 1i32);
+            drop stmt_moves_binding(e, raw arm_body(parm), selid, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    List<int32>:ids = raw list_init::<int32>(8i64);
+    drop stmt_expr_ids(e.ast, s, @ids);
+    for (int64:k in 0i64...ids.count) {
+        drop guard_move_of_binding(e, ExprId{ index: ids[k] }, selid, fuel - 1i32);
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(s);
+        for (int32:i in 0i32...n) {
+            drop stmt_moves_binding(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) },
+                                    selid, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop stmt_moves_binding(e, raw stmt_then(s), selid, fuel - 1i32);
+        drop stmt_moves_binding(e, raw stmt_else(s), selid, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop stmt_moves_binding(e, raw stmt_body(e.ast, s), selid, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop stmt_moves_binding(e, raw stmt_when_body(e.ast, s), selid, fuel - 1i32);
+        drop stmt_moves_binding(e, raw stmt_when_then(e.ast, s), selid, fuel - 1i32);
+        drop stmt_moves_binding(e, raw stmt_when_end(e.ast, s), selid, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt)   { drop stmt_moves_binding(e, raw stmt_for_body(e.ast, s), selid, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtLoopStmt)  { drop stmt_moves_binding(e, raw stmt_counted_body(s), selid, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtTillStmt)  { drop stmt_moves_binding(e, raw stmt_counted_body(s), selid, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtDeferStmt) { drop stmt_moves_binding(e, StmtId{ index: s.a }, selid, fuel - 1i32); pass NIL; }
+    pass NIL;
+};
+
+// Every `fall` reachable in an arm's body without entering a nested `pick`:
+// its label names an arm of THIS pick, and that arm binds nothing.
+func:fall_targets_in = NIL(ExprTyper->:e, StmtId:sid, int32:start, int32:count, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtFallStmt) {
+        int32:want = raw stmt_label(s);
+        for (int32:i in 0i32...count) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
+            if ((raw arm_label(arm)) == want) {
+                if (raw arm_binds_name(e, arm)) {
+                    string:f1 = string_concat("`fall ", raw intern_get(e.interns, want));
+                    drop diaglist_push(e.diags, raw diag_error(raw TYPE_FALL_INTO_BINDING(),
+                        string_concat(f1, ";` targets an arm that binds a name: the target's pattern is never matched against the selector, so its bindings would read a payload of whatever variant the selector holds (DEF-139) -- fall only to an arm that binds nothing"),
+                        s.span));
+                }
+                pass NIL;
+            }
+        }
+        string:u1 = string_concat("no arm of this `pick` is labelled `", raw intern_get(e.interns, want));
+        drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(),
+            string_concat(u1, "`: `fall` names the label of an arm of the same `pick` (`label: (pattern) { ... }`)"),
+            s.span));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(s);
+        for (int32:i in 0i32...n) {
+            drop fall_targets_in(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) },
+                                 start, count, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop fall_targets_in(e, raw stmt_then(s), start, count, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_else(s), start, count, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop fall_targets_in(e, raw stmt_body(e.ast, s), start, count, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop fall_targets_in(e, raw stmt_when_body(e.ast, s), start, count, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_when_then(e.ast, s), start, count, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_when_end(e.ast, s), start, count, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt)   { drop fall_targets_in(e, raw stmt_for_body(e.ast, s), start, count, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtLoopStmt)  { drop fall_targets_in(e, raw stmt_counted_body(s), start, count, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtTillStmt)  { drop fall_targets_in(e, raw stmt_counted_body(s), start, count, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtDeferStmt) { drop fall_targets_in(e, StmtId{ index: s.a }, start, count, fuel - 1i32); pass NIL; }
+    pass NIL;
 };
 
 // EVERY ARM OVER AN `Error` SELECTOR (D-275, 1.5.4d step 1) -- `failsafe`'s

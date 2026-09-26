@@ -1374,6 +1374,15 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                 pcons = true;
             }
         }
+        // A CONSUMING PICK TAKES ITS SELECTOR (D-216, D-246) -- in THIS
+        // spelling too (DEF-141, 1.6.1d step 3): the arms own the payloads
+        // they bind and drop them at their exits, so the selector is no
+        // longer the statement's temporary. The statement form said so since
+        // D-246; the expression form left the moved-in value on the
+        // temporaries list, and the statement's end dropped the whole enum
+        // after an arm had already taken (or `give move(x)`n away) its
+        // payload -- a double free, exit 95 on every compiler before this one.
+        if (pcons) { drop temp_take(x, psv.ref); }
         IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, move(pdll),
                         n.b, n.c, string_concat(pslot, ""), string_concat(pll2.text, ""), ptid,
                         pcons, string_concat(psa.addr, ""));

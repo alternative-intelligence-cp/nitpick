@@ -13736,6 +13736,16 @@ What REMAINS of D-183's partial-place item after this: destructuring
 ownership and statement-end temporaries, unchanged; the field/element
 OVERWRITE half is closed.
 
+> **Note (2026-09-26, 1.6.1d step 3 — DEF-120):** the FOURTH store shape drops too. This decision's
+> field and element overwrite left the dereference target alone ("a pointer target is somebody
+> else's value"), and every value stored over through a `T->` leaked its body (the library
+> listener's F-005: 46,043 bytes live after a thousand stores, a stored-over `OwnedFd` left open).
+> `(<-p) = v` now drops the old pointee before the store when the pointee's type owns and the
+> pointer names MANAGED storage — a `wild` binding, parameter or field, an `=>! wild` cast,
+> `#ptr_add`, an allocator's result stay drop-free (the escape analysis's wild-provenance
+> reading, `wild_places.npk`, is the one predicate); a plain `T->` names a live managed value by
+> the language's contract, a `wild` block laundered by `=>! T->` included.
+
 ## D-187 — `#ptr_add<T>` is element-scaled; `atomic_from_ptr` is fused-only over the turbofish — **SETTLED at 1.1.13a**
 
 **`#ptr_add<T>(ptr, offset)` — SETTLED.** The offset is in **ELEMENTS of
@@ -15257,6 +15267,18 @@ payloads they bind and drop them at their exits" — is 1.6.1d step 3's (DEF-121
 binding's flag was set and nothing ever read it, because the arm was not a scope in the
 emitter).
 
+> **Note (2026-09-26, 1.6.1d step 3 — DEF-121, DEF-138, DEF-139, DEF-141):** the consuming arm is a
+> SCOPE in the emitter as it is in the resolver: its bindings are dropped at the arm's end, and at
+> every exit from it (the library listener's F-006 found the read-only arm's payload released by
+> nothing); a coroutine's binding keeps its flag in the frame (role `50 + ordinal`). Three rules
+> the scope made visible: a `move` of the arm's own binding inside its `where` guard is refused
+> (`NITPICK-TYPE-089` — a failing guard hands the payload to the next arm, which bound and freed
+> it a second time), a `fall` lands only on an arm that binds nothing (`NITPICK-TYPE-090` — the
+> target's pattern is never matched, so its bindings read whatever the selector holds) and names
+> an arm of its own `pick` (RESOLVE-002 where the emitter said EMIT-002), and the EXPRESSION form
+> takes its consuming selector off the statement's temporaries as the statement form does (D-246;
+> `give move(x)` handed out a body the statement then freed).
+
 ## D-217 — NIKOS struck from 1.5 — **SETTLED (user-ratified; B-5)**
 
 A decision, not a deferral-by-silence: Astrée IS the
@@ -16382,6 +16404,10 @@ is total and needs no second mechanism. **Declined — keeping the rung** for th
 class: a rung says "later", and there is no later for a language rule (the
 standing no-deferral rule).
 
+> **Note (2026-09-26 — D-333):** the `cstring` row moves under D-328: a `cstring` owns its body at
+> `cap > 0` and borrows only a literal's or an `argv`/`environ()` element's at `cap == 0`, `string`'s
+> two cases, so it rides a channel and crosses a spawn as a `string` does (lands at 1.6.1d step 3b).
+
 ## D-236 — source paths are recorded relative to the manifest root, for diagnostics and the site table alike — **SETTLED (user decision, 2026-09-01)**
 
 Closes OPEN_DECISIONS S-7, found at the 1.4.7 close. D-179's site table records
@@ -16468,6 +16494,10 @@ runner self-check gains the case: a negative test reporting a second code its
 expectations do not name must FAIL. BUILD_REFERENCE §7.1's measured note is
 replaced by the rule as enforced. The eight files' resolutions are
 pre-settled in `meta/roadmap/1.4/1.4.8b.md`.
+
+> **Note (2026-09-26 — D-332):** the SET is not enough: a site the checker never reports is invisible
+> when its code appears elsewhere in the file (`aliasing.npk`'s documented BORROW-013 case, silent
+> for a cycle). D-332 adds the COUNT of sites per code, held to the lines naming it, in both runners.
 
 ## D-238 — every suite `npkg test` runs is declared in the manifest, and both runners read the one table — **SETTLED (user decision, 2026-09-02)**
 
@@ -16873,6 +16903,11 @@ nested form to 4× the bound form's peak — measured ×3.0, three live bodies a
 the store against two (the plan wrote 2 before the mechanics were known; the
 probe's comment carries the count).
 
+> **Note (2026-09-26, 1.6.1d step 3 — DEF-141):** a consuming `pick` EXPRESSION's selector is not
+> its statement's temporary — the arms own the payloads they bind and drop them at their exits,
+> as this decision said of the statement form. The expression form had left the moved-in value
+> on the list, and the statement's end dropped the whole enum after an arm had taken its payload.
+
 ## D-247 — `List<T>` is compiler-known and OWNING — **SETTLED (ratified with 1.5.1b; landed at step 5, 2026-09-04)**
 
 The compiler's own growable collection (`src/frontend/list.npk`, 1.4.7's
@@ -17075,6 +17110,13 @@ alternative, refusing partial moves, would strike the resolver's own idiom.
 first record. D-251 adds the one exception: a proper sub-place of a
 LIMITED binding may not be moved out of, since the vacate is a write no
 rule can admit.
+
+> **Note (2026-09-26, 1.6.1d step 3 — DEF-120):** a moved-out WHOLE binding keeps the vacant value
+> too. The flag alone was enough while nothing read the slot after a move; the dereference store's
+> drop reads it through a held `@` — `p = @x; string:t = move(x); (<-p) = v;` is legal (a held `@`
+> is D-286's plain party) — and the stale header would have freed `t`'s body at the store. So
+> `emit_move_out` vacates a whole binding as it vacates a field or an element (the flag clear stays
+> as the scope-exit drop's fast path): one rule for every moved-out place.
 
 ## D-255 — the statement after `wild_release_all()` must be `exit` — **SETTLED (user decision, 2026-09-04; 1.5.1b S-27; landed at 1.5.1b step 5 as the fix, NITPICK-TYPE-062)**
 
@@ -21413,3 +21455,36 @@ the signed minimum over −1 — `NITPICK-TYPE-004`, one report (D-240), where T
 the overflow of the other three operators. A refusal added, announced to the library
 listener in advance; the alternative was the sentence moving to "where the folder is
 asked". Lands at 1.6.1d step 4.
+
+## D-332 — a rejection test's reported sites are COUNTED per code: both runners hold the number of sites a code is reported at to the number of `expect-error` lines naming it — **SETTLED (user decision, 2026-09-26: "go with your recommendations on those two questions. they look fine to me."; S-113)**
+
+**The history.** D-237 (1.4.8b) made both runners hold a rejection file to the SET of codes
+its `expect-error` lines name — every reported code expected, every expected code reported —
+replacing the subset match that had let seventeen files carry unasserted extras. A SET cannot
+see a silent site: 1.6.1d step 1's sweep found that `tests/analysis/rejection/aliasing.npk`'s
+own "a write THROUGH a shared claim's holder" case, expected as BORROW-013 since 1.5.5, had
+never been reported by any checker until DEF-123's fix, and nothing noticed, because other
+sites in the file supplied the code — the exact hazard the library listener's F-008 found,
+documented in our own suite for a cycle.
+
+**The decision.** Both runners also hold the COUNT of reported sites per code to the number
+of `expect-error` lines naming that code (the files already write one line per site, with
+its `expect-error-at`), so a silent site fails by name; a file that means several sites under
+one line is re-spelled. A runner rule in the harness and `npkg`, each with a self-check case
+that plants a silent site; its own small landing after 1.6.1d.
+
+## D-333 — a `cstring` rides a channel and crosses a spawn as a `string` does: D-235's row amended under D-328 — **SETTLED (user decision, 2026-09-26: "go with your recommendations on those two questions. they look fine to me."; S-114)**
+
+**The history.** D-235 (1.4.7b) decided every kind as a channel element, and `cstring`
+refused as a BORROW beside pointers and slices (`type_contains_borrow_recorded`), because
+its bytes were never its own — a view of a literal's, `argv`'s or `to_cstring`'s unowned
+block. D-328 gives it `string`'s shape and rule: an owned body at `cap > 0`, a borrowed one
+at `cap == 0` only of a literal or an `argv`/`environ()` element, both process-immortal —
+exactly `string`'s two cases, and `string` rides (the owned body's pointer crosses with its
+ownership under the send's `move`).
+
+**The decision.** A `cstring` rides a channel and crosses a spawn as a `string` does;
+`type_contains_borrow_recorded` and the channel-element table read it as `string`. Lands
+with 1.6.1d step 3b (DEF-122), where the shape changes; nothing in the tree sends one today,
+so the alternative — keeping the refusal — cost nothing either, and one rule for the two
+string kinds is D-328's own principle.

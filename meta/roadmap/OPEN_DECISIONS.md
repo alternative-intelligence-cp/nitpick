@@ -274,7 +274,8 @@ already does."
 | **SETTLED as D-329 (2026-09-26).** ~~**S-110**~~ — the range value keeps its spelling (DEF-128, the listener's F-012: `for (uint8:i in 0u8..255u8)` and `for (int8:i in 0i8..127i8)` run ZERO times, silently; an unsigned range across the sign bit likewise). The recap: D-145 (0.9.6) normalised every range value half-open at construction — `lo..hi` stores `hi + 1` — so no consumer asks which spelling built it, and accepted that "an inclusive range ending at the carrier's maximum wraps under the +1 and the bounds guard traps it — a loud outcome for a corner with no honest answer"; true of a SLICE (its guard fires), false of a `for` (no guard: zero trips in silence), and the corner is the everyday byte loop. The other cause, the head's fixed signed compare, is the emitter's and needs no decision. Asked 2026-09-26 (`1.6.1d.md` §2.5, §3). | OPEN — blocks 1.6.1d step 2's DEF-128 (DEF-129 and DEF-130 land without it). | **`range<T>` is `{ T:lo; T:hi; bool:inclusive }`**, built by the literal from its own payload with no `+ 1`, read by every consumer with the flag; D-145 amended on the representation alone (the slice reads the same value). A wider `hi` fails at `uint64`, a `{lo, count}` pair at a count of 2^64, and refusing `lo..MAX` refuses the byte loop. |
 | **SETTLED as D-330 (2026-09-26).** ~~**S-111**~~ — `<=>` on floats (DEF-131, the listener's F-015: the operator was never lowered; the checker types it `int32` over any ordered pair). Landing it asks what a NaN answers: `-1`, `0` or `1` cannot say "unordered", and `0` would claim equality. Asked 2026-09-26 (`1.6.1d.md` §2.13). | OPEN — blocks nothing but the float arm of 1.6.1d step 4's DEF-131. | **Refused for floats** (a new code at the operator, "no total order — compare with `<`, `==`, `>` and decide the unordered case yourself"); lowered for every other ordered kind, the twisted kinds through their compare-trap path. |
 | **SETTLED as D-331 (2026-09-26).** ~~**S-112**~~ — a constant division that cannot succeed (DEF-133's d7, the listener's F-017). The recap: D-310 (1.5.8b) refuses a certain constant `+ - *` overflow wherever the folder decides an operand pair (TYPE-076 at the node); OP_REFERENCE §1.1 promises the same for a constant division by zero and `MIN / −1` (TYPE-004), and the compiler keeps that promise only where the folder is ASKED — a `fixed` initialiser, `comptime` — while a local `int32:x = 5i32 / 0i32;` compiles and traps `DivByZero` at run time. Asked 2026-09-26 (`1.6.1d.md` §2.15). | OPEN — 1.6.1d step 4's DEF-133 (d7). | **D-310's reach extended to `/` and `%`**: a certain constant division by zero or `MIN / −1` is `NITPICK-TYPE-004` at the node wherever the folder decides the pair; a refusal added, announced in advance. The alternative is the sentence moving to "where the folder is asked". |
-| **S-113** — a rejection test's silent site (found by 1.6.1d step 1's sweep). D-237 (1.4.8b) holds a rejection file to the SET of codes it names, so a site the checker never reports is invisible whenever its code appears elsewhere in the file: `tests/analysis/rejection/aliasing.npk`'s "a write THROUGH a shared claim's holder" case carried its `expect-error: NITPICK-BORROW-013` line since 1.5.5 and was never reported until DEF-123's fix — the exact hazard the listener's F-008 found, documented in our own suite for a cycle. Asked 2026-09-26. | OPEN — a runner rule (both runners and their self-checks); no step of 1.6.1d waits on it. | **Both runners also hold the COUNT of reported sites per code to the count of `expect-error` lines naming it** (the files already write one line per site), so a silent site fails by name; a file that means several sites under one line is re-spelled. |
+| **SETTLED as D-332 (2026-09-26).** ~~**S-113**~~ — a rejection test's silent site (found by 1.6.1d step 1's sweep). D-237 (1.4.8b) holds a rejection file to the SET of codes it names, so a site the checker never reports is invisible whenever its code appears elsewhere in the file: `tests/analysis/rejection/aliasing.npk`'s "a write THROUGH a shared claim's holder" case carried its `expect-error: NITPICK-BORROW-013` line since 1.5.5 and was never reported until DEF-123's fix — the exact hazard the listener's F-008 found, documented in our own suite for a cycle. Asked 2026-09-26. | OPEN — a runner rule (both runners and their self-checks); no step of 1.6.1d waits on it. | **Both runners also hold the COUNT of reported sites per code to the count of `expect-error` lines naming it** (the files already write one line per site), so a silent site fails by name; a file that means several sites under one line is re-spelled. |
+| **SETTLED as D-333 (2026-09-26).** ~~**S-114**~~ — a `cstring` across a channel or a spawn after D-328 (asked by the compiler seat 2026-09-26 with the step-3 report). The recap: D-235 (1.4.7b) decided every kind as a channel element and `cstring` refuses as a BORROW beside pointers and slices (`type_contains_borrow_recorded`), because its bytes were never its own; D-328 gives it `string`'s shape and rule — an owned body at `cap > 0`, a borrowed one at `cap == 0` only of a literal or an `argv`/`environ()` element, both process-immortal, exactly `string`'s two cases, and `string` rides. The user, 2026-09-26: "go with your recommendations on those two questions. they look fine to me." | SETTLED — lands with 1.6.1d step 3b (DEF-122). | **A `cstring` rides a channel and crosses a spawn as a `string` does**, D-235's row amended; the alternative (keeping the refusal) cost nothing today, since nothing in the tree sends one. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -2514,19 +2515,42 @@ defect declares a `DEF-` in §2f.
 > (`record_mut_of_call`/the mutation paths of D-325: a `move(<-p)` empties the pointee as an assignment would).
 > Evidence: `findings/F-004-view-root-freed-through-callee/`. A memory fault in safe code. **The fix (1.6.1d step 1):** `record_mut_of_place` peels one leading dereference; `tests/analysis/rejection/view_root_moved_through_callee.npk`.
 
-> **DEF-120 — OPEN (registered 2026-09-26; F-005; owner: the compiler seat, 1.6.1d step 2). `(<-p) = v` NEVER
+> **DEF-120 — FIXED at 1.6.1d step 3 (2026-09-26; registered the same day; F-005). `(<-p) = v` NEVER
 > DROPS THE OLD VALUE: an assignment through a pointer dereference to an owning pointee leaks it — 121 grid cells,
 > every owning type; 1,000 stores keep 46,043 B live at exit under NPK_HEAP_STATS, and a descriptor stored over is
 > left open (exit 26).** D-183 and D-186's overwrite drop covers a binding, an owning FIELD and a managed-array
 > ELEMENT (`overwrite_owned.npk`); the dereference place is the fourth store shape and has no drop. Evidence:
 > `findings/F-005-store-through-pointer-leak/`. Invisible to D-151 (managed storage), visible to the heap stats.
+> **The fix (1.6.1d step 3):** `emit_assign`'s dereference target drops the old pointee before the store when the
+> pointee's type owns AND the pointer names MANAGED storage -- the escape analysis's own wild-provenance reading
+> (D-223), factored into `src/frontend/analysis/wild_places.npk` so both readers ask one predicate: a `wild`
+> binding, parameter or field, an `=>! wild` cast, `#ptr_add`, an allocator's or a wild-returning function's result
+> stays drop-free (manual storage holds no value until the author writes one; the closed direction for a wrong free
+> is no free), and a plain `T->` -- a live managed value by the language's contract, a `wild` block laundered by
+> `=>! T->` included -- drops. With it a moved-out WHOLE binding keeps the type's vacant value (D-254's rule beside
+> the field's and the element's), because `p = @x; t = move(x); (<-p) = v;` is legal and the stale header would
+> have freed `t`'s body at the store. Measured: 46,043 -> 89 bytes live after a thousand stores, the stored-over
+> descriptor closed (exit 26 -> 0), the generic face (`(<-p) = move(v)` at `T = string`) drops too, and three
+> `wild` shapes with a bogus header planted under the store run untouched. `tests/backend/programs/deref_store_drop.npk`,
+> `deref_store_churn.npk`/`deref_store_once.npk` under `tests/cost/deref_store.toml`.
 
-> **DEF-121 — OPEN (registered 2026-09-26; F-006; owner: the compiler seat, 1.6.1d step 2). A CONSUMING `pick`'S
+> **DEF-121 — FIXED at 1.6.1d step 3 (2026-09-26; registered the same day; F-006). A CONSUMING `pick`'S
 > BINDING IS NEVER DROPPED AT THE ARM'S END** (a leak; the binding owns what the arm moved into it and nothing runs
 > its drop when the arm ends). Evidence: `findings/F-006-consuming-pick-binding-not-dropped/`. DEF-118's sibling:
 > the consuming arm's bindings are outside both the move analysis and the drop schedule.
+> **The fix (1.6.1d step 3):** THE ARM IS A SCOPE in the emitter, as it always was in the resolver -- `emit_pick` and
+> `emit_pick_chain` push a defer frame before `bind_payload`, so a consuming binding falls inside the frame's locals
+> window, and run the frame's exit (the flag-tested drops) when the body did not leave by an exit of its own (a `pass`,
+> `break`, `give` or `fall` inside the arm walked the frames and dropped it there -- the read-only arm, completing
+> normally, was the leak). In a coroutine the binding's flag is a FRAME BYTE at role `50 + ordinal` on the arm's
+> statement, reserved by `scan_pick_binds` beside the slot at `7 + ordinal` (an alloca dies at a suspension inside the
+> arm). A guard that fails branches on without the frame's exit: the payload is still the selector's, owned once by
+> the arm that finally binds it or the wildcard's whole-value drop (DEF-88). Measured: eleven arm shapes two thousand
+> rounds at the once twin's peak (884 bytes), the coroutine's arm read after a suspension among them.
+> `tests/backend/programs/pick_binding_churn.npk`/`pick_binding_once.npk` under `tests/cost/pick_binding.toml`. The
+> arm scope's probes found DEF-138 … DEF-141 below, fixed with it.
 
-> **DEF-122 — OPEN (registered 2026-09-26; F-007; owner: the compiler seat, 1.6.1d step 2). `to_cstring`'S BUFFER
+> **DEF-122 — OPEN (registered 2026-09-26; F-007; owner: the compiler seat, 1.6.1d step 3b under D-328 -- the floor's `cstring` layout moves, with a two-floor snapshot refresh). `to_cstring`'S BUFFER
 > IS NEVER FREED: every call leaks `len + 1` bytes (1,000 calls hold 10,000 B live at exit).** The `cstring`
 > result is a view-shaped value whose backing block nothing owns; the fix is the builtin's row (its `Views`/drop
 > column) and the drop of what it allocates, or an owning result. Evidence: `findings/F-007-to-cstring-leak/`.
@@ -2648,11 +2672,126 @@ defect declares a `DEF-` in §2f.
 > paths with it -- one length whatever the pid. A per-process name in any explored program is spelled with it
 > from here on.
 
+> **DEF-138 — FIXED at 1.6.1d step 3 (2026-09-26; found by the step's probe of the arm scope DEF-121 gives a
+> consuming `pick`). A `move` OF AN ARM'S OWN BINDING INSIDE ITS `where` GUARD DOUBLE-FREED WHEN THE GUARD FAILED.**
+> The bindings a guard reads are copied out of the selector before the arm is chosen; `(Som(x)) where (raw
+> eat(move(x)))` spent the payload in `eat`, the guard failed, the next arm `(Som(y))` bound the same payload from
+> the selector, and its drop freed the body a second time -- exit 95 through the heap's integrity trap, in safe
+> code, on every compiler before this step (the second free was an exit-path drop, which the arm had always run).
+> **The fix:** `NITPICK-TYPE-089` at the `move` -- a `move` whose root is a pattern binding of the pick whose guard
+> it stands in (a `SYM_PAT` symbol linked to that selector, D-266), through a field or a value-`pick` inside the
+> guard alike (`check_arm_control`, type_stmt.npk); a move of anything else in a guard is a conditional move the
+> move analysis already tracks. `tests/types/rejection/pick_guard_move.npk` (three sites, two controls).
+
+> **DEF-139 — FIXED at 1.6.1d step 3 (2026-09-26; found by the same probes). A `fall` INTO AN ARM THAT BINDS A
+> NAME READ A PAYLOAD THE TARGET'S PATTERN NEVER MATCHED.** `fall label;` enters the labelled arm's body without
+> matching its pattern, and the target extracts its bindings from the selector at the body's entry: a `Non` fell
+> into `two: (Som(x))` and `x` read the empty payload area as a string (exit 23; a variant with a differently laid
+> payload would have read a wild header, and with DEF-121's drop freed it). **The fix:** `NITPICK-TYPE-090` at the
+> `fall` when its target arm binds a name (`arm_binds_name`), the walk descending blocks, `if`, loops and `defer`
+> and stopping at a nested `pick` (whose `fall`s are its own); the falling arm's own bindings are dropped at the
+> `fall` as at every other exit from the arm. `tests/types/rejection/pick_fall_target.npk`.
+
+> **DEF-140 — FIXED at 1.6.1d step 3 (2026-09-26; found by the same probes). A `fall` TO A LABEL NO ARM CARRIES
+> WAS NITPICK-EMIT-002** -- the emitter resolved the label against the innermost pick's frame (`emit_fall`) and
+> reported a miss as "a defect in the compiler rather than in this program"; the checker never read the label. The
+> class of DEF-131, DEF-132 and the listener's DEF-142. **The fix:** the identifier's own `NITPICK-RESOLVE-002` at
+> the `fall`, naming the label and the shape (`label: (pattern) { … }`), from the same walk as DEF-139's.
+> `tests/types/rejection/pick_fall_target.npk`.
+
+> **DEF-141 — FIXED at 1.6.1d step 3 (2026-09-26; found when the arm scope's churn twin trapped on its first
+> round). A CONSUMING `pick` EXPRESSION LEFT ITS SELECTOR ON THE STATEMENT'S TEMPORARIES: THE STATEMENT'S END
+> DROPPED THE WHOLE ENUM AFTER AN ARM HAD TAKEN ITS PAYLOAD.** The statement form takes the consuming selector off
+> the temporaries (D-216, D-246: the arms own the payloads they bind); the expression form (`ir_expr.npk`'s
+> `ExprPickExpr`) computed `pcons` and never did, so `string:r = pick (move(e)) { (Som(x)) { give move(x); }, … };`
+> handed the caller a body the statement then freed -- exit 95 on every compiler before this step (measured on step
+> 2's), and an arm that read `x` and gave something else freed it twice the moment DEF-121 dropped the binding.
+> **The fix:** `temp_take` of the selector in the expression form when it consumes, the statement form's line.
+> `tests/backend/programs/pick_value_consume.npk` (three shapes, 500 rounds, exit 0 at both legs).
+
+> **DEF-142 — OPEN (registered 2026-09-26; the library listener's O-N32, from nitpick-regex's 0.1.0 planning;
+> owner: the compiler seat, 1.6.1d step 4). A `pick` ARM NAMING A VARIANT ITS ENUM LACKS IS ADMITTED BY THE
+> FRONTEND AND REFUSED BY THE EMITTER AS NITPICK-EMIT-002** (`enum:K = { A; B; };` with a `(K.C)` arm: npkc exits
+> 1 at the `pick`, writes no IR, and calls it a compiler defect; without the arm the program runs 0 at both legs;
+> without `(K.B)` as well it is PICK-001 "does not cover B", as it should). Reproduced by the listener at
+> `c970483`, `c3bdae2` and `9f6f370`. The class of DEF-131, DEF-132 and DEF-140. **Requested and planned:** a
+> resolution error at the arm naming the enum and the missing variant.
+
+> **DEF-143 — OPEN (registered 2026-09-26; the library listener's O-N32, its observation; owner: the compiler
+> seat, 1.6.1d step 4 with DEF-126's diagnostics). NITPICK-RESOLVE-012's MESSAGE FOR `mod:error;` DROPS THE
+> KEYWORD:** it reads "declares `mod:;` first" -- the offending word, a keyword, renders as nothing. A message
+> defect: the text names the token by its interned spelling, and a keyword has none.
+
+> **THE LIBRARY LISTENER'S M11 FINDINGS (nitpick-fuzz F-018 … F-028, main `3d7d924`; reported 2026-09-26 by
+> `nitpick-libs_s7`, reproduced by them at `c3bdae2`, `9f6f370`/`1b4f0c6` and their pin `c970483` — all live on
+> main). M11 checks the REFERENCES against the compiler: 3,704 of 10,433 reference lines covered, 1,488 claims,
+> 1,262 tested, 144 disagreeing. Registered here as DEF-144 … DEF-154, owner the compiler seat, for a subcycle
+> **1.6.1e** to be PLANNED execution-grade after 1.6.1d step 3 lands; the user's standing rule orders its steps
+> (the silent wrong answers and the memory fault first — DEF-144 … DEF-148 — then the compiler's own refusals and
+> traps, then the two tables), and whether its first step goes BEFORE 1.6.1d steps 3b and 4 (a use-after-free and
+> three wrong answers outrank a leak and the over-restrictions) is put to the user with step 3's report.**
+
+> **DEF-144 — OPEN (F-018; owner: the compiler seat, 1.6.1e). A MACRO'S FREE NAME, STANDING ALONE OR AS A
+> COMPARISON'S OPERAND, READS THE CALL SITE'S LOCAL INSTEAD OF THE MODULE BINDING** it names at the definition
+> (inside arithmetic it reads the right one) — a hygiene hole in the expansion (D-057/D-127's rule that a macro's
+> names bind in its defining scope), a silent wrong answer.
+
+> **DEF-145 — OPEN (F-019; owner: the compiler seat, 1.6.1e). A `'\u{…}'` ESCAPE IS TYPED `char8` AND TRUNCATED TO
+> ITS LOW BYTE** (`'\u{1F641}' == 'A'` is true), and a `char32` cannot take it (TYPE-007) — a silent wrong answer in
+> the lexer's or the literal typer's reading of a scalar above U+00FF.
+
+> **DEF-146 — OPEN (F-020; owner: the compiler seat, 1.6.1e). THE SCOPE-EXIT JOIN RELAYS THE LAST-SPAWNED
+> CHILD'S ERROR, NOT THE FIRST CHILD ERROR** CONCURRENCY_REFERENCE:79 promises — D-136's first-child-error
+> arbitration read against the join walk (D-207): a silent wrong answer in which error a caller sees.
+
+> **DEF-147 — OPEN (F-021; owner: the compiler seat, 1.6.1e). A `timedwait` THAT EXPIRES WITH NO SIGNAL RETURNS
+> SUCCESS AFTER THE FULL WAIT** — an error path (the deadline, `DeadlineExceeded` or the spent guard of 1.1.11)
+> becomes a success: a silent wrong answer in a synchronisation primitive.
+
+> **DEF-148 — OPEN (F-022; owner: the compiler seat, 1.6.1e, FIRST). A `shared_arena` CAN BE DESTROYED WHILE A
+> SPAWNED THREAD HOLDS IT; the thread then allocates in it and the program ends in `WildLeak` (96)** — a
+> use-after-free in safe code; destroying after the join is clean. D-180 sanctions the `shared_arena<T>->` spawn
+> crossing on the ground that the join precedes the free (1.4.4's order); `.destroy()` inside the holder's scope
+> defeats the order, so `.destroy()` on a borrowed-across-a-spawn arena is the shape to refuse or to sequence.
+
+> **DEF-149 — OPEN (F-023; owner: the compiler seat, 1.6.1e). AN UN-AWAITED ASYNC METHOD CALL (`r.read(…)`) IS
+> ACCEPTED**; npkc exits 0 and emits a call to an undefined symbol, which `llc` and `opt` refuse — the free-function
+> case is TYPE-043; the method spelling escaped the rule (a rule written for one spelling owed to the other).
+
+> **DEF-150 — OPEN (F-024; owner: the compiler seat, 1.6.1e). npkc TRAPS (exit 3, no message)** on a macro emitting a
+> method into an impl, on a 500-deep expression (with or without a macro; 250 compiles), and on a macro emitting a
+> `comptime` function — three uncontrolled stops of the compiler itself (a trap inside the compiler is a `src/`
+> defect; the depth one is a recursion with no measure the runtime's `StackExhausted` should have named).
+
+> **DEF-151 — OPEN (F-025; owner: the compiler seat, 1.6.1e). `--extra-picky=no-wildx` REFUSES EVERY PROGRAM, THE
+> CANARY INCLUDED, AT ITS OWN PRELUDE** (256 `NITPICK-WILDX-003`, the first at prelude.npk:125): the rule reads the
+> prelude's `wildx` machinery as the program's.
+
+> **DEF-152 — OPEN (F-026; owner: the compiler seat, 1.6.1e). `tfp64<Meters>` IS ACCEPTED AND ITS UNIT IGNORED**, so
+> `Meters + Seconds` compiles; the same over `dim256` is TYPE-049 — a unit annotation on a kind that carries none
+> (D-196: units are `dim256`'s alone) is accepted and dropped instead of refused.
+
+> **DEF-153 — OPEN (F-027, sixteen rows; owner: the compiler seat, 1.6.1e). THE ACCEPTED-THOUGH-REFUSED AND
+> REFUSED-THOUGH-PERMITTED TABLE**: `f512` and `flt32` suffixes, `flt256`, a spliced `fixed` qualifier, a
+> self-invoking macro, unchecked channel and `dyn` lock levels (accepted where the reference refuses); the
+> compiler's own named holes (EMIT-002 for `suspend_until` and `flt256`, MACRO-006 for a `decreases` measure); a
+> string literal in `cstring` position, a declaration-macro alias, `comptime` string comparison (refused where
+> the reference permits); and two diagnostics. Each row decided as a rule kept or a sentence corrected, at the plan.
+
+> **DEF-154 — OPEN (F-028, ninety-four rows; owner: the compiler seat, 1.6.1e, with DEF-133's method). THE
+> DOCUMENTATION TABLE**: surfaces that do not exist (TYPE_REFERENCE's char and string function tables,
+> tensor/matrix, `Stream`, `Actor`, `#align_of`, `--seccomp`, `--extra-picky=no-sys` and `no-wild`), stale spellings
+> and codes, examples that do not compile, rules changed by D-180, D-222, D-177 and D-197, self-contradictions
+> (`await` yielding `Result<T>` against `T`; `requires` on `never fails`), and emission and encoding misdescribed.
+
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,
 > DEF-123, DEF-127, DEF-134), step 2 the silent wrong loop counts (DEF-128 under S-110, DEF-129, DEF-130, DEF-135 and DEF-136 found by the step's probes, DEF-137 found by landing 72's red harness), step 3 the leaks
-> (DEF-120, DEF-121, DEF-122 under S-109), step 4 the over-restrictions, the refusals of what the reference
-> promises and the documentation (DEF-124, DEF-125, DEF-126, DEF-131 under S-111, DEF-132, DEF-133 under S-112) —
+> (DEF-120, DEF-121, and DEF-138 … DEF-141 found by the arm scope's probes), step 3b DEF-122 under D-328 (the floor's
+> `cstring` layout moves, with a two-floor snapshot refresh; split from step 3 at the floor's seam, 1.5.8b step 6's
+> precedent), step 4 the over-restrictions, the refusals of what the reference
+> promises and the documentation (DEF-124, DEF-125, DEF-126, DEF-131 under S-111, DEF-132, DEF-133 under S-112, and
+> the listener's DEF-142 and DEF-143) —
 > each reproduced from the listener's minimised programs first, its fix measured by the fuzzer's own recipe
 > (npkc, llc at -O0 and after opt -O2, ld.lld -static, NPK_HEAP_STATS), and the compiler tree's and the
 > listener's exposure swept under both checkers where a refusal moves. The user's standing rule puts the faults

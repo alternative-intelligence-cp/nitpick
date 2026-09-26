@@ -1,0 +1,91 @@
+// expect-error: NITPICK-TYPE-089
+// expect-error-at: 33:33
+// expect-error: NITPICK-TYPE-089
+// expect-error-at: 43:33
+// expect-error: NITPICK-TYPE-089
+// expect-error-at: 53:58
+//
+// DEF-138 (1.6.1d step 3): A `where` GUARD MAY NOT SPEND THE ARM'S OWN
+// BINDING. The bindings a guard reads were copied out of the selector before
+// the arm was chosen; a failing guard hands the selector to the next arm,
+// which binds the same payload again -- so a `move` of the arm's binding
+// inside its guard freed a payload another arm then owned (measured: exit 95,
+// the heap's integrity trap, in safe code). Three sites: the binding itself,
+// an owning field of a struct payload, and a value-`pick` inside the guard
+// whose arm moves it. The controls stand: a guard that READS the binding, and
+// a guard that moves an OUTER local (a conditional move the move analysis
+// tracks; nothing reads it after).
+mod:pick_guard_move;
+error:E9;
+
+enum:Opt = { Non; Som(string); };
+struct:Box = { string:s; int64:n; };
+enum:Has = { Not; Yes(Box); };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:eat = bool(move string:s) never fails { pass (string_byte_length(s) > 100i64); };
+func:obs = int32(string:v) never fails { pass (string_byte_length(v) =>! int32); };
+
+// (1) the binding itself
+func:g1 = int32() never fails {
+    Opt:e = Opt.Som(raw mk());
+    pick (move(e)) {
+        (Som(x)) where (raw eat(move(x))) { pass 1i32; },
+        (Som(y)) { pass raw obs(y); },
+        (Opt.Non) { pass 3i32; }
+    }
+};
+
+// (2) an owning field of a struct payload
+func:g2 = int32() never fails {
+    Has:h = Has.Yes(Box{ s: raw mk(), n: 1i64 });
+    pick (move(h)) {
+        (Yes(b)) where (raw eat(move(b.s))) { pass 1i32; },
+        (Yes(c)) { pass raw obs(c.s); },
+        (Has.Not) { pass 3i32; }
+    }
+};
+
+// (3) a value-`pick` inside the guard, whose arm moves the binding
+func:g3 = int32(int32:k) never fails {
+    Opt:e = Opt.Som(raw mk());
+    pick (move(e)) {
+        (Som(x)) where (pick (k) { (1i32) { give raw eat(move(x)); }, (*) { give false; } }) { pass 1i32; },
+        (Som(y)) { pass raw obs(y); },
+        (Opt.Non) { pass 3i32; }
+    }
+};
+
+// CONTROLS: a guard that reads; a guard that moves an outer local
+func:ok1 = int32() never fails {
+    Opt:e = Opt.Som(raw mk());
+    pick (move(e)) {
+        (Som(x)) where (x.len > 100i64) { pass 1i32; },
+        (Som(y)) { pass raw obs(y); },
+        (Opt.Non) { pass 3i32; }
+    }
+};
+func:ok2 = int32() never fails {
+    string:o = raw mk();
+    Opt:e = Opt.Som(raw mk());
+    pick (move(e)) {
+        (Som(x)) where (raw eat(move(o))) { pass raw obs(x); },
+        (Som(y)) { pass raw obs(y); },
+        (Opt.Non) { pass 3i32; }
+    }
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit raw g1() + raw g2() + raw g3(1i32) + raw ok1() + raw ok2();
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (CastRange) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

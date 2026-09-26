@@ -1,0 +1,198 @@
+// expect-exit: 0
+//
+// DEF-120 (1.6.1d step 3; the library listener's F-005): `(<-p) = v` DROPS THE
+// OLD POINTEE when the pointer names MANAGED storage. A store through a
+// pointer was the one store shape that dropped nothing -- a field's and an
+// element's have since D-186 -- so every value stored over through a `T->`
+// leaked its body and an `OwnedFd` stored over stayed open. Each case reads
+// the value back through the pointer (no use-after-free, the right value),
+// the descriptor case counts the table, the moved-then-stored case proves the
+// vacated binding (a whole binding moved out keeps the vacant value now, as a
+// field does, so the drop at the store meets nothing), and the wild cases
+// plant a bogus header under the store: a drop THERE would free address 4096
+// and stop the run through the heap's integrity trap (exit 95). Every case at
+// both legs; the churn twins under `tests/cost/deref_store.toml` measure the
+// bytes.
+mod:deref_store_drop;
+error:E9;
+
+func:mk = string() never fails { pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c"); };
+func:nw = string() never fails { pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w"); };
+func:sn = string() never fails { pass string_concat("stttttttttttttttttttttttttttttttttttttttttttt", "u"); };
+
+// The first byte says which body: 21 mk, 22 nw, 25 sn, 70 the free poison.
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 115u8) { pass 25i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+func:obs_l = int32(List<int64>:v) never fails {
+    if (v.count != 1i64) { pass 23i32; }
+    int64:e = v[0i64];
+    if (e == 424242i64) { pass 21i32; }
+    if (e == 777777i64) { pass 22i32; }
+    pass 24i32;
+};
+func:fd_open = bool(int64:n) never fails {
+    Result<int64>:r = sys(72i64, n, 1i64, 0i64);   // fcntl(n, F_GETFD)
+    pass !(r.is_error);
+};
+func:open_fds = int32() never fails {
+    int32:n = 0i32;
+    for (int64:k in 3i64...16i64) { if (raw fd_open(k)) { n = n + 1i32; } }
+    pass n;
+};
+func:mkfd = OwnedFd() {
+    cstring:dn = to_cstring("/dev/null") ?! E9;
+    fd:f = open(dn, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
+    pass own_fd(f);
+};
+
+struct:Box = { string:s; int64:n; };
+
+func:store_s = NIL(string->:p) never fails { (<-p) = raw nw(); pass NIL; };
+func:store_l = NIL(List<int64>->:p) never fails { (<-p) = raw mkl(777777i64); pass NIL; };
+func:store_fd = NIL(OwnedFd->:p, move OwnedFd:n) never fails { (<-p) = move(n); pass NIL; };
+func:store_box = NIL(Box->:p) never fails { (<-p) = Box{ s: raw nw(), n: 2i64 }; pass NIL; };
+func:put<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+
+// 1. a string, through a pointer parameter, stored over a thousand times
+func:case_string = int32() never fails {
+    string:x = raw mk();
+    for (int32:i in 0i32...1000i32) { drop store_s(@x); }
+    if ((raw obs_s(x)) != 22i32) { pass 1i32; }
+    pass 0i32;
+};
+// 2. a List: the old buffer freed, the new one read
+func:case_list = int32() never fails {
+    List<int64>:l = raw mkl(424242i64);
+    drop store_l(@l);
+    if ((raw obs_l(l)) != 22i32) { pass 2i32; }
+    pass 0i32;
+};
+// 3. an OwnedFd: the store CLOSES the old descriptor -- one live at a time
+func:case_fd = int32() {
+    int32:before = raw open_fds();
+    OwnedFd:f = mkfd() ?! E9;
+    OwnedFd:g = mkfd() ?! E9;
+    if ((raw open_fds()) != before + 2i32) { pass 3i32; }
+    drop store_fd(@f, move(g));
+    if ((raw open_fds()) != before + 1i32) { pass 4i32; }   // the old `f` closed, `g`'s live in `f`
+    pass 0i32;
+};
+// 4. a struct with an owning field: the whole old value dropped
+func:case_box = int32() never fails {
+    Box:b = Box{ s: raw mk(), n: 1i64 };
+    drop store_box(@b);
+    if (b.n != 2i64) { pass 5i32; }
+    if ((raw obs_s(b.s)) != 22i32) { pass 6i32; }
+    pass 0i32;
+};
+// 5. a pointer to a FIELD: the field's old value dropped, the aggregate's exit drops the new
+func:case_field_ptr = int32() never fails {
+    Box:b = Box{ s: raw mk(), n: 1i64 };
+    string->:q = @b.s;
+    (<-q) = raw nw();
+    if ((raw obs_s(b.s)) != 22i32) { pass 7i32; }
+    pass 0i32;
+};
+// 6. MOVED, THEN STORED OVER: `x`'s slot is vacant after the move, so the
+//    store's drop frees nothing and `t` keeps the body it was handed
+func:case_vacate = int32() never fails {
+    string:x = raw mk();
+    string->:p = @x;
+    string:t = move(x);
+    (<-p) = raw nw();
+    if ((raw obs_s(t)) != 21i32) { pass 8i32; }
+    if ((raw obs_s(<-p)) != 22i32) { pass 9i32; }
+    pass 0i32;
+};
+// 7. a `move` parameter's field through a pointer
+func:take = int32(move Box:b) never fails {
+    string->:q = @b.s;
+    (<-q) = raw nw();
+    if ((raw obs_s(b.s)) != 22i32) { pass 10i32; }
+    pass 0i32;
+};
+// 8. a generic body: the pointee's type is the instance's, and it drops
+func:case_generic = int32() never fails {
+    string:x = raw mk();
+    string:n = raw nw();
+    drop put(@x, move(n));
+    if ((raw obs_s(x)) != 22i32) { pass 11i32; }
+    pass 0i32;
+};
+// 9. WILD STORAGE HOLDS NO VALUE UNTIL THE AUTHOR WRITES ONE: a `wild`
+//    binding, a `#ptr_add` result, an `=>! wild` cast -- no drop at the store.
+//    A bogus header is planted first (ptr 4096, cap 7): a drop would free it
+//    and trap the run.
+func:plant = NIL(wild int8->:m) never fails {
+    wild int64->:w = m =>! wild int64->;
+    <-w = 4096i64;
+    wild int64->:c = #ptr_add<int64>(w, 2i64);
+    <-c = 7i64;
+    pass NIL;
+};
+func:case_wild = int32() never fails {
+    wild int8->:m = alloc(#size_of<string>());
+    defer { dalloc(m); }
+    drop plant(m);
+    wild string->:ws = m =>! wild string->;
+    (<-ws) = raw mk();                       // over the bogus header: no drop
+    string:s1 = move(<-ws);
+    drop plant(m);
+    wild string->:e = #ptr_add<string>(ws, 0i64);
+    (<-e) = raw sn();                        // through `#ptr_add`: no drop
+    string:s2 = move(<-e);
+    drop plant(m);
+    (<-(m =>! wild string->)) = raw nw();    // through the cast itself: no drop
+    string:s3 = move(<-ws);
+    if ((raw obs_s(s1)) != 21i32) { pass 12i32; }
+    if ((raw obs_s(s2)) != 25i32) { pass 13i32; }
+    if ((raw obs_s(s3)) != 22i32) { pass 14i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = raw case_string();
+    if (r != 0i32) { exit r; }
+    r = raw case_list();
+    if (r != 0i32) { exit r; }
+    r = case_fd() ?! E9;
+    if (r != 0i32) { exit r; }
+    r = raw case_box();
+    if (r != 0i32) { exit r; }
+    r = raw case_field_ptr();
+    if (r != 0i32) { exit r; }
+    r = raw case_vacate();
+    if (r != 0i32) { exit r; }
+    Box:tb = Box{ s: raw mk(), n: 3i64 };
+    r = raw take(move(tb));
+    if (r != 0i32) { exit r; }
+    r = raw case_generic();
+    if (r != 0i32) { exit r; }
+    r = raw case_wild();
+    if (r != 0i32) { exit r; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

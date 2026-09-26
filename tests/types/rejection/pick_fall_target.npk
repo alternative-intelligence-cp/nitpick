@@ -1,0 +1,94 @@
+// expect-error: NITPICK-TYPE-090
+// expect-error-at: 34:21
+// expect-error: NITPICK-TYPE-090
+// expect-error-at: 43:27
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 52:18
+//
+// DEF-139, DEF-140 (1.6.1d step 3): A `fall` LANDS ON AN ARM THAT BINDS
+// NOTHING, AND NAMES AN ARM OF ITS OWN `pick`. `fall label;` enters the
+// labelled arm's body without matching its pattern, and that arm extracts its
+// bindings from the selector at the body's entry -- from a payload of whatever
+// variant the selector holds (measured: a `Non` fell into `(Som(x))` and `x`
+// read the empty payload area as a string). Two TYPE-090 sites -- a fall from
+// a bind-free arm into a binding arm, and one nested inside an `if` in a
+// binding arm into another binding arm -- and a `fall` to a label no arm
+// carries, the identifier's own RESOLVE-002 (it reached the emitter and died
+// as EMIT-002, a compiler-defect report for a program mistake). The controls
+// stand: a fall into a bind-free labelled arm, into a labelled wildcard arm,
+// and OUT of a binding arm into a bind-free one (the falling arm's binding is
+// dropped at the `fall`, as at every other exit from the arm).
+mod:pick_fall_target;
+error:E9;
+
+enum:Opt = { Non; Som(string); };
+enum:Sh = { A(string); B(string); Z; };
+
+func:mk = string() never fails { pass string_concat("ab", "c"); };
+func:obs = int32(string:v) never fails { pass (string_byte_length(v) =>! int32); };
+
+// (1) into an arm that binds
+func:f1 = int32() never fails {
+    Opt:e = Opt.Non;
+    pick (move(e)) {
+        (Opt.Non) { fall two; },
+        two: (Som(x)) { pass raw obs(x); }
+    }
+};
+
+// (2) nested inside an `if`, from a binding arm into another binding arm
+func:f2 = int32(bool:b) never fails {
+    Sh:s = Sh.A(raw mk());
+    pick (move(s)) {
+        (A(p)) { if (b) { fall tgt; } pass raw obs(p); },
+        tgt: (B(q)) { pass raw obs(q); },
+        (Sh.Z) { pass 0i32; }
+    }
+};
+
+// (3) a label no arm of this pick carries
+func:f3 = int32(int32:k) never fails {
+    pick (k) {
+        (1i32) { fall nosuch; },
+        two: (2i32) { pass 2i32; },
+        (*) { pass 3i32; }
+    }
+};
+
+// CONTROLS: a bind-free target, a wildcard target, and OUT of a binding arm
+func:ok1 = int32(int32:k) never fails {
+    pick (k) {
+        (1i32) { fall two; },
+        two: (2i32) { pass 2i32; },
+        rest: (*) { pass 3i32; }
+    }
+};
+func:ok2 = int32(int32:k) never fails {
+    pick (k) {
+        (1i32) { fall rest; },
+        (2i32) { pass 2i32; },
+        rest: (*) { pass 3i32; }
+    }
+};
+func:ok3 = int32() never fails {
+    Opt:e = Opt.Som(raw mk());
+    pick (move(e)) {
+        (Som(x)) { if (raw obs(x) > 2i32) { fall done; } pass 1i32; },
+        done: (Opt.Non) { pass 0i32; }
+    }
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit raw f1() + raw f2(true) + raw f3(1i32) + raw ok1(1i32) + raw ok2(1i32) + raw ok3();
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (CastRange) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

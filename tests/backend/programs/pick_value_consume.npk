@@ -1,0 +1,75 @@
+// expect-exit: 0
+//
+// DEF-141 (1.6.1d step 3): A CONSUMING `pick` EXPRESSION TAKES ITS SELECTOR OFF
+// THE STATEMENT'S TEMPORARIES, as the statement form has since D-246. The arms
+// own the payloads they bind and drop them at their exits; the expression form
+// left the moved-in value on the temporaries list, and the statement's end
+// dropped the whole enum after an arm had taken its payload -- `give move(x)`
+// handed the caller a body the statement then freed (a use-after-free, exit
+// 95 through the heap's integrity trap on every compiler before this step),
+// and an arm that read `x` and gave something else freed it twice once the
+// arm scope of DEF-121 dropped the binding. Three shapes: the payload given
+// away, the payload read and dropped at the `give`, and a value pick whose
+// selector is a plain (lending) value.
+mod:pick_value_consume;
+
+enum:Opt = { Non; Som(string); };
+
+func:mk = string() never fails { pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c"); };
+func:nw = string() never fails { pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w"); };
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+
+// (1) the payload GIVEN AWAY: the caller owns it, the statement frees nothing
+func:given = int32() never fails {
+    Opt:e = Opt.Som(raw mk());
+    string:r = pick (move(e)) {
+        (Som(x)) { give move(x); },
+        (Opt.Non) { give raw nw(); }
+    };
+    pass raw obs_s(r);   // 21
+};
+// (2) the payload READ, something else given: dropped once, at the `give`
+func:read_only = int32() never fails {
+    Opt:e = Opt.Som(raw mk());
+    int32:v = pick (move(e)) {
+        (Som(x)) { give raw obs_s(x); },
+        (Opt.Non) { give 0i32; }
+    };
+    pass v;   // 21
+};
+// (3) a LENDING value pick: the selector stays the binding's and drops at scope exit
+func:lent = int32() never fails {
+    Opt:e = Opt.Som(raw mk());
+    int32:v = pick (e) {
+        (Som(x)) { give raw obs_s(x); },
+        (Opt.Non) { give 0i32; }
+    };
+    pass v;   // 21
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:acc = 0i32;
+    for (int32:i in 0i32...500i32) {
+        acc = raw given() + raw read_only() + raw lent();
+        if (acc != 63i32) { exit acc; }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

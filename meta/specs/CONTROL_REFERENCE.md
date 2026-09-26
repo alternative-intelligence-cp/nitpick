@@ -58,6 +58,20 @@ In a lending `pick` these names are views of `event`'s fields and payload
 ### 1.2.2 `pick` Control Modifiers
 
 *   **`fall label;`** — falls through to the labelled arm. There is no implicit fallthrough.
+    *   **The target binds nothing, and is an arm of the same `pick`** (DEF-139, DEF-140; 1.6.1d step 3;
+        `NITPICK-TYPE-090`, `NITPICK-RESOLVE-002`). A `fall` enters the labelled arm's body without
+        matching its pattern, so an arm that binds a name would extract its bindings from a payload
+        the selector may not hold; fall only to an arm whose pattern binds nothing (a value, a
+        payload-less variant, `(*)`). A label no arm of the `pick` carries is the identifier's own
+        RESOLVE-002. The falling arm's own bindings are dropped at the `fall`, as at every exit from it.
+*   **A `where` guard decides and does not consume** (DEF-138; 1.6.1d step 3; `NITPICK-TYPE-089`): a
+    `move` of the arm's own binding inside its guard is refused — the guard runs before the arm is
+    chosen, over bindings copied out of the selector, and a guard that fails hands the same payload
+    to the next arm. Read the binding in the guard; move it in the body.
+*   **A consuming arm owns what it binds until the arm ends** (D-216, DEF-121; 1.6.1d step 3): the
+    bindings of `pick (move(v))` are dropped at the arm's end and at every exit from it (`pass`,
+    `break`, `give`, `fall`), in the statement form and the expression form alike; a payload the arm
+    moves out (`give move(x)`, `string:y = move(x)`) leaves with the move.
 *   **`give expr;`** — yields a value out of the `pick` block when it is used as an expression.
 
 > ⚠️ **`(!)` is removed** (D-061). An earlier revision of this section listed it as

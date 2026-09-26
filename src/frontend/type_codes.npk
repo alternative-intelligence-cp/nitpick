@@ -567,3 +567,25 @@ pub func:TYPE_FIXED_WRITE = string() never fails { pass "NITPICK-TYPE-086"; };
 // member is not itself `Copy` (a named type without the impl, a bare `T` no
 // bound licenses) -- a copy of it would be a second owner.
 pub func:TYPE_COPY_OWNS = string() never fails { pass "NITPICK-TYPE-087"; };
+
+// A `where` GUARD THAT SPENDS THE ARM'S OWN BINDING (DEF-138, 1.6.1d step 3;
+// found by the step's probe of the arm scope DEF-121 gives a consuming `pick`):
+// the guard runs between arm selection and entry, over bindings copied out of
+// the selector before the arm is chosen; a `move` of one inside the guard spends
+// the payload, and when the guard then FAILS the next arm binds the same payload
+// from the selector again and frees it a second time -- a double free in safe
+// code (measured: exit 95 through the heap's integrity trap). The guard decides;
+// the body consumes. A move of anything else inside a guard is a conditional
+// move the move analysis already tracks.
+pub func:TYPE_GUARD_MOVES_BINDING = string() never fails { pass "NITPICK-TYPE-089"; };
+
+// A `fall` INTO AN ARM THAT BINDS A NAME (DEF-139, 1.6.1d step 3): `fall label;`
+// jumps to the labelled arm's BODY without matching its pattern, and the arm's
+// bindings are extracted from the selector at the body's entry -- so they read a
+// payload of whatever variant the selector holds (measured: a `Non` fell into
+// `(Som(x))` and `x` read the empty payload area as a string). An arm fallen into
+// must bind nothing; the falling arm's own bindings are dropped at the `fall` as
+// at every other exit from the arm. A `fall` naming no arm of its `pick` is the
+// identifier's own RESOLVE-002 (DEF-140: it was an EMIT-002, a compiler-defect
+// report for a program mistake).
+pub func:TYPE_FALL_INTO_BINDING = string() never fails { pass "NITPICK-TYPE-090"; };
