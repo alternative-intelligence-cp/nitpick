@@ -476,6 +476,9 @@ pub func:refuse_write_path_ex = bool(ExprTyper->:e, ExprId:place, string:what, S
             at));
         pass true;
     }
+    // A PART OF A `fixed` BINDING (DEF-106, 1.6.0 step 4b; TYPE-086), after the
+    // loan and before the view: the address forms report TYPE-071 ahead of this.
+    if (raw refuse_fixed_write(e, place, what, at)) { pass true; }
     if (raw place_is_view(e, place)) {
         string:m1 = string_concat("a lending `pick`'s binding is a read-only VIEW of the payload in place (D-266), and this ", what);
         discard(raw te_error(e, raw TYPE_VIEW_READ_ONLY(),

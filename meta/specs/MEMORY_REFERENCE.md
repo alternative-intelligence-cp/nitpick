@@ -214,7 +214,11 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   cannot be moved out of — `move(...)` or the implicit move at `pass`, of the
   binding or any part of it — since the vacant value a move leaves behind is a
   write to immutable storage (`NITPICK-TYPE-084`, 1.6.0 step 3f; `.clone()` is
-  the reading): the pointer
+  the reading), and no PART of one is written after its declaration — an element,
+  a plain field, a compound assignment, a stateful operation on a part, a `fixed`
+  local's element, anything under a `fixed` field (`NITPICK-TYPE-086`, 1.6.0
+  step 4b; the whole binding's second assignment and a `fixed` field's own stay
+  `NITPICK-ASSIGN-002`): the pointer
   type carries no mutability, so an address of an immutable would be a write
   path no rule sees.
 

@@ -549,3 +549,16 @@ pub func:TYPE_FIXED_MOVE = string() never fails { pass "NITPICK-TYPE-084"; };
 // stateful operation -- the view's rule (TYPE-066) for the loan. A copyable
 // parameter is a copy and keeps every write; `move T:p` owns and keeps them.
 pub func:TYPE_LOAN_READ_ONLY = string() never fails { pass "NITPICK-TYPE-085"; };
+
+// A WRITE INTO A PART OF A `fixed` BINDING (DEF-106, 1.6.0 step 4b; the library
+// listener's O-N24, found by its fuzzer): `fixed` is written once, where it is
+// declared, and no part of it is written after -- an element, a field, a
+// compound assignment, a stateful operation on a part. The whole binding's
+// second assignment was ASSIGN-002, its address TYPE-071 (D-287), a move out of
+// it TYPE-084 (DEF-99); a write into a PART was never asked, and a `fixed`
+// module binding is an LLVM `constant` global (D-211): `FI[i] = 5i64` stored
+// into read-only memory (a fault at -O0, the store deleted as undefined at
+// -O2), and `FA[i] = string_concat(...)` freed a literal body no allocation
+// made. Every write form asks it through `refuse_write_path`; the two forms the
+// bindings analysis reports keep their ASSIGN-002 (D-240).
+pub func:TYPE_FIXED_WRITE = string() never fails { pass "NITPICK-TYPE-086"; };

@@ -2273,6 +2273,26 @@ defect declares a `DEF-` in §2f.
 > `tests/backend/programs/import_scope_{lib,table,loud}.npk` are the fixture, the silent form read correctly
 > beside an importer's wider same-named `Row`, and the loud form compiling. No refusal added.
 
+> **DEF-106 — FIXED at 1.6.0 step 4b (2026-09-25). A WRITE INTO A PART OF A `fixed` BINDING COMPILED AND STORED
+> INTO THE LLVM `constant` GLOBAL.** Found by the library listener's fuzzer (`nitpick-libs_s6`; nitpick-fuzz, grid
+> cells c0039/c0040/c0185, their O-N24) at c3bdae2 and 6fb85d3 and reproduced here on a79d8df: `FA[i] =
+> string_concat(…)` over `fixed string[2]:FA` (exit 95 on both legs: the overwrite drop freed a literal body no
+> allocation made), `FB.s = …` over a `fixed Box:FB` (95/95), `FI[i] = 5i64` over `fixed int64[2]:FI` (107 at -O0,
+> the SIGSEGV into read-only memory through D-307's net; exit 3 at -O2, the store deleted as the undefined
+> behaviour it is), `FP.b = 5i64` (107 / 0) — the two legs disagreeing on what a program means. The whole
+> binding's second assignment was ASSIGN-002 (the bindings analysis), its address TYPE-071 (D-287), a move out
+> of it TYPE-084 (DEF-99, 3f); a write into a PART was never asked by anything. `NITPICK-TYPE-086` refuses it at
+> the one helper every write form already asks (`refuse_write_path`, type_expr.npk, beside the loan and the view
+> clauses; `refuse_fixed_write` beside `place_fixed` in type_stmt.npk): an element or a plain field of a `fixed`
+> binding, a compound assignment, a stateful operation on a part, a `fixed` LOCAL's element, and anything under a
+> `fixed` field; the two shapes the bindings analysis reports — the whole binding, and a `fixed` field's own
+> assignment — keep their ASSIGN-002 (D-240), and the address forms and the pointer-receiver call report TYPE-071
+> ahead of it. Measured: the listener's four shapes refuse with TYPE-086 and its clone control runs (exit 0);
+> the compiler's own `src/`, `npkg`, `lib/`, `tools/` and every test naming `fixed` (127 files) report no site;
+> the listener swept 231 files of its six repositories: 63 `fixed` bindings, 0 sub-place writes.
+> `tests/types/rejection/fixed_write.npk` holds the seven shapes and the read/clone control. A REFUSAL ADDED,
+> announced in advance (NOTICES F11).
+
 > **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/done/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
 >
 > **1.5.0 LANDED (2026-09-03)** — the skeleton with the D-007 division pair end to end (D-218/D-219; `meta/roadmap/done/1.5/1.5.0.md`). C-17→D-218's items (1)–(11) are all implemented or scoped: the SMT emitter, the determinism profile, per-function processes, the integer encoding, the ownership-trusting memory model, the content-hash identity, `llvm.assume` elision, the `undef` ban, and TCB.md. The catalogue's remaining kinds land 1.5.1–1.5.8.

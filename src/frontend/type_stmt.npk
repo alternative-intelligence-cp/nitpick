@@ -1365,6 +1365,36 @@ pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
 };
 
 // Does this struct type declare the named field `fixed`?
+// A WRITE PATH INTO A PART OF A `fixed` BINDING, OR UNDER A `fixed` FIELD
+// (DEF-106, 1.6.0 step 4b; TYPE-086): the one question every write form asks
+// through `refuse_write_path` -- an assignment or compound assignment, a
+// stateful operation; the address forms and the pointer-receiver call report
+// TYPE-071 before they get here (D-240). Two shapes are the bindings analysis's
+// and are skipped: the whole binding (`FI = ...`, ASSIGN-002 "assigned once")
+// and a `fixed` field's own assignment (`s.f = ...`, ASSIGN-002 "a fixed field
+// is assigned once"). What is left is exactly what nothing refused: an element
+// or a plain field of a `fixed` binding, and anything under a `fixed` field.
+// True when reported.
+pub func:refuse_fixed_write = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    if (raw expr_is_none(place)) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, place);
+    if (n.kind == ExprKind.ExprIdentifierExpr) { pass false; }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        if (bt != 0i32) {
+            int32:st = bt;
+            if ((raw type_kind(e.types, bt)) == (raw TY_POINTER())) { st = raw type_elem(e.types, bt); }
+            if (raw struct_field_fixed(e, st, (raw expr_name(n)) =>! int32)) { pass false; }
+        }
+    }
+    if (!(raw place_fixed(e, place, 64i32))) { pass false; }
+    string:m1 = string_concat("a `fixed` binding is written once, where it is declared, and no part of it is written after (D-287), so this ", what);
+    discard(raw te_error(e, raw TYPE_FIXED_WRITE(),
+        string_concat(m1, " into a part of one is refused -- a `fixed` module binding is read-only memory (D-211): the store faulted at -O0 and was deleted as undefined at -O2, and an owning element's overwrite freed a literal -- copy the value out (`.clone()` for an owning one), or declare the binding plain"),
+        at));
+    pass true;
+};
+
 func:struct_field_fixed = bool(ExprTyper->:e, int32:sty, int32:name) never fails {
     pass (((raw struct_field_quals(e, sty, name)) & (raw QUAL_FIXED())) != 0i32);
 };

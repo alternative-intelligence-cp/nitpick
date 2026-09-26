@@ -18487,6 +18487,17 @@ program faulted (`MachineFault` at -O0; at -O2 the store deleted as UB and the d
 `Unreachable`), at every pin the listener keeps. `NITPICK-TYPE-084` refuses a move out of a `fixed`
 binding or any part of one when the value owns, at the `move` operator and at `pass`, as TYPE-046
 refuses the copy and TYPE-071 the address; a copyable value moved out is a plain copy and stays.]**
+
+**[1.6.0 step 4b (2026-09-25): THE WRITE INTO A PART, asked at last — DEF-106, the library listener's
+fuzzer's finding. `FI[i] = 5i64` over `fixed int64[2]:FI` and `FP.b = 5i64` over a `fixed P:FP` compiled and
+stored into the `constant` global this decision's reason names (a fault at -O0, the store deleted as undefined
+behaviour at -O2 — the two legs disagreeing), and `FA[i] = string_concat(…)` freed a literal body; the whole
+binding's second assignment was ASSIGN-002, its address TYPE-071, the move out TYPE-084, and the part's write
+was asked by nothing. `NITPICK-TYPE-086` refuses every write form into a part of a `fixed` binding — an element,
+a plain field, a compound assignment, a stateful operation, a `fixed` local's element, anything under a `fixed`
+field — through the one helper every write form asks, the bindings analysis keeping its two shapes (D-240). So
+this decision now reads whole: a `fixed` binding is written once, where it is declared, and no part of it is
+written, addressed or moved out of after.]**
 ## D-288 — the floor's obligations: the evidence beside the floor, the program's theory, loops by invariant or by a stated bound, the residue named, TCB.md generated — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-63, S-64, S-65, S-68; lands at 1.5.6 steps 3, 4 and 6)**
 
 Planned 1.5.6 (`meta/roadmap/1.5/1.5.6.md`, 2026-09-11, on `149dbf6`) under

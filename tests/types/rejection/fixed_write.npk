@@ -1,0 +1,69 @@
+// expect-error: NITPICK-TYPE-086
+//
+// DEF-106 (1.6.0 step 4b, the library listener's O-N24, found by its fuzzer): a
+// write INTO A PART of a `fixed` binding compiled and stored into the LLVM
+// `constant` global (D-211) -- a fault at -O0, the store deleted as undefined
+// at -O2, and for an owning element a free of a literal body. The whole
+// binding's second assignment was ASSIGN-002, its address TYPE-071 (D-287), a
+// move out of it TYPE-084 (DEF-99); the part's write is TYPE-086 now, for an
+// element, a plain field, a compound assignment, a `fixed` local's element and
+// a plain field under a `fixed` field alike. Reading a part, and cloning an
+// owning one, is the way (the control below carries no code).
+mod:fixed_write;
+
+fixed string[2]:FA = ["abc", "def"];
+struct:Box = { string:s; };
+fixed Box:FB = Box{ s: "abc" };
+fixed int64[2]:FI = [1i64, 2i64];
+struct:P = { int64:a; int64:b; };
+fixed P:FP = P{ a: 1i64, b: 2i64 };
+struct:Inner = { int64:x; };
+struct:Outer = { fixed Inner:f; };
+
+func:elem_owning = NIL(int64:i) {
+    FA[i] = string_concat("xyz", "w") ?! HeapOom;
+    pass NIL;
+};
+
+func:field_owning = NIL() {
+    FB.s = string_concat("uvw", "q") ?! HeapOom;
+    pass NIL;
+};
+
+func:elem_scalar = NIL(int64:i) never fails {
+    FI[i] = 5i64;
+    pass NIL;
+};
+
+func:field_scalar = NIL() never fails {
+    FP.b = 5i64;
+    pass NIL;
+};
+
+func:compound = NIL(int64:i) {
+    FI[i] += 1i64;
+    pass NIL;
+};
+
+func:local_elem = int64() never fails {
+    fixed int64[2]:a = [1i64, 2i64];
+    a[1i64] = 3i64;
+    pass a[0i64];
+};
+
+func:under_fixed_field = NIL() never fails {
+    Outer:o = Outer{ f: Inner{ x: 1i64 } };
+    o.f.x = 2i64;
+    pass NIL;
+};
+
+func:control = int64(int64:i) {
+    string:a = FA[0i64].clone() ?! HeapOom;
+    int64:n = FI[1i64] + FP.b;
+    Outer:o = Outer{ f: Inner{ x: 1i64 } };
+    int64:m = o.f.x + n + a.len;
+    pass m + FI[i];
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };
