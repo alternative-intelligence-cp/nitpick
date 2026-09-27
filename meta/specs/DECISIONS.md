@@ -21695,3 +21695,34 @@ spawned child that failed; the function's own error still wins over every child'
 same child's error (it entered `failsafe` at the first error it met, the last-spawned's).
 Landed at 1.6.1e step 1 under the recommendation, ratified the same day: `join_first_spawned.npk`
 and `join_main_first_spawned.npk` pin it; the listener's `ctl_j3` answers E2 by the rule.
+
+## D-335 — wide strings are IN: `string<char16>` and `string<char32>` are designed and implemented before the freeze, not struck — **SETTLED (user decision, 2026-09-26: "For the S-116, i think if we are ever gonna have them we go ahead and plan for and implement them now so they can also go through all the bug checks and testing and verification we are currently doing"; S-116, found at 1.6.1e step 2)**
+
+**The history.** TYPE_REFERENCE §3.2's layout table lists `string` = `string<char8>`,
+`string<char16>` and `string<char32>`, each `{ptr, i64, i64}`. 1.6.1e step 2 (DEF-152) made a
+builtin that takes no type arguments refuse them, and the first form of that fix refused the three
+`string` spellings too -- contradicting the reference and the step's plan, which had kept them; the
+landed form keeps them. Measuring what they meant found that the compiler has ALWAYS accepted the
+two wide forms and IGNORED the element width: each is exactly a `string` -- its elements bytes,
+`.len` a byte count, a read a byte -- so `string<char16>` compiled with a meaning its spelling does
+not say, the class DEF-152 closed for `tfp64<Meters>`.
+
+**The two readings put to the user.** Decide wide strings OUT (refuse the two forms, strike the two
+rows, keep `string<char8>` as the one alias of `string`) -- the recommendation, on the ground that a
+wide string is a feature nobody had designed; or DESIGN them now and land them before the evidence
+campaign closes.
+
+**The decision.** Wide strings are IN. The user's rule, stated with it: the language is made "feature
+complete" to what is planned, then frozen -- permanently, no breaking change afterwards except for
+security -- and tested; a feature that is ever going to exist is implemented before the freeze, so it
+goes through every bug check, test and verification the rest of the language does. The reference
+already plans the two forms, so they are designed and implemented as their own subcycle, **1.6.1f**
+(the 1.6 README's map), planned execution-grade before it starts: the element type, indexing and
+`.len` in code units, conversion to and from `string` (UTF-8, D-193's encoding), literals,
+`ToString`, the floor's allocation and drop, the channel and spawn rules, the verification rows.
+Its plan is design work (the model policy: planning and soundness-deciding design are Fable's).
+Until it lands the two forms stay as they are -- accepted, byte strings -- and no code of the tree
+or the libraries writes one (CLAUDE.md says so, and advance notice F23 told the library listener);
+the plan's first step decides whether they refuse by name in the interim, the capability ladder's
+rule for a form not yet implemented, which this decision recommends.
+
