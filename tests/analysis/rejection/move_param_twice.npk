@@ -1,0 +1,58 @@
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 17:20
+//
+// DEF-124 (1.6.1d step 4; the library listener's F-009): a `move` PARAMETER
+// RE-INITIALISED AFTER A MOVE IS READABLE AGAIN -- `x = raw nw();` marks the
+// parameter assigned as a local's assignment does. The CONTROL of 1.4.3's rule
+// stands: a parameter moved twice with no assignment between is MOVE-001 at
+// the second move.
+mod:move_param_twice;
+
+func:nw = string() never fails { pass "fresh"; };
+func:take = NIL(move string:s) never fails { pass NIL; };
+func:obs = int64(string:s) never fails { pass s.len; };
+
+func:twice = NIL(move string:x) never fails {
+    drop take(move(x));
+    drop take(move(x));
+    pass NIL;
+};
+
+func:reinit = int64(move string:x) never fails {
+    drop take(move(x));
+    x = raw nw();
+    pass (raw obs(x));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw reinit("abc")) != 5i64) { exit 1i32; }
+    drop twice("xyz");
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

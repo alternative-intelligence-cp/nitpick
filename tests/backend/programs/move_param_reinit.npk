@@ -1,0 +1,70 @@
+// expect-exit: 22
+//
+// DEF-124 (1.6.1d step 4; the library listener's F-009): A `move` PARAMETER
+// RE-INITIALISED AFTER A MOVE IS READABLE AGAIN. `string:t = move(x); x = raw
+// nw(); … obs(x)` was MOVE-001 at the read while its local twin compiled: the
+// bindings analysis returned before marking a parameter's assignment (a
+// parameter's symbol is a `SYM_DECL`, and the branch handled a global's
+// `fixed` and nothing else), so the moved bit set by `move(x)` was never
+// cleared. The emitter had always restored the parameter's drop flag on the
+// assignment, so the fixed program drops the new value once and leaks
+// nothing (the listener's program: exit 22, heap 89/89/2 as its local twin).
+mod:move_param_reinit;
+error:E9;
+func:mk = string() never fails {
+    pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c");
+};
+func:nw = string() never fails {
+    pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w");
+};
+func:sn = string() never fails {
+    pass string_concat("stttttttttttttttttttttttttttttttttttttttttttt", "u");
+};
+func:truth = bool(int64:n) never fails {
+    pass n > 0i64;
+};
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 115u8) { pass 25i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+func:obs_l = int32(List<int64>:v) never fails {
+    if (v.count == -6148914691236517206i64) { pass 70i32; }
+    if (v.count == 0i64) { pass 23i32; }
+    int64:e = v[0i64];
+    if (e == 424242i64) { pass 21i32; }
+    if (e == 777777i64) { pass 22i32; }
+    if (e == 555555i64) { pass 25i32; }
+    if (e == -6148914691236517206i64) { pass 70i32; }
+    pass 24i32;
+};
+func:f = int32(move string:x) never fails {
+    string:t = move(x);
+    x = raw nw();
+    pass raw obs_s(x);
+};
+func:main = int32(cstring[]:_~argv) {
+    string:s = raw mk();
+    int32:o = raw f(move(s));
+    exit o;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,44 @@
+// expect-exit: 110
+//
+// DEF-131 (1.6.1d step 4): a twisted `<=>` guards as `<` does (D-008 §5, D-278):
+// an ERR operand at a comparison is a tainted value about to steer control flow,
+// and it traps `TbbErr` -- once, before the two compares -- so this program ends
+// in `failsafe`'s `(TbbErr)` arm. A `tfp` pair, since a `tbb` has no ordering.
+mod:spaceship_tfp_err;
+
+func:vq = tfp32(tfp32:x) never fails { pass x; };
+
+func:main = int32(cstring[]:_~argv) {
+    tfp32:qa = raw vq(1.5tfp32);
+    tfp32:qb = raw vq(ERR);
+    int32:o = qa <=> qb;
+    if (o == 0i32) { exit 1i32; }
+    exit 2i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

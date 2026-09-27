@@ -1,0 +1,35 @@
+// expect-exit: 0
+// expect-obligation: requires discharged 1
+// expect-obligation: requires open 1
+// expect-obligation: ensures discharged 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: exhaustive checker 1
+//
+// DEF-131 (1.6.1d step 4): `<=>` IS A TERM -- `(ite (< a b) (- 1) (ite (> a b)
+// 1 0))`, an exact `int32` -- so an `ensures` over its result under a
+// `requires` that orders the operands is discharged.
+mod:spaceship;
+error:E9;
+
+func:three = int32(int32:a, int32:b) requires a < b ensures result == (0i32 - 1i32) never fails {
+    pass (a <=> b);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:o = raw three(3i32, 9i32);
+    if (o != (0i32 - 1i32)) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (RequiresViolated) { exit 60i32; }, (EnsuresViolated) { exit 61i32; },
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

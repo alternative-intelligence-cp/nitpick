@@ -162,7 +162,13 @@ step 2).**
   - `~5u8` is 250;
   - a `uint64` divides, takes remainders, shifts right and orders UNSIGNED;
   - a constant `MIN / −1` or `MIN % −1` is refused as a constant division by
-    zero is (TYPE-004), since the run time traps `DivOverflow`.
+    zero is (TYPE-004), since the run time traps `DivOverflow` — WHEREVER the
+    folder decides the pair (D-331, 1.6.1d step 4): a local's initialiser, an
+    argument, any expression, as a constant `+ - *` overflow is (TYPE-076).
+    Until that step the refusal reached only a `fixed` initialiser and a
+    `comptime` body, where the folder was asked; `int32:x = 5i32 / 0i32;`
+    compiled and trapped at run time (DEF-133's d7, the library listener's
+    F-017; S-112).
 - `uint64` values past 2^63−1 are built with bit operations, which never
   overflow: `~0u64`, `(1u64 << 63u64) | k`.
 

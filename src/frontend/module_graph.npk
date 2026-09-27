@@ -255,6 +255,11 @@ func:check_file_header = NIL(ModuleGraph->:g, int32:file, DeclId:root) never fai
             string_concat(m3, ";` (D-248)"), d0.span));
         pass NIL;
     }
+    // A HEADER WHOSE NAME THE PARSER REFUSED (DEF-143): `mod:error;` is
+    // PARSE-001 at the keyword, and the node carries no name; the mismatch
+    // below would add "declares `mod:;` first" -- a second sentence about one
+    // mistake (D-240), with the offending word rendered as nothing.
+    if ((raw decl_name(d0)) == 0i32) { pass NIL; }
     string:name = raw intern_get(g.interns, raw decl_name(d0));
     if (raw string_eq(name, want)) { pass NIL; }
     string:w1 = string_concat("file `", shown);

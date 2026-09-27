@@ -1,0 +1,78 @@
+// DEF-125 (1.6.1d step 4; the library listener's F-010): the swap of two owned
+// strings through a lent `dyn`'s method is ACCEPTED -- the moved-out `self.v`
+// carries what the place holds (nothing: no view was ever stored there), not
+// `self`'s identity -- beside the two shapes that always were (a fresh string
+// stored into the cell, a moved local stored). The program twin runs it (exit
+// 22 at both legs); this file is the frontend's silence and the emission.
+mod:lent_dyn_swap;
+error:E9;
+func:mk = string() never fails {
+    pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c");
+};
+func:nw = string() never fails {
+    pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w");
+};
+func:sn = string() never fails {
+    pass string_concat("stttttttttttttttttttttttttttttttttttttttttttt", "u");
+};
+func:truth = bool(int64:n) never fails {
+    pass n > 0i64;
+};
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 115u8) { pass 25i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+func:obs_l = int32(List<int64>:v) never fails {
+    if (v.count == -6148914691236517206i64) { pass 70i32; }
+    if (v.count == 0i64) { pass 23i32; }
+    int64:e = v[0i64];
+    if (e == 424242i64) { pass 21i32; }
+    if (e == 777777i64) { pass 22i32; }
+    if (e == 555555i64) { pass 25i32; }
+    if (e == -6148914691236517206i64) { pass 70i32; }
+    pass 24i32;
+};
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { string:v; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass raw obs_s(self.v); };
+    func:op = NIL(DHold->:self) never fails {
+        string:other = raw nw();
+        string:tmp = move(self.v);
+        self.v = move(other);
+        other = move(tmp);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:main = int32(cstring[]:_~argv) {
+    DHold:b = DHold{ v: raw mk() };
+    dyn Tr:d = move(b);
+    drop callit(d);
+    int32:o = raw d.peek();
+    exit o;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

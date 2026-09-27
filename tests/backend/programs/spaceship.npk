@@ -1,0 +1,88 @@
+// expect-exit: 0
+//
+// DEF-131 (1.6.1d step 4; the library listener's F-015; S-111 as D-330):
+// `a <=> b` LOWERS -- every form was EMIT-002 since the operator was parsed,
+// two literals included. The operands are evaluated once and the emitter's
+// own `<` and `>` composed: `select(lt, -1, select(gt, 1, 0))`, an `int32`.
+// A signed pair, an unsigned pair past 2^63 (unsigned order: `ugt`), a
+// `char8` pair (code-point order, unsigned), a negative `int8` pair, a
+// constant pair the folder folds, and each operand evaluated ONCE (a counter
+// bumped by a call in the operand), and a `tfp32` pair through its signed
+// carriers with the twisted ERR guard once. A `tbb` pair has no ordering at
+// all (D-093, TYPE-008): error codes are compared against named constants.
+mod:spaceship;
+
+func:v32 = int32(int32:x) never fails { pass x; };
+func:vu64 = uint64(uint64:x) never fails { pass x; };
+func:vc = char8(char8:x) never fails { pass x; };
+func:v8 = int8(int8:x) never fails { pass x; };
+func:vq = tfp32(tfp32:x) never fails { pass x; };
+
+struct:Counter = { int32:n; };
+func:bump = int32(Counter->:c) never fails { c.n = c.n + 1i32; pass c.n; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = raw v32(3i32);
+    int32:b = raw v32(7i32);
+    if ((a <=> b) != (0i32 - 1i32)) { exit 1i32; }
+    if ((b <=> a) != 1i32)          { exit 2i32; }
+    if ((a <=> a) != 0i32)          { exit 3i32; }
+    // unsigned order: 2^63 + 5 is ABOVE 1, not below
+    uint64:big = raw vu64((1u64 << 63u64) | 5u64);
+    uint64:one = raw vu64(1u64);
+    if ((big <=> one) != 1i32)      { exit 4i32; }
+    if ((one <=> big) != (0i32 - 1i32)) { exit 5i32; }
+    // a char orders by code point, the upper half above NUL
+    char8:hi = raw vc('\xE9');
+    char8:lo = raw vc('a');
+    if ((hi <=> lo) != 1i32)        { exit 6i32; }
+    if ((lo <=> hi) != (0i32 - 1i32)) { exit 7i32; }
+    // a negative int8 pair orders signed
+    int8:m = raw v8(-100i8);
+    int8:p = raw v8(5i8);
+    if ((m <=> p) != (0i32 - 1i32)) { exit 8i32; }
+    // a constant pair folds to the same answer
+    if ((2i32 <=> 9i32) != (0i32 - 1i32)) { exit 9i32; }
+    if ((9i32 <=> 2i32) != 1i32)          { exit 10i32; }
+    if ((4i32 <=> 4i32) != 0i32)          { exit 11i32; }
+    // a fixed-point pair (D-195: signed carriers, Q-scaled) orders through its
+    // carriers, its ERR guard once before the two compares
+    tfp32:qa = raw vq(1.5tfp32);
+    tfp32:qb = raw vq(2.25tfp32);
+    if ((qa <=> qb) != (0i32 - 1i32)) { exit 12i32; }
+    if ((qb <=> qa) != 1i32)          { exit 13i32; }
+    if ((qa <=> qa) != 0i32)          { exit 16i32; }
+    // each operand is evaluated ONCE
+    Counter:c = Counter{ n: 0i32 };
+    int32:o = (raw bump(@c)) <=> (raw bump(@c));
+    if (o != (0i32 - 1i32)) { exit 14i32; }
+    if (c.n != 2i32)        { exit 15i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

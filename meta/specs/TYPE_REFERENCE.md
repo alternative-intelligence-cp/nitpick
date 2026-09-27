@@ -373,10 +373,17 @@ Nitpick includes several domain-specific native primitives designed for aggressi
   workbench (`nitpick-time`, 2026-09-05).
 - Ordering: `a.cmp(b)` (the prelude's `string: Ord`, D-257) → lexicographic;
   the operators are refused as `==` is.
-- Indexing: `char8:c = s[0];` → returns the char at that index (bounds-checked)
-- Length: `int64:len = s.length;` → field access
+- Indexing: `uint8:b = string_bytes(s)[0i64];` → the byte at that index
+  (bounds-checked through the byte slice, D-070); a `string` is not indexed
+  directly, and a character is a decoding question the prelude answers
+- Length: `int64:len = s.len;` → the sealed header field (D-313); `s.length`
+  is no member (the two rows above read `s[0]` and `s.length` until 1.6.1d step
+  4 — DEF-133, the library listener's F-017)
 
-**Standard functions (Tier 1, written in Nitpick):**
+**Standard functions (Tier 1, written in Nitpick)** — `nlibc`'s PLANNED
+surface, not the prelude's: none of these names is a builtin or a prelude
+function today (1.6.1d step 4, DEF-133); the prelude's string surface is the
+`string_*` family of BUILTIN_REFERENCE and the traits of TRAITS_REFERENCE.
 
 | Function | Signature | Description |
 |---|---|---|
@@ -489,9 +496,12 @@ bits/8, i.e. 32 for `i256`); the frontend now stores exactly this column
 (`tt_int`/`tt_tbb` cap at 16), because a frontend struct offset that is not
 LLVM's is memory corruption wearing a type annotation.
 
-**Behaviors:** ordinary integer semantics at every width — D-037 wrapping,
-D-092 explicit widening, the D-142 division guards (zero divisor and the
-structural INT_MIN/−1 check, which is width-independent by construction).
+**Behaviors:** ordinary integer semantics at every width — overflow TRAPS
+(`IntOverflow`, D-210, at every width; the wrapping family `+% -% *%` is the
+modular spelling, D-312 — this sentence read "D-037 wrapping" until 1.6.1d
+step 4, DEF-133), D-092 explicit widening, the D-142 division guards (zero
+divisor and the structural INT_MIN/−1 check, which is width-independent by
+construction).
 
 ---
 
@@ -2052,7 +2062,7 @@ level, because `q.x` does.
 | `/` | divide | `sdiv`/`fdiv` | div-by-zero → failsafe |
 | `%` | remainder | `srem`/`frem` | |
 | `**` | power | library call | Tier 1 |
-| `<=>` | spaceship | `icmp`+select | Returns -1/0/1 |
+| `<=>` | spaceship | `icmp`+select | Returns -1/0/1 (`int32`). Lowered since 1.6.1d step 4 (DEF-131: every form was EMIT-002 before) for an integer, a `char`, a kernel identifier and the twisted kinds — the operands evaluated once, `<` and `>` composed, a twisted pair's ERR guard once (`err-exit`); the folder folds a constant pair and the encoder reads `(ite (< a b) -1 (ite (> a b) 1 0))`. **Refused on floats** (`NITPICK-TYPE-088`, D-330: no total order — NaN is neither below, above nor equal, and `0` would say "equal") and on a frac (its order is the exact core's); `<`, `==` and `>` stay. |
 
 ### Bitwise
 | Operator | Meaning | IR | Notes |
@@ -2068,7 +2078,7 @@ level, because `q.x` does.
 | Operator | Meaning | IR | Notes |
 |---|---|---|---|
 | `==` | equal | `icmp eq`/`fcmp oeq` | Scalars, pointers, and an `Optional` against `NIL`. **A struct, array, `Result`, `string` or `dyn` does not compare with `==`** (D-169; refused at the checker from 1.0.9c, a named rung until then) — implement `Eq` and call `a.eq(b)`; `string_eq` for strings. |
-| `!=` | not equal | `icmp ne`/`fcmp one` | |
+| `!=` | not equal | `icmp ne`/`fcmp une` | `une`, not `one`: `!=` is the negation of `==` (whose `oeq` is false on NaN), so NaN != NaN is TRUE — §1.4's rule, 0.9.4/D-143; the row read `one` until 1.6.1d step 4 (DEF-133) |
 | `<` | less than | `icmp slt`/`fcmp olt` | |
 | `<=` | less or equal | `icmp sle`/`fcmp ole` | |
 | `>` | greater than | `icmp sgt`/`fcmp ogt` | |
@@ -2115,7 +2125,7 @@ level, because `q.x` does.
 ### Ternary
 | Operator | Meaning | IR | Notes |
 |---|---|---|---|
-| `is (cond) : then : else` | ternary/conditional | `select i1 %cond, %then, %else` | NOT `? :` syntax |
+| `is (cond) : then : else` | ternary/conditional | branches: `br` on the condition, ONLY the chosen arm evaluated, the value merged (the encoder reads each arm under its condition, VERIFICATION §1.2) — this row read `select i1 %cond, %then, %else` until 1.6.1d step 4 (DEF-133's d4), which evaluates both arms and is not what the emitter writes | NOT `? :` syntax |
 
 ### String / Template
 | Operator | Meaning | Notes |

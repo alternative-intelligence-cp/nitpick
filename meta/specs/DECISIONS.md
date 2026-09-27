@@ -257,6 +257,16 @@ change an owning value takes it as `move T:p`.]**
 > — is the reading for a callee the analysis cannot see alone (a `dyn` method, a function value, a
 > `#` builtin). Rules 2, 3 and B and the freeze are unchanged; a bare builtin's result is the
 > reference's `Views` column's (D-249). The landing note under D-326 has the measurements.
+*[2026-09-26, 1.6.1d step 4 — a dated note (DEF-125).]* `move(place)` of an OWNING value whose
+type holds no foreign pointer carries the refs recorded AT that place — a view stored there
+earlier in the body — and nothing of its root's identity: the moved bytes are the heap body the
+value owns, and moving it out transfers that body. The ref collector had read "reaching into a
+value carries what the value carries", so `string:tmp = move(self.v)` in a `Self->` method
+carried `self`'s PASS ref, the store back recorded `self` into its own pointee, and a caller's
+swap through a lent `dyn` was BORROW-002 with no view anywhere (the library listener's F-010).
+The return seam's implicit move (`pass self.v`, S-26) reads the same way. A struct with a raw
+pointer field, a slice, a `dyn` keep the conservative reading (`type_holds_foreign_pointer`).
+
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
@@ -15110,6 +15120,14 @@ about parameters, a third time — so `string:b = move(x)` after `string:a = mov
 arm compiled and double-freed, and a read after a conditional move read the free poison
 (the library listener's F-003).
 
+*[2026-09-26, 1.6.1d step 4 — a dated note (DEF-124).]* A PARAMETER's re-assignment is an
+assignment: the move analysis learned about parameters at 1.4.3, and the assignment walk
+(`assign_assign`) had not — its `SYM_DECL` branch handled a global's `fixed` and returned, so
+`x = raw nw();` after `move(x)` never cleared the moved bit and the next read was MOVE-001
+while the local twin compiled (the library listener's F-009). The branch marks a
+`DeclParamDecl`'s slot now; the emitter had always restored the parameter's drop flag on the
+assignment, so the re-initialised value is dropped once and nothing leaks.
+
 ## D-209 — the adoption scope — **SETTLED (1.4.0 batch, user-ratified)**
 
 What `src/` adopts at 1.4.7, as a list rather than an ambition. **In**:
@@ -17546,6 +17564,17 @@ could be given.
 > node by hand (a `T` unbound) and now read `variant_payload_slot`. The
 > compiler, `npkg` and the tools check clean under the shared rules;
 > `nitpick.obligations` did not move.
+
+*[2026-09-26, 1.6.1d step 4 — a dated note (DEF-160).]* An enum's PAYLOAD may be an address,
+and until this step nothing recorded it: the layout wrote no pointer-bearing bit for an enum
+(`field_holds_ptr` answered "a tag and a word" for every enum, true of the payload-less enums
+it was written for), so the escape analysis's verdict filter dropped every borrow inside one,
+and the constructor `E.Some(@local)` — method-call-shaped, no callee — was read as an
+intercepted builtin method whose arguments carry nothing. `E.Some(@local)` returned from a
+function compiled, and the caller read a dead frame through the payload; the same inside a
+struct and stored through a call. The enum-layout arm records the bit from its payloads now,
+the three pointer tables read it, `type_reachable_in` descends payloads, and a constructor is
+an unknown callee to the ref collector (`call_is_enum_ctor`).
 
 ## D-262 — an unreferenced prelude item is not emitted, and the frontend's per-program cost is bounded by the program, not by the prelude — **SETTLED (user decision, 2026-09-05: "lets go with your recommendation"; OPEN_DECISIONS S-38; lands at 1.5.2d)**
 
@@ -21519,6 +21548,19 @@ and floats have none — compare with `<`, `==` and `>` and decide the unordered
 yourself); `<` and `>` on floats stay the ordered IEEE compares they are. Lands at 1.6.1d
 step 4.
 
+*[2026-09-26, 1.6.1d step 4 — the landing note (DEF-131).]* Landed as decided, with one
+correction of the decision's list by measurement: a `string` and a `tbb` have NO ordering
+at all (TYPE-008 — D-093's reading, "error codes are compared against named constants, not
+sorted"; a string orders by `a.cmp(b)`), so `<=>` on either is refused before this decision's
+rule is reached; the kinds it orders are an integer by its signedness, a `char` (code-point
+order), a kernel identifier and the twisted kinds that order — `tfp`, `dim256`, the ternary
+family — through their signed carriers with the ERR guard ONCE before the two compares (one
+`err-exit` row, the emitter's guard factored into `emit_twisted_cmp_guard`). Floats and a
+frac are `NITPICK-TYPE-088` at the operator (the frac orders through its exact core, not one
+`icmp`). The folder folds a constant pair to its `int32`; the encoder's term is
+`(ite (< a b) (- 1) (ite (> a b) 1 0))`; `tests/verify/spaceship.npk` discharges an `ensures`
+over it. The listener's three programs exit 0 at both legs.
+
 ## D-331 — A certain constant division by zero, or `MIN / −1`, is refused wherever the folder decides the pair: D-310's reach extended to `/` and `%` — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-112, DEF-133's d7)**
 
 **The history.** D-310 (1.5.8b) refuses a certain constant `+ - *` overflow at every node
@@ -21535,6 +21577,14 @@ the signed minimum over −1 — `NITPICK-TYPE-004`, one report (D-240), where T
 the overflow of the other three operators. A refusal added, announced to the library
 listener in advance; the alternative was the sentence moving to "where the folder is
 asked". Lands at 1.6.1d step 4.
+
+*[2026-09-26, 1.6.1d step 4 — the landing note (DEF-133's d7).]* Landed as decided:
+`check_const_division` at the typer's `/` and `%` folds the operands as `check_const_overflow`
+does and, when both are integer constants, folds the whole node so the folder's own division
+arm reports the zero divisor or the signed minimum over −1 with its own sentence — one report,
+since the diagnostic list keeps one copy of an identical finding and a `fixed` initialiser's
+later fold adds nothing. `tests/types/rejection/const_div_zero.npk` (five sites, the variable
+divisor as the control); the listener's `d7_local_constant_div_zero` refused TYPE-004.
 
 ## D-332 — a rejection test's reported sites are COUNTED per code: both runners hold the number of sites a code is reported at to the number of `expect-error` lines naming it — **SETTLED (user decision, 2026-09-26: "go with your recommendations on those two questions. they look fine to me."; S-113)**
 

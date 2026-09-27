@@ -1221,6 +1221,19 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
                     tn.span);
             }
         }
+        // A PARAMETER'S RE-ASSIGNMENT IS AN ASSIGNMENT (DEF-124, 1.6.1d step 4;
+        // the library listener's F-009): `x = raw nw();` after `move(x)` gives
+        // the parameter a value again, exactly as a local's assignment does
+        // (`state_mark` below clears the moved and freed bits), and a read after
+        // it is a read of that value. Until this step the branch returned here
+        // for every `SYM_DECL`, so a re-initialised `move` parameter stayed
+        // MOVE-001 at its next read while its local twin compiled -- the move
+        // analysis had learned about parameters at 1.4.3 (D-208) and the
+        // assignment had not. A parameter carries no `fixed` (it is not a
+        // `VarDeclStmt`), so there is nothing else to check.
+        if (gd.kind == DeclKind.DeclParamDecl) {
+            drop state_mark(st, raw symbol_slot(x, tn.a));
+        }
         pass NIL;
     }
 

@@ -2355,6 +2355,36 @@ pub func:arith_name = string(TokenKind:op, bool:signed) never fails {
     pass "";
 };
 
+// A TWISTED PAIR'S COMPARISON GUARD (0.9.5, D-008 §5; one shape since D-278,
+// 1.5.4b step 2): an ERR operand at a comparison is a tainted value about to
+// steer control flow, and it traps (TBB_ERR, -4100) -- `is_err` is the test
+// that looks without trapping, and `pick` with an `ERR:` arm is the branch
+// that handles it; a bare compare is neither. The `err-exit` row's site is
+// the compare node, elided through the matrices' guard. Nothing for a plain
+// kind; false when the width has no sentinel (the emitter's broken promise).
+// Factored out of the compare arm at 1.6.1d step 4 so `<=>` guards once.
+func:emit_twisted_cmp_guard = bool(ExprEmitter->:x, int32:lt, IrVal:lhs, IrVal:rhs,
+                                   int32:site, Span:at) never fails {
+    bool:twcmp = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB()));
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) { twcmp = true; }
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) { twcmp = true; }
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TERN())) { twcmp = true; }
+    if (!twcmp) { pass true; }
+    int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
+    string:tmn = raw tbb_min_decimal(tb);
+    if (tmn.len == 0i64) { pass false; }
+    string:e1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(e1, " = icmp eq ", lhs.ll, " ",
+                      raw cat3(lhs.ref, ", ", tmn)));
+    string:e2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(e2, " = icmp eq ", lhs.ll, " ",
+                      raw cat3(rhs.ref, ", ", tmn)));
+    string:ea = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ea, " = or i1 ", e1, ", ", e2));
+    drop tbb_trap_if(x, ea, site, at);
+    pass true;
+};
+
 func:icmp_name = string(TokenKind:op, bool:signed) never fails {
     if (op == TokenKind.OpEqEq)  { pass "eq"; }
     if (op == TokenKind.OpNotEq) { pass "ne"; }
@@ -3258,6 +3288,38 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         signed = true;
     }
 
+    // `a <=> b` LOWERS (DEF-131, 1.6.1d step 4; the library listener's F-015;
+    // S-111 as D-330): the operands evaluated ONCE above, then the emitter's
+    // own `<` and `>` composed -- `select(lt, -1, select(gt, 1, 0))`, an
+    // `int32` -- over a scalar integer, a `char`, a kernel identifier or a
+    // twisted carrier (its ERR guard once, the `err-exit` row's shape for `<`;
+    // the encoder records the row under the same site). Every form was
+    // EMIT-002 since the operator was parsed. Floats never reach here: the
+    // checker refuses them (TYPE-088, D-330 -- no total order), as it refuses
+    // every kind whose `<` is not one `icmp`.
+    if (op == TokenKind.OpSpaceship) {
+        if (!(raw ll_is_scalar_int(raw ll_ok(string_concat(lhs.ll, ""))))) {
+            pass (raw iv_broken(n.span));
+        }
+        if (!(raw emit_twisted_cmp_guard(x, lt, lhs, rhs, id.index, n.span))) {
+            pass (raw iv_broken(n.span));
+        }
+        string:sl = "ult";
+        string:sg = "ugt";
+        if (signed) { sl = "slt"; sg = "sgt"; }
+        string:s1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(s1, " = icmp ", sl, " ",
+                          raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+        string:s2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(s2, " = icmp ", sg, " ",
+                          raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+        string:s3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(s3, " = select i1 ", string_concat(s2, ", i32 1, i32 0")));
+        string:s4 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(s4, " = select i1 ", s1, ", i32 -1, i32 ", s3));
+        pass (raw iv("i32", move(s4), 0i32));
+    }
+
     string:cmp = raw icmp_name(op, signed);
     if (cmp.len > 0i64) {
         // FLOATS COMPARE WITH fcmp AND IEEE SEMANTICS (0.9.4, D-143): ordered
@@ -3288,25 +3350,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         // trapping, and `pick` with an `ERR:` arm is the branch that handles
         // it; a bare `==` is neither. Ordering was already a compile error
         // (D-093).
-        bool:twcmp = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB()));
-        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) { twcmp = true; }
-        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) { twcmp = true; }
-        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TERN())) { twcmp = true; }
-        if (twcmp) {
-            int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
-            string:tmn = raw tbb_min_decimal(tb);
-            if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
-            string:e1 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(e1, " = icmp eq ", lhs.ll, " ",
-                              raw cat3(lhs.ref, ", ", tmn)));
-            string:e2 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(e2, " = icmp eq ", lhs.ll, " ",
-                              raw cat3(rhs.ref, ", ", tmn)));
-            string:ea = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(ea, " = or i1 ", e1, ", ", e2));
-            // ONE GUARD SHAPE (D-278, 1.5.4b step 2): the `err-exit` row's
-            // site is this node, elided through the matrices' guard.
-            drop tbb_trap_if(x, ea, id.index, n.span);
+        if (!(raw emit_twisted_cmp_guard(x, lt, lhs, rhs, id.index, n.span))) {
+            pass (raw iv_broken(n.span));
         }
         string:c = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(c, " = icmp ", cmp, " ",

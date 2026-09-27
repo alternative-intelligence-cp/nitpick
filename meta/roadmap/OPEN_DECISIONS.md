@@ -2568,20 +2568,19 @@ defect declares a `DEF-` in §2f.
 > accesses; a write THROUGH the shared holder is the case its "a write through a shared holder" sentence names and
 > the walk does not check. Evidence: `findings/F-008-shared-claim-holder-write/`. **The fix (1.6.1d step 1):** `refuse_shared_holder_write` (a rootless place bottoming in `<-p`, and `acc_expr`'s dereference case) and `refuse_shared_to_writer` (the callee's mutation summary at the claim's position; an unseen callee refuses, a builtin admits) in alias.npk; `tests/analysis/rejection/shared_holder_write.npk` (seven sites), `tests/accept/shared_holder_reads.npk`.
 
-> **DEF-124 — OPEN (registered 2026-09-26; F-009; owner: the compiler seat, 1.6.1d step 3). A `move` PARAMETER
+> **DEF-124 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; F-009; the bindings analysis marks a parameter's assignment as a local's, `assign_assign`'s `SYM_DECL` branch; the listener's program exits 22 at both legs with its local twin's heap numbers; `tests/backend/programs/move_param_reinit.npk`, `tests/analysis/rejection/move_param_twice.npk` keeps 1.4.3's rule). A `move` PARAMETER
 > RE-INITIALISED AFTER A MOVE CANNOT BE READ (MOVE-001); its local twin compiles.** D-208's loop-carried states
 > re-initialise a local; a parameter's re-initialisation is not read as one. An over-restriction. Evidence:
 > `findings/F-009-move-param-reinit-refused/`.
 
-> **DEF-125 — OPEN (registered 2026-09-26; F-010; owner: the compiler seat, 1.6.1d step 3). NEW WITH 1.6.1 STEP 0:
+> **DEF-125 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; F-010; a `move` of an owning place whose type holds no foreign pointer carries the refs recorded AT that place -- `collect_moved_place_refs`, `type_holds_foreign_pointer` in escape.npk -- and the return seam's implicit move reads the same; the listener's swap runs 22 at both legs, `tests/backend/programs/lent_dyn_swap.npk`, `tests/accept/lent_dyn_swap.npk`; the refusals that stay are pinned in `tests/analysis/rejection/moved_field_carries_view.npk`). NEW WITH 1.6.1 STEP 0:
 > a swap through a lent `dyn`'s method (`move(self.v)` into a local, then two owning strings moved whole, no view
 > anywhere) is refused BORROW-002 at `9f6f370`, citing D-004 rule 3 and D-325 (DEF-115's rule); it compiles at
 > `c3bdae2` and `c970483` and runs 22, correctly.** DEF-115's store-into-a-lent-`dyn`-cell rule reads a MOVED whole
 > value as a borrow stored; an owned value moved into the cell is the cell's, not a view. An over-restriction.
 > Evidence: `findings/F-010-lent-dyn-swap-refused/`.
 
-> **DEF-126 — OPEN (registered 2026-09-26; the listener's O-N29, a diagnostic; owner: the compiler seat, 1.6.1d
-> step 3). A TYPE-007 MESSAGE NAMES TWO TYPES BY ONE WORD: an importer's own `struct:Row` beside an imported
+> **DEF-126 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; the listener's O-N29; `type_display_qualified` names a struct or an enum by the module node that holds its declaration -- an inline module by its name, a file by its header -- whenever the two plain texts of a mismatch are equal: "expected `mismatch_same_name.Row`, found `rows_same_name.Row`", measured; `tests/types/rejection/mismatch_same_name.npk`). A TYPE-007 MESSAGE NAMES TWO TYPES BY ONE WORD: an importer's own `struct:Row` beside an imported
 > `rows.Row`, with `Row:r = ROWS[1i64];`, is refused "expected `Row`, found `Row`" (the refusal is right; the
 > control renamed to `Cell` reads "expected `Cell`, found `Row`").** Qualify a type's name by its module whenever
 > the two names in one message are equal. Found by M8: 12 grid cells gained TYPE-007 at 1.6.0 step 3h (DEF-105's
@@ -2634,18 +2633,18 @@ defect declares a `DEF-` in §2f.
 > 64 bits (DEF-135's trap at ERR) -- and anything else is `NITPICK-TYPE-068` at the operand;
 > `tests/types/rejection/counted_wide.npk` (seven sites).
 
-> **DEF-131 — OPEN (registered 2026-09-26; F-015; owner: the compiler seat, 1.6.1d step 4, under S-111). `<=>`
+> **DEF-131 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; F-015; under S-111 as D-330: the emitter composes its own `<` and `>` over operands evaluated once, a twisted pair's ERR guard once, the folder folds a constant pair, the encoder reads `(ite (< a b) -1 (ite (> a b) 1 0))`; floats and a frac refused `NITPICK-TYPE-088`; the listener's three programs exit 0 at both legs; `tests/backend/programs/spaceship.npk`, `spaceship_tfp_err.npk`, `tests/types/rejection/spaceship_float.npk`, `tests/verify/spaceship.npk`). `<=>`
 > IS REFUSED BY THE EMITTER (`NITPICK-EMIT-002`) IN EVERY FORM, two `int32` literals included; the checker types
 > it `int32` over any ordered pair and no arm lowers it.** Lowered at step 4 for every ordered kind but the
 > floats, which are refused by the checker (no total order; S-111). Evidence:
 > `findings/F-015-spaceship-not-lowered/`.
 
-> **DEF-132 — OPEN (registered 2026-09-26; F-016; owner: the compiler seat, 1.6.1d step 4). A `pick` RANGE
+> **DEF-132 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; F-016; the chain reads each bound through the constant folder, `pat_bound_value`; the listener's three programs exit 4 at both legs; `tests/backend/programs/pick_neg_range.npk`). A `pick` RANGE
 > PATTERN WITH A NEGATIVE BOUND (`(-5i32..-2i32)`, `(-5i32..2i32)`, `(-5i32...-2i32)`) IS `NITPICK-EMIT-002`
 > where the value pattern `(-3i32)` lowers since DEF-35: the chain reads a bound's payload as a literal and
 > answers `iv_broken` for the negated form.** Evidence: `findings/F-016-negative-range-pattern-not-lowered/`.
 
-> **DEF-133 — OPEN (registered 2026-09-26; F-017; owner: the compiler seat, 1.6.1d step 4). SEVEN REFERENCE
+> **DEF-133 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; F-017; d1-d6 the six sentences corrected in TYPE_REFERENCE §3.2 and §28, §4, CONTROL_REFERENCE §2.3; d7 under S-112 as D-331: a certain constant division is refused wherever the folder decides it, `check_const_division`, `tests/types/rejection/const_div_zero.npk` -- the listener's `d7_local_constant_div_zero` refused TYPE-004 as its `fixed` control always was). SEVEN REFERENCE
 > SENTENCES THE COMPILER CONTRADICTS, the compiler right or safe in each: TYPE_REFERENCE §3.2's `s.length` and
 > `s[0]` (d1, d2: the language's are `s.len` and `string_bytes(s)[i]`), §28's `!=` row (`fcmp one` for the
 > emitted `une`, d3), §28's ternary row (`select` for the branches the emitter writes, d4), §4's D-037 wrapping
@@ -2716,16 +2715,14 @@ defect declares a `DEF-` in §2f.
 > **The fix:** `temp_take` of the selector in the expression form when it consumes, the statement form's line.
 > `tests/backend/programs/pick_value_consume.npk` (three shapes, 500 rounds, exit 0 at both legs).
 
-> **DEF-142 — OPEN (registered 2026-09-26; the library listener's O-N32, from nitpick-regex's 0.1.0 planning;
-> owner: the compiler seat, 1.6.1d step 4). A `pick` ARM NAMING A VARIANT ITS ENUM LACKS IS ADMITTED BY THE
+> **DEF-142 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; the library listener's O-N32; `check_enum_arms` in `type_pick_rules`, both spellings: an arm naming a variant the enum lacks, or another type's name before the dot, is `NITPICK-RESOLVE-002` at the pattern naming the enum, the missing name and the variants it has; `tests/types/rejection/pick_missing_variant.npk`). A `pick` ARM NAMING A VARIANT ITS ENUM LACKS IS ADMITTED BY THE
 > FRONTEND AND REFUSED BY THE EMITTER AS NITPICK-EMIT-002** (`enum:K = { A; B; };` with a `(K.C)` arm: npkc exits
 > 1 at the `pick`, writes no IR, and calls it a compiler defect; without the arm the program runs 0 at both legs;
 > without `(K.B)` as well it is PICK-001 "does not cover B", as it should). Reproduced by the listener at
 > `c970483`, `c3bdae2` and `9f6f370`. The class of DEF-131, DEF-132 and DEF-140. **Requested and planned:** a
 > resolution error at the arm naming the enum and the missing variant.
 
-> **DEF-143 — OPEN (registered 2026-09-26; the library listener's O-N32, its observation; owner: the compiler
-> seat, 1.6.1d step 4 with DEF-126's diagnostics). NITPICK-RESOLVE-012's MESSAGE FOR `mod:error;` DROPS THE
+> **DEF-143 — FIXED at 1.6.1d step 4 (2026-09-26; registered the same day; the library listener's O-N32; a module's name is read by `p_declared_name` -- `mod:error;` is `NITPICK-PARSE-001` at the keyword, DEF-103's rule, and the loader adds no second sentence; the case is `tests/frontend/module_graph.npk`'s last -- written to a pid-tagged temporary file and loaded through the real loader, because a file whose refusal is a parse error cannot sit in the tree, where every file must pass the real parser (D-085; the step's first form was a rejection file, and its harness refused it there)). NITPICK-RESOLVE-012's MESSAGE FOR `mod:error;` DROPS THE
 > KEYWORD:** it reads "declares `mod:;` first" -- the offending word, a keyword, renders as nothing. A message
 > defect: the text names the token by its interned spelling, and a keyword has none.
 
@@ -2871,6 +2868,20 @@ defect declares a `DEF-` in §2f.
 > over the slot (a drop of a vacant value is a no-op; a re-initialised one is dropped), the flag kept as the fast
 > path for a binding no address of which is taken — the emitter already knows which bindings are address-taken
 > (the frame-residency scan, D-191); measured on the tree before it lands. Its own landing, after 1.6.1e.
+
+> **DEF-160 — FIXED at 1.6.1d step 4 (2026-09-26; found and fixed the same day by the step's own probe of the
+> escape analysis's pointer predicate, not by a test of the thing that broke). AN ENUM PAYLOAD CARRIED AN
+> ADDRESS NOBODY TRACKED: `E.Some(@local)` returned from a function compiled since D-261 gave enums payloads,
+> and the caller read a dead frame through the payload (exit 3 at -O0, 0 at -O2 on a twelve-line program; the
+> same inside a struct, and stored through a call into an outliving pointee).** Two causes, one class: the
+> layout recorded no pointer-bearing bit for an enum (`field_holds_ptr`'s "a tag and a word" was true of
+> 0.8.1's payload-less enums), so `type_holds_pointer`'s verdict filter dropped every borrow inside one; and
+> the enum constructor -- method-call-shaped, no callee, no function type -- was read by the escape analysis
+> as an intercepted builtin method whose arguments carry nothing. The fix: the enum-layout arm records the bit
+> from its payloads (`tt_set_haspt`, as a struct's), the three pointer tables read it, `type_reachable_in`
+> descends payloads, and `call_is_enum_ctor` makes a constructor an unknown callee whose arguments' refs are
+> the value's (as a struct literal's field values are). `tests/analysis/rejection/enum_payload_escape.npk`
+> pins the three faces (BORROW-001, BORROW-001, BORROW-002). A refusal added, in F22 with the sweep.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

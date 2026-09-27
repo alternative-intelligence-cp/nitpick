@@ -928,7 +928,12 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
 func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.KwMod));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    // A MODULE'S NAME IS AN IDENTIFIER TOO (DEF-143, 1.6.1d step 4; the
+    // library listener's O-N32): `mod:error;` parsed with a name of NOTHING
+    // (a keyword has no interned spelling), and the loader's header check
+    // then reported "declares `mod:;` first" -- the offending word gone from
+    // the message. DEF-103's rule, applied where the name is read.
+    Token:name = raw p_declared_name(p);
     IdSpan:members = raw idspan_empty();
     if (raw p_accept(p, TokenKind.OpAssign)) {
         members = raw p_parse_item_block(p);
@@ -955,7 +960,7 @@ func:p_declared_name = Token(Parser->:p) never fails {
     if (name.kind == TokenKind.KwTrit) { pass name; }
     if (name.kind == TokenKind.KwNit) { pass name; }
     drop p_error_at(p, raw PARSE_EXPECTED(),
-        "expected a name: a keyword cannot be declared as a function or type name, since it could never be named where it is used",
+        "expected a name: a keyword cannot be declared as a function, type or module name, since it could never be named where it is used",
         name.span);
     pass name;
 };

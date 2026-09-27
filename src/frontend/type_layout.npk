@@ -288,7 +288,13 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     if (k == (raw TY_ERROR()))   { pass false; }   // a code word, not an address (D-179)
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_FLAGS()))   { pass false; }   // a word (D-230)
-    if (k == (raw TY_ENUM()))    { pass false; }
+    // AN ENUM HOLDS AN ADDRESS WHEN A PAYLOAD DOES (DEF-160): the bit the
+    // layout recorded, as a struct's; 0 (never laid out) answers YES.
+    if (k == (raw TY_ENUM())) {
+        int32:ebit = raw tt_haspt(r.types, t);
+        if (ebit == 1i32) { pass false; }
+        pass true;
+    }
     if (k == (raw TY_NIL()))     { pass false; }
     // Stated at 1.4.1 (the walkers-total instrument found them reaching the
     // conservative tail): a float is a scalar, an OwnedFd is a descriptor
@@ -516,6 +522,14 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         bool:ehaschan = false;
         bool:ehasborrow = false;
         bool:ehasshared = false;
+        // THE POINTER-BEARING BIT OF AN ENUM (DEF-160, 1.6.1d step 4): a
+        // payload may be an address, and `field_holds_ptr` answered `false`
+        // for EVERY enum since 0.8.1 ("a tag and a word") -- so `E.Some(@local)`
+        // returned from a function was never a borrow to the escape analysis
+        // and the caller read a dead frame through the payload (measured:
+        // exit 3 at -O0, 0 at -O2, on a twelve-line program). Recorded on the
+        // same walk as the struct's bit, read by the same three tables.
+        bool:ehaspt = false;
         if (raw enum_has_payload(r.ast, r.types, t)) {
             DeclId:did = DeclId{ index: raw type_decl(r.types, t) };
             DeclNode:d = raw ast_decl(r.ast, did);
@@ -559,6 +573,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         // question the drop function answers on the tag; this
                         // is only whether the type needs one at all.
                         if (raw type_drops_recorded(r.types, pt, 64i32)) { edrops = true; }
+                        if (raw field_holds_ptr(r, pt)) { ehaspt = true; }
                         if (raw type_contains_channel_recorded(r.types, pt, 64i32)) {
                             ehaschan = true;
                         }
@@ -578,6 +593,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                 discard(raw lay_field(@l, raw align_up(wsize, walign), walign));
             }
         }
+        drop tt_set_haspt(r.types, t, ehaspt);
         drop tt_set_drops(r.types, t, edrops);
         drop tt_set_haschan(r.types, t, ehaschan);
         drop tt_set_hasborrow(r.types, t, ehasborrow);

@@ -1,0 +1,83 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 23:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 40:10
+//
+// DEF-125 (1.6.1d step 4; the library listener's F-010): A MOVED-OUT OWNING
+// VALUE CARRIES WHAT THE PLACE HOLDS, NOT ITS ROOT'S IDENTITY -- so a
+// `string` field that was assigned a VIEW of frame storage (`string_from_bytes`
+// over a local buffer), moved out and returned, is still BORROW-001: the view
+// ref recorded at the field travels with the moved value. A struct whose field
+// is a raw POINTER keeps the conservative reading -- moved out of a lent
+// `dyn`'s method and stored into the cell, BORROW-002 as before. The control
+// moves out a plain owned string and returns it.
+mod:moved_field_carries_view;
+
+struct:H = { string:v; int64:n; };
+struct:P = { int32->:p; int64:n; };
+
+func:view_out = string() never fails {
+    uint8[8]:buf = [104u8, 105u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    H:h = H{ v: string_from_bytes(@buf[0i64], 2i64), n: 0i64 };
+    string:t = move(h.v);
+    pass t;
+};
+
+trait:Tr = { func:op = NIL(Self->:self, P:other) never fails; };
+struct:Cell = { P:q; };
+impl:Cell:Tr = {
+    func:op = NIL(Cell->:self, P:other) never fails {
+        P:tmp = self.q;
+        self.q = other;
+        if (tmp.n == 0i64) { pass NIL; }
+        pass NIL;
+    };
+};
+
+func:through_dyn = NIL(dyn Tr:d) never fails {
+    int32:local = 3i32;
+    P:np = P{ p: @local, n: 1i64 };
+    drop d.op(np);
+    pass NIL;
+};
+
+func:fine = string() never fails {
+    H:h = H{ v: "owned", n: 0i64 };
+    string:t = move(h.v);
+    pass t;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    string:a = raw fine();
+    if (a.len != 5i64) { exit 1i32; }
+    string:b = raw view_out();
+    if (b.len != 2i64) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

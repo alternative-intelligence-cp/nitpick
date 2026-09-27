@@ -44,7 +44,11 @@ Modules can be defined inline or exist in external files.
     nothing and loads nothing: it says what the file is. A file whose first
     declaration is anything else, or a `mod:` naming another module, is refused
     at that declaration (`NITPICK-RESOLVE-012`; a file with no declarations at
-    all is refused at its first line). A member-less `mod:name;` written AFTER
+    all is refused at its first line). A module's name is an IDENTIFIER: `mod:error;`
+    — a keyword — is `NITPICK-PARSE-001` at the keyword (DEF-103's rule, applied
+    to modules at 1.6.1d step 4 for DEF-143; the header check adds no second
+    sentence, where it once read "declares `mod:;` first" with the keyword
+    rendered as nothing). A member-less `mod:name;` written AFTER
     the header is the external-file import above. Before this rule a header
     and an import written first were the same shape, so a header naming a
     sibling that existed loaded the sibling into the program — two `main`s at

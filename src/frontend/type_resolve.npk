@@ -1508,12 +1508,26 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
         if (op == TokenKind.OpLtEq) { pass (raw cv_bool(r.types.t_bool, cua <= cub)); }
         if (op == TokenKind.OpGt)   { pass (raw cv_bool(r.types.t_bool, cua > cub)); }
         if (op == TokenKind.OpGtEq) { pass (raw cv_bool(r.types.t_bool, cua >= cub)); }
+        // `<=>` folds to its `int32` (DEF-131): the emitter's `select` pair
+        // and the encoder's `ite` agree with it by construction.
+        if (op == TokenKind.OpSpaceship) {
+            int64:uord = 0i64;
+            if (cua < cub) { uord = 0i64 - 1i64; }
+            if (cua > cub) { uord = 1i64; }
+            pass (raw cv_int(raw tt_int(r.types, 32i32, true), uord));
+        }
         pass (raw cv_none());
     }
     if (op == TokenKind.OpLt)     { pass (raw cv_bool(r.types.t_bool, l.num < rr.num)); }
     if (op == TokenKind.OpLtEq)   { pass (raw cv_bool(r.types.t_bool, l.num <= rr.num)); }
     if (op == TokenKind.OpGt)     { pass (raw cv_bool(r.types.t_bool, l.num > rr.num)); }
     if (op == TokenKind.OpGtEq)   { pass (raw cv_bool(r.types.t_bool, l.num >= rr.num)); }
+    if (op == TokenKind.OpSpaceship) {
+        int64:sord = 0i64;
+        if (l.num < rr.num) { sord = 0i64 - 1i64; }
+        if (l.num > rr.num) { sord = 1i64; }
+        pass (raw cv_int(raw tt_int(r.types, 32i32, true), sord));
+    }
     pass (raw cv_none());
 };
 

@@ -1,0 +1,23 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 14:5
+//
+// DEF-126 (1.6.1d step 4; the library listener's O-N29): TWO TYPES WITH ONE
+// NAME ARE NAMED BY THEIR MODULES. An importer's own `struct:Row` beside the
+// imported `rows_same_name.Row` was refused "expected `Row`, found `Row`"; the
+// message reads "expected `mismatch_same_name.Row`, found `rows_same_name.Row`"
+// now (measured by hand at the step: the runners match codes, not text). The
+// refusal itself is right and stands.
+mod:mismatch_same_name;
+use "./rows_same_name.npk".ROWS;
+struct:Row = { int64:x; int64:y; };
+func:main = int32(cstring[]:_~argv) {
+    Row:r = ROWS[1i64];
+    if (r.x != 3i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

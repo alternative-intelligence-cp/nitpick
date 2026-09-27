@@ -68,6 +68,12 @@ In a lending `pick` these names are views of `event`'s fields and payload
     `move` of the arm's own binding inside its guard is refused — the guard runs before the arm is
     chosen, over bindings copied out of the selector, and a guard that fails hands the same payload
     to the next arm. Read the binding in the guard; move it in the body.
+*   **An arm over an enum names one of ITS variants** (DEF-142; 1.6.1d step 4; `NITPICK-RESOLVE-002`):
+    `(K.C)` over a `K` that has no `C`, or `(Other.A)` — another type's name before the dot — is refused
+    at the pattern, naming the enum, the missing name and the variants it has. Until that step such an
+    arm was admitted by every pass (the binding typer looked a variant up only to type its payloads,
+    the exhaustiveness analysis asked which variants the arms cover and never whether an arm covers
+    anything) and died in the emitter as `EMIT-002`, a compiler-defect report for a program mistake.
 *   **A consuming arm owns what it binds until the arm ends** (D-216, DEF-121; 1.6.1d step 3): the
     bindings of `pick (move(v))` are dropped at the arm's end and at every exit from it (`pass`,
     `break`, `give`, `fall`), in the statement form and the expression form alike; a payload the arm
@@ -199,7 +205,8 @@ for (int64:i in 1..3) {
 > `assoc:Item; func:next = Item?(Self->:self);`, `NIL` ending the loop (the
 > `Iterator` form lands at 1.0.9d). **The binding's type must equal the element
 > type**: no wrap, no widening. Anything else is refused at the checker by
-> name (`NITPICK-TYPE-033`), never at a backend rung.
+> name (`NITPICK-TYPE-007`, the type mismatch at the binding — this sentence
+> named `TYPE-033` until 1.6.1d step 4, DEF-133's d6), never at a backend rung.
 
 ### 2.4 Counted Iteration (`loop` and `till`)
 For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword.

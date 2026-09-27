@@ -577,6 +577,11 @@ pub func:TYPE_COPY_OWNS = string() never fails { pass "NITPICK-TYPE-087"; };
 // code (measured: exit 95 through the heap's integrity trap). The guard decides;
 // the body consumes. A move of anything else inside a guard is a conditional
 // move the move analysis already tracks.
+// `<=>` NEEDS A TOTAL ORDER ONE `icmp` DECIDES (DEF-131 / D-330, 1.6.1d step
+// 4): a float pair is refused -- a NaN is neither below nor above nor equal,
+// and `0` would say "equal" -- and so is every ordered kind whose `<` is not
+// one integer compare (a frac's exact core); `<`, `==` and `>` stay.
+pub func:TYPE_SPACESHIP_ORDER = string() never fails { pass "NITPICK-TYPE-088"; };
 pub func:TYPE_GUARD_MOVES_BINDING = string() never fails { pass "NITPICK-TYPE-089"; };
 
 // A `fall` INTO AN ARM THAT BINDS A NAME (DEF-139, 1.6.1d step 3): `fall label;`

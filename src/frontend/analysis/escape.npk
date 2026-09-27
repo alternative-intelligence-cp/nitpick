@@ -739,7 +739,13 @@ func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
     if (raw expr_is_none(v)) { pass NIL; }
     if (x.cur_fn < 0i32) { pass NIL; }
     List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
-    drop collect_view_refs(x, v, raw ESCAPE_DEPTH(), @refs);
+    // `pass self.v` IS THE EMITTER'S IMPLICIT MOVE (S-26, D-254): the same
+    // reading as `pass move(self.v)` -- the place's own refs, not its root's
+    // (DEF-125). A place that owns nothing or holds a foreign pointer falls
+    // through to the general collection.
+    if (!(raw collect_moved_place_refs(x, v, @refs))) {
+        drop collect_view_refs(x, v, raw ESCAPE_DEPTH(), @refs);
+    }
     for (int64:i in 0i64...refs.count) {
         ViewRef:r = refs[i];
         int32:k = raw param_index_of(x, r.root);
@@ -768,10 +774,39 @@ func:call_is_bare_builtin = bool(Escape->:x, ExprId:call) never fails {
     pass ((raw bare_builtin_name(x, n)).len > 0i64);
 };
 
+// AN ENUM CONSTRUCTOR IS METHOD-CALL-SHAPED (DEF-160, 1.6.1d step 4):
+// `E.Some(@local)` parses as a method call whose receiver is the identifier
+// `E`, and the checker recognises the constructor exactly so -- an
+// identifier whose symbol is the enum's declaration (`type_members.npk`'s
+// namespace read). It has no callee, no function type and no namespace
+// record, which is the shape of a BUILTIN METHOD (`c.re()`, `s.eq(t)`,
+// `.clone()`) to the predicate below -- so its arguments' refs were never
+// collected, `E.Some(@local)` carried no borrow, and the caller read a dead
+// frame through the payload (three faces: returned bare, inside a struct,
+// stored through a call). A constructor is an UNKNOWN callee here: every
+// argument's refs are the value's, as a struct literal's field values are.
+func:call_is_enum_ctor = bool(Escape->:x, ExprId:call) never fails {
+    if (raw expr_is_none(call)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, call);
+    if (n.kind != ExprKind.ExprMethodCallExpr) { pass false; }
+    ExprId:rv = raw expr_operand(n);
+    if (raw expr_is_none(rv)) { pass false; }
+    ExprNode:rn = raw ast_expr(x.ast, rv);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (rn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, rn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    if (s.origin < 0i32) { pass false; }
+    if (s.origin >= (raw ast_decl_count(x.ast))) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: s.origin });
+    pass (d.kind == DeclKind.DeclEnumDecl);
+};
+
 func:call_is_builtin_method = bool(Escape->:x, ExprId:call) never fails {
     if (raw expr_is_none(call)) { pass false; }
     ExprNode:n = raw ast_expr(x.ast, call);
     if (n.kind != ExprKind.ExprMethodCallExpr) { pass false; }
+    if (raw call_is_enum_ctor(x, call)) { pass false; }   // DEF-160: a constructor, not an intercepted method
     if ((raw exprtypes_ns_decl(x.etypes, call)) != 0i32) { pass false; }
     if ((raw call_callee_fn(x, call)) != 0i32) { pass false; }
     pass ((raw exprtypes_callee_ft(x.etypes, call)) == 0i32);
@@ -1175,6 +1210,7 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
 func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref, int32:start,
                               int32:count) never fails {
     if (raw call_is_builtin_method(x, call)) { pass NIL; }
+    if (raw call_is_enum_ctor(x, call)) { pass NIL; }   // a constructor stores its arguments and writes through none (DEF-160)
     if (x.cur_fn < 0i32) { pass NIL; }
     int32:callee = raw call_callee_fn(x, call);
     int32:base = 0i32;
@@ -1365,6 +1401,116 @@ func:push_binding_refs = NIL(Escape->:x, int32:sym, List<ViewRef>->:out) never f
     pass NIL;
 };
 
+// THE REFS A MOVED-OUT OWNING PLACE CARRIES (DEF-125): true when the reading
+// applied -- `place` is a place chain rooted at an identifier (a local, a
+// pattern binding, a parameter -- `self.v` through the pointer receiver
+// included), its recorded type owns and holds no foreign pointer -- and
+// `out` then holds the root binding's refs (a local's chain, or a parameter's
+// POINTEE chain: what the body stored into the pointee at each path) whose
+// full path overlaps the place's path below the root, and NOTHING else: not
+// the root's PASS ref, not a sibling field's view. False leaves `out`
+// untouched for the general walk.
+func:collect_moved_place_refs = bool(Escape->:x, ExprId:operand, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(operand)) { pass false; }
+    ExprId:pl = raw arg_place_chain(x, operand);
+    if (raw expr_is_none(pl)) { pass false; }
+    int32:pt = raw exprtypes_get(x.etypes, operand);
+    if (pt == 0i32) { pass false; }
+    if (!(raw type_drops_recorded(x.types, pt, 64i32))) { pass false; }
+    if (raw type_holds_foreign_pointer(x, pt, 16i32)) { pass false; }
+    PlaceRoot:r = raw place_root(x.ast, pl, raw BORROW_FUEL());
+    if (r.exhausted) { pass false; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (rn.a == 0i32) { pass false; }
+    List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
+    drop push_binding_refs(x, rn.a, @held);
+    int32:ppath = raw path_rel(x, pl);
+    for (int64:i in 0i64...held.count) {
+        ViewRef:h = held[i];
+        if (raw paths_overlap(x, raw ref_full_path(x, h), ppath)) {
+            drop list_push(out, h);
+        }
+    }
+    pass true;
+};
+
+// DOES A TYPE HOLD A FOREIGN POINTER -- an address that may be somebody
+// else's storage, as opposed to the body an owning value carries for itself
+// (DEF-125)? A `string`, a `cstring`, a `buffer`, an `OwnedFd` own what their
+// words reach (a VIEW of them at `cap == 0` is tracked by the refs, not by
+// the type); a struct, an enum, an array, an `Optional`, a `Result`, a
+// `range`, an `atomic`, the prelude's `List<T>` hold one exactly when a
+// member does; a pointer, a slice, a `dyn`, `any`, an arena, a lock, a
+// guard and every unresolved kind answer YES, the closed direction --
+// `type_holds_pointer`'s table with the owning kinds moved to NO. Fuel
+// exhausted answers YES.
+func:type_holds_foreign_pointer = bool(Escape->:x, int32:t, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (t == 0i32) { pass true; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_STRING()))  { pass false; }
+    if (k == (raw TY_CSTRING())) { pass false; }
+    if (k == (raw TY_BUFFER()))  { pass false; }
+    if (k == (raw TY_OWNEDFD())) { pass false; }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT()))
+        || (k == (raw TY_RANGE())) || (k == (raw TY_ATOMIC()))) {
+        pass (raw type_holds_foreign_pointer(x, raw type_elem(x.types, t), fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT())) {
+        if (raw type_is_list(x.tr, t)) {
+            int32:lel = raw list_elem_type(x.tr, t);
+            if (lel == 0i32) { pass true; }
+            pass (raw type_holds_foreign_pointer(x, lel, fuel - 1i32));
+        }
+        int32:sdi = raw type_decl(x.types, t);
+        if (sdi < 0i32) { pass true; }
+        if (sdi >= (raw ast_decl_count(x.ast))) { pass true; }
+        DeclId:did = DeclId{ index: sdi };
+        DeclNode:d = raw ast_decl(x.ast, did);
+        int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
+        int32:nmembers = raw item_member_count(x.ast, d);
+        for (int32:i in 0i32...nmembers) {
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
+            if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+            FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);
+            if (!fi.found) { pass true; }
+            if (raw type_holds_foreign_pointer(x, fi.type_id, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (k == (raw TY_ENUM())) {
+        if (!(raw enum_has_payload(x.ast, x.types, t))) { pass false; }
+        int32:edi = raw type_decl(x.types, t);
+        if (edi < 0i32) { pass true; }
+        if (edi >= (raw ast_decl_count(x.ast))) { pass true; }
+        DeclId:edid = DeclId{ index: edi };
+        DeclNode:ed = raw ast_decl(x.ast, edid);
+        int32:ehome = raw symtab_home_scope(x.tab, edid.index, 0i32);
+        // the instance's arguments bound while its payload types resolve (D-261)
+        GenericScope:esaved = raw bind_instance(x.tr, t);
+        bool:foreign = false;
+        int32:nm = raw item_member_count(x.ast, ed);
+        for (int32:vi in 0i32...nm) {
+            DeclNode:vm = raw ast_decl(x.ast, raw item_member(x.ast, ed, vi));
+            if (vm.kind != DeclKind.DeclEnumVariant) { continue; }
+            int32:pc = raw variant_payload_count(vm);
+            for (int32:j in 0i32...pc) {
+                int32:ptt = raw resolve_type(x.tr,
+                                 TypeId{ index: raw ast_id_at(x.ast, raw variant_payload_start(vm), j) },
+                                 ehome);
+                if (raw type_holds_foreign_pointer(x, ptt, fuel - 1i32)) { foreign = true; }
+            }
+        }
+        x.tr.generics = esaved;
+        pass foreign;
+    }
+    // every scalar kind `type_holds_pointer` names as address-free
+    if (!(raw type_holds_pointer(x.types, t, fuel))) { pass false; }
+    pass true;
+};
+
 // WHAT STORAGE MAY A VALUE VIEW -- the (root, place, kind) refs inside an
 // expression, mirroring the carrying rules of `escape_expr` shape for shape:
 // a view-maker's or a range view's operand is a DIRECT ref (and the viewed
@@ -1428,9 +1574,30 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
         pass NIL;
     }
     if (n.kind == ExprKind.ExprDerefExpr) { pass NIL; }
+    // `move(place)` OF AN OWNING VALUE CARRIES WHAT THE PLACE HOLDS, NOT WHAT
+    // ITS ROOT IS (DEF-125, 1.6.1d step 4; the library listener's F-010): the
+    // moved bytes are the heap body the value owns, and moving it out
+    // transfers that body -- so `string:tmp = move(self.v);` inside a
+    // `Self->` method carries the refs recorded AT `self.v` (a view stored
+    // there earlier in the body) and nothing of `self`'s identity. The
+    // generic rule below ("reaching into a value carries what the value
+    // carries") read it as a PASS ref of `self`, `other = move(tmp)`
+    // inherited it, `self.v = move(other)` recorded a store of `self` into
+    // `self`'s own pointee, and the caller of the method through a lent
+    // `dyn` read its implicit `@d` as stored into `d`'s cell: BORROW-002 on
+    // a swap that stores nothing but owned values. The narrow reading needs
+    // the place's type to OWN and to hold no FOREIGN pointer
+    // (`type_holds_foreign_pointer`): a struct with a raw pointer field, a
+    // slice, a `dyn` keep the conservative reading, since their bytes may be
+    // the root's address.
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        if (raw collect_moved_place_refs(x, raw expr_operand(n), out)) { pass NIL; }
+        drop collect_view_refs(x, raw expr_operand(n), d, out);
+        pass NIL;
+    }
     if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)
         || (n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprRelayExpr)
-        || (n.kind == ExprKind.ExprAwaitExpr) || (n.kind == ExprKind.ExprMoveExpr)) {
+        || (n.kind == ExprKind.ExprAwaitExpr)) {
         drop collect_view_refs(x, raw expr_operand(n), d, out);
         pass NIL;
     }
@@ -1461,6 +1628,7 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
         if (!(raw carries_pointer(x, raw exprtypes_get(x.etypes, id), raw CARRY_FUEL()))) { pass NIL; }
         ExprId:mrecv = raw expr_operand(n);
         if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { mrecv = raw expr_none(); }
+        if (raw call_is_enum_ctor(x, id)) { mrecv = raw expr_none(); }   // DEF-160
         drop collect_call_refs(x, id, mrecv, raw expr_list_start(n), raw expr_list_count(n), d, out);
         pass NIL;
     }
@@ -1547,12 +1715,19 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
     int32:total = base + count;
     bool:recv_auto = false;
     if (base == 1i32) { recv_auto = raw recv_is_auto_ref(x, call, recv); }
+    // AN ENUM CONSTRUCTOR CARRIES ITS ARGUMENTS AND VIEWS NOTHING (DEF-160):
+    // the payload is the argument's VALUE, stored -- an address carried, a
+    // view carried, a fresh string owned -- so its refs are the PASS reading
+    // of every argument and never the VIEW reading, which would call a
+    // temporary handed to `Opt.Some(string_concat(a, b))` a view of a
+    // temporary (BORROW-012 on seven programs of the tree, measured).
+    bool:ctor = raw call_is_enum_ctor(x, call);
     for (int32:k in 0i32...total) {
         ExprId:a = recv;
         bool:a_auto = recv_auto;
         if (k >= base) { a = ExprId{ index: raw ast_id_at(x.ast, start, k - base) }; a_auto = false; }
         if (callee <= 0i32) {
-            drop arg_refs_view(x, a, a_auto, 0i32, depth, out);
+            if (!ctor) { drop arg_refs_view(x, a, a_auto, 0i32, depth, out); }
         } else {
             int32:e = x.sv_head[callee => int64];
             while (e >= 0i32) decreases e + 1i32 {
@@ -3037,7 +3212,16 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     if (k == (raw TY_ERROR()))   { pass false; }   // a code word, not an address (D-179)
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_FLAGS()))   { pass false; }   // a word (D-230)
-    if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
+    // AN ENUM HOLDS AN ADDRESS WHEN A PAYLOAD DOES (DEF-160, 1.6.1d step 4):
+    // the layout's bit, as the struct arm below reads it -- "a tag and a
+    // WORD" was true of the payload-less enums of 0.8.1 and false of
+    // `E.Some(@local)` since D-261, which this verdict filter let leave its
+    // frame (the caller read a dead frame through the payload).
+    if (k == (raw TY_ENUM())) {
+        int32:ebit = raw tt_haspt(table, t);
+        if (ebit == 1i32) { pass false; }
+        pass true;
+    }
     if (k == (raw TY_NIL()))     { pass false; }
     // Stated at 1.4.1, when the walkers-total instrument found them falling
     // to the conservative tail: a float is a scalar, an OwnedFd is a
@@ -3227,6 +3411,9 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         // recorded.
         ExprId:erecv = raw expr_operand(n);
         if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { erecv = raw expr_none(); }
+        // An enum constructor's "receiver" is the enum's NAME (DEF-160): no
+        // value to walk, as for a namespace call.
+        if (raw call_is_enum_ctor(x, id)) { erecv = raw expr_none(); }
         pass (raw escape_call_like(x, id, erecv,
                                      raw expr_list_start(n),
                                      raw expr_list_count(n),
@@ -3894,6 +4081,35 @@ func:type_reachable_in_walk = bool(Escape->:x, int32:t, int32:src,
     if (k == (raw TY_RESULT()))   { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_ARENA()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_SHARED_ARENA())) { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
+    // AN ENUM REACHES WHAT ITS PAYLOADS REACH (DEF-160): the walk had no arm
+    // for one and answered "unreachable" -- the open side -- for every
+    // payload-carrying enum; the instance's arguments bound while the payload
+    // types resolve (D-261), the enum-layout arm's idiom.
+    if (k == (raw TY_ENUM())) {
+        if (!(raw enum_has_payload(x.ast, x.types, src))) { pass false; }
+        int32:edi = raw type_decl(x.types, src);
+        if (edi < 0i32) { pass false; }
+        if (edi >= (raw ast_decl_count(x.ast))) { pass false; }
+        DeclId:edid = DeclId{ index: edi };
+        DeclNode:ed = raw ast_decl(x.ast, edid);
+        int32:ehome = raw symtab_home_scope(x.tab, edid.index, 0i32);
+        GenericScope:esaved = raw bind_instance(x.tr, src);
+        bool:reach = false;
+        int32:nm = raw item_member_count(x.ast, ed);
+        for (int32:vi in 0i32...nm) {
+            DeclNode:vm = raw ast_decl(x.ast, raw item_member(x.ast, ed, vi));
+            if (vm.kind != DeclKind.DeclEnumVariant) { continue; }
+            int32:pc = raw variant_payload_count(vm);
+            for (int32:j in 0i32...pc) {
+                int32:ptt = raw resolve_type(x.tr,
+                                 TypeId{ index: raw ast_id_at(x.ast, raw variant_payload_start(vm), j) },
+                                 ehome);
+                if (raw type_reachable_in(x, t, ptt, fuel - 1i32)) { reach = true; }
+            }
+        }
+        x.tr.generics = esaved;
+        pass reach;
+    }
     if (k == (raw TY_STRUCT())) {
         // The prelude's `List<T>` reaches its `T` (D-325; see `can_connect`).
         if (raw type_is_list(x.tr, src)) {

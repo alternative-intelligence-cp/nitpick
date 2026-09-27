@@ -287,6 +287,22 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   and cannot travel up; a LENT `dyn`'s cell is the caller's (the one owning-by-cell
   kind a loan may write, through its methods), so a borrow stored into it refuses
   at the call (`NITPICK-BORROW-002`, DEF-115).
+  **A moved-out OWNING value carries what its place holds, not its root's identity**
+  (DEF-125, 1.6.1d step 4): `move(self.v)` of a `string` — a `cstring`, a `buffer`, an
+  `OwnedFd`, a struct or an enum of such, a `List` of such: a type holding no FOREIGN
+  pointer (no raw pointer, slice, `dyn` or `any` inside) — carries the refs recorded at
+  `self.v` (a view stored there earlier in the body) and nothing of `self`, because the
+  moved bytes are the heap body the value owns and moving it out transfers that body;
+  the return seam's implicit move (`pass self.v`) reads the same. So a swap of two owned
+  strings through a lent `dyn`'s method is accepted, and a field that holds a view of
+  frame storage, moved out and returned, is still `NITPICK-BORROW-001`; a struct with a
+  raw pointer field keeps the conservative reading.
+  **An enum's payload carries an address as a struct's field does** (DEF-160, 1.6.1d
+  step 4): the layout records the pointer-bearing bit of an enum from its payloads, the
+  escape analysis reads it, and the constructor `E.Some(@local)` is a call whose
+  arguments' refs are the value's — returned from its frame, held in a struct that is, or
+  stored through a call into an outliving pointee, it refuses (`NITPICK-BORROW-001`,
+  `NITPICK-BORROW-002`) exactly as the struct literal `S{ p: @local }` always has.
   A plain by-value parameter of an OWNING type is a loan and is read-only (D-004,
   D-266; `NITPICK-TYPE-085`, 1.6.0 step 3g): no assignment to it or into it, no
   `@`/`$$i`/`$$m`, no pointer-receiver call, no stateful operation — a callee that

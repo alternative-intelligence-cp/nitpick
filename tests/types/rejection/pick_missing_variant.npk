@@ -1,0 +1,42 @@
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 24:10
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 28:10
+//
+// DEF-142 (1.6.1d step 4; the library listener's O-N32, from nitpick-regex's
+// planning): AN ARM OVER AN ENUM NAMES ONE OF ITS VARIANTS. `(K.C)` over a `K`
+// with variants A and B was admitted by the frontend and died in the emitter as
+// EMIT-002; it is the identifier's own RESOLVE-002 at the arm now, naming the
+// enum, the missing name and the variants it has. A two-segment arm's first
+// segment must be the enum's own name: `(Other.A)` over a `K` selector names
+// another type's variant. The covered `pick` is the control.
+mod:pick_missing_variant;
+
+enum:K = { A; B; };
+enum:Other = { A; Z; };
+
+func:main = int32(cstring[]:_~argv) {
+    K:k = K.B;
+    int32:r = 0i32;
+    pick (k) {
+        (K.A) { r = 1i32; },
+        (K.B) { r = 2i32; },
+        (K.C) { r = 3i32; }
+    }
+    pick (k) {
+        (K.A) { r = r + 1i32; },
+        (Other.A) { r = r + 2i32; },
+        (*) { r = r + 3i32; }
+    }
+    pick (k) {
+        (K.A) { r = r + 10i32; },
+        (K.B) { r = r + 20i32; }
+    }
+    exit r;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

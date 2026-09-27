@@ -1,0 +1,84 @@
+// expect-exit: 22
+//
+// DEF-125 (1.6.1d step 4; the library listener's F-010): A MOVED-OUT OWNING
+// VALUE CARRIES WHAT THE PLACE HOLDS, NOT ITS ROOT'S IDENTITY. Inside a
+// `Self->` method reached through a lent `dyn`, `string:tmp = move(self.v);
+// self.v = move(other); other = move(tmp);` -- a swap of two owned strings,
+// no view anywhere -- was BORROW-002 at the caller since 1.6.1 step 0: the
+// ref collector read `move(self.v)` as a PASS ref of `self`, the store of
+// `other` into `self.v` then recorded `self` stored into its own pointee, and
+// the caller's implicit `@d` read as stored into `d`'s cell. The moved
+// string's bytes are the heap body it owns; moving it out transfers that
+// body, and what it may VIEW is what was recorded at `self.v`, nothing more.
+mod:lent_dyn_swap;
+error:E9;
+func:mk = string() never fails {
+    pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c");
+};
+func:nw = string() never fails {
+    pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w");
+};
+func:sn = string() never fails {
+    pass string_concat("stttttttttttttttttttttttttttttttttttttttttttt", "u");
+};
+func:truth = bool(int64:n) never fails {
+    pass n > 0i64;
+};
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 115u8) { pass 25i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+func:obs_l = int32(List<int64>:v) never fails {
+    if (v.count == -6148914691236517206i64) { pass 70i32; }
+    if (v.count == 0i64) { pass 23i32; }
+    int64:e = v[0i64];
+    if (e == 424242i64) { pass 21i32; }
+    if (e == 777777i64) { pass 22i32; }
+    if (e == 555555i64) { pass 25i32; }
+    if (e == -6148914691236517206i64) { pass 70i32; }
+    pass 24i32;
+};
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { string:v; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass raw obs_s(self.v); };
+    func:op = NIL(DHold->:self) never fails {
+        string:other = raw nw();
+        string:tmp = move(self.v);
+        self.v = move(other);
+        other = move(tmp);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:main = int32(cstring[]:_~argv) {
+    DHold:b = DHold{ v: raw mk() };
+    dyn Tr:d = move(b);
+    drop callit(d);
+    int32:o = raw d.peek();
+    exit o;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

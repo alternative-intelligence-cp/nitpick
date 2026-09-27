@@ -1,0 +1,41 @@
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 25:20
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 26:20
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 27:28
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 28:30
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 29:30
+//
+// D-331 (1.6.1d step 4; DEF-133's d7, the library listener's F-017; S-112): A
+// CERTAIN CONSTANT DIVISION IS REFUSED WHEREVER THE FOLDER DECIDES IT -- a
+// local's initialiser, an argument -- as a constant `+ - *` overflow is
+// (TYPE-076, D-310). Until this step `int32:x = 5i32 / 0i32;` compiled and
+// trapped at run time while the same pair in a `fixed` initialiser was refused.
+// A zero divisor for `/` and `%`, the signed minimum over -1 for both; the
+// variable divisor is the control (a run-time guard, D-007).
+mod:const_div_zero;
+
+func:eat = int32(int32:v) never fails { pass v; };
+
+func:main = int32(cstring[]:argv) {
+    int32:d = argv.len =>! int32;
+    int32:a = 5i32 / 0i32;
+    int32:b = 7i32 % 0i32;
+    int32:c = raw eat(9i32 / 0i32);
+    int8:m1 = (-127i8 - 1i8) / -1i8;
+    int8:m2 = (-127i8 - 1i8) % -1i8;
+    int32:ok = 9i32 / d;
+    if (a + b + c + (m1 => int32) + (m2 => int32) + ok == 0i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (*) { exit 70i32; }
+    }
+};

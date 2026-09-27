@@ -576,6 +576,12 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
         if ((raw type_kind(e.types, selt)) == (raw TY_ERROR())) {
             drop check_error_arms(e, start, count);
         }
+        // AN ENUM SELECTOR'S ARMS NAME ITS OWN VARIANTS (DEF-142, 1.6.1d step
+        // 4; the library listener's O-N32): a variant the enum lacks, or
+        // another type's name before the dot, is refused at the arm.
+        if ((raw type_kind(e.types, selt)) == (raw TY_ENUM())) {
+            drop check_enum_arms(e, selt, start, count);
+        }
     }
     drop type_pick_bindings(e, selt, start, count);
     drop check_pick_view_binds(e, selt, consuming, start, count);
@@ -988,6 +994,74 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
         vi = vi + 1i32;
     }
     r.generics = bsaved;
+    pass NIL;
+};
+
+// EVERY ARM OVER AN ENUM NAMES ONE OF ITS VARIANTS (DEF-142, 1.6.1d step 4;
+// the library listener's O-N32, from nitpick-regex's planning). `enum:K = {
+// A; B; };` with a `(K.C)` arm was admitted by every pass -- the binding
+// typer above looks a variant up only to type its payload bindings, and
+// found nothing to type in silence; the exhaustiveness analysis asks which
+// variants the arms COVER and never whether an arm covers anything -- and
+// died in the emitter as EMIT-002, a compiler-defect report for a program
+// mistake (the class of DEF-131, DEF-132 and DEF-140). The arm's LAST segment
+// is the variant, looked up among the enum's own; a two-segment arm's FIRST
+// segment must be the enum's declared name, since `(Other.A)` over a `K`
+// selector names another type's variant and means nothing here either. The
+// refusal is the identifier's own RESOLVE-002 (D-275's reading for an
+// `Error` arm), at the pattern, naming the enum, the missing name and the
+// variants it has. An `Error` selector's arms are `check_error_arms`'s; a
+// wildcard, a value, a range and a struct pattern have no variant to check.
+func:check_enum_arms = NIL(ExprTyper->:e, int32:selt, int32:start, int32:count) never fails {
+    int32:sdi = raw type_decl(e.types, selt);
+    if (sdi < 0i32) { pass NIL; }
+    if (sdi >= (raw ast_decl_count(e.ast))) { pass NIL; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: sdi });
+    if (d.kind != DeclKind.DeclEnumDecl) { pass NIL; }
+    int32:ename = raw decl_name(d);
+    for (int32:i in 0i32...count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
+        PatId:pid2 = raw arm_pattern(arm);
+        if (raw pat_is_none(pid2)) { continue; }
+        PatNode:pn = raw ast_pat(e.ast, pid2);
+        if (pn.kind != PatKind.PatEnumDestructure) { continue; }
+        int32:segs = raw pat_enum_segment_count(e.ast, pn);
+        if (segs <= 0i32) { continue; }
+        int32:vname = raw pat_enum_segment(e.ast, pn, segs - 1i32);
+        if (segs >= 2i32) {
+            int32:head = raw pat_enum_segment(e.ast, pn, 0i32);
+            if (head != ename) {
+                string:h1 = string_concat("this arm names `", raw intern_get(e.interns, head));
+                string:h2 = string_concat(h1, "`, and the selector is a `");
+                string:h3 = string_concat(h2, raw intern_get(e.interns, ename));
+                string:h4 = string_concat(h3, "`: an arm over an enum names that enum's own variant -- `(");
+                string:h5 = string_concat(h4, raw intern_get(e.interns, ename));
+                string:h6 = string_concat(h5, ".");
+                string:h7 = string_concat(h6, raw intern_get(e.interns, vname));
+                string:h8 = string_concat(h7, ")`");
+                drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(), move(h8), pn.span));
+                continue;
+            }
+        }
+        bool:found = false;
+        string:names = "";
+        int32:nmembers = raw item_member_count(e.ast, d);
+        for (int32:vi in 0i32...nmembers) {
+            DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
+            if (m.kind != DeclKind.DeclEnumVariant) { continue; }
+            if ((raw decl_name(m)) == vname) { found = true; }
+            if (names.len > 0i64) { names = string_concat(names, ", "); }
+            names = string_concat(names, raw intern_get(e.interns, raw decl_name(m)));
+        }
+        if (found) { continue; }
+        string:m1 = string_concat("enum `", raw intern_get(e.interns, ename));
+        string:m2 = string_concat(m1, "` has no variant `");
+        string:m3 = string_concat(m2, raw intern_get(e.interns, vname));
+        string:m4 = string_concat(m3, "`; its variants are ");
+        string:m5 = string_concat(m4, names);
+        string:m6 = string_concat(m5, " -- an arm names one of them, or `(*)` covers the rest");
+        drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(), move(m6), pn.span));
+    }
     pass NIL;
 };
 

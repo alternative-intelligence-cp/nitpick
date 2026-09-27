@@ -2167,6 +2167,22 @@ func:pk_named = string(int32:seq, string:stem) never fails {
 };
 
 // The integer constant an arm matches, as text — or a refusal.
+// A RANGE PATTERN'S BOUND AS A NUMBER (DEF-132): an integer or a char
+// literal by its payload (the shapes the chain read before), a negated
+// literal or a `fixed` constant through the folder; false when nothing folds.
+func:pat_bound_value = bool(ExprEmitter->:x, ExprId:b, int64->:out) never fails {
+    if (raw expr_is_none(b)) { pass false; }
+    ExprNode:bn = raw ast_expr(x.ast, b);
+    if ((bn.kind == ExprKind.ExprIntLiteral) || (bn.kind == ExprKind.ExprCharLiteral)) {
+        (<-out) = bn.payload;
+        pass true;
+    }
+    ConstVal:cv = raw fold_const(x.tr, b, x.scope);
+    if (cv.kind == (raw CV_INT()))  { (<-out) = cv.num; pass true; }
+    if (cv.kind == (raw CV_CHAR())) { (<-out) = cv.num; pass true; }
+    pass false;
+};
+
 func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) never fails {
     // `(module.Name)` OVER AN `Error` SELECTOR (D-179): a two-segment,
     // bind-free "destructure" is the qualified spelling of an error
@@ -2853,13 +2869,20 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 // reasons over them, so nothing dynamic ever got here) — read
                 // their payloads directly; pattern sub-expressions carry no
                 // checker-recorded type to emit through.
-                ExprNode:lon = raw ast_expr(x.ast, raw pat_range_lo(pn));
-                ExprNode:hin = raw ast_expr(x.ast, raw pat_range_hi(pn));
-                if (lon.kind != ExprKind.ExprIntLiteral) {
-                    if (lon.kind != ExprKind.ExprCharLiteral) {
-                        pass (raw iv_broken(arm.span));
-                    }
-                }
+                // A BOUND IS READ THROUGH THE CONSTANT FOLDER (DEF-132, 1.6.1d
+                // step 4; the library listener's F-016): `(-5i32..-2i32)` is a
+                // negated literal on each side, which the exhaustiveness
+                // analysis admits and the encoder folds, and the payload read
+                // that stood here since 0.9.7 answered `iv_broken` for it --
+                // EMIT-002 on a program the frontend accepted (the value
+                // pattern `(-3i32)` had the same fix at DEF-35). The folder
+                // knows a literal, a negated literal and a `fixed` constant; a
+                // bound that does not fold is the frontend's promise broken,
+                // and stays `iv_broken`.
+                int64:lo_v = 0i64;
+                int64:hi_v = 0i64;
+                if (!(raw pat_bound_value(x, raw pat_range_lo(pn), @lo_v))) { pass (raw iv_broken(arm.span)); }
+                if (!(raw pat_bound_value(x, raw pat_range_hi(pn), @hi_v))) { pass (raw iv_broken(arm.span)); }
                 // CLONED, NOT MOVED — twice. `iv` OWNS the `ll` it is given
                 // (`move string:ll`), so moving `disc_ll` into both of these
                 // gave one string body two owners and two drops: a double free,
@@ -2867,9 +2890,9 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 // 1.4.3 taught the move analysis about parameters. `disc_ll` is
                 // read again below, too, which the same hole hid.
                 IrVal:plo = raw iv(string_concat(disc_ll, ""),
-                                   int_to_string(lon.payload), 0i32);
+                                   int_to_string(lo_v), 0i32);
                 IrVal:phi = raw iv(string_concat(disc_ll, ""),
-                                   int_to_string(hin.payload), 0i32);
+                                   int_to_string(hi_v), 0i32);
                 string:gep2 = "uge";
                 string:lep = "ult";
                 string:lip = "ule";

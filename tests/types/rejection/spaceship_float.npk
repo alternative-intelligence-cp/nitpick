@@ -1,0 +1,31 @@
+// expect-error: NITPICK-TYPE-088
+// expect-error-at: 16:18
+// expect-error: NITPICK-TYPE-088
+// expect-error-at: 19:19
+//
+// DEF-131 / D-330 (1.6.1d step 4; S-111): `<=>` NEEDS A TOTAL ORDER ONE
+// INTEGER COMPARE DECIDES. A float pair is refused -- a NaN is neither
+// below, above nor equal, and `0` would say "equal" -- and so is a frac pair
+// (its order is the exact core's); `<`, `==` and `>` stay on both. The
+// integer pair is the control.
+mod:spaceship_float;
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:a = 1.5f64;
+    flt64:b = 2.5f64;
+    int32:o1 = a <=> b;
+    frac32:fa = 1i32 => frac32;
+    frac32:fb = 2i32 => frac32;
+    int32:o2 = fa <=> fb;
+    int32:x = 3i32;
+    int32:y = 4i32;
+    int32:o3 = x <=> y;
+    if (o1 + o2 + o3 == 0i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

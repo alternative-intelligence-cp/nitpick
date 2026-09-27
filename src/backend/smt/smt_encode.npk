@@ -1865,7 +1865,20 @@ func:tw_oor = Term(Encoder->:e, Term:a, string:hi, bool:signed) never fails {
 func:tw_is_cmp = bool(TokenKind:op) never fails {
     if ((op == TokenKind.OpEqEq) || (op == TokenKind.OpNotEq)) { pass true; }
     if ((op == TokenKind.OpLt) || (op == TokenKind.OpLtEq)) { pass true; }
+    if (op == TokenKind.OpSpaceship) { pass true; }   // `<=>` guards as `<` does (DEF-131)
     pass ((op == TokenKind.OpGt) || (op == TokenKind.OpGtEq));
+};
+
+// `a <=> b` AS A TERM (DEF-131, 1.6.1d step 4): `-1`, `0` or `1` by the
+// operands' order -- `(ite (< a b) (- 1) (ite (> a b) 1 0))`, an exact
+// `int32` -- for an integer pair and for a twisted pair's carriers (the
+// `err-exit` row recorded by the caller as for `<`).
+func:spaceship_term = Term(Term:a, Term:b) never fails {
+    string:lt = raw smt_app2("<", a.text, b.text);
+    string:gt = raw smt_app2(">", a.text, b.text);
+    string:inner = raw smt_app3("ite", gt, "1", "0");
+    string:outer = raw smt_app3("ite", lt, "(- 1)", inner);
+    pass (Term{ ok: true, is_bool: false, text: move(outer), syms: raw syms_union(a.syms, b.syms) });
 };
 
 func:enc_twisted_binary = Term(Encoder->:e, TokenKind:op, int32:lt, int32:ty, Term:a, Term:b,
@@ -1886,6 +1899,7 @@ func:enc_twisted_binary = Term(Encoder->:e, TokenKind:op, int32:lt, int32:ty, Te
         if (op == TokenKind.OpLt)    { pass (raw term_app2("<", ta, tb, true)); }
         if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", ta, tb, true)); }
         if (op == TokenKind.OpGt)    { pass (raw term_app2(">", ta, tb, true)); }
+        if (op == TokenKind.OpSpaceship) { pass (raw spaceship_term(ta, tb)); }
         pass (raw term_app2(">=", ta, tb, true));
     }
     Term:taint = raw tw_taint(e, lt, ta, tb);
@@ -4912,6 +4926,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             if (op == TokenKind.OpGtEq)  { pass (raw term_app2(">=", a, b, true)); }
             if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
             if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+            if (op == TokenKind.OpSpaceship) { pass (raw spaceship_term(a, b)); }   // DEF-131
             pass (raw term_opaque(e, ty));
         }
         if (raw is_bool(e, lt)) {

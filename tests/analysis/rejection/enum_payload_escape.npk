@@ -1,0 +1,86 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 27:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 33:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 43:14
+//
+// DEF-160 (1.6.1d step 4; found by the step's own probe of the escape
+// analysis's pointer predicate, not by a test of the thing that broke): AN
+// ENUM PAYLOAD CARRIES AN ADDRESS. `E.Some(@local)` returned from a function
+// compiled since D-261 -- the layout recorded no pointer bit for an enum ("a
+// tag and a word"), so the escape analysis's verdict filter dropped every
+// borrow inside one, and the enum constructor, method-call-shaped with no
+// callee, was read as an intercepted builtin method whose arguments carry
+// nothing -- and the caller read a dead frame through the payload (exit 3 at
+// -O0, 0 at -O2, measured). Three faces, one bit and one predicate: the value
+// returned bare (BORROW-001), inside a struct (BORROW-001), stored through a
+// call into an outliving pointee (BORROW-002, D-223's connection); the control
+// returns a payload of a value.
+mod:enum_payload_escape;
+
+enum:E = { Some(int32->); None; };
+struct:Box = { E:e; int32:k; };
+
+func:leak_bare = E() never fails {
+    int32:local = 7i32;
+    pass E.Some(@local);
+};
+
+func:leak_boxed = Box() never fails {
+    int32:local = 7i32;
+    Box:b = Box{ e: E.Some(@local), k: 1i32 };
+    pass b;
+};
+
+func:put = NIL(E->:dst, int32->:p) never fails {
+    (<-dst) = E.Some(p);
+    pass NIL;
+};
+
+func:leak_stored = NIL(E->:dst) never fails {
+    int32:local = 7i32;
+    drop put(dst, @local);
+    pass NIL;
+};
+
+func:fine = E(int32->:p) never fails {
+    pass E.Some(p);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = 5i32;
+    E:e = raw fine(@v);
+    E:x = raw leak_bare();
+    Box:b = raw leak_boxed();
+    drop leak_stored(@e);
+    if (b.k != 1i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

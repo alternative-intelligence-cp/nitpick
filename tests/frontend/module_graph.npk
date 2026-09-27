@@ -17,6 +17,8 @@ use "../../src/frontend/symbols.npk".*;
 use "../../src/frontend/module_graph.npk".*;
 use "../../src/frontend/token.npk".*;
 use "../../src/frontend/types.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../lib/nsys.npk".*;
 
 // Every module in the graph, keyed by name, so a lookup can assert that a symbol
 // lives in the module it was declared in and not somewhere else.
@@ -54,6 +56,36 @@ func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags,
     discard(raw graph_load_all(@g, root));
     drop graph_collect_all(@g);
     pass g;
+};
+
+// A MODULE'S NAME IS AN IDENTIFIER, AND ITS REFUSAL IS ONE REPORT (DEF-143,
+// 1.6.1d step 4; the library listener's O-N32). `mod:error;` parsed with a name of
+// nothing (a keyword has no interned spelling) and the loader's header check then
+// said "declares `mod:;` first" -- the offending word gone. The fix reads the name
+// through `p_declared_name` (PARSE-001 at the keyword, DEF-103's rule) and the
+// loader adds no sentence for a nameless header.
+//
+// THE CASE LIVES HERE, not in tests/modules/rejection/: its refusal IS a parse
+// error, and every file of the tree must pass the real parser -- the `grammar`
+// stage, D-085's rule that a rejection test parses and is refused LATER. The
+// step's first form was a rejection file, and the landing's own harness refused it
+// there. So the source is written to a pid-tagged temporary file (DEF-137's
+// fixed-width tag), loaded through the real loader, and removed.
+func:keyword_header = int32(InternTable->:it) {
+    string:me = relay sys_pid_tag();
+    string:p = string_concat(string_concat("/tmp/npk_mod_keyword.", me), ".npk");
+    cstring:c = relay to_cstring(p);
+    Result<NIL>:w = write_file(c, "mod:error;\n\nfunc:helper = int32() never fails { pass 1i32; };\n");
+    if (w.is_error) { pass 4i32; }
+    DiagList:d = raw diaglist_init();
+    RootList:r = raw rootlist_init();
+    ModuleGraph:g = raw load(p, it, @d, @r);
+    discard(sys(263i64, raw AT_FDCWD(), c.ptr, 0i64) ?| 0i64);   // unlinkat
+    if (raw graph_count(@g) != 1i32)                         { pass 5i32; }
+    if (raw diaglist_count(@d) != 1i64)                      { pass 1i32; }
+    if (!(raw string_eq((raw diaglist_at(@d, 0i64)).code, raw PARSE_EXPECTED()))) { pass 2i32; }
+    if ((raw diaglist_at(@d, 0i64)).span.line != 1i32)       { pass 3i32; }
+    pass 0i32;
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -151,6 +183,10 @@ func:main = int32(cstring[]:_~argv) {
     // In declaration order, so the output is the same on every run.
     if ((raw diaglist_at(@d6, 0i64)).span.line != 4i32)  { exit 53i32; }
     if ((raw diaglist_at(@d6, 1i64)).span.line != 5i32)  { exit 54i32; }
+
+    // --- a keyword as a module name: PARSE-001 at the keyword, one report ---------
+    int32:kh = keyword_header(@it) ?| 9i32;
+    if (kh != 0i32)                                      { exit 60i32 + kh; }
 
     wild_release_all();
     exit 0i32;
