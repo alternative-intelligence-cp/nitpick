@@ -10,7 +10,10 @@
 // told the identity could not arrive. The walk follows every resolved callee
 // now, so `list_pop`'s raise is reachable here and the missing arm refuses.
 // `(IntOverflow)` IS named: `list_pop`'s `count - 1` and `list_init`'s
-// `cap * size` reach it too, and this file is about the raise.
+// `cap * size` reach it too, and this file is about the raise. So is
+// `(LimitViolated)`: `list_pop` writes the List's `count`, whose rule is
+// `limit<ListLen>` (D-308 §6) -- named since D-332's count rule showed its
+// REACH-002 standing beside the raise's at the same site.
 mod:reach_prelude;
 
 func:main = int32(cstring[]:_~argv) {
@@ -29,6 +32,7 @@ func:failsafe = int32(Error:e) {
         (StackExhausted) { exit 9i32; },
         (MachineFault)   { exit 9i32; },
         (DecreasesViolated) { exit 9i32; },
+        (LimitViolated)  { exit 9i32; },
         (*)              { exit 9i32; }
     }
     exit 9i32;

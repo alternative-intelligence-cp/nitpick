@@ -2074,7 +2074,12 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
 
     int32:saved = e.expected;
     e.expected = want;
+    // A declaration always writes its type, so `want == 0` here means the
+    // resolver refused it (D-240; `expect_refused`).
+    bool:rsaved = e.expect_refused;
+    e.expect_refused = (want == 0i32);
     int32:got = raw type_of_expr(e, init);
+    e.expect_refused = rsaved;
     e.expected = saved;
 
     if (got == 0i32) { pass NIL; }

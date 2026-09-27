@@ -101,7 +101,7 @@ func:two = NIL() {
 # EVERY CASE CARRIES ITS HEADER after its directives (D-248, 1.5.1b step 1: a
 # file's first declaration is `mod:<basename>;`), which is also why the names
 # are identifiers now -- the file is written as `<name>.npk`. `npkg/selfcheck.npk`
-# writes the same nine texts, byte for byte.
+# writes the same texts, byte for byte (eleven since D-332's `silent_site`).
 def _case(name, kind, directives, body, must_fail, why):
     return (name, kind, directives + "mod:" + name + ";\n" + body, must_fail, why)
 
@@ -155,6 +155,15 @@ CASES = [
     _case("exit_out_of_range", "positive",
           "// expect-exit: 321\n", MAIN_OK + FAILSAFE,
           True, "an expect-exit above a byte can never be satisfied and must fail by name"),
+
+    # A SILENT SITE (D-332; S-113): the code is expected at TWO sites and
+    # reported at ONE. The set rule (D-237) accepts this shape -- the code is
+    # both expected and reported -- which is how `aliasing.npk` carried a case
+    # no checker ever reported for a cycle; the count rule refuses it by name.
+    _case("silent_site", "negative",
+          "// expect-error: NITPICK-TYPE-007\n// expect-error: NITPICK-TYPE-007\n",
+          RUNG + MAIN_OK + FAILSAFE,
+          True, "a code expected at more sites than it is reported at must fail"),
 ]
 
 

@@ -1,15 +1,22 @@
 // expect-error: NITPICK-TYPE-004
+// expect-error-at: 27:11
 // expect-error: NITPICK-TYPE-004
-// expect-error: NITPICK-TYPE-004
+// expect-error-at: 30:15
 //
 // WHAT IS STILL REFUSED, now that a general constant expression folds. The debt
 // 0.6.4 paid was "must be a LITERAL"; it was never "must be VALID", and each site
 // still owes its own check on what it got.
 //
-// A NAME FOLDS ONLY IF IT IS A `const` GLOBAL. `const` is the marker that says a
-// binding has one value for the whole program (D-010), so it is the marker that
-// says a name may stand in a constant expression — nothing is inferred, and a
-// `fixed` binding, which is assigned once at RUN time, is correctly not one.
+// A NAME FOLDS ONLY IF IT IS A MODULE-LEVEL `fixed` BINDING. This said "a `const`
+// global", and that a `fixed` binding, "assigned once at RUN time", was correctly
+// not one -- true until D-222 (2026-08-29) retired `const` and made every module
+// binding a `fixed` one lowered to an LLVM `constant` with a compile-time
+// initialiser (D-165), so a module `fixed` binding DOES fold. The file kept
+// expecting a third refusal at `int32[RUNTIME_ONE]` for a month, and no runner
+// noticed: the code was reported at the file's other two sites (the silent site
+// D-332's count rule exists to catch, and caught). That line is ACCEPTED now, a
+// control carrying no code; a local is still not a constant, and `comptime`
+// still requires an expression that folds.
 mod:not_constant;
 
 fixed int32:RUNTIME_ONE = 1i32;
@@ -18,7 +25,7 @@ func:main = int32(cstring[]:_~argv) {
     int32:local = 3i32;
 
     int32[local]:from_a_local;        // a local is not a constant
-    int32[RUNTIME_ONE]:from_fixed;    // `fixed` is assigned at run time
+    int32[RUNTIME_ONE]:from_fixed;    // a module `fixed` binding folds (D-222): accepted
 
     int32:v = comptime(local + 1i32); // `comptime` requires one that folds
     exit 0i32;

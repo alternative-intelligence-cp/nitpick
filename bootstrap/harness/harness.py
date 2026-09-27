@@ -2057,6 +2057,25 @@ def match_findings(name, exp, stderr_text):
                          "unexpected diagnostic fails a test as surely as a "
                          "missing one (BUILD_REFERENCE §7.1, D-237)"
                          % (name, code))
+
+    # EVERY SITE IS COUNTED (D-332; S-113, 1.6.1d step 1's sweep). A SET cannot
+    # see a silent site: `aliasing.npk` expected a BORROW-013 case for a cycle
+    # that no checker ever reported, because other sites in the file supplied
+    # the code. So the number of sites a code is reported at must equal the
+    # number of `expect-error` lines naming it -- a file already writes one line
+    # per site, with its `expect-error-at`. A code reported and never named, or
+    # named and never reported, is the rules above; this is the count between.
+    want = {}
+    for c, _, _ in exp.errors:
+        want[c] = want.get(c, 0) + 1
+    have = {}
+    for g in got:
+        have[g[0]] = have.get(g[0], 0) + 1
+    for code in sorted(want):
+        if code in have and have[code] != want[code]:
+            fails.append("%s: %s reported at %d site(s), expected at %d -- every "
+                         "site is counted, and a silent or an unnamed one fails "
+                         "by name (D-332)" % (name, code, have[code], want[code]))
     return fails
 
 

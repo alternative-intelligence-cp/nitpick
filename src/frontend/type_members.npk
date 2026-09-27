@@ -1154,13 +1154,21 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             }
             for (int32:sai in 0i32...count) {
                 ExprId:sa = ExprId{ index: raw ast_id_at(e.ast, start, sai) };
+                bool:spread_refused = false;
                 if (raw is_spread(e, sa)) {
                     ExprNode:ssn = raw ast_expr(e.ast, sa);
                     discard(raw te_error(e, raw TYPE_MISMATCH(),
                         "`..^` expands a collection into a variadic parameter, and this callee has none the checker can see — a builtin's arguments are fixed registers, and pass the elements yourself otherwise",
                         ssn.span));
+                    spread_refused = true;
                 }
                 int32:sat = raw type_of_expr(e, sa);
+                // A REFUSED `..^` ARGUMENT IS NOT ALSO FIT-CHECKED (D-240, whose own
+                // case this is, applied to `sys`'s register check as it was to the
+                // general argument path; found by D-332's count rule): the operand is
+                // still typed, so a mistake inside it is reported, and the register
+                // rule says nothing more about an argument already refused.
+                if (spread_refused) { continue; }
                 bool:sok = false;
                 if (raw type_is_integer(e.types, sat)) {
                     sok = true;

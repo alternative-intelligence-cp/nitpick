@@ -2885,6 +2885,54 @@ defect declares a `DEF-` in §2f.
 > the value's (as a struct literal's field values are). `tests/analysis/rejection/enum_payload_escape.npk`
 > pins the three faces (BORROW-001, BORROW-001, BORROW-002). A refusal added, in F22 with the sweep.
 
+> **DEF-161 — FIXED at D-332's landing (2026-09-27; found by D-332's count rule on `tests/types/rejection/
+> variadic_rules.npk`). A REFUSED `..^` ARGUMENT TO `sys` WAS FIT-CHECKED TOO:** `sys(60i64, ..^xs)` reported
+> TYPE-007 twice at one site -- the spread refusal, then "an argument to `sys` must fit a kernel register ...
+> this is `int64[]`" -- one mistake, two reports, D-240's own case (1.4.8c: "a refused `..^` argument is not
+> also fit-checked") applied to the general argument path and missed in `sys`'s register check
+> (type_members.npk). The operand is still typed, so a mistake inside it is reported; the register rule says
+> nothing more about an argument already refused. A set-matching runner could not see it: the file names
+> TYPE-007 elsewhere.
+
+> **DEF-162 — FIXED at D-332's landing (2026-09-27; found by D-332's count rule on `tests/types/rejection/
+> simd_rules.npk`). A `simd(…)` UNDER A REFUSED ANNOTATION REPORTED THE ANNOTATION MISSING:** `simd<Box,
+> 4>:v = simd(Box{ v: 1i32 });` reported TYPE-001 at the annotation and TYPE-001 again at the constructor
+> ("`simd(…)` needs a `simd<T, N>` annotation"), four times in the file -- a refused type resolves to 0, the
+> value that also means "no expectation", so the constructor read the annotation's refusal as its absence.
+> `ExprTyper.expect_refused`: a declaration (which always writes its type) sets it while its initialiser is
+> typed when the type was refused, and the constructor is silent when it is set and nothing directs it; it
+> can only silence a second report in a program already refused at its annotation (type_expr.npk,
+> type_stmt.npk).
+
+> **DEF-163 — FIXED at D-332's landing (2026-09-27; found by D-332's count rule on `tests/types/rejection/
+> not_constant.npk`). A REJECTION FILE EXPECTED A REFUSAL D-222 HAD MADE LEGAL, AND THE COMPILER'S MESSAGE
+> NAMED A RETIRED KEYWORD:** the file expected TYPE-004 at `int32[RUNTIME_ONE]` ("`fixed` is assigned at run
+> time"), but D-222 (2026-08-29) made every module binding a `fixed` one lowered to an LLVM `constant` with a
+> compile-time initialiser, so it folds and is accepted; the code was reported at the file's other two sites,
+> so no runner noticed for a month -- the silent site D-332 exists to catch. The line is a control now, and
+> the two messages that said "a name folds only if it is a `const` global" say "a module-level `fixed`
+> binding (D-222)" (type_resolve.npk).
+
+> **DEF-164 — OPEN (2026-09-27; owner: the compiler seat; found by D-332's count rule run over the library
+> listener's corpus, `nitpick-time/tests/probe/probe14_error_payload_refused.npk`). THE PARSER'S RECOVERY
+> REPORTS ONE MISTAKE TWICE:** `pub error:ETimeValue(ValueFault);` -- an error identity with a payload, which
+> the language does not have -- is PARSE-001 at the `(` ("expected `;`") and PARSE-001 again at the `)`
+> ("expected `:`"): after the first report the parser resynchronises inside the same declaration and reads
+> `ValueFault)` as a new item. D-240: one mistake, one report. Recommendation: the declaration-level
+> recovery skips to the declaration's own `;` (the sync point it already knows) before reading an item again;
+> measured over the tree and the listener's corpus with both checkers before it lands, since every parse-error
+> test's count moves with it.
+
+> **DEF-165 — OPEN (2026-09-27; owner: the compiler seat, the user's call on the reading; found by D-332's
+> count rule over the listener's corpus: `nitpick-regex/tests/rejection/pattern_error_literal.npk`,
+> `nitpick-time/tests/probe/probe15_civil_literal_bypass.npk`). A STRUCT LITERAL OF A TYPE WITH SEALED FIELDS,
+> WRITTEN OUTSIDE ITS MODULE, IS REPORTED ONCE PER FIELD:** `PatternError{ kind: …, offset: …, span_len: …,
+> detail: … }` is four TYPE-079 at one span (D-313's write forms include "a struct literal"). Two readings:
+> each sealed field is its own fact (the author learns every field at once), or the literal is ONE mistake --
+> constructing the type outside the module that owns its invariants -- and D-240 says one report.
+> Recommendation: one report per literal, naming every sealed field it writes, since the fix is the same one
+> action (call the owning module's constructor) whatever the count.
+
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,
 > DEF-123, DEF-127, DEF-134), step 2 the silent wrong loop counts (DEF-128 under S-110, DEF-129, DEF-130, DEF-135 and DEF-136 found by the step's probes, DEF-137 found by landing 72's red harness), step 3 the leaks

@@ -21651,6 +21651,26 @@ its `expect-error-at`), so a silent site fails by name; a file that means severa
 one line is re-spelled. A runner rule in the harness and `npkg`, each with a self-check case
 that plants a silent site; its own small landing after 1.6.1d.
 
+*[2026-09-27, the landing note (`nitpick-compiler_21`).]* Landed as its own landing after 1.6.1e
+step 2: `match_findings` (harness.py) and `counted_sites` (npkg/suites.npk) hold each code's
+reported site count to its `expect-error` lines on the error channel, at both of the rule's call
+sites (the rejection suites and the verify stage's refusal); the self-checks' `silent_site` case
+(eleven texts, byte for byte in both runners) plants a code expected at two sites and reported at
+one, and both runners refuse it. MEASURED FIRST over the tree's 235 rejection files with this
+tree's tools: thirteen differed by count, and every extra or missing site was READ. Nine were
+headers that named several sites under one line (a two-member cycle reported at both members, as
+the cycle rule intends; a file of seven write paths; four functions that fall off; two reads of
+one unassigned binding; a loop's may-be-unassigned consequence its own comment states; a missing
+field its own comment says is reported beside an unknown one) -- re-spelled one line per site.
+Four were findings, each fixed in the landing: DEF-161 (a refused `..^` argument to `sys` was
+fit-checked too -- D-240's own case, missed in `sys`'s register check), DEF-162 (a `simd(…)`
+constructor under a declaration whose annotation was refused reported "needs a `simd<T, N>`
+annotation" -- one mistake, two reports), DEF-163 (`not_constant.npk` expected a refusal at a
+module `fixed` binding used as an array size, which D-222 made a compile-time constant a month
+before: the file's silent site, the exact hazard; and the compiler's two messages still named
+the retired `const`), and `reach_prelude.npk`'s second REACH-002 (`LimitViolated`, the List's
+count rule, D-308 §6) named in its `failsafe` so the file stays about the raise.
+
 ## D-333 — a `cstring` rides a channel and crosses a spawn as a `string` does: D-235's row amended under D-328 — **SETTLED (user decision, 2026-09-26: "go with your recommendations on those two questions. they look fine to me."; S-114)**
 
 **The history.** D-235 (1.4.7b) decided every kind as a channel element, and `cstring`

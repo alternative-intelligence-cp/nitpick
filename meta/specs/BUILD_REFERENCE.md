@@ -581,6 +581,16 @@ Three rules make this worth having rather than decorative:
   resolved one of two ways and never a third: a finding the test MEANS is
   named with an `expect-error` line beside its construct; an incidental defect
   in the test's own text is corrected so the file reports only what it tests.
+- **Every site is counted (D-332, enforced from 2026-09-27).** A SET cannot see a
+  silent site: a file whose code is reported at one of its sites satisfies an
+  expectation meant for another. So both runners also hold the NUMBER of sites a
+  code is reported at (error channel) to the number of `expect-error` lines naming
+  it -- one line per site, each with its `expect-error-at` where the file spells
+  one -- and a mismatch fails the test by name (`X reported at N site(s), expected
+  at M`). A code reported and never named, or named and never reported, stays the
+  set rule's. `match_findings` (harness) and `counted_sites` (npkg), the parity
+  stage proving they agree, and the runner self-checks' `silent_site` case (a code
+  expected at two sites, reported at one) proving the rule bites.
 
   > The subset rule this replaced — every expected code must appear, extras
   > pass — ran from 0.8 to 1.4.8 in the harness and was ported as found into

@@ -97,7 +97,9 @@ func:pick_arm_gap = int32(int32:n) never fails {
 
 // `$$i` HANDS OUT A READABLE VIEW, and shared means readable. Only `$$m` says the
 // callee will write, which is why that one is the endorsed way to fill a
-// caller-owned destination (D-004) and this one is not.
+// caller-owned destination (D-004) and this one is not. Both reads of the
+// never-assigned `x` are reported, the borrow and the `pass` (D-332 counts each).
+// expect-error: NITPICK-ASSIGN-001
 // expect-error: NITPICK-ASSIGN-001
 func:shared_borrow_is_a_read = int32() never fails {
     int32:x;
@@ -180,7 +182,10 @@ func:fixed_assigned_on_a_branch = int32(bool:c) never fails {
 // A LOOP BODY CAN WRITE THE SAME BINDING ONCE PER ITERATION, which is once too
 // many. Nothing the body assigns is definitely assigned afterwards, and everything
 // it assigns is possibly assigned — this is the half that catches it.
+// And the loop may run zero times, so `k` may be unassigned at `pass k` -- the
+// consequence the sentence above states, reported (D-332 counts it).
 // expect-error: NITPICK-ASSIGN-002
+// expect-error: NITPICK-ASSIGN-001
 func:fixed_assigned_in_a_loop = int32(bool:c) never fails {
     fixed int32:k;
     // a flag loop that shows the analysis a shape; the flag never changes

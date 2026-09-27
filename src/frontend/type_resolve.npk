@@ -2054,7 +2054,7 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
     if (!(raw cv_is_int(cv))) {
         if (raw fold_gave_up(r)) { pass 0i32; }
         pass (raw ty_error(r, raw TYPE_NOT_CONSTANT(),
-            "a `comptime` argument must be a constant expression; a name folds only if it is a `const` global",
+            "a `comptime` argument must be a constant expression; a name folds only if it is a module-level `fixed` binding (D-222)",
             v.span));
     }
 
@@ -2775,7 +2775,7 @@ func:resolve_fixed_array = int32(TypeResolver->:r, TypeNode:n, int32:elem,
     if (!(raw cv_is_int(cv))) {
         if (raw fold_gave_up(r)) { pass 0i32; }
         pass (raw ty_error(r, raw TYPE_NOT_CONSTANT(),
-            "an array size must be a constant expression; a name folds only if it is a `const` global",
+            "an array size must be a constant expression; a name folds only if it is a module-level `fixed` binding (D-222)",
             se.span));
     }
 

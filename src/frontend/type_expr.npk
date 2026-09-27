@@ -69,6 +69,17 @@ pub struct:ExprTyper = {
     // state is an error rather than a silent `int32`.
     int32:expected;
 
+    // THE EXPECTATION WAS WRITTEN AND REFUSED (D-240; found by D-332's count rule,
+    // 1.6.1e's follow-on). A refused type resolves to 0, the same value as "no
+    // expectation", so a construct that needs its annotation to be directed --
+    // `simd(…)` reads its element and lane count from it -- reported "needs a
+    // `simd<T, N>` annotation" under a declaration whose annotation was there and
+    // refused: one mistake, two reports. A declaration sets this while its
+    // initialiser is typed when its declared type was refused; the constructor
+    // stays silent when it is set and nothing else directs it. It can only
+    // silence a second report inside a program already refused at its annotation.
+    bool:expect_refused;
+
     // THE SCOPE NAMES ARE LOOKED UP IN. It lives on the typer rather than being
     // threaded through every walk function for the same reason `expected` does:
     // it is constant across an expression tree, and a construct that nests a
@@ -213,7 +224,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  FnInstTable->:fninsts,
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
-                             diags: diags, expected: 0i32, scope: scope,
+                             diags: diags, expected: 0i32, expect_refused: false, scope: scope,
                              fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
@@ -3066,6 +3077,8 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
         for (int32:i0 in 0i32...cnt) {
             discard(raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, i0) }));
         }
+        // An annotation that was written and refused is the report (D-240).
+        if (e.expect_refused && (want == 0i32)) { pass 0i32; }
         pass (raw te_error(e, raw TYPE_UNKNOWN(),
             "`simd(…)` needs a `simd<T, N>` annotation to read its element and lane count from — they live in the type (D-194), which is what makes each instantiation one behaviour",
             n.span));

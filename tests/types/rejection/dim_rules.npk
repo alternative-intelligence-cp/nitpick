@@ -55,7 +55,9 @@ unit:P64 = P32 * P32;
 // expect-error: NITPICK-TYPE-050
 unit:P128 = P64 * P64;
 
-// A cycle has no vector; the depth bound is the refusal.
+// A cycle has no vector; the depth bound is the refusal, reported at both
+// members (D-332 counts each site).
+// expect-error: NITPICK-TYPE-050
 // expect-error: NITPICK-TYPE-050
 unit:CycA = CycB;
 unit:CycB = CycA;
