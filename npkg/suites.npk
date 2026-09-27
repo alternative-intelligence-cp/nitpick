@@ -402,7 +402,7 @@ pub async func:check_rejection = List<string>(Ctx->:c, string:binary, string:pat
                                               Expect:exp) {
     List<string>:fl = raw list_init::<string>(1i64);
     if (!exp.ok) { pass (raw unreadable(name, exp)); }
-    Result<Run>:r = await compile_stdout(c, binary, path, raw duration_secs(20i64));
+    Result<Run>:r = await compile_stdout_flags(c, binary, path, exp.flags, raw duration_secs(20i64));
     if (r.is_error) { fail r.err; }
     Run:run = move(r.value);
     if (run.timed_out) {
@@ -443,9 +443,10 @@ pub async func:check_rejection = List<string>(Ctx->:c, string:binary, string:pat
 };
 
 // A whole program the frontend must accept with NO diagnostics at all.
-pub async func:check_accept = List<string>(Ctx->:c, string:binary, string:path, string:name) {
+pub async func:check_accept = List<string>(Ctx->:c, string:binary, string:path, string:name,
+                                          List<string>:flags) {
     List<string>:fl = raw list_init::<string>(1i64);
-    Result<Run>:r = await compile_stdout(c, binary, path, raw duration_secs(20i64));
+    Result<Run>:r = await compile_stdout_flags(c, binary, path, flags, raw duration_secs(20i64));
     if (r.is_error) { fail r.err; }
     Run:run = move(r.value);
     if (run.timed_out) {
@@ -798,13 +799,18 @@ async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
     for (int64:i in 0i64...files.count) {
         string:p = raw strlist_view(files, i);
         string:name = raw rel_to_root(c, p);
-        List<string>:fl = relay await check_accept(c, check, p, name);
+        // AN ACCEPT FILE MAY NAME A BUILD MODE (`// npkc-flags:`, 1.6.1e step 2,
+        // DEF-151): the clean twin of a mode's rejection suite is accepted
+        // UNDER the mode, by both runners.
+        string:atext = relay read_text(p);
+        Expect:aexp = raw expect_read(atext);
+        List<string>:fl = relay await check_accept(c, check, p, name, aexp.flags);
         // AND THE EMITTER MUST LOWER IT (1.5.8b step 7, after DEF-88): an
         // accepted file that dies in the emitter is a compiler defect by its
         // own message, and this suite asked only the frontend for a cycle.
         // One verdict per file: silence first, then the emission.
         if (fl.count == 0i64) {
-            fl = relay await emit_accept(c, string_from_bytes(c.npkc.ptr, c.npkc.len), p, name);
+            fl = relay await emit_accept(c, string_from_bytes(c.npkc.ptr, c.npkc.len), p, name, aexp.flags);
         }
         drop record(c, tname, name, fl);
         count = count + 1i64;
@@ -816,9 +822,10 @@ async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
 // The compiler under test must EMIT an accepted file (1.5.8b step 7): the
 // harness's `emit_accept`, verdict for verdict. Measured on `c5ba885` with
 // `tests/accept/moves.npk`: reported; on the tree that fixed DEF-88: silent.
-pub async func:emit_accept = List<string>(Ctx->:c, string:binary, string:path, string:name) {
+pub async func:emit_accept = List<string>(Ctx->:c, string:binary, string:path, string:name,
+                                         List<string>:flags) {
     List<string>:fl = raw list_init::<string>(1i64);
-    Result<Run>:r = await compile_stdout(c, binary, path, raw duration_secs(300i64));
+    Result<Run>:r = await compile_stdout_flags(c, binary, path, flags, raw duration_secs(300i64));
     if (r.is_error) { fail r.err; }
     Run:run = move(r.value);
     if (run.timed_out) {

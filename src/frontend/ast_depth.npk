@@ -1,0 +1,220 @@
+// THE DEPTH BOUND, MEASURED (DEF-150's c2, 1.6.1e step 2; the library listener's
+// F-024).
+//
+// A program only LONG ran the compiler off its own stack: a parenthesised
+// expression 500 deep, and -- found when this step's first form counted the
+// parser's nesting alone -- a chain `1 + 1 + ... + 1` of 600 terms, which the
+// parser builds in a loop at one level of its own recursion while the tree it
+// builds is 600 deep on its left spine, and the constant folder's recursion over
+// that spine (its fuel counts WORK, 4096, not depth) exhausted the 8 MiB stack:
+// `StackExhausted`, exit 3, no message. Every walk of the compiler after the
+// parser recurses once per NODE, so the bound is on the tree: a node's HEIGHT is
+// the depth of the subtree it roots, and no root may be taller than
+// `AST_DEPTH_MAX`.
+//
+// ONE PASS, NO RECURSION. The AST logs every expression and statement in the order
+// it is built, and both producers -- the parser and the expander's clone -- build
+// a node only after its children, so a stretch of the log read in order meets
+// every child before its parent: a node's height is one more than its tallest
+// child's, read from the height list. The pass returns the FIRST node in the
+// stretch whose height passes the bound -- the smallest subtree that is too deep,
+// which is where the report belongs -- or 0.
+//
+// THE CHILDREN ARE THE WALKERS' CHILDREN. An expression's come from `expr_shape`,
+// the table every walker reads, and its four custom shapes as the clone reads them
+// (a call's and a builtin's generic TYPE arguments are not expressions; a struct
+// literal's window alternates a NAME and a value; a `pick` expression's arms are
+// statements). A statement's are the clone's, kind by kind, and a loop's
+// invariant and measure count at the loop's own level, as the clone passes them
+// the loop's fuel.
+mod:ast_depth;
+
+use "./source_location.npk".*;
+use "./ast_kind.npk".*;
+use "./ast.npk".*;
+use "./parse_expr.npk".*;
+use "./parse_stmt.npk".*;
+use "./parse_pick.npk".*;
+use "./parse_decorate.npk".*;
+
+func:hmax = int32(int32:a, int32:b) never fails pure {
+    if (a > b) { pass a; }
+    pass b;
+};
+
+func:eh = int32(Ast->:ast, ExprId:e) never fails {
+    if (raw expr_is_none(e)) { pass 0i32; }
+    pass (raw ast_expr_height(ast, e));
+};
+
+func:sh = int32(Ast->:ast, StmtId:s) never fails {
+    if (raw stmt_is_none(s)) { pass 0i32; }
+    pass (raw ast_stmt_height(ast, s));
+};
+
+// The tallest expression of an id window `[start + from, start + count)`.
+func:expr_window_h = int32(Ast->:ast, int32:start, int32:from, int32:count) never fails {
+    int32:m = 0i32;
+    for (int32:i in from...count) {
+        m = raw hmax(m, raw eh(ast, ExprId{ index: raw ast_id_at(ast, start, i) }));
+    }
+    pass m;
+};
+
+func:stmt_window_h = int32(Ast->:ast, int32:start, int32:count) never fails {
+    int32:m = 0i32;
+    for (int32:i in 0i32...count) {
+        m = raw hmax(m, raw sh(ast, StmtId{ index: raw ast_id_at(ast, start, i) }));
+    }
+    pass m;
+};
+
+// A verification node's expressions, transparent: the clone hands them the fuel of
+// the statement that carries them.
+func:verify_h = int32(Ast->:ast, VerifyId:id) never fails {
+    if (raw verify_is_none(id)) { pass 0i32; }
+    VerifyNode:v = raw ast_verify(ast, id);
+    if (v.kind == VerifyKind.VerifyContractNode) { pass (raw eh(ast, raw contract_cond(v))); }
+    if (v.kind == VerifyKind.VerifyJoinsWithin)  { pass (raw eh(ast, raw contract_cond(v))); }
+    if (v.kind == VerifyKind.VerifyInvariantNode) {
+        pass (raw expr_window_h(ast, raw invariant_start(v), 0i32, raw invariant_count(v)));
+    }
+    if (v.kind == VerifyKind.VerifyDecreasesNode) { pass (raw eh(ast, raw measure_expr(v))); }
+    pass 0i32;
+};
+
+func:expr_children_h = int32(Ast->:ast, ExprNode:n) never fails {
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass 0i32; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass (raw eh(ast, raw expr_lhs(n))); }
+    if (shape == (raw EXPR_SHAPE_TWO())) {
+        pass (raw hmax(raw eh(ast, raw expr_lhs(n)), raw eh(ast, raw expr_rhs(n))));
+    }
+    if (shape == (raw EXPR_SHAPE_THREE())) {
+        int32:m = raw hmax(raw eh(ast, raw expr_lhs(n)), raw eh(ast, raw expr_rhs(n)));
+        pass (raw hmax(m, raw eh(ast, raw expr_third(n))));
+    }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (raw expr_window_h(ast, raw expr_list_start(n), 0i32, raw expr_list_count(n)));
+    }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        pass (raw hmax(raw eh(ast, raw expr_lhs(n)),
+                       raw expr_window_h(ast, raw expr_list_start(n), 0i32, raw expr_list_count(n))));
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        pass (raw hmax(raw eh(ast, raw expr_callee(n)),
+                       raw expr_window_h(ast, raw expr_list_start(n), raw expr_generic_count(n),
+                                         raw expr_list_count(n))));
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw expr_window_h(ast, raw expr_list_start(n), raw builtin_generic_count(n),
+                                raw expr_list_count(n)));
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:start = raw expr_list_start(n);
+        int32:cnt = raw expr_list_count(n);
+        int32:m = 0i32;
+        for (int32:i in 0i32...cnt) {
+            if ((i % 2i32) == 1i32) {
+                m = raw hmax(m, raw eh(ast, ExprId{ index: raw ast_id_at(ast, start, i) }));
+            }
+        }
+        pass m;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        pass (raw hmax(raw eh(ast, raw pickx_selector(n)),
+                       raw stmt_window_h(ast, raw pickx_arm_start(n), raw pickx_arm_count(n))));
+    }
+    // An unclassified kind is `tests/frontend/ast.npk`'s failure; read as a leaf here
+    // it could only make a subtree SHORTER than it is, so it is refused by that test
+    // before it can reach this line.
+    pass 0i32;
+};
+
+func:stmt_children_h = int32(Ast->:ast, StmtNode:s) never fails {
+    StmtKind:k = s.kind;
+    if (k == StmtKind.StmtBlockStmt) {
+        pass (raw stmt_window_h(ast, raw stmt_list_start(s), raw stmt_list_count(s)));
+    }
+    if (k == StmtKind.StmtVarDeclStmt) { pass (raw eh(ast, raw stmt_decl_init(ast, s))); }
+    if (k == StmtKind.StmtAssignStmt) {
+        pass (raw hmax(raw eh(ast, raw stmt_target(s)), raw eh(ast, raw stmt_assigned(s))));
+    }
+    if (k == StmtKind.StmtIfStmt) {
+        int32:m = raw hmax(raw eh(ast, raw stmt_cond(s)), raw sh(ast, raw stmt_then(s)));
+        pass (raw hmax(m, raw sh(ast, raw stmt_else(s))));
+    }
+    if (k == StmtKind.StmtWhileStmt) {
+        int32:m = raw hmax(raw eh(ast, raw stmt_cond(s)), raw sh(ast, raw stmt_body(ast, s)));
+        m = raw hmax(m, raw verify_h(ast, raw stmt_while_invariant(ast, s)));
+        pass (raw hmax(m, raw verify_h(ast, raw stmt_while_measure(ast, s))));
+    }
+    if (k == StmtKind.StmtForStmt) {
+        int32:m = raw hmax(raw eh(ast, raw stmt_for_iter(ast, s)), raw sh(ast, raw stmt_for_body(ast, s)));
+        m = raw hmax(m, raw verify_h(ast, raw stmt_for_invariant(ast, s)));
+        pass (raw hmax(m, raw verify_h(ast, raw stmt_for_measure(ast, s))));
+    }
+    if (k == StmtKind.StmtWhenStmt) {
+        int32:m = raw hmax(raw eh(ast, raw stmt_cond(s)), raw sh(ast, raw stmt_when_body(ast, s)));
+        m = raw hmax(m, raw sh(ast, raw stmt_when_then(ast, s)));
+        m = raw hmax(m, raw sh(ast, raw stmt_when_end(ast, s)));
+        m = raw hmax(m, raw verify_h(ast, raw stmt_when_invariant(ast, s)));
+        pass (raw hmax(m, raw verify_h(ast, raw stmt_when_measure(ast, s))));
+    }
+    if ((k == StmtKind.StmtLoopStmt) || (k == StmtKind.StmtTillStmt)) {
+        int32:m = raw sh(ast, raw stmt_counted_body(s));
+        int32:argc = raw stmt_counted_argc(ast, s);
+        for (int32:i in 0i32...argc) {
+            m = raw hmax(m, raw eh(ast, raw stmt_counted_arg(ast, s, i)));
+        }
+        m = raw hmax(m, raw verify_h(ast, raw stmt_counted_invariant(ast, s)));
+        pass (raw hmax(m, raw verify_h(ast, raw stmt_counted_measure(ast, s))));
+    }
+    if (k == StmtKind.StmtPickStmt) {
+        pass (raw hmax(raw eh(ast, raw pick_selector(s)),
+                       raw stmt_window_h(ast, raw pick_arm_start(s), raw pick_arm_count(s))));
+    }
+    if (k == StmtKind.StmtPickArm) {
+        pass (raw hmax(raw eh(ast, raw arm_guard(s)), raw sh(ast, raw arm_body(s))));
+    }
+    if (k == StmtKind.StmtDeferStmt) { pass (raw sh(ast, StmtId{ index: s.a })); }
+    if ((k == StmtKind.StmtPassStmt) || (k == StmtKind.StmtFailStmt)
+        || (k == StmtKind.StmtReturnStmt) || (k == StmtKind.StmtExitStmt)
+        || (raw stmt_carries_expr(k))) {
+        pass (raw eh(ast, ExprId{ index: s.a }));
+    }
+    // `break`, `continue`, `fall` and the NONE statement carry nothing to follow.
+    pass 0i32;
+};
+
+// Compute the heights of the log's stretch `[from, end)`; answer the first node
+// taller than `AST_DEPTH_MAX` (an expression as its index, a statement as its index
+// negated), or 0.
+pub func:ast_depth_pass = int32(Ast->:ast, int64:from) never fails {
+    int64:upto = raw ast_built_mark(ast);
+    int32:bound = raw AST_DEPTH_MAX();
+    int32:first = 0i32;
+    for (int64:i in from...upto) {
+        int32:v = raw ast_built_at(ast, i);
+        int32:h = 0i32;
+        if (v > 0i32) {
+            ExprId:e = ExprId{ index: v };
+            h = 1i32 + (raw expr_children_h(ast, raw ast_expr(ast, e)));
+            drop ast_set_expr_height(ast, e, h);
+        } else {
+            StmtId:st = StmtId{ index: 0i32 - v };
+            h = 1i32 + (raw stmt_children_h(ast, raw ast_stmt(ast, st)));
+            drop ast_set_stmt_height(ast, st, h);
+        }
+        if (h > bound) {
+            if (first == 0i32) { first = v; }
+        }
+    }
+    pass first;
+};
+
+// Where a node the pass named was written.
+pub func:ast_depth_span = Span(Ast->:ast, int32:v) never fails {
+    if (v > 0i32) { pass (raw ast_expr(ast, ExprId{ index: v })).span; }
+    pass (raw ast_stmt(ast, StmtId{ index: 0i32 - v })).span;
+};

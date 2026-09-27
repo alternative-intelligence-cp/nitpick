@@ -171,6 +171,17 @@ pub struct:Ast = {
     List<int32>:expr_flags;
     List<int32>:stmt_flags;
 
+    // THE DEPTH BOUND'S TWO RECORDS (DEF-150's c2, 1.6.1e step 2). A node's HEIGHT
+    // is the depth of the subtree it roots (a leaf is 1), and the LOG is every
+    // expression and statement in the order it was built -- an expression as its
+    // index, a statement as its index negated. Nodes are built children first, by
+    // the parser and by the expander's clone alike, so one pass over a stretch of
+    // the log computes every height in it exactly (`ast_depth.npk`); the pushes sit
+    // in the same functions as the flag bytes, for the reason given above.
+    List<int32>:expr_height;
+    List<int32>:stmt_height;
+    List<int32>:built;
+
     // A flat pool of child handles. A node that owns a SEQUENCE -- generic
     // arguments, function parameters, `dyn A & B` traits -- stores a (start,
     // count) window into this pool rather than owning an array of its own.
@@ -225,6 +236,9 @@ pub func:ast_init = Ast() never fails {
         verifies: raw list_init::<VerifyNode>(n),
         expr_flags: raw list_init::<int32>(n),
         stmt_flags: raw list_init::<int32>(n),
+        expr_height: raw list_init::<int32>(n),
+        stmt_height: raw list_init::<int32>(n),
+        built:    raw list_init::<int32>(n),
         ids:      raw list_init::<int32>(n),
         scratch:  raw list_init::<int32>(n)
     };
@@ -235,11 +249,13 @@ pub func:ast_init = Ast() never fails {
                             width: NumWidth.WNone };
     drop list_push(@ast.exprs, en);
     drop list_push(@ast.expr_flags, 0i32);
+    drop list_push(@ast.expr_height, 0i32);
 
     StmtNode:sn = StmtNode{ kind: StmtKind.StmtNone, span: z,
                             a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
     drop list_push(@ast.stmts, sn);
     drop list_push(@ast.stmt_flags, 0i32);
+    drop list_push(@ast.stmt_height, 0i32);
 
     // PUSHED, as every other array's NONE node is (DEF-79, found 1.5.8b step
     // 1b by `l[i]`'s bounds check on its first run): from 1.4.7 step 2 until
@@ -283,6 +299,8 @@ pub func:ast_add_expr_w = ExprId(Ast->:ast, ExprKind:kind, Span:span,
     ExprId:id = ExprId{ index: raw ast_id(ast.exprs.count) };
     drop list_push(@ast.exprs, n);
     drop list_push(@ast.expr_flags, 0i32);
+    drop list_push(@ast.expr_height, 1i32);
+    drop list_push(@ast.built, id.index);
     pass id;
 };
 
@@ -296,6 +314,45 @@ pub func:ast_expr = ExprNode(Ast->:ast, ExprId:id) never fails {
 };
 
 pub func:ast_expr_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.exprs.count)); };
+
+// THE DEPTH BOUND (DEF-150's c2, 1.6.1e step 2; the library listener's F-024). No
+// node of a program sits deeper than this below the root it hangs from -- a
+// function's body block counting as 1, a module-level initialiser's expression as
+// 1 -- so no walk of the compiler recurses further: the parser refuses a program
+// that nests past it (PARSE-012), the expander an expansion whose splice would
+// (MACRO-003), and every whole-body analysis follows exactly this far by its own
+// fuel. ONE number: the analyses' depths read it, and nothing else states one.
+pub func:AST_DEPTH_MAX = int32() never fails { pass 256i32; };
+
+// Where the log stands: a stretch of it is `[mark, ast_built_mark(ast))`.
+pub func:ast_built_mark = int64(Ast->:ast) never fails { pass ast.built.count; };
+pub func:ast_built_at = int32(Ast->:ast, int64:i) never fails {
+    if (i < 0i64) { !!! BoundsId; }
+    if (i >= ast.built.count) { !!! BoundsId; }
+    pass ast.built[i];
+};
+pub func:ast_expr_height = int32(Ast->:ast, ExprId:id) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if ((id.index => int64) >= ast.expr_height.count) { !!! BoundsId; }
+    pass ast.expr_height[id.index => int64];
+};
+pub func:ast_stmt_height = int32(Ast->:ast, StmtId:id) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if ((id.index => int64) >= ast.stmt_height.count) { !!! BoundsId; }
+    pass ast.stmt_height[id.index => int64];
+};
+pub func:ast_set_expr_height = NIL(Ast->:ast, ExprId:id, int32:h) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if ((id.index => int64) >= ast.expr_height.count) { !!! BoundsId; }
+    ast.expr_height[id.index => int64] = h;
+    pass NIL;
+};
+pub func:ast_set_stmt_height = NIL(Ast->:ast, StmtId:id, int32:h) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if ((id.index => int64) >= ast.stmt_height.count) { !!! BoundsId; }
+    ast.stmt_height[id.index => int64] = h;
+    pass NIL;
+};
 
 // Write slot `a` of an expression.
 //
@@ -514,6 +571,8 @@ pub func:ast_add_stmt = StmtId(Ast->:ast, StmtKind:kind, Span:span,
     StmtId:id = StmtId{ index: raw ast_id(ast.stmts.count) };
     drop list_push(@ast.stmts, n);
     drop list_push(@ast.stmt_flags, 0i32);
+    drop list_push(@ast.stmt_height, 1i32);
+    drop list_push(@ast.built, 0i32 - id.index);
     pass id;
 };
 

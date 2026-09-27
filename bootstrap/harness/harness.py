@@ -204,6 +204,7 @@ class Expect:
         self.no_parse_error = False
         self.obligations = []      # (kind, verdict, n) -- the `verify` stage's rows (1.5.0)
         self.obligations_none = False
+        self.flags = []            # `// npkc-flags: …` -- the tool's extra arguments (1.6.1e step 2, DEF-151)
         # `// argv: TOK ...` -- extra argv for the RUN. A token that names a
         # fixture (its basename, uppercased -- MOCK_DRIVER for
         # tests/backend/fixtures/mock_driver.npk) is substituted with the
@@ -276,6 +277,11 @@ def read_expectations(path):
                 e.stress = int(body.split(":", 1)[1].strip())
             elif body.startswith("argv:"):
                 e.argv = body.split(":", 1)[1].split()
+            elif body.startswith("npkc-flags:"):
+                # THE TOOL'S FLAGS (1.6.1e step 2, DEF-151): a rejection file under a build
+                # mode names the mode in its header, and both runners pass the words to the
+                # tool after the path -- `--extra-picky=no-wildx` has a suite by it.
+                e.flags = body.split(":", 1)[1].split()
             elif body.startswith("explore-seed:"):
                 e.explore_first.append(int(body.split(":", 1)[1].strip()))
             elif body.startswith("explore:"):
@@ -612,6 +618,21 @@ UNTESTED_CODES = {
     "NITPICK-TYPE-011":    "internal -- a node kind the type checker has no case for",
     "NITPICK-EMIT-002":    "internal -- a node kind the emitter has no case for",
 
+    # INTERNAL SINCE 1.6.1e STEP 2 (DEF-150's c2; the one time this list grew, by
+    # a design that closed the route rather than a test that went missing). The
+    # four analyses' depth refusals were reachable from source until the tree
+    # bound: `AST_DEPTH_MAX` refuses any program nesting past 256 levels at the
+    # PARSER (PARSE-012) and at every splice (MACRO-003), and each analysis's depth
+    # reads the same constant, so a program reaches one of these only if the bound
+    # and an analysis disagree about depth -- a compiler defect. Each stays the
+    # fail-closed belt it always was; their other sites were already internal (an
+    # unclassified kind, a round bound that did not settle). The 3,579-file sweep
+    # found none reached anywhere after the bound.
+    "NITPICK-ASSIGN-003":  "internal since 1.6.1e step 2 -- the definite-assignment walk's depth belt, behind AST_DEPTH_MAX",
+    "NITPICK-BORROW-007":  "internal since 1.6.1e step 2 -- the escape and aliasing walks' depth belt, behind AST_DEPTH_MAX",
+    "NITPICK-LOCK-004":    "internal since 1.6.1e step 2 -- the lock-level walk's depth, unclassified-kind and round belts",
+    "NITPICK-PICK-005":    "internal since 1.6.1e step 2 -- the exhaustiveness walk's depth and unclassified-kind belts",
+
     # AHEAD OF THE LANGUAGE -- the rule is written, correct, and unreachable
     # because the construct it governs does not exist yet. Deliberate, and the
     # reason is the one-shot Astree run: a rule added AFTER the analysis is
@@ -629,11 +650,14 @@ UNTESTED_CODES = {
     # (`check_rung_names_open_cycle` holds the naming rule meanwhile).
     "NITPICK-RUNG-001":    "no rung left -- the suite that asserted it retired at 1.5.4 (S-47); the code stays for the next rung",
 
-    # BUILD-MODE -- emitted only under `--extra-picky=no-wildx`, which the
-    # flagless rejection suites do not pass. Exercised directly against npkc
-    # with the flag (0.10.5); the state-machine codes WILDX-001/002 that the
-    # DEFAULT build enforces are both in analysis/rejection/wildx_rules.npk.
-    "NITPICK-WILDX-003":   "build-mode -- only under --extra-picky=no-wildx",
+    # BUILD-MODE (WILDX-003) HAS ITS SUITE since 1.6.1e step 2 (DEF-151): a
+    # rejection file names the mode in its header (`// npkc-flags:
+    # --extra-picky=no-wildx`) and both runners hand the words to the tool --
+    # tests/analysis/rejection/no_wildx.npk holds the four spellings, and its
+    # clean twin tests/accept/no_wildx_clean.npk is accepted under the mode. The
+    # state-machine codes WILDX-001/002 that the DEFAULT build enforces are both
+    # in analysis/rejection/wildx_rules.npk. The "build-mode" excuse that stood
+    # here from 0.10.5 retired with the suite.
 }
 
 
@@ -1937,7 +1961,7 @@ def check_module_rejection(binary, path, name, exp):
     refused" indistinguishable.
     """
     try:
-        r = subprocess.run([binary, path], capture_output=True, timeout=20)
+        r = subprocess.run([binary, path] + list(exp.flags), capture_output=True, timeout=20)
     except subprocess.TimeoutExpired:
         return ["%s: the frontend did not terminate" % name]
     if r.returncode == 3:
@@ -2068,7 +2092,7 @@ def check_type_accept(binary, path, name):
     there is nothing for the frontend to say about it.
     """
     try:
-        r = subprocess.run([binary, path], capture_output=True, timeout=20)
+        r = subprocess.run([binary, path] + list(read_expectations(path).flags), capture_output=True, timeout=20)
     except subprocess.TimeoutExpired:
         return ["%s: the frontend did not terminate" % name]
     if r.returncode == 3:
@@ -3125,7 +3149,7 @@ def emit_accept(binary, path, name):
     history, not a planted case -- no construct the checker admits and the
     emitter refuses is known today, which is exactly what this leg holds."""
     try:
-        r = subprocess.run([binary, path], capture_output=True, timeout=300)
+        r = subprocess.run([binary, path] + list(read_expectations(path).flags), capture_output=True, timeout=300)
     except subprocess.TimeoutExpired:
         return ["%s: the compiler did not terminate emitting an accepted file" % name]
     if r.returncode == 3:

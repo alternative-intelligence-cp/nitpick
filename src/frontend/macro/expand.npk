@@ -42,6 +42,7 @@ use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;
 use "../builtins.npk".*;
 use "./macro_codes.npk".*;
+use "../ast_depth.npk".*;
 
 // THE TWO BOUNDS, and they bound different things — see the header.
 //
@@ -143,6 +144,12 @@ pub struct:Expander = {
 
     // Set when a bound was exceeded, so the caller stops rather than looping.
     bool:blown;
+
+    // THE WALK'S DEPTH (DEF-150's c2, 1.6.1e step 2): the node `expand_in_expr` or
+    // `expand_in_stmt` is looking at sits this deep below its declaration's root
+    // (a function's body block is 1), so a splice there knows how deep its clone
+    // lands.
+    int32:depth;
 };
 
 pub func:macrotable_init = MacroTable() never fails {
@@ -1034,11 +1041,14 @@ func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) 
     int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
     int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
     drop record_site(x, md, inv.span);
+    int64:hmark = raw ast_built_mark(x.ast);
     ExprId:c = raw clone_expr(x, ExprId{ index: bs.a }, raw CLONE_FUEL());
     x.params_start = saved_ps;  x.params_count = saved_pc;
     x.args_start = saved_as;    x.args_count = saved_ac;
 
     if (raw expr_is_none(c)) { pass false; }
+    discard(raw ast_depth_pass(x.ast, hmark));
+    if (raw splice_too_deep(x, raw ast_expr_height(x.ast, c), inv.span)) { pass false; }
 
     drop blank_window(x, (raw expr_list_start(inv)) + (raw builtin_generic_count(inv)),
                       (raw expr_list_count(inv)) - (raw builtin_generic_count(inv)),
@@ -1076,6 +1086,7 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
     drop record_site(x, md, at);
 
     int32:bcount = raw macro_body_count(x.ast, md);
+    int64:hmark = raw ast_built_mark(x.ast);
     int32:mark = raw ast_scratch_mark(x.ast);
     for (int32:i in 0i32...bcount) {
         StmtId:cs = raw clone_stmt(x, StmtId{ index: raw macro_body_at(x.ast, md, i) },
@@ -1086,6 +1097,19 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
 
     x.params_start = saved_ps;  x.params_count = saved_pc;
     x.args_start = saved_as;    x.args_count = saved_ac;
+
+    // The statements land in a block that takes the invocation's place: the block
+    // at the site's depth, the statements one below it.
+    discard(raw ast_depth_pass(x.ast, hmark));
+    int32:tallest = 0i32;
+    for (int32:j in 0i32...w.count) {
+        StmtId:ws = StmtId{ index: raw ast_id_at(x.ast, w.start, j) };
+        if (!(raw stmt_is_none(ws))) {
+            int32:hj = raw ast_stmt_height(x.ast, ws);
+            if (hj > tallest) { tallest = hj; }
+        }
+    }
+    if (raw splice_too_deep(x, tallest + 1i32, at)) { pass false; }
 
     // THE WHOLE INVOCATION, not just its arguments. Where an expression-position
     // expansion is written OVER the invocation's own node, this one replaces the
@@ -1112,7 +1136,39 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
 // standing. The walk is the mechanism and the scan is the proof, and a hole in the
 // first shows up as a refusal rather than as a program that quietly did nothing.
 
+// THE DEPTH OF THE WALK is kept by these two wrappers and nowhere else: each level
+// of the tree passes through exactly one of them, as it passes through one
+// constructor when it is built, so `x.depth` is the tree depth the heights measure.
 func:expand_in_expr = bool(Expander->:x, ExprId:id) never fails {
+    x.depth = x.depth + 1i32;
+    bool:r = raw expand_in_expr_node(x, id);
+    x.depth = x.depth - 1i32;
+    pass r;
+};
+
+func:expand_in_stmt = bool(Expander->:x, StmtId:id) never fails {
+    x.depth = x.depth + 1i32;
+    bool:r = raw expand_in_stmt_node(x, id);
+    x.depth = x.depth - 1i32;
+    pass r;
+};
+
+// A SPLICE MAY NOT NEST PAST THE BOUND (DEF-150's c2): its clone lands at the site's
+// depth, and the parser measured the macro's body and the site's tree apart, so the
+// sum is measured here -- the site's depth plus the placed subtree's height, less
+// the one level they share. Refused once, as the clone's own fuel is.
+func:splice_too_deep = bool(Expander->:x, int32:placed, Span:at) never fails {
+    if ((x.depth + placed - 1i32) <= (raw AST_DEPTH_MAX())) { pass false; }
+    if (!x.blown) {
+        drop expand_err(x, raw MACRO_TOO_DEEP(),
+            "this expansion nests deeper than 256 levels where it lands; split the macro's body or the expression around the invocation into named parts (MACRO_REFERENCE §7)",
+            at);
+    }
+    x.blown = true;
+    pass true;
+};
+
+func:expand_in_expr_node = bool(Expander->:x, ExprId:id) never fails {
     if (raw expr_is_none(id)) { pass false; }
     ExprNode:n = raw ast_expr(x.ast, id);
     if (n.kind == ExprKind.ExprNone) { pass false; }
@@ -1192,7 +1248,7 @@ func:expand_in_stmt_window = bool(Expander->:x, int32:start, int32:count) never 
     pass hit;
 };
 
-func:expand_in_stmt = bool(Expander->:x, StmtId:id) never fails {
+func:expand_in_stmt_node = bool(Expander->:x, StmtId:id) never fails {
     if (raw stmt_is_none(id)) { pass false; }
     StmtNode:s = raw ast_stmt(x.ast, id);
     if (s.kind == StmtKind.StmtNone) { pass false; }
@@ -1644,7 +1700,7 @@ pub func:expander_init = Expander(Ast->:ast, InternTable->:interns,
                            sites: raw sitetable_init(),
                            params_start: 0i32, params_count: 0i32,
                            args_start: 0i32, args_count: 0i32,
-                           cur_module: 0i32, blown: false };
+                           cur_module: 0i32, blown: false, depth: 0i32 };
     pass x;
 };
 
@@ -1922,6 +1978,7 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
 
     drop record_site(x, md, d.span);
 
+    int64:hmark = raw ast_built_mark(x.ast);
     int32:bcount = raw macro_body_count(x.ast, md);
     for (int32:i in 0i32...bcount) {
         if (site == (raw SITE_STRUCT())) {
@@ -1932,6 +1989,16 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
             DeclId:c = raw clone_decl(x, src, raw CLONE_FUEL());
             drop ast_scratch_push(x.ast, c.index);
         }
+    }
+    // A declaration lands at the module's level: each root it carries is measured
+    // from itself, so the question is whether any cloned node is too tall.
+    if ((raw ast_depth_pass(x.ast, hmark)) != 0i32) {
+        if (!x.blown) {
+            drop expand_err(x, raw MACRO_TOO_DEEP(),
+                "this expansion emits a declaration that nests deeper than 256 levels (MACRO_REFERENCE §7)",
+                d.span);
+        }
+        x.blown = true;
     }
 
     x.params_start = saved_ps;

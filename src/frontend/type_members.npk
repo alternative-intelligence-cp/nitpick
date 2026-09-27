@@ -2299,6 +2299,29 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     drop exprtypes_set_callee(e.expr_types, id, did_index);
     drop exprtypes_set_call(e.expr_types, id, e.fn_decl, did_index);   // the call graph's edge (1.5.8c step 4)
 
+    // AN `async` METHOD IS CALLED UNDER `await` OR SPAWNED WITH `drop` (DEF-149,
+    // 1.6.1e step 2; the library listener's F-023): the direct call's rule
+    // (`type_direct_call`, D-058/D-177) verbatim, at the one point the method's
+    // callee is final -- an impl's method, a trait's default, a `dyn` method or
+    // the UFCS free function. A rule written for one spelling was owed to the
+    // other: a bare `r.read(buf, d)` compiled to a call of the coroutine's
+    // symbol, which does not exist, and `llc` refused the module. The five
+    // builtin-method paths keep their own copies (each names its operation).
+    if (did_index > 0i32) {
+        if (did_index < (raw ast_decl_count(e.ast))) {
+            DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: did_index });
+            if (cdn.kind == DeclKind.DeclFunctionDecl) {
+                if (raw decl_has(cdn, raw DECL_ASYNC())) {
+                    if (id.index != e.await_operand) {
+                        discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                            "an `async` method is called under `await` or spawned with `drop` (D-058/D-177): a bare call would suspend where nothing says so",
+                            n.span));
+                    }
+                }
+            }
+        }
+    }
+
     // AND THE SYMBOL IT IS EMITTED UNDER (1.0.5b). D-156's amendment makes a
     // method's symbol carry its impl, and the two facts that takes — the
     // RECEIVER's type and the owning TRAIT — are both here and in neither table

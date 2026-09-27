@@ -2160,6 +2160,17 @@ to `src/runtime/assembler/jit_smoke.cpp` — so it needs replacing regardless.)*
 
 ---
 
+*[2026-09-26, 1.6.1e step 2 — a dated note (DEF-151).]* The build mode is the FRONT HALF's:
+`front_run_mode(f, root, no_wildx)`, handed the same `--extra-picky=no-wildx` by the driver and
+by `tools/check.npk`, so a rejection suite can hold the mode's refusals (`// npkc-flags:` in a
+file's header, read by both runners for a rejection and an accept file). The exclusion walks the
+PROGRAM's modules only — the prelude holds the `wildx` machinery every program links, and reading
+it as the program's refused every program under the mode, the library listener's canary included
+(256 WILDX-003 at prelude.npk:143, F-025) — and reads four spellings: a `wildx` local, a
+`wildx`-returning function, an `=>! wildx …->` cast, and a call of `wildx_alloc`, `wildx_seal`,
+`wildx_call` or `wildx_free`, bare or `#`. `tests/analysis/rejection/no_wildx.npk` holds the
+four; `tests/accept/no_wildx_clean.npk` is accepted under the mode.
+
 ## D-036 — `tfp` and `dim` are distinct types; `fix256` is the obsolete name — **SETTLED**
 
 Records the naming history, because the rename is still incomplete across the
@@ -3969,6 +3980,19 @@ the constant folder reads the symbol). The emitter resolves an identifier node b
 symbol now (`ident_slot`: a local by its declaring statement, a parameter by the prologue's binding,
 a function, a constant or a global to its own emission before any local is consulted). Two readers of
 one name disagreed exactly where hygiene matters; there is one now.
+
+*[2026-09-26, 1.6.1e step 2 — a dated note (DEF-150, c2).]* The expansion depth bound is now the
+compiler's ONE depth bound, on the tree: no node sits more than 256 levels below its root
+(`AST_DEPTH_MAX`, a function's body block the first level). The parser measures each declaration's
+tree after parsing it and refuses the first subtree past the bound with `NITPICK-PARSE-012`, once
+(its own descent held to the same number), so a macro BODY can no longer outgrow the clone; what the
+parser cannot see is the SUM of a legal body and a legal site, and the expander refuses a splice
+whose clone would land past the bound (the site's depth plus the clone's height) with this
+decision's `NITPICK-MACRO-003` at the invocation. `CLONE_FUEL` (512) stays as the clone's belt.
+The shapes that forced it: a 500-deep parenthesised expression, and a 600-term chain `1 + 1 + …`
+that the parser builds in a loop while the tree is 600 deep — both ran the constant folder, whose
+fuel counts work, off the compiler's stack (exit 3, no message); every whole-body analysis's depth
+reads the same constant.
 
 ## D-058 — `Future<T>` is an internal lowering artifact, not surface syntax — **SETTLED**
 
@@ -9323,6 +9347,17 @@ same answer: expansion precedes evaluation and runs to a fixed point first (D-05
 
 ---
 
+*[2026-09-26, 1.6.1e step 2 — a dated note (DEF-150, c1 and c3).]* A body is declarations OR
+statements: a statement in a body that declares is `NITPICK-MACRO-010` at the statement, once,
+and the body expands to nothing — every reader of the window reads each item by the body's one
+kind, and a statement id read as a declaration was a compiler trap (exit 3, no message). A
+declaration may begin with its modifiers (`comptime func:`, `async func:`): the per-item
+lookahead reads past them, where it stopped at the modifier and classified a `comptime
+func:` as a statement (the library listener's c3). And a body holding a PARSE ERROR expands to
+nothing — the errors are the report; the reference's own `emit_methods` example spelled its
+receiver `$$i Box:self`, never a parameter form, and the parse error inside the body left a window
+the expander read past its end (c1). The example reads `Box:self`.
+
 ## D-126 — Every `#name(...)` still standing at the end of expansion is refused — **SETTLED**
 
 `#` is the compiler-directive sigil for **both** kinds of thing — the three
@@ -12416,6 +12451,14 @@ changes executors, which is what lets D-153 stay atomics-free). Mid-statement
 suspension is out by D-178: an `await` is the first evaluation its statement
 performs.
 
+*[2026-09-26, 1.6.1e step 2 — a dated note (DEF-149).]* The bare-call rule — an `async`
+function is called under `await` or spawned with `drop`, TYPE-043 — is applied to the METHOD
+spelling at the point `type_method_call` makes the callee final (an impl's method, a trait's
+default, a `dyn` method, the UFCS free function). It had been the direct call's alone: a bare
+`r.read(buf, d)` compiled to a call of the coroutine's symbol, which does not exist, and `llc`
+refused the module (the library listener's F-023) — a rule written for one spelling owed to the
+other.
+
 ## D-178 — A statement suspends at most once, before anything else it computes — **SETTLED**
 
 Ratified during 1.1.4: the resolution of the first-evaluation question stage
@@ -14335,6 +14378,11 @@ Design points fixed inside the ratified frame, at open:
    `dim256` additionally holds `op=` to the SLOT's unit (`d *= d` is
    `Meters^2` into a `Meters` slot — refused; the checker's compound arm
    runs the algebra with the real operator).
+
+*[2026-09-26, 1.6.1e step 2 — a dated note (DEF-152).]* A builtin scalar reached with type
+arguments is `NITPICK-TYPE-016` at the type: `tfp64<Meters>` was accepted and its unit DROPPED, so
+`Meters + Seconds` compiled where the same pair over `dim256` is TYPE-049 (the library listener's
+F-026). A unit rides `dim256<Unit>` alone; the parameterised builtins check their own arity.
 
 ## D-197 — the ternary/nonary bases; Kleene logic rides `&` and `|` — **SETTLED (1.3.0 batch, user-ratified)**
 

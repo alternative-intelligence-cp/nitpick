@@ -59,7 +59,7 @@ use "./wild_places.npk".*;   // the one wild-provenance reading (D-223; 1.6.1d s
 // How deep an expression tree this walk will follow. Every walk in this compiler
 // that follows program structure is bounded, and this one fails CLOSED when the
 // bound is reached — see `escape_expr`.
-pub func:ESCAPE_DEPTH = int32() never fails { pass 256i32; };
+pub func:ESCAPE_DEPTH = int32() never fails { pass (raw AST_DEPTH_MAX()); };  // the one bound (DEF-150's c2, 1.6.1e step 2)
 
 pub struct:Escape = {
     Ast->:ast;

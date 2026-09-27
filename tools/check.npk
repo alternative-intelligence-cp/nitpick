@@ -47,8 +47,17 @@ async func:main = int32(cstring[]:argv) {
     // binding-to-binding copy would be a second owner (TYPE-046).
     string:root = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
 
+    // THE BUILD MODE IS THE FRONT HALF'S (DEF-151, 1.6.1e step 2): the same
+    // `--extra-picky=no-wildx` npkc reads, so a rejection suite can hold the
+    // mode's refusals (`// npkc-flags:` in a file's header, both runners).
+    bool:no_wildx = false;
+    for (int64:ai in 2i64...argv.len) {
+        if (raw string_eq(string_from_bytes(argv[ai].ptr, argv[ai].len), "--extra-picky=no-wildx")) {
+            no_wildx = true;
+        }
+    }
     Front:f;
-    int32:fr = raw front_run($$m f, root);
+    int32:fr = raw front_run_mode($$m f, root, no_wildx);
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
         await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;

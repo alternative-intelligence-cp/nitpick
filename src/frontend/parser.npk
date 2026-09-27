@@ -38,6 +38,15 @@ pub struct:Parser = {
     int32:paren_depth;
     int32:bracket_depth;
     int32:brace_depth;
+    // THE DEPTH BOUND (DEF-150's c2, 1.6.1e step 2; `ast_depth.npk`). `expr_depth`
+    // is the expression parser's own recursion, held to AST_DEPTH_MAX so the parser
+    // never descends past what it would refuse; `depth_done` is how far along the
+    // AST's construction log the heights are computed (each declaration's nodes
+    // once); `deep_seen` says this declaration was already refused by the
+    // recursion guard, so its tree is not reported a second time.
+    int32:expr_depth;
+    int64:depth_done;
+    bool:deep_seen;
 };
 
 pub func:parser_init = Parser(TokenList->:tokens, Ast->:ast,
@@ -45,7 +54,8 @@ pub func:parser_init = Parser(TokenList->:tokens, Ast->:ast,
     Parser:p = Parser{ tokens: tokens, ast: ast, diags: diags,
                        interns: interns, pos: 0i64, panic: false,
                        paren_depth: 0i32, bracket_depth: 0i32,
-                       brace_depth: 0i32 };
+                       brace_depth: 0i32, expr_depth: 0i32,
+                       depth_done: raw ast_built_mark(ast), deep_seen: false };
     pass p;
 };
 

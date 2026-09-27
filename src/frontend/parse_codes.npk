@@ -45,3 +45,8 @@ pub func:PARSE_INCDEC_REMOVED = string() never fails { pass "NITPICK-PARSE-010";
 // two-character `?`-family form (`?|` / `??` / `?!`). Named so old code learns
 // the spelling. (PARSE-009, which removed `?|`, retired with the reversal.)
 pub func:PARSE_BARE_QUESTION_REMOVED = string() never fails { pass "NITPICK-PARSE-011"; };
+// AN EXPRESSION NESTS NO DEEPER THAN 256 LEVELS (DEF-150's c2, 1.6.1e step 2): the
+// parser counts its own nesting -- a parenthesis, an argument, a prefix operator --
+// and refuses the 257th level here, where the compiler's own recursions (the folder,
+// the analyses at 256 by their fuels) would otherwise run off the compiler's stack.
+pub func:PARSE_TOO_DEEP = string() never fails { pass "NITPICK-PARSE-012"; };

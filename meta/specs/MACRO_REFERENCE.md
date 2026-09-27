@@ -37,7 +37,13 @@ kind.
 A macro taking no parameters still declares an empty list: `macro:m = () { … };`.
 
 **A body is a declaration body if it CONTAINS a declaration** (D-125), and that is
-decided before its first item is read. It has to be: `#name(...);` standing alone
+decided before its first item is read. **A body is declarations or statements, not
+both** (DEF-150, 1.6.1e step 2): a statement in a body that declares is
+`NITPICK-MACRO-010` at the statement, once, and the body then expands to nothing —
+no site holds both kinds, and every reader of the body's window reads each item by
+the body's one kind. A declaration may begin with its modifiers (`comptime func:`,
+`async func:`): the lookahead reads past them. A body holding a parse error expands
+to nothing; the errors are the report. It has to be: `#name(...);` standing alone
 is a splice among declarations and an expression statement among statements, and
 the sigil does not say which. Deciding per item made every body beginning with `#`
 a declaration body, so `macro:opt = () { #caller(x) + 1i32; };` was refused as "not
@@ -135,11 +141,15 @@ struct:Point = { #make_xy_fields(); };
 
 ```nitpick
 macro:emit_methods = () {
-    func:add_one = int32($$i Box:self) { pass (self.n + 1i32); };
+    func:add_one = int32(Box:self) { pass (self.n + 1i32); };
 };
 
 impl:Box:Pair = { #emit_methods(); };
 ```
+
+(The example read `$$i Box:self` until 1.6.1e step 2 — never a parameter form:
+a lent receiver is `Box->:self`, a by-value one `Box:self`. The library
+listener's copy of it trapped the compiler, DEF-150's c1.)
 
 ## 5. Hygiene
 
@@ -255,7 +265,25 @@ macro:m = () { #m(); };      // refused
 
 **A depth bound** limits one invocation's nesting; **an iteration bound** limits
 the fixed-point loop. Exceeding either is an ordinary compile error naming the
-macro and the chain that reached the bound.
+macro and the chain that reached the bound. **And no tree nests deeper than 256 levels**
+(`AST_DEPTH_MAX`, DEF-150, 1.6.1e step 2): no node sits more than 256 levels below
+its root — a function's body block is the first level, a module-level initialiser's
+expression its own first — so no walk of the compiler recurses further. The parser
+MEASURES each declaration's tree after parsing it (a node's height is the depth of
+the subtree it roots; the AST logs construction order, children first, and one
+pass computes every height) and refuses the first subtree past the bound with
+`NITPICK-PARSE-012`, once per declaration; its own descent is held to the same
+number, so a parenthesised nesting is refused before the 257th level is parsed.
+The expander refuses a splice whose clone would land past the bound — the site's
+depth plus the clone's height — with `NITPICK-MACRO-003` at the invocation, since a
+body and a site the parser admitted apart can still sum past it. Every whole-body
+analysis's depth reads the same constant. The shapes it closed: a 500-deep
+parenthesised expression, and a 600-term chain `1 + 1 + … + 1`, which the parser
+builds in a loop while the tree is 600 deep on its left spine — both ran the
+constant folder (whose fuel counts work, 4,096, not depth) off the compiler's stack.
+A program that did not parse is not expanded (the rule the pipeline applies after
+expansion, one stage earlier), so a macro whose body the parser refused reports
+that refusal alone.
 
 The two are separate because they are different mistakes: deeply nested is a
 program that is too complicated, mutual recursion is a program that does not

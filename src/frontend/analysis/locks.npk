@@ -75,7 +75,7 @@ pub func:LOCK_NONE_MIN = int32() never fails { pass 2147483647i32; };
 pub func:LOCK_NONE_MAX = int32() never fails { pass (0i32 - 2147483647i32); };
 
 pub func:LOCK_ROUNDS = int32() never fails pure { pass 64i32; };
-pub func:LOCK_DEPTH = int32() never fails  { pass 256i32; };
+pub func:LOCK_DEPTH = int32() never fails { pass (raw AST_DEPTH_MAX()); };  // the one bound (DEF-150's c2, 1.6.1e step 2)
 
 // WHAT EACH FUNCTION MAY ACQUIRE, transitively. Indexed by `DeclId`, dense, for
 // the same reason every other side table in this compiler is: declarations are

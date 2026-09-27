@@ -156,21 +156,13 @@ async func:main = int32(cstring[]:argv) {
     // refused, correctly: an immutable borrow of memory nothing has written is
     // a read of it.
     Front:f;
-    int32:fr = raw front_run($$m f, root);
+    int32:fr = raw front_run_mode($$m f, root, no_wildx);   // the build mode is the front half's (DEF-151, 1.6.1e step 2)
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
         await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
         exit 1i32;
     }
 
-    // The build-mode exclusion runs on a clean front half: it is a refusal
-    // about what may be built, not about whether the program type-checks.
-    if (no_wildx) {
-        if ((raw reject_wildx($$m f)) > 0i32) {
-            await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
-            exit 1i32;
-        }
-    }
 
     // The backend, INTO A BUFFER: a rung refusal can arrive after half the
     // module is written, and half a module beside an error report is an output

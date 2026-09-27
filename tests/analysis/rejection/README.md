@@ -39,7 +39,7 @@ Silence has no stage.
 | `BORROW-015` | D-325 (1.6.1 step 0) — a write-capable access of storage a live VIEW names: the root reassigned, `@d` handed to a callee that writes through it, `$$m d`, a `List` pushed while a range view of it lives, a view through a call that views its pointee, a view moved through a call, a view assigned into an outer local inside a loop, a field written while another field views it, a view pushed into a `List` | `view_freeze.npk`, with `BORROW-002` (a view of the storage a store overwrites), `BORROW-001` (a by-value parameter's address returned, DEF-109) and `BORROW-012` (a temporary handed to a callee that views it) |
 | `BORROW-016` | DEF-148 (1.6.1e step 1; D-180, D-207) — a write-capable access of a binding a SPAWN lent until its block's join: `destroy()`, an assignment over the root, a `move` out, `$$m`, `@s` to a callee that stores over the pointee, a lock moved, and the spawned task's own body storing over what it was lent (refused at the spawn); the kind's concurrent operations, `$$i`, a second spawn, a helper that only allocates and `destroy` after the block are the controls | `spawn_lent.npk` |
 | `BORROW-003` | D-004 rule 4 — nor cross an `extern` call | `borrows.npk`, `path_shapes.npk` |
-| `BORROW-007` | the derivation walk ran out of fuel | `too_deep.npk` |
+| `BORROW-007` | the derivation walk ran out of fuel | none since 1.6.1e step 2: an internal belt behind the tree bound (`AST_DEPTH_MAX`); `too_deep.npk` retired: its shape is a PARSER refusal now (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
 | `BORROW-009` | a borrow reaches a binding the analysis cannot follow — a `for` binding, when the iterated element type can carry a pointer (a range's integers or a `uint8[]`'s bytes cannot, whatever the bound's operands hold; 1.5.1b step 2) | `borrows.npk` |
 | `BORROW-010` | the marking fixpoint did not settle | `unsettled.npk` |
 | `BORROW-011` | D-223 — a borrow entering a `wild` slot | `wild_store.npk` |
@@ -49,7 +49,7 @@ Silence has no stage.
 | `BORROW-001` | D-223's counterweight, read both ways since D-325: an UNKNOWN callee (a function value) by the shape rule, where the plain slot decides; a KNOWN callee by its body, which launders a borrow of one parameter's pointee into the other's through a returned pointer | `borrow_pair_plain.npk` |
 | `ASSIGN-001` | D-010 — read before written | `definite_assignment.npk`, ten forms |
 | `ASSIGN-002` | `fixed` / `const` assigned twice | `definite_assignment.npk` |
-| `ASSIGN-003` | the walk ran out of depth | `too_deep.npk` |
+| `ASSIGN-003` | the walk ran out of depth | none since 1.6.1e step 2: an internal belt behind the tree bound (`AST_DEPTH_MAX`); `too_deep.npk` retired: its shape is a PARSER refusal now (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
 | `MOVE-001` | D-065 — use after move | `moves.npk`, `path_shapes.npk` |
 | `MOVE-002` | use after free, and double free | `moves.npk`, `path_shapes.npk` |
 | `MOVE-003` | `nodrop` with no drop to suppress | `moves.npk` |
@@ -57,12 +57,12 @@ Silence has no stage.
 | `PICK-002` | D-008 §5.1 — a `tbb` with no `ERR:` arm | `exhaustiveness.npk` |
 | `PICK-003` | a selector that cannot be covered by listing | `exhaustiveness.npk` |
 | `PICK-004` | an arm nothing can reach | `exhaustiveness.npk` |
-| `PICK-005` | the walk ran out of depth | `too_deep.npk` |
+| `PICK-005` | the walk ran out of depth | none since 1.6.1e step 2: an internal belt behind the tree bound (`AST_DEPTH_MAX`); `too_deep.npk` retired: its shape is a PARSER refusal now (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
 | `TAINT-001` | D-007 — `.value` of an unchecked `Result` | `taint.npk`, `path_shapes.npk` |
 | `LOCK-001` | D-056 — acquiring downward | `lock_levels.npk`, `path_shapes.npk` |
 | `LOCK-002` | an implementation above its trait's bound | `lock_levels.npk` |
 | `LOCK-003` | an `acquires` level that is not constant | `lock_levels.npk` |
-| `LOCK-004` | the walk ran out of depth | `too_deep.npk` |
+| `LOCK-004` | the walk ran out of depth | none since 1.6.1e step 2: an internal belt behind the tree bound (`AST_DEPTH_MAX`); `too_deep.npk` retired: its shape is a PARSER refusal now (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
 | `REACH-001` | D-179 — a `failsafe` with no `pick` over its `Error` parameter names nothing | `failsafe_nopick.npk` |
 | `REACH-002` | D-179 — a `failsafe` whose `pick` does not name an error that can reach it (`(*)` counts for nothing) | `failsafe_reach.npk` |
 | `REACH-003` | D-013 — a root that declares `main` and no `failsafe`, refused at `main` with the identities the absent handler owes (1.5.1b step 1b, the workbench's DEF-5) | `missing_failsafe.npk` |

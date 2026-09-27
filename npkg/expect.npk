@@ -46,6 +46,7 @@ pub struct:Expect = {
     int64:exit_code;
     int64:stress;
     List<string>:argv;
+    List<string>:flags;           // `npkc-flags:` -- the tool's extra arguments (1.6.1e step 2, DEF-151)
     bool:no_parse_error;
     List<ObExpect>:obligations;   // `expect-obligation:` rows (the verify stage)
     bool:obligations_none;        // `expect-obligation: none`
@@ -106,6 +107,7 @@ pub func:expect_read = Expect(string:text) never fails {
                        notes: raw list_init::<Expected>(2i64),
                        exit_code: 0i64, stress: 1i64,
                        argv: raw list_init::<string>(2i64),
+                       flags: raw list_init::<string>(1i64),
                        no_parse_error: false,
                        obligations: raw list_init::<ObExpect>(2i64),
                        obligations_none: false,
@@ -160,6 +162,13 @@ pub func:expect_read = Expect(string:text) never fails {
         }
         if (raw text_starts_with(body, "argv:")) {
             e.argv = raw text_split_ws(raw after_colon(body));
+            continue;
+        }
+        // THE TOOL'S FLAGS (1.6.1e step 2, DEF-151): a rejection file under a build
+        // mode names the mode in its header, and both runners hand the words to
+        // the tool after the path -- `--extra-picky=no-wildx` has a suite by it.
+        if (raw text_starts_with(body, "npkc-flags:")) {
+            e.flags = raw text_split_ws(raw after_colon(body));
             continue;
         }
         if (raw text_starts_with(body, "expect-no-parse-error")) {

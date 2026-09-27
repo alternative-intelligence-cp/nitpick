@@ -438,6 +438,22 @@ func:resolve_pointee = int32(TypeResolver->:r, TypeId:id, int32:scope) never fai
 
 // --- named types ---------------------------------------------------------------------
 
+// `string<char8>`, `string<char16>` or `string<char32>`: one argument, a char
+// keyword (told apart by the NODE's builtin flag, never by the payload's value --
+// the reason `type_name_is_builtin` exists), no arguments of its own.
+func:string_char_arg = bool(TypeResolver->:r, TokenKind:k, TypeNode:n) never fails {
+    if (k != TokenKind.KwString) { pass false; }
+    if ((raw type_args_count(n)) != 1i32) { pass false; }
+    TypeNode:a = raw ast_type(r.ast, TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), 0i32) });
+    if (a.kind != TypeKind.TypeNamedType) { pass false; }
+    if (!(raw type_name_is_builtin(a))) { pass false; }
+    if ((raw type_args_count(a)) != 0i32) { pass false; }
+    TokenKind:ak = (((raw type_name_index(a)) =>! int32) =>! TokenKind);
+    if (ak == TokenKind.KwChar8) { pass true; }
+    if (ak == TokenKind.KwChar16) { pass true; }
+    pass (ak == TokenKind.KwChar32);
+};
+
 func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fails {
     int64:payload = raw type_name_index(n);
 
@@ -465,6 +481,24 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fail
     TokenKind:as_kind = ((payload =>! int32) =>! TokenKind);
     BuiltinTypeSpec:spec = raw builtin_type_spec(as_kind);
     if (spec.known) {
+        // A BUILTIN THAT TAKES NO TYPE ARGUMENTS REFUSES THEM (DEF-152, 1.6.1e
+        // step 2; the library listener's F-026): `tfp64<Meters>` was accepted
+        // and its unit DROPPED, so `Meters + Seconds` compiled where the same
+        // pair over `dim256` is TYPE-049 -- a unit rides `dim256<Unit>` alone
+        // (D-196). The scalar table's kinds take nothing; the parameterised
+        // builtins (`dim256`, `simd`, `atomic`, `range`, the locks) check their
+        // own arity below.
+        // `string` keeps its three SPELLED forms (TYPE_REFERENCE §3.2's table:
+        // `string<char8>`, `string<char16>`, `string<char32>`), as the plan
+        // settled; what a wider element means when the bytes are read is
+        // recorded for the user (1.6.1e's record), and any other argument on a
+        // `string` refuses like every other builtin's.
+        if ((raw type_args_count(n)) > 0i32) {
+            if (raw string_char_arg(r, as_kind, n)) { pass (raw builtin_to_type(r, spec, n)); }
+            string:g1 = string_concat("`", raw token_kind_name(as_kind));
+            string:g2 = string_concat(g1, "` takes no type arguments; a unit rides `dim256<Unit>` alone (D-196, TYPE_REFERENCE §5a), and no other builtin scalar is parameterised");
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(), move(g2), n.span));
+        }
         pass (raw builtin_to_type(r, spec, n));
     }
 

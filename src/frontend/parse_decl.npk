@@ -31,12 +31,14 @@ use "./intern.npk".*;
 use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./diagnostics.npk".*;
+use "./macro/macro_codes.npk".*;   // MACRO_MIXED_BODY: a macro body of both kinds (DEF-150, 1.6.1e step 2)
 use "./parse_codes.npk".*;
 use "./parser.npk".*;
 use "./parse_type.npk".*;
 use "./parse_expr.npk".*;
 use "./parse_decorate.npk".*;
 use "./parse_stmt.npk".*;
+use "./ast_depth.npk".*;
 
 // --- flags --------------------------------------------------------------------
 //
@@ -377,9 +379,33 @@ pub func:tok_starts_decl = bool(TokenKind:k) never fails {
     pass (k == TokenKind.KwUse);
 };
 
+// A DECLARATION MAY BEGIN WITH ITS MODIFIERS (DEF-150's c3, 1.6.1e step 2): `comptime
+// func:sq = …` is a declaration `p_parse_decl` reads (the modifier words become
+// flags), and this lookahead answered `false` for the modifier, so a macro body
+// holding one was classified by its first plain keyword -- a statement window with
+// a declaration in it, and a compiler trap when the expander read the window by
+// the body's kind. The modifiers are peeked past; `pub` is a decl start already.
+func:tok_is_decl_modifier = bool(TokenKind:k) never fails {
+    if (k == TokenKind.KwInline)   { pass true; }
+    if (k == TokenKind.KwNoinline) { pass true; }
+    if (k == TokenKind.KwComptime) { pass true; }
+    if (k == TokenKind.KwAsync)    { pass true; }
+    pass (k == TokenKind.KwThread);
+};
+
 pub func:p_at_decl_start = bool(Parser->:p) never fails {
     TokenKind:k = raw p_kind(p);
     if (raw tok_starts_decl(k)) { pass true; }
+    if (raw tok_is_decl_modifier(k)) {
+        int64:i = 1i64;
+        // a modifier run is short: the five words, each at most once
+        while (i < 8i64) decreases 8i64 - i {
+            TokenKind:nk = (raw p_peek_at(p, i)).kind;
+            if (!(raw tok_is_decl_modifier(nk))) { pass (raw tok_starts_decl(nk)); }
+            i = i + 1i64;
+        }
+        pass false;
+    }
 
     // `#name();` COUNTS AS A DECLARATION START, and that is the whole reason a
     // nested invocation works. A macro body containing `#inner(); func:f3 = …;`
@@ -793,7 +819,30 @@ pub func:p_parse_param = DeclId(Parser->:p) never fails {
 
 // --- the entry point ---------------------------------------------------------------------------------
 
+// THE TREE BOUND, ONCE PER DECLARATION (DEF-150's c2, 1.6.1e step 2). Every node a
+// declaration built is measured after it is parsed (`ast_depth.npk`: the AST's
+// construction log, children before parents, one pass), and the first subtree
+// taller than `AST_DEPTH_MAX` is refused at its span -- PARSE-012, once, the same
+// code as the parser's recursion guard, which already refused this declaration if
+// it fired (`deep_seen`). A nested declaration (an inline module's member, an
+// impl's method) is measured by its own call, so the enclosing one measures only
+// what it built itself and nothing is reported twice.
 pub func:p_parse_decl = DeclId(Parser->:p) never fails {
+    DeclId:d = raw p_parse_decl_item(p);
+    int32:bad = raw ast_depth_pass(p.ast, p.depth_done);
+    p.depth_done = raw ast_built_mark(p.ast);
+    if (bad != 0i32) {
+        if (!p.deep_seen) {
+            drop diaglist_push(p.diags, raw diag_error(raw PARSE_TOO_DEEP(),
+                "this nests deeper than 256 levels (a function body counts as the first); split it into named parts -- no walk of the compiler follows further (MACRO_REFERENCE §7)",
+                raw ast_depth_span(p.ast, bad)));
+        }
+    }
+    p.deep_seen = false;
+    pass d;
+};
+
+func:p_parse_decl_item = DeclId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
 
     // Attributes come first and attach to whatever follows.
@@ -1352,6 +1401,8 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     int32:bcount = 0i32;
     int32:elo = raw ast_expr_count(p.ast);
     bool:has_decl = raw p_macro_body_has_decl(p);
+    int64:errs_before = raw diaglist_count(p.diags);
+    bool:mixed = false;
     discard(raw p_expect(p, TokenKind.PLBrace));
     while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
@@ -1367,18 +1418,35 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
                 bkind = raw MACRO_BODY_DECLS();
                 DeclId:d = raw p_parse_decl(p);
                 drop ast_scratch_push(p.ast, d.index);
+                bcount = bcount + 1i32;
             } else {
-                StmtId:st = raw p_parse_stmt(p);
-                drop ast_scratch_push(p.ast, st.index);
+                // A STATEMENT IN A DECLARATIONS BODY (DEF-150's c1, 1.6.1e step
+                // 2): refused by name -- no site holds both kinds, and every
+                // reader of the window reads each item by the body's one kind
+                // (a statement id read as a declaration was a compiler trap).
+                // The item is consumed and not pushed.
+                if (!mixed) {
+                    drop p_error_at(p, raw MACRO_MIXED_BODY(),
+                        "a macro body is declarations or statements, not both (MACRO_REFERENCE §3): this item is a statement in a body that declares",
+                        raw p_span(p));
+                    mixed = true;
+                }
+                discard(raw p_parse_stmt(p));
             }
         } else {
             StmtId:st2 = raw p_parse_stmt(p);
             drop ast_scratch_push(p.ast, st2.index);
+            bcount = bcount + 1i32;
         }
-        bcount = bcount + 1i32;
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:body = raw ast_scratch_commit(p.ast, bmark);
+    // A BODY WITH A PARSE ERROR EXPANDS TO NOTHING (DEF-150's c1): the errors
+    // are the report, and a window that holds a broken item is not read by
+    // the expander -- a declaration that failed inside its parameter list left
+    // an id the site recorder could not read (a compiler trap, exit 3, before
+    // the parse errors were ever printed).
+    if ((raw diaglist_count(p.diags)) != errs_before) { bcount = 0i32; }
 
     // EVERY EXPRESSION WRITTEN INSIDE THE BODY, MARKED. A macro body is the one
     // place an unexpanded `#name(...)` legitimately survives to the end of

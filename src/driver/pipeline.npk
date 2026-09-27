@@ -81,6 +81,10 @@ pub struct:Front = {
     ImplTable:im;
     BoundTable:bd;
     ExprTypes:ets;
+    // THE BUILD MODE (D-035; a field since DEF-151, 1.6.1e step 2): `--extra-picky=no-wildx`
+    // is the FRONT HALF's mode, set by the driver and by `tools/check.npk` from the same
+    // argument, so the mode has a suite (a rejection file's `// npkc-flags:` header).
+    bool:no_wildx;
 };
 
 // Load, expand, resolve, type-check, analyse. Returns 0 with `f` filled and no
@@ -95,34 +99,93 @@ pub struct:Front = {
 // vardecl and every decl is there regardless of nesting — so a `wildx` local
 // or a `wildx`-returning function anywhere is found. Returns the count found.
 pub func:reject_wildx = int32(Front->:f) never fails {
+    // THE PROGRAM'S MODULES, NEVER THE PRELUDE'S (DEF-151, 1.6.1e step 2; the
+    // library listener's F-025): the prelude holds the `wildx` machinery every
+    // program links, and reading it as the program's refused every program under
+    // the mode, the canary included (256 WILDX-003 at prelude.npk:143). A node
+    // belongs to the prelude by its span's file.
+    int32:pfile = (raw graph_at(@f.g, f.g.prelude)).file;
     int32:found = 0i32;
+    // (1) a `wildx` LOCAL
     int32:si = 0i32;
     int32:sn = raw ast_stmt_count(@f.g.ast);
     while (si < sn) decreases sn - si {
         StmtNode:s = raw ast_stmt(@f.g.ast, StmtId{ index: si });
-        if (s.kind == StmtKind.StmtVarDeclStmt) {
-            if (((raw stmt_quals(@f.g.ast, s)) & (raw QUAL_WILDX())) != 0i32) {
-                drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
-                    "`wildx` is excluded by `--extra-picky=no-wildx`: this build mode forbids runtime code generation, which no structural-coverage regime can analyse (D-035)",
-                    s.span));
-                found = found + 1i32;
+        if (s.span.file != pfile) {
+            if (s.kind == StmtKind.StmtVarDeclStmt) {
+                if (((raw stmt_quals(@f.g.ast, s)) & (raw QUAL_WILDX())) != 0i32) {
+                    drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
+                        "`wildx` is excluded by `--extra-picky=no-wildx`: this build mode forbids runtime code generation, which no structural-coverage regime can analyse (D-035)",
+                        s.span));
+                    found = found + 1i32;
+                }
             }
         }
         si = si + 1i32;
     }
+    // (2) a `wildx`-RETURNING FUNCTION (an `extern` method's stub is one)
     int32:di = 0i32;
     int32:dn = raw ast_decl_count(@f.g.ast);
     while (di < dn) decreases dn - di {
         DeclNode:d = raw ast_decl(@f.g.ast, DeclId{ index: di });
-        if (((raw decl_flags(d)) & (raw DECL_RET_WILDX())) != 0i32) {
-            drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
-                "`wildx` is excluded by `--extra-picky=no-wildx` (D-035)",
-                d.span));
-            found = found + 1i32;
+        if (d.span.file != pfile) {
+            if (d.kind == DeclKind.DeclFunctionDecl) {
+                if (((raw decl_flags(d)) & (raw DECL_RET_WILDX())) != 0i32) {
+                    drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
+                        "`wildx` is excluded by `--extra-picky=no-wildx` (D-035): this function returns executable memory",
+                        d.span));
+                    found = found + 1i32;
+                }
+            }
         }
         di = di + 1i32;
     }
+    // (3) an `=>! wildx …->` CAST, and (4) a call of `wildx_alloc`, `wildx_seal`,
+    // `wildx_call` or `wildx_free` -- bare or `#`
+    int32:ei = 0i32;
+    int32:en = raw ast_expr_count(@f.g.ast);
+    while (ei < en) decreases en - ei {
+        ExprNode:x = raw ast_expr(@f.g.ast, ExprId{ index: ei });
+        if (x.span.file != pfile) {
+            if ((x.kind == ExprKind.ExprCastExpr) || (x.kind == ExprKind.ExprUncheckedCastExpr)) {
+                if (((raw expr_cast_quals(x)) & (raw QUAL_WILDX())) != 0i32) {
+                    drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
+                        "`wildx` is excluded by `--extra-picky=no-wildx` (D-035): this cast makes executable memory",
+                        x.span));
+                    found = found + 1i32;
+                }
+            }
+            int32:bname = 0i32;
+            if (x.kind == ExprKind.ExprBuiltinExpr) { bname = raw builtin_name(x); }
+            if (x.kind == ExprKind.ExprCallExpr) {
+                ExprId:cal = raw expr_callee(x);
+                if (!(raw expr_is_none(cal))) {
+                    ExprNode:cn = raw ast_expr(@f.g.ast, cal);
+                    if (cn.kind == ExprKind.ExprIdentifierExpr) {
+                        if (cn.a == 0i32) { bname = cn.payload =>! int32; }
+                    }
+                }
+            }
+            if (bname != 0i32) {
+                if (raw wildx_builtin_name(raw intern_get(@f.it, bname))) {
+                    drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
+                        "`wildx` is excluded by `--extra-picky=no-wildx` (D-035): this call is the executable-memory surface",
+                        x.span));
+                    found = found + 1i32;
+                }
+            }
+        }
+        ei = ei + 1i32;
+    }
     pass found;
+};
+
+// The four names of the executable-memory surface (BUILTIN_REFERENCE's `wildx_*` rows).
+func:wildx_builtin_name = bool(string:name) never fails {
+    if (raw string_eq(name, "wildx_alloc")) { pass true; }
+    if (raw string_eq(name, "wildx_seal"))  { pass true; }
+    if (raw string_eq(name, "wildx_call"))  { pass true; }
+    pass (raw string_eq(name, "wildx_free"));
 };
 
 // THE MANIFEST ROOT (D-236, 1.4.8): the directory holding `nitpick.toml`,
@@ -172,8 +235,25 @@ func:front_set_root = NIL(Front->:f, string:root_path) never fails {
 // declaration, naming the derive and the member. A wrapper rather than a
 // call before each `pass`, so a new return path cannot forget it.
 pub func:front_run = int32(Front->:f, string:root) never fails {
+    pass (raw front_run_mode(f, root, false));
+};
+
+// THE FRONT HALF UNDER A BUILD MODE (DEF-151, 1.6.1e step 2): `--extra-picky=no-wildx`
+// is the front half's mode -- the driver and `tools/check.npk` hand it here from the
+// same argument, so a rejection suite can hold the mode's refusals. The exclusion
+// runs on a CLEAN front half: it is a refusal about what may be built, not about
+// whether the program type-checks (D-035). The mode is recorded on the `Front`
+// through the pointer (a field of an unassigned local cannot be written by the
+// caller, ASSIGN-001, which is why it is an argument and not a caller's store).
+pub func:front_run_mode = int32(Front->:f, string:root, bool:no_wildx) never fails {
     int32:rc = raw front_run_passes(f, root);
+    f.no_wildx = no_wildx;
     drop rehome_derived(@f.g);
+    if (rc == 0i32) {
+        if (f.no_wildx) {
+            if ((raw reject_wildx(f)) > 0i32) { pass 1i32; }
+        }
+    }
     pass rc;
 };
 
@@ -208,6 +288,15 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // declared after it — the same reason cycle 0.3 collects every declaration
     // before binding any name.
     f.xp = raw expander_init(@f.g.ast, @f.it, @f.diags);
+
+    // A PROGRAM THAT DID NOT PARSE IS NOT A PROGRAM TO EXPAND (DEF-150's c2, 1.6.1e
+    // step 2) -- the rule below, one stage earlier. A macro whose body the parser
+    // refused (a body nested past the depth bound, a malformed item) has no body to
+    // instantiate, and the expander would report the absence ("not a single
+    // expression") as a second sentence about the one mistake (D-240).
+    if ((raw diaglist_count(@f.diags)) != 0i64) {
+        pass 1i32;
+    }
     int64:before_expand = raw diaglist_count(@f.diags);
     int32:cm = 0i32;
     while (cm < nmods) decreases nmods - cm {

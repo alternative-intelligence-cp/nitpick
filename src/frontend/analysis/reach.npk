@@ -41,7 +41,7 @@ use "../type_resolve.npk".*;     // struct_field_decl_of: a limited field's writ
 use "../type_trait.npk".*;       // ImplTable: a trait-method callee reaches every impl (DEF-86, 1.5.8b step 6b)
 use "./analysis_codes.npk".*;
 
-pub func:REACH_DEPTH = int32() never fails { pass 256i32; };
+pub func:REACH_DEPTH = int32() never fails { pass (raw AST_DEPTH_MAX()); };  // the one bound (DEF-150's c2, 1.6.1e step 2)
 
 pub struct:Reach = {
     Ast->:ast;

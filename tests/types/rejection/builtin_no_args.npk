@@ -1,0 +1,70 @@
+// expect-error: NITPICK-TYPE-016
+// expect-error-at: 17:5
+// expect-error: NITPICK-TYPE-016
+// expect-error-at: 18:5
+// expect-error: NITPICK-TYPE-016
+// expect-error-at: 19:5
+//
+// DEF-152 (1.6.1e step 2; the library listener's F-026): A BUILTIN THAT TAKES NO
+// TYPE ARGUMENTS REFUSES THEM. `tfp64<Meters>` was accepted and its unit dropped,
+// so `Meters + Seconds` compiled where the same pair over `dim256` is TYPE-049 --
+// a unit rides `dim256<Unit>` alone (D-196). Three shapes: a `tfp64` with a unit,
+// an `int32` with a type, a `bool` with a unit. The controls: `string<char16>` and `string<char8>` (TYPE_REFERENCE §3.2's spelled forms, kept), `dim256<Meters>`,
+// which takes one, and the plain kinds.
+mod:builtin_no_args;
+
+func:main = int32(cstring[]:_~argv) {
+    tfp64<Meters>:m = 1.5tfp64;
+    int32<Seconds>:s = 2i32;
+    bool<Meters>:b = true;
+    dim256<Meters>:ok = 1.0tfp256 =>! dim256<Meters>;
+    tfp64:plain = 1.5tfp64;
+    string<char16>:w = "wide";
+    string<char8>:n8 = "narrow";
+    if (m == plain) { exit 1i32; }
+    if (s != 2i32) { exit 2i32; }
+    if (!b) { exit 3i32; }
+    if (w.len != 4i64) { exit 5i32; }
+    if (n8.len != 6i64) { exit 6i32; }
+    tfp256:okv = ok => tfp256;
+    if (okv == 0.0tfp256) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

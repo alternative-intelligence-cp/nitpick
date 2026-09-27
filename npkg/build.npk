@@ -343,6 +343,18 @@ pub async func:compile_stdout = Run(Ctx->:c, string:compiler, string:path, Durat
     pass (relay await run_argv(compiler, args, c.t.env, within));
 };
 
+// The same run with the unit's own flags after the path (`npkc-flags:`, 1.6.1e
+// step 2, DEF-151): a rejection suite under a build mode.
+pub async func:compile_stdout_flags = Run(Ctx->:c, string:compiler, string:path,
+                                          List<string>:flags, Duration:within) {
+    List<string>:args = raw list_init::<string>(1i64 + flags.count);
+    drop strlist_push(@args, path);
+    for (int64:i in 0i64...flags.count) {
+        drop strlist_push(@args, string_concat(raw strlist_view(flags, i), ""));
+    }
+    pass (relay await run_argv(compiler, args, c.t.env, within));
+};
+
 // A tool under `tools/` or `src/`, built BY THE BUILDER through `-o`
 // (the harness's `build_tool`): `<base>.ll`, `<base>.o`, `<base>`. The
 // text of a good step is the binary's path.

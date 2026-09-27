@@ -54,3 +54,8 @@ pub func:MACRO_CALLER_FORM = string() never fails  { pass "NITPICK-MACRO-008"; }
 // Its own code because a note is filtered like anything else, and because a reader
 // who sees it is being told WHERE to look rather than WHAT is wrong.
 pub func:MACRO_EXPANDED_HERE = string() never fails { pass "NITPICK-MACRO-009"; };
+// A MACRO BODY IS DECLARATIONS OR STATEMENTS, NOT BOTH (DEF-150's c1, 1.6.1e step 2;
+// MACRO_REFERENCE §3): a body that mixes the two kinds fits no site, and every reader
+// of its window reads each item by the body's one kind -- a statement in a
+// declarations window was a compiler trap.
+pub func:MACRO_MIXED_BODY = string() never fails { pass "NITPICK-MACRO-010"; };

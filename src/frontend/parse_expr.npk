@@ -129,6 +129,24 @@ pub func:char_lit_bits = int32(NumWidth:w) never fails {
 
 // --- entry -------------------------------------------------------------------
 
+// THE PARSER'S OWN RECURSION IS BOUNDED (DEF-150's c2, 1.6.1e step 2; the library
+// listener's F-024). A parenthesis, an argument, a literal's element and a prefix
+// operator's operand each reach `p_unary` exactly once per level of the parser's
+// descent, so the count lives there and nowhere else (counting in `p_parse_expr`
+// as well read one parenthesis as two levels). It is held to `AST_DEPTH_MAX`, the
+// bound on the TREE that `ast_depth.npk` measures after each declaration: the
+// parser never descends past a depth it would refuse, and a nesting 100,000 deep
+// cannot exhaust the parser's own stack before the tree bound is asked. The
+// refusal is once (`p_error`'s panic suppresses the cascade) and marks the
+// declaration, so the tree measure does not report it again.
+func:p_depth_refused = bool(Parser->:p) never fails {
+    if (p.expr_depth < (raw AST_DEPTH_MAX())) { pass false; }
+    p.deep_seen = true;
+    drop p_error(p, raw PARSE_TOO_DEEP(),
+        "this nests deeper than 256 levels; split it into named parts -- no walk of the compiler follows further (MACRO_REFERENCE §7)");
+    pass true;
+};
+
 pub func:p_parse_expr = ExprId(Parser->:p) never fails {
     pass (raw p_ternary(p));
 };
@@ -302,6 +320,14 @@ pub func:p_parse_const_arg = ExprId(Parser->:p) never fails {
 };
 
 func:p_unary = ExprId(Parser->:p) never fails {
+    if (raw p_depth_refused(p)) { pass (raw expr_none()); }
+    p.expr_depth = p.expr_depth + 1i32;
+    ExprId:r = raw p_unary_inner(p);
+    p.expr_depth = p.expr_depth - 1i32;
+    pass r;
+};
+
+func:p_unary_inner = ExprId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     TokenKind:k = raw p_kind(p);
 
