@@ -277,6 +277,69 @@ func:main = int32(cstring[]:_~argv) {
         @it);
     if (!(raw one_diag(@v11, raw MACRO_WRONG_SHAPE())))              { exit 95i32; }
 
+    // --- A PARAMETER IN A TYPE IS SUBSTITUTED, AND THE TYPE IS THE INSTANTIATION'S
+    //     OWN (DEF-189, 1.6.1e step 3a) -----------------------------------------------
+    //
+    // Two splices of one field macro: each struct's `arr` is its own array type
+    // whose size is its own argument, where both pointed at the template's
+    // `int32[N]` until this step. And a type with no expression inside cannot
+    // differ between instantiations, so it stays ONE node: both `tail` fields
+    // point at the template's `int32`.
+    Ex:v12 = raw expanded(
+        "mod:m; macro:af = (N) { int32[N]:arr; int32:tail; }; struct:S3 = { #af(3i32); }; struct:S5 = { #af(5i32); };",
+        @it);
+    if ((raw diaglist_count(@v12.diags)) != 0i64)                   { exit 96i32; }
+    int32:arr_first = 0i32;
+    int32:arr_second = 0i32;
+    int32:tail_first = 0i32;
+    int32:tail_second = 0i32;
+    int64:size_sum = 0i64;
+    int32:structs = 0i32;
+    DeclNode:m12 = raw ast_decl(@v12.ast, v12.root);
+    int32:mc12 = raw item_member_count(@v12.ast, m12);
+    for (int32:si in 0i32...mc12) {
+        DeclNode:sd = raw ast_decl(@v12.ast, raw item_member(@v12.ast, m12, si));
+        if (sd.kind == DeclKind.DeclStructDecl) {
+            if ((raw item_member_count(@v12.ast, sd)) != 2i32)        { exit 97i32; }
+            DeclNode:fa = raw ast_decl(@v12.ast, raw item_member(@v12.ast, sd, 0i32));
+            DeclNode:ft = raw ast_decl(@v12.ast, raw item_member(@v12.ast, sd, 1i32));
+            if (fa.kind != DeclKind.DeclFieldDecl)                   { exit 98i32; }
+            TypeNode:at = raw ast_type(@v12.ast, raw field_type(fa));
+            if (at.kind != TypeKind.TypeArrayType)                   { exit 99i32; }
+            ExprNode:asz = raw ast_expr(@v12.ast, raw type_array_size(at));
+            if (asz.kind != ExprKind.ExprIntLiteral)                 { exit 100i32; }
+            size_sum = size_sum + asz.payload;
+            if (structs == 0i32) { arr_first = (raw field_type(fa)).index;  tail_first = (raw field_type(ft)).index; }
+            if (structs == 1i32) { arr_second = (raw field_type(fa)).index; tail_second = (raw field_type(ft)).index; }
+            structs = structs + 1i32;
+        }
+    }
+    if (structs != 2i32)                                             { exit 101i32; }
+    if (size_sum != 8i64)                                            { exit 102i32; }   // 3 and 5
+    if (arr_first == arr_second)                                     { exit 103i32; }
+    if (tail_first == 0i32)                                          { exit 104i32; }
+    if (tail_first != tail_second)                                   { exit 105i32; }
+
+    // --- WHAT A PARAMETER CANNOT BE IS REFUSED AT THE DECLARATION (DEF-189) -------
+    //
+    // A type's name, and a name the body declares AND uses: one report each,
+    // uninvoked.
+    Ex:v13 = raw expanded("mod:m; macro:bad = (T) { T:x = 1i32; };", @it);
+    if (!(raw one_diag(@v13, raw MACRO_PARAM_FORM())))               { exit 106i32; }
+    Ex:v14 = raw expanded("mod:m; macro:bump = (N) { int32:N = 1i32; #caller(g) = N + 1i32; };", @it);
+    if (!(raw one_diag(@v14, raw MACRO_PARAM_FORM())))               { exit 107i32; }
+    // A FIELD of the parameter's spelling is no identifier and is left alone; a
+    // name declared and never written as an expression is MACRO_REFERENCE §10's
+    // open question and is left alone too (`func:N` is literally called `N`); and
+    // the name inside `#caller(…)` is copied by name, no use of the parameter.
+    Ex:v15 = raw expanded("mod:m; struct:B = { int32:v; }; macro:ok = (v) { B{ v: v }; };", @it);
+    if ((raw diaglist_count(@v15.diags)) != 0i64)                   { exit 108i32; }
+    Ex:v16 = raw expanded("mod:m; macro:mk = (N) { func:N = int32() never fails { pass 5i32; }; }; #mk(7i32);", @it);
+    if ((raw diaglist_count(@v16.diags)) != 0i64)                   { exit 109i32; }
+    if (!(raw has_member(@v16, @it, DeclKind.DeclFunctionDecl, "N"))) { exit 110i32; }
+    Ex:v17 = raw expanded("mod:m; macro:esc = (N) { int32:N = 1i32; #caller(g) = #caller(N); };", @it);
+    if ((raw diaglist_count(@v17.diags)) != 0i64)                   { exit 111i32; }
+
     wild_release_all();
     exit 0i32;
 };

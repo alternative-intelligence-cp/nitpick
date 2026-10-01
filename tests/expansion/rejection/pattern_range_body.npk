@@ -1,9 +1,13 @@
 // expect-error: NITPICK-MACRO-005
-// expect-error-at: 31:17
+// expect-error-at: 35:17
 // expect-error: NITPICK-MACRO-005
-// expect-error-at: 38:26
+// expect-error-at: 42:26
 // expect-note: NITPICK-MACRO-009
-// expect-note-at: 40:66
+// expect-note-at: 44:66
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 52:26
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 54:65
 //
 // A MACRO WHOSE BODY IS A RANGE CANNOT STAND AS A WHOLE PATTERN (DEF-170, 1.6.1e
 // step 3 -- the one pattern position that cannot hold what was substituted).
@@ -32,12 +36,26 @@ func:whole_range = int32(int32:n) never fails {
     pass 0i32;
 };
 
-// The same pattern inside a macro body: one node, shared by every instantiation, and
-// refused where the body wrote it -- with the note that names the instantiation.
+// The same pattern inside a macro body: refused where the body wrote it, at each
+// instantiation's own clone of it -- with the note that names the instantiation.
 macro:classify = () {
     pick (#caller(v)) { (#low_digits()) { #caller(r) = 1i32; }, (*) { #caller(r) = 0i32; } }
 };
 func:through_body = int32(int32:v) never fails { int32:r = 0i32; #classify(); pass r; };
+
+// AND A RANGE PASSED AS AN ARGUMENT LANDS THE SAME WAY (DEF-189, 1.6.1e step 3a). A
+// parameter standing as a whole value pattern is replaced by its argument, and an
+// argument that is a range would leave a range value in a value pattern -- refused
+// where the body wrote the pattern, with the note that names the invocation. The
+// bounds are what a body takes as parameters: `(LO..HI)`.
+macro:is_k = (K) {
+    pick (#caller(v)) { (K) { #caller(r) = 1i32; }, (*) { #caller(r) = 0i32; } }
+};
+func:through_arg = int32(int32:v) never fails { int32:r = 0i32; #is_k(1i32..5i32); pass r; };
+macro:in_bounds = (LO, HI) {
+    pick (#caller(v)) { (LO..HI) { #caller(r) = 1i32; }, (*) { #caller(r) = 0i32; } }
+};
+func:by_bounds = int32(int32:v) never fails { int32:r = 0i32; #in_bounds(1i32, 5i32); pass r; };
 
 // --- control: the bounds are invocations, the range is the pattern's own -----------
 func:bounds = int32(int32:n) never fails {
@@ -46,5 +64,6 @@ func:bounds = int32(int32:n) never fails {
 };
 
 func:main = int32(cstring[]:_~argv) {
-    exit (raw whole_range(3i32)) + (raw through_body(3i32)) + (raw bounds(3i32));
+    exit (raw whole_range(3i32)) + (raw through_body(3i32)) + (raw bounds(3i32))
+       + (raw through_arg(3i32)) + (raw by_bounds(3i32));
 };

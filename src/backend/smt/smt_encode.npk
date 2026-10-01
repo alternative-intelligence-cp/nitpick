@@ -3485,6 +3485,14 @@ struct:CallEnc = {
     List<int32>:names;
     List<int32>:types;
     List<Term>:terms;
+    // WHICH INSTANCE OF THE DECLARATION THIS CALL REACHES (DEF-195, 1.6.1e step
+    // 3a), as the text `uf_value` appends to the callee's function symbol: the
+    // call's own type arguments when the declaration is generic, and the
+    // receiver's type on a method call -- one declaration serves every `Self` a
+    // trait's default body or a family impl is instantiated at. Empty for a
+    // plain function; `?` when the declaration is generic and the checker
+    // recorded no arguments for this call, which `uf_value` answers with no term.
+    string:inst;
 };
 
 // THE CALLEE'S DECLARATION (1.5.2 step 3; factored at 1.5.8c step 4): the one
@@ -3540,7 +3548,7 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     }
     CallEnc:none = CallEnc{ cd: 0i32, coroutine: false, through_dyn: false,
                             names: raw list_init::<int32>(1i64), types: raw list_init::<int32>(1i64),
-                            terms: raw list_init::<Term>(1i64) };
+                            terms: raw list_init::<Term>(1i64), inst: "" };
     int32:cd = raw call_decl_of(e, id, n);
     if (cd == 0i32) { pass none; }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
@@ -3572,8 +3580,28 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     bool:co = (raw decl_has(cdn, raw DECL_ASYNC())) || (raw decl_has(cdn, raw DECL_THREAD()));
     bool:dy = false;
     if (rty != 0i32) { if ((raw type_kind(e.types, rty)) == (raw TY_DYN())) { dy = true; } }
+    // THE INSTANCE (DEF-195): the type arguments the checker recorded on the
+    // call, then the receiver's type.
+    string:inst = "";
+    IdSpan:gw = raw decl_generic_window(e.ast, cdn);
+    if (gw.count > 0i32) {
+        int32:ta = raw exprtypes_callee_targs(e.et, id);
+        if (ta == 0i32) {
+            inst = "?";
+        } else {
+            for (int32:gk in 0i32...gw.count) {
+                inst = string_concat(inst, string_concat(".t",
+                           int_to_string((raw ast_id_at(e.ast, ta - 1i32, gk)) => int64)));
+            }
+        }
+    }
+    if (off == 1i32) {
+        if (!(raw string_eq(inst, "?"))) {
+            inst = string_concat(inst, string_concat(".r", int_to_string(rty => int64)));
+        }
+    }
     pass CallEnc{ cd: cd, coroutine: co, through_dyn: dy, names: move(names),
-                  types: move(types), terms: move(terms) };
+                  types: move(types), terms: move(terms), inst: move(inst) };
 };
 
 // The two call-site rows of a recorded callee (L-10, D-268): its role is
@@ -3763,13 +3791,27 @@ func:push_callee_ensures = NIL(Encoder->:e, CallEnc:ce, Term:val) never fails {
 };
 
 // A `pure never fails` CALLEE'S VALUE (L-3): the application of its
-// uninterpreted function to the argument terms -- `|uf.<name>.<decl>|`, one
-// symbol per declaration -- when every argument and the result are in the
-// fragment and the callee is not a coroutine; its result's range axiom is a
-// hypothesis (the value IS of that type). `term_none` otherwise.
+// uninterpreted function to the argument terms -- `|uf.<name><instance>.<decl>|`,
+// one symbol per INSTANCE of the declaration -- when every argument and the result
+// are in the fragment and the callee is not a coroutine; its result's range axiom
+// is a hypothesis (the value IS of that type). `term_none` otherwise.
+//
+// PER INSTANCE, NOT PER DECLARATION (DEF-195, 1.6.1e step 3a). The symbol was
+// `|uf.<name>.<decl>|` until this step, and an argument is an `Int` whatever its
+// width -- so `width(1i8)` and `width(1i64)` over `func:width<T> = int64(T:x)
+// never fails pure { pass #size_of<T>(); }` were ONE term, `(|uf.width| 1)`, and
+// the solver knew two calls equal that return 1 and 8. A `div-zero` row over
+// their difference was discharged and its guard elided: the verified build
+// divided by zero where the plain build trapped `DivByZero`. A generic function's
+// instance is its type arguments, and a method's is its receiver's type (a
+// trait's default body and a family impl are one declaration for every `Self`);
+// both are in the symbol now, so two instances are two functions.
 func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     if (ce.cd == 0i32) { pass (raw term_none()); }
     if (ce.coroutine) { pass (raw term_none()); }
+    // Generic, and the checker recorded no type arguments for this call: no
+    // instance is known, so nothing is claimed about the value.
+    if (raw string_eq(ce.inst, "?")) { pass (raw term_none()); }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if (!(raw fn_is_pure_never_fails(e, cdn))) { pass (raw term_none()); }
     if (!(raw is_named(e, ty))) { pass (raw term_none()); }
@@ -3796,7 +3838,8 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
         syms = raw syms_union(syms, ce.terms[i].syms);
     }
     sorts = string_concat(sorts, ")");
-    string:fname = string_concat("uf.", raw intern_get(e.interns, raw decl_name(cdn)));
+    string:fname = string_concat(string_concat("uf.", raw intern_get(e.interns, raw decl_name(cdn))),
+                                 ce.inst);
     string:fsym = raw smt_sym(fname, ce.cd => int64);
     int32:fi = raw sym_new_fun(e, fsym, sorts, raw is_bool(e, ty), raw fp_sort(e, ty));
     List<int32>:one = raw list_init::<int32>(1i64);

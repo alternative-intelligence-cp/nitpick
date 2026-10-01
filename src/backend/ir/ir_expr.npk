@@ -7525,15 +7525,18 @@ func:emit_direct_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:decl
     // A GENERIC CALL NAMES ITS SPECIALIZATION (1.0.2b). The declaration is a
     // template; what this call reaches is the body emitted for ITS argument set.
     //
-    // THE INSTANTIATION IS RE-DERIVED, NOT CARRIED ON THE NODE. A call node's
-    // slots are all spoken for (callee, argument window, generic count), and
-    // widening the AST to carry a backend index is the frontend rework the
-    // capability ladder exists to prevent. Instead the match is made from what
-    // the checker already recorded: this call's own ARGUMENT TYPES against the
-    // recorded instantiation's PARAMETER TYPES. Two instantiations of one
-    // declaration differ in their substituted signature, so the arguments that
-    // reached this call say which one it is — and where a program has only one
-    // instantiation of a function (the common case) the first match is it.
+    // THE INSTANTIATION IS READ OFF THE CALL'S OWN RECORD (DEF-191): the checker
+    // solved this call's type arguments and recorded where their window is
+    // (`exprtypes_callee_targs`), and the instance is the one recorded with
+    // those arguments -- the key `fninst_record` dedups by.
+    //
+    // IT WAS RE-DERIVED FROM THE SUBSTITUTED SIGNATURE until that defect, on the
+    // premise that "two instantiations of one declaration differ in their
+    // substituted signature, so the arguments that reached this call say which
+    // one it is". They do not when the type parameter appears in no parameter
+    // type and not in the return type: every instance of `func:bytes_of<T> =
+    // int64() { pass #size_of<T>(); }` is an `int64()`, and every call reached
+    // the first one recorded -- the wrong body, in silence.
     string:sym = raw mangled_fn_sym(x.fe.ctx, decl, fname);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: decl });
     if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
@@ -8930,19 +8933,55 @@ func:pv_broken = PlaceVal(Span:at) never fails {
 // called the template's symbol, which does not exist. `callee_ft` IS the
 // instantiation's substituted signature, so the match is the signature itself.
 func:fninst_for_call = int32(ExprEmitter->:x, int32:decl, ExprId:call) never fails {
-    int32:ft = raw exprtypes_callee_ft(x.et, call);
+    // BY THE CALL'S RECORDED TYPE ARGUMENTS (DEF-191), which is what tells two
+    // instances of one declaration apart.
+    int32:targs = raw exprtypes_callee_targs(x.et, call);
     int32:i = 0i32;
     int32:ninsts = raw fninst_count(x.fninsts);
+    if (targs != 0i32) {
+        while (i < ninsts) decreases ninsts - i {
+            FnInstance:e = raw fninst_at(x.fninsts, i);
+            if (e.decl == decl) {
+                if (raw fninst_args_are(x, e, targs - 1i32)) {
+                    pass (raw fninst_name_of(x, raw fninst_concrete(x, e, call)));
+                }
+            }
+            i = i + 1i32;
+        }
+        pass 0i32;
+    }
+    // A CALL WITH NO RECORD is matched by its substituted signature, as every
+    // call was until DEF-191 -- but only where that signature names ONE instance.
+    // Two instances under one signature and no record to choose by is answered
+    // with nothing, and the call then names a symbol that does not exist: a loud
+    // failure where the first match was a silent wrong body.
+    int32:ft = raw exprtypes_callee_ft(x.et, call);
+    int32:found = 0i32 - 1i32;
     while (i < ninsts) decreases ninsts - i {
         FnInstance:e = raw fninst_at(x.fninsts, i);
         if (e.decl == decl) {
             if (raw fn_types_same(x, e.type_id, ft)) {
-                pass (raw fninst_name_of(x, raw fninst_concrete(x, e, call)));
+                if (found >= 0i32) { pass 0i32; }
+                found = i;
             }
         }
         i = i + 1i32;
     }
-    pass 0i32;
+    if (found < 0i32) { pass 0i32; }
+    pass (raw fninst_name_of(x, raw fninst_concrete(x, raw fninst_at(x.fninsts, found), call)));
+};
+
+// IS THIS INSTANCE THE ONE RECORDED WITH THE ARGUMENTS AT `start`? The same
+// element-by-element comparison of interned ids `fninst_record` dedups by.
+func:fninst_args_are = bool(ExprEmitter->:x, FnInstance:e, int32:start) never fails {
+    int32:k = 0i32;
+    while (k < e.args_count) decreases e.args_count - k {
+        if ((raw ast_id_at(x.ast, e.args_start, k)) != (raw ast_id_at(x.ast, start, k))) {
+            pass false;
+        }
+        k = k + 1i32;
+    }
+    pass true;
 };
 
 // A TEMPLATE-SHAPED INSTANCE BECOMES THE CONCRETE ONE THIS SPECIALIZATION ASKS

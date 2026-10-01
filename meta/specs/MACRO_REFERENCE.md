@@ -136,18 +136,70 @@ macro:make_const = (N) {
 Substitution traverses the whole emitted subtree. It is not textual: the argument
 is an AST node and lands as one.
 
-> *[2026-09-30, 1.6.1e step 3 — a dated note (DEF-189, OPEN).]* Two positions are
-> NOT yet reached by substitution: a **type** and a **pattern** written in the body
-> — an array size `int32[N]`, a `comptime` argument, a pattern's value `(K)`. The
-> clone copies both through (§6), so a parameter written there stays the bare name
-> and resolves by the body's own rule (§5): refused where the module has no such
-> name (`NITPICK-TYPE-004`, `NITPICK-RESOLVE-002`), and **read as the module's
-> binding where it has one** — beside a module-level `fixed int32:N = 2i32;`,
-> `#mk(3i32)` over `macro:mk = (N) { int32[N]:a = …; }` builds a two-element array,
-> in silence, on every compiler to date (found by the step's own probes, measured at
-> both legs). The sentence above is the rule; the compiler does not keep it in
-> those two positions until DEF-189 lands. Do not write a parameter in a type or a
-> pattern until then.
+**Wherever an expression stands in the body** — in a statement, in the body of a
+declaration the macro emits, and inside what those carry: a **type** (an array's
+size, a `comptime` argument), a **pattern** (its value, a range pattern's two
+bounds), an **attribute**'s arguments, a variant's value, and every type of an
+emitted declaration — a parameter's, a return type, a field's, a cast's target, a
+generic argument, a generic parameter's bound:
+
+```nitpick
+macro:sized = (N) { wild int32[N]->:p = (#caller(mem) =>! wild int32[N]->); … #size_of<int32[N]>() … };
+macro:in_range = (LO, HI) { pick (#caller(v)) { (LO..HI) { … }, (*) { … } } };
+macro:arr_field = (N) { int32[N]:arr; };                 // struct:S3 = { #arr_field(3i32); };
+```
+
+Each instantiation gets its own copy of every such type and pattern (§6), so two
+invocations with different arguments are two different types.
+`tests/backend/programs/macro_param_positions.npk` observes each position through a
+value, twice.
+
+**What a parameter cannot be** — `NITPICK-MACRO-011`, refused at the macro's
+DECLARATION, whether or not anything invokes it, once per parameter at its first
+such spelling:
+
+- **the name of a type.** `T:x`, `T{ … }`, `x =>! T`, `(T.Variant(b))`, `(T{ a, b })`:
+  an argument is an expression and cannot name a type, so nothing could be
+  substituted there and the body would mean whatever `T` names where the macro is
+  written.
+- **a name the body declares AND writes as an expression.** A local, a `for`
+  binding, a pattern's binding, a function's parameter, a generic parameter, or a
+  declaration the body emits: the declaration's name is never substituted and
+  every USE of the name is, so each use would be the argument and not that
+  declaration.
+
+A name the body declares and never writes as an expression is NOT refused: that is
+§10's open question (may a parameter name an emitted declaration? — `func:N` is
+literally called `N`), left open. A FIELD and a VARIANT of a parameter's spelling
+are neither — they are reached through `.`, are not identifiers, and are left
+alone (`Box{ v: v }` substitutes the value and keeps the field). And the name in
+`#caller(N)` is copied by name; it is no use of the parameter.
+
+**A compile-time VALUE in an argument list is written in parentheses.** A bare
+identifier there is read as a type's name (D-064 §2) — for a macro parameter as for
+any other name — so `simd<int32, N>` is the first refusal above and
+`simd<int32, (N)>` is the argument landing as the lane count.
+
+**A range passed where a whole value pattern stands is refused**
+(`NITPICK-MACRO-005`, at the pattern): a pattern's kind is the parser's (§6), and a
+range substituted for `(K)` would leave a range value in a value pattern. The body
+takes the bounds — `(LO..HI)`.
+
+> *[2026-10-01, 1.6.1e step 3a — a dated note (DEF-189, FIXED).]* Until this step
+> two positions were NOT reached by substitution: a **type** and a **pattern**
+> written in the body. The clone copied both through, so a parameter written there
+> stayed the bare name and resolved by the body's own rule (§5): refused where the
+> module had no such name (`NITPICK-TYPE-004`, `NITPICK-RESOLVE-002`), and **read as
+> the module's binding where it had one** — beside a module-level
+> `fixed int32:N = 2i32;`, `#mk(3i32)` over `macro:mk = (N) { int32[N]:a = …; }`
+> built a two-element array, in silence, at both legs, on every compiler to that
+> day. The two things a parameter cannot be were accepted the same way: `T:x` beside
+> a module `struct:T` built the module's type whatever was passed, and a body's
+> `int32:N = 1i32;` declared a local that every later `N` then ignored for the
+> argument. The paragraphs above are the rule as it now holds. (The step's first
+> form refused EVERY declaration of a parameter's name; the sweep found the library
+> listener's `mc0388` — §10's own example, expected to run — refused by it, and the
+> rule was narrowed to the half that answers wrongly before it landed.)
 
 ## 4. Emission
 
@@ -243,6 +295,11 @@ locals and, past them, the module's own names. `#caller(NAME)` means "whatever
 bare name exactly when the invocation site has a local binding of it, which is the
 case it exists for.
 
+**It stands wherever an expression stands in a body** — inside a type's size or a
+pattern's value or bounds as well as in a statement (since DEF-189; it was
+`NITPICK-MACRO-008` there while a body's types and patterns were shared by every
+instantiation, §6).
+
 **It is checked like any other name.** Naming something absent from the invocation
 site is `NITPICK-RESOLVE-002`, and writing `#caller` outside a macro body — where
 there is no invocation to reach — is `NITPICK-MACRO-008`. An escape hatch with no
@@ -312,12 +369,24 @@ and the depth pass enumerate:
 
 `tests/backend/programs/macro_walk_positions.npk` observes each through a value.
 
-**A type, a pattern, an attribute and a generic parameter written in a macro body
-are the template's own nodes.** The clone copies them through, so every
-instantiation of the body points at ONE node, and an invocation inside it is
-expanded in place the first time an instantiation leads the walk to it — once, for
-all of them. Nothing there depends on the instantiation, because no macro parameter
-is substituted into one (§3's dated note, DEF-189).
+**Every instantiation is its own copy of the body** (DEF-189, 1.6.1e step 3a). An
+expression, a statement, a declaration, a pattern, an attribute, a generic
+parameter and a verification clause are cloned, each one; a **type** is cloned
+exactly when it holds an expression — an array's size, a `comptime` argument — and
+is otherwise the template's own node, because a type with no expression inside
+cannot differ between two instantiations and nothing later writes onto a type. So
+an invocation written inside a body's type or pattern is expanded once per
+instantiation, in that instantiation's copy, and a parameter there is that
+instantiation's argument (§3).
+
+> *[2026-10-01 — what this replaced.]* From 1.6.1e step 3 until step 3a this
+> paragraph read "a type, a pattern, an attribute and a generic parameter written in
+> a macro body are the template's own nodes … every instantiation of the body points
+> at ONE node, and an invocation inside it is expanded in place the first time an
+> instantiation leads the walk to it — once, for all of them". That was sound only
+> while no parameter was substituted into one, which was the defect (DEF-189); and a
+> declaration shared by two instantiations (a `for` binding, a generic parameter, a
+> field, an attribute) was one node under two symbols.
 
 **A pattern's kind is the parser's.** `(1i32..5i32)` is a range pattern because the
 parser saw the `..`; `(#m())` is a value pattern, read before anybody knows what `m`
@@ -426,14 +495,15 @@ statement kind; the scan afterwards cannot, so a miss arrives as a refusal namin
 the invocation rather than as a body that quietly never expanded.
 
 A macro body is exempt, because a body is a **template** — the invocations written
-in one are consumed when the macro is cloned, not where they appear. **Except what
-the walk reached** (1.6.1e step 3): a template's type, pattern, attribute or generic
-bound is shared by every instantiation (§6), so an expression there that an
-instantiation led the walk to IS in the program, and an invocation still standing in
-one is refused like any other — `(#no_such())` as a pattern in an instantiated body
-used to pass the whole front half unexpanded and die in the emitter. `#caller(name)`
-in such a shared position is `MACRO-008` with its own sentence: it is copied through
-rather than cloned, so it has no one invocation site to name.
+in one are consumed when the macro is cloned, not where they appear. What an
+instantiation holds is the CLONE, which is program text and is audited like any
+other: `(#no_such())` as a pattern in an instantiated body is `MACRO-001` at the
+span the body wrote, with the note that names the instantiation (it used to pass
+the whole front half unexpanded and die in the emitter, until 1.6.1e step 3).
+(Between that step and step 3a a body's types and patterns were shared by every
+instantiation, the audit made an exception for a template expression the walk had
+reached, and `#caller(name)` in one was `MACRO-008`; each instantiation has its own
+copy now, §6, and `#caller` there is consumed like any other.)
 
 ---
 
@@ -560,6 +630,11 @@ Recorded as open rather than invented:
   `N`. The corpus never writes it — `bug593` substitutes into a body and every
   emitted name is fixed — so this is unimplemented rather than refused. It is a
   question about **parameters**, not about hygiene.
+  *[2026-10-01, 1.6.1e step 3a.]* STILL OPEN — **S-123**, the user's: refuse it,
+  keep the literal name, or substitute a name. What is refused since that step
+  (`NITPICK-MACRO-011`, §3) is the half of it that answered WRONGLY: a body that
+  declares a parameter's name and also writes it as an expression, whose every
+  such use was the argument instead.
 
 > **Settled since: are emitted names hygienic?** No — **a macro never renames what
 > it emits** (D-128), and a collision is an error like any other name declared

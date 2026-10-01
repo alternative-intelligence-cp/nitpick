@@ -273,6 +273,24 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) never fails {
         pass (raw ast_add_expr(x.ast, n.kind, n.span, n.a, n.b, n.c, n.payload));
     }
 
+    // A CAST CARRIES A TYPE, and the type is part of the body (DEF-189). The shape
+    // table calls the three kinds one-operand, which is right for every walker that
+    // follows EXPRESSIONS and wrong for the clone: slot `b` -- a `dyn` cast's
+    // window -- was copied through with the node, so `x =>! int32[N]->` kept the
+    // template's `int32[N]` in every instantiation. Their own arms, ahead of the
+    // shape dispatch.
+    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+        ExprId:cop = raw clone_expr(x, raw expr_operand(n), f);
+        TypeId:cty = raw clone_type(x, raw expr_cast_type(n), f);
+        pass (raw ast_add_expr(x.ast, n.kind, n.span, cop.index, cty.index, n.c, n.payload));
+    }
+    if (n.kind == ExprKind.ExprDynCastExpr) {
+        ExprId:dop = raw clone_expr(x, raw expr_operand(n), f);
+        IdSpan:dw = raw clone_type_window(x, raw expr_list_start(n),
+                                            raw expr_list_count(n), f);
+        pass (raw ast_add_expr(x.ast, n.kind, n.span, dop.index, dw.start, dw.count, n.payload));
+    }
+
     int32:shape = raw expr_shape(n.kind);
 
     // A LEAF CARRIES ITS WIDTH, and `ast_add_expr` does not take one — it sets
@@ -423,10 +441,12 @@ func:clone_call = ExprId(Expander->:x, ExprNode:n, int32:gc, int32:fuel) never f
     int32:mark = raw ast_scratch_mark(x.ast);
     int32:i = 0i32;
     while (i < gc) decreases gc - i {
-        // The generic arguments are TYPE ids and are copied through: a type
-        // mentioning a macro parameter is not a form the corpus exercises, and
-        // substituting into one silently would be inventing a rule.
-        drop ast_scratch_push(x.ast, raw ast_id_at(x.ast, start, i));
+        // The generic arguments are TYPES, cloned as every type in a body is
+        // (`clone_type`: shared when it holds no expression). They were copied
+        // through until DEF-189 -- `#size_of<int32[N]>()` kept the template's
+        // `N` in every instantiation, whatever the argument.
+        TypeId:gt = raw clone_type(x, TypeId{ index: raw ast_id_at(x.ast, start, i) }, fuel);
+        drop ast_scratch_push(x.ast, gt.index);
         i = i + 1i32;
     }
     while (i < total) decreases total - i {
@@ -508,6 +528,9 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
     }
 
     if (s.kind == StmtKind.StmtVarDeclStmt) {
+        // THE DECLARED TYPE AND THE ATTRIBUTES ARE CLONED (DEF-189): `int32[N]:a`
+        // is the declaration this defect was found on.
+        TypeId:vty = raw clone_type(x, raw stmt_decl_type(s), f);
         ExprId:init = raw clone_expr(x, raw stmt_decl_init(x.ast, s), f);
         int32:mark = raw ast_scratch_mark(x.ast);
         drop ast_scratch_push(x.ast, init.index);
@@ -516,10 +539,10 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         int32:ac = raw stmt_decl_attr_count(x.ast, s);
         drop ast_scratch_push(x.ast, ac);
         for (int32:i in 0i32...ac) {
-            drop ast_scratch_push(x.ast, (raw stmt_decl_attr(x.ast, s, i)).index);
+            drop ast_scratch_push(x.ast, (raw clone_attr(x, raw stmt_decl_attr(x.ast, s, i), f)).index);
         }
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
-        pass (raw ast_add_stmt(x.ast, s.kind, s.span, s.a, w.start, w.count, s.payload));
+        pass (raw ast_add_stmt(x.ast, s.kind, s.span, vty.index, w.start, w.count, s.payload));
     }
 
     if (s.kind == StmtKind.StmtAssignStmt) {
@@ -547,6 +570,10 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
     }
 
     if (s.kind == StmtKind.StmtForStmt) {
+        // THE BINDING IS A DECLARATION AND IS CLONED (DEF-189): the resolver
+        // declares the loop's name with this node as its origin, and until this
+        // step every instantiation's loop declared its own symbol over ONE node.
+        DeclId:fb = raw clone_param(x, raw stmt_for_binding(s), f);
         ExprId:it = raw clone_expr(x, raw stmt_for_iter(x.ast, s), f);
         StmtId:b = raw clone_stmt(x, raw stmt_for_body(x.ast, s), f);
         int32:mark = raw ast_scratch_mark(x.ast);
@@ -555,7 +582,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_for_invariant(x.ast, s), f)).index);
         drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_for_measure(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
-        pass (raw ast_add_stmt(x.ast, s.kind, s.span, s.a, w.start, w.count, s.payload));
+        pass (raw ast_add_stmt(x.ast, s.kind, s.span, fb.index, w.start, w.count, s.payload));
     }
 
     if (s.kind == StmtKind.StmtWhenStmt) {
@@ -583,12 +610,14 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, sel.index, w.start, w.count, s.payload));
     }
     if (s.kind == StmtKind.StmtPickArm) {
-        // THE PATTERN IS COPIED THROUGH, not cloned. A pattern names values and
-        // bindings, and substituting a macro parameter into one is not a form the
-        // corpus exercises — doing it silently would be inventing a rule.
+        // THE PATTERN IS CLONED (DEF-189). It was copied through -- "a form the
+        // corpus does not exercise" -- so a parameter written as a pattern's value
+        // or a range's bound was never replaced, and beside a module binding of
+        // that spelling the arm silently matched the binding.
+        PatId:ap = raw clone_pat(x, raw arm_pattern(s), f);
         ExprId:g = raw clone_expr(x, raw arm_guard(s), f);
         StmtId:b = raw clone_stmt(x, raw arm_body(s), f);
-        pass (raw ast_add_stmt(x.ast, s.kind, s.span, s.a, g.index, b.index, s.payload));
+        pass (raw ast_add_stmt(x.ast, s.kind, s.span, ap.index, g.index, b.index, s.payload));
     }
 
     if (s.kind == StmtKind.StmtDeferStmt) {
@@ -661,14 +690,260 @@ func:clone_verify = VerifyId(Expander->:x, VerifyId:id, int32:fuel) never fails 
     pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, v.b, v.c, v.payload));
 };
 
-// A PARAMETER IS CLONED WITH ITS `limit` (1.5.1): the flat copy every other
-// slot gets, plus its own verification node, so what resolve writes onto the
-// limit belongs to this expansion alone.
+// --- types, patterns, attributes, generic parameters (DEF-189, 1.6.1e step 3a) --------
+//
+// SUBSTITUTION TRAVERSES THE WHOLE EMITTED SUBTREE (MACRO_REFERENCE §3), and what a
+// body writes inside a TYPE, a PATTERN, an ATTRIBUTE or a GENERIC PARAMETER is part
+// of it. Until this step each of those was copied through by id -- "a form the
+// corpus does not exercise, and substituting into one silently would be inventing a
+// rule" -- so a parameter written in one was never replaced and resolved as the
+// bare name: beside a module binding of that spelling the body SILENTLY READ THE
+// BINDING. `macro:mk = (N) { int32[N]:a = …; };` beside `fixed int32:N = 2i32;`
+// built a two-element array for `#mk(3i32)` -- exit 8 where 12 is right, at both
+// legs, on every compiler to that day. The rule was never missing; §3 states it.
+//
+// WHAT IS SHARED AND WHAT IS NOT is settled by one question, asked of each node
+// kind: can two instantiations need the node to differ, or does a later pass WRITE
+// onto it or key a record by it?
+//
+//   * an EXPRESSION, a STATEMENT, a VERIFICATION node -- cloned, as they were;
+//   * a DECLARATION -- cloned, every kind. The resolver declares a symbol whose
+//     origin is the node, so one node under two instantiations is two bindings
+//     with one identity: a `for` binding, a generic parameter, a field, a variant
+//     and an attribute were each ONE node for every instantiation until this step;
+//   * a PATTERN -- cloned, every kind. The checker records a destructure's binding
+//     types ON the pattern (`ast_set_pat_payload`) and the resolver keys each
+//     binding's symbol by it, so a shared one is the last instantiation checked
+//     winning -- 1.5.1's finding about verification nodes (`clone_verify`), in
+//     another kind. Probed before this was written (two instantiations over
+//     `Opt<string>` and `Opt<Two>`, consuming and lending, in either order): the
+//     answers were right, because the one reader of that record reads it while
+//     its own `pick` is being checked. It is cloned so that this stays a fact
+//     about the tree and not about the order of a walk;
+//   * a TYPE -- shared when it holds no expression, cloned when it does. Nothing
+//     writes onto a type node and no table is keyed by one, and the only thing
+//     inside a type that an instantiation can change is an expression -- an
+//     array's size, a `comptime` argument. A type without one cannot differ, so it
+//     stays the template's node. (A parameter's NAME standing where a type's name
+//     stands is refused at the macro's declaration, `check_macro_decls`: an
+//     argument is an expression and cannot name a type.)
+
+// DOES THIS TYPE HOLD AN EXPRESSION, anywhere inside it? The suffix run is followed
+// in a loop, as `expand_in_type` follows it and for its reason; a window recurses
+// under `fuel`. Too deep to answer is answered YES: the clone then follows the
+// type and refuses it by its own fuel, once.
+func:type_holds_expr = bool(Expander->:x, TypeId:start, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    TypeId:cur = start;
+    while (!(raw type_is_none(cur))) decreases cur.index {
+        TypeNode:t = raw ast_type(x.ast, cur);
+        if (t.kind == TypeKind.TypeArrayType) {
+            // `T[]` has no size; `T[N]` does.
+            if (!(raw expr_is_none(raw type_array_size(t)))) { pass true; }
+            cur = raw type_element(t);
+            continue;
+        }
+        if (t.kind == TypeKind.TypePointerType)  { cur = raw type_pointee(t); continue; }
+        if (t.kind == TypeKind.TypeOptionalType) { cur = raw type_inner(t); continue; }
+        if (t.kind == TypeKind.TypeProjection)   { cur = raw type_projection_base(t); continue; }
+        if (t.kind == TypeKind.TypeFuncType) {
+            if (raw type_window_holds_expr(x, raw type_param_start(t),
+                                             raw type_param_count(t), fuel - 1i32)) { pass true; }
+            cur = raw type_return(t);
+            continue;
+        }
+        if (t.kind == TypeKind.TypeComptimeArg) { pass true; }
+        if ((t.kind == TypeKind.TypeNamedType) || (t.kind == TypeKind.TypeDynType)) {
+            pass (raw type_window_holds_expr(x, raw type_args_start(t),
+                                               raw type_args_count(t), fuel - 1i32));
+        }
+        // `cstring`, `any` and `Self` hold nothing.
+        pass false;
+    }
+    pass false;
+};
+
+func:type_window_holds_expr = bool(Expander->:x, int32:start, int32:count,
+                                   int32:fuel) never fails {
+    for (int32:i in 0i32...count) {
+        if (raw type_holds_expr(x, TypeId{ index: raw ast_id_at(x.ast, start, i) }, fuel)) {
+            pass true;
+        }
+    }
+    pass false;
+};
+
+// A TYPE, CLONED WHERE IT CAN DIFFER. The same id comes back when the type holds
+// no expression; otherwise every node on the path to an expression is rebuilt --
+// the wrapped type first, then the node that wraps it, the order the parser builds
+// them in and the order `expand_in_type`'s measure relies on -- and the expression
+// goes through `clone_expr`, so a parameter in it becomes the argument, a
+// `#caller(name)` the caller's name, and an invocation a clone the next round
+// expands. The rebuild recurses, a frame per level, under the clone's fuel.
+func:clone_type = TypeId(Expander->:x, TypeId:id, int32:fuel) never fails {
+    if (raw type_is_none(id)) { pass (raw type_none()); }
+    if (!(raw type_holds_expr(x, id, fuel))) { pass id; }
+    TypeNode:t = raw ast_type(x.ast, id);
+    if (fuel <= 0i32) {
+        // ONE FAILURE, ONE DIAGNOSTIC -- `clone_expr`'s rule.
+        if (x.blown) { pass (raw type_none()); }
+        drop expand_err(x, raw MACRO_TOO_DEEP(),
+            "this macro body nests deeper than expansion will follow", t.span);
+        x.blown = true;
+        pass (raw type_none());
+    }
+    int32:f = fuel - 1i32;
+
+    if (t.kind == TypeKind.TypeArrayType) {
+        TypeId:el = raw clone_type(x, raw type_element(t), f);
+        ExprId:size = raw clone_expr(x, raw type_array_size(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, el.index, size.index, t.c, t.payload));
+    }
+    if (t.kind == TypeKind.TypePointerType) {
+        TypeId:pt = raw clone_type(x, raw type_pointee(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, pt.index, t.b, t.c, t.payload));
+    }
+    if (t.kind == TypeKind.TypeOptionalType) {
+        TypeId:ot = raw clone_type(x, raw type_inner(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, ot.index, t.b, t.c, t.payload));
+    }
+    if (t.kind == TypeKind.TypeProjection) {
+        TypeId:bt = raw clone_type(x, raw type_projection_base(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, bt.index, t.b, t.c, t.payload));
+    }
+    if (t.kind == TypeKind.TypeFuncType) {
+        TypeId:ret = raw clone_type(x, raw type_return(t), f);
+        IdSpan:pw = raw clone_type_window(x, raw type_param_start(t),
+                                            raw type_param_count(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, pw.start, pw.count, ret.index, t.payload));
+    }
+    if (t.kind == TypeKind.TypeComptimeArg) {
+        ExprId:cv = raw clone_expr(x, raw type_comptime_value(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, cv.index, t.b, t.c, t.payload));
+    }
+    if ((t.kind == TypeKind.TypeNamedType) || (t.kind == TypeKind.TypeDynType)) {
+        IdSpan:aw = raw clone_type_window(x, raw type_args_start(t),
+                                            raw type_args_count(t), f);
+        pass (raw ast_add_type(x.ast, t.kind, t.span, aw.start, aw.count, t.c, t.payload));
+    }
+
+    drop expand_err(x, raw MACRO_INTERNAL(),
+        "this type kind has no entry in the macro clone, so a macro body containing one would be emitted with the template's own type",
+        t.span);
+    x.blown = true;
+    pass (raw type_none());
+};
+
+// A WINDOW OF TYPES -- a named type's arguments, a function type's parameters, a
+// `dyn`'s traits, a variant's payloads, a generic parameter's bounds, a trait's
+// supertraits. The same window comes back when none of them holds an expression.
+func:clone_type_window = IdSpan(Expander->:x, int32:start, int32:count, int32:fuel) never fails {
+    if (!(raw type_window_holds_expr(x, start, count, fuel))) {
+        pass IdSpan{ start: start, count: count };
+    }
+    int32:mark = raw ast_scratch_mark(x.ast);
+    for (int32:i in 0i32...count) {
+        TypeId:c = raw clone_type(x, TypeId{ index: raw ast_id_at(x.ast, start, i) }, fuel);
+        drop ast_scratch_push(x.ast, c.index);
+    }
+    pass (raw ast_scratch_commit(x.ast, mark));
+};
+
+// A PATTERN, CLONED: a value's expression and a range's two bounds through
+// `clone_expr`; a destructure's names as they are -- its windows hold intern
+// indices, which nothing rewrites -- on a node of its own, with the slot the
+// checker writes its binding types to (the payload) empty as the parser left it.
+//
+// THE PATTERN'S KIND IS THE PARSER'S AND DOES NOT CHANGE (`expand_in_pat` says why).
+// So an ARGUMENT that is a range, substituted for a parameter standing as a whole
+// value pattern, is refused here as the range-bodied macro is refused there: it
+// would leave a range VALUE where one value is matched.
+func:clone_pat = PatId(Expander->:x, PatId:id, int32:fuel) never fails {
+    if (raw pat_is_none(id)) { pass (raw pat_none()); }
+    PatNode:p = raw ast_pat(x.ast, id);
+    if (p.kind == PatKind.PatValue) {
+        ExprId:v = raw clone_expr(x, raw pat_value(p), fuel);
+        if (!(raw expr_is_none(v))) {
+            // (The parser never leaves a range as a value pattern's expression,
+            // so a range here came in through a parameter.)
+            ExprNode:now = raw ast_expr(x.ast, v);
+            if (now.kind == ExprKind.ExprRangeExpr) {
+                drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+                    "this is a value pattern, and the argument substituted into it is a range: a pattern's kind is read where it is written, so an argument cannot make it a range pattern; write the range in the pattern and pass its bounds -- `(LO..HI)`",
+                    p.span);
+                // ONE MISTAKE, ONE REPORT (D-240): the pattern is left without a
+                // value, so the walk's own check of a value pattern that holds a
+                // range (`expand_in_pat`) has nothing to say a second time.
+                drop blank_tree(x, v, fuel);
+                v = raw expr_none();
+            }
+        }
+        pass (raw ast_add_pat(x.ast, p.kind, p.span, v.index, p.b, p.c, 0i64));
+    }
+    if (p.kind == PatKind.PatRange) {
+        ExprId:lo = raw clone_expr(x, raw pat_range_lo(p), fuel);
+        ExprId:hi = raw clone_expr(x, raw pat_range_hi(p), fuel);
+        pass (raw ast_add_pat(x.ast, p.kind, p.span, lo.index, hi.index, p.c, 0i64));
+    }
+    // A struct destructure names its type in `a` -- a bare name, no arguments by
+    // the grammar, so no expression and the template's node -- and its bindings
+    // in `b`, `c`; an enum destructure's header, segments and bindings are one
+    // window in `b`, `c`.
+    if (p.kind == PatKind.PatStructDestructure) {
+        pass (raw ast_add_pat(x.ast, p.kind, p.span, p.a, p.b, p.c, 0i64));
+    }
+    if (p.kind == PatKind.PatEnumDestructure) {
+        pass (raw ast_add_pat(x.ast, p.kind, p.span, 0i32, p.b, p.c, 0i64));
+    }
+    // The wildcard and `ERR:` carry nothing.
+    if (p.kind == PatKind.PatWildcard)   { pass (raw ast_add_pat(x.ast, p.kind, p.span, 0i32, 0i32, 0i32, 0i64)); }
+    if (p.kind == PatKind.PatErrPattern) { pass (raw ast_add_pat(x.ast, p.kind, p.span, 0i32, 0i32, 0i32, 0i64)); }
+
+    drop expand_err(x, raw MACRO_INTERNAL(),
+        "this pattern kind has no entry in the macro clone, so a macro body containing one would be silently emitted incomplete",
+        p.span);
+    x.blown = true;
+    pass (raw pat_none());
+};
+
+// AN ATTRIBUTE, CLONED WITH ITS ARGUMENTS -- `#[align(N)]` on whatever carries it.
+func:clone_attr = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
+    if (raw decl_is_none(id)) { pass (raw decl_none()); }
+    DeclNode:a = raw ast_decl(x.ast, id);
+    IdSpan:w = raw clone_expr_window(x, raw attr_arg_start(a), raw attr_arg_count(a), fuel);
+    pass (raw ast_add_decl(x.ast, a.kind, a.span, a.a, w.start, w.count, a.payload));
+};
+
+// A GENERIC PARAMETER, CLONED: a `comptime` one's value type and a type one's
+// bounds are types, and each may hold a size or a value argument.
+func:clone_generic = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
+    if (raw decl_is_none(id)) { pass (raw decl_none()); }
+    DeclNode:g = raw ast_decl(x.ast, id);
+    TypeId:vt = raw clone_type(x, raw generic_value_type(g), fuel);
+    IdSpan:w = raw clone_type_window(x, raw generic_bound_start(g),
+                                       raw generic_bound_count(g), fuel);
+    pass (raw ast_add_decl(x.ast, g.kind, g.span, vt.index, w.start, w.count, g.payload));
+};
+
+// A PARAMETER, A `for` BINDING, A VARIADIC TAIL AND A FIELD share one layout --
+// `a` the type, `b` a `limit` (none on a binding and a tail), `c` the flags, the
+// payload the name -- and one clone: the type through `clone_type`, the `limit`
+// through `clone_verify` (1.5.1: what resolve writes onto it belongs to this
+// expansion alone), the rest as written.
 func:clone_param = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
     if (raw decl_is_none(id)) { pass (raw decl_none()); }
     DeclNode:d = raw ast_decl(x.ast, id);
+    TypeId:ty = raw clone_type(x, raw param_type(d), fuel);
     VerifyId:lim = raw clone_verify(x, raw param_limit(d), fuel);
-    pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, lim.index, d.c, d.payload));
+    pass (raw ast_add_decl(x.ast, d.kind, d.span, ty.index, lim.index, d.c, d.payload));
+};
+
+// A VARIANT: its value is an expression, its payloads are types.
+func:clone_variant = DeclId(Expander->:x, DeclNode:d, int32:fuel) never fails {
+    ExprId:v = raw clone_expr(x, raw variant_value(d), fuel);
+    IdSpan:w = raw clone_type_window(x, raw variant_payload_start(d),
+                                       raw variant_payload_count(d), fuel);
+    pass (raw ast_add_decl(x.ast, d.kind, d.span, v.index, w.start, w.count, d.payload));
 };
 
 func:clone_counted = StmtId(Expander->:x, StmtNode:s, int32:fuel) never fails {
@@ -703,19 +978,16 @@ func:clone_stmt_window = IdSpan(Expander->:x, int32:start, int32:count, int32:fu
 // mutually-referencing declarations, are things generics, `comptime`, and
 // `#[derive]` cannot do."
 //
-// TYPES, PATTERNS AND VERIFY NODES ARE COPIED THROUGH RATHER THAN CLONED, and the
-// reason is the same for all three: they are immutable once parsed, and nothing in
-// the corpus substitutes a macro parameter into one. Sharing an unmodified subtree
-// between two instantiations is safe precisely because neither can change it —
-// and cloning them "just in case" would be inventing a rule about a form nobody
-// has written.
+// EVERYTHING A DECLARATION CARRIES IS CLONED WITH IT -- its types, its generic
+// parameters, its attributes, its members -- by the rule stated above
+// `type_holds_expr`: a declaration node always, a type where it can differ.
 //
-// (VERIFY NODES ARE CLONED since 1.5.1 -- `clone_verify` says why. A TYPE AND A
-// PATTERN ARE STILL SHARED, and since 1.6.1e step 3 the expansion walk enters
-// them: an invocation written inside one -- `int32[#n()]`, `(#k())` -- is the
-// template's own expression, substituted in place the first time an instantiation
-// leads the walk to it, once for all of them. Still no macro PARAMETER is
-// substituted into one; that would be the rule this paragraph declines to invent.)
+// (This paragraph said "types, patterns and verify nodes are copied through rather
+// than cloned ... cloning them just in case would be inventing a rule about a form
+// nobody has written" from 0.6.1. Verification nodes left it at 1.5.1, when one
+// shared between two expansions turned out to be resolved once for both; types and
+// patterns at DEF-189, when a parameter written in one turned out to be a form
+// somebody writes -- and MACRO_REFERENCE §3 had stated the rule all along.)
 
 func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
     if (raw decl_is_none(id)) { pass (raw decl_none()); }
@@ -741,55 +1013,64 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
         int32:cc = raw fn_contract_count(x.ast, d);
         int32:ac = raw fn_attr_count(x.ast, d);
 
+        // THE SIGNATURE IS CLONED WITH THE BODY (DEF-189): the return type, the
+        // variadic tail, and below them the generic parameters, the parameters,
+        // the contracts and the attributes. A function a macro emits may take
+        // `int32[N]:a` and return `int32[N]`, and each instantiation's is its own.
+        TypeId:fret = raw clone_type(x, raw fn_return(x.ast, d), f);
+        DeclId:fvar = raw clone_param(x, raw fn_variadic(x.ast, d), f);
+
         int32:mark = raw ast_scratch_mark(x.ast);
-        drop ast_scratch_push(x.ast, (raw fn_return(x.ast, d)).index);
+        drop ast_scratch_push(x.ast, fret.index);
         drop ast_scratch_push(x.ast, body.index);
-        drop ast_scratch_push(x.ast, (raw fn_variadic(x.ast, d)).index);
+        drop ast_scratch_push(x.ast, fvar.index);
         drop ast_scratch_push(x.ast, gc);
         drop ast_scratch_push(x.ast, pc);
         drop ast_scratch_push(x.ast, cc);
         drop ast_scratch_push(x.ast, ac);
 
-        // Generics, parameters, contracts and attributes are copied through, each
-        // by its NAMED accessor rather than by walking the window. A parameter's
-        // TYPE is a type node and a contract is a predicate over the signature;
-        // neither is a place a macro argument lands in any form the corpus
-        // exercises.
-        //
+        // Each section by its NAMED accessor rather than by walking the window.
         // Four loops rather than one over the raw tail, because `d_at` is private
         // on purpose: a raw slot read is how a window whose sections shift silently
         // becomes a defect, and this clone would be the worst place to have one.
         int32:i = 0i32;
-        while (i < gc) decreases gc - i { drop ast_scratch_push(x.ast, (raw fn_generic(x.ast, d, i)).index); i = i + 1i32; }
-        // PARAMETERS AND CONTRACTS ARE CLONED (1.5.1, V-19): a parameter carries
-        // a `limit` and a contract carries a condition, and both are nodes
-        // resolution writes onto — shared, the last expansion resolved wins.
+        while (i < gc) decreases gc - i { drop ast_scratch_push(x.ast, (raw clone_generic(x, raw fn_generic(x.ast, d, i), f)).index); i = i + 1i32; }
+        // PARAMETERS AND CONTRACTS HAVE BEEN CLONED SINCE 1.5.1 (V-19): a
+        // parameter carries a `limit` and a contract carries a condition, and
+        // both are nodes resolution writes onto — shared, the last expansion
+        // resolved wins.
         i = 0i32;
         while (i < pc) decreases pc - i { drop ast_scratch_push(x.ast, (raw clone_param(x, raw fn_param(x.ast, d, i), f)).index); i = i + 1i32; }
         i = 0i32;
         while (i < cc) decreases cc - i { drop ast_scratch_push(x.ast, (raw clone_verify(x, raw fn_contract(x.ast, d, i), f)).index); i = i + 1i32; }
         i = 0i32;
-        while (i < ac) decreases ac - i { drop ast_scratch_push(x.ast, (raw fn_attr(x.ast, d, i)).index); i = i + 1i32; }
+        while (i < ac) decreases ac - i { drop ast_scratch_push(x.ast, (raw clone_attr(x, raw fn_attr(x.ast, d, i), f)).index); i = i + 1i32; }
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
     }
 
-    // A FIELD OR A PARAMETER is a type and a name, with nothing inside to clone.
-    if (d.kind == DeclKind.DeclFieldDecl)  { pass (raw clone_flat_decl(x, d)); }
-    if (d.kind == DeclKind.DeclParamDecl)  { pass (raw clone_flat_decl(x, d)); }
-    if (d.kind == DeclKind.DeclEnumVariant){ pass (raw clone_flat_decl(x, d)); }
-    if (d.kind == DeclKind.DeclAttribute)  { pass (raw clone_flat_decl(x, d)); }
+    // A FIELD, A PARAMETER AND A VARIADIC TAIL are a type, a `limit` and a name
+    // (`clone_param`); a variant is a value and payload types; an attribute is its
+    // arguments. Each was a flat copy until DEF-189 -- "a type and a name, with
+    // nothing inside to clone" -- which shared the type, a field's `limit` and a
+    // variant's value expression with the template.
+    if (d.kind == DeclKind.DeclFieldDecl)    { pass (raw clone_param(x, id, f)); }
+    if (d.kind == DeclKind.DeclParamDecl)    { pass (raw clone_param(x, id, f)); }
+    if (d.kind == DeclKind.DeclVariadicSpec) { pass (raw clone_param(x, id, f)); }
+    if (d.kind == DeclKind.DeclEnumVariant)  { pass (raw clone_variant(x, d, f)); }
+    if (d.kind == DeclKind.DeclAttribute)    { pass (raw clone_attr(x, id, f)); }
+    if (d.kind == DeclKind.DeclGenericParam) { pass (raw clone_generic(x, id, f)); }
 
-    // A GLOBAL carries an initialiser, which is an expression and is cloned.
+    // A GLOBAL carries a type and an initialiser.
     if (d.kind == DeclKind.DeclGlobalDecl) {
+        TypeId:gty = raw clone_type(x, raw global_type(d), f);
         ExprId:init = raw clone_expr(x, raw global_init(d), f);
-        pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, init.index, d.c, d.payload));
+        pass (raw ast_add_decl(x.ast, d.kind, d.span, gty.index, init.index, d.c, d.payload));
     }
 
-    // THE ITEM KINDS — struct, enum, trait, impl, module — share one window shape:
-    // a four-slot header, then generics, members, attributes and extras. Their
-    // MEMBERS are cloned and everything else is copied, which is what makes a macro
-    // able to emit a struct whose fields mention its parameters.
+    // THE ITEM KINDS — struct, enum, trait, module — share one window shape: a
+    // four-slot header, then generics, members, attributes and extras (a trait's
+    // supertraits), every section cloned.
     if (d.kind == DeclKind.DeclStructDecl) { pass (raw clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclEnumDecl)   { pass (raw clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclTraitDecl)  { pass (raw clone_item(x, d, f)); }
@@ -802,11 +1083,12 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
     if (d.kind == DeclKind.DeclImplDecl) { pass (raw clone_impl(x, d, f)); }
 
     // A `Rules` BLOCK IN A MACRO BODY (1.5.1): its refinements are verification
-    // nodes and its clauses are expressions, both cloned; the subject is a
-    // type id, copied through like every type. Until 1.5.1 this kind fell to
-    // the fail-closed default below — refused loudly, never silently — and it
-    // gains an arm here because its bodies are typed now (D-220).
+    // nodes and its clauses are expressions, both cloned, and its subject is a
+    // type, cloned like every type (DEF-189). Until 1.5.1 this kind fell to the
+    // fail-closed default below — refused loudly, never silently — and it gains
+    // an arm here because its bodies are typed now (D-220).
     if (d.kind == DeclKind.DeclRuleDecl) {
+        TypeId:rsub = raw clone_type(x, raw rule_subject(d), f);
         int32:rn = raw rule_refine_count(x.ast, d);
         int32:cn = raw rule_clause_count(x.ast, d);
         int32:mark = raw ast_scratch_mark(x.ast);
@@ -819,7 +1101,11 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
             drop ast_scratch_push(x.ast, (raw clone_expr(x, raw rule_clause(x.ast, d, ci), f)).index);
         }
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
-        pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
+        // THE FLAGS RIDE THE HIGH HALF OF THE COUNT SLOT (DEF-93), as the parser
+        // builds the node. Until DEF-189's reading this wrote the bare count, so
+        // a `pub Rules` block that a macro emitted lost its `pub` on the way out.
+        pass (raw ast_add_decl(x.ast, d.kind, d.span, rsub.index, w.start,
+                                 w.count | ((raw decl_flags(d)) << 16i32), d.payload));
     }
 
     // A NESTED INVOCATION IS COPIED THROUGH AND EXPANDS ON THE NEXT ROUND. That is
@@ -843,31 +1129,29 @@ func:clone_impl = DeclId(Expander->:x, DeclNode:d, int32:fuel) never fails {
     int32:mc = raw impl_member_count(x.ast, d);
     int32:ac = raw impl_attr_count(x.ast, d);
 
+    // Target and trait are types, cloned as every type in a body is (DEF-189).
+    TypeId:itgt = raw clone_type(x, raw impl_target(x.ast, d), fuel);
+    TypeId:itr = raw clone_type(x, raw impl_trait(x.ast, d), fuel);
+
     int32:mark = raw ast_scratch_mark(x.ast);
-    // Target and trait are TYPE ids and are copied through, as every other type in
-    // a cloned body is.
-    drop ast_scratch_push(x.ast, (raw impl_target(x.ast, d)).index);
-    drop ast_scratch_push(x.ast, (raw impl_trait(x.ast, d)).index);
+    drop ast_scratch_push(x.ast, itgt.index);
+    drop ast_scratch_push(x.ast, itr.index);
     drop ast_scratch_push(x.ast, mc);
     drop ast_scratch_push(x.ast, ac);
     drop ast_scratch_push(x.ast, gc);
 
     for (int32:g in 0i32...gc) {
-        drop ast_scratch_push(x.ast, (raw impl_generic(x.ast, d, g)).index);
+        drop ast_scratch_push(x.ast, (raw clone_generic(x, raw impl_generic(x.ast, d, g), fuel)).index);
     }
     for (int32:m in 0i32...mc) {
         DeclId:c = raw clone_decl(x, raw impl_member(x.ast, d, m), fuel);
         drop ast_scratch_push(x.ast, c.index);
     }
     for (int32:a2 in 0i32...ac) {
-        drop ast_scratch_push(x.ast, (raw impl_attr(x.ast, d, a2)).index);
+        drop ast_scratch_push(x.ast, (raw clone_attr(x, raw impl_attr(x.ast, d, a2), fuel)).index);
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
-};
-
-func:clone_flat_decl = DeclId(Expander->:x, DeclNode:d) never fails {
-    pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, d.b, d.c, d.payload));
 };
 
 func:clone_item = DeclId(Expander->:x, DeclNode:d, int32:fuel) never fails {
@@ -883,17 +1167,18 @@ func:clone_item = DeclId(Expander->:x, DeclNode:d, int32:fuel) never fails {
     drop ast_scratch_push(x.ast, ec);
 
     for (int32:i in 0i32...gc) {
-        drop ast_scratch_push(x.ast, (raw item_generic(x.ast, d, i)).index);
+        drop ast_scratch_push(x.ast, (raw clone_generic(x, raw item_generic(x.ast, d, i), fuel)).index);
     }
     for (int32:m in 0i32...mc) {
         DeclId:c = raw clone_decl(x, raw item_member(x.ast, d, m), fuel);
         drop ast_scratch_push(x.ast, c.index);
     }
     for (int32:a2 in 0i32...ac) {
-        drop ast_scratch_push(x.ast, (raw item_attr(x.ast, d, a2)).index);
+        drop ast_scratch_push(x.ast, (raw clone_attr(x, raw item_attr(x.ast, d, a2), fuel)).index);
     }
+    // The extras are a trait's supertraits: types.
     for (int32:e2 in 0i32...ec) {
-        drop ast_scratch_push(x.ast, (raw item_extra(x.ast, d, e2)).index);
+        drop ast_scratch_push(x.ast, (raw clone_type(x, raw item_extra(x.ast, d, e2), fuel)).index);
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
@@ -953,14 +1238,19 @@ func:bind_invocation = bool(Expander->:x, DeclNode:md, ExprNode:inv, Span:at) ne
 // this misses leaves a live-looking dead node rather than corrupting anything, so
 // it reports and carries on instead of blowing the expansion.
 //
-// WHAT THE CLONE COPIES THROUGH IS NOT DETACHED (DEF-170, 1.6.1e step 3). A type --
-// a cast's target, a turbofish's or a builtin's generic arguments -- is the same
-// node in the original and in every clone made of it, so it is never blanked; it
-// is WALKED here instead, where it stands. For an argument the body used that is
-// the walk the next round would have made through the clone. For one the body
-// never mentions it is the only walk the type gets: nothing points at it any
-// more, and an invocation left inside one was refused by the audit as a hole in
-// the expander -- `#ignore(#size_of<int32[#n()]>())`, about a correct program.
+// WHAT THE CLONE CLONES IS DETACHED WITH THE ORIGINAL, AND WHAT IT SHARES HOLDS NO
+// EXPRESSION (DEF-189). A type -- a cast's target, a turbofish's or a builtin's
+// generic arguments -- is cloned exactly when it holds an expression, so the
+// original's expressions are dead with the rest of the original and are blanked
+// (`blank_type`); a type the clone shared has none to blank. An argument the body
+// never mentions goes the same way, its inner invocations with it: never
+// expanded, never audited -- `#ignore(#size_of<int32[#n()]>())` is a correct
+// program that drops `#n()`.
+//
+// (From DEF-170 until DEF-189 a type was the same node in the original and in
+// every clone, so it could not be blanked and was WALKED here instead, where it
+// stood -- which expanded an invocation inside a type in place, once, for every
+// instantiation that shared it.)
 func:blank_tree = NIL(Expander->:x, ExprId:id, int32:fuel) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (fuel <= 0i32) { pass NIL; }
@@ -970,13 +1260,13 @@ func:blank_tree = NIL(Expander->:x, ExprId:id, int32:fuel) never fails {
     int32:shape = raw expr_shape(n.kind);
 
     if (n.kind == ExprKind.ExprCallExpr) {
-        discard(raw expand_in_type_window(x, raw expr_list_start(n), raw expr_generic_count(n)));
+        drop blank_type_window(x, raw expr_list_start(n), raw expr_generic_count(n), f);
         drop blank_tree(x, raw expr_callee(n), f);
         drop blank_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
                           (raw expr_list_count(n)) - (raw expr_generic_count(n)), f);
     } else {
         if (n.kind == ExprKind.ExprBuiltinExpr) {
-            discard(raw expand_in_type_window(x, raw expr_list_start(n), raw builtin_generic_count(n)));
+            drop blank_type_window(x, raw expr_list_start(n), raw builtin_generic_count(n), f);
             drop blank_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
                               (raw expr_list_count(n)) - (raw builtin_generic_count(n)), f);
         } else {
@@ -1001,11 +1291,11 @@ func:blank_tree = NIL(Expander->:x, ExprId:id, int32:fuel) never fails {
                                            raw pickx_arm_count(n), f);
                 } else {
                     if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
-                        discard(raw expand_in_type(x, raw expr_cast_type(n)));
+                        drop blank_type(x, raw expr_cast_type(n), f);
                     }
                     if (n.kind == ExprKind.ExprDynCastExpr) {
-                        discard(raw expand_in_type_window(x, raw expr_list_start(n),
-                                                          raw expr_list_count(n)));
+                        drop blank_type_window(x, raw expr_list_start(n),
+                                               raw expr_list_count(n), f);
                     }
                     if (shape == (raw EXPR_SHAPE_LIST())) {
                         drop blank_window(x, raw expr_list_start(n),
@@ -1046,12 +1336,10 @@ func:blank_window = NIL(Expander->:x, int32:start, int32:count, int32:fuel) neve
 // THE STATEMENTS OF A DETACHED ARGUMENT -- an expression-`pick`'s arms and what
 // their bodies hold. EVERY EXPRESSION THE CLONE CLONES IS BLANKED, kind by kind as
 // `clone_stmt` reads them, a verification node's among them (the clone makes a
-// new node, so the original's expressions are dead with it). What the clone
-// copies through -- a declaration's type and attributes, a `for` binding, an
-// arm's pattern -- is shared with the clone and is walked where it stands, for
-// the reason given above `blank_tree`. The statement nodes themselves are left:
-// nothing scans the statement array for meaning, and a dead one holds only
-// blanks.
+// new node, so the original's expressions are dead with it), and since DEF-189 a
+// declaration's type and attributes, a `for` binding's type and an arm's pattern
+// among them. The statement nodes themselves are left: nothing scans the
+// statement array for meaning, and a dead one holds only blanks.
 func:blank_stmt = NIL(Expander->:x, StmtId:id, int32:fuel) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
     if (fuel <= 0i32) { pass NIL; }
@@ -1063,10 +1351,10 @@ func:blank_stmt = NIL(Expander->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtVarDeclStmt) {
-        discard(raw expand_in_type(x, raw stmt_decl_type(s)));
+        drop blank_type(x, raw stmt_decl_type(s), f);
         int32:ac = raw stmt_decl_attr_count(x.ast, s);
         for (int32:ai in 0i32...ac) {
-            discard(raw expand_in_attr(x, raw stmt_decl_attr(x.ast, s, ai)));
+            drop blank_attr(x, raw stmt_decl_attr(x.ast, s, ai), f);
         }
         drop blank_tree(x, raw stmt_decl_init(x.ast, s), f);
         pass NIL;
@@ -1090,7 +1378,10 @@ func:blank_stmt = NIL(Expander->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
-        discard(raw expand_in_param(x, raw stmt_for_binding(s)));
+        DeclId:fbid = raw stmt_for_binding(s);
+        if (!(raw decl_is_none(fbid))) {
+            drop blank_type(x, raw param_type(raw ast_decl(x.ast, fbid)), f);
+        }
         drop blank_tree(x, raw stmt_for_iter(x.ast, s), f);
         drop blank_verify(x, raw stmt_for_invariant(x.ast, s), f);
         drop blank_verify(x, raw stmt_for_measure(x.ast, s), f);
@@ -1122,7 +1413,7 @@ func:blank_stmt = NIL(Expander->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickArm) {
-        discard(raw expand_in_pat(x, raw arm_pattern(s)));
+        drop blank_pat(x, raw arm_pattern(s), f);
         drop blank_tree(x, raw arm_guard(s), f);
         drop blank_stmt(x, raw arm_body(s), f);
         pass NIL;
@@ -1158,6 +1449,72 @@ func:blank_verify = NIL(Expander->:x, VerifyId:id, int32:fuel) never fails {
         drop blank_window(x, raw invariant_start(v), raw invariant_count(v), fuel);
     }
     if (v.kind == VerifyKind.VerifyDecreasesNode) { drop blank_tree(x, raw measure_expr(v), fuel); }
+    pass NIL;
+};
+
+// THE EXPRESSIONS INSIDE A DETACHED TYPE: every array size and every `comptime`
+// argument, the suffix run followed in a loop as `expand_in_type` follows it. A
+// type with no expression inside is the one the clone SHARED, and there is
+// nothing in it to blank -- which is what makes this safe to call on any type of
+// a detached original without asking which it was.
+func:blank_type = NIL(Expander->:x, TypeId:start, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass NIL; }
+    int32:f = fuel - 1i32;
+    TypeId:cur = start;
+    while (!(raw type_is_none(cur))) decreases cur.index {
+        TypeNode:t = raw ast_type(x.ast, cur);
+        if (t.kind == TypeKind.TypeArrayType) {
+            drop blank_tree(x, raw type_array_size(t), f);
+            cur = raw type_element(t);
+            continue;
+        }
+        if (t.kind == TypeKind.TypePointerType)  { cur = raw type_pointee(t); continue; }
+        if (t.kind == TypeKind.TypeOptionalType) { cur = raw type_inner(t); continue; }
+        if (t.kind == TypeKind.TypeProjection)   { cur = raw type_projection_base(t); continue; }
+        if (t.kind == TypeKind.TypeFuncType) {
+            drop blank_type_window(x, raw type_param_start(t), raw type_param_count(t), f);
+            cur = raw type_return(t);
+            continue;
+        }
+        if (t.kind == TypeKind.TypeComptimeArg) {
+            drop blank_tree(x, raw type_comptime_value(t), f);
+            pass NIL;
+        }
+        if ((t.kind == TypeKind.TypeNamedType) || (t.kind == TypeKind.TypeDynType)) {
+            drop blank_type_window(x, raw type_args_start(t), raw type_args_count(t), f);
+            pass NIL;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:blank_type_window = NIL(Expander->:x, int32:start, int32:count, int32:fuel) never fails {
+    for (int32:i in 0i32...count) {
+        drop blank_type(x, TypeId{ index: raw ast_id_at(x.ast, start, i) }, fuel);
+    }
+    pass NIL;
+};
+
+// A DETACHED PATTERN'S VALUE, OR ITS TWO BOUNDS. A destructure, the wildcard and
+// `ERR:` hold no expression.
+func:blank_pat = NIL(Expander->:x, PatId:id, int32:fuel) never fails {
+    if (raw pat_is_none(id)) { pass NIL; }
+    PatNode:p = raw ast_pat(x.ast, id);
+    if (p.kind == PatKind.PatValue) { drop blank_tree(x, raw pat_value(p), fuel); }
+    if (p.kind == PatKind.PatRange) {
+        drop blank_tree(x, raw pat_range_lo(p), fuel);
+        drop blank_tree(x, raw pat_range_hi(p), fuel);
+    }
+    pass NIL;
+};
+
+// A DETACHED ATTRIBUTE'S ARGUMENTS.
+func:blank_attr = NIL(Expander->:x, DeclId:id, int32:fuel) never fails {
+    if (raw decl_is_none(id)) { pass NIL; }
+    DeclNode:a = raw ast_decl(x.ast, id);
+    if (a.kind != DeclKind.DeclAttribute) { pass NIL; }
+    drop blank_window(x, raw attr_arg_start(a), raw attr_arg_count(a), fuel);
     pass NIL;
 };
 
@@ -1207,12 +1564,12 @@ func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) 
     if (raw splice_too_deep(x, raw ast_expr_height(x.ast, c), inv.span)) { pass false; }
 
     // THE INVOCATION'S OWN GENERIC ARGUMENTS are types nothing reads -- a macro
-    // takes none, and they go with the invocation. What stands inside one is
-    // walked where it stands, as `blank_tree` does when the whole invocation is
+    // takes none (DEF-186), and they go with the invocation. What stands inside
+    // one is blanked with it, as `blank_tree` does when the whole invocation is
     // detached (the statement and the splice forms), so the three positions
     // answer alike and none leaves an invocation for the audit to call a hole.
-    discard(raw expand_in_type_window(x, raw expr_list_start(inv),
-                                      raw builtin_generic_count(inv)));
+    drop blank_type_window(x, raw expr_list_start(inv),
+                           raw builtin_generic_count(inv), raw CLONE_FUEL());
     drop blank_window(x, (raw expr_list_start(inv)) + (raw builtin_generic_count(inv)),
                       (raw expr_list_count(inv)) - (raw builtin_generic_count(inv)),
                       raw CLONE_FUEL());
@@ -1619,13 +1976,11 @@ func:expand_root_expr = bool(Expander->:x, ExprId:id) never fails {
 // binding, a parameter, a field, a return type, a cast's target, a generic
 // argument, a pointee.
 //
-// SUBSTITUTED IN PLACE, AND SHARED. The clone copies a type through (see
-// `clone_decl`), so a type written in a macro body is ONE node that every
-// instantiation points at, and an invocation inside it is the template's own
-// expression: the walk meets it through whichever instantiation it reaches first
-// and substitutes there, once, for all of them. Nothing in a type depends on the
-// instantiation -- a macro parameter is not substituted into one, which is the
-// rule the clone already kept -- so once is the right number of times.
+// SUBSTITUTED IN PLACE, EACH INSTANTIATION'S OWN. A type that holds an expression
+// is cloned with the body that wrote it (`clone_type`, DEF-189), so an invocation
+// inside one reaches the walk as that instantiation's clone and is substituted
+// there, for it alone. (From DEF-170 until DEF-189 the type was the template's
+// node, shared, and its invocation was substituted once for every instantiation.)
 //
 // `->`, `?`, `[N]` and `.Item` EACH WRAP ONE TYPE and the parser builds a run of
 // them in a loop (`p_suffixes`), so the run is followed in a loop here: a frame
@@ -1678,11 +2033,11 @@ func:expand_in_type_window = bool(Expander->:x, int32:start, int32:count) never 
     pass hit;
 };
 
-// A PATTERN'S VALUE AND A RANGE PATTERN'S TWO BOUNDS. The pattern is copied
-// through by the clone exactly as a type is, so the same holds: substituted in
-// place, once, for every instantiation that shares it. A struct destructure names
-// a type that takes no arguments by its grammar, an enum destructure names
-// segments and bindings, and the wildcard and `ERR:` carry nothing.
+// A PATTERN'S VALUE AND A RANGE PATTERN'S TWO BOUNDS, substituted in place -- in
+// the program's own patterns, and in each instantiation's clone of a body's
+// (`clone_pat`). A struct destructure names a type that takes no arguments by its
+// grammar, an enum destructure names segments and bindings, and the wildcard and
+// `ERR:` carry nothing.
 //
 // THE PATTERN'S KIND IS THE PARSER'S AND DOES NOT CHANGE. `(1i32..5i32)` is a
 // RANGE pattern because the parser saw the `..` and put the two bounds on the
@@ -2083,37 +2438,26 @@ pub func:expand_audit = NIL(Expander->:x) never fails {
         // rather than where it is written, so neither is standing anywhere it
         // should be refused.
         //
-        // UNLESS THE WALK CAME TO IT (DEF-170, 1.6.1e step 3). The walk never
-        // enters a macro declaration, so the one way it reaches a template's
-        // expression is through an instantiation that SHARES the node: a type, a
-        // pattern, an attribute, a generic bound, each copied through by the
-        // clone. Such an expression is in the program -- every instantiation
-        // points at it -- and an invocation still standing in one is refused like
-        // any other. Before the walk reached these, the mark hid them: `(#m())`
-        // as a pattern in an instantiated body was accepted by this whole front
-        // half, unexpanded, and died in the emitter as a defect of its own.
-        bool:in_body = raw ast_expr_flag(x.ast, id, raw HYG_IN_MACRO());
-        if (in_body) {
-            if (!(raw ast_expr_flag(x.ast, id, raw HYG_SEEN()))) {
-                i = i + 1i32;
-                continue;
-            }
+        // AND NO INSTANTIATION LEADS THE WALK INTO ONE (DEF-189). Every expression
+        // a body holds is cloned -- the ones inside its types, patterns,
+        // attributes and generic parameters with the rest -- so what the walk
+        // reaches through an instantiation is the clone, which carries no mark and
+        // is audited like any program text: `(#no_such())` as a pattern in an
+        // instantiated body is refused at the clone, at the span the body wrote.
+        // (From DEF-170 until DEF-189 those four were the template's own nodes,
+        // shared by every instantiation, and a marked expression the walk had
+        // SEEN was audited here for that reason.)
+        if (raw ast_expr_flag(x.ast, id, raw HYG_IN_MACRO())) {
+            i = i + 1i32;
+            continue;
         }
         if (n.kind == ExprKind.ExprBuiltinExpr) {
             int32:name = raw builtin_name(n);
             string:t = raw intern_get(x.interns, name);
             if (raw string_eq(t, "caller")) {
-                if (in_body) {
-                    // In a body, and still standing: it was written where the
-                    // clone does not go.
-                    drop expand_err(x, raw MACRO_CALLER_FORM(),
-                        "`#caller` stands in a part of this macro's body that every instantiation shares -- a type, a pattern, an attribute -- which is copied through rather than cloned, so it has no one invocation site to name; write the name in an expression of the body",
-                        n.span);
-                } else {
-                    drop expand_err(x, raw MACRO_CALLER_FORM(),
-                        "`#caller` is legal only inside a macro body, where it names something at the invocation site; outside one there is no invocation to reach",
-                        n.span);
-                }
+                drop expand_err(x, raw MACRO_CALLER_FORM(),
+                    "`#caller` is legal only inside a macro body, where it names something at the invocation site; outside one there is no invocation to reach",
+                    n.span);
             } else {
                 if (!(raw is_hash_builtin(t))) {
                     // NEVER VISITED IS A DEFECT IN THE COMPILER, not in the
@@ -2441,9 +2785,12 @@ func:splice_field = DeclId(Expander->:x, StmtId:src) never fails {
     // last expansion wins (1.5.1's finding, `clone_verify`'s reason). A macro
     // that writes `limit<r> int64:n;` in a struct body gets a limited field,
     // where this splice wrote `0i32` and silently dropped the rule.
+    // AND THE TYPE IS CLONED (DEF-189): `int32[N]:arr;` spliced as a field is
+    // `int32[<the argument>]`, this instantiation's own.
+    TypeId:fty = raw clone_type(x, raw stmt_decl_type(v), raw CLONE_FUEL());
     VerifyId:flim = raw clone_verify(x, raw stmt_decl_limit(x.ast, v), raw CLONE_FUEL());
     pass (raw ast_add_decl(x.ast, DeclKind.DeclFieldDecl, v.span,
-                             (raw stmt_decl_type(v)).index, flim.index,
+                             fty.index, flim.index,
                              raw stmt_quals(x.ast, v), v.payload));
 };
 
@@ -2726,6 +3073,237 @@ func:refuse_nested_macros = NIL(Expander->:x, DeclId:id, int32:fuel) never fails
     pass NIL;
 };
 
+// --- what a body may not write about its own parameters (DEF-189) -------------------
+//
+// AN ARGUMENT IS AN EXPRESSION (MACRO_REFERENCE §3), so there are two things a body
+// cannot do with a parameter's name -- and each was accepted in silence:
+//
+//   * USE IT AS A TYPE'S NAME. `macro:mk = (T) { T:x = T{ v: 7i32 }; … };` beside a
+//     module `struct:T` built the module's `T` whatever was passed: the argument
+//     dropped, exit 7 for `#mk(3i32)`. A named type, a struct literal's name and the
+//     type a destructuring pattern names are NAMES, not expressions; no argument can
+//     be substituted there. (A compile-time VALUE in an argument list is the one
+//     place the two look alike: `simd<int32, N>` reads `N` as a type's name, by
+//     the parser's rule that a bare identifier in that list is one, and
+//     `simd<int32, (N)>` reads it as the expression it is.)
+//   * DECLARE IT AND USE IT. `macro:bump = (N) { int32:N = 1i32; … N + 1i32 … };`
+//     declared a local `N` and read the ARGUMENT at every `N` after it -- exit 41
+//     for `#bump(40i32)`: a declaration's name is not an identifier expression and
+//     is never replaced, and every use of it is. A local, a `for` binding, a
+//     pattern's binding, a function's parameter and a declaration the body emits
+//     each do this.
+//
+// A NAME THE BODY DECLARES AND NEVER WRITES AS AN EXPRESSION IS LEFT ALONE. It is
+// MACRO_REFERENCE §10's open question -- "may a parameter name an emitted
+// declaration?": `macro:m = (N) { func:N = …; };` emits a function literally
+// called `N`, "unimplemented rather than refused" -- and refusing it would be
+// settling that question here (S-123, the user's). What IS refused is the half of
+// it that answers wrongly: the same body calling `N()` would call the ARGUMENT.
+// A field and a variant are reached through `.`, are no identifier, and are no
+// declaration in this sense at all.
+//
+// READ OFF THE BODY'S ID RANGES, which the parser records on the declaration, for
+// the reason the cycle check reads the expression range: every node written
+// between the braces is in them, wherever it stands. ONE REPORT PER PARAMETER PER
+// MACRO, at its first such spelling in source order.
+struct:ParamUse = {
+    bool:names_type;    // written where a type's name stands
+    Span:type_at;       // the first such spelling
+    bool:declared;      // declared by the body
+    Span:decl_at;       // the first such declaration
+    bool:used;          // written as an identifier expression (and not as `#caller`'s name)
+};
+
+// Which parameter of `md` a name is, or -1.
+func:macro_param_of = int32(Expander->:x, DeclNode:md, int32:name) never fails {
+    int32:pc = raw macro_param_count(x.ast, md);
+    for (int32:i in 0i32...pc) {
+        if ((raw macro_param(x.ast, md, i)) == name) { pass i; }
+    }
+    pass (0i32 - 1i32);
+};
+
+func:note_param_type = NIL(Expander->:x, List<ParamUse>->:uses, DeclNode:md, int32:name,
+                           Span:at) never fails {
+    int32:i = raw macro_param_of(x, md, name);
+    if (i < 0i32) { pass NIL; }
+    ParamUse:u = (<-uses)[i => int64];
+    bool:take = !u.names_type;
+    if (!take) { take = raw span_before(at, u.type_at); }
+    if (take) { u.names_type = true; u.type_at = at; (<-uses)[i => int64] = u; }
+    pass NIL;
+};
+
+func:note_param_decl = NIL(Expander->:x, List<ParamUse>->:uses, DeclNode:md, int32:name,
+                           Span:at) never fails {
+    int32:i = raw macro_param_of(x, md, name);
+    if (i < 0i32) { pass NIL; }
+    ParamUse:u = (<-uses)[i => int64];
+    bool:take = !u.declared;
+    if (!take) { take = raw span_before(at, u.decl_at); }
+    if (take) { u.declared = true; u.decl_at = at; (<-uses)[i => int64] = u; }
+    pass NIL;
+};
+
+func:check_macro_params = NIL(Expander->:x, DeclNode:md, List<ParamUse>->:uses,
+                              List<int32>->:escaped) never fails {
+    int32:pc = raw macro_param_count(x.ast, md);
+    if (pc == 0i32) { pass NIL; }
+    drop list_clear(uses);
+    drop list_clear(escaped);
+    for (int32:z in 0i32...pc) {
+        drop list_push(uses, ParamUse{ names_type: false, type_at: md.span,
+                                       declared: false, decl_at: md.span, used: false });
+    }
+
+    // A named type whose name is a parameter. A builtin type keyword's payload is
+    // its token kind, not a name.
+    int32:ti = raw macro_body_type_lo(x.ast, md);
+    int32:thi = raw macro_body_type_hi(x.ast, md);
+    while (ti < thi) decreases thi - ti {
+        TypeNode:tn = raw ast_type(x.ast, TypeId{ index: ti });
+        if (tn.kind == TypeKind.TypeNamedType) {
+            if (!(raw type_name_is_builtin(tn))) {
+                drop note_param_type(x, uses, md, (raw type_name_index(tn)) =>! int32, tn.span);
+            }
+        }
+        ti = ti + 1i32;
+    }
+
+    // The expressions: a struct literal's name is a type's; and the name written
+    // in `#caller(name)` is copied by NAME, never substituted, so it is no use.
+    int32:elo = raw macro_body_expr_lo(x.ast, md);
+    int32:ehi = raw macro_body_expr_hi(x.ast, md);
+    int32:ei = elo;
+    while (ei < ehi) decreases ehi - ei {
+        ExprNode:en = raw ast_expr(x.ast, ExprId{ index: ei });
+        if (en.kind == ExprKind.ExprStructLiteralExpr) {
+            drop note_param_type(x, uses, md, (raw expr_name(en)) =>! int32, en.span);
+        }
+        if (raw is_caller_form(x, en)) {
+            if ((raw expr_list_count(en)) == 1i32) {
+                drop list_push(escaped, raw ast_id_at(x.ast, raw expr_list_start(en), 0i32));
+            }
+        }
+        ei = ei + 1i32;
+    }
+    // A USE: an identifier expression spelling the parameter -- exactly the node
+    // `clone_expr` replaces with the argument.
+    ei = elo;
+    while (ei < ehi) decreases ehi - ei {
+        ExprNode:un = raw ast_expr(x.ast, ExprId{ index: ei });
+        if (un.kind == ExprKind.ExprIdentifierExpr) {
+            int32:upi = raw macro_param_of(x, md, (raw expr_name(un)) =>! int32);
+            if (upi >= 0i32) {
+                bool:is_escape = false;
+                int64:ek = 0i64;
+                while (ek < (<-escaped).count) decreases (<-escaped).count - ek {
+                    if ((<-escaped)[ek] == ei) { is_escape = true; }
+                    ek = ek + 1i64;
+                }
+                if (!is_escape) {
+                    ParamUse:uu = (<-uses)[upi => int64];
+                    uu.used = true;
+                    (<-uses)[upi => int64] = uu;
+                }
+            }
+        }
+        ei = ei + 1i32;
+    }
+
+    // A destructuring pattern: the enum it names (every segment but the last,
+    // which is the variant) and the names it binds. A struct pattern's type is a
+    // type node and was read above.
+    int32:pi = raw macro_body_pat_lo(x.ast, md);
+    int32:phi = raw macro_body_pat_hi(x.ast, md);
+    while (pi < phi) decreases phi - pi {
+        PatNode:pn = raw ast_pat(x.ast, PatId{ index: pi });
+        if (pn.kind == PatKind.PatEnumDestructure) {
+            int32:segs = raw pat_enum_segment_count(x.ast, pn);
+            for (int32:sg in 0i32...(segs - 1i32)) {
+                drop note_param_type(x, uses, md, raw pat_enum_segment(x.ast, pn, sg), pn.span);
+            }
+            int32:ebc = raw pat_enum_bind_count(x.ast, pn);
+            for (int32:eb in 0i32...ebc) {
+                drop note_param_decl(x, uses, md, raw pat_enum_bind(x.ast, pn, eb), pn.span);
+            }
+        }
+        if (pn.kind == PatKind.PatStructDestructure) {
+            int32:sbc = raw pat_bind_count(pn);
+            for (int32:sb in 0i32...sbc) {
+                drop note_param_decl(x, uses, md, raw ast_id_at(x.ast, raw pat_bind_start(pn), sb),
+                                     pn.span);
+            }
+        }
+        pi = pi + 1i32;
+    }
+
+    // A local.
+    int32:si = raw macro_body_stmt_lo(x.ast, md);
+    int32:shi = raw macro_body_stmt_hi(x.ast, md);
+    while (si < shi) decreases shi - si {
+        StmtNode:sn = raw ast_stmt(x.ast, StmtId{ index: si });
+        if (sn.kind == StmtKind.StmtVarDeclStmt) {
+            drop note_param_decl(x, uses, md, raw stmt_name(sn), sn.span);
+        }
+        si = si + 1i32;
+    }
+
+    // A declaration whose name an identifier can mean: a parameter (a function's,
+    // a `for` binding), a variadic tail, a generic parameter, and what the body
+    // emits. NOT a field, a variant or an attribute -- none is an identifier.
+    int32:di = raw macro_body_decl_lo(x.ast, md);
+    int32:dhi = raw macro_body_decl_hi(x.ast, md);
+    while (di < dhi) decreases dhi - di {
+        DeclNode:dn = raw ast_decl(x.ast, DeclId{ index: di });
+        bool:names = (dn.kind == DeclKind.DeclParamDecl);
+        if (dn.kind == DeclKind.DeclVariadicSpec)  { names = true; }
+        if (dn.kind == DeclKind.DeclGenericParam)  { names = true; }
+        if (dn.kind == DeclKind.DeclFunctionDecl)  { names = true; }
+        if (dn.kind == DeclKind.DeclGlobalDecl)    { names = true; }
+        if (dn.kind == DeclKind.DeclStructDecl)    { names = true; }
+        if (dn.kind == DeclKind.DeclEnumDecl)      { names = true; }
+        if (dn.kind == DeclKind.DeclTraitDecl)     { names = true; }
+        if (dn.kind == DeclKind.DeclRuleDecl)      { names = true; }
+        if (dn.kind == DeclKind.DeclUnitDecl)      { names = true; }
+        if (dn.kind == DeclKind.DeclErrorDecl)     { names = true; }
+        if (dn.kind == DeclKind.DeclModuleDecl)    { names = true; }
+        if (dn.kind == DeclKind.DeclAssocTypeDecl) { names = true; }
+        if (dn.kind == DeclKind.DeclOpaqueDecl)    { names = true; }
+        if (dn.kind == DeclKind.DeclExternFn)      { names = true; }
+        if (names) {
+            drop note_param_decl(x, uses, md, raw decl_name(dn), dn.span);
+        }
+        di = di + 1i32;
+    }
+
+    string:mname = raw intern_get(x.interns, raw decl_name(md));
+    for (int32:r in 0i32...pc) {
+        ParamUse:u = (<-uses)[r => int64];
+        // The two violations, and the earlier of them where a parameter has both.
+        bool:bad_type = u.names_type;
+        bool:bad_decl = (u.declared && u.used);
+        if ((!bad_type) && (!bad_decl)) { continue; }
+        if (bad_type && bad_decl) {
+            if (raw span_before(u.decl_at, u.type_at)) { bad_type = false; } else { bad_decl = false; }
+        }
+        string:pname = raw intern_get(x.interns, raw macro_param(x.ast, md, r));
+        string:m1 = string_concat("`", pname);
+        string:m2 = string_concat(m1, "` is a parameter of macro `");
+        string:m3 = string_concat(m2, mname);
+        if (bad_type) {
+            drop expand_err(x, raw MACRO_PARAM_FORM(),
+                string_concat(m3, "`, and here it stands where a type's name stands: an argument is an expression and cannot name a type, so nothing would be substituted and this would mean whatever the name means where the macro is written. Rename the parameter or the type; where a compile-time VALUE is meant in an argument list, write the parameter in parentheses -- `simd<int32, (N)>` (MACRO_REFERENCE §3)"),
+                u.type_at);
+        } else {
+            drop expand_err(x, raw MACRO_PARAM_FORM(),
+                string_concat(m3, "`, and the body both declares that name here and writes it as an expression: a declaration's name is never substituted and every use of the name is, so each use would be the argument and not this declaration. Rename one of them (MACRO_REFERENCE §3)"),
+                u.decl_at);
+        }
+    }
+    pass NIL;
+};
+
 // THE INVOCATION GRAPH AND ONE SEARCH'S WORKING LISTS, in one place so the search
 // is handed one pointer.
 struct:MacroGraph = {
@@ -2802,6 +3380,16 @@ pub func:check_macro_decls = NIL(Expander->:x) never fails {
             }
         }
         k = k + 1i64;
+    }
+
+    // Then what each body writes about its own parameters.
+    List<ParamUse>:uses = raw list_init::<ParamUse>(8i64);
+    List<int32>:escaped = raw list_init::<int32>(8i64);
+    int64:q = 0i64;
+    while (q < n) decreases n - q {
+        DeclNode:qd = raw ast_decl(x.ast, DeclId{ index: (x.macros.v[q]).decl });
+        drop check_macro_params(x, qd, @uses, @escaped);
+        q = q + 1i64;
     }
 
     MacroGraph:g = MacroGraph{

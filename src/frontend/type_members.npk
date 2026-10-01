@@ -1782,9 +1782,13 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                        args.start, args.count, gp.start, gp.count, 0i32, ft,
                        n.span);
 
-    // The SUBSTITUTED signature is the one the emitter must fit arguments to —
-    // and the one `fninst_for_call` matches the specialization by (1.0.6e).
+    // The SUBSTITUTED signature is the one the emitter must fit arguments to
+    // (1.0.6e). It is NOT what names the specialization: two instances of a
+    // function whose parameter appears in no parameter type and not in the
+    // return type share one signature, so the ARGUMENTS travel on the call too
+    // and `fninst_for_call` matches by them (DEF-191).
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
+    drop exprtypes_set_callee_targs(e.expr_types, id, args.start);
     drop check_gives_call_position(e, id, n, cd);
     pass (raw check_args(e, ft, start, count, 0i32, n.span, cd));
 };

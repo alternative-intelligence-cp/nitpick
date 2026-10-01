@@ -350,11 +350,13 @@ pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) never fails {
 // a header slot added in the middle shifts everything after, which is exactly what
 // a named header constant exists to make survivable.
 //
-// AND TWO TRAILING SLOTS since 1.6.1e step 3: the body's expression-id range,
-// `[lo, hi)`, read from the window's END (`macro_body_expr_lo`/`_hi`) so that no
-// section before them shifts.
+// AND TEN TRAILING SLOTS: the body's id range `[lo, hi)` in each of the five node
+// arrays it can build in -- expressions (1.6.1e step 3), then types, patterns,
+// statements and declarations (DEF-189) -- read from the window's END
+// (`macro_body_expr_lo`/`_hi` and their four siblings) so that no section before
+// them shifts.
 func:MACRO_HDR = int32() never fails { pass 4i32; };
-func:MACRO_TAIL = int32() never fails { pass 2i32; };
+func:MACRO_TAIL = int32() never fails { pass 10i32; };
 
 // The tokens that begin a DECLARATION rather than a statement.
 //
@@ -502,6 +504,24 @@ pub func:macro_body_expr_lo = int32(Ast->:ast, DeclNode:d) never fails {
 pub func:macro_body_expr_hi = int32(Ast->:ast, DeclNode:d) never fails {
     pass (raw d_at(ast, d, (raw decl_win_count(d)) - (raw MACRO_TAIL()) + 1i32));
 };
+
+// THE SAME RANGE IN THE OTHER FOUR ARRAYS (DEF-189): every type, pattern,
+// statement and declaration node the parser built between the body's braces.
+// What a body may not write about its own parameters -- a parameter's name where
+// a type's name stands, a declaration of a parameter's name -- is read off these
+// (`check_macro_decls`), a range for the reason the expression range is one: it
+// cannot have the hole a walk of the body can.
+func:macro_tail_at = int32(Ast->:ast, DeclNode:d, int32:i) never fails {
+    pass (raw d_at(ast, d, (raw decl_win_count(d)) - (raw MACRO_TAIL()) + i));
+};
+pub func:macro_body_type_lo = int32(Ast->:ast, DeclNode:d) never fails { pass (raw macro_tail_at(ast, d, 2i32)); };
+pub func:macro_body_type_hi = int32(Ast->:ast, DeclNode:d) never fails { pass (raw macro_tail_at(ast, d, 3i32)); };
+pub func:macro_body_pat_lo = int32(Ast->:ast, DeclNode:d) never fails  { pass (raw macro_tail_at(ast, d, 4i32)); };
+pub func:macro_body_pat_hi = int32(Ast->:ast, DeclNode:d) never fails  { pass (raw macro_tail_at(ast, d, 5i32)); };
+pub func:macro_body_stmt_lo = int32(Ast->:ast, DeclNode:d) never fails { pass (raw macro_tail_at(ast, d, 6i32)); };
+pub func:macro_body_stmt_hi = int32(Ast->:ast, DeclNode:d) never fails { pass (raw macro_tail_at(ast, d, 7i32)); };
+pub func:macro_body_decl_lo = int32(Ast->:ast, DeclNode:d) never fails { pass (raw macro_tail_at(ast, d, 8i32)); };
+pub func:macro_body_decl_hi = int32(Ast->:ast, DeclNode:d) never fails { pass (raw macro_tail_at(ast, d, 9i32)); };
 
 // THE ATTRIBUTES WRITTEN ON THE DECLARATION -- the window's last section before
 // the range, read from the end for the same reason (a body with a parse error
@@ -1432,6 +1452,10 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     int32:bkind = raw MACRO_BODY_STMTS();
     int32:bcount = 0i32;
     int32:elo = raw ast_expr_count(p.ast);
+    int32:tlo = raw ast_type_count(p.ast);
+    int32:plo = raw ast_pat_count(p.ast);
+    int32:slo = raw ast_stmt_count(p.ast);
+    int32:dlo = raw ast_decl_count(p.ast);
     bool:has_decl = raw p_macro_body_has_decl(p);
     int64:errs_before = raw diaglist_count(p.diags);
     bool:mixed = false;
@@ -1491,6 +1515,10 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     // range cannot have the hole a walk can. Clones do not inherit the mark, which
     // is right — a cloned body is program text now.
     int32:ehi = raw ast_expr_count(p.ast);
+    int32:thi = raw ast_type_count(p.ast);
+    int32:phi = raw ast_pat_count(p.ast);
+    int32:shi = raw ast_stmt_count(p.ast);
+    int32:dhi = raw ast_decl_count(p.ast);
     int32:em = elo;
     while (em < ehi) decreases ehi - em {
         drop ast_set_expr_flag(p.ast, ExprId{ index: em }, raw HYG_IN_MACRO());
@@ -1525,6 +1553,15 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     // the mark is one: it cannot have the hole a walk of the body can.
     drop ast_scratch_push(p.ast, elo);
     drop ast_scratch_push(p.ast, ehi);
+    // AND THE OTHER FOUR ARRAYS' (DEF-189), in the tail's order.
+    drop ast_scratch_push(p.ast, tlo);
+    drop ast_scratch_push(p.ast, thi);
+    drop ast_scratch_push(p.ast, plo);
+    drop ast_scratch_push(p.ast, phi);
+    drop ast_scratch_push(p.ast, slo);
+    drop ast_scratch_push(p.ast, shi);
+    drop ast_scratch_push(p.ast, dlo);
+    drop ast_scratch_push(p.ast, dhi);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_decl(p.ast, DeclKind.DeclMacroDecl, sp,
                              flags, w.start, w.count, name.payload));

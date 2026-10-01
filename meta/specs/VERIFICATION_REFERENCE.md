@@ -408,9 +408,19 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 > seam's check is elided. A callee's `ensures` is KNOWLEDGE at every unwrap
 > that continues only on success (`raw f(…)`, `f(…) ?! E`, `relay f(…)`,
 > plain or awaited; never at `?|`), and a `pure never fails` callee is an
-> UNINTERPRETED FUNCTION `|uf.<name>.<decl>|` (equal inputs, equal outputs —
-> D-242's purity is exactly the soundness condition), so `sq` in a contract
-> and `sq` in the body are one symbol while `sq(3)` has no value.
+> UNINTERPRETED FUNCTION `|uf.<name><instance>.<decl>|` (equal inputs, equal
+> outputs — D-242's purity is exactly the soundness condition), so `sq` in a
+> contract and `sq` in the body are one symbol while `sq(3)` has no value.
+> ONE FUNCTION PER INSTANCE (DEF-195, 1.6.1e step 3a): `<instance>` is the
+> call's type arguments (`.t<id>` each) when the declaration is generic, and
+> the receiver's type (`.r<id>`) on a method call — a trait's default body
+> and a family impl are one declaration for every `Self` — and is empty for
+> a plain function. The symbol was per DECLARATION until that step, and an
+> argument is an `Int` whatever its width, so `width(1i8)` and `width(1i64)`
+> over a generic `pure` `width<T>` were one term: a `div-zero` row over
+> their difference was discharged and its guard elided where the plain build
+> traps. A generic callee whose call the checker recorded no type arguments
+> for has no term at all.
 > CONFORMANCE is two rows per impl method whose trait method carries a
 > contract, in a space of their own with no guard (`none`): the trait's
 > `requires` implies the impl's (an impl may weaken), the impl's `ensures`
@@ -1329,7 +1339,8 @@ holds compute in floats or vectors.
 > D-317, 1.5.8d step 0).** Besides its constants (`|name.k|`, a binding's
 > k-th version; `|_.k|`, an anonymous opaque; `|len.name.k|`, a container
 > binding's length) a row's canonical text may declare uninterpreted
-> functions: `|uf.<name>.<decl>|` for a `pure never fails` callee (1.5.3),
+> functions: `|uf.<name><instance>.<decl>|` for a `pure never fails` callee
+> (1.5.3; the instance in the symbol since DEF-195, 1.6.1e step 3a),
 > `|npk.len|` of sort `(Int) Int` for the length of a container image
 > (1.5.8b step 5), and since D-317 `|npk.f.<TYPEID>.<field>|` of sort
 > `(Int) <field sort>` -- one per (struct type id, field name), the type id

@@ -280,7 +280,11 @@ already does."
 | **S-116** — what `string<char16>` and `string<char32>` MEAN (found at 1.6.1e step 2, by the sweep of the library listener's M11 programs ty0319b/ty0320/ty0321). The recap: TYPE_REFERENCE §3.2's layout table lists `string` = `string<char8>`, `string<char16>` and `string<char32>`, each `{ptr, i64, i64}`; DEF-152 (F-026) made every builtin that takes no type arguments refuse them (`tfp64<Meters>` had been accepted and its unit dropped), and the 1.6.1e plan §2.9 kept `string`'s spelled forms. MEASURED: the compiler has always ACCEPTED the three forms and IGNORED the element width — each is exactly `string`: its elements are bytes, `.len` counts bytes, a read yields a byte — so `string<char16>` is a written argument the compiler does not honour, the class DEF-152 closed for `tfp64<Meters>`. Step 2's first form refused all three (TYPE-016), contradicting the plan and the reference; the landed form keeps the three spellings accepted as before and refuses every other argument on a `string` (`string<int32>`, two arguments, a nested `string`: TYPE-016). | **SETTLED as D-335** (the user, 2026-09-26: "if we are ever gonna have them we go ahead and plan for and implement them now"): wide strings are IN, designed and implemented as subcycle 1.6.1f before the freeze; the recommendation (decide them out) was not taken | **Decide wide strings OUT**: `string<char16>` and `string<char32>` refuse (TYPE-016, "a `string`'s elements are bytes: UTF-8, D-193"), their two table rows struck, `string<char8>` kept as the one spelled alias of `string` — a spelling must mean what it says (the blueprint rule), and a wide string is a feature nobody has designed, not a layout. If Nikola needs UTF-16 or UTF-32 text, the alternative is to DESIGN it now (element type, indexing, conversion, `ToString`) and land it before the evidence campaign closes; accepting the spelling while meaning bytes is the one reading this recommends against. |
 | **S-117** — a FROZEN COMPATIBILITY CORPUS as the instrument of the permanent freeze (raised 2026-09-26 by `nitpick-compiler_21`). The recap: the user plans a PERMANENT language freeze at feature-complete -- "a program written in nitpick next year would still compile and run 30 years from now", no breaking change except for security -- and clarified the same evening that the promise is about PROGRAMS, not tools: the compiler, the floor and the toolchain may all move (a newer LLVM, a new target) and the language absorbs it under the hood. Nothing today proves a change is invisible to programs; the per-landing two-checker sweep and emission comparison are its seed, but they compare one landing with its parent, and their corpus is whatever the trees hold that night. | **SETTLED 2026-09-30 as D-336** (the user: "go with your recommendations on all three"): YES -- a corpus frozen AT the freeze, a stage of both runners; a pre-freeze subcycle on the roadmap (`ROADMAP.md`, "The freeze"), nothing built now. | **A corpus, frozen at the freeze**: the tree's suites, the libraries' programs and the fuzzer's accepted programs, each with its recorded verdict (the diagnostic set, or the exit code at both legs); every later change to the compiler, the floor or the toolchain must reproduce every verdict, a stage of both runners, a moved verdict a red run unless it is the named security exception. A language version row in the manifest was considered and NOT recommended: it can be added the day a break is first needed, a missing row read as version 1, so adding it now is complexity with no present need. |
 | **S-118** — may `comptime` ORDER STRINGS (raised 2026-09-30 by `nitpick-compiler_22`, reading the library listener's F-027 row `mc0309b`). The recap: MACRO_REFERENCE §8's table lists string "ordering" among what the evaluator can do (recovered from the prototype's `COMPTIME-005`); a string is ordered only by `a.cmp(b)`, which answers an `Ordering` enum (D-093, D-330), and the evaluator holds no enum value and runs no `pick`, so the row cannot work (TYPE-004, measured on `5fbaf4a`). | **SETTLED 2026-09-30 as D-338** (the user: "go with your recommendations on all three"): IMPLEMENT -- 1.6.1e step 3b, its own landing after step 3, planned execution-grade first. | **Implement**: a payload-less enum value, `==`/`!=` on it, `pick` over constants, `a.cmp(b)` on constant strings held equal to the run-time order by a test. The alternative -- striking "ordering" -- leaves compile-time code unable to order strings for good once the freeze is permanent. |
-| **S-119** — the lock levels of a dynamically dispatched call: the FLOOR under a `<=` bound, and what the prelude's traits declare (raised 2026-09-30 by `nitpick-compiler_22` from the probes of the lock walk at 1.6.1e step 3; DEF-181). The recap: D-056 (settled with the user at the concurrency planning) proves lock-order freedom by LEVELS — acquisition strictly increases — and says a dynamically dispatched method "declares its maximum acquisition level … and implementations are checked against it. An undeclared method may not acquire at all"; D-113 spells the clause `acquires <= N`. Step 3 made the last sentence true: an implementation of a trait method that declares no clause, reaching any level, is LOCK-002. Two things follow. **(a) THE FLOOR.** `acquires <= N` is a ceiling only: holding level 2 and calling through a `dyn` bounded at 3 passes although an implementation may take level 1 — a downward acquisition the proof does not see (D-056 itself lists "a declared-but-broad dynamic bound" among what its second layer contains by deadlines, not proves absent). **(b) THE PRELUDE'S TRAITS** declare no level, so since step 3 no implementation of `Writer`, `Reader`, `Iterator`, `ToString`, `Eq`, `Ord`, `Hash`, `Clone` or `Debug` may take a lock or wait on a channel, and a program cannot add the clause to a trait it does not own: a mutex-guarded `Writer` cannot acquire inside its own `write`. None exists in the tree or the libraries today (the step's sweep: zero sites). | OPEN — the user's, to be asked WITH NUMBERS (how many sites of the tree and the libraries call a `<=`-bounded method with something held; which prelude-trait implementations would want a lock); 1.6.1e step 3c (DEF-181) is planned on the answer. The user was TOLD consequence (b) on 2026-09-30 and has not answered it. | **(a) Close the floor**: a call through a `<=`-bounded method while anything is held is refused (LOCK-001), and an EXACT `acquires N` on a trait's method means its implementations reach N and nothing else — measured on the tree first. **(b) Keep the prelude's traits undeclared**: a lock hidden behind an I/O trait is behaviour that depends on which implementation stands behind the `dyn` — the kind the blueprint rule refuses — and the guard-outside pattern says the same thing where the reader can see it (`Guard<…>:g = relay await m.acquire(d); g.value.write(…)`); an inherent method (unbounded, statically dispatched) or a program's own trait with `acquires <= N` covers the rest. The alternative for (b), a declared level on `Writer`/`Reader`, fixes ONE number for every program and orders every write against every lock a caller holds. |
+| **S-119** — the lock levels of a dynamically dispatched call: the FLOOR under a `<=` bound, and what the prelude's traits declare (raised 2026-09-30 by `nitpick-compiler_22` from the probes of the lock walk at 1.6.1e step 3; DEF-181). The recap: D-056 (settled with the user at the concurrency planning) proves lock-order freedom by LEVELS — acquisition strictly increases — and says a dynamically dispatched method "declares its maximum acquisition level … and implementations are checked against it. An undeclared method may not acquire at all"; D-113 spells the clause `acquires <= N`. Step 3 made the last sentence true: an implementation of a trait method that declares no clause, reaching any level, is LOCK-002. Two things follow. **(a) THE FLOOR.** `acquires <= N` is a ceiling only: holding level 2 and calling through a `dyn` bounded at 3 passes although an implementation may take level 1 — a downward acquisition the proof does not see (D-056 itself lists "a declared-but-broad dynamic bound" among what its second layer contains by deadlines, not proves absent). **(b) THE PRELUDE'S TRAITS** declare no level, so since step 3 no implementation of `Writer`, `Reader`, `Iterator`, `ToString`, `Eq`, `Ord`, `Hash`, `Clone` or `Debug` may take a lock or wait on a channel, and a program cannot add the clause to a trait it does not own: a mutex-guarded `Writer` cannot acquire inside its own `write`. None exists in the tree or the libraries today (the step's sweep: zero sites). | OPEN — PUT TO THE USER 2026-10-01 by `nitpick-compiler_23`, with the numbers (measured 2026-09-30 on `9efe218`): an `acquires` clause appears NOWHERE in `lib/`, `npkg/`, `tools/`, nitpick-apps or any library, and in nitpick-libs only in the fuzzer's three reproducers (`vf0829`, `vf0830`, `vf0831`); a `<=` bound on a trait method outside our own tests is in ONE file (`vf0830`, a control); so closing the floor (a) costs our own four test files (`lock_levels` ×2, `lock_calls`, `lock_undeclared`) and nothing else, and no implementation of a prelude trait anywhere takes a lock or waits (b). 1.6.1e step 3c (DEF-181) is planned on the answer. | **(a) Close the floor**: a call through a `<=`-bounded method while anything is held is refused (LOCK-001), and an EXACT `acquires N` on a trait's method means its implementations reach N and nothing else — measured on the tree first. **(b) Keep the prelude's traits undeclared**: a lock hidden behind an I/O trait is behaviour that depends on which implementation stands behind the `dyn` — the kind the blueprint rule refuses — and the guard-outside pattern says the same thing where the reader can see it (`Guard<…>:g = relay await m.acquire(d); g.value.write(…)`); an inherent method (unbounded, statically dispatched) or a program's own trait with `acquires <= N` covers the rest. The alternative for (b), a declared level on `Writer`/`Reader`, fixes ONE number for every program and orders every write against every lock a caller holds. |
+| **S-120** — WHOSE SCOPE A MACRO ARGUMENT RESOLVES IN (raised 2026-10-01 by `nitpick-compiler_23`, reading DEF-183 against D-057; probes `ha1`, `ha2`). The recap: D-057 (settled at 0.6.0) says "an identifier in a macro BODY resolves in the scope where the macro was written. Always", and that `#caller(NAME)` is "the sole way to reach the call site". An ARGUMENT is in neither sentence: it is the caller's own text, written at the invocation. The expander's own comment says "its identifiers are the caller's" — and the resolver then resolves the substituted argument with the body, in the module scope. So today a caller's local cannot be passed at all (`#twice(n)` with a local `n`: RESOLVE-002, "cannot find `n` in the scope this macro was written in"), and one that shadows a module binding is SILENTLY replaced by it: beside `fixed int32:shared = 100i32;`, `int32:shared = 5i32; #twice(shared)` over `macro:twice = (X) { X + X; };` answers 200, at both legs (DEF-183's silent face). | OPEN — the user's, put to him 2026-10-01; DEF-183 lands on the answer (the mechanism for either reading is planned, `1.6.1e.md` §2.10c part B). | **R1: an argument is the caller's text and resolves at the invocation site** — `#twice(n)` works, the shadowing case answers 10; `#caller(NAME)` stays the BODY's one way out, an argument is the caller's way in, and nothing a body writes changes meaning. The alternative, R2: everything in an expansion resolves where the macro was written, and an argument identifier that would bind differently at the site (or exists only there) is REFUSED at the argument — no local can ever be passed to a macro. |
+| **S-121** — A `buffer` HAS NO SAFE TYPED ACCESS (raised 2026-10-01 by `nitpick-compiler_23` from the library listener's IN-2 (1); numbers taken on `9efe218`). The recap: D-200 gave the language `buffer`, the managed owning byte cell, and STRUCK §23's draft verb family — typed access is `#ptr_add` + `<-` over `b.ptr`, or a `#wild_slice(b.ptr, n)`; D-315 says the `#wild_` spelling IS the acknowledgement, so a `#wild_slice` is tied to nothing. The first library that needed a byte sink (nitpick-time, `src/core/bytes.npk`) wrote five unchecked slices over a managed header's `.ptr` — three written through — and one PUBLIC function, `bytes_view`, that RETURNS one: after the buffer grows, the returned view reads freed memory (the library's own `tests/unit/bytes_view_lifetime.npk`: exit 0, reading the 0xAA poison), in a caller that spells no opt-out. `#wild_slice` sites: `src/` 6, tests 7, nitpick-libs 25, apps 0, `lib/` 0; over a managed header's `.ptr`: 5, all in that one file. | OPEN — the user's, put to him 2026-10-01. | **(3) Give `buffer` checked indexing and slicing** — `b[i]`, `b[lo...hi]`, a view frozen like any other (D-325) — so the safe spelling exists, **with (1) as the belt**: a `#wild_slice(x.ptr, n)` whose pointer is read from a managed header is tied to `x` (the freeze then refuses the growth while the view lives; the library's three write-through uses take a block each). (2), leaving it the author's and documenting D-315/D-325, leaves a hole in every consumer of such a library. |
+| **S-122** — WHAT AN ENUM VARIANT'S EXPLICIT VALUE MAY BE, AND WHAT AN UNVALUED VARIANT BESIDE ONE IS (raised 2026-10-01 by `nitpick-compiler_24`; DEF-193, found writing DEF-189's test). The recap: the grammar reads `Name = <expression>;` in an enum body; `variant_tag_of` (1.4.1) has the whole rule — "the DECLARED integer literal where one is given, the POSITION otherwise" — and nothing checks a value at all (`check_decl` has no arm for an enum). So: a value that is not a bare integer literal is silently IGNORED and the position used (`X = 7i32 + 1i32`, `X = BASE`, `X = -3i32` are each 0 as a first variant); two variants may carry one tag (`enum:F = { A = 3i32; B = 3i32; }`: `F.A == F.B` is true; `enum:E = { A; B = 0i32; }` likewise, and a `pick` naming both is refused by `llc`, "duplicate case value"); a value past `int32` is truncated. 455 explicit values exist in the tree, the libraries and the applications, every one a bare literal (2 are macro invocations that expand to one). | OPEN — the user's. DEF-193's interim refusals land on the recommendation unless he says otherwise. | **Refuse what cannot be honoured, now; decide the rest once.** (1) A value is an integer CONSTANT expression, folded by the checker (a literal, a negated literal, a module `fixed` name, arithmetic on those) — until the folder's value reaches the emitter, anything but a bare literal is refused by name. (2) Two variants of one enum never share a tag — refused at the second, naming the first. (3) A value fits `int32`. (4) An unvalued variant is its POSITION, as today (not the previous value plus one): with (2) a collision is a refusal, never a silent second meaning. |
+| **S-123** — MAY A MACRO PARAMETER NAME AN EMITTED DECLARATION (raised 2026-10-01 by `nitpick-compiler_24`; MACRO_REFERENCE §10 has recorded it as open since 0.6.0, "rather than invented"). The recap: an argument is an EXPRESSION and substitution replaces identifier expressions (D-057, MACRO_REFERENCE §3). A declaration's NAME is not an expression, so `macro:m = (N) { func:N = int32() never fails { pass 5i32; }; }; #m(7i32);` emits a function literally called `N`, the argument dropped — "unimplemented rather than refused" in the reference's words, and the library listener's `mc0388` pins it as running. Step 3a refuses the half that answered WRONGLY (a body that declares the name and also writes it as an expression: each use was the argument) and left this half as it was. | OPEN — the user's. | **Refuse it at the macro's declaration** (`NITPICK-MACRO-011`, the sentence saying a declaration's name cannot come from an argument): a parameter that only names a declaration is an argument silently DROPPED, the author almost certainly meant "the function named by the argument", and a second invocation is a duplicate-name error that names neither cause. The alternatives: keep the literal name (today), or substitute a name when the argument is a bare identifier — a real feature (generated names) with its own questions (D-128: a macro never renames what it emits; what a non-identifier argument is). `mc0388`'s expectation moves under the refusal; the library listener is told in advance. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -2999,12 +3003,14 @@ defect declares a `DEF-` in §2f.
 > (TYPE-007 for another kind or width, TYPE-031 for a value outside it; a float or a string selector has no value
 > patterns -- TYPE-052's sentence for the kinds that cannot select), both spellings.
 
-> **DEF-179 — OPEN, TO BE READ FIRST (2026-09-30; owner: the compiler seat; reported by WP-A's implementer).** A
-> module-level `fixed flt64:PI = 3.14f64;` and `fixed tfp64:Q = 2.5tfp64;` are `NITPICK-TYPE-035` although the
-> message lists "a literal" among what a module binding's initialiser may be. Read D-211/D-222 on a float or
-> fixed-point module constant and measure what the folder holds (its values are integers, bools, chars and
-> strings); if a module float constant is refused altogether that is a question for the user (Nikola's code will
-> want them), and the message is wrong either way.
+> **DEF-179 — OPEN; READ 2026-10-01 (`nitpick-compiler_23`): A DEFECT, NO USER QUESTION (owner: the compiler seat;
+> reported by WP-A's implementer).** A module-level `fixed flt64:PI = 3.14f64;` and `fixed tfp64:Q = 2.5tfp64;` are
+> `NITPICK-TYPE-035`, on `5fbaf4a` and on `9efe218`. D-165 is the rule: "the initialiser is a compile-time constant
+> expression: a literal OF ANY KIND" — the refusal is the folder's (`ConstVal` holds integers, bools, chars and
+> strings and no float), not the language's. The workaround today is a function — `func:PI = flt64() never fails
+> pure { pass 3.14f64; };` and `raw PI()` (probe `mf2`: clean). Nikola's code will want module-level float and
+> fixed-point constants: ITS OWN LANDING, AHEAD OF step 3b — the folder's value gains the float and twisted
+> literals, the global's initialiser lowers them, and a float constant folds where a constant is asked for.
 
 > **DEF-180 — OPEN (2026-09-30; owner: the compiler seat; reported by both implementers). THE PIPE FORM `x |> f` IS
 > NOT A CALL TO EVERY READER:** a pipe into a bare builtin (`x |> string_byte_length`, `x |> suspend_until`) is
@@ -3045,8 +3051,14 @@ defect declares a `DEF-` in §2f.
 > `decreases` clauses on one loop is discarded where TYPE-072 is the right report -- recommended: refused by name
 > where it cannot be kept. DEF-183, **A CALLER'S LOCAL CANNOT BE A MACRO ARGUMENT**: `#twice(n)` with a local `n`
 > is RESOLVE-002 "cannot find `n` in the scope this macro was written in" -- the ARGUMENT, the caller's own text,
-> is resolved as body text (measured: `wt/22a/.internal/probe/pm_arg.npk`); to be read against D-057 first;
-> recommended: an argument's names resolve at the invocation site, the body's at the definition. DEF-184, DEEP
+> is resolved as body text (measured: `wt/22a/.internal/probe/pm_arg.npk`). **AND IT HAS A SILENT FACE (2026-10-01,
+> `nitpick-compiler_23`'s probe `ha1`): an argument naming a caller's local that SHADOWS a module binding reads the
+> MODULE's** — `fixed int32:shared = 100i32;` at module level, `int32:shared = 5i32; exit #twice(shared);` in `main`
+> over `macro:twice = (X) { X + X; };` exits 200 where the caller wrote 10, at both legs, on `5fbaf4a` and `9efe218`.
+> READ against D-057: its rules speak of an identifier in a macro BODY, and of `#caller` as the body's way out; an
+> ARGUMENT is in neither sentence — **S-120** (§2e-quinquies), the user's. Recommended (R1): an argument's names
+> resolve at the invocation site, the body's at the definition; the mechanism for either answer is planned
+> (`1.6.1e.md` §2.10c part B), and it lands the day he answers. DEF-184, DEEP
 > TYPES TRAP THE COMPILER (exit 3, no message): `List<List<…>>` at about 8,300 levels, `func func …` at about
 > 9,350, `->` at about 12,700 -- `AST_DEPTH_MAX` measures expressions and statements and no type node;
 > recommended: the depth pass counts type nesting under the same bound. DEF-185, the macro clone has no case for
@@ -3061,27 +3073,47 @@ defect declares a `DEF-` in §2f.
 > 3d (the rows' neighbours), planned execution-grade before it starts, by severity: the traps (DEF-176, DEF-184,
 > DEF-177's), the checker's holes (DEF-178, DEF-187, DEF-180), DEF-183, then the rest.
 
-> **DEF-189 — OPEN (2026-09-30; owner: the compiler seat; found by WP-C's implementer answering the incoming seat's
-> review question, reproduced by the seat on `5fbaf4a` and on step 3's tree at both legs). A MACRO PARAMETER WRITTEN
-> IN A TYPE OR A PATTERN IS NEVER SUBSTITUTED, AND WHERE THE MODULE HAS A BINDING OF THAT SPELLING THE BODY SILENTLY
-> READS IT -- A WRONG ANSWER.** `fixed int32:N = 2i32; macro:mk = (N) { int32[N]:a = [1i32, 2i32]; #caller(got) =
-> (#size_of<int32[N]>() =>! int32) + a[0i64] - 1i32; };` invoked as `#mk(3i32)` builds a TWO-element array: exit 8
-> where three elements give 12, the checker clean, -O0 and -O2 (`.internal/handoff_22/probes/22d/s6.npk`). The clone
-> copies a type and a pattern THROUGH -- one node every instantiation shares -- and substitutes no parameter into
-> either, so `N` stays an identifier and resolves by D-057's rule in the scope the macro was written in. With no
-> module binding of that name the program is refused by an unrelated sentence (TYPE-004 "an array size must be a
-> constant expression" for `int32[N]` and `int32[#id(N)]`; RESOLVE-002 for a pattern `(#id(K))`; a bare `(K)` beside
-> a module `K` dies as EMIT-002, DEF-187's shape). MACRO_REFERENCE §3 says an argument replaces EVERY occurrence of
-> the parameter and that substitution traverses the whole emitted subtree: the reference is the rule and the compiler
-> has departed from it since macros landed -- the class DEF-144 was (a macro body's name read from the wrong scope, in
-> silence). **Recommended:** substitution reaches types and patterns -- the clone COPIES a type or a pattern that
-> mentions a parameter, so that node is no longer shared between instantiations (one that mentions none stays shared,
-> and step 3's in-place expansion keeps serving it) -- measured by the probe and by a parameter in every type position
-> `macro_walk_positions.npk` enumerates; if a position cannot hold a substituted argument, the fallback is a refusal
-> by name at the macro's DECLARATION, never the silent read. ITS OWN LANDING, FIRST AFTER STEP 3 (the standing rule:
-> a program the compiler accepts and answers wrongly outranks every refusal and every leak), planned execution-grade
-> before it starts, with an advance notice. Until then no macro writes a parameter in a type or a pattern (the
-> library listener was told in F25).
+> **DEF-189 — FIXED at 1.6.1e step 3a (2026-10-01, `nitpick-compiler_24`; registered 2026-09-30, found by WP-C's
+> implementer answering the incoming seat's review question). A MACRO PARAMETER WRITTEN IN A TYPE OR A PATTERN WAS
+> NEVER SUBSTITUTED, AND WHERE THE MODULE HAD A BINDING OF THAT SPELLING THE BODY SILENTLY READ IT.** `fixed int32:N =
+> 2i32; macro:mk = (N) { int32[N]:a = …; … #size_of<int32[N]>() … };` invoked as `#mk(3i32)` built a TWO-element
+> array: exit 8 where three elements give 12, the checker clean, -O0 and -O2. MACRO_REFERENCE §3 was the rule — an
+> argument replaces EVERY occurrence, substitution traverses the whole emitted subtree — and the clone had departed
+> from it since 0.6.1 in four node kinds it copied through by id: a type, a pattern, an attribute, a generic
+> parameter. **The fix: THE CLONE IS TOTAL.** `clone_type` (shared when the type holds no expression — nothing
+> writes onto a type node and none can then differ — rebuilt when it does, the array size and the `comptime`
+> argument through `clone_expr`), `clone_pat` (every pattern its own node: the checker records a destructure's
+> binding types ON the pattern and the resolver keys the binding's symbol by it), `clone_attr`, `clone_generic`,
+> `clone_param` (a parameter, a `for` binding, a variadic tail and a field: every declaration node is cloned — one
+> node under two instantiations was two symbols with one origin), `clone_variant`; a cast's target and a `dyn`
+> cast's window; a function's return type, an impl's target and trait, a trait's supertraits, a `Rules` subject, a
+> spliced field's type. What the clone clones is BLANKED in a detached original (`blank_type`, `blank_pat`,
+> `blank_attr`), where step 3 had to walk a shared node in place; the audit's exception for a template expression
+> the walk had reached is removed with the sharing that needed it, and `#caller(name)` in a body's type or pattern is
+> legal (it was MACRO-008). **WHAT A PARAMETER CANNOT BE is refused at the macro's declaration, `NITPICK-MACRO-011`
+> (new)**, read off the body's five id ranges (the declaration's window records them): the name of a TYPE (`T:x`,
+> `T{ … }`, `x =>! T`, a destructure's enum or struct — `macro:mk = (T) { T:x = T{ v: 7i32 }; … }` beside a module
+> `struct:T` built the module's type whatever was passed, exit 7), and a name the body DECLARES AND WRITES AS AN
+> EXPRESSION (a local, a `for` binding, a pattern's binding, a function's parameter, a generic parameter, an emitted
+> declaration — `macro:bump = (N) { int32:N = 1i32; … N + 1i32 … }` read the ARGUMENT at every later `N`, exit 41
+> for `#bump(40i32)`); one report per parameter, at its first such spelling; a field and a variant of the spelling
+> are left alone, and so is a name the body declares and never uses — MACRO_REFERENCE §10's open question, "may a
+> parameter name an emitted declaration?" (`func:N` is literally called `N`), which stays open as **S-123**: the
+> step's first form refused every declaration of a parameter's name, and the sweep found the library listener's
+> `mc0388` (that very example, expected to run) refused by it. A bare name in a type-argument list is a type's name (D-064 §2), so a compile-time value is written
+> `simd<int32, (N)>`, and the sentence says so. A range passed where a whole value pattern stands is MACRO-005, once.
+> **Found reading the clone, fixed with it:** a `pub Rules` block a macro emitted LOST ITS `pub` (the clone wrote the
+> bare clause count over the flags that ride that slot's high half, DEF-93: `use m.{R};` of it was RESOLVE-003).
+> **Probed before any of it was written (the hand-off's two questions):** two instantiations sharing one
+> destructuring pattern over `Opt<string>` and `Opt<Two>`, consuming and lending, in either order, and one `for`
+> binding shared by two NESTED instantiations — each answered rightly on `9efe218`, the heap numbers the hand-written
+> twin's; they are cloned so that this is a fact about the tree and not about the order of a walk. Tests:
+> `tests/backend/programs/macro_param_positions.npk` (fifteen positions, each through a value, each body instantiated
+> twice with different arguments beside a module binding of the parameter's spelling; exit 0 at both legs; refused by
+> `9efe218`), `tests/expansion/rejection/param_misplaced.npk` (MACRO-011 ×16, eight controls), `shared_position.npk`
+> re-read (its MACRO-008 case a control), `pattern_range_body.npk` (+ the range argument), unit cases v12…v17 in
+> `tests/frontend/expansion_output.npk` (two instantiations own DIFFERENT array types and the SAME `int32`). PART B —
+> DEF-183, whose scope an ARGUMENT resolves in — waits for S-120.
 
 > **DEF-190 — OPEN (2026-09-30; owner: the compiler seat; found by the seat's review of step 3's float scan against
 > LEXICAL_REFERENCE §6.2). THE NUMERIC SCANS ACCEPT A `_` THE PRODUCTION DOES NOT:** `DecimalLiteral ::= [0-9]
@@ -3093,6 +3125,82 @@ defect declares a `DEF-` in §2f.
 > both scans are held to the production (LEX-003 for an integer run, LEX-009 for a float's), a unit case each
 > (D-085: a lexer refusal is never a rejection file). Exposure measured 2026-09-30: no file of the tree, `lib/`,
 > nitpick-libs or nitpick-apps writes one (3,727 `.npk` files scanned). With step 3d.
+
+> **DEF-191 — FIXED at 1.6.1e step 3a (2026-10-01; found by `nitpick-compiler_24` writing DEF-189's test, the
+> turbofish case; a silent wrong answer on every compiler since 1.0.2b). A GENERIC CALL REACHED THE FIRST INSTANCE
+> RECORDED WHEREVER TWO INSTANCES SHARE A SIGNATURE.** `fninst_for_call` re-derived a call's instance from the
+> callee's SUBSTITUTED function type. A type parameter that appears in no parameter type and not in the return type
+> leaves every instance with one signature: `func:bytes_of<T> = int64() never fails { pass #size_of<T>(); };` — both
+> `bytes_of<int32>` and `bytes_of<int64>` were emitted, and `raw bytes_of::<int64>()` CALLED `bytes_of<int32>`:
+> probes `gi1` (exit 44 for 48), `tf1` (two array instances: exit 2), `gi2` (a value parameter beside it, 88 for
+> 81), `gi6` (inside a generic body, 55 for 60), `gi7` (awaited: 111 for 182); where a template-shaped instance was
+> recorded first, the call named `bytes_of<A>`, a symbol that does not exist (`llc` refused the module). In `wild`
+> code — `alloc(n * #size_of<T>())` — the wrong body is the wrong SIZE. Fixed: the checker records each generic call's
+> type-argument window on the call (`ExprTypes.callee_targs`, at `type_generic_call`, the one site that types a
+> generic call), and the emitter matches the instance by the window's CONTENTS (`fninst_args_are`) — the key
+> `fninst_record` dedups by, D-108 as amended; a call with no record is matched by signature only where the
+> signature names one instance, and names nothing otherwise (loud, never the first match). Exposure, measured: no
+> generic function of `src/`, `lib/`, `npkg/`, `tools/`, nitpick-libs or nitpick-apps has a type parameter that
+> appears only in its body (two of the tree's program tests hold one — `macro_walk_positions.npk`,
+> `late_instance.npk` — each at a single instance). `tests/backend/programs/
+> generic_instance_args.npk` (exit 0 at both legs; `llc` refuses `9efe218`'s emission of it).
+
+> **DEF-192 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_24` asking where a body's TYPE
+> names resolve). A TYPE NAME IN A MACRO BODY IS RESOLVED IN THE INVOKING FUNCTION'S SCOPE — THE CALLER'S GENERIC
+> PARAMETER CAPTURES IT, IN SILENCE.** `struct:T = { int32:v; }; macro:sz = () { #size_of<T>(); }; func:g<T> =
+> int64(move T:x) never fails { int64:r = #sz(); pass r; };` — `raw g(1i64)` answers 8, the caller's `T`, where
+> D-057 says the body's `T` is the module's struct: 4 (probe `q3a`, both legs, `9efe218` and step 3a alike). The
+> resolver never enters a type: the type resolver binds a type's name itself, and it consults the GENERIC
+> parameters of the function (and the impl) it is checking before any scope -- for an expression- or
+> statement-position expansion that is the function the invocation stands in. So what captures is exactly a
+> generic parameter of the invoking function or impl; a caller's LOCAL or PARAMETER does not (a name inside a type
+> is otherwise looked up from the module: probes `q3b`, `q3c`, an array size `int32[N]` in a body reads the module's
+> `N` beside a caller's local or parameter `N`). It bears on S-120 from the other side: a type inside an ARGUMENT
+> (`#m(#size_of<T>())` in `func:g<T>`) is the caller's text and its `T` IS the caller's. **Recommended:** a type
+> written in an expression or statement BODY does not see the invoking function's generic parameters (the parser
+> marks the body's type nodes, the clone carries the mark, the type resolver skips the enclosing generics for a
+> marked node); an argument's types keep the invocation's; a declarations body keeps the landing scope (an emitted
+> function's own generics must stay visible to its own types). ITS OWN LANDING, with DEF-183 or directly after it;
+> an advance notice.
+
+> **DEF-193 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_24` writing DEF-189's test, the
+> variant-value case). AN ENUM VARIANT'S EXPLICIT VALUE IS HONOURED ONLY AS A BARE INTEGER LITERAL, AND NOTHING
+> CHECKS IT.** `variant_tag_of`: "the declared integer literal where one is given, the position otherwise".
+> `enum:B = { X = 7i32 + 1i32; Y = 2i32; };` — `(B.X =>! int32)` is 0, the position, in silence (probe `ev3`: exit
+> 3); a `fixed` name and a negated literal likewise; `enum:F = { A = 3i32; B = 3i32; }` compiles and `F.A == F.B`
+> is true (`ev5`); `enum:E = { A; B = 0i32; }` gives both the tag 0, and a `pick` naming both is refused by `llc`
+> ("duplicate case value in switch", `ev4`); a value past `int32` is truncated. `check_decl` has no arm for an enum
+> — D-085's shape: a construct parsed and resolved, and the checker's silence about it invisible. Exposure: 455
+> explicit values in the tree, the libraries and the applications, every one a bare literal (two are macro
+> invocations that expand to one). **Recommended (S-122, the user's):** at the enum's declaration — a value that is
+> not a bare integer literal is refused by name until the folder's value reaches the emitter; two variants of one
+> enum sharing a tag are refused at the second; a value outside `int32` is refused. ITS OWN LANDING, next after 3a:
+> a program the compiler accepts and answers wrongly.
+
+> **DEF-194 — OPEN (2026-10-01; owner: the compiler seat; observed by `nitpick-compiler_24`'s probes; with DEF-187,
+> step 3d). A `comptime` VALUE PARAMETER IS ACCEPTED WHERE NOTHING LOWERS IT.** `func:staged<comptime int32:LEVEL> =
+> int32() never fails { pass LEVEL; };` passes the frontend and is EMIT-002 at the read (`gi5`; DEF-187's last
+> sentence, with its probe); `struct:Buf<comptime int32:N> = { int32[N]:a; };` is TYPE-004, "an array size must be
+> a constant expression" — a value parameter cannot size a field of its own struct (`cn3`); a generic `comptime
+> func:` cannot be folded at all ("there is no type named `T`", `gi8`). Each is a refusal, none silent. To be read
+> against D-064 §2 and D-109 (what a value parameter is FOR beyond the compiler-known `Mutex`/`simd` positions)
+> before step 3d plans it.
+
+> **DEF-195 — FIXED at 1.6.1e step 3a (2026-10-01; found by `nitpick-compiler_24` asking what DEF-191's fix did to
+> the verified build; A SOUNDNESS HOLE OF THE VERIFICATION LEG, on every compiler since 1.5.3). A GENERIC `pure never
+> fails` CALLEE WAS ONE UNINTERPRETED FUNCTION FOR EVERY INSTANCE.** `uf_value` named the function per DECLARATION
+> (`|uf.<name>.<decl>|`), and an argument is an `Int` whatever its width, so over `func:width<T> = int64(T:x) never
+> fails pure { pass #size_of<T>(); };` the calls `raw width(1i8)` and `raw width(1i64)` were ONE term, `(|uf.width|
+> 1)`: z3 knew two calls equal that return 1 and 8, discharged the `div-zero` row of `100i64 / ((b - a) - 7i64)`,
+> and the verified build elided the guard — it divided by zero, unguarded, where the plain build traps `DivByZero`
+> (probe `vg2` on `9efe218`: the plain build exits 97, all four rows of `main` `unsat`). DEF-191's fix alone would
+> have widened it (its two bodies were one before, and the model accidentally matched the miscompiled program):
+> probe `vg1`. Fixed: the symbol carries the INSTANCE — the call's recorded type arguments (`.t<id>`), and on a
+> method call the receiver's type (`.r<id>`: a trait's default body and a family impl are one declaration for every
+> `Self`); a generic callee with no recorded arguments has no term. Exposure, measured: no generic function is
+> declared `pure` in `src/`, `lib/`, `npkg/`, `tools/`, the prelude or `tests/verify/`.
+> `tests/verify/generic_uf_instance.npk` (`div-zero open 2`; the verified build exits 97 like the plain one; on
+> `9efe218` both rows are `discharged`).
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

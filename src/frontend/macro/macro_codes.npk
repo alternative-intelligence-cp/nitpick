@@ -68,3 +68,15 @@ pub func:MACRO_EXPANDED_HERE = string() never fails { pass "NITPICK-MACRO-009"; 
 // of its window reads each item by the body's one kind -- a statement in a
 // declarations window was a compiler trap.
 pub func:MACRO_MIXED_BODY = string() never fails { pass "NITPICK-MACRO-010"; };
+
+// A PARAMETER WRITTEN WHERE AN ARGUMENT CANNOT LAND (DEF-189, 1.6.1e step 3a;
+// MACRO_REFERENCE §3). An argument is an expression, so a parameter's name
+// standing where a TYPE'S NAME stands is never substituted, and a parameter's
+// name that the body DECLARES AND WRITES AS AN EXPRESSION is a declaration every
+// use of which is the argument instead. Each was accepted, in silence, with the
+// argument dropped or the declaration unread. Refused at the macro's declaration,
+// whether or not anything invokes it. (A name the body declares and never uses
+// is MACRO_REFERENCE §10's open question, S-123, and is not refused.) Its own code rather than `MACRO_WRONG_SHAPE`: that one is
+// about what a body emits and where it lands, and this is about the body's own
+// names -- unrelated mistakes with unrelated fixes.
+pub func:MACRO_PARAM_FORM = string() never fails { pass "NITPICK-MACRO-011"; };

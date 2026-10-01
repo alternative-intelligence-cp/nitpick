@@ -13,10 +13,13 @@
 // three-element literal, a loop with the wrong bound stops at another count, an
 // arm with the wrong pattern is not the one taken.
 //
-// AND TWO INSTANTIATIONS OF ONE BODY SHARE WHAT THE CLONE COPIES THROUGH: the
-// type and the pattern in `tally`'s body are one node each, reached through
-// whichever instantiation the walk meets first and substituted in place, once
-// (`expand_in_type`'s comment). Both callers get the answer.
+// AND TWO INSTANTIATIONS OF ONE BODY EACH GET THE ANSWER: the type and the
+// pattern in `tally`'s body hold an invocation, and each caller's instantiation
+// expands its own. (They were ONE node each when this file was written -- the
+// clone copied a type and a pattern through, and the walk substituted in place,
+// once, through whichever instantiation it met first. Since DEF-189 a type that
+// holds an expression and every pattern are cloned with the body, each
+// instantiation's own: `clone_type`, `clone_pat`.)
 mod:macro_walk_positions;
 
 macro:one = () { 1i32; };
@@ -68,7 +71,9 @@ func:second_caller = int32() never fails { int32:acc = 10i32; #tally(); pass acc
 // The argument of an instantiated invocation is cloned into the body and the original
 // is detached. Two things stood in the dead original and were refused as holes: the
 // arms of an expression-`pick` (left unblanked), and a type in an argument the body
-// never mentions (shared with no clone, so walked by nothing).
+// never mentions (shared with no clone, so walked by nothing). Both are blanked
+// with the rest of the dead original now (`blank_type`, DEF-189): the invocation
+// inside `#seven`'s unused argument is dropped with it, never expanded.
 macro:same = (X) { X; };
 macro:seven = (X) { 7i32; };
 fixed int32:SEL = 1i32;

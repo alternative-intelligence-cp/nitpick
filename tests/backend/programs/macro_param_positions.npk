@@ -1,0 +1,223 @@
+// expect-exit: 0
+//
+// DEF-189 (1.6.1e step 3a): SUBSTITUTION TRAVERSES THE WHOLE EMITTED SUBTREE
+// (MACRO_REFERENCE §3) -- a parameter written inside a TYPE, a PATTERN, an
+// ATTRIBUTE or a declaration's signature is replaced by the argument like any
+// other. Until this step the clone copied those four through by id, so a
+// parameter written in one was never replaced and resolved as the bare name:
+// refused where the module had no binding of that spelling, and SILENTLY READ
+// AS THE MODULE'S BINDING where it had one. `sized` below is the shape it was
+// found on: beside `fixed int32:N = 2i32;` every instantiation built
+// `int32[2]`, whatever the argument (8 bytes where `#sized(3i32)` asks for 12).
+//
+// EVERY PARAMETER HERE HAS A MODULE BINDING OF ITS OWN SPELLING BESIDE IT (`N`,
+// `K`, `LO`, `HI`, `V`, `W`), which is what made the old answer silent rather
+// than a refusal; EVERY BODY IS INSTANTIATED AT LEAST TWICE WITH DIFFERENT
+// ARGUMENTS where the language lets one name be declared twice (a body that
+// emits a named declaration at module level can be invoked there once), because
+// a type or a pattern shared between two instantiations can only be right for
+// one of them; and EACH POSITION IS OBSERVED THROUGH A VALUE that is wrong if
+// the argument did not land.
+mod:macro_param_positions;
+
+fixed int32:N = 2i32;
+fixed int32:K = 9i32;
+fixed int32:LO = 100i32;
+fixed int32:HI = 200i32;
+fixed int32:V = 1i32;
+fixed int32:W = 2i32;
+fixed int32:THREE = 3i32;
+fixed int32:CN = 6i32;
+fixed int32:CLO = 4i32;
+fixed int32:CHI = 6i32;
+fixed int32:zero = 0i32;
+
+macro:same = (X) { X; };
+func:bytes_of<T> = int64() never fails { pass #size_of<T>(); };
+enum:Opt<T> = { Some(T); None; };
+
+// --- 1. a local's type, a cast's target and a builtin's generic argument ---------
+macro:sized = (N) {
+    wild int32[N]->:p = (#caller(mem) =>! wild int32[N]->);
+    #caller(got) = (#size_of<int32[N]>() =>! int32) + ((<-p).len =>! int32);
+};
+
+// --- 2. a field's type, spliced into two structs -------------------------------------
+macro:arr_field = (N) { int32[N]:arr; };
+struct:S3 = { #arr_field(3i32); };
+struct:S4 = { #arr_field(4i32); };
+
+// --- 3. a parameter's type and a return type, in a declarations body spliced into
+//        two impls ------------------------------------------------------------------
+struct:A3 = { int32:v; };
+struct:A5 = { int32:v; };
+macro:arr_methods = (N) {
+    func:last = int32(Self:self, int32[N]:a) never fails { pass a[(N - 1i32) => int64] + self.v; };
+    func:back = int32[N](Self:self, int32[N]:a) never fails { pass a; };
+};
+impl:A3 = { #arr_methods(3i32); };
+impl:A5 = { #arr_methods(5i32); };
+
+// --- 4. a cast's target alone, 5. a turbofish's argument, 6. a compile-time value
+//        argument (written `(N)`: a bare name in an argument list is a TYPE's name) --
+macro:as_arr_len = (N) { (<-(#caller(mem) =>! wild int32[N]->)).len; };
+macro:turbo = (N) { raw bytes_of::<int32[N]>(); };
+macro:lanes = (N) { simd<int32, (N)>:v = simd(1i32); #caller(got) = (v.len =>! int32); };
+
+// --- 7. a value pattern, 8. both bounds of a range pattern -----------------------------
+macro:is_k = (K) { pick (#caller(v)) { (K) { #caller(hit) = 1i32; }, (*) { #caller(hit) = 0i32; } } };
+macro:in_range = (LO, HI) { pick (#caller(v)) { (LO..HI) { #caller(hit) = 1i32; }, (*) { #caller(hit) = 0i32; } } };
+
+// --- 9. a variant's value, 10. an attribute's argument (the trait a derive names) ------
+macro:mk_enum = (V, W) { enum:Lvl = { Low = V; High = W; }; };
+#mk_enum(7i32, 8i32);
+macro:mk_point = (TR) {
+    #[derive(TR)]
+    struct:Pt = { int32:x; int32:y; };
+};
+#mk_point(Eq);
+
+// --- 11. an invocation inside a type, holding the parameter: each instantiation's own -
+macro:nest = (N) { #size_of<int32[#same(N)]>(); };
+
+// --- 12. `#caller(name)` in a type and in a pattern: consumed by the clone like any
+//         other (it was MACRO-008 while those two were the template's shared nodes) --
+macro:c_arr = () { #size_of<int32[#caller(CN)]>(); };
+macro:c_pat = () { pick (#caller(v)) { (#caller(CLO)..#caller(CHI)) { #caller(hit) = 1i32; }, (*) { #caller(hit) = 0i32; } } };
+
+// --- 13. a destructuring pattern, each instantiation's own node: the checker records
+//         the binding's type ON the pattern, and the two selectors are two instances -
+macro:get = () { pick (#caller(o)) { (Opt.Some(x)) { #caller(got) = x; }, (Opt.None) { } } };
+func:f32 = int32(Opt<int32>:o) never fails { int32:got = 0i32; #get(); pass got; };
+func:f64 = int64(Opt<int64>:o) never fails { int64:got = 0i64; #get(); pass got; };
+
+// --- 14. a `for` binding, each instantiation's own declaration: the second
+//         instantiation stands INSIDE the first one's loop (an invocation in an
+//         arm of the argument), and the outer counter must survive the inner loop --
+macro:rep = (X) { for (int32:i in 0i32...3i32) { if ((X + i) == 7i32) { pass 77i32; } } };
+func:nested = int32() never fails {
+    #rep(pick (zero) { (*) { #rep(0i32); give 5i32; } });
+    pass 1i32;
+};
+
+// --- 15. a `pub Rules` block a macro emits keeps its `pub`. Found by reading the
+//         clone for DEF-189: it rebuilt the declaration with the bare clause count,
+//         over the flags that ride that slot's high half (DEF-93), so the rule
+//         arrived private and `use rules_home.{Small};` was RESOLVE-003 --------------
+mod:rules_home = {
+    macro:mk_rule = (HI) { pub Rules<int64>:Small = { $ >= 0i64, $ <= HI }; };
+    #mk_rule(100i64);
+};
+use rules_home.{Small};
+
+func:main = int32(cstring[]:_~argv) {
+    wild int8->:mem = alloc(64i64);
+    int32:got = 0i32;
+    #sized(3i32);
+    if (got != 15i32) { exit 10i32; }      // 12 bytes + 3 elements; 10 while `N` read the module's 2
+    #sized(5i32);
+    if (got != 25i32) { exit 11i32; }
+    #sized(THREE);                         // an argument that is a NAME lands in the type as one
+    if (got != 15i32) { exit 12i32; }
+
+    if (#size_of<S3>() != 12i64) { exit 13i32; }
+    if (#size_of<S4>() != 16i64) { exit 14i32; }
+
+    A3:x3 = A3{ v: 7i32 };
+    A5:x5 = A5{ v: 9i32 };
+    int32[3]:arr3 = [1i32, 2i32, 30i32];
+    int32[5]:arr5 = [1i32, 2i32, 3i32, 4i32, 50i32];
+    if ((raw x3.last(arr3)) != 37i32) { exit 15i32; }
+    if ((raw x5.last(arr5)) != 59i32) { exit 16i32; }
+    int32[3]:f3 = raw x3.back(arr3);
+    int32[5]:f5 = raw x5.back(arr5);
+    if ((f3.len + f5.len) != 8i64) { exit 17i32; }
+    if ((f3[2i64] + f5[4i64]) != 80i32) { exit 18i32; }
+
+    int64:l3 = #as_arr_len(3i32);
+    int64:l5 = #as_arr_len(5i32);
+    dalloc(mem);
+    if (l3 != 3i64) { exit 19i32; }
+    if (l5 != 5i64) { exit 20i32; }
+
+    if (#turbo(3i32) != 12i64) { exit 21i32; }
+    if (#turbo(5i32) != 20i64) { exit 22i32; }
+
+    #lanes(4i32);
+    if (got != 4i32) { exit 23i32; }
+    #lanes(8i32);
+    if (got != 8i32) { exit 24i32; }
+
+    int32:v = 5i32;
+    int32:hit = 9i32;
+    #is_k(5i32);
+    if (hit != 1i32) { exit 25i32; }
+    #is_k(6i32);
+    if (hit != 0i32) { exit 26i32; }
+    #in_range(1i32, 9i32);
+    if (hit != 1i32) { exit 27i32; }
+    #in_range(6i32, 9i32);
+    if (hit != 0i32) { exit 28i32; }
+
+    if ((Lvl.Low =>! int32) != 7i32)  { exit 29i32; }
+    if ((Lvl.High =>! int32) != 8i32) { exit 30i32; }
+    Pt:pa = Pt{ x: 1i32, y: 2i32 };
+    Pt:pb = Pt{ x: 1i32, y: 2i32 };
+    if (!(pa.eq(pb) ?| false)) { exit 31i32; }
+
+    if (#nest(3i32) != 12i64) { exit 32i32; }
+    if (#nest(5i32) != 20i64) { exit 33i32; }
+
+    if (#c_arr() != 24i64) { exit 34i32; }
+    #c_pat();
+    if (hit != 1i32) { exit 35i32; }
+
+    Opt<int32>:oa = Opt.Some(7i32);
+    Opt<int64>:ob = Opt.Some(4294967301i64);
+    if ((raw f32(oa)) != 7i32)          { exit 36i32; }
+    if ((raw f64(ob)) != 4294967301i64) { exit 37i32; }
+
+    if ((raw nested()) != 77i32) { exit 38i32; }
+
+    limit<Small> int64:lim = (#size_of<S3>()) - 5i64;
+    if (lim != 7i64) { exit 39i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

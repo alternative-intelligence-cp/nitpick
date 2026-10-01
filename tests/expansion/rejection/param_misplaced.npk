@@ -1,0 +1,115 @@
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 72:26
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 73:36
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 74:37
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 75:49
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 76:51
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 77:50
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 78:39
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 81:26
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 82:38
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 83:49
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 84:51
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 85:45
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 87:5
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 92:24
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 93:29
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 93:47
+//
+// WHAT A MACRO'S PARAMETER CANNOT BE (DEF-189, 1.6.1e step 3a; MACRO_REFERENCE §3).
+//
+// An argument is an EXPRESSION, and it replaces every occurrence of the parameter
+// written as one. Two things a body can write with a parameter's name are not
+// expressions, and each was accepted in silence with the argument dropped or the
+// declaration unread:
+//
+//   * THE NAME OF A TYPE. `macro:mk = (T) { T:x = T{ v: 7i32 }; … };` beside a
+//     module `struct:T` built the module's `T` whatever was passed -- exit 7 for
+//     `#mk(3i32)`, both legs. A named type, a struct literal's name and the type a
+//     destructuring pattern names are names; nothing can be substituted there.
+//   * A NAME THE BODY DECLARES AND THEN USES. `macro:bump = (N) { int32:N = 1i32; …
+//     N + 1i32 … };` declared a local `N` and read the ARGUMENT at every `N` after
+//     it -- exit 41 for `#bump(40i32)`: a declaration's name is never replaced, and
+//     every use is.
+//
+// REFUSED AT THE MACRO'S DECLARATION, whether or not anything invokes it (nothing
+// below is invoked), ONCE PER PARAMETER, at its first such spelling in source
+// order -- `two_ways` is one report, at the type; `two_params` is two.
+//
+// A NAME THE BODY DECLARES AND NEVER WRITES AS AN EXPRESSION IS NOT REFUSED. That is
+// MACRO_REFERENCE §10's open question -- may a parameter name an emitted
+// declaration? `macro:m = (N) { func:N = …; };` emits a function literally called
+// `N`, "unimplemented rather than refused" -- and it stays open (S-123): the
+// `*_unused` controls below are accepted, each beside the body that is refused
+// for calling or reading the name it declared.
+//
+// AND WHERE A COMPILE-TIME VALUE IS MEANT, THE PARAMETER GOES IN PARENTHESES. A
+// bare identifier in a type-argument list is a type's name by the parser's rule
+// (D-064 §2), for a macro parameter as for any other name; `(N)` is the
+// expression. `lanes_ok` is the control.
+mod:param_misplaced;
+
+struct:Pt = { int32:x; int32:y; };
+struct:Box = { int32:v; };
+enum:Opt<T> = { Some(T); None; };
+
+// --- a parameter where a type's name stands ------------------------------------------
+macro:local_type = (T) { T:x = #caller(v); discard(x); };
+macro:literal_name = (T) { discard(T{ v: 1i32 }); };
+macro:value_arg = (N) { simd<int32, N>:v = simd(1i32); discard(v); };
+macro:enum_pattern = (E) { pick (#caller(o)) { (E.Some(x)) { discard(x); }, (*) { discard(0i32); } } };
+macro:struct_pattern = (P) { pick (#caller(p)) { (P{ x, y }) { discard(x); discard(y); } } };
+macro:cast_target = (T) { discard(#caller(v) =>! T); };
+macro:signature = (T) { func:sig_fn = T(T:a) never fails { pass a; }; };
+
+// --- a parameter the body declares AND writes as an expression --------------------------
+macro:local_decl = (N) { int32:N = 1i32; #caller(got) = N + 1i32; };
+macro:for_binding = (I) { for (int32:I in 0i32...3i32) { discard(I); } };
+macro:enum_binding = (X) { pick (#caller(o)) { (Opt.Some(X)) { discard(X); }, (*) { discard(0i32); } } };
+macro:struct_binding = (x) { pick (#caller(p)) { (Pt{ x, y }) { discard(x); discard(y); } } };
+macro:fn_param = (A) { func:takes_a = int32(int32:A) never fails { pass A; }; };
+macro:emitted_called = (F) {
+    func:F = int32() never fails { pass 1i32; };
+    func:calls_f = int32() never fails { pass (raw F()); };
+};
+
+// --- one report per parameter: the first spelling; two parameters, two reports ----------
+macro:two_ways = (T) { T:first = #caller(v); int32:T = 2i32; discard(first + T); };
+macro:two_params = (A, B) { A:a = #caller(v); int32:B = 1i32; discard(a + B); };
+
+// --- controls: each DECLARATION is accepted ---------------------------------------------
+// A parameter as an expression, in a type's size, as a compile-time value in
+// parentheses; a FIELD and a VARIANT of the parameter's spelling (neither is an
+// identifier: they are reached through `.` and never replaced). They are not
+// invoked here -- a program refused at a declaration is not expanded -- and
+// tests/backend/programs/macro_param_positions.npk runs the same shapes.
+// A name DECLARED and never written as an expression (§10, S-123): a local, an emitted
+// function, a generic parameter. And the name inside `#caller(…)`, which is copied by
+// name and is no use of the parameter.
+macro:local_unused = (N) { int32:N = 1i32; };
+macro:emitted_unused = (F) { func:F = int32() never fails { pass 1i32; }; };
+macro:generic_unused = (G) { func:gen_fn<G> = int32(int32:a) never fails { pass a; }; };
+macro:caller_named = (N) { int32:N = 1i32; #caller(got) = #caller(N); };
+macro:value_ok = (N) { int32[N]:a = #caller(arr); discard(a[(N - 1i32) => int64]); };
+macro:lanes_ok = (N) { simd<int32, (N)>:w = simd(1i32); discard(w); };
+macro:field_ok = (v) { discard(Box{ v: v }); };
+macro:variant_ok = (Some) { pick (#caller(o)) { (Opt.Some(x)) { discard(x + Some); }, (*) { discard(0i32); } } };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
