@@ -10257,6 +10257,22 @@ correct rounding directly.
 > literal still rides LLVM's parser; writing its bits too, so that no constant is decided by a toolchain's decimal
 > parser, is DEF-209's fix and the next landing.
 
+> *[2026-10-01, 1.6.1e, landing 89 — DEF-209 FIXED: no literal is LLVM's to convert.]* "`flt64` literals are
+> unbounded: LLVM's parser converts any decimal with correct rounding directly" is no longer how a `flt64` literal
+> lowers either. The compiler converts the decimal itself at both widths (`float_round`: exactly, to nearest, ties
+> to even, one rounding) and writes the BITS — `double 0x…` — through the one writer of a float constant
+> (`float_const_text`, `ir_expr.npk`). LLVM's parser caps the exponent it reads at 24,000, so a literal written past
+> it was another number: the number 1.0 as `0.<24000 zeros>1e24001` was the double 0.1, as `1<24001 zeros>.0e-24001`
+> it was 10.0, and a longer one zero (measured through the whole compiler, at both legs), while the solver's term
+> was the number written. A `flt64` literal stays unbounded in length; what one that rounds to infinity or to zero
+> should be is still S-126. THE PROOF THAT NO OTHER CONSTANT MOVED, since every program with a float literal changes
+> its emitted text: each differing pair of emissions (the tree's 34, the libraries' 31) on two independent legs —
+> the two texts are identical once every floating-point constant is read as its bits, the old decimals by exact
+> rationals; and LLVM makes ONE artifact of both (the `-O0` object, the `opt -O2` text and the `-O2` object
+> byte-identical) — in every pair but the 2 that hold a literal past the cap, which are this landing's tests. The
+> emitter's own exact bounds (`cast_bounds.npk`: `-1.0`, `-129.0`, `-32769.0`, `-2147483649.0`; a ternary family's
+> bound; `0.0`) are still decimals in the IR: the compiler's text, not a program's.
+
 ## D-144 — `tbb` at run time: sticky, saturating, and the cast matrix — **SETTLED**
 
 Cycle 0.9.5, making D-008 executable and closing the audit's third live rung
@@ -15031,6 +15047,13 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
 > `bootstrap/generator/float_vectors.py --llvm` is the wider measurement (on 20.1.2: 8,890 texts with an exponent
 > within 24,000, none different; and LLVM WRONG past that, where it caps the exponent — DEF-209). A `flt32` literal
 > no longer depends on it: the compiler writes the bits (DEF-203); a `flt64` literal will not after DEF-209's fix.
+
+> *[2026-10-01, 1.6.1e, landing 89 — one thing fewer the pinned toolchain is trusted for.]* A `flt64` literal no
+> longer depends on LLVM's decimal parser: the compiler writes its bits (DEF-209). The value of every floating-point
+> constant a program writes is decided by the compiler's own conversion at both widths, held to exact rationals by
+> `float_round.npk` and by `float_literal_kat.npk` at both legs; a toolchain release cannot move one.
+> `float_vectors.py --llvm` stays as a measurement of that parser, outside every gate (on 20.1.2: right within an
+> exponent of 24,000, wrong past it).
 
 ## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
 

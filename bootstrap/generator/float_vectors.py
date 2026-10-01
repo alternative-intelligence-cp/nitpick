@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""1.6.1e, DEF-203: the known-answer vectors of the compiler's decimal -> float conversion.
+"""1.6.1e, DEF-203 and DEF-209: the known-answer vectors of the compiler's decimal -> float conversion.
 
 THE SPECIFICATION is exact rational arithmetic: the decimal a literal writes is a
 rational number, the float it denotes is the nearest value of the format to that
@@ -17,24 +17,25 @@ current by the harness (`check_generated_current` runs `--check`, beside
       the answers the language does not yet settle (a literal that rounds to
       infinity, a nonzero one that rounds to zero: DEF-205, S-126) by their flags.
   tests/backend/programs/float_literal_kat.npk
-      literals COMPILED: a `flt32` through the compiler's constant (the bits), a
-      `flt64` through LLVM's own decimal parser (`double <text>`), each read back
-      as its bits, at both legs. The `flt64` half is the standing measurement of
-      D-143's other claim -- "LLVM's parser converts decimal to double with
-      correct rounding" -- on the pinned toolchain, for texts whose exponent LLVM
-      does not cap (see `--llvm`).
+      literals COMPILED, each read back as its bits, at both legs. A literal of
+      either width is the compiler's own constant -- the bits `float_round`
+      makes of its text. A `flt32` was `fptrunc double <text> to float` until
+      DEF-203, and a `flt64` was `double <text>`, converted by LLVM's decimal
+      parser, until DEF-209: that parser caps the exponent it reads (see
+      `--llvm`), and the `flt64` half holds four texts past the cap.
 
 usage:
   float_vectors.py --write    write both files
   float_vectors.py --check    both files are what this script writes (exit 1 otherwise)
   float_vectors.py --llvm     the vector texts, and five more draws of every family, as
                               `double <text>` through llc: the object's bytes against
-                              the specification. A measurement, outside the gates. On
-                              LLVM 20.1.2: none differs among the texts whose decimal
-                              exponent is within 24,000, and LLVM is WRONG past that --
-                              its parser caps the exponent, so `0.<24000 zeros>1e24001`
-                              (the number 1.0) reads as 0.1 and a longer one as zero
-                              (DEF-209). Exit 1 if a text within the cap differs.
+                              the specification. A measurement of LLVM's decimal parser,
+                              outside the gates -- no emission of ours asks it to convert
+                              a decimal since DEF-209. On LLVM 20.1.2: none differs among
+                              the texts whose decimal exponent is within 24,000, and LLVM
+                              is WRONG past that -- its parser caps the exponent, so
+                              `0.<24000 zeros>1e24001` (the number 1.0) reads as 0.1 and a
+                              longer one as zero. Exit 1 if a text within the cap differs.
 """
 import os, random, struct, subprocess, sys, tempfile
 from fractions import Fraction
@@ -198,6 +199,13 @@ def unit_vectors(p, emax, seed):
         out += [t, nudge(t, 1), nudge(t, -1)]
     return out
 
+# PAST THE EXPONENT LLVM'S PARSER READS (24,000: DEF-209). The number 1.0 written both ways round the cap --
+# `double <text>` read the first as 0.1 and the second as 10.0 -- and an exponent that undoes a hundred
+# thousand leading zeros: 1.0 and 5.0, exactly (LLVM read both as zero; a fixed cap on the exponent's own
+# digits would read them as 1e-6).
+PAST_CAP = ["0." + "0" * 24000 + "1e24001", "1" + "0" * 24001 + ".0e-24001",
+            "0." + "0" * 100005 + "1e100006", "0." + "0" * 100005 + "5e100006"]
+
 FORMS = ["0.0", "0.0e10", "0.0e-10", "000.000", "0", "7", "007", "16777217", "9007199254740993",
          "0.1", "1.0", "1.5", "2.5", "0.5", "0.25", "10.0", "100.0", "3.14", "2.718281828459045",
          "1.5f32", "1.5f64", "2.5e-3f32", "2.5e-3f64", "1.0E5", "1.0E+5f64", "1.0e+5f32", "1.0E-5",
@@ -210,10 +218,7 @@ FORMS = ["0.0", "0.0e10", "0.0e-10", "000.000", "0", "7", "007", "16777217", "90
          "3.4028234e38", "3.4028235e38", "3.4028236e38", "3.40282356e38", "3.40282357e38",
          "1.17549435e-38", "1.4e-45", "7.0e-46", "7.1e-46",
          "1.0e39", "1.0e999", "1.0e-60", "1.0e-999", "1.0e99999", "1.0e-99999", "1.0e999999999",
-         "0.0e999999999", "1" + "0" * 320 + ".0", "0." + "0" * 340 + "1",
-         # an exponent that undoes a hundred thousand leading zeros: 1.0 and 0.5, exactly (a fixed cap on the
-         # exponent's digits reads these as 1e-6)
-         "0." + "0" * 100005 + "1e100006", "0." + "0" * 100005 + "5e100006"]
+         "0.0e999999999", "1" + "0" * 320 + ".0", "0." + "0" * 340 + "1"] + PAST_CAP
 
 def kat_vectors(p, emax, seed):
     """literal texts a PROGRAM may write: finite nonzero answers only, a flt32's within fifteen digits (D-143)"""
@@ -251,7 +256,7 @@ def kat_vectors(p, emax, seed):
         out += ["1.7976931348623157e308", "1.7976931348623158e308", "4.9e-324", "2.4703282292062328e-324",
                 "2.2250738585072011e-308", "2.2250738585072012e-308", "2.2250738585072014e-308",
                 "9007199254740993.0", "0.1", "0.2", "0.3", "1.0", "0.5", "3.141592653589793",
-                "0.1234567890123456789012345678901234567890"]
+                "0.1234567890123456789012345678901234567890"] + PAST_CAP
     keep = []
     for t in out:
         if ref(t, p, emax)[1] == 0 and ref(t, p, emax)[0] != 0 and t not in keep:
@@ -345,28 +350,54 @@ def kat_text():
     c64 = ["(raw b64(%sf64)) != %du64" % (t, ref(t, *FMT64)[0]) for t in kat_vectors(53, 1023, 30640)]
     s32, n32 = chunks(c32, 40, "s")
     s64, n64 = chunks(c64, 40, "w")
-    assert len(n32) + len(n64) < 250
+    assert len(n32) + len(n64) < 249
+    one, ten = PAST_CAP[0], PAST_CAP[1]                    # the number 1.0, written past the cap both ways round
+    b1 = ref(one, *FMT64)[0]
+    assert b1 == ref(ten, *FMT64)[0] == 0x3FF0000000000000
+    neg = "(%du64 | (1u64 << 63u64))" % b1                 # a `uint64` past 2^63 is built, not written (D-311)
+    roads = [
+        "// THE ROADS a constant's text takes to the emitter's one writer besides a literal in a body, each with a",
+        "// text past the cap: a module binding, one under a sign, an aggregate's element, a literal with no suffix",
+        "// in a `flt64` slot, `comptime(...)` and `comptime(-...)`.",
+        "fixed flt64:M_ONE = %sf64;" % one,
+        "fixed flt64:M_NEG = -%sf64;" % ten,
+        "fixed flt64[2]:M_ARR = [0.1f64, %sf64];" % one,
+        "",
+        "func:roads = int32() never fails {",
+        "    if ((raw b64(M_ONE)) != %du64) { pass 1i32; }" % b1,
+        "    if ((raw b64(M_NEG)) != %s) { pass 2i32; }" % neg,
+        "    if ((raw b64(M_ARR[1])) != %du64) { pass 3i32; }" % b1,
+        "    flt64:u = %s;" % ten,
+        "    if ((raw b64(u)) != %du64) { pass 4i32; }" % b1,
+        "    flt64:c = comptime(%sf64);" % one,
+        "    if ((raw b64(c)) != %du64) { pass 5i32; }" % b1,
+        "    flt64:cn = comptime(-%sf64);" % ten,
+        "    if ((raw b64(cn)) != %s) { pass 6i32; }" % neg,
+        "    pass 0i32;",
+        "};",
+        "",
+    ]
     out = [
         "// expect-exit: 0",
         "//",
         "// GENERATED by bootstrap/generator/float_vectors.py -- do not edit; `--write` regenerates it and",
         "// `--check` holds it current.",
         "//",
-        "// A FLOAT LITERAL IS THE NEAREST VALUE OF ITS TYPE TO THE NUMBER WRITTEN (DEF-203, 1.6.1e): each literal",
-        "// below is compiled, handed through a call, read back as its bits and compared with the answer the exact",
-        "// rationals give (`fractions.Fraction`: round to nearest, ties to even). A `flt32` literal is the",
-        "// compiler's own constant -- the bits `float_round` makes -- and was `fptrunc double <text> to float`,",
-        "// LLVM's rounding to 53 bits and then the instruction's to 24: a different float for the texts of the",
-        "// `s` functions' near-midpoint family, on every compiler before this one. A `flt64` literal is still",
-        "// `double <text>`, converted by LLVM's parser, so the `w` functions are the standing measurement of that",
-        "// parser on the pinned toolchain (D-143's other claim; D-204): exact midpoints written out to several",
-        "// hundred digits and the texts beside them, decimals of 16 to 22 digits beside a midpoint, the subnormal",
-        "// boundary, the largest value. It holds for these; it does NOT hold for a text whose exponent is past",
-        "// 24,000, which LLVM's parser caps (DEF-209: no such text is here until a `flt64` is written as its bits",
-        "// too). Only literals whose answer is finite and nonzero: what one that rounds to infinity or to zero",
-        "// should be is the user's (DEF-205, S-126).",
+        "// A FLOAT LITERAL IS THE NEAREST VALUE OF ITS TYPE TO THE NUMBER WRITTEN (DEF-203, DEF-209; 1.6.1e): each",
+        "// literal below is compiled, handed through a call, read back as its bits and compared with the answer the",
+        "// exact rationals give (`fractions.Fraction`: round to nearest, ties to even). A literal of either width is",
+        "// the compiler's own constant -- the bits `float_round` makes of its text. A `flt32` was `fptrunc double",
+        "// <text> to float` until DEF-203, LLVM's rounding to 53 bits and then the instruction's to 24: a different",
+        "// float for the texts of the `s` functions' near-midpoint family. A `flt64` was `double <text>`, converted",
+        "// by LLVM's decimal parser, until DEF-209: right for the `w` functions' exact midpoints written out to",
+        "// several hundred digits and the texts beside them, the decimals of 16 to 22 digits beside a midpoint, the",
+        "// subnormal boundary and the largest value -- and WRONG for the four texts that end the `w` family, whose",
+        "// exponent is past the 24,000 that parser reads: the number 1.0 was the double 0.1, or 10.0, or zero (two",
+        "// of the four are a hundred thousand digits long, and are one line each). Only literals whose answer is",
+        "// finite and nonzero: what one that rounds to infinity or to zero should be is the user's (DEF-205, S-126).",
         "//",
         "// exit N: a literal of the N-th function below is not the nearest value (s0 is 1); `pass K` names the line.",
+        "// `roads`, the last, holds the past-the-cap text on every other road to the constant's writer.",
         "mod:float_literal_kat;",
         "",
         "func:b32 = uint32(flt32:v) never fails {",
@@ -388,8 +419,8 @@ def kat_text():
         "    pass w;",
         "};",
         "",
-    ] + s32 + s64 + ["func:main = int32(cstring[]:_~argv) {"]
-    for k, nm in enumerate(n32 + n64):
+    ] + s32 + s64 + roads + ["func:main = int32(cstring[]:_~argv) {"]
+    for k, nm in enumerate(n32 + n64 + ["roads"]):
         out.append("    if ((raw %s()) != 0i32) { exit %di32; }" % (nm, k + 1))
     out += ["    exit 0i32;", "};", ""] + failsafe(KAT_ARMS, 250)
     return "\n".join(out) + "\n", len(c32), len(c64)

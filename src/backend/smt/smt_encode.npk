@@ -2190,9 +2190,9 @@ func:twisted_cast = Term(Encoder->:e, Term:t, int32:from, int32:to, bool:uncheck
 // `fp.eq`, `une` its negation (NaN != NaN is true, as `fcmp une` says),
 // `olt`/`ole`/`ogt`/`oge` are `fp.lt`/`fp.leq`/`fp.gt`/`fp.geq`, each false
 // on a NaN operand. A literal is `to_fp RNE` of the EXACT rational its
-// decimal text denotes -- what LLVM's own parser rounds from, so the two
-// agree by IEEE's correct-rounding rule -- and a `flt32` literal takes the
-// emitter's road (a double, then `fptrunc`): two roundings, spelled twice.
+// decimal text denotes, at the literal's own format -- ONE rounding, the
+// number the emitter's constant is at either width (`float_round`; the two
+// roads were LLVM's parser and a double-then-`fptrunc`: DEF-203, DEF-209).
 // An integer entering a float is `to_fp RNE (to_real x)` (`sitofp`/
 // `uitofp`); a widening `flt32 => flt64` is exact, a narrowing `=>!` rounds;
 // a float LEAVING to an integer stays opaque until 1.5.8's `cast-range`.

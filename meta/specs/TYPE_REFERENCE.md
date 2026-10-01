@@ -195,25 +195,23 @@ float whose value is the integer written, as `5tfp64` is the fixed-point value 5
 (D-195). The checker typed them floats and the emitter wrote `double 3`, which is not
 LLVM grammar, so no program with one ever linked; and the `flt32` digit count read the
 integer payload as an intern index, so `100000000f32` trapped the checker. Both lower
-now (`3f64` is `double 3.0`), and the 15-digit rule counts the payload's own digits.
+now (`3f64` is the double 3.0), and the 15-digit rule counts the payload's own digits.
 
-**A float literal is the nearest value of its type to the number written** (DEF-203, 1.6.1e):
-round to nearest, ties to even, ONE rounding, at the width the literal was given. For a
-`flt32` the constant is the compiler's own conversion of the decimal (`float_round`,
-`numeric.npk`: the digits halved and doubled as decimal runs, a window of 25 bits and a
-sticky bit — exact, no wide integer) and is written into the IR as its bits. For a `flt64`
-the IR still carries the decimal and LLVM's parser converts it. That parser was measured
-against the exact rationals on the pinned toolchain: 8,890 adversarial texts whose
-exponent is within 24,000, none different, held on every run by
-`tests/backend/programs/float_literal_kat.npk` — and it is WRONG past that: it caps the
-exponent it reads, so `0.<24000 zeros>1e24001` (the number 1.0) is the double 0.1, and a
-longer such text zero or infinity (**DEF-209, OPEN — the next landing writes a `flt64`'s
-bits too**; it takes a literal of some 24 KB). The
-same `float_round` at 53 bits is held to the exact answers (`tests/frontend/float_round.npk`:
-2,072 vectors computed with exact rationals by `bootstrap/generator/float_vectors.py`).
-Every road a constant takes — a literal in a body, under a sign, with no suffix in a float
-slot, the integer form, `comptime(…)`, an aggregate's member, a `simd` lane, a `complex`
-component, a rule's or a contract's bound, a module binding's initialiser — is one writer.
+**A float literal is the nearest value of its type to the number written** (DEF-203, DEF-209;
+1.6.1e): round to nearest, ties to even, ONE rounding, at the width the literal was given. At
+both widths the constant is the compiler's own conversion of the decimal (`float_round`,
+`numeric.npk`: the digits halved and doubled as decimal runs, a window of the format's
+precision and one more bit, and a sticky bit — exact, no wide integer) and is written into
+the IR as its BITS: `1.5f64` is `double 0x3FF8000000000000`, and a `flt32` is the bits of the
+double holding the float. No decimal a program writes is handed to LLVM to convert. The
+conversion is held to the exact answers at both formats (`tests/frontend/float_round.npk`:
+2,076 vectors computed with exact rationals by
+`bootstrap/generator/float_vectors.py`) and through the whole compiler
+(`tests/backend/programs/float_literal_kat.npk`: 505 `flt32` and 504 `flt64`
+literals read back as their bits at both legs). Every road a constant takes — a literal in a
+body, under a sign, with no suffix in a float slot, the integer form, `comptime(…)`, an
+aggregate's member, a `simd` lane, a `complex` component, a rule's or a contract's bound, a
+module binding's initialiser — is one writer.
 
 > *[2026-10-01, 1.6.1e, landing 88 — what this replaced.]* A `flt32` literal lowered as
 > `fptrunc double <text> to float` on every compiler before landing 88: LLVM's rounding to
@@ -225,6 +223,19 @@ component, a rule's or a contract's bound, a module binding's initialiser — is
 > `0x218C5C7F`. About one written number in 2³⁰, by one unit in the last place, in silence
 > (`7.99248255789280e-2f32` is another). The solver's term had mirrored the two roundings on
 > purpose and changed with the emitter (VERIFICATION_REFERENCE §7c).
+
+> *[2026-10-01, 1.6.1e, landing 89 — what this replaced at `flt64`.]* A `flt64` literal was
+> emitted as `double <text>` on every compiler before landing 89, and LLVM's decimal parser
+> decided its bits. That parser is correctly rounded on the pinned toolchain for every text
+> whose exponent is within 24,000 — measured against exact rationals: 8,890 adversarial texts
+> at landing 88, and at this one every distinct decimal the tree's and the libraries' programs
+> emitted (593 texts within the cap, none read as another double) — and WRONG past that: it caps the
+> exponent it reads, so `0.<24000 zeros>1e24001`, the number 1.0, was the double 0.1,
+> `1<24001 zeros>.0e-24001` was 10.0, and a longer such text zero (DEF-209: a literal of some
+> 24 KB, in silence, at both legs, while the solver's term was the number written; no file of
+> the tree, the libraries, the applications or the fuzzer's corpus writes one).
+> `bootstrap/generator/float_vectors.py --llvm` remains as the measurement of that parser,
+> outside every gate.
 
 What a literal that does NOT FIT should be is open: `1.0e39f32` and `1.0e999f64` are
 infinity and `1.0e-60f32` is zero, in silence, as before (DEF-205; S-126, the user's). The
@@ -2021,8 +2032,8 @@ integers, exactly at the width (D-310); a float's arithmetic rounds, a fixed-poi
 value's and a `tbb`'s and a ternary's saturate to a sticky ERR, and those are the
 RUN TIME's operations — so a constant of one of those families is the number its
 literal is, carried as the literal's text to the one conversion a literal in a
-function body goes through (LLVM's decimal conversion for a `flt64`,
-`tfp_q_decimal` for a fixed-point value), and an expression over them is
+function body goes through (`float_round` for a float, `tfp_q_decimal` for a
+fixed-point value), and an expression over them is
 `NITPICK-TYPE-035`: "written, not computed". `fixed flt64:TAU = 6.283185307179586f64;`
 is the spelling; `2.0f64 * PI` is computed in a function. Whether the compiler should
 ever compute in these families is **S-125**.

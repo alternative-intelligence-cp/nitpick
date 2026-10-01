@@ -288,13 +288,14 @@ over one would have to lie.
 
 ### What is generated today, and what is refused
 
-All seven generate for a struct and for an enum (D-123, D-250, D-258): a
+All eight derivable traits generate for a struct and for an enum (D-123, D-250,
+D-258; `Copy`, the eighth, is D-327's marker and is described below): a
 struct's derives read its fields; an enum's `Eq`, `Ord`, `PartialOrd` and
 `Clone` compare or rebuild the payloads of equal tags through a lending `pick`
 per variant (the tag first, in declaration order) whose bindings are VIEWS of
 the payloads in place (D-266, 1.5.2h), the comparison and the clone taking
 their operands by value — the lend — so a `string` payload and a bare `T`
-payload derive all seven, `enum:Opt<T> = { Some(T); None; }` included; its
+payload derive the seven that have bodies, `enum:Opt<T> = { Some(T); None; }` included; its
 `Hash` is the tag's and its `ToString`/`Debug` the variant's name. (From D-250
 to D-266 a lending binding was a COPY, and the four that bind refused a
 `string` or a `T` payload as DERIVE-006 — the second owner the checker refuses
@@ -311,10 +312,24 @@ at the user's declaration:
   function type, `complex` over a parameter); a `string` PAYLOAD under the four
   that bind it (a `pick` cannot bind an owning payload without consuming it —
   D-216's is the only binding form; a `string` FIELD derives through the
-  prelude's impls); a pointer under anything but `Eq` and `Clone` (identity and
-  nothing else); an array under anything but `Clone` over scalar elements. The
-  message names the member, its spelling, the reason, and what a hand-written
-  impl decides.
+  prelude's impls); a pointer under anything but `Eq`, `Clone` and `Copy`
+  (identity and nothing else: it compares and copies by address); an array
+  under anything but `Clone` and `Copy` over scalar elements; a `string` member
+  under `Copy` (it owns its bytes: it clones, it does not copy). The message
+  names the member, its spelling, the reason, and what a hand-written impl
+  decides.
+
+`Copy` (D-327, 1.6.1c) is a MARKER: the derive generates an impl with an empty
+body whose head carries `: Copy` on exactly the type parameters a member
+mentions, and the checker judges it as it judges a hand-written one
+(`NITPICK-TYPE-087` where a member is not `Copy`). A scalar, a pointer, a
+`simd` value, an array of scalars and a named type that is itself `Copy` are
+copyable members — each copies bit for bit and makes no second owner; a
+`string`, an owning or erased builtin and an array of anything else are refused
+at the declaration (DERIVE-006, above). (Until landing 89 this section said
+"all seven" and its DERIVE-006 list had no `Copy` — the library seat's
+documentation note, measured: `#[derive(Copy)]` over an `int64->` member and
+over an `int64[4]` member compiles and runs.)
 
 What only the checker can know — a named type that lacks the trait, a builtin
 the prelude has no impl for under it (`bool` under `Ord`, a float under `Ord`, a

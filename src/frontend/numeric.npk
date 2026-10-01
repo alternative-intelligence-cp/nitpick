@@ -604,7 +604,7 @@ pub func:tfp_q_of_int = string(int64:payload, int32:bits) never fails {
     pass (raw tfp_q_signed(int_to_string(0i64 - payload), bits, true));
 };
 
-// --- float literal rounding (DEF-203, 1.6.1e) ----------------------------------------
+// --- float literal rounding (DEF-203, DEF-209; 1.6.1e) -------------------------------
 //
 // THE NEAREST FLOAT TO THE NUMBER WRITTEN, IN ONE ROUNDING. A `flt32` literal
 // rode a `double` until this landed -- `fptrunc double <text> to float`: LLVM
@@ -628,7 +628,10 @@ pub func:tfp_q_of_int = string(int64:payload, int32:bits) never fails {
 // GENERIC IN THE FORMAT (24 bits / 127 and 53 bits / 1023), because the
 // checker's range question, the emitter's constant and the solver's
 // `to_fp RNE` of the exact real must be ONE number for either width --
-// `tfp_q_decimal`'s rule above, kept for the floats.
+// `tfp_q_decimal`'s rule above, kept for the floats. The emitter's constant
+// is this conversion's at BOTH widths (DEF-209): a `flt64` literal was left
+// to LLVM's decimal parser until then, and that parser caps the exponent it
+// reads at 24,000 -- past it, the number in the program was another number.
 //
 // THE ANSWER CARRIES TWO FLAGS and decides nothing about them: `inf`, the
 // number rounds to infinity; `zero`, a NONZERO number rounds to zero. What a

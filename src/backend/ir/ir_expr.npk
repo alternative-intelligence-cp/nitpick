@@ -1995,41 +1995,40 @@ func:widen_len_i64 = string(ExprEmitter->:x, string:ref, string:ll, int32:len_ti
     pass w;
 };
 
-// A FLOAT CONSTANT'S LLVM TEXT (DEF-203, 1.6.1e): `text` is a float literal's
-// kept text or an integer body's decimal digits, `neg` its sign, `bits` the
-// width of the type it was written at. "" where that width has no constant
-// (`flt128` is a storage format, D-143).
+// A FLOAT CONSTANT'S LLVM TEXT (DEF-203, DEF-209; 1.6.1e): `text` is a float
+// literal's kept text or an integer body's decimal digits, `neg` its sign,
+// `bits` the width of the type it was written at. "" where that width has no
+// constant (`flt128` is a storage format, D-143).
 //
-//   flt64   the decimal body, signed. LLVM's parser converts it -- to nearest
-//           with ties to even on every measured text whose exponent is within
-//           24,000, and WRONGLY past that (it caps the exponent it reads:
-//           DEF-209, whose fix is to write these bits too, from `float_round`).
-//   flt32   THE BITS: `0x` and sixteen hex digits, the pattern of the double
-//           holding the float that `float_round` makes of the text -- the
-//           nearest float to the number written, in one rounding. It lowered
-//           as `fptrunc double <body> to float` until this landed: LLVM's
-//           rounding to 53 bits and then the instruction's to 24, which is a
-//           different float for about one literal in 2^30 (D-143's "equal
-//           below 16 digits" was false). A `float` has no decimal spelling in
-//           LLVM unless the decimal is exact, which is why the road through
-//           the double was taken, and why the answer is the bits.
+// THE BITS, AT BOTH WIDTHS: `0x` and sixteen hex digits -- the pattern of the
+// double `float_round` makes of the text (a `flt64`), or of the double holding
+// the float it makes (a `flt32`: LLVM's spelling of a `float` that is no short
+// decimal). The nearest value of the type to the number written, in ONE
+// rounding, by the compiler's own exact conversion -- the number the solver's
+// term is (`fp_literal`). No other reader of the decimal stands between the
+// program's text and its constant.
 //
-// ONE WRITER for every float constant the emitter spells: a literal in a body,
-// the integer form, a `comptime(...)` value and a module binding's initialiser
-// (`const_scalar_text`) -- there were three, each with its own `fptrunc`.
-func:float_const_text = string(ExprEmitter->:x, string:text, bool:neg, int32:bits) never fails {
-    if (bits == 64i32) {
-        string:body = raw float_literal_body(x, text);
-        if (neg) { pass (string_concat("-", body)); }
-        pass body;
-    }
-    if (bits == 32i32) {
-        FloatBits:fb = raw float_round(text, 32i32);
-        uint64:d = raw flt32_bits_as_flt64(fb.bits);
-        if (neg) { d = d | (1u64 << 63u64); }
-        pass (raw hex64_text(d));
-    }
-    pass "";
+// Neither width was always so. A `flt32` lowered as `fptrunc double <body> to
+// float` until DEF-203: LLVM's rounding to 53 bits and then the instruction's
+// to 24, a different float for about one literal in 2^30 (D-143's "equal
+// below 16 digits" was false). A `flt64` was `double <body>`, converted by
+// LLVM's parser, until DEF-209: right for every measured text whose exponent
+// is within 24,000 and WRONG past that -- the parser caps the exponent it
+// reads, so `0.<24000 zeros>1e24001`, the number 1.0, was the double 0.1, and
+// a longer one zero.
+//
+// ONE WRITER for every float constant the emitter spells from a program's
+// text: a literal in a body, the integer form, a `comptime(...)` value and a
+// module binding's initialiser (`const_scalar_text`). (The bounds the emitter
+// itself compares a cast against -- `cast_bounds.npk`: small exact integers
+// and powers of two -- are no program's text, and are spelled there.)
+func:float_const_text = string(string:text, bool:neg, int32:bits) never fails {
+    if ((bits != 64i32) && (bits != 32i32)) { pass ""; }
+    FloatBits:fb = raw float_round(text, bits);
+    uint64:d = fb.bits;
+    if (bits == 32i32) { d = raw flt32_bits_as_flt64(d); }
+    if (neg) { d = d | (1u64 << 63u64); }
+    pass (raw hex64_text(d));
 };
 
 // A FLOAT CONSTANT AS A VALUE: no instruction, the constant at its type.
@@ -2037,7 +2036,7 @@ func:emit_float_const = IrVal(ExprEmitter->:x, string:text, bool:neg, int32:ftid
     LlType:fll = raw ll_type(x.fe.ctx, ftid);
     if (!(raw ll_is_ok(fll))) { pass (raw iv_from_ll_at(x, fll, ftid, at)); }
     if ((raw type_kind(x.fe.ctx.types, ftid)) != (raw TY_FLOAT())) { pass (raw iv_broken(at)); }
-    string:ct = raw float_const_text(x, text, neg, raw type_int_bits(x.fe.ctx.types, ftid));
+    string:ct = raw float_const_text(text, neg, raw type_int_bits(x.fe.ctx.types, ftid));
     if (ct.len == 0i64) { pass (raw iv_broken(at)); }
     pass (raw iv(move(fll.text), move(ct), ftid));
 };
@@ -2047,8 +2046,8 @@ func:emit_float_const = IrVal(ExprEmitter->:x, string:text, bool:neg, int32:ftid
 // decided by the TYPE as much as by the value:
 //
 //   a carried float           the constant a literal of that text is, signed
-//                             (`float_const_text`: a `flt64`'s decimal body, a
-//                             `flt32`'s bits)
+//                             (`float_const_text`: its bits, at either
+//                             width)
 //   a carried fixed-point     the exact Q constant of the text, signed
 //   an integer, bool, char    the number -- at a type whose value IS the number
 //
@@ -2063,7 +2062,7 @@ func:const_scalar_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never f
             pass (raw tfp_q_signed(cv.text, raw type_int_bits(x.fe.ctx.types, sty), neg));
         }
         if (k == (raw TY_FLOAT())) {
-            pass (raw float_const_text(x, cv.text, neg, raw type_int_bits(x.fe.ctx.types, sty)));
+            pass (raw float_const_text(cv.text, neg, raw type_int_bits(x.fe.ctx.types, sty)));
         }
         pass "";
     }
@@ -2071,34 +2070,6 @@ func:const_scalar_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never f
     if (cv.kind == (raw CV_NONE()))   { pass ""; }
     if ((k == (raw TY_TFP())) || (k == (raw TY_DIM())) || (k == (raw TY_FLOAT()))) { pass ""; }
     pass (int_to_string(cv.num));
-};
-
-// The literal text, made a valid LLVM decimal-FP constant: the type suffix is
-// cut, and a body with no '.' gets one ("1e10" is not LLVM grammar; "1.0e10"
-// is). The digits themselves pass through untouched — LLVM's own parser does
-// the correctly-rounded conversion.
-func:float_literal_body = string(ExprEmitter->:x, string:txt) never fails {
-    int64:cut = txt.len;
-    int64:fi = 0i64;
-    while (fi < txt.len) decreases txt.len - fi {
-        if (txt.ptr[fi] == 102u8) { cut = fi; break; }   // 'f' opens the suffix
-        fi = fi + 1i64;
-    }
-    string:body = raw slice_proven(txt, 0i64, cut);
-    bool:has_dot = false;
-    int64:epos = body.len;
-    int64:bi = 0i64;
-    while (bi < body.len) decreases body.len - bi {
-        uint8:bc = body.ptr[bi];
-        if (bc == 46u8) { has_dot = true; }
-        if (bc == 101u8) { epos = bi; break; }
-        if (bc == 69u8)  { epos = bi; break; }
-        bi = bi + 1i64;
-    }
-    if (has_dot) { pass body; }
-    string:mant = raw slice_proven(body, 0i64, epos);
-    string:rest = raw slice_proven(body, epos, body.len);
-    pass (raw cat3(mant, ".0", rest));
 };
 
 // `tbb` division and remainder: zero divisor or any ERR yields ERR — never a

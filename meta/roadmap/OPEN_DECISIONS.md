@@ -3425,6 +3425,10 @@ defect declares a `DEF-` in §2f.
 > half-way cases on each side). Nothing reads the flags: a literal that does not fit is still infinity or zero.
 > The refusal S-126 (a) recommends is one test of each flag in `float_text_ok`, for every spelling.
 >
+> *[Landing 89.]* A `flt64` literal's constant is the conversion's too (DEF-209): `1.0e999f64` is written as
+> infinity's own bits and a nonzero literal below the range as zero's — the same two doubles LLVM's parser gave,
+> in silence as before. The flags are still unread.
+>
 > **DEF-206 — FIXED 2026-10-01 (landing 88; found probing around DEF-203, as `nitpick-compiler_25` predicted from
 > reading `type_numeric_literal`). D-143'S FLOAT-LITERAL RULES WERE ASKED OF THE SUFFIXED SPELLING ONLY.** An
 > unsuffixed fraction takes the width of the float slot it sits in (D-092) through `lit_ranged`, which holds no
@@ -3468,7 +3472,7 @@ defect declares a `DEF-` in §2f.
 > place decided as `float_round` decides it (digits and exponent together, the exponent bounded by the text's
 > length); step 3d.
 >
-> **DEF-209 — OPEN (2026-10-01; owner: the compiler seat; found by landing 88's own committed measurement of LLVM's
+> **DEF-209 — FIXED 2026-10-01 (landing 89, `nitpick-compiler_27`; found by landing 88's own committed measurement of LLVM's
 > parser, `float_vectors.py --llvm`, on its two longest texts). A `flt64` LITERAL WHOSE EXPONENT IS PAST 24,000 IS
 > NOT THE NUMBER WRITTEN — LLVM'S PARSER CAPS THE EXPONENT IT READS.** A `flt64` literal is emitted as `double
 > <text>` and LLVM decides the bits. Measured on the pinned 20.1.2: `0.<N zeros>1e<N+1>` and `1<N zeros>.0e-<N>` are
@@ -3487,6 +3491,44 @@ defect declares a `DEF-` in §2f.
 > gains the long texts, and `float_vectors.py --llvm` stays as the outside-gate measurement of LLVM's parser. It was
 > kept out of landing 88 so that the conversion did not become the single authority for every `flt64` in the commit
 > that first used it — decided before the cap was found, and kept after: one landing, one harness.
+>
+> **FIXED (landing 89).** MEASURED FIRST, on `88aa21d`, through the whole compiler at both legs (the registration
+> had `llc` alone): `0.<N zeros>1e<N+1>f64` reads back as 1.0 at N = 23,990, as 0.1 at N = 24,000, as zero at N =
+> 30,000 and at N = 100,005; `1<24001 zeros>.0e-24001f64` as 10.0; the 100 KB literal costs 0.45 s end to end, so
+> nothing in the frontend is nonlinear in a literal's length. THE FIX: `float_const_text(text, neg, bits)` is one
+> branch — `float_round(text, bits)`, a `flt32`'s float widened to the double holding it, the sign bit, sixteen hex
+> digits — and `float_literal_body` (the reader that cut the suffix and handed the decimal to LLVM) is gone. ASKED
+> HOW IT COULD FAIL: the two readers of a literal's text agree on every legal text (LEXICAL_REFERENCE §6.2's
+> production; LEX-009 holds the tail); no emitter site reads a constant's TEXT (a negated literal is an `fneg` on
+> the constant; the sign is put on text in the one writer alone); the backend holds no second writer of a program's
+> decimal (what it writes beside `double` is its own exact bounds, `cast_bounds.npk` and one `0.0`, which stay); and
+> the `flt64` twin of `flt32_literal.npk` — every road — holds 47 decimal constants under `88aa21d` and none under
+> this compiler, the two emissions one artifact. THE PROOF THAT NO OTHER CONSTANT MOVED, over every differing pair
+> of the emission comparisons (the tree's 34 of 544 programs, the libraries' and applications' 31 of 2,602): (B) the
+> two texts are byte-identical once every floating-point constant on both sides is read as its bits, a decimal by
+> exact rationals (`fractions.Fraction`, the generator's `ref`) — 65 of 65; (A) LLVM makes one artifact of the two,
+> assembled under one module name: the `-O0` object, the `opt -O2` text and the `-O2` object byte-identical — 63 of
+> 65, the 2 others being this landing's tests that hold a literal past the cap (there the old artifact is the wrong
+> one); and every distinct decimal the old emissions held within the cap, 593 texts (the longest 115 characters, the
+> largest exponent 324), through the pinned `llc` against the exact rationals: none read as another double (the 5
+> texts past the cap, all in this landing's tests, are each read as another: the defect). THE CONVERSION ITSELF, now
+> the one authority at both widths, against the exact rationals on 566,680 adversarial texts at both formats: no
+> mismatch. Tests: `float_literal_kat.npk` gains four texts past the cap in its `flt64` family and a `roads`
+> function (a module binding, a negated one, an aggregate's element, a literal with no suffix, `comptime(…)` and
+> `comptime(-…)`, each with a text past the cap; `88aa21d` exits 26 and, by a probe that masks the roads, fails all
+> six); `tests/verify/flt64_past_cap.npk` (two `prove(x == 1.0f64)` rows, discharged under both compilers — and the
+> verified binary of `88aa21d` exits 1: it proved a sentence about a double its own binary did not hold);
+> `float_round.npk` gains the two 24,001 texts at both widths (2,076 vectors). The encoder is untouched
+> (`fp_literal` was already the exact real at the literal's format): 130 of 130 `tests/verify/` files give
+> byte-identical rows under both compilers.
+>
+> **DEF-210 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_27` measuring the library
+> seat's documentation note on `#[derive(Copy)]`). A REFUSED `#[derive(Copy)]` OVER AN ARRAY SAYS `Clone`.**
+> `dv_refusal` (derive_gen.npk) answers one sentence for `Clone` and `Copy` at an array whose elements are not
+> scalars: "an array copies under `Clone` only when its elements are scalars; anything else needs its own clone
+> rule" — under `#[derive(Copy)]` over `int64[2][2]` or `string[2]` the diagnostic (NITPICK-DERIVE-006, the right
+> code at the right place) names the wrong trait. A wording defect; nothing is accepted or refused wrongly.
+> **Recommended:** the sentence names the derive being generated; step 3d.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

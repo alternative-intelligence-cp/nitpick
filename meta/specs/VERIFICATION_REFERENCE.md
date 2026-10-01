@@ -1212,15 +1212,17 @@ the emitter's instruction under SMT-LIB's IEEE semantics: `fp.add`/`sub`/
 predicates the emitter's `fcmp` writes (`==` is `fp.eq`, `!=` its negation,
 so NaN compares as the machine does), a literal `to_fp RNE` of the exact
 rational its decimal text denotes, at the literal's own format -- one
-rounding, which is the emitter's constant at either width: a `flt64`'s is
-what LLVM's parser makes of the text (measured correctly rounded on the
-pinned toolchain for an exponent within 24,000, and held by
-`float_literal_kat.npk`; past that LLVM caps the exponent and the program's
-double is NOT the term's -- DEF-209, open), a `flt32`'s the compiler's own
-`float_round`, written as its bits. (Until DEF-203, landing
-88, a `flt32` literal was a `Float64` literal narrowed, mirroring the
-emitter's double-then-`fptrunc` road; the two changed in one commit, so the
-solver and the program held the same float before it and after it.) An
+rounding, which is the emitter's constant at either width: the compiler's
+own `float_round` of the same text, written as its bits
+(`tests/verify/flt32_round.npk` and `tests/verify/flt64_past_cap.npk` hold
+the term and the constant to one number). (Until DEF-203, landing 88, a
+`flt32` literal was a `Float64` literal narrowed, mirroring the emitter's
+double-then-`fptrunc` road; the two changed in one commit, so the solver and
+the program held the same float before it and after it. Until DEF-209,
+landing 89, a `flt64`'s constant was LLVM's parse of the decimal, which caps
+the exponent it reads at 24,000: for a literal past that the term was the
+number written and the program's double was not, so a discharged row spoke
+of a value the binary did not hold.) An
 integer entering `to_fp RNE
 (to_real x)`, a widening exact, a narrowing `=>!` rounded; `%` (`frem`, a
 truncated fmod, not IEEE's `fp.rem`) and a float LEAVING to an integer stay
