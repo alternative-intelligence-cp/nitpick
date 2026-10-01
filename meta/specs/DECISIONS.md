@@ -10294,6 +10294,14 @@ correct rounding directly.
 > emitter's own exact bounds (`cast_bounds.npk`: `-1.0`, `-129.0`, `-32769.0`, `-2147483649.0`; a ternary family's
 > bound; `0.0`) are still decimals in the IR: the compiler's text, not a program's.
 
+> *[2026-10-01, 1.6.1e, landing 91 — the 15-digit rule is LIFTED and a float literal FITS (D-346).]* "A `flt32`
+> literal carries at most 15 significant digits" is no longer a rule: its reason was false (DEF-203), the constant
+> is the nearest float whatever is written (landing 88), and the user lifted it (D-346, 2026-10-01). A `flt32`
+> literal is free in length, as a `flt64` literal always was. In its place stands the rule D-148 states for every
+> numeric literal and this decision never gave the floats: the literal FITS — one that rounds to infinity, or a
+> nonzero one that rounds to zero, is `NITPICK-TYPE-031` at the literal, at both widths, on every spelling and under
+> `comptime(…)` (DEF-205, fixed). `NITPICK-TYPE-030` keeps `flt128`'s refusals alone.
+
 ## D-144 — `tbb` at run time: sticky, saturating, and the cast matrix — **SETTLED**
 
 Cycle 0.9.5, making D-008 executable and closing the audit's third live rung
@@ -10562,6 +10570,14 @@ constant that used to wrap.
 *[2026-09-19, D-310 and D-311 (1.5.8b's planning). The one-subtraction spelling above is exact only under D-037's wrap, and D-210 replaced that wrap with a trap for plain integers. The constant folder kept wrapping, so `0u64 - 1u64` meant 2^64−1 in a `fixed` initialiser and a trap at run time (DEF-71). From 1.5.8b step 2 it is refused (NITPICK-TYPE-076). `uint64`'s upper half is constructed with bit operations: `~0u64` is the maximum, and `(1u64 << 63u64) | k` gives any value above 2^63−1. From 1.5.8b step 4, `0u64 -% 1u64` works too, the wrap marked at the site (D-312). The rule of this decision, "constructed, not spelled", stands.]*
 
 *[2026-09-30, 1.6.1e step 3 — a dated note (DEF-167, DEF-174, DEF-175).]* "Must fit its type, verified at the literal" reaches a literal WITH A FRACTION that carries an integer, `tbb` or `char` suffix: `NITPICK-TYPE-031` whatever the value (`2.5i32`, and `2.0i32` — a literal with a fraction is not an integer literal). The three ranged arms read a literal's PAYLOAD as its value, and a float's payload is the intern index of its text: `2.5i32` typed as an `int32` and died in the emitter, and `1.5u8` was "does not fit" only where the index happened to pass 255. (Inside `comptime(…)` or an array size the folder reports it first, TYPE-004; one report either way.) And the float scan is the production's now (LEXICAL_REFERENCE §6.2), which closed two defects of the VALUE: a sign after a float literal was swallowed into the literal's text, so `flt64:y = 3.5f64-x;` stored 3.5 on every compiler before this one — the subtraction gone, in silence (DEF-174); and a `_` separator rode into the kept text, so `1_000.5tfp64` folded to 1.0 (DEF-175).
+
+> *[2026-10-01, 1.6.1e, landing 91 — the floats have their range rule (D-346, DEF-205).]* "A numeric literal must
+> fit its type" left the floats to D-143, which gave them none: `1.0e39f32` and `1.0e999f64` were infinity and
+> `1.0e-60f32` zero, in silence. A float literal that rounds to infinity, or a nonzero one that rounds to zero, is
+> `NITPICK-TYPE-031` at the literal now — decided by the compiler's own exact conversion (`float_round`), asked by
+> the checker of every literal it types and by the compile-time evaluator of a literal it alone reads (a
+> `comptime(…)` operand), and held by the emitter, which has no constant for one. A subnormal result is rounding and
+> stays; an exact zero is a zero written.
 
 ## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED; D-163 reuses the retired `never fails`**: a driver method may always fail, so `raw`/`drop` are never licensed on a driver call (falls out of D-163 rules 3–4), and when the Bridge lands (1.1) `VerifyNeverFails` becomes the one node for the one word**
 
@@ -22294,3 +22310,21 @@ and `comptime` pass through it; since landing 89 both widths ride `float_round`)
 deleted. Refusals move BOTH ways (the fuzzer's twenty-digit `vf0983`/`vf1149` become legal; `1.0e39f32`,
 `1.0e999f64`, `1.0e-60f32` become refusals): an advance notice first, both repositories swept. A silent wrong
 constant today, so it stands second in the queue.
+
+> *[2026-10-01, 1.6.1e, landing 91 — LANDED.]* (a) THE REFUSAL: `float_fit_refusal(text, bits)` (`numeric.npk`) is
+> the rule's one sentence, from `float_round`'s two flags; `float_text_ok` (the checker: the suffix's branch, the
+> contextual one, `type_comptime`'s fraction with no suffix) and `fold_suffixed_literal` (the compile-time
+> evaluator, outside a call) ask it; `float_const_text` (the emitter) writes no constant for a literal with either
+> flag. MEASURED FIRST on `eaf6b08`: eight roads, eight silent infinities and zeros, at both legs. A FOURTH ROAD was
+> found by probing after the checker's rule stood: a literal under a `comptime(…)` operand is read by the evaluator
+> alone (`type_comptime` folds its operand and never types it), so `comptime(1.0e999f64)`, `comptime(-1.0e39f32)`
+> and a literal handed to a `comptime func:` inside one were still infinity — the same road had let a suffixed
+> sixteen-digit `flt32` literal past the 15-digit rule since it was written. (b) THE 15-DIGIT RULE IS GONE from
+> `float_text_ok`; `tests/types/rejection/float_rules.npk` keeps `flt128`'s five sites and `float_fit.npk` holds the
+> fit rule's eighteen, with eleven controls on the other side of each edge. The sweep over 3,625 files: the 105 are
+> NITPICK-TYPE-030 at long `flt32` literals -- 97 in the regenerated `float_literal_kat.npk` (its `flt32` literals
+> run past fifteen digits now), 3 in `float_rules.npk` and 2 in `float_fit.npk` (the digit sites, controls now), and
+> 3 in the fuzzer's corpus, one each in the three programs that expect the lifted rule
+> (`m10/programs/c25_flt32_literal_16_digits.npk`, `m11/programs/vf0983.npk`, `m11/programs/vf1149.npk`); the 18 are
+> NITPICK-TYPE-031 in `float_fit.npk`; no file of the libraries, the applications or the fuzzer's corpus writes a
+> float literal that does not fit.

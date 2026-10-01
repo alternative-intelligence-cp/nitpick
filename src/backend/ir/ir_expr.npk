@@ -2025,6 +2025,11 @@ func:widen_len_i64 = string(ExprEmitter->:x, string:ref, string:ll, int32:len_ti
 func:float_const_text = string(string:text, bool:neg, int32:bits) never fails {
     if ((bits != 64i32) && (bits != 32i32)) { pass ""; }
     FloatBits:fb = raw float_round(text, bits);
+    // A LITERAL THAT DOES NOT FIT NEVER ARRIVES (D-346, DEF-205): the checker
+    // refuses one that rounds to infinity or, being nonzero, to zero. "" is the
+    // frontend's broken promise, confessed by the callers (EMIT-002) -- never
+    // an infinity or a zero written in silence, whatever road a text took.
+    if (fb.inf || fb.zero) { pass ""; }
     uint64:d = fb.bits;
     if (bits == 32i32) { d = raw flt32_bits_as_flt64(d); }
     if (neg) { d = d | (1u64 << 63u64); }

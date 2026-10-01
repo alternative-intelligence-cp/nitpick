@@ -14,8 +14,8 @@ current by the harness (`check_generated_current` runs `--check`, beside
 
   tests/frontend/float_round.npk
       `float_round` and `flt32_bits_as_flt64` called directly: both formats, and
-      the answers the language does not yet settle (a literal that rounds to
-      infinity, a nonzero one that rounds to zero: DEF-205, S-126) by their flags.
+      the two answers the checker refuses (a literal that rounds to infinity, a
+      nonzero one that rounds to zero: NITPICK-TYPE-031, D-346) by their flags.
   tests/backend/programs/float_literal_kat.npk
       literals COMPILED, each read back as its bits, at both legs. A literal of
       either width is the compiler's own constant -- the bits `float_round`
@@ -221,11 +221,12 @@ FORMS = ["0.0", "0.0e10", "0.0e-10", "000.000", "0", "7", "007", "16777217", "90
          "0.0e999999999", "1" + "0" * 320 + ".0", "0." + "0" * 340 + "1"] + PAST_CAP
 
 def kat_vectors(p, emax, seed):
-    """literal texts a PROGRAM may write: finite nonzero answers only, a flt32's within fifteen digits (D-143)"""
+    """literal texts a PROGRAM may write: finite nonzero answers only (one that rounds to infinity or to zero is
+    refused, D-346), at any length at either width (the 15-digit rule on a flt32 went with the same decision)"""
     emin = 1 - emax
     rnd = random.Random(seed)
     lim, hi = (44, 38) if p == 24 else (322, 308)
-    maxd = 15 if p == 24 else 25
+    maxd = 25
     out = []
     for _ in range(150):
         nd = rnd.randint(1, maxd)
@@ -237,21 +238,23 @@ def kat_vectors(p, emax, seed):
     for _ in range(90):                                    # DEF-203's shape, at lengths a program may write
         m = (1 << (p - 1)) + rnd.randrange(1 << (p - 1))
         mid = Fraction(2 * m + 1) * Fraction(2) ** (rnd.randint(max(emin, -70), min(emax, 70)) - p)
-        # fifteen digits is where a `flt32` text can sit inside half a double's unit of the midpoint
-        nd = (15 if rnd.random() < 0.8 else rnd.randint(10, 14)) if p == 24 else rnd.randint(16, 22)
+        # fifteen digits is where a `flt32` text sat inside half a double's unit of the midpoint (DEF-203)
+        nd = (15 if rnd.random() < 0.6 else rnd.randint(10, 22)) if p == 24 else rnd.randint(16, 22)
         out += [near(mid, nd, 0), near(mid, nd, 1)]
-    if p == 53:
-        for _ in range(8):                                 # exact midpoints, written out (several hundred digits)
-            m = (1 << (p - 1)) + rnd.randrange(1 << (p - 1))
-            t = dyadic(Fraction(2 * m + 1) * Fraction(2) ** (rnd.randint(-60, 60) - p))
-            out += [t, nudge(t, 1), nudge(t, -1)]
+    for _ in range(8):                                     # exact midpoints, written out (up to several hundred digits)
+        m = (1 << (p - 1)) + rnd.randrange(1 << (p - 1))
+        t = dyadic(Fraction(2 * m + 1) * Fraction(2) ** (rnd.randint(-60, 60) - p))
+        out += [t, nudge(t, 1), nudge(t, -1)]
     for e10 in range(-lim - 1, hi + 1, 1 if p == 24 else 7):
         out.append("1.0e%d" % e10)
     if p == 24:
         out += counterexamples(40, seed + 1)
         out += ["3.4028235e38", "3.4028234e38", "1.17549435e-38", "1.4e-45", "7.1e-46", "16777217.0",
                 "0.1", "0.2", "0.3", "1.0", "0.5", "9.51125303839185e-19", "7.99248255789280e-2",
-                "8.89761617066066e16", "2.47979713208224e-7"]
+                "8.89761617066066e16", "2.47979713208224e-7",
+                # past fifteen digits: legal since D-346, and the nearest float (the first is one unit above 1.0)
+                "1.0000000596046448309", "0.1234567890123456789", "1.0000000000000001",
+                "3.40282356e38", "7.1e-46"]
     else:
         out += ["1.7976931348623157e308", "1.7976931348623158e308", "4.9e-324", "2.4703282292062328e-324",
                 "2.2250738585072011e-308", "2.2250738585072012e-308", "2.2250738585072014e-308",
@@ -394,7 +397,10 @@ def kat_text():
         "// subnormal boundary and the largest value -- and WRONG for the four texts that end the `w` family, whose",
         "// exponent is past the 24,000 that parser reads: the number 1.0 was the double 0.1, or 10.0, or zero (two",
         "// of the four are a hundred thousand digits long, and are one line each). Only literals whose answer is",
-        "// finite and nonzero: what one that rounds to infinity or to zero should be is the user's (DEF-205, S-126).",
+        "// finite and nonzero: one that rounds to infinity, or a nonzero one that rounds to zero, is refused",
+        "// (NITPICK-TYPE-031, D-346: `tests/types/rejection/float_fit.npk`). A literal's length is free at both",
+        "// widths (the 15-digit rule on a `flt32` went with the same decision): the `s` family runs to 25 digits",
+        "// and to exact midpoints written out.",
         "//",
         "// exit N: a literal of the N-th function below is not the nearest value (s0 is 1); `pass K` names the line.",
         "// `roads`, the last, holds the past-the-cap text on every other road to the constant's writer.",

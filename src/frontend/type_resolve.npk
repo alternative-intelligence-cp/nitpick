@@ -21,6 +21,7 @@ use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./type_codes.npk".*;
+use "./numeric.npk".*;   // float_fit_refusal (D-346)
 use "./types.npk".*;
 use "./builtin_types.npk".*;
 use "./num_width.npk".*;
@@ -1695,6 +1696,20 @@ func:fold_suffixed_literal = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope,
     }
     if (lk == (raw TY_FLOAT())) {
         if (bits == 128i32) { pass (raw cv_none()); }
+        // THE LITERAL FITS ITS TYPE (D-346, DEF-205). The checker asks this of
+        // every literal it types -- and it never types a `comptime(...)`
+        // operand, which this evaluator alone reads: `comptime(1.0e999f64)` was
+        // infinity in silence after the checker's rule stood. So it is asked
+        // here too, OUTSIDE A CALL (inside one the literal sits in a function's
+        // body, which the checker types), in the checker's own sentence, so a
+        // literal both read is one report.
+        if (r.fold_depth <= 0i32) {
+            string:why = raw float_fit_refusal(text, bits);
+            if (why.len != 0i64) {
+                drop fold_reported(r, raw TYPE_LIT_RANGE(), move(why), e.span);
+                pass (raw cv_none());
+            }
+        }
         pass (raw cv_real(raw tt_float(r.types, bits), move(text), neg));
     }
     if (lk == (raw TY_TFP())) { pass (raw cv_real(raw tt_tfp(r.types, bits), move(text), neg)); }

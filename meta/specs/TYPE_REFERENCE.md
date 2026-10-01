@@ -195,7 +195,7 @@ float whose value is the integer written, as `5tfp64` is the fixed-point value 5
 (D-195). The checker typed them floats and the emitter wrote `double 3`, which is not
 LLVM grammar, so no program with one ever linked; and the `flt32` digit count read the
 integer payload as an intern index, so `100000000f32` trapped the checker. Both lower
-now (`3f64` is the double 3.0), and the 15-digit rule counts the payload's own digits.
+now (`3f64` is the double 3.0).
 
 **A float literal is the nearest value of its type to the number written** (DEF-203, DEF-209;
 1.6.1e): round to nearest, ties to even, ONE rounding, at the width the literal was given. At
@@ -237,9 +237,30 @@ module binding's initialiser — is one writer.
 > `bootstrap/generator/float_vectors.py --llvm` remains as the measurement of that parser,
 > outside every gate.
 
-What a literal that does NOT FIT should be is open: `1.0e39f32` and `1.0e999f64` are
-infinity and `1.0e-60f32` is zero, in silence, as before (DEF-205; S-126, the user's). The
-conversion reports both answers (`FloatBits.inf`, `FloatBits.zero`); nothing reads them yet.
+**A float literal fits its type** (D-148; D-346, DEF-205; landing 91): the number written,
+rounded once to the type, is finite, and is zero only where zero was written. A literal that
+rounds to infinity (`1.0e39f32`, `1.0e999f64`, and at the edge `3.40282357e38f32`: half-way
+from the largest value to the next power of two rounds to the even neighbour, which is the
+power of two) and a nonzero literal that rounds to zero (`1.0e-60f32`, `1.0e-999f64`,
+`7.0e-46f32`: half the smallest subnormal or less) are `NITPICK-TYPE-031` at the literal — a
+limit that limits nothing, an epsilon that divides by zero. A subnormal result is ordinary
+rounding and stays; an infinity is computed, never written. The rule follows the literal
+whatever gave it its width — its suffix, the float slot it sits in, `comptime(…)` of a
+fraction with no suffix — and whoever reads it: a literal under a `comptime(…)` operand is
+never typed by the checker, so the compile-time evaluator asks the same question in the same
+sentence (`float_fit_refusal`, `numeric.npk`), and a literal both read is one report. The
+emitter holds the promise: a literal that does not fit has no constant, and one that arrived
+would be `NITPICK-EMIT-002`, never an infinity or a zero written in silence.
+
+> *[2026-10-01, 1.6.1e, landing 91 — what this replaced.]* Until this landing a float literal
+> past its type's range was infinity and a nonzero one below its smallest value was zero, in
+> silence, at both widths and on every road (measured: a body literal, an unsuffixed one, a
+> `comptime(…)`, a module constant — eight of eight). D-148's "a literal must fit its type"
+> had handed the floats to D-143, which had no range rule. And a `flt32` literal carried "at
+> most 15 significant digits" (`NITPICK-TYPE-030`): the reason D-143 gave — two roundings
+> equal to one below sixteen digits — was false (DEF-203), the constant has been the nearest
+> float whatever is written since landing 88, and D-346 lifted the rule: `flt32` and `flt64`
+> literals are free in length.
 
 **Behaviors (flt32/flt64):**
 - Arithmetic: `+`, `-`, `*`, `/`, `%` → `fadd`, `fsub`, `fmul`, `fdiv`, `frem`
@@ -257,14 +278,10 @@ conversion reports both answers (`FloatBits.inf`, `FloatBits.zero`); nothing rea
   suffix and no other: `2.5i32`, `1.5u8`, `2.5tbb8` and `2.5char8` are
   `NITPICK-TYPE-031` at the literal, whatever the value (DEF-167; they were
   typed as the integer, the value read from the intern index of the literal's
-  text, and died as EMIT-002). A `flt32` literal carries at most 15 significant digits
-  (D-143). The reason given for the rule is gone — it protected a lowering through
-  a double that was not exact even below sixteen digits (DEF-203), and the constant
-  is the nearest float now whatever is written — so whether the rule stays is the
-  user's (S-126); while it does, it is one rule for every way a literal gets a
-  width: its suffix, the float slot an unsuffixed fraction sits in, or the slot a
-  `comptime(…)` of one lands in (`flt32:x = 0.1234567890123456789;` was accepted
-  until landing 88, and `flt128:x = 1.0;` passed the checker and died in the
+  text, and died as EMIT-002). A float literal's rules — it fits its type, and
+  `flt128` has none — are one rule for every way a literal gets a width: its
+  suffix, the float slot an unsuffixed fraction sits in, or the slot a
+  `comptime(…)` of one lands in (`flt128:x = 1.0;` passed the checker and died in the
   emitter: DEF-206).
 - Math functions (sin, cos, sqrt, …) arrive with the library tier, wrapping
   LLVM intrinsics

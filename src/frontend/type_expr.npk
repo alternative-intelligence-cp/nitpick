@@ -799,12 +799,18 @@ func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) never fails {
 //   flt128   a storage format -- no literals (its constants cannot even be
 //            spelled in the IR without soft-float semantics this implementation
 //            deliberately does not provide).
-//   flt32    at most 15 significant digits. THE REASON D-143 GAVE IS GONE: the
-//            literal lowered through a double, and the two roundings were held
-//            equal to one below sixteen digits -- which was false (DEF-203),
-//            and the constant is now the nearest float whatever is written
-//            (`float_round`). The rule stands until the user answers S-126; it
-//            is applied to both spellings while it does.
+//   flt32,   THE LITERAL FITS ITS TYPE (D-148; D-346, DEF-205): the number
+//   flt64    written, rounded once to the type (`float_round`), is finite, and
+//            is zero only where zero was written. A literal past the type's
+//            range was infinity and a nonzero one below its smallest value was
+//            zero, in silence, until this rule -- a limit that limits nothing,
+//            an epsilon that divides by zero. A subnormal result is ordinary
+//            rounding and stays; an infinity is computed, never written.
+//
+// (A `flt32` literal carried "at most 15 significant digits" until D-346
+// lifted it. The reason D-143 gave -- two roundings equal to one below sixteen
+// digits -- was false (DEF-203), and since the constant is the nearest float
+// whatever is written, the rule protected nothing.)
 func:float_text_ok = bool(ExprTyper->:e, string:txt, int32:bits, Span:at) never fails {
     if (bits == 128i32) {
         discard(raw te_error(e, raw TYPE_FLOAT_RULES(),
@@ -812,33 +818,10 @@ func:float_text_ok = bool(ExprTyper->:e, string:txt, int32:bits, Span:at) never 
             at));
         pass false;
     }
-    if (bits == 32i32) {
-        int32:sig = 0i32;
-        bool:lead = true;
-        int64:ti = 0i64;
-        while (ti < txt.len) decreases txt.len - ti {
-            uint8:ch = txt.ptr[ti];
-            if (ch == 101u8) { break; }   // 'e' — exponent: digits end
-            if (ch == 69u8)  { break; }   // 'E'
-            if (ch == 102u8) { break; }   // 'f' — the suffix
-            if (ch >= 48u8) {
-                if (ch <= 57u8) {
-                    if (ch == 48u8) {
-                        if (!lead) { sig = sig + 1i32; }
-                    } else {
-                        lead = false;
-                        sig = sig + 1i32;
-                    }
-                }
-            }
-            ti = ti + 1i64;
-        }
-        if (sig > 15i32) {
-            discard(raw te_error(e, raw TYPE_FLOAT_RULES(),
-                "a `flt32` literal carries at most 15 significant digits (D-143); shorten it, or write it as a `flt64` literal (`…f64`) and narrow it with `=>!` — `flt64 => flt32` is a lossy cast",
-                at));
-            pass false;
-        }
+    string:why = raw float_fit_refusal(txt, bits);
+    if (why.len != 0i64) {
+        discard(raw te_error(e, raw TYPE_LIT_RANGE(), move(why), at));
+        pass false;
     }
     pass true;
 };

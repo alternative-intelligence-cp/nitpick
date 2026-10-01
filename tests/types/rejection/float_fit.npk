@@ -1,0 +1,132 @@
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 70:21
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 71:23
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 73:41
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 74:41
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 75:42
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 76:42
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 77:44
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 80:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 84:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 88:27
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 92:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 96:24
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 100:25
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 104:33
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 108:46
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 109:46
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 110:47
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 111:47
+//
+// A FLOAT LITERAL FITS ITS TYPE (D-148; D-346, DEF-205; 1.6.1e). D-148 says a
+// numeric literal "must fit its type", verified at the literal, and handed the
+// floats to D-143, which had no range rule: `1.0e39f32` and `1.0e999f64` were
+// infinity and `1.0e-60f32` was zero, in silence, on every compiler before
+// this one -- a limit that limits nothing, an epsilon that divides by zero.
+// The rule (the user, 2026-10-01): a literal whose value, rounded once to its
+// type, is infinity -- or is zero where zero was not written -- is refused,
+// NITPICK-TYPE-031 at the literal, at both widths. A subnormal result is
+// ordinary rounding and stays; an infinity is computed, never written.
+//
+// THE RULE FOLLOWS THE LITERAL, WHATEVER GAVE IT ITS WIDTH AND WHOEVER READS
+// IT: its suffix, the float slot it sits in, `comptime(...)` of a fraction with
+// no suffix -- and a literal UNDER a `comptime(...)` operand, which the checker
+// never types: the compile-time evaluator alone reads it, and asks the same
+// question in the same sentence (the `_operand` functions were accepted, and
+// were infinity, with the rule standing in the checker alone).
+//
+// THE EDGES are the format's own: half-way from the largest value to the next
+// power of two is infinity (round to nearest, ties to even: the even
+// neighbour is the power of two), and half the smallest subnormal or less is
+// zero. The controls sit on the other side of each edge, and fit.
+//
+// THE 15-DIGIT RULE IS GONE WITH THIS (D-346): a `flt32` literal is the
+// nearest float to the number written whatever its length (DEF-203), so
+// `twenty_digits` and `twenty_slot` fit; they were NITPICK-TYPE-030.
+
+mod:float_fit;
+
+struct:P = { flt32:a; flt64:b; };
+
+comptime func:id32 = flt32(flt32:x) never fails { pass x; };
+
+fixed flt32:M_INF = 1.0e39f32;
+fixed flt64:M_ZERO = -1.0e-999f64;
+
+func:inf32 = flt32() never fails { pass 1.0e39f32; };
+func:inf64 = flt64() never fails { pass 1.0e999f64; };
+func:zero32 = flt32() never fails { pass 1.0e-60f32; };
+func:zero64 = flt64() never fails { pass 1.0e-999f64; };
+func:neg_inf = flt32() never fails { pass -1.0e39f32; };
+
+func:inf32_slot = flt32() never fails {
+    flt32:x = 1.0e39;
+    pass x;
+};
+func:zero64_slot = flt64() never fails {
+    flt64:x = 1.0e-999;
+    pass x;
+};
+func:field_slot = P() never fails {
+    pass P{ a: 1.0f32, b: 1.0e999 };
+};
+
+func:inf32_comptime = flt32() never fails {
+    flt32:x = comptime(1.0e39);
+    pass x;
+};
+func:inf64_operand = flt64() never fails {
+    flt64:x = comptime(1.0e999f64);
+    pass x;
+};
+func:neg_operand = flt64() never fails {
+    flt64:x = comptime(-1.0e999f64);
+    pass x;
+};
+func:arg_operand = flt32() never fails {
+    flt32:x = comptime(raw id32(1.0e39f32));
+    pass x;
+};
+
+func:edge_inf32 = flt32() never fails { pass 3.40282357e38f32; };
+func:edge_inf64 = flt64() never fails { pass 1.7976931348623159e308f64; };
+func:edge_zero32 = flt32() never fails { pass 7.0e-46f32; };
+func:edge_zero64 = flt64() never fails { pass 2.4703282292062327e-324f64; };
+
+func:max32 = flt32() never fails { pass 3.4028235e38f32; };
+func:rounds_to_max32 = flt32() never fails { pass 3.40282356e38f32; };
+func:max64 = flt64() never fails { pass 1.7976931348623158e308f64; };
+func:min_sub32 = flt32() never fails { pass 1.4e-45f32; };
+func:rounds_to_min32 = flt32() never fails { pass 7.1e-46f32; };
+func:min_sub64 = flt64() never fails { pass 4.9e-324f64; };
+func:rounds_to_min64 = flt64() never fails { pass 2.4703282292062328e-324f64; };
+func:zero_written = flt64() never fails { pass 0.0e999999999f64; };
+func:zero_plain = flt32() never fails { pass 0.0f32; };
+func:twenty_digits = flt32() never fails { pass 1.0000000596046448309f32; };
+func:twenty_slot = flt32() never fails {
+    flt32:x = 0.1234567890123456789;
+    pass x;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:_~err) { exit 1i32; };

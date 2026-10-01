@@ -120,11 +120,14 @@ pub func:TYPE_FIELD_TWICE = string() never fails   { pass "NITPICK-TYPE-028"; };
 // TYPE-001 with the annotation rule; nothing else was ever Tier-refused.
 // The number is not reused.
 
-// D-143's float rules: a flt32 literal past 15 significant digits, or any
-// literal/arithmetic/comparison on the storage-only flt128.
+// D-143's float rules: any literal/arithmetic/comparison on the storage-only
+// flt128. (A flt32 literal past 15 significant digits was this code too, until
+// D-346 lifted the rule.)
 pub func:TYPE_FLOAT_RULES = string() never fails   { pass "NITPICK-TYPE-030"; };
 
 // D-148: a literal whose value does not fit its type -- suffixed or contextual.
+// A float literal too (D-346, DEF-205): one that rounds to infinity, or a
+// nonzero one that rounds to zero.
 // Until 0.9.9 nothing checked this anywhere: `int8:a = 300i8;` survived to the
 // backend and emitted `i8 300`, which is not even valid IR.
 pub func:TYPE_LIT_RANGE = string() never fails     { pass "NITPICK-TYPE-031"; };

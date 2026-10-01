@@ -633,10 +633,10 @@ pub func:tfp_q_of_int = string(int64:payload, int32:bits) never fails {
 // to LLVM's decimal parser until then, and that parser caps the exponent it
 // reads at 24,000 -- past it, the number in the program was another number.
 //
-// THE ANSWER CARRIES TWO FLAGS and decides nothing about them: `inf`, the
-// number rounds to infinity; `zero`, a NONZERO number rounds to zero. What a
-// literal that does not fit should be is DEF-205's and the user's (S-126);
-// the caller reads the flags.
+// THE ANSWER CARRIES TWO FLAGS: `inf`, the number rounds to infinity; `zero`,
+// a NONZERO number rounds to zero. A literal with either does not fit its type
+// (D-346): the checker and the compile-time evaluator refuse it
+// (`float_fit_refusal` below), and the emitter writes no such constant.
 //
 // The work is bounded whatever is written: a number at or past 10^310 is
 // infinity and one below 10^-330 is zero for both formats (2^1024 < 1.8e308,
@@ -830,6 +830,27 @@ pub func:float_round = FloatBits(string:text, int32:width) never fails {
         pass FloatBits{ bits: inf_bits, inf: true, zero: false };
     }
     pass FloatBits{ bits: bits, inf: false, zero: false };
+};
+
+// A FLOAT LITERAL FITS ITS TYPE (D-148; D-346, DEF-205) -- or the sentence that
+// says why it does not: "" where the number written, rounded once to the type,
+// is finite and is zero only where zero was written. ONE sentence for every
+// reader of a literal -- the checker where it types one, the compile-time
+// evaluator where it alone reads one (a `comptime(...)` operand) -- so a
+// literal both read is one report (the diagnostic list drops the repeat).
+pub func:float_fit_refusal = string(string:text, int32:bits) never fails {
+    FloatBits:fb = raw float_round(text, bits);
+    string:tn = "`flt64`";
+    if (bits == 32i32) { tn = "`flt32`"; }
+    if (fb.inf) {
+        pass (string_concat(string_concat("this literal is past the largest ", tn),
+            " value: it would be infinity, and the number in the program would not be the number written (D-148, D-346); an infinity is computed, never written"));
+    }
+    if (fb.zero) {
+        pass (string_concat(string_concat("this literal is not zero and is below the smallest ", tn),
+            " value: it would be zero, and the number in the program would not be the number written (D-148, D-346)"));
+    }
+    pass "";
 };
 
 // A `flt32`'s BITS AS THE BITS OF THE `flt64` HOLDING THE SAME VALUE -- the one

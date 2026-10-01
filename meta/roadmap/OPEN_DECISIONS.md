@@ -3412,7 +3412,7 @@ defect declares a `DEF-` in §2f.
 > exit 0 at both legs). DEF-178 (a pattern's literal is never TYPED against its selector) stays open: `(2i32)` over
 > a `tfp64` selector is still accepted, and is read as the number 2.
 >
-> **DEF-205 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_25` probing what DEF-203's
+> **DEF-205 — FIXED 2026-10-01 (landing 91, `nitpick-compiler_27`, under D-346; found by `nitpick-compiler_25` probing what DEF-203's
 > conversion must decide). A FLOAT LITERAL PAST ITS TYPE'S RANGE IS INFINITY, AND ONE BELOW ITS SMALLEST VALUE IS
 > ZERO — IN SILENCE.** Probe `ms1`, both legs: `flt32:a = 1.0e39f32;` is +inf (`fptrunc double 1.0e39 to float`),
 > `flt64:b = 1.0e999f64;` is +inf (LLVM reads `double 1.0e999` as infinity), `flt32:c = 1.0e-60f32;` is 0.0. D-148
@@ -3430,6 +3430,31 @@ defect declares a `DEF-` in §2f.
 > *[Landing 89.]* A `flt64` literal's constant is the conversion's too (DEF-209): `1.0e999f64` is written as
 > infinity's own bits and a nonzero literal below the range as zero's — the same two doubles LLVM's parser gave,
 > in silence as before. The flags are still unread.
+>
+> **FIXED (landing 91, under D-346).** MEASURED FIRST on `eaf6b08`, at both legs: a body literal at both widths in
+> both directions, an unsuffixed one in a slot, `comptime(…)`, and two module constants — eight roads, eight silent
+> infinities and zeros (probe `fz1`: exit 255). THE FIX: `float_fit_refusal` (`numeric.npk`) — "" where the number
+> written, rounded once to the type, is finite and is zero only where zero was written, else the sentence — asked by
+> `float_text_ok` of every literal the checker types (NITPICK-TYPE-031 at the literal), and the 15-digit count
+> deleted there. PROBED AFTER IT LOOKED COMPLETE, every position a float literal can sit in: a struct field, an
+> array element, a `simd` lane, a `complex` component, an operand of `+` and of `<`, an argument, under a sign, a
+> cast's operand, a rule's and a contract's bound, a `comptime func:`'s body, a module binding — one report each —
+> and A FOURTH ROAD stood open: a literal under a `comptime(…)` operand is read by the compile-time evaluator alone
+> (`type_comptime` folds the operand and never types it), so `comptime(1.0e999f64)`, `comptime(-1.0e39f32)`, a
+> parenthesised or nested one and a literal handed to a `comptime func:` inside one were still infinity.
+> `fold_suffixed_literal` asks the same sentence outside a call (inside one the literal sits in a function's body,
+> which the checker types; `comptime(M)` and `comptime(raw f())` over a refused literal add nothing: one mistake,
+> one report). AND THE EMITTER HOLDS THE PROMISE: `float_const_text` has no constant for a literal with either flag,
+> so a text that reached it by a road nobody asked would be NITPICK-EMIT-002, never a silent infinity. A `pick`
+> pattern over a float selector is DEF-178's (EMIT-002 before and after). Tests:
+> `tests/types/rejection/float_fit.npk` (eighteen sites, eleven controls at the format's own edges),
+> `float_rules.npk` (its three digit sites are controls), `float_literal_kat.npk` (535 `flt32` literals, to 25
+> digits and exact midpoints written out, and 504 `flt64`).
+>
+> *[DEF-206's fourth road, closed by the same landing.]* The suffixed spelling inside `comptime(…)` — `flt32:x =
+> comptime(1.0000000000000001f32);` — was accepted on every compiler from landing 88 (probe `fq2`), past the
+> 15-digit rule DEF-206 had put on three roads: the evaluator read the literal and nobody asked. The rule it skipped
+> is lifted (D-346); the road is the one DEF-205's fix closes for the rule that stands.
 >
 > **DEF-206 — FIXED 2026-10-01 (landing 88; found probing around DEF-203, as `nitpick-compiler_25` predicted from
 > reading `type_numeric_literal`). D-143'S FLOAT-LITERAL RULES WERE ASKED OF THE SUFFIXED SPELLING ONLY.** An
