@@ -30,6 +30,7 @@ use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
+use "./parse_pick.npk".*;       // a `pick`'s arms and patterns: the evaluator runs one (D-338, 1.6.1e step 3b)
 use "./parse_decorate.npk".*;   // measure_is_unbounded, measure_expr: the evaluator checks a loop's measure (1.5.8c step 3)
 use "./parser.npk".*;   // QUAL_FIXED, for what may stand in a constant expression
 use "./builtins.npk".*;     // is_builtin_name, for the four with compile-time answers
@@ -182,6 +183,16 @@ pub struct:TypeResolver = {
     // arithmetic is the subject's and not int64's -- rather than as a loop's
     // int64 counter. Set and restored by `fold_rule_clause_at` alone.
     int32:fold_subject_ty;
+
+    // HOW MANY `comptime func:` BODIES ARE BEING EVALUATED RIGHT NOW (D-338,
+    // 1.6.1e step 3b). Not `fold_depth`: that one is the chain's index and the
+    // recursion bound, and until this step every `fold_const` reset it -- a
+    // type resolved in the middle of a body (`#size_of<int8[N]>()`) re-enters
+    // `fold_const`. This one is raised and lowered by `fold_call` alone, and two
+    // rules read it: a `pick` EXPRESSION is evaluated only inside a frame
+    // (`fold_expr`), and a `fold_const` entered from inside one keeps the
+    // evaluation's depth (DEF-213).
+    int32:fold_frames;
 };
 
 pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
@@ -199,7 +210,7 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    fold_blown: false, stamp_depth: 0i32, fold_depth: 0i32,
                                    fold_chain: [],
                                    fold_counter: 0i64, fold_counting: false,
-                                   fold_subject_ty: 0i32 };
+                                   fold_subject_ty: 0i32, fold_frames: 0i32 };
     pass r;
 };
 
@@ -832,6 +843,16 @@ pub func:CV_STRING = int32() never fails { pass 4i32; };
 // text, which are the conversions a literal in a function body goes through, so
 // a constant and the literal it was written as cannot drift apart.
 pub func:CV_REAL = int32() never fails   { pass 5i32; };
+// A PAYLOAD-LESS VARIANT OF AN ENUM (D-338, 1.6.1e step 3b): `type_id` the enum's
+// type, `num` the variant's POSITION among its declaration's members -- the
+// `position` the one tag rule (`variant_tag_of`) takes. Position is identity:
+// two variants of one enum never share a tag (DEF-193), so "the same position"
+// and "the same tag" are one question, and the folder needs no copy of the tag
+// rule. It is a value INSIDE the evaluator -- compared with `==`/`!=`, selected
+// on by a `pick` -- and it does not leave it: `comptime(…)` over one and a module
+// binding initialised with one are refused by name where they are written
+// (`type_comptime`, `const_init_verdict`; S-127 asks whether they should be).
+pub func:CV_ENUM = int32() never fails   { pass 6i32; };
 
 // WHETHER IT FOLDED AND WHAT IT IS ARE TWO QUESTIONS, and `kind` answers both
 // without merging them: `CV_NONE` is "no value", and every other kind carries one.
@@ -877,6 +898,11 @@ pub func:cv_real = ConstVal(int32:ty, move string:t, bool:neg) never fails {
     int64:n = 0i64;
     if (neg) { n = 1i64; }
     ConstVal:v = ConstVal{ kind: raw CV_REAL(), type_id: ty, num: n, text: move(t) };
+    pass v;
+};
+
+pub func:cv_enum = ConstVal(int32:ty, int32:position) never fails {
+    ConstVal:v = ConstVal{ kind: raw CV_ENUM(), type_id: ty, num: position => int64, text: "" };
     pass v;
 };
 
@@ -1012,23 +1038,54 @@ func:foldenv_get = ConstVal(FoldEnv->:e, int32:kind, int32:origin) never fails {
 // of fuel gave up, and an `if` whose branch did neither did neither. Merging
 // "returned nothing" with "could not evaluate" would make a comptime function that
 // falls off its end look like one the evaluator does not understand.
+//
+// AND TWO MORE WAYS OUT OF A BLOCK, BOTH A `pick`'S (D-338, 1.6.1e step 3b):
+// `give v;` hands the enclosing `pick` EXPRESSION its value (`gave`, the value
+// in `value`), and `fall label;` enters another arm's body (`fall_to`, the
+// label's intern index; 0 is "no fall", and no identifier interns to 0). Each
+// leaves every block and loop between it and its `pick` exactly as a `pass`
+// leaves them, which is why the walk asks ONE question of a flow --
+// `flow_leaves` -- and never the four fields in turn: a walker that forgot one
+// would run the statements after a `give`.
 pub struct:FoldFlow = {
     bool:returned;
     bool:failed;
+    bool:gave;
+    int32:fall_to;
     ConstVal:value;
 };
 
 func:flow_none = FoldFlow() never fails {
-    FoldFlow:f = FoldFlow{ returned: false, failed: false, value: raw cv_none() };
+    FoldFlow:f = FoldFlow{ returned: false, failed: false, gave: false, fall_to: 0i32,
+                           value: raw cv_none() };
     pass f;
 };
 func:flow_fail = FoldFlow() never fails {
-    FoldFlow:f = FoldFlow{ returned: false, failed: true, value: raw cv_none() };
+    FoldFlow:f = FoldFlow{ returned: false, failed: true, gave: false, fall_to: 0i32,
+                           value: raw cv_none() };
     pass f;
 };
 func:flow_ret = FoldFlow(move ConstVal:v) never fails {
-    FoldFlow:f = FoldFlow{ returned: true, failed: false, value: move(v) };
+    FoldFlow:f = FoldFlow{ returned: true, failed: false, gave: false, fall_to: 0i32,
+                           value: move(v) };
     pass f;
+};
+func:flow_give = FoldFlow(move ConstVal:v) never fails {
+    FoldFlow:f = FoldFlow{ returned: false, failed: false, gave: true, fall_to: 0i32,
+                           value: move(v) };
+    pass f;
+};
+func:flow_fall = FoldFlow(int32:label) never fails {
+    FoldFlow:f = FoldFlow{ returned: false, failed: false, gave: false, fall_to: label,
+                           value: raw cv_none() };
+    pass f;
+};
+// DOES CONTROL LEAVE THE BLOCK THIS STATEMENT STANDS IN?
+func:flow_leaves = bool(FoldFlow:fl) never fails {
+    if (fl.failed)   { pass true; }
+    if (fl.returned) { pass true; }
+    if (fl.gave)     { pass true; }
+    pass (fl.fall_to != 0i32);
 };
 
 // --- EXACT CONSTANT ARITHMETIC (D-310, K-7; 1.5.8b step 2; DEF-71) -----------------
@@ -1297,9 +1354,21 @@ pub func:fold_rule_clause_at = ConstVal(TypeResolver->:r, ExprId:clause, int32:s
     pass cv;
 };
 
+// ENTERED FROM INSIDE AN EVALUATION, IT IS PART OF THAT EVALUATION (DEF-213,
+// 1.6.1e step 3b). A type resolved in the middle of a `comptime func:` body --
+// `#size_of<int8[N]>()` folds `N` -- comes back through here, and until this
+// step the reset below ran there too: the depth went back to zero in the
+// middle of a call chain, so a function that recursed THROUGH a type
+// (`#size_of<int8[comptime(deep())]>()` inside `deep`) was bounded by nothing
+// and stopped the compiler with exit 3 and no message. The reset is for a
+// fold that STARTS here; inside a frame the depth, the chain and the said-flag
+// are the running evaluation's, and the recursion meets `FOLD_DEPTH` like any
+// other (NITPICK-TYPE-025).
 pub func:fold_const = ConstVal(TypeResolver->:r, ExprId:id, int32:scope) never fails {
-    r.fold_blown = false;
-    r.fold_depth = 0i32;
+    if (r.fold_frames <= 0i32) {
+        r.fold_blown = false;
+        r.fold_depth = 0i32;
+    }
     pass (raw fold_expr(r, id, scope, raw FOLD_FUEL()));
 };
 
@@ -1525,6 +1594,54 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
     if (e.kind == ExprKind.ExprRawUnwrapExpr) {
         pass (raw fold_expr(r, raw expr_operand(e), scope, f));
     }
+    // `f(x) ?! E` AND `f(x) ?| d` ARE THE SAME CALL WITH ITS FAILURE ROUTED
+    // ELSEWHERE (D-338, 1.6.1e step 3b; the library listener's `mc0309b` writes
+    // `a.cmp(b) ?! E9`). An operand the evaluator folded is a call that
+    // COMPLETED -- a body that reaches `fail` does not fold -- so the trap `?!`
+    // names is never taken, and `?|`'s fallback is lazy at run time (it is
+    // evaluated on the error path alone), so it is not evaluated here either.
+    // Both spellings, because a rule written for one is owed to its twin.
+    if (e.kind == ExprKind.ExprEmphaticUnwrapExpr) {
+        pass (raw fold_expr(r, raw expr_lhs(e), scope, f));
+    }
+    if (e.kind == ExprKind.ExprSafeUnwrapExpr) {
+        pass (raw fold_expr(r, raw expr_lhs(e), scope, f));
+    }
+
+    // `Enum.Variant` -- a payload-less variant, as a value (D-338).
+    if (e.kind == ExprKind.ExprMemberAccessExpr) {
+        pass (raw fold_variant(r, e));
+    }
+
+    // THE ONE METHOD CALL THAT FOLDS: `a.cmp(b)` on two constant strings (D-338).
+    if (e.kind == ExprKind.ExprMethodCallExpr) {
+        pass (raw fold_string_cmp(r, e, scope, f));
+    }
+
+    // A `pick` EXPRESSION, INSIDE A `comptime func:` CALL AND NOWHERE ELSE
+    // (D-338). An arm is a block of STATEMENTS, and the evaluator runs
+    // statements in a frame: folded where it stands in a run-time body -- the
+    // emitter asks about every `+ - *` node (`emit_const_fold`) -- an arm's
+    // assignment to a local of that body would be evaluated into the
+    // resolver's own environment and never run. `1i32 + pick (2i32) { (2i32)
+    // { acc = 7i32; give 20i32; }, … }` would be the constant 21 with `acc`
+    // still 0. So outside a frame a `pick` is not a constant, and a constant
+    // site that wants one calls a `comptime func:` -- the marker that says the
+    // compiler may run code (D-130).
+    //
+    // THE CHOSEN ARM ENDS IN `give`. A `pass` inside it leaves the FUNCTION
+    // through an expression, and this function answers a value, not a flow:
+    // carrying a pending return across every expression site would be a second
+    // control channel whose one missed check hands a caller its callee's
+    // value. Declined; the statement form returns from its arms.
+    if (e.kind == ExprKind.ExprPickExpr) {
+        if (r.fold_frames <= 0i32) { pass (raw cv_none()); }
+        FoldFlow:xf = raw fold_pick(r, raw pickx_selector(e), raw pickx_arm_start(e),
+                                    raw pickx_arm_count(e), e.span, scope, f);
+        if (xf.failed) { pass (raw cv_none()); }
+        if (!(xf.gave)) { pass (raw cv_none()); }
+        pass (xf.value);
+    }
 
     // EVERYTHING ELSE DOES NOT FOLD, and that is not an error here. `fold_const`
     // answers "is this a constant"; the caller decides whether a non-constant is
@@ -1653,9 +1770,35 @@ func:fold_join_type = int32(int32:a, int32:b) never fails {
 func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) never fails {
     ConstVal:l = raw fold_expr(r, raw expr_lhs(e), scope, fuel);
     if (!(raw cv_folded(l))) { pass (raw cv_none()); }
+    TokenKind:op = raw expr_op(e);
+
+    // `&&` AND `||` DECIDE ON THE LEFT OPERAND WHERE IT DECIDES (DEF-211, 1.6.1e
+    // step 3b), as the run time's branch does (`emit_shortcircuit`). Both
+    // operands were folded first, so a right operand the left one guards was
+    // evaluated anyway: `(d != 0i32) && ((10i32 / d) > 1i32)` with `d` 0 was
+    // "this constant expression divides by zero" at compile time where the same
+    // function answers `false` at run time, and a recursion guarded by `||` ran
+    // to the depth bound. Never a wrong value -- a refusal of a right program.
+    if (l.kind == (raw CV_BOOL())) {
+        if ((op == TokenKind.OpAndAnd) && (l.num == 0i64)) { pass (raw cv_bool(l.type_id, false)); }
+        if ((op == TokenKind.OpOrOr) && (l.num != 0i64))   { pass (raw cv_bool(l.type_id, true)); }
+    }
+
     ConstVal:rr = raw fold_expr(r, raw expr_rhs(e), scope, fuel);
     if (!(raw cv_folded(rr))) { pass (raw cv_none()); }
-    TokenKind:op = raw expr_op(e);
+
+    // TWO VALUES OF ONE ENUM ARE EQUAL OR THEY ARE NOT (D-338), where the run
+    // time's `==` exists: an enum that carries no payload anywhere is its tag,
+    // and one that carries one is an aggregate with no built-in `==` (the
+    // checker's `equatable`). Nothing else is defined on an enum value.
+    if (l.kind == (raw CV_ENUM())) {
+        if (rr.kind != (raw CV_ENUM())) { pass (raw cv_none()); }
+        if (l.type_id != rr.type_id) { pass (raw cv_none()); }
+        if (raw enum_type_carries_payload(r, l.type_id)) { pass (raw cv_none()); }
+        if (op == TokenKind.OpEqEq)  { pass (raw cv_bool(r.types.t_bool, l.num == rr.num)); }
+        if (op == TokenKind.OpNotEq) { pass (raw cv_bool(r.types.t_bool, l.num != rr.num)); }
+        pass (raw cv_none());
+    }
 
     // BOOLEAN CONNECTIVES FIRST, because they are the only ones whose operands are
     // not integers.
@@ -1952,10 +2095,15 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
         r.fold_chain[saved_depth => int64] = raw decl_name(fndecl);
     }
     r.fold_depth = saved_depth + 1i32;
+    // A FRAME IS OPEN (`fold_frames`): the one place it is raised and lowered.
+    r.fold_frames = r.fold_frames + 1i32;
     FoldFlow:flow = raw fold_stmt(r, raw fn_body(r.ast, fndecl), sym.scope, fuel - 1i32);
+    r.fold_frames = r.fold_frames - 1i32;
     r.env = move(saved);
     r.fold_depth = saved_depth;
 
+    // A `give` or a `fall` that reached the function's own block belongs to no
+    // `pick` of this body: it did not return, so there is no value.
     if (flow.failed) { pass (raw cv_none()); }
     if (!(flow.returned)) { pass (raw cv_none()); }
     pass (flow.value);
@@ -1983,8 +2131,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
         while (i < n) decreases n - i {
             StmtId:s2 = StmtId{ index: raw ast_id_at(r.ast, raw stmt_list_start(st), i) };
             FoldFlow:fl = raw fold_stmt(r, s2, scope, f);
-            if (fl.failed) { pass fl; }
-            if (fl.returned) { pass fl; }
+            if (raw flow_leaves(fl)) { pass fl; }
             i = i + 1i32;
         }
         pass (raw flow_none());
@@ -2063,7 +2210,365 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
         pass (raw flow_none());
     }
 
+    // `pick` AS A STATEMENT (D-338, 1.6.1e step 3b): the arm that matches runs,
+    // and whatever its body did is what the statement did -- a `pass` returns
+    // from the function, a body that completes goes on to the next statement.
+    // A `give` that surfaces here belongs to no expression: not evaluated.
+    if (st.kind == StmtKind.StmtPickStmt) {
+        FoldFlow:pf = raw fold_pick(r, raw pick_selector(st), raw pick_arm_start(st),
+                                    raw pick_arm_count(st), st.span, scope, f);
+        if (pf.gave) { pass (raw flow_fail()); }
+        pass pf;
+    }
+    // `give v;` -- the enclosing `pick` expression's value.
+    if (st.kind == StmtKind.StmtGiveStmt) {
+        ConstVal:gv = raw fold_expr(r, raw stmt_operand(st), scope, f);
+        if (!(raw cv_folded(gv))) { pass (raw flow_fail()); }
+        pass (raw flow_give(move(gv)));
+    }
+    // `fall label;` -- the labelled arm's body, entered by `fold_pick`.
+    if (st.kind == StmtKind.StmtFallStmt) {
+        int32:fl_label = raw stmt_label(st);
+        if (fl_label == 0i32) { pass (raw flow_fail()); }
+        pass (raw flow_fall(fl_label));
+    }
+
     pass (raw flow_fail());
+};
+
+// A `pick`, EVALUATED (D-338, 1.6.1e step 3b). ONE core for the statement and
+// the expression form: they are one layout (AST_REFERENCE 3.6) and differ in
+// what their arms end with, which the two callers read off the flow.
+//
+// WHAT IT MIRRORS IS THE EMITTER'S CHAIN (`emit_pick_chain`): the arms tested
+// in SOURCE ORDER, a pattern before its guard, the first arm whose both hold
+// taken. The `switch` lowering agrees with that order in every program that
+// reaches a binary: an arm after an unguarded `(*)` is NITPICK-PICK-004, and
+// two value arms with one value are refused by `llc` (DEF-212).
+//
+// A SELECTOR NO ARM MATCHES IS NOT EVALUATED. Exhaustiveness is the checker's
+// proof, made over the body whether or not this evaluator ever runs it, and
+// the run time's fall-off end is `unreachable`; answering "nothing happened"
+// here would be an answer the program cannot give.
+//
+// `fall label;` ENTERS THE LABELLED ARM'S BODY WITH NO TEST -- its pattern is
+// never matched and its guard never asked (`emit_fall`; the checker holds the
+// target to binding nothing, NITPICK-TYPE-090) -- and each entry spends one
+// unit of the pick's own share of the fuel, so two arms that fall to each
+// other end as every loop that does not: NITPICK-TYPE-025.
+func:fold_pick = FoldFlow(TypeResolver->:r, ExprId:sel, int32:start, int32:count,
+                          Span:at, int32:scope, int32:fuel) never fails {
+    ConstVal:sv = raw fold_expr(r, sel, scope, fuel);
+    if (!(raw pick_selects(r, sv))) { pass (raw flow_fail()); }
+
+    int32:hit = 0i32 - 1i32;
+    int32:i = 0i32;
+    while (i < count) decreases count - i {
+        StmtNode:arm = raw ast_stmt(r.ast, raw pick_arm_at(r.ast, start, i));
+        int32:m = raw fold_arm_matches(r, sv, arm, scope, fuel);
+        if (m < 0i32) { pass (raw flow_fail()); }
+        if (m == 1i32) { hit = i; i = count; } else { i = i + 1i32; }
+    }
+    if (hit < 0i32) { pass (raw flow_fail()); }
+
+    int32:left = fuel;
+    while (left > 0i32) decreases left {
+        StmtNode:taken = raw ast_stmt(r.ast, raw pick_arm_at(r.ast, start, hit));
+        FoldFlow:fl = raw fold_stmt(r, raw arm_body(taken), scope, left);
+        if (fl.fall_to == 0i32) { pass fl; }
+        int32:next = 0i32 - 1i32;
+        int32:j = 0i32;
+        while (j < count) decreases count - j {
+            StmtNode:cand = raw ast_stmt(r.ast, raw pick_arm_at(r.ast, start, j));
+            if ((raw arm_label(cand)) == fl.fall_to) { next = j; j = count; } else { j = j + 1i32; }
+        }
+        // A label no arm of THIS pick carries: the checker's refusal
+        // (NITPICK-RESOLVE-002, DEF-140), and nothing to enter here.
+        if (next < 0i32) { pass (raw flow_fail()); }
+        hit = next;
+        left = left - 1i32;
+    }
+    drop fold_exhausted(r, at);
+    pass (raw flow_fail());
+};
+
+// MAY THE EVALUATOR SELECT ON THIS VALUE? A plain integer, a `bool`, a `char`,
+// a `string` and a payload-less enum value: the kinds whose compare is the one
+// the chain emits. A `tbb` or a ternary value is an integer the folder CARRIES
+// and does not compute in (DEF-197) -- its arms may include `ERR:`, which is
+// not a comparison this evaluator makes -- and a float or a fixed-point value
+// is a text, not a number.
+func:pick_selects = bool(TypeResolver->:r, ConstVal:sv) never fails {
+    if (sv.kind == (raw CV_BOOL()))   { pass true; }
+    if (sv.kind == (raw CV_CHAR()))   { pass true; }
+    if (sv.kind == (raw CV_STRING())) { pass true; }
+    if (sv.kind == (raw CV_ENUM()))   { pass true; }
+    if (sv.kind == (raw CV_INT())) {
+        if (sv.type_id == 0i32) { pass true; }
+        pass (raw type_is_integer(r.types, sv.type_id));
+    }
+    pass false;
+};
+
+// ONE ARM AGAINST THE SELECTOR: 1 it is taken, 0 it is not, -1 the evaluator
+// cannot say -- and "cannot say" ends the evaluation, because an arm skipped
+// on a guess is a different program. The pattern first, then the guard, which
+// is asked only of an arm whose pattern matched (the chain's order).
+func:fold_arm_matches = int32(TypeResolver->:r, ConstVal:sv, StmtNode:arm,
+                              int32:scope, int32:fuel) never fails {
+    PatId:patid = raw arm_pattern(arm);
+    if (raw pat_is_none(patid)) { pass (0i32 - 1i32); }
+    int32:m = raw fold_pat_matches(r, sv, raw ast_pat(r.ast, patid), scope, fuel);
+    if (m != 1i32) { pass m; }
+    ExprId:g = raw arm_guard(arm);
+    if (raw expr_is_none(g)) { pass 1i32; }
+    ConstVal:gv = raw fold_expr(r, g, scope, fuel);
+    if (gv.kind != (raw CV_BOOL())) { pass (0i32 - 1i32); }
+    if (gv.num != 0i64) { pass 1i32; }
+    pass 0i32;
+};
+
+// ONE PATTERN AGAINST THE SELECTOR, with the same three answers.
+//
+//   `(*)`             matches
+//   a value           folded, and equal to the selector (`cv_matches`)
+//   a range           both bounds folded, by the SELECTOR's signedness: a
+//                     `char` and a `uint64` compare unsigned, as the chain's
+//                     `icmp` does; `..` includes its upper bound, `...` does not
+//   `(Enum.Variant)`  the variant BY NAME in the selector's enum, a two-segment
+//                     head held to the enum's own name (`check_enum_arms`'s
+//                     reading); an arm that BINDS a payload cannot be the one
+//                     taken -- the selector is a payload-less variant -- and is
+//                     "cannot say" if its variant is the selector's
+//
+// A struct destructure and `ERR:` are not evaluated.
+func:fold_pat_matches = int32(TypeResolver->:r, ConstVal:sv, PatNode:pn,
+                              int32:scope, int32:fuel) never fails {
+    int32:cannot = 0i32 - 1i32;
+    if (pn.kind == PatKind.PatWildcard) { pass 1i32; }
+    if (pn.kind == PatKind.PatValue) {
+        ConstVal:pv = raw fold_expr(r, raw pat_value(pn), scope, fuel);
+        if (!(raw cv_folded(pv))) { pass cannot; }
+        pass (raw cv_matches(r, sv, pv));
+    }
+    if (pn.kind == PatKind.PatRange) {
+        bool:is_char = (sv.kind == (raw CV_CHAR()));
+        if ((!is_char) && (sv.kind != (raw CV_INT()))) { pass cannot; }
+        ConstVal:lo = raw fold_expr(r, raw pat_range_lo(pn), scope, fuel);
+        if (lo.kind != sv.kind) { pass cannot; }
+        ConstVal:hi = raw fold_expr(r, raw pat_range_hi(pn), scope, fuel);
+        if (hi.kind != sv.kind) { pass cannot; }
+        if (!(raw cv_bound_agrees(r, sv, lo))) { pass cannot; }
+        if (!(raw cv_bound_agrees(r, sv, hi))) { pass cannot; }
+        bool:unsigned = is_char;
+        if (!is_char) {
+            int32:jt = raw fold_join_type(sv.type_id, raw fold_join_type(lo.type_id, hi.type_id));
+            unsigned = raw fw_is_u64(raw fold_width(r, jt));
+        }
+        bool:above = (sv.num >= lo.num);
+        bool:below = (sv.num < hi.num);
+        bool:at_top = (sv.num == hi.num);
+        if (unsigned) {
+            above = ((sv.num =>! uint64) >= (lo.num =>! uint64));
+            below = ((sv.num =>! uint64) < (hi.num =>! uint64));
+        }
+        if (raw pat_range_inclusive(pn)) {
+            if (at_top) { below = true; }
+        }
+        if (above && below) { pass 1i32; }
+        pass 0i32;
+    }
+    if (pn.kind == PatKind.PatEnumDestructure) {
+        if (sv.kind != (raw CV_ENUM())) { pass cannot; }
+        int32:segs = raw pat_enum_segment_count(r.ast, pn);
+        if ((segs <= 0i32) || (segs > 2i32)) { pass cannot; }
+        int32:edecl = raw type_decl(r.types, sv.type_id);
+        if (edecl <= 0i32) { pass cannot; }
+        DeclNode:ed = raw ast_decl(r.ast, DeclId{ index: edecl });
+        if (ed.kind != DeclKind.DeclEnumDecl) { pass cannot; }
+        if (segs == 2i32) {
+            if ((raw pat_enum_segment(r.ast, pn, 0i32)) != (raw decl_name(ed))) { pass cannot; }
+        }
+        int32:pos = raw enum_variant_position(r, ed, raw pat_enum_segment(r.ast, pn, segs - 1i32));
+        if (pos < 0i32) { pass cannot; }
+        if ((pos => int64) != sv.num) { pass 0i32; }
+        if ((raw pat_enum_bind_count(r.ast, pn)) > 0i32) { pass cannot; }
+        pass 1i32;
+    }
+    pass cannot;
+};
+
+// IS A PATTERN'S VALUE THE SELECTOR'S? 1, 0, or -1 where the two are not the
+// same kind of thing. THE CHECKER DOES NOT TYPE A PATTERN'S VALUE AGAINST ITS
+// SELECTOR (DEF-178, open), so this does not trust it: a value of another
+// kind, an integer of another written type, or an unsuffixed one the
+// selector's type cannot hold is "cannot say", never "no match" -- the chain
+// compares such a pattern under the SELECTOR's type, where `255` beside an
+// `int8` selector is -1.
+func:cv_matches = int32(TypeResolver->:r, ConstVal:sv, ConstVal:pv) never fails {
+    int32:cannot = 0i32 - 1i32;
+    if (sv.kind != pv.kind) { pass cannot; }
+    if (sv.kind == (raw CV_STRING())) {
+        if (raw string_eq(sv.text, pv.text)) { pass 1i32; }
+        pass 0i32;
+    }
+    if (sv.kind == (raw CV_ENUM())) {
+        if (sv.type_id != pv.type_id) { pass cannot; }
+        if (sv.num == pv.num) { pass 1i32; }
+        pass 0i32;
+    }
+    if (sv.kind == (raw CV_BOOL())) {
+        if ((sv.num != 0i64) == (pv.num != 0i64)) { pass 1i32; }
+        pass 0i32;
+    }
+    if ((sv.kind == (raw CV_INT())) || (sv.kind == (raw CV_CHAR()))) {
+        if (!(raw cv_bound_agrees(r, sv, pv))) { pass cannot; }
+        if (sv.num == pv.num) { pass 1i32; }
+        pass 0i32;
+    }
+    pass cannot;
+};
+
+// MAY THIS INTEGER OR CHARACTER BE COMPARED WITH THE SELECTOR AS A NUMBER? Its
+// written type is the selector's, or one of the two wrote none and the value
+// fits the type the other wrote. A character's number is compared at the
+// selector's width, so one past it does not agree.
+func:cv_bound_agrees = bool(TypeResolver->:r, ConstVal:sv, ConstVal:pv) never fails {
+    if (sv.kind == (raw CV_CHAR())) {
+        if (sv.type_id == pv.type_id) { pass true; }
+        if (pv.num < 0i64) { pass false; }
+        int32:cb = raw type_int_bits(r.types, sv.type_id);
+        if ((cb <= 0i32) || (cb >= 63i32)) { pass false; }
+        pass (pv.num < (1i64 << (cb => int64)));
+    }
+    if ((sv.type_id != 0i32) && (pv.type_id != 0i32)) { pass (sv.type_id == pv.type_id); }
+    if (pv.type_id == 0i32) {
+        if (sv.type_id == 0i32) { pass true; }
+        pass (raw fold_value_fits(pv.num, raw fold_width(r, 0i32), raw fold_width(r, sv.type_id)));
+    }
+    pass (raw fold_value_fits(sv.num, raw fold_width(r, 0i32), raw fold_width(r, pv.type_id)));
+};
+
+// WHERE A VARIANT STANDS AMONG ITS ENUM'S MEMBERS, by name -- the `position`
+// the tag rule takes, counting every member as the emitter's count does -- or
+// -1 for a name the enum does not declare.
+func:enum_variant_position = int32(TypeResolver->:r, DeclNode:ed, int32:name) never fails {
+    int32:n = raw item_member_count(r.ast, ed);
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, ed, i));
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw decl_name(m)) == name) { pass i; }
+        }
+    }
+    pass (0i32 - 1i32);
+};
+
+// DOES ANY VARIANT OF THIS ENUM CARRY A PAYLOAD? `type_layout.npk`'s
+// `enum_has_payload` asks the same of a laid-out type; this module is below
+// layout's memo (D-227), so it reads the declaration.
+func:enum_type_carries_payload = bool(TypeResolver->:r, int32:ety) never fails {
+    int32:edecl = raw type_decl(r.types, ety);
+    if (edecl <= 0i32) { pass true; }
+    DeclNode:ed = raw ast_decl(r.ast, DeclId{ index: edecl });
+    if (ed.kind != DeclKind.DeclEnumDecl) { pass true; }
+    int32:n = raw item_member_count(r.ast, ed);
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, ed, i));
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw variant_payload_count(m)) > 0i32) { pass true; }
+        }
+    }
+    pass false;
+};
+
+// `Enum.Variant` AS A VALUE (D-338): the base is an identifier the RESOLVER
+// bound to an `enum` declaration -- its recorded symbol, never a lookup by
+// spelling (DEF-196's lesson) -- the enum takes no type arguments (a generic
+// enum's instance is not in this expression, D-261), and the member names a
+// variant that carries no payload. Anything else is a field read, a module
+// member or a constructor, and none of those is a constant here.
+func:fold_variant = ConstVal(TypeResolver->:r, ExprNode:e) never fails {
+    ExprId:b = raw expr_operand(e);
+    if (raw expr_is_none(b)) { pass (raw cv_none()); }
+    ExprNode:bn = raw ast_expr(r.ast, b);
+    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass (raw cv_none()); }
+    if (bn.a == 0i32) { pass (raw cv_none()); }
+    Symbol:sym = raw symtab_get(r.tab, bn.a);
+    if (sym.origin_kind != (raw SYM_DECL())) { pass (raw cv_none()); }
+    DeclNode:ed = raw ast_decl(r.ast, DeclId{ index: sym.origin });
+    if (ed.kind != DeclKind.DeclEnumDecl) { pass (raw cv_none()); }
+    if ((raw decl_generic_window(r.ast, ed)).count != 0i32) { pass (raw cv_none()); }
+    int32:pos = raw enum_variant_position(r, ed, e.payload =>! int32);
+    if (pos < 0i32) { pass (raw cv_none()); }
+    DeclNode:vm = raw ast_decl(r.ast, raw item_member(r.ast, ed, pos));
+    if ((raw variant_payload_count(vm)) != 0i32) { pass (raw cv_none()); }
+    pass (raw cv_enum(raw tt_enum(r.types, sym.origin, raw decl_name(ed), 0i64, 1i32), pos));
+};
+
+// THE ORDER OF TWO STRINGS, AS `impl:string:Ord` COMPUTES IT (D-338): the first
+// byte that differs decides, compared UNSIGNED, and where one is a prefix of
+// the other the shorter is less. -1, 0 or 1. The prelude's loop is the
+// authority (`self.ptr[i] < other.ptr[i]` over `char8`, then the lengths);
+// `tests/backend/programs/comptime_string_order.npk` asks both and holds them
+// equal, because two implementations of one order agree only while something
+// checks that they do.
+func:string_byte_order = int64(string:a, string:b) never fails {
+    int64:n = a.len;
+    if (b.len < n) { n = b.len; }
+    int64:i = 0i64;
+    while (i < n) decreases n - i {
+        uint8:x = a.ptr[i] => uint8;
+        uint8:y = b.ptr[i] => uint8;
+        if (x < y) { pass (0i64 - 1i64); }
+        if (x > y) { pass 1i64; }
+        i = i + 1i64;
+    }
+    if (a.len < b.len) { pass (0i64 - 1i64); }
+    if (a.len > b.len) { pass 1i64; }
+    pass 0i64;
+};
+
+// `a.cmp(b)` ON TWO CONSTANT STRINGS (D-338) -- the one method call that folds.
+//
+// IDENTIFIED BY THE RECEIVER'S VALUE, because the evaluator runs on a body the
+// checker may not have typed yet and holds no call record: a method named
+// `cmp`, one argument, the receiver and the argument both strings. That is
+// sound because `string` has ONE `cmp` in any program that compiles -- the
+// prelude's `impl:string:Ord`; a second, from a trait of the program's own, is
+// NITPICK-TYPE-020 at every call, the prelude's own included (measured).
+//
+// THE ANSWER IS THE PRELUDE'S `Ordering`, FOUND IN THE PRELUDE'S OWN SCOPE and
+// never from the body's: `Ordering` is a name the prelude owns (D-239), and a
+// lookup by spelling from wherever the call stands is the second, weaker
+// resolver this file has already removed twice.
+func:fold_string_cmp = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope,
+                                int32:fuel) never fails {
+    if ((raw expr_list_count(e)) != 1i32) { pass (raw cv_none()); }
+    if (!(raw string_eq(raw intern_get(r.interns, e.payload =>! int32), "cmp"))) {
+        pass (raw cv_none());
+    }
+    ConstVal:a = raw fold_expr(r, raw expr_operand(e), scope, fuel);
+    if (a.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+    ConstVal:b = raw fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, raw expr_list_start(e), 0i32) },
+                               scope, fuel);
+    if (b.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+
+    if (r.tab.prelude_scope == 0i32) { pass (raw cv_none()); }
+    int32:osym = raw scope_lookup_local(r.tab, r.tab.prelude_scope,
+                                        raw intern_add(r.interns, "Ordering"));
+    if (osym == 0i32) { pass (raw cv_none()); }
+    Symbol:os = raw symtab_get(r.tab, osym);
+    if (os.origin_kind != (raw SYM_DECL())) { pass (raw cv_none()); }
+    DeclNode:od = raw ast_decl(r.ast, DeclId{ index: os.origin });
+    if (od.kind != DeclKind.DeclEnumDecl) { pass (raw cv_none()); }
+
+    int64:ord = raw string_byte_order(a.text, b.text);
+    string:vname = "Equal";
+    if (ord < 0i64) { vname = "Less"; }
+    if (ord > 0i64) { vname = "Greater"; }
+    int32:pos = raw enum_variant_position(r, od, raw intern_add(r.interns, move(vname)));
+    if (pos < 0i32) { pass (raw cv_none()); }
+    pass (raw cv_enum(raw tt_enum(r.types, os.origin, raw decl_name(od), 0i64, 1i32), pos));
 };
 
 // A LOOP, WITH THE FUEL AS ITS BOUND. The fuel is shared with everything else the
@@ -2113,8 +2618,9 @@ func:fold_while = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:fue
             first = false;
         }
         FoldFlow:fl = raw fold_stmt(r, raw stmt_body(r.ast, st), scope, left);
-        if (fl.failed) { pass fl; }
-        if (fl.returned) { pass fl; }
+        // A `pass`, a failure, and a `give` or a `fall` to the `pick` this loop
+        // stands in: each leaves the loop (`flow_leaves`).
+        if (raw flow_leaves(fl)) { pass fl; }
         left = left - 1i32;
     }
     drop fold_exhausted(r, st.span);
@@ -2208,12 +2714,7 @@ func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:f
         }
         r.fold_counter = i;
         FoldFlow:fl = raw fold_stmt(r, raw stmt_counted_body(st), scope, left);
-        if (fl.failed) {
-            r.fold_counting = saved_counting;
-            r.fold_counter = saved_counter;
-            pass fl;
-        }
-        if (fl.returned) {
+        if (raw flow_leaves(fl)) {
             r.fold_counting = saved_counting;
             r.fold_counter = saved_counter;
             pass fl;

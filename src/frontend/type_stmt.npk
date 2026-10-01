@@ -2988,6 +2988,11 @@ func:const_init_verdict = int32(ExprTyper->:e, ExprId:eid) never fails {
         if (carried) { pass 2i32; }
         pass 1i32;
     }
+    // AN ENUM'S VARIANT FOLDS SINCE D-338 AND IS STILL NOT A MODULE CONSTANT
+    // (1.6.1e step 3b): D-165's list has none, the renderer writes none, and
+    // `fixed Ordering:O = Ordering.Less;` is refused exactly as it was before
+    // the evaluator could hold the value. Whether it should be one is S-127.
+    if (cv.kind == (raw CV_ENUM())) { pass 1i32; }
     if ((k == (raw TY_TERN())) && (cv.kind == (raw CV_INT())) && (cv.type_id == 0i32)) {
         bool:lit = (n.kind == ExprKind.ExprIntLiteral);
         if (n.kind == ExprKind.ExprUnaryExpr) {

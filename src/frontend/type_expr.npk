@@ -2939,6 +2939,16 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             "`comptime` requires an expression that folds at compile time, and this one does not",
             n.span));
     }
+    // AN ENUM VALUE DOES NOT LEAVE THE EVALUATOR (D-338, 1.6.1e step 3b). It is
+    // typed -- `cv.type_id` is the enum -- so without this it would be taken as
+    // the node's value and reach an emitter that has no constant to write for
+    // it. The evaluator holds one to compare and to select on; whether a
+    // `comptime(…)` or a module binding may BE one is S-127, the user's.
+    if (cv.kind == (raw CV_ENUM())) {
+        pass (raw te_error(e, raw TYPE_NOT_CONSTANT(),
+            "this `comptime` value is an enum's variant, which the compile-time evaluator holds only inside a `comptime func:` — compared with `==`, selected on by `pick` — and nothing writes one into the program (D-338); return the number or the `bool` the caller needs",
+            n.span));
+    }
     if (cv.type_id != 0i32) { pass cv.type_id; }
 
     int32:want = raw expected_value(e);

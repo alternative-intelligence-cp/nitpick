@@ -560,23 +560,74 @@ Recovered from `COMPTIME-001…013`:
 | **loops** — `loop(lo, hi, step) { … }` | `COMPTIME-001` |
 | calls to `comptime func:` declarations, nested | `COMPTIME-001`, `COMPTIME-009` |
 | **strings** — concatenation, equality, ordering, length | `COMPTIME-005` |
+| an enum's payload-less variant as a value; `==` and `!=` on two | D-338 |
+| `pick`, statement and expression form, over a constant selector — inside a `comptime func:` | D-338 |
+| `?!` and `?|` over a call the evaluator completed, as `raw` | D-338 |
 | size and alignment intrinsics | `COMPTIME-003`, `COMPTIME-004` |
 | built-in macros inside `comptime(…)` | `COMPTIME-007` |
 | `assert_static comptime(…)`, short-circuiting to the verifier | `COMPTIME-008` |
 
-> *[2026-09-30, 1.6.1e step 3 — a dated note (D-338).]* String **ordering** is not
-> evaluated yet. A string is ordered only by `a.cmp(b)`, which answers an `Ordering`
-> (D-093, D-330), and the evaluator holds no enum value and runs no `pick`, so the
-> row's "ordering" is `NITPICK-TYPE-004` today (the library listener's `mc0309b`).
-> D-338 (the user, 2026-09-30) settles that it is IMPLEMENTED — a payload-less enum
-> value, `==`/`!=` on it, `pick` over a constant selector, `a.cmp(b)` on two constant
-> strings held equal to the run-time order by a test — as 1.6.1e step 3b.
-> Concatenation, equality and length work as the row says.
+> *[2026-10-01, 1.6.1e step 3b — D-338 as it landed (landing 90).]* String **ordering** is
+> evaluated: `a.cmp(b)` on two constant strings answers the prelude's `Ordering`, by the order
+> the run time's `impl:string:Ord` computes (unsigned bytes, then length) — the two held equal
+> by `tests/backend/programs/comptime_string_order.npk`, which asks both. Until this landing
+> the row's "ordering" was `NITPICK-TYPE-004` (the library listener's `mc0309b`): the evaluator
+> held no enum value and ran no `pick`. Concatenation, equality and length were always there.
 
 **This is an interpreter for a subset of the language, not a constant folder.** It
 executes loops and mutates locals, which means anything it can express is something
 the compiler runs at build time — so evaluation carries a budget for the same
 reason expansion carries a bound.
+
+### An enum value and a `pick`, at compile time (D-338)
+
+The evaluator holds **a payload-less enum variant** as a value — `Ordering.Less`, any
+non-generic enum's variant that carries no payload — in a local, as a `comptime func:`'s
+argument or its result. Two values of one enum compare with `==` and `!=` where the run
+time's `==` exists (an enum none of whose variants carries a payload). `a.cmp(b)` on two
+constant strings is the ONE method call it folds. `f(x) ?! E` and `f(x) ?| d` fold through a
+call it completed, as `raw f(x)` does: an evaluation that completed did not fail, and `?|`'s
+fallback is lazy. `&&` and `||` decide on their left operand where it decides, as at run
+time (DEF-211: until 1.6.1e step 3b both operands were evaluated, and a division its guard
+protects was refused).
+
+It runs **a `pick`, in both forms, inside a `comptime func:`**: the selector a plain integer,
+a `bool`, a `char`, a `string` or an enum value; the arms tested in source order, a `where`
+guard asked after its pattern; a wildcard, a value, a range (by the selector's signedness — a
+`char` and a `uint64` compare unsigned) or a bind-free variant; `give` and `fall` as at run
+time. An arm that binds a payload is passed over when its variant is not the selector's.
+
+```nitpick
+comptime func:order = int32(string:a, string:b) never fails {
+    pick (raw a.cmp(b)) {
+        (Ordering.Less)    { pass -1i32; },
+        (Ordering.Equal)   { pass 0i32; },
+        (Ordering.Greater) { pass 1i32; }
+    }
+};
+fixed int32:AB_VS_B = comptime(order("ab", "b"));     // -1
+```
+
+Four things it does not do — each is `NITPICK-TYPE-004` at the site that forced the
+evaluation, never a different value:
+
+- **A `pick` is evaluated only inside a `comptime func:` call.** `comptime(pick (K) { … })`
+  written directly in an ordinary body, or as a module binding's initialiser, is not a
+  constant: an arm is a block of statements, and the evaluator runs statements in a call's
+  frame and nowhere else. (Folded where it stands, an arm's assignment to a local of the
+  surrounding function would be evaluated and never run.) Call a `comptime func:`.
+- **The arm of an expression `pick` ends in `give`.** A `pass` there leaves the function
+  through an expression; the statement form returns from its arms.
+- **No binding pattern is taken** (a struct pattern; a variant that binds a payload, since the
+  values the evaluator holds carry none), there is no `ERR:` arm, and a `tbb`, ternary,
+  fixed-point or float selector is not selected on.
+- **An enum value does not leave the evaluator**: `comptime(…)` whose value is one, and a
+  module binding initialised with one (`NITPICK-TYPE-035`, as before D-338), are refused where
+  they are written. Whether they should be constants is **S-127**, the user's.
+
+A `comptime func:` that recurses THROUGH A TYPE — `#size_of<int8[comptime(deep())]>()` inside
+`deep` — meets the depth bound like any other recursion (DEF-213; until 1.6.1e step 3b it
+stopped the compiler with no message).
 
 ### Macros and `comptime`, both directions
 
@@ -716,5 +767,9 @@ Recorded as open rather than invented:
 - **What may a `comptime func:` call?** The corpus shows comptime functions calling
   comptime functions. Whether an ordinary function is callable, and what happens if
   it touches the outside world, is unstated.
+  *[2026-10-01.]* And where a `comptime func:` may BE called: it is emitted nowhere, so a
+  call of one outside a constant context compiles and is refused by `llc` as an undefined
+  symbol (DEF-214, open). **S-128**, the user's: recommended, a `comptime func:` exists at
+  compile time only and the checker refuses such a call by name.
 - **What are the bounds, numerically?** D-057 settles that they exist.
   `--comptime-budget <N>` is named as the precedent for the shape.

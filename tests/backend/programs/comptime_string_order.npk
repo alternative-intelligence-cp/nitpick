@@ -1,0 +1,241 @@
+// expect-exit: 0
+//
+// `comptime` ORDERS STRINGS, AND ITS ORDER IS THE RUN TIME'S (D-338, 1.6.1e step
+// 3b; the library listener's `mc0309b`). MACRO_REFERENCE section 8's table has
+// promised "strings -- concatenation, equality, ordering, length" since 0.6; a
+// string is ordered only by `a.cmp(b)`, which answers an `Ordering`, and the
+// evaluator held no enum value and ran no `pick`, so the row was
+// NITPICK-TYPE-004 (measured on `776383f`, which refuses this file).
+//
+// TWO IMPLEMENTATIONS OF ONE ORDER AGREE ONLY WHILE SOMETHING CHECKS THAT THEY
+// DO. The run-time order is the prelude's `impl:string:Ord` -- a byte loop,
+// unsigned, then the lengths -- and the compile-time one is the folder's
+// `string_byte_order`. So every pair below is asked THREE ways and all three
+// must agree: `comptime(c_ord("…", "…"))`, the evaluator; `r_ord` over strings
+// from `rs`, a function the compiler cannot fold, so the machine answers; and
+// the literal answer. The pairs are the ones an implementation gets wrong: the
+// empty string on either side, a proper prefix, a byte past 0x7F against one
+// below it (a SIGNED compare orders "\x7F" after "\x80"), a multi-byte
+// character against ASCII, and `mc0309b`'s own pair ("ab" before "b": a
+// length-first order says otherwise).
+//
+// EVERY FUNCTION IS WRITTEN TWICE, `c_name` AND `r_name`, WITH ONE BODY: a
+// `comptime func:` is run by the compiler and emitted nowhere (DEF-214), so
+// the machine's side is an ordinary function of the same text. The two texts
+// were written from one template; a change to one is a change to both.
+//
+// The second half is the value the order is made of: a payload-less enum
+// variant held in a local, returned from one function to another, compared
+// with `==` and `!=`; and `?!` and `?|` folding through a call the evaluator
+// completed, as `raw` always has.
+mod:comptime_string_order;
+
+error:E9;
+
+enum:Mode = { Off; Slow; Fast; };
+enum:Lvl = { Lo = 10i32; Mid = 20i32; Hi = 30i32; };
+comptime func:c_ord = int32(string:a, string:b) never fails {
+    pick (raw a.cmp(b)) {
+        (Ordering.Less)    { pass -1i32; },
+        (Ordering.Equal)   { pass 0i32; },
+        (Ordering.Greater) { pass 1i32; }
+    }
+};
+func:r_ord = int32(string:a, string:b) never fails {
+    pick (raw a.cmp(b)) {
+        (Ordering.Less)    { pass -1i32; },
+        (Ordering.Equal)   { pass 0i32; },
+        (Ordering.Greater) { pass 1i32; }
+    }
+};
+// `mc0309b`'s own spelling: the unwrap is `?!`, the selector a local, the arms a
+// variant and a wildcard.
+comptime func:c_mc_order = int32() {
+    string:a = "ab";
+    string:b = "b";
+    Ordering:o = a.cmp(b) ?! E9;
+    pick (o) { (Ordering.Less) { pass 1i32; }, (*) { pass 2i32; } }
+};
+func:r_mc_order = int32() {
+    string:a = "ab";
+    string:b = "b";
+    Ordering:o = a.cmp(b) ?! E9;
+    pick (o) { (Ordering.Less) { pass 1i32; }, (*) { pass 2i32; } }
+};
+comptime func:c_mode_of = Mode(int32:k) never fails {
+    if (k == 0i32) { pass Mode.Off; }
+    if (k == 1i32) { pass Mode.Slow; }
+    pass Mode.Fast;
+};
+func:r_mode_of = Mode(int32:k) never fails {
+    if (k == 0i32) { pass Mode.Off; }
+    if (k == 1i32) { pass Mode.Slow; }
+    pass Mode.Fast;
+};
+// An enum value in a local, compared both ways, the value itself computed by
+// another function of its side.
+comptime func:c_mode_rank = int32(int32:k) never fails {
+    Mode:m = raw c_mode_of(k);
+    if (m == Mode.Off) { pass 10i32; }
+    if (m != Mode.Fast) { pass 20i32; }
+    pass 30i32;
+};
+func:r_mode_rank = int32(int32:k) never fails {
+    Mode:m = raw r_mode_of(k);
+    if (m == Mode.Off) { pass 10i32; }
+    if (m != Mode.Fast) { pass 20i32; }
+    pass 30i32;
+};
+comptime func:c_lvl_of = Lvl(int32:k) never fails {
+    if (k == 0i32) { pass Lvl.Lo; }
+    if (k == 1i32) { pass Lvl.Mid; }
+    pass Lvl.Hi;
+};
+func:r_lvl_of = Lvl(int32:k) never fails {
+    if (k == 0i32) { pass Lvl.Lo; }
+    if (k == 1i32) { pass Lvl.Mid; }
+    pass Lvl.Hi;
+};
+// Variants with explicit tags: the value is the variant, whatever its tag.
+comptime func:c_lvl_rank = int32(int32:k) never fails {
+    Lvl:l = raw c_lvl_of(k);
+    Lvl:other = Lvl.Mid;
+    if (l == other) { pass 2i32; }
+    if (l == Lvl.Lo) { pass 1i32; }
+    pass 3i32;
+};
+func:r_lvl_rank = int32(int32:k) never fails {
+    Lvl:l = raw r_lvl_of(k);
+    Lvl:other = Lvl.Mid;
+    if (l == other) { pass 2i32; }
+    if (l == Lvl.Lo) { pass 1i32; }
+    pass 3i32;
+};
+comptime func:c_plus_one = int32(int32:k) {
+    pass k + 1i32;
+};
+func:r_plus_one = int32(int32:k) {
+    pass k + 1i32;
+};
+// `?!` and `?|` over a call the evaluator completes: the call's value.
+comptime func:c_via_bang = int32(int32:k) {
+    int32:x = c_plus_one(k) ?! E9;
+    pass x * 2i32;
+};
+func:r_via_bang = int32(int32:k) {
+    int32:x = r_plus_one(k) ?! E9;
+    pass x * 2i32;
+};
+comptime func:c_via_pipe = int32(int32:k) {
+    int32:x = c_plus_one(k) ?| 99i32;
+    pass x * 3i32;
+};
+func:r_via_pipe = int32(int32:k) {
+    int32:x = r_plus_one(k) ?| 99i32;
+    pass x * 3i32;
+};
+
+// The strings, by number, from a function the compiler does not run.
+func:rs = string(int32:k) never fails {
+    if (k == 1i32) { pass "a"; }
+    if (k == 2i32) { pass "ab"; }
+    if (k == 3i32) { pass "b"; }
+    if (k == 4i32) { pass "abc"; }
+    if (k == 5i32) { pass "abd"; }
+    if (k == 6i32) { pass "\x7F"; }
+    if (k == 7i32) { pass "\x80"; }
+    if (k == 8i32) { pass "\xC3\xA9"; }
+    if (k == 9i32) { pass "z"; }
+    if (k == 10i32) { pass "\xFF"; }
+    pass "";
+};
+
+func:opq = int32(int32:v) never fails { pass v; };
+
+func:same = bool(int32:ct, int32:rt, int32:want) never fails {
+    pass ((ct == want) && (rt == want));
+};
+
+// A constant expression outside any function: the order and the comparison
+// both fold where they stand.
+fixed bool:AB_BEFORE_B = (raw "ab".cmp("b")) == Ordering.Less;
+fixed bool:E_ACUTE_NOT_BEFORE_Z = (raw "\xC3\xA9".cmp("z")) != Ordering.Less;
+
+func:main = int32(cstring[]:argv) {
+    // --- the order, three ways ---
+    if (!(raw same(comptime(c_ord("", "")), raw r_ord(raw rs(0i32), raw rs(0i32)), 0i32))) { exit 1i32; }
+    if (!(raw same(comptime(c_ord("", "a")), raw r_ord(raw rs(0i32), raw rs(1i32)), -1i32))) { exit 2i32; }
+    if (!(raw same(comptime(c_ord("a", "")), raw r_ord(raw rs(1i32), raw rs(0i32)), 1i32))) { exit 3i32; }
+    if (!(raw same(comptime(c_ord("ab", "b")), raw r_ord(raw rs(2i32), raw rs(3i32)), -1i32))) { exit 4i32; }
+    if (!(raw same(comptime(c_ord("b", "ab")), raw r_ord(raw rs(3i32), raw rs(2i32)), 1i32))) { exit 5i32; }
+    if (!(raw same(comptime(c_ord("abc", "abd")), raw r_ord(raw rs(4i32), raw rs(5i32)), -1i32))) { exit 6i32; }
+    if (!(raw same(comptime(c_ord("abd", "abc")), raw r_ord(raw rs(5i32), raw rs(4i32)), 1i32))) { exit 7i32; }
+    if (!(raw same(comptime(c_ord("abc", "abc")), raw r_ord(raw rs(4i32), raw rs(4i32)), 0i32))) { exit 8i32; }
+    if (!(raw same(comptime(c_ord("ab", "abc")), raw r_ord(raw rs(2i32), raw rs(4i32)), -1i32))) { exit 9i32; }
+    if (!(raw same(comptime(c_ord("abc", "ab")), raw r_ord(raw rs(4i32), raw rs(2i32)), 1i32))) { exit 10i32; }
+    if (!(raw same(comptime(c_ord("\x7F", "\x80")), raw r_ord(raw rs(6i32), raw rs(7i32)), -1i32))) { exit 11i32; }
+    if (!(raw same(comptime(c_ord("\x80", "\x7F")), raw r_ord(raw rs(7i32), raw rs(6i32)), 1i32))) { exit 12i32; }
+    if (!(raw same(comptime(c_ord("\xC3\xA9", "z")), raw r_ord(raw rs(8i32), raw rs(9i32)), 1i32))) { exit 13i32; }
+    if (!(raw same(comptime(c_ord("z", "\xC3\xA9")), raw r_ord(raw rs(9i32), raw rs(8i32)), -1i32))) { exit 14i32; }
+    if (!(raw same(comptime(c_ord("\xFF", "")), raw r_ord(raw rs(10i32), raw rs(0i32)), 1i32))) { exit 15i32; }
+    if (!(raw same(comptime(c_ord("\xFF", "\xFF")), raw r_ord(raw rs(10i32), raw rs(10i32)), 0i32))) { exit 16i32; }
+    if (!(raw same(comptime(c_ord("\x80", "\xFF")), raw r_ord(raw rs(7i32), raw rs(10i32)), -1i32))) { exit 17i32; }
+    if (!(raw same(comptime(c_ord("z", "\x80")), raw r_ord(raw rs(9i32), raw rs(7i32)), -1i32))) { exit 18i32; }
+    if (!(raw same(comptime(c_ord("\xC3\xA9", "\xFF")), raw r_ord(raw rs(8i32), raw rs(10i32)), -1i32))) { exit 19i32; }
+    if (!(raw same(comptime(c_ord("a", "z")), raw r_ord(raw rs(1i32), raw rs(9i32)), -1i32))) { exit 20i32; }
+
+    // --- the listener's program ---
+    int32:mc = comptime(c_mc_order());
+    if (mc != 1i32) { exit 30i32; }
+    int32:mc_rt = r_mc_order() ?! E9;
+    if (mc_rt != 1i32) { exit 31i32; }
+
+    // --- an enum value: held, returned, compared ---
+    if (!(raw same(comptime(c_mode_rank(0i32)), raw r_mode_rank(raw opq(0i32)), 10i32))) { exit 40i32; }
+    if (!(raw same(comptime(c_mode_rank(1i32)), raw r_mode_rank(raw opq(1i32)), 20i32))) { exit 41i32; }
+    if (!(raw same(comptime(c_mode_rank(2i32)), raw r_mode_rank(raw opq(2i32)), 30i32))) { exit 42i32; }
+    if (!(raw same(comptime(c_lvl_rank(0i32)), raw r_lvl_rank(raw opq(0i32)), 1i32))) { exit 43i32; }
+    if (!(raw same(comptime(c_lvl_rank(1i32)), raw r_lvl_rank(raw opq(1i32)), 2i32))) { exit 44i32; }
+    if (!(raw same(comptime(c_lvl_rank(2i32)), raw r_lvl_rank(raw opq(2i32)), 3i32))) { exit 45i32; }
+    // The comparison folds where it stands, too.
+    bool:eq = comptime(Mode.Slow == Mode.Slow);
+    bool:ne = comptime(Mode.Slow != Mode.Fast);
+    bool:eq2 = comptime(Lvl.Lo == Lvl.Hi);
+    if (!eq) { exit 50i32; }
+    if (!ne) { exit 51i32; }
+    if (eq2) { exit 52i32; }
+
+    // --- `?!` and `?|` fold through a completed call ---
+    int32:vb = comptime(c_via_bang(4i32));
+    int32:vp = comptime(c_via_pipe(4i32));
+    int32:vb_rt = r_via_bang(raw opq(4i32)) ?! E9;
+    int32:vp_rt = r_via_pipe(raw opq(4i32)) ?! E9;
+    if (vb != 10i32) { exit 60i32; }
+    if (vp != 15i32) { exit 61i32; }
+    if (vb_rt != 10i32) { exit 62i32; }
+    if (vp_rt != 15i32) { exit 63i32; }
+
+    // --- module constants computed from the order ---
+    if (!AB_BEFORE_B) { exit 70i32; }
+    if (!E_ACUTE_NOT_BEFORE_Z) { exit 71i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (E9) { exit 89i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

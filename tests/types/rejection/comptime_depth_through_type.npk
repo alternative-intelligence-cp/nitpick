@@ -1,0 +1,45 @@
+// expect-error: NITPICK-TYPE-025
+// expect-error-at: 17:76
+//
+// A `comptime func:` THAT RECURSES THROUGH A TYPE MEETS THE DEPTH BOUND (DEF-213,
+// 1.6.1e step 3b). `#size_of<int8[N]>()` folds `N` to resolve the type, and that
+// fold came back through the evaluator's front door, which reset the depth it
+// was already counting: a function that called itself from inside an array size
+// was bounded by nothing, and the compiler stopped with exit 3 and no message
+// (measured on `776383f`: the checker and `npkc` alike). The evaluation's depth
+// is kept across a fold entered from inside it, so this is the budget's own
+// sentence, once, with the chain that reached it.
+//
+// The control is the same shape with an end: the type's size is asked inside a
+// `comptime func:` body, and the evaluation goes on after it (`sized`, 13).
+mod:comptime_depth_through_type;
+
+comptime func:deep = int64() never fails { pass #size_of<int8[comptime(deep())]>(); };
+
+comptime func:sized = int64(int64:k) never fails {
+    int64:sz = #size_of<int8[4]>();
+    pick (k) { (1i64) { pass sz + 9i64; }, (*) { pass sz; } }
+};
+
+func:main = int32(cstring[]:argv) {
+    int64:v = comptime(deep());
+    int64:w = comptime(sized(1i64));
+    if (w != 13i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

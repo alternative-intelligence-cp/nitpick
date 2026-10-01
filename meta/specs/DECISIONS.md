@@ -4136,6 +4136,13 @@ the stdlib were written before the feature existed, in a style that predates it.
 
 ---
 
+> *[2026-10-01, 1.6.1e step 3b (D-338) — a dated note.]* **A `pick` is evaluated at compile time, in both forms,
+> inside a `comptime func:` call.** The compile-time evaluator runs the arm the run time's chain would take — the
+> arms in source order, a guard after its pattern, `fall` entering a labelled arm's body with no test — and reads
+> the two forms off one core: a statement `pick`'s arm may `pass`, an expression `pick`'s arm ends in `give`. A
+> `pass` out of an expression arm leaves the function through an expression and is not evaluated (MACRO_REFERENCE
+> §8).
+
 ## D-060 — Nitpick is statement-oriented; the expression forms are a closed list — **SETTLED; D-163 adds the STATEMENT-side closed list (checked since 1.1.0)**: a value-less statement is one of `drop f();` / `relay f();` / `f() ?! c;` / `f() ?| NIL;`, and a bare `f();` on a `Result` is refused — the statement-side counterpart of this decision**
 
 Resolves conflicts **24** and **18**, which are the same question.
@@ -9687,6 +9694,20 @@ configurable, and the two bounds stay two.
 
 *[2026-10-01, 1.6.1e (DEF-192's and DEF-196's landing) — a dated note.]* **What a name means inside a `comptime func:` call is what the resolver bound it to (DEF-196).** The evaluator's environment was one flat list of (name, value) per call, with the comment "there is no nested scope in a body this evaluator accepts" — false since the evaluator learned `if`, `while` and the counted loops. Three silent wrong answers of compile-time evaluation, each disagreeing with the same body at run time: a nested block's local overwrote the outer local or parameter of its spelling (12 for 11; 50 for 3); a macro body's free name read a `comptime` local (6 for 105); a name inside a type read a local where the checker reads the module's `fixed` binding (8 for 12 — one type, two sizes). `FoldEnv` is keyed by the declaring node now (the symbol's origin kind and origin), `fold_ident` asks it only for an identifier that HAS a symbol, an assignment writes its target's symbol, and nothing is asked by name: an identifier the resolver did not bind is a name inside a type, which is the module's binding by D-222.
 
+> *[2026-10-01, 1.6.1e step 3b — a dated note (D-338, DEF-211, DEF-213).]* **What the evaluator gained, and three
+> things about how it runs.** It holds a payload-less enum variant as a value (`CV_ENUM`: the enum's type and the
+> variant's position among its declaration's members), compares two with `==`/`!=`, folds `a.cmp(b)` on two constant
+> strings — the one method call it folds — folds `?!` and `?|` through a call it completed as it always folded
+> `raw`, and runs a `pick`. (1) STATEMENTS RUN ONLY INSIDE A `comptime func:` CALL: a `pick` expression is evaluated
+> only there (`TypeResolver.fold_frames`), because an arm's assignment folded where it stands in a run-time body
+> would be evaluated into the resolver's own environment and never run — `1i32 + pick (2i32) { (2i32) { acc = 7i32;
+> give 20i32; }, … }` would be the constant 21 with `acc` unwritten. (2) `&&` AND `||` DECIDE ON THE LEFT OPERAND
+> WHERE IT DECIDES (DEF-211): both were folded first, so a division its guard protects was refused at compile time
+> (`(d != 0i32) && ((10i32 / d) > 1i32)` with `d` 0: "divides by zero") where the run time answers `false`. (3) A
+> FOLD ENTERED FROM INSIDE AN EVALUATION KEEPS ITS DEPTH (DEF-213): `fold_const` reset the depth each time a type
+> was resolved mid-body, so a `comptime func:` recursing through an array size was bounded by nothing and stopped
+> the compiler with exit 3 and no message; it is NITPICK-TYPE-025 now, the second bound this decision set.
+
 ## D-131 — Folding is not typing, and the 0.5.0 tripwire stands — **SETTLED**
 
 `tests/frontend/expr_types.npk` asserts that **exactly one** expression in its
@@ -12072,6 +12093,14 @@ them.
 > negated one, the integer form, an unsuffixed fraction, `comptime(…)` of one, a reference to another, a `flt32`
 > member of an array or struct constant — each the bits a literal of that text is in a function body, by the one
 > writer (`float_const_text`). It was NITPICK-TYPE-035 by name for one landing.
+
+> *[2026-10-01, 1.6.1e step 3b — a dated note (D-338; S-127).]* **An enum's variant folds since D-338 and is still
+> not a module constant.** The rule above reads "everything else is constant exactly when the folder folds it", and
+> the folder now folds `Ordering.Less`; `const_init_verdict` keeps the refusal it gave before the evaluator could
+> hold the value (NITPICK-TYPE-035 for `fixed Ordering:O = Ordering.Less;`, at a struct's or an array's member too),
+> because this list has no enum variant in it, the renderer writes none, and D-338 added the value to the EVALUATOR
+> and "nothing else". Whether a payload-less variant should be a module constant — and a `comptime(…)` value — is
+> S-127, the user's.
 
 ## D-166 — What `for` iterates: a range, a slice, an array, or an `Iterator` — **SETTLED**
 
@@ -21952,3 +21981,316 @@ run-time `impl:string:Ord` computes (unsigned bytes, then length), held equal by
 Nothing else is added: no payload-carrying variant, no array, no method call but that one. It is its own
 landing, 1.6.1e step 3b, planned execution-grade before it starts, because it is new evaluator surface
 and "anything it can express is something the compiler runs at build time" (MACRO_REFERENCE §8).
+
+> *[2026-10-01, 1.6.1e step 3b — D-338 AS IT LANDED (landing 90, `nitpick-compiler_28`; `1.6.1e.md` §2.10d and its
+> record).]* Everything in the decision's list is in: the value (`CV_ENUM`), `==`/`!=` on it, `pick` in both forms
+> over a constant selector (a plain integer, a `bool`, a `char`, a `string`, an enum value), and `a.cmp(b)` on two
+> constant strings, held equal to the prelude's `impl:string:Ord` by
+> `tests/backend/programs/comptime_string_order.npk`, which asks the evaluator, the machine and the literal answer
+> of twenty pairs. With it, because `mc0309b` writes `a.cmp(b) ?! E9`: `?!` and `?|` fold through a call the
+> evaluator completed. FOUR READINGS TAKEN AT THE PLAN, each with its reason there: a `pick` is evaluated only
+> inside a `comptime func:` call; an expression `pick`'s arm ends in `give`; an enum value does not leave the
+> evaluator (`comptime(…)` over one is NITPICK-TYPE-004 with its own sentence, a module binding NITPICK-TYPE-035 as
+> before — S-127 asks whether it should); a selector the folder carries and does not compute in (`tbb`, ternary,
+> fixed-point, float) is not selected on. The listener's `mc0309b` answers `run:0`.
+
+## D-339 — THE LOCK FLOOR IS CLOSED UNDER A `<=` BOUND, AN EXACT TRAIT CLAUSE IS EXACT, AND THE PRELUDE'S TRAITS DECLARE NO LEVEL — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-119)**
+
+**The question, as it was put (S-119).** the lock levels of a dynamically dispatched call: the FLOOR under a `<=`
+bound, and what the prelude's traits declare (raised 2026-09-30 by `nitpick-compiler_22` from the probes of the lock
+walk at 1.6.1e step 3; DEF-181). The recap: D-056 (settled with the user at the concurrency planning) proves
+lock-order freedom by LEVELS — acquisition strictly increases — and says a dynamically dispatched method "declares
+its maximum acquisition level … and implementations are checked against it. An undeclared method may not acquire at
+all"; D-113 spells the clause `acquires <= N`. Step 3 made the last sentence true: an implementation of a trait
+method that declares no clause, reaching any level, is LOCK-002. Two things follow. **(a) THE FLOOR.** `acquires <=
+N` is a ceiling only: holding level 2 and calling through a `dyn` bounded at 3 passes although an implementation may
+take level 1 — a downward acquisition the proof does not see (D-056 itself lists "a declared-but-broad dynamic
+bound" among what its second layer contains by deadlines, not proves absent). **(b) THE PRELUDE'S TRAITS** declare
+no level, so since step 3 no implementation of `Writer`, `Reader`, `Iterator`, `ToString`, `Eq`, `Ord`, `Hash`,
+`Clone` or `Debug` may take a lock or wait on a channel, and a program cannot add the clause to a trait it does not
+own: a mutex-guarded `Writer` cannot acquire inside its own `write`. None exists in the tree or the libraries today
+(the step's sweep: zero sites).
+
+**Where it stood.** OPEN — PUT TO THE USER 2026-10-01 by `nitpick-compiler_23`, with the numbers (measured
+2026-09-30 on `9efe218`): an `acquires` clause appears NOWHERE in `lib/`, `npkg/`, `tools/`, nitpick-apps or any
+library, and in nitpick-libs only in the fuzzer's three reproducers (`vf0829`, `vf0830`, `vf0831`); a `<=` bound on
+a trait method outside our own tests is in ONE file (`vf0830`, a control); so closing the floor (a) costs our own
+four test files (`lock_levels` ×2, `lock_calls`, `lock_undeclared`) and nothing else, and no implementation of a
+prelude trait anywhere takes a lock or waits (b). 1.6.1e step 3c (DEF-181) is planned on the answer.
+
+**The decision: the recommendation, ratified as written.** **(a) Close the floor**: a call through a `<=`-bounded
+method while anything is held is refused (LOCK-001), and an EXACT `acquires N` on a trait's method means its
+implementations reach N and nothing else — measured on the tree first. **(b) Keep the prelude's traits undeclared**:
+a lock hidden behind an I/O trait is behaviour that depends on which implementation stands behind the `dyn` — the
+kind the blueprint rule refuses — and the guard-outside pattern says the same thing where the reader can see it
+(`Guard<…>:g = relay await m.acquire(d); g.value.write(…)`); an inherent method (unbounded, statically dispatched)
+or a program's own trait with `acquires <= N` covers the rest. The alternative for (b), a declared level on
+`Writer`/`Reader`, fixes ONE number for every program and orders every write against every lock a caller holds.
+
+**In one line.** (a) close the floor: a call through a `<=`-bounded method while anything is held is LOCK-001, and
+an exact `acquires N` on a trait's method means its implementations reach N and nothing else; (b) the prelude's
+traits stay undeclared — the guard is taken outside the call.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** It unblocks 1.6.1e step 3c (the lock walk, DEF-181's six holes), measured on the tree first as
+the recommendation says; four of our own test files move with it (`lock_levels` twice, `lock_calls`,
+`lock_undeclared`).
+
+## D-340 — A MACRO ARGUMENT IS THE CALLER'S TEXT AND RESOLVES AT THE INVOCATION SITE — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-120)**
+
+**The question, as it was put (S-120).** WHOSE SCOPE A MACRO ARGUMENT RESOLVES IN (raised 2026-10-01 by
+`nitpick-compiler_23`, reading DEF-183 against D-057; probes `ha1`, `ha2`). The recap: D-057 (settled at 0.6.0) says
+"an identifier in a macro BODY resolves in the scope where the macro was written. Always", and that `#caller(NAME)`
+is "the sole way to reach the call site". An ARGUMENT is in neither sentence: it is the caller's own text, written
+at the invocation. The expander's own comment says "its identifiers are the caller's" — and the resolver then
+resolves the substituted argument with the body, in the module scope. So today a caller's local cannot be passed at
+all (`#twice(n)` with a local `n`: RESOLVE-002, "cannot find `n` in the scope this macro was written in"), and one
+that shadows a module binding is SILENTLY replaced by it: beside `fixed int32:shared = 100i32;`, `int32:shared =
+5i32; #twice(shared)` over `macro:twice = (X) { X + X; };` answers 200, at both legs (DEF-183's silent face).
+
+**Where it stood.** OPEN — the user's, put to him 2026-10-01; DEF-183 lands on the answer (the mechanism for either
+reading is planned, `1.6.1e.md` §2.10c part B).
+
+**The decision: the recommendation, ratified as written.** **R1: an argument is the caller's text and resolves at
+the invocation site** — `#twice(n)` works, the shadowing case answers 10; `#caller(NAME)` stays the BODY's one way
+out, an argument is the caller's way in, and nothing a body writes changes meaning. The alternative, R2: everything
+in an expansion resolves where the macro was written, and an argument identifier that would bind differently at the
+site (or exists only there) is REFUSED at the argument — no local can ever be passed to a macro.
+
+**In one line.** R1: an argument is the caller's text and resolves at the invocation site; `#caller(NAME)` stays the
+body's one way out.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** It unblocks DEF-183 part B, whose shadowing face is a SILENT WRONG ANSWER today
+(`#twice(shared)` answers 200 for 10): by the standing rule it is the queue's FIRST item, landing 91. The mechanism
+is planned (`1.6.1e.md` §2.10c part B).
+
+## D-341 — `buffer` GETS CHECKED INDEXING AND SLICING, AND A `#wild_slice` OF A MANAGED HEADER'S POINTER IS TIED TO ITS OWNER — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-121)**
+
+**The question, as it was put (S-121).** A `buffer` HAS NO SAFE TYPED ACCESS (raised 2026-10-01 by
+`nitpick-compiler_23` from the library listener's IN-2 (1); numbers taken on `9efe218`). The recap: D-200 gave the
+language `buffer`, the managed owning byte cell, and STRUCK §23's draft verb family — typed access is `#ptr_add` +
+`<-` over `b.ptr`, or a `#wild_slice(b.ptr, n)`; D-315 says the `#wild_` spelling IS the acknowledgement, so a
+`#wild_slice` is tied to nothing. The first library that needed a byte sink (nitpick-time, `src/core/bytes.npk`)
+wrote five unchecked slices over a managed header's `.ptr` — three written through — and one PUBLIC function,
+`bytes_view`, that RETURNS one: after the buffer grows, the returned view reads freed memory (the library's own
+`tests/unit/bytes_view_lifetime.npk`: exit 0, reading the 0xAA poison), in a caller that spells no opt-out.
+`#wild_slice` sites: `src/` 6, tests 7, nitpick-libs 25, apps 0, `lib/` 0; over a managed header's `.ptr`: 5, all in
+that one file.
+
+**Where it stood.** OPEN — the user's, put to him 2026-10-01.
+
+**The decision: the recommendation, ratified as written.** **(3) Give `buffer` checked indexing and slicing** —
+`b[i]`, `b[lo...hi]`, a view frozen like any other (D-325) — so the safe spelling exists, **with (1) as the belt**:
+a `#wild_slice(x.ptr, n)` whose pointer is read from a managed header is tied to `x` (the freeze then refuses the
+growth while the view lives; the library's three write-through uses take a block each). (2), leaving it the author's
+and documenting D-315/D-325, leaves a hole in every consumer of such a library.
+
+**In one line.** (3) `b[i]`, `b[lo...hi]`, a view frozen like any other (D-325), with (1) as the belt: a
+`#wild_slice(x.ptr, n)` whose pointer is read from a managed header is tied to `x`.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** A language addition: its own subcycle plan, execution-grade, before it is built (design work);
+nitpick-time's `bytes.npk` (five slices, `bytes_view`) is the consumer.
+
+## D-342 — AN ENUM VARIANT'S VALUE IS A BARE NON-NEGATIVE `int32` LITERAL, NO TWO VARIANTS SHARE A TAG, AND AN ENUM VALUES EVERY VARIANT OR NONE — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-122)**
+
+**The question, as it was put (S-122).** WHAT AN ENUM VARIANT'S EXPLICIT VALUE MAY BE, AND WHAT AN UNVALUED VARIANT
+BESIDE ONE IS (raised 2026-10-01 by `nitpick-compiler_24`; DEF-193, found writing DEF-189's test). The recap: the
+grammar reads `Name = <expression>;` in an enum body; `variant_tag_of` (1.4.1) has the whole rule — "the DECLARED
+integer literal where one is given, the POSITION otherwise" — and nothing checks a value at all (`check_decl` has no
+arm for an enum). So: a value that is not a bare integer literal is silently IGNORED and the position used (`X =
+7i32 + 1i32`, `X = BASE`, `X = -3i32` are each 0 as a first variant); two variants may carry one tag (`enum:F = { A
+= 3i32; B = 3i32; }`: `F.A == F.B` is true; `enum:E = { A; B = 0i32; }` likewise, and a `pick` naming both is
+refused by `llc`, "duplicate case value"); a value past `int32` is truncated. 455 explicit values exist in the tree,
+the libraries and the applications, every one a bare literal (2 are macro invocations that expand to one).
+
+**Where it stood.** OPEN — the user's. The interim refusals LANDED 2026-10-01 (DEF-193, `NITPICK-TYPE-093`: a value
+that is not a bare literal, a value outside `int32`, a shared tag); they foreclose neither answer.
+
+**The decision: the recommendation, ratified as written.** **Refuse what cannot be honoured, now; decide the rest
+once.** (1) A value is an integer CONSTANT expression, folded by the checker (a literal, a negated literal, a module
+`fixed` name, arithmetic on those) — until the folder's value reaches the emitter, anything but a bare literal is
+refused by name. (2) Two variants of one enum never share a tag — refused at the second, naming the first. (3) A
+value fits `int32`. (4) An unvalued variant is its POSITION, as today (not the previous value plus one): with (2) a
+collision is a refusal, never a silent second meaning. *[Revised 2026-10-01 by the same seat, putting the question
+to the user:]* **the simplest rule, and final — R1:** a value is a bare non-negative integer literal that fits
+`int32` (what landing 85 enforces); no two variants share a tag; and **an enum gives EVERY variant a value or NONE**
+— a mix is refused, because `{ A = 5i32; B; }` makes `B` 1 (its position) where a reader from C or Rust expects 6,
+the look-alike trap the language's renaming rule exists to remove (three enums of our own tests mix today; none in
+the libraries or the applications). R2, the first form above: constant-expression values (`X = BASE + 1i32`, a
+negative tag), built and verified before the freeze — nothing among the 455 existing values needs one.
+
+**In one line.** R1, final: a value is a bare non-negative integer literal that fits `int32`; no two variants share
+a tag; an enum gives EVERY variant a value or NONE — a mix is refused.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** Landing 85's three refusals (DEF-193, `NITPICK-TYPE-093`) are the first two clauses; the third
+is ONE refusal added to `check_enum_values`, its own landing with an advance notice (three enums of our own tests
+mix: `enumvals.py` finds them; none in the libraries or the applications). TYPE_REFERENCE §9.3 and `enum_values.npk`
+move with it.
+
+## D-343 — A MACRO PARAMETER THAT ONLY NAMES AN EMITTED DECLARATION IS REFUSED AT THE MACRO'S DECLARATION — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-123)**
+
+**The question, as it was put (S-123).** MAY A MACRO PARAMETER NAME AN EMITTED DECLARATION (raised 2026-10-01 by
+`nitpick-compiler_24`; MACRO_REFERENCE §10 has recorded it as open since 0.6.0, "rather than invented"). The recap:
+an argument is an EXPRESSION and substitution replaces identifier expressions (D-057, MACRO_REFERENCE §3). A
+declaration's NAME is not an expression, so `macro:m = (N) { func:N = int32() never fails { pass 5i32; }; };
+#m(7i32);` emits a function literally called `N`, the argument dropped — "unimplemented rather than refused" in the
+reference's words, and the library listener's `mc0388` pins it as running. Step 3a refuses the half that answered
+WRONGLY (a body that declares the name and also writes it as an expression: each use was the argument) and left this
+half as it was.
+
+**Where it stood.** OPEN — the user's.
+
+**The decision: the recommendation, ratified as written.** **Refuse it at the macro's declaration**
+(`NITPICK-MACRO-011`, the sentence saying a declaration's name cannot come from an argument): a parameter that only
+names a declaration is an argument silently DROPPED, the author almost certainly meant "the function named by the
+argument", and a second invocation is a duplicate-name error that names neither cause. The alternatives: keep the
+literal name (today), or substitute a name when the argument is a bare identifier — a real feature (generated names)
+with its own questions (D-128: a macro never renames what it emits; what a non-identifier argument is). `mc0388`'s
+expectation moves under the refusal; the library listener is told in advance.
+
+**In one line.** Refuse at the macro's declaration (`NITPICK-MACRO-011`): a parameter that only names a declaration
+is an argument silently dropped.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** `check_macro_params` (expand.npk) drops its "AND writes it as an expression" half, so a
+declared parameter name alone is MACRO-011; the listener's `mc0388` moves, so an advance notice goes first. Its own
+landing.
+
+## D-344 — A MACRO BODY DOES NOT NAME THE TYPE PARAMETER OF THE DECLARATION IT IS INVOKED IN — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-124)**
+
+**The question, as it was put (S-124).** MAY A MACRO BODY NAME THE TYPE PARAMETER OF THE DECLARATION IT IS INVOKED
+IN (raised 2026-10-01 by `nitpick-compiler_24` with DEF-192's fix). The recap: D-057 (settled at 0.6.0) says a name
+in a macro body resolves where the macro was WRITTEN — "Always" — and that `#caller(NAME)` is the sole way to reach
+the invocation site; `#caller` is an EXPRESSION form. A type's name never went through the resolver, and the type
+checker asked the generic parameters of whatever declaration it stood in first, so a body's `T` silently meant the
+invoking function's or `impl`'s `T` (DEF-192: beside a module `struct:T`, `#size_of<T>()` measured the caller's
+type, 8 for 4). The fix holds a type's name to D-057: it binds a generic parameter only where the body itself
+declares it. The consequence is this question: a field `V:item;` spliced into `struct:Box<V>`, or a method spliced
+into `impl:<T>:Stack<T>` whose signature says `T`, compiled BY THE CAPTURE and is `NITPICK-TYPE-001` now — a body
+has no way to name the landing declaration's type parameter (`Self` is a keyword and still means the landing type).
+Measured over 3,601 files of the tree, the libraries and the applications: none — the sweep moves no site outside
+the new test, so no macro body anywhere names a landing declaration's type parameter.
+
+**Where it stood.** OPEN — the user's. DEF-192's fix landed on D-057 as written.
+
+**The decision: the recommendation, ratified as written.** **R1: leave it so.** Generics and `#[derive]` are the
+language's tools for code over a type parameter; a macro is a local, hygienic shorthand, and nothing in the tree,
+the libraries or the applications reaches a type parameter through one. The alternative, R2: `#caller(T)` accepted
+where a type's name stands — the opt-out D-057 already has, extended to types: one production in type position and
+one exception in the rule, to be designed, tested and verified before the freeze.
+
+**In one line.** R1: leave it so — generics and `#[derive]` are the language's tools for code over a type parameter.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** No code: DEF-192's fix (landing 86) already stands on D-057 as written. `#caller(T)` in type
+position is decided OUT, not deferred.
+
+## D-345 — A CONSTANT OF A CARRIED FAMILY — FLOAT, FIXED-POINT, `tbb`, TERNARY — IS WRITTEN, NOT COMPUTED — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-125)**
+
+**The question, as it was put (S-125).** MAY THE COMPILER COMPUTE IN THE CARRIED FAMILIES: FLOAT, FIXED-POINT,
+`tbb`, TERNARY (raised 2026-10-01 by `nitpick-compiler_25` with DEF-179's and DEF-197's fix). The recap: D-165
+(settled at 1.0.9) says a module binding's initialiser is a compile-time constant — a literal of any kind, a
+sentinel, an aggregate of them, another binding, or `comptime(…)` — "and so is [refused] any expression the folder
+cannot fold"; D-310 (1.5.8b) made the folder exact for the plain integers: a constant means what the run time means.
+The folder has never computed in the other families: a float's arithmetic rounds, a fixed-point value's and a
+`tbb`'s and a ternary's saturate to a sticky ERR. Landing 87 found it folding them as plain integers into three
+silent wrong constants and made the rule explicit: a constant of a carried family is WRITTEN (a literal, a negated
+literal, `ERR`, another binding), so `fixed flt64:TAU = 6.283185307179586f64;` compiles and `fixed flt64:TAU =
+2.0f64 * PI;` is NITPICK-TYPE-035, as is `comptime(2.0f64 * PI)`.
+
+**Where it stood.** OPEN — the user's. The refusals landed (they are D-165's own rule, and foreclose neither
+answer). No `fixed` binding of any carried type exists in 40,928 files of the tree, the libraries, the applications
+and the fuzzer's corpus.
+
+**The decision: the recommendation, ratified as written.** **R1: written, not computed — and final.** One evaluator
+per operation: the run time's. A second implementation of float rounding and of each twisted family's saturation
+inside the compiler would have to agree with the emitted code bit for bit, forever, under verification (DEF-29,
+DEF-80 and DEF-197 are what a second evaluator of one operation costs), to save a reader a multiplication they can
+check by hand; a derived constant is written as its literal, and a table is computed by a function. The alternative,
+R2: the folder learns each family exactly — floats through the compiler's own correctly rounded conversion and IEEE
+arithmetic, the twisted families through their saturating rules — designed, tested against the run time and verified
+before the freeze.
+
+**In one line.** R1, final: one evaluator per operation, the run time's; a derived constant is written as its
+literal and a table is computed by a function.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** No code: landing 87's refusals (TYPE-035 with the family's own sentence) already stand. A
+second evaluator of float rounding or of a twisted family's saturation inside the compiler is decided OUT.
+
+## D-346 — A FLOAT LITERAL THAT ROUNDS TO INFINITY, OR FROM NONZERO TO ZERO, IS REFUSED; THE 15-DIGIT RULE ON `flt32` IS LIFTED — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-126)**
+
+**The question, as it was put (S-126).** A FLOAT LITERAL THAT DOES NOT FIT: INFINITY AND ZERO (raised 2026-10-01 by
+`nitpick-compiler_25`; DEF-205), AND THE 15-DIGIT RULE AFTER DEF-203. The recap: D-148 (settled at 0.9.9) says a
+numeric literal's value "must fit its type", verified at the literal (NITPICK-TYPE-031) — "the number in the program
+was not the number written, the exact drift this language exists to make impossible"; its table hands floats to
+D-143 (0.9.4), which gives `flt32` literals a 15-significant-digit limit and no range rule. So today `1.0e39f32` and
+`1.0e999f64` are +infinity and `1.0e-60f32` is 0.0, each in silence; and the 15-digit limit's stated reason (two
+roundings equal one below 16 digits) is false (DEF-203), while the fix for that — the compiler's own exact
+conversion — makes every `flt32` literal the nearest float whatever its length.
+
+**Where it stood.** OPEN — the user's. DEF-203 LANDED (88): the conversion exists at both widths and reports both
+answers, unread; the 15-digit rule is asked of every spelling of a literal while it stands (DEF-206). (a) is one
+test of each flag, (b) deletes the `flt32` half of `float_text_ok`; either is a refusal moved and goes in an advance
+notice.
+
+**The decision: the recommendation, ratified as written.** **(a) Refuse a float literal that rounds to infinity, and
+a nonzero one that rounds to zero** (NITPICK-TYPE-031, both widths): neither is a rounding of the number written in
+any useful sense — an epsilon that is zero divides by zero, a limit that is infinite limits nothing — and infinity
+is spelled by computing it. A subnormal result is ordinary rounding and stays. **(b) Lift the 15-digit rule once
+DEF-203 lands**: it protects nothing then, and refusing `0.1234567890123456f32` while accepting its fifteen-digit
+prefix is a rule a reader cannot derive. The alternative for (b): keep it as a style limit (a `flt32` holds about
+seven digits; sixteen written ones claim a precision the type has not).
+
+**In one line.** (a) refuse a float literal that rounds to infinity, and a nonzero one that rounds to zero
+(`NITPICK-TYPE-031`, both widths; a subnormal result stays); (b) lift the 15-digit rule on `flt32` literals.
+
+**How it was ratified.** The user, 2026-10-01, in `nitpick-compiler_26`'s session, reminded of the eight open
+questions S-119…S-126 each with its recommendation (the rows of OPEN_DECISIONS §2e-quinquies as they stood at
+`776383f`): "all the recommendations look fine to me. lets go with those." One sentence for the eight; each is
+settled as its own row's recommendation says. The words reached the queue's holder by the seats' relay and are
+recorded here by landing 90.
+
+**What it changes.** It is DEF-205's fix: one test of `FloatBits.inf` / `.zero` in `float_text_ok` (every spelling
+and `comptime` pass through it; since landing 89 both widths ride `float_round`), and the `flt32` digit count
+deleted. Refusals move BOTH ways (the fuzzer's twenty-digit `vf0983`/`vf1149` become legal; `1.0e39f32`,
+`1.0e999f64`, `1.0e-60f32` become refusals): an advance notice first, both repositories swept. A silent wrong
+constant today, so it stands second in the queue.

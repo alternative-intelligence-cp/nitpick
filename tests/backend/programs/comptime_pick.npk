@@ -1,0 +1,429 @@
+// expect-exit: 0
+//
+// THE COMPILE-TIME EVALUATOR RUNS A `pick`, AND ITS `pick` IS THE RUN TIME'S
+// (D-338, 1.6.1e step 3b). Every function here is written TWICE with one body --
+// `comptime func:c_name`, run by the compiler, and `func:r_name`, run by the
+// machine (a `comptime func:` is emitted nowhere, DEF-214; the two texts were
+// written from one template, and a change to one is a change to both) -- and
+// every case is asked three ways that must agree: `comptime(c_name(…))`, `r_name` over an argument the
+// compiler cannot fold, and the literal answer. `776383f` refuses the file:
+// a `pick` in a `comptime` body was NITPICK-TYPE-004.
+//
+// What each function holds the evaluator to:
+//   p_int     value arms, a negated literal, the wildcard, the statement form
+//   p_range   `..` includes its upper bound and `...` does not; a guard is
+//             asked after its pattern and a failed one goes on to the next arm
+//   p_u64     a `uint64` selector orders UNSIGNED: 2^63 + 7 is inside
+//             `(HALF..TOP)`, and a signed compare puts it below zero
+//   p_char    a `char8` past 0x7F likewise
+//   p_bool, p_str, p_enum, p_lvl   the other selector kinds; explicit tags
+//   p_msg     an arm that BINDS a payload is passed over when its variant is
+//             not the selector's (the value an evaluator holds carries none)
+//   p_expr    the expression form in arithmetic; a local declared in an arm;
+//             an outer local assigned in one; `give` from a nested block
+//   p_fall    `fall` enters the labelled arm's body with no test
+//   p_nest, p_loop, p_find   a pick in a pick, in a loop, and a `pass` that
+//             leaves the loop from an arm
+//   p_guard, sc_and, sc_or, count_down   DEF-211: `&&`/`||` decide on the left
+//             operand where it decides -- the guard's division is never
+//             reached with a zero divisor, and a recursion guarded by `||`
+//             ends (it ran to the depth bound, NITPICK-TYPE-025)
+//
+// AND ONE FUNCTION THAT IS NOT A TWIN, `effect`: a run-time `pick` with a
+// constant selector and an assignment in its arm, inside a `+` node -- the node
+// the emitter asks the folder about. The evaluator runs statements only inside
+// a `comptime func:` call, so the arm RUNS (28); folded where it stands it
+// would be 21 with `acc` never written.
+mod:comptime_pick;
+
+enum:Color = { Red; Green; Blue; };
+enum:Lvl = { Lo = 10i32; Mid = 20i32; Hi = 30i32; };
+enum:Msg = { Idle; Text(int32); Quit; };
+
+fixed uint64:HALF = 1u64 << 63u64;
+fixed uint64:TOP = ~0u64;
+
+func:opq = int32(int32:v) never fails { pass v; };
+func:opqu = uint64(uint64:v) never fails { pass v; };
+func:opqc = char8(char8:v) never fails { pass v; };
+func:opqb = bool(bool:v) never fails { pass v; };
+func:rs = string(int32:k) never fails {
+    if (k == 1i32) { pass "ab"; }
+    if (k == 2i32) { pass "b"; }
+    if (k == 3i32) { pass "zz"; }
+    pass "";
+};
+
+comptime func:c_p_int = int32(int32:k) never fails {
+    pick (k) {
+        (1i32)  { pass 11i32; },
+        (-3i32) { pass 12i32; },
+        (7i32)  { pass 13i32; },
+        (*)     { pass 19i32; }
+    }
+};
+func:r_p_int = int32(int32:k) never fails {
+    pick (k) {
+        (1i32)  { pass 11i32; },
+        (-3i32) { pass 12i32; },
+        (7i32)  { pass 13i32; },
+        (*)     { pass 19i32; }
+    }
+};
+comptime func:c_p_range = int32(int32:k) never fails {
+    pick (k) {
+        (0i32...5i32)                  { pass 21i32; },
+        (5i32..9i32) where (k > 6i32)  { pass 22i32; },
+        (5i32..9i32)                   { pass 23i32; },
+        (-9i32..-1i32)                 { pass 24i32; },
+        (*)                            { pass 29i32; }
+    }
+};
+func:r_p_range = int32(int32:k) never fails {
+    pick (k) {
+        (0i32...5i32)                  { pass 21i32; },
+        (5i32..9i32) where (k > 6i32)  { pass 22i32; },
+        (5i32..9i32)                   { pass 23i32; },
+        (-9i32..-1i32)                 { pass 24i32; },
+        (*)                            { pass 29i32; }
+    }
+};
+comptime func:c_p_u64 = int32(uint64:k) never fails {
+    pick (k) {
+        (0u64..9u64) { pass 31i32; },
+        (HALF..TOP)  { pass 33i32; },
+        (*)          { pass 39i32; }
+    }
+};
+func:r_p_u64 = int32(uint64:k) never fails {
+    pick (k) {
+        (0u64..9u64) { pass 31i32; },
+        (HALF..TOP)  { pass 33i32; },
+        (*)          { pass 39i32; }
+    }
+};
+comptime func:c_p_char = int32(char8:c) never fails {
+    pick (c) {
+        ('a'..'z')        { pass 41i32; },
+        ('\x80'..'\xFF')  { pass 42i32; },
+        ('0')             { pass 43i32; },
+        (*)               { pass 49i32; }
+    }
+};
+func:r_p_char = int32(char8:c) never fails {
+    pick (c) {
+        ('a'..'z')        { pass 41i32; },
+        ('\x80'..'\xFF')  { pass 42i32; },
+        ('0')             { pass 43i32; },
+        (*)               { pass 49i32; }
+    }
+};
+comptime func:c_p_bool = int32(bool:b) never fails {
+    pick (b) { (true) { pass 51i32; }, (false) { pass 52i32; } }
+};
+func:r_p_bool = int32(bool:b) never fails {
+    pick (b) { (true) { pass 51i32; }, (false) { pass 52i32; } }
+};
+comptime func:c_p_str = int32(string:s) never fails {
+    pick (s) {
+        ("ab") { pass 61i32; },
+        ("b")  { pass 62i32; },
+        ("")   { pass 63i32; },
+        (*)    { pass 69i32; }
+    }
+};
+func:r_p_str = int32(string:s) never fails {
+    pick (s) {
+        ("ab") { pass 61i32; },
+        ("b")  { pass 62i32; },
+        ("")   { pass 63i32; },
+        (*)    { pass 69i32; }
+    }
+};
+comptime func:c_color_of = Color(int32:k) never fails {
+    if (k == 0i32) { pass Color.Red; }
+    if (k == 1i32) { pass Color.Green; }
+    pass Color.Blue;
+};
+func:r_color_of = Color(int32:k) never fails {
+    if (k == 0i32) { pass Color.Red; }
+    if (k == 1i32) { pass Color.Green; }
+    pass Color.Blue;
+};
+comptime func:c_p_enum = int32(int32:k) never fails {
+    pick (raw c_color_of(k)) {
+        (Color.Green) { pass 72i32; },
+        (Color.Red)   { pass 71i32; },
+        (*)           { pass 79i32; }
+    }
+};
+func:r_p_enum = int32(int32:k) never fails {
+    pick (raw r_color_of(k)) {
+        (Color.Green) { pass 72i32; },
+        (Color.Red)   { pass 71i32; },
+        (*)           { pass 79i32; }
+    }
+};
+comptime func:c_lvl_of = Lvl(int32:k) never fails {
+    if (k == 0i32) { pass Lvl.Lo; }
+    if (k == 1i32) { pass Lvl.Mid; }
+    pass Lvl.Hi;
+};
+func:r_lvl_of = Lvl(int32:k) never fails {
+    if (k == 0i32) { pass Lvl.Lo; }
+    if (k == 1i32) { pass Lvl.Mid; }
+    pass Lvl.Hi;
+};
+comptime func:c_p_lvl = int32(int32:k) never fails {
+    Lvl:l = raw c_lvl_of(k);
+    pick (l) { (Lvl.Lo) { pass 81i32; }, (Lvl.Mid) { pass 82i32; }, (Lvl.Hi) { pass 83i32; } }
+};
+func:r_p_lvl = int32(int32:k) never fails {
+    Lvl:l = raw r_lvl_of(k);
+    pick (l) { (Lvl.Lo) { pass 81i32; }, (Lvl.Mid) { pass 82i32; }, (Lvl.Hi) { pass 83i32; } }
+};
+comptime func:c_msg_of = Msg(int32:k) never fails {
+    if (k == 0i32) { pass Msg.Idle; }
+    pass Msg.Quit;
+};
+func:r_msg_of = Msg(int32:k) never fails {
+    if (k == 0i32) { pass Msg.Idle; }
+    pass Msg.Quit;
+};
+comptime func:c_p_msg = int32(int32:k) never fails {
+    Msg:m = raw c_msg_of(k);
+    pick (m) {
+        (Msg.Text(n)) { pass n; },
+        (Msg.Idle)    { pass 91i32; },
+        (Msg.Quit)    { pass 92i32; }
+    }
+};
+func:r_p_msg = int32(int32:k) never fails {
+    Msg:m = raw r_msg_of(k);
+    pick (m) {
+        (Msg.Text(n)) { pass n; },
+        (Msg.Idle)    { pass 91i32; },
+        (Msg.Quit)    { pass 92i32; }
+    }
+};
+comptime func:c_p_expr = int32(int32:k) never fails {
+    int32:acc = 100i32;
+    int32:v = 1i32 + pick (k) {
+        (1i32) { int32:t = k * 3i32; acc = acc + 1i32; give t; },
+        (2i32) { if (acc > 50i32) { give 5i32; } give 6i32; },
+        (*)    { give 0i32; }
+    };
+    pass v + acc;
+};
+func:r_p_expr = int32(int32:k) never fails {
+    int32:acc = 100i32;
+    int32:v = 1i32 + pick (k) {
+        (1i32) { int32:t = k * 3i32; acc = acc + 1i32; give t; },
+        (2i32) { if (acc > 50i32) { give 5i32; } give 6i32; },
+        (*)    { give 0i32; }
+    };
+    pass v + acc;
+};
+comptime func:c_p_fall = int32(int32:k) never fails {
+    int32:acc = 0i32;
+    pick (k) {
+        (1i32)        { acc = acc + 1i32; fall two; },
+        two: (2i32)   { acc = acc + 10i32; fall three; },
+        three: (3i32) { acc = acc + 100i32; },
+        (*)           { acc = 7i32; }
+    }
+    pass acc;
+};
+func:r_p_fall = int32(int32:k) never fails {
+    int32:acc = 0i32;
+    pick (k) {
+        (1i32)        { acc = acc + 1i32; fall two; },
+        two: (2i32)   { acc = acc + 10i32; fall three; },
+        three: (3i32) { acc = acc + 100i32; },
+        (*)           { acc = 7i32; }
+    }
+    pass acc;
+};
+comptime func:c_p_nest = int32(int32:a, int32:b) never fails {
+    pick (a) {
+        (1i32) { pick (b) { (1i32) { pass 11i32; }, (*) { pass 12i32; } } },
+        (*)    { pick (b) { (1i32) { pass 21i32; }, (*) { pass 22i32; } } }
+    }
+};
+func:r_p_nest = int32(int32:a, int32:b) never fails {
+    pick (a) {
+        (1i32) { pick (b) { (1i32) { pass 11i32; }, (*) { pass 12i32; } } },
+        (*)    { pick (b) { (1i32) { pass 21i32; }, (*) { pass 22i32; } } }
+    }
+};
+comptime func:c_p_loop = int32(int32:n) never fails {
+    int32:sum = 0i32;
+    int32:i = 0i32;
+    while (i < n) decreases n - i {
+        sum = sum + pick (i % 3i32) { (0i32) { give 1i32; }, (1i32) { give 10i32; }, (*) { give 100i32; } };
+        i = i + 1i32;
+    }
+    pass sum;
+};
+func:r_p_loop = int32(int32:n) never fails {
+    int32:sum = 0i32;
+    int32:i = 0i32;
+    while (i < n) decreases n - i {
+        sum = sum + pick (i % 3i32) { (0i32) { give 1i32; }, (1i32) { give 10i32; }, (*) { give 100i32; } };
+        i = i + 1i32;
+    }
+    pass sum;
+};
+comptime func:c_p_find = int32(int32:n) never fails {
+    int32:i = 0i32;
+    while (i < 50i32) decreases 50i32 - i {
+        pick (i == n) { (true) { pass i * 2i32; }, (false) { i = i + 1i32; } }
+    }
+    pass -1i32;
+};
+func:r_p_find = int32(int32:n) never fails {
+    int32:i = 0i32;
+    while (i < 50i32) decreases 50i32 - i {
+        pick (i == n) { (true) { pass i * 2i32; }, (false) { i = i + 1i32; } }
+    }
+    pass -1i32;
+};
+comptime func:c_p_guard = int32(int32:n) never fails {
+    pick (n) {
+        (*) where ((n != 0i32) && ((10i32 / n) > 1i32)) { pass 1i32; },
+        (*) { pass 2i32; }
+    }
+};
+func:r_p_guard = int32(int32:n) never fails {
+    pick (n) {
+        (*) where ((n != 0i32) && ((10i32 / n) > 1i32)) { pass 1i32; },
+        (*) { pass 2i32; }
+    }
+};
+comptime func:c_sc_and = bool(int32:d) never fails {
+    pass ((d != 0i32) && ((10i32 / d) > 1i32));
+};
+func:r_sc_and = bool(int32:d) never fails {
+    pass ((d != 0i32) && ((10i32 / d) > 1i32));
+};
+comptime func:c_sc_or = bool(int32:d) never fails {
+    pass ((d == 0i32) || ((10i32 / d) > 1i32));
+};
+func:r_sc_or = bool(int32:d) never fails {
+    pass ((d == 0i32) || ((10i32 / d) > 1i32));
+};
+comptime func:c_count_down = bool(int32:n) never fails {
+    pass ((n <= 0i32) || raw c_count_down(n - 1i32));
+};
+func:r_count_down = bool(int32:n) never fails {
+    pass ((n <= 0i32) || raw r_count_down(n - 1i32));
+};
+
+// NOT A TWIN: an ordinary function, its `pick` over a constant selector.
+func:effect = int32() never fails {
+    int32:acc = 0i32;
+    int32:x = 1i32 + pick (2i32) { (1i32) { give 10i32; }, (2i32) { acc = 7i32; give 20i32; }, (*) { give 0i32; } };
+    pass x + acc;
+};
+
+func:same = bool(int32:ct, int32:rt, int32:want) never fails {
+    pass ((ct == want) && (rt == want));
+};
+func:sameb = bool(bool:ct, bool:rt, bool:want) never fails {
+    pass ((ct == want) && (rt == want));
+};
+
+func:main = int32(cstring[]:argv) {
+    if (!(raw same(comptime(c_p_int(1i32)), raw r_p_int(raw opq(1i32)), 11i32))) { exit 1i32; }
+    if (!(raw same(comptime(c_p_int(-3i32)), raw r_p_int(raw opq(-3i32)), 12i32))) { exit 2i32; }
+    if (!(raw same(comptime(c_p_int(7i32)), raw r_p_int(raw opq(7i32)), 13i32))) { exit 3i32; }
+    if (!(raw same(comptime(c_p_int(0i32)), raw r_p_int(raw opq(0i32)), 19i32))) { exit 4i32; }
+    if (!(raw same(comptime(c_p_int(3i32)), raw r_p_int(raw opq(3i32)), 19i32))) { exit 5i32; }
+    if (!(raw same(comptime(c_p_range(0i32)), raw r_p_range(raw opq(0i32)), 21i32))) { exit 6i32; }
+    if (!(raw same(comptime(c_p_range(4i32)), raw r_p_range(raw opq(4i32)), 21i32))) { exit 7i32; }
+    if (!(raw same(comptime(c_p_range(5i32)), raw r_p_range(raw opq(5i32)), 23i32))) { exit 8i32; }
+    if (!(raw same(comptime(c_p_range(6i32)), raw r_p_range(raw opq(6i32)), 23i32))) { exit 9i32; }
+    if (!(raw same(comptime(c_p_range(7i32)), raw r_p_range(raw opq(7i32)), 22i32))) { exit 10i32; }
+    if (!(raw same(comptime(c_p_range(9i32)), raw r_p_range(raw opq(9i32)), 22i32))) { exit 11i32; }
+    if (!(raw same(comptime(c_p_range(10i32)), raw r_p_range(raw opq(10i32)), 29i32))) { exit 12i32; }
+    if (!(raw same(comptime(c_p_range(-1i32)), raw r_p_range(raw opq(-1i32)), 24i32))) { exit 13i32; }
+    if (!(raw same(comptime(c_p_range(-9i32)), raw r_p_range(raw opq(-9i32)), 24i32))) { exit 14i32; }
+    if (!(raw same(comptime(c_p_range(-10i32)), raw r_p_range(raw opq(-10i32)), 29i32))) { exit 15i32; }
+    if (!(raw same(comptime(c_p_u64(0u64)), raw r_p_u64(raw opqu(0u64)), 31i32))) { exit 16i32; }
+    if (!(raw same(comptime(c_p_u64(9u64)), raw r_p_u64(raw opqu(9u64)), 31i32))) { exit 17i32; }
+    if (!(raw same(comptime(c_p_u64(10u64)), raw r_p_u64(raw opqu(10u64)), 39i32))) { exit 18i32; }
+    if (!(raw same(comptime(c_p_u64((1u64 << 63u64) | 7u64)), raw r_p_u64(raw opqu((1u64 << 63u64) | 7u64)), 33i32))) { exit 19i32; }
+    if (!(raw same(comptime(c_p_u64(~0u64)), raw r_p_u64(raw opqu(~0u64)), 33i32))) { exit 20i32; }
+    if (!(raw same(comptime(c_p_u64(1u64 << 63u64)), raw r_p_u64(raw opqu(1u64 << 63u64)), 33i32))) { exit 21i32; }
+    if (!(raw same(comptime(c_p_u64((1u64 << 63u64) - 1u64)), raw r_p_u64(raw opqu((1u64 << 63u64) - 1u64)), 39i32))) { exit 22i32; }
+    if (!(raw same(comptime(c_p_char('a')), raw r_p_char(raw opqc('a')), 41i32))) { exit 23i32; }
+    if (!(raw same(comptime(c_p_char('z')), raw r_p_char(raw opqc('z')), 41i32))) { exit 24i32; }
+    if (!(raw same(comptime(c_p_char('\x80')), raw r_p_char(raw opqc('\x80')), 42i32))) { exit 25i32; }
+    if (!(raw same(comptime(c_p_char('\xFF')), raw r_p_char(raw opqc('\xFF')), 42i32))) { exit 26i32; }
+    if (!(raw same(comptime(c_p_char('0')), raw r_p_char(raw opqc('0')), 43i32))) { exit 27i32; }
+    if (!(raw same(comptime(c_p_char('~')), raw r_p_char(raw opqc('~')), 49i32))) { exit 28i32; }
+    if (!(raw same(comptime(c_p_char('\x7F')), raw r_p_char(raw opqc('\x7F')), 49i32))) { exit 29i32; }
+    if (!(raw same(comptime(c_p_bool(true)), raw r_p_bool(raw opqb(true)), 51i32))) { exit 30i32; }
+    if (!(raw same(comptime(c_p_bool(false)), raw r_p_bool(raw opqb(false)), 52i32))) { exit 31i32; }
+    if (!(raw same(comptime(c_p_str("ab")), raw r_p_str(raw rs(1i32)), 61i32))) { exit 32i32; }
+    if (!(raw same(comptime(c_p_str("b")), raw r_p_str(raw rs(2i32)), 62i32))) { exit 33i32; }
+    if (!(raw same(comptime(c_p_str("")), raw r_p_str(raw rs(0i32)), 63i32))) { exit 34i32; }
+    if (!(raw same(comptime(c_p_str("zz")), raw r_p_str(raw rs(3i32)), 69i32))) { exit 35i32; }
+    if (!(raw same(comptime(c_p_enum(0i32)), raw r_p_enum(raw opq(0i32)), 71i32))) { exit 36i32; }
+    if (!(raw same(comptime(c_p_enum(1i32)), raw r_p_enum(raw opq(1i32)), 72i32))) { exit 37i32; }
+    if (!(raw same(comptime(c_p_enum(2i32)), raw r_p_enum(raw opq(2i32)), 79i32))) { exit 38i32; }
+    if (!(raw same(comptime(c_p_lvl(0i32)), raw r_p_lvl(raw opq(0i32)), 81i32))) { exit 39i32; }
+    if (!(raw same(comptime(c_p_lvl(1i32)), raw r_p_lvl(raw opq(1i32)), 82i32))) { exit 40i32; }
+    if (!(raw same(comptime(c_p_lvl(2i32)), raw r_p_lvl(raw opq(2i32)), 83i32))) { exit 41i32; }
+    if (!(raw same(comptime(c_p_msg(0i32)), raw r_p_msg(raw opq(0i32)), 91i32))) { exit 42i32; }
+    if (!(raw same(comptime(c_p_msg(1i32)), raw r_p_msg(raw opq(1i32)), 92i32))) { exit 43i32; }
+    if (!(raw same(comptime(c_p_expr(1i32)), raw r_p_expr(raw opq(1i32)), 105i32))) { exit 44i32; }
+    if (!(raw same(comptime(c_p_expr(2i32)), raw r_p_expr(raw opq(2i32)), 106i32))) { exit 45i32; }
+    if (!(raw same(comptime(c_p_expr(9i32)), raw r_p_expr(raw opq(9i32)), 101i32))) { exit 46i32; }
+    if (!(raw same(comptime(c_p_fall(1i32)), raw r_p_fall(raw opq(1i32)), 111i32))) { exit 47i32; }
+    if (!(raw same(comptime(c_p_fall(2i32)), raw r_p_fall(raw opq(2i32)), 110i32))) { exit 48i32; }
+    if (!(raw same(comptime(c_p_fall(3i32)), raw r_p_fall(raw opq(3i32)), 100i32))) { exit 49i32; }
+    if (!(raw same(comptime(c_p_fall(4i32)), raw r_p_fall(raw opq(4i32)), 7i32))) { exit 50i32; }
+    if (!(raw same(comptime(c_p_nest(1i32, 1i32)), raw r_p_nest(raw opq(1i32), raw opq(1i32)), 11i32))) { exit 51i32; }
+    if (!(raw same(comptime(c_p_nest(1i32, 2i32)), raw r_p_nest(raw opq(1i32), raw opq(2i32)), 12i32))) { exit 52i32; }
+    if (!(raw same(comptime(c_p_nest(2i32, 1i32)), raw r_p_nest(raw opq(2i32), raw opq(1i32)), 21i32))) { exit 53i32; }
+    if (!(raw same(comptime(c_p_nest(2i32, 2i32)), raw r_p_nest(raw opq(2i32), raw opq(2i32)), 22i32))) { exit 54i32; }
+    if (!(raw same(comptime(c_p_loop(0i32)), raw r_p_loop(raw opq(0i32)), 0i32))) { exit 55i32; }
+    if (!(raw same(comptime(c_p_loop(1i32)), raw r_p_loop(raw opq(1i32)), 1i32))) { exit 56i32; }
+    if (!(raw same(comptime(c_p_loop(7i32)), raw r_p_loop(raw opq(7i32)), 223i32))) { exit 57i32; }
+    if (!(raw same(comptime(c_p_find(4i32)), raw r_p_find(raw opq(4i32)), 8i32))) { exit 58i32; }
+    if (!(raw same(comptime(c_p_find(0i32)), raw r_p_find(raw opq(0i32)), 0i32))) { exit 59i32; }
+    if (!(raw same(comptime(c_p_find(99i32)), raw r_p_find(raw opq(99i32)), -1i32))) { exit 60i32; }
+    if (!(raw same(comptime(c_p_guard(0i32)), raw r_p_guard(raw opq(0i32)), 2i32))) { exit 61i32; }
+    if (!(raw same(comptime(c_p_guard(3i32)), raw r_p_guard(raw opq(3i32)), 1i32))) { exit 62i32; }
+    if (!(raw same(comptime(c_p_guard(20i32)), raw r_p_guard(raw opq(20i32)), 2i32))) { exit 63i32; }
+    if (!(raw same(comptime(c_p_guard(-4i32)), raw r_p_guard(raw opq(-4i32)), 2i32))) { exit 64i32; }
+    if (!(raw sameb(comptime(c_sc_and(0i32)), raw r_sc_and(raw opq(0i32)), false))) { exit 65i32; }
+    if (!(raw sameb(comptime(c_sc_and(3i32)), raw r_sc_and(raw opq(3i32)), true))) { exit 66i32; }
+    if (!(raw sameb(comptime(c_sc_and(20i32)), raw r_sc_and(raw opq(20i32)), false))) { exit 67i32; }
+    if (!(raw sameb(comptime(c_sc_or(0i32)), raw r_sc_or(raw opq(0i32)), true))) { exit 68i32; }
+    if (!(raw sameb(comptime(c_sc_or(20i32)), raw r_sc_or(raw opq(20i32)), false))) { exit 69i32; }
+    if (!(raw sameb(comptime(c_count_down(5i32)), raw r_count_down(raw opq(5i32)), true))) { exit 70i32; }
+
+    // --- the run-time pick, with its effect ---
+    if ((raw effect()) != 28i32) { exit 200i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
