@@ -1,0 +1,66 @@
+// expect-exit: 0
+// DEF-204 (1.6.1e): A `pick` ARM OVER A FIXED-POINT SELECTOR MATCHES THE NUMBER
+// IT WRITES. The selector is compared as its Q integer, and a pattern's literal
+// was written as its integer PAYLOAD whatever the selector's type: `(2tfp64)`
+// compared the Q value of the selector (8589934592 for 2.0) with 2, so the arm
+// was never taken -- in silence, at both legs, on every compiler since `tfp`
+// landed -- and a range `(3tfp64..4tfp64)` likewise; a fraction `(2.5tfp64)` and
+// a negated literal were EMIT-002. The solver read the same patterns as their Q
+// values, so the two disagreed. Every exit code is a case.
+mod:pick_fixed_point;
+
+func:classify = int32(tfp64:q) never fails {
+    pick (q) {
+        (2tfp64)          { pass 1i32; },
+        (2.5tfp64)        { pass 2i32; },
+        (-1tfp64)         { pass 3i32; },
+        (3tfp64..4tfp64)  { pass 4i32; },
+        (-8.5tfp64...-7tfp64) { pass 5i32; },
+        ERR:              { pass 6i32; },
+        (*)               { pass 0i32; }
+    }
+    pass 9i32;
+};
+
+func:narrow = int32(tfp32:q) never fails {
+    pick (q) {
+        (1.5tfp32) { pass 1i32; },
+        ERR:       { pass 6i32; },
+        (*)        { pass 0i32; }
+    }
+    pass 9i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    tfp64:one = 1tfp64;
+    if ((raw classify(2tfp64)) != 1i32)            { exit 1i32; }
+    if ((raw classify(one + one)) != 1i32)         { exit 2i32; }
+    if ((raw classify(2.5tfp64)) != 2i32)          { exit 3i32; }
+    if ((raw classify(0tfp64 - one)) != 3i32)      { exit 4i32; }
+    if ((raw classify(3tfp64)) != 4i32)            { exit 5i32; }
+    if ((raw classify(3.5tfp64)) != 4i32)          { exit 6i32; }
+    if ((raw classify(4tfp64)) != 4i32)            { exit 7i32; }
+    if ((raw classify(4.25tfp64)) != 0i32)         { exit 8i32; }
+    if ((raw classify(0tfp64 - 8tfp64)) != 5i32)   { exit 9i32; }
+    if ((raw classify(0tfp64 - 7tfp64)) != 0i32)   { exit 10i32; }
+    if ((raw classify(7tfp64)) != 0i32)            { exit 11i32; }
+    tfp64:bad = ERR;
+    if ((raw classify(bad)) != 6i32)               { exit 12i32; }
+    if ((raw narrow(1.5tfp32)) != 1i32)            { exit 13i32; }
+    if ((raw narrow(1.25tfp32)) != 0i32)           { exit 14i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 110i32; },
+        (Unreachable) { exit 95i32; },
+        (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

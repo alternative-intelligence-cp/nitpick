@@ -852,7 +852,21 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
         // double rounding can differ and the value would be implementation-
         // defined, which a literal must never be.
         if (bits == 32i32) {
-            string:txt = raw intern_get(e.interns, n.payload =>! int32);
+            // THE DIGITS OF THE LITERAL AS WRITTEN: a fraction's kept text, an
+            // integer body's payload in decimal (DEF-199, 1.6.1e -- an integer
+            // payload was read as an intern index here, so `7f32` counted the
+            // digits of an unrelated string and `100000000f32` trapped the
+            // compiler outside the table).
+            string:txt = "";
+            if (n.kind == ExprKind.ExprFloatLiteral) {
+                txt = string_concat(raw intern_get(e.interns, n.payload =>! int32), "");
+            } else {
+                int64:fmag = n.payload;
+                if (fmag < 0i64) {
+                    if (fmag >= (0i64 - 9223372036854775807i64)) { fmag = 0i64 - fmag; } else { fmag = 0i64; }
+                }
+                txt = int_to_string(fmag);
+            }
             int32:sig = 0i32;
             bool:lead = true;
             int64:ti = 0i64;
@@ -888,14 +902,14 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
     // and a value past the width's balanced range refuses here with the
     // D-148 discipline rather than saturating silently.
     if (kind == (raw TY_TFP())) {
-        string:qtx = "";
+        string:qv = "";
         if (n.kind == ExprKind.ExprFloatLiteral) {
-            qtx = raw intern_get(e.interns, n.payload =>! int32);
+            qv = raw tfp_q_decimal(raw intern_get(e.interns, n.payload =>! int32), bits);
         }
         if (n.kind == ExprKind.ExprIntLiteral) {
-            qtx = int_to_string(n.payload);
+            qv = raw tfp_q_of_int(n.payload, bits);
         }
-        if ((raw tfp_q_decimal(qtx, bits)).len == 0i64) {
+        if (qv.len == 0i64) {
             string:q1 = string_concat(
                 "the value of this literal does not fit `tfp",
                 int_to_string(bits => int64));
@@ -916,14 +930,14 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
                 "a `dim256` literal carries its unit — `1.5dim256<Meters>` (D-196); a dimensionless value is spelled `tfp256`",
                 n.span));
         }
-        string:dtx = "";
+        string:dqv = "";
         if (n.kind == ExprKind.ExprFloatLiteral) {
-            dtx = raw intern_get(e.interns, n.payload =>! int32);
+            dqv = raw tfp_q_decimal(raw intern_get(e.interns, n.payload =>! int32), 256i32);
         }
         if (n.kind == ExprKind.ExprIntLiteral) {
-            dtx = int_to_string(n.payload);
+            dqv = raw tfp_q_of_int(n.payload, 256i32);
         }
-        if ((raw tfp_q_decimal(dtx, 256i32)).len == 0i64) {
+        if (dqv.len == 0i64) {
             pass (raw te_error(e, raw TYPE_LIT_RANGE(),
                 "the value of this literal does not fit `dim256` (D-148/D-195): the balanced range excludes the sentinel's magnitude, and a literal must be the number written",
                 n.span));
@@ -2902,8 +2916,38 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (cv.type_id != 0i32) { pass cv.type_id; }
 
     int32:want = raw expected_value(e);
+    // AN UNSUFFIXED FRACTION TAKES A FLOAT SLOT'S WIDTH, as the literal itself
+    // does (DEF-179): `flt64:x = comptime(2.5);`.
+    if (raw cv_is_real(cv)) {
+        if (want != 0i32) {
+            if ((raw type_kind(e.types, want)) == (raw TY_FLOAT())) { pass want; }
+            string:cr1 = string_concat("this `comptime` value is a fraction with no width and sits in a `",
+                            raw type_display(e.types, e.interns, want));
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                string_concat(cr1, "` slot, which is not a float; write a suffix inside it"),
+                n.span));
+        }
+        pass (raw te_error(e, raw TYPE_UNKNOWN(),
+            "this `comptime` value has no width and nothing here says what it should be; write a suffix inside it or give the surrounding expression a type",
+            n.span));
+    }
     if (want != 0i32) {
-        if (raw type_is_integer(e.types, want)) { pass want; }
+        if (raw type_is_integer(e.types, want)) {
+            // AND IT HAS TO FIT THERE, AS AN UNSUFFIXED LITERAL HAS TO (D-148;
+            // DEF-198, 1.6.1e): the slot's width was taken with no question
+            // asked, so `int8:x = comptime(100 + 100);` stored `i8 200` -- the
+            // wrapped constant the folder exists to refuse, in silence.
+            if (cv.kind == (raw CV_INT())) {
+                if (!(raw fold_value_fits(cv.num, raw fold_width(@r, 0i32), raw fold_width(@r, want)))) {
+                    string:cf1 = string_concat("the value of this `comptime` expression does not fit `",
+                                    raw type_display(e.types, e.interns, want));
+                    pass (raw te_error(e, raw TYPE_LIT_RANGE(),
+                        string_concat(cf1, "` (D-148): it carries no width of its own and takes the slot's, and the number in the program would not be the number computed"),
+                        n.span));
+                }
+            }
+            pass want;
+        }
         // The slot SAYS what it is, and it is not an integer (1.0.8): the
         // unsuffixed `comptime` value cannot take a width from it.
         string:c1 = string_concat("this `comptime` value has no width and sits in a `",

@@ -579,3 +579,27 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     if (!(raw tfpq_in_range(val, bits))) { pass ""; }
     pass (raw tfpq_decimal(val));
 };
+
+// THE Q CONSTANT UNDER A SIGN (DEF-197, 1.6.1e). `tfp_q_decimal` reads digits and
+// never a sign: handed "-1" it stopped at the minus and answered "0", which is
+// what a balanced-base literal under a `tfp` suffix was (`0Tttfp64`, the
+// literal -1, compiled as 0). The magnitude goes through the one conversion and
+// the sign is written in front -- exact, because the valid range is symmetric
+// (D-008 SS1: the sentinel's magnitude is excluded, so no magnitude that fits
+// has a negation that does not). "" when the magnitude does not fit.
+pub func:tfp_q_signed = string(string:text, int32:bits, bool:neg) never fails {
+    string:q = raw tfp_q_decimal(text, bits);
+    if (!neg) { pass q; }
+    if (q.len == 0i64) { pass q; }
+    if ((q.len == 1i64) && (q.ptr[0i64] == 48u8)) { pass q; }
+    pass (string_concat("-", q));
+};
+
+// THE Q CONSTANT OF AN INTEGER-FORM LITERAL (`5tfp64`), whose payload is a signed
+// value: the checker's range question and the emitter's constant, as the
+// fractional form's are one conversion.
+pub func:tfp_q_of_int = string(int64:payload, int32:bits) never fails {
+    if (payload >= 0i64) { pass (raw tfp_q_decimal(int_to_string(payload), bits)); }
+    if (payload < (0i64 - 9223372036854775807i64)) { pass ""; }
+    pass (raw tfp_q_signed(int_to_string(0i64 - payload), bits, true));
+};

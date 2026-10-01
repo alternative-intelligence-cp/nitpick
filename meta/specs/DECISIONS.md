@@ -6655,6 +6655,14 @@ one and converting it is a decision somebody must make in the source.
 
 ---
 
+> *[2026-10-01, 1.6.1e, landing 87 — a dated note on D-092: a `comptime` value and a folded name.]* "An untyped
+> result takes the context type, exactly as an unsuffixed literal does" was half kept: the literal is range-checked
+> against the slot (D-148) and the `comptime` value was not, so `int8:a = comptime(100 + 100);` stored `i8 200`; and
+> a module binding read through its name left the folder with no type, so `fixed int64:BIG = 5000000000;` read as
+> `comptime(BIG)` took an `int32` slot's width and stored 705032704 (DEF-198, both silent). A folded name's value
+> now has its binding's declared type (`fold_stamp`), and an untyped `comptime` value must fit the slot it takes its
+> width from (NITPICK-TYPE-031).
+
 ## D-093 — A range is a typed value, and ordering is narrower than equality
 
 **Settled in cycle 0.4.2.** Two questions the specs left implicit, decided
@@ -10224,6 +10232,13 @@ correct rounding directly.
 
 *[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `ty0176`, `ty0178`, `ty0189b`; DEF-166).]* "`flt256` and `flt512` are reserved words; the resolver refuses them" was a sentence the resolver did not keep: the generated scalar table answered both as floats of 256 and 512 bits and the program died in the emitter (EMIT-002). `resolve_named` refuses both ahead of the table — `NITPICK-TYPE-001` at the spelling, in every position a type stands in, the answer the INVALID type so nothing beside it adds a sentence. And the removed `f256`/`f512` suffixes were removed from the suffix table only: a float literal's tail was never held to the `TypeSuffix` production, so `1.5f512` (and `3.14flt32`, and `1.5garbage`) compiled as the number in front. `NITPICK-LEX-009` now (LEXICAL_REFERENCE §6.2). `f128` stays a suffix the lexer reads and TYPE-030 refuses: `flt128` has no literals.
 
+> *[2026-10-01, 1.6.1e, landing 87 — a dated note on D-143's 15-digit rule.]* "Exactly correct for ≤ 15 significant
+> digits (double rounding is innocuous at 53 vs 24 bits)" is false as a statement about decimal literals: the
+> innocuous-double-rounding theorem is about the results of float operations, not about a decimal near a float
+> midpoint. `9.51125303839185e-19f32` lowers to `0x218C5C80`; the nearest float is `0x218C5C7F` (DEF-203, OPEN,
+> measured with exact rationals; TYPE_REFERENCE §1.4 has the numbers). The rule stays as written until the
+> compiler's own decimal→`flt32` conversion lands; the value it protects is then exact for every literal.
+
 ## D-144 — `tbb` at run time: sticky, saturating, and the cast matrix — **SETTLED**
 
 Cycle 0.9.5, making D-008 executable and closing the audit's third live rung
@@ -12001,6 +12016,23 @@ first read) — a hidden call on a read, the context-dependent behaviour the
 blueprint rule forbids, and a data race under 1.1; and refusing all globals
 — the compiler's own sources want constants, and the spec already promises
 them.
+
+> *[2026-10-01, 1.6.1e, landing 87 — a dated note on D-165: "a literal of any kind" kept, and three constants that
+> were wrong.]* The folder's value held integers, bools, chars and strings, so a float or a fixed-point literal with
+> a fraction was NITPICK-TYPE-035 at module level (DEF-179) — and every OTHER literal of the twisted families folded
+> as an untyped plain integer, which the global's renderer then wrote whatever the binding's type: `fixed tfp64:Q =
+> 2tfp64;` was `constant i64 2` (the Q value of 2.0 is 8589934592), `fixed tbb8:T = 100tbb8 + 100tbb8;` was `i8 200`
+> (the run time's saturating `+` answers ERR), `fixed tryte:C = 29524 + 1;` was `i16 29525` (DEF-197: three silent
+> wrong constants, on every compiler since the tier landed; no `fixed` binding of any of these types exists in
+> 40,928 files of the tree, the libraries, the applications and the fuzzer's corpus). The reading that landed: the
+> folder COMPUTES in the plain integers and a flag family (`fold_computes`), and CARRIES a float or fixed-point
+> constant as its literal's text (`CV_REAL`) and a `tbb` or ternary one as a typed integer no operator arm accepts;
+> a module binding of a carried family is a literal, a negated literal, `ERR`, another binding or `comptime(…)` of
+> those (`const_init_verdict`), an expression over one NITPICK-TYPE-035 with its own sentence; the renderer decides
+> by the type the checker recorded (`const_scalar_text`). A top-level sentinel is accepted, as this decision always
+> said (DEF-200: a second gate in the bindings analysis refused it; that gate is gone). A reference to an AGGREGATE
+> binding (`fixed Pt:Q = P;`) is still NITPICK-TYPE-035 — the folder holds no aggregate (DEF-202, OPEN) — and a
+> `flt32` constant waits for DEF-203. Whether the compiler should compute in the carried families at all is S-125.
 
 ## D-166 — What `for` iterates: a range, a slice, an array, or an `Iterator` — **SETTLED**
 
@@ -14355,6 +14387,12 @@ compile-time integer arithmetic; out-of-range refuses (TYPE-031
 discipline). `ToString` renders the EXACT finite decimal expansion (a Q
 value is a binary fraction; determinism is the family's point) — trailing
 zeros trimmed, mandatory fraction digit, "ERR" for the sentinel.
+
+> *[2026-10-01, 1.6.1e, landing 87 — a dated note on D-195: the integer form under a sign.]* "`5tfp64` rides the
+> integer payload" through `tfp_q_decimal`, which reads digits and never a sign; a balanced-base literal's payload
+> may be negative, and `0Tttfp64` — the literal −1 — was the Q constant 0, at the checker's range test, in the
+> emitter and in the solver's term alike (DEF-197). The magnitude goes through the one conversion and the sign is
+> written in front (`tfp_q_of_int`, `tfp_q_signed`): exact, because the valid range is symmetric.
 
 ## D-196 — `dim256<Unit>`: units are exponent vectors; `unit:` declarations join the grammar — **SETTLED (1.3.0 batch, user-ratified)**
 

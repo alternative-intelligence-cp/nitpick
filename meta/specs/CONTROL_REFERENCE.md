@@ -74,6 +74,12 @@ In a lending `pick` these names are views of `event`'s fields and payload
     arm was admitted by every pass (the binding typer looked a variant up only to type its payloads,
     the exhaustiveness analysis asked which variants the arms cover and never whether an arm covers
     anything) and died in the emitter as `EMIT-002`, a compiler-defect report for a program mistake.
+*   **An arm over a fixed-point selector matches the number it writes** (DEF-204; 1.6.1e landing 87): a
+    `tfp` or `dim256` selector is compared as its Q integer, so a value pattern `(2tfp64)`, a fraction
+    `(2.5tfp64)`, a negated one and each bound of a range are lowered as their exact Q constants (the
+    conversion a literal goes through). Until that landing the pattern's integer PAYLOAD was written
+    whatever the selector: `pick (q) { (2tfp64) { … } }` compared the Q value of `q` with 2 and never
+    took the arm, in silence, a range likewise, and a fraction or a negated pattern was `EMIT-002`.
 *   **A consuming arm owns what it binds until the arm ends** (D-216, DEF-121; 1.6.1d step 3): the
     bindings of `pick (move(v))` are dropped at the arm's end and at every exit from it (`pass`,
     `break`, `give`, `fall`), in the statement form and the expression form alike; a payload the arm

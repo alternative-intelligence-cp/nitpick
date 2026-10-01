@@ -1,0 +1,69 @@
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 43:14
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 44:5
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 45:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 46:15
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 47:15
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 48:15
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 49:15
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 50:11
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 51:10
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 52:11
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 53:5
+//
+// DEF-198, DEF-201 (1.6.1e): A FOLDED VALUE IS HELD TO THE TYPE IT LANDS IN.
+//
+// `comptime(…)` of an untyped value took the slot's width with no question asked:
+// `int8:a = comptime(100 + 100);` stored `i8 200` (-56) where the same sum without
+// `comptime` is NITPICK-TYPE-076 -- and a module binding read through its name
+// lost its declared type, so `fixed int64:BIG = 5000000000;` read as
+// `comptime(BIG)` into an `int32` slot stored `i32 5000000000` (705032704), in
+// silence, where the plain read `int32:b = BIG;` is NITPICK-TYPE-007.
+//
+// And three sites narrowed a folded value to `int32` unchecked: `int8[4294967298]`
+// was an array of two, a lane count of 4294967300 a four-lane vector. A constant
+// of a carried family (a `tfp`, a `tbb`) is not an integer constant: `int32[2tfp64]`
+// was an array of two.
+mod:comptime_width;
+
+fixed int64:BIG = 5000000000;
+fixed int32:SMALL = 7;
+
+func:main = int32(cstring[]:argv) {
+    int8:a = comptime(100 + 100);
+    int32:b = comptime(BIG);
+    int32:c = comptime(5000000000);
+    uint8:d = comptime(0 - 1);
+    flt64:e = comptime(2.5f64 + 1.0f64);
+    tfp64:f = comptime(2tfp64 + 1tfp64);
+    int32:g = comptime(2.5);
+    int32[2tfp64]:h = [1i32, 2i32];
+    int8[4294967298]:i = [1i8, 2i8];
+    int32[2tbb8]:j = [1i32, 2i32];
+    simd<int32, 4294967300>:k = simd(1i32);
+
+    // controls
+    int8:o1 = comptime(100 + 27);
+    int64:o2 = comptime(BIG);
+    int32:o3 = comptime(SMALL);
+    flt64:o4 = comptime(2.5);
+    uint8:o5 = comptime(200 + 55);
+    int32[SMALL]:o6 = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32];
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

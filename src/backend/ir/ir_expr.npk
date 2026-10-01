@@ -1082,8 +1082,18 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                 " = insertvalue { ptr, i64, i64 } ", s2, ", i64 0, 2"));
             pass (raw iv("{ ptr, i64, i64 }", move(s3), ctid));
         }
-        // int, bool and char are one numeric constant at the node's width.
-        pass (raw iv(move(ct.text), int_to_string(cv.num), ctid));
+        // A CARRIED FLOAT (DEF-179): the literal's body under its sign -- a
+        // `flt32` through the same double a `flt32` literal rides.
+        if ((cv.kind == (raw CV_REAL())) && ((raw type_kind(x.fe.ctx.types, ctid)) == (raw TY_FLOAT()))) {
+            string:cfb = raw float_literal_body(x, cv.text);
+            if (cv.num != 0i64) { cfb = string_concat("-", cfb); }
+            pass (raw emit_float_const(x, cfb, ctid, n.span));
+        }
+        // int, bool and char are one numeric constant at the node's width; a
+        // fixed-point value is its Q constant.
+        string:cst = raw const_scalar_text(x, cv, ctid);
+        if (cst.len == 0i64) { pass (raw iv_broken(n.span)); }
+        pass (raw iv(move(ct.text), move(cst), ctid));
     }
     // A range VALUE (0.9.6, D-093; D-329 at 1.6.1d step 2): `{ T, T, i8 }` --
     // `lo` and `hi` AS WRITTEN and the spelling in the third word (1 for the
@@ -1454,11 +1464,23 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_DIM())) { iq = true; }
     if (iq) {
         int32:ib = raw type_int_bits(x.fe.ctx.types, itid);
-        string:iqv = raw tfp_q_decimal(int_to_string(n.payload), ib);
+        // The payload is a SIGNED value (a balanced-base literal may be
+        // negative): `tfp_q_of_int` carries the sign past the digit-only
+        // conversion (DEF-197 -- `0Tttfp64`, the literal -1, was 0).
+        string:iqv = raw tfp_q_of_int(n.payload, ib);
         if (iqv.len == 0i64) { pass (raw iv_broken(n.span)); }
         LlType:ill = raw ll_type(x.fe.ctx, itid);
         if (!(raw ll_is_ok(ill))) { pass (raw iv_from_ll_at(x, ill, itid, n.span)); }
         pass (raw iv(move(ill.text), move(iqv), itid));
+    }
+    // `3f64` -- THE INTEGER-FORM FLOAT LITERAL (DEF-199, 1.6.1e): the grammar
+    // gives an integer body any `TypeSuffix` and the checker types this one a
+    // float, as it types `5tfp64` a `tfp`; it fell through to the integer text
+    // below and `double 3` is not LLVM grammar. The payload in decimal is the
+    // literal's body, and `float_literal_body` gives it its point.
+    if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_FLOAT())) {
+        pass (raw emit_float_const(x, raw float_literal_body(x, int_to_string(n.payload)),
+                                   itid, n.span));
     }
     LlType:t = raw node_ll(x, id);
     if (t.state != (raw LL_OK())) {
@@ -1979,6 +2001,58 @@ func:widen_len_i64 = string(ExprEmitter->:x, string:ref, string:ll, int32:len_ti
     drop irw_line(x.fe.w, raw cat5(w, raw cat3(" = ", ext, " "), ll, " ",
                       raw cat3(ref, " to ", "i64")));
     pass w;
+};
+
+// A FLOAT CONSTANT FROM ITS LLVM DECIMAL BODY, sign included: `double <body>`
+// as it stands; a `flt32` rides the same double and truncates, as a `flt32`
+// literal does (the arm in `emit_expr`).
+func:emit_float_const = IrVal(ExprEmitter->:x, string:body, int32:ftid, Span:at) never fails {
+    LlType:fll = raw ll_type(x.fe.ctx, ftid);
+    if (!(raw ll_is_ok(fll))) { pass (raw iv_from_ll_at(x, fll, ftid, at)); }
+    if (raw string_eq(fll.text, "double")) {
+        pass (raw iv("double", string_concat(body, ""), ftid));
+    }
+    if (raw string_eq(fll.text, "float")) {
+        string:fr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(fr, " = fptrunc double ", body, " to float", ""));
+        pass (raw iv("float", move(fr), ftid));
+    }
+    pass (raw iv_broken(at));
+};
+
+// A FOLDED SCALAR'S LLVM CONSTANT TEXT AT TYPE `sty` (DEF-179, DEF-197; 1.6.1e)
+// -- what a module binding's initialiser and a `comptime(…)` write. It is
+// decided by the TYPE as much as by the value:
+//
+//   a carried float           `double` only: the literal's own body, signed. A
+//                             `flt32` has no constant spelling without the
+//                             bits ("" -- the checker refuses it at module
+//                             level, and `comptime` in a body truncates)
+//   a carried fixed-point     the exact Q constant of the text, signed
+//   an integer, bool, char    the number -- at a type whose value IS the number
+//
+// "" where the pair has no spelling: an integer value under a float or
+// fixed-point type is the frontend's broken promise (the integer 2 is not the
+// Q value of 2.0), and writing it was DEF-197.
+func:const_scalar_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never fails {
+    int32:k = raw type_kind(x.fe.ctx.types, sty);
+    if (cv.kind == (raw CV_REAL())) {
+        bool:neg = (cv.num != 0i64);
+        if ((k == (raw TY_TFP())) || (k == (raw TY_DIM()))) {
+            pass (raw tfp_q_signed(cv.text, raw type_int_bits(x.fe.ctx.types, sty), neg));
+        }
+        if (k == (raw TY_FLOAT())) {
+            if ((raw type_int_bits(x.fe.ctx.types, sty)) != 64i32) { pass ""; }
+            string:body = raw float_literal_body(x, cv.text);
+            if (neg) { pass (string_concat("-", body)); }
+            pass body;
+        }
+        pass "";
+    }
+    if (cv.kind == (raw CV_STRING())) { pass ""; }
+    if (cv.kind == (raw CV_NONE()))   { pass ""; }
+    if ((k == (raw TY_TFP())) || (k == (raw TY_DIM())) || (k == (raw TY_FLOAT()))) { pass ""; }
+    pass (int_to_string(cv.num));
 };
 
 // The literal text, made a valid LLVM decimal-FP constant: the type suffix is
@@ -10995,7 +11069,11 @@ pub func:emit_global_const_into = bool(ExprEmitter->:x, ExprId:eid,
         drop sink_write(out, " }");
         pass true;
     }
-    drop sink_write(out, int_to_string(cv.num));
+    // BY THE TYPE THE CHECKER RECORDED (DEF-197): this wrote `cv.num` whatever
+    // the type, so a fixed-point binding held its literal's integer payload.
+    string:gct = raw const_scalar_text(x, cv, gcid);
+    if (gct.len == 0i64) { pass false; }
+    drop sink_write(out, gct);
     pass true;
 };
 

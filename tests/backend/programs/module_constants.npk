@@ -1,0 +1,149 @@
+// expect-exit: 0
+// DEF-179, DEF-197, DEF-199, DEF-200 (1.6.1e): A MODULE-LEVEL CONSTANT OF EVERY
+// LITERAL FAMILY IS THE NUMBER ITS LITERAL IS IN A FUNCTION BODY. D-165 says a
+// module binding's initialiser is "a literal of any kind", a sentinel, a struct
+// or array of them, another module binding, or `comptime(…)`; until this step
+//
+//   * a float or a fixed-point literal with a fraction was NITPICK-TYPE-035 (the
+//     folder's value held integers, bools, chars and strings and nothing else);
+//   * AN INTEGER-FORM FIXED-POINT LITERAL WAS WRITTEN AS ITS PAYLOAD -- `fixed
+//     tfp64:Q2 = 2tfp64;` was `constant i64 2`, where the Q value of 2.0 is
+//     8589934592: a silent wrong constant (case 21 answered 21 at both legs);
+//   * a top-level `ERR` or `NIL` was refused by a second gate in the bindings
+//     analysis (NITPICK-TYPE-004, in a sentence that still said `const`);
+//   * `3f64`, the integer-form float literal, reached `llc` as `double 3`, and
+//     `100000000f32` trapped the checker (its digit count read the integer
+//     payload as an intern index);
+//   * a balanced-base literal under a `tfp` suffix lost its sign (`0Tttfp64`,
+//     the literal -1, was 0: case 62).
+//
+// Each constant is compared with the same value built where it is read, so the
+// constant and the run time are held to one answer; every exit code is a case.
+mod:module_constants;
+
+struct:Pt  = { flt64:x; flt64:y; };
+struct:Mix = { tfp64:q; tbb8:t; flt64:f; };
+
+fixed flt64:PI    = 3.14f64;
+fixed flt64:NEG   = -2.5f64;
+fixed flt64:TAU   = PI;
+fixed flt64:CT    = comptime(2.5f64);
+fixed flt64:WHOLE = 3f64;
+fixed flt64:BARE  = 0.125;
+fixed flt64:TINY  = 1.5e-3f64;
+fixed flt64:NZERO = -0.0f64;
+fixed flt64[3]:TBL = [1.0f64, -2.0f64, 3.5f64];
+fixed Pt:P = Pt{ x: 1.5f64, y: -2.5f64 };
+
+fixed tfp64:Q   = 2.5tfp64;
+fixed tfp64:Q2  = 2tfp64;
+fixed tfp64:QN  = -2.5tfp64;
+fixed tfp64:QR  = Q;
+fixed tfp32:Q32 = 1.5tfp32;
+fixed tfp64[2]:QT = [1tfp64, -3tfp64];
+fixed dim256<Meters>:LEN = 2.5dim256<Meters>;
+fixed dim256<Meters>:LEN3 = 3dim256<Meters>;
+
+fixed tbb8:T   = 100tbb8;
+fixed tbb8:TN  = -100tbb8;
+fixed tbb8:TR  = TN;
+fixed tbb32:TE = ERR;
+fixed int32?:ON = NIL;
+fixed tryte:TY  = 5;
+fixed tryte:TYN = -29524;
+fixed tryte:TYR = TY;
+fixed Mix:M = Mix{ q: 2tfp64, t: -7tbb8, f: 0.5f64 };
+
+func:main = int32(cstring[]:argv) {
+    // --- floats ---
+    flt64:pi = 3.14f64;
+    if (PI != pi)                 { exit 1i32; }
+    if (NEG != (0.0f64 - 2.5f64)) { exit 2i32; }
+    if (TAU != pi)                { exit 3i32; }
+    if (CT != 2.5f64)             { exit 4i32; }
+    if (WHOLE != 3.0f64)          { exit 5i32; }
+    if (BARE != 0.125f64)         { exit 6i32; }
+    if (TINY != 0.0015f64)        { exit 7i32; }
+    if ((1.0f64 / NZERO) > 0.0f64) { exit 8i32; }      // -0.0 keeps its sign: 1/-0 is -inf
+    if (TBL[0i64] != 1.0f64)      { exit 9i32; }
+    if (TBL[1i64] != (0.0f64 - 2.0f64)) { exit 10i32; }
+    if (TBL[2i64] != 3.5f64)      { exit 11i32; }
+    if (P.x != 1.5f64)            { exit 12i32; }
+    if (P.y != NEG)               { exit 13i32; }
+
+    // --- fixed point ---
+    tfp64:q = 2.5tfp64;
+    tfp64:two = 2tfp64;
+    if (Q != q)                   { exit 20i32; }
+    if (Q2 != two)                { exit 21i32; }
+    if (QN != (0tfp64 - q))       { exit 22i32; }
+    if (QR != q)                  { exit 23i32; }
+    if ((Q2 + Q2) != (two + two)) { exit 24i32; }
+    tfp32:q32 = 1.5tfp32;
+    if (Q32 != q32)               { exit 25i32; }
+    if (QT[0i64] != 1tfp64)       { exit 26i32; }
+    if (QT[1i64] != (0tfp64 - 3tfp64)) { exit 27i32; }
+    dim256<Meters>:len = 2.5dim256<Meters>;
+    if (LEN != len)               { exit 28i32; }
+    if (LEN3 != 3dim256<Meters>)  { exit 29i32; }
+
+    // --- tbb, the sentinels, the ternary family ---
+    tbb8:t = 100tbb8;
+    if (T != t)                   { exit 30i32; }
+    if (TN != (0tbb8 - t))        { exit 31i32; }
+    if (TR != TN)                 { exit 32i32; }
+    if (!(is_err(TE)))            { exit 33i32; }
+    if (ON != NIL)                { exit 34i32; }
+    tryte:five = 5;
+    if (TY != five)               { exit 35i32; }
+    tryte:low = -29524;
+    if (TYN != low)               { exit 36i32; }
+    if (TYR != five)              { exit 37i32; }
+    if (M.q != two)               { exit 38i32; }
+    if (M.t != (0tbb8 - 7tbb8))   { exit 39i32; }
+    if (M.f != 0.5f64)            { exit 40i32; }
+
+    // --- `comptime(…)` of a carried constant, where it is read ---
+    flt64:c1 = comptime(2.5f64);
+    if (c1 != 2.5f64)             { exit 50i32; }
+    flt64:c2 = comptime(PI);
+    if (c2 != pi)                 { exit 51i32; }
+    flt64:c3 = comptime(2.5);
+    if (c3 != 2.5f64)             { exit 52i32; }
+    flt32:c4 = comptime(1.5f32);
+    if (c4 != 1.5f32)             { exit 53i32; }
+    tfp64:c5 = comptime(2.5tfp64);
+    if (c5 != q)                  { exit 54i32; }
+    tbb8:c6 = comptime(100tbb8);
+    if (c6 != t)                  { exit 55i32; }
+    tbb8:c7 = comptime(TN);
+    if (c7 != (0tbb8 - t))        { exit 56i32; }
+    flt64:c8 = comptime(-2.5f64);
+    if (c8 != NEG)                { exit 57i32; }
+
+    // --- the integer-form float literal, and a signed integer-form `tfp` ---
+    flt64:w = 3f64;
+    if (w != 3.0f64)              { exit 60i32; }
+    flt32:w32 = 7f32;
+    if (w32 != 7.0f32)            { exit 61i32; }
+    tfp64:m1 = 0Tttfp64;
+    if (m1 != (0tfp64 - 1tfp64))  { exit 62i32; }
+    flt32:big = 100000000f32;
+    if (big != 100000000.0f32)    { exit 63i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 110i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

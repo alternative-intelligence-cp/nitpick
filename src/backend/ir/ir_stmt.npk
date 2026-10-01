@@ -43,6 +43,7 @@ use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/type_resolve.npk".*;
+use "../../frontend/numeric.npk".*;       // tfp_q_signed, tfp_q_of_int (DEF-204)
 use "../../frontend/type_decls.npk".*;
 use "../../frontend/type_trait.npk".*;   // impl_count/impl_at, method_symbol_name (D-166)
 use "../../frontend/type_names.npk".*;   // method_symbol_name (D-166)
@@ -2183,6 +2184,22 @@ func:pat_bound_value = bool(ExprEmitter->:x, ExprId:b, int64->:out) never fails 
     pass false;
 };
 
+// A PATTERN'S VALUE OVER A FIXED-POINT SELECTOR, AS ITS Q CONSTANT (DEF-204,
+// 1.6.1e) -- "" when it has none. The selector is compared as its `iN`, and a
+// pattern's literal was written as its INTEGER PAYLOAD whatever the selector:
+// `pick (q) { (2tfp64) { … } }` compared the Q value of `q` with 2 and never
+// took the arm, a range `(1tfp64..2tfp64)` likewise, in silence -- while the
+// encoder read the same pattern as its Q value. The folder carries the
+// literal (a fraction, an integer form, a negated one, a `fixed` binding) and
+// the one conversion spells it; an integer pattern is the number it denotes.
+func:pat_q_text = string(ExprEmitter->:x, ExprId:v, int32:bits) never fails {
+    if (raw expr_is_none(v)) { pass ""; }
+    ConstVal:cv = raw fold_const(x.tr, v, x.scope);
+    if (cv.kind == (raw CV_REAL())) { pass (raw tfp_q_signed(cv.text, bits, cv.num != 0i64)); }
+    if (cv.kind == (raw CV_INT()))  { pass (raw tfp_q_of_int(cv.num, bits)); }
+    pass "";
+};
+
 func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) never fails {
     // `(module.Name)` OVER AN `Error` SELECTOR (D-179): a two-segment,
     // bind-free "destructure" is the qualified spelling of an error
@@ -2210,6 +2227,13 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
     }
     if (pn.kind == PatKind.PatValue) {
         ExprNode:vn = raw ast_expr(x.ast, raw pat_value(pn));
+        int32:psk = raw type_kind(x.fe.ctx.types, sel_tid);
+        if ((psk == (raw TY_TFP())) || (psk == (raw TY_DIM()))) {
+            string:pq = raw pat_q_text(x, raw pat_value(pn),
+                                       raw type_int_bits(x.fe.ctx.types, sel_tid));
+            if (pq.len == 0i64) { pass (raw iv_broken(at)); }
+            pass (raw iv("", move(pq), 0i32));
+        }
         if (vn.kind == ExprKind.ExprIntLiteral) {
             pass (raw iv("", int_to_string(vn.payload), 0i32));
         }
@@ -2881,8 +2905,21 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 // and stays `iv_broken`.
                 int64:lo_v = 0i64;
                 int64:hi_v = 0i64;
-                if (!(raw pat_bound_value(x, raw pat_range_lo(pn), @lo_v))) { pass (raw iv_broken(arm.span)); }
-                if (!(raw pat_bound_value(x, raw pat_range_hi(pn), @hi_v))) { pass (raw iv_broken(arm.span)); }
+                string:lo_t = "";
+                string:hi_t = "";
+                int32:rsk = raw type_kind(x.fe.ctx.types, sel_tid);
+                if ((rsk == (raw TY_TFP())) || (rsk == (raw TY_DIM()))) {
+                    // A fixed-point selector's bounds are Q constants (DEF-204).
+                    int32:rqb = raw type_int_bits(x.fe.ctx.types, sel_tid);
+                    lo_t = raw pat_q_text(x, raw pat_range_lo(pn), rqb);
+                    hi_t = raw pat_q_text(x, raw pat_range_hi(pn), rqb);
+                    if ((lo_t.len == 0i64) || (hi_t.len == 0i64)) { pass (raw iv_broken(arm.span)); }
+                } else {
+                    if (!(raw pat_bound_value(x, raw pat_range_lo(pn), @lo_v))) { pass (raw iv_broken(arm.span)); }
+                    if (!(raw pat_bound_value(x, raw pat_range_hi(pn), @hi_v))) { pass (raw iv_broken(arm.span)); }
+                    lo_t = int_to_string(lo_v);
+                    hi_t = int_to_string(hi_v);
+                }
                 // CLONED, NOT MOVED — twice. `iv` OWNS the `ll` it is given
                 // (`move string:ll`), so moving `disc_ll` into both of these
                 // gave one string body two owners and two drops: a double free,
@@ -2890,9 +2927,9 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 // 1.4.3 taught the move analysis about parameters. `disc_ll` is
                 // read again below, too, which the same hole hid.
                 IrVal:plo = raw iv(string_concat(disc_ll, ""),
-                                   int_to_string(lo_v), 0i32);
+                                   move(lo_t), 0i32);
                 IrVal:phi = raw iv(string_concat(disc_ll, ""),
-                                   int_to_string(hi_v), 0i32);
+                                   move(hi_t), 0i32);
                 string:gep2 = "uge";
                 string:lep = "ult";
                 string:lip = "ule";

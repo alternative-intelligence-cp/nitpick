@@ -340,6 +340,12 @@ TypeSuffix     ::= "u8" | "u16" | "u32" | "u64" | "u128"
 > reports it first, `NITPICK-TYPE-004`, one report either way); `f128` is
 > `NITPICK-TYPE-030`, since `flt128` has no literals (D-143).
 >
+> The converse holds too, and is not an error: an INTEGER body under a float or
+> fixed-point suffix is that family's literal of the integer written — `3f64` is 3.0,
+> `5tfp64` the fixed-point 5 (D-195; DEF-199, 1.6.1e: the float form reached `llc` as
+> `double 3` until then). A balanced-base body keeps its sign under such a suffix:
+> `0Tttfp64` is −1 (DEF-197: it was 0).
+>
 > *What it replaced, each measured on `5fbaf4a`.* The scan was `digits . ident-part*`,
 > then ANY sign, then `ident-part*`, the whole run kept as the literal's text and only
 > its end asked for a suffix. So a tail naming no suffix was never looked at

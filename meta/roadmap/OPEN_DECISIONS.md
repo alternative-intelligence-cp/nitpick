@@ -286,6 +286,8 @@ already does."
 | **S-122** — WHAT AN ENUM VARIANT'S EXPLICIT VALUE MAY BE, AND WHAT AN UNVALUED VARIANT BESIDE ONE IS (raised 2026-10-01 by `nitpick-compiler_24`; DEF-193, found writing DEF-189's test). The recap: the grammar reads `Name = <expression>;` in an enum body; `variant_tag_of` (1.4.1) has the whole rule — "the DECLARED integer literal where one is given, the POSITION otherwise" — and nothing checks a value at all (`check_decl` has no arm for an enum). So: a value that is not a bare integer literal is silently IGNORED and the position used (`X = 7i32 + 1i32`, `X = BASE`, `X = -3i32` are each 0 as a first variant); two variants may carry one tag (`enum:F = { A = 3i32; B = 3i32; }`: `F.A == F.B` is true; `enum:E = { A; B = 0i32; }` likewise, and a `pick` naming both is refused by `llc`, "duplicate case value"); a value past `int32` is truncated. 455 explicit values exist in the tree, the libraries and the applications, every one a bare literal (2 are macro invocations that expand to one). | OPEN — the user's. The interim refusals LANDED 2026-10-01 (DEF-193, `NITPICK-TYPE-093`: a value that is not a bare literal, a value outside `int32`, a shared tag); they foreclose neither answer. | **Refuse what cannot be honoured, now; decide the rest once.** (1) A value is an integer CONSTANT expression, folded by the checker (a literal, a negated literal, a module `fixed` name, arithmetic on those) — until the folder's value reaches the emitter, anything but a bare literal is refused by name. (2) Two variants of one enum never share a tag — refused at the second, naming the first. (3) A value fits `int32`. (4) An unvalued variant is its POSITION, as today (not the previous value plus one): with (2) a collision is a refusal, never a silent second meaning. *[Revised 2026-10-01 by the same seat, putting the question to the user:]* **the simplest rule, and final — R1:** a value is a bare non-negative integer literal that fits `int32` (what landing 85 enforces); no two variants share a tag; and **an enum gives EVERY variant a value or NONE** — a mix is refused, because `{ A = 5i32; B; }` makes `B` 1 (its position) where a reader from C or Rust expects 6, the look-alike trap the language's renaming rule exists to remove (three enums of our own tests mix today; none in the libraries or the applications). R2, the first form above: constant-expression values (`X = BASE + 1i32`, a negative tag), built and verified before the freeze — nothing among the 455 existing values needs one. |
 | **S-123** — MAY A MACRO PARAMETER NAME AN EMITTED DECLARATION (raised 2026-10-01 by `nitpick-compiler_24`; MACRO_REFERENCE §10 has recorded it as open since 0.6.0, "rather than invented"). The recap: an argument is an EXPRESSION and substitution replaces identifier expressions (D-057, MACRO_REFERENCE §3). A declaration's NAME is not an expression, so `macro:m = (N) { func:N = int32() never fails { pass 5i32; }; }; #m(7i32);` emits a function literally called `N`, the argument dropped — "unimplemented rather than refused" in the reference's words, and the library listener's `mc0388` pins it as running. Step 3a refuses the half that answered WRONGLY (a body that declares the name and also writes it as an expression: each use was the argument) and left this half as it was. | OPEN — the user's. | **Refuse it at the macro's declaration** (`NITPICK-MACRO-011`, the sentence saying a declaration's name cannot come from an argument): a parameter that only names a declaration is an argument silently DROPPED, the author almost certainly meant "the function named by the argument", and a second invocation is a duplicate-name error that names neither cause. The alternatives: keep the literal name (today), or substitute a name when the argument is a bare identifier — a real feature (generated names) with its own questions (D-128: a macro never renames what it emits; what a non-identifier argument is). `mc0388`'s expectation moves under the refusal; the library listener is told in advance. |
 | **S-124** — MAY A MACRO BODY NAME THE TYPE PARAMETER OF THE DECLARATION IT IS INVOKED IN (raised 2026-10-01 by `nitpick-compiler_24` with DEF-192's fix). The recap: D-057 (settled at 0.6.0) says a name in a macro body resolves where the macro was WRITTEN — "Always" — and that `#caller(NAME)` is the sole way to reach the invocation site; `#caller` is an EXPRESSION form. A type's name never went through the resolver, and the type checker asked the generic parameters of whatever declaration it stood in first, so a body's `T` silently meant the invoking function's or `impl`'s `T` (DEF-192: beside a module `struct:T`, `#size_of<T>()` measured the caller's type, 8 for 4). The fix holds a type's name to D-057: it binds a generic parameter only where the body itself declares it. The consequence is this question: a field `V:item;` spliced into `struct:Box<V>`, or a method spliced into `impl:<T>:Stack<T>` whose signature says `T`, compiled BY THE CAPTURE and is `NITPICK-TYPE-001` now — a body has no way to name the landing declaration's type parameter (`Self` is a keyword and still means the landing type). Measured over 3,601 files of the tree, the libraries and the applications: none — the sweep moves no site outside the new test, so no macro body anywhere names a landing declaration's type parameter. | OPEN — the user's. DEF-192's fix landed on D-057 as written. | **R1: leave it so.** Generics and `#[derive]` are the language's tools for code over a type parameter; a macro is a local, hygienic shorthand, and nothing in the tree, the libraries or the applications reaches a type parameter through one. The alternative, R2: `#caller(T)` accepted where a type's name stands — the opt-out D-057 already has, extended to types: one production in type position and one exception in the rule, to be designed, tested and verified before the freeze. |
+| **S-125** — MAY THE COMPILER COMPUTE IN THE CARRIED FAMILIES: FLOAT, FIXED-POINT, `tbb`, TERNARY (raised 2026-10-01 by `nitpick-compiler_25` with DEF-179's and DEF-197's fix). The recap: D-165 (settled at 1.0.9) says a module binding's initialiser is a compile-time constant — a literal of any kind, a sentinel, an aggregate of them, another binding, or `comptime(…)` — "and so is [refused] any expression the folder cannot fold"; D-310 (1.5.8b) made the folder exact for the plain integers: a constant means what the run time means. The folder has never computed in the other families: a float's arithmetic rounds, a fixed-point value's and a `tbb`'s and a ternary's saturate to a sticky ERR. Landing 87 found it folding them as plain integers into three silent wrong constants and made the rule explicit: a constant of a carried family is WRITTEN (a literal, a negated literal, `ERR`, another binding), so `fixed flt64:TAU = 6.283185307179586f64;` compiles and `fixed flt64:TAU = 2.0f64 * PI;` is NITPICK-TYPE-035, as is `comptime(2.0f64 * PI)`. | OPEN — the user's. The refusals landed (they are D-165's own rule, and foreclose neither answer). No `fixed` binding of any carried type exists in 40,928 files of the tree, the libraries, the applications and the fuzzer's corpus. | **R1: written, not computed — and final.** One evaluator per operation: the run time's. A second implementation of float rounding and of each twisted family's saturation inside the compiler would have to agree with the emitted code bit for bit, forever, under verification (DEF-29, DEF-80 and DEF-197 are what a second evaluator of one operation costs), to save a reader a multiplication they can check by hand; a derived constant is written as its literal, and a table is computed by a function. The alternative, R2: the folder learns each family exactly — floats through the compiler's own correctly rounded conversion and IEEE arithmetic, the twisted families through their saturating rules — designed, tested against the run time and verified before the freeze. |
+| **S-126** — A FLOAT LITERAL THAT DOES NOT FIT: INFINITY AND ZERO (raised 2026-10-01 by `nitpick-compiler_25`; DEF-205), AND THE 15-DIGIT RULE AFTER DEF-203. The recap: D-148 (settled at 0.9.9) says a numeric literal's value "must fit its type", verified at the literal (NITPICK-TYPE-031) — "the number in the program was not the number written, the exact drift this language exists to make impossible"; its table hands floats to D-143 (0.9.4), which gives `flt32` literals a 15-significant-digit limit and no range rule. So today `1.0e39f32` and `1.0e999f64` are +infinity and `1.0e-60f32` is 0.0, each in silence; and the 15-digit limit's stated reason (two roundings equal one below 16 digits) is false (DEF-203), while the fix for that — the compiler's own exact conversion — makes every `flt32` literal the nearest float whatever its length. | OPEN — the user's; DEF-203's landing builds the conversion either answer needs. | **(a) Refuse a float literal that rounds to infinity, and a nonzero one that rounds to zero** (NITPICK-TYPE-031, both widths): neither is a rounding of the number written in any useful sense — an epsilon that is zero divides by zero, a limit that is infinite limits nothing — and infinity is spelled by computing it. A subnormal result is ordinary rounding and stays. **(b) Lift the 15-digit rule once DEF-203 lands**: it protects nothing then, and refusing `0.1234567890123456f32` while accepting its fifteen-digit prefix is a rule a reader cannot derive. The alternative for (b): keep it as a style limit (a `flt32` holds about seven digits; sixteen written ones claim a precision the type has not). |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -3010,7 +3012,7 @@ defect declares a `DEF-` in §2f.
 > (TYPE-007 for another kind or width, TYPE-031 for a value outside it; a float or a string selector has no value
 > patterns -- TYPE-052's sentence for the kinds that cannot select), both spellings.
 
-> **DEF-179 — OPEN; READ 2026-10-01 (`nitpick-compiler_23`): A DEFECT, NO USER QUESTION (owner: the compiler seat;
+> **DEF-179 — FIXED 2026-10-01 (landing 87) for `flt64`, `tfp` and `dim256`; a `flt32` constant waits for DEF-203. READ 2026-10-01 (`nitpick-compiler_23`): A DEFECT, NO USER QUESTION (owner: the compiler seat;
 > reported by WP-A's implementer).** A module-level `fixed flt64:PI = 3.14f64;` and `fixed tfp64:Q = 2.5tfp64;` are
 > `NITPICK-TYPE-035`, on `5fbaf4a` and on `9efe218`. D-165 is the rule: "the initialiser is a compile-time constant
 > expression: a literal OF ANY KIND" — the refusal is the folder's (`ConstVal` holds integers, bools, chars and
@@ -3018,6 +3020,15 @@ defect declares a `DEF-` in §2f.
 > pure { pass 3.14f64; };` and `raw PI()` (probe `mf2`: clean). Nikola's code will want module-level float and
 > fixed-point constants: ITS OWN LANDING, AHEAD OF step 3b — the folder's value gains the float and twisted
 > literals, the global's initialiser lowers them, and a float constant folds where a constant is asked for.
+>
+> **FIXED (landing 87, `nitpick-compiler_25`).** The folder's value gained `CV_REAL` — a float or fixed-point
+> constant carried as its literal's decimal text, a sign beside it, never computed — so `fixed flt64:PI = 3.14f64;`,
+> `-2.5f64`, `= PI`, `comptime(2.5f64)`, an unsuffixed `0.125` in a float slot, a float array and a struct of
+> floats, and the same forms at `tfp` and `dim256<U>`, are constants: the text reaches LLVM's own decimal conversion
+> (`double 3.14`) or `tfp_q_decimal`, the conversions a literal in a body goes through. `comptime(…)` of one works
+> where it is read. An expression over them stays refused, with its own sentence (S-125).
+> `tests/backend/programs/module_constants.npk` (sixty cases, each constant against the same value built where it is
+> read; exit 0 at both legs, refused by `f13914c`).
 
 > **DEF-180 — OPEN (2026-09-30; owner: the compiler seat; reported by both implementers). THE PIPE FORM `x |> f` IS
 > NOT A CALL TO EVERY READER:** a pipe into a bare builtin (`x |> string_byte_length`, `x |> suspend_until`) is
@@ -3277,6 +3288,114 @@ defect declares a `DEF-` in §2f.
 > compile-time ones) exits 0 at both legs where `c6d671d` exits 1. Exposure, measured: no program of the tree (538)
 > or of the libraries and applications (1,562 that compile) changes its emission — no existing `comptime func:`
 > shadowed a binding or named a local after a module constant a body or a type read.
+
+> **DEF-197 — FIXED 2026-10-01 (landing 87; found by `nitpick-compiler_25` probing DEF-179 before building it). A
+> MODULE-LEVEL CONSTANT OF A TWISTED FAMILY WAS WRITTEN AS THE FOLDER'S PLAIN-INTEGER READING OF IT — THREE SILENT
+> WRONG CONSTANTS.** The folder typed a literal only under an integer suffix; every other suffixed literal was an
+> untyped plain integer ("no width was written"), plain arithmetic folded over it, and `emit_global_const_into`
+> wrote `int_to_string(cv.num)` whatever the binding's type. Measured on `9efe218` and `f13914c`, both legs: (1)
+> `fixed tfp64:Q2 = 2tfp64;` is `constant i64 2` — the Q value of 2.0 is 8589934592 — so `Q2 == 2tfp64` is false
+> (exit 1); (2) `fixed tbb8:T = 100tbb8 + 100tbb8;` is `i8 200`, −56, where the run time's `+` saturates to ERR, and
+> `fixed tfp64:Q = 2tfp64 + 1tfp64;` is `i64 3`; (3) `fixed tryte:TR = 29524 + 1;` is `i16 29525`, no tryte at all,
+> where the run time answers ERR. A function body computed each correctly: the emitter's constant shortcut asks for
+> a plain integer type (`fold_node_constant`), the global's renderer asked nothing. With them: a balanced-base
+> literal under a `tfp` suffix lost its sign everywhere (`0Tttfp64`, the literal −1, was 0 in a body too:
+> `tfp_q_decimal` reads no sign), and `int32[2tfp64]` was an array of two. EXPOSURE: none — no `fixed` binding of a
+> `tbb`, `tfp`, `dim256`, ternary or float type exists in 40,928 `.npk` files (the tree, the libraries, the
+> applications, the fuzzer's corpus). **FIXED:** `fold_suffixed_literal` gives a literal its suffix's family;
+> `fold_computes` holds every operator arm to the plain integers and a flag family; `const_init_verdict` (the
+> checker's one gate) reads the family off the recorded type, so an unsuffixed ternary literal under arithmetic is
+> caught too; `const_scalar_text` renders by type; `tfp_q_of_int`/`tfp_q_signed` carry the sign. The three shapes
+> are NITPICK-TYPE-035 "written, not computed" (`tests/types/rejection/module_const_carried.npk`); the written forms
+> are right (`module_constants.npk`, cases 21, 30–39, 62).
+>
+> **DEF-198 — FIXED 2026-10-01 (landing 87; found by the same probes). A FOLDED VALUE TOOK ITS SLOT'S WIDTH
+> UNCHECKED, AND A FOLDED NAME LOST ITS BINDING'S TYPE.** Both silent, in function bodies, on `f13914c`: `int8:a =
+> comptime(100 + 100);` stored `i8 200` (the sum without `comptime` is NITPICK-TYPE-076), and `fixed int64:BIG =
+> 5000000000; … int32:b = comptime(BIG);` stored `i32 5000000000` — 705032704 — where the plain read `int32:b =
+> BIG;` is NITPICK-TYPE-007. `type_comptime` gave an untyped value the slot's type with no range question;
+> `fold_ident` returned the initialiser's value with the literal's own type, which for an unsuffixed literal is
+> none. **FIXED:** `fold_stamp` gives a folded name its binding's declared type (bounded against a declared type
+> that names its own binding: `fixed int32[K]:K = 5;`), and an untyped `comptime` value must fit the integer slot it
+> lands in (NITPICK-TYPE-031). `tests/types/rejection/comptime_width.npk`.
+>
+> **DEF-199 — FIXED 2026-10-01 (landing 87). THE INTEGER-FORM FLOAT LITERAL: `3f64` REACHED `llc` AS `double 3`, AND
+> `100000000f32` TRAPPED THE CHECKER.** The grammar gives an integer body any `TypeSuffix`; the checker typed `3f64`
+> a `flt64` (as it types `5tfp64` a `tfp64`) and `emit_int` had no float arm, so no program with one ever linked;
+> and the `flt32` digit count read the INTEGER payload as an intern index — the digits of an unrelated string, or
+> outside the table (exit 3, no message). No file of the tree, the libraries or the applications writes one.
+> **FIXED:** `emit_int` lowers it through `float_literal_body` (`double 3.0`; a `flt32` through the same double),
+> and the digit count reads the payload's own digits. `module_constants.npk` cases 60, 61, 63.
+>
+> **DEF-200 — FIXED 2026-10-01 (landing 87). A TOP-LEVEL SENTINEL INITIALISER WAS REFUSED BY A SECOND GATE.** `fixed
+> int32?:O = NIL;` and `fixed tbb32:E = ERR;` passed the checker (D-165 lists a sentinel) and were NITPICK-TYPE-004
+> from the BINDINGS analysis, which re-folded every module initialiser as a belt, admitted an aggregate literal by
+> shape and never a sentinel, and said so in a sentence that still named `const` (the third copy DEF-163 missed).
+> Inside a struct literal the same sentinel compiled. **FIXED:** the belt is gone — the checker's
+> `const_init_verdict` is the one gate, and the emitter's renderer fails closed behind it. `module_constants.npk`
+> cases 33, 34.
+>
+> **DEF-201 — FIXED 2026-10-01 (landing 87). THREE SITES NARROWED A FOLDED VALUE TO `int32` UNCHECKED.**
+> `int8[4294967298]:a = [1i8, 2i8];` compiled as an array of two (`resolve_fixed_array`: `count =>! int32`); a lane
+> count of 4294967300 was a four-lane vector; a channel's constant argument likewise, and any folded KIND passed
+> there (a string constant read as 0). **FIXED:** each asks an integer constant of a plain type and its range before
+> narrowing (NITPICK-TYPE-004 for the array, the sites' own codes for the other two). `comptime_width.npk`.
+>
+> **DEF-202 — OPEN (2026-10-01; owner: the compiler seat; found by landing 87's probes). A REFERENCE TO AN AGGREGATE
+> MODULE BINDING IS NOT A CONSTANT.** D-165 lists "a reference to another module-level binding"; `fixed Pt:Q = P;`
+> and `fixed int32[3]:B = A;` are NITPICK-TYPE-035, because the folder holds no struct or array value and the gate
+> and the renderer ask only the folder for a name (probe `mj1`; a reference to a sentinel-initialised binding
+> likewise). Refused, not wrong. **Recommended:** the gate and the renderer follow an identifier that names a module
+> binding to that binding's initialiser (in ITS scope), for every type; step 3d.
+>
+> **DEF-203 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_25` reading how a `flt32`
+> module constant could be spelled). A `flt32` LITERAL IS NOT ALWAYS THE NEAREST FLOAT TO THE NUMBER WRITTEN — A
+> SILENT ONE-ULP WRONG CONSTANT, AND D-143'S REASON FOR THE 15-DIGIT RULE IS FALSE.** A `flt32` literal lowers as
+> `fptrunc double <text> to float`: two roundings. D-143 says they equal one rounding "exactly when the decimal has
+> ≤ 15 significant digits". Measured with exact rationals: `9.51125303839185e-19f32` is `0x218C5C80` through the
+> double and `0x218C5C7F` rounded once (probe `mr1`: the compiled program reads back `0x218C5C80`, at both legs); 88
+> such fifteen-digit literals in 4,000 sampled float midpoints (the decimal sits within half a double's ulp of the
+> midpoint, the double is the midpoint, the tie goes to even). Any one literal is hit with probability near 2⁻³⁰.
+> The solver agrees with the emitted program today — `fp_literal` (smt_encode.npk) mirrors the two roundings on
+> purpose, to a `Float64` and then narrowed — so the fix moves the emitter AND the encoder together, or they part.
+> One consequence beyond the ulp: a `flt32` MODULE constant has no spelling at all without the bits (LLVM takes a
+> `float` constant only where it is exact, and has no constant `fptrunc`), which is DEF-179's remaining rung
+> (NITPICK-TYPE-035 by name since landing 87). **Recommended, its own landing next:** the compiler's own
+> decimal→`flt32` conversion (exact, in the wide integers `tfp_q_decimal` already uses; known-answer vectors
+> generated as D-193's were), ONE rounding, emitted as the exact constant for a literal in a body and a module
+> constant alike; the 15-digit rule then protects nothing and its fate is the user's.
+
+>
+> *[The library seat on advance notice F29, 2026-10-01.]* No library or application file uses `flt32`. Three
+> programs of the fuzzer's corpus pin the two-rounding ROUTE and quote the references that state it
+> (VERIFICATION_REFERENCE §7c's "a `flt32` literal rounded twice, as the emitter's double-then-`fptrunc` road
+> does"; TYPE_REFERENCE §1.4's "through a correctly-rounded double"): `vf0983` and `vf1149` (a twenty-digit
+> literal, NITPICK-TYPE-030 today) and `ty0190b`. Those sentences change with the fix, and the notice for it
+> names the three programs.
+>
+> **DEF-204 — FIXED 2026-10-01 (landing 87; found by `nitpick-compiler_25` asking what else read a fixed-point
+> literal by its payload). A `pick` ARM OVER A FIXED-POINT SELECTOR NEVER MATCHED — A SILENT WRONG BRANCH.**
+> `pattern_const` wrote a value pattern's integer payload whatever the selector's type, and a range's bounds
+> likewise: over `tfp64:q = 2tfp64`, `pick (q) { (2tfp64) { … } … }` compared the selector's Q value (8589934592)
+> with 2 and took the wildcard (probe `mn2`: exit 1 at both legs, `9efe218` and `f13914c`); `(1tfp64..2tfp64)` over
+> 1.5 likewise (`mn1`); a fraction `(2.5tfp64)` or a negated pattern was EMIT-002. The encoder read the same
+> patterns as their Q values (`enc_pattern_value`), so a verified build reasoned about an arm the program never
+> entered. A `tbb` selector was right (its value is its integer). No `pick` over a fixed-point selector with a value
+> pattern exists in the tree's programs, the libraries or the applications (the emission comparisons move nothing).
+> **FIXED:** `pat_q_text` (ir_stmt.npk) — the folder carries the pattern's literal and `tfp_q_signed`/`tfp_q_of_int`
+> spell it, for a value pattern and each range bound. `tests/backend/programs/pick_fixed_point.npk` (fourteen cases,
+> exit 0 at both legs). DEF-178 (a pattern's literal is never TYPED against its selector) stays open: `(2i32)` over
+> a `tfp64` selector is still accepted, and is read as the number 2.
+>
+> **DEF-205 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_25` probing what DEF-203's
+> conversion must decide). A FLOAT LITERAL PAST ITS TYPE'S RANGE IS INFINITY, AND ONE BELOW ITS SMALLEST VALUE IS
+> ZERO — IN SILENCE.** Probe `ms1`, both legs: `flt32:a = 1.0e39f32;` is +inf (`fptrunc double 1.0e39 to float`),
+> `flt64:b = 1.0e999f64;` is +inf (LLVM reads `double 1.0e999` as infinity), `flt32:c = 1.0e-60f32;` is 0.0. D-148
+> says a numeric literal "must fit its type … verified at the literal (NITPICK-TYPE-031)", and its table leaves
+> floats to D-143, which has no range rule: the number in the program is not the number written — an epsilon that is
+> zero, a bound that is infinite. **Recommended (S-126, the user's):** NITPICK-TYPE-031 at a float literal whose
+> value rounds to infinity or — being nonzero — to zero; a subnormal result is rounding and stays. It needs the
+> exact conversion DEF-203 builds (and its `flt64` twin for the range test), so it lands with or after that.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

@@ -189,6 +189,29 @@ suffixes are gone (`NITPICK-LEX-009`, LEXICAL_REFERENCE §6.2).
 > suffix was gone only from the suffix table: `1.5f512` compiled as `1.5`, the tail
 > never looked at (DEF-166).
 
+**The integer-form float literal** (DEF-199, 1.6.1e). `TypeSuffix` is one production
+for both literal forms (LEXICAL_REFERENCE §6.2), so `3f64` and `7f32` are literals: the
+float whose value is the integer written, as `5tfp64` is the fixed-point value 5
+(D-195). The checker typed them floats and the emitter wrote `double 3`, which is not
+LLVM grammar, so no program with one ever linked; and the `flt32` digit count read the
+integer payload as an intern index, so `100000000f32` trapped the checker. Both lower
+now (`3f64` is `double 3.0`), and the 15-digit rule counts the payload's own digits.
+
+> *[2026-10-01, 1.6.1e — a dated note on the 15-digit rule; DEF-203, OPEN.]* D-143
+> justifies it by "decimal→double→float equals direct rounding exactly when the decimal
+> has ≤ 15 significant digits". That sentence is false, measured: `9.51125303839185e-19f32`
+> (fifteen digits) lowers through the double to `0x218C5C80`, and the float nearest the
+> number written is `0x218C5C7F` — the decimal lies within half a double's ulp of the
+> midpoint between two floats, the double IS the midpoint, and the tie rounds to even.
+> About one float midpoint in forty-five has such a fifteen-digit neighbour (88 found in
+> 4,000 sampled), so a given literal is wrong with probability near 2⁻³⁰ and by one ulp.
+> The fix is the compiler's own decimal→`flt32` conversion, one rounding, used for a
+> literal in a body and for a module constant alike (which is also what a `flt32` module
+> constant waits for). The solver's term mirrors the two roundings today (`fp_literal`), so
+> it agrees with the emitted program and moves with it. And a float literal has no RANGE
+> rule at all: `1.0e39f32` and `1.0e999f64` are infinity and `1.0e-60f32` is zero, in
+> silence (DEF-205; S-126).
+
 **Behaviors (flt32/flt64):**
 - Arithmetic: `+`, `-`, `*`, `/`, `%` → `fadd`, `fsub`, `fmul`, `fdiv`, `frem`
   (`frem` lowers to the runtime floor's hand-written, exact `fmod`/`fmodf`)
@@ -1959,6 +1982,33 @@ can emit a second write. A module binding lowers to `@"npk.<module>.name" =
 constant <T> <v>` — read-only memory, since D-165 already requires the
 initialiser to be a compile-time constant and D-211 requires the keyword, so
 every module binding qualifies.
+
+**What the initialiser may be, by the binding's type** (D-165; DEF-179 and DEF-197,
+1.6.1e):
+
+| The binding's type | The initialiser |
+|---|---|
+| a plain integer, `bool`, `char`, `string`, a flag family | any constant expression the compiler computes: literals, the operators, other module bindings, `comptime(…)`, a `comptime func:` |
+| `flt64`, a `tfp` width, `dim256<U>`, a `tbb` width, the ternary family | a **written** value: a literal, a negated literal, `ERR`, another module binding of that type, or `comptime(…)` of one of those |
+| `flt32` | not yet (DEF-203: its bits need the compiler's own decimal conversion) — `NITPICK-TYPE-035`, by name |
+| a struct, an array | a literal whose every member is one of the above |
+| an `Optional`, a pointer | `NIL`, `NULL` |
+
+The second row is the rule's point. The compiler computes constants in the plain
+integers, exactly at the width (D-310); a float's arithmetic rounds, a fixed-point
+value's and a `tbb`'s and a ternary's saturate to a sticky ERR, and those are the
+RUN TIME's operations — so a constant of one of those families is the number its
+literal is, carried as the literal's text to the one conversion a literal in a
+function body goes through (LLVM's decimal conversion for a `flt64`,
+`tfp_q_decimal` for a fixed-point value), and an expression over them is
+`NITPICK-TYPE-035`: "written, not computed". `fixed flt64:TAU = 6.283185307179586f64;`
+is the spelling; `2.0f64 * PI` is computed in a function. Whether the compiler should
+ever compute in these families is **S-125**.
+
+A folded name has its binding's declared type (DEF-198): `fixed int64:BIG = 5000000000;`
+read as `comptime(BIG)` is an `int64`, and an `int32` slot refuses it as it refuses
+the plain read (`NITPICK-TYPE-007`); an untyped `comptime(…)` value takes its slot's
+width only if it fits there (`NITPICK-TYPE-031`).
 
 ---
 

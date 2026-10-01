@@ -1941,6 +1941,16 @@ func:enc_twisted_binary = Term(Encoder->:e, TokenKind:op, int32:lt, int32:ty, Te
 func:twisted_int_literal = Term(Encoder->:e, int64:v, int32:ty) never fails {
     int32:k = raw type_kind(e.types, ty);
     if ((k == (raw TY_TFP())) || (k == (raw TY_DIM()))) {
+        // A NEGATIVE PAYLOAD (a balanced-base literal) is `0 - Q(|v|)`: the
+        // digit-only conversion read "-1" as 0, which is what the emitter
+        // wrote too until DEF-197 -- the two agree on the signed value now.
+        if (v < 0i64) {
+            if (v < (0i64 - 9223372036854775807i64)) { pass (raw term_none()); }
+            Term:mq = raw twisted_text_literal(e, int_to_string(0i64 - v), ty);
+            if (!mq.ok) { pass (raw term_none()); }
+            if (raw string_eq(mq.text, "0")) { pass mq; }
+            pass (raw term_lit(raw smt_app2("-", "0", mq.text), false));
+        }
         pass (raw twisted_text_literal(e, int_to_string(v), ty));
     }
     pass (raw term_lit(raw smt_int(v), false));

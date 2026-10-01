@@ -2893,7 +2893,8 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             // (1.4.2c): the qualifier used to gate this, which meant the one
             // spelling that skipped the check was the one that lowered to
             // writable memory.
-            if (!(raw is_const_initialiser(e, init))) {
+            int32:civ = raw const_init_verdict(e, init);
+            if (civ != 0i32) {
                 // A LITERAL REFUSED AT THE LITERAL IS NOT ALSO "NOT A CONSTANT"
                 // (D-240; 1.6.1e step 3): `fixed int32:K = 2.5i32;` is TYPE-031
                 // where it is written (DEF-167), and the folder -- which holds
@@ -2904,9 +2905,24 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
                         lit_refused = true;
                     }
                 }
-                if (!lit_refused) {
+                if ((!lit_refused) && (civ == 1i32)) {
                     discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
                         "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
+                        d.span));
+                }
+                // THE FAMILIES THE COMPILER CARRIES AND DOES NOT COMPUTE IN (DEF-197,
+                // 1.6.1e): a float's, a fixed-point value's, a `tbb`'s and a
+                // ternary's arithmetic is not the folder's, so a constant of one is
+                // WRITTEN, not computed -- said by name, because `100tbb8 + 100tbb8`
+                // looks as constant as `100i8 + 100i8` does.
+                if ((!lit_refused) && (civ == 2i32)) {
+                    discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
+                        "a module-level constant of a float, fixed-point, `tbb` or ternary type is written, not computed: a literal, a negated literal, `ERR`, or another module binding of that type (D-165) — the compiler computes constants in the plain integers, `bool`, `char` and `string` only, and this family's arithmetic (its rounding, its sticky ERR) is the run time's; write the value as one literal, or compute it in a function",
+                        d.span));
+                }
+                if ((!lit_refused) && (civ == 3i32)) {
+                    discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
+                        "a `flt32` constant is not lowered at module level yet (DEF-179): its bits need the compiler's own decimal conversion, which the next landing brings — declare it `flt64` and narrow where it is read (`=>! flt32`), or return the literal from a `pure never fails` function",
                         d.span));
                 }
             }
@@ -2921,7 +2937,15 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
 // is constant exactly when the folder folds it (a literal, a sentinel, an
 // arithmetic expression, another module binding, a `comptime(…)`). A call folds
 // to nothing, which is the refusal D-165 wants.
-func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) never fails {
+//
+// THE VERDICT (1.6.1e, DEF-179/DEF-197): 0 a constant; 1 not one; 2 an
+// expression of a CARRIED family -- float, fixed-point, `tbb`, ternary -- that is
+// not a written value; 3 a `flt32`, which the emitter cannot spell yet. The
+// family is read off the type the checker recorded for the member, never off
+// the folded value: an unsuffixed literal in a ternary slot folds as an untyped
+// integer, and so did `29524 + 1` there -- 29525, written into the global where
+// the run time's saturating `+` answers ERR.
+func:const_init_verdict = int32(ExprTyper->:e, ExprId:eid) never fails {
     ExprNode:n = raw ast_expr(e.ast, eid);
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:pairs = (raw expr_list_count(n)) / 2i32;
@@ -2929,28 +2953,58 @@ func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) never fails {
         while (i < pairs) decreases pairs - i {
             ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
                              raw expr_list_start(n), (i * 2i32) + 1i32) };
-            if (!(raw is_const_initialiser(e, vid))) { pass false; }
+            int32:sv = raw const_init_verdict(e, vid);
+            if (sv != 0i32) { pass sv; }
             i = i + 1i32;
         }
-        pass true;
+        pass 0i32;
     }
     if (n.kind == ExprKind.ExprArrayLiteralExpr) {
         int32:c = raw expr_list_count(n);
-        for (int32:i in 0i32...c) {
-            ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
-                             raw expr_list_start(n), i) };
-            if (!(raw is_const_initialiser(e, vid))) { pass false; }
+        for (int32:ai in 0i32...c) {
+            ExprId:avid = ExprId{ index: raw ast_id_at(e.ast,
+                              raw expr_list_start(n), ai) };
+            int32:av = raw const_init_verdict(e, avid);
+            if (av != 0i32) { pass av; }
         }
-        pass true;
+        pass 0i32;
     }
-    if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass 0i32; }
     TypeResolver:cr = raw etyper_resolver(e);
     ConstVal:cv = raw fold_const(@cr, eid, e.scope);
     // A FOLD THAT ALREADY SAID WHAT WENT WRONG -- a constant overflow (D-310),
     // a division by zero -- is not also "not a constant" (D-240: one mistake,
     // one report; the specific sentence is the useful one).
-    if (raw fold_gave_up(@cr)) { pass true; }
-    pass (raw cv_folded(cv));
+    if (raw fold_gave_up(@cr)) { pass 0i32; }
+    int32:t = raw exprtypes_get(e.expr_types, eid);
+    // A MEMBER WHOSE TYPE WAS REFUSED HAS HAD ITS SENTENCE (D-240): `comptime(…)`
+    // over something that does not fold is NITPICK-TYPE-004 at the `comptime`,
+    // and "not a constant" about the same expression is the second report.
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    int32:k = raw type_kind(e.types, t);
+    bool:carried = (k == (raw TY_FLOAT()));
+    if (k == (raw TY_TFP()))  { carried = true; }
+    if (k == (raw TY_DIM()))  { carried = true; }
+    if (k == (raw TY_TBB()))  { carried = true; }
+    if (k == (raw TY_TERN())) { carried = true; }
+    if (!(raw cv_folded(cv))) {
+        if (carried) { pass 2i32; }
+        pass 1i32;
+    }
+    if ((k == (raw TY_TERN())) && (cv.kind == (raw CV_INT())) && (cv.type_id == 0i32)) {
+        bool:lit = (n.kind == ExprKind.ExprIntLiteral);
+        if (n.kind == ExprKind.ExprUnaryExpr) {
+            if ((raw expr_op(n)) == TokenKind.OpMinus) {
+                if ((raw ast_expr(e.ast, raw expr_operand(n))).kind == ExprKind.ExprIntLiteral) { lit = true; }
+            }
+        }
+        if (!lit) { pass 2i32; }
+    }
+    if (k == (raw TY_FLOAT())) {
+        if ((raw type_int_bits(e.types, t)) == 32i32) { pass 3i32; }
+    }
+    pass 0i32;
 };
 
 // A STRUCT'S FIELD TYPES. Resolving them IS the layout walk, so asking for the
