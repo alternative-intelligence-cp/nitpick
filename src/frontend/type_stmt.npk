@@ -2550,6 +2550,99 @@ pub func:check_module = NIL(ExprTyper->:e, DeclId:mod_id, int32:scope) never fai
     pass NIL;
 };
 
+// EVERY VARIANT'S TAG IS ONE THE EMITTER WILL USE, AND NO TWO ARE EQUAL (DEF-193).
+//
+// The emitter's rule (`variant_tag_of`): the declared integer LITERAL where one is
+// given, the variant's POSITION otherwise. This holds a declaration to it:
+//
+//   * a value that is not a bare integer literal is refused -- it was ignored, in
+//     silence, and the variant numbered by its position (`X = 7i32 + 1i32` was 0);
+//   * a value outside `int32` is refused -- the tag is an `i32`, and the literal
+//     was truncated into it;
+//   * a tag another variant already has is refused at the later one -- the two
+//     were one value to `==` and to every `pick`.
+//
+// The position counts every member, as the emitter's does. A refused value takes
+// no part in the duplicate check: one mistake, one report (D-240).
+func:check_enum_values = NIL(ExprTyper->:e, DeclNode:d) never fails {
+    int32:n = raw item_member_count(e.ast, d);
+    List<int64>:tags = raw list_init::<int64>(8i64);
+    List<int32>:owners = raw list_init::<int32>(8i64);
+    List<bool>:spelled = raw list_init::<bool>(8i64);
+    string:ename = raw intern_get(e.interns, raw decl_name(d));
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
+        if (m.kind != DeclKind.DeclEnumVariant) { continue; }
+        string:vname = raw intern_get(e.interns, raw decl_name(m));
+        int64:tag = i => int64;
+        bool:valued = false;
+        Span:at = m.span;
+        ExprId:ve = raw variant_value(m);
+        if (!(raw expr_is_none(ve))) {
+            ExprNode:vn = raw ast_expr(e.ast, ve);
+            at = vn.span;
+            if (vn.kind != ExprKind.ExprIntLiteral) {
+                string:x1 = string_concat("the value of `", ename);
+                string:x2 = string_concat(x1, ".");
+                string:x3 = string_concat(x2, vname);
+                discard(raw te_error(e, raw TYPE_ENUM_VALUE(),
+                    string_concat(x3, "` is not an integer literal: an enum variant's explicit value is written as one (`Name = 3i32;`), and an expression here is not evaluated -- the variant would take its position as its tag"),
+                    vn.span));
+                continue;
+            }
+            if ((vn.payload < 0i64) || (vn.payload > 2147483647i64)) {
+                string:r1 = string_concat("the value of `", ename);
+                string:r2 = string_concat(r1, ".");
+                string:r3 = string_concat(r2, vname);
+                discard(raw te_error(e, raw TYPE_ENUM_VALUE(),
+                    string_concat(r3, "` does not fit an enum's tag, which is an `int32`"),
+                    vn.span));
+                continue;
+            }
+            tag = vn.payload;
+            valued = true;
+        }
+        bool:clash = false;
+        int64:k = 0i64;
+        while (k < tags.count) decreases tags.count - k {
+            if (tags[k] == tag) {
+                string:c1 = string_concat("`", ename);
+                string:c2 = string_concat(c1, ".");
+                string:c3 = string_concat(c2, vname);
+                string:c4 = string_concat(c3, "` has the tag ");
+                string:c5 = string_concat(c4, int_to_string(tag));
+                string:c6 = string_concat(c5, ", which `");
+                string:c7 = string_concat(c6, ename);
+                string:c8 = string_concat(c7, ".");
+                string:c9 = string_concat(c8, raw intern_get(e.interns, owners[k]));
+                string:c10 = string_concat(c9, "` already has: two variants of one enum cannot share a tag -- they would be one value to `==` and to every `pick`");
+                if (!valued) {
+                    c10 = string_concat(c10, " (this variant has no explicit value, so its tag is its position)");
+                } else {
+                    if (!spelled[k]) {
+                        string:o1 = string_concat(c10, " (`");
+                        string:o2 = string_concat(o1, ename);
+                        string:o3 = string_concat(o2, ".");
+                        string:o4 = string_concat(o3, raw intern_get(e.interns, owners[k]));
+                        c10 = string_concat(o4, "` has no explicit value, so its tag is its position)");
+                    }
+                }
+                discard(raw te_error(e, raw TYPE_ENUM_VALUE(), move(c10), at));
+                clash = true;
+                k = tags.count;
+            } else {
+                k = k + 1i64;
+            }
+        }
+        if (!clash) {
+            drop list_push(@tags, tag);
+            drop list_push(@owners, raw decl_name(m));
+            drop list_push(@spelled, valued);
+        }
+    }
+    pass NIL;
+};
+
 func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
     DeclNode:d = raw ast_decl(e.ast, id);
 
@@ -2698,6 +2791,14 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
         e.enclosing = saved_enc;
         e.self_type = saved_self;
         e.self_trait = saved_st;
+        pass NIL;
+    }
+
+    // AN ENUM'S VARIANT VALUES (DEF-193). Nothing visited an enum's declaration at
+    // all until this arm: D-085's shape -- parsed, resolved, and the checker's
+    // silence about it invisible because there was nothing to see.
+    if (d.kind == DeclKind.DeclEnumDecl) {
+        drop check_enum_values(e, d);
         pass NIL;
     }
 

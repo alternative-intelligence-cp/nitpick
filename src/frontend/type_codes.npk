@@ -612,3 +612,15 @@ pub func:TYPE_DESTROY_NOT_OWNED = string() never fails { pass "NITPICK-TYPE-091"
 // `cstring:cs = "Hello";` -- and a NUL inside it is the poison-NUL bypass
 // `to_cstring` refuses at run time, refused here at the literal instead.
 pub func:TYPE_CSTRING_LITERAL_NUL = string() never fails { pass "NITPICK-TYPE-092"; };
+
+// AN ENUM VARIANT'S EXPLICIT VALUE THAT CANNOT BE HONOURED (DEF-193, 1.6.1e, after step
+// 3a): the tag rule has been "the declared integer LITERAL where one is given,
+// the position otherwise" since the seed (`variant_tag_of`), and nothing checked a
+// value against it -- so a value written as an expression (`X = 7i32 + 1i32`, a
+// `fixed` name, `-3i32`) was IGNORED and the variant silently took its position;
+// two variants could carry one tag and compare equal (a `pick` naming both was
+// refused by `llc`, "duplicate case value"); and a value past `int32` was
+// truncated. Refused at the enum's declaration: a value that is not a bare
+// integer literal, a value outside `int32`, and a tag another variant of the enum
+// already has (an unvalued variant's tag is its position).
+pub func:TYPE_ENUM_VALUE = string() never fails { pass "NITPICK-TYPE-093"; };

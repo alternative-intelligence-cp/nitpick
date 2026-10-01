@@ -1191,6 +1191,28 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 ; payload extraction does not cause unaligned reads/segfaults on strict architectures.
 ```
 
+**A variant's explicit value (DEF-193, 2026-10-01).** A variant's tag is the integer LITERAL its
+declaration gives — `Late = 9i32;` — and its POSITION among the enum's members where it gives none:
+`enum:Flat = { A; B; Late = 9i32; };` is 0, 1, 9. The declaration is held to that rule, and what it
+cannot honour is `NITPICK-TYPE-093`, at the value:
+
+- **a value that is not a bare integer literal** — `X = 7i32 + 1i32`, `X = BASE`, `X = -3i32`,
+  `X = 'a'`. Nothing evaluates an expression there, and until this check the variant silently took
+  its position (`X` above was 0). Parentheses build no node, so `(5i32)` is the literal; a macro
+  invocation that EXPANDS to a literal is one; the literal's own suffix is not read — the tag is an
+  `int32` whatever the suffix says.
+- **a value outside `[0, 2^31 − 1]`** — the tag is an `i32`, and a larger literal was truncated into
+  it.
+- **a tag another variant of the enum already has**, reported at the LATER variant and naming the
+  earlier — two valued variants, or a valued one and an unvalued one whose position it equals
+  (`{ A; B = 0i32; }`, and `{ A = 1i32; B; }`, whose `B` is its position, 1). The two were one value
+  to `==`, and a `pick` naming both reached `llc` as a duplicate case.
+
+A refused value takes no part in the duplicate check (one mistake, one report — D-240); a variant
+that carries a payload takes no value at all (`Some(T) = 4i32;` does not parse). What a value may be
+beyond a bare literal — a constant expression, a negative tag — and what an unvalued variant after a
+valued one should be are **S-122**, the user's; these refusals foreclose neither answer.
+
 **A generic enum is a family, exactly as a generic struct is (D-261, 1.5.2c).**
 `enum:Opt<T> = { Some(T); None; };` is a template; `Opt<int32>` and
 `Opt<string>` are instances, each with its own identity (D-090), its own

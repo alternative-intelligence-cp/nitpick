@@ -10065,6 +10065,16 @@ explicit lie, not the checker's gap. A payload-carrying enum still refuses the
 manufacturing direction at the backend: a tag is not a whole `{tag, payload}`
 value, and inventing the other half is not a cast.
 
+*[2026-10-01, 1.6.1e (DEF-193's landing) — a dated note.]* **The tag these casts read is CHECKED at
+its declaration now.** `enum =>! intN` reads the tag, and the tag was whatever `variant_tag_of`
+computed — the declared integer literal, else the position — with nothing holding a declaration to
+it: a value written as an expression was ignored in silence (`enum:B = { X = 7i32 + 1i32; … }` read
+back 0), two variants could share a tag (`F.A == F.B` true, a `pick` naming both a duplicate case to
+`llc`), and a literal past `int32` was truncated. `NITPICK-TYPE-093` refuses each at the declaration
+(`check_enum_values`, type_stmt.npk; TYPE_REFERENCE §9.3). What a value may be beyond a bare literal,
+and what an unvalued variant beside a valued one is, are S-122 — the user's; the refusals are the
+interim that forecloses neither answer.
+
 ## D-141 — The fd floor, the error-code space, and stdout/stderr's contract — **SETTLED**
 
 Cycle 0.8.5, executing D-050/D-075/D-076 at the rung that exists. Four parts.

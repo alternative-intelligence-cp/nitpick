@@ -1,0 +1,82 @@
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 53:23
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 54:20
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 55:23
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 56:23
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 59:19
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 62:30
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 63:28
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 64:34
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 65:40
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 65:50
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 66:21
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 69:49
+//
+// AN ENUM VARIANT'S EXPLICIT VALUE IS HELD TO THE RULE THE EMITTER USES (DEF-193,
+// 1.6.1e).
+//
+// The tag rule has been one sentence since the seed -- "the declared integer
+// LITERAL where one is given, the POSITION otherwise" (`variant_tag_of`) -- and
+// nothing checked a declaration against it; the checker had no arm for an enum at
+// all. So, each in silence:
+//
+//   * a value written as an EXPRESSION was ignored and the variant took its
+//     position: `enum:B = { X = 7i32 + 1i32; Y = 2i32; }` made `B.X` 0, not 8
+//     (a `fixed` name and a negated literal the same);
+//   * two variants could carry ONE tag: `enum:F = { A = 3i32; B = 3i32; }`
+//     compiled and `F.A == F.B` was true; `enum:E = { A; B = 0i32; }` gave both
+//     the tag 0, and a `pick` naming both was refused by `llc` ("duplicate case
+//     value in switch") rather than by the compiler;
+//   * a value past `int32` was truncated into the tag.
+//
+// Each is refused at the declaration, `NITPICK-TYPE-093`. What a value MAY be
+// beyond a literal -- a constant expression, a negative tag -- and what an
+// unvalued variant beside a valued one is, are S-122, the user's; until then an
+// unvalued variant is its position, as it always was, and a collision says so.
+mod:enum_values;
+
+fixed int32:BASE = 40i32;
+macro:three = () { 3i32; };
+
+// --- a value that is not a bare integer literal ------------------------------------------
+enum:Sum = { X = 7i32 + 1i32; Y = 2i32; };
+enum:Named = { X = BASE; Y = 2i32; };
+enum:Negative = { X = -3i32; Y = 2i32; };
+enum:Lettered = { X = 'a'; Y = 2i32; };      // a literal, but not an INTEGER literal
+
+// --- a value outside `int32` ------------------------------------------------------------
+enum:Wide = { X = 4294967297i64; Y = 2i32; };
+
+// --- one tag, two variants -----------------------------------------------------------------
+enum:Twice = { A = 3i32; B = 3i32; };
+enum:ByPosition = { A; B = 0i32; };          // `A` is its position, 0
+enum:PositionLater = { A = 1i32; B; C; };    // `B` is its position, 1
+enum:Three = { A = 5i32; B = 6i32; C = 5i32; D = 6i32; };
+enum:Folded = { A = 4294967296i64; B = 0i32; };      // refused for its range, ONCE: no second report at `B`
+
+// --- wherever an enum is declared ----------------------------------------------------------
+mod:nested = { pub enum:Inner = { A = 1i32; B = 1i32; }; };
+
+// --- controls: each is accepted ----------------------------------------------------------
+enum:Plain = { Red; Green; Blue; };
+enum:Valued = { Red = 0i32; Green = 1i32; Blue = 2i32; };
+enum:Sparse = { Low = 10i32; Mid = 20i32; High = 30i32; };
+enum:Mixed = { First; Second; Tenth = 10i32; };          // positions 0 and 1, then 10
+enum:Expanded = { One = 1i32; Three = #three(); };       // an invocation that expands to a literal
+enum:Grouped = { X = (5i32); Y = 2i32; };                // parentheses build no node: this IS the literal
+enum:Payload<T> = { Some(T); None; };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
