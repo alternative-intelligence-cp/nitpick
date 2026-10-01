@@ -1,0 +1,99 @@
+// A BARE `#unreachable();` LEAVES, AND ONLY THE BARE STATEMENT (DEF-225).
+//
+// `#unreachable()` traps through D-142's route wherever it stands and produces no
+// value (D-061), so an arm that ends in it contributes nothing to a merge and a
+// body that ends in it does not reach its closing brace. The controls below were
+// each refused before this -- TAINT-001, ASSIGN-001, ASSIGN-002, MOVE-001, FLOW-001:
+// five codes, one root, the library listener's O-N34 -- where the same arm ending in
+// `!!! Unreachable;` or `exit` compiled.
+//
+// THE EDGE OF THE RULE IS WHAT THIS FILE REFUSES. The bindings analysis recognises
+// the builtin as a statement of its own and looks no further: under another
+// expression -- an initialiser here -- the statement is one that completes. That
+// costs the author one bare `#unreachable();` and decides nothing about what is
+// evaluated before it. Widening it is a decision, and this file is where it shows.
+
+mod:unreachable_edge;
+error:E5;
+
+func:might_fail = int32(bool:c) {
+    if (c) { fail E5; }
+    pass 7i32;
+};
+
+func:eat = int64(move string:s) never fails { pass s.len; };
+
+// --- under an initialiser the statement completes ------------------------------------
+
+// expect-error: NITPICK-TAINT-001
+func:arm_initialiser = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    if (r.is_error) { int32:z = #unreachable(); discard(z); }
+    pass (r.value);
+};
+
+// expect-error: NITPICK-FLOW-001
+func:body_initialiser = int32(bool:c) never fails {
+    if (c) { pass 1i32; }
+    int32:z = #unreachable();
+    discard(z);
+};
+
+// --- the controls: the bare statement, at every merge and at a body's end ------------
+
+func:ctl_taint_if = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    if (r.is_error) { #unreachable(); }
+    pass (r.value);
+};
+
+func:ctl_taint_else = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    if (!r.is_error) { } else { #unreachable(); }
+    pass (r.value);
+};
+
+func:ctl_taint_nested = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    if (r.is_error) { { #unreachable(); } }
+    pass (r.value);
+};
+
+func:ctl_assign = int32(bool:c) never fails {
+    int32:x;
+    if (c) { x = 41i32; } else { #unreachable(); }
+    pass x;
+};
+
+func:ctl_assign_pick = int32(bool:c) never fails {
+    int32:x;
+    pick (c) {
+        (true)  { x = 41i32; },
+        (false) { #unreachable(); }
+    }
+    pass x;
+};
+
+func:ctl_fixed = int32(bool:c) never fails {
+    fixed int32:k;
+    if (c) { k = 1i32; #unreachable(); }
+    k = 2i32;
+    pass k;
+};
+
+func:ctl_move = int64(bool:c) never fails {
+    string:s = string_concat("ab", "cd");
+    if (c) { discard(raw eat(move(s))); #unreachable(); }
+    pass s.len;
+};
+
+func:ctl_flow = int32(int32:x) never fails {
+    if (x > 0i32) { pass 1i32; }
+    if (x <= 0i32) { pass 0i32; }
+    #unreachable();
+};
+
+func:ctl_flow_nil = NIL(bool:c) never fails {
+    if (c) { pass NIL; }
+    #unreachable();
+};

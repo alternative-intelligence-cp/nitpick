@@ -370,7 +370,10 @@ Two checks that the compiler enforces aggressively:
     walk is conservative towards refusal: an `if` without `else` completes, an
     `if`/`else` completes if either arm does, a `pick` if any arm's body does (an
     arm ending in `fall` continues into the next arm), a `while (true)` with no
-    `break` never completes, every other loop and `when` completes as a whole.
+    `break` never completes, every other loop and `when` completes as a whole. A
+    bare `#unreachable();` is a trap as `!!!` is and never completes (DEF-225,
+    landing 93); under another expression — an initialiser, an argument — the
+    statement is one that completes.
 
 > `FORMAL_DRAFT` 05 §5.7 describes `pass` as sugar for `return ok(expr);` and
 > `fail` as `return err(expr);`. **Both are wrong.** `ok()` is the taint-clearing

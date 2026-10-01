@@ -3697,6 +3697,44 @@ defect declares a `DEF-` in §2f.
 > `failsafe` macro for sixty utilities) depends on the answer. Queued by severity (a refusal, no wrong answer); not
 > started.
 
+> **DEF-225 — FIXED 2026-10-01 (landing 93, `nitpick-compiler_30`; the library listener's O-N34, found by
+> nitpick-time's 0.2.2 planning, measured by the listener at `5fbaf4a` and `c15422e` and here at `2b5ef34`). A BARE
+> `#unreachable();` DID NOT LEAVE: FIVE REFUSALS OF CORRECT PROGRAMS, ONE MISSING ROW.** -- The bindings analysis
+> decides "does this statement leave" (`stmt_exits`: which arm a merge drops) and "may this statement complete"
+> (`stmt_completes`: FLOW-001) from two lists of statement KINDS, and `#unreachable()` is an expression: as a
+> statement of its own it was "an expression statement", which falls through. Measured on `2b5ef34`, each beside the
+> same arm ending in `!!! Unreachable;` or `exit`, which compiles: `if (r.is_error) { #unreachable(); }` and then
+> `r.value` -- `NITPICK-TAINT-001` (the listener's shape; `r ?| #unreachable()` compiles); `if (c) { x = 41i32; } else
+> { #unreachable(); }` and then `x` -- `NITPICK-ASSIGN-001`, and through a `pick` on `c` the same; a `fixed` binding
+> written in the arm and again below it -- `NITPICK-ASSIGN-002`; a `move` in the arm and a read below it --
+> `NITPICK-MOVE-001`; a body whose last statement is `#unreachable();`, plain or a coroutine's -- `NITPICK-FLOW-001`,
+> under a message that says "without `pass`, `fail`, `exit` or a trap". The builtin traps through D-142's route
+> wherever it stands and produces no value (D-061; BUILTIN_REFERENCE's row), so by D-121's sentence ("an arm that
+> leaves contributes nothing to the merge") and D-323's ("or a trap") each was a refusal of a correct program -- loud,
+> never a wrong answer. THE FIX: one helper, `stmt_is_unreachable` (bindings.npk: an expression statement whose
+> expression is the builtin), read by both predicates beside the trap statement's row. ONLY THE BARE STATEMENT: under
+> another expression (`int32:z = #unreachable();`, an argument, an operand) the statement is one that completes, which
+> costs precision and decides nothing about evaluation order; `tests/analysis/rejection/unreachable_edge.npk` holds
+> that edge (TAINT-001 and FLOW-001, one site each) beside nine controls. The encoder's `stmt_falls_through` keeps its
+> own list and reads the builtin as falling through ON PURPOSE (its claim becomes a hypothesis; it claims less). No
+> emission changes: the analysis feeds refusals alone, and the emitter always lowered the builtin as a trap and a
+> block terminator. The tests: `tests/backend/programs/unreachable_leaves.npk` (ten functions and a coroutine pair,
+> every shape refused by the compiler before this one; exit 0 at both legs) and `unreachable_leaves_trap.npk` (the
+> error taken: `failsafe` hears `Unreachable`, 42 at both legs -- the read below the arm is never run with an error).
+
+> **DEF-226 — OPEN (2026-10-01; owner: the compiler seat; found by landing 93's probes `p06b` and `p06c`,
+> `wt/30a/.internal/probes`). THE `pick (r.is_error)` FORM'S CHECK IS NOT CARRIED OUT OF THE `pick`.** `pick
+> (r.is_error) { (true) { exit 10i32; }, (false) { } }` followed by a read of `r.value` is `NITPICK-TAINT-001` -- with
+> every leaver in the error arm (`exit`, `!!! Unreachable;`, and a bare `#unreachable();` after DEF-225), on `2b5ef34`
+> and after landing 93 alike -- where the `if` form of the same program compiles. `assign_pick` (bindings.npk)
+> intersects `must` over the arms that fall through and takes it out of the `pick` (`state_intersect_must`,
+> `state_take_must`); it has no such step for `checked`, so the refinement D-121 gives the `pick` form ("the same
+> refinement an `if` gets") holds inside the safe arm and ends with it. Definite assignment through the same `pick` IS
+> carried (`unreachable_leaves.npk`'s `assigned_pick`). A refusal of a correct program, loud; the spellings that
+> compile are the `if` form, `?!` and `?| #unreachable()`. To be READ before it is built: `checked` is a PERMISSION
+> and intersects, so the step is `must`'s twin under the same exhaustiveness condition, and a wrong answer towards
+> `checked` admits a tainted read (D-007). Queued by severity (a refusal, no wrong answer); not started.
+
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,
 > DEF-123, DEF-127, DEF-134), step 2 the silent wrong loop counts (DEF-128 under S-110, DEF-129, DEF-130, DEF-135 and DEF-136 found by the step's probes, DEF-137 found by landing 72's red harness), step 3 the leaks

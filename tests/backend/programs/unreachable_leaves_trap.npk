@@ -1,0 +1,37 @@
+// expect-exit: 42
+//
+// THE OTHER PATH OF `unreachable_leaves.npk` (DEF-225): the read of `r.value`
+// below `if (r.is_error) { #unreachable(); }` is admitted because the arm never
+// continues -- so when the `Result` DOES carry an error the builtin must stop the
+// program before the read, at both legs, and `failsafe` must hear `Unreachable`.
+// A build that reached the read would answer 11 (the tainted value is not 5) or
+// 0; the trap answers 42.
+
+mod:unreachable_leaves_trap;
+error:Boom;
+
+func:take = int64(bool:bad) {
+    if (bad) { fail Boom; }
+    pass 5i64;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Result<int64>:r = take(true);
+    if (r.is_error) { #unreachable(); }
+    if (r.value != 5i64) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 42i32; },
+        (Boom)              { exit 80i32; },
+        (HeapBadRequest)    { exit 85i32; },
+        (HeapOom)           { exit 86i32; },
+        (WildLeak)          { exit 87i32; },
+        (StackExhausted)    { exit 88i32; },
+        (MachineFault)      { exit 89i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

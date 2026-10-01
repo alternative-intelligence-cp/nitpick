@@ -1,0 +1,154 @@
+// expect-exit: 0
+//
+// A BARE `#unreachable();` LEAVES (DEF-225, the library listener's O-N34).
+// `#unreachable()` traps through D-142's route wherever it stands and produces
+// no value (D-061), so an arm that ends in it contributes nothing to a merge --
+// exactly as one ending in `!!! Unreachable;`, `exit` or `pass` does -- and a
+// body that ends in it does not fall off its end. Every function below was
+// refused before this, each by a different code of the one analysis:
+// TAINT-001 (the `Result` stayed tainted), ASSIGN-001 (the binding stayed
+// unassigned), ASSIGN-002 (the `fixed` one stayed written), MOVE-001 (the
+// string stayed moved), FLOW-001 (the body was said to reach its closing brace).
+//
+// Each case runs the path on which the builtin is NOT reached and checks the
+// value computed there; `unreachable_leaves_trap.npk` takes the other path. A
+// coroutine's body is here beside the plain ones: its last statement and its
+// arms are lowered by a different emitter path.
+
+mod:unreachable_leaves;
+error:Boom;
+error:E9;
+
+func:take = int64(bool:bad) {
+    if (bad) { fail Boom; }
+    pass 5i64;
+};
+
+func:eat = int64(move string:s) never fails { pass s.len; };
+
+// The listener's shape: the test, the leaver, the read below it.
+func:read_after_if = int64() never fails {
+    Result<int64>:r = take(false);
+    if (r.is_error) { #unreachable(); }
+    pass r.value;
+};
+
+// The leaver in `else`, under the negated test; and inside a nested block.
+func:read_after_else = int64() never fails {
+    Result<int64>:r = take(false);
+    if (!r.is_error) { } else { #unreachable(); }
+    pass r.value;
+};
+
+func:read_after_nested = int64() never fails {
+    Result<int64>:r = take(false);
+    if (r.is_error) { { #unreachable(); } }
+    pass r.value;
+};
+
+// Inside a loop: every trip tests, leaves or reads.
+func:read_in_loop = int64() never fails {
+    int64:sum = 0i64;
+    for (int64:i in 0i64...3i64) {
+        Result<int64>:r = take(false);
+        if (r.is_error) { #unreachable(); }
+        sum = sum + r.value;
+    }
+    pass sum;
+};
+
+// Definite assignment, through an `if` and through a `pick`: the arm that
+// leaves assigns nothing and owes nothing.
+func:assigned_if = int32(bool:c) never fails {
+    int32:x;
+    if (c) { x = 41i32; } else { #unreachable(); }
+    pass x + 1i32;
+};
+
+func:assigned_pick = int32(bool:c) never fails {
+    int32:x;
+    pick (c) {
+        (true)  { x = 61i32; },
+        (false) { #unreachable(); }
+    }
+    pass x + 1i32;
+};
+
+// A `fixed` binding written in the arm that leaves is not written below it.
+func:fixed_once = int32(bool:c) never fails {
+    fixed int32:k;
+    if (c) { k = 1i32; #unreachable(); }
+    k = 2i32;
+    pass k;
+};
+
+// A move in the arm that leaves is no move below it.
+func:moved_in_arm = int64(bool:c) never fails {
+    string:s = string_concat("ab", "cd");
+    if (c) { discard(raw eat(move(s))); #unreachable(); }
+    pass s.len;
+};
+
+// A body whose last statement is the builtin: every path has ended.
+func:sign = int32(int32:x) never fails {
+    if (x > 0i32) { pass 1i32; }
+    if (x <= 0i32) { pass 0i32; }
+    #unreachable();
+};
+
+func:nil_end = NIL(bool:c) never fails {
+    if (c) { pass NIL; }
+    #unreachable();
+};
+
+// The same two shapes in a coroutine.
+async func:asign = int32(int32:x) {
+    if (x > 0i32) { pass 1i32; }
+    if (x <= 0i32) { pass 0i32; }
+    #unreachable();
+};
+
+async func:aread = int64() {
+    Result<int64>:r = take(false);
+    if (r.is_error) { #unreachable(); }
+    pass r.value;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw read_after_if()) != 5i64)        { exit 11i32; }
+    if ((raw read_after_else()) != 5i64)      { exit 12i32; }
+    if ((raw read_after_nested()) != 5i64)    { exit 13i32; }
+    if ((raw read_in_loop()) != 15i64)        { exit 14i32; }
+    if ((raw assigned_if(true)) != 42i32)     { exit 15i32; }
+    if ((raw assigned_pick(true)) != 62i32)   { exit 16i32; }
+    if ((raw fixed_once(false)) != 2i32)      { exit 17i32; }
+    if ((raw moved_in_arm(false)) != 4i64)    { exit 18i32; }
+    if ((raw sign(7i32)) != 1i32)             { exit 19i32; }
+    if ((raw sign(-7i32)) != 0i32)            { exit 20i32; }
+    drop nil_end(true);
+
+    int32:a = await asign(3i32) ?! E9;
+    if (a != 1i32)                            { exit 21i32; }
+    int32:b = await asign(-3i32) ?! E9;
+    if (b != 0i32)                            { exit 22i32; }
+    int64:v = await aread() ?! E9;
+    if (v != 5i64)                            { exit 23i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Boom)              { exit 80i32; },
+        (E9)                { exit 81i32; },
+        (Unreachable)       { exit 82i32; },
+        (DeadlineExceeded)  { exit 83i32; },
+        (IntOverflow)       { exit 84i32; },
+        (HeapBadRequest)    { exit 85i32; },
+        (HeapOom)           { exit 86i32; },
+        (WildLeak)          { exit 87i32; },
+        (StackExhausted)    { exit 88i32; },
+        (MachineFault)      { exit 89i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

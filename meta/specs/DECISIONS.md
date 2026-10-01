@@ -9091,6 +9091,23 @@ the language rather than a hole in the analysis.
 and greppable is the only property this language asks of an escape hatch, and both
 already are.
 
+*[2026-10-01, 1.6.1e (DEF-225's landing) — a dated note.]* **"An arm that leaves" includes one that
+ends in a bare `#unreachable();`.** The sentence above was kept by a list of statement KINDS
+(`stmt_exits`, bindings.npk: `pass`, `fail`, `return`, `exit`, `!!!`, `break`, `continue`, `fall`, a
+block holding one, an `if` whose two arms leave), and the list had no row for the builtin that traps
+through D-142's route and produces no value (D-061): it is an expression, so as a statement of its
+own it was "an expression statement", which falls through. `if (r.is_error) { #unreachable(); }`
+followed by a read of `r.value` was `NITPICK-TAINT-001` where the same arm ending in `!!!
+Unreachable;` or `exit` compiled and `r ?| #unreachable()` beside it compiled too (the library
+listener's O-N34, measured at three commits). The bare statement is a leaver now -- in this merge
+and in the three others the one predicate decides (definite assignment, a `fixed` binding's single
+write, a move). ONLY THE BARE STATEMENT: under another expression (`int32:z = #unreachable();`, an
+argument) the statement is one that completes, which costs precision and decides nothing about what
+is evaluated before it (`tests/analysis/rejection/unreachable_edge.npk` holds the edge). Found
+beside it and registered as DEF-226: the `pick (r.is_error)` form's refinement holds INSIDE its arms
+and is not carried out of the `pick` -- `pick (r.is_error) { (true) { exit 1i32; }, (false) { } }`
+followed by the read is TAINT-001 with every leaver, where the `if` form compiles.
+
 
 ---
 
@@ -21391,6 +21408,17 @@ listener's phrasing) would make `NIL` the one type whose functions may fall off 
 second meaning for a function's end that depends on its type, which is exactly the
 context-dependence D-001's philosophy forbids, and it would leave a `NIL` function's `pass
 NIL` optional where every other function's leaver is not.
+
+*[2026-10-01, 1.6.1e (DEF-225's landing) — a dated note.]* **"Or a trap" includes a bare
+`#unreachable();`.** The decision names the trap as `!!!`, and `stmt_completes` listed the trap
+STATEMENT alone, so a body whose last statement was `#unreachable();` -- which traps through the
+same route (D-061, D-142) and can no more reach the closing brace than `!!! Unreachable;` can -- was
+`NITPICK-FLOW-001`, under a message that says "without `pass`, `fail`, `exit` or a trap". The bare
+statement never completes now: one helper (`stmt_is_unreachable`, bindings.npk) is read by this walk
+and by its twin `stmt_exits`, which gained the same row in the same commit. The conservatism is
+unchanged: the builtin under another expression is "every other statement" and completes, so a body
+ending in `int32:z = #unreachable();` is still refused, and the author answers with the bare
+statement.
 
 ## D-324 — 1.6.1's process and stage: the NIKOS port on a `nitpick-port` branch the user merges, the second decider on by default, the stage over every plain emission on every run — **SETTLED (user decision, 2026-09-26: "both of your recommendations sound fine to me. lets ratify those."; S-103, S-104, S-105)**
 

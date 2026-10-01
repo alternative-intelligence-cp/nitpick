@@ -2185,6 +2185,14 @@ level, because `q.x` does.
   > D-007 removed, so it was an operator whose subject no longer existed, and it
   > has been removed from the language. Checking `is_error` is the remaining
   > route, and it was always the one that composed with the `Result` discipline.
+
+  The check is read BY BRANCH (D-121): the arm the test proves safe may read
+  `value`, and so may the code after an `if` whose error arm LEAVES — by `pass`,
+  `fail`, `return`, `exit`, `!!!`, `break`, `continue`, `fall`, or a bare
+  `#unreachable();` (DEF-225, landing 93: it traps, so the arm contributes nothing
+  to the merge; under another expression the statement completes and the taint
+  stands). The same early exit through `pick (r.is_error) { … }` is not carried
+  out of the `pick` (DEF-226, open): the refinement there holds inside the arm.
 - IR: uses `undef` value with taint metadata in debug builds
 
 ---
