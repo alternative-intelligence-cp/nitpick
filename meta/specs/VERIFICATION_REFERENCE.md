@@ -1109,6 +1109,20 @@ guard that stays), `budget` (unknown under the pinned `rlimit`), `unencoded`
 INVENTORY of guards), or `checker` (discharged by the frontend). The elision
 column is `elided`, `retained`, or `none` for a kind with no guard.
 
+### What a name is to the encoder (DEF-14, DEF-223)
+
+A local is a versioned symbol, and the encoder finds a local's current version by the name's SPELLING, innermost
+declaration first. Three rules keep that from stating a fact about the wrong thing. **A name whose address is taken
+is never named** (DEF-14): every read is a fresh opaque term, because a callee holding the pointer may write it.
+**An identifier the resolver bound to a module-level declaration never reads a local** (DEF-223): a callee's
+contract evaluated at a call site, and a macro body's free name, mean the module's binding whatever the function
+around them has declared -- `requires d > lim` over a module `lim` was once proven against the CALLER's local `lim`,
+and the verified build divided by zero where the plain build stops with `RequiresViolated`. **A spelling that
+hygiene makes ambiguous is never named** (DEF-223): where an identifier inside a macro expansion uses a spelling the
+function declares more than once, the innermost declaration need not be the one the resolver bound (an argument and
+`#caller` are the caller's, D-340), so no local of that spelling carries a fact in that function. The cost of the
+third rule is those proofs and no others; the rows stay `open` and keep their guards.
+
 ## 7c. The theories (D-218 (4) and (5); landed 1.5.4b, 2026-09-10)
 
 What a value IS to the solver, family by family — the partition D-218 (4)

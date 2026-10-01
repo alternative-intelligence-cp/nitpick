@@ -1,0 +1,23 @@
+// expect-error: NITPICK-MACRO-008
+// expect-error-at: 21:24
+//
+// `#caller` IN AN ARGUMENT WRITTEN OUTSIDE EVERY MACRO BODY (DEF-222, 1.6.1e).
+// `#caller(NAME)` is a macro BODY's one way out to the invocation site (D-057).
+// An argument is not a body: it is the caller's own text, written AT the site,
+// and names the caller's scope already (D-340) -- so the form means nothing
+// there, exactly as it means nothing in `caller_outside.npk`.
+//
+// The compiler before this one consumed it while cloning the argument, as it
+// consumes a body's, and the program compiled (and answered 8).
+//
+// A `#caller` that a body writes inside an INNER invocation's argument is the
+// body's, and legal: `tests/backend/programs/macro_arg_shadow.npk` runs one.
+mod:caller_in_argument;
+
+macro:twice = (X) { X + X; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:x = 4i32;
+    int32:got = #twice(#caller(x));
+    exit got;
+};

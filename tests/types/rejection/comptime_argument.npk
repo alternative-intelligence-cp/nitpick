@@ -1,0 +1,20 @@
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 14:17
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 18:17
+//
+// AN ARGUMENT UNDER `comptime(...)` IS STILL THE CALLER'S (D-340; DEF-183 part
+// B, 1.6.1e). `K` at the invocation is `main`'s local -- a run-time value -- so
+// `comptime(K + 1i32)` does not fold. The compiler before this one bound the
+// argument where the macro was written, read the MODULE's `K`, and the program
+// compiled and answered 101.
+mod:comptime_argument;
+
+fixed int32:K = 100i32;
+macro:c = (X) { comptime(X + 1i32); };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:K = 5i32;
+    int32:got = #c(K);
+    exit got + K;
+};

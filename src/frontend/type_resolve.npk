@@ -228,7 +228,8 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
 // type nodes (shared by every instantiation where they hold no expression) and
 // the copies an instantiation makes answer alike, and so does a parameter the
 // body declares. A name written OUTSIDE every macro body -- an argument's
-// included -- binds as it always did; what an argument's names may see is S-120.
+// included -- binds as it always did: an argument is the caller's text and its
+// names are the invocation site's (D-340).
 func:macro_may_bind = bool(TypeResolver->:r, Span:written, Span:declared) never fails {
     int32:m = raw ast_macro_at(r.ast, written);
     if (m == 0i32) { pass true; }

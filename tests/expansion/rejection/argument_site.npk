@@ -1,0 +1,39 @@
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 30:27
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 32:7
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 36:22
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 37:15
+//
+// AN ARGUMENT RESOLVES AT THE INVOCATION SITE, AND ONLY THERE (D-340; DEF-183
+// part B, 1.6.1e). Three names that are not in scope where the argument was
+// written, each refused at the argument, in the caller's text:
+//
+//   `nosuch`      names nothing anywhere. The sentence is the plain one -- the
+//                 name was looked for in the scope the reader is reading.
+//   `a`           a DECLARATION macro's argument. The invocation stands at module
+//                 level, where there is no `a`; the function the macro emits has
+//                 a parameter `a`, and until D-340 the argument was captured by
+//                 it and the program compiled.
+//   `only_local`  an argument a macro BODY writes for an inner invocation is the
+//                 body's text, and the body cannot see the caller's local
+//                 (D-057): the hygiene sentence, at the body, with the note that
+//                 names the invocation.
+mod:argument_site;
+
+macro:twice = (X) { X + X; };
+
+macro:mkfn = (V) { func:emitted = int32(int32:a) never fails { pass a + V; }; };
+
+macro:reach = () { #twice(only_local); };
+
+#mkfn(a);
+
+func:main = int32(cstring[]:_~argv) {
+    int32:only_local = 3i32;
+    int32:s = #twice(nosuch);
+    int32:t = #reach();
+    exit 0i32;
+};

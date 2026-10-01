@@ -1,0 +1,167 @@
+// expect-exit: 0
+//
+// D-340 (DEF-183 part B, 1.6.1e): A MACRO ARGUMENT IS THE CALLER'S TEXT AND
+// RESOLVES AT THE INVOCATION SITE. Every case below COMPILED on the compiler
+// before this one and answered wrongly, in silence, at both legs -- the
+// argument's names were bound with the macro's BODY, where the macro was written
+// (D-057's rule for a body, applied to text the caller wrote):
+//
+//   shadow_module         the caller's local `shared` (5) was read as the MODULE's
+//                         (100): `#twice(shared)` answered 200 for 10;
+//   body_declares_after   `int32:tmp = X;` in the body read the module's `tmp`;
+//   body_declares_before  a local the BODY had declared captured the argument:
+//                         `int32:tmp = 1i32; ... tmp + X` over the caller's `tmp`
+//                         (7) answered 2 for 8;
+//   for_binding           the body's own `for` binding captured it (3 for 30);
+//   `emitted`             a declaration macro's argument was captured by a
+//                         PARAMETER of the function the macro emitted (10 for 105);
+//   `emitted2`            ... and an inner invocation's argument written in that
+//                         function read the module's `t` for the function's local;
+//   `emitted_mod`         a binding of the MODULE the macro emitted captured it.
+//
+// AND A DEFECT OF `#caller` THE SAME PROBES FOUND, silent:
+//
+//   caller_in_inner_arg   DEF-221: `#caller(n)` written in an INNER invocation's
+//                         argument lost its mark when the inner macro cloned the
+//                         argument and read the module's `n` (101 for 6).
+//
+// AND A RULE THE MECHANISM MUST KEEP (a control: it passed before, and passes):
+//
+//   caller_through_alias  an ALIAS -- a body that is nothing but one invocation --
+//                         is whatever its target is (D-125), so the target's
+//                         `#caller(k)` reaches the ALIAS's caller (5); a body that
+//                         merely contains an invocation (`#inner_k() + 0i32`) is
+//                         no alias, and the same `#caller` reaches that body's
+//                         own site, the module (100).
+mod:macro_arg_shadow;
+
+fixed int32:shared = 100i32;
+fixed int32:tmp = 50i32;
+fixed int32:k = 100i32;
+fixed int32:n = 100i32;
+fixed int32:a = 100i32;
+fixed int32:t = 100i32;
+
+func:v32 = int32(int32:x) never fails { pass x; };
+
+macro:twice = (X) { X + X; };
+macro:dbl = (X) { int32:tmp = X; #caller(out) = tmp + tmp; };
+macro:addone_tmp = (X) { int32:tmp = 1i32; #caller(out) = tmp + X; };
+macro:rep = (X) { for (int32:i in 0i32...3i32) { #caller(acc) = #caller(acc) + X; } };
+macro:inner_k = () { #caller(k); };
+macro:w_k = () { #inner_k(); };
+macro:w_k2 = () { #inner_k() + 0i32; };
+macro:inc = (Y) { Y + 1i32; };
+macro:outer_n = () { #inc(#caller(n)); };
+
+macro:mkfn = (V) { func:emitted = int32(int32:a) never fails { pass a + V; }; };
+#mkfn(a);
+macro:mkfn2 = (V) { func:emitted2 = int32() never fails { int32:t = 2i32; pass #twice(t + V); }; };
+#mkfn2(t);
+macro:mkmod = (V) { pub mod:emitted_mod = { fixed int32:a = 7i32; pub func:get = int32() never fails { pass V; }; }; };
+#mkmod(a);
+
+func:shadow_module = int32() never fails {
+    int32:shared = raw v32(5i32);
+    int32:got = #twice(shared);
+    if (got != 10i32) { pass 1i32; }
+    pass 0i32;
+};
+
+func:body_declares_after = int32() never fails {
+    int32:tmp = raw v32(7i32);
+    int32:out = 0i32;
+    #dbl(tmp);
+    if (out != 14i32) { pass 2i32; }
+    if (tmp != 7i32) { pass 3i32; }
+    pass 0i32;
+};
+
+func:body_declares_before = int32() never fails {
+    int32:tmp = raw v32(7i32);
+    int32:out = 0i32;
+    #addone_tmp(tmp);
+    if (out != 8i32) { pass 4i32; }
+    pass 0i32;
+};
+
+func:for_binding = int32() never fails {
+    int32:i = raw v32(10i32);
+    int32:acc = 0i32;
+    #rep(i);
+    if (acc != 30i32) { pass 5i32; }
+    pass 0i32;
+};
+
+func:caller_through_alias = int32() never fails {
+    int32:k = raw v32(5i32);
+    int32:got = #w_k();
+    if (got != 5i32) { pass 6i32; }
+    int32:got2 = #w_k2();
+    if (got2 != 100i32) { pass 7i32; }
+    if (k != 5i32) { pass 8i32; }
+    pass 0i32;
+};
+
+func:caller_in_inner_arg = int32() never fails {
+    int32:n = raw v32(5i32);
+    int32:got = #outer_n();
+    if (got != 6i32) { pass 9i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:c1 = raw shadow_module();
+    if (c1 != 0i32) { exit c1; }
+    int32:c2 = raw body_declares_after();
+    if (c2 != 0i32) { exit c2; }
+    int32:c3 = raw body_declares_before();
+    if (c3 != 0i32) { exit c3; }
+    int32:c4 = raw for_binding();
+    if (c4 != 0i32) { exit c4; }
+    int32:c5 = raw caller_through_alias();
+    if (c5 != 0i32) { exit c5; }
+    int32:c6 = raw caller_in_inner_arg();
+    if (c6 != 0i32) { exit c6; }
+    if ((raw emitted(5i32)) != 105i32) { exit 10i32; }
+    if ((raw emitted2()) != 204i32) { exit 11i32; }
+    if ((raw emitted_mod.get()) != 100i32) { exit 12i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

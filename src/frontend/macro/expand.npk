@@ -159,6 +159,17 @@ pub struct:Expander = {
     // expression id, 0 while none has been met.
     bool:probing;
     int32:standing;
+
+    // WHERE AN ARGUMENT BEING SUBSTITUTED WAS WRITTEN (D-340; DEF-183 part B).
+    // `in_arg` counts the `clone_arg` calls in progress: what is cloned inside one
+    // is the caller's own text. `at_decl_site` says the instantiation in progress
+    // is a declaration macro's -- its invocation stands at module level, so its
+    // arguments resolve in the module's scope -- and `mod_depth` counts the
+    // modules that macro's body has emitted around the point being cloned, each
+    // of which an argument's name has to step back out of.
+    int32:in_arg;
+    bool:at_decl_site;
+    int32:mod_depth;
 };
 
 pub func:macrotable_init = MacroTable() never fails {
@@ -243,7 +254,34 @@ func:param_arg = ExprId(Expander->:x, int32:idx) never fails {
 // reached explicitly and an unclassified one reports `MACRO_INTERNAL`, which is the
 // same answer `check_stmt` and `resolve_expr` give for the same situation.
 
+// THE CLONE CARRIES THE HYGIENE MARKS OF THE NODE IT COPIES (D-340; DEF-221).
+// A clone is a fresh node and its flag word starts empty, so until this stood
+// here whatever the original was marked with stayed behind: `#caller(n)` written
+// in an inner invocation's ARGUMENT was consumed into a marked identifier when
+// the outer body was cloned, lost the mark when the inner macro cloned its
+// argument, and bound in the module's scope -- RESOLVE-002, or beside a module
+// binding of that spelling the module's value, in silence. The same holds for
+// an argument's own marks when it is handed down a second macro level. One
+// place, after the kind dispatch, so no arm can forget. (A parameter is not
+// copied but REPLACED, and its replacement is marked by `clone_arg`.)
 func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass (raw expr_none()); }
+    ExprNode:n0 = raw ast_expr(x.ast, id);
+    if (n0.kind == ExprKind.ExprIdentifierExpr) {
+        if ((raw param_index(x, (raw expr_name(n0)) =>! int32)) >= 0i32) {
+            pass (raw clone_expr_node(x, id, fuel));
+        }
+    }
+    ExprId:out = raw clone_expr_node(x, id, fuel);
+    if (raw expr_is_none(out)) { pass out; }
+    int32:carried = (raw ast_expr_marks(x.ast, id)) & (raw HYG_CARRY());
+    if (carried != 0i32) {
+        drop ast_set_expr_marks(x.ast, out, (raw ast_expr_marks(x.ast, out)) | carried);
+    }
+    pass out;
+};
+
+func:clone_expr_node = ExprId(Expander->:x, ExprId:id, int32:fuel) never fails {
     if (raw expr_is_none(id)) { pass (raw expr_none()); }
     ExprNode:n = raw ast_expr(x.ast, id);
     if (fuel <= 0i32) {
@@ -347,6 +385,18 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) never fails {
         // guess — so one that survives to the audit was written somewhere it means
         // nothing, and is refused there.
         if (raw is_caller_form(x, n)) {
+            // AND AN ARGUMENT IS NOT A MACRO BODY (DEF-222). What `clone_arg`
+            // clones was written at an invocation; a `#caller` inside it that a
+            // body's own clone has not already consumed was written OUTSIDE every
+            // macro body, where the form means nothing (MACRO-008). Until D-340
+            // it was consumed here like a body's and read the caller's name --
+            // `#twice(#caller(x))` in ordinary code compiled.
+            if (x.in_arg > 0i32) {
+                drop expand_err(x, raw MACRO_CALLER_FORM(),
+                    "`#caller` is legal only inside a macro body, where it names something at the invocation site; an argument is the caller's own text and names the caller's scope already (D-340)",
+                    n.span);
+                pass (raw expr_none());
+            }
             pass (raw clone_caller(x, n));
         }
         pass (raw clone_call(x, n, raw builtin_generic_count(n), f));
@@ -420,13 +470,56 @@ func:clone_caller = ExprId(Expander->:x, ExprNode:n) never fails {
 // The argument was written at the invocation site, so its identifiers are the
 // caller's and must not be substituted again — a parameter named `x` and an
 // argument mentioning `x` are different `x`es.
+//
+// AND ITS ROOT IS MARKED WITH HOW FAR OUT IT WAS WRITTEN (D-340; DEF-183 part B).
+// The comment above was true of the clone and false of the program: the resolver
+// then bound the argument's names where the BODY's are bound, in the module's
+// scope. So a caller's local could not be passed (`#twice(n)`: RESOLVE-002), one
+// that shadowed a module binding was replaced by it in silence (200 for 10), a
+// local the body declared captured it (`int32:tmp = 1i32; ... tmp + X` with the
+// caller's `tmp` passed: 2 for 8), and so did a parameter of a function a
+// declaration macro emitted. The mark is on the ROOT and counts sites, because
+// an argument may bind names of its own (a `pick` arm's) and may itself hold an
+// invocation: what is under it resolves as it would have at the invocation.
+//
+//   an expression or statement macro's argument: ONE more step back -- out of
+//     the expansion it is substituted into;
+//   a declaration macro's argument: `HYG_SITE`, and one step back for each
+//     module the macro's body has emitted around this point.
+//
+// The clone carried whatever the argument's root already had (an argument that
+// is exactly an enclosing macro's parameter has stepped in once already), so
+// the steps add.
 func:clone_arg = ExprId(Expander->:x, ExprId:id, int32:fuel) never fails {
     int32:ps = x.params_start;
     int32:pc = x.params_count;
     x.params_count = 0i32;
+    x.in_arg = x.in_arg + 1i32;
     ExprId:out = raw clone_expr(x, id, fuel);
+    x.in_arg = x.in_arg - 1i32;
     x.params_start = ps;
     x.params_count = pc;
+    if (raw expr_is_none(out)) { pass out; }
+
+    int32:word = raw ast_expr_marks(x.ast, out);
+    int32:back = raw hyg_back(word);
+    if (x.at_decl_site) {
+        back = back + x.mod_depth;
+        word = word | (raw HYG_SITE());
+    } else {
+        back = back + 1i32;
+    }
+    if (back > (raw HYG_COUNT_MAX())) {
+        if (!x.blown) {
+            ExprNode:an = raw ast_expr(x.ast, out);
+            drop expand_err(x, raw MACRO_TOO_DEEP(),
+                "this argument has been handed down more macro levels than expansion will follow (MACRO_REFERENCE §7)",
+                an.span);
+        }
+        x.blown = true;
+        pass (raw expr_none());
+    }
+    drop ast_set_expr_marks(x.ast, out, raw hyg_with(word, back, raw hyg_roots(word)));
     pass out;
 };
 
@@ -505,7 +598,20 @@ func:clone_expr_window = IdSpan(Expander->:x, int32:start, int32:count, int32:fu
 // consequence of a missing case is not a wrong answer but a SILENTLY SHORTER
 // program, which is why the fall-through reports rather than returns.
 
+// A statement's marks are carried as an expression's are (`clone_expr`): the
+// block an expansion left behind is an expansion still when it is cloned.
 func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
+    if (raw stmt_is_none(id)) { pass (raw stmt_none()); }
+    StmtId:out = raw clone_stmt_node(x, id, fuel);
+    if (raw stmt_is_none(out)) { pass out; }
+    int32:carried = (raw ast_stmt_marks(x.ast, id)) & (raw HYG_CARRY());
+    if (carried != 0i32) {
+        drop ast_set_stmt_marks(x.ast, out, (raw ast_stmt_marks(x.ast, out)) | carried);
+    }
+    pass out;
+};
+
+func:clone_stmt_node = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
     if (raw stmt_is_none(id)) { pass (raw stmt_none()); }
     StmtNode:s = raw ast_stmt(x.ast, id);
     if (fuel <= 0i32) {
@@ -1074,7 +1180,15 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
     if (d.kind == DeclKind.DeclStructDecl) { pass (raw clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclEnumDecl)   { pass (raw clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclTraitDecl)  { pass (raw clone_item(x, d, f)); }
-    if (d.kind == DeclKind.DeclModuleDecl) { pass (raw clone_item(x, d, f)); }
+    // A MODULE THE BODY EMITS IS A SCOPE OF ITS OWN, sealed from the module the
+    // invocation stands in, and an argument used inside it was written OUTSIDE
+    // it: `clone_arg` reads this count as the steps back out (D-340).
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        x.mod_depth = x.mod_depth + 1i32;
+        DeclId:mc = raw clone_item(x, d, f);
+        x.mod_depth = x.mod_depth - 1i32;
+        pass mc;
+    }
 
     // AN `impl` IS NOT AN ITEM. Five header slots against four, and in a different
     // order — so cloning one through `clone_item` read the trait's type id as the
@@ -1553,11 +1667,14 @@ func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) 
 
     int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
     int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
+    bool:saved_site = x.at_decl_site;
+    x.at_decl_site = false;
     drop record_site(x, md, inv.span);
     int64:hmark = raw ast_built_mark(x.ast);
     ExprId:c = raw clone_expr(x, ExprId{ index: bs.a }, raw CLONE_FUEL());
     x.params_start = saved_ps;  x.params_count = saved_pc;
     x.args_start = saved_as;    x.args_count = saved_ac;
+    x.at_decl_site = saved_site;
 
     if (raw expr_is_none(c)) { pass false; }
     discard(raw ast_depth_pass(x.ast, hmark));
@@ -1574,16 +1691,58 @@ func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) 
                       (raw expr_list_count(inv)) - (raw builtin_generic_count(inv)),
                       raw CLONE_FUEL());
 
+    // THE MARKS OF THE NODE BEING REPLACED AND OF THE CLONE'S ROOT MEET HERE, on
+    // one node, and are composed into the one order the resolver applies (D-340;
+    // `ast.npk`: the steps back, `HYG_SITE`, the roots). In the order they
+    // happened: what the invocation's node already carried -- it may be an
+    // argument's root, and it may be a root already, where an outer macro's body
+    // was exactly this invocation -- then THIS expansion's root, then the clone's
+    // root's own. A root followed by a step back is no move at all (the body is
+    // exactly a parameter: `macro:id = (X) { X; };` leaves the argument standing
+    // as though it had been written there), so those cancel in pairs; what is
+    // left is steps, then roots.
+    //
+    // THE ROOTS ARE COUNTED. The mark was one bit, so an ALIAS -- a body that is
+    // exactly an invocation, D-125 -- put two expansions on one node and the
+    // resolver crossed one. That was the alias rule for `#caller` (the target's
+    // escape reaches the alias's caller, and still does: `site_enter`), and it is
+    // one site too few for an ARGUMENT: in `macro:w = (X) { #inner(X + k); };` the
+    // `k` is `w`'s text and the `X` under it the caller's, two steps apart.
+    //
+    // AND THE ESCAPE COMES WITH THE CLONE'S ROOT, as it always did: a body of
+    // exactly `#caller(name)` is a root and the escape at once, and the resolver
+    // crosses the root before it reads the escape.
+    int32:w1 = raw ast_expr_marks(x.ast, id);
+    int32:w2 = raw ast_expr_marks(x.ast, c);
+    int32:roots = (raw hyg_roots(w1)) + 1i32;
+    int32:steps = raw hyg_back(w2);
+    int32:cancel = steps;
+    if (roots < cancel) { cancel = roots; }
+    roots = (roots - cancel) + (raw hyg_roots(w2));
+    steps = (raw hyg_back(w1)) + (steps - cancel);
+    if (((w2 & (raw HYG_SITE())) != 0i32) && (roots > (raw hyg_roots(w2)))) {
+        // A declaration macro's argument is module-level text: every expansion
+        // between it and this node was stepped back out of, or the count is wrong.
+        drop expand_err(x, raw MACRO_INTERNAL(),
+            "a declaration macro's argument stands under an expansion its marks do not step out of; this is a defect in the expander, not a mistake in this program",
+            inv.span);
+        x.blown = true;
+        pass false;
+    }
+    if ((roots > (raw HYG_COUNT_MAX())) || (steps > (raw HYG_COUNT_MAX()))) {
+        if (!x.blown) {
+            drop expand_err(x, raw MACRO_TOO_DEEP(),
+                "this invocation stands under more nested expansions than expansion will follow (MACRO_REFERENCE §7)",
+                inv.span);
+        }
+        x.blown = true;
+        pass false;
+    }
+
     ExprNode:cnode = raw ast_expr(x.ast, c);
     drop ast_replace_expr(x.ast, id, cnode);
-    drop ast_adopt_expr_flags(x.ast, id, c);
+    drop ast_set_expr_marks(x.ast, id, raw hyg_with(w1 | w2, steps, roots));
     drop ast_blank_expr(x.ast, c);
-
-    // BOTH MARKS CAN LAND ON ONE NODE, and the order the resolver applies them in
-    // is what makes that right rather than a contradiction: the root switches the
-    // scope and records where the invocation was, and the escape then reads that
-    // record. A body of exactly `#caller(name)` is the case.
-    drop ast_set_expr_flag(x.ast, id, raw HYG_ROOT());
     pass true;
 };
 
@@ -1602,6 +1761,8 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
 
     int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
     int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
+    bool:saved_site = x.at_decl_site;
+    x.at_decl_site = false;
 
     drop record_site(x, md, at);
 
@@ -1617,6 +1778,7 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
 
     x.params_start = saved_ps;  x.params_count = saved_pc;
     x.args_start = saved_as;    x.args_count = saved_ac;
+    x.at_decl_site = saved_site;
 
     // The statements land in a block that takes the invocation's place: the block
     // at the site's depth, the statements one below it.
@@ -1636,12 +1798,30 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
     // STATEMENT — so the invocation expression is left behind, pointed at by
     // nothing, and the audit would find it standing there and refuse a program
     // that had expanded correctly.
+    //
+    // AND WHAT THE INVOCATION'S NODE CARRIED GOES TO THE BLOCK (D-340). The
+    // invocation may be an argument's root -- `macro:both = (X) { X; X; };` over
+    // `#both(#set(n))` leaves two statements that are each the caller's text --
+    // and it may be a root already (an expression macro whose body is exactly
+    // this invocation). The block is where that node's place in the program now
+    // is, so it takes the steps back, `HYG_SITE` and the roots, and adds its own.
+    int32:iw = raw ast_expr_marks(x.ast, inv_id);
+    if ((raw hyg_roots(iw)) >= (raw HYG_COUNT_MAX())) {
+        if (!x.blown) {
+            drop expand_err(x, raw MACRO_TOO_DEEP(),
+                "this invocation stands under more nested expansions than expansion will follow (MACRO_REFERENCE §7)",
+                at);
+        }
+        x.blown = true;
+        pass false;
+    }
     drop blank_tree(x, inv_id, raw CLONE_FUEL());
 
     StmtNode:blk = StmtNode{ kind: StmtKind.StmtBlockStmt, span: at,
                              a: 0i32, b: w.start, c: w.count, payload: 0i64 };
     drop ast_replace_stmt(x.ast, id, blk);
-    drop ast_set_stmt_flag(x.ast, id, raw HYG_ROOT());
+    int32:sw = (raw ast_stmt_marks(x.ast, id)) | (iw & (raw HYG_SITE()));
+    drop ast_set_stmt_marks(x.ast, id, raw hyg_with(sw, raw hyg_back(iw), (raw hyg_roots(iw)) + 1i32));
     pass true;
 };
 
@@ -2589,7 +2769,8 @@ pub func:expander_init = Expander(Ast->:ast, InternTable->:interns,
                            params_start: 0i32, params_count: 0i32,
                            args_start: 0i32, args_count: 0i32,
                            cur_module: 0i32, blown: false, depth: 0i32,
-                           probing: false, standing: 0i32 };
+                           probing: false, standing: 0i32,
+                           in_arg: 0i32, at_decl_site: false, mod_depth: 0i32 };
     pass x;
 };
 
@@ -2813,6 +2994,11 @@ func:splice_alias = int32(Expander->:x, DeclNode:d, DeclNode:md, ExprNode:inv,
     x.params_count = raw macro_param_count(x.ast, md);
     x.args_start = (raw expr_list_start(inv)) + gcount;
     x.args_count = (raw expr_list_count(inv)) - gcount;
+    // A declaration site (D-340): the alias's arguments are module-level text.
+    bool:saved_site = x.at_decl_site;
+    int32:saved_md = x.mod_depth;
+    x.at_decl_site = true;
+    x.mod_depth = 0i32;
 
     drop record_site(x, md, d.span);
     int64:hmark = raw ast_built_mark(x.ast);
@@ -2822,6 +3008,8 @@ func:splice_alias = int32(Expander->:x, DeclNode:d, DeclNode:md, ExprNode:inv,
     x.params_count = saved_pc;
     x.args_start = saved_as;
     x.args_count = saved_ac;
+    x.at_decl_site = saved_site;
+    x.mod_depth = saved_md;
 
     // The clone is an invocation with its arguments: measured from itself, as the
     // declarations a splice emits are.
@@ -2952,6 +3140,16 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
     x.params_count = pcount;
     x.args_start = (raw expr_list_start(inv)) + gcount;
     x.args_count = acount;
+    // A DECLARATION SITE (D-340): this invocation stands at module level, in a
+    // struct's body or in an `impl`'s, where the only scope is the module's. Its
+    // arguments resolve THERE -- not inside the declarations the body emits,
+    // where a parameter or a local of the emitted function captured them
+    // (`macro:mk = (V) { func:f = int32(int32:a) { pass a + V; }; };` over
+    // `#mk(a)` answered 10 for 105).
+    bool:saved_site = x.at_decl_site;
+    int32:saved_md = x.mod_depth;
+    x.at_decl_site = true;
+    x.mod_depth = 0i32;
 
     drop record_site(x, md, d.span);
 
@@ -2982,6 +3180,8 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
     x.params_count = saved_pc;
     x.args_start = saved_as;
     x.args_count = saved_ac;
+    x.at_decl_site = saved_site;
+    x.mod_depth = saved_md;
 
     // The splice's own invocation is detached now — its arguments were cloned into
     // the body — so it is blanked rather than left for the audit to find and refuse.

@@ -49,15 +49,37 @@ pub struct:Resolver = {
     // postcondition. `result` is a keyword with its own node now, D-221/S-18,
     // and the resolver has nothing to exempt.)
 
-    // WHERE THE INVOCATION WAS, while a macro expansion is being resolved.
+    // WHERE THE INVOCATIONS WERE, while a macro expansion is being resolved.
     //
-    // Hygiene (D-057) makes an expansion resolve in the scope the macro was
-    // WRITTEN in, and `module_scope` is that scope — a macro is invocable only in
-    // the module that declares it (D-124), so the two are the same. This is the
-    // OTHER one: `#caller(NAME)` is the sole way back out to the invocation site,
-    // and this is the scope it reaches. Zero outside an expansion, which is
-    // exactly when `#caller` is not a legal thing to have written.
-    int32:caller_scope;
+    // Hygiene (D-057) makes an expansion's BODY resolve in the scope the macro was
+    // WRITTEN in, and `module_scope` is that scope -- a macro is invocable only in
+    // the module that declares it (D-124), so the two are the same. Two things in
+    // an expansion resolve somewhere else: `#caller(NAME)`, the body's one way out
+    // to the invocation site, and an ARGUMENT, which is the caller's own text and
+    // was written there (D-340). Both need the site, and an argument needs more
+    // than one of them -- handed down through an inner macro it stands two
+    // expansions deep, and what stands under IT (an invocation of its own, a
+    // `#caller` an enclosing body wrote) needs the sites as they were where the
+    // argument was written.
+    //
+    // SO THE SITES ARE A CHAIN, NOT ONE FIELD. `sites` holds a frame of five per
+    // site entered -- the scope the invocation stood in, the module scope there,
+    // the frame below, the frame's kind, and the scope `#caller` reaches from
+    // inside it -- and `site` is the top frame (0: none).
+    // Entering an expansion pushes one; an argument steps back to the frame
+    // below, resolves, and the top is put back when its subtree is done. A frame
+    // is never overwritten while anything can return to it: what an argument's
+    // subtree pushes goes on the END of the list and comes off when the subtree
+    // ends. (One `int32:caller_scope` stood here until D-340, saved and restored
+    // around each expansion; nothing could step back through it.)
+    //
+    // A MODULE IS A FRAME TOO (kind `FRAME_MODULE`), pushed where an inline module
+    // is entered: a declaration macro may emit a module around its argument, and
+    // the argument steps back out of it to the module its invocation stands in.
+    // `#caller` never reads one -- it reaches a site only when the top frame is an
+    // expansion's -- so outside every expansion it stays the illegal thing it was.
+    List<int32>:sites;
+    int32:site;
 
     // D-179: whether the module being resolved IS the prelude (the pipeline
     // sets it per module), the module's own name (for code derivation), and
@@ -83,10 +105,112 @@ pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                                   InternTable->:interns, DiagList->:diags) never fails {
     Resolver:r = Resolver{ ast: ast, tab: tab, interns: interns, diags: diags,
                            module_scope: 0i32,
-                           caller_scope: 0i32,
+                           sites: raw list_init::<int32>(64i64), site: 0i32,
                            in_prelude: false, module_name: 0i32,
                            local_next: 0i32 };
+    // Frame 0 is "no site": five words nothing reads.
+    drop list_push(@r.sites, 0i32);
+    drop list_push(@r.sites, 0i32);
+    drop list_push(@r.sites, 0i32);
+    drop list_push(@r.sites, 0i32);
+    drop list_push(@r.sites, 0i32);
     pass r;
+};
+
+// --- the sites (D-057, D-340) ---------------------------------------------------------
+
+func:FRAME_EXPANSION = int32() never fails { pass 1i32; };
+func:FRAME_MODULE = int32() never fails    { pass 2i32; };
+
+// THE SCOPE `#caller` REACHES: the invocation site of the expansion being
+// resolved, or 0 when the walk is in no expansion -- which is exactly when
+// `#caller` is not a legal thing to have written.
+func:caller_scope = int32(Resolver->:r) never fails {
+    if (r.site == 0i32) { pass 0i32; }
+    int64:f = (r.site => int64) * 5i64;
+    if (r.sites[f + 3i64] != (raw FRAME_EXPANSION())) { pass 0i32; }
+    pass r.sites[f + 4i64];
+};
+
+// A site entered: `scope` is where the invocation (or the module's declaration)
+// stands, the module scope recorded is the one current THERE, and `reaches` is
+// the scope `#caller` names from inside (0 for a module, which has no caller).
+func:site_push = NIL(Resolver->:r, int32:scope, int32:kind, int32:reaches) never fails {
+    int32:idx = (r.sites.count / 5i64) =>! int32;
+    drop list_push(@r.sites, scope);
+    drop list_push(@r.sites, r.module_scope);
+    drop list_push(@r.sites, r.site);
+    drop list_push(@r.sites, kind);
+    drop list_push(@r.sites, reaches);
+    r.site = idx;
+    pass NIL;
+};
+
+// WHERE A MARKED NODE RESOLVES, and the sites its subtree sees. The marks are
+// applied in the one order the expander composed them into (`ast.npk`):
+//
+//   the steps back   each leaves the top site: the node resolves where that
+//                    invocation stood, with the sites that were under it;
+//   `HYG_SITE`       the text was written at a declaration macro's invocation,
+//                    so after the steps it resolves in the module's own scope;
+//   the roots        each is an expansion substituted in at this node: the scope
+//                    it is reached in becomes a site, and its body resolves in
+//                    the module's scope. A second root on one node is an ALIAS's
+//                    target (D-125: a body that is nothing but one invocation is
+//                    whatever its target is): the invocation was written in the
+//                    alias's body, so ITS ARGUMENTS step back to the module's
+//                    scope -- and the alias is transparent to `#caller`, which
+//                    reaches the alias's own invocation site, as it always did
+//                    (`macro:bump_alias = () { #bump(); };` bumps its caller's
+//                    `acc`). So a frame holds two scopes: where an argument
+//                    written at the site resolves, and what `#caller` reaches.
+//
+// Returns the scope the node's subtree resolves in. `r.site` and `r.module_scope`
+// are left as the subtree must see them; the CALLER saves both and the length of
+// `r.sites` before, and restores them after.
+//
+// A COUNT THAT DOES NOT FIT THE SITES IS THIS COMPILER'S DEFECT, and it is said:
+// stepping back with no site left, or out of a module for text that was not
+// written at a declaration macro's invocation, would otherwise resolve the name
+// somewhere plausible -- which is the silent wrong answer the marks exist to end.
+func:site_enter = int32(Resolver->:r, int32:word, int32:scope, Span:at) never fails {
+    int32:look = scope;
+    bool:decl_site = (word & (raw HYG_SITE())) != 0i32;
+    int32:back = raw hyg_back(word);
+    for (int32:i in 0i32...back) {
+        if (r.site == 0i32) {
+            drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
+                "this macro argument's marks step back out of more expansions than enclose it; this is a defect in the compiler, not a mistake in this program",
+                at));
+            pass look;
+        }
+        int64:f = (r.site => int64) * 5i64;
+        if ((r.sites[f + 3i64] == (raw FRAME_MODULE())) && (!decl_site)) {
+            drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
+                "this macro argument's marks step back out of a module, and it was not written at a declaration macro's invocation; this is a defect in the compiler, not a mistake in this program",
+                at));
+            pass look;
+        }
+        look = r.sites[f];
+        r.module_scope = r.sites[f + 1i64];
+        r.site = r.sites[f + 2i64];
+    }
+    if (decl_site) {
+        if ((raw caller_scope(r)) != 0i32) {
+            drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
+                "a declaration macro's argument is still inside an expansion after its marks have stepped back; this is a defect in the compiler, not a mistake in this program",
+                at));
+            pass look;
+        }
+        look = r.module_scope;
+    }
+    int32:roots = raw hyg_roots(word);
+    int32:reaches = look;
+    for (int32:j in 0i32...roots) {
+        drop site_push(r, look, raw FRAME_EXPANSION(), reaches);
+        look = r.module_scope;
+    }
+    pass look;
 };
 
 // --- the identifier ------------------------------------------------------------------
@@ -101,13 +225,13 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) never fails {
     // which are lexically in the same place and mean something else entirely.
     int32:look = scope;
     if (raw ast_expr_flag(r.ast, id, raw HYG_CALLER())) {
-        if (r.caller_scope == 0i32) {
+        look = raw caller_scope(r);
+        if (look == 0i32) {
             drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
                 "this `#caller` name is outside any macro expansion, which the expander should have refused",
                 e.span));
             pass NIL;
         }
-        look = r.caller_scope;
     }
 
     int32:sym = raw scope_lookup(r.tab, look, name);
@@ -144,14 +268,17 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) never fails {
     if (raw ast_expr_flag(r.ast, id, raw HYG_CALLER())) {
         m2 = string_concat(m1, "` at the invocation site; `#caller` names something there, and nothing of that name is in scope where this macro was invoked");
     } else {
-        // INSIDE AN EXPANSION is `caller_scope != 0` — it is set around every
-        // expansion and cleared after (1.0.8). The test used to be
-        // `look != scope`, and in this branch `look` IS `scope`, so the one
-        // sentence written for D-057's case was unreachable: the hygiene
-        // refusal printed the generic "cannot find it in this scope" at a
-        // macro body, the answer about a scope the reader is not reading that
-        // the comment above says it avoids.
-        if (r.caller_scope != 0i32) {
+        // INSIDE AN EXPANSION is "the top site is an expansion's" (1.0.8). The
+        // test used to be `look != scope`, and in this branch `look` IS `scope`,
+        // so the one sentence written for D-057's case was unreachable: the
+        // hygiene refusal printed the generic "cannot find it in this scope" at
+        // a macro body, the answer about a scope the reader is not reading that
+        // the comment above says it avoids. AN ARGUMENT IS NOT A BODY (D-340):
+        // its marks have stepped back to where it was written, so an unknown
+        // name in the caller's own text gets the plain sentence -- and an
+        // argument a macro BODY wrote for an inner invocation gets this one,
+        // because that text is the body's.
+        if ((raw caller_scope(r)) != 0i32) {
             m2 = string_concat(m1, "` in the scope this macro was written in; an identifier in a macro body resolves there and never at the invocation site, and `#caller(name)` is the only way to reach the caller's scope");
         }
     }
@@ -164,11 +291,14 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) never fails {
 
 // THE HYGIENE SWITCH, AND THE ONLY PLACE IT HAPPENS FOR AN EXPRESSION.
 //
-// A node marked `HYG_ROOT` is where a macro expansion was substituted in, and
-// everything under it resolves where the MACRO was written rather than where it
-// was invoked (D-057). A macro is invocable only in the module that declares it
-// (D-124), so "where it was written" is `module_scope` and no per-expansion scope
-// has to be carried — which is why this is four lines rather than a table.
+// A node the expander marked resolves somewhere other than where it stands
+// (`site_enter`): an expansion's root where the MACRO was written rather than
+// where it was invoked (D-057) -- a macro is invocable only in the module that
+// declares it (D-124), so that is `module_scope` and no per-expansion scope has
+// to be carried -- and an argument's root where the ARGUMENT was written, which
+// is the invocation site (D-340). Everything under the node resolves in the
+// scope that gives, so an argument's own bindings (a `pick` arm's) and its own
+// invocations land where they would have at the site.
 //
 // A WRAPPER RATHER THAN A CHECK INSIDE, because the walk below returns from
 // nineteen places and a switch that has to be undone at each of them is a switch
@@ -177,14 +307,19 @@ pub func:resolve_expr = NIL(Resolver->:r, ExprId:id, int32:scope) never fails {
     if (raw expr_is_none(id)) {
         pass NIL;
     }
-    if (!(raw ast_expr_flag(r.ast, id, raw HYG_ROOT()))) {
+    int32:word = raw ast_expr_marks(r.ast, id);
+    if ((word & (raw HYG_PLACED())) == 0i32) {
         drop resolve_expr_inner(r, id, scope);
         pass NIL;
     }
-    int32:saved = r.caller_scope;
-    r.caller_scope = scope;
-    drop resolve_expr_inner(r, id, r.module_scope);
-    r.caller_scope = saved;
+    int32:saved_site = r.site;
+    int32:saved_mod = r.module_scope;
+    int64:saved_len = r.sites.count;
+    int32:look = raw site_enter(r, word, scope, (raw ast_expr(r.ast, id)).span);
+    drop resolve_expr_inner(r, id, look);
+    r.site = saved_site;
+    r.module_scope = saved_mod;
+    drop list_truncate(@r.sites, saved_len);
     pass NIL;
 };
 
@@ -329,17 +464,28 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
         // locals live here and cannot collide with the caller's or outlive the
         // invocation, and a free name in the body walks up past the caller's
         // locals to where the macro was written. `#caller(name)` is what reaches
-        // back, and `caller_scope` is where it reaches to.
+        // back, and the site `site_enter` pushes is where it reaches to. (The
+        // block carries the marks of the invocation it replaced -- D-340: an
+        // invocation that was an argument steps back first, and its site is
+        // where the argument was written.)
         int32:parent = scope;
-        int32:saved_caller = r.caller_scope;
-        if (raw ast_stmt_flag(r.ast, id, raw HYG_ROOT())) {
-            parent = r.module_scope;
-            r.caller_scope = scope;
+        int32:word = raw ast_stmt_marks(r.ast, id);
+        if ((word & (raw HYG_PLACED())) == 0i32) {
+            int32:plain = raw scope_open(r.tab, parent, raw SCOPE_BLOCK());
+            drop resolve_stmt_window(r, raw stmt_list_start(s),
+                                     raw stmt_list_count(s), plain);
+            pass NIL;
         }
+        int32:saved_site = r.site;
+        int32:saved_mod = r.module_scope;
+        int64:saved_len = r.sites.count;
+        parent = raw site_enter(r, word, scope, s.span);
         int32:inner = raw scope_open(r.tab, parent, raw SCOPE_BLOCK());
         drop resolve_stmt_window(r, raw stmt_list_start(s),
                                  raw stmt_list_count(s), inner);
-        r.caller_scope = saved_caller;
+        r.site = saved_site;
+        r.module_scope = saved_mod;
+        drop list_truncate(@r.sites, saved_len);
         pass NIL;
     }
 
@@ -783,10 +929,19 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         // scope would resolve that macro's body one level too far out. Nothing
         // read this field before hygiene did, which is why the omission was
         // invisible.
+        //
+        // AND THE MODULE IS A SITE (D-340): a declaration macro's argument used
+        // inside a module the macro emitted steps back out through this frame,
+        // to the scope the module's declaration stands in.
         int32:saved_mod = r.module_scope;
+        int32:saved_site = r.site;
+        int64:saved_len = r.sites.count;
+        drop site_push(r, scope, raw FRAME_MODULE(), 0i32);
         r.module_scope = inner;
         drop resolve_members(r, d, inner);
         r.module_scope = saved_mod;
+        r.site = saved_site;
+        drop list_truncate(@r.sites, saved_len);
         pass NIL;
     }
 

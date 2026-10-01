@@ -4002,6 +4002,23 @@ reads the same constant.
 
 *[2026-10-01, 1.6.1e (DEF-192's and DEF-196's landing) — a dated note.]* **"An identifier in a macro body resolves in the scope where the macro was written. Always" is kept for a TYPE's name, and by the compile-time evaluator.** Two readers of a name had never been told the rule. The type checker resolves a type's name itself (the resolver does not enter a type) and asked the generic parameters of the declaration it stood in before any scope, so a body's `T` meant the INVOKING function's or `impl`'s `T` (DEF-192: `#size_of<T>()` measured the caller's type beside a module `struct:T`, 8 for 4 at both legs; where the module held no such type, the capture was what made the body compile). And the compile-time evaluator kept a call's variables by NAME, so a body's free name read a local of the `comptime func:` it was invoked in (DEF-196: 6 for 105). Both read the resolver's answer now: a type's name written in a macro body binds a generic parameter or an associated type only where that is declared in the SAME body (`macro_may_bind`, asked of the node's span through `ast_macro_at`), and the evaluator's environment is keyed by the symbol's origin. An ARGUMENT's type names bind at the invocation, as before; what an argument's identifiers may see is still S-120. The consequence — a body cannot name the type parameter of the declaration it lands in, and `#caller` has no type form — is S-124, the user's.
 
+> *[2026-10-01, 1.6.1e, landing 92 -- a dated note (DEF-221, DEF-222; found probing D-340).]* TWO DEFECTS OF
+> `#caller`, one of them silent, each measured on `eaf6b08`: **DEF-221** -- `#caller(n)` written in an INNER
+> invocation's argument (`macro:outer = () { #inc(#caller(n)); };`) was consumed into a marked identifier when the
+> outer body was cloned and LOST the mark when the inner macro cloned its argument: RESOLVE-002, or beside a module
+> `n` the module's value in silence (101 for 6). The clone carries the marks. **DEF-222** -- `#caller` written in an
+> argument OUTSIDE every macro body (`#twice(#caller(x))` in ordinary code) was consumed like a body's and the
+> program compiled; it is `NITPICK-MACRO-008` at the form, as it is everywhere else outside a body. WHAT `#caller`
+> REACHES THROUGH AN ALIAS is stated in the reference now, because this landing's first build broke it: **DEF-220,
+> registered by this landing's first reading and WITHDRAWN by its first measurement** -- `macro:w = () { #inner();
+> };` lets `inner`'s `#caller(k)` read `w`'s CALLER (5) where `{ #inner() + 0i32; }` reads the module's (100), and
+> the first reading called that two sites out. It is the ALIAS rule: a body that is nothing but one invocation is
+> whatever its target is (D-125; MACRO_REFERENCE section 1), and the tree's own `macro_alias_sites.npk` bumps its
+> caller's `acc` through one. The counted roots KEEP it (the alias's target's frame inherits what `#caller`
+> reaches); the first build did not, and the chain refused that test. And the rule's other half is settled as D-340:
+> an ARGUMENT is the caller's text and resolves at the invocation site; `#caller` is still the only way a BODY
+> reaches it.
+
 ## D-058 — `Future<T>` is an internal lowering artifact, not surface syntax — **SETTLED**
 
 `TYPE_REFERENCE.md` §17 defines `Future<T>` as a user-facing type. No chapter
@@ -15726,6 +15743,32 @@ and a hypothesis a new row adds after its site changes later rows' text. The
 compiler's `div-min` rows in three functions were identical problems that the
 manifest, a set, had held as one line each, and they are distinct lines now.
 
+> *[2026-10-01, 1.6.1e, landing 92 -- a dated note (DEF-223: a soundness defect of the encoding, fixed).]*
+> **DEF-223, A SOUNDNESS HOLE OF THE VERIFIED BUILD, OLDER THAN THIS LANDING AND NEEDING NO MACRO** -- the SMT
+> encoder keeps a function's locals by SPELLING, innermost first, and looked every identifier up that way. (a) A
+> callee's contract at a call site: `requires d > lim` over the MODULE's `lim` (5), called as `safe(5i32)` from a
+> function with a local `lim` (0), was proven against the caller's local; the call went past the checked entry and
+> the body -- its division proven safe under the requirement -- divided by zero: the verified binary exits 107
+> (`MachineFault`) where the plain build exits 115 (`RequiresViolated`), on `eaf6b08` and every compiler since the
+> rows existed. (b) Two locals of one spelling that hygiene crosses: `10i32 / #caller(tmp)` (the caller's `tmp` is
+> 0) in a body that declared its own `tmp` (5) had its `div-zero` row DISCHARGED over the body's (107 for 97) -- and
+> through an argument the same from the day D-340 lets one be passed, which is why the fix is in this landing. THE
+> FIX, two rules in `smt_encode.npk`: an identifier the resolver bound to a module-scope declaration never reads a
+> local's binding (`ident_bind`, at the four sites that turn an identifier node into a binding); and a spelling that
+> an identifier inside an expansion uses and the function declares more than once is never NAMED (`enc_prepare` puts
+> it in the escape set DEF-14 built: every read opaque, no version) -- found on the walk DEF-14 needs complete. The
+> cost is the proofs about an ambiguous spelling in the function that has one, and nothing else: THE MANIFEST: `npkg
+> verify --record` at this tree -- 7,025 obligations (3,397 discharged, 2,717 open, 0 budget, 906 unencoded, 5
+> checker), matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved;
+> `nitpick.obligations` 6,695 rows before and 6,730 after, 6,450 shared, ZERO verdicts moved among shared rows, 2
+> (symbol, kind) discharged counts fell (both a MOVE: the one discharged `overflow` row of `clone_expr` and of
+> `clone_stmt` went with the body to `clone_expr_node` and `clone_stmt_node`).
+> `tests/verify/contract_module_name.npk`, `hyg_caller_shadow.npk` and `hyg_arg_shadow.npk` hold the three shapes
+> (each `open` where it was discharged, each answering the plain build's exit in the verified one). THE RULE FOR A
+> READER OF THE ENCODER: a spelling is not a binding -- the resolver's symbol is, and a lookup that has only the
+> spelling is right only for text that resolves where it stands (the fifth by-name reader beside a resolver this
+> cycle: the emitter, DEF-144; the evaluator, DEF-196; the type resolver, DEF-192; the lock walk, 1.6.1e step 3).
+
 ## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
 
 Elision is a property of the VERIFIED BUILD recorded in the manifest —
@@ -22090,6 +22133,72 @@ recorded here by landing 90.
 **What it changes.** It unblocks DEF-183 part B, whose shadowing face is a SILENT WRONG ANSWER today
 (`#twice(shared)` answers 200 for 10): by the standing rule it is the queue's FIRST item, landing 91. The mechanism
 is planned (`1.6.1e.md` §2.10c part B).
+
+> *[2026-10-01, 1.6.1e -- D-340 LANDED (landing 92, `nitpick-compiler_29`; the record is
+> `meta/roadmap/1.6/1.6.1e.md`).]* An argument resolves at the invocation site. MEASURED FIRST on `eaf6b08`, both
+> legs, and the defect had SEVEN faces where the question named two: `#twice(shared)` beside a module `shared`
+> answered 200 for 10 (the module's binding read); `#twice(n)` with a local `n` was RESOLVE-002; a local the BODY
+> had declared captured the argument (`int32:tmp = 1i32; ... tmp + X` over the caller's `tmp`: 2 for 8), and so did
+> the body's own `for` binding (3 for 30); a declaration macro's argument was captured by a PARAMETER of the
+> function the macro emitted (10 for 105) and by a binding of a module it emitted (7 for 100); and `comptime(X +
+> 1i32)` over the caller's local `K` folded the MODULE's `K` (101). THE MECHANISM (three files): the expander marks
+> the ROOT of every argument it substitutes with how far out it was written -- one step back per expansion it is
+> substituted into, and for a declaration macro's argument `HYG_SITE` (module-level text) with one step per module
+> the macro's body emitted around it -- the clone CARRIES a node's marks (a fresh node's flag word starts empty: the
+> second defect below), `instantiate_expr` composes the marks that meet on one node into one order (the steps back,
+> `HYG_SITE`, the roots; a root followed by a step back cancels, which is a body that is exactly a parameter), and
+> the resolver's one `caller_scope` field is a chain of site frames: an expansion's root pushes the scope it is
+> reached in, an argument's root steps back to the frame below and resolves there, and what stands under it -- a
+> `pick` arm's binding, an invocation of its own, a `#caller` an enclosing body wrote -- sees the sites as they were
+> where the argument was written. A frame holds two scopes -- where an argument written at the site resolves, and
+> what `#caller` reaches -- because an ALIAS (a body that is nothing but one invocation, D-125) roots two expansions
+> at one node: its target's `#caller` reaches the alias's own caller, as it always did, while what the alias's body
+> wrote in the target's argument list steps back to the module's scope. A count that does not fit the sites is
+> `RESOLVE-INTERNAL`, said, never a fallback to the module's scope (which is the wrong answer the marks exist to
+> end). WHAT THE RULE MEANS AT THE EDGES, each measured: an argument a macro BODY writes for an inner invocation is
+> the body's text (`k` in `#inc(X + k)` is the module's, the `X` inside it the caller's); a name inside a TYPE is
+> the module's `fixed` binding wherever it is written (D-222), so an argument standing in an array size means what
+> it would mean written there -- unchanged; a declaration macro's argument that names the emitted function's own
+> parameter, with no module binding of that spelling, is `RESOLVE-002` at the argument where it compiled by capture;
+> `#caller` stays the body's one way out. WHAT ITS PROBES FOUND, fixed in the same landing: **DEF-221** --
+> `#caller(n)` written in an INNER invocation's argument (`macro:outer = () { #inc(#caller(n)); };`) was consumed
+> into a marked identifier when the outer body was cloned and LOST the mark when the inner macro cloned its
+> argument: RESOLVE-002, or beside a module `n` the module's value in silence (101 for 6). The clone carries the
+> marks; **DEF-222** -- `#caller` written in an argument OUTSIDE every macro body (`#twice(#caller(x))` in ordinary
+> code) was consumed like a body's and the program compiled; it is `NITPICK-MACRO-008` at the form, as it is
+> everywhere else outside a body; and **DEF-223, A SOUNDNESS HOLE OF THE VERIFIED BUILD, OLDER THAN THIS LANDING AND
+> NEEDING NO MACRO** -- the SMT encoder keeps a function's locals by SPELLING, innermost first, and looked every
+> identifier up that way. (a) A callee's contract at a call site: `requires d > lim` over the MODULE's `lim` (5),
+> called as `safe(5i32)` from a function with a local `lim` (0), was proven against the caller's local; the call
+> went past the checked entry and the body -- its division proven safe under the requirement -- divided by zero: the
+> verified binary exits 107 (`MachineFault`) where the plain build exits 115 (`RequiresViolated`), on `eaf6b08` and
+> every compiler since the rows existed. (b) Two locals of one spelling that hygiene crosses: `10i32 / #caller(tmp)`
+> (the caller's `tmp` is 0) in a body that declared its own `tmp` (5) had its `div-zero` row DISCHARGED over the
+> body's (107 for 97) -- and through an argument the same from the day D-340 lets one be passed, which is why the
+> fix is in this landing. THE FIX, two rules in `smt_encode.npk`: an identifier the resolver bound to a module-scope
+> declaration never reads a local's binding (`ident_bind`, at the four sites that turn an identifier node into a
+> binding); and a spelling that an identifier inside an expansion uses and the function declares more than once is
+> never NAMED (`enc_prepare` puts it in the escape set DEF-14 built: every read opaque, no version) -- found on the
+> walk DEF-14 needs complete. AND ONE FINDING WITHDRAWN: **DEF-220, registered by this landing's first reading and
+> WITHDRAWN by its first measurement** -- `macro:w = () { #inner(); };` lets `inner`'s `#caller(k)` read `w`'s
+> CALLER (5) where `{ #inner() + 0i32; }` reads the module's (100), and the first reading called that two sites out.
+> It is the ALIAS rule: a body that is nothing but one invocation is whatever its target is (D-125; MACRO_REFERENCE
+> section 1), and the tree's own `macro_alias_sites.npk` bumps its caller's `acc` through one. The counted roots
+> KEEP it (the alias's target's frame inherits what `#caller` reaches); the first build did not, and the chain
+> refused that test. THE SWEEP under landing 91's checker and this one over 3,635 files (the tree's units and every
+> .npk of the library and application repositories): 30 sites vanished and 6 appeared, every one read -- in our own
+> new test files, and in two probe files of nitpick-posix, the listener's own probes of this defect
+> (`probe02a_failsafe_macro.npk`: RESOLVE-002 at the argument gone, and REACH-001 in its place -- the reach analysis
+> does not see a `pick` an expansion's block holds, the doubt the probe states; `probe02c_caller_arg.npk`:
+> `#caller(e)` as the argument is MACRO-008); per code MACRO-008 3 → 5; REACH-003 5 → 3; RESOLVE-002 157 → 134;
+> TYPE-004 38 → 39; note:MACRO-009 33 → 31 (2,486 -> 2,462 sites); no TRAP or TIMEOUT. THE EMISSION COMPARISON: 551
+> programs under both compilers, 548 byte-identical, 2 different (the two new tests the parent compiles to a wrong
+> answer: `macro_arg_shadow.npk`, `hyg_arg_shadow.npk`), 0 newly refused, 1 refused by the parent alone
+> (`macro_arg_site.npk`). THE MANIFEST: `npkg verify --record` at this tree -- 7,025 obligations (3,397 discharged,
+> 2,717 open, 0 budget, 906 unencoded, 5 checker), matching, the verified compiler rebuilding itself
+> byte-identically, the floor's 388 unmoved; `nitpick.obligations` 6,695 rows before and 6,730 after, 6,450 shared,
+> ZERO verdicts moved among shared rows, 2 (symbol, kind) discharged counts fell (both a MOVE: the one discharged
+> `overflow` row of `clone_expr` and of `clone_stmt` went with the body to `clone_expr_node` and `clone_stmt_node`).
 
 ## D-341 — `buffer` GETS CHECKED INDEXING AND SLICING, AND A `#wild_slice` OF A MANAGED HEADER'S POINTER IS TIED TO ITS OWNER — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-121)**
 

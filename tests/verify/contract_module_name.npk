@@ -1,0 +1,65 @@
+// expect-exit: 115
+// expect-obligation: requires open 2
+// expect-obligation: div-zero discharged 1
+// expect-obligation: overflow discharged 2
+// expect-obligation: div-min discharged 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 33
+//
+// DEF-223 (1.6.1e), WITH NO MACRO IN THE PROGRAM: A CALLEE'S CONTRACT NAMES A
+// MODULE BINDING, AND THE CALLER HAS A LOCAL OF THAT SPELLING. `requires d > lim`
+// is about the module's `lim` (5). At the call `safe(5i32)` the encoder looked
+// the spelling up among the CALLER's bindings, found `main`'s local `lim` (0),
+// proved `5 > 0`, and the call went past the checked entry -- into a body whose
+// division is proven safe UNDER the requirement. The verified build divided by
+// zero (107) where the plain build stops with `RequiresViolated` (115). An
+// identifier the resolver bound to a module-level declaration never reads a
+// local's binding now (`ident_bind`): the call-site row is `open`, the call
+// keeps its checked entry, and both builds answer 115.
+mod:contract_module_name;
+fixed int32:lim = 5i32;
+func:v32 = int32(int32:x) never fails { pass x; };
+func:safe = int32(int32:d) requires d > lim never fails { pass 10i32 / (d - 5i32); };
+
+func:main = int32(cstring[]:argv) {
+    int32:lim = 0i32;
+    int32:r = raw safe(5i32);
+    exit r + lim;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

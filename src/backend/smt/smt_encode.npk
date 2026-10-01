@@ -260,6 +260,18 @@ pub struct:Encoder = {
     List<int32>:ver_name;      // per-name version counters
     List<int32>:ver_next;
     List<int32>:escaped;       // names whose address is taken: never defined
+    // WHERE THE SPELLING IS NOT THE BINDING (DEF-223). The bindings below are kept
+    // by SPELLING, innermost first -- which is the resolver's own answer for text
+    // that resolves where it stands, and is not for text that hygiene resolves
+    // somewhere else: a macro ARGUMENT (D-340) and a `#caller` name are the
+    // caller's, whatever the macro's body has declared since. `enc_prepare`
+    // finds every spelling that a hygienic identifier uses AND the function
+    // declares more than once, and puts it in `escaped`: such a name is never
+    // named, so no fact about one local can be read as a fact about the other.
+    // `hyg_depth` counts the marked subtrees the pre-walk is inside.
+    int32:hyg_depth;
+    List<int32>:hyg_names;     // the spellings identifiers inside expansions use
+    List<int32>:decl_names;    // one entry per local the function declares, by spelling
     int32:anon;                // anonymous opaque counter
     List<int32>:ordinals;      // per-kind ordinal counters, OK_COUNT + 1 slots
     bool:nonlinear;            // a non-literal `*` or a non-literal divisor appeared
@@ -436,6 +448,9 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   ver_name: raw list_init::<int32>(16i64),
                   ver_next: raw list_init::<int32>(16i64),
                   escaped: raw list_init::<int32>(4i64),
+                  hyg_depth: 0i32,
+                  hyg_names: raw list_init::<int32>(4i64),
+                  decl_names: raw list_init::<int32>(8i64),
                   anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false, uses_bv: false, uses_fp: false, fpdefs: raw list_init::<FpDef>(4i64), lane_tab: raw list_init::<LaneEntry>(4i64),
                   region_parent: move(rp), cur_region: 0i32,
                   region_cond: move(rc), region_hyp0: move(rh), last_give: raw term_none(),
@@ -878,6 +893,31 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
     pass false;
 };
 
+// THE BINDING AN IDENTIFIER NODE DENOTES, or -1 (DEF-223). `bind_find` answers
+// by spelling, and a spelling is not a binding: an identifier the resolver bound
+// to a MODULE-LEVEL declaration -- a `fixed` binding, a function -- never reads
+// a local of the same spelling, however many are live. Two programs said so,
+// each a row DISCHARGED on a false fact and a guard removed with it:
+//
+//   a callee's contract at a call site: `requires d > lim` over the module's
+//     `lim` was proven against the CALLER's local `lim`, the call went past the
+//     checked entry, and the body divided by zero where the plain build stops
+//     with `RequiresViolated` (exit 107 for 115; no macro in the program);
+//   a macro body's free name, which the resolver binds where the macro was
+//     written (D-057), read a local of the function it was invoked in.
+//
+// The resolver's symbol decides: a symbol declared in a module's scope is never
+// one of this function's bindings. (Two LOCALS of one spelling that hygiene
+// crosses are `enc_prepare`'s: neither is named.)
+func:ident_bind = int64(Encoder->:e, ExprNode:n) never fails {
+    int64:bi = raw bind_find(e, n.payload =>! int32);
+    if (bi < 0i64) { pass bi; }
+    if (n.a == 0i32) { pass bi; }
+    Symbol:sy = raw symtab_get(e.tab, n.a);
+    if ((raw scope_kind(e.tab, sy.scope)) == (raw SCOPE_MODULE())) { pass (0i64 - 1i64); }
+    pass bi;
+};
+
 // A new version of `name` with type `ty`: defined by `t` when the type is
 // int/bool and the term is encodable; opaque (range axiom only) when the
 // term is not; symbol-less when the type is neither -- or when the name is
@@ -1215,7 +1255,7 @@ func:place_len_term = Term(Encoder->:e, ExprId:base, int32:bty) never fails {
     ExprNode:bn = raw ast_expr(e.ast, base);
     if (bn.kind != ExprKind.ExprIdentifierExpr) { pass (raw term_none()); }
     int32:nm = bn.payload =>! int32;
-    int64:bi = raw bind_find(e, nm);
+    int64:bi = raw ident_bind(e, bn);
     if (bi < 0i64) { pass (raw term_none()); }
     if (raw is_escaped(e, nm)) { pass (raw term_none()); }
     // THE SENTINEL IS -1, NEVER 0 (1.5.8b step 5): `sym_new` hands out ids from
@@ -1383,6 +1423,8 @@ func:agg_path = AggPath(Encoder->:e, ExprId:place) never fails {
         if (raw expr_is_none(cur)) { pass p; }
         ExprNode:n = raw ast_expr(e.ast, cur);
         if (n.kind == ExprKind.ExprIdentifierExpr) {
+            // A module-level root is no binding of this function (DEF-223).
+            if ((raw ident_bind(e, n)) < 0i64) { pass p; }
             p.root = n.payload =>! int32;
             p.ok = (p.kinds.count > 0i64);
             pass p;
@@ -3330,7 +3372,7 @@ func:limited_root_name = int32(Encoder->:e, ExprId:id) never fails {
         if (raw expr_is_none(cur)) { pass 0i32; }
         ExprNode:n = raw ast_expr(e.ast, cur);
         if (n.kind == ExprKind.ExprIdentifierExpr) {
-            int64:bi = raw bind_find(e, n.payload =>! int32);
+            int64:bi = raw ident_bind(e, n);
             if (bi < 0i64) { pass 0i32; }
             pass n.payload =>! int32;
         }
@@ -4861,7 +4903,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         pass (raw term_none());
     }
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        int64:bi = raw bind_find(e, n.payload =>! int32);
+        int64:bi = raw ident_bind(e, n);
         if (bi >= 0i64) {
             // A `simd` binding's read: its lane symbols (D-282), no scalar term.
             if (e.binds[bi].lanes.count > 0i64) {
@@ -5616,9 +5658,43 @@ func:place_root_name = int32(Encoder->:e, ExprId:id) never fails {
 
 // Every name whose address is taken (`@x`, `$$m x`, `$$i x`, through any
 // place path) anywhere under `id`.
+//
+// AND EVERY SPELLING AN IDENTIFIER INSIDE AN EXPANSION USES (DEF-223): a node
+// the expander marked -- an expansion's root, an argument's root -- is where
+// text that resolves somewhere else begins, and `#caller` leaves its own mark.
+// The walk is the one DEF-14 needs complete, so this inherits that.
 func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
+    bool:placed = ((raw ast_expr_marks(e.ast, id)) & (raw HYG_PLACED())) != 0i32;
+    if (placed) { e.hyg_depth = e.hyg_depth + 1i32; }
+    drop collect_escaped_node(e, id);
+    if (placed) { e.hyg_depth = e.hyg_depth - 1i32; }
+    pass NIL;
+};
+
+// The spellings a pattern binds, one entry each: what `bind_pattern` will bind.
+func:note_pattern_decls = NIL(Encoder->:e, PatNode:p) never fails {
+    if (p.kind == PatKind.PatStructDestructure) {
+        for (int32:i in 0i32...(raw pat_bind_count(p))) {
+            drop list_push(@e.decl_names, raw ast_id_at(e.ast, raw pat_bind_start(p), i));
+        }
+        pass NIL;
+    }
+    if (p.kind == PatKind.PatEnumDestructure) {
+        for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
+            drop list_push(@e.decl_names, raw pat_enum_bind(e.ast, p, j));
+        }
+    }
+    pass NIL;
+};
+
+func:collect_escaped_node = NIL(Encoder->:e, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if ((e.hyg_depth > 0i32) || (raw ast_expr_flag(e.ast, id, raw HYG_CALLER()))) {
+            drop list_push(@e.hyg_names, n.payload =>! int32);
+        }
+    }
     if ((n.kind == ExprKind.ExprAddressOfExpr) || (n.kind == ExprKind.ExprBorrowExpr)) {
         int32:root = raw place_root_name(e, raw expr_operand(n));
         if (root != 0i32) { drop list_push(@e.escaped, root); }
@@ -5656,6 +5732,7 @@ func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprPickExpr) {
         for (int32:a in 0i32...n.c) {
             StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, n.b, a));
+            drop note_pattern_decls(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
             drop collect_escaped_expr(e, raw arm_guard(arm));
             drop collect_escaped(e, raw arm_body(arm));
         }
@@ -5683,7 +5760,22 @@ func:is_trait_qualified = bool(Encoder->:e, ExprNode:n) never fails {
 
 func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
+    bool:placed = ((raw ast_stmt_marks(e.ast, sid)) & (raw HYG_PLACED())) != 0i32;
+    if (placed) { e.hyg_depth = e.hyg_depth + 1i32; }
+    drop collect_escaped_stmt(e, sid);
+    if (placed) { e.hyg_depth = e.hyg_depth - 1i32; }
+    pass NIL;
+};
+
+func:collect_escaped_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     StmtNode:s = raw ast_stmt(e.ast, sid);
+    // EVERY LOCAL THE FUNCTION DECLARES, BY SPELLING (DEF-223): a declaration,
+    // a `for` binding, an arm's pattern (below) -- what the walk will bind.
+    if (s.kind == StmtKind.StmtVarDeclStmt) { drop list_push(@e.decl_names, raw stmt_name(s)); }
+    if (s.kind == StmtKind.StmtForStmt) {
+        DeclNode:fbd = raw ast_decl(e.ast, raw stmt_for_binding(s));
+        drop list_push(@e.decl_names, raw decl_name(fbd));
+    }
     // THE EXPRESSIONS THROUGH THE ONE ENUMERATION (DEF-26), then the bodies.
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(e.ast, s, @xs);
@@ -5714,6 +5806,7 @@ func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
     if (s.kind == StmtKind.StmtPickStmt) {
         for (int32:a in 0i32...(raw pick_arm_count(s))) {
             StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            drop note_pattern_decls(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
             drop collect_escaped(e, raw arm_body(arm));
         }
         pass NIL;
@@ -6957,8 +7050,39 @@ pub func:enc_subject = NIL(Encoder->:e, int32:name) never fails {
 // first read. 1.5.0 collected it inside `enc_body`, after `enc_param` had
 // already given every parameter a stable symbol -- the same hole one line
 // earlier.
+//
+// AND THE SPELLINGS HYGIENE MAKES AMBIGUOUS (DEF-223), from the same walk: a
+// spelling some identifier inside an expansion uses, declared by MORE THAN ONE
+// local of this function -- its parameters counted -- is never named. That is
+// every case in which the innermost binding of a spelling can be another local
+// than the one the resolver bound: text that resolves where it stands reads the
+// innermost by the language's own rule, and only an argument or a `#caller`
+// name resolves anywhere else. `10i32 / X` with the caller's `tmp` (0) for `X`,
+// in a body that had declared its own `tmp` (5), had its `div-zero` row
+// DISCHARGED over the body's, and the verified build divided by zero (107 for
+// the plain build's 97) -- through `#caller(tmp)` on every compiler since the
+// rows existed, and through an argument from the day D-340 let one be passed.
+// The cost is the proofs about those names in that function, nothing else.
 pub func:enc_prepare = NIL(Encoder->:e, StmtId:body) never fails {
     drop collect_escaped(e, body);
+    if (e.hyg_names.count == 0i64) { pass NIL; }
+    if (e.fn_decl != 0i32) {
+        DeclNode:fnd = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+        if (fnd.kind == DeclKind.DeclFunctionDecl) {
+            for (int32:pi in 0i32...(raw fn_param_count(e.ast, fnd))) {
+                DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, fnd, pi));
+                drop list_push(@e.decl_names, raw decl_name(pd));
+            }
+        }
+    }
+    for (int64:h in 0i64...e.hyg_names.count) {
+        int32:nm = e.hyg_names[h];
+        int32:declared = 0i32;
+        for (int64:d in 0i64...e.decl_names.count) {
+            if (e.decl_names[d] == nm) { declared = declared + 1i32; }
+        }
+        if ((declared >= 2i32) && (!(raw is_escaped(e, nm)))) { drop list_push(@e.escaped, nm); }
+    }
     pass NIL;
 };
 

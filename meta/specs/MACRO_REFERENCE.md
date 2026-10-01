@@ -285,6 +285,60 @@ func:main = int32(cstring[]:_~argv) {
 If the name does not resolve in the defining scope, that is a **compile error** —
 never a silent fall back to the call site.
 
+### An argument is the caller's text (D-340)
+
+**An argument resolves at the invocation site.** It was written there, by the caller,
+and it means what it would mean written there in place of the invocation:
+
+```nitpick
+fixed int32:shared = 100i32;
+macro:twice = (X) { X + X; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:shared = 5i32;
+    int32:got = #twice(shared);    // 10: the argument is `main`'s local
+    exit got;
+};
+```
+
+The rule is about WHO WROTE THE TEXT, and each consequence follows from that:
+
+- **Nothing the body declares can capture it.** `macro:m = (X) { int32:tmp = 1i32;
+  #caller(out) = tmp + X; };` invoked as `#m(tmp)` adds the body's `tmp` to the
+  CALLER's; a `for` binding or an arm's binding in the body is the same.
+- **What stands under an argument resolves with it**: a `pick` expression passed as
+  an argument binds its arms' names where it was written, and an invocation written
+  inside an argument expands there.
+- **An argument handed on stays the caller's.** `macro:outer = (X) { #inner(X); };`
+  passes the caller's text down; however many macros it goes through, it resolves
+  where the caller wrote it.
+- **An argument a BODY writes is the body's text.** In `macro:w = (X) { #inner(X + k);
+  };` the `k` was written in `w`'s body and is the module's `k` (the paragraph
+  above); the `X` inside it is still the caller's.
+- **A declaration macro's invocation stands at module level**, so its arguments
+  resolve in the module's scope — not inside the declarations the body emits.
+  `macro:mk = (V) { func:f = int32(int32:a) never fails { pass a + V; }; };` invoked
+  as `#mk(a)` adds the MODULE's `a` to the parameter; with no module `a` the
+  argument is `NITPICK-RESOLVE-002`. The same holds inside a module the body emits.
+- **A name inside a TYPE is the module's binding wherever it is written** (D-222: a
+  local is not an array size), so an argument standing in `int32[N]` means what
+  `int32[K]` would mean at the invocation.
+- **`#caller` in an argument is `NITPICK-MACRO-008`** where the argument was written
+  outside every macro body: the text names the caller's scope already.
+
+A name the argument uses that is not in scope at the invocation is
+`NITPICK-RESOLVE-002` at the argument, in the caller's own text.
+
+> *[2026-10-01, 1.6.1e, landing 92 — why this section is dated.]* Until D-340 this document did not say whose scope
+> an argument resolves in, and the compiler resolved it WITH THE BODY, where the macro was written: `#twice(shared)`
+> beside a module `shared` answered 200 for 10 (the module's binding read); `#twice(n)` with a local `n` was
+> RESOLVE-002; a local the BODY had declared captured the argument (`int32:tmp = 1i32; ... tmp + X` over the
+> caller's `tmp`: 2 for 8), and so did the body's own `for` binding (3 for 30); a declaration macro's argument was
+> captured by a PARAMETER of the function the macro emitted (10 for 105) and by a binding of a module it emitted (7
+> for 100); and `comptime(X + 1i32)` over the caller's local `K` folded the MODULE's `K` (101). The expander marks
+> each argument's root with how far out it was written and the resolver steps back to that site (`ast.npk`'s marks;
+> `resolve.npk`'s `site_enter`).
+
 **A type's name is a name** (DEF-192, 1.6.1e). `T` written in a body — a local's
 annotation, a cast's target, `#size_of<T>()`, a field or a signature the body emits
 — is the type the macro's own scope holds, and where that scope holds none it is
@@ -312,9 +366,22 @@ the caller's `T`, as the caller wrote.
 macro:report_opt = () { `shared = &{#caller(shared)}`; };
 ```
 
-`#caller(NAME)` resolves `NAME` at the **invocation site**. It is the only way to
-reach the caller's scope, and naming something absent there is an error like any
-other unresolved name.
+`#caller(NAME)` resolves `NAME` at the **invocation site**. It is the only way for a
+BODY to reach the caller's scope, and naming something absent there is an error like
+any other unresolved name.
+
+**Through an alias it reaches the alias's caller.** A body that is nothing but one
+invocation is whatever its target is (§1), so in `macro:bump_alias = () { #bump(); };`
+the `#caller(acc)` that `bump` wrote names `bump_alias`'s caller's `acc`. A body that
+merely CONTAINS an invocation is no alias: in `macro:w = () { #inner() + 0i32; };` the
+`#caller` that `inner` wrote names what `w`'s body can see, which is the module's
+scope, and `w` reaches its own caller only by writing `#caller` itself —
+`#inner(#caller(n))`.
+
+> *[2026-10-01, 1.6.1e, landing 92 — a dated note (DEF-221).]* The last sentence was false of the compiler, in
+> silence: a `#caller` written in an inner invocation's argument lost its mark when that argument was cloned and
+> bound in the module's scope (101 for 6 beside a module binding of the name). The alias paragraph states what the
+> compiler has always done and no document said.
 
 `#` is the compiler-directive sigil (D-020), so this needs no new syntax shape.
 
@@ -340,7 +407,7 @@ rule would be the one path in the language worse than having no escape hatch.
 |---|---|---|
 | a declaration | the declarations, in this module | landing where the macro was written |
 | a statement | **a block** holding the statements | the block's parent being the module scope |
-| an expression | the expression, substituted in place | one mark on the substituted node |
+| an expression | the expression, substituted in place | a mark on the substituted node, counted: an alias roots two expansions there |
 
 The **block** is worth stating rather than treating as an implementation detail. A
 `int32:tmp = …` in a statement body lives in the block's own scope: it cannot
