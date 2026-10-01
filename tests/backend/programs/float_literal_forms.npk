@@ -1,0 +1,106 @@
+// expect-exit: 0
+//
+// A FLOAT LITERAL IS READ BY ITS PRODUCTION (DEF-166, 1.6.1e step 3;
+// LEXICAL_REFERENCE §6.2):
+//
+//   FloatLiteral ::= DecimalLiteral "." DecimalLiteral Exponent? TypeSuffix?
+//   Exponent     ::= [eE] [+-]? DecimalLiteral
+//
+// The lexer scanned `digits . ident-part*`, then ANY sign, then `ident-part*`
+// again, and kept the run as the literal's text. Three things this program
+// writes were wrong on every compiler before this step, each measured on
+// `5fbaf4a`:
+//
+//   - A SIGN AFTER A FLOAT WAS SWALLOWED WITH WHAT FOLLOWED IT. `3.5f64-x` was
+//     one literal, whose value the emitter read up to its `f`: the subtraction
+//     vanished and the program computed 3.5, in silence (exits 1, 2 and 5
+//     below). Without the suffix, `3.5-x` reached `llc` as `double 3.5-x`, and
+//     `2.5-1.5` was the literal `2.5-1` and a member access `.5`.
+//   - A `_` SEPARATOR, which §6.2 permits and ignores, rode into the kept text:
+//     `1_000.5f64` reached `llc` as `double 1_000.5`, and `1_000.5tfp64`
+//     folded to 1.0 -- the Q converter stopped at the `_` (exits 20 to 25).
+//   - (and a tail that names no suffix was ignored: `1.5f512` compiled as 1.5.
+//     That one is a refusal now, NITPICK-LEX-009, held by
+//     `tests/frontend/lexer_numeric.npk` -- a lexer's refusal is a unit case.)
+//
+// Every value goes through a call, so neither leg folds the comparison away.
+mod:float_literal_forms;
+
+func:vf = flt64(flt64:x) never fails { pass x; };
+func:vq = tfp64(tfp64:x) never fails { pass x; };
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:x = raw vf(1.0f64);
+
+    // A sign belongs to the literal only inside an exponent.
+    flt64:a = 3.5f64-x;
+    if ((raw vf(a)) != 2.5f64)    { exit 1i32; }
+    flt64:b = 1.5f64+x;
+    if ((raw vf(b)) != 2.5f64)    { exit 2i32; }
+    flt64:c = 3.5-x;
+    if ((raw vf(c)) != 2.5f64)    { exit 3i32; }
+    flt64:d = 2.5-1.5;
+    if ((raw vf(d)) != 1.0f64)    { exit 4i32; }
+    flt64:e2 = 1.5e3f64-x;
+    if ((raw vf(e2)) != 1499.0f64) { exit 5i32; }
+    flt64:f = 1.5e3-2.0;
+    if ((raw vf(f)) != 1498.0f64) { exit 6i32; }
+    // ...and the spelling with spaces says the same thing.
+    flt64:g = 3.5f64 - x;
+    if ((raw vf(g)) != (raw vf(a))) { exit 7i32; }
+
+    // The exponent: `e` or `E`, an optional sign, digits.
+    if ((raw vf(2.5e-1)) != 0.25f64)        { exit 10i32; }
+    if ((raw vf(2.5e+1f64)) != 25.0f64)     { exit 11i32; }
+    if ((raw vf(1.5E+3f64)) != 1500.0f64)   { exit 12i32; }
+    if ((raw vf(25.0e-01)) != 2.5f64)       { exit 13i32; }
+    if ((raw vf(2.5E0)) != 2.5f64)          { exit 14i32; }
+
+    // A `_` separator is ignored, in each digit run.
+    if ((raw vf(1_000.5f64)) != 1000.5f64)  { exit 20i32; }
+    if ((raw vf(0.2_5e1)) != 2.5f64)        { exit 21i32; }
+    if ((raw vf(0.25e0_1f64)) != 2.5f64)    { exit 22i32; }
+    if ((raw vq(1_000.5tfp64)) != (raw vq(1000.5tfp64)))   { exit 23i32; }
+    if ((raw vq(1000.2_5tfp64)) != (raw vq(1000.25tfp64))) { exit 24i32; }
+    flt32:h = 1_0.5f32;
+    if ((raw vf(h => flt64)) != 10.5f64)    { exit 25i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

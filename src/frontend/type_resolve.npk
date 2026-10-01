@@ -155,6 +155,16 @@ pub struct:TypeResolver = {
     // int32(int32:n) { pass (raw forever(n)); };` segfaulted the checker.
     int32:fold_depth;
 
+    // THE `comptime func:` CALLS BEING EVALUATED, outermost first (1.6.1e step
+    // 3; the library listener's `mc0344`). A compile-time failure is reported
+    // at the expression that failed, which sits in a function's BODY -- and the
+    // sentence said nothing of the call that reached it, so `comptime(outer(0))`
+    // failing three functions down pointed at a division with no path to it.
+    // Names only (intern indices), written at `fold_depth` as a call is entered
+    // -- `inst_chain`'s shape above, and bounded as it is: `fold_call` refuses
+    // to enter past `FOLD_DEPTH`, which is this array's size.
+    int32[64]:fold_chain;
+
     // `$` — THE COUNTER OF THE `loop` BEING EVALUATED. It is not a name, so it
     // cannot live in the frame with the locals: `ExprIterationVarExpr` is its own
     // node kind precisely because a counter is not a binding anybody declared.
@@ -180,6 +190,7 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    inst_chain: [],
                                    env: raw foldenv_none(),
                                    fold_blown: false, fold_depth: 0i32,
+                                   fold_chain: [],
                                    fold_counter: 0i64, fold_counting: false,
                                    fold_subject_ty: 0i32 };
     pass r;
@@ -479,6 +490,25 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fail
     }
 
     TokenKind:as_kind = ((payload =>! int32) =>! TokenKind);
+
+    // `flt256` AND `flt512` ARE RESERVED WORDS, NOT TYPES (D-143; TYPE_REFERENCE
+    // §1.4 -- "the resolver refuses them", which until 1.6.1e step 3 it did not:
+    // the generated scalar table answers both as floats of 256 and 512 bits, so
+    // `flt256:x = y => flt256;` type-checked and died in the emitter, EMIT-002,
+    // the compiler confessing a defect about a program's mistake; the library
+    // listener's `ty0176`). Asked AHEAD of the table, which is generated from
+    // the keyword list and stays as it is: the words stay lexed, and every
+    // position a type stands in -- a binding, a parameter, a field, a cast
+    // target, a generic argument, a pointee -- comes through here. The answer
+    // is the INVALID type, so the cast and the initialiser beside the spelling
+    // add no sentence of their own (D-240).
+    if ((as_kind == TokenKind.KwFlt256) || (as_kind == TokenKind.KwFlt512)) {
+        string:rw1 = string_concat("`", raw token_kind_name(as_kind));
+        pass (raw ty_error(r, raw TYPE_UNKNOWN(),
+            string_concat(rw1, "` is a reserved word, not a type: the float types are `flt32`, `flt64` and `flt128` (D-143)"),
+            n.span));
+    }
+
     BuiltinTypeSpec:spec = raw builtin_type_spec(as_kind);
     if (spec.known) {
         // A BUILTIN THAT TAKES NO TYPE ARGUMENTS REFUSES THEM (DEF-152, 1.6.1e
@@ -1193,11 +1223,86 @@ pub func:fold_gave_up = bool(TypeResolver->:r) never fails { pass r.fold_blown; 
 // THE FOLD REPORTED SOMETHING, AND IT SAYS SO ONCE. Without the guard a failure
 // deep in a nested evaluation reports at every frame it unwinds through, which
 // buries the one sentence that matters under copies of itself.
+//
+// AND IT NAMES THE CALLS THAT REACHED IT (1.6.1e step 3; `mc0344`). The span is
+// the expression that failed and stays so; inside a `comptime func:` the
+// sentence gains "; reached through the compile-time calls `outer` -> `inner`",
+// outermost first, from `fold_chain`.
+//
+// ONE EXPRESSION'S FAILURE IS STILL ONE REPORT. The diagnostic list drops a
+// repeat of the same code, span and message, and several paths lean on that:
+// a constant division in a `comptime` body is folded by the typer where it
+// stands (D-331) AND by each call that evaluates it. With the chain in the
+// sentence those are different messages about the one expression, so the
+// repeat is asked HERE, of the sentence without its chain -- whichever path
+// reports first is the report, and no count moves.
 func:fold_reported = NIL(TypeResolver->:r, move string:code, move string:msg, Span:sp) never fails {
     if (r.fold_blown) { pass NIL; }
     r.fold_blown = true;
-    drop diaglist_push(r.diags, raw diag_error(move(code), move(msg), sp));
+    if (raw fold_said(r, code, msg, sp)) { pass NIL; }
+    if (r.fold_depth <= 0i32) {
+        drop diaglist_push(r.diags, raw diag_error(move(code), move(msg), sp));
+        pass NIL;
+    }
+    drop diaglist_push(r.diags, raw diag_error(move(code),
+        string_concat(msg, raw fold_chain_text(r)), sp));
     pass NIL;
+};
+
+// "; reached through the compile-time call(s) `a` -> `b`". A name entered
+// several times in a row -- a `comptime func:` recursing into itself is how the
+// depth bound is usually met, sixty-four frames of one name -- is written once
+// with its count.
+func:fold_chain_text = string(TypeResolver->:r) never fails {
+    int32:depth = r.fold_depth;
+    if (depth > (raw FOLD_DEPTH())) { depth = raw FOLD_DEPTH(); }
+    string:out = "; reached through the compile-time call `";
+    if (depth > 1i32) { out = "; reached through the compile-time calls `"; }
+    int32:i = 0i32;
+    while (i < depth) decreases depth - i {
+        int32:name = r.fold_chain[i => int64];
+        int32:run = 1i32;
+        while ((i + run) < depth) decreases depth - (i + run) {
+            if (r.fold_chain[(i + run) => int64] != name) { break; }
+            run = run + 1i32;
+        }
+        if (i > 0i32) { out = string_concat(out, " -> `"); }
+        out = string_concat(out, raw intern_get(r.interns, name));
+        out = string_concat(out, "`");
+        if (run > 1i32) {
+            out = string_concat(out, " (x");
+            out = string_concat(out, int_to_string(run => int64));
+            out = string_concat(out, ")");
+        }
+        i = i + run;
+    }
+    pass out;
+};
+
+// HAS THE FOLDER SAID THIS SENTENCE ABOUT THIS EXPRESSION ALREADY -- bare, or
+// with a chain behind it?
+func:fold_said = bool(TypeResolver->:r, string:code, string:msg, Span:sp) never fails {
+    int64:n = raw diaglist_count(r.diags);
+    int64:i = 0i64;
+    while (i < n) decreases n - i {
+        Diagnostic:d = raw diaglist_at(r.diags, i);
+        bool:here = (d.span.file == sp.file);
+        if (d.span.offset != sp.offset) { here = false; }
+        if (d.span.len != sp.len)       { here = false; }
+        if (here) {
+            if (raw string_eq(d.code, code)) {
+                if (d.message.len >= msg.len) {
+                    if (raw string_eq(raw slice_proven(d.message, 0i64, msg.len), msg)) {
+                        // The whole sentence, or the sentence and then its chain.
+                        if (d.message.len == msg.len) { pass true; }
+                        if ((d.message.ptr[msg.len] => uint8) == 59u8) { pass true; }   // ';'
+                    }
+                }
+            }
+        }
+        i = i + 1i64;
+    }
+    pass false;
 };
 
 func:fold_exhausted = NIL(TypeResolver->:r, Span:sp) never fails {
@@ -1648,6 +1753,13 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
     FoldEnv:saved = move(r.env);
     int32:saved_depth = r.fold_depth;
     r.env = move(frame);
+    // THE CALL IS NAMED WHERE ITS FRAME IS ENTERED (`fold_chain`): the slot at
+    // the caller's depth, which the bound just above keeps inside the array,
+    // and which the callee's own calls write past, never over. Nothing pops
+    // it -- the depth restored below is what ends the chain.
+    if ((saved_depth >= 0i32) && (saved_depth < (raw FOLD_DEPTH()))) {
+        r.fold_chain[saved_depth => int64] = raw decl_name(fndecl);
+    }
     r.fold_depth = saved_depth + 1i32;
     FoldFlow:flow = raw fold_stmt(r, raw fn_body(r.ast, fndecl), sym.scope, fuel - 1i32);
     r.env = move(saved);

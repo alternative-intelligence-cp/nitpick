@@ -304,10 +304,22 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
         cm = cm + 1i32;
     }
 
+    // WHAT THE DECLARATIONS ALONE DECIDE (DEF-172, DEF-173; 1.6.1e step 3): a
+    // macro that reaches itself through the invocations the bodies write, and a
+    // `macro:` declared inside a macro body. Both are refused before the first
+    // round, and A PROGRAM THIS REFUSES IS NOT EXPANDED -- the rule a parse error
+    // gets just above, for the same reason: the rounds would run a cycle to their
+    // bound and say again, less precisely, what the declarations already said. No
+    // body has been instantiated, so no note has a site to name.
+    drop check_macro_decls(@f.xp);
+    if ((raw diaglist_count(@f.diags)) != before_expand) {
+        pass 1i32;
+    }
+
     // A FIXED POINT, BOUNDED. A macro body may contain invocations, so one round
-    // is not enough; and `macro:m = () { #m(); };` never settles, so the loop is
-    // bounded and exceeding the bound REFUSES rather than proceeding with a
-    // half-expanded program.
+    // is not enough. A cycle is refused above, so what the bound stops is a chain
+    // that is finite and too long, and exceeding it REFUSES rather than
+    // proceeding with a half-expanded program.
     int32:xr = 0i32;
     bool:more = true;
     while (more) decreases (raw EXPAND_ROUNDS()) - xr {
@@ -325,8 +337,19 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     }
     if (more) {
         if (!(raw expander_blown(@f.xp))) {
-            drop expand_no_fixpoint(@f.xp, (raw ast_decl(@f.g.ast,
-                DeclId{ index: (raw graph_at(@f.g, 0i32)).root })).span);
+            // THE LAST ROUND STILL EXPANDED SOMETHING. Whether anything is left
+            // is asked by one more walk that instantiates nothing (the probe):
+            // the first invocation it meets is where the refusal points, in the
+            // program's own text -- it used to point at module 0's root, the
+            // prelude's first line -- and if it meets none, the last round was
+            // the last one needed.
+            drop expand_probe_begin(@f.xp);
+            int32:pm = 0i32;
+            while (pm < nmods) decreases nmods - pm {
+                discard(raw expand_module(@f.xp, DeclId{ index: (raw graph_at(@f.g, pm)).root }));
+                pm = pm + 1i32;
+            }
+            drop expand_no_fixpoint(@f.xp);
         }
     }
 
@@ -355,7 +378,6 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // emit, and the diagnostics would be about the absence rather than the cause.
     if ((raw diaglist_count(@f.diags)) != 0i64) {
         drop expansion_notes(@f.xp, @f.diags);
-        drop expansion_notes(@f.xp, @f.diags);
         pass 1i32;
     }
 
@@ -364,7 +386,6 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // complete before any name is bound.
     drop derive_apply(@f.g);
     if ((raw diaglist_count(@f.diags)) != 0i64) {
-        drop expansion_notes(@f.xp, @f.diags);
         drop expansion_notes(@f.xp, @f.diags);
         pass 1i32;
     }
@@ -432,7 +453,6 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // "there is no type named `Foo`" beneath "unknown name `Foo`" is the same
     // mistake twice, and the second sentence is the less useful one.
     if ((raw diaglist_count(@f.diags)) != 0i64) {
-        drop expansion_notes(@f.xp, @f.diags);
         drop expansion_notes(@f.xp, @f.diags);
         pass 1i32;
     }
@@ -507,7 +527,6 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // established. The same reason the type stage does not run over a program
     // that failed to resolve.
     if ((raw diaglist_count(@f.diags)) != 0i64) {
-        drop expansion_notes(@f.xp, @f.diags);
         drop expansion_notes(@f.xp, @f.diags);
         pass 1i32;
     }

@@ -163,6 +163,24 @@ func:code0 = string(Fx->:x) never fails {
     pass (string_concat(d.code, ""));
 };
 
+// WHERE THE FIRST DIAGNOSTIC'S MESSAGE NAMES `needle`, or -1 where it does not.
+// THE ONE QUESTION THIS FILE ASKS OF A MESSAGE'S TEXT (1.6.1e step 3), and it
+// is asked of NAMES THE PROGRAM WROTE, never of the compiler's wording: that a
+// compile-time failure names the `comptime func:` calls that reached it is the
+// rule under test, and the names are the only place it shows. The words
+// around them stay free.
+func:msg0_names = int64(Fx->:x, string:needle) never fails {
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    if (needle.len > d.message.len) { pass 0i64 - 1i64; }
+    int64:last = d.message.len - needle.len;
+    int64:i = 0i64;
+    while (i <= last) decreases (last - i) + 1i64 {
+        if (raw string_eq(raw slice_proven(d.message, i, i + needle.len), needle)) { pass i; }
+        i = i + 1i64;
+    }
+    pass 0i64 - 1i64;
+};
+
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
 
@@ -389,6 +407,29 @@ func:main = int32(cstring[]:_~argv) {
         // …and the two sides still have to be the same type.
         Fx:c5 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i64; pass NIL; };", @it);
         if (raw errs(@c5) != 1i64)                                 { exit 95i32; }
+
+        // --- A COMPILE-TIME FAILURE NAMES THE CALLS THAT REACHED IT ----------
+        // (1.6.1e step 3; the library listener's `mc0344`.) The report sits at
+        // the expression that failed -- inside a `comptime func:` body -- and
+        // said nothing of how evaluation got there. ONE report, the code it
+        // always had, and both names in it, OUTERMOST FIRST.
+        Fx:k1 = raw fx("comptime func:inner_div = int32(int32:d) never fails { pass (100i32 / d); }; comptime func:outer_call = int32(int32:d) never fails { pass (raw inner_div(d)); }; func:f = NIL() { int32:v = comptime(outer_call(0i32)); pass NIL; };", @it);
+        if (raw errs(@k1) != 1i64)                                 { exit 120i32; }
+        if (!(raw string_eq(raw code0(@k1), raw TYPE_NOT_CONSTANT()))) { exit 121i32; }
+        if (raw msg0_names(@k1, "`outer_call`") < 0i64)            { exit 122i32; }
+        if (raw msg0_names(@k1, "`inner_div`") < 0i64)             { exit 123i32; }
+        if ((raw msg0_names(@k1, "`outer_call`")) > (raw msg0_names(@k1, "`inner_div`"))) { exit 124i32; }
+        // A failure outside every call names none: the same division, written
+        // where it is folded, is the sentence it always was.
+        Fx:k2 = raw fx("comptime func:inner_div = int32(int32:d) never fails { pass (100i32 / d); }; func:f = NIL() { int32:v = 100i32 / 0i32; pass NIL; };", @it);
+        if (raw errs(@k2) != 1i64)                                 { exit 125i32; }
+        if (raw msg0_names(@k2, "`inner_div`") >= 0i64)            { exit 126i32; }
+        // The budget's sentence carries the chain too: a `comptime func:` that
+        // recurses to the depth bound is named.
+        Fx:k3 = raw fx("comptime func:deep = int32(int32:n) never fails { pass (raw deep(n)); }; func:f = NIL() { int32:v = comptime(deep(1i32)); pass NIL; };", @it);
+        if (raw errs(@k3) != 1i64)                                 { exit 127i32; }
+        if (!(raw string_eq(raw code0(@k3), raw TYPE_COMPTIME_BUDGET()))) { exit 128i32; }
+        if (raw msg0_names(@k3, "`deep`") < 0i64)                  { exit 129i32; }
 
         wild_release_all();
         exit 0i32;

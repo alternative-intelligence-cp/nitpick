@@ -1,0 +1,125 @@
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 54:22
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 60:18
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 65:15
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 70:13
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 76:26
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 81:23
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 86:26
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 86:26
+//
+// THE THREE BUILTINS THAT SPEAK FOR THE CURRENT TASK ARE LEGAL ONLY INSIDE AN
+// `async` FUNCTION (DEF-168, DEF-169; 1.6.1e step 3; the library listener's
+// `bi0256`). `suspend_until` and `suspend_io` PARK the task, `io_watch`
+// registers it as a descriptor's waiter (BUILTIN_REFERENCE §2b) -- and until
+// this step nothing in the checker held any of the three to a task: a park in a
+// synchronous body was EMIT-002, the compiler confessing a defect about a
+// program's mistake; `io_watch` in a synchronous body COMPILED, and called where
+// no task runs it faulted the machine (`MachineFault`, exit 107, in safe code);
+// and a park inside a `defer` body trapped the COMPILER (a park's wind-up exit
+// runs the function's defers, so the emitter lowered the defer body inside
+// itself until its own stack was exhausted: exit 3, no message).
+// `NITPICK-TYPE-043` at the call. The two parks are refused in a `defer` body as
+// `await` is there -- cleanup is synchronous -- and the two rules are asked
+// apart, as `await`'s are: `sync_defer` breaks both and is told both, at one
+// site.
+//
+// The controls: all three inside an `async` function, an `async` method and a
+// `thread` function; `io_watch` inside an `async` function's `defer` (it
+// registers and parks nowhere); and `io_unwatch`, which is safe with no task
+// and belongs in a `defer`, in a synchronous function and in one.
+mod:task_builtins;
+
+struct:Job = { int32:n; };
+trait:Run = {
+    async func:go = NIL(Self->:self);
+    func:plain = NIL(Self->:self) never fails;
+};
+impl:Job:Run = {
+    async func:go = NIL(Job->:self) {
+        io_watch(0i32, 1i32);
+        suspend_io(1i32, 1i32, mono_now() + 10i64);
+        io_unwatch(0i32);
+        io_unwatch(1i32);
+        pass NIL;
+    };
+    func:plain = NIL(Job->:self) never fails {
+        suspend_until(mono_now() + 10i64);
+        pass NIL;
+    };
+};
+
+func:sync_until = NIL() never fails {
+    suspend_until(mono_now() + 10i64);
+    pass NIL;
+};
+
+func:sync_io = NIL() never fails {
+    suspend_io(0i32, 1i32, mono_now() + 10i64);
+    pass NIL;
+};
+
+func:sync_watch = NIL() never fails {
+    io_watch(0i32, 1i32);
+    io_unwatch(0i32);
+    pass NIL;
+};
+
+async func:defer_until = NIL() {
+    defer { suspend_until(mono_now() + 10i64); }
+    pass NIL;
+};
+
+async func:defer_io = NIL() {
+    defer { suspend_io(0i32, 1i32, mono_now() + 10i64); }
+    pass NIL;
+};
+
+func:sync_defer = NIL() never fails {
+    defer { suspend_until(mono_now() + 10i64); }
+    pass NIL;
+};
+
+// The controls.
+async func:waits = NIL() {
+    defer { io_unwatch(0i32); }
+    io_watch(0i32, 1i32);
+    suspend_io(1i32, 1i32, mono_now() + 10i64);
+    io_unwatch(1i32);
+    suspend_until(mono_now() + 10i64);
+    pass NIL;
+};
+
+async func:defer_watch = NIL() {
+    defer { io_watch(0i32, 1i32); io_unwatch(0i32); }
+    pass NIL;
+};
+
+func:sync_unwatch = NIL() never fails {
+    defer { io_unwatch(1i32); }
+    io_unwatch(0i32);
+    pass NIL;
+};
+
+fixed Duration:JOIN_1S = Duration{ ns: 1000000000i64 };
+thread async func:worker = NIL() joins JOIN_1S {
+    suspend_until(mono_now() + 10i64);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

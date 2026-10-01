@@ -349,7 +349,12 @@ pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) never fails {
 // It was three until the body gained a kind — and the count moved with it, because
 // a header slot added in the middle shifts everything after, which is exactly what
 // a named header constant exists to make survivable.
+//
+// AND TWO TRAILING SLOTS since 1.6.1e step 3: the body's expression-id range,
+// `[lo, hi)`, read from the window's END (`macro_body_expr_lo`/`_hi`) so that no
+// section before them shifts.
 func:MACRO_HDR = int32() never fails { pass 4i32; };
+func:MACRO_TAIL = int32() never fails { pass 2i32; };
 
 // The tokens that begin a DECLARATION rather than a statement.
 //
@@ -485,6 +490,28 @@ pub func:macro_body_at = int32(Ast->:ast, DeclNode:d, int32:i) never fails {
 };
 pub func:macro_param = int32(Ast->:ast, DeclNode:d, int32:i) never fails {
     pass (raw d_at(ast, d, (raw MACRO_HDR()) + (raw macro_body_count(ast, d)) + i));
+};
+
+// THE BODY'S EXPRESSION-ID RANGE `[lo, hi)` (DEF-172, 1.6.1e step 3): every
+// expression the parser built between the body's braces -- the range the
+// `HYG_IN_MACRO` mark was written over. The two ids close the window, so they
+// are read from its end and no section before them moves.
+pub func:macro_body_expr_lo = int32(Ast->:ast, DeclNode:d) never fails {
+    pass (raw d_at(ast, d, (raw decl_win_count(d)) - (raw MACRO_TAIL())));
+};
+pub func:macro_body_expr_hi = int32(Ast->:ast, DeclNode:d) never fails {
+    pass (raw d_at(ast, d, (raw decl_win_count(d)) - (raw MACRO_TAIL()) + 1i32));
+};
+
+// THE ATTRIBUTES WRITTEN ON THE DECLARATION -- the window's last section before
+// the range, read from the end for the same reason (a body with a parse error
+// records a count of zero and keeps its items, so a start counted from the front
+// would land among them). Read by the expansion walk (DEF-170): an attribute's
+// arguments are expressions, on a macro declaration as on any other.
+pub func:macro_attr_count = int32(Ast->:ast, DeclNode:d) never fails { pass (raw d_at(ast, d, 3i32)); };
+pub func:macro_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) never fails {
+    int32:base = (raw decl_win_count(d)) - (raw MACRO_TAIL()) - (raw macro_attr_count(ast, d));
+    DeclId:a = DeclId{ index: raw d_at(ast, d, base + i) }; pass a;
 };
 
 // WHERE THE PARAMETER NAMES LIVE, as an absolute window into the shared pool.
@@ -640,6 +667,11 @@ pub func:global_quals = int32(DeclNode:d) never fails { pass (d.c & 65535i32); }
 pub func:global_flags = int32(DeclNode:d) never fails { pass ((d.c >> 16i32) & 65535i32); };
 pub func:assoc_default = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:variant_value = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.a }; pass e; };
+// A `unit:` declaration's right-hand side and an `error:` declaration's explicit
+// code: slot `b` on both, named for the expansion walk (DEF-170, 1.6.1e step 3),
+// which reaches every expression a declaration carries.
+pub func:unit_rhs = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.b }; pass e; };
+pub func:errdecl_code = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.b }; pass e; };
 pub func:variant_payload_start = int32(DeclNode:d) never fails { pass d.b; };
 pub func:variant_payload_count = int32(DeclNode:d) never fails { pass d.c; };
 // THE WHOLE `T[]`, NOT ITS ELEMENT. `..*T[]:rest` parses `T[]` with the ordinary
@@ -1486,6 +1518,13 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     drop ast_copy_window(p.ast, body);
     drop ast_copy_window(p.ast, params);
     drop ast_copy_window(p.ast, attrs);
+    // THE BODY'S EXPRESSION RANGE, KEPT (DEF-172, 1.6.1e step 3): the two ids
+    // the mark above was written between. Every `#name(...)` the body writes
+    // sits in it, wherever it stands, so it is what the cycle check reads a
+    // macro's invocations off (`check_macro_decls`) -- a range for the reason
+    // the mark is one: it cannot have the hole a walk of the body can.
+    drop ast_scratch_push(p.ast, elo);
+    drop ast_scratch_push(p.ast, ehi);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_decl(p.ast, DeclKind.DeclMacroDecl, sp,
                              flags, w.start, w.count, name.payload));

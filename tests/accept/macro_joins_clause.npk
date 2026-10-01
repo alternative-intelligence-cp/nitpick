@@ -1,0 +1,68 @@
+// AN INVOCATION IN A `joins` CLAUSE EXPANDS (DEF-170, 1.6.1e step 3). The thread's
+// join deadline is an expression of the function's contract window, one of the
+// positions the expansion walk never reached: `joins #deadline()` was
+// `NITPICK-MACRO-006`, "a hole in the expander". The rest of the positions are run
+// in tests/backend/programs/macro_walk_positions.npk; this one needs a thread, so
+// it is accepted and lowered here and not run there.
+mod:macro_joins_clause;
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+macro:deadline = () { JOIN_5S; };
+macro:two = () { 2i64; };
+
+thread async func:bump = NIL(wild int64->:cell, int64:n) joins #deadline() {
+    for (int64:i in 0i64...n) {
+        discard(atomic_from_ptr::<int64>(cell).fetch_add(1i64));
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    wild int8->:raw_cell = alloc(8i64);
+    wild int64->:cell = raw_cell =>! wild int64->;
+    atomic_from_ptr::<int64>(cell).store(0i64);
+    {
+        drop bump(cell, #two());
+        drop bump(cell, #two());
+    }
+    int64:total = atomic_from_ptr::<int64>(cell).load();
+    if (total != 4i64) { exit 1i32; }
+    wild_release_all();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

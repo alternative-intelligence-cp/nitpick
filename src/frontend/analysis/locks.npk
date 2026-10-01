@@ -84,12 +84,48 @@ pub struct:LockTable = {
     wild int32->:acq_min;
     wild int32->:acq_max;
 
+    // THE LOWEST LEVEL A CALL MAY LEAVE HELD in the value it returns, or none
+    // (1.6.1e step 3). `acq_min` answers "what may this function WAIT FOR or
+    // take" -- the question a caller holding something has to ask -- and until
+    // channels joined the analysis it was also read as "what may its result
+    // hold", by the binding rule (`raise_held`). Those are two questions the
+    // moment a summary contains a WAIT: a `timedwait`, an `arrive`, a `send`
+    // and a `recv` are ordered against what is held and leave nothing held
+    // (D-056's own amendment at 1.1.11b), so a function that only receives
+    // returns holding nothing, and
+    //
+    //     int32:a = await fetch(ch) ?! E;     // `fetch` receives on level 4
+    //     int32:b = await fetch(ch) ?! E;     // "holds 4 and can acquire 4"
+    //
+    // was refused -- measured, for a barrier's `arrive`, on 5fbaf4a, and for
+    // four of the library listener's own programs the day `send`/`recv`
+    // entered the summaries. What a result can hold is fed by the things that
+    // yield a hold and by nothing else: a declared `acquires N`, an `acquire`,
+    // a `read`, a `write`, and a callee that may itself return one.
+    wild int32->:hold_min;
+
     // The bound a trait method declared with `acquires <= N`, or none. Kept apart
     // from what the method ACQUIRES, because a bound is a promise about
     // implementations and an acquisition is a fact about a body — the same
     // `whether` versus `which` split the rest of this compiler is built on.
+    //
+    // THREE KINDS OF BOUND since 1.6.1e step 3 (the library listener's vf0831),
+    // and the reading of each is its reader's, never the raw word's:
+    //
+    //   `acquires <= N`   a CEILING that also STANDS IN for the body at a call
+    //                     (D-113): `bound` is N, `bound_exact` false.
+    //   `acquires N`      on a TRAIT's method, a fact about every implementation:
+    //                     a ceiling that is CHECKED and does not stand in --
+    //                     the declaring method is seeded as an acquirer at N, and
+    //                     a call that names an implementation reads that body's
+    //                     own summary, as it always did. `bound_exact` true.
+    //   no clause         on a TRAIT's method, A BOUND OF NOTHING -- D-056's "an
+    //                     undeclared method may not acquire at all". `bound` is
+    //                     `LOCK_NONE_MAX`, the "no level" a maximum already has,
+    //                     and it is never read as a level (`bound_is_nothing`).
     wild int32->:bound;
     wild bool->:has_bound;
+    wild bool->:bound_exact;
 
     int32:count;
     bool:changed;
@@ -116,6 +152,12 @@ pub struct:Locks = {
 
     // The widening rounds are SILENT; only the last walk reports. See the walk.
     bool:reporting;
+
+    // THE TRAIT WHOSE OWN MEMBERS ARE BEING WALKED, or 0 (1.6.1e step 3). A
+    // trait's default body is an implementation like any other and is held to
+    // its method's bound; the report has to say WHICH kind of implementation it
+    // is looking at, and the declaration alone does not.
+    int32:cur_trait;
 };
 
 pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
@@ -128,23 +170,29 @@ pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:m2 = alloc(size * #size_of<int32>());
     wild int8->:m3 = alloc(size * #size_of<int32>());
     wild int8->:m4 = alloc(size * #size_of<bool>());
+    wild int8->:m5 = alloc(size * #size_of<bool>());
+    wild int8->:m6 = alloc(size * #size_of<int32>());
 
     LockTable:t = LockTable{ acq_min: m1 =>! wild int32->,
                              acq_max: m2 =>! wild int32->,
+                             hold_min: m6 =>! wild int32->,
                              bound: m3 =>! wild int32->,
                              has_bound: m4 =>! wild bool->,
+                             bound_exact: m5 =>! wild bool->,
                              count: size =>! int32, changed: false };
     for (int64:i in 0i64...size) {
         t.acq_min[i] = raw LOCK_NONE_MIN();
         t.acq_max[i] = raw LOCK_NONE_MAX();
+        t.hold_min[i] = raw LOCK_NONE_MIN();
         t.bound[i] = 0i32;
         t.has_bound[i] = false;
+        t.bound_exact[i] = false;
     }
 
     Locks:x = Locks{ ast: ast, tab: tab, types: types, etypes: etypes,
                      interns: interns, impls: impls, bounds: bounds,
                      diags: diags, table: t, tyres: tyres, cur_scope: 0i32,
-                     reporting: false };
+                     reporting: false, cur_trait: 0i32 };
     pass x;
 };
 
@@ -183,6 +231,18 @@ func:table_widen = NIL(Locks->:x, int32:decl, int32:lo, int32:hi) never fails {
     pass NIL;
 };
 
+// The same, for what a call may leave HELD (`LockTable.hold_min`).
+func:table_hold = NIL(Locks->:x, int32:decl, int32:lo) never fails {
+    if (decl < 0i32)           { pass NIL; }
+    if (decl >= x.table.count) { pass NIL; }
+    int64:i = decl => int64;
+    if (lo < x.table.hold_min[i]) {
+        x.table.hold_min[i] = lo;
+        x.table.changed = true;
+    }
+    pass NIL;
+};
+
 // --- reading the contract ------------------------------------------------------
 
 // THE LEVEL A CLAUSE NAMES, or none. `N` is a compile-time constant of the same
@@ -195,10 +255,25 @@ pub struct:LevelRead = {
     bool:found;
     int32:level;
     bool:bounded;    // `acquires <= N` rather than `acquires N`
+
+    // A CLAUSE IS WRITTEN, whether or not its level could be read (1.6.1e step
+    // 3). "No clause" and "a clause that does not fold" were both `found: false`
+    // -- one answer for an absence and for a mistake already reported
+    // (LOCK-003). The bound of nothing below is given to the ABSENCE alone: a
+    // trait method whose clause was refused must not also refuse every
+    // implementation for acquiring under "no clause" (D-240: one mistake, one
+    // report).
+    bool:written;
 };
 
 func:no_level = LevelRead() never fails {
-    LevelRead:r = LevelRead{ found: false, level: 0i32, bounded: false };
+    LevelRead:r = LevelRead{ found: false, level: 0i32, bounded: false, written: false };
+    pass r;
+};
+
+// A clause that is there and names no level this analysis can use.
+func:unread_level = LevelRead() never fails {
+    LevelRead:r = LevelRead{ found: false, level: 0i32, bounded: false, written: true };
     pass r;
 };
 
@@ -208,24 +283,36 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
         VerifyNode:v = raw ast_verify(x.ast, raw fn_contract(x.ast, d, i));
         if ((raw contract_kind(v)) == (raw CONTRACT_ACQUIRES())) {
             ExprId:c = raw contract_cond(v);
-            if (raw expr_is_none(c)) { pass (raw no_level()); }
+            if (raw expr_is_none(c)) { pass (raw unread_level()); }
             ExprNode:cnode = raw ast_expr(x.ast, c);
             // The checker already folded this `acquires` level; failing to
             // RE-fold it is an internal inconsistency, not a program error.
             ConstVal:cv = fold_const(x.tyres, c, x.cur_scope) ?! Rederived;
             if (!(raw cv_is_int(cv))) {
-                if (raw fold_gave_up(x.tyres)) { pass (raw no_level()); }
+                if (raw fold_gave_up(x.tyres)) { pass (raw unread_level()); }
                 drop locks_err(x, raw LOCK_NOT_CONSTANT(),
                     "an `acquires` level must be a constant expression: the ordering is decided while compiling or it is not decided at all. A module binding folds (every one is a compile-time constant, D-165/D-211); a local or a parameter is a value that arrives too late",
                     cnode.span);
-                pass (raw no_level());
+                pass (raw unread_level());
             }
             LevelRead:r = LevelRead{ found: true, level: cv.num =>! int32,
-                                     bounded: raw contract_is_bounded(v) };
+                                     bounded: raw contract_is_bounded(v),
+                                     written: true };
             pass r;
         }
     }
     pass (raw no_level());
+};
+
+// IS THIS DECLARATION BOUND TO ACQUIRE NOTHING? The one reader of the sentinel
+// (see `LockTable.bound`): every site that reads a bound asks this FIRST, because
+// `LOCK_NONE_MAX` read as a level is "can acquire level -2147483647" -- a
+// sentence about a lock nobody declared.
+func:bound_is_nothing = bool(Locks->:x, int32:decl) never fails {
+    if (decl < 0i32)           { pass false; }
+    if (decl >= x.table.count) { pass false; }
+    if (!(x.table.has_bound[decl => int64])) { pass false; }
+    pass (x.table.bound[decl => int64] == (raw LOCK_NONE_MAX()));
 };
 
 // --- the call graph, walked without reporting ----------------------------------
@@ -239,8 +326,8 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
 // WHICH FUNCTION A CALL REACHES, as a `DeclId`, or 0.
 //
 // THREE FORMS, AND ALL THREE HAVE TO BE HERE. A direct call resolves through the
-// symbol; a method call resolves through the impl table exactly as the checker
-// resolves it; and a call through a trait object resolves to the trait's method,
+// symbol; a method call resolves to what the checker recorded for it (see the
+// arm); and a call through a trait object resolves to the trait's method,
 // whose `acquires <= N` bound is what makes the analysis terminate there instead
 // of giving up. An analysis that handled only direct calls would under-approximate
 // SILENTLY, which is the failure D-056 exists to prevent.
@@ -279,6 +366,17 @@ func:mutex_acquire_level = int32(Locks->:x, ExprNode:n) never fails {
 // then HOLDS NOTHING. Both are ordered against what the caller holds — a
 // wait below a held level is the same wedge shape — but binding their
 // `Result<NIL>` raises no held level, unlike binding a guard.
+//
+// A CHANNEL IS THE THIRD (1.6.1e step 3; the library listener's cc0380). "A
+// channel blocks, so it is a blocking primitive" (CONCURRENCY_REFERENCE §6.1):
+// a `send` waits for space or a receiver and a `recv` waits for a value, each
+// at the LEVEL its `Channel<T, LEVEL, CAP>` states -- word `b` of the type,
+// read through `type_chan_level`. D-056 said so from the day it was written
+// ("two tasks blocked on each other's bounded channel are deadlocked just as
+// thoroughly") and until this arm nothing read the level at all: a `send` on a
+// level-4 channel under a level-5 guard compiled. `close` does not block --
+// it never suspends -- and has no level. Like the other two waits a channel
+// operation yields no hold: binding a `recv`'s value raises nothing.
 func:sync_wait_level = int32(Locks->:x, ExprNode:n) never fails {
     if (n.kind != ExprKind.ExprMethodCallExpr) { pass (raw LOCK_NONE_MIN()); }
     ExprId:recv = raw expr_operand(n);
@@ -295,6 +393,11 @@ func:sync_wait_level = int32(Locks->:x, ExprNode:n) never fails {
     }
     if (rk == (raw TY_BARRIER())) {
         if (raw string_eq(mnm, "arrive")) { pass ((raw tt_get(x.types, rty)).b); }
+        pass (raw LOCK_NONE_MIN());
+    }
+    if (rk == (raw TY_CHANNEL())) {
+        if (raw string_eq(mnm, "send")) { pass (raw type_chan_level(x.types, rty)); }
+        if (raw string_eq(mnm, "recv")) { pass (raw type_chan_level(x.types, rty)); }
         pass (raw LOCK_NONE_MIN());
     }
     pass (raw LOCK_NONE_MIN());
@@ -321,19 +424,50 @@ func:call_target = int32(Locks->:x, ExprId:id, ExprNode:n) never fails {
     }
 
     if (n.kind == ExprKind.ExprMethodCallExpr) {
-        ExprId:recv = raw expr_operand(n);
-        int32:rty = raw exprtypes_get(x.etypes, recv);
-        if (rty == 0i32) { pass 0i32; }
-        // 0 for the enclosing trait: this walk visits function BODIES, and a
-        // `Self` receiver in one is a trait default's — whose lock levels are
-        // judged where the trait is checked, not here (1.0.4).
-        // The checker already resolved this method at the call site; a failed
-        // RE-resolution here is an internal inconsistency, not a program error.
-        MethodFind:m = find_method(x.impls, x.bounds, x.types, x.ast,
-                                         x.interns, rty,
-                                         (raw expr_name(n)) =>! int32, 0i32) ?! Rederived;
-        if (!m.found) { pass 0i32; }
-        pass m.decl;
+        // THE CHECKER'S RECORD, NOT A SECOND RESOLUTION (1.6.1e step 3). This
+        // arm re-ran `find_method` on the receiver's recorded type, and the
+        // comment above called that resolving "exactly as the checker resolves
+        // it". It was not: the checker peels one pointer off the receiver
+        // first (D-098), tries a free function of that name after the impls
+        // (UFCS, D-006), resolves `Trait.method(recv)` through the named trait
+        // (D-172) and a `Self` call in a default body through the enclosing
+        // trait (1.0.4) -- and this arm did none of the four. So `p.flush()`
+        // with `p` a pointer, `x.helper()` reaching a free function,
+        // `Trait.m(x)` and a default body's `self.m()` each resolved to
+        // NOTHING, and whatever the callee acquired was invisible: the silent
+        // under-approximation the paragraph above says D-056 exists to
+        // prevent (measured on 5fbaf4a: holding level 2 and calling a method
+        // that takes level 1 through a `Self->` receiver compiled). What the
+        // checker resolved is recorded on the call (`ExprTypes.callee`, 1.0.3)
+        // for exactly this reader -- the emitter, the reach analysis and the
+        // escape analysis all read it -- and a reader of the record agrees
+        // with the checker by construction. 0 is a call the checker gave no
+        // function to: a builtin kind's own operation, a variant constructor,
+        // a function-valued field.
+        int32:rec = raw exprtypes_callee(x.etypes, id);
+        if (rec <= 0i32) { pass 0i32; }
+        if (rec >= x.table.count) { pass 0i32; }
+        DeclNode:rd = raw ast_decl(x.ast, DeclId{ index: rec });
+        if (rd.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+        pass rec;
+    }
+
+    // A PIPE IS A CALL WRITTEN THE OTHER WAY ROUND (1.0.9c): `x |> g` is `g(x)`,
+    // and a call the walk did not count was an acquisition nobody ordered
+    // (1.6.1e step 3; measured: holding level 2 and piping into a function
+    // that takes level 1 compiled). A function VALUE on the right has no
+    // declaration to read and stays unresolved, as it does in a plain call.
+    if (n.kind == ExprKind.ExprPipeExpr) {
+        ExprId:pf = raw expr_rhs(n);
+        if (raw expr_is_none(pf)) { pass 0i32; }
+        ExprNode:pnode = raw ast_expr(x.ast, pf);
+        if (pnode.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+        if (pnode.a == 0i32) { pass 0i32; }
+        Symbol:ps = raw symtab_get(x.tab, pnode.a);
+        if (ps.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: ps.origin });
+        if (pd.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+        pass ps.origin;
     }
 
     pass 0i32;
@@ -382,6 +516,9 @@ func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
             pass NIL;
         }
         drop table_widen(x, id.index, r.level, r.level);
+        // A DECLARED ACQUISITION IS A HOLD: `acquires N` is the contract of a
+        // function that TAKES the lock, and what it returns is the lease.
+        drop table_hold(x, id.index, r.level);
         pass NIL;
     }
 
@@ -392,19 +529,71 @@ func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
         pass NIL;
     }
     if (d.kind == DeclKind.DeclImplDecl) {
+        // AN IMPLEMENTATION INHERITS ITS TRAIT METHOD'S BOUND, whether or not it
+        // repeats the clause. Requiring the repetition would make the promise
+        // opt-in at the one place it has to be kept, and D-056's "an undeclared
+        // method may not acquire at all" would become "unless the implementation
+        // forgot to say so".
+        //
+        // INHERITED AT THE SEED since 1.6.1e step 3 (it was the first thing each
+        // widening round did to an impl): a bound decides how a CALL of the
+        // method is read, and a caller walked before the impl in the first round
+        // read the method as unbounded -- an order the modules happen to be in.
+        // The seed has finished for every module before any call is absorbed.
         int32:mn = raw impl_member_count(x.ast, d);
         for (int32:j in 0i32...mn) {
-            drop locks_seed_decl(x, raw impl_member(x.ast, d, j), scope);
+            DeclId:mid = raw impl_member(x.ast, d, j);
+            drop locks_seed_decl(x, mid, scope);
+            drop inherit_trait_bound(x, id.index, mid);
         }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
         for (int32:k in 0i32...tn) {
-            drop locks_seed_decl(x, raw item_member(x.ast, d, k), scope);
+            DeclId:tmid = raw item_member(x.ast, d, k);
+            drop locks_seed_decl(x, tmid, scope);
+            drop seed_trait_bound(x, tmid);
         }
         pass NIL;
     }
+    pass NIL;
+};
+
+// WHAT A CALL THROUGH THE TRAIT MAY ASSUME, recorded on the trait's own method
+// (1.6.1e step 3; the library listener's vf0831) -- the declaration a `dyn`, a
+// bound `T: Trait` and a `Self` call all resolve to, and the one a default body
+// is written under.
+//
+// NO CLAUSE IS A BOUND OF NOTHING. D-056: "a dynamically dispatched call
+// declares its maximum acquisition level as part of the trait method's
+// contract, and implementations are checked against it. An undeclared method
+// may not acquire at all." Until this function the absence set nothing: the
+// call through the trait was read as acquiring nothing (true of the
+// DECLARATION, which has no body) while every implementation stayed unbounded
+// -- so an impl could take a level-1 lock behind a `dyn` its caller reached
+// holding level 9, and the analysis that exists to refuse exactly that said
+// nothing. The promise the caller relies on is now the one the implementations
+// are held to.
+//
+// AN EXACT CLAUSE BOUNDS TOO. `acquires N` on a trait's method is a fact about
+// every implementation (the function arm above has already seeded the method as
+// an acquirer at N, which is what a call through the trait reads); an
+// implementation reaching above N would make that fact false, so N is its
+// ceiling exactly as a `<= N` is.
+func:seed_trait_bound = NIL(Locks->:x, DeclId:id) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    LevelRead:r = raw read_acquires(x, d);
+    if (!r.written) {
+        x.table.bound[id.index => int64] = raw LOCK_NONE_MAX();
+        x.table.has_bound[id.index => int64] = true;
+        pass NIL;
+    }
+    if (!r.found) { pass NIL; }   // LOCK-003 has said what is wrong with it
+    x.table.bound[id.index => int64] = r.level;
+    x.table.has_bound[id.index => int64] = true;
+    x.table.bound_exact[id.index => int64] = !r.bounded;
     pass NIL;
 };
 
@@ -443,24 +632,26 @@ func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
         pass NIL;
     }
     if (d.kind == DeclKind.DeclImplDecl) {
-        // AN IMPLEMENTATION INHERITS ITS TRAIT METHOD'S BOUND, whether or not it
-        // repeats the clause. Requiring the repetition would make the promise
-        // opt-in at the one place it has to be kept, and D-056's "an undeclared
-        // method may not acquire at all" would become "unless the implementation
-        // forgot to say so".
+        // Each method carries the bound its trait's method gave it at the seed
+        // (`inherit_trait_bound`), and is checked against it where it is walked.
         int32:mn = raw impl_member_count(x.ast, d);
         for (int32:j in 0i32...mn) {
-            DeclId:mid = raw impl_member(x.ast, d, j);
-            drop inherit_trait_bound(x, id.index, mid);
-            drop locks_widen_decl(x, mid, scope);
+            drop locks_widen_decl(x, raw impl_member(x.ast, d, j), scope);
         }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclTraitDecl) {
+        // A DEFAULT BODY IS AN IMPLEMENTATION (1.6.1e step 3): every impl that
+        // does not write its own method runs this one, behind the same `dyn`.
+        // It is walked like any body and held to the bound its own declaration
+        // carries (`seed_trait_bound`) -- a bodiless member has nothing to walk
+        // and reaches nothing.
         int32:tn = raw item_member_count(x.ast, d);
+        x.cur_trait = id.index;
         for (int32:k in 0i32...tn) {
             drop locks_widen_decl(x, raw item_member(x.ast, d, k), scope);
         }
+        x.cur_trait = 0i32;
         pass NIL;
     }
     pass NIL;
@@ -605,9 +796,31 @@ func:raise_held = int32(Locks->:x, int32:caller, StmtId:id, int32:held) never fa
     pass lo;
 };
 
-// The lowest level an initialiser's calls reach, unwrapping the operators that sit
-// between a binding and its acquisition — `relay await cfg_lock.acquire(…)` is
-// three of them before the call is reached.
+// WHAT A CALL OF THIS FUNCTION MAY LEAVE HELD in the value it returns, or none:
+// the question the binding rule asks, and the one a caller's own `hold_min`
+// absorbs.
+func:call_holds = int32(Locks->:x, int32:target) never fails {
+    if (target <= 0i32)          { pass (raw LOCK_NONE_MIN()); }
+    if (target >= x.table.count) { pass (raw LOCK_NONE_MIN()); }
+    // A BOUND OF NOTHING HOLDS NOTHING (1.6.1e step 3): the sentinel is not a
+    // level, and read as one it would be the lowest there is.
+    if (raw bound_is_nothing(x, target)) { pass (raw LOCK_NONE_MIN()); }
+    if (x.table.has_bound[target => int64]) {
+        // A `<= N` bound stands in for the body here as it does at the call
+        // (D-113): N is what the caller must assume it now holds. An exact
+        // clause's ceiling does not stand in -- the declaring method is seeded
+        // as a holder at its level and an implementation's own summary is read
+        // (see `LockTable.bound`).
+        if (!(x.table.bound_exact[target => int64])) {
+            pass (x.table.bound[target => int64]);
+        }
+    }
+    pass (x.table.hold_min[target => int64]);
+};
+
+// The lowest level an initialiser's calls may leave held, unwrapping the operators
+// that sit between a binding and its acquisition — `relay await cfg_lock.acquire(…)`
+// is three of them before the call is reached.
 func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
     if (raw expr_is_none(id))  { pass (raw LOCK_NONE_MIN()); }
     if (depth <= 0i32)         { pass (raw LOCK_NONE_MIN()); }
@@ -615,10 +828,7 @@ func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
 
     int32:target = raw call_target(x, id, n);
     if (target != 0i32) {
-        if (x.table.has_bound[target => int64]) {
-            pass (x.table.bound[target => int64]);
-        }
-        pass (raw table_min(x, target));
+        pass (raw call_holds(x, target));
     }
 
     // `Guard<T>:g = relay await m.acquire(…);` — the binding this walk's own
@@ -674,18 +884,32 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
         drop locks_call(x, caller, target, held, n.span);
     }
     int32:mlv = raw mutex_acquire_level(x, n);
-    if (mlv == (raw LOCK_NONE_MIN())) { mlv = raw sync_wait_level(x, n); }
+    bool:m_holds = true;
+    if (mlv == (raw LOCK_NONE_MIN())) {
+        mlv = raw sync_wait_level(x, n);
+        m_holds = false;
+    }
     if (mlv != (raw LOCK_NONE_MIN())) {
         if (!x.reporting) {
             drop table_widen(x, caller, mlv, mlv);
+            // AN ACQUISITION MAY BE RETURNED; A WAIT IS OVER WHEN IT RETURNS.
+            if (m_holds) { drop table_hold(x, caller, mlv); }
         } else {
             bool:m_ord_ok = false;
             if (held == (raw LOCK_NONE_MAX())) { m_ord_ok = true; }
             if (mlv > held) { m_ord_ok = true; }
             if (!m_ord_ok) {
+                // THE VERB IS THE ONE WRITTEN (1.6.1e step 3). The sentence said
+                // "`acquire`" of every typed operation -- of a `read`, a
+                // `timedwait`, an `arrive` -- and a reader told that `acquire`
+                // takes a level looks for an `acquire`; a `send` least of all
+                // reads as one.
                 string:q1 = string_concat("this holds lock level ",
                                                 int_to_string(held => int64));
-                string:q2 = string_concat(q1, " and `acquire` takes level ");
+                string:q1b = string_concat(q1, " and `");
+                string:q1c = string_concat(q1b,
+                    raw intern_get(x.interns, (raw expr_name(n)) =>! int32));
+                string:q2 = string_concat(q1c, "` takes level ");
                 string:q3 = string_concat(q2, int_to_string(mlv => int64));
                 string:q4 = string_concat(q3,
                     " from the receiver's own type; acquisition must strictly increase, or a cycle of threads each waiting on the next becomes possible (D-056)");
@@ -787,17 +1011,38 @@ func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at
     int32:lo = raw table_min(x, target);
     int32:hi = raw table_max(x, target);
 
-    if (x.table.has_bound[target => int64]) {
-        // A BOUND STANDS IN FOR THE BODY (D-113). `acquires <= N` says nothing
-        // above N is reached, so N is what the caller must assume — and it is
-        // finite, which is what makes the walk terminate at a trait object instead
-        // of following a call that could reach anything.
-        lo = x.table.bound[target => int64];
-        hi = lo;
+    if (raw bound_is_nothing(x, target)) {
+        // A BOUND OF NOTHING IS NOT A LEVEL (1.6.1e step 3). A method whose
+        // trait declares no `acquires` may acquire nothing at all, so a call of
+        // it contributes NO level to its caller -- through the trait or by the
+        // implementation's own name. An implementation that acquires anyway is
+        // refused where it is written (LOCK-002, `check_against_bound`), once;
+        // its callers are not told a second time about what it reaches.
+        lo = raw LOCK_NONE_MIN();
+        hi = raw LOCK_NONE_MAX();
+    } else {
+        if (x.table.has_bound[target => int64]) {
+            // A BOUND STANDS IN FOR THE BODY (D-113). `acquires <= N` says nothing
+            // above N is reached, so N is what the caller must assume — and it is
+            // finite, which is what makes the walk terminate at a trait object instead
+            // of following a call that could reach anything.
+            //
+            // AN EXACT CLAUSE'S CEILING DOES NOT (1.6.1e step 3): the method
+            // that declares `acquires N` is already an acquirer at N by the
+            // seed, and an implementation named directly keeps the summary of
+            // its own body -- standing N in for it would hide a level BELOW N
+            // the body is seen to take.
+            if (!(x.table.bound_exact[target => int64])) {
+                lo = x.table.bound[target => int64];
+                hi = lo;
+            }
+        }
     }
 
     if (!x.reporting) {
         drop table_widen(x, caller, lo, hi);
+        // What the callee may hand back held, the caller may hand on.
+        drop table_hold(x, caller, raw call_holds(x, target));
         pass NIL;
     }
 
@@ -832,19 +1077,41 @@ func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) never fails {
     int32:bound = x.table.bound[decl => int64];
     int32:hi = raw table_max(x, decl);
     if (hi == (raw LOCK_NONE_MAX())) { pass NIL; }
+
+    // A BOUND OF NOTHING, AND THE BODY REACHES A LEVEL (1.6.1e step 3; the
+    // library listener's vf0831). Asked before the comparison below, which
+    // would read the sentinel as the lowest level there is and say "bound by
+    // `acquires <= -2147483647`". The sentence names what is MISSING, because
+    // the fix is on the trait -- declare the level a call through it may
+    // reach -- or in this body, and neither is found by reading a number.
+    if (raw bound_is_nothing(x, decl)) {
+        string:n1 = "this implements a trait method that declares no `acquires <= N`, so a call through the trait may hold anything and this may acquire nothing; it can reach level ";
+        if (x.cur_trait != 0i32) {
+            n1 = "this is the default body of a trait method that declares no `acquires <= N`, so a call through the trait may hold anything and the body may acquire nothing; it can reach level ";
+        }
+        string:n2 = string_concat(n1, int_to_string(hi => int64));
+        drop locks_err(x, raw LOCK_EXCEEDS_BOUND(),
+            string_concat(n2, " (D-056, D-113)"), d.span);
+        pass NIL;
+    }
     if (hi <= bound) { pass NIL; }
 
     // WHO DECLARED THE BOUND (1.0.8). A trait method's bound is inherited by
     // the implementation whether or not it repeats the clause
     // (`inherit_trait_bound`), and this is reported at the IMPLEMENTATION —
     // so "this declares" was said about a method that wrote no clause.
+    //
+    // AND IN WHICH FORM (1.6.1e step 3): an exact `acquires N` on the trait's
+    // method is quoted as it is written, not as the `<=` nobody wrote.
     LevelRead:own = raw read_acquires(x, d);
+    string:form = "acquires <= ";
+    if (x.table.bound_exact[decl => int64]) { form = "acquires "; }
     string:m1 = "";
     if (own.found) {
-        m1 = string_concat("this declares `acquires <= ",
+        m1 = string_concat(string_concat("this declares `", form),
                                  int_to_string(bound => int64));
     } else {
-        m1 = string_concat("this implementation is bound by `acquires <= ",
+        m1 = string_concat(string_concat("this implementation is bound by `", form),
                                  int_to_string(bound => int64));
         m1 = string_concat(m1, "`, declared by the trait method it implements, and can reach level ");
     }
@@ -880,6 +1147,14 @@ pub func:locks_unsettled = NIL(Locks->:x, Span:sp) never fails {
 // undeclared method may not acquire at all". It is not a special case to remember:
 // no clause means no permission, the same shape that makes a trait method with no
 // body a real absence rather than a flag (D-103).
+//
+// THE PARAGRAPH ABOVE WAS A PROMISE THE CODE UNDER IT DID NOT KEEP until 1.6.1e
+// step 3 (the library listener's vf0831): with no clause on the trait's method
+// this function set NOTHING, so the implementation was unbounded and acquired
+// what it liked behind a call the caller read as acquiring nothing. An exact
+// `acquires N` set nothing either. All three shapes are copied now -- the
+// absence as `LOCK_NONE_MAX` (`bound_is_nothing`), the two clauses as their
+// level, the exact one marked so (`LockTable.bound`).
 func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) never fails {
     DeclNode:m = raw ast_decl(x.ast, method);
     if (m.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
@@ -905,12 +1180,24 @@ func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) never 
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, i));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(tm)) == name) {
+                // THE TRAIT'S CLAUSE IS READ WHERE THE TRAIT WAS WRITTEN. The
+                // impl may sit in another module, and a level is folded in a
+                // scope (`read_acquires`): the one the clause's own names mean
+                // something in is its declaration's (D-137).
+                int32:saved = x.cur_scope;
+                x.cur_scope = raw symtab_home_scope(x.tab, tdecl, saved);
                 LevelRead:b = raw read_acquires(x, tm);
+                x.cur_scope = saved;
+                if (!b.written) {
+                    x.table.bound[method.index => int64] = raw LOCK_NONE_MAX();
+                    x.table.has_bound[method.index => int64] = true;
+                    x.table.bound_exact[method.index => int64] = false;
+                    pass NIL;
+                }
                 if (b.found) {
-                    if (b.bounded) {
-                        x.table.bound[method.index => int64] = b.level;
-                        x.table.has_bound[method.index => int64] = true;
-                    }
+                    x.table.bound[method.index => int64] = b.level;
+                    x.table.has_bound[method.index => int64] = true;
+                    x.table.bound_exact[method.index => int64] = !b.bounded;
                 }
                 pass NIL;
             }

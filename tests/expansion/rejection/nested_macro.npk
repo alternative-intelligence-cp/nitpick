@@ -1,0 +1,43 @@
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 25:5
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 34:9
+//
+// A `macro:` DECLARED INSIDE A MACRO BODY IS REFUSED WHERE IT IS WRITTEN (DEF-173,
+// 1.6.1e step 3).
+//
+// Macros are collected ONCE, before the first round, from the modules' own
+// members. One that an expansion emitted would enter no table, so nothing could
+// ever invoke it -- the body is asking for something the expansion order cannot
+// give. It is refused at the nested declaration, at the declarations, whether or
+// not the outer macro is invoked (`outer_unused` is not) and however deep in the
+// body it sits (an `impl` the body emits holds the second), and the program is
+// not expanded.
+//
+// IT WAS `NITPICK-MACRO-006`: the clone has no case for the kind, so the outer
+// macro's first instantiation reported "this declaration kind has no entry in the
+// macro clone, so a macro body containing one would be silently emitted
+// incomplete" -- a defect of the compiler by its own sentence, about a program that
+// was simply wrong -- and an uninvoked one was accepted.
+mod:nested_macro;
+
+macro:outer = () {
+    macro:inner = () { 1i32; };
+    func:emitted = int32() never fails { pass 2i32; };
+};
+
+#outer();
+
+struct:Holder = { int32:v; };
+macro:outer_unused = () {
+    impl:Holder = {
+        macro:deeper = () { 3i32; };
+    };
+};
+
+// --- control: a macro declared BESIDE the one that needs it, and invoked from its body
+macro:helper = () { 4i32; };
+macro:uses_helper = () { func:four = int32() never fails { pass #helper(); }; };
+#uses_helper();
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

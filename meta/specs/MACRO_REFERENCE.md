@@ -54,6 +54,17 @@ A body that is **nothing but a single invocation** — `macro:alias = () { #b();
 body, and at statement position it becomes a block holding `#b();` that the next
 round expands. Both work.
 
+**At a declaration site the alias is passed through** (DEF-171, 1.6.1e step 3): at
+module level, in a `struct` body and in an `impl` or `trait` body, the alias's one
+invocation — its arguments substituted — stands as a splice where the alias stood,
+and the next round expands it as what its target is. An alias of an alias takes one
+round each. A target that does not fit the site is refused by the target's own
+check, once, at the alias's body, with the note naming the alias's invocation.
+(Until that step all three sites refused the alias with `NITPICK-MACRO-005` for
+being an expression body, whatever `b` was — the library listener's `mc0046b`.)
+`#caller(name)` and a compiler builtin (`#size_of<T>()`) are values, not aliases: a
+body that is one of those is an expression body, and a declaration site refuses it.
+
 ## 2. Invoking one
 
 ```nitpick
@@ -87,9 +98,23 @@ holds, and how a body reaches it:
 
 The struct case is the one that is not a copy. `int32:x;` parses as a STATEMENT
 inside a macro body and as a FIELD inside a struct — different grammars reading the
-same text — so splicing one into the other is a conversion. A variable declaration
-carrying an initialiser or a qualifier is refused rather than stripped: a field has
-neither, and losing a `fixed` quietly is worse than not accepting the program.
+same text — so splicing one into the other is a conversion. **A qualifier and a
+`limit` travel to the field**: `fixed int32:a;` spliced into a struct body is a
+`fixed` field — a later `s.a = 5i32;` is `NITPICK-ASSIGN-002`, exactly as on a field
+written by hand — and `limit<r> int64:n;` is a limited field (D-308). **An
+initialiser is refused** (`NITPICK-MACRO-005`): a field has none, and dropping a
+value quietly is worse than not accepting the program.
+
+> *[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `mc0085b`).]*
+> This paragraph said "a variable declaration carrying an initialiser or a qualifier
+> is refused rather than stripped: a field has neither" until this step. It described
+> the splice before 1.0.8, which wrote no qualifier onto the field, and fields before
+> D-287 and D-308 gave them `fixed` and `limit`. The qualifier has travelled since
+> 1.0.8 and the rule since 1.5.8b step 6; the compiler was right and the sentence
+> stale, so the step withdrew the refusal its plan had scheduled.
+> `tests/analysis/rejection/spliced_fixed_field.npk` pins the travelling qualifier
+> beside its hand-written twin, `tests/expansion/rejection/field_initialiser.npk` the
+> initialiser's refusal with and without `fixed`.
 
 **An enum body is refused**, and that is the absence of a spelling rather than a
 restriction: a variant is a name with an optional payload, no macro body can contain
@@ -110,6 +135,19 @@ macro:make_const = (N) {
 
 Substitution traverses the whole emitted subtree. It is not textual: the argument
 is an AST node and lands as one.
+
+> *[2026-09-30, 1.6.1e step 3 — a dated note (DEF-189, OPEN).]* Two positions are
+> NOT yet reached by substitution: a **type** and a **pattern** written in the body
+> — an array size `int32[N]`, a `comptime` argument, a pattern's value `(K)`. The
+> clone copies both through (§6), so a parameter written there stays the bare name
+> and resolves by the body's own rule (§5): refused where the module has no such
+> name (`NITPICK-TYPE-004`, `NITPICK-RESOLVE-002`), and **read as the module's
+> binding where it has one** — beside a module-level `fixed int32:N = 2i32;`,
+> `#mk(3i32)` over `macro:mk = (N) { int32[N]:a = …; }` builds a two-element array,
+> in silence, on every compiler to date (found by the step's own probes, measured at
+> both legs). The sentence above is the rule; the compiler does not keep it in
+> those two positions until DEF-189 lands. Do not write a parameter in a type or a
+> pattern until then.
 
 ## 4. Emission
 
@@ -254,6 +292,39 @@ macro:outer = () { #inner(); func:f3 = int32() { pass 30i32; }; };
 The loop repeats until no invocation remains. This holds for splices too — a
 struct-body macro may expand to a body containing another struct-body macro.
 
+**Expansion reaches every position an expression is written in** (DEF-170, 1.6.1e
+step 3). Until that step the walk followed a statement's condition and body and a
+declaration's body and initialiser, and an invocation anywhere else was
+`NITPICK-MACRO-006` — the compiler's own defect code — in a correct program (the
+library listener's `mc0278`, a `while`'s `decreases`). It follows what the clone
+and the depth pass enumerate:
+
+- a loop's `invariant` and `decreases`, in every loop form;
+- a function's contracts — `requires`, `ensures`, `decreases`, `acquires`, `joins`;
+- a `Rules` block's clauses;
+- the expressions inside a **type**, wherever the type stands — an array size and
+  a `comptime` argument (`int32[#n()]`, `Mutex<Config, #lvl()>`) in a binding, a
+  parameter, a field, a return type, a cast's target, a generic argument, a
+  pointee, an impl's target or trait, an `assoc` default, a generic bound;
+- a `pick` pattern's value and a range pattern's bounds;
+- a variant's value, a `unit:` right-hand side, an `error:` code, an attribute's
+  arguments, an extern function's `fails on` predicate.
+
+`tests/backend/programs/macro_walk_positions.npk` observes each through a value.
+
+**A type, a pattern, an attribute and a generic parameter written in a macro body
+are the template's own nodes.** The clone copies them through, so every
+instantiation of the body points at ONE node, and an invocation inside it is
+expanded in place the first time an instantiation leads the walk to it — once, for
+all of them. Nothing there depends on the instantiation, because no macro parameter
+is substituted into one (§3's dated note, DEF-189).
+
+**A pattern's kind is the parser's.** `(1i32..5i32)` is a range pattern because the
+parser saw the `..`; `(#m())` is a value pattern, read before anybody knows what `m`
+is. A macro whose body is a range therefore cannot stand as a WHOLE pattern —
+`NITPICK-MACRO-005` at the pattern. Write the range in the pattern and expand its
+bounds: `(#lo()..#hi())`.
+
 **Expansion precedes `comptime` evaluation**, and `comptime` delegates to the
 expanded AST (§8).
 
@@ -263,9 +334,50 @@ expanded AST (§8).
 macro:m = () { #m(); };      // refused
 ```
 
-**A depth bound** limits one invocation's nesting; **an iteration bound** limits
-the fixed-point loop. Exceeding either is an ordinary compile error naming the
-macro and the chain that reached the bound. **And no tree nests deeper than 256 levels**
+**A macro that reaches itself never settles, and that is decided at the
+declarations** (DEF-172, 1.6.1e step 3). After the macros are collected and before
+the first round, the compiler reads the invocation graph of each module's macros —
+a macro's edges are the `#name(...)` written anywhere between its body's braces
+that name a macro of the same module (D-124: another module's macro is no edge, so
+two modules' macros form no cycle) — and refuses every cycle once:
+`NITPICK-MACRO-004` at the declaration of the cycle's first macro in source order,
+the shortest chain in the sentence — "macro `ping_m` never settles: `ping_m` invokes
+`pong_m`, which invokes `ping_m`". A body has no conditional, so a cycle in this
+graph is non-termination the moment any member is invoked, and it is refused
+UNINVOKED: the example above is refused where it stands. A program refused here is
+not expanded.
+
+**The edge is what the body writes**, not what an instantiation happens to keep.
+`macro:a = () { #ign(#a()); };` is refused although `ign` discards its argument: the
+rule is one syntactic reading of the declarations, and a rule that depended on what
+every other macro does with its parameters would change a declaration's verdict
+when an unrelated body was edited.
+
+> *[2026-09-30, 1.6.1e step 3 — what this replaced.]* The declaration above was
+> ACCEPTED while nothing invoked it (the library listener's `mc0246`), and an invoked
+> cycle ran the rounds to their bound and was reported at `prelude.npk:17:1` — module
+> 0's root, a file the reader did not write — in a sentence naming neither macro
+> (`mc0251`).
+
+**A depth bound** limits one invocation's nesting; **an iteration bound** — 32
+rounds — limits the fixed-point loop. With the cycles refused at the declarations,
+what reaches the iteration bound is a chain that is finite and too long: each round
+expands one level, so a chain of exactly 32 macros settles on the last round and is
+accepted, and a 33rd link is `NITPICK-MACRO-004` at the first invocation still
+standing in the program's own text after the last round, naming its macro.
+
+**A `macro:` declared inside a macro body is refused where it is written**
+(`NITPICK-MACRO-005`): macros are collected once, before expansion begins, so one
+that an expansion emitted could never be invoked. (It was `NITPICK-MACRO-006`, from
+the clone, and only when the outer macro was invoked.)
+
+**A diagnostic inside an expansion is annotated once.** `NITPICK-MACRO-009` is the
+note "the X at line N lies in a macro body that this invocation expanded"; it
+annotates a diagnostic and never another note (DEF-173: the driver called the
+annotation twice at four of its returns since 0.7.8, and the second pass annotated
+the first pass's notes).
+
+**And no tree nests deeper than 256 levels**
 (`AST_DEPTH_MAX`, DEF-150, 1.6.1e step 2): no node sits more than 256 levels below
 its root — a function's body block is the first level, a module-level initialiser's
 expression its own first — so no walk of the compiler recurses further. The parser
@@ -285,9 +397,10 @@ A program that did not parse is not expanded (the rule the pipeline applies afte
 expansion, one stage earlier), so a macro whose body the parser refused reports
 that refusal alone.
 
-The two are separate because they are different mistakes: deeply nested is a
-program that is too complicated, mutual recursion is a program that does not
-terminate, and one budget would report them alike.
+The two bounds are separate because they are different mistakes: deeply nested is
+one invocation that is too complicated, a chain past the round bound is too many
+layers of macros each invoking the next, and one budget would report them alike. A
+cycle is neither — it does not terminate, and it is refused at its declaration.
 
 > **New in D-057.** Nothing in the corpus bounds the loop, so the prototype **fails
 > to terminate** on the macro above. That is unacceptable in a compiler under
@@ -313,7 +426,14 @@ statement kind; the scan afterwards cannot, so a miss arrives as a refusal namin
 the invocation rather than as a body that quietly never expanded.
 
 A macro body is exempt, because a body is a **template** — the invocations written
-in one are consumed when the macro is cloned, not where they appear.
+in one are consumed when the macro is cloned, not where they appear. **Except what
+the walk reached** (1.6.1e step 3): a template's type, pattern, attribute or generic
+bound is shared by every instantiation (§6), so an expression there that an
+instantiation led the walk to IS in the program, and an invocation still standing in
+one is refused like any other — `(#no_such())` as a pattern in an instantiated body
+used to pass the whole front half unexpanded and die in the emitter. `#caller(name)`
+in such a shared position is `MACRO-008` with its own sentence: it is copied through
+rather than cloned, so it has no one invocation site to name.
 
 ---
 
@@ -344,6 +464,15 @@ Recovered from `COMPTIME-001…013`:
 | size and alignment intrinsics | `COMPTIME-003`, `COMPTIME-004` |
 | built-in macros inside `comptime(…)` | `COMPTIME-007` |
 | `assert_static comptime(…)`, short-circuiting to the verifier | `COMPTIME-008` |
+
+> *[2026-09-30, 1.6.1e step 3 — a dated note (D-338).]* String **ordering** is not
+> evaluated yet. A string is ordered only by `a.cmp(b)`, which answers an `Ordering`
+> (D-093, D-330), and the evaluator holds no enum value and runs no `pick`, so the
+> row's "ordering" is `NITPICK-TYPE-004` today (the library listener's `mc0309b`).
+> D-338 (the user, 2026-09-30) settles that it is IMPLEMENTED — a payload-less enum
+> value, `==`/`!=` on it, `pick` over a constant selector, `a.cmp(b)` on two constant
+> strings held equal to the run-time order by a test — as 1.6.1e step 3b.
+> Concatenation, equality and length work as the row says.
 
 **This is an interpreter for a subset of the language, not a constant folder.** It
 executes loops and mutates locals, which means anything it can express is something
@@ -378,6 +507,14 @@ discover by accident.
 The diagnostic names **the offending expression** and, where the failure is inside
 nested `comptime func:` calls, **the call chain** that reached it
 (`COMPTIME-009`). A comptime failure is a compile error.
+
+The chain is in the sentence (1.6.1e step 3; the library listener's `mc0344` — it
+was promised here and written nowhere): the report keeps the offending expression's
+span and ends "; reached through the compile-time calls `outer_call` -> `inner_div`",
+outermost first, a name entered several times in a row written once with its count
+(`deep` (x64) at the depth bound). One expression's failure is still one report,
+whichever path reaches it first — the typer folding it where it stands, or a call
+evaluating it.
 
 ### And when it does not finish
 

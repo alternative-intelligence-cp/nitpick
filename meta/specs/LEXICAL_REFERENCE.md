@@ -317,6 +317,48 @@ TypeSuffix     ::= "u8" | "u16" | "u32" | "u64" | "u128"
                  | "char8" | "char16" | "char32"
 ```
 
+> **A float literal is read by its production** (DEF-166, 1.6.1e step 3). Its
+> numeric BODY is decimal digits, a dot, decimal digits, and an exponent only where
+> the `e`/`E` is followed by a digit, or by a sign and then a digit; `_` separators
+> are ignored, and the text the literal keeps carries none. The `[0-9a-zA-Z_]` run
+> behind the body is the TAIL, and the tail is one `TypeSuffix` or nothing: any other
+> tail is **`NITPICK-LEX-009`** at the literal — "`f512` is not a literal suffix: a
+> float literal ends in `f32`, `f64`, a `tfp` width or `dim256`, or in nothing" —
+> with the token still a float literal, so the parser adds no second sentence about
+> the one mistake (D-240). A sign belongs to a literal only inside such an exponent:
+> `3.5f64-x` is a literal, a minus and a name, and `3.5e-x` is the literal `3.5e` (a
+> bad tail), a minus and a name. A float's whole part is decimal digits, so
+> `0FFhex.5`, `12i32.5` and `1e5.0` are not floats: each is an integer literal (or a
+> refused one), a dot and what follows, for the integer scan and the parser to
+> answer. `0...4` stays a range: a float needs a digit after its dot.
+>
+> Whether a suffix SUITS a literal with a fraction is the checker's question, not
+> the lexer's. `f32`, `f64`, a `tfp` width and `dim256` make a float or fixed-point
+> literal; an integer, `tbb` or `char` suffix on a literal with a fraction is
+> `NITPICK-TYPE-031` whatever the value — `2.0i32` too: a literal with a fraction is
+> not an integer literal (DEF-167; inside `comptime(…)` or an array size the folder
+> reports it first, `NITPICK-TYPE-004`, one report either way); `f128` is
+> `NITPICK-TYPE-030`, since `flt128` has no literals (D-143).
+>
+> *What it replaced, each measured on `5fbaf4a`.* The scan was `digits . ident-part*`,
+> then ANY sign, then `ident-part*`, the whole run kept as the literal's text and only
+> its end asked for a suffix. So a tail naming no suffix was never looked at
+> (`1.5f512`, `3.14flt32` and `1.0f64x` compiled as the number in front — the library
+> listener's `ty0178` and `ty0189b` — and `1.5garbage` reached `llc` as written); **a
+> sign after any float was swallowed with what followed it** (DEF-174: `flt64:y =
+> 3.5f64-x;` stored 3.5 at both legs, in silence, and `2.5-1.5` was a literal and a
+> member access); and a `_` separator rode into the kept text (DEF-175:
+> `1_000.5tfp64` folded to 1.0 and `1_000.5f64` was refused by `llc`).
+>
+> *Still open (DEF-190).* Both scans, the integer's and the float's, accept a `_`
+> the `DecimalLiteral` production does not: a digit run may END in one or double one
+> (`10_`, `1_i32`, `1__0`, `1_.5`), ignored like any other — the integer scan since
+> the lexer was written, the float scan in agreement with it. No value changes, but
+> a numeral that ends in a separator reads as an unfinished one (`30_` where
+> `30_000` was meant compiles as 30). The production is the rule; the scans are to
+> be tightened to it. No file of the tree, the libraries or the applications writes
+> one (3,727 files scanned, 2026-09-30).
+
 > **D-148 — the literal envelope.** A numeric literal's value lies in the
 > signed 64-bit envelope, verified EXACTLY at scan time (`NITPICK-LEX-004`),
 > and must fit its type — suffixed or contextual — verified at the literal

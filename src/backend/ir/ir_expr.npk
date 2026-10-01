@@ -7997,9 +7997,11 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // `io_watch(fd, events)` (1.1.13b): the registration half of
     // `suspend_io`, alone — arm the one-shot with the current task as
     // payload, park NOWHERE. The dual/triple waits register N-1 descriptors
-    // here and park once through the `suspend_io` that follows. Legal in
-    // sync code (it suspends nothing), though only an async park can ever
-    // consume the wake.
+    // here and park once through the `suspend_io` that follows. It suspends
+    // nothing, so it lowers in any body -- but the CHECKER admits it only
+    // inside an `async` function since 1.6.1e step 3 (DEF-169, TYPE-043): the
+    // payload is the current task, and called where none runs it faulted the
+    // machine.
     if (raw string_eq(name, "io_watch")) {
         IrVal:iwfd = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
         if (!(raw iv_is_ok(iwfd))) { pass iwfd; }

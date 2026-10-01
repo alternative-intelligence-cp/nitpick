@@ -1,0 +1,83 @@
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 51:19
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 54:18
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 55:12
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 55:50
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 56:18
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 57:18
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 58:17
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 59:18
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 60:22
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 61:24
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 69:5
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 69:36
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 71:5
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 71:21
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 72:24
+//
+// `flt256` AND `flt512` ARE RESERVED WORDS, NOT TYPES (D-143; TYPE_REFERENCE §1.4;
+// 1.6.1e step 3, the library listener's `ty0176`). The reference says "the
+// resolver refuses them", and until this step it did not: the generated scalar
+// table answers both words as floats of 256 and 512 bits, so every line below
+// type-checked and the program died in the emitter as EMIT-002 -- the compiler
+// confessing a defect about a program's mistake. `NITPICK-TYPE-001` at each
+// SPELLING, in every position a type stands -- a field, a parameter, a return,
+// a pointee, an array and a slice element, an `Optional`, a generic argument, a
+// function type, a binding, a cast target, `#size_of` -- and ONE report per
+// spelling (D-240): the cast and the initialiser beside a refused type add no
+// sentence of their own (`main`'s first line spells the word twice and is
+// reported twice, the listener's own line).
+//
+// The controls: the three float types there are -- `flt128` as the storage
+// format D-143 makes it, held, passed and returned with no literal, arithmetic
+// or comparison of its own.
+mod:flt_reserved;
+
+struct:Box<T> = { T:v; };
+struct:Holder = { flt256:f; int32:n; };
+
+func:vf64 = flt64(flt64:x) never fails { pass x; };
+func:par = int32(flt512:p) never fails { pass 1i32; };
+func:ret = flt256() never fails { pass 1.5f64 => flt256; };
+func:ptr = int32(flt256->:p) never fails { pass 2i32; };
+func:arr = int32(flt512[4]:a) never fails { pass 3i32; };
+func:sl = int32(flt512[]:a) never fails { pass 3i32; };
+func:opt = int32(flt256?:a) never fails { pass 3i32; };
+func:gen = int32(Box<flt256>:b) never fails { pass 4i32; };
+func:fnty = int32(func flt256(int32) never fails:f) never fails { pass 5i32; };
+
+// The controls.
+struct:Kept = { flt32:a; flt64:b; flt128:c; };
+func:keep = flt128(flt128:q) never fails { pass q; };
+func:wide = flt64(flt32:s) never fails { pass s => flt64; };
+
+func:main = int32(cstring[]:_~argv) {
+    flt256:x = raw vf64(1.5f64) => flt256;
+    flt64:y = 1.5f64;
+    flt512:z = y => flt512;
+    int64:s = #size_of<flt256>();
+    flt32:lo = 2.5f32;
+    flt64:hi = raw wide(lo);
+    discard(x); discard(z); discard(s); discard(hi);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

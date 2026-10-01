@@ -1,0 +1,50 @@
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 31:17
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 38:26
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 40:66
+//
+// A MACRO WHOSE BODY IS A RANGE CANNOT STAND AS A WHOLE PATTERN (DEF-170, 1.6.1e
+// step 3 -- the one pattern position that cannot hold what was substituted).
+//
+// A pattern's KIND is the parser's: `(1i32..5i32)` is a range pattern because the
+// parser saw the `..` and put the two bounds on the pattern, and `(#m())` is a value
+// pattern, read before anybody knows what `m` is. The expansion walk substitutes an
+// invocation in a pattern in place, like any expression -- and a range substituted
+// into a VALUE pattern is a range value where one value is matched, which no later
+// stage reads as a range pattern. Before the walk reached patterns the invocation
+// was simply never expanded (MACRO-006); the first form of the fix let this through
+// the whole front half and the emitter refused it as a defect of its own. It is a
+// body that does not fit where it landed, and it is refused as that, at the
+// pattern.
+//
+// THE RANGE IS WRITTEN IN THE PATTERN AND ITS BOUNDS EXPANDED -- the control below,
+// which reports nothing.
+mod:pattern_range_body;
+
+macro:low_digits = () { 1i32..5i32; };
+macro:lo = () { 1i32; };
+macro:hi = () { 5i32; };
+
+func:whole_range = int32(int32:n) never fails {
+    pick (n) { (#low_digits()) { pass 1i32; }, (*) { pass 0i32; } }
+    pass 0i32;
+};
+
+// The same pattern inside a macro body: one node, shared by every instantiation, and
+// refused where the body wrote it -- with the note that names the instantiation.
+macro:classify = () {
+    pick (#caller(v)) { (#low_digits()) { #caller(r) = 1i32; }, (*) { #caller(r) = 0i32; } }
+};
+func:through_body = int32(int32:v) never fails { int32:r = 0i32; #classify(); pass r; };
+
+// --- control: the bounds are invocations, the range is the pattern's own -----------
+func:bounds = int32(int32:n) never fails {
+    pick (n) { (#lo()..#hi()) { pass 1i32; }, (*) { pass 0i32; } }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit (raw whole_range(3i32)) + (raw through_body(3i32)) + (raw bounds(3i32));
+};

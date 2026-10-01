@@ -278,6 +278,13 @@ pub func:LOCK_ORDER = string() never fails          { pass "NITPICK-LOCK-001"; }
 // An implementation that can reach above the bound its trait method declared. Its
 // own code: the fix is to lower what the implementation acquires or raise the
 // declared bound, and neither is what a reader of an ordering error would try.
+//
+// THREE SHAPES OF THE BOUND since 1.6.1e step 3 (locks.npk's `LockTable.bound`):
+// above an `acquires <= N`, as it always was; above an EXACT `acquires N` on the
+// trait's method, a checked ceiling; and reaching ANY level -- an acquisition or a
+// wait, in the body or through what it calls -- under a trait method that
+// declares NO clause, which is a bound of nothing (D-056: "an undeclared method
+// may not acquire at all"). A trait's own default body is held to the same three.
 pub func:LOCK_EXCEEDS_BOUND = string() never fails  { pass "NITPICK-LOCK-002"; };
 
 // An `acquires` level that is not a constant. Shares nothing with `TYPE_NOT_CONSTANT`

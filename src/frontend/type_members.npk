@@ -1233,6 +1233,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                         n.span));
                 }
             }
+            drop check_task_builtin(e, n);
             pass (raw type_builtin_regular(e, id, n,
                       raw callee_builtin_name(e, n), start, count));
         }
@@ -2664,6 +2665,50 @@ func:callee_builtin_name = string(ExprTyper->:e, ExprNode:n) never fails {
     if (!(raw is_builtin_name(raw intern_get(e.interns,
                                   raw expr_name(cnode) =>! int32)))) { pass ""; }
     pass (raw intern_get(e.interns, raw expr_name(cnode) =>! int32));
+};
+
+// THE THREE BUILTINS THAT SPEAK FOR THE CURRENT TASK (DEF-168, DEF-169; 1.6.1e
+// step 3; the library listener's `bi0256`). `suspend_until` and `suspend_io`
+// PARK the task and `io_watch` registers it as a descriptor's waiter
+// (BUILTIN_REFERENCE §2b), so each is legal only inside an `async` function --
+// the reference has said so of the first since 1.1.8, and nothing in the
+// checker held any of the three to it. Measured on `5fbaf4a`: a park in a
+// synchronous body was EMIT-002, the compiler confessing a defect about a
+// program's mistake; `io_watch` in a synchronous body COMPILED, and called
+// where no task runs it faulted the machine (`MachineFault`, exit 107, in safe
+// code); and a park inside a `defer` body trapped the COMPILER -- a park's
+// wind-up exit runs the function's defers, so the emitter lowered the defer
+// body inside itself until its own stack was exhausted (exit 3, no message).
+// The two parks are refused in a `defer` body as `await` is there, for
+// `await`'s reason, and the two rules are asked apart as `await`'s are.
+// `io_unwatch` is not here: it is safe with no task (it removes a
+// registration, and removing none is a no-op -- measured in a synchronous
+// `main`, exit 0) and a `defer` is where it belongs.
+func:check_task_builtin = NIL(ExprTyper->:e, ExprNode:n) never fails {
+    bool:park = raw callee_is_builtin_named(e, n, "suspend_until");
+    if (raw callee_is_builtin_named(e, n, "suspend_io")) { park = true; }
+    bool:watch = raw callee_is_builtin_named(e, n, "io_watch");
+    if (!(park || watch)) { pass NIL; }
+    string:b1 = string_concat("`", raw callee_builtin_name(e, n));
+    if (!e.fn_is_async) {
+        if (park) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                string_concat(b1, "` parks the current task and is legal only inside an `async` function (BUILTIN_REFERENCE §2b): a synchronous function has no frame to suspend"),
+                n.span));
+        } else {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                string_concat(b1, "` registers the current task as a descriptor's waiter and is legal only inside an `async` function (BUILTIN_REFERENCE §2b): a synchronous function is not one, and called where no task runs it has none to register"),
+                n.span));
+        }
+    }
+    if (park) {
+        if (e.in_defer) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                string_concat(b1, "` cannot appear inside `defer` (D-177): a defer body is synchronous cleanup, and a suspension inside it would hold the scope's exit open"),
+                n.span));
+        }
+    }
+    pass NIL;
 };
 
 // THE SIGNATURE TABLE'S TYPE TEXTS, INTERNED.

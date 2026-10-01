@@ -1,0 +1,90 @@
+// expect-exit: 0
+//
+// DEF-171 (1.6.1e step 3; the library listener's mc0046b): AN ALIAS IS WHATEVER
+// ITS TARGET IS, AT EVERY SITE (D-125, MACRO_REFERENCE §1). A body that is
+// nothing but one invocation -- `macro:alias = () { #b(); };` -- is read as an
+// expression body, because the parse cannot know what `b` is; and at each of the
+// three declaration sites the check that a body FITS the site then refused the
+// alias for being an expression, whatever `b` was (MACRO-005 at module level, in
+// a struct body and in an impl body, measured). The splice passes the alias
+// through now: its one invocation stands where the alias stood, the arguments
+// substituted, and the next round expands it as what its target is.
+//
+// Each case is observed through what the target emitted: a field that is read, a
+// method the trait requires, a function that is called -- an alias that expanded
+// to nothing would not resolve.
+mod:macro_alias_sites;
+
+// --- a struct body: the target's variable declarations become fields ---------------
+macro:xy = () { int32:x; int32:y; };
+macro:xy_alias = () { #xy(); };
+macro:xy_alias2 = () { #xy_alias(); };          // an alias of an alias: one round each
+struct:Point = { #xy_alias2(); int32:z; };
+
+// --- an impl body: the target's declarations become methods, an argument carried ---
+trait:Scaled = { func:scale = int32(Self:self); };
+macro:scale_by = (K) { pub func:scale = int32(Self:self) never fails { pass (self.x * K); }; };
+macro:scale_alias = (K) { #scale_by(K); };
+impl:Point:Scaled = { #scale_alias(7i32); };
+
+// --- module level: the target's declarations, an argument carried -------------------
+macro:konst = (N) { func:from_target = int32() never fails { pass N; }; };
+macro:konst_alias = (N) { #konst(N); };
+#konst_alias(5i32);
+
+// --- and the two positions that already worked: a value, and a statement ------------
+macro:val = () { 3i32; };
+macro:val_alias = () { #val(); };
+macro:bump = () { #caller(acc) = #caller(acc) + 1i32; };
+macro:bump_alias = () { #bump(); };
+
+func:main = int32(cstring[]:_~argv) {
+    Point:p = Point{ x: 2i32, y: 4i32, z: 6i32 };
+    if ((p.x + p.y + p.z) != 12i32)    { exit 10i32; }
+    if ((raw p.scale()) != 14i32)      { exit 11i32; }
+    if ((raw from_target()) != 5i32)   { exit 12i32; }
+    if (#val_alias() != 3i32)          { exit 13i32; }
+    int32:acc = 0i32;
+    #bump_alias();
+    #bump_alias();
+    if (acc != 2i32)                   { exit 14i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

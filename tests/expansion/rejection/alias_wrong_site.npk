@@ -1,0 +1,41 @@
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 27:28
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 29:23
+// expect-error: NITPICK-MACRO-002
+// expect-error-at: 33:23
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 34:1
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 39:14
+//
+// AN ALIAS IS WHATEVER ITS TARGET IS -- AND A TARGET THAT DOES NOT FIT IS REFUSED
+// ONCE, BY THE TARGET'S OWN CHECK (D-125; DEF-171, 1.6.1e step 3).
+//
+// `macro:alias = () { #b(); };` at a declaration site is passed through: its one
+// invocation stands where the alias stood and the next round expands it as what
+// `b` is (tests/backend/programs/macro_alias_sites.npk has the three sites
+// working). So when `b` does not fit, the refusal is `b`'s -- reported where the
+// alias's body wrote the invocation, with the note that names the alias's own
+// invocation -- and nothing is said about the alias "not being a declaration
+// body", which is the sentence every alias got before this step whatever its
+// target was.
+mod:alias_wrong_site;
+
+// A DECLARATIONS body cannot become fields: the struct site's own refusal.
+macro:methods = () { func:m = int32() never fails { pass 7i32; }; };
+macro:methods_alias = () { #methods(); };
+
+struct:S = { int32:y; #methods_alias(); };
+
+// The target's ARITY is the target's check too: the alias carried one argument on.
+macro:no_params = () { func:n = int32() never fails { pass 1i32; }; };
+macro:carries = (A) { #no_params(A); };
+#carries(1i32);
+
+// A body that is ONE VALUE is not an alias: `#size_of<T>()` is a compiler builtin, so
+// the macro is an expression macro and the site's own check refuses it, as before.
+macro:a_size = () { #size_of<int32>(); };
+struct:T = { #a_size(); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

@@ -1,0 +1,63 @@
+// expect-error: NITPICK-MACRO-004
+// expect-error-at: 28:1
+// expect-error: NITPICK-MACRO-004
+// expect-error-at: 30:1
+// expect-error: NITPICK-MACRO-004
+// expect-error-at: 41:1
+// expect-error: NITPICK-MACRO-004
+// expect-error-at: 47:5
+//
+// A CYCLE IS REFUSED AT THE DECLARATIONS, INVOKED OR NOT (DEF-172, 1.6.1e step 3;
+// the library listener's mc0246). MACRO_REFERENCE §7 writes
+// `macro:m = () { #m(); };      // refused` -- and nothing in this file invokes a
+// single macro. Before this step the compiler ACCEPTED every one of them, because
+// the only thing that noticed a cycle was the round bound, and an uninvoked
+// macro runs no round.
+//
+// ONE REPORT PER CYCLE, AT ITS FIRST MACRO IN SOURCE ORDER, the chain in the
+// sentence. Four cycles, four reports:
+//   `m`           invokes itself (the reference's example)
+//   `ping_a`      invokes `pong_a`, which invokes `ping_a` -- and `pong_a`, the
+//                 second of that cycle, is not reported again
+//   `tri_a`       reaches itself through two others
+//   `in_x`        a cycle inside an inline module, whose macros are its own
+// and `outer_user`, which merely INVOKES a member of a cycle, is the first macro of
+// none and is not reported.
+mod:cycle_uninvoked;
+
+macro:m = () { #m(); };
+
+macro:ping_a = () {
+    func:from_ping = int32() never fails { pass 1i32; };
+    #pong_a();
+};
+macro:pong_a = () {
+    func:from_pong = int32() never fails { pass 2i32; };
+    #ping_a();
+};
+
+macro:outer_user = () { #ping_a(); func:from_user = int32() never fails { pass 3i32; }; };
+
+macro:tri_a = () { #tri_b() + 1i32; };
+macro:tri_b = () { #tri_c() + 1i32; };
+macro:tri_c = () { #tri_a() + 1i32; };
+
+mod:inner = {
+    // `inner`'s own macros. Its `m` is not the file's `m`: it invokes nothing, and is no cycle.
+    macro:in_x = () { #in_y(); };
+    macro:in_y = () { #in_x(); };
+    macro:m = () { 1i32; };
+};
+
+// --- controls: none of these is a cycle ----------------------------------------------
+//
+// A chain that ENDS, however it is written; a macro that invokes another twice; and a
+// macro whose body names a macro only ANOTHER MODULE declares -- `in_x` is `inner`'s,
+// so `#in_x()` written here is no edge (a macro is invocable only in the module that
+// declares it, D-124; invoking `reach_in` would be MACRO-007, and nothing does).
+macro:leaf = () { 1i32; };
+macro:mid = () { #leaf() + #leaf(); };
+macro:top = () { #mid() + #leaf(); };
+macro:reach_in = () { #in_x(); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

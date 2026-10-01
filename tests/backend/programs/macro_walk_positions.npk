@@ -1,0 +1,165 @@
+// expect-exit: 0
+//
+// DEF-170 (1.6.1e step 3; the library listener's mc0278): THE EXPANSION WALK
+// REACHES EVERY EXPRESSION A STATEMENT OR A DECLARATION CARRIES. It followed a
+// statement's condition and body and a declaration's body and initialiser, and
+// nothing else -- so an invocation written anywhere below was never expanded,
+// and the audit refused it as a hole in the walk: `NITPICK-MACRO-006`, "this is
+// a hole in the expander, not a mistake in this program", which was true of
+// every line of this file (thirty-seven sites on the compiler before this step).
+//
+// EACH POSITION IS OBSERVED THROUGH A VALUE THAT IS WRONG IF THE INVOCATION
+// EXPANDED TO ANYTHING ELSE: an array of the wrong size does not take its
+// three-element literal, a loop with the wrong bound stops at another count, an
+// arm with the wrong pattern is not the one taken.
+//
+// AND TWO INSTANTIATIONS OF ONE BODY SHARE WHAT THE CLONE COPIES THROUGH: the
+// type and the pattern in `tally`'s body are one node each, reached through
+// whichever instantiation the walk meets first and substituted in place, once
+// (`expand_in_type`'s comment). Both callers get the answer.
+mod:macro_walk_positions;
+
+macro:one = () { 1i32; };
+macro:three = () { 3i32; };
+macro:four = () { 4i32; };
+macro:five = () { 5i32; };
+macro:sec = () { Seconds; };
+
+// --- a `Rules` block's clauses --------------------------------------------------
+Rules<int32>:small = { $ >= #one(), $ < #five() };
+
+// --- a function's contract window: `requires`, `ensures`, `decreases`, `acquires` -
+func:req = int32(int32:a) requires a >= #one() never fails { pass a; };
+func:ens = int32(int32:a) ensures result >= #one() never fails { pass a + #one(); };
+func:rec = int32(int32:n) decreases n + #one() never fails {
+    if (n <= 0i32) { pass 0i32; }
+    pass (raw rec(n - 1i32));
+};
+struct:Lease = { int32:v; };
+func:take_low = Lease() acquires #one() { pass Lease{ v: 1i32 }; };
+
+// --- the types of declarations: a field, a global, a parameter, a return type, a
+//     variant's payload, a turbofish's argument --------------------------------------
+struct:S = { int32[#three()]:arr; int32:b; };
+fixed int32[#three()]:G = [10i32, 20i32, 30i32];
+func:last_of = int32(int32[#three()]:a) never fails { pass a[2i64]; };
+func:make3 = int32[#three()]() never fails { int32[3]:r = [7i32, 8i32, 9i32]; pass r; };
+enum:P = { Arr(int32[#three()]); Nope; };
+func:bytes_of<T> = int64() never fails { pass #size_of<T>(); };
+
+// --- a variant's value, a unit's right-hand side, an attribute's argument ---------
+enum:E = { A = #one(); B = #three(); };
+unit:PerSec = 1 / #sec();
+#[align(#four())]
+struct:Al = { int32:x; };
+
+// --- a body whose type and pattern hold invocations, instantiated twice -----------
+macro:tally = () {
+    int32[#three()]:buf = [1i32, 2i32, 3i32];
+    pick (buf[0i64]) {
+        (#one()) { #caller(acc) = #caller(acc) + buf[2i64]; },
+        (*)      { #caller(acc) = #caller(acc) + 100i32; }
+    }
+};
+func:first_caller = int32() never fails { int32:acc = 0i32; #tally(); pass acc; };
+func:second_caller = int32() never fails { int32:acc = 10i32; #tally(); pass acc; };
+
+// --- an ARGUMENT's own positions ------------------------------------------------------
+// The argument of an instantiated invocation is cloned into the body and the original
+// is detached. Two things stood in the dead original and were refused as holes: the
+// arms of an expression-`pick` (left unblanked), and a type in an argument the body
+// never mentions (shared with no clone, so walked by nothing).
+macro:same = (X) { X; };
+macro:seven = (X) { 7i32; };
+fixed int32:SEL = 1i32;
+
+func:main = int32(cstring[]:_~argv) {
+    // --- every loop form's `decreases` and `invariant` ----------------------------
+    int32:n = 0i32;
+    while (n < #three()) decreases #three() - n invariant n >= (#one() - 1i32) { n = n + 1i32; }
+    if (n != 3i32) { exit 10i32; }
+    for (int64:i in 0i64...3i64) invariant n >= #three() { n = n + 1i32; discard(i); }
+    if (n != 6i32) { exit 11i32; }
+    when (n < 8i32) decreases (#four() + #four()) - n invariant n >= #one() { n = n + 1i32; } then { n = n + 0i32; } end { exit 12i32; }
+    if (n != 8i32) { exit 13i32; }
+    loop(0i32, 2i32, 1i32) invariant n >= #four() { n = n + 1i32; }
+    till(2i32, 1i32) invariant n >= #five() { n = n + 1i32; }
+    if (n != 12i32) { exit 14i32; }
+
+    // --- a local's type, and a pattern's literal and range bounds -------------------
+    int32[#three()]:arr = [1i32, 2i32, 3i32];
+    int32:picked = 0i32;
+    pick (arr[2i64]) { (#three()) { picked = 1i32; }, (*) { picked = 2i32; } }
+    if (picked != 1i32) { exit 15i32; }
+    pick (n) { (#one()..#five()) { picked = 3i32; }, (#five()...100i32) { picked = 4i32; }, (*) { picked = 5i32; } }
+    if (picked != 4i32) { exit 16i32; }
+
+    // --- a generic VALUE argument, a builtin's and a turbofish's type argument, a
+    //     cast's target ---------------------------------------------------------------
+    limit<small> int32:k = #one();
+    simd<int32, #four()>:v = simd(1i32, 2i32, 3i32, 4i32);
+    if ((#size_of<int32[#three()]>()) != 12i64) { exit 17i32; }
+    if ((raw bytes_of::<int32[#three()]>()) != 12i64) { exit 18i32; }
+    wild int8->:mem = alloc(12i64);
+    wild int32[#three()]->:view = mem =>! wild int32[#three()]->;
+    (<-view)[0i64] = 5i32;
+    if ((<-view)[0i64] != 5i32) { exit 19i32; }
+    dalloc(mem);
+
+    if ((raw first_caller()) != 3i32)   { exit 20i32; }
+    if ((raw second_caller()) != 13i32) { exit 21i32; }
+
+    int32:from_arm = #same(pick (SEL) { (#one()) { give #three(); }, (*) { give 0i32; } });
+    if (from_arm != 3i32)                                    { exit 22i32; }
+    if (#seven(#size_of<int32[#three()]>()) != 7i32)         { exit 23i32; }
+    if (#same(#size_of<int32[#three()]>()) != 12i64)         { exit 24i32; }
+
+    S:s = S{ arr: [4i32, 5i32, 6i32], b: 2i32 };
+    int32[3]:m3 = raw make3();
+    Lease:l = take_low() ?| Lease{ v: 0i32 };
+    Al:al = Al{ x: 1i32 };
+    dim256<PerSec>:rate = 2.0dim256<PerSec>;
+    discard(rate);
+    int32:total = (raw req(1i32)) + (raw ens(1i32)) + (raw rec(2i32))
+                + (raw last_of(arr)) + s.arr[0i64] + G[1i64] + m3[0i64] + v[3i64] + k + l.v + al.x;
+    pick (E.B) { (E.A) { total = total + 100i32; }, (E.B) { total = total + 0i32; } }
+    exit total - 44i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

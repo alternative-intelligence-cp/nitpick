@@ -121,6 +121,23 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw type_kind(@fm.types, fm.ty)) != (raw TY_FLAGS())) { exit 94i32; }
     if ((raw type_elem(@fm.types, fm.ty)) != (raw FLAGS_FMODE())) { exit 95i32; }
 
+    // --- `flt256` AND `flt512` ARE RESERVED WORDS, NOT TYPES (D-143) -----------
+    // The generated scalar table answers both as floats, and until 1.6.1e
+    // step 3 the resolver handed them out: the word type-checked and the
+    // program died in the emitter. Refused BY NAME, as an unknown type, alone
+    // and under a pointer; the three float types there are still resolve.
+    Fix:q256 = raw ty("", "flt256", @it);
+    if (raw errs(@q256) != 1i64)                               { exit 110i32; }
+    if (!(raw string_eq(raw code0(@q256), raw TYPE_UNKNOWN()))) { exit 111i32; }
+    if (q256.ty != 0i32)                                       { exit 112i32; }
+    Fix:q512 = raw ty("", "flt512->", @it);
+    if (raw errs(@q512) != 1i64)                               { exit 113i32; }
+    if (!(raw string_eq(raw code0(@q512), raw TYPE_UNKNOWN()))) { exit 114i32; }
+    Fix:q128 = raw ty("", "flt128", @it);
+    if (raw errs(@q128) != 0i64)                               { exit 115i32; }
+    if ((raw type_kind(@q128.types, q128.ty)) != (raw TY_FLOAT())) { exit 116i32; }
+    if ((raw type_int_bits(@q128.types, q128.ty)) != 128i32)   { exit 117i32; }
+
     // --- `cstring` is its own type, reachable since 0.2.8 -----------------------
     Fix:cs = raw ty("", "cstring", @it);
     if (raw errs(@cs) != 0i64)                                 { exit 25i32; }

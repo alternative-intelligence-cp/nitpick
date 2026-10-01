@@ -422,6 +422,24 @@ and `OPEN_DECISIONS.md`): the ship-list is stale (`MACRO_REFERENCE.md`, added at
 `meta/specs/` inherits every doc-staleness gap in the audit's Theme F before it
 can replace `nitpick-docs`.
 
+## The freeze — after the language is feature-complete (D-335, D-336)
+
+The user's arc, stated 2026-09-26: the language is made **feature-complete to what is planned**, then
+**frozen permanently** -- no breaking change afterwards except for security -- and tested and optimised
+as it stands; new capability goes into libraries. The promise is about PROGRAMS ("a program written in
+nitpick next year would still compile and run 30 years from now"), not tools: the compiler, the floor
+and the toolchain may move underneath.
+
+Two things follow, each with an owner:
+
+- **What is planned is implemented before the freeze, never struck to save work** (D-335: wide strings,
+  1.6.1f; D-338: `comptime` string ordering, 1.6.1e step 3b). Owner: the compiler seat, each as its own
+  subcycle or step.
+- **The compatibility corpus (D-336)** -- the tree's suites, the libraries' programs and the fuzzer's
+  accepted programs, each with its recorded verdict, reproduced by every later change as a stage of both
+  runners. It is chosen AT the freeze, so it is a pre-freeze subcycle: TO BE PLANNED execution-grade when
+  the last language-changing subcycle is in sight. Owner: the compiler seat; the timing is the user's.
+
 ## Ordering notes
 
 - **Diagnostics come first, in 0.0**, not last. They are how every later cycle is

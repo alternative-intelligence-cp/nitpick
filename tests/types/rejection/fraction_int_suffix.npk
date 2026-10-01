@@ -1,0 +1,90 @@
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 55:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 56:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 57:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 58:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 59:16
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 60:16
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 61:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 62:24
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 63:20
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 64:16
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 65:15
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 66:19
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 67:17
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 68:9
+//
+// A LITERAL WITH A FRACTION IS NOT AN INTEGER LITERAL (DEF-167, 1.6.1e step 3).
+// `TypeSuffix` is one production for both literal forms (LEXICAL_REFERENCE §6.2),
+// so `2.5i32` lexes -- and until this step the checker typed it as the `int32`
+// its suffix names, reading the literal's PAYLOAD as its value: a float's
+// payload is the intern index of its text. `int32:z = 2.5i32;` passed the
+// checker and died in the emitter (EMIT-002); `1.5u8` was "does not fit `uint8`"
+// only where the index happened to pass 255. `NITPICK-TYPE-031` at the literal,
+// whatever the value -- `2.0i32` is a fraction too, and the family is the
+// suffix's, never the digits' -- for an integer, a `tbb` and a character suffix,
+// wherever a literal stands: an initialiser, an argument, an operand, a cast's
+// operand, an array's and a struct literal's value, an assignment. ONE report
+// per literal: the slot, the operator and the cast beside it add nothing
+// (D-240).
+//
+// The controls: the suffixes a fraction takes (`f32`, `f64`, a `tfp` width), a
+// fraction with none in a float slot, and whole literals with the three
+// refused families' suffixes.
+mod:fraction_int_suffix;
+
+struct:P = { int32:x; int32:y; };
+
+func:take = int32(int32:v) never fails { pass v; };
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;
+    int32:a = 2.5i32;
+    int32:b = 2.0i32;
+    uint8:c = 1.5u8;
+    tbb32:d = 1.5tbb32;
+    char8:e2 = 1.5char8;
+    char32:f = 65.0char32;
+    int64:g = 2.5e3i64;
+    int32:h = raw take(3.5i32);
+    int32:i2 = n + 2.5i32;
+    int32:j = -2.5i32;
+    flt64:k = 2.5i32 => flt64;
+    int32[2]:l = [1.5i32, 2i32];
+    P:p = P{ x: 2.5i32, y: 1i32 };
+    n = 7.5i32;
+
+    // The controls.
+    flt64:ok1 = 2.5f64;
+    flt32:ok2 = 2.5f32;
+    tfp64:ok3 = 2.5tfp64;
+    flt64:ok4 = 2.5;
+    flt64:ok5 = 2.5e3;
+    int32:ok6 = 2i32;
+    tbb32:ok7 = 2tbb32;
+    char8:ok8 = 65char8;
+    discard(a); discard(b); discard(c); discard(d); discard(e2); discard(f); discard(g);
+    discard(h); discard(i2); discard(j); discard(k); discard(l); discard(p);
+    discard(ok1); discard(ok2); discard(ok3); discard(ok4); discard(ok5); discard(ok6);
+    discard(ok7); discard(ok8);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

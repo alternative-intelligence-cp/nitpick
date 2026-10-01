@@ -3867,6 +3867,8 @@ clock at its resume: at or past the absolute deadline it fails `DeadlineExceeded
 re-acquiring, the guard nulled and the frame off the condvar's list; a signal before the deadline
 succeeds with the guard whole. No floor byte.
 
+*[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `cc0380` and `vf0831`; DEF-181 and S-119 registered).]* Two sentences of this decision were not kept until this step. **"Every blocking primitive … `channel` … carries a compile-time `LEVEL`" was true of the type and read by nothing**: `send` and `recv` are waits at the channel's level now (`sync_wait_level`'s `TY_CHANNEL` arm), ordered against what is held and raising no hold — in the function, and across a call: `LockTable.hold_min` is what a call may leave HELD, fed by a declared `acquires N`, an `acquire`/`read`/`write` and a callee's own hold, and by no wait (the binding rule had read a waiting callee's result as a hold at the wait's level, which refused binding two `recv`s made through one helper — four of the listener's own `expect: run:0` programs the day channels entered the summaries, and a barrier's `arrive` on `5fbaf4a`). **And "an undeclared method may not acquire at all" set nothing**: a trait method with no `acquires` clause now gives its default body and every implementation a BOUND OF NOTHING (`LOCK_NONE_MAX`, read through the one predicate `bound_is_nothing`): `NITPICK-LOCK-002` where the body can reach any level, and a call through the method contributes no level. An exact `acquires N` on a trait's method is a checked ceiling for its implementations. The walk reads the checker's record of a method call (`ExprTypes.callee`) where it re-resolved the receiver and missed a pointer receiver, a free function reached by UFCS, `Trait.m(x)` and a pipe — each an acquisition nobody ordered. **The consequence**: the prelude's traits declare no level, so no implementation of `Writer`, `Reader`, `Iterator`, `ToString` or the rest may acquire or wait; the lock is taken outside the call, the caller's visible act. **What is NOT covered** is stated in VERIFICATION_REFERENCE §7's note of this date: DEF-181's six holes in the walk and the missing floor under a `<=` bound (S-119, the user's) — 1.6.1e step 3c. **Exposure**, by the two-checker sweep over the tree and every `.npk` of the library and application repositories: one file, our own `tests/backend/programs/mutex_basic.npk`, whose channel sat below the mutex its sender held (the channel raised to level 6). `tests/analysis/rejection/chan_levels.npk`, `lock_undeclared.npk`, `lock_calls.npk`; `tests/backend/programs/wait_bound.npk`.
+
 ## D-057 — Macro hygiene and expansion order — **SETTLED**
 
 The macro system is far larger than either document describes, and **its
@@ -3993,6 +3995,8 @@ The shapes that forced it: a 500-deep parenthesised expression, and a 600-term c
 that the parser builds in a loop while the tree is 600 deep — both ran the constant folder, whose
 fuel counts work, off the compiler's stack (exit 3, no message); every whole-body analysis's depth
 reads the same constant.
+
+*[2026-09-30, 1.6.1e step 3 — a dated note (DEF-170, DEF-172, DEF-173; the library listener's `mc0278`, `mc0246`, `mc0251`). DEF-183 and DEF-189 registered OPEN.]* **"Expansion is bounded" is decided in two places now.** A macro that reaches itself through the invocations its body WRITES is refused at its declaration, before a round runs (`check_macro_decls`: `NITPICK-MACRO-004` at the cycle's first macro in source order, the shortest chain named; the edges read off the body's expression-id range, which the parser records on the declaration; same-module macros only, D-124) — uninvoked cycles included: MACRO_REFERENCE §7's own example was accepted until a member was invoked. The edge is syntactic: an invocation written as an argument that the invoked macro discards is an edge all the same (one rule read off the declarations; zero exposure, measured). The round bound then stops only a chain that is finite and too long, and reports at the first invocation still standing in the program's text, found by one more walk that instantiates nothing — it reported at module 0's root, `prelude.npk:17:1`, naming no macro. A chain of exactly 32 settles on the last round and is accepted. A `macro:` declared inside a macro body is `NITPICK-MACRO-005` where it is written. **And the expansion walk reaches every position an expression is written in** (MACRO_REFERENCE §6): a loop's and a function's verification clauses, a `Rules` clause, the expressions inside types, patterns, attributes, a variant's value, a `unit:` and an `error:` right-hand side — each was `NITPICK-MACRO-006`, the compiler's own defect code, in a correct program (43 sites of the tree and the listener's corpus; none after). **Two things this decision's hygiene rule does not yet keep, both older than the step and found by it**: a macro PARAMETER written in a type or a pattern is never substituted, and where the module has a binding of that spelling the body silently reads it (DEF-189 — a wrong answer, the class DEF-144 was); and a caller's LOCAL written as a macro ARGUMENT is resolved as body text and refused (DEF-183, to be read against this decision first).
 
 ## D-058 — `Future<T>` is an internal lowering artifact, not surface syntax — **SETTLED**
 
@@ -5185,6 +5189,8 @@ have done anyway.
 - The §1 table's split stands, but gains a connecting rule: **threads supply
   parallelism, tasks supply concurrency, and waiting is always a task-level
   event.**
+
+*[2026-09-30, 1.6.1e step 3 — a dated note.]* "Blocking is always task suspension" is held at the primitives by the CHECKER now: `suspend_until`, `suspend_io` and `io_watch` are `NITPICK-TYPE-043` outside an `async` function (D-177's note of this date has the three defects it closed).
 
 ---
 
@@ -8374,6 +8380,8 @@ practice: a test that has never failed is a test whose failure mode is unknown.
 Nothing. The three driver-completeness gaps 0.4.7 recorded — a declaration nothing
 reaches, an `impl` method body, a struct's layout — were all closed in 0.4.8.
 
+*[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `vf0831`).]* "The natural meaning of no clause" is enforced. `inherit_trait_bound` copies the trait method's bound to each implementation AT THE SEED (it was the first thing each widening round did, so a caller walked before the impl read the method unbounded for a round — an order the modules happen to be in): the ABSENCE as a bound of nothing, a `<=` clause as its level, an exact clause as a checked ceiling (`LockTable.bound_exact`). The exact clause does NOT stand in for the body at a direct call — an implementation named by its own name keeps its own summary — where the step's design had said "as the `<=` form does": measured, the `<=` reading would have silenced a downward acquisition `5fbaf4a` reports (hold 2, call an impl whose body takes 1 under a trait's `acquires 3`). The trait's clause is folded in the trait's home scope (D-137). `seed_trait_bound` gives the trait's own method — what a `dyn`, a bound `T: Trait` and a default body's `self.m()` resolve to — the same three readings, and a default body is walked and held to it as an implementation is. A clause that is written and does not fold is `NITPICK-LOCK-003` alone (`LevelRead.written`: the absence is what bounds, not the mistake — D-240). What a `<=` bound still does not give — a FLOOR under its implementations — is S-119, with DEF-181.
+
 ---
 
 ## D-114 — An `extern` function has a type, and it is a `Result<T>` like every other — **SETTLED (its open sub-item is queued)**
@@ -9358,6 +9366,8 @@ nothing — the errors are the report; the reference's own `emit_methods` exampl
 receiver `$$i Box:self`, never a parameter form, and the parse error inside the body left a window
 the expander read past its end (c1). The example reads `Box:self`.
 
+*[2026-09-30, 1.6.1e step 3 — a dated note (DEF-171; the library listener's `mc0046b`).]* "A body that is nothing but one invocation is whatever `b` is" held at statement and expression position and was REFUSED at all three declaration sites (`NITPICK-MACRO-005`: the alias is an expression body, whatever its target). `expand_splice` passes the alias through (`splice_alias`): its one invocation, the alias's arguments substituted, becomes a splice standing where the alias stood, and the next round expands THAT as what its target is — at module level, in a struct body, in an impl or trait body; an alias of an alias takes one round each; a target that does not fit the site is refused by the target's own check, once. `#caller(name)` and a compiler builtin (`#size_of<T>()`) are values, not aliases, and keep the site's refusal. `tests/backend/programs/macro_alias_sites.npk`, `tests/expansion/rejection/alias_wrong_site.npk`. The same step withdrew a refusal its plan had scheduled (the listener's `mc0085b`): a `fixed` qualifier spliced into a struct body TRAVELS to the field (since 1.0.8) and is not refused — MACRO_REFERENCE §2's sentence was stale, not the compiler.
+
 ## D-126 — Every `#name(...)` still standing at the end of expansion is refused — **SETTLED**
 
 `#` is the compiler-directive sigil for **both** kinds of thing — the three
@@ -9407,6 +9417,8 @@ context" rule (D-019) is enforced nowhere. That is 0.4-era work the type checker
 missed, it is unblocked by nothing, and **0.6.4 is where it lands**: folding
 `#size_of<T>` is exactly what a `comptime` evaluator has to do, and it cannot fold
 what it cannot type.
+
+*[2026-09-30, 1.6.1e step 3 — a dated note (DEF-170).]* "A macro body is exempt" has one exception now: a template expression the walk REACHED. A type, a pattern, an attribute and a generic bound written in a body are copied through by the clone, so every instantiation shares the one node and the walk reaches it through whichever instantiation it meets first; an invocation still standing there is in the program and is refused like any other. Before, the body mark hid it: `(#no_such())` as a pattern in an instantiated body passed the whole front half unexpanded — `tools/check` silent — and died in the emitter (EMIT-002). `#caller(name)` in such a shared position is MACRO-008 with its own sentence. `tests/expansion/rejection/shared_position.npk`.
 
 ---
 
@@ -9652,6 +9664,8 @@ The bound is a constant today. The flag needs argument parsing, a manifest, and 
 place to put a build option — `BUILD_REFERENCE.md` §7's `npkg`, which is cycle 0.8.
 Nothing about the mechanism changes when it arrives: the number becomes
 configurable, and the two bounds stay two.
+
+*[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `mc0344`; D-338).]* MACRO_REFERENCE §8's "the call chain that reached it" was promised and written nowhere. `fold_call` records the callee's name at the caller's depth (`fold_chain`, sized by `FOLD_DEPTH` as the depth bound is, so a chain can never be longer than the array) and `fold_reported` appends "; reached through the compile-time calls `outer_call` -> `inner_div`" — outermost first, a name entered several times in a row written once with its count. The span stays the offending expression's. One expression's failure is still one report (`fold_said`: D-240's note of this date). And the evaluator learns to ORDER strings — a payload-less enum value, `pick` over a constant selector, `a.cmp(b)` on constant strings — by D-338, as 1.6.1e step 3b.
 
 ---
 
@@ -10188,6 +10202,8 @@ that the value would be implementation-defined — which a literal must never
 be. `flt64` literals are unbounded: LLVM's parser converts any decimal with
 correct rounding directly.
 
+*[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `ty0176`, `ty0178`, `ty0189b`; DEF-166).]* "`flt256` and `flt512` are reserved words; the resolver refuses them" was a sentence the resolver did not keep: the generated scalar table answered both as floats of 256 and 512 bits and the program died in the emitter (EMIT-002). `resolve_named` refuses both ahead of the table — `NITPICK-TYPE-001` at the spelling, in every position a type stands in, the answer the INVALID type so nothing beside it adds a sentence. And the removed `f256`/`f512` suffixes were removed from the suffix table only: a float literal's tail was never held to the `TypeSuffix` production, so `1.5f512` (and `3.14flt32`, and `1.5garbage`) compiled as the number in front. `NITPICK-LEX-009` now (LEXICAL_REFERENCE §6.2). `f128` stays a suffix the lexer reads and TYPE-030 refuses: `flt128` has no literals.
+
 ## D-144 — `tbb` at run time: sticky, saturating, and the cast matrix — **SETTLED**
 
 Cycle 0.9.5, making D-008 executable and closing the audit's third live rung
@@ -10454,6 +10470,8 @@ The repairs:
 constant that used to wrap.
 
 *[2026-09-19, D-310 and D-311 (1.5.8b's planning). The one-subtraction spelling above is exact only under D-037's wrap, and D-210 replaced that wrap with a trap for plain integers. The constant folder kept wrapping, so `0u64 - 1u64` meant 2^64−1 in a `fixed` initialiser and a trap at run time (DEF-71). From 1.5.8b step 2 it is refused (NITPICK-TYPE-076). `uint64`'s upper half is constructed with bit operations: `~0u64` is the maximum, and `(1u64 << 63u64) | k` gives any value above 2^63−1. From 1.5.8b step 4, `0u64 -% 1u64` works too, the wrap marked at the site (D-312). The rule of this decision, "constructed, not spelled", stands.]*
+
+*[2026-09-30, 1.6.1e step 3 — a dated note (DEF-167, DEF-174, DEF-175).]* "Must fit its type, verified at the literal" reaches a literal WITH A FRACTION that carries an integer, `tbb` or `char` suffix: `NITPICK-TYPE-031` whatever the value (`2.5i32`, and `2.0i32` — a literal with a fraction is not an integer literal). The three ranged arms read a literal's PAYLOAD as its value, and a float's payload is the intern index of its text: `2.5i32` typed as an `int32` and died in the emitter, and `1.5u8` was "does not fit" only where the index happened to pass 255. (Inside `comptime(…)` or an array size the folder reports it first, TYPE-004; one report either way.) And the float scan is the production's now (LEXICAL_REFERENCE §6.2), which closed two defects of the VALUE: a sign after a float literal was swallowed into the literal's text, so `flt64:y = 3.5f64-x;` stored 3.5 on every compiler before this one — the subtraction gone, in silence (DEF-174); and a `_` separator rode into the kept text, so `1_000.5tfp64` folded to 1.0 (DEF-175).
 
 ## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED; D-163 reuses the retired `never fails`**: a driver method may always fail, so `raw`/`drop` are never licensed on a driver call (falls out of D-163 rules 3–4), and when the Bridge lands (1.1) `VerifyNeverFails` becomes the one node for the one word**
 
@@ -12458,6 +12476,8 @@ default, a `dyn` method, the UFCS free function). It had been the direct call's 
 `r.read(buf, d)` compiled to a call of the coroutine's symbol, which does not exist, and `llc`
 refused the module (the library listener's F-023) — a rule written for one spelling owed to the
 other.
+
+*[2026-09-30, 1.6.1e step 3 — a dated note (DEF-168, DEF-169; the library listener's `bi0256`).]* The three builtins that speak for the CURRENT TASK — `suspend_until`, `suspend_io`, `io_watch` — are held to an `async` function by the checker (`check_task_builtin`, where a bare builtin call is typed: `NITPICK-TYPE-043` at the call), and the two parks to "not inside `defer`", as `await` is and for `await`'s reason. Measured on `5fbaf4a`: a park in a synchronous body was EMIT-002, the compiler confessing a defect about a program's mistake; `io_watch` in a synchronous body COMPILED and, called where no task runs, faulted the machine (`MachineFault`, exit 107, in safe code); and a park inside a `defer` body trapped the COMPILER (exit 3, no message) — a park's wind-up exit runs the function's defers, so the emitter lowered the defer body inside itself until its own stack was exhausted. `io_unwatch` is unchanged: it removes a registration, speaks for no task, and a `defer` is where it belongs. The two rules are asked apart, so a park in a synchronous function's `defer` is two reports at one site, as an `await` there is. `tests/types/rejection/task_builtins.npk`.
 
 ## D-178 — A statement suspends at most once, before anything else it computes — **SETTLED**
 
@@ -16738,6 +16758,8 @@ value, which is the only case where the sentence is true; a `..^` argument the
 TYPE-054 refusal named is not also measured against the register it cannot
 become, though its contents are still typed. The principle binds every future
 pair of rules the same way.
+
+*[2026-09-30, 1.6.1e step 3 — a dated note: the principle applied at four new sites, and one place it is deliberately not.]* (1) `NITPICK-LEX-009`'s token stays a float literal: an `Error` token would have the parser say "expected an expression" about the same mistake. (2) A reserved word in type position (`flt256`) answers the INVALID type, so the cast and the initialiser beside it say nothing. (3) A module binding whose initialiser is a literal refused at the literal (`fixed int32:K = 2.5i32;`, TYPE-031) is not also "not a constant" (TYPE-035) — the silence is keyed on the initialiser being a float literal whose type was refused, so no second mistake hides behind it. (4) A compile-time failure reached through two call chains, or folded by the typer where it stands and again by a call that evaluates it, is ONE report: with the chain in the sentence the list's identical-repeat rule no longer saw the repeat, so the folder asks "already said" of the sentence WITHOUT its chain (`fold_said`). Not applied, as `await`'s own two rules are not: a park (`suspend_until`, `suspend_io`) in a synchronous function's `defer` body is two TYPE-043 at one site — outside an `async` function, and inside `defer` — two rules, each broken. And two cascades the step's reading found and did NOT fix are registered: the integer scan's LEX-003 followed by the parser's PARSE-002 (DEF-164's family), and a lexer refusal's dangling operator (`1.5e+;`: LEX-009, then PARSE-002 for the `+`).
 
 ## D-241 — `never fails` may carry `requires`/`ensures`/`limit<Rules>`: D-163 rule 2's contract row retires — **SETTLED (user decision, 2026-09-03; 1.5.1 S-14)**
 
@@ -21746,3 +21768,63 @@ or the libraries writes one (CLAUDE.md says so, and advance notice F23 told the 
 the plan's first step decides whether they refuse by name in the interim, the capability ladder's
 rule for a form not yet implemented, which this decision recommends.
 
+## D-336 — a FROZEN COMPATIBILITY CORPUS is the instrument of the permanent freeze: built at the freeze, held by both runners ever after — **SETTLED (user decision, 2026-09-30: "go with your recommendations on all three"; S-117)**
+
+**The history.** The user stated the arc on 2026-09-26: the language is made feature-complete to what is
+planned, then frozen PERMANENTLY -- no breaking change afterwards except for security -- and "a program
+written in nitpick next year would still compile and run 30 years from now". He clarified the same evening
+that the promise is about PROGRAMS, not tools: the compiler, the floor and the toolchain may all move (a
+newer LLVM, a new target), and the language absorbs it under the hood. Nothing proved such a change
+invisible to programs: the per-landing two-checker sweep and the emission comparison compare one landing
+with its parent, over whatever the trees hold that night.
+
+**The decision.** A corpus, frozen at the freeze: the tree's suites, the libraries' programs and the
+fuzzer's accepted programs, each with its RECORDED VERDICT -- the diagnostic set with its per-code site
+counts (D-237, D-332), or the exit code at both legs. Every later change to the compiler, the floor or
+the toolchain must reproduce every verdict; it is a stage of both runners, and a moved verdict is a red
+run unless it is the named security exception, which is recorded with its reason beside the verdict it
+moves. The corpus is CHOSEN at the freeze and not before -- while the language still moves, a frozen
+verdict would only be re-recorded -- so nothing is built now; it is a pre-freeze subcycle on the
+roadmap (`ROADMAP.md`, "The freeze"), planned execution-grade when the last language-changing subcycle
+is in sight. **Decided out with it:** a `language = "1"` manifest row. A missing row can be read as
+version 1 the day a version is first needed, so adding it now is complexity with no present need.
+
+## D-337 — a struct literal that writes sealed fields from outside their module is ONE report, naming every sealed field it writes — **SETTLED (user decision, 2026-09-30: "go with your recommendations on all three"; DEF-165)**
+
+**The history.** D-313 (1.5.8b) made a `sealed` field readable anywhere and writable only by the module
+that declares its struct, and counted a struct literal among the write forms. D-240 (1.4.8c) says one
+mistake, one report. D-332's count rule, run over the library listener's corpus on 2026-09-27, showed
+`PatternError{ kind: …, offset: …, span_len: …, detail: … }` written outside its module reported as FOUR
+`NITPICK-TYPE-079` at one span (DEF-165) -- two readings: each sealed field is its own fact, or the literal
+is one mistake.
+
+**The decision.** The literal is the mistake: constructing the type outside the module that owns its
+invariants. ONE `NITPICK-TYPE-079` at the literal, its message naming every sealed field the literal
+writes, because the fix is one action whatever the count -- call the owning module's constructor. Every
+other write form (an assignment, a compound, `@`, `$$m`, a `Self->` receiver, a move out) stays one
+report per write: each is its own statement. Lands as DEF-165's fix, with its advance notice: the
+expected counts of `nitpick-regex`'s `pattern_error_literal.npk` and `nitpick-time`'s
+`probe15_civil_literal_bypass.npk` move from one line per field to one line, as their headers say.
+
+## D-338 — `comptime` ORDERS STRINGS: the evaluator holds a payload-less enum value and runs a `pick` — **SETTLED (user decision, 2026-09-30: "go with your recommendations on all three"; S-118, the library listener's F-027 row `mc0309b`)**
+
+**The history.** MACRO_REFERENCE §8's table of what the compile-time evaluator can do lists "strings --
+concatenation, equality, ordering, length", recovered from the prototype's `COMPTIME-005`. In this
+language a string is ordered only by `a.cmp(b)`, which answers an `Ordering` (D-093: no `<` on strings,
+and `<=>` refuses them under D-330). The evaluator's values are integers, bools, chars and strings; it
+holds no enum value and its statement walk has no `pick`, so `comptime` could not order two strings at
+all (`NITPICK-TYPE-004`, measured on `5fbaf4a`).
+
+**The two readings put to the user.** Implement it; or strike "ordering" from the table -- after which
+compile-time code could never order strings, and after the permanent freeze (D-336's history) it could
+not be added.
+
+**The decision.** Implement it, by the freeze rule (D-335: what is planned is implemented before the
+freeze, not struck). The evaluator gains: a PAYLOAD-LESS ENUM VALUE (`Ordering.Less`, any enum's
+payload-less variant, as a constant); `==` and `!=` on two such values of one enum; `pick` -- statement
+and expression form -- over a constant selector, with literal, variant, range and wildcard patterns and
+`where` guards, no binding patterns; and `a.cmp(b)` on two constant strings, the same byte order the
+run-time `impl:string:Ord` computes (unsigned bytes, then length), held equal by a test that asks both.
+Nothing else is added: no payload-carrying variant, no array, no method call but that one. It is its own
+landing, 1.6.1e step 3b, planned execution-grade before it starts, because it is new evaluator surface
+and "anything it can express is something the compiler runs at build time" (MACRO_REFERENCE §8).

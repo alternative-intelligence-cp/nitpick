@@ -1,12 +1,16 @@
 // expect-error: NITPICK-MACRO-004
+// expect-error-at: 16:1
 //
-// THE SAME NON-TERMINATION, REACHED FROM EXPRESSION POSITION. `#endless()` expands
+// THE SAME NON-TERMINATION, WRITTEN IN EXPRESSION POSITION. `#endless()` expands
 // to `#endless() + 1i32`, which contains an invocation, which expands again.
 //
 // This one exists because until 0.6.2 there was no expression-position expansion at
 // all: an invocation in a body was left standing and typed as INVALID, so the loop
-// this file drives could not be entered from here. A bound is only established for
-// the paths that can actually reach it.
+// this file drove could not be entered from here. Since 1.6.1e step 3 no round is
+// run for it: the cycle is read off the declaration -- the edge is the `#endless()`
+// the body writes, whatever position it stands in -- and refused there (DEF-172).
+// A bound is only established for the paths that can actually reach it, and a
+// refusal at the declaration is established for every position at once.
 mod:bounds_expr;
 
 macro:endless = () { #endless() + 1i32; };

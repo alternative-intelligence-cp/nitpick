@@ -842,6 +842,56 @@ specifically. It does not claim deadlock freedom, and the previous wording that
 did has been corrected: a safety claim nothing backs is worse than an absent one,
 because it invites reliance.
 
+> *[2026-09-30, 1.6.1e step 3 — a dated note: what the first layer checks, and what
+> it does not.]* Two sentences of item 1 were not kept until this step.
+>
+> **A channel's level was read by nothing** (the library listener's `cc0380`).
+> `send` and `recv` are waits at the channel's `LEVEL` now, ordered against what is
+> held and raising no hold (`NITPICK-LOCK-001`; CONCURRENCY_REFERENCE §6.1).
+>
+> **An undeclared dynamically dispatched method could acquire anything**
+> (`vf0831`). A trait method with NO `acquires` clause gives every implementation
+> of it — and its own default body, which is the implementation every impl that
+> omits the method runs — a BOUND OF NOTHING: one that can reach any level, by an
+> acquisition or a wait, in its own body or through what it calls, is
+> `NITPICK-LOCK-002` where it is written, and a call through the method contributes
+> no level to its caller. An EXACT `acquires N` on a trait's method is a checked
+> ceiling for its implementations (one reaching above N is LOCK-002), and a call
+> through the trait is judged at N. An inherent impl is unbounded: nothing
+> dispatches to it dynamically. A clause that is written and refused is
+> `NITPICK-LOCK-003` alone — the absence is what bounds, not the mistake.
+>
+> **The walk reads the checker's record of each call**, so a method reached through
+> a pointer receiver, through a free function (UFCS), as `Trait.method(recv)`, or
+> written as a pipe is ordered like any other; each of the four resolved to nothing
+> before, and holding level 2 while calling a level-1 method through a `Self->`
+> receiver compiled.
+>
+> **The consequence for the prelude's traits.** `Eq`, `Ord`, `PartialOrd`, `Clone`,
+> `Hash`, `ToString`, `Debug`, `Iterator`, `Reader` and `Writer` declare no level, so
+> no implementation of them may take a lock or wait on a channel, and a program
+> cannot add the clause to a trait it does not own. The lock is taken OUTSIDE such
+> a call: acquire the guard, then write through the guarded value — the caller's
+> visible act, never a wait hidden behind an I/O trait. A program's own trait may
+> declare `acquires <= N`. Whether the prelude's traits should declare a level is
+> S-119, the user's.
+>
+> **What item 1 does NOT yet cover** (DEF-181, OPEN — each shape accepted before
+> this step and after it): (1) at a direct call an `acquires <= N` bound stands in
+> for a body whose own summary is known, so a level below what is held, taken by
+> that body, passes; (2) a call through a function VALUE contributes nothing;
+> (3) a bound result is assumed to hold its callee's lowest hold, not its highest;
+> (4) a `defer` body is ordered against what was held where it is written, not at
+> the scope's exit where it runs; (5) a guard taken after a spawn is held across
+> the block's join, and a child that needs it waits out its deadline; (6) a level
+> written as one of the walk's two sentinels (`2147483647`, `-2147483647`) reads as
+> "no level". And a `<=` bound puts no floor under an implementation (S-119):
+> holding 2 and calling through a `dyn` bounded at 3, an implementation that takes
+> 1 passes. Every one of these is CONTAINED by the second layer — a deadline and an
+> error at a known point, never a wedge — and none is proven absent: "lock-order
+> freedom is proven" is the design's claim and, until 1.6.1e step 3c closes these,
+> not yet the compiler's.
+
 ---
 
 ## 7b. The obligation catalogue (D-218.7; landed 1.5.0)

@@ -1,0 +1,92 @@
+// expect-exit: 0
+//
+// A CHAIN OF EXACTLY THIRTY-TWO MACROS SETTLES (DEF-173, 1.6.1e step 3). Each round
+// expands one level, and the bound is on rounds that still leave something to
+// expand: after the thirty-second, nothing is standing. Before this step the
+// driver refused the program all the same -- the last round had expanded
+// something, so it could not tell "settled on the last round" from "did not
+// settle", and reported non-termination (at `prelude.npk:17:1`) for an expansion
+// that was complete. It asks now, with one more walk that instantiates nothing
+// (the probe), and proceeds when that walk meets no invocation.
+//
+// One macro more is the refusal: tests/expansion/rejection/round_bound.npk.
+//
+// GENERATED: `macro:linkK = () { #link(K+1)() + 1i32; };` for K in 1..31 and a last
+// `link32` that is `1i32`. Regenerate it if `EXPAND_ROUNDS` moves.
+mod:macro_chain_bound;
+
+macro:link1 = () { #link2() + 1i32; };
+macro:link2 = () { #link3() + 1i32; };
+macro:link3 = () { #link4() + 1i32; };
+macro:link4 = () { #link5() + 1i32; };
+macro:link5 = () { #link6() + 1i32; };
+macro:link6 = () { #link7() + 1i32; };
+macro:link7 = () { #link8() + 1i32; };
+macro:link8 = () { #link9() + 1i32; };
+macro:link9 = () { #link10() + 1i32; };
+macro:link10 = () { #link11() + 1i32; };
+macro:link11 = () { #link12() + 1i32; };
+macro:link12 = () { #link13() + 1i32; };
+macro:link13 = () { #link14() + 1i32; };
+macro:link14 = () { #link15() + 1i32; };
+macro:link15 = () { #link16() + 1i32; };
+macro:link16 = () { #link17() + 1i32; };
+macro:link17 = () { #link18() + 1i32; };
+macro:link18 = () { #link19() + 1i32; };
+macro:link19 = () { #link20() + 1i32; };
+macro:link20 = () { #link21() + 1i32; };
+macro:link21 = () { #link22() + 1i32; };
+macro:link22 = () { #link23() + 1i32; };
+macro:link23 = () { #link24() + 1i32; };
+macro:link24 = () { #link25() + 1i32; };
+macro:link25 = () { #link26() + 1i32; };
+macro:link26 = () { #link27() + 1i32; };
+macro:link27 = () { #link28() + 1i32; };
+macro:link28 = () { #link29() + 1i32; };
+macro:link29 = () { #link30() + 1i32; };
+macro:link30 = () { #link31() + 1i32; };
+macro:link31 = () { #link32() + 1i32; };
+macro:link32 = () { 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = #link1();
+    exit v - 32i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

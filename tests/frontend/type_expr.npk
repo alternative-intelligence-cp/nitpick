@@ -166,6 +166,27 @@ func:main = int32(cstring[]:_~argv) {
     Ex:nm = raw ex("1.5f64 + 2", @it);
     if (raw errs(@nm) != 1i64)                                 { exit 209i32; }
 
+    // …AND THE SUFFIX'S FAMILY MUST BE ONE A FRACTION HAS (DEF-167, 1.6.1e
+    // step 3). `TypeSuffix` is one production for both literal forms, so
+    // `2.5i32` lexes -- and it typed as the `int32` its suffix names, with the
+    // literal's PAYLOAD read as its value: a float's payload is the intern
+    // index of its text. The emitter died on it. Refused at the literal,
+    // whatever the value, for the integer, `tbb` and character suffixes; ONE
+    // report beside an operand, not a mismatch as well.
+    Ex:fi = raw ex("2.5i32", @it);
+    if (raw errs(@fi) != 1i64)                                 { exit 210i32; }
+    if (!(raw string_eq(raw code0(@fi), raw TYPE_LIT_RANGE()))) { exit 211i32; }
+    Ex:fz = raw ex("2.0i32", @it);
+    if (raw errs(@fz) != 1i64)                                 { exit 212i32; }
+    Ex:ft = raw ex("1.5tbb8", @it);
+    if (raw errs(@ft) != 1i64)                                 { exit 213i32; }
+    if (!(raw string_eq(raw code0(@ft), raw TYPE_LIT_RANGE()))) { exit 214i32; }
+    Ex:fc = raw ex("65.0char8", @it);
+    if (raw errs(@fc) != 1i64)                                 { exit 215i32; }
+    Ex:fo = raw ex("1i32 + 2.5i32", @it);
+    if (raw errs(@fo) != 1i64)                                 { exit 216i32; }
+    if (!(raw string_eq(raw code0(@fo), raw TYPE_LIT_RANGE()))) { exit 217i32; }
+
     // --- THE SEMANTIC-TYPE RULES ------------------------------------------------
     // Each of these is representationally an integer and none is a number.
 

@@ -1,0 +1,52 @@
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 29:69
+// expect-error: NITPICK-TYPE-004
+// expect-error-at: 31:58
+// expect-error: NITPICK-TYPE-025
+// expect-error-at: 32:65
+//
+// A COMPILE-TIME FAILURE IS ONE REPORT, AT THE EXPRESSION THAT FAILED -- AND IT
+// NAMES THE CALLS THAT REACHED IT (1.6.1e step 3; the library listener's
+// `mc0344`). The evaluator reports where the failure is, which is inside a
+// `comptime func:` body, and until this step the sentence said nothing of how
+// evaluation got there: `comptime(outer_call(0i32))` failing two functions down
+// pointed at a division with no path to it. The message now ends "; reached
+// through the compile-time calls `outer_call` -> `inner_div`", outermost first
+// (`tests/frontend/type_stmt.npk` holds the names; this file holds the SITES).
+//
+// The chain is in the sentence, and the diagnostic list drops only an identical
+// repeat -- so the count is what this file pins. Each failing expression below
+// is reached more than once, and is reported ONCE (measured with the folder's
+// own "already said" question removed: five reports where there are three):
+//   - `inner_div`'s division, through two different chains (`outer_call`, and
+//     `direct`'s own call);
+//   - `lit_div`'s constant division, by the typer where it stands (D-331) and
+//     again by the call that evaluates it;
+//   - `deep`'s recursion, at the depth bound, from sixty-four frames of itself.
+// The control: the same chain over a divisor that is not zero folds.
+mod:comptime_chain;
+
+comptime func:inner_div = int32(int32:d) never fails { pass (100i32 / d); };
+comptime func:outer_call = int32(int32:d) never fails { pass (raw inner_div(d)); };
+comptime func:lit_div = int32() never fails { pass (7i32 / 0i32); };
+comptime func:deep = int32(int32:n) never fails { pass (raw deep(n)); };
+
+func:direct = int32() never fails {
+    int32:w = comptime(inner_div(0i32));
+    pass w;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = comptime(outer_call(0i32));
+    int32:l = comptime(lit_div());
+    int32:r = comptime(deep(1i32));
+    int32:ok = comptime(outer_call(4i32));
+    if (v + l + r + ok + (raw direct()) == 0i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 70i32; }
+    }
+};

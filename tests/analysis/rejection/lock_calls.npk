@@ -1,0 +1,150 @@
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 54:18
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 63:11
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 80:11
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 101:16
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 115:21
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 124:5
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 137:11
+//
+// EVERY FORM A CALL IS WRITTEN IN IS A CALL THE LOCK-LEVEL WALK FOLLOWS (D-056;
+// 1.6.1e step 3). "An analysis that handled only direct calls would
+// under-approximate SILENTLY, which is the failure D-056 exists to prevent" --
+// and the walk resolved a method call a second time, on the receiver's
+// recorded type, where the checker had resolved it once and recorded the
+// answer. The second resolution skipped what the first does: the pointer the
+// checker peels off a receiver (D-098), the free function it reaches as a
+// method (UFCS, D-006), the trait a qualified `Trait.method(recv)` names
+// (D-172), and the enclosing trait a default body's `self` call goes through.
+// A piped call `x |> f` had no case at all.
+//
+// Measured on 5fbaf4a: cases 1 to 5 below compiled. Each holds level 2 and
+// reaches level 1 through the form it names; case 6 is a default body that
+// reaches its trait's declared level 3 through a sibling and declares nothing
+// itself. Case 7, a value receiver, is the form that WAS followed.
+mod:lock_calls;
+error:E9;
+
+struct:Lease = { int32:v; };
+
+func:take_1 = Lease() acquires 1i32 { pass Lease{ v: 1i32 }; };
+func:take_2 = Lease() acquires 2i32 { pass Lease{ v: 2i32 }; };
+
+struct:Cell = { int32:v; };
+
+impl:Cell = {
+    // takes level 1, through a pointer receiver
+    pub func:low = NIL(Self->:self) never fails {
+        Lease:g = take_1() ?! E9;
+        discard(g.v);
+        pass NIL;
+    };
+
+    // 1. A SIBLING CALLED ON `self`, WHICH IS A POINTER: the commonest method
+    // call there is.
+    pub func:high_then_low = NIL(Self->:self) never fails {
+        Lease:g = take_2() ?! E9;
+        discard(g.v);
+        drop self.low();
+        pass NIL;
+    };
+};
+
+// 2. A POINTER PARAMETER as the receiver.
+func:through_a_pointer = NIL(Cell->:p) never fails {
+    Lease:g = take_2() ?! E9;
+    discard(g.v);
+    drop p.low();
+    pass NIL;
+};
+
+// a free function that takes level 1, callable as a method of its first
+// parameter (D-006)
+func:settle = NIL(Cell:c) never fails {
+    Lease:g = take_1() ?! E9;
+    discard(g.v);
+    discard(c.v);
+    pass NIL;
+};
+
+// 3. UFCS: `c.settle()` is `settle(c)`.
+func:through_ufcs = NIL(Cell:c) never fails {
+    Lease:g = take_2() ?! E9;
+    discard(g.v);
+    drop c.settle();
+    pass NIL;
+};
+
+trait:Speaks = {
+    func:say = NIL(Self:self) acquires <= 1i32;
+};
+
+impl:Cell:Speaks = {
+    pub func:say = NIL(Self:self) never fails {
+        Lease:g = take_1() ?! E9;
+        discard(g.v);
+        pass NIL;
+    };
+};
+
+// 4. THE QUALIFIED FORM: `Speaks.say(c)` names the trait, and its receiver
+// expression is a trait name, which has no type to re-resolve from.
+func:through_the_trait = NIL(Cell:c) never fails {
+    Lease:g = take_2() ?! E9;
+    discard(g.v);
+    drop Speaks.say(c);
+    pass NIL;
+};
+
+func:reaches_1 = int32(int32:n) never fails {
+    Lease:g = take_1() ?! E9;
+    discard(g.v);
+    pass n;
+};
+
+// 5. A PIPE: `5i32 |> reaches_1` is `reaches_1(5i32)`.
+func:through_a_pipe = int32() never fails {
+    Lease:g = take_2() ?! E9;
+    discard(g.v);
+    int32:r = (5i32 |> reaches_1) ?| 0i32;
+    pass r;
+};
+
+// 6. A DEFAULT BODY'S CALL ON `self` goes through the enclosing trait: `forward`
+// declares nothing, so it may acquire nothing (`lock_undeclared.npk`), and it
+// reaches the level 3 its sibling declares.
+trait:Chained = {
+    func:commit = NIL(Self:self) acquires <= 3i32;
+    func:forward = NIL(Self:self) {
+        relay self.commit();
+        pass NIL;
+    };
+};
+
+// 7. THE FORM THAT WAS ALWAYS FOLLOWED: a value receiver (the implicit address
+// of a local). Reported before this step and reported now, the same sentence
+// at the same place -- the one the six above now match.
+func:through_a_value = NIL() never fails {
+    Cell:c = Cell{ v: 1i32 };
+    Lease:g = take_2() ?! E9;
+    discard(g.v);
+    drop c.low();
+    pass NIL;
+};
+
+// --- the control: not reported ---------------------------------------------------------
+
+// NOTHING HELD: each of the forms above is an ordinary call.
+func:nothing_held = int32(Cell->:p, Cell:c) never fails {
+    drop p.low();
+    drop c.settle();
+    drop Speaks.say(c);
+    int32:r = (5i32 |> reaches_1) ?| 0i32;
+    pass r;
+};

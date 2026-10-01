@@ -391,6 +391,20 @@ Channel<T, LEVEL, CAP>
 | `LEVEL` | D-056 lock level — a channel blocks, so it is a blocking primitive |
 | `CAP` | `comptime int64` capacity. `0` is a rendezvous channel; `> 0` is buffered. |
 
+**`LEVEL` is checked** (1.6.1e step 3; the library listener's `cc0380`). `send` and
+`recv` are WAITS at the channel's level: each is ordered against what the task
+holds — a wait at or below a held level is `NITPICK-LOCK-001`, the sentence naming
+the verb written — and, like a condition variable's `timedwait` and a barrier's
+`arrive`, a wait leaves nothing held: binding a `recv`'s value raises no level, in
+the function that waits and across a call of one (a function that only waits
+returns holding nothing, so its result may be bound twice in a row). A function
+that sends or receives is an acquirer at that level to its callers, and so is one
+that spawns a task which does. `close` never suspends and has no level. Until this
+step nothing read the level at all: a `send` on a level-4 channel under a level-5
+guard compiled. An implementation of a trait method that declares no `acquires`
+level may not `send` or `recv` either (VERIFICATION_REFERENCE §7).
+`tests/analysis/rejection/chan_levels.npk`.
+
 **A rendezvous is not a one-slot buffer.** Its sender waits for a RECEIVER,
 not for buffer space: a `CAP == 0` send deposits only when a receiver is
 registered and therefore certain to take it, and that hand-off is the

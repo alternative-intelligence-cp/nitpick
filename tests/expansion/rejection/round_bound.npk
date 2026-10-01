@@ -1,0 +1,67 @@
+// expect-error: NITPICK-MACRO-004
+// expect-error-at: 62:72
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 61:72
+//
+// THE ROUND BOUND, AND WHO IS STANDING AT IT (D-057; DEF-173, 1.6.1e step 3 -- the
+// library listener's mc0251).
+//
+// A cycle is refused at the declarations (`cycle_uninvoked.npk`), so what reaches
+// the bound is a chain that is FINITE AND TOO LONG: thirty-three distinct macros,
+// each emitting one function and invoking the next. Each round expands one level;
+// after the thirty-second, `#link33()` is still standing where `link32`'s body
+// wrote it.
+//
+// THE REFUSAL POINTS AT THAT INVOCATION AND NAMES ITS MACRO. It used to be reported
+// "at the module" -- module 0, so `prelude.npk:17:1`, a file the reader did not
+// write -- in a sentence that named nothing. The driver takes one more walk that
+// instantiates nothing (the probe) and reports the first invocation it meets; the
+// note says which invocation expanded the body that line is in.
+//
+// A CHAIN OF EXACTLY THIRTY-TWO SETTLES (tests/backend/programs/macro_chain_bound.npk):
+// the bound is on rounds that still have something to expand, and the probe finds
+// nothing standing after the thirty-second. Before this step that chain was
+// refused too, with nothing left to refuse.
+//
+// GENERATED: `macro:linkK = () { func:rungK = int32() never fails { pass Ki32; };
+// #link(K+1)(); };` for K in 1..32, a last `link33` that only emits, then
+// `#link1();`. Regenerate it if `EXPAND_ROUNDS` moves.
+mod:round_bound;
+
+macro:link1 = () { func:rung1 = int32() never fails { pass 1i32; }; #link2(); };
+macro:link2 = () { func:rung2 = int32() never fails { pass 2i32; }; #link3(); };
+macro:link3 = () { func:rung3 = int32() never fails { pass 3i32; }; #link4(); };
+macro:link4 = () { func:rung4 = int32() never fails { pass 4i32; }; #link5(); };
+macro:link5 = () { func:rung5 = int32() never fails { pass 5i32; }; #link6(); };
+macro:link6 = () { func:rung6 = int32() never fails { pass 6i32; }; #link7(); };
+macro:link7 = () { func:rung7 = int32() never fails { pass 7i32; }; #link8(); };
+macro:link8 = () { func:rung8 = int32() never fails { pass 8i32; }; #link9(); };
+macro:link9 = () { func:rung9 = int32() never fails { pass 9i32; }; #link10(); };
+macro:link10 = () { func:rung10 = int32() never fails { pass 10i32; }; #link11(); };
+macro:link11 = () { func:rung11 = int32() never fails { pass 11i32; }; #link12(); };
+macro:link12 = () { func:rung12 = int32() never fails { pass 12i32; }; #link13(); };
+macro:link13 = () { func:rung13 = int32() never fails { pass 13i32; }; #link14(); };
+macro:link14 = () { func:rung14 = int32() never fails { pass 14i32; }; #link15(); };
+macro:link15 = () { func:rung15 = int32() never fails { pass 15i32; }; #link16(); };
+macro:link16 = () { func:rung16 = int32() never fails { pass 16i32; }; #link17(); };
+macro:link17 = () { func:rung17 = int32() never fails { pass 17i32; }; #link18(); };
+macro:link18 = () { func:rung18 = int32() never fails { pass 18i32; }; #link19(); };
+macro:link19 = () { func:rung19 = int32() never fails { pass 19i32; }; #link20(); };
+macro:link20 = () { func:rung20 = int32() never fails { pass 20i32; }; #link21(); };
+macro:link21 = () { func:rung21 = int32() never fails { pass 21i32; }; #link22(); };
+macro:link22 = () { func:rung22 = int32() never fails { pass 22i32; }; #link23(); };
+macro:link23 = () { func:rung23 = int32() never fails { pass 23i32; }; #link24(); };
+macro:link24 = () { func:rung24 = int32() never fails { pass 24i32; }; #link25(); };
+macro:link25 = () { func:rung25 = int32() never fails { pass 25i32; }; #link26(); };
+macro:link26 = () { func:rung26 = int32() never fails { pass 26i32; }; #link27(); };
+macro:link27 = () { func:rung27 = int32() never fails { pass 27i32; }; #link28(); };
+macro:link28 = () { func:rung28 = int32() never fails { pass 28i32; }; #link29(); };
+macro:link29 = () { func:rung29 = int32() never fails { pass 29i32; }; #link30(); };
+macro:link30 = () { func:rung30 = int32() never fails { pass 30i32; }; #link31(); };
+macro:link31 = () { func:rung31 = int32() never fails { pass 31i32; }; #link32(); };
+macro:link32 = () { func:rung32 = int32() never fails { pass 32i32; }; #link33(); };
+macro:link33 = () { func:rung33 = int32() never fails { pass 33i32; }; };
+
+#link1();
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

@@ -1,0 +1,274 @@
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 62:13
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 72:23
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 85:16
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 98:15
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 108:19
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 114:13
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 120:29
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 126:21
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 133:13
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 147:13
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 161:21
+//
+// A CHANNEL'S LEVEL IS A LOCK LEVEL (D-056; CONCURRENCY_REFERENCE §6.1; 1.6.1e
+// step 3, the library listener's cc0380). "A channel blocks, so it is a blocking
+// primitive": a `send` waits for space or a receiver, a `recv` waits for a
+// value, and two tasks blocked on each other's channels are deadlocked as
+// thoroughly as two blocked on each other's mutexes. So `send` and `recv` on a
+// `Channel<T, LEVEL, CAP>` are WAITS at LEVEL -- ordered against what the task
+// holds, exactly as `timedwait` and `arrive` are, and leaving nothing held.
+//
+// Measured on 5fbaf4a: every refusal below compiled. The level sat in the type
+// (word `b` of `TY_CHANNEL`), was folded, was part of the type's identity --
+// and the one analysis it exists for never read it.
+//
+// A WAIT YIELDS NO HOLD, AND A HOLD IS NOT LOWERED BY A WAIT. Binding a
+// `recv`'s value raises nothing -- and neither does binding what a function
+// that only waits returned, which the summaries could not say until this step:
+// one number per function answered both "what may it wait for or take" and
+// "what may its result hold", so `int32:a = await fetch(ch) ?! E;` was read as
+// holding the channel's level (measured on 5fbaf4a with a barrier's `arrive`:
+// the second `await meets(b)` below was LOCK-001, and a function that waited
+// at 2 before taking 5 was read as returning a hold at 2, so a level-3
+// acquisition under its result compiled -- case 8).
+//
+// The controls at the end are the other half: an upward `send`, a `send` with
+// nothing held, a `close` (which never suspends and has no level), a wait
+// after its guard's block has closed, a `recv` bound and followed by a LOWER
+// acquisition, and what a waiting function returned, bound and followed by
+// another wait (the library listener's cc0092 and cc0489 among the four).
+mod:chan_levels;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+
+struct:Lease = { int32:v; };
+func:take_3 = Lease() acquires 3i32 { pass Lease{ v: 3i32 }; };
+func:take_5 = Lease() acquires 5i32 { pass Lease{ v: 5i32 }; };
+
+// 1. THE LISTENER'S CASE: a `send` on a level-4 channel under a level-5 guard.
+async func:send_downward = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    await ch.send(g.value, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+
+// 2. STRICTLY INCREASING, so a wait at the level already held is refused too:
+// two tasks each holding one level-4 lock and waiting on the other's level-4
+// channel is the cycle, and "greater than or equal" would permit it.
+async func:recv_at_the_held_level = int32(Mutex<int32, 4i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    int32:v = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    pass v;
+};
+
+// 3. THROUGH THE CALL GRAPH: a function that sends is an acquirer at the
+// channel's level to its callers. Neither function is wrong on its own.
+async func:sends = NIL(Channel<int32, 4i32, 2i64>:ch) {
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+async func:calls_a_sender = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    await sends(ch) ?! E1;
+    pass NIL;
+};
+
+// 4. A SPAWNED SENDER is a call the walk follows like any other: the parent
+// holds its guard until the block's join, and the child's send waits below it.
+thread async func:child = NIL(Channel<int32, 4i32, 2i64>:ch) joins J2 {
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+async func:spawns_a_sender = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    drop child(ch);
+    pass NIL;
+};
+
+// 5. EVERY FORM A WAIT IS WRITTEN IN. `send` and `recv` run only under
+// `await`; what wraps the `await` is the caller's choice of what to do with
+// the `Result`, and the wait is found under each.
+async func:send_relayed = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    relay await ch.send(1i32, raw duration_ms(5i64));
+    pass NIL;
+};
+async func:send_defaulted = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    await ch.send(1i32, raw duration_ms(5i64)) ?| NIL;
+    pass NIL;
+};
+async func:send_bound = bool(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    Result<NIL>:r = await ch.send(1i32, raw duration_ms(5i64));
+    pass r.is_error;
+};
+async func:recv_discarded = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    discard(await ch.recv(raw duration_ms(5i64)) ?! E1);
+    pass NIL;
+};
+
+// 6. A DECLARED LEVEL IS HELD INSIDE ITS BODY, and a wait is ordered against
+// it as an acquisition is (`lock_levels.npk`'s typed case, with a channel).
+async func:declares_five_sends_at_four = NIL(Channel<int32, 4i32, 2i64>:ch) acquires 5i32 {
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+
+// 7. A HOLD COMES BACK THROUGH A CALL. `locked` returns the guard it took, so
+// the binding holds level 5 for the rest of its block and the send waits
+// below it.
+async func:locked = Guard<int32>(Mutex<int32, 5i32>->:m) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    pass g;
+};
+async func:sends_under_a_returned_guard = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = await locked(m) ?! E1;
+    discard(g.value);
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+
+// 8. A WAIT DOES NOT LOWER WHAT A RESULT HOLDS. `waits_then_takes` waits at
+// level 2 with nothing held, then takes level 5 and returns the lease: its
+// result holds 5, not the 2 it once waited at.
+async func:waits_then_takes = Lease(Barrier<2i32, 2i32>->:b) {
+    await b.arrive(raw duration_ms(5i64)) ?! E1;
+    Lease:l = take_5() ?! E1;
+    pass l;
+};
+async func:takes_three_under_five = NIL(Barrier<2i32, 2i32>->:b) {
+    Lease:x = await waits_then_takes(b) ?! E1;
+    Lease:y = take_3() ?! E1;
+    discard(x.v);
+    discard(y.v);
+    pass NIL;
+};
+
+// --- the controls: none of these is reported -----------------------------------------
+
+// UPWARD: level 4 under a level-3 guard (the listener's cc0380b).
+async func:send_upward = NIL(Mutex<int32, 3i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    await ch.send(g.value, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+
+// NOTHING HELD.
+async func:send_holding_nothing = NIL(Channel<int32, 4i32, 2i64>:ch) {
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E1;
+    int32:v = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    discard(v);
+    pass NIL;
+};
+
+// `close` NEVER SUSPENDS and has no level: legal under any guard.
+async func:close_under_a_guard = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    ch.close() ?! E1;
+    pass NIL;
+};
+
+// THE GUARD'S BLOCK HAS CLOSED, so nothing is held at the wait.
+async func:send_after_release = NIL(Mutex<int32, 5i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+        discard(g.value);
+    }
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+
+// A WAIT YIELDS NO HOLD: the `recv`'s value is bound, and a level-3 acquire
+// after it is not downward -- there is nothing at level 4 to be below.
+async func:recv_then_lower = int32(Mutex<int32, 3i32>->:m, Channel<int32, 4i32, 2i64>:ch) {
+    int32:v = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    discard(g.value);
+    pass v;
+};
+
+// TWO WAITS ON ONE CHANNEL in one block: the first left nothing held.
+async func:recv_twice = int32(Channel<int32, 4i32, 2i64>:ch) {
+    int32:a = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    int32:b = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    discard(a);
+    pass b;
+};
+
+// WHAT A WAITING FUNCTION RETURNED HOLDS NOTHING EITHER. `fetch` receives at
+// level 4 and returns the value: binding it twice in one block is two waits,
+// not a wait under a hold.
+async func:fetch = int32(Channel<int32, 4i32, 2i64>:ch) {
+    int32:v = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    pass v;
+};
+async func:fetch_twice = int32(Channel<int32, 4i32, 2i64>:ch) {
+    int32:a = await fetch(ch) ?! E1;
+    int32:b = await fetch(ch) ?! E1;
+    discard(a);
+    pass b;
+};
+
+// THE SAME FOR A WAIT THAT WAS THERE BEFORE CHANNELS: a function whose only
+// level is a barrier's `arrive`.
+async func:meets = int32(Barrier<2i32, 4i32>->:b) {
+    await b.arrive(raw duration_ms(5i64)) ?! E1;
+    pass 1i32;
+};
+async func:meets_twice = int32(Barrier<2i32, 4i32>->:b) {
+    int32:x = await meets(b) ?! E1;
+    int32:y = await meets(b) ?! E1;
+    discard(x);
+    pass y;
+};
+
+// A FUNCTION WHOSE SPAWNED TASK SENDS, bound, then a `recv` on the same
+// channel (the listener's cc0092): the task's send is a wait in the
+// function's summary, and its `int32` holds nothing.
+async func:late_sender = NIL(Channel<int32, 4i32, 2i64>:ch) {
+    await ch.send(7i32, raw duration_ms(5i64)) ?! E1;
+    pass NIL;
+};
+async func:starts_a_sender = int32(Channel<int32, 4i32, 2i64>:ch) {
+    drop late_sender(ch);
+    pass 5i32;
+};
+async func:waits_for_its_task = int32(Channel<int32, 4i32, 2i64>:ch) {
+    int32:p = await starts_a_sender(ch) ?! E1;
+    int32:v = await ch.recv(raw duration_ms(5i64)) ?! E1;
+    pass (p + v);
+};
+
+// A FACTORY THAT SENDS BEFORE IT HANDS ITS CHANNEL OVER (the listener's
+// cc0489): the endpoint is a handle, not a hold.
+async func:primed = Channel<int32, 4i32, 2i64>() gives {
+    Channel<int32, 4i32, 2i64>:ch = channel() ?! E1;
+    await ch.send(7i32, raw duration_ms(5i64)) ?! E1;
+    pass ch;
+};
+async func:reads_what_it_made = int32() {
+    Channel<int32, 4i32, 2i64>:c = await primed() ?! E1;
+    int32:v = await c.recv(raw duration_ms(5i64)) ?! E1;
+    pass v;
+};

@@ -1,0 +1,80 @@
+// expect-exit: 0
+//
+// A WAIT LEAVES NOTHING HELD -- THROUGH A CALL TOO (D-056; 1.6.1e step 3).
+// `arrive`, `timedwait`, `send` and `recv` are ordered against what the task
+// holds and yield no hold, so binding the value a WAITING FUNCTION returned
+// raises nothing either. The lock-level analysis kept one number per function
+// and read it both as "what may this wait for or take" and as "what may its
+// result hold", so the second `await meets(@b)` below was refused -- LOCK-001,
+// "this holds lock level 4 and can acquire level 4", on every compiler before
+// this step -- and the day a channel's level joined the summaries the same
+// happened to the commonest channel code there is: bind what a function that
+// receives returned, receive again.
+//
+// The three shapes, run: a barrier's `arrive` behind a call, bound twice; a
+// `recv` behind a call, bound twice; and a function whose spawned task sends,
+// bound, followed by the `recv` that takes what the task sent (the join is
+// what makes the value be there: a task cannot outlive its scope, D-062).
+mod:wait_bound;
+error:E1;
+
+async func:meets = int32(Barrier<1i32, 4i32>->:b) {
+    await b.arrive(raw duration_ms(500i64)) ?! E1;
+    pass 1i32;
+};
+
+async func:fetch = int32(Channel<int32, 4i32, 2i64>:ch) {
+    int32:v = await ch.recv(raw duration_ms(500i64)) ?! E1;
+    pass v;
+};
+
+async func:late_sender = NIL(Channel<int32, 4i32, 2i64>:ch) {
+    await sleep(raw duration_ms(20i64)) ?| NIL;
+    await ch.send(7i32, raw duration_ms(500i64)) ?! E1;
+    pass NIL;
+};
+
+async func:starts_a_sender = int32(Channel<int32, 4i32, 2i64>:ch) {
+    drop late_sender(ch);
+    pass 5i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Barrier<1i32, 4i32>:b = barrier() ?! Unreachable;
+    int32:x = await meets(@b) ?! E1;
+    int32:y = await meets(@b) ?! E1;
+    if ((x + y) != 2i32)   { exit 10i32; }
+
+    Channel<int32, 4i32, 2i64>:ch = channel() ?! Unreachable;
+    await ch.send(20i32, raw duration_ms(500i64)) ?! E1;
+    await ch.send(22i32, raw duration_ms(500i64)) ?! E1;
+    int32:a = await fetch(ch) ?! E1;
+    int32:c = await fetch(ch) ?! E1;
+    if ((a + c) != 42i32)  { exit 11i32; }
+
+    int32:p = await starts_a_sender(ch) ?! E1;
+    Result<int32>:v = await ch.recv(raw duration_ms(0i64));
+    if (v.is_error)        { exit 12i32; }
+    if ((p + v.value) != 12i32) { exit 13i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 61i32; },
+        (IntOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

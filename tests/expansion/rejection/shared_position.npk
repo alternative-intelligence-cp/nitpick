@@ -1,0 +1,64 @@
+// expect-error: NITPICK-MACRO-001
+// expect-error-at: 39:19
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 60:5
+// expect-error: NITPICK-MACRO-008
+// expect-error-at: 45:19
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 61:5
+// expect-error: NITPICK-MACRO-001
+// expect-error-at: 49:11
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 62:5
+//
+// WHAT THE CLONE COPIES THROUGH IS IN THE PROGRAM ONCE A BODY IS INSTANTIATED
+// (DEF-170, 1.6.1e step 3).
+//
+// A type and a pattern are not cloned with the body that holds them: every
+// instantiation points at the template's own node. The expansion walk enters them
+// now -- tests/backend/programs/macro_walk_positions.npk's `tally` has an
+// invocation in each, expanded once for both of its callers -- and so the audit
+// can no longer take "written inside a macro body" to mean "not standing in the
+// program". An invocation the walk REACHED and could not expand is refused like any
+// other, wherever it was written.
+//
+// IT USED TO BE ACCEPTED. The audit skipped everything in a body, so `(#no_such())`
+// as an arm's pattern in an instantiated body went through this whole front half
+// unexpanded -- the checker printed nothing -- and died in the emitter as
+// `NITPICK-EMIT-002`, "a defect in the compiler rather than in this program". The
+// type's twin got as far as the array-size fold (TYPE-004, "not a constant").
+//
+// AND `#caller(name)` THERE HAS NO INVOCATION SITE TO NAME: the clone is what
+// consumes it, and the clone does not go into a type or a pattern. It says so.
+mod:shared_position;
+
+fixed int32:SEL = 3i32;
+fixed int32:K = 3i32;
+
+macro:unknown_in_pattern = () {
+    pick (SEL) { (#no_such()) { discard(1i32); }, (*) { discard(2i32); } }
+};
+
+// `K` is a module constant, so the name would resolve either way; what is refused is
+// the escape itself, standing where no clone will ever turn it into a name.
+macro:caller_in_pattern = () {
+    pick (SEL) { (#caller(K)) { discard(1i32); }, (*) { discard(2i32); } }
+};
+
+macro:unknown_in_type = () {
+    int32[#no_such_size()]:buf;
+    discard(SEL);
+};
+
+// --- control: a body NOBODY instantiates is a template, and nothing in it is refused --
+macro:never_invoked = () {
+    int32[#no_such_either()]:buf;
+    pick (SEL) { (#caller(K)) { discard(1i32); }, (#nor_this()) { discard(2i32); }, (*) { discard(3i32); } }
+};
+
+func:main = int32(cstring[]:_~argv) {
+    #unknown_in_pattern();
+    #caller_in_pattern();
+    #unknown_in_type();
+    exit 0i32;
+};

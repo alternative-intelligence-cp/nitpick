@@ -175,7 +175,19 @@ saturates to ERR rather than trapping — see §6.)*
 
 `flt256`/`flt512` are **reserved words, not types** (D-143): LLVM has no
 fp256/fp512, and a soft-float that wide has no consumer. The resolver refuses
-them; the `f256`/`f512` literal suffixes are gone.
+them — `NITPICK-TYPE-001` at the spelling, in every position a type stands in (a
+binding, a parameter, a field, a return, a cast's target, a generic argument, a
+pointee, `#size_of`), one report per spelling — and the `f256`/`f512` literal
+suffixes are gone (`NITPICK-LEX-009`, LEXICAL_REFERENCE §6.2).
+
+> *[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `ty0176`).]*
+> "The resolver refuses them" was a sentence the resolver did not keep until this
+> step: the generated scalar table answers both words as floats of 256 and 512
+> bits, so `flt256:x = y => flt256;` type-checked and died in the emitter
+> (`NITPICK-EMIT-002`, the compiler confessing a defect about a program's mistake).
+> The refusal is asked ahead of the table now; the words stay lexed. And the `f512`
+> suffix was gone only from the suffix table: `1.5f512` compiled as `1.5`, the tail
+> never looked at (DEF-166).
 
 **Behaviors (flt32/flt64):**
 - Arithmetic: `+`, `-`, `*`, `/`, `%` → `fadd`, `fsub`, `fmul`, `fdiv`, `frem`
@@ -186,8 +198,14 @@ them; the `f256`/`f512` literal suffixes are gone.
 - Negation is `fneg` (sign-bit exact: `-(0.0)` is `-0.0`)
 - Comparison: `fcmp` ordered predicates, except `!=` which is `une` so that
   NaN ≠ NaN is true and `!=` stays the negation of `==`
-- Literal suffixes: `3.14f32`, `2.718f64` (this section once said `3.14flt32`,
-  which never lexed). A `flt32` literal carries at most 15 significant digits
+- Literal suffixes: `3.14f32`, `2.718f64` (this section once said `3.14flt32`;
+  `flt32` is a type's name and not a suffix, and the spelling is
+  `NITPICK-LEX-009` — until 1.6.1e step 3 it compiled as `3.14`, its tail
+  ignored, DEF-166). A literal with a fraction takes a float or fixed-point
+  suffix and no other: `2.5i32`, `1.5u8`, `2.5tbb8` and `2.5char8` are
+  `NITPICK-TYPE-031` at the literal, whatever the value (DEF-167; they were
+  typed as the integer, the value read from the intern index of the literal's
+  text, and died as EMIT-002). A `flt32` literal carries at most 15 significant digits
   (D-143): it lowers through a correctly-rounded double, exact to 15 digits by
   the double-rounding theorem, and unbounded digits would make the value
   implementation-defined.

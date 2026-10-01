@@ -8,12 +8,31 @@ use "../../src/frontend/token.npk".*;
 use "../../src/frontend/intern.npk".*;
 use "../../src/frontend/numeric.npk".*;
 use "../../src/frontend/keywords.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
 use "../../src/frontend/lexer.npk".*;
 
 func:one = Token(string:src, InternTable->:it, DiagList->:dg) never fails {
     TokenList:ts = raw lex_all(0i32, src, it, dg);
     pass (raw tokenlist_at(@ts, 0i64));
+};
+
+// `src` IS ONE FLOAT WITH A TAIL THAT IS NO SUFFIX: exactly one diagnostic, its
+// code NITPICK-LEX-009, and exactly one token before the end -- a `FloatLit`
+// of the whole run, carrying no width. 0 when all of that holds, else which
+// part did not.
+func:bad_suffix = int32(string:src, int32:run_len, InternTable->:it) never fails {
+    DiagList:d = raw diaglist_init();
+    TokenList:ts = raw lex_all(0i32, src, it, @d);
+    if (raw diaglist_count(@d) != 1i64) { pass 1i32; }
+    Diagnostic:f = raw diaglist_at(@d, 0i64);
+    if (!(raw string_eq(f.code, raw LEX_BAD_SUFFIX()))) { pass 2i32; }
+    Token:t = raw tokenlist_at(@ts, 0i64);
+    if (t.kind != TokenKind.FloatLit) { pass 3i32; }
+    if (t.width != NumWidth.WNone)    { pass 4i32; }
+    if (t.span.len != run_len)        { pass 5i32; }
+    if (!(raw token_is_eof(raw tokenlist_at(@ts, 1i64)))) { pass 6i32; }
+    pass 0i32;
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -94,6 +113,105 @@ func:main = int32(cstring[]:_~argv) {
 
     // Everything above must have been clean.
     if (raw diaglist_count(@dg) != 0i64) { exit 44i32; }
+
+    // --- a float is read by its production (DEF-166, 1.6.1e step 3) ---------
+    //
+    //   FloatLiteral ::= DecimalLiteral "." DecimalLiteral Exponent? TypeSuffix?
+    //   Exponent     ::= [eE] [+-]? DecimalLiteral
+    //
+    // THE TAIL IS ONE `TypeSuffix` OR NOTHING: NITPICK-LEX-009 otherwise, ONE
+    // report, at the literal, and the token stays a `FloatLit` -- so the parser
+    // has nothing to add about the same mistake. Each of these was accepted
+    // until this step -- as the number in front where the tail begins with an
+    // `f` (the library listener's `ty0178` and `ty0189b` are the first two),
+    // and handed to `llc` as written otherwise.
+    if (raw bad_suffix("1.5f512", 7i32, @it) != 0i32)    { exit 70i32; }
+    if (raw bad_suffix("3.14flt32", 9i32, @it) != 0i32)  { exit 71i32; }
+    if (raw bad_suffix("1.5garbage", 10i32, @it) != 0i32) { exit 72i32; }
+    if (raw bad_suffix("2.5e3zz", 7i32, @it) != 0i32)    { exit 73i32; }
+    if (raw bad_suffix("1.0f64x", 7i32, @it) != 0i32)    { exit 74i32; }
+    if (raw bad_suffix("1.5F64", 6i32, @it) != 0i32)     { exit 75i32; }   // suffixes are lower case
+    if (raw bad_suffix("1.5hex", 6i32, @it) != 0i32)     { exit 76i32; }   // no base suffix on a fraction
+    // A doubled `e`, and an `e` with no digit behind it, are tails too: the
+    // exponent is `e`, an optional sign and a DIGIT, or it is not an exponent.
+    if (raw bad_suffix("1.5e3e4", 7i32, @it) != 0i32)    { exit 77i32; }
+    if (raw bad_suffix("1.5ee3", 6i32, @it) != 0i32)     { exit 78i32; }
+    if (raw bad_suffix("1.5e", 4i32, @it) != 0i32)       { exit 79i32; }
+    if (raw bad_suffix("1.5e_3", 6i32, @it) != 0i32)     { exit 80i32; }
+
+    // A SIGN BELONGS TO THE LITERAL ONLY INSIDE AN EXPONENT. The old scan took
+    // any sign after any float, and what followed it: `3.5f64-x` was ONE
+    // literal whose value was read up to its `f` -- the subtraction vanished
+    // and the program computed 3.5, in silence.
+    DiagList:dg7 = raw diaglist_init();
+    TokenList:sub = raw lex_all(0i32, "3.5f64-x", @it, @dg7);
+    Token:s0 = raw tokenlist_at(@sub, 0i64);
+    if (s0.kind != TokenKind.FloatLit)                 { exit 81i32; }
+    if (s0.width != NumWidth.WF64)                     { exit 82i32; }
+    if (s0.span.len != 6i32)                           { exit 83i32; }   // `3.5f64`, not the run
+    if ((raw tokenlist_at(@sub, 1i64)).kind != TokenKind.OpMinus) { exit 84i32; }
+    if ((raw tokenlist_at(@sub, 2i64)).kind != TokenKind.Ident)   { exit 85i32; }
+    TokenList:sub2 = raw lex_all(0i32, "2.5+1.5", @it, @dg7);
+    if ((raw tokenlist_at(@sub2, 0i64)).span.len != 3i32)         { exit 86i32; }
+    if ((raw tokenlist_at(@sub2, 1i64)).kind != TokenKind.OpPlus) { exit 87i32; }
+    if ((raw tokenlist_at(@sub2, 2i64)).kind != TokenKind.FloatLit) { exit 88i32; }
+    // ...and inside one it still does, with or without a suffix behind it.
+    Token:x1 = raw one("1.5e-3", @it, @dg7);
+    if (x1.kind != TokenKind.FloatLit)                 { exit 89i32; }
+    if (x1.span.len != 6i32)                           { exit 90i32; }
+    Token:x2 = raw one("1.5E+3f64", @it, @dg7);
+    if (x2.span.len != 9i32)                           { exit 91i32; }
+    if (x2.width != NumWidth.WF64)                     { exit 92i32; }
+    if (raw diaglist_count(@dg7) != 0i64)              { exit 93i32; }
+    // `3.5e-x` is the literal `3.5e` (a bad tail), a minus and a name: the
+    // three bytes of an exponent are looked at before any is taken.
+    DiagList:dg8 = raw diaglist_init();
+    TokenList:ex = raw lex_all(0i32, "3.5e-x", @it, @dg8);
+    if (raw diaglist_count(@dg8) != 1i64)              { exit 94i32; }
+    if ((raw tokenlist_at(@ex, 0i64)).span.len != 4i32)           { exit 95i32; }
+    if ((raw tokenlist_at(@ex, 1i64)).kind != TokenKind.OpMinus)  { exit 96i32; }
+
+    // A `_` SEPARATOR IS IGNORED (§6.2), in a float as in an integer -- and so
+    // it is not in the text the float keeps: `1_000.5f64` reached `llc` as
+    // `double 1_000.5`, and `1_000.5tfp64` folded to 1.0.
+    DiagList:dg9 = raw diaglist_init();
+    Token:u1 = raw one("1_000.5f64", @it, @dg9);
+    if (u1.kind != TokenKind.FloatLit)                 { exit 97i32; }
+    if (u1.width != NumWidth.WF64)                     { exit 98i32; }
+    if (u1.span.len != 10i32)                          { exit 99i32; }   // the span is the source's
+    if (!(raw string_eq(raw intern_get(@it, u1.payload =>! int32), "1000.5f64"))) { exit 100i32; }
+    Token:u2 = raw one("1.000_5e1_0tfp64", @it, @dg9);
+    if (u2.width != NumWidth.WTfp64)                   { exit 101i32; }
+    if (!(raw string_eq(raw intern_get(@it, u2.payload =>! int32), "1.0005e10tfp64"))) { exit 102i32; }
+    // A text with nothing to drop is kept as it was written.
+    Token:u3 = raw one("2.5e-3", @it, @dg9);
+    if (!(raw string_eq(raw intern_get(@it, u3.payload =>! int32), "2.5e-3"))) { exit 103i32; }
+    if (raw diaglist_count(@dg9) != 0i64)              { exit 104i32; }
+
+    // A FLOAT'S WHOLE PART IS DECIMAL DIGITS. An integer in another base, or
+    // one with its own suffix, followed by `.5` is that integer, a dot and an
+    // integer -- for the parser to refuse -- and a run that is no integer at
+    // all is the integer scan's LEX-003, as it is without the `.0`.
+    DiagList:dg10 = raw diaglist_init();
+    TokenList:hx = raw lex_all(0i32, "0FFhex.5", @it, @dg10);
+    Token:h0 = raw tokenlist_at(@hx, 0i64);
+    if (h0.kind != TokenKind.IntLit)                   { exit 105i32; }
+    if (h0.payload != 255i64)                          { exit 106i32; }
+    if ((raw tokenlist_at(@hx, 1i64)).kind != TokenKind.PDot)     { exit 107i32; }
+    if (raw diaglist_count(@dg10) != 0i64)             { exit 108i32; }
+    DiagList:dg11 = raw diaglist_init();
+    discard(raw lex_all(0i32, "1e5.0", @it, @dg11));
+    if (raw diaglist_count(@dg11) != 1i64)             { exit 109i32; }
+    Diagnostic:e5 = raw diaglist_at(@dg11, 0i64);
+    if (!(raw string_eq(e5.code, raw LEX_BAD_DIGIT())))  { exit 110i32; }
+
+    // A SUFFIX OF ANOTHER FAMILY IS STILL A SUFFIX: `2.5i32` lexes clean, as a
+    // float carrying an integer width, and the checker refuses it (TYPE-031).
+    DiagList:dg12 = raw diaglist_init();
+    Token:fi = raw one("2.5i32", @it, @dg12);
+    if (fi.kind != TokenKind.FloatLit)                 { exit 111i32; }
+    if (fi.width != NumWidth.WI32)                     { exit 112i32; }
+    if (raw diaglist_count(@dg12) != 0i64)             { exit 113i32; }
 
     // --- `0...4` is a RANGE, not a malformed float --------------------------
     // A float needs a digit after the dot. The seed walked into this exact case

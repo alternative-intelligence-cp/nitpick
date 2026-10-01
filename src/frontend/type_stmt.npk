@@ -2793,9 +2793,21 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             // spelling that skipped the check was the one that lowered to
             // writable memory.
             if (!(raw is_const_initialiser(e, init))) {
-                discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
-                    "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
-                    d.span));
+                // A LITERAL REFUSED AT THE LITERAL IS NOT ALSO "NOT A CONSTANT"
+                // (D-240; 1.6.1e step 3): `fixed int32:K = 2.5i32;` is TYPE-031
+                // where it is written (DEF-167), and the folder -- which holds
+                // no fraction -- would add this sentence about the same token.
+                bool:lit_refused = false;
+                if (got == 0i32) {
+                    if ((raw ast_expr(e.ast, init)).kind == ExprKind.ExprFloatLiteral) {
+                        lit_refused = true;
+                    }
+                }
+                if (!lit_refused) {
+                    discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
+                        "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
+                        d.span));
+                }
             }
         }
         pass NIL;

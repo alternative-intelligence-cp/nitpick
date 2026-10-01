@@ -1,12 +1,19 @@
-// Two macros expanding into each other (D-057, 0.6.1).
+// expect-error: NITPICK-MACRO-004
+// expect-error-at: 17:1
+//
+// Two macros expanding into each other (D-057, 0.6.1; DEF-172 and DEF-173, 1.6.1e
+// step 3 -- the library listener's mc0251).
 //
 // The same non-termination as direct self-recursion, reached by a route no single
-// macro's body reveals — which is why the diagnostic is reported at the module
-// rather than at an invocation: a cycle needs at least two participants and blaming
-// either one would be arbitrary.
+// macro's body reveals. It was reported at the MODULE, on the reasoning that a
+// cycle has at least two participants and blaming either would be arbitrary --
+// and the module was module 0, so the report read `prelude.npk:17:1` and named
+// neither macro. The cycle is found at the declarations now, ONE report for the
+// cycle, at its FIRST macro in source order, and the sentence carries the chain:
+// "macro `ping` never settles: `ping` invokes `pong`, which invokes `ping`".
+// `pong` is the first macro of no cycle and is not reported a second time.
 mod:mutual;
 
-// expect-error: NITPICK-MACRO-004
 macro:ping = () {
     func:from_ping = int32() never fails { pass 1i32; };
     #pong();

@@ -1,0 +1,31 @@
+// expect-error: NITPICK-MACRO-007
+// expect-error-at: 23:5
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 26:1
+//
+// TWO MODULES' MACROS CANNOT FORM A CYCLE (D-124; DEF-172, 1.6.1e step 3). `here`
+// invokes `there` and, in `lib/cycle_peer.npk`, `there` invokes `here` -- by name,
+// a ring. But a macro is invocable only in the module that declares it, so
+// neither invocation names a macro of ITS OWN module, the cycle check reads no
+// edge from either body, and there is NO `NITPICK-MACRO-004` in this file.
+//
+// What is wrong is the reach, and it is reported as that: `#here()` expands, its
+// body's `#there()` names a macro of another module, MACRO-007 -- at the
+// invocation inside the body, with the note that says which invocation of `here`
+// brought it. The set of codes this file reports is exactly {MACRO-007}; a cycle
+// check that looked across modules would add a second code and fail it.
+mod:cycle_cross_module;
+
+use "./lib/cycle_peer.npk".*;
+
+macro:here = () {
+    func:from_here = int32() never fails { pass 1i32; };
+    #there();
+};
+
+#here();
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = raw peer_anchor();
+    exit 0i32;
+};

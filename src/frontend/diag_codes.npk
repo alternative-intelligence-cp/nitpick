@@ -22,3 +22,15 @@ pub func:LEX_UNTERMINATED_STRING = string() never fails{ pass "NITPICK-LEX-005";
 pub func:LEX_UNTERMINATED_TEMPLATE = string() never fails { pass "NITPICK-LEX-006"; };
 pub func:LEX_BAD_ESCAPE = string() never fails         { pass "NITPICK-LEX-007"; };
 pub func:LEX_UNTERMINATED_CHAR = string() never fails  { pass "NITPICK-LEX-008"; };
+
+// A FLOAT LITERAL'S TAIL IS NOT A `TypeSuffix` (DEF-166, 1.6.1e step 3; the
+// library listener's `ty0178` and `ty0189b`): LEXICAL_REFERENCE §6.2 ends a
+// float in one `TypeSuffix` or in nothing, and until this step whatever
+// followed the digits was scanned into the literal and never looked at:
+// `1.5f512`, `3.14flt32` and `1.0f64x` compiled as the number in front (the
+// emitter cut the text at its first `f`), and `1.5garbage` and `2.5e3zz` were
+// handed to `llc` as written. An integer run with a bad tail has always been
+// LEX-003; this is the float's own sentence, naming the tail. The token stays
+// a `FloatLit`, so the parser adds no second report about the one mistake
+// (D-240) and the driver stops before expansion as it does on any diagnostic.
+pub func:LEX_BAD_SUFFIX = string() never fails         { pass "NITPICK-LEX-009"; };

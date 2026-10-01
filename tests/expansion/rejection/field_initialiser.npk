@@ -1,4 +1,11 @@
 // expect-error: NITPICK-MACRO-005
+// expect-error-at: 28:24
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 30:14
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 32:30
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 34:14
 //
 // A FIELD HAS NO INITIALISER, so a variable declaration carrying one cannot become
 // a field. Refused rather than dropped: splicing this quietly would lose the value
@@ -9,10 +16,21 @@
 // a declaration has, and until 1.0.8 the splice wrote zero into it and refused
 // the declaration for "carrying" what the field "could not". Covered by the
 // accept suite's splice cases, not here: this file is the refusal.
+//
+// AND THE QUALIFIER DOES NOT EXCUSE THE VALUE (1.6.1e step 3; the library
+// listener's mc0085b, read as a documentation row): `fixed int32:b;` splices as a
+// `fixed` field -- tests/analysis/rejection/spliced_fixed_field.npk pins that the
+// qualifier arrived, by the write it refuses -- while `fixed int32:b = 5i32;` is
+// still this refusal. The reference's sentence said a qualifier was "refused
+// rather than stripped"; it is neither refused nor stripped, it travels.
 mod:field_initialiser;
 
 macro:with_init = () { int32:a = 5i32; };
 
 struct:S = { #with_init(); };
+
+macro:fixed_with_init = () { fixed int32:b = 5i32; };
+
+struct:T = { #fixed_with_init(); };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };

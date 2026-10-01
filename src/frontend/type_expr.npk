@@ -801,6 +801,37 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
     int32:kind = raw num_width_kind(w);
     int32:bits = raw num_width_bits(w);
 
+    // A LITERAL WITH A FRACTION IS NOT AN INTEGER LITERAL (DEF-167, 1.6.1e
+    // step 3). `TypeSuffix` is one production for both literal forms
+    // (LEXICAL_REFERENCE §6.2), so `2.5i32` lexes -- and it reached the three
+    // `lit_ranged` arms below, which read a literal's PAYLOAD as its value: a
+    // float's payload is the intern index of its text. So `int32:z = 2.5i32;`
+    // typed as an `int32` and died in the emitter (EMIT-002), and `1.5u8` was
+    // "does not fit `uint8`" only where the index happened to pass 255.
+    // Refused at the literal whatever the value: `2.0i32` is a fraction too,
+    // and the family is the suffix's, never the digits'.
+    if (n.kind == ExprKind.ExprFloatLiteral) {
+        string:fam = "";
+        string:sfx = "";
+        if (kind == (raw TY_INT())) {
+            fam = "an integer suffix";
+            sfx = "u";
+            if (raw num_width_signed(w)) { sfx = "i"; }
+        }
+        if (kind == (raw TY_TBB()))  { fam = "a `tbb` suffix";     sfx = "tbb"; }
+        if (kind == (raw TY_CHAR())) { fam = "a character suffix"; sfx = "char"; }
+        if (fam.len > 0i64) {
+            string:fl1 = string_concat(
+                "a literal with a fraction is a float or fixed-point literal; `", sfx);
+            string:fl2 = string_concat(fl1, int_to_string(bits => int64));
+            string:fl3 = string_concat(fl2, "` is ");
+            string:fl4 = string_concat(fl3, fam);
+            pass (raw te_error(e, raw TYPE_LIT_RANGE(),
+                string_concat(fl4, ", and the number in the program would not be the number written (D-148)"),
+                n.span));
+        }
+    }
+
     if (kind == (raw TY_INT())) {
         pass (raw lit_ranged(e, n,
                   raw tt_int(e.types, bits, raw num_width_signed(w))));

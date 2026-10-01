@@ -74,6 +74,15 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(raw code_at(@d9, 0i64), raw LEX_UNTERMINATED_TEMPLATE())))
                                                               { exit 26i32; }
 
+    // A float literal's tail that is no `TypeSuffix` (DEF-166, 1.6.1e step 3;
+    // `lexer_numeric.npk` holds the scan): one diagnostic, and the ONLY one --
+    // the token is still a `FloatLit`, so nothing downstream repeats it.
+    DiagList:dc = raw diaglist_init();
+    discard(raw lex_all(0i32, "1.5f512", @it, @dc));
+    if (raw diaglist_count(@dc) != 1i64)                      { exit 27i32; }
+    if (!(raw string_eq(raw code_at(@dc, 0i64), raw LEX_BAD_SUFFIX())))
+                                                              { exit 28i32; }
+
     // --- one bad CHARACTER is one diagnostic --------------------------------
     // A multi-byte UTF-8 character outside a literal is a single mistake. A
     // lexer that reports per BYTE buries the real first error under its own

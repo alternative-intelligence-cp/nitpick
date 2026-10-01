@@ -150,13 +150,128 @@ func:strip_type_suffix = int64(string:run) never fails {
     pass 0i64;
 };
 
-// The width suffix on a float literal's text, or WNone.
-pub func:num_float_width = NumWidth(string:text) never fails {
-    int64:tlen = raw strip_type_suffix(text);
-    if (tlen == 0i64) {
-        pass NumWidth.WNone;
+// --- the float literal (LEXICAL_REFERENCE §6.2; DEF-166, 1.6.1e step 3) --------
+//
+//   FloatLiteral ::= DecimalLiteral "." DecimalLiteral Exponent? TypeSuffix?
+//   Exponent     ::= [eE] [+-]? DecimalLiteral
+//
+// THE BODY IS READ BY THE PRODUCTION, AND WHAT FOLLOWS IT IS THE TAIL. Until
+// this step the lexer scanned `digits . ident-part*`, then ANY sign, then
+// `ident-part*` again, kept the whole run as the literal's text, and asked only
+// whether the run ENDED in a suffix. Three defects came of it, each measured on
+// `5fbaf4a`:
+//   - a tail naming no suffix was never looked at: `1.5f512`, `3.14flt32` and
+//     `1.0f64x` compiled as the number in front (the library listener's
+//     `ty0178` and `ty0189b`; the emitter cut the text at its first `f`), and
+//     `1.5garbage` was handed to `llc` as written;
+//   - a sign after ANY float was swallowed with what followed it: `3.5f64-x`
+//     was one literal, whose value the emitter read up to its `f` -- the
+//     subtraction vanished and the program computed 3.5, in silence -- while
+//     `3.5-x` reached `llc` as `double 3.5-x` and `2.5-1.5` was the literal
+//     `2.5-1` and a member access `.5` (TYPE-019);
+//   - a `_` separator, which §6.2 permits and ignores, rode into the kept text:
+//     `1_000.5f64` reached `llc` as `double 1_000.5`, and `1_000.5tfp64` folded
+//     to 1.0 -- `tfp_q_decimal` below stops at the first byte it does not know.
+// So the body is digits, a dot, digits, and an exponent ONLY where an `e`/`E`
+// is followed by a digit, or by a sign and then a digit; a `_` is admitted in
+// each digit run after its first digit, where the integer scan admits it; the
+// tail is the [0-9a-zA-Z_] run after the body, for the lexer to hold to the
+// `TypeSuffix` production (NITPICK-LEX-009); and the text a float keeps is its
+// body WITHOUT the separators, then its tail -- so the four readers of that
+// text (the checker's digit count, the Q fold, the emitter, the encoder) read
+// the number that was written.
+
+pub struct:FloatScan = {
+    bool:is_float;     // false: not `digits . digit`, and the caller scans an integer
+    int64:body_end;    // one past the numeric body
+    int64:end;         // one past the tail: where the token ends
+};
+
+func:dec_digit = bool(uint8:c) never fails {
+    pass ((c >= 48u8) && (c <= 57u8));
+};
+
+// One past the digits and `_` separators from `at` on. The caller has seen a
+// DIGIT at `at`, so a separator never leads a run.
+func:skip_digit_run = int64(string:text, int64:at) never fails {
+    int64:p = at;
+    while (p < text.len) decreases text.len - p {
+        uint8:c = text.ptr[p] => uint8;
+        if (!(raw dec_digit(c))) {
+            if (c != 95u8) { pass p; }
+        }
+        p = p + 1i64;
     }
-    pass (raw num_width_of(raw slice_proven(text, text.len - tlen, text.len)));
+    pass p;
+};
+
+// `text` is the SOURCE, `start` the literal's first byte and `dot` the byte
+// after the lexer's first [0-9a-zA-Z_] run -- where a float's dot stands.
+pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never fails {
+    FloatScan:no = FloatScan{ is_float: false, body_end: dot, end: dot };
+    // A FLOAT NEEDS A DIGIT AFTER THE DOT: `0...4` is a range, and this is the
+    // check that keeps it one (the seed walked into that case in 0.0.2).
+    if ((dot + 1i64) >= text.len) { pass no; }
+    if ((text.ptr[dot] => uint8) != 46u8) { pass no; }
+    if (!(raw dec_digit(text.ptr[dot + 1i64] => uint8))) { pass no; }
+    // AND DECIMAL DIGITS BEFORE IT: `0FFhex.5`, `12i32.5` and `1e5.0` are an
+    // integer (or a bad one), a dot and an integer, for the integer scan and
+    // the parser to answer. They were floats whose text no reader understood.
+    int64:i = start;
+    while (i < dot) decreases dot - i {
+        uint8:c = text.ptr[i] => uint8;
+        if (!(raw dec_digit(c))) {
+            if (c != 95u8) { pass no; }
+        }
+        i = i + 1i64;
+    }
+    int64:p = raw skip_digit_run(text, dot + 1i64);
+    // THE EXPONENT IS `e`, AN OPTIONAL SIGN, AND A DIGIT -- all three looked at
+    // before any is taken, so `3.5e-x` is the literal `3.5e` (a bad tail), a
+    // minus and a name, and `3.5-x` is a literal, a minus and a name.
+    if (p < text.len) {
+        uint8:x = text.ptr[p] => uint8;
+        if ((x == 101u8) || (x == 69u8)) {
+            int64:q = p + 1i64;
+            if (q < text.len) {
+                uint8:sg = text.ptr[q] => uint8;
+                if ((sg == 43u8) || (sg == 45u8)) { q = q + 1i64; }
+            }
+            if (q < text.len) {
+                if (raw dec_digit(text.ptr[q] => uint8)) {
+                    p = raw skip_digit_run(text, q);
+                }
+            }
+        }
+    }
+    int64:body_end = p;
+    while (p < text.len) decreases text.len - p {
+        uint8:t = text.ptr[p] => uint8;
+        bool:part = raw dec_digit(t);
+        if ((t >= 97u8) && (t <= 122u8)) { part = true; }   // a-z
+        if ((t >= 65u8) && (t <= 90u8))  { part = true; }   // A-Z
+        if (t == 95u8)                   { part = true; }   // _
+        if (!part) { break; }
+        p = p + 1i64;
+    }
+    pass FloatScan{ is_float: true, body_end: body_end, end: p };
+};
+
+// THE TEXT A FLOAT KEEPS: its numeric body without the `_` separators, then
+// its tail -- `1_000.5f64` keeps "1000.5f64".
+pub func:num_float_text = string(string:text, int64:start, FloatScan:fs) never fails {
+    string:out = "";
+    int64:lo = start;
+    int64:i = start;
+    while (i < fs.body_end) decreases fs.body_end - i {
+        if ((text.ptr[i] => uint8) == 95u8) {
+            out = string_concat(out, raw slice_proven(text, lo, i));
+            lo = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    out = string_concat(out, raw slice_proven(text, lo, fs.body_end));
+    pass (string_concat(out, raw slice_proven(text, fs.body_end, fs.end)));
 };
 
 // --- the scan ---------------------------------------------------------------
@@ -329,6 +444,9 @@ func:tfpq_decimal = string(uint512:v0) never fails {
 pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     int32:frac_bits = bits / 2i32;
     // --- parse: integer digits, fraction digits, exponent; stop at a suffix ---
+    // (A float's kept text carries no `_` separator -- `num_float_text` drops
+    // them -- which matters HERE: this loop ends at the first byte it does not
+    // know, and `1_000.5tfp64` folded to 1.0 until the lexer kept the body bare.)
     wild uint8->:ints = alloc(text.len + 408i64) =>! wild uint8->;
     wild uint8->:frs = alloc(text.len + 408i64) =>! wild uint8->;
     int64:ni = 0i64;

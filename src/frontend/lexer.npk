@@ -509,33 +509,45 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             discard(raw lexer_advance(lx));
         }
 
-        // A float needs a DIGIT after the dot. `0...4` is a range, not a
-        // malformed float, and this is the check that keeps it one.
+        // A FLOAT IS READ BY ITS PRODUCTION (LEXICAL_REFERENCE §6.2; DEF-166,
+        // 1.6.1e step 3): `num_float_scan` finds the numeric body and the tail
+        // behind it, and says what the scan it replaces got wrong. A float needs
+        // a DIGIT after the dot -- `0...4` is a range, not a malformed float --
+        // and decimal digits before it.
         if (raw is_digit(c)) {
-            if ((raw lexer_peek(lx)) == 46u8) {
-                if (raw is_digit(raw lexer_peek2(lx))) {
-                    discard(raw lexer_advance(lx));                    // the dot
-                    while (raw is_ident_part(raw lexer_peek(lx))) decreases lx.text.len - lx.pos {
-                        discard(raw lexer_advance(lx));
-                    }
-                    // An exponent may carry a sign, which is not an ident part.
-                    uint8:e = raw lexer_peek(lx);
-                    if ((e == 43u8) || (e == 45u8)) {
-                        discard(raw lexer_advance(lx));
-                        while (raw is_ident_part(raw lexer_peek(lx))) decreases lx.text.len - lx.pos {
-                            discard(raw lexer_advance(lx));
-                        }
-                    }
-                    string:ftext = raw slice_proven(lx.text, start, lx.pos);
-                    Span:fsp = raw lexer_span_from(lx, start, line, col);
-                    // A float keeps its TEXT, interned, rather than a converted
-                    // value: converting at scan time would round once here and
-                    // again later, and the source form is what the const
-                    // evaluator needs to get it right the first time.
-                    pass (raw token_numeric(TokenKind.FloatLit, fsp,
-                              (raw intern_add(interns, string_concat(ftext, ""))) => int64,
-                              raw num_float_width(ftext)));
+            FloatScan:fs = raw num_float_scan(lx.text, start, lx.pos);
+            if (fs.is_float) {
+                while (lx.pos < fs.end) decreases fs.end - lx.pos {
+                    discard(raw lexer_advance(lx));
                 }
+                Span:fsp = raw lexer_span_from(lx, start, line, col);
+                // THE TAIL IS ONE `TypeSuffix` OR NOTHING. Whether the suffix
+                // suits a literal with a fraction (`2.5i32` does not) is the
+                // checker's question; whether it is a suffix at all is this
+                // one. THE TOKEN STAYS A `FloatLit`: an `Error` token would
+                // have the parser say "expected an expression" about the same
+                // mistake (D-240), and the driver stops before expansion on
+                // any diagnostic, so nothing reads the literal further.
+                string:tail = raw slice_proven(lx.text, fs.body_end, fs.end);
+                NumWidth:fw = NumWidth.WNone;
+                if (tail.len > 0i64) {
+                    fw = raw num_width_of(tail);
+                    if (fw == NumWidth.WNone) {
+                        string:b1 = string_concat("`", tail);
+                        drop diaglist_push(diags,
+                            raw diag_error(raw LEX_BAD_SUFFIX(),
+                                string_concat(b1, "` is not a literal suffix: a float literal ends in `f32`, `f64`, a `tfp` width or `dim256`, or in nothing (LEXICAL_REFERENCE §6.2)"),
+                                fsp));
+                    }
+                }
+                // A float keeps its TEXT, interned, rather than a converted
+                // value: converting at scan time would round once here and
+                // again later, and the source form is what the const
+                // evaluator needs to get it right the first time. The text is
+                // the body without its `_` separators, then the tail.
+                pass (raw token_numeric(TokenKind.FloatLit, fsp,
+                          (raw intern_add(interns, raw num_float_text(lx.text, start, fs))) => int64,
+                          fw));
             }
         }
 

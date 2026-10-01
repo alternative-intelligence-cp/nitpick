@@ -1,0 +1,260 @@
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 68:5
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 83:5
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 91:5
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 108:5
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 115:5
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 135:5
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 158:16
+// expect-error: NITPICK-LOCK-003
+// expect-error-at: 172:53
+//
+// AN UNDECLARED DYNAMICALLY DISPATCHED METHOD MAY NOT ACQUIRE AT ALL (D-056,
+// D-113; VERIFICATION_REFERENCE §7; 1.6.1e step 3, the library listener's
+// vf0831). A call through a trait object can reach any implementation, so what
+// it may acquire is whatever the trait's method DECLARES -- `acquires <= N` --
+// and a method that declares nothing has promised its callers nothing is taken.
+// Every implementation is held to that promise: one that can reach ANY level is
+// LOCK-002 where it is written, and so is the trait's own default body, which is
+// the implementation every impl that omits the method runs.
+//
+// Measured on 5fbaf4a: every LOCK-002 below compiled. `inherit_trait_bound`'s
+// comment said "an absent clause is a bound of nothing" and the code under it
+// set no bound at all, so the implementation was unbounded while a call through
+// the trait was read as acquiring nothing -- an impl could take a level-1 lock
+// behind a `dyn` its caller reached holding level 9.
+//
+// Two neighbours are pinned beside it. An exact `acquires N` on a trait's method
+// is a ceiling for its implementations too (case 6) -- checked, and not read in
+// place of the body of an implementation named directly (case 6b, the
+// LOCK-001). And a clause that is written and refused is LOCK-003 alone: the
+// absence is what bounds, not the mistake (case 7).
+//
+// The controls at the end: an implementation within a declared `acquires <= N`,
+// an inherent impl (nothing dispatches to it dynamically, so nothing bounds
+// it), implementations and a default body that acquire nothing, a call through
+// the undeclared method while a level is held (it contributes NO level: the
+// bound of nothing is never read as one), and its result bound.
+mod:lock_undeclared;
+error:E9;
+
+struct:Lease = { int32:v; };
+
+func:take_1 = Lease() acquires 1i32 { pass Lease{ v: 1i32 }; };
+func:take_2 = Lease() acquires 2i32 { pass Lease{ v: 2i32 }; };
+func:take_3 = Lease() acquires 3i32 { pass Lease{ v: 3i32 }; };
+func:take_9 = Lease() acquires 9i32 { pass Lease{ v: 9i32 }; };
+
+func:reaches_1 = NIL() never fails {
+    Lease:g = take_1() ?! E9;
+    discard(g.v);
+    pass NIL;
+};
+
+// --- no clause on the trait's method ------------------------------------------------
+
+trait:Plain = {
+    func:touch = NIL(Self:self);
+    func:read = int32(Self:self);
+
+    // 2. A DEFAULT BODY IS AN IMPLEMENTATION. Every impl that omits `settle`
+    // runs this one behind the same `dyn Plain`.
+    func:settle = NIL(Self:self) {
+        Lease:g = take_1() ?! E9;
+        discard(g.v);
+        pass NIL;
+    };
+
+    // (control) a default body that acquires nothing keeps the bound of nothing.
+    func:idle = int32(Self:self) never fails { pass 0i32; };
+};
+
+struct:Loose = { int32:v; };
+
+impl:Loose:Plain = {
+    // 1. THE LISTENER'S CASE: the trait's `touch` declares no level and this
+    // implementation takes one.
+    pub func:touch = NIL(Self:self) never fails {
+        Lease:g = take_1() ?! E9;
+        discard(g.v);
+        pass NIL;
+    };
+
+    // 3. THROUGH THE CALL GRAPH: nothing is acquired in this body, and what it
+    // calls reaches level 1 -- "at all" is transitive, as the ordering is.
+    pub func:read = int32(Self:self) never fails {
+        drop reaches_1();
+        pass self.v;
+    };
+};
+
+// --- a typed acquisition and a channel wait are levels like any other ------------------
+
+trait:Worker = {
+    async func:bump = NIL(Self:self, Mutex<int32, 3i32>->:m);
+    async func:notify = NIL(Self:self, Channel<int32, 4i32, 2i64>:ch);
+};
+
+struct:Busy = { int32:v; };
+
+impl:Busy:Worker = {
+    // 4. `m.acquire(…)` carries its level in the receiver's type (1.1.11).
+    pub async func:bump = NIL(Self:self, Mutex<int32, 3i32>->:m) {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+        g.value = g.value + self.v;
+        pass NIL;
+    };
+
+    // 5. A `send` waits at its channel's level (`chan_levels.npk`).
+    pub async func:notify = NIL(Self:self, Channel<int32, 4i32, 2i64>:ch) {
+        await ch.send(self.v, raw duration_ms(5i64)) ?! E9;
+        pass NIL;
+    };
+};
+
+// --- an exact clause is a ceiling for its implementations too ---------------------------
+//
+// `acquires 3i32` on a trait's method is a FACT about every implementation: a
+// call through the trait is read as taking level 3. An implementation reaching
+// level 9 makes the fact false, and until this step nothing compared the two.
+
+trait:Vault = {
+    func:open = Lease(Self:self) acquires 3i32;
+};
+
+struct:Deep = { int32:v; };
+
+// 6. reaches 9 under `acquires 3`.
+impl:Deep:Vault = {
+    pub func:open = Lease(Self:self) {
+        Lease:g = take_9() ?! E9;
+        pass g;
+    };
+};
+
+struct:Shallow = { int32:v; };
+
+// (within the ceiling: reaches 1 under `acquires 3`, and is not LOCK-002.)
+impl:Shallow:Vault = {
+    pub func:open = Lease(Self:self) {
+        Lease:g = take_1() ?! E9;
+        pass g;
+    };
+};
+
+// 6b. THE CEILING IS CHECKED AND DOES NOT STAND IN FOR THE BODY. `Shallow.open`
+// named directly is read by what its body takes -- level 1 -- so calling it
+// with level 2 held is the downward acquisition it is. Reading the trait's 3 in
+// its place would have accepted this (it is LOCK-001 on every compiler before
+// this step, when an exact clause bounded nothing).
+func:opens_under_two = NIL(Shallow:s) never fails {
+    Lease:a = take_2() ?! E9;
+    Lease:b = s.open() ?! E9;
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+// --- a clause that is written and refused is not an absence -----------------------------
+//
+// 7. ONE MISTAKE, ONE REPORT (D-240). The level below is a parameter, which
+// arrives too late to order anything: LOCK-003 at the clause. The
+// implementation acquires, and is NOT also told its trait declares nothing --
+// the trait declares something the compiler has already refused.
+
+trait:Odd = {
+    func:go = NIL(Self:self, int32:lvl) acquires <= lvl;
+};
+
+struct:Follows = { int32:v; };
+
+impl:Follows:Odd = {
+    pub func:go = NIL(Self:self, int32:lvl) never fails {
+        Lease:g = take_1() ?! E9;
+        discard(g.v);
+        discard(lvl);
+        pass NIL;
+    };
+};
+
+// --- the controls: none of these is reported -----------------------------------------
+
+struct:Level3 = { int32:v; };
+
+// AT THE EXACT LEVEL: the implementation takes the 3 its trait declares.
+impl:Level3:Vault = {
+    pub func:open = Lease(Self:self) {
+        Lease:g = take_3() ?! E9;
+        pass g;
+    };
+};
+
+trait:Storage = {
+    func:commit = NIL(Self:self) acquires <= 3i32;
+};
+
+struct:Tight = { int32:v; };
+
+// WITHIN A DECLARED BOUND: reaches 1, declared `<= 3`.
+impl:Tight:Storage = {
+    pub func:commit = NIL(Self:self) never fails {
+        drop reaches_1();
+        pass NIL;
+    };
+};
+
+struct:Quiet = { int32:v; };
+
+// AN IMPLEMENTATION THAT ACQUIRES NOTHING keeps the bound of nothing. The rule
+// is about what a body can REACH, not about a clause it would have to write.
+impl:Quiet:Plain = {
+    pub func:touch = NIL(Self:self) never fails { pass NIL; };
+    pub func:read = int32(Self:self) never fails { pass self.v; };
+};
+
+struct:Alone = { int32:v; };
+
+// AN INHERENT IMPL IS NOT BOUND: nothing dispatches to it dynamically, so
+// there is no caller who read a promise off a trait.
+impl:Alone = {
+    pub func:whatever = NIL(Self:self) never fails {
+        Lease:g = take_9() ?! E9;
+        discard(g.v);
+        pass NIL;
+    };
+};
+
+// A CALL THROUGH THE UNDECLARED METHOD CONTRIBUTES NO LEVEL. Level 9 is held
+// and `touch` is called behind a `dyn`: there is nothing it may acquire, so
+// there is nothing to order -- and the bound of nothing is never read as the
+// level its sentinel happens to be.
+func:calls_under_a_level = NIL(dyn Plain:d) never fails {
+    Lease:a = take_9() ?! E9;
+    discard(a.v);
+    d.touch() ?! E9;
+    pass NIL;
+};
+
+// ITS RESULT BOUND HOLDS NOTHING: a level-1 acquisition after it is not
+// downward from anything.
+func:binds_then_acquires = int32(dyn Plain:d) never fails {
+    int32:n = d.read() ?! E9;
+    Lease:b = take_1() ?! E9;
+    discard(b.v);
+    pass n;
+};
+
+// THE IMPLEMENTATION NAMED DIRECTLY, with a level held: `Quiet.touch` is bound
+// to acquire nothing and does not.
+func:calls_by_name = NIL(Quiet:q) never fails {
+    Lease:a = take_9() ?! E9;
+    discard(a.v);
+    drop q.touch();
+    pass NIL;
+};

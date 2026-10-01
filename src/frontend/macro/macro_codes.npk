@@ -24,10 +24,19 @@ pub func:MACRO_TOO_DEEP = string() never fails     { pass "NITPICK-MACRO-003"; }
 // ITS OWN CODE, not shared with the depth bound. They are different mistakes with
 // unrelated fixes, and a single "expansion limit exceeded" would make the second
 // look like the first.
+//
+// DECIDED IN TWO PLACES since 1.6.1e step 3 (DEF-172, DEF-173). A macro that
+// reaches itself through the invocations the bodies write is refused at its
+// DECLARATION, before a round is run, with the chain in the sentence; what the
+// round bound still stops is a chain that is finite and too long, refused at the
+// invocation left standing after the last round.
 pub func:MACRO_NO_FIXPOINT = string() never fails  { pass "NITPICK-MACRO-004"; };
 
 // A body spliced where what it emits does not fit — fields into something that is
-// not a struct, declarations into an expression.
+// not a struct, declarations into an expression. And, since 1.6.1e step 3, the two
+// bodies that fit NO site: one that declares a `macro:` (macros are collected
+// before expansion, so an emitted one could never be invoked), and a range standing
+// as a whole value pattern (a pattern's kind is the parser's).
 pub func:MACRO_WRONG_SHAPE = string() never fails  { pass "NITPICK-MACRO-005"; };
 
 // A DEFECT IN THE COMPILER: a node kind the clone has no case for. `RESOLVE_INTERNAL`

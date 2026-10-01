@@ -1,0 +1,82 @@
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 31:6
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 38:6
+//
+// A SPLICED `fixed` FIELD IS A `fixed` FIELD (1.6.1e step 3; the library listener's
+// mc0085b, read as a DOCUMENTATION row).
+//
+// MACRO_REFERENCE §2 said a variable declaration carrying a qualifier "is refused
+// rather than stripped: a field has neither, and losing a `fixed` quietly is worse
+// than not accepting the program". That described the splice before 1.0.8. A field
+// HAS a qualifier slot, and the splice has carried the declaration's qualifier
+// across since then (`splice_field`: "THE QUALIFIER TRAVELS") -- so nothing is
+// lost, and refusing the program would have broken `fixed` fields (D-222, D-287) for
+// the sake of a stale sentence. The listener's program compiles, and it should.
+//
+// THIS FILE IS THE PROOF THAT THE QUALIFIER ARRIVED: the later write to the spliced
+// field is refused exactly as the write to the field written by hand is, by the
+// same rule, in the same words. The sibling field without the qualifier is
+// written freely -- the control.
+mod:spliced_fixed_field;
+
+macro:with_qual = () { fixed int32:a; };
+
+struct:Spliced = { #with_qual(); int32:b; };
+struct:ByHand  = { fixed int32:a; int32:b; };
+
+func:write_spliced = int32() never fails {
+    Spliced:s = Spliced{ a: 1i32, b: 2i32 };
+    s.b = 3i32;
+    s.a = 5i32;
+    pass s.a + s.b;
+};
+
+func:write_by_hand = int32() never fails {
+    ByHand:d = ByHand{ a: 1i32, b: 2i32 };
+    d.b = 3i32;
+    d.a = 5i32;
+    pass d.a + d.b;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit (raw write_spliced()) + (raw write_by_hand());
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
