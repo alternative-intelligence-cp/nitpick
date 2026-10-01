@@ -1,0 +1,121 @@
+// expect-exit: 0
+//
+// A COMPILE-TIME BINDING IS THE ONE THE RESOLVER BOUND, NOT WHATEVER SHARES ITS
+// SPELLING (DEF-196, 1.6.1e).
+//
+// The evaluator kept a `comptime func:` call's variables in one list keyed by
+// NAME, on a premise its own comment stated -- "there is no nested scope in a body
+// this evaluator accepts" -- that stopped being true when it learned `if`, `while`
+// and the counted loops. So, each in silence, and each disagreeing with the same
+// body run at run time:
+//
+//   * a local declared in a nested block OVERWROTE the outer local of its
+//     spelling: `shadow_local` answered 12 for 11, `shadow_param` 50 for 3;
+//   * a macro body's free name, which the resolver binds where the macro was
+//     written (D-057), READ a local of the function it was invoked in:
+//     `body_free_name` answered 6 for 105;
+//   * a name written inside a TYPE read a local too, where the checker reads the
+//     module's `fixed` binding (D-222: a local is not an array size) -- one type,
+//     two sizes: `name_in_type` and `body_name_in_type` answered 8 for 12.
+//
+// An entry is keyed by the node that declares it now (the symbol's origin), the
+// rule DEF-144 gave the emitter. The run-time twins are here to say what the
+// right answer is: they were always right.
+mod:comptime_scopes;
+
+fixed int32:N = 100i32;
+fixed int32:LEN = 3i32;
+
+macro:add_n = (X) { X + N; };
+macro:size_len = () { #size_of<int32[LEN]>(); };
+macro:bump = (X) { int32:t = X * 2i32; discard(t); };
+
+// --- shadowing ----------------------------------------------------------------------------
+comptime func:shadow_local = int32() never fails {
+    int32:x = 1i32;
+    if (x == 1i32) { int32:x = 2i32; discard(x); }
+    pass x + 10i32;
+};
+func:shadow_local_rt = int32() never fails {
+    int32:x = 1i32;
+    if (x == 1i32) { int32:x = 2i32; discard(x); }
+    pass x + 10i32;
+};
+comptime func:shadow_param = int32(int32:a) never fails {
+    if (a > 0i32) { int32:a = 50i32; discard(a); }
+    pass a;
+};
+
+// --- a macro body's names -----------------------------------------------------------------
+comptime func:body_free_name = int32() never fails {
+    int32:N = 1i32;
+    int32:r = #add_n(5i32);
+    pass r + (N - 1i32);
+};
+func:body_free_name_rt = int32() never fails {
+    int32:N = 1i32;
+    int32:r = #add_n(5i32);
+    pass r + (N - 1i32);
+};
+comptime func:body_local = int32() never fails { int32:t = 7i32; #bump(5i32); pass t; };
+
+// --- a name inside a type -----------------------------------------------------------------
+comptime func:name_in_type = int64() never fails {
+    int32:LEN = 2i32;
+    int64:r = #size_of<int32[LEN]>();
+    pass r + ((LEN - 2i32) => int64);
+};
+comptime func:body_name_in_type = int64() never fails {
+    int32:LEN = 2i32;
+    int64:r = #size_len();
+    pass r + ((LEN - 2i32) => int64);
+};
+
+// --- what the one frame always did, kept --------------------------------------------------
+comptime func:param_shadows_global = int32(int32:N) never fails { pass N + 1i32; };
+comptime func:outer_assigned = int32() never fails {
+    int32:x = 1i32;
+    if (x == 1i32) { x = 5i32; }
+    pass x;
+};
+comptime func:loop_local = int32(int32:n) never fails {
+    int32:s = 0i32;
+    int32:i = 0i32;
+    while (i < n) decreases n - i { int32:sq = i * i; s = s + sq; i = i + 1i32; }
+    pass s;
+};
+comptime func:fact = int32(int32:n) decreases n never fails {
+    if (n <= 1i32) { pass 1i32; }
+    pass n * (raw fact(n - 1i32));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if (comptime(raw shadow_local()) != 11i32) { exit 1i32; }
+    if ((raw shadow_local_rt()) != 11i32) { exit 2i32; }
+    if (comptime(raw shadow_param(3i32)) != 3i32) { exit 3i32; }
+    if (comptime(raw body_free_name()) != 105i32) { exit 4i32; }
+    if ((raw body_free_name_rt()) != 105i32) { exit 5i32; }
+    if (comptime(raw body_local()) != 7i32) { exit 6i32; }
+    if (comptime(raw name_in_type()) != 12i64) { exit 7i32; }
+    if (comptime(raw body_name_in_type()) != 12i64) { exit 8i32; }
+    if (comptime(raw param_shadows_global(5i32)) != 6i32) { exit 9i32; }
+    if (comptime(raw outer_assigned()) != 5i32) { exit 10i32; }
+    if (comptime(raw loop_local(4i32)) != 14i32) { exit 11i32; }
+    if (comptime(raw fact(5i32)) != 120i32) { exit 12i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*) { exit 90i32; }
+    }
+    exit 90i32;
+};

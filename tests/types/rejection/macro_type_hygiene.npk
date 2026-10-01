@@ -1,0 +1,62 @@
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 40:30
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 41:54
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 44:25
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 45:19
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 50:30
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 52:68
+//
+// A TYPE'S NAME IN A MACRO BODY MEANS WHAT IT MEANT WHERE THE MACRO WAS WRITTEN
+// (DEF-192, 1.6.1e; D-057's rule, which the type resolver had never been told).
+//
+// The resolver binds a body's identifiers in the scope the macro was declared in,
+// and has done since 0.6. A type's name is resolved later, by the type checker,
+// which asked the generic parameters of whatever declaration it was standing in
+// FIRST -- and a body lands inside the declaration that invoked it. So each of
+// these compiled, the body's name silently meaning the invocation site's
+// parameter:
+//
+//   * `#size_of<U>()` in a body, invoked inside `func:measure<U>`;
+//   * a field `V:item;` spliced into `struct:Box<V>`;
+//   * `#size_of<W>()` in a body, invoked inside a method of `impl:<W>:Holder<W>`.
+//
+// Beside a module type of that spelling the wrong one was read, in silence
+// (`tests/backend/programs/macro_type_hygiene.npk` is that half: 8 for 4). Here
+// there is no such type, so each is the refusal the rule always promised:
+// "there is no type named `U` in the scope this macro was written in".
+//
+// THE CONTROLS, each accepted: a generic parameter the body itself declares, and
+// an ARGUMENT's type name, which stands at the invocation.
+mod:macro_type_hygiene;
+
+macro:plus_one = (E) { E + 1i64; };
+
+// --- the invoking FUNCTION's parameter ----------------------------------------------------
+macro:size_u = () { #size_of<U>(); };
+func:measure<U> = int64(move U:x) never fails { pass #size_u(); };
+
+// --- the generic STRUCT a field is spliced into -------------------------------------------
+macro:item_field = () { V:item; };
+struct:Box<V> = { #item_field(); };
+
+// --- the generic IMPL whose method invokes it ---------------------------------------------
+struct:Holder<W> = { int64:n; };
+trait:Count = { func:count = int64(Self:self); };
+macro:size_w = () { #size_of<W>(); };
+impl:<W>:Holder<W>:Count = {
+    func:count = int64(Holder<W>:self) never fails { pass self.n + #size_w(); };
+};
+
+// --- controls -----------------------------------------------------------------------------
+macro:emit_id = () { func:same<Q> = Q(move Q:x) never fails { pass move(x); }; };
+#emit_id();                                                  // the body's OWN parameter
+func:wide<U> = int64(move U:x) never fails { pass #plus_one(#size_of<U>()); };   // an argument's name
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

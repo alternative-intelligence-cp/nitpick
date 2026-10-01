@@ -201,6 +201,16 @@ pub struct:Ast = {
     // With scratch, a nested node copies its entries out and pops them, so what
     // remains above the outer node's mark is exactly its own children.
     List<int32>:scratch;
+
+    // WHERE EVERY MACRO DECLARATION STANDS IN ITS FILE (DEF-192, DEF-196): three
+    // entries per declaration -- the file, the offset of its first token, the
+    // offset just past its closing `;`. A node's SPAN is how it is asked which
+    // macro body it was written in (`ast_macro_at`): a clone keeps its template's
+    // span, so the answer is the same for the template's own nodes, which every
+    // instantiation shares, and for the copies each instantiation makes -- where
+    // an id range knows only the first and a flag would have to be carried by
+    // every constructor of every node kind.
+    List<int32>:macro_spans;
 };
 
 pub struct:IdSpan = {
@@ -240,7 +250,8 @@ pub func:ast_init = Ast() never fails {
         stmt_height: raw list_init::<int32>(n),
         built:    raw list_init::<int32>(n),
         ids:      raw list_init::<int32>(n),
-        scratch:  raw list_init::<int32>(n)
+        scratch:  raw list_init::<int32>(n),
+        macro_spans: raw list_init::<int32>(16i64)
     };
 
     // Reserve index 0 in every array as the NONE node.
@@ -476,6 +487,36 @@ pub func:HYG_IN_MACRO = int32() never fails { pass 4i32; };
 // one it never visited is a hole in the walk itself. Without the bit both read as
 // the first, which points the reader at their program for a defect in the compiler.
 pub func:HYG_SEEN = int32() never fails { pass 8i32; };
+
+// A MACRO DECLARATION'S EXTENT, RECORDED BY THE PARSER as it closes one.
+pub func:ast_note_macro = NIL(Ast->:ast, int32:file, int32:lo, int32:hi) never fails {
+    drop list_push(@ast.macro_spans, file);
+    drop list_push(@ast.macro_spans, lo);
+    drop list_push(@ast.macro_spans, hi);
+    pass NIL;
+};
+
+// WHICH MACRO BODY A NODE WAS WRITTEN IN: 0 for a span outside every macro
+// declaration, else the declaration's 1-based ordinal in parse order. A macro
+// declaration cannot stand inside another (MACRO-005), so at most one contains
+// a span. What an ARGUMENT wrote stands at its invocation and answers by where
+// that is -- 0 in ordinary code, the enclosing macro's ordinal where the
+// invocation is itself written in a body.
+pub func:ast_macro_at = int32(Ast->:ast, Span:at) never fails {
+    int64:n = ast.macro_spans.count;
+    int64:i = 0i64;
+    int32:ordinal = 1i32;
+    while ((i + 2i64) < n) decreases n - i {
+        if (ast.macro_spans[i] == at.file) {
+            if ((at.offset >= ast.macro_spans[i + 1i64]) && (at.offset < ast.macro_spans[i + 2i64])) {
+                pass ordinal;
+            }
+        }
+        i = i + 3i64;
+        ordinal = ordinal + 1i32;
+    }
+    pass 0i32;
+};
 
 pub func:ast_expr_flag = bool(Ast->:ast, ExprId:id, int32:bit) never fails {
     if (id.index < 0i32) { !!! BoundsId; }

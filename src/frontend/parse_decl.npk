@@ -1526,6 +1526,11 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     }
     discard(raw p_expect(p, TokenKind.PRBrace));
     discard(raw p_expect(p, TokenKind.PSemi));
+    // WHERE THIS DECLARATION STANDS (DEF-192): from its first token to the token
+    // after its `;`. Every node of the body lies between the two, and so does
+    // every copy an instantiation makes of one -- a clone keeps its span.
+    Span:past = raw p_span(p);
+    drop ast_note_macro(p.ast, sp.file, sp.offset, past.offset);
 
     // ONE STATEMENT THAT IS AN EXPRESSION is the expression form. Recognised here
     // rather than at the invocation, because the invocation cannot see the body —

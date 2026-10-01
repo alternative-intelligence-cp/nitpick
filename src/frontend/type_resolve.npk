@@ -196,6 +196,26 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
     pass r;
 };
 
+// HYGIENE FOR A TYPE'S NAME (DEF-192; D-057's rule, which the type resolver had
+// never been told). A name written in a macro body means what it meant where the
+// macro was WRITTEN -- the module's scope -- so it binds a generic parameter, or
+// a trait's associated type, only where that is declared in the SAME body (the
+// `T` of a `func:f<T>` the body emits). The parameters of the function or `impl`
+// the macro was INVOKED in belong to the invocation site, which a body cannot
+// see: `macro:sz = () { #size_of<T>(); };` invoked inside `func:g<T>` measured
+// the caller's `T`, in silence, where the module's `struct:T` was written.
+//
+// ASKED OF THE SPANS, because a clone keeps its template's span: the body's own
+// type nodes (shared by every instantiation where they hold no expression) and
+// the copies an instantiation makes answer alike, and so does a parameter the
+// body declares. A name written OUTSIDE every macro body -- an argument's
+// included -- binds as it always did; what an argument's names may see is S-120.
+func:macro_may_bind = bool(TypeResolver->:r, Span:written, Span:declared) never fails {
+    int32:m = raw ast_macro_at(r.ast, written);
+    if (m == 0i32) { pass true; }
+    pass ((raw ast_macro_at(r.ast, declared)) == m);
+};
+
 // A NAME THAT IS A GENERIC PARAMETER OF SOMETHING CURRENTLY IN SCOPE.
 pub func:generic_lookup = ParamBind(TypeResolver->:r, int32:name, Span:at) never fails {
     ParamBind:own = raw generic_bind_in(r, r.generics, name, at);
@@ -212,6 +232,12 @@ func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name,
         DeclId:gpid = DeclId{ index: raw ast_id_at(r.ast, g.params_start, i) };
         DeclNode:pn = raw ast_decl(r.ast, gpid);
         if ((raw decl_name(pn)) == name) {
+            // NOT THIS ONE, FOR A NAME WRITTEN IN A MACRO BODY THAT DOES NOT
+            // DECLARE IT (DEF-192): the search goes on, and ends in the scope.
+            if (!(raw macro_may_bind(r, at, pn.span))) {
+                i = i + 1i32;
+                continue;
+            }
             // A VALUE PARAMETER IS NOT A TYPE. `<comptime int32:LEVEL>` names a
             // compile-time constant, and `LEVEL:x` is as wrong as `MAX:x` would
             // be — refused by name rather than becoming an opaque type that then
@@ -576,9 +602,16 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // binds" — so it is asked of the enclosing trait, before the scope, for the
     // same reason a generic parameter is: the nearer binding wins, and a
     // module-level `Item` is not what the trait body meant.
+    //
+    // A NAME WRITTEN IN A MACRO BODY IS HELD TO THE GENERIC PARAMETER'S RULE
+    // (DEF-192): the trait's `Item` is the invocation site's unless the body
+    // declares the trait.
     if (r.self_trait != 0i32) {
-        int32:at = raw assoc_of_trait(r, r.self_trait, name);
-        if (at != 0i32) { pass at; }
+        DeclNode:strait = raw ast_decl(r.ast, DeclId{ index: r.self_trait });
+        if (raw macro_may_bind(r, n.span, strait.span)) {
+            int32:at = raw assoc_of_trait(r, r.self_trait, name);
+            if (at != 0i32) { pass at; }
+        }
     }
 
     int32:sym = raw scope_lookup(r.tab, scope, name);
@@ -586,6 +619,13 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
         string:text = raw intern_get(r.interns, name);
         string:m1 = string_concat("there is no type named `", text);
         string:m2 = string_concat(m1, "`");
+        // WHICH SCOPE, when it is not the one the reader is looking at (D-057's
+        // sentence, for a type's name; DEF-192): the diagnostic points into a
+        // macro body, and the generic parameter of that spelling the reader can
+        // see at the invocation is exactly what the body cannot.
+        if ((raw ast_macro_at(r.ast, n.span)) != 0i32) {
+            m2 = string_concat(m1, "` in the scope this macro was written in; a type's name in a macro body resolves there and never at the invocation site, so a generic parameter of the function, struct or `impl` the macro is invoked in is not visible to it (D-057)");
+        }
         pass (raw ty_error(r, raw TYPE_UNKNOWN(), move(m2), n.span));
     }
 
@@ -842,13 +882,21 @@ pub func:FOLD_DEPTH = int32() never fails { pass 64i32; };
 // reinterpretation beside each array -- the shape 1.4.2 found FIVE latent
 // unchecked pointer reinterpretations in.
 //
-// THE TWO COUNTS MOVE TOGETHER, and that is this family's invariant: every
-// write pushes BOTH, so `names.count == vals.count` always. The shared `count`
+// THE THREE COUNTS MOVE TOGETHER, and that is this family's invariant: every
+// write pushes ALL THREE, so the counts are equal always. The shared `count`
 // this replaces made that structural; here it is maintained, and the read paths
 // bound-check against their own list rather than against a count that belongs
-// to neither array in particular.
+// to no array in particular.
+//
+// AN ENTRY IS KEYED BY THE NODE THAT DECLARES IT, NOT BY ITS NAME (DEF-196): the
+// symbol-origin pair the resolver gave the binding -- (`SYM_DECL`, the
+// parameter's declaration) or (`SYM_STMT`, the local's statement) -- which is
+// what an identifier's recorded symbol leads back to. No name is kept, because
+// nothing may ask by one: an identifier the resolver did not bind is a name
+// written inside a TYPE (`int32[N]`), and that is never a local (`fold_ident`).
 pub struct:FoldEnv = {
-    List<int32>:names;
+    List<int32>:kinds;
+    List<int32>:origins;
     List<ConstVal>:vals;
 };
 
@@ -856,50 +904,66 @@ pub struct:FoldEnv = {
 // has no zero-capacity form BY DESIGN (a doubling from zero is a no-op
 // forever), so one is the floor. It is built exactly once, at resolver init.
 pub func:foldenv_none = FoldEnv() never fails {
-    pass FoldEnv{ names: raw list_init::<int32>(1i64),
+    pass FoldEnv{ kinds: raw list_init::<int32>(1i64),
+                  origins: raw list_init::<int32>(1i64),
                   vals: raw list_init::<ConstVal>(1i64) };
 };
 
 func:foldenv_new = FoldEnv() never fails {
-    pass FoldEnv{ names: raw list_init::<int32>(16i64),
+    pass FoldEnv{ kinds: raw list_init::<int32>(16i64),
+                  origins: raw list_init::<int32>(16i64),
                   vals: raw list_init::<ConstVal>(16i64) };
 };
 
-// LAST BINDING WINS, and it is a REBIND rather than a shadow: a comptime function
-// has one frame, `x = x + 1i32` writes the `x` that is there, and there is no
-// nested scope in a body this evaluator accepts. Searching backwards would be the
-// same answer more slowly.
-func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
+// ONE ENTRY PER DECLARING NODE (DEF-196). A write to a binding that is there is a
+// REBIND -- `x = x + 1i32`, or a declaration a loop runs again -- and a
+// declaration that is not there is a new entry, WHATEVER IT IS CALLED.
+//
+// This was keyed by the NAME until 1.6.1e, on the stated premise that "there is no
+// nested scope in a body this evaluator accepts". The evaluator had long since
+// learned `if`, `while` and the counted loops, each with a block of its own, so:
+// a local declared in a nested block OVERWROTE the outer local of its spelling
+// (`int32:x = 1i32; if (c) { int32:x = 2i32; } pass x;` evaluated to 2 where the
+// same body run at run time answers 1), and a macro body's free name, which the
+// resolver binds where the macro was written (D-057), READ a local of the
+// `comptime func:` it was invoked in. The emitter learned the same lesson as
+// DEF-144: a binding is its symbol, never its spelling.
+func:foldenv_set = NIL(FoldEnv->:e, int32:kind, int32:origin, move ConstVal:v) never fails {
     int32:i = 0i32;
-    while ((i => int64) < e.names.count) decreases e.names.count - (i => int64) {
-        if (e.names[i => int64] == name) {
+    while ((i => int64) < e.kinds.count) decreases e.kinds.count - (i => int64) {
+        if ((e.kinds[i => int64] == kind) && (e.origins[i => int64] == origin)) {
             e.vals[i => int64] = move(v);
             pass NIL;
         }
         i = i + 1i32;
     }
-    // BOTH, ALWAYS -- the invariant the struct comment states.
-    drop list_push(@e.names, name);
+    // ALL THREE, ALWAYS -- the invariant the struct comment states.
+    drop list_push(@e.kinds, kind);
+    drop list_push(@e.origins, origin);
     drop list_push(@e.vals, move(v));
     pass NIL;
 };
 
-func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
+// AN OWNED COPY, NOT A VIEW (DEF-110, 1.6.1 step 0; found by D-325's analysis on
+// this file): the env owns the text, and `foldenv_set` DROPS the entry it
+// overwrites -- so a view handed out here and stored back (`s = raw id(s)` in a
+// `comptime` body: the argument is read out as a view, passed through, and set
+// over the entry that owned its bytes) read freed memory at the next read of
+// `s`. A copy per variable read is the price; the folder is not hot.
+func:foldenv_copy = ConstVal(FoldEnv->:e, int64:i) never fails {
+    ConstVal:cv = ConstVal{ kind: e.vals[i].kind,
+                            type_id: e.vals[i].type_id,
+                            num: e.vals[i].num,
+                            text: string_concat("", e.vals[i].text) };
+    pass cv;
+};
+
+// THE BINDING AN IDENTIFIER'S SYMBOL NAMES, or nothing.
+func:foldenv_get = ConstVal(FoldEnv->:e, int32:kind, int32:origin) never fails {
     int32:i = 0i32;
-    while ((i => int64) < e.names.count) decreases e.names.count - (i => int64) {
-        if (e.names[i => int64] == name) {
-            // AN OWNED COPY, NOT A VIEW (DEF-110, 1.6.1 step 0; found by D-325's
-            // analysis on this file): the env owns the text, and `foldenv_set`
-            // DROPS the entry it overwrites -- so a view handed out here and
-            // stored back (`s = raw id(s)` in a `comptime` body: the argument is
-            // read out as a view, passed through, and set over the entry that
-            // owned its bytes) read freed memory at the next read of `s`. A
-            // copy per variable read is the price; the folder is not hot.
-            ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
-                                    type_id: e.vals[i => int64].type_id,
-                                    num: e.vals[i => int64].num,
-                                    text: string_concat("", e.vals[i => int64].text) };
-            pass cv;
+    while ((i => int64) < e.kinds.count) decreases e.kinds.count - (i => int64) {
+        if ((e.kinds[i => int64] == kind) && (e.origins[i => int64] == origin)) {
+            pass (raw foldenv_copy(e, i => int64));
         }
         i = i + 1i32;
     }
@@ -1739,7 +1803,7 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
         ConstVal:av = raw fold_expr(r, arg, scope, fuel - 1i32);
         if (!(raw cv_folded(av))) { pass (raw cv_none()); }
         DeclNode:pn = raw ast_decl(r.ast, raw fn_param(r.ast, fndecl, i));
-        drop foldenv_set(@frame, raw decl_name(pn), move(av));
+        drop foldenv_set(@frame, raw SYM_DECL(), (raw fn_param(r.ast, fndecl, i)).index, move(av));
     }
 
     if (r.fold_depth >= (raw FOLD_DEPTH())) {
@@ -1802,7 +1866,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
     if (st.kind == StmtKind.StmtVarDeclStmt) {
         ConstVal:v = raw fold_expr(r, raw stmt_decl_init(r.ast, st), scope, f);
         if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
-        drop foldenv_set(@r.env, raw stmt_name(st), move(v));
+        drop foldenv_set(@r.env, raw SYM_STMT(), id.index, move(v));
         pass (raw flow_none());
     }
 
@@ -1812,9 +1876,13 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
         // pretending otherwise would evaluate the right-hand side and drop it.
         ExprNode:target = raw ast_expr(r.ast, raw stmt_target(st));
         if (target.kind != ExprKind.ExprIdentifierExpr) { pass (raw flow_fail()); }
+        // THE BINDING THE RESOLVER GAVE THE TARGET IS THE ONE WRITTEN (DEF-196):
+        // an inner `x` and an outer `x` are two entries, and the target names one.
+        if (target.a == 0i32) { pass (raw flow_fail()); }
+        Symbol:tsym = raw symtab_get(r.tab, target.a);
         ConstVal:v = raw fold_expr(r, raw stmt_assigned(st), scope, f);
         if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
-        drop foldenv_set(@r.env, (raw expr_name(target)) =>! int32, move(v));
+        drop foldenv_set(@r.env, tsym.origin_kind, tsym.origin, move(v));
         pass (raw flow_none());
     }
 
@@ -2082,12 +2150,23 @@ func:fold_string_builtin = ConstVal(TypeResolver->:r, ExprNode:e, string:name,
 // inferred, and a `fixed` binding, which is assigned once at RUN time, is correctly
 // not one.
 func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) never fails {
-    // A LOCAL OF THE `comptime func:` BEING EVALUATED SHADOWS EVERYTHING, because
-    // it is the innermost thing in scope and because a parameter named after a
-    // `const` global is a program somebody may well write.
-    if (r.env.names.count > 0i64) {
-        ConstVal:local = raw foldenv_get(@r.env, (raw expr_name(e)) =>! int32);
-        if (raw cv_folded(local)) { pass local; }
+    // A LOCAL OF THE `comptime func:` BEING EVALUATED IS ASKED FIRST -- BY THE
+    // SYMBOL THE RESOLVER RECORDED, not by the spelling (DEF-196): a parameter
+    // named after a module `fixed` binding shadows it because the resolver bound
+    // the name to the parameter, and a macro body's free name of the same
+    // spelling does NOT read that parameter, because the resolver bound it where
+    // the macro was written (D-057).
+    //
+    // AN IDENTIFIER WITH NO SYMBOL IS NEVER A LOCAL. It is a name written inside
+    // a type (the paragraph below), and the checker reads `int32[N]` as the
+    // module's `fixed` binding wherever it stands (D-222: a local is not an
+    // array size) -- so this reads it the same way. Asked by name, as it was, a
+    // `comptime` local of that spelling answered instead, and the evaluator and
+    // the checker gave one type two sizes.
+    if ((r.env.vals.count > 0i64) && (e.a != 0i32)) {
+        Symbol:lsym = raw symtab_get(r.tab, e.a);
+        ConstVal:bound = raw foldenv_get(@r.env, lsym.origin_kind, lsym.origin);
+        if (raw cv_folded(bound)) { pass bound; }
     }
 
     // A NAME IN A TYPE POSITION WAS NEVER BOUND BY THE RESOLVER, and that is by

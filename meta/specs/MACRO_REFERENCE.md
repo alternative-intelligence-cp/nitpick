@@ -227,6 +227,14 @@ struct:Point = { #make_xy_fields(); };
 
 `Point` has fields `x` and `y`, and may mix spliced and literal fields freely.
 
+**What a spliced member may name is what the body's own scope holds (§5).** A field
+`V:item;` spliced into a generic `struct:Box<V>`, or a method spliced into
+`impl:<T>:Stack<T>` whose signature says `T`, names a type parameter of the
+declaration it LANDS in — the invocation site's — and is `NITPICK-TYPE-001` since
+DEF-192 (it compiled, by capture, before). `Self` is a keyword, not a name, and
+means the landing declaration's type as it does anywhere. Whether a body should
+have a way to name the landing declaration's type parameter is **S-124** (§10).
+
 ### Splicing into an `impl`
 
 ```nitpick
@@ -276,6 +284,27 @@ func:main = int32(cstring[]:_~argv) {
 
 If the name does not resolve in the defining scope, that is a **compile error** —
 never a silent fall back to the call site.
+
+**A type's name is a name** (DEF-192, 1.6.1e). `T` written in a body — a local's
+annotation, a cast's target, `#size_of<T>()`, a field or a signature the body emits
+— is the type the macro's own scope holds, and where that scope holds none it is
+`NITPICK-TYPE-001`, the sentence saying which scope was asked. It binds a generic
+parameter, or a trait's associated type, only where **the body itself declares it**
+(the `T` of an emitted `func:same<T>`, the `A` of an emitted `struct:Pair<A>`); the
+parameters of the function, struct or `impl` the macro is INVOKED in belong to the
+invocation site, and a body cannot see them. An ARGUMENT's type names stand at the
+invocation and bind there — `#plus_one(#size_of<T>())` inside `func:g<T>` measures
+the caller's `T`, as the caller wrote.
+
+> *[2026-10-01, 1.6.1e — why this paragraph is dated.]* The resolver has bound a
+> body's identifiers this way since 0.6, and it never enters a type: a type's name
+> is resolved later, by the type checker, which asked the generic parameters of
+> whatever declaration it was standing in FIRST — and a body lands inside the
+> declaration that invoked it. So `macro:sz = () { #size_of<T>(); };` beside a
+> module `struct:T`, invoked inside `func:g<T>` or a method of `impl:<T>:Box<T>`,
+> measured the caller's type in silence (8 for 4, both legs). The rule is asked of
+> the node's SPAN now (`ast_macro_at`: a clone keeps its template's span, so the
+> body's own nodes and every instantiation's copies answer alike).
 
 ### `#caller(NAME)` — the sole opt-out
 
@@ -568,9 +597,34 @@ is the marker that says a name may stand in a constant expression. A `fixed`
 binding is assigned once at **run** time and is correctly not one, and neither is a
 local or a parameter of an ordinary function.
 
+> *[2026-10-01 — a dated note.]* D-222 (2026-08-29) retired `const`: the binding
+> that folds is a MODULE-LEVEL `fixed` binding, and the sentence above about
+> `fixed` describes a local one.
+
 Likewise a call folds when the function is declared `comptime`, and not because it
 happens to be foldable — whether the compiler runs your code is not something to
 discover by accident.
+
+**Inside a `comptime func:` call, a binding is the one the resolver bound** (DEF-196,
+1.6.1e). The evaluator keeps a call's parameters and locals by the DECLARATION that
+introduced each, so:
+
+- a local declared in a nested block is a new binding, and the outer one of its
+  spelling is untouched when the block ends — as at run time;
+- a macro body's free name is the module's (§5), whatever the function it is
+  invoked in calls its locals;
+- a name written inside a TYPE (`int32[LEN]`) is the module's `fixed` binding and
+  never a local: a local is not an array size (D-222), and the checker never read
+  one there.
+
+> *[2026-10-01, 1.6.1e — why this is dated.]* The evaluator kept them by NAME, in one
+> list per call, on a premise its own comment stated ("there is no nested scope in a
+> body this evaluator accepts") that stopped being true when it learned `if`,
+> `while` and the counted loops. Each of the three evaluated WRONGLY at compile time
+> while the same body answered rightly at run time: `int32:x = 1i32; if (x == 1i32)
+> { int32:x = 2i32; } pass x + 10i32;` was 12 for 11; `{ X + N; }` beside a module
+> `N` of 100, invoked where a local `N` is 1, was 6 for 105; `#size_of<int32[LEN]>()`
+> with a local `LEN` was 8 where the checker's type is 12 bytes.
 
 ### When evaluation fails
 
@@ -642,6 +696,14 @@ Recorded as open rather than invented:
 > cannot be named by the caller, a renamed method cannot satisfy the trait it
 > implements, and `#make_pair()`'s `greet1` could not be called. §4's splicing works
 > entirely by naming what was emitted.
+- **May a body name the type parameter of the declaration it is invoked in?** Not
+  since DEF-192 (§5): a type's name in a body is the defining scope's, so a field
+  spliced into `struct:Box<V>` cannot say `V`, and a method spliced into
+  `impl:<T>:Stack<T>` cannot say `T` — each compiled before, by the capture the
+  hygiene rule exists to prevent. `#caller(NAME)` is an expression form and has no
+  type form. **S-124**, the user's: leave it so (generics and `#[derive]` are the
+  tools for code over a type parameter), or accept `#caller(T)` where a type's name
+  stands.
 - **May a macro emit a macro?** Nothing exercises it. The fixed-point loop would
   expand the result, so it likely works by construction — which is not the same as
   being specified. Note what D-124 adds: an emitted macro would belong to the

@@ -1,0 +1,93 @@
+// expect-exit: 0
+//
+// A TYPE'S NAME IN A MACRO BODY IS THE ONE THE MACRO'S OWN SCOPE HOLDS (DEF-192,
+// 1.6.1e; D-057).
+//
+// The module declares `struct:T`, four bytes. `#size_t()` writes `#size_of<T>()`,
+// and until this landing the answer depended on WHERE it was invoked: inside a
+// generic function or a generic `impl` whose parameter is also called `T`, the
+// type resolver asked that parameter first, and the body measured the caller's
+// type -- 8 for an `int64` -- with nothing said. A silent capture, the thing
+// hygiene exists to make impossible: the resolver has bound a body's IDENTIFIERS
+// where the macro was written since 0.6, and a type's name never went through it.
+//
+// WHAT THE RULE MUST KEEP, each a case below: a generic parameter the body itself
+// declares (an emitted `func:same<T>`, an emitted `struct:Pair<A>` with its
+// `impl`), an ARGUMENT's type name (it stands at the invocation, so the caller's
+// `T` is right there), an argument written inside another body, and a body
+// invoked inside another body's emitted generic function -- which reads the
+// module's `T`, for the reason the first case does.
+mod:macro_type_hygiene;
+
+struct:T = { int32:v; };                        // the module's `T`: 4 bytes
+
+macro:size_t = () { #size_of<T>(); };
+macro:plus_one = (E) { E + 1i64; };
+
+// --- the cases that answered 8 ------------------------------------------------------------
+func:in_function<T> = int64(move T:x) never fails { pass #size_t(); };
+
+struct:Box<U> = { U:item; };
+trait:Wide = { func:width = int64(Self:self); };
+impl:<T>:Box<T>:Wide = {
+    func:width = int64(Box<T>:self) never fails { pass #size_t(); };
+};
+
+// --- what a body declares is the body's ---------------------------------------------------
+macro:emit_same = () { func:same<T> = T(move T:x) never fails { pass move(x); }; };
+#emit_same();
+
+macro:emit_pair = () {
+    struct:Pair<A> = { A:first; A:second; };
+    trait:Span2 = { func:span = int64(Self:self); };
+    impl:<A>:Pair<A>:Span2 = {
+        func:span = int64(Pair<A>:self) never fails { pass #size_of<A>() * 2i64; };
+    };
+};
+#emit_pair();
+
+macro:emit_sized = (N) {
+    func:sized<T> = int64(move T:x) never fails { pass #size_of<int32[N]>() + #size_of<T>(); };
+};
+#emit_sized(3i32);
+
+// --- an argument stands at its invocation -------------------------------------------------
+func:arg_names_caller<T> = int64(move T:x) never fails { pass #plus_one(#size_of<T>()); };
+
+macro:emit_inner_arg = () {
+    func:inner_arg<T> = int64(move T:x) never fails { pass #plus_one(#size_of<T>()); };
+};
+#emit_inner_arg();
+
+// --- a body inside another body's generic function: the module's `T` again ----------------
+macro:emit_nested = () { func:nested<T> = int64(move T:x) never fails { pass #size_t(); }; };
+#emit_nested();
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw in_function(1i64)) != 4i64) { exit 1i32; }
+    Box<int64>:b = Box{ item: 1i64 };
+    if ((raw b.width()) != 4i64) { exit 2i32; }
+    if ((raw same(7i64)) != 7i64) { exit 3i32; }
+    Pair<int64>:p = Pair{ first: 1i64, second: 2i64 };
+    if ((raw p.span()) != 16i64) { exit 4i32; }
+    if ((raw sized(1i64)) != 20i64) { exit 5i32; }
+    if ((raw arg_names_caller(1i64)) != 9i64) { exit 6i32; }
+    if ((raw inner_arg(1i16)) != 3i64) { exit 7i32; }
+    if ((raw nested(1i64)) != 4i64) { exit 8i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*) { exit 90i32; }
+    }
+    exit 90i32;
+};
