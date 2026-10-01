@@ -197,20 +197,38 @@ LLVM grammar, so no program with one ever linked; and the `flt32` digit count re
 integer payload as an intern index, so `100000000f32` trapped the checker. Both lower
 now (`3f64` is `double 3.0`), and the 15-digit rule counts the payload's own digits.
 
-> *[2026-10-01, 1.6.1e — a dated note on the 15-digit rule; DEF-203, OPEN.]* D-143
-> justifies it by "decimal→double→float equals direct rounding exactly when the decimal
-> has ≤ 15 significant digits". That sentence is false, measured: `9.51125303839185e-19f32`
-> (fifteen digits) lowers through the double to `0x218C5C80`, and the float nearest the
-> number written is `0x218C5C7F` — the decimal lies within half a double's ulp of the
-> midpoint between two floats, the double IS the midpoint, and the tie rounds to even.
-> About one float midpoint in forty-five has such a fifteen-digit neighbour (88 found in
-> 4,000 sampled), so a given literal is wrong with probability near 2⁻³⁰ and by one ulp.
-> The fix is the compiler's own decimal→`flt32` conversion, one rounding, used for a
-> literal in a body and for a module constant alike (which is also what a `flt32` module
-> constant waits for). The solver's term mirrors the two roundings today (`fp_literal`), so
-> it agrees with the emitted program and moves with it. And a float literal has no RANGE
-> rule at all: `1.0e39f32` and `1.0e999f64` are infinity and `1.0e-60f32` is zero, in
-> silence (DEF-205; S-126).
+**A float literal is the nearest value of its type to the number written** (DEF-203, 1.6.1e):
+round to nearest, ties to even, ONE rounding, at the width the literal was given. For a
+`flt32` the constant is the compiler's own conversion of the decimal (`float_round`,
+`numeric.npk`: the digits halved and doubled as decimal runs, a window of 25 bits and a
+sticky bit — exact, no wide integer) and is written into the IR as its bits. For a `flt64`
+the IR still carries the decimal and LLVM's parser converts it. That parser was measured
+against the exact rationals on the pinned toolchain: 8,890 adversarial texts whose
+exponent is within 24,000, none different, held on every run by
+`tests/backend/programs/float_literal_kat.npk` — and it is WRONG past that: it caps the
+exponent it reads, so `0.<24000 zeros>1e24001` (the number 1.0) is the double 0.1, and a
+longer such text zero or infinity (**DEF-209, OPEN — the next landing writes a `flt64`'s
+bits too**; it takes a literal of some 24 KB). The
+same `float_round` at 53 bits is held to the exact answers (`tests/frontend/float_round.npk`:
+2,072 vectors computed with exact rationals by `bootstrap/generator/float_vectors.py`).
+Every road a constant takes — a literal in a body, under a sign, with no suffix in a float
+slot, the integer form, `comptime(…)`, an aggregate's member, a `simd` lane, a `complex`
+component, a rule's or a contract's bound, a module binding's initialiser — is one writer.
+
+> *[2026-10-01, 1.6.1e, landing 88 — what this replaced.]* A `flt32` literal lowered as
+> `fptrunc double <text> to float` on every compiler before landing 88: LLVM's rounding to
+> a double and then the instruction's to a float. D-143 held the two equal to one "exactly
+> when the decimal has ≤ 15 significant digits"; that is false. Where the decimal lies
+> within half a double's unit of the midpoint between two floats, the double IS the midpoint
+> and the tie rounds to even, whichever side the decimal was on:
+> `9.51125303839185e-19f32` compiled to `0x218C5C80`, and the nearest float is
+> `0x218C5C7F`. About one written number in 2³⁰, by one unit in the last place, in silence
+> (`7.99248255789280e-2f32` is another). The solver's term had mirrored the two roundings on
+> purpose and changed with the emitter (VERIFICATION_REFERENCE §7c).
+
+What a literal that does NOT FIT should be is open: `1.0e39f32` and `1.0e999f64` are
+infinity and `1.0e-60f32` is zero, in silence, as before (DEF-205; S-126, the user's). The
+conversion reports both answers (`FloatBits.inf`, `FloatBits.zero`); nothing reads them yet.
 
 **Behaviors (flt32/flt64):**
 - Arithmetic: `+`, `-`, `*`, `/`, `%` → `fadd`, `fsub`, `fmul`, `fdiv`, `frem`
@@ -229,9 +247,14 @@ now (`3f64` is `double 3.0`), and the 15-digit rule counts the payload's own dig
   `NITPICK-TYPE-031` at the literal, whatever the value (DEF-167; they were
   typed as the integer, the value read from the intern index of the literal's
   text, and died as EMIT-002). A `flt32` literal carries at most 15 significant digits
-  (D-143): it lowers through a correctly-rounded double, exact to 15 digits by
-  the double-rounding theorem, and unbounded digits would make the value
-  implementation-defined.
+  (D-143). The reason given for the rule is gone — it protected a lowering through
+  a double that was not exact even below sixteen digits (DEF-203), and the constant
+  is the nearest float now whatever is written — so whether the rule stays is the
+  user's (S-126); while it does, it is one rule for every way a literal gets a
+  width: its suffix, the float slot an unsuffixed fraction sits in, or the slot a
+  `comptime(…)` of one lands in (`flt32:x = 0.1234567890123456789;` was accepted
+  until landing 88, and `flt128:x = 1.0;` passed the checker and died in the
+  emitter: DEF-206).
 - Math functions (sin, cos, sqrt, …) arrive with the library tier, wrapping
   LLVM intrinsics
 
@@ -1989,8 +2012,7 @@ every module binding qualifies.
 | The binding's type | The initialiser |
 |---|---|
 | a plain integer, `bool`, `char`, `string`, a flag family | any constant expression the compiler computes: literals, the operators, other module bindings, `comptime(…)`, a `comptime func:` |
-| `flt64`, a `tfp` width, `dim256<U>`, a `tbb` width, the ternary family | a **written** value: a literal, a negated literal, `ERR`, another module binding of that type, or `comptime(…)` of one of those |
-| `flt32` | not yet (DEF-203: its bits need the compiler's own decimal conversion) — `NITPICK-TYPE-035`, by name |
+| `flt32`, `flt64`, a `tfp` width, `dim256<U>`, a `tbb` width, the ternary family | a **written** value: a literal, a negated literal, `ERR`, another module binding of that type, or `comptime(…)` of one of those (a `flt32` since landing 88: LLVM spells a `float` constant by its bits unless the decimal is exact, and the compiler makes the bits itself now, DEF-203) |
 | a struct, an array | a literal whose every member is one of the above |
 | an `Optional`, a pointer | `NIL`, `NULL` |
 

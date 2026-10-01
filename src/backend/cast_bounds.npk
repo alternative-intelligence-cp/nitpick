@@ -37,17 +37,24 @@ pub func:hex_nibble = string(uint64:nib) never fails {
     pass "F";
 };
 
-pub func:pow2_double_signed = string(int32:k, bool:neg) never fails {
-    uint64:e = ((1023i32 + k) =>! uint64) << 52u64;
-    if (neg) { e = e | (1u64 << 63u64); }
+// A 64-BIT PATTERN AS LLVM SPELLS A FLOAT CONSTANT BY ITS BITS: `0x` and sixteen
+// hex digits -- a `double`'s own pattern, and a `float`'s as the pattern of the
+// double holding the same value.
+pub func:hex64_text = string(uint64:v) never fails {
     string:out = "0x";
     int32:i = 15i32;
     while (i >= 0i32) decreases i {
         out = string_concat(out,
-                  raw hex_nibble((e >> ((i * 4i32) =>! uint64)) & 15u64));
+                  raw hex_nibble((v >> ((i * 4i32) =>! uint64)) & 15u64));
         i = i - 1i32;
     }
     pass out;
+};
+
+pub func:pow2_double_signed = string(int32:k, bool:neg) never fails {
+    uint64:e = ((1023i32 + k) =>! uint64) << 52u64;
+    if (neg) { e = e | (1u64 << 63u64); }
+    pass (raw hex64_text(e));
 };
 
 pub func:cast_lo_exact = bool(int32:bits) never fails {

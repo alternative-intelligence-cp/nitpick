@@ -287,7 +287,7 @@ already does."
 | **S-123** — MAY A MACRO PARAMETER NAME AN EMITTED DECLARATION (raised 2026-10-01 by `nitpick-compiler_24`; MACRO_REFERENCE §10 has recorded it as open since 0.6.0, "rather than invented"). The recap: an argument is an EXPRESSION and substitution replaces identifier expressions (D-057, MACRO_REFERENCE §3). A declaration's NAME is not an expression, so `macro:m = (N) { func:N = int32() never fails { pass 5i32; }; }; #m(7i32);` emits a function literally called `N`, the argument dropped — "unimplemented rather than refused" in the reference's words, and the library listener's `mc0388` pins it as running. Step 3a refuses the half that answered WRONGLY (a body that declares the name and also writes it as an expression: each use was the argument) and left this half as it was. | OPEN — the user's. | **Refuse it at the macro's declaration** (`NITPICK-MACRO-011`, the sentence saying a declaration's name cannot come from an argument): a parameter that only names a declaration is an argument silently DROPPED, the author almost certainly meant "the function named by the argument", and a second invocation is a duplicate-name error that names neither cause. The alternatives: keep the literal name (today), or substitute a name when the argument is a bare identifier — a real feature (generated names) with its own questions (D-128: a macro never renames what it emits; what a non-identifier argument is). `mc0388`'s expectation moves under the refusal; the library listener is told in advance. |
 | **S-124** — MAY A MACRO BODY NAME THE TYPE PARAMETER OF THE DECLARATION IT IS INVOKED IN (raised 2026-10-01 by `nitpick-compiler_24` with DEF-192's fix). The recap: D-057 (settled at 0.6.0) says a name in a macro body resolves where the macro was WRITTEN — "Always" — and that `#caller(NAME)` is the sole way to reach the invocation site; `#caller` is an EXPRESSION form. A type's name never went through the resolver, and the type checker asked the generic parameters of whatever declaration it stood in first, so a body's `T` silently meant the invoking function's or `impl`'s `T` (DEF-192: beside a module `struct:T`, `#size_of<T>()` measured the caller's type, 8 for 4). The fix holds a type's name to D-057: it binds a generic parameter only where the body itself declares it. The consequence is this question: a field `V:item;` spliced into `struct:Box<V>`, or a method spliced into `impl:<T>:Stack<T>` whose signature says `T`, compiled BY THE CAPTURE and is `NITPICK-TYPE-001` now — a body has no way to name the landing declaration's type parameter (`Self` is a keyword and still means the landing type). Measured over 3,601 files of the tree, the libraries and the applications: none — the sweep moves no site outside the new test, so no macro body anywhere names a landing declaration's type parameter. | OPEN — the user's. DEF-192's fix landed on D-057 as written. | **R1: leave it so.** Generics and `#[derive]` are the language's tools for code over a type parameter; a macro is a local, hygienic shorthand, and nothing in the tree, the libraries or the applications reaches a type parameter through one. The alternative, R2: `#caller(T)` accepted where a type's name stands — the opt-out D-057 already has, extended to types: one production in type position and one exception in the rule, to be designed, tested and verified before the freeze. |
 | **S-125** — MAY THE COMPILER COMPUTE IN THE CARRIED FAMILIES: FLOAT, FIXED-POINT, `tbb`, TERNARY (raised 2026-10-01 by `nitpick-compiler_25` with DEF-179's and DEF-197's fix). The recap: D-165 (settled at 1.0.9) says a module binding's initialiser is a compile-time constant — a literal of any kind, a sentinel, an aggregate of them, another binding, or `comptime(…)` — "and so is [refused] any expression the folder cannot fold"; D-310 (1.5.8b) made the folder exact for the plain integers: a constant means what the run time means. The folder has never computed in the other families: a float's arithmetic rounds, a fixed-point value's and a `tbb`'s and a ternary's saturate to a sticky ERR. Landing 87 found it folding them as plain integers into three silent wrong constants and made the rule explicit: a constant of a carried family is WRITTEN (a literal, a negated literal, `ERR`, another binding), so `fixed flt64:TAU = 6.283185307179586f64;` compiles and `fixed flt64:TAU = 2.0f64 * PI;` is NITPICK-TYPE-035, as is `comptime(2.0f64 * PI)`. | OPEN — the user's. The refusals landed (they are D-165's own rule, and foreclose neither answer). No `fixed` binding of any carried type exists in 40,928 files of the tree, the libraries, the applications and the fuzzer's corpus. | **R1: written, not computed — and final.** One evaluator per operation: the run time's. A second implementation of float rounding and of each twisted family's saturation inside the compiler would have to agree with the emitted code bit for bit, forever, under verification (DEF-29, DEF-80 and DEF-197 are what a second evaluator of one operation costs), to save a reader a multiplication they can check by hand; a derived constant is written as its literal, and a table is computed by a function. The alternative, R2: the folder learns each family exactly — floats through the compiler's own correctly rounded conversion and IEEE arithmetic, the twisted families through their saturating rules — designed, tested against the run time and verified before the freeze. |
-| **S-126** — A FLOAT LITERAL THAT DOES NOT FIT: INFINITY AND ZERO (raised 2026-10-01 by `nitpick-compiler_25`; DEF-205), AND THE 15-DIGIT RULE AFTER DEF-203. The recap: D-148 (settled at 0.9.9) says a numeric literal's value "must fit its type", verified at the literal (NITPICK-TYPE-031) — "the number in the program was not the number written, the exact drift this language exists to make impossible"; its table hands floats to D-143 (0.9.4), which gives `flt32` literals a 15-significant-digit limit and no range rule. So today `1.0e39f32` and `1.0e999f64` are +infinity and `1.0e-60f32` is 0.0, each in silence; and the 15-digit limit's stated reason (two roundings equal one below 16 digits) is false (DEF-203), while the fix for that — the compiler's own exact conversion — makes every `flt32` literal the nearest float whatever its length. | OPEN — the user's; DEF-203's landing builds the conversion either answer needs. | **(a) Refuse a float literal that rounds to infinity, and a nonzero one that rounds to zero** (NITPICK-TYPE-031, both widths): neither is a rounding of the number written in any useful sense — an epsilon that is zero divides by zero, a limit that is infinite limits nothing — and infinity is spelled by computing it. A subnormal result is ordinary rounding and stays. **(b) Lift the 15-digit rule once DEF-203 lands**: it protects nothing then, and refusing `0.1234567890123456f32` while accepting its fifteen-digit prefix is a rule a reader cannot derive. The alternative for (b): keep it as a style limit (a `flt32` holds about seven digits; sixteen written ones claim a precision the type has not). |
+| **S-126** — A FLOAT LITERAL THAT DOES NOT FIT: INFINITY AND ZERO (raised 2026-10-01 by `nitpick-compiler_25`; DEF-205), AND THE 15-DIGIT RULE AFTER DEF-203. The recap: D-148 (settled at 0.9.9) says a numeric literal's value "must fit its type", verified at the literal (NITPICK-TYPE-031) — "the number in the program was not the number written, the exact drift this language exists to make impossible"; its table hands floats to D-143 (0.9.4), which gives `flt32` literals a 15-significant-digit limit and no range rule. So today `1.0e39f32` and `1.0e999f64` are +infinity and `1.0e-60f32` is 0.0, each in silence; and the 15-digit limit's stated reason (two roundings equal one below 16 digits) is false (DEF-203), while the fix for that — the compiler's own exact conversion — makes every `flt32` literal the nearest float whatever its length. | OPEN — the user's. DEF-203 LANDED (88): the conversion exists at both widths and reports both answers, unread; the 15-digit rule is asked of every spelling of a literal while it stands (DEF-206). (a) is one test of each flag, (b) deletes the `flt32` half of `float_text_ok`; either is a refusal moved and goes in an advance notice. | **(a) Refuse a float literal that rounds to infinity, and a nonzero one that rounds to zero** (NITPICK-TYPE-031, both widths): neither is a rounding of the number written in any useful sense — an epsilon that is zero divides by zero, a limit that is infinite limits nothing — and infinity is spelled by computing it. A subnormal result is ordinary rounding and stays. **(b) Lift the 15-digit rule once DEF-203 lands**: it protects nothing then, and refusing `0.1234567890123456f32` while accepting its fifteen-digit prefix is a rule a reader cannot derive. The alternative for (b): keep it as a style limit (a `flt32` holds about seven digits; sixteen written ones claim a precision the type has not). |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -3012,7 +3012,7 @@ defect declares a `DEF-` in §2f.
 > (TYPE-007 for another kind or width, TYPE-031 for a value outside it; a float or a string selector has no value
 > patterns -- TYPE-052's sentence for the kinds that cannot select), both spellings.
 
-> **DEF-179 — FIXED 2026-10-01 (landing 87) for `flt64`, `tfp` and `dim256`; a `flt32` constant waits for DEF-203. READ 2026-10-01 (`nitpick-compiler_23`): A DEFECT, NO USER QUESTION (owner: the compiler seat;
+> **DEF-179 — FIXED 2026-10-01 (landing 87) for `flt64`, `tfp` and `dim256`, and for `flt32` at landing 88 (DEF-203). READ 2026-10-01 (`nitpick-compiler_23`): A DEFECT, NO USER QUESTION (owner: the compiler seat;
 > reported by WP-A's implementer).** A module-level `fixed flt64:PI = 3.14f64;` and `fixed tfp64:Q = 2.5tfp64;` are
 > `NITPICK-TYPE-035`, on `5fbaf4a` and on `9efe218`. D-165 is the rule: "the initialiser is a compile-time constant
 > expression: a literal OF ANY KIND" — the refusal is the folder's (`ConstVal` holds integers, bools, chars and
@@ -3348,7 +3348,7 @@ defect declares a `DEF-` in §2f.
 > likewise). Refused, not wrong. **Recommended:** the gate and the renderer follow an identifier that names a module
 > binding to that binding's initialiser (in ITS scope), for every type; step 3d.
 >
-> **DEF-203 — OPEN (2026-10-01; owner: the compiler seat; found by `nitpick-compiler_25` reading how a `flt32`
+> **DEF-203 — FIXED 2026-10-01 (landing 88, `nitpick-compiler_26`; found by `nitpick-compiler_25` reading how a `flt32`
 > module constant could be spelled). A `flt32` LITERAL IS NOT ALWAYS THE NEAREST FLOAT TO THE NUMBER WRITTEN — A
 > SILENT ONE-ULP WRONG CONSTANT, AND D-143'S REASON FOR THE 15-DIGIT RULE IS FALSE.** A `flt32` literal lowers as
 > `fptrunc double <text> to float`: two roundings. D-143 says they equal one rounding "exactly when the decimal has
@@ -3373,6 +3373,29 @@ defect declares a `DEF-` in §2f.
 > literal, NITPICK-TYPE-030 today) and `ty0190b`. Those sentences change with the fix, and the notice for it
 > names the three programs.
 >
+> **FIXED (landing 88).** MEASURED FIRST, on `789ffdc`: every road a `flt32` constant takes gave the two-rounding
+> float (a body literal, a negated one, an unsuffixed fraction in a `flt32` slot, `comptime(…)`, a struct field, an
+> array element, a `simd` lane and splat, a `complex` component: probes `fa1`…`fa7`; the integer form is exact
+> through a double), and D-143's OTHER claim was measured for the first time — LLVM's decimal→double parse is
+> correctly rounded on the pinned toolchain for every measured text whose exponent is within 24,000 (8,890
+> adversarial texts, none different), and WRONG past that (DEF-209, found by this landing's own committed
+> measurement after its source was final) — so a `flt64` literal's road is unchanged HERE and changes next. THE FIX:
+> `float_round(text, width)` (`numeric.npk`), generic in the format (24 bits/127, 53 bits/1023): the decimal's
+> digits are halved (the integer part's bits, least significant first) and doubled (the fraction's, most significant
+> first) as digit runs, a window of p+1 bits and a sticky bit kept, rounded once to nearest with ties to even, the
+> encoding absorbing the carry; it reports and does not decide the two answers DEF-205 asks about (`inf`, `zero`).
+> It agrees with exact rationals on 42,501 adversarial texts at both widths before it was wired (0 different), and
+> `tests/frontend/float_round.npk` holds 2,072 of them. The emitter has ONE writer of a float constant
+> (`float_const_text`, behind `emit_float_const` and `const_scalar_text`): a `flt32` is `float 0x…`, the bits of the
+> double holding that float; there were three writers, each with its own `fptrunc`. `fp_literal` is `((_ to_fp 8 24)
+> RNE <the exact real>)`, changed in the same commit: `prove((9.51125303839185e-19f32 => flt64) ==
+> 9.511252521403968e-19f64)` was REFUTED on `789ffdc` (the solver held the upper neighbour, as the program did) and
+> is discharged. `const_init_verdict`'s third refusal is gone: a `flt32` module constant compiles in every written
+> form. Tests: `float_round.npk` (unit), `float_literal_kat.npk` (505 `flt32` and 500 `flt64` literals read back as
+> bits at both legs; `789ffdc` answers 44 of the `flt32` ones wrongly), `flt32_literal.npk` (every road, the four
+> counterexamples it is built from, module constants), `tests/verify/flt32_round.npk`. One consequence for the
+> verifier: `flt32` rows are eligible for the Real-interval tier for the first time (D-281's dated note).
+>
 > **DEF-204 — FIXED 2026-10-01 (landing 87; found by `nitpick-compiler_25` asking what else read a fixed-point
 > literal by its payload). A `pick` ARM OVER A FIXED-POINT SELECTOR NEVER MATCHED — A SILENT WRONG BRANCH.**
 > `pattern_const` wrote a value pattern's integer payload whatever the selector's type, and a range's bounds
@@ -3396,6 +3419,74 @@ defect declares a `DEF-` in §2f.
 > zero, a bound that is infinite. **Recommended (S-126, the user's):** NITPICK-TYPE-031 at a float literal whose
 > value rounds to infinity or — being nonzero — to zero; a subnormal result is rounding and stays. It needs the
 > exact conversion DEF-203 builds (and its `flt64` twin for the range test), so it lands with or after that.
+>
+> *[Landing 88.]* The conversion exists at both widths and REPORTS both answers (`FloatBits.inf`, `FloatBits.zero`;
+> held by `float_round.npk`'s vectors: a text past the range, one below half the smallest subnormal, the exact
+> half-way cases on each side). Nothing reads the flags: a literal that does not fit is still infinity or zero.
+> The refusal S-126 (a) recommends is one test of each flag in `float_text_ok`, for every spelling.
+>
+> **DEF-206 — FIXED 2026-10-01 (landing 88; found probing around DEF-203, as `nitpick-compiler_25` predicted from
+> reading `type_numeric_literal`). D-143'S FLOAT-LITERAL RULES WERE ASKED OF THE SUFFIXED SPELLING ONLY.** An
+> unsuffixed fraction takes the width of the float slot it sits in (D-092) through `lit_ranged`, which holds no
+> float rule: `flt128:x = 1.0;` passed the checker and died in the emitter (NITPICK-EMIT-002, the compiler
+> confessing a defect about a program's mistake) where `1.0f128` is NITPICK-TYPE-030, and `flt32:x =
+> 0.1234567890123456789;` was ACCEPTED where the same literal with its suffix is refused — and, before DEF-203's
+> fix, compiled through the double with nineteen digits, the case the rule was written against
+> (`1.0000000596046448309` in a `flt32` slot was 1.0 where the nearest float is the next one up). A THIRD ROAD to a
+> width had the same hole: `comptime(…)` of an unsuffixed fraction takes the float slot's (`type_comptime`), so
+> `flt128:w = comptime(1.0);` died in the emitter too. **FIXED:** one helper asked of the TEXT, `float_text_ok`
+> (type_expr.npk; `float_literal_ok` for a literal node), by the suffix's branch, the contextual one and
+> `type_comptime`; every position an unsuffixed fraction can sit in was probed (a module binding, a `comptime` at
+> both levels, an argument, a returned value, a struct field, an array element, an operand of `+` and of `<`, a
+> `simd` lane, under a sign): NITPICK-TYPE-030 at each. `tests/types/rejection/float_rules.npk` gains the unsuffixed
+> and the `comptime` sites and two controls (fifteen digits in a `flt32` slot; any length in a `flt64` slot). The
+> sweep: no file of the libraries, the applications or the fuzzer's corpus writes either shape (the four sites that
+> appear are the test's own). The 15-digit half of this is a refusal the user may lift (S-126 (b)): it is applied to
+> every spelling while the rule stands.
+>
+> **DEF-207 — FIXED 2026-10-01 (landing 88; found asking how `float_round`'s exponent bound could fail, then asking
+> the same of the encoder). A FLOAT LITERAL WITH A LARGE EXPONENT STOPPED THE COMPILER IN A BUILD THAT WRITES
+> OBLIGATIONS.** `decimal_to_real` (smt_encode.npk) summed the exponent's digits with no bound and spelled the power
+> of ten out digit by digit: `flt64:x = 1.0e999999f64;` under any row did not finish (a million-digit numeral, built
+> quadratically; killed at 60 s on `789ffdc`) and `1.0e99999999999999999999f64` trapped the compiler (IntOverflow,
+> exit 3) — under `--obligations` only; the plain build of both is a silent infinity (DEF-205). **FIXED:** the
+> exponent stops growing once nothing the text holds can bring the number back into range, and a number past 10^400
+> or below 10^-400 is written as 10^400 or 10^-400 — the same `to_fp` value at both formats (infinity; zero), and to
+> the Real twin a magnitude past every `MAX_NORMAL` or one inside `eta` of the float. A literal in range is spelled
+> byte for byte as before (the row hashes of `tests/verify/` are compared, base against new: 128 of 129 files
+> byte-identical, the 129th this landing's own `flt32_round.npk`). And the bound `float_round` itself was first
+> written with — a fixed cap on the exponent, `tfp_q_decimal`'s — was wrong for one legal text, found before it
+> landed: a fraction with a hundred thousand leading zeros and the exponent that undoes them (`float_round.npk`
+> holds two such texts; the exponent is bounded by the text's own length now). `tfp_q_decimal` keeps its cap: there
+> the same text is refused (NITPICK-TYPE-031), not misread — registered as DEF-208, OPEN, with its neighbours of
+> step 3d.
+>
+> **DEF-208 — OPEN (2026-10-01; owner: the compiler seat; found with DEF-207). `tfp_q_decimal` REFUSES A FIXED-POINT
+> LITERAL WHOSE EXPONENT IS PAST 350 WHATEVER ITS DIGITS.** `0.<400 zeros>1e401tfp64` is the number 1.0 and is
+> NITPICK-TYPE-031 "does not fit" (the exponent is tested before the point is moved), and the exponent's digits stop
+> at a fixed 100,000. Refused, never misread; no file writes such a literal. **Recommended:** the point's final
+> place decided as `float_round` decides it (digits and exponent together, the exponent bounded by the text's
+> length); step 3d.
+>
+> **DEF-209 — OPEN (2026-10-01; owner: the compiler seat; found by landing 88's own committed measurement of LLVM's
+> parser, `float_vectors.py --llvm`, on its two longest texts). A `flt64` LITERAL WHOSE EXPONENT IS PAST 24,000 IS
+> NOT THE NUMBER WRITTEN — LLVM'S PARSER CAPS THE EXPONENT IT READS.** A `flt64` literal is emitted as `double
+> <text>` and LLVM decides the bits. Measured on the pinned 20.1.2: `0.<N zeros>1e<N+1>` and `1<N zeros>.0e-<N>` are
+> both the number 1.0, and both are the double 1.0 for every N tried up to 23,990; at N = 24,000 the first is 0.1
+> (`0x3FB999999999999A`: the exponent 24001 read as 24000); at 24,010 they are 1e-10 and 1e10; from 30,000 on, zero
+> and infinity. A silent wrong constant, at both legs, in a literal of some 24 KB — no file of the tree, the
+> libraries, the applications or the fuzzer's corpus writes one — and before landing 88 a `flt32` literal had it
+> too, through the same double. The solver's term for such a literal is the number written (z3's `to_fp` of the
+> exact real), so a verified build reasons about a double the program does not hold. **Decided — the next landing,
+> first in the queue (a wrong answer):** the emitter writes `double 0x…` from `float_round(text, 64)` through the
+> one writer (`float_const_text`; `float_literal_body` goes), the 53-bit path already held to exact rationals by
+> `float_round.npk`'s vectors, the two long texts among them. Every float program's emitted TEXT moves and no value
+> does but these: the proof is the two emissions compared after reading every `double <decimal>` of the old one
+> through the exact rationals (`fnorm.py`'s method, used in landing 88 for the `flt32` constants), with the
+> programs' exits at both legs; `float_literal_kat.npk`'s `flt64` half then tests the compiler's conversion and
+> gains the long texts, and `float_vectors.py --llvm` stays as the outside-gate measurement of LLVM's parser. It was
+> kept out of landing 88 so that the conversion did not become the single authority for every `flt64` in the commit
+> that first used it — decided before the cap was found, and kept after: one landing, one harness.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

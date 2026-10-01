@@ -34,7 +34,8 @@ nitpick/                    # `alternative-intelligence-cp/nitpick` since 2026-0
 │   └── tests/              #   re-homed here at 1.4.6), and the floor's own hand-written tests
 ├── tools/                  # check / parse_check / resolve_check — the real frontend, for the harness (0.7.8)
 ├── bootstrap/              # Not the compiler. (D-085; survival map D-203)
-│   ├── generator/          #   made the FIRST snapshot; builds nothing now (permanent, regeneration-only)
+│   ├── generator/          #   made the FIRST snapshot; builds nothing now (permanent, regeneration-only:
+│   │                       #   gen_tables.py, and float_vectors.py for the float conversion's known answers)
 │   ├── harness/            #   the Python runner, beside `npkg` until SWITCH.md retires it (D-206; parity is a stage on every run)
 │   └── seed/               #   stage1.ll + STAMP + README — THE BUILDER since 1.4.6, refreshed at cycle closes (D-203/D-205)
 └── tests/

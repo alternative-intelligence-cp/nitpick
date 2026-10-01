@@ -1082,12 +1082,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                 " = insertvalue { ptr, i64, i64 } ", s2, ", i64 0, 2"));
             pass (raw iv("{ ptr, i64, i64 }", move(s3), ctid));
         }
-        // A CARRIED FLOAT (DEF-179): the literal's body under its sign -- a
-        // `flt32` through the same double a `flt32` literal rides.
+        // A CARRIED FLOAT (DEF-179): the literal's text under its sign, the
+        // constant a literal of that text is (`emit_float_const`).
         if ((cv.kind == (raw CV_REAL())) && ((raw type_kind(x.fe.ctx.types, ctid)) == (raw TY_FLOAT()))) {
-            string:cfb = raw float_literal_body(x, cv.text);
-            if (cv.num != 0i64) { cfb = string_concat("-", cfb); }
-            pass (raw emit_float_const(x, cfb, ctid, n.span));
+            pass (raw emit_float_const(x, cv.text, cv.num != 0i64, ctid, n.span));
         }
         // int, bool and char are one numeric constant at the node's width; a
         // fixed-point value is its Q constant.
@@ -1175,11 +1173,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // refuses them by name (`PARSE-010`), so this is a defensive confession.
         pass (raw iv_broken(n.span));
     }
-    // A float literal (0.9.4). The lexer kept the TEXT; LLVM's parser converts
-    // decimal to double with correct rounding, so `double <text>` is exact for
-    // flt64. A flt32 literal rides the same double and truncates — exactly
-    // correct for ≤ 15 significant digits (double rounding is innocuous at
-    // 53 vs 24 bits), and the checker refused anything longer (D-143).
+    // A float literal (0.9.4). The lexer kept the TEXT, and the constant is the
+    // nearest value of the literal's type to the number written, in ONE
+    // rounding (`emit_float_const`; DEF-203).
     if (n.kind == ExprKind.ExprFloatLiteral) {
         int32:ftid = raw exprtypes_get(x.et, id);
         // A `tfp` LITERAL IS ITS EXACT Q CONSTANT (D-195, 1.3.2): the same
@@ -1196,20 +1192,8 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             if (!(raw ll_is_ok(qll2))) { pass (raw iv_from_ll_at(x, qll2, ftid, n.span)); }
             pass (raw iv(move(qll2.text), move(qv2), ftid));
         }
-        LlType:fll = raw ll_type(x.fe.ctx, ftid);
-        if (!(raw ll_is_ok(fll))) { pass (raw iv_from_ll_at(x, fll, ftid, n.span)); }
-        string:txt = raw intern_get(x.interns, n.payload =>! int32);
-        string:body = raw float_literal_body(x, txt);
-        if (raw string_eq(fll.text, "double")) {
-            pass (raw iv("double", move(body), ftid));
-        }
-        if (raw string_eq(fll.text, "float")) {
-            string:fr = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(fr, " = fptrunc double ", body,
-                              " to float", ""));
-            pass (raw iv("float", move(fr), ftid));
-        }
-        pass (raw iv_broken(n.span));
+        pass (raw emit_float_const(x, raw intern_get(x.interns, n.payload =>! int32),
+                                   false, ftid, n.span));
     }
     // The four below were found by `check_kinds_lowered_or_refused`'s first run
     // (0.9.1): each fell through to iv_broken — an INTERNAL-defect report for
@@ -1476,11 +1460,19 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // `3f64` -- THE INTEGER-FORM FLOAT LITERAL (DEF-199, 1.6.1e): the grammar
     // gives an integer body any `TypeSuffix` and the checker types this one a
     // float, as it types `5tfp64` a `tfp`; it fell through to the integer text
-    // below and `double 3` is not LLVM grammar. The payload in decimal is the
-    // literal's body, and `float_literal_body` gives it its point.
+    // below and `double 3` is not LLVM grammar. The payload's magnitude in
+    // decimal is the literal's text and its sign is carried apart (a
+    // balanced-base body may be negative), as the folder carries them.
     if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_FLOAT())) {
-        pass (raw emit_float_const(x, raw float_literal_body(x, int_to_string(n.payload)),
-                                   itid, n.span));
+        int64:fmag = n.payload;
+        bool:fneg = false;
+        if (fmag < 0i64) {
+            // The envelope's own minimum has no magnitude in the window.
+            if (fmag < (0i64 - 9223372036854775807i64)) { pass (raw iv_broken(n.span)); }
+            fmag = 0i64 - fmag;
+            fneg = true;
+        }
+        pass (raw emit_float_const(x, int_to_string(fmag), fneg, itid, n.span));
     }
     LlType:t = raw node_ll(x, id);
     if (t.state != (raw LL_OK())) {
@@ -2003,31 +1995,60 @@ func:widen_len_i64 = string(ExprEmitter->:x, string:ref, string:ll, int32:len_ti
     pass w;
 };
 
-// A FLOAT CONSTANT FROM ITS LLVM DECIMAL BODY, sign included: `double <body>`
-// as it stands; a `flt32` rides the same double and truncates, as a `flt32`
-// literal does (the arm in `emit_expr`).
-func:emit_float_const = IrVal(ExprEmitter->:x, string:body, int32:ftid, Span:at) never fails {
+// A FLOAT CONSTANT'S LLVM TEXT (DEF-203, 1.6.1e): `text` is a float literal's
+// kept text or an integer body's decimal digits, `neg` its sign, `bits` the
+// width of the type it was written at. "" where that width has no constant
+// (`flt128` is a storage format, D-143).
+//
+//   flt64   the decimal body, signed. LLVM's parser converts it -- to nearest
+//           with ties to even on every measured text whose exponent is within
+//           24,000, and WRONGLY past that (it caps the exponent it reads:
+//           DEF-209, whose fix is to write these bits too, from `float_round`).
+//   flt32   THE BITS: `0x` and sixteen hex digits, the pattern of the double
+//           holding the float that `float_round` makes of the text -- the
+//           nearest float to the number written, in one rounding. It lowered
+//           as `fptrunc double <body> to float` until this landed: LLVM's
+//           rounding to 53 bits and then the instruction's to 24, which is a
+//           different float for about one literal in 2^30 (D-143's "equal
+//           below 16 digits" was false). A `float` has no decimal spelling in
+//           LLVM unless the decimal is exact, which is why the road through
+//           the double was taken, and why the answer is the bits.
+//
+// ONE WRITER for every float constant the emitter spells: a literal in a body,
+// the integer form, a `comptime(...)` value and a module binding's initialiser
+// (`const_scalar_text`) -- there were three, each with its own `fptrunc`.
+func:float_const_text = string(ExprEmitter->:x, string:text, bool:neg, int32:bits) never fails {
+    if (bits == 64i32) {
+        string:body = raw float_literal_body(x, text);
+        if (neg) { pass (string_concat("-", body)); }
+        pass body;
+    }
+    if (bits == 32i32) {
+        FloatBits:fb = raw float_round(text, 32i32);
+        uint64:d = raw flt32_bits_as_flt64(fb.bits);
+        if (neg) { d = d | (1u64 << 63u64); }
+        pass (raw hex64_text(d));
+    }
+    pass "";
+};
+
+// A FLOAT CONSTANT AS A VALUE: no instruction, the constant at its type.
+func:emit_float_const = IrVal(ExprEmitter->:x, string:text, bool:neg, int32:ftid, Span:at) never fails {
     LlType:fll = raw ll_type(x.fe.ctx, ftid);
     if (!(raw ll_is_ok(fll))) { pass (raw iv_from_ll_at(x, fll, ftid, at)); }
-    if (raw string_eq(fll.text, "double")) {
-        pass (raw iv("double", string_concat(body, ""), ftid));
-    }
-    if (raw string_eq(fll.text, "float")) {
-        string:fr = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(fr, " = fptrunc double ", body, " to float", ""));
-        pass (raw iv("float", move(fr), ftid));
-    }
-    pass (raw iv_broken(at));
+    if ((raw type_kind(x.fe.ctx.types, ftid)) != (raw TY_FLOAT())) { pass (raw iv_broken(at)); }
+    string:ct = raw float_const_text(x, text, neg, raw type_int_bits(x.fe.ctx.types, ftid));
+    if (ct.len == 0i64) { pass (raw iv_broken(at)); }
+    pass (raw iv(move(fll.text), move(ct), ftid));
 };
 
 // A FOLDED SCALAR'S LLVM CONSTANT TEXT AT TYPE `sty` (DEF-179, DEF-197; 1.6.1e)
 // -- what a module binding's initialiser and a `comptime(…)` write. It is
 // decided by the TYPE as much as by the value:
 //
-//   a carried float           `double` only: the literal's own body, signed. A
-//                             `flt32` has no constant spelling without the
-//                             bits ("" -- the checker refuses it at module
-//                             level, and `comptime` in a body truncates)
+//   a carried float           the constant a literal of that text is, signed
+//                             (`float_const_text`: a `flt64`'s decimal body, a
+//                             `flt32`'s bits)
 //   a carried fixed-point     the exact Q constant of the text, signed
 //   an integer, bool, char    the number -- at a type whose value IS the number
 //
@@ -2042,10 +2063,7 @@ func:const_scalar_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never f
             pass (raw tfp_q_signed(cv.text, raw type_int_bits(x.fe.ctx.types, sty), neg));
         }
         if (k == (raw TY_FLOAT())) {
-            if ((raw type_int_bits(x.fe.ctx.types, sty)) != 64i32) { pass ""; }
-            string:body = raw float_literal_body(x, cv.text);
-            if (neg) { pass (string_concat("-", body)); }
-            pass body;
+            pass (raw float_const_text(x, cv.text, neg, raw type_int_bits(x.fe.ctx.types, sty)));
         }
         pass "";
     }

@@ -1,23 +1,23 @@
 // expect-error: NITPICK-TYPE-035
-// expect-error-at: 40:1
-// expect-error: NITPICK-TYPE-035
-// expect-error-at: 41:1
-// expect-error: NITPICK-TYPE-035
 // expect-error-at: 42:1
 // expect-error: NITPICK-TYPE-035
 // expect-error-at: 43:1
 // expect-error: NITPICK-TYPE-035
 // expect-error-at: 44:1
 // expect-error: NITPICK-TYPE-035
+// expect-error-at: 45:1
+// expect-error: NITPICK-TYPE-035
 // expect-error-at: 46:1
 // expect-error: NITPICK-TYPE-035
 // expect-error-at: 48:1
 // expect-error: NITPICK-TYPE-035
-// expect-error-at: 49:1
-// expect-error: NITPICK-TYPE-035
 // expect-error-at: 50:1
 // expect-error: NITPICK-TYPE-035
 // expect-error-at: 51:1
+// expect-error: NITPICK-TYPE-035
+// expect-error-at: 52:1
+// expect-error: NITPICK-TYPE-035
+// expect-error-at: 53:1
 //
 // DEF-197 (1.6.1e): A MODULE-LEVEL CONSTANT OF A CARRIED FAMILY IS WRITTEN, NOT
 // COMPUTED. The folder computes in the plain integers, `bool`, `char` and
@@ -30,9 +30,11 @@
 //   fixed tfp64:B = 2tfp64 + 1tfp64;    `constant i64 3`  (the Q value of 3.0 is 12884901888)
 //   fixed tryte:C = 29524 + 1;          `constant i16 29525` (no tryte at all; the run time: ERR)
 //
-// A float's arithmetic is the run time's too (its rounding), a `flt32` constant
-// waits for the compiler's own decimal conversion, and a reference does not
-// launder the arithmetic. The controls are every written form.
+// A float's arithmetic is the run time's too (its rounding), at either width,
+// and a reference does not launder the arithmetic. The controls are every
+// written form -- a `flt32` among them since DEF-203 gave the emitter its bits
+// (it was refused by name for one landing: LLVM has no decimal spelling of a
+// `float` that is not exact, and no constant `fptrunc`).
 mod:module_const_carried;
 
 struct:W = { tfp64:q; int32:k; };
@@ -41,7 +43,7 @@ fixed tbb8:A = 100tbb8 + 100tbb8;
 fixed tfp64:B = 2tfp64 + 1tfp64;
 fixed tryte:C = 29524 + 1;
 fixed flt64:D = 2.0f64 * 3.0f64;
-fixed flt32:E = 1.5f32;
+fixed flt32:E = 1.5f32 + 0.5f32;
 fixed tryte:F0 = 5;
 fixed tryte:F = F0 + 1;
 fixed tbb8:G0 = 100tbb8;
@@ -60,6 +62,8 @@ fixed tbb8:OK5 = ERR;
 fixed tfp64:OK6 = Q0;
 fixed int32:OK7 = 2i32 + 3i32;
 fixed W:OK8 = W{ q: 2tfp64, k: 1i32 + 1i32 };
+fixed flt32:OK9 = 1.5f32;
+fixed flt32:OK10 = -0.1f32;
 
 func:main = int32(cstring[]:argv) {
     exit 0i32;

@@ -2920,11 +2920,6 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
                         "a module-level constant of a float, fixed-point, `tbb` or ternary type is written, not computed: a literal, a negated literal, `ERR`, or another module binding of that type (D-165) — the compiler computes constants in the plain integers, `bool`, `char` and `string` only, and this family's arithmetic (its rounding, its sticky ERR) is the run time's; write the value as one literal, or compute it in a function",
                         d.span));
                 }
-                if ((!lit_refused) && (civ == 3i32)) {
-                    discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
-                        "a `flt32` constant is not lowered at module level yet (DEF-179): its bits need the compiler's own decimal conversion, which the next landing brings — declare it `flt64` and narrow where it is read (`=>! flt32`), or return the literal from a `pure never fails` function",
-                        d.span));
-                }
             }
         }
         pass NIL;
@@ -2940,7 +2935,8 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
 //
 // THE VERDICT (1.6.1e, DEF-179/DEF-197): 0 a constant; 1 not one; 2 an
 // expression of a CARRIED family -- float, fixed-point, `tbb`, ternary -- that is
-// not a written value; 3 a `flt32`, which the emitter cannot spell yet. The
+// not a written value. (A `flt32` was a third refusal until the emitter could
+// spell its bits: DEF-203.) The
 // family is read off the type the checker recorded for the member, never off
 // the folded value: an unsuffixed literal in a ternary slot folds as an untyped
 // integer, and so did `29524 + 1` there -- 29525, written into the global where
@@ -3000,9 +2996,6 @@ func:const_init_verdict = int32(ExprTyper->:e, ExprId:eid) never fails {
             }
         }
         if (!lit) { pass 2i32; }
-    }
-    if (k == (raw TY_FLOAT())) {
-        if ((raw type_int_bits(e.types, t)) == 32i32) { pass 3i32; }
     }
     pass 0i32;
 };

@@ -1,0 +1,175 @@
+// expect-exit: 0
+//
+// EVERY ROAD A `flt32` CONSTANT TAKES ENDS AT THE NEAREST FLOAT TO THE NUMBER
+// WRITTEN (DEF-203, 1.6.1e). A `flt32` literal lowered as
+// `fptrunc double <text> to float` on every compiler before this one: LLVM
+// rounded the decimal to a double and the instruction rounded the double to a
+// float. D-143 held the two roundings equal to one "exactly when the decimal
+// has <= 15 significant digits"; where the decimal sits within half a double's
+// unit of the midpoint between two floats, the double IS the midpoint and the
+// tie goes to even, whichever side the decimal was on. The four literals this
+// file is built from each carry fifteen digits and each compiled to the
+// neighbour of the nearest float:
+//
+//   9.51125303839185e-19   nearest 0x218C5C7F   compiled 0x218C5C80
+//   7.99248255789280e-2    nearest 0x3DA3AFA1   compiled 0x3DA3AFA0
+//   8.89761617066066e16    nearest 0x5B9E0DAD   compiled 0x5B9E0DAC
+//   2.47979713208224e-7    nearest 0x34852213   compiled 0x34852212
+//
+// The constant is the compiler's own conversion now (`float_round`,
+// numeric.npk: exact, to nearest, ties to even) and it is written as its bits
+// by ONE writer, so every road below must give the same float: a literal in a
+// body, under a sign, with either exponent spelling, with no suffix in a
+// `flt32` slot, in the integer form, through `comptime(...)`, as a struct
+// field, an array element, a `simd` lane and splat, a `complex` component, an
+// argument, a returned value, a `Rules` clause's bound and a contract's -- and
+// a MODULE-LEVEL constant, which a `flt32` could not be before (LLVM spells a
+// `float` constant only by its bits unless the decimal is exact, and has no
+// constant `fptrunc`: NITPICK-TYPE-035 "by name" from DEF-179's landing until
+// this one). Every value is read back as its bits, through a call, so neither
+// leg folds a comparison away.
+mod:flt32_literal;
+
+struct:P = { flt32:a; flt32:b; };
+
+fixed flt32:M_LIT  = 9.51125303839185e-19f32;
+fixed flt32:M_NEG  = -7.99248255789280e-2f32;
+fixed flt32:M_UNS  = 2.47979713208224e-7;
+fixed flt32:M_INT  = 16777217f32;
+fixed flt32:M_BAL  = 0Ttf32;
+fixed flt32:M_CT   = comptime(8.89761617066066e16f32);
+fixed flt32:M_REF  = M_LIT;
+fixed flt32:M_NZ   = -0.0f32;
+fixed flt32:M_TINY = 1.4e-45f32;
+fixed flt32:M_MAX  = 3.4028235e38f32;
+fixed flt32[3]:M_ARR = [9.51125303839185e-19f32, -7.99248255789280e-2f32, 0.1f32];
+fixed P:M_PT = P{ a: 9.51125303839185e-19f32, b: 8.89761617066066e16f32 };
+
+// A rule and a contract whose bound is the literal: the nearest float meets
+// both, and its upper neighbour -- what the literal used to be -- is what
+// `$ <= ...` would have admitted in its place.
+Rules<flt32>:r_at_most = { $ <= 9.51125303839185e-19f32 };
+
+func:bits = uint32(flt32:v) never fails {
+    wild int8->:b = alloc(4i64);
+    wild flt32->:fp = b =>! wild flt32->;
+    <-fp = v;
+    wild uint32->:ip = b =>! wild uint32->;
+    uint32:w = <-ip;
+    dalloc(b);
+    pass w;
+};
+
+func:of_bits = flt32(uint32:w) never fails {
+    wild int8->:b = alloc(4i64);
+    wild uint32->:ip = b =>! wild uint32->;
+    <-ip = w;
+    wild flt32->:fp = b =>! wild flt32->;
+    flt32:v = <-fp;
+    dalloc(b);
+    pass v;
+};
+
+func:returned = flt32() never fails { pass 9.51125303839185e-19f32; };
+
+func:limited = uint32(limit<r_at_most> flt32:x) never fails { pass (raw bits(x)); };
+
+func:above = bool(flt32:x) requires x <= 9.51125303839185e-19f32 never fails {
+    pass (x > 9.51125303839185e-19f32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // A literal in a body; under a sign; both exponent spellings.
+    flt32:a = 9.51125303839185e-19f32;
+    if ((raw bits(a)) != 562846847u32)                               { exit 1i32; }
+    flt32:n = -7.99248255789280e-2f32;
+    if ((raw bits(n)) != 3181621153u32)                              { exit 2i32; }
+    if ((raw bits(8.89761617066066E16f32)) != 1537084845u32)         { exit 3i32; }
+    if ((raw bits(8.89761617066066e+16f32)) != 1537084845u32)        { exit 4i32; }
+    if ((raw bits(79.9248255789280e-3f32)) != 1034137505u32)         { exit 5i32; }
+
+    // No suffix: the slot gives the width, and the constant is the same one.
+    flt32:u = 2.47979713208224e-7;
+    if ((raw bits(u)) != 881140243u32)                               { exit 10i32; }
+
+    // The integer form: 2^24 + 1 is half-way between two floats, and the tie
+    // goes to the even one; a balanced-base body carries its sign.
+    if ((raw bits(16777217f32)) != 1266679808u32)                    { exit 11i32; }
+    if ((raw bits(0Ttf32)) != 3212836864u32)                         { exit 12i32; }
+    if ((raw bits(7f32)) != (raw bits(7.0f32)))                      { exit 13i32; }
+
+    // `comptime(...)`, an argument, a returned value.
+    flt32:c = comptime(8.89761617066066e16f32);
+    if ((raw bits(c)) != 1537084845u32)                              { exit 20i32; }
+    flt32:cn = comptime(-9.51125303839185e-19f32);
+    if ((raw bits(cn)) != 2710330495u32)                             { exit 21i32; }
+    if ((raw bits(raw returned())) != 562846847u32)                  { exit 22i32; }
+
+    // Aggregates in a body.
+    P:p = P{ a: 9.51125303839185e-19f32, b: 2.47979713208224e-7f32 };
+    if ((raw bits(p.a)) != 562846847u32)                             { exit 30i32; }
+    if ((raw bits(p.b)) != 881140243u32)                             { exit 31i32; }
+    flt32[2]:arr = [7.99248255789280e-2f32, 9.51125303839185e-19f32];
+    if ((raw bits(arr[0])) != 1034137505u32)                         { exit 32i32; }
+    if ((raw bits(arr[1])) != 562846847u32)                          { exit 33i32; }
+    simd<flt32, 4>:lanes = simd(9.51125303839185e-19f32, 7.99248255789280e-2f32,
+                                8.89761617066066e16f32, 2.47979713208224e-7f32);
+    if ((raw bits(lanes[0])) != 562846847u32)                        { exit 34i32; }
+    if ((raw bits(lanes[1])) != 1034137505u32)                       { exit 35i32; }
+    if ((raw bits(lanes[2])) != 1537084845u32)                       { exit 36i32; }
+    if ((raw bits(lanes[3])) != 881140243u32)                        { exit 37i32; }
+    simd<flt32, 4>:splat = simd(9.51125303839185e-19f32);
+    if ((raw bits(splat[3])) != 562846847u32)                        { exit 38i32; }
+    complex<flt32>:z = complex(9.51125303839185e-19f32, 7.99248255789280e-2f32);
+    if ((raw bits(z.re())) != 562846847u32)                          { exit 39i32; }
+    if ((raw bits(z.im())) != 1034137505u32)                         { exit 40i32; }
+
+    // A rule's bound and a contract's are the same float: the nearest one
+    // meets `<=`, and is not above itself. Both are built FROM BITS, so the
+    // literal under test is only the one in the clause.
+    flt32:nearest = raw of_bits(562846847u32);
+    if ((raw limited(nearest)) != 562846847u32)                      { exit 50i32; }
+    if (raw above(nearest))                                          { exit 51i32; }
+    // ...and its upper neighbour, which the literal used to be, is above it.
+    flt32:upper = raw of_bits(562846848u32);
+    if (!(upper > 9.51125303839185e-19f32))                          { exit 52i32; }
+
+    // Module-level constants, each form.
+    if ((raw bits(M_LIT)) != 562846847u32)                           { exit 60i32; }
+    if ((raw bits(M_NEG)) != 3181621153u32)                          { exit 61i32; }
+    if ((raw bits(M_UNS)) != 881140243u32)                           { exit 62i32; }
+    if ((raw bits(M_INT)) != 1266679808u32)                          { exit 63i32; }
+    if ((raw bits(M_BAL)) != 3212836864u32)                          { exit 64i32; }
+    if ((raw bits(M_CT)) != 1537084845u32)                           { exit 65i32; }
+    if ((raw bits(M_REF)) != 562846847u32)                           { exit 66i32; }
+    if ((raw bits(M_NZ)) != 2147483648u32)                           { exit 67i32; }
+    if ((raw bits(M_TINY)) != 1u32)                                  { exit 68i32; }
+    if ((raw bits(M_MAX)) != 2139095039u32)                          { exit 69i32; }
+    if ((raw bits(M_ARR[0])) != 562846847u32)                        { exit 70i32; }
+    if ((raw bits(M_ARR[1])) != 3181621153u32)                       { exit 71i32; }
+    if ((raw bits(M_ARR[2])) != 1036831949u32)                       { exit 72i32; }
+    if ((raw bits(M_PT.a)) != 562846847u32)                          { exit 73i32; }
+    if ((raw bits(M_PT.b)) != 1537084845u32)                         { exit 74i32; }
+
+    // A negative zero keeps its sign in a body as at module level.
+    if ((raw bits(-0.0f32)) != 2147483648u32)                        { exit 80i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)     { exit 201i32; },
+        (RequiresViolated)  { exit 202i32; },
+        (OutOfBounds)       { exit 203i32; },
+        (HeapBadRequest)    { exit 204i32; },
+        (HeapOom)           { exit 204i32; },
+        (IntOverflow)       { exit 204i32; },
+        (Unreachable)       { exit 204i32; },
+        (WildLeak)          { exit 204i32; },
+        (StackExhausted)    { exit 204i32; },
+        (MachineFault)      { exit 204i32; },
+        (DecreasesViolated) { exit 204i32; },
+        (*)                 { exit 205i32; }
+    }
+    exit 206i32;
+};

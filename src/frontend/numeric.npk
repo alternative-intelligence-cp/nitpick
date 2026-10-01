@@ -603,3 +603,248 @@ pub func:tfp_q_of_int = string(int64:payload, int32:bits) never fails {
     if (payload < (0i64 - 9223372036854775807i64)) { pass ""; }
     pass (raw tfp_q_signed(int_to_string(0i64 - payload), bits, true));
 };
+
+// --- float literal rounding (DEF-203, 1.6.1e) ----------------------------------------
+//
+// THE NEAREST FLOAT TO THE NUMBER WRITTEN, IN ONE ROUNDING. A `flt32` literal
+// rode a `double` until this landed -- `fptrunc double <text> to float`: LLVM
+// rounded the decimal to 53 bits and the instruction rounded that to 24. D-143
+// held the two roundings equal to one "exactly when the decimal has <= 15
+// significant digits", and that is false: where the decimal sits within half a
+// double's unit of the midpoint between two floats, the double IS the midpoint
+// and the tie goes to even, whichever side the decimal was on.
+// `9.51125303839185e-19f32` compiled to 0x218C5C80; the nearest float is
+// 0x218C5C7F. One literal in about 2^30 -- and silent.
+//
+// So the compiler converts the decimal itself: EXACTLY, to nearest, ties to
+// even, at the precision of the type that was written. Nothing here rounds
+// before the one rounding: the digits are halved (the integer part's bits,
+// least significant first) and doubled (the fraction's, most significant
+// first) as DECIMAL DIGIT RUNS, the schoolbook way, so every bit that comes out
+// is a bit of the number written; a window of p + 1 of them is kept -- the
+// significand and the round bit -- and `sticky` remembers whether anything
+// nonzero lay below. No wide integer and no division but a digit's by two.
+//
+// GENERIC IN THE FORMAT (24 bits / 127 and 53 bits / 1023), because the
+// checker's range question, the emitter's constant and the solver's
+// `to_fp RNE` of the exact real must be ONE number for either width --
+// `tfp_q_decimal`'s rule above, kept for the floats.
+//
+// THE ANSWER CARRIES TWO FLAGS and decides nothing about them: `inf`, the
+// number rounds to infinity; `zero`, a NONZERO number rounds to zero. What a
+// literal that does not fit should be is DEF-205's and the user's (S-126);
+// the caller reads the flags.
+//
+// The work is bounded whatever is written: a number at or past 10^310 is
+// infinity and one below 10^-330 is zero for both formats (2^1024 < 1.8e308,
+// 2^-1075 > 2.4e-324), so the digit runs hold at most the literal's own digits
+// and 330 zeros, and the halving ends inside four trips per digit.
+
+pub struct:FloatBits = {
+    uint64:bits;    // the IEEE encoding at the format's own width; a literal carries no sign
+    bool:inf;       // the number written rounds to infinity
+    bool:zero;      // a NONZERO number written rounds to zero
+};
+
+// x2 over a decimal fraction's digits, right to left, in place. The carry out
+// is the fraction's next bit below the point.
+func:frac_double = uint64(List<uint8>->:f) never fails {
+    uint64:carry = 0u64;
+    int64:j = f.count - 1i64;
+    while (j >= 0i64) decreases j {
+        uint64:t = (((<-f)[j] => uint64) * 2u64) + carry;
+        carry = 0u64;
+        if (t >= 10u64) { t = t - 10u64; carry = 1u64; }
+        (<-f)[j] = t =>! uint8;
+        j = j - 1i64;
+    }
+    pass carry;
+};
+
+// `text` is a float literal's kept text (or an integer body's decimal digits);
+// the read ends at the first byte that is not the number's, which is where a
+// suffix begins. `width` is 32 or 64.
+pub func:float_round = FloatBits(string:text, int32:width) never fails {
+    int64:p = 53i64;
+    int64:emax = 1023i64;
+    if (width == 32i32) { p = 24i64; emax = 127i64; }
+    int64:emin = 1i64 - emax;
+    uint64:top = ((2i64 * emax) + 1i64) =>! uint64;      // the exponent field of infinity
+    uint64:inf_bits = top << ((p - 1i64) =>! uint64);
+
+    // --- parse: every digit into ONE run, the point's place counted ---
+    List<uint8>:dg = raw list_init::<uint8>(text.len + 1i64);
+    int64:pt = 0i64;
+    int64:ex = 0i64;
+    bool:negex = false;
+    int32:st = 0i32;    // 0 integer digits, 1 fraction digits, 2 the exponent
+    int64:i = 0i64;
+    while (i < text.len) decreases text.len - i {
+        uint8:c = text.ptr[i];
+        bool:handled = false;
+        if ((c >= 48u8) && (c <= 57u8)) {
+            handled = true;
+            if (st == 2i32) {
+                // The exponent stops growing once it is past anything the
+                // text's own digits can bring back into range: the point moves
+                // by at most the text's length, so an exponent beyond that and
+                // a thousand more forces the answer whatever digits follow.
+                // (A fixed cap would be wrong for a fraction with a hundred
+                // thousand leading zeros and the exponent that undoes them.)
+                if (ex <= (text.len + 1000i64)) { ex = (ex * 10i64) + ((c - 48u8) => int64); }
+            } else {
+                drop list_push(@dg, c - 48u8);
+                if (st == 0i32) { pt = pt + 1i64; }
+            }
+        }
+        if (!handled) {
+            if ((c == 46u8) && (st == 0i32)) { st = 1i32; handled = true; }       // '.'
+            if (!handled) {
+                if (((c == 101u8) || (c == 69u8)) && (st < 2i32)) { st = 2i32; handled = true; }   // 'e' 'E'
+            }
+            if (!handled) {
+                if (st == 2i32) {
+                    if (c == 45u8) { negex = true; handled = true; }                // '-'
+                    if (c == 43u8) { handled = true; }                              // '+'
+                }
+            }
+            if (!handled) { i = text.len; }    // the suffix: done
+        }
+        if (i < text.len) { i = i + 1i64; }
+    }
+    if (negex) { ex = 0i64 - ex; }
+
+    // --- leading zeros leave and the point follows them; trailing zeros leave ---
+    int64:lead = 0i64;
+    while (lead < dg.count) decreases dg.count - lead {
+        if (dg[lead] != 0u8) { break; }
+        lead = lead + 1i64;
+    }
+    int64:nd = dg.count;
+    while (nd > lead) decreases nd - lead {
+        if (dg[nd - 1i64] != 0u8) { break; }
+        nd = nd - 1i64;
+    }
+    pt = (pt - lead) + ex;
+    // Zero, exactly: the one zero that is the number written.
+    if (nd == lead) { pass FloatBits{ bits: 0u64, inf: false, zero: false }; }
+    // --- the forced answers: past both formats' range ---
+    if (pt > 310i64) { pass FloatBits{ bits: inf_bits, inf: true, zero: false }; }
+    if (pt < (0i64 - 330i64)) { pass FloatBits{ bits: 0u64, inf: false, zero: true }; }
+
+    // --- the integer's digits and the fraction's, the point between them ---
+    List<uint8>:ig = raw list_init::<uint8>(312i64);
+    int64:k = 0i64;
+    while (k < pt) decreases pt - k {
+        uint8:dv = 0u8;
+        if ((lead + k) < nd) { dv = dg[lead + k]; }
+        drop list_push(@ig, dv);
+        k = k + 1i64;
+    }
+    List<uint8>:fr = raw list_init::<uint8>((nd - lead) + 332i64);
+    int64:z = pt;
+    while (z < 0i64) decreases 0i64 - z {
+        drop list_push(@fr, 0u8);
+        z = z + 1i64;
+    }
+    int64:k2 = lead;
+    if (pt > 0i64) { k2 = lead + pt; }
+    while (k2 < nd) decreases nd - k2 {
+        drop list_push(@fr, dg[k2]);
+        k2 = k2 + 1i64;
+    }
+
+    // --- the integer's bits, least significant first: halve the digits until
+    //     none is left. `w` keeps the newest p + 1 of them -- the top of the
+    //     number -- and `sticky` what fell out below. An integer of n digits is
+    //     below 2^(4n), so the measure is its bits still to come. ---
+    uint64:w = 0u64;
+    int64:nbi = 0i64;
+    bool:sticky = false;
+    int64:first = 0i64;
+    int64:bitcap = ig.count * 4i64;
+    while (first < ig.count) decreases bitcap - nbi {
+        uint64:carry = 0u64;
+        for (int64:j in first...ig.count) {
+            uint64:cur = (carry * 10u64) + (ig[j] => uint64);
+            ig[j] = (cur >> 1u64) =>! uint8;
+            carry = cur & 1u64;
+        }
+        if ((w & 1u64) == 1u64) { sticky = true; }
+        w = (w >> 1u64) | (carry << (p =>! uint64));
+        nbi = nbi + 1i64;
+        while (first < ig.count) decreases ig.count - first {
+            if (ig[first] != 0u8) { break; }
+            first = first + 1i64;
+        }
+    }
+
+    // `e` is the exponent of the number's leading 1; `need` the fraction bits
+    // the window is still owed.
+    int64:e = 0i64;
+    int64:need = 0i64;
+    if (nbi > 0i64) {
+        e = nbi - 1i64;
+        int64:have = nbi;
+        if (have > (p + 1i64)) { have = p + 1i64; }
+        need = (p + 1i64) - have;
+        w = w >> (need =>! uint64);     // the bits it has come down; the owed ones fill in below
+    } else {
+        // --- no integer part: double the fraction until its first 1 comes out.
+        //     Below the round bit's place a leading 1 is zero. ---
+        bool:found = false;
+        int64:floor_e = emin - p;
+        while ((!found) && (e >= floor_e)) decreases e - floor_e {
+            if ((raw frac_double(@fr)) == 1u64) { found = true; }
+            e = e - 1i64;
+        }
+        if ((!found) || (e < floor_e)) { pass FloatBits{ bits: 0u64, inf: false, zero: true }; }
+        w = 1u64;
+        need = p;
+        if (e < emin) { need = e - floor_e; }    // a subnormal keeps fewer bits
+    }
+
+    // --- the owed fraction bits, most significant first; then what is left ---
+    for (int64:b in 0i64...need) {
+        w = (w << 1u64) | (raw frac_double(@fr));
+    }
+    for (int64:j2 in 0i64...fr.count) {
+        if (fr[j2] != 0u8) { sticky = true; }
+    }
+
+    // --- round to nearest, ties to even. The encoding absorbs the carry: a
+    //     significand that rounds up to 2^p is the next exponent's first value,
+    //     and the largest exponent's is infinity's own pattern. ---
+    uint64:m = w >> 1u64;
+    if ((w & 1u64) == 1u64) {
+        if (sticky || ((m & 1u64) == 1u64)) { m = m + 1u64; }
+    }
+    if (m == 0u64) { pass FloatBits{ bits: 0u64, inf: false, zero: true }; }
+    int64:base = e;
+    if (base < emin) { base = emin; }
+    uint64:bits = (((base - emin) =>! uint64) << ((p - 1i64) =>! uint64)) + m;
+    if ((bits >> ((p - 1i64) =>! uint64)) >= top) {
+        pass FloatBits{ bits: inf_bits, inf: true, zero: false };
+    }
+    pass FloatBits{ bits: bits, inf: false, zero: false };
+};
+
+// A `flt32`'s BITS AS THE BITS OF THE `flt64` HOLDING THE SAME VALUE -- the one
+// spelling LLVM gives a `float` constant that is not a short decimal: sixteen
+// hex digits, the double's pattern, accepted only where that double is exactly
+// a float. This one is by construction: the float's fraction moves up 29 bits
+// and its exponent is re-biased; a subnormal float is a NORMAL double, found
+// by its leading bit.
+pub func:flt32_bits_as_flt64 = uint64(uint64:b32) never fails {
+    uint64:ef = (b32 >> 23u64) & 255u64;
+    uint64:fr = b32 & 8388607u64;
+    if (ef == 255u64) { pass ((2047u64 << 52u64) | (fr << 29u64)); }
+    if (ef == 0u64) {
+        if (fr == 0u64) { pass 0u64; }
+        uint64:t = 22u64;
+        while (((fr >> t) & 1u64) == 0u64) decreases t { t = t - 1u64; }
+        // 2^(t - 149): the exponent field is t - 149 + 1023
+        pass (((t + 874u64) << 52u64) | ((fr - (1u64 << t)) << (52u64 - t)));
+    }
+    pass (((ef + 896u64) << 52u64) | (fr << 29u64));     // ef - 127 + 1023
+};

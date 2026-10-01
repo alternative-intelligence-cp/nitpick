@@ -785,6 +785,80 @@ func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) never fails {
 
 // --- literals ---------------------------------------------------------------------------
 
+// D-143'S RULES FOR A FLOAT LITERAL, WHATEVER GAVE IT ITS WIDTH -- its suffix
+// or the slot it sits in (DEF-206, 1.6.1e). There was one copy, inside the
+// suffix's branch, and an unsuffixed fraction took a float slot's width through
+// `lit_ranged`, which holds no float rule: `flt128:x = 1.0;` passed the checker
+// and died in the emitter (EMIT-002), and `flt32:x = 0.1234567890123456789;`
+// was accepted where `0.1234567890123456789f32` is refused. And a THIRD road
+// to a width: `comptime(...)` of an unsuffixed fraction takes the float slot's
+// (`type_comptime`), so the rules are asked of the TEXT -- a literal's kept
+// text, an integer body's digits, a folded value's. False after the report;
+// the caller's answer is then the refused type.
+//
+//   flt128   a storage format -- no literals (its constants cannot even be
+//            spelled in the IR without soft-float semantics this implementation
+//            deliberately does not provide).
+//   flt32    at most 15 significant digits. THE REASON D-143 GAVE IS GONE: the
+//            literal lowered through a double, and the two roundings were held
+//            equal to one below sixteen digits -- which was false (DEF-203),
+//            and the constant is now the nearest float whatever is written
+//            (`float_round`). The rule stands until the user answers S-126; it
+//            is applied to both spellings while it does.
+func:float_text_ok = bool(ExprTyper->:e, string:txt, int32:bits, Span:at) never fails {
+    if (bits == 128i32) {
+        discard(raw te_error(e, raw TYPE_FLOAT_RULES(),
+            "`flt128` is a storage format (D-143): it holds and moves values but has no literals, arithmetic, or comparison",
+            at));
+        pass false;
+    }
+    if (bits == 32i32) {
+        int32:sig = 0i32;
+        bool:lead = true;
+        int64:ti = 0i64;
+        while (ti < txt.len) decreases txt.len - ti {
+            uint8:ch = txt.ptr[ti];
+            if (ch == 101u8) { break; }   // 'e' — exponent: digits end
+            if (ch == 69u8)  { break; }   // 'E'
+            if (ch == 102u8) { break; }   // 'f' — the suffix
+            if (ch >= 48u8) {
+                if (ch <= 57u8) {
+                    if (ch == 48u8) {
+                        if (!lead) { sig = sig + 1i32; }
+                    } else {
+                        lead = false;
+                        sig = sig + 1i32;
+                    }
+                }
+            }
+            ti = ti + 1i64;
+        }
+        if (sig > 15i32) {
+            discard(raw te_error(e, raw TYPE_FLOAT_RULES(),
+                "a `flt32` literal carries at most 15 significant digits (D-143); shorten it, or write it as a `flt64` literal (`…f64`) and narrow it with `=>!` — `flt64 => flt32` is a lossy cast",
+                at));
+            pass false;
+        }
+    }
+    pass true;
+};
+
+// THE RULES ASKED OF A LITERAL NODE. THE DIGITS OF THE LITERAL AS WRITTEN: a
+// fraction's kept text, an integer body's payload in decimal (DEF-199, 1.6.1e
+// -- an integer payload was read as an intern index here, so `7f32` counted
+// the digits of an unrelated string and `100000000f32` trapped the compiler
+// outside the table).
+func:float_literal_ok = bool(ExprTyper->:e, ExprNode:n, int32:bits) never fails {
+    if (n.kind == ExprKind.ExprFloatLiteral) {
+        pass (raw float_text_ok(e, raw intern_get(e.interns, n.payload =>! int32), bits, n.span));
+    }
+    int64:fmag = n.payload;
+    if (fmag < 0i64) {
+        if (fmag >= (0i64 - 9223372036854775807i64)) { fmag = 0i64 - fmag; } else { fmag = 0i64; }
+    }
+    pass (raw float_text_ok(e, int_to_string(fmag), bits, n.span));
+};
+
 // A NUMERIC LITERAL'S TYPE COMES FROM ITS SUFFIX, and with no suffix from
 // context (D-092). With neither it is an error rather than a silent `int32`: a
 // default would be a type nobody wrote, chosen by a rule nobody read, and every
@@ -837,62 +911,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
                   raw tt_int(e.types, bits, raw num_width_signed(w))));
     }
     if (kind == (raw TY_FLOAT())) {
-        // D-143: `flt128` is a storage format — no literals (its constants
-        // cannot even be spelled in the IR without soft-float semantics this
-        // implementation deliberately does not provide).
-        if (bits == 128i32) {
-            pass (raw te_error(e, raw TYPE_FLOAT_RULES(),
-                "`flt128` is a storage format (D-143): it holds and moves values but has no literals, arithmetic, or comparison",
-                n.span));
-        }
-        // D-143: a `flt32` literal carries at most 15 significant digits. The
-        // literal lowers through a correctly-rounded double (the IR's only
-        // portable spelling), and decimal→double→float equals direct rounding
-        // exactly when the decimal has ≤ 15 significant digits — beyond that,
-        // double rounding can differ and the value would be implementation-
-        // defined, which a literal must never be.
-        if (bits == 32i32) {
-            // THE DIGITS OF THE LITERAL AS WRITTEN: a fraction's kept text, an
-            // integer body's payload in decimal (DEF-199, 1.6.1e -- an integer
-            // payload was read as an intern index here, so `7f32` counted the
-            // digits of an unrelated string and `100000000f32` trapped the
-            // compiler outside the table).
-            string:txt = "";
-            if (n.kind == ExprKind.ExprFloatLiteral) {
-                txt = string_concat(raw intern_get(e.interns, n.payload =>! int32), "");
-            } else {
-                int64:fmag = n.payload;
-                if (fmag < 0i64) {
-                    if (fmag >= (0i64 - 9223372036854775807i64)) { fmag = 0i64 - fmag; } else { fmag = 0i64; }
-                }
-                txt = int_to_string(fmag);
-            }
-            int32:sig = 0i32;
-            bool:lead = true;
-            int64:ti = 0i64;
-            while (ti < txt.len) decreases txt.len - ti {
-                uint8:ch = txt.ptr[ti];
-                if (ch == 101u8) { break; }   // 'e' — exponent: digits end
-                if (ch == 69u8)  { break; }   // 'E'
-                if (ch == 102u8) { break; }   // 'f' — the suffix
-                if (ch >= 48u8) {
-                    if (ch <= 57u8) {
-                        if (ch == 48u8) {
-                            if (!lead) { sig = sig + 1i32; }
-                        } else {
-                            lead = false;
-                            sig = sig + 1i32;
-                        }
-                    }
-                }
-                ti = ti + 1i64;
-            }
-            if (sig > 15i32) {
-                pass (raw te_error(e, raw TYPE_FLOAT_RULES(),
-                    "a `flt32` literal carries at most 15 significant digits (D-143); shorten it, or write it as a `flt64` literal (`…f64`) and narrow it with `=>!` — `flt64 => flt32` is a lossy cast",
-                    n.span));
-            }
-        }
+        if (!(raw float_literal_ok(e, n, bits))) { pass 0i32; }
         pass (raw tt_float(e.types, bits));
     }
     if (kind == (raw TY_TBB()))   { pass (raw lit_ranged(e, n, raw tt_tbb(e.types, bits))); }
@@ -1005,6 +1024,13 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
     }
     if (want != 0i32) {
         if ((raw type_kind(e.types, want)) == (raw kind_wanted(e, example))) {
+            // A FLOAT SLOT GIVES THE LITERAL ITS WIDTH, AND THE WIDTH'S RULES
+            // WITH IT (DEF-206, 1.6.1e): `flt128:x = 1.0;` and a sixteen-digit
+            // fraction in a `flt32` slot were refused only when the same
+            // literal carried the suffix.
+            if ((raw type_kind(e.types, want)) == (raw TY_FLOAT())) {
+                if (!(raw float_literal_ok(e, n, raw type_int_bits(e.types, want)))) { pass 0i32; }
+            }
             pass (raw lit_ranged(e, n, want));
         }
     }
@@ -2920,7 +2946,13 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // does (DEF-179): `flt64:x = comptime(2.5);`.
     if (raw cv_is_real(cv)) {
         if (want != 0i32) {
-            if ((raw type_kind(e.types, want)) == (raw TY_FLOAT())) { pass want; }
+            if ((raw type_kind(e.types, want)) == (raw TY_FLOAT())) {
+                // ...AND THE WIDTH'S RULES WITH IT (DEF-206): the value is the
+                // text a literal would be, and `flt128:w = comptime(1.0);`
+                // reached the emitter with nothing to write.
+                if (!(raw float_text_ok(e, cv.text, raw type_int_bits(e.types, want), n.span))) { pass 0i32; }
+                pass want;
+            }
             string:cr1 = string_concat("this `comptime` value is a fraction with no width and sits in a `",
                             raw type_display(e.types, e.interns, want));
             pass (raw te_error(e, raw TYPE_MISMATCH(),

@@ -1,0 +1,67 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 2
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// A `flt32` LITERAL IS ONE NUMBER TO THE PROGRAM AND TO THE SOLVER (DEF-203,
+// 1.6.1e). The emitter lowered a `flt32` literal through a double and an
+// `fptrunc`, and the encoder mirrored it on purpose: a `Float64` literal,
+// narrowed. Both were two roundings, and for `9.51125303839185e-19f32` both
+// held 0x218C5C80 where the nearest float is 0x218C5C7F. They changed
+// TOGETHER: the constant is the compiler's own exact conversion, and the term
+// is `((_ to_fp 8 24) RNE <the exact real>)` -- one rounding each, the same
+// one.
+//
+// `nearest`: the literal widened is exactly the nearest float's value, decided
+// in QF_FP. On the compiler before this one the same row was REFUTED (the
+// solver's number was the upper neighbour, as the program's was).
+//
+// `hyp32`: WHAT THE CHANGE OPENS. The Real-interval tier (D-281) asks that
+// every float symbol be bounded by comparisons against LITERALS; a `flt32`
+// literal was a `narrow` definition, never a literal to that test, so no
+// `flt32` row was ever eligible and this `prove` -- `unknown` to QF_FP at the
+// rlimit, like its `flt64` twin in `flt_tier2.npk` -- was `budget`, which the
+// verified build refuses. A `flt32` literal is a literal now: the twin is
+// written, with the `flt32` error model (`eps = 2^-24`, `eta = 2^-149`, every
+// magnitude held under the largest `flt32`), and answers `unsat`.
+mod:flt32_round;
+
+Rules<flt32>:r_unit = { $ >= 1.0f32, $ <= 2.0f32 };
+
+func:nearest = bool() never fails {
+    flt32:x = 9.51125303839185e-19f32;
+    prove((x => flt64) == 9.511252521403968e-19f64);
+    pass true;
+};
+
+func:hyp32 = flt32(limit<r_unit> flt32:a, limit<r_unit> flt32:b) never fails {
+    flt32:s = #sqrt(a * a + b * b);
+    prove(s >= 0.0f32);
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if (!(raw nearest())) { exit 1i32; }
+    flt32:h = raw hyp32(1.5f32, 2.0f32);
+    if (h < 2.4f32) { exit 2i32; }
+    if (h > 2.6f32) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)  { exit 25i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 99i32; },
+        (MachineFault)   { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

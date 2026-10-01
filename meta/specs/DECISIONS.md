@@ -10239,6 +10239,24 @@ correct rounding directly.
 > measured with exact rationals; TYPE_REFERENCE §1.4 has the numbers). The rule stays as written until the
 > compiler's own decimal→`flt32` conversion lands; the value it protects is then exact for every literal.
 
+> *[2026-10-01, 1.6.1e, landing 88 — DEF-203 FIXED, and what stands of this decision's literal paragraph.]* "Its
+> only portable lowering rides a correctly-rounded double and truncates" is no longer how a `flt32` literal lowers:
+> the compiler converts the decimal itself — exactly, to nearest, ties to even, one rounding (`float_round`,
+> `numeric.npk`) — and writes the float's bits, so every `flt32` literal is the nearest float to the number written,
+> whatever its length, and a `flt32` module constant has a spelling (D-165). "`flt64` literals are unbounded: LLVM's
+> parser converts any decimal with correct rounding directly" was MEASURED for the first time, and is true only up
+> to a bound nobody had stated: 8,890 adversarial texts whose exponent is within 24,000 through the pinned `llc`,
+> the object's bytes against exact rationals, none different (exact midpoints written out to several hundred digits
+> and the texts beside them, the subnormal boundary, the largest value and half-way to infinity;
+> `float_literal_kat.npk` holds it on every run at both legs) — and PAST 24,000 LLVM CAPS THE EXPONENT IT READS:
+> `0.<24000 zeros>1e24001`, the number 1.0, is the double 0.1, and `1<30000 zeros>.0e-30000` is infinity (DEF-209, a
+> silent wrong answer in a literal of some 24 KB, at both widths before this landing and at `flt64` after it). THE
+> 15-DIGIT RULE STANDS, with no reason left under it, until the user answers S-126; and it is one rule for every way
+> a literal gets its width now — an unsuffixed fraction in a `flt32` slot skipped it, as did `comptime(…)` of one,
+> and one in a `flt128` slot skipped "no literals" and died in the emitter (DEF-206, fixed with this). A `flt64`
+> literal still rides LLVM's parser; writing its bits too, so that no constant is decided by a toolchain's decimal
+> parser, is DEF-209's fix and the next landing.
+
 ## D-144 — `tbb` at run time: sticky, saturating, and the cast matrix — **SETTLED**
 
 Cycle 0.9.5, making D-008 executable and closing the audit's third live rung
@@ -12033,6 +12051,11 @@ them.
 > said (DEF-200: a second gate in the bindings analysis refused it; that gate is gone). A reference to an AGGREGATE
 > binding (`fixed Pt:Q = P;`) is still NITPICK-TYPE-035 — the folder holds no aggregate (DEF-202, OPEN) — and a
 > `flt32` constant waits for DEF-203. Whether the compiler should compute in the carried families at all is S-125.
+
+> *[2026-10-01, 1.6.1e, landing 88.]* A `flt32` module constant compiles (DEF-203): `fixed flt32:H = 1.5f32;`, a
+> negated one, the integer form, an unsuffixed fraction, `comptime(…)` of one, a reference to another, a `flt32`
+> member of an array or struct constant — each the bits a literal of that text is in a function body, by the one
+> writer (`float_const_text`). It was NITPICK-TYPE-035 by name for one landing.
 
 ## D-166 — What `for` iterates: a range, a slice, an array, or an `Iterator` — **SETTLED**
 
@@ -15000,6 +15023,14 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
 > are what the runners hold every emission, the floor and the explorer shim to,
 > and the layout is held to what the pinned `opt` derives from the triple, so a
 > stale string cannot stand. The measurements are under D-322's landing note.
+
+> *[2026-10-01, 1.6.1e, landing 88 — one more thing the pinned toolchain is trusted for, measured and held.]* A
+> `flt64` literal is emitted as its decimal text, and LLVM's parser decides the bits.
+> `tests/backend/programs/float_literal_kat.npk` (500 `flt64` literals whose answers are computed from exact
+> rationals, read back as bits at both legs) is the standing check of that parser on the pinned release;
+> `bootstrap/generator/float_vectors.py --llvm` is the wider measurement (on 20.1.2: 8,890 texts with an exponent
+> within 24,000, none different; and LLVM WRONG past that, where it caps the exponent — DEF-209). A `flt32` literal
+> no longer depends on it: the compiler writes the bits (DEF-203); a `flt64` literal will not after DEF-209's fix.
 
 ## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
 
@@ -18607,6 +18638,16 @@ two passes; parity diffs the verdicts.
 > `err-exit` row of a float entering `tbb` or a ternary kind is encoded.
 > `flt_tier1`, `flt_tier2`, `flt_unbounded`, `flt_open`, `flt_limit`,
 > `flt_nan_cmp`, `flt_entry`.
+
+> *[2026-10-01, 1.6.1e, landing 88 — a consequence of DEF-203 for tier 2.]* Condition (i) asks that a float symbol
+> be bounded by comparisons against LITERALS, and the test reads a literal as a definition of shape `lit`. A `flt32`
+> literal had been encoded as a `Float64` literal NARROWED (the emitter's old double-then-`fptrunc` road, mirrored),
+> a definition of shape `narrow`: so no comparison against a `flt32` literal ever counted as a bound and no `flt32`
+> row was ever eligible for the twin. It is a `lit` at `Float32` now, and `flt32` rows are eligible under the model
+> this decision already gives them (`ε = 2^−24`, `η = 2^−149`, `MAX_NORMAL = (2^24 − 1)·2^104`):
+> `tests/verify/flt32_round.npk`'s `prove` over `#sqrt(a*a + b*b)` with `flt32` bounds was `budget` on the compiler
+> before and is `discharged`, tier `real`, the twin's text read. Over `tests/verify/` 129 of 129 pass; the
+> compiler's own manifest holds no float row.
 
 ## D-282 — `simd` values are per-lane terms, and a `simd` division is one row over its lanes — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-57; lands at 1.5.4b step 4)**
 

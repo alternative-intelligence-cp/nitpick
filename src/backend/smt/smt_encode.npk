@@ -2217,7 +2217,12 @@ func:decimal_to_real = string(string:txt) never fails {
         if (c == 45u8) { negex = true; continue; }        // '-'
         if (c == 43u8) { continue; }                      // '+'
         if ((c < 48u8) || (c > 57u8)) { continue; }
-        if (st == 2i32) { ex = ex * 10i64 + ((c - 48u8) => int64); continue; }
+        // The exponent stops growing once nothing the text holds can bring the
+        // number back into any format's range (`float_round`'s rule).
+        if (st == 2i32) {
+            if (ex <= (txt.len + 1000i64)) { ex = ex * 10i64 + ((c - 48u8) => int64); }
+            continue;
+        }
         if (st == 1i32) { frac = frac + 1i64; }
         if ((digits.len == 0i64) && (c == 48u8)) { continue; }   // leading zeros
         digits = string_concat(digits, raw slice_proven(txt, i, i + 1i64));
@@ -2225,6 +2230,27 @@ func:decimal_to_real = string(string:txt) never fails {
     if (digits.len == 0i64) { digits = "0"; }
     if (negex) { ex = 0i64 - ex; }
     int64:scale = ex - frac;
+    // A NUMBER NO FORMAT REACHES IS WRITTEN AS ONE THAT ROUNDS THE SAME WAY
+    // (DEF-207, 1.6.1e). The power of ten below is spelled out digit by digit,
+    // and the exponent was summed with no bound: `1.0e999999f64` under a row
+    // did not finish (a million-digit numeral, built quadratically) and a
+    // twenty-digit exponent trapped the compiler (IntOverflow) -- in a build
+    // that writes obligations, never in a plain one. 10^(top-1) <= the number
+    // < 10^top; past 10^400 every format's `to_fp` is infinity and below
+    // 10^-400 it is zero, so 10^400 and 10^-400 stand for the two ranges --
+    // the same term value, and to the Real twin a magnitude past every
+    // `MAX_NORMAL`, or one inside `eta` of the float (which is zero).
+    int64:top = digits.len + scale;
+    if (!(string_equals(digits, "0"))) {
+        if ((top > 400i64) || (top < (0i64 - 400i64))) {
+            string:far = "1";
+            for (int64:fz in 0i64...400i64) { far = string_concat(far, "0"); }
+            if (top > 400i64) { pass (raw smt_app2("*", "1.0", string_concat(far, ".0"))); }
+            pass (raw smt_app2("/", "1.0", string_concat(far, ".0")));
+        }
+    } else {
+        if ((scale > 400i64) || (scale < (0i64 - 400i64))) { pass "0.0"; }
+    }
     if (scale == 0i64) { pass (string_concat(digits, ".0")); }
     string:p = "1";
     int64:mag = scale;
@@ -2248,16 +2274,18 @@ func:fp_make = Term(Encoder->:e, string:op, int32:ty, string:a, string:b, string
     pass nm;
 };
 
+// A FLOAT LITERAL'S TERM: the exact real the decimal denotes, rounded ONCE to
+// the literal's own format -- `to_fp` under RNE, which is what the emitter's
+// constant is at either width (DEF-203: a `flt32` was a `Float64` literal
+// narrowed here while the emitter lowered it through a double and an
+// `fptrunc`; the two changed together, so the solver and the program hold the
+// same number before the change and after it).
 func:fp_literal = Term(Encoder->:e, string:txt, int32:ty) never fails {
     string:r = raw decimal_to_real(txt);
     List<int32>:none = raw list_init::<int32>(1i64);
-    string:d64 = raw smt_app1("(_ to_fp 11 53) RNE", r);
-    if ((raw type_int_bits(e.types, ty)) == 64i32) { pass (raw fp_make(e, "lit", ty, r, "", d64, none)); }
-    // `flt32`: the emitter parses a double and truncates it (D-143).
-    int32:t64 = raw tt_float(e.types, 64i32);
-    Term:wide = raw fp_make(e, "lit", t64, r, "", d64, none);
-    if (!wide.ok) { pass (raw term_none()); }
-    pass (raw fp_make(e, "narrow", ty, wide.text, "", raw smt_app1("(_ to_fp 8 24) RNE", wide.text), wide.syms));
+    string:head = string_concat("(_ to_fp ", raw fp_eb_sb(e, ty));
+    head = string_concat(head, ") RNE");
+    pass (raw fp_make(e, "lit", ty, r, "", raw smt_app1(head, r), none));
 };
 
 func:enc_float_binary = Term(Encoder->:e, TokenKind:op, int32:lt, int32:ty, Term:a, Term:b) never fails {

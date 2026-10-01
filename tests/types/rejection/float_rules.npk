@@ -1,12 +1,39 @@
 // expect-error: NITPICK-TYPE-030
+// expect-error-at: 40:10
 // expect-error: NITPICK-TYPE-030
+// expect-error-at: 44:10
 // expect-error: NITPICK-TYPE-030
+// expect-error-at: 48:15
 // expect-error: NITPICK-TYPE-030
+// expect-error-at: 53:16
+// expect-error: NITPICK-TYPE-030
+// expect-error-at: 58:15
+// expect-error: NITPICK-TYPE-030
+// expect-error-at: 63:16
+// expect-error: NITPICK-TYPE-030
+// expect-error-at: 78:13
+// expect-error: NITPICK-TYPE-030
+// expect-error-at: 82:13
 //
 // D-143's float rules, refused by the CHECKER (language rules, not rungs):
-// a flt32 literal past 15 significant digits (its lowering rides a double,
-// and double rounding is only provably innocuous to 15), and the storage-only
-// flt128 — no literals, no arithmetic, no comparison.
+// a flt32 literal past 15 significant digits, and the storage-only flt128 —
+// no literals, no arithmetic, no comparison.
+//
+// THE RULES FOLLOW THE LITERAL'S WIDTH, WHATEVER GAVE IT ONE (DEF-206, 1.6.1e):
+// an unsuffixed fraction takes the width of the float slot it sits in, and the
+// two `_unsuffixed` functions below were accepted on every compiler before this
+// one -- the sixteen-digit one compiled, and `flt128:x = 1.0;` passed the
+// checker and died in the emitter (NITPICK-EMIT-002). `comptime(...)` of an
+// unsuffixed fraction is a third road to a width, with the same hole (the two
+// `_comptime` functions). One helper is asked of the text on all three now
+// (`float_text_ok`).
+//
+// The 15-digit rule's stated reason is gone -- a `flt32` literal lowered
+// through a double, the two roundings were held equal to one below sixteen
+// digits, and that was false (DEF-203); the constant is the nearest float now
+// whatever is written. Whether the rule stays is the user's (S-126); while it
+// does, it is one rule for both spellings. The controls: fifteen digits in a
+// `flt32` slot, and a `flt64` slot, which has no digit rule.
 
 mod:float_rules;
 func:long_literal = flt32() never fails {
@@ -15,6 +42,36 @@ func:long_literal = flt32() never fails {
 
 func:wide_literal = flt128() never fails {
     pass 1.0f128;
+};
+
+func:long_unsuffixed = flt32() never fails {
+    flt32:x = 1.0000000000000001;
+    pass x;
+};
+
+func:wide_unsuffixed = flt128() never fails {
+    flt128:x = 1.0;
+    pass x;
+};
+
+func:long_comptime = flt32() never fails {
+    flt32:x = comptime(1.0000000000000001);
+    pass x;
+};
+
+func:wide_comptime = flt128() never fails {
+    flt128:x = comptime(1.0);
+    pass x;
+};
+
+func:fifteen_digits = flt32() never fails {
+    flt32:x = 0.123456789012345;
+    pass x;
+};
+
+func:double_slot = flt64() never fails {
+    flt64:x = 1.00000000000000000001;
+    pass x;
 };
 
 func:wide_arith = flt128(flt128:a, flt128:b) never fails {

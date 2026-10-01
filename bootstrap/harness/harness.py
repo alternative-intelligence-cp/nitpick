@@ -1271,6 +1271,16 @@ def check_generated_current():
     if r.returncode != 0:
         return ["generated-current: gen_tables.py --check exited %d:\n%s"
                 % (r.returncode, (r.stdout + r.stderr).strip())]
+    # THE FLOAT CONVERSION'S KNOWN ANSWERS (DEF-203, 1.6.1e): two test files
+    # whose every expected value is computed from exact rationals by
+    # `float_vectors.py`. A vector edited by hand, or the generator changed and
+    # not re-run, is an answer nobody derived.
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "bootstrap", "generator",
+                                                     "float_vectors.py"), "--check"],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode != 0:
+        return ["generated-current: float_vectors.py --check exited %d:\n%s"
+                % (r.returncode, (r.stdout + r.stderr).strip())]
     return []
 
 

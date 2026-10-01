@@ -1041,8 +1041,10 @@ elide (D-219); the subcycle column says where its rows are produced.
 > `fp.neg`, `#sqrt` as `fp.sqrt RNE`, the ORDERED predicates the emitter's
 > `fcmp` writes (`==` is `fp.eq`, `!=` its negation, so NaN compares as the
 > machine does), a literal `to_fp RNE` of the exact rational its decimal
-> text denotes (a `flt32` literal rounded twice, as the emitter's double-then-
-> `fptrunc` road does), an integer entering `to_fp RNE (to_real x)`, a
+> text denotes, at the literal's own format (one rounding, which is what the
+> emitter's constant is at either width; until DEF-203 a `flt32` literal was a
+> `Float64` literal narrowed, mirroring the emitter's double-then-`fptrunc`
+> road, and both held the same wrong float), an integer entering `to_fp RNE (to_real x)`, a
 > widening exact, a narrowing `=>!` rounded; `%` (`frem`) and a float LEAVING
 > to an integer stay opaque (the cast's RESULT has no term; the crossing
 > itself carries a `cast-range` row over the operand since 1.5.8b step 5);
@@ -1069,7 +1071,10 @@ elide (D-219); the subcycle column says where its rows are produced.
 > `fp.eq`, with its NaN reading, stays tier 1. The runner asks tier 1 first
 > and, for a `budget` row with a twin, the twin once under the same profile:
 > `unsat` discharges it and the tier reads `real`; a tier-1 `sat` is a
-> countermodel and is never retried. `flt_tier2.npk` is the shape D-218 (5)
+> countermodel and is never retried. (A `flt32` row meets condition (i) only
+> since DEF-203: a `flt32` literal had been a NARROWED definition, which the
+> bound test does not take for a literal, so no `flt32` row ever had a twin;
+> `flt32_round.npk` is `flt_tier2.npk`'s twin at 24 bits.) `flt_tier2.npk` is the shape D-218 (5)
 > was written for: `#sqrt(a*a + b*b) >= 0.0` under bounded `a`, `b` —
 > `unknown` in QF_FP at the rlimit, `unsat` in the twin in milliseconds.
 
@@ -1206,9 +1211,17 @@ the emitter's instruction under SMT-LIB's IEEE semantics: `fp.add`/`sub`/
 `mul`/`div` under RNE, `fp.neg`, `#sqrt` as `fp.sqrt RNE`, the ORDERED
 predicates the emitter's `fcmp` writes (`==` is `fp.eq`, `!=` its negation,
 so NaN compares as the machine does), a literal `to_fp RNE` of the exact
-rational its decimal text denotes (what LLVM's own parser rounds from, so
-the two agree by correct rounding; a `flt32` literal rounded twice, as the
-emitter's double-then-`fptrunc` road does), an integer entering `to_fp RNE
+rational its decimal text denotes, at the literal's own format -- one
+rounding, which is the emitter's constant at either width: a `flt64`'s is
+what LLVM's parser makes of the text (measured correctly rounded on the
+pinned toolchain for an exponent within 24,000, and held by
+`float_literal_kat.npk`; past that LLVM caps the exponent and the program's
+double is NOT the term's -- DEF-209, open), a `flt32`'s the compiler's own
+`float_round`, written as its bits. (Until DEF-203, landing
+88, a `flt32` literal was a `Float64` literal narrowed, mirroring the
+emitter's double-then-`fptrunc` road; the two changed in one commit, so the
+solver and the program held the same float before it and after it.) An
+integer entering `to_fp RNE
 (to_real x)`, a widening exact, a narrowing `=>!` rounded; `%` (`frem`, a
 truncated fmod, not IEEE's `fp.rem`) and a float LEAVING to an integer stay
 opaque as VALUES -- the crossing itself carries a `cast-range` row over the
