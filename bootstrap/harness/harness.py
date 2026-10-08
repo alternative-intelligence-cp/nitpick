@@ -2765,10 +2765,10 @@ def first_difference(a, b):
 # --- the toolchain pin, checked (D-204, 1.4.5) -------------------------------
 
 _VER_RE = {
-    # `llc --version` / `opt --version`: "Ubuntu LLVM version 20.1.2"
+    # `llc --version` / `opt --version`: "Ubuntu LLVM version 20.1.8"
     "llc": re.compile(r"LLVM version\s+(\d+\.\d+\.\d+)"),
     "opt": re.compile(r"LLVM version\s+(\d+\.\d+\.\d+)"),
-    # `ld.lld --version`: "Ubuntu LLD 20.1.2 (compatible with GNU linkers)"
+    # `ld.lld --version`: "Ubuntu LLD 20.1.8 (compatible with GNU linkers)"
     "ld.lld": re.compile(r"LLD\s+(\d+\.\d+\.\d+)"),
 }
 

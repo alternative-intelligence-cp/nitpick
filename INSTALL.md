@@ -17,8 +17,9 @@ Everything here was run, in this order, on a fresh clone.
   sudo apt install llvm-20 lld-20
   ```
 
-  Where the distribution has no `llvm-20` (Ubuntu 24.04 "noble"), use the LLVM
-  project's own repository (about 880 MB for the 26 packages it installs):
+  Where the distribution has no `llvm-20`, or an older one than 20.1.8 (Ubuntu
+  24.04 "noble" ships 20.1.2, which §6 refuses), use the LLVM project's own
+  repository (about 880 MB for the 26 packages it installs):
 
   ```sh
   wget https://apt.llvm.org/llvm.sh
@@ -38,8 +39,34 @@ Everything here was run, in this order, on a fresh clone.
   either route: `llc` and `opt` arrive through the `llvm-20` package, which the
   recommends pull in.
 
-  Both routes install versioned names (`llc-20`, `opt-20`, `ld.lld-20`). The
-  commands below use the plain names; either put links on your `PATH`:
+  On a machine that also holds the distribution's 32-bit LLVM library
+  (`libllvm20:i386`, pulled in by the 32-bit Mesa drivers that Steam and Wine
+  need), `apt` refuses the repository's packages ("libllvm20 … but 1:20.1.2…
+  is to be installed"): apt.llvm.org ships no i386 build, and a multi-arch
+  library must stay at one version across its architectures. Do not remove the
+  32-bit drivers. Install the release as a PREFIX instead, from the same signed
+  packages, with no sudo beyond the repository line `llvm.sh` already added:
+
+  ```sh
+  mkdir -p ~/.local/llvm-20.1.8/debs && cd ~/.local/llvm-20.1.8/debs
+  apt-get download libllvm20 llvm-20 llvm-20-runtime llvm-20-linker-tools llvm-20-dev lld-20 \
+                   clang-20 libclang-cpp20 libclang1-20 libclang-common-20-dev
+  for d in *.deb; do dpkg-deb -x "$d" ~/.local/llvm-20.1.8; done
+  ```
+
+  `apt-get download` checks each package against the repository's signed index.
+  The tools then live in `~/.local/llvm-20.1.8/usr/lib/llvm-20/bin`, their
+  library beside them (found through the binaries' own `$ORIGIN/../lib`;
+  `llvm-20-dev` carries the `libLLVM.so.20.1` link that makes this work, so do
+  not leave it out), and the links below point there instead of
+  `/usr/lib/llvm-20/bin`. The distribution's 20.1.2 stays where it is for
+  everything else on the machine. (This is how the project's own machine moved
+  to 20.1.8 on 2026-10-08.)
+
+  Both apt routes install versioned names (`llc-20`, `opt-20`, `ld.lld-20`); the
+  prefix route puts the plain names under its own `bin`. The commands below use
+  the plain names; either put links on your `PATH` (for the prefix route,
+  `~/.local/llvm-20.1.8/usr/lib/llvm-20/bin` in place of `/usr/lib/llvm-20/bin`):
 
   ```sh
   mkdir -p ~/.local/bin
@@ -55,20 +82,20 @@ Everything here was run, in this order, on a fresh clone.
   build: the runtime is hand-written LLVM IR.
 
 > The compiler's own build and test driver (`npkg`, §6) holds the toolchain to
-> the exact release recorded in `nitpick.toml` — `20.1.2` today — and refuses
-> another, because a patch release can change instruction selection and the
-> project's test results are recorded against one. Building and using the
-> compiler by hand, as below, works with any LLVM 20.1 release. Today's package
-> sources ship 20.1.8 (apt.llvm.org's noble suite and Ubuntu 26.04's archive
-> alike) and none ships 20.1.2 any more, so on a fresh machine §6 refuses until
-> the pin moves to 20.1.8 — decided 2026-10-08 (D-349 in `meta/specs/DECISIONS.md`),
-> landing after the ones in flight, with the analyzers of cycle 1.6 rebuilt against
-> the same release; §§2–5 need no pin.
+> the exact release recorded in `nitpick.toml` — `20.1.8`, the LLVM 20.1 release
+> the distributions serve (D-349 in `meta/specs/DECISIONS.md`, 2026-10-08; the pin
+> was `20.1.2` from the day it was made until then) — and refuses another, because
+> a patch release can change instruction selection and the project's test results
+> are recorded against one. Building and using the compiler by hand, as below,
+> works with any LLVM 20.1 release; §§2–5 need no pin. Both routes above install
+> 20.1.8 today (apt.llvm.org's noble suite and Ubuntu 26.04's archive alike);
+> Ubuntu 24.04's own archive stops at 20.1.2, so on it §6 needs the apt.llvm.org
+> route.
 
 **What it was tested at.** This procedure was run, in this order, on Linux
 Mint 22.3 (an Ubuntu 24.04 base), x86-64, LLVM 20.1.2, and on a fresh Ubuntu
 Server 26.04.1 LTS virtual machine (16 vCPUs, 15 GiB; the distribution's LLVM
-20.1.8; §§2–5 and the optimised build, 2026-10-08). The build runs ONE process
+20.1.8; §§2–5 and the optimised build, 2026-10-08). On 2026-10-08 the Mint machine moved to LLVM 20.1.8 by §1's prefix route (its `apt` route was blocked by the 32-bit Mesa drivers' `libllvm20:i386`), and the project's full test suite ran green under it (D-349's landing). The build runs ONE process
 at a time — it uses no parallelism, so the number of cores does not matter —
 and its peak memory is 345 MB, in `llc` assembling the compiler's 31 MB of IR
 (measured with `/usr/bin/time -v` on both machines); 1 GB of free memory is
@@ -216,9 +243,8 @@ the one that must match across machines on the same LLVM release: the emitted
 IR is the project's cross-machine claim (D-265), and the notice each landing
 sends to the library repositories carries the project's digest for it; the
 object and the binary belong to your toolchain build. `npkg build` refuses an
-LLVM release other than the one `nitpick.toml` records (§1's note: no package
-source ships that release today). `npkg test` runs the whole suite and takes
-about three hours.
+LLVM release other than the one `nitpick.toml` records (20.1.8; §1's note). `npkg
+test` runs the whole suite and takes about three hours.
 
 ## 7. Where to go next
 

@@ -40,7 +40,13 @@ ALIVE2_SHORT=02ec3af8                                       # 2025-01-17, the la
 Z3_REPO=https://github.com/Z3Prover/z3.git
 Z3_SHA=ddb49568d3520e99799e364fb22f35fc67d887b1             # tag z3-4.16.0, the tree's [verify] solver commit
 
-LLVM20=/usr/lib/llvm-20
+# The pinned LLVM 20 install (D-204; 20.1.8 since D-349): by default the one PATH's `llc` lives in, resolved through its
+# links -- the rule both runners use to find the toolchain, so the engines are built against the LLVM the pin check
+# accepts (on a machine where the pinned release is a prefix beside the distribution's LLVM, as this one is since D-349,
+# `/usr/lib/llvm-20` is the WRONG one). Overridable, so a pin move is MEASURED first against an extracted prefix with a
+# fresh ENGINES_ROOT, never over a pinned install: D-349's landing built the engines that way before the machine moved.
+llvm20_from_path() { local l; l=$(command -v llc 2>/dev/null) || { echo /usr/lib/llvm-20; return; }; l=$(readlink -f "$l"); echo "$(dirname "$(dirname "$l")")"; }
+LLVM20="${LLVM20:-$(llvm20_from_path)}"
 LLVM18=/usr/lib/llvm-18
 
 short() { echo "${1:0:7}"; }

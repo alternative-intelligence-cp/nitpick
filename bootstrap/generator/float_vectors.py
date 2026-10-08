@@ -31,7 +31,8 @@ usage:
                               `double <text>` through llc: the object's bytes against
                               the specification. A measurement of LLVM's decimal parser,
                               outside the gates -- no emission of ours asks it to convert
-                              a decimal since DEF-209. On LLVM 20.1.2: none differs among
+                              a decimal since DEF-209. On LLVM 20.1.2 and on 20.1.8 alike
+                              (D-349, measured 2026-10-08): none differs among
                               the texts whose decimal exponent is within 24,000, and LLVM
                               is WRONG past that -- its parser caps the exponent, so
                               `0.<24000 zeros>1e24001` (the number 1.0) reads as 0.1 and a

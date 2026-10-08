@@ -15173,6 +15173,19 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
 > `float_vectors.py --llvm` stays as a measurement of that parser, outside every gate (on 20.1.2: right within an
 > exponent of 24,000, wrong past it).
 
+> *[2026-10-08, D-349's landing — the pin moved for the first time, and what a patch release moved was measured before
+> the machine did.]* The pin is `20.1.8` from this landing (D-349: the LLVM 20.1 release the distributions serve; 20.1.2
+> had left every package source). The rule stands as written — an exact patch release, the hashes re-recorded — and the
+> move was MEASURED FIRST with apt.llvm.org's signed noble-20 packages extracted into a user prefix (`dpkg -x`, the tools'
+> RUNPATH `$ORIGIN/../lib`, `llvm-20-dev` included for the `libLLVM.so.20.1` symlink it carries), on landing 98's tree,
+> beside the 20.1.2 ladder: the layout `opt` derives from the triple identical; `npkrt.o`, the explorer shim's `npkx.o`,
+> `builder.o` (12,067,840 B) and `npkc.o` BYTE-IDENTICAL object for object; the emission `npkc.ll` byte-identical
+> (31,443,507 B); the self-hosting fixpoint holding (31,444,215 B, the two stage objects identical across the two
+> `llc`s); `float_vectors.py --llvm` the same numbers (8,890 within the cap, none different; 4 of 8 past it). What a
+> patch release moved here: ONE byte of every linked binary, the linker's version string in `.comment` ("Linker:
+> Ubuntu LLD 20.1.8"). The downstream tools that link LLVM moved with the pin (D-349: Alive2 links `libLLVM.so.20.1`
+> dynamically, NIKOS statically; both rebuilt and re-pinned at the landing).
+
 ## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-13 — the rule obeyed by discipline since 0.9, whose switch cycle
@@ -18175,6 +18188,13 @@ reading `nitpick-regex`'s CI job logs through the jobs API): the emission's dige
 equals the one recorded on this machine at two pins — `c3bdae2` (`4029fc70…`, notice 50's row) and
 `3d15ac9` (`05457db4…`, the value the library recorded at that pin). "A pin is a version, and the
 emission is what holds across machines" is a measurement now, at two points, not an argument.]**
+
+**[2026-10-08, D-349's landing: measured across TOOLCHAIN BUILDS for the first time. On landing 98's tree the emission
+`build/npkc.ll` is byte-identical whether the builder was assembled by Ubuntu's 20.1.2 or by apt.llvm.org's 20.1.8
+(`dcca97cb…`, 31,443,507 B), and so is every OBJECT (`npkrt.o`, `npkx.o`, `builder.o`, `npkc.o`); the two builds'
+linked binaries differ by the linker's `.comment` string alone. So across this patch release the claim D-265 makes of
+the emission held of the objects too — and the pin stays a VERSION: the `.comment` byte is exactly the kind of difference
+a tool-binary digest would refuse every machine for.]**
 
 ## D-266 — a lending `pick` binds views; the selector is frozen while a view is live — **SETTLED (user decision, 2026-09-06: "yes, ratify it as stated with the frozen-selector rule"; OPEN_DECISIONS S-41; lands at 1.5.2h)**
 
@@ -22680,3 +22700,18 @@ route. Its own landing, after the five in flight at the decision (94…98); `nit
 
 **In one line.** The toolchain is pinned to a release a fresh machine can install, and every tool downstream of LLVM
 — NIKOS and Alive2 first — is rebuilt and re-measured against it in the same landing.
+
+> *[2026-10-08, LANDED as landing 99 (`nitpick-compiler_32`; `1.6.1e.md`'s record).]* The pin is `20.1.8`. MEASURED FIRST, the
+> machine untouched, with apt.llvm.org's signed noble-20 packages extracted into a user prefix (`llvm-20-dev` included for the
+> `libLLVM.so.20.1` link the tools' RUNPATH needs) on landing 98's tree, beside the 20.1.2 ladder: the derived datalayout, `npkrt.o`,
+> `npkx.o`, `builder.o` (12,067,840 B), `npkc.o` and the emission `npkc.ll` (31,443,507 B) byte-identical; the fixpoint holding;
+> `float_vectors.py --llvm` the same numbers; ONE byte of every linked binary moved, the linker's `.comment` string. THE CHAIN: NIKOS
+> and Alive2 rebuilt against 20.1.8 and re-pinned (`pins.txt`: the nikos rows byte-identical between the measuring root and the
+> pinned root, the alive2 rows differing by Alive2's rpath; z3 and Clam unchanged), the gate's controls 7 of 8 in both modes and
+> Alive2's smoke counts exactly as at 1.6.0; NIKOS's cmake demands a `clang` of the same release, so `clang-20` stands beside
+> `llvm-20-dev` wherever the engines are built; `engines.sh` finds LLVM 20 where PATH's `llc` lives, the runners' rule. THE
+> MACHINE: the planned `apt` route FAILED (the 32-bit Mesa drivers hold `libllvm20:i386` at 20.1.2 and the suite has no i386), so
+> the release went in as a PREFIX, `~/.local/llvm-20.1.8`, the `~/.local/bin` links repointed, the distribution's 20.1.2 left for
+> Mesa -- recorded in INSTALL.md as the route for that case. The harness green under the prefix; no refusal, emission, answer, floor
+> byte or snapshot moved; `nitpick.obligations` unmoved. The library side holds its runners on a private 20.1.2 prefix and re-pins
+> after DEF-165 and DEF-164.
