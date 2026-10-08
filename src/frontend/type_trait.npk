@@ -1602,6 +1602,12 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     }
     SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
     if (raw same_signature(r, want, got, sc)) { pass NIL; }
+    // A SIGNATURE HOLDING A REFUSED TYPE IS NOT A MISMATCH (DEF-164 (e), landing
+    // 101; D-240): the parameter or return type that failed to resolve was
+    // reported where it stands (TYPE-001), and comparing it would report the
+    // one mistake a second time as "does not have the signature".
+    if (raw sig_holds_invalid(r, want)) { pass NIL; }
+    if (raw sig_holds_invalid(r, got)) { pass NIL; }
 
     string:m1 = string_concat("`",
                     raw intern_get(r.interns, raw decl_name(f)));
@@ -1651,6 +1657,20 @@ pub struct:SigCtx = {
     int32:target;
     int32:impl_decl;
     int32:scope;
+};
+
+// Does a function type carry a refused (invalid) parameter or return type?
+// Asked before a signature mismatch is reported, so a type that failed to
+// resolve is reported once, at its own span (DEF-164 (e)).
+func:sig_holds_invalid = bool(TypeResolver->:r, int32:t) never fails {
+    if (raw type_is_invalid(r.types, t)) { pass true; }
+    if (!(raw type_is_func(r.types, t))) { pass false; }
+    if (raw type_is_invalid(r.types, raw type_elem(r.types, t))) { pass true; }
+    int32:n = raw type_param_count_of(r.types, t);
+    for (int32:i in 0i32...n) {
+        if (raw type_is_invalid(r.types, raw type_param_at_of(r.ast, r.types, t, i))) { pass true; }
+    }
+    pass false;
 };
 
 func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) never fails {

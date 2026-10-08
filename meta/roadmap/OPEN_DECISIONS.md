@@ -2933,7 +2933,13 @@ defect declares a `DEF-` in §2f.
 > the two messages that said "a name folds only if it is a `const` global" say "a module-level `fixed`
 > binding (D-222)" (type_resolve.npk).
 
-> **DEF-164 — OPEN (2026-09-27; owner: the compiler seat; found by D-332's count rule run over the library
+> **DEF-164 — FIXED 2026-10-08 (landing 101, `nitpick-compiler_32`), ALL FIVE FACES: (a) a declaration's recovery skips to a sync
+> point (`p_recover_decl`: `;`, `}` or a declaration keyword, never an identifier the broken declaration left behind), so
+> `error:E(P);` is PARSE-001 once; (b), (d) a refused integer literal stays an `IntLit` token, as the float's does, so LEX-003 and
+> LEX-004 are not followed by PARSE-002; (c) a dangling exponent sign before a terminator is the refused float's tail (`1.5e+`,
+> LEX-009 naming `e+`), `3.5e-x` keeping its reading; (e) a signature holding a refused type is not compared, so TYPE-001 stands
+> alone (`sig_holds_invalid`). `parse_one_report.npk` (the unit test: faces a-d, each one diagnostic, with the recovery controls) and
+> `impl_refused_param.npk` (face e beside a real mismatch, still TYPE-014). WAS: OPEN (2026-09-27; owner: the compiler seat; found by D-332's count rule run over the library
 > listener's corpus, `nitpick-time/tests/probe/probe14_error_payload_refused.npk`). THE PARSER'S RECOVERY
 > REPORTS ONE MISTAKE TWICE:** `pub error:ETimeValue(ValueFault);` -- an error identity with a payload, which
 > the language does not have -- is PARSE-001 at the `(` ("expected `;`") and PARSE-001 again at the `)`
@@ -3961,6 +3967,20 @@ defect declares a `DEF-` in §2f.
 > manifest root exists (the driver already renders every site path that way), the real path (`..` resolved against the
 > directory, never the text) where none does -- decided at one place in the loader, so that RESOLVE-010 means what it
 > says. Nothing in the libraries or the applications takes the shape (nitpick-time measured and worked around nothing).
+
+> **DEF-245 — OPEN (registered 2026-10-08 by `nitpick-compiler_32`, found by landing 101's sweep and read by `nitpick-compiler_33`;
+> low priority, DEF-164's family). A DECLARATION WHOSE HEADER FAILS IS PARSED ON INTO ITS BODY, AND THE BODY IS REPORTED TWICE MORE.**
+> -- `extern func:f = int32() { pass 1i32; };` (the fuzzer's `as0100`, AST_REFERENCE §100's claim: `extern` is not a modifier) is
+> PARSE-001 at the `func` ("expected `:`") and PARSE-001 again inside the body, because the `extern` declaration's parser goes on
+> into its block after the broken header and its member loop reports "expected `func`" at the first token the recovery stops at
+> (`{` before landing 101, `pass` since -- the declaration-level recovery's sync point: landing 101 MOVED that second report, it did
+> not make it). The same shape stands under both compilers in six more of the fuzzer's programs -- a broken `func<T>:process`
+> header in `tr0425` (then PARSE-001 at the body's `pass` and at its `}`), `cc0151c`, `md0219`, `tr0448`, `vf0580`, `tr0550`: a
+> declaration whose header fails, the parser going on into the body, one report at the body's first statement and another at its
+> closing brace. Two or three reports of one mistake (D-240). RECOMMENDED: a declaration parser whose HEADER fails (`p_expect` of
+> the keyword's `:`, name or `=`) bails out to the declaration's sync point instead of parsing its block -- one shape for `func`,
+> `extern`, `impl`, `trait`, `struct`, `enum`, `macro`, `mod` -- measured over the tree and the listener's corpus with both checkers
+> before it lands, since every parse-error count moves with it.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

@@ -1,0 +1,140 @@
+// ONE MISTAKE, ONE REPORT AT THE LEXER'S AND THE PARSER'S SEAM (DEF-164, landing 101; D-240).
+//
+// Four shapes reported one mistake twice until this landing: a declaration the parser
+// refused mid-way and then RESUMED INSIDE (`error:E(P);` -- "expected `;`" at the `(`,
+// then "expected `:`" at the `)`, the recovery having stopped at the identifier the
+// broken declaration left behind); an integer run with a bad digit and one outside the
+// 64-bit envelope (the lexer's LEX-003 / LEX-004, then the parser's "expected an
+// expression" at the Error token that stood where the literal was); and a float's
+// dangling exponent sign (LEX-009 for `1.5e`, then "expected an expression" after the
+// `+` left behind). A parse refusal is a UNIT case (D-085: the grammar stage feeds every
+// tree file through the real parser), so each shape is lexed and parsed here and its
+// diagnostics counted: exactly one, with the right code. The controls say what the
+// recovery still does: a declaration after a sync keyword parses, two broken
+// declarations are two reports, and `3.5e-x` keeps its reading (the literal `3.5e`, a
+// minus and a name -- one report, as before).
+
+mod:parse_one_report;
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+
+struct:Parsed = {
+    Ast:ast;
+    DiagList:diags;
+    DeclId:root;
+};
+
+// Lex and parse a module, as the driver does, and keep what came out.
+func:parsed = Parsed(string:src, InternTable->:it) never fails {
+    Ast:ast = raw ast_init();
+    DiagList:diags = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @diags);
+    Parser:p = raw parser_init(@toks, @ast, @diags, it);
+    DeclId:root = raw p_parse_module(@p);
+    Parsed:out = Parsed{ ast: move(ast), diags: diags, root: root };
+    pass out;
+};
+
+// Exactly one diagnostic, and it carries `code`.
+func:one_diag = bool(Parsed->:x, string:code) never fails {
+    if ((raw diaglist_count(@x.diags)) != 1i64) { pass false; }
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (raw string_eq(d.code, code));
+};
+
+// How many members the parsed module holds, and whether one is a function named `name`.
+func:has_func = bool(Parsed->:x, InternTable->:it, string:name) never fails {
+    DeclNode:m = raw ast_decl(@x.ast, x.root);
+    int32:n = raw item_member_count(@x.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclNode:d = raw ast_decl(@x.ast, raw item_member(@x.ast, m, i));
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            if (raw string_eq(raw intern_get(it, raw decl_name(d)), name)) { pass true; }
+        }
+    }
+    pass false;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // (a) an error identity with a payload: PARSE-001 at the `(`, and nothing more.
+    Parsed:a = raw parsed("mod:m; pub error:ETimeValue(ValueFault);", @it);
+    if (!(raw one_diag(@a, raw PARSE_EXPECTED())))                                  { exit 10i32; }
+
+    // (b) an integer run with a bad digit: the lexer's LEX-003, and the parser silent.
+    Parsed:b = raw parsed("mod:m; func:f = int32() { int32:a = 12abc; pass a; };", @it);
+    if (!(raw one_diag(@b, raw LEX_BAD_DIGIT())))                                   { exit 20i32; }
+
+    // (c) a float's dangling exponent sign before the `;`: LEX-009 for `1.5e+`, once.
+    Parsed:c = raw parsed("mod:m; func:f = flt64() { flt64:a = 1.5e+; pass a; };", @it);
+    if (!(raw one_diag(@c, raw LEX_BAD_SUFFIX())))                                  { exit 30i32; }
+
+    // (d) a literal outside the 64-bit envelope: LEX-004, once.
+    Parsed:d = raw parsed("mod:m; func:f = int64() { int64:a = 99999999999999999999; pass a; };", @it);
+    if (!(raw one_diag(@d, raw LEX_INT_TOO_LARGE())))                               { exit 40i32; }
+
+    // CONTROL: the recovery resumes at the next declaration keyword -- the function
+    // after the broken declaration is in the module, and the one report stands.
+    Parsed:e = raw parsed("mod:m; pub error:ETimeValue(ValueFault); func:g = int32() { pass 1i32; };", @it);
+    if (!(raw one_diag(@e, raw PARSE_EXPECTED())))                                  { exit 50i32; }
+    if (!(raw has_func(@e, @it, "g")))                                              { exit 51i32; }
+
+    // CONTROL: two broken declarations are two reports -- recovery makes progress,
+    // it does not fall silent.
+    Parsed:f = raw parsed("mod:m; pub error:E(P); pub error:F(Q);", @it);
+    if ((raw diaglist_count(@f.diags)) != 2i64)                                     { exit 60i32; }
+
+    // CONTROL: a sign followed by a name is an operator with its operand, as before:
+    // `3.5e` is the refused literal (LEX-009), `- x` parses, one report.
+    Parsed:g = raw parsed("mod:m; func:f = flt64(flt64:x) { flt64:a = 3.5e-x; pass a; };", @it);
+    if (!(raw one_diag(@g, raw LEX_BAD_SUFFIX())))                                  { exit 70i32; }
+
+    // CONTROL: a sound module parses clean.
+    Parsed:h = raw parsed("mod:m; pub error:EPlain; func:f = int32() { pass 1i32; };", @it);
+    if ((raw diaglist_count(@h.diags)) != 0i64)                                     { exit 80i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsIndex) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (ShiftRange)  { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (BoundsId) { exit 1i32; },
+        (BoundsScratch) { exit 1i32; },
+        (BoundsWindow) { exit 1i32; },
+        (DeadlineExceeded) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (ProvenSlice) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
+        (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

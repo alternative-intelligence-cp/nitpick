@@ -556,11 +556,16 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         NumScan:ns = raw num_scan(text);
         if (ns.is_numeric) {
             Span:nsp = raw lexer_span_from(lx, start, line, col);
+            // A REFUSED INTEGER LITERAL STAYS AN `IntLit` (DEF-164 (b), (d); landing 101),
+            // as a refused float stays a `FloatLit` (DEF-166): an `Error` token had the
+            // parser say "expected an expression" about the one mistake (D-240). The
+            // value it carries is 0 and is never read -- the driver stops before
+            // expansion on any diagnostic.
             if (ns.bad_digit) {
                 drop diaglist_push(diags,
                     raw diag_error(raw LEX_BAD_DIGIT(),
                         "digit is not valid for this base", nsp));
-                pass (raw token_make(TokenKind.Error, nsp, 0i64));
+                pass (raw token_numeric(TokenKind.IntLit, nsp, 0i64, ns.width));
             }
             if (ns.overflow) {
                 // Detected, never wrapped. Wrapping here would put a different
@@ -568,7 +573,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 drop diaglist_push(diags,
                     raw diag_error(raw LEX_INT_TOO_LARGE(),
                         "this literal is outside the 64-bit literal envelope (D-148); a type's outermost values are constructed arithmetically, not spelled", nsp));
-                pass (raw token_make(TokenKind.Error, nsp, 0i64));
+                pass (raw token_numeric(TokenKind.IntLit, nsp, 0i64, ns.width));
             }
             pass (raw token_numeric(TokenKind.IntLit, nsp, ns.value, ns.width));
         }

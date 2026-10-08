@@ -254,6 +254,26 @@ pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never f
         if (!part) { break; }
         p = p + 1i64;
     }
+    // A DANGLING EXPONENT SIGN BEFORE A TERMINATOR IS THE TAIL'S (DEF-164 (c),
+    // landing 101; D-240): `1.5e+;` is the literal `1.5e+` with the bad tail
+    // `e+`, not the literal `1.5e` and a `+` the parser then wants an operand
+    // for ("expected an expression" -- the second sentence about one mistake).
+    // Only before `;`, `)`, `]`, `}`, `,` or the end of the text: `3.5e-x` keeps
+    // its reading as the literal `3.5e`, a minus and a name, one report.
+    if (p == (body_end + 1i64)) {
+        if (p < text.len) {
+            uint8:e1 = text.ptr[body_end] => uint8;
+            uint8:sg2 = text.ptr[p] => uint8;
+            if (((e1 == 101u8) || (e1 == 69u8)) && ((sg2 == 43u8) || (sg2 == 45u8))) {
+                bool:term = (p + 1i64) >= text.len;
+                if (!term) {
+                    uint8:nx = text.ptr[p + 1i64] => uint8;
+                    if ((nx == 59u8) || (nx == 41u8) || (nx == 93u8) || (nx == 125u8) || (nx == 44u8)) { term = true; }
+                }
+                if (term) { p = p + 1i64; }
+            }
+        }
+    }
     pass FloatScan{ is_float: true, body_end: body_end, end: p };
 };
 

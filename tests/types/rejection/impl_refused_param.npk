@@ -1,0 +1,27 @@
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 22
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 23
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 24
+//
+// HEADER MEASURED on this checker after the file had its final line count (the parent reports TYPE-014 at 22 and 23 too).
+mod:impl_refused_param;
+
+// AN IMPL METHOD WHOSE PARAMETER TYPE IS REFUSED IS ONE REPORT (DEF-164 (e),
+// landing 101; D-240): `Nosuch` is NITPICK-TYPE-001 where it stands, and the
+// comparison with the trait's signature says nothing about a signature that
+// holds a refused type -- before landing 101 it added NITPICK-TYPE-014 ("does
+// not have the signature `Peek` declares for it"), the second sentence about
+// the one mistake. The controls: a refused RETURN type, one report too; a real
+// mismatch beside a sound signature is still TYPE-014.
+trait:Peek = { func:peek = int64(Self:self, int64:n) never fails; };
+trait:Size = { func:size = int64(Self:self) never fails; };
+trait:Twice = { func:twice = int64(Self:self, int64:n) never fails; };
+struct:Box = { int64:v; };
+impl:Box:Peek = { func:peek = int64(Box:self, Nosuch:n) never fails { pass self.v; }; };
+impl:Box:Size = { func:size = Nowhere(Box:self) never fails { pass self.v; }; };
+impl:Box:Twice = { func:twice = int64(Box:self, int32:n) never fails { pass self.v; }; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

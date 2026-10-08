@@ -362,5 +362,28 @@ pub func:p_recover = NIL(Parser->:p) never fails {
     pass NIL;
 };
 
+// A DECLARATION'S RECOVERY SKIPS TO A SYNC POINT (DEF-164 (a), landing 101; D-240): `p_recover` stops at anything
+// that can start an item, and an identifier the broken declaration left behind -- `ValueFault)` after
+// `error:ETimeValue(` was refused at the `(` -- can start one, so it was read as a new declaration and reported a
+// second time ("expected `:`, found `)`"). At the declaration level the broken construct ends at the next `;`,
+// `}` or declaration keyword, which is `is_sync_point`'s set; a declaration that follows without one of those
+// between is lost to the parse, which costs nothing (a parse error stops the driver before resolution). Statements
+// keep `p_recover`: most begin with an identifier or a type.
+pub func:p_recover_decl = NIL(Parser->:p) never fails {
+    if (!p.panic) {
+        pass NIL;
+    }
+    while (true) decreases raw p_left(p) {
+        if (raw p_at_end(p))               { break; }
+        if (raw is_sync_point(raw p_kind(p))) { break; }
+        discard(raw p_advance(p));
+    }
+    if (raw p_at(p, TokenKind.PSemi)) {
+        discard(raw p_advance(p));
+    }
+    p.panic = false;
+    pass NIL;
+};
+
 pub func:p_in_panic = bool(Parser->:p) never fails { pass p.panic; };
 pub func:p_position = int64(Parser->:p) never fails { pass p.pos; };

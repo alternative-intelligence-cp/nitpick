@@ -327,7 +327,10 @@ TypeSuffix     ::= "u8" | "u16" | "u32" | "u64" | "u128"
 > with the token still a float literal, so the parser adds no second sentence about
 > the one mistake (D-240). A sign belongs to a literal only inside such an exponent:
 > `3.5f64-x` is a literal, a minus and a name, and `3.5e-x` is the literal `3.5e` (a
-> bad tail), a minus and a name. A float's whole part is decimal digits, so
+> bad tail), a minus and a name. A dangling sign that nothing follows but `;`, `)`, `]`, `}`,
+> `,` or the end of the text belongs to the bad tail instead -- `1.5e+;` is the literal
+> `1.5e+`, refused once -- because an operator left behind with no operand would be the
+> parser's second sentence about the one mistake (DEF-164, landing 101). A float's whole part is decimal digits, so
 > `0FFhex.5`, `12i32.5` and `1e5.0` are not floats: each is an integer literal (or a
 > refused one), a dot and what follows, for the integer scan and the parser to
 > answer. `0...4` stays a range: a float needs a digit after its dot.

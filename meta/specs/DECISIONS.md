@@ -17030,6 +17030,14 @@ pair of rules the same way.
 
 *[2026-09-30, 1.6.1e step 3 — a dated note: the principle applied at four new sites, and one place it is deliberately not.]* (1) `NITPICK-LEX-009`'s token stays a float literal: an `Error` token would have the parser say "expected an expression" about the same mistake. (2) A reserved word in type position (`flt256`) answers the INVALID type, so the cast and the initialiser beside it say nothing. (3) A module binding whose initialiser is a literal refused at the literal (`fixed int32:K = 2.5i32;`, TYPE-031) is not also "not a constant" (TYPE-035) — the silence is keyed on the initialiser being a float literal whose type was refused, so no second mistake hides behind it. (4) A compile-time failure reached through two call chains, or folded by the typer where it stands and again by a call that evaluates it, is ONE report: with the chain in the sentence the list's identical-repeat rule no longer saw the repeat, so the folder asks "already said" of the sentence WITHOUT its chain (`fold_said`). Not applied, as `await`'s own two rules are not: a park (`suspend_until`, `suspend_io`) in a synchronous function's `defer` body is two TYPE-043 at one site — outside an `async` function, and inside `defer` — two rules, each broken. And two cascades the step's reading found and did NOT fix are registered: the integer scan's LEX-003 followed by the parser's PARSE-002 (DEF-164's family), and a lexer refusal's dangling operator (`1.5e+;`: LEX-009, then PARSE-002 for the `+`).
 
+*[2026-10-08, landing 101 (DEF-164) — the principle applied at five more sites, each a lexer's or a resolver's refusal answered by a
+second sentence: a declaration's recovery no longer resumes at an identifier the broken declaration left behind (`p_recover_decl`:
+`error:E(P);` was PARSE-001 twice); a refused integer literal stays a literal token (LEX-003 and LEX-004 were each followed by
+PARSE-002 "expected an expression"); a dangling exponent sign before a terminator is the refused float's tail (`1.5e+;` was LEX-009
+and PARSE-002 at the `+`); a trait-signature comparison says nothing about a signature holding a refused type (TYPE-001 was also
+TYPE-014). One mistake, one report; the driver stops before resolution on any parse diagnostic, so a declaration the recovery
+skips costs nothing.]*
+
 ## D-241 — `never fails` may carry `requires`/`ensures`/`limit<Rules>`: D-163 rule 2's contract row retires — **SETTLED (user decision, 2026-09-03; 1.5.1 S-14)**
 
 D-163 rule 2 refused a contract or a `limit` on a `never fails` function

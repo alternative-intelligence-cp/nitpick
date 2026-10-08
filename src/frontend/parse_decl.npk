@@ -1165,7 +1165,7 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
             DeclId:v = raw p_parse_variant(p);
             drop ast_scratch_push(p.ast, v.index);
         }}
-        drop p_recover(p);
+        drop p_recover_decl(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:members = raw ast_scratch_commit(p.ast, imark);
@@ -1607,7 +1607,7 @@ func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
             DeclId:f = raw p_parse_extern_fn(p);
             drop ast_scratch_push(p.ast, f.index);
         }
-        drop p_recover(p);
+        drop p_recover_decl(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     discard(raw p_expect(p, TokenKind.PRBrace));
@@ -1724,7 +1724,7 @@ func:p_parse_item_block = IdSpan(Parser->:p) never fails {
         int64:before = raw p_position(p);
         DeclId:item = raw p_parse_decl(p);
         drop ast_scratch_push(p.ast, item.index);
-        drop p_recover(p);
+        drop p_recover_decl(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     discard(raw p_expect(p, TokenKind.PRBrace));
@@ -1759,7 +1759,7 @@ pub func:p_parse_module = DeclId(Parser->:p) never fails {
         int64:before = raw p_position(p);
         DeclId:item = raw p_parse_decl(p);
         drop ast_scratch_push(p.ast, item.index);
-        drop p_recover(p);
+        drop p_recover_decl(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:members = raw ast_scratch_commit(p.ast, mark);
