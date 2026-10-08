@@ -3799,18 +3799,23 @@ defect declares a `DEF-` in §2f.
 > at the bare parameter; exit 0 at both legs). The emitter's refusal has no suite that expects it (a backend refusal
 > is tested by no `[[test]]` kind; recorded as measured by hand) -- the one code is asserted by the rejection file.
 
-> **DEF-230 — OPEN, WITH S-129 (2026-10-07; owner: the user, then the compiler seat; the library listener's F-047
-> in O-N36; measured by the listener at three compilers and here at `93bcb66`, both legs). A WRITE THROUGH A
-> `fixed uint8[]` LANDS.** `func:m11w = NIL(fixed uint8[]:v) never fails { v[0i64] = 9u8; pass NIL; };` called over
-> `arr[0i64...4i64]` changes `arr[0]` in the caller (exit 10 at both legs; a local `fixed uint8[]` view written
-> likewise); a `fixed int32` written again is ASSIGN-002 and a plain slice parameter writes, as it may. Not an
-> accident: `place_fixed` (type_stmt.npk) answers false for an index whose base is a slice, a pointer or a handle,
-> by D-287's reading ("the storage there is not the binding's own"), so `fixed` fixes the view's header and not the
-> bytes; while D-074 retired the `binary` type on the promise that "an immutable byte view is `fixed uint8[]`",
-> which TYPE_REFERENCE §22 teaches. A silent wrong answer under the reference's reading, a documentation error under
-> D-287's: the user's decision (S-129) -- SETTLED 2026-10-08 as D-348 (R1: the write refusal, landing 98; the type rule
-> after it). Measured: every `fixed uint8[]` in the tree (seven files) is the `Writer` trait's `write` parameter,
-> none written through; no library uses one.
+> **DEF-230 — FIXED 2026-10-08 (landing 98, `nitpick-compiler_32`, under D-348 step (i); the library listener's
+> F-047 in O-N36; measured by the listener at three compilers and here at `93bcb66`, both legs). A WRITE THROUGH A
+> `fixed uint8[]` LANDED.** `func:m11w = NIL(fixed uint8[]:v) never fails { v[0i64] = 9u8; pass NIL; };` called over
+> `arr[0i64...4i64]` changed `arr[0]` in the caller (exit 10 at both legs; a local `fixed uint8[]` view written
+> likewise), because `place_fixed` (type_stmt.npk) answered false for an index whose base is a slice, by D-287's
+> reading ("the storage there is not the binding's own") -- `fixed` fixed the view's header and not the bytes, while
+> D-074 retired `binary` on the promise that "an immutable byte view is `fixed uint8[]`". The user settled it as
+> D-348 (2026-10-08: "your recommendations are fine with me"): D-074's promise is made true, in two steps. Step (i),
+> this landing: the walk goes THROUGH a slice base to the view's root (a pointer and a handle still stop it), so an
+> element write, a compound assignment, a write through a sub-range, through a slice held in a `fixed` aggregate or
+> declared a `fixed` field is `NITPICK-TYPE-086` with the view's own sentence (`place_through_slice`), and `@`,
+> `$$i`/`$$m` or a pointer-receiver call on an element is `NITPICK-TYPE-071`. `tests/types/rejection/
+> fixed_slice_write.npk` (nine sites; the silent controls: a plain view written, a `fixed` view read, ranged, passed
+> to a reader and -- step (ii)'s hole -- to a writer taking a plain view); the listener's `s1`/`s2` refused, its
+> `ctl_s3` exit 0 and `ctl_s4` ASSIGN-002 as before; the tree's six `fixed uint8[]` (the `Writer` trait's `write`
+> parameter) unchanged. A REFUSAL ADDED, announced in advance (F40). Step (ii), `fixed T[]` as a type, is planned
+> next.
 
 > **DEF-231 — FIXED 2026-10-08 (landing 97, built by `nitpick-compiler_31` under D-347, landed by
 > `nitpick-compiler_32`; the fuzzer's `ty1657` in O-N36, found by M11's TYPE run; measured here at `93bcb66`, both

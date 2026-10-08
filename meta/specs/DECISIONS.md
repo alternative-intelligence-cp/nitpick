@@ -5434,6 +5434,13 @@ prototype's own `bug403` comment states the rule — so an immutable byte view i
 
 `binary` is therefore redundant twice over and is **removed**, along with its
 seven `binary_*` operations, which are slice operations under other names.
+
+> **Note (2026-10-08, 1.6.1e landing 98 — DEF-230, D-348):** "an immutable byte view is `fixed uint8[]`" was a
+> promise the compiler did not keep from this decision until that landing: D-287 (1.5.5) and DEF-106's TYPE-086
+> stopped at a slice base ("the storage there is not the binding's own"), so a write through a `fixed uint8[]` landed
+> in the viewed bytes (the library listener's F-047, measured at `93bcb66`, both legs). D-348 keeps the promise: a
+> write through a `fixed` slice is TYPE-086 and an address of its element TYPE-071 (landing 98), and `fixed T[]`
+> becomes a type a plain view converts to and never back (step (ii), planned).
 `buffer` (`{ptr, len, cap}`) is retained: a slice cannot own, and the owning byte
 container is what a read fills and a write drains.
 
@@ -19089,6 +19096,15 @@ a plain field, a compound assignment, a stateful operation, a `fixed` local's el
 field — through the one helper every write form asks, the bindings analysis keeping its two shapes (D-240). So
 this decision now reads whole: a `fixed` binding is written once, where it is declared, and no part of it is
 written, addressed or moved out of after.]**
+
+**[1.6.1e landing 98 (2026-10-08): THE WRITE THROUGH A SLICE, asked at last — DEF-230, the library listener's F-047,
+under D-348. `place_fixed`'s root question stopped at a slice base by this decision's reading ("the storage there is
+not the binding's own"), so `fixed uint8[]:v` written through (`v[0i64] = 9u8`) changed the caller's bytes where D-074
+had promised an immutable byte view. The walk goes THROUGH a slice to the view's root now: an element write, a compound
+assignment, a sub-range's element, a slice held in a `fixed` aggregate or declared a `fixed` field are TYPE-086 with
+the view's own sentence, and `@`, `$$i`/`$$m` and a pointer-receiver call on an element are TYPE-071 — a pointer and a
+handle still stop the walk (an address is not a view). So this decision reads: a `fixed` binding is written once, where
+it is declared, and no part of it — nor any byte a slice of it views — is written, addressed or moved out of after.]**
 ## D-288 — the floor's obligations: the evidence beside the floor, the program's theory, loops by invariant or by a stated bound, the residue named, TCB.md generated — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-63, S-64, S-65, S-68; lands at 1.5.6 steps 3, 4 and 6)**
 
 Planned 1.5.6 (`meta/roadmap/1.5/1.5.6.md`, 2026-09-11, on `149dbf6`) under
@@ -22609,6 +22625,17 @@ recommendations are fine with me". Recorded by landing 96; (i) built as landing 
 held in a `fixed` aggregate), announced in advance; the sweep measures that no existing file moves. (ii): a type
 qualifier, a conversion rule and a sweep of every slice parameter in the tree, the prelude and the libraries — its
 plan says what refuses.
+
+> **Landing note (2026-10-08, 1.6.1e landing 98 — step (i) built, `nitpick-compiler_32`; DEF-230 FIXED):**
+> `place_fixed` (type_stmt.npk) walks through a slice base to the view's root (a pointer and a handle still stop it),
+> `place_through_slice` tells the view's sentence from the binding's, and `refuse_fixed_write` and the three address
+> sites (`@`, `$$i`/`$$m`, the pointer-receiver call) say it: TYPE-086 for an element write, a compound assignment, a
+> sub-range's element, a slice held in a `fixed` aggregate or declared a `fixed` field; TYPE-071 for an address of an
+> element. `tests/types/rejection/fixed_slice_write.npk`: nine sites, with a plain view written, a `fixed` view read,
+> ranged and passed to a reader, and a `fixed` view handed to a plain parameter (step (ii)'s hole) as the silent
+> controls. The listener's `s1`/`s2` are TYPE-086, its two controls unchanged; every `fixed uint8[]` of the tree (the
+> `Writer` trait's `write` parameter, six files) compiles as before. The measurements are in `1.6.1e.md`'s record of
+> landing 98. Step (ii) remains planned.
 
 ## D-349 — THE TOOLCHAIN PIN MOVES TO THE LLVM 20.1 RELEASE THE DISTRIBUTIONS SERVE (20.1.8 TODAY), AND THE DEPENDENCY CHAIN MOVES WITH IT — **SETTLED (user decision, 2026-10-08: "i'm fine with moving the pin … we just can't forget the dependency chain beyond just the compiler itself")**
 

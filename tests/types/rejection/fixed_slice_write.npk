@@ -1,0 +1,127 @@
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 46:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 52:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 58:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 64:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 72:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 78:5
+// expect-error: NITPICK-TYPE-071
+// expect-error-at: 84:17
+// expect-error: NITPICK-TYPE-071
+// expect-error-at: 90:17
+// expect-error: NITPICK-TYPE-071
+// expect-error-at: 96:18
+//
+// D-348 (i) (1.6.1e landing 98; DEF-230, the library listener's F-047 in O-N36): A
+// `fixed` SLICE IS READ-ONLY THROUGH IT -- D-074's "an immutable byte view is
+// `fixed uint8[]`" made true. Until this landing `place_fixed` stopped at a slice
+// base as it stops at a pointer's ("the storage there is not the binding's own",
+// D-287), so a callee declaring `fixed uint8[]:v` wrote its caller's bytes in
+// silence (the listener's `s1`/`s2`: exit 10 at both legs, where the reference
+// says refused). Now an element write, a compound assignment, a write through a
+// sub-range, a write through a slice held in a `fixed` aggregate and a write
+// through a `fixed` slice FIELD are TYPE-086 with the view's own sentence, and
+// `@`, `$$m` and a pointer-receiver call on an element are TYPE-071 (D-287's code,
+// the same walk). A plain slice still writes, a `fixed` slice is read, ranged and
+// passed on, and a `fixed` slice handed to a PLAIN parameter still compiles -- the
+// hole D-348's step (ii), `fixed T[]` as a type, closes (the controls carry no
+// code).
+mod:fixed_slice_write;
+
+struct:P = { int64:x; };
+func:bump = NIL(P->:self) never fails { self.x = self.x + 1i64; pass NIL; };
+struct:Holder = { uint8[]:view; };
+struct:Bytes = { fixed uint8[]:data; };
+func:v64 = int64(int64:x) never fails { pass x; };
+
+// s1: a local `fixed uint8[]` view written.
+func:local_view = uint8() never fails {
+    uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    fixed uint8[]:v = arr[0i64...4i64];
+    v[raw v64(0i64)] = 9u8;
+    pass arr[0i64];
+};
+
+// s2: a callee writes through its `fixed uint8[]` parameter.
+func:param_view = NIL(fixed uint8[]:v) never fails {
+    v[0i64] = 9u8;
+    pass NIL;
+};
+
+// a compound assignment through the view.
+func:compound = NIL(fixed uint8[]:v) never fails {
+    v[0i64] += 1u8;
+    pass NIL;
+};
+
+// a write through a sub-range of the view.
+func:sub_range = NIL(fixed uint8[]:v) never fails {
+    v[0i64...2i64][1i64] = 9u8;
+    pass NIL;
+};
+
+// a slice held in a `fixed` aggregate.
+func:in_fixed_struct = uint8() never fails {
+    uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    fixed Holder:h = Holder{ view: arr[0i64...4i64] };
+    h.view[0i64] = 9u8;
+    pass arr[0i64];
+};
+
+// a `fixed` slice FIELD of a plain struct.
+func:fixed_field = NIL(Bytes:b) never fails {
+    b.data[0i64] = 9u8;
+    pass NIL;
+};
+
+// the address of an element.
+func:addr_of_elem = uint8(fixed uint8[]:v) never fails {
+    uint8->:p = @v[0i64];
+    pass (<-p);
+};
+
+// an exclusive borrow of an element.
+func:excl_of_elem = uint8(fixed uint8[]:v) never fails {
+    uint8->:p = $$m v[0i64];
+    pass (<-p);
+};
+
+// a pointer-receiver call on an element.
+func:receiver_of_elem = int64(fixed P[]:ps) never fails {
+    drop ps[0i64].bump();
+    pass ps[0i64].x;
+};
+
+// THE CONTROLS. A plain view writes, as it may.
+func:plain_view = NIL(uint8[]:v) never fails {
+    v[0i64] = 9u8;
+    pass NIL;
+};
+
+// A `fixed` view is read, ranged, and handed on -- to a reader, and (the hole
+// step (ii) closes) to a writer taking a plain view.
+func:reads = int64(fixed uint8[]:v) never fails {
+    int64:n = v.len;
+    uint8:b = v[0i64];
+    fixed uint8[]:w = v[0i64...1i64];
+    int64:r = raw param_reads(w);
+    drop plain_view(v);
+    pass (n + (b => int64) + w.len + r);
+};
+func:param_reads = int64(fixed uint8[]:v) never fails {
+    int64:acc = 0i64;
+    int64:i = 0i64;
+    while (i < v.len) decreases v.len - i {
+        acc = acc + (v[i] => int64);
+        i = i + 1i64;
+    }
+    pass acc;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

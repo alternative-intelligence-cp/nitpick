@@ -1874,6 +1874,15 @@ non-owning behaviour, identical sub-ranging. The remaining difference was
 immutability, and that is a **binding** property in Nitpick rather than a type
 property, so an immutable byte view is `fixed uint8[]`.
 
+> **Note (2026-10-08, 1.6.1e landing 98 — D-348 (i), DEF-230):** it is one now. Until this landing `fixed` on a
+> slice fixed the view's HEADER and not the bytes (D-287's reading: the storage a slice views is not the binding's
+> own), so a callee declaring `fixed uint8[]:v` wrote `v[0] = 9` into its caller's bytes in silence (the library
+> listener's F-047). A write through a `fixed` slice — an element, a compound assignment, a sub-range's element, a
+> slice held in a `fixed` aggregate or declared a `fixed` field — is `NITPICK-TYPE-086`, and `@`, `$$i`/`$$m` or a
+> pointer-receiver call on an element is `NITPICK-TYPE-071`, each with the view's own sentence (§26). What step (i)
+> leaves: a `fixed uint8[]` handed to a PLAIN `uint8[]` parameter whose callee writes; D-348's step (ii), `fixed T[]`
+> as a TYPE that a plain view converts to and never back, closes it (planned before it is built).
+
 Redundant twice over. `binary` and its seven `binary_*` operations are removed;
 use `uint8[]`. `buffer` (§23) is retained, because a slice cannot own and the
 owning byte container is what a read fills and a write drains.
@@ -2032,6 +2041,18 @@ func:greet = NIL(fixed string:name) { pass NIL; };
 **Diagnostic:** every one of these is `NITPICK-ASSIGN-002` — one question, one
 code, whatever the position. A reader filtering a log is asking the same thing
 each time.
+
+**Through a slice** (D-348 (i), 1.6.1e landing 98): a `fixed` slice binding, a
+slice declared a `fixed` field, or a slice held in a `fixed` aggregate is
+READ-ONLY THROUGH IT — the bytes it views are written by no path that spells
+`fixed`. An element write, a compound assignment and a sub-range's element are
+`NITPICK-TYPE-086` (the code a write into a part of a `fixed` binding carries,
+DEF-106); the address of an element — `@`, `$$i`/`$$m`, the implicit address a
+pointer-receiver call takes — is `NITPICK-TYPE-071` (D-287's: an address of fixed
+storage). Reading, ranging and passing the view on are free. Handing a `fixed`
+view to a plain `T[]` parameter still compiles until D-348's step (ii) makes
+`fixed T[]` a type; until then `fixed` at a call site protects nothing a callee
+declares plain.
 
 **And the value need not be known at compile time.** Where you want to say it
 *is*, wrap the initialiser: `comptime(…)` refuses an expression that does not

@@ -1629,10 +1629,16 @@ pub func:place_limited = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails 
 // (D-287, 1.5.5 step 1; TYPE-071): a local's `fixed` qualifier, a parameter's,
 // a module binding's -- and a field's, wherever the struct lives, since the
 // qualifier is the field's own (the bindings analysis's `field_declares_fixed`
-// reads the same bit). The root question stops at a pointer, slice or handle
-// base exactly as `place_limited` does (the storage there is not the
-// binding's own); the field question does not, because `p.f` through a
-// pointer reaches the pointee's `fixed` field all the same.
+// reads the same bit). The root question stops at a pointer or handle base
+// as `place_limited` does (the storage there is not the binding's own) and
+// WALKS THROUGH A SLICE (D-348 (i), 1.6.1e landing 98; DEF-230): a `fixed`
+// slice is read-only through it -- D-074's "an immutable byte view is `fixed
+// uint8[]`" -- so an element of a slice rooted at a `fixed` binding, or held in
+// a `fixed` aggregate or field, is fixed storage to every write form; until
+// that landing the slice stopped the walk as a pointer does, and a callee
+// declaring `fixed uint8[]:v` wrote its caller's bytes in silence. The field
+// question does not stop at a pointer, because `p.f` through a pointer
+// reaches the pointee's `fixed` field all the same.
 pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
     if (raw expr_is_none(id)) { pass false; }
@@ -1674,10 +1680,35 @@ pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
         if (bt != 0i32) {
             int32:bk = raw type_kind(e.types, bt);
             if (bk == (raw TY_POINTER())) { pass false; }
-            if (bk == (raw TY_SLICE()))   { pass false; }
+            // A SLICE does not stop the walk (D-348 (i), landing 98): the
+            // question goes on to the view's own root, so `v[i]` over a
+            // `fixed uint8[]:v`, `h.view[i]` over a `fixed Holder:h` and
+            // `s.bytes[i]` over a `fixed uint8[]` field are all fixed storage.
             if (bk == (raw TY_HANDLE()))  { pass false; }
         }
         pass (raw place_fixed(e, raw expr_lhs(n), fuel - 1i32));
+    }
+    pass false;
+};
+
+// DOES THIS PLACE REACH ITS ROOT THROUGH A SLICE (D-348 (i), landing 98)? Asked
+// of a place `place_fixed` answered true for, to say the VIEW's sentence rather
+// than the binding's: the bytes a `fixed uint8[]` views are the viewed storage's
+// and the refusal is the view's read-only promise (D-074), not D-211's read-only
+// memory. The same index-and-member walk as `place_fixed`'s root question.
+pub func:place_through_slice = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        pass (raw place_through_slice(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_lhs(n));
+        if (bt != 0i32) {
+            if ((raw type_kind(e.types, bt)) == (raw TY_SLICE())) { pass true; }
+        }
+        pass (raw place_through_slice(e, raw expr_lhs(n), fuel - 1i32));
     }
     pass false;
 };
@@ -1691,8 +1722,10 @@ pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
 // and are skipped: the whole binding (`FI = ...`, ASSIGN-002 "assigned once")
 // and a `fixed` field's own assignment (`s.f = ...`, ASSIGN-002 "a fixed field
 // is assigned once"). What is left is exactly what nothing refused: an element
-// or a plain field of a `fixed` binding, and anything under a `fixed` field.
-// True when reported.
+// or a plain field of a `fixed` binding, anything under a `fixed` field -- and,
+// since D-348 (i) (landing 98), an element reached through a SLICE rooted at a
+// `fixed` binding or field, which gets the view's own sentence. True when
+// reported.
 pub func:refuse_fixed_write = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
     if (raw expr_is_none(place)) { pass false; }
     ExprNode:n = raw ast_expr(e.ast, place);
@@ -1706,6 +1739,13 @@ pub func:refuse_fixed_write = bool(ExprTyper->:e, ExprId:place, string:what, Spa
         }
     }
     if (!(raw place_fixed(e, place, 64i32))) { pass false; }
+    if (raw place_through_slice(e, place, 64i32)) {
+        string:s1 = string_concat("a `fixed` slice is read-only through it (D-074, D-348): the bytes it views are written by no path that spells `fixed`, so this ", what);
+        discard(raw te_error(e, raw TYPE_FIXED_WRITE(),
+            string_concat(s1, " through a `fixed` view is refused -- before this rule a callee declaring `fixed uint8[]` changed its caller's bytes in silence (DEF-230) -- write through a plain view, or copy the bytes out"),
+            at));
+        pass true;
+    }
     string:m1 = string_concat("a `fixed` binding is written once, where it is declared, and no part of it is written after (D-287), so this ", what);
     discard(raw te_error(e, raw TYPE_FIXED_WRITE(),
         string_concat(m1, " into a part of one is refused -- a `fixed` module binding is read-only memory (D-211): the store faulted at -O0 and was deleted as undefined at -O2, and an owning element's overwrite freed a literal -- copy the value out (`.clone()` for an owning one), or declare the binding plain"),
@@ -1830,8 +1870,10 @@ pub func:is_rguard_value = bool(ExprTyper->:e, int32:bt, int32:name) never fails
 // struct this code is outside, a compiler-known header, a read hold's view --
 // and a place that is a part of a VALUE is part of what is written, so the walk
 // continues into the value. It stops at a pointer, a slice or a handle base, as `place_fixed`'s
-// root question does: a write through `p.f`'s pointer writes the pointee, not the
-// pointer, and the pointee's own field was asked at `.f` already.
+// root question does at a pointer and a handle: a write through `p.f`'s pointer writes the
+// pointee, not the pointer, and the pointee's own field was asked at `.f` already. (A slice
+// stops this walk and not `place_fixed`'s since D-348: a `sealed` field is a question about a
+// FIELD, asked at `.f`, while `fixed` on a view is a promise about the bytes it views.)
 pub func:place_sealed_access = int32(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass 0i32; }
     if (raw expr_is_none(id)) { pass 0i32; }

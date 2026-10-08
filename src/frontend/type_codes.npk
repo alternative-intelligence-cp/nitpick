@@ -432,7 +432,11 @@ pub func:TYPE_SHIFT_RANGE = string() never fails { pass "NITPICK-TYPE-070"; };
 // through a pointer. Measured before the rule: a `fixed` local was silently
 // overwritten through `$$m`, and a `fixed` module binding -- an LLVM constant
 // in read-only memory (D-211) -- died with SIGSEGV, `failsafe` never running.
-// TYPE-063's twin: pass a `fixed` value by value, or declare it plain.
+// TYPE-063's twin: pass a `fixed` value by value, or declare it plain. Since
+// D-348 (i) (landing 98) an element of a `fixed` SLICE has no address either
+// (`@v[i]`, `$$m v[i]`, a pointer-receiver call on `v[i]`): the view is
+// read-only through it, and the walk that decides it (`place_fixed`) goes
+// through a slice base to the view's root.
 pub func:TYPE_FIXED_ADDRESS = string() never fails { pass "NITPICK-TYPE-071"; };
 // A WRITE TO A `sealed` FIELD FROM OUTSIDE ITS DECLARING MODULE (D-313, S-93;
 // 1.5.8b step 1; DEF-72). The write forms: an assignment through any path, a
@@ -563,7 +567,12 @@ pub func:TYPE_LOAN_READ_ONLY = string() never fails { pass "NITPICK-TYPE-085"; }
 // into read-only memory (a fault at -O0, the store deleted as undefined at
 // -O2), and `FA[i] = string_concat(...)` freed a literal body no allocation
 // made. Every write form asks it through `refuse_write_path`; the two forms the
-// bindings analysis reports keep their ASSIGN-002 (D-240).
+// bindings analysis reports keep their ASSIGN-002 (D-240). Since D-348 (i)
+// (1.6.1e landing 98; DEF-230, the library listener's F-047) the same code
+// refuses a write THROUGH A `fixed` SLICE -- an element, a compound, a
+// sub-range's element, a slice held in a `fixed` aggregate or declared a `fixed`
+// field -- with the view's own sentence: a `fixed uint8[]` is D-074's immutable
+// byte view, and a callee declaring one wrote its caller's bytes in silence.
 pub func:TYPE_FIXED_WRITE = string() never fails { pass "NITPICK-TYPE-086"; };
 
 // D-327 (1.6.1c): an impl of the prelude's `Copy` on a type that owns, or whose
