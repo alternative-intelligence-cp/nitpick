@@ -1,0 +1,116 @@
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 28:5
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 35:5
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 41:5
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 47:5
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 55:5
+//
+// A `fixed` PARAMETER IS WRITTEN BY ITS CALLER AND NEVER BY ITS BODY (DEF-248,
+// 1.6.1e landing 102). TYPE_REFERENCE §26 has promised it since the keyword
+// existed -- "a parameter the callee may not reassign", `NITPICK-ASSIGN-002`
+// "whatever the position" -- and the bindings analysis checked no qualifier on a
+// parameter's assignment: `func:g = int32(fixed int32:n) never fails { n = 2i32;
+// pass n; };` compiled and answered 2 on every compiler before this one (its
+// comment said "a parameter carries no `fixed`", which was false: `param_quals`
+// has carried the bit since 0.7.3, and `place_fixed` reads it for an address and
+// a part write). A whole-binding assignment and a compound assignment to a
+// `fixed` parameter are ASSIGN-002 now, a `fixed` view parameter's re-pointing
+// among them (its bytes are D-348's, landing 98; its header is the binding's).
+// The local twin stands beside them as the control that the sentence is one.
+mod:fixed_param_assign;
+
+// s1: a whole-binding assignment to a `fixed` parameter.
+func:set = int32(fixed int32:n) never fails {
+    n = 2i32;
+    pass n;
+};
+
+// s2: the value is read before the target is written -- the write is still
+// the second one.
+func:bump = int32(fixed int32:n) never fails {
+    n = n + 1i32;
+    pass n;
+};
+
+// s3: a compound assignment is an assignment.
+func:acc = int32(fixed int32:n) never fails {
+    n += 1i32;
+    pass n;
+};
+
+// s4: a `fixed` view parameter re-pointed (the header; the bytes are TYPE-086's).
+func:repoint = int64(fixed uint8[]:v, uint8[]:w) never fails {
+    v = w;
+    pass v.len;
+};
+
+// s5: the local twin, the rule as it stood (D-287) -- the control that one
+// sentence covers both positions.
+func:local_twice = int32() never fails {
+    fixed int32:k = 1i32;
+    k = 2i32;
+    pass k;
+};
+
+// THE CONTROLS. A plain parameter is assigned; a `fixed` parameter is read,
+// passed on and has its parts read; a `move` parameter is re-initialised after
+// its move (DEF-124).
+func:plain = int32(int32:n) never fails {
+    n = n + 1i32;
+    pass n;
+};
+func:reads = int64(fixed uint8[]:v, fixed int32:n) never fails {
+    int64:a = v.len + (n => int64);
+    pass a + (raw reads2(v, n));
+};
+func:reads2 = int64(fixed uint8[]:v, fixed int32:n) never fails {
+    pass v.len + (n => int64);
+};
+func:reinit = string(move string:s) never fails {
+    string:t = move(s);
+    s = string_concat(t, "!");
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -19140,6 +19140,13 @@ assignment, a sub-range's element, a slice held in a `fixed` aggregate or declar
 the view's own sentence, and `@`, `$$i`/`$$m` and a pointer-receiver call on an element are TYPE-071 — a pointer and a
 handle still stop the walk (an address is not a view). So this decision reads: a `fixed` binding is written once, where
 it is declared, and no part of it — nor any byte a slice of it views — is written, addressed or moved out of after.]**
+
+**[1.6.1e landing 102 (2026-10-08): THE PARAMETER POSITION, asked at last — DEF-248. TYPE_REFERENCE §26 lists "a parameter the
+callee may not reassign" among the positions this decision's keyword covers, and the bindings analysis never asked: a `fixed`
+parameter's whole-binding or compound assignment compiled (the arm marked the parameter and read no qualifier, under a comment
+that said a parameter carries no `fixed`). It is ASSIGN-002 now, as a local's second write is; a plain or `move` parameter
+keeps DEF-124's re-assignment. Found by the probes of D-348 step (ii)'s planning, which also registered DEF-246 (a plain view
+of `fixed` storage writes it: six faces, two of them faults in safe code) and DEF-247 (dormant return qualifiers).]**
 ## D-288 — the floor's obligations: the evidence beside the floor, the program's theory, loops by invariant or by a stated bound, the residue named, TCB.md generated — **SETTLED (user decision, 2026-09-11: "lets ratify the recommendations for the 8 questions and you execute the steps for this session"; OPEN_DECISIONS S-63, S-64, S-65, S-68; lands at 1.5.6 steps 3, 4 and 6)**
 
 Planned 1.5.6 (`meta/roadmap/1.5/1.5.6.md`, 2026-09-11, on `149dbf6`) under
@@ -22740,3 +22747,61 @@ route. Its own landing, after the five in flight at the decision (94…98); `nit
 > Mesa -- recorded in INSTALL.md as the route for that case. The harness green under the prefix; no refusal, emission, answer, floor
 > byte or snapshot moved; `nitpick.obligations` unmoved. The library side holds its runners on a private 20.1.2 prefix and re-pins
 > after DEF-165 and DEF-164.
+
+## D-350 — `fixed` STAYS THE BINDING'S QUALIFIER, AND A `fixed` BINDING OF SLICE TYPE HAS THE TYPE `fixed T[]` (D-348 STEP (ii)'S SPELLING, R1) — **SETTLED (user decision, 2026-10-08: "your recommendation for those questions looks fine to me.")**
+
+**The question, as it was put (S-132; D-348 step (ii)'s plan, `.internal/handoff_33/D348_II_PLAN.md` §3.2).** D-348 made `fixed
+T[]` a TYPE; how is it SPELLED, and what does today's declaration spelling `fixed uint8[]:v` mean once the type exists? Two
+positions exist: a DECLARATION (a local, a parameter, a field, a module binding -- where the qualifier loop stands before the
+type) and a BARE TYPE (a type argument `List<fixed uint8[]>`, a function type's parameter `func NIL(fixed uint8[])`, a return
+type `= fixed uint8[](…)`, a nested element). R1: `fixed` is the binding's qualifier wherever it precedes a declaration, as
+today; a `fixed`-qualified binding whose declared type is a slice has the type `fixed T[]`; in a bare type position `fixed T[]`
+is the type. Every existing spelling keeps its meaning (the prelude's `write(… fixed uint8[]:wsrc …)` and its impls are
+untouched; the parameter's TYPE becomes `fixed uint8[]`, which is what makes the trait comparison and the call-site conversion
+work). What R1 cannot say: a RE-POINTABLE binding of a read-only view (`cur = cur[1i64...cur.len]`) -- measured absent (no view
+local of the tree or of any library's sources is re-assigned; three test files re-point PLAIN views); the idiom is an offset
+into the view, or a `for`. A `fixed` parameter of non-slice type keeps a plain type: only a view's `fixed` reaches its type,
+because only a view says something about memory the binding does not own. R1': `fixed` immediately before a slice type is the
+TYPE's in every position and the binding is plain unless `fixed` is written twice -- the cleanest separation, admitting the
+cursor, at the cost of every existing `fixed uint8[]:wsrc` parameter changing meaning in silence and `fixed fixed uint8[]:v` for
+a once-written fixed view.
+
+**The decision: R1, the recommendation, ratified as written.** No spelling in the tree or the libraries changes meaning; the rule
+has one sentence; the one thing it cannot express is used nowhere. Refusals: `fixed` in a bare type position before anything but a
+slice type, `stack` on a return (DEF-247: both parsed and meant nothing) and `fixed` on a cast target are `NITPICK-PARSE-013` at
+the keyword, unit-tested (D-085). A doubled `fixed` at a declaration is the qualifier loop's existing idempotence, as `wild wild` is.
+
+**In one line.** `fixed uint8[]:v` means what it meant -- written once, read-only through it -- and `v`'s TYPE now says the second
+half wherever `v` goes; `fixed T[]` is the type in a bare position.
+
+**How it was ratified.** In `nitpick-compiler_33`'s session, 2026-10-08, answering the two questions as put in the seat's report
+with their recommendations: "your recommendation for those questions looks fine to me." Recorded by landing 102; built as landing
+103.
+
+**What it changes.** The parser (the type parser's `fixed` prefix in bare positions; the four declaration parsers marking a
+`fixed` slice binding's type node; `p_return_quals` reading `wild`/`wildx` alone), the resolver (a marked slice node is
+`tt_slice_fixed`), the display (`fixed T[]`), PARSE-013. The sweep of D-348 (ii)'s landing measures that no existing file moves
+but by the rules of D-348 and D-351.
+
+## D-351 — `string_bytes` RETURNS THE READ-ONLY VIEW, `fixed uint8[]`, ALWAYS — **SETTLED (user decision, 2026-10-08: "your recommendation for those questions looks fine to me.")**
+
+**The question, as it was put (S-133; D-348 step (ii)'s plan §3.3 item 4).** Does the string→slice bridge hand out the
+read-only view? Recommended: always. A string's bytes are written by no string operation; the reference calls the bridge "the
+bytes as a borrowed VIEW"; a write through it is a write the string's own invariants never see, and over a `fixed string`
+module binding it is DEF-246's first face: a store into a `constant` global, `MachineFault` in safe code. The alternative --
+`fixed uint8[]` only when the argument is a `fixed` place -- closes that face alone and keeps a plain string's bytes writable
+through the bridge, a road nothing in the tree or the libraries is known to take; the sweep of the landing is the measurement
+(every writer through a `string_bytes` view appears as TYPE-086 and is read).
+
+**The decision: always, the recommendation, ratified as written.** BUILTIN_REFERENCE's row is `string → fixed uint8[]`; the
+generated table and `builtin_text_type` carry the text; a `string_bytes(s)` result goes where a `fixed uint8[]` goes (`write`, a
+range, a `fixed` slot) and converts to no plain `uint8[]`.
+
+**How it was ratified.** With S-132, in `nitpick-compiler_33`'s session, 2026-10-08: "your recommendation for those questions
+looks fine to me." Recorded by landing 102; built as landing 103.
+
+**What it changes.** A refusal ADDED at every binding, argument, return or field that took the bridge's view as a plain
+`uint8[]` -- a READER re-spells its slot `fixed uint8[]` (the tree had seven: `tw_write_all`'s local in the prelude, the
+escape analysis's `paths_overlap` and `header_field_disjoint_text`, the alias analysis's `decode_path`, `decode_step` and
+`decode_int`), a WRITER through the bridge is refused outright (none known). The landing's sweep names every library site, and
+the advance notice carries them before the landing.

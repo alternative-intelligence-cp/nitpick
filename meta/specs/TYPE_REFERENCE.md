@@ -2046,6 +2046,11 @@ func:greet = NIL(fixed string:name) { pass NIL; };
 code, whatever the position. A reader filtering a log is asking the same thing
 each time.
 
+> **Note (2026-10-08, 1.6.1e landing 102 — DEF-248):** the parameter position was promised here and enforced by nothing until
+> this landing: `func:g = int32(fixed int32:n) never fails { n = 2i32; pass n; };` compiled and answered 2. A whole-binding or
+> compound assignment to a `fixed` parameter is `NITPICK-ASSIGN-002` now; a plain or `move` parameter may be re-assigned
+> (DEF-124). A `fixed` view parameter's bytes are D-348's (landing 98; step (ii) makes `fixed T[]` a type).
+
 **Through a slice** (D-348 (i), 1.6.1e landing 98): a `fixed` slice binding, a
 slice declared a `fixed` field, or a slice held in a `fixed` aggregate is
 READ-ONLY THROUGH IT — the bytes it views are written by no path that spells

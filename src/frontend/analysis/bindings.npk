@@ -1247,9 +1247,24 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
         // for every `SYM_DECL`, so a re-initialised `move` parameter stayed
         // MOVE-001 at its next read while its local twin compiled -- the move
         // analysis had learned about parameters at 1.4.3 (D-208) and the
-        // assignment had not. A parameter carries no `fixed` (it is not a
-        // `VarDeclStmt`), so there is nothing else to check.
+        // assignment had not.
+        //
+        // A `fixed` PARAMETER IS WRITTEN BY ITS CALLER AND NEVER BY ITS BODY
+        // (DEF-248, 1.6.1e landing 102). TYPE_REFERENCE §26 has promised it
+        // since the keyword existed -- "a parameter the callee may not
+        // reassign", ASSIGN-002 "whatever the position" -- and the comment
+        // that stood here said a parameter carries no `fixed`, which was false:
+        // `param_quals` has carried QUAL_FIXED since 0.7.3 (`place_fixed` reads
+        // it for an address and a part write), and the whole-binding write was
+        // asked of nothing. No flow analysis, as for a `fixed` field: a
+        // parameter's one write is the call, so every assignment is the second.
+        // A plain or `move` parameter keeps DEF-124's re-assignment.
         if (gd.kind == DeclKind.DeclParamDecl) {
+            if (((raw param_quals(gd)) & (raw QUAL_FIXED())) != 0i32) {
+                drop assign_err(x, raw ASSIGN_IMMUTABLE(),
+                    "a `fixed` parameter is written by its caller and never by its body (TYPE_REFERENCE §26): this assignment is the second write; drop `fixed` if the parameter is meant to change",
+                    tn.span);
+            }
             drop state_mark(st, raw symbol_slot(x, tn.a));
         }
         pass NIL;
