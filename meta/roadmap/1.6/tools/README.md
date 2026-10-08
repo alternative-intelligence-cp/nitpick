@@ -31,6 +31,7 @@ python3 meta/roadmap/1.6/tools/gate_inputs.py                     # the input se
 python3 meta/roadmap/1.6/tools/gate_controls.py                   # the seven controls, plain and planted, RUN (step 2)
 python3 meta/roadmap/1.6/tools/plant.py X.plant IN.ll OUT.ll      # one plant by hand
 python3 meta/roadmap/1.6/tools/gate_run.py [--quick] [--jobs N]    # the runs (step 3): every engine over every input, twice; report.md
+python3 meta/roadmap/1.6/tools/sitenorm.py BASE_PRELUDE NEW_PRELUDE PAIRS_DIR .base.ll .new.ll [--show N]  # two compilers' emissions compared with D-179's site table canonicalised (landing 97; DEF-242)
 ```
 
 `engines.sh check` verifies every recorded patch pins.txt names against the file

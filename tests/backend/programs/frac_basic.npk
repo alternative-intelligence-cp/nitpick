@@ -35,11 +35,13 @@ func:main = int32(cstring[]:argv) {
     if (negthird.num != (0i32 - 1i32))           { exit 20i32; }
     if (negthird.denom != 3u32)                  { exit 21i32; }
 
-    // -2 5/8 through negation: -(2 5/8) — sign on whole, num positive.
+    // -2 5/8 through negation: -(2 5/8) — whole and num of one sign, the
+    // value whole + num/denom (D-347; it was the floor form {-3, 3, 8} until
+    // landing 97, which printed as "-3 3/8").
     frac32:two58 = (2i32 => frac32) + ((5i32 => frac32) / (8i32 => frac32));
     frac32:neg258 = -two58;
-    if (neg258.whole != (0i32 - 3i32))           { exit 22i32; }
-    if (neg258.num != 3i32)                      { exit 23i32; }
+    if (neg258.whole != (0i32 - 2i32))           { exit 22i32; }
+    if (neg258.num != (0i32 - 5i32))             { exit 23i32; }
     if (neg258.denom != 8u32)                    { exit 24i32; }
 
     // Division by an exact zero degrades to ERR; stickiness holds.

@@ -3812,21 +3812,25 @@ defect declares a `DEF-` in §2f.
 > after it). Measured: every `fixed uint8[]` in the tree (seven files) is the `Writer` trait's `write` parameter,
 > none written through; no library uses one.
 
-> **DEF-231 — OPEN, UNDER THE USER'S RULING (2026-10-07; owner: the compiler seat; the fuzzer's `ty1657` in O-N36,
-> found by M11's TYPE run; measured here at `93bcb66`, both legs, `wt/31a`-era probe `frac_probe.npk`). A `frac`
-> PRINTS ITS STORED PARTS, WHICH READ AS ANOTHER NUMBER, AND ONE VALUE HAS TWO STORED FORMS.** `-(1 3/8)` prints
-> "-2 5/8" (whole −2, num 5, denom 8: the normaliser's last step borrows from the whole so `num` is never negative
-> beside a nonzero whole, the prototype's rule carried into D-198), which a reader of mixed numbers takes for
-> −2.625; `-(2 5/8)` prints "-3 3/8". And −3/8 is stored as {−1, 5, 8} when computed as `(-1) + 5/8` -- printing
-> "-1 5/8", read as −1.625 -- and as {0, −3, 8} when computed as `1/8 - 1/2`, printing "-3/8"; `==` says they are
-> equal (the core compares improper forms), the parts differ, so anything that reads the parts (the members, a
-> derived `Hash`, a `Debug`) sees two values. The user ruled the print a wrong answer (2026-10-05, in
-> `nitpick-compiler_31`'s session) and the principle: everything a person or a program READS from a value shows it
-> as it would be used, never the stored form. The decision, D-347 (ratified 2026-10-08: "your recommendations are fine with
-> me"; built as landing 97): the stored parts ARE the readable parts -- whole and num of one sign (or zero), |num| < denom, value = whole + num/denom in every case, one form
-> per value; the print shows the sign once ("-1 3/8", "-3/8"); `.whole` −1, `.num` −3. Touches: `npk_frac_norm`'s
-> last block and the four `ToString` impls (prelude.npk), `emit_frac_cast`'s integer exit (the "+1 when negative"
-> goes), `frac_basic.npk`'s expectations, TYPE_REFERENCE's invariant sentence and example, D-198's dated note.
+> **DEF-231 — FIXED 2026-10-08 (landing 97, built by `nitpick-compiler_31` under D-347, landed by
+> `nitpick-compiler_32`; the fuzzer's `ty1657` in O-N36, found by M11's TYPE run; measured here at `93bcb66`, both
+> legs). A `frac` PRINTED ITS STORED PARTS, WHICH READ AS ANOTHER NUMBER, AND ONE VALUE HAD TWO STORED FORMS.** --
+> `-(1 3/8)` printed "-2 5/8" (stored {−2, 5, 8}: the normaliser's last step borrowed from the whole so `num` was
+> never negative beside a nonzero whole, the prototype's rule carried into D-198), which a reader of mixed numbers
+> takes for −2.625; and −3/8 was {−1, 5, 8} when computed as `(-1) + 5/8` (printing "-1 5/8") and {0, −3, 8} as
+> `1/8 - 1/2`, `==` equal, the parts different. D-347 (the user's ruling of 2026-10-05 and his ratification of
+> 2026-10-08): the stored parts ARE the readable parts -- whole and num never of opposite signs, |num| < denom,
+> value = whole + num/denom in every case, one form per value; the print shows the sign once ("-1 3/8", "-3/8",
+> and "-2 5/8" is −2.625); `.whole` −1, `.num` −3. `npk_frac_norm`'s last block shares the sign (a positive whole
+> beside a negative fraction borrows one, a negative whole beside a positive fraction carries one), the four
+> `ToString` impls print |num| beside a nonzero whole, `emit_frac_cast`'s integer exit is the whole field alone (its
+> "plus one when negative" was the floor form's correction), `npk_frac_cmp` needed nothing (it compares improper
+> forms, one number under either form), `frac_basic.npk`'s expectations follow the form, and `frac_parts.npk` reads
+> the parts, the print and both casts in thirty-three checks (−(1 3/8), −(2 5/8), −3/8 by three routes as one form,
+> the positive twins, a borrow and a carry, −1, 0, ERR, the order, `frac64`). TYPE_REFERENCE's invariant sentence,
+> its members' and `ToString` rows and D-198's dated note say the rule. A COMPUTED ANSWER changes for every negative
+> frac with a fraction (its print, `.whole`, `.num`): the landing's sweep and emission comparison name every
+> program that reads one (the record).
 
 > **DEF-232 — OPEN (2026-10-07; the listener's F-048 in O-N36; measured by it at `5fbaf4a` and `93bcb66`). A STRUCT
 > WITH A `NIL` FIELD IS ACCEPTED AND EMITTED AS `type { i32, void }`**, which `llc` and `opt` refuse; the control
@@ -3900,6 +3904,25 @@ defect declares a `DEF-` in §2f.
 > none (found reading the sweep: the fuzzer's `op0391`, "a backtick template with nothing interpolated is its text",
 > had moved). `template_owner.npk`'s first road (3 + 3 where the parent trapped) and its tenth; `tests/cost/
 > template_literal.toml` holds a thousand splice-free templates to a thousand plain literals' peak.
+
+> **DEF-242 — OPEN (registered 2026-10-08 by `nitpick-compiler_32`, reading landing 97's emission comparison; low
+> priority, S-130's neighbourhood: a cost and a churn, not a wrong answer). EVERY EMISSION CARRIES THE PRELUDE'S WHOLE
+> ERROR-ORIGIN SITE TABLE, AND A PRELUDE EDIT MOVES EVERY PROGRAM'S TEXT.** -- D-179's site table (`@npk.sitep.N`,
+> `@npk.site.paths`, `@npk.site.lines`; read by `npk_chain_reset`/`npk_chain_push` to name a trap's origin) numbers the
+> prelude's sites first and the program's after them, and every program's emission carries every prelude site -- 287
+> `prelude.npk` rows at landing 96 in a program that calls none of those bodies (D-262's trim keeps items by
+> reference and does not reach the table). Measured at landing 97, whose prelude edit added six guard sites and 27
+> lines to the frac section: 561 of 561 tree programs and 2,435 of 2,435 compiling library programs emitted
+> different text, every one of them by the table's renumbering (every program site's id by six, every prelude site's
+> line below the edit by 27, the lookup's bound) and the twenty frac programs by the landing's change beside it --
+> read with `meta/roadmap/1.6/tools/sitenorm.py`, which canonicalises the table and compares what is left. The same
+> growth moves every verify row's SITE KEY (the program's node ids) while the problem hashes stand. What it costs:
+> some 290 path-and-line rows and a 300-entry pair of tables in every program (block_string_quotes: 57,755 of its
+> bytes of text), an emission digest that moves for every prelude edit (the library side compares per-program
+> digests across a re-pin, F39), and an emission comparison that must be canonicalised before it says anything.
+> RECOMMENDED: the table holds the sites of the functions the emission holds, numbered after D-262's trim settles
+> (the ids are the emission's own constants, so a per-program numbering is sound), its own small landing with the
+> comparison tool as its measure; the examination phase's otherwise.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

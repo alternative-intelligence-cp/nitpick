@@ -1811,7 +1811,16 @@ pub func:npk_gcd256 = int256(int256:a, int256:b) never fails {
     pass x;
 };
 
-// Canonical form — D-198's five invariants — from any {w, n, d} with d > 0;
+// Canonical form — D-198's invariants as D-347 states them — from any
+// {w, n, d} with d > 0: denom > 0; |num| < denom; gcd(|num|, denom) = 1 and
+// denom = 1 when num = 0; WHOLE AND NUM NEVER OF OPPOSITE SIGNS; and the value
+// is whole + num/denom in every case — so whole is the value truncated toward
+// zero, the fraction carries the value's sign too, and one value has ONE
+// form: −1 3/8 is {−1, −3, 8}, −3/8 is {0, −3, 8} however it was computed.
+// (Until landing 97 the last step BORROWED from the whole so num was never
+// negative beside a nonzero whole — the floor form {−2, 5, 8} for −1 3/8,
+// which printed as "-2 5/8" and read as −2.625; and (−1) + 5/8 stayed
+// {−1, 5, 8} while 1/8 − 1/2 was {0, −3, 8}: two forms of −3/8, DEF-231.)
 // d ≤ 0 is ERR (`ok: false`), and so is a reduced form whose components
 // exceed the width's bounds: "exact or ERR", never rounded. The width's
 // valid component ranges are balanced (±bound for whole and num — the
@@ -1845,11 +1854,17 @@ pub func:npk_frac_norm = FracParts(int256:w0, int256:n0, int256:d0,
     } else {
         d = 1i256;
     }
-    if (w != 0i256) {
-        if (n < 0i256) {
-            w = w - 1i256;
-            n = d + n;
-        }
+    // ONE SIGN (D-347): a positive whole beside a negative fraction borrows
+    // one (1 − 3/8 is {0, 5, 8}); a negative whole beside a positive fraction
+    // carries one ((−1) + 5/8 is {0, −3, 8}). A zero whole keeps the
+    // fraction's sign; a zero fraction keeps the whole's.
+    if ((w > 0i256) && (n < 0i256)) {
+        w = w - 1i256;
+        n = d + n;
+    }
+    if ((w < 0i256) && (n > 0i256)) {
+        w = w + 1i256;
+        n = n - d;
     }
     if (w > bound)                     { pass (raw frac_bad()); }
     if (w < (0i256 - bound))           { pass (raw frac_bad()); }
@@ -1924,17 +1939,23 @@ pub func:npk_frac_cmp = int32(int256:aw, int256:an, int256:ad,
     pass 0i32;
 };
 
-// A frac RENDERS ITS MIXED NUMBER (D-198, D-168): "3 1/3", "-2 5/8", "0",
-// "ERR" — exact by construction; the sign rides whole, or num when whole
-// is 0. The members are the read-only component views (1.3.5).
+// A frac RENDERS ITS MIXED NUMBER (D-198, D-168; D-347): "3 1/3", "-2 5/8"
+// (that is −2.625), "-3/8", "0", "ERR" — exact by construction, the sign
+// shown ONCE: the whole carries it and the fraction beside a nonzero whole
+// is printed as its magnitude (the stored num has the same sign, D-347); a
+// fraction with no whole carries its own. The members are the read-only
+// component views (1.3.5). Until landing 97 the stored num was printed as
+// it was, so −1 3/8, then stored {−2, 5, 8}, printed "-2 5/8" (DEF-231).
 impl:frac8:ToString = { func:to_string = string(frac8:self) never fails {
     if (is_err(self)) { pass "ERR"; }
     if (self.num == 0i8) { pass (int_to_string(self.whole => int64)); }
     string:head = "";
+    int64:n = self.num => int64;
     if (self.whole != 0i8) {
         head = string_concat(int_to_string(self.whole => int64), " ");
+        if (n < 0i64) { n = 0i64 - n; }
     }
-    string:fr = string_concat(int_to_string(self.num => int64), "/");
+    string:fr = string_concat(int_to_string(n), "/");
     pass (string_concat(head,
               string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
 }; };
@@ -1942,10 +1963,12 @@ impl:frac16:ToString = { func:to_string = string(frac16:self) never fails {
     if (is_err(self)) { pass "ERR"; }
     if (self.num == 0i16) { pass (int_to_string(self.whole => int64)); }
     string:head = "";
+    int64:n = self.num => int64;
     if (self.whole != 0i16) {
         head = string_concat(int_to_string(self.whole => int64), " ");
+        if (n < 0i64) { n = 0i64 - n; }
     }
-    string:fr = string_concat(int_to_string(self.num => int64), "/");
+    string:fr = string_concat(int_to_string(n), "/");
     pass (string_concat(head,
               string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
 }; };
@@ -1953,10 +1976,12 @@ impl:frac32:ToString = { func:to_string = string(frac32:self) never fails {
     if (is_err(self)) { pass "ERR"; }
     if (self.num == 0i32) { pass (int_to_string(self.whole => int64)); }
     string:head = "";
+    int64:n = self.num => int64;
     if (self.whole != 0i32) {
         head = string_concat(int_to_string(self.whole => int64), " ");
+        if (n < 0i64) { n = 0i64 - n; }
     }
-    string:fr = string_concat(int_to_string(self.num => int64), "/");
+    string:fr = string_concat(int_to_string(n), "/");
     pass (string_concat(head,
               string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
 }; };
@@ -1964,10 +1989,12 @@ impl:frac64:ToString = { func:to_string = string(frac64:self) never fails {
     if (is_err(self)) { pass "ERR"; }
     if (self.num == 0i64) { pass (int_to_string(self.whole)); }
     string:head = "";
+    int64:n = self.num;
     if (self.whole != 0i64) {
         head = string_concat(int_to_string(self.whole), " ");
+        if (n < 0i64) { n = 0i64 - n; }
     }
-    string:fr = string_concat(int_to_string(self.num), "/");
+    string:fr = string_concat(int_to_string(n), "/");
     pass (string_concat(head,
               string_concat(fr, raw uint_to_decimal(self.denom))));
 }; };

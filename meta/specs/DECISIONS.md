@@ -14736,6 +14736,15 @@ Design points fixed inside the ratified frame, at open:
    the CLAUDE.md table's own rows) that only npkc's parse catches, the
    seed's checker never building backend files.
 
+> **Note (2026-10-08, 1.6.1e landing 97 — D-347, DEF-231):** the five invariants' sign rule ("num ≥ 0 when whole ≠ 0;
+> the sign on whole, or on num when whole = 0") was the prototype's floor form, carried here without a reason of its
+> own: −1 3/8 was stored {−2, 5, 8}, the `ToString` row's "-2 5/8" printed it, and a reader took that for −2.625; and
+> one value had two stored forms ((−1) + 5/8 was {−1, 5, 8}, 1/8 − 1/2 was {0, −3, 8}), so the members, a `Debug`
+> and a derived `Hash` saw two numbers for one. D-347 replaces the rule: whole and num never of opposite signs, the
+> value whole + num/denom in every case, one form per value, the sign printed once. The layout (item 2), the
+> read-only members (item 3) and the core's home (item 1) stand; item 3's "its ToString renders them" now renders
+> them as the number they are.
+
 ## D-199 — `complex<T>` over flt and tfp elements; Smith's division — **SETTLED (1.3.0 batch, user-ratified)**
 
 `T` ∈ {`flt32`, `flt64`, `tfp32`, `tfp64`} (§21's `fix*` names obsolete
@@ -22554,6 +22563,15 @@ members' description (its example "-2 5/8" stands: it is −2.625 now, as a read
 A COMPUTED ANSWER changes for every negative `frac` with a fraction — its print, its `.whole`, its `.num` — and no
 program of the tree, the libraries or the applications reads a negative frac's parts (measured by the sweep at the
 landing); the fuzzer's `ty1657` expects the old print and is told in advance.
+
+> **Landing note (2026-10-08, 1.6.1e landing 97 — DEF-231 FIXED):** built as "What it changes" says, by
+> `nitpick-compiler_31`, landed by `nitpick-compiler_32`: `npk_frac_norm`'s last block shares the sign (a positive
+> whole beside a negative fraction borrows one, a negative whole beside a positive fraction carries one; a zero whole
+> keeps the fraction's sign, a zero fraction the whole's), the four `ToString` impls print |num| beside a nonzero
+> whole, `emit_frac_cast`'s integer exit is the whole field, `frac_basic.npk` expects the form, and the new
+> `frac_parts.npk` reads −(1 3/8) as {−1, −3, 8} printing "-1 3/8", −3/8 by three routes as one form, both casts, the
+> order unchanged and `frac64` alike. `npk_frac_cmp` needed no change: it compares improper forms, one number under
+> either form. The fuzzer's `ty1657` exits 0. The measurements are in `1.6.1e.md`'s record of landing 97.
 
 ## D-348 — A `fixed` SLICE IS READ-ONLY THROUGH IT: D-074'S PROMISE MADE TRUE — THE WRITE REFUSAL NOW, `fixed T[]` AS A TYPE AS ITS SECOND STEP — **SETTLED (user decision, 2026-10-08: "your recommendations are fine with me")**
 

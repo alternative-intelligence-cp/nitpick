@@ -4525,23 +4525,12 @@ func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             drop irw_line(x.fe.w, raw cat5(fs, " = fadd double ", fw, ", ", fq));
             pass (raw iv(move(want.text), move(fs), wid));
         }
-        // → intN: truncation toward zero — whole, plus one when whole is
-        // negative and num nonzero.
-        string:ineg = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(ineg, " = icmp slt ", scll, " ",
-                          string_concat(sw, ", 0")));
-        string:inz = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(inz, " = icmp ne ", scll, " ",
-                          string_concat(sn, ", 0")));
-        string:iboth = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(iboth, " = and i1 ", ineg, ", ", inz));
-        string:iadj = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(iadj, " = zext i1 ", iboth, " to ",
-                          scll));
-        string:iw = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(iw, " = add ", scll, " ",
-                          raw cat3(sw, ", ", iadj)));
-        string:irz = raw tbb_resize(x, scll, iw, want.text, true);
+        // → intN: truncation toward zero IS the whole field (D-347, landing
+        // 97: whole and num carry one sign, so the whole is the value
+        // truncated toward zero). Under the floor form this added one when
+        // the whole was negative and the fraction nonzero -- the correction a
+        // stored form needed that the readable form does not.
+        string:irz = raw tbb_resize(x, scll, sw, want.text, true);
         pass (raw iv(move(want.text), move(irz), wid));
     }
 

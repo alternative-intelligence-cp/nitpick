@@ -1,0 +1,112 @@
+// expect-exit: 0
+//
+// A `frac`'S STORED PARTS ARE ITS READABLE PARTS (D-347; DEF-231, 1.6.1e
+// landing 97; the fuzzer's `ty1657`). Whole and num carry one sign, the value
+// is whole + num/denom in every case, one value has one form, and the print
+// shows the sign once: −1 3/8 is {−1, −3, 8} and prints "-1 3/8". Until this
+// landing the normaliser borrowed from the whole so num was never negative
+// beside a nonzero whole -- {−2, 5, 8}, printed "-2 5/8", read as −2.625 --
+// and −3/8 had TWO forms: {−1, 5, 8} from `(-1) + 5/8` (printed "-1 5/8") and
+// {0, −3, 8} from `1/8 - 1/2`; `==` said equal, the parts differed. Every case
+// below reads the parts, the print, the integer and float casts.
+mod:frac_parts;
+
+func:v32 = int32(int32:x) never fails { pass x; };
+func:f = frac32(int32:x) never fails { pass (raw v32(x) => frac32); };
+
+func:parts = bool(frac32:x, int32:w, int32:n, uint32:d) never fails {
+    if (x.whole != w) { pass false; }
+    if (x.num != n)   { pass false; }
+    if (x.denom != d) { pass false; }
+    pass true;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    frac32:one = raw f(1i32);
+    frac32:two = raw f(2i32);
+    frac32:three = raw f(3i32);
+    frac32:five = raw f(5i32);
+    frac32:eight = raw f(8i32);
+    frac32:half = one / two;
+    frac32:eighth = one / eight;
+
+    // −(1 3/8): the parts, the print, the casts.
+    frac32:m138 = -(one + (three / eight));
+    if (!(raw parts(m138, 0i32 - 1i32, 0i32 - 3i32, 8u32)))       { exit 10i32; }
+    if (!(string_equals(`&{ m138 }`, "-1 3/8")))                   { exit 11i32; }
+    if ((m138 =>! int32) != (0i32 - 1i32))                         { exit 12i32; }
+    if ((m138 =>! flt64) != (0.0f64 - 1.375f64))                   { exit 13i32; }
+
+    // −(2 5/8) prints "-2 5/8" and IS −2.625.
+    frac32:m258 = -(two + (five / eight));
+    if (!(raw parts(m258, 0i32 - 2i32, 0i32 - 5i32, 8u32)))       { exit 14i32; }
+    if (!(string_equals(`&{ m258 }`, "-2 5/8")))                   { exit 15i32; }
+    if ((m258 =>! int32) != (0i32 - 2i32))                         { exit 16i32; }
+    if ((m258 =>! flt64) != (0.0f64 - 2.625f64))                   { exit 17i32; }
+
+    // −3/8 by three routes: one form, one print.
+    frac32:a = (-one) + (five / eight);
+    frac32:b = eighth - half;
+    frac32:c = -(three / eight);
+    if (!(raw parts(a, 0i32, 0i32 - 3i32, 8u32)))                  { exit 18i32; }
+    if (!(raw parts(b, 0i32, 0i32 - 3i32, 8u32)))                  { exit 19i32; }
+    if (!(raw parts(c, 0i32, 0i32 - 3i32, 8u32)))                  { exit 20i32; }
+    if (!(string_equals(`&{ a }`, "-3/8")))                        { exit 21i32; }
+    if (a != b)                                                    { exit 22i32; }
+    if ((a =>! int32) != 0i32)                                     { exit 23i32; }
+
+    // The positive twins, unchanged by the rule.
+    frac32:p138 = one + (three / eight);
+    if (!(raw parts(p138, 1i32, 3i32, 8u32)))                      { exit 24i32; }
+    if (!(string_equals(`&{ p138 }`, "1 3/8")))                    { exit 25i32; }
+    if ((p138 =>! int32) != 1i32)                                  { exit 26i32; }
+    if (!(string_equals(`&{ three / eight }`, "3/8")))             { exit 27i32; }
+
+    // Borrow and carry: 1 − 3/8 is 5/8, and (−2) + 11/8 is −5/8.
+    frac32:borrow = one - (three / eight);
+    if (!(raw parts(borrow, 0i32, 5i32, 8u32)))                    { exit 28i32; }
+    frac32:carry = (-two) + ((raw f(11i32)) / eight);
+    if (!(raw parts(carry, 0i32, 0i32 - 5i32, 8u32)))              { exit 29i32; }
+    if (!(string_equals(`&{ carry }`, "-5/8")))                    { exit 30i32; }
+
+    // A negative integer and zero keep their forms; so does ERR.
+    frac32:m1 = -one;
+    if (!(raw parts(m1, 0i32 - 1i32, 0i32, 1u32)))                 { exit 31i32; }
+    if (!(string_equals(`&{ m1 }`, "-1")))                         { exit 32i32; }
+    frac32:z = one - one;
+    if (!(string_equals(`&{ z }`, "0")))                           { exit 33i32; }
+    frac32:e = ERR;
+    if (!(string_equals(`&{ e }`, "ERR")))                         { exit 34i32; }
+
+    // The order is unchanged: −2 5/8 < −1 3/8 < −3/8 < 0 < 5/8 < 1 3/8.
+    if (!(m258 < m138))                                            { exit 35i32; }
+    if (!(m138 < a))                                               { exit 36i32; }
+    if (!(a < z))                                                  { exit 37i32; }
+    if (!(z < borrow))                                             { exit 38i32; }
+    if (!(borrow < p138))                                          { exit 39i32; }
+
+    // frac64 renders the same way.
+    frac64:w = -((raw v32(7i32) => frac64) + ((raw v32(2i32) => frac64) / (raw v32(3i32) => frac64)));
+    if (!(string_equals(`&{ w }`, "-7 2/3")))                      { exit 40i32; }
+    if (w.whole != (0i64 - 7i64))                                  { exit 41i32; }
+    if (w.num != (0i64 - 2i64))                                    { exit 42i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 90i32; },
+        (TbbErr)            { exit 89i32; },
+        (CastRange)         { exit 88i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 99i32;
+};

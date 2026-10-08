@@ -1773,10 +1773,17 @@ is AUTOMATIC after every operation, never a call:
 
 - **Operators are `+ - * /` and the comparisons, exactly** — no `%`, no
   bitwise. Same-width only. Negation is unary `-` (through the same core).
-- **The five invariants hold after every operation**: denom > 0; num ≥ 0
-  when whole ≠ 0; num < denom; gcd(num, denom) = 1; the sign rides whole
-  (or num when whole = 0). "Call `frac_simplify` yourself" was a latent-ERR
-  generator and is gone.
+- **The invariants hold after every operation** (D-347, landing 97): denom >
+  0; |num| < denom; gcd(|num|, denom) = 1, and denom = 1 when num = 0;
+  **whole and num never have opposite signs** (one may be zero); and **the
+  value is whole + num/denom in every case** — so whole is the value
+  truncated toward zero, the fraction carries the value's sign as well, and
+  one value has ONE form: −1 3/8 is {−1, −3, 8}, −3/8 is {0, −3, 8} however
+  it was computed. "Call `frac_simplify` yourself" was a latent-ERR
+  generator and is gone. *[Until landing 97 this read "num ≥ 0 when whole ≠
+  0; the sign rides whole (or num when whole = 0)" — the floor form, in which
+  −1 3/8 was {−2, 5, 8} and printed "-2 5/8", and −3/8 had two stored forms
+  (DEF-231).]*
 - **ERR** is `{minN, minN, 0}` canonically, and `is_err` answers the
   disjunction — whole or num at the width's most-negative, or denom 0 — so a
   partially-forged state reads as ERR too. Sticky, D-144 discipline;
@@ -1788,14 +1795,22 @@ is AUTOMATIC after every operation, never a call:
   ratio is division. No `pick` selectors — ERR is the only nameable case,
   and `is_err` is the look.
 - **Members `.whole` / `.num` / `.denom`** are read-only component views
-  (values, not places — the invariants cannot be broken through them).
+  (values, not places — the invariants cannot be broken through them), and
+  they are the READABLE parts (D-347): `.whole` is the value truncated
+  toward zero, `.num` is signed like it, so `whole + num/denom` is the value
+  with no special case — −1 3/8 answers −1, −3, 8.
 - **Casts**: widths widen `=>`, narrow `=>!` (absorbing as ERR when the
   reduced form does not fit); `frac =>! flt64` rounds (the acknowledged
   form — this section's old `frac_to_flt64` implied a checked conversion,
   corrected at ratification); `frac =>! intN` truncates toward zero; ERR
   traps under BOTH spellings on any exit; a float never enters, and the
   other twisted families are reached through the plain integer.
-- **`ToString`**: "whole num/denom" — "3 1/3", "-2 5/8", "0", "ERR".
+- **`ToString`**: the mixed number, the sign shown ONCE — "3 1/3", "-2 5/8"
+  (which is −2.625, as a reader takes it), "-3/8", "0", "ERR": the whole
+  carries the sign and the fraction beside a nonzero whole is printed as its
+  magnitude (D-347); a fraction with no whole carries its own. `Debug` prints
+  the same. *[Until landing 97 the stored parts were printed as they were, so
+  −1 3/8 printed "-2 5/8" (DEF-231).]*
 - **The implementation is the PRELUDE's** (1.3.5): one `int256` core —
   `npk_gcd256`, `npk_frac_norm`, the four operations, `cmp` — with the
   width's bounds as parameters; the emitter unpacks, calls, and repacks.
