@@ -17279,6 +17279,15 @@ probe's comment carries the count).
 > as this decision said of the statement form. The expression form had left the moved-in value
 > on the list, and the statement's end dropped the whole enum after an arm had taken its payload.
 
+> **Note (2026-10-08, 1.6.1e landing 94 — DEF-227, the library listener's F-037):** a temporary is
+> registered ONCE, by the one site that produces its value. The explicit `dyn` cast (`x => dyn T`)
+> lowers through `emit_fit`, whose transfer registers the cell exactly as the implicit coercion's
+> does, and the cast NODE was also on `temp_producer`'s list — the same cell under two entries of
+> one name. A consumer takes one entry per name, so the binding kept the cell and the statement's
+> end freed it: `dyn Speaks:d = move(l) => dyn Speaks;` read freed memory through `d` at both legs,
+> and a function that returned freed the cell again. The cast is not a producer now; a cast that
+> `emit_fit` hands back unchanged produces nothing, and its operand's own registration stands.
+
 ## D-247 — `List<T>` is compiler-known and OWNING — **SETTLED (ratified with 1.5.1b; landed at step 5, 2026-09-04)**
 
 The compiler's own growable collection (`src/frontend/list.npk`, 1.4.7's

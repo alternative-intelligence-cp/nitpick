@@ -290,6 +290,8 @@ already does."
 | **S-126** — A FLOAT LITERAL THAT DOES NOT FIT: INFINITY AND ZERO (raised 2026-10-01 by `nitpick-compiler_25`; DEF-205), AND THE 15-DIGIT RULE AFTER DEF-203. The recap: D-148 (settled at 0.9.9) says a numeric literal's value "must fit its type", verified at the literal (NITPICK-TYPE-031) — "the number in the program was not the number written, the exact drift this language exists to make impossible"; its table hands floats to D-143 (0.9.4), which gives `flt32` literals a 15-significant-digit limit and no range rule. So today `1.0e39f32` and `1.0e999f64` are +infinity and `1.0e-60f32` is 0.0, each in silence; and the 15-digit limit's stated reason (two roundings equal one below 16 digits) is false (DEF-203), while the fix for that — the compiler's own exact conversion — makes every `flt32` literal the nearest float whatever its length. | **SETTLED 2026-10-01 as D-346** (the user: "all the recommendations look fine to me. lets go with those."): (a) refuse a float literal that rounds to infinity, and a nonzero one that rounds to zero (`NITPICK-TYPE-031`, both widths; a subnormal result stays); (b) lift the 15-digit rule on `flt32` literals. *Until then:* OPEN — the user's. DEF-203 LANDED (88): the conversion exists at both widths and reports both answers, unread; the 15-digit rule is asked of every spelling of a literal while it stands (DEF-206). (a) is one test of each flag, (b) deletes the `flt32` half of `float_text_ok`; either is a refusal moved and goes in an advance notice. | **(a) Refuse a float literal that rounds to infinity, and a nonzero one that rounds to zero** (NITPICK-TYPE-031, both widths): neither is a rounding of the number written in any useful sense — an epsilon that is zero divides by zero, a limit that is infinite limits nothing — and infinity is spelled by computing it. A subnormal result is ordinary rounding and stays. **(b) Lift the 15-digit rule once DEF-203 lands**: it protects nothing then, and refusing `0.1234567890123456f32` while accepting its fifteen-digit prefix is a rule a reader cannot derive. The alternative for (b): keep it as a style limit (a `flt32` holds about seven digits; sixteen written ones claim a precision the type has not). |
 | **S-127** — MAY AN ENUM'S PAYLOAD-LESS VARIANT BE A CONSTANT OUTSIDE THE EVALUATOR: a module binding, and a `comptime(…)` value (raised 2026-10-01 by `nitpick-compiler_28` with D-338's landing). The recap: D-165 (settled at 1.0.9) says a module-level binding's initialiser is a compile-time constant — "a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`" — decided by whether the compile-time evaluator folds it. Until D-338 the evaluator held no enum value, so `fixed Ordering:O = Ordering.Less;` was NITPICK-TYPE-035 and `comptime(Ordering.Less)` NITPICK-TYPE-004. D-338 (2026-09-30) gave the EVALUATOR the value — to compare, and to select on with `pick` — and said "nothing else is added", so landing 90 kept both refusals exactly as they were (the second with its own sentence): every other kind of value the evaluator holds can leave it, and this one cannot. | OPEN — the user's. Landing 90 forecloses neither answer: the value is in the evaluator (`CV_ENUM`), and the two refusals are one test each (`const_init_verdict`, `type_comptime`). | **Admit it, in both positions, as its own landing**: a module binding (and a struct's or an array's member) initialised with a payload-less variant, and `comptime(expr)` whose value is one. The constant is the tag the variant already has (`i32`, or the enum's aggregate with a zeroed payload) — the value `Enum.Variant` builds at run time. It is the same rule D-165 already states ("constant exactly when the folder folds it"), it removes the one kind the forcing form computes and refuses, and after the permanent freeze it could not be added. The alternative: leave it out for good — an enum constant is then written as a function or a number. |
 | **S-128** — IS A `comptime func:` ALSO A RUN-TIME FUNCTION (raised 2026-10-01 by `nitpick-compiler_28`; DEF-214, found writing D-338's tests). The recap: `comptime` on a declaration "is the marker that says a function may run at compile time" (D-130, settled at 0.6.7), and MACRO_REFERENCE §10 has listed "what may a `comptime func:` call" as unsettled since then. What the compiler DOES: the checker types a `comptime func:` and a call of it like any other, and the emitter emits no `comptime func:` at all (since 1.0.9c) — so a call outside a constant context (`int32:v = raw dbl(x);` with `dbl` a `comptime func:`) compiles and is refused by `llc` as an undefined symbol, at both legs, on every compiler since (probes `t1`, `t2`). The program is refused either way; by the wrong tool, with no sentence. | OPEN — the user's. DEF-214 lands on the answer. | **No: a `comptime func:` exists at compile time only, and a call of one outside a constant context is refused by name** (the checker, at the call: inside `comptime(…)`, a constant site — an array size, a module initialiser — or another `comptime func:`'s body it is evaluated; anywhere else it is refused, and the sentence says to write `comptime(…)` or an ordinary function). One body then never has two executions that must agree, the evaluator's and the machine's — the class DEF-29, DEF-130 and DEF-196 came from — and the marker means one thing (the blueprint rule). The alternative, R2: emit it as an ordinary function as well, so the same declaration runs at both times; every `comptime func:` is then held to the run time's answer by tests forever, as D-338's twin tests hold two. |
+| **S-129** — IS A `fixed` SLICE READ-ONLY THROUGH IT (raised 2026-10-07 by `nitpick-compiler_31`; DEF-230, the library listener's F-047). The recap: D-074 (settled at 0.7) retired the `binary` type because "immutability is a BINDING property in Nitpick rather than a type property, so an immutable byte view is `fixed uint8[]`" — TYPE_REFERENCE §22 teaches exactly that; D-287 (1.5.5) made a `fixed` binding addressless (TYPE-071) and DEF-106's TYPE-086 refuses a write into a PART of one, and both stop at a pointer, slice or handle base, "the storage there is not the binding's own". So today a callee declaring `fixed uint8[]:v` writes `v[0] = 9` and the caller's bytes change (measured at `93bcb66`, both legs), which is what D-287 says and the opposite of what D-074 promised. Measured: every `fixed uint8[]` in the tree (seven files) is the `Writer` trait's `write` parameter and none writes through it; no library uses a fixed slice view. | OPEN — the user's. DEF-230 lands on the answer. | **R1: make D-074's promise true, in two steps.** (i) A write through a `fixed` slice — an element, a range, `@`/`$$m` of its elements, a stateful operation on one — is refused (TYPE-086, `place_fixed` walking into a slice base when the slice binding is `fixed`); pointers and handles stay as D-287 has them (an address is not a view). This closes F-047's two programs and refuses nothing that exists. (ii) `fixed T[]` becomes a TYPE — a read-only view: `T[]` converts to it implicitly (fewer rights), never back, so a `fixed uint8[]` cannot be handed to a plain `uint8[]` parameter whose callee writes; the hole (i) leaves. A language change before the freeze, its own landing after the wrong answers. The alternatives: R2, (i) alone, the pass-through hole documented; R3, correct D-074's sentence instead — `fixed` fixes the binding, a view's bytes are the viewed storage's — and the reference stops promising an immutable byte view. Against the no-surprises rule a signature that says `fixed` and lets the callee write is the worse reading. |
+| **S-130** — THE PERFORMANCE FINDINGS OF THE LIBRARY SEAT'S BENCHMARK ROUNDS (raised 2026-10-07 by `nitpick-compiler_31`; the listener's O-N36 Gemini Findings 01–03, O-N37 Finding 04, O-N38 items 2–3, O-N39; registered, not decided — every answer is right, and performance is subordinate to safety). The recap, as measured by the listener and its subagent: (1) THE FLOOR IS BUILT AT -O0 (`nitpick.toml`'s `llc-flags`), its `memset` a byte loop; a 10 MB zeroing loop's verified build runs 120,076,387 instructions against an optimized build's 1,326,407, and with the floor through `opt -O2` + `llc -O2` 1,589,667; `alloc_churn`'s allocator 1,245,083,684 → 300,030,724 (C 143,173,989); binary-trees at depth 16: 14,499,678,447 (4.36× gcc) → 6,207,367,212, the -O0 floor 57% of the total; 13_strings: the -O0 floor is 86% of the gap to C. Four floor symbols had to lose `internal` for `opt` to keep them (`npk_start`, `npk_start_main`, `npk_fs_stack_top`/`_limit`). (2) A CHECKED PATH BESIDE THE `{ T, i32 }` ENVELOPE DEFEATS INLINING: `update` (three checked `int64` adds returning a 48-byte struct) costs 240 against LLVM's -O2 threshold 225 and is not inlined — with `+%` it costs 15 and is; `parse_int`'s `decreases s.len - i` survives -O2 at 5 instructions per trip and raises its cost 105 → 305 (964,019,277 instructions against 204,019,261 with `unbounded`; the verified build's 4.7× is the elided check); Collatz's checked `3x+1` keeps the parity test a branch (9.8% mispredicted, 602 ms against clang's 197; `+%` makes it a `cmov`, 236 ms); the envelope repack after a recursive call blocks tail-call elimination (Ackermann(3,10): 44,698,325 calls against 22,345,074). (3) THE ALLOCATOR: a free costs 708.5 instructions on the shipped floor (the 0xAA fill 181, `npk_chtab_find`'s search 227.5, `npk_small_check` 87 plus 41 of guards, `npk_lg_find` 56, the mutex 19) against glibc's 105.1, an allocation 201.9 against 75.7; the heap counters run without `NPK_HEAP_STATS` (1.75%) and the mutex is taken in single-threaded programs (3.92%). (4) COMPILE SPEED at `93bcb66`: `src/npkc.npk` 18.10 s and 173,620 KB; nitpick-time's lib 0.33 s, 4.22 s with `--obligations` (12.8×, all CPU, no solver started). | OPEN — the user's; nothing is blocked. | **Decide (1) now, the rest in the examination phase.** (1) Build the floor through the pinned `opt -O2` + `llc -O2`: the floor's evidence is over its IR TEXT (the spec's rows, the models, the explorer's transformer all read `npkrt.ll`), so the object's optimisation moves no row — to be MEASURED by the landing: the 388 rows re-decided, D-303's sweep, every `// stress:` program, the four symbols' `internal` read before it is lifted; a D-204 pin change (the flag lists) announced in advance. (2) and (3) are language-shaped (the envelope, the overflow checks, the measure check, the poison fill and chunk checks are safety instruments by decision) and belong to the post-1.6 examination with the inline threshold measured as a pin candidate; the mutex in a single-threaded program and the counters are small (5.7% together) and stay until measured against the explorer. (4) `--obligations` 12.8× is the encoder's own cost and is read with E-4/E-6's residue work. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2) — **CLOSED as a queue at the 1.5 close (2026-09-25): every entry DEF-1…DEF-94 carries its disposition — FIXED with its landing, or SETTLED by a decision (DEF-19/20 → D-260/261, DEF-36 → D-285, DEF-38 → D-284); a defect found from here goes to the cycle that finds it**
 
@@ -3144,7 +3146,9 @@ defect declares a `DEF-` in §2f.
 > should not accept; and once the freeze is permanent a scan can be widened and never tightened. **Recommended:**
 > both scans are held to the production (LEX-003 for an integer run, LEX-009 for a float's), a unit case each
 > (D-085: a lexer refusal is never a rejection file). Exposure measured 2026-09-30: no file of the tree, `lib/`,
-> nitpick-libs or nitpick-apps writes one (3,727 `.npk` files scanned). With step 3d.
+> nitpick-libs or nitpick-apps writes one (3,727 `.npk` files scanned). With step 3d. *[2026-10-07:
+> the library listener's F-036 (b), O-N36, is this shape -- `10_i32` accepted against the DecimalLiteral
+> production, measured at `5fbaf4a` and `93bcb66`; registered here, not as a new number.]*
 
 > **DEF-191 — FIXED at 1.6.1e step 3a (2026-10-01; found by `nitpick-compiler_24` writing DEF-189's test, the
 > turbofish case; a silent wrong answer on every compiler since 1.0.2b). A GENERIC CALL REACHED THE FIRST INSTANCE
@@ -3734,6 +3738,150 @@ defect declares a `DEF-` in §2f.
 > compile are the `if` form, `?!` and `?| #unreachable()`. To be READ before it is built: `checked` is a PERMISSION
 > and intersects, so the step is `must`'s twin under the same exhaustiveness condition, and a wrong answer towards
 > `checked` admits a tainted read (D-007). Queued by severity (a refusal, no wrong answer); not started.
+
+> **DEF-227 — FIXED 2026-10-08 (landing 94, `nitpick-compiler_31`; the library listener's F-037 in its O-N36,
+> found by nitpick-fuzz M11 session 9, measured by the listener at `9126350`, `c3bdae2` and `93bcb66` and here at
+> `93bcb66`, both legs). A TRAIT OBJECT BUILT BY THE EXPLICIT CAST READ FREED MEMORY: USE AFTER FREE IN SAFE CODE.**
+> -- `dyn Speaks:d = move(l) => dyn Speaks;` then `d.say()` answered the allocator's 0xAA poison (170 for 7), with and
+> without `move`, over a POD and over a struct owning a `string`, while the implicit coercion `dyn Speaks:d =
+> move(l);` and the direct call answered 7. The cast lowers through `emit_fit`, the one path the implicit coercion
+> takes, and `emit_fit`'s transfer registers the cell as the statement's temporary (D-246); the cast NODE was also in
+> `temp_producer`'s list, so the same cell was registered a second time under the cast's own name. `fnem_temp_take`
+> takes ONE entry per name ("the same name never names two live ones" -- true of every producer but this one), so the
+> binding took one registration and the statement dropped the other at its end: a read through `d` after the
+> statement was a read of freed storage, and the scope's exit freed the cell again (in a function that returns, the
+> parent trips the allocator's check: exit 95 at both legs). The fix is the list: a `dyn` cast is not a producer --
+> its cell is `emit_fit`'s registration, and a cast that changes nothing produces nothing. `dyn_cast_owner.npk`:
+> nine roads (a declaration with and without `move`, an owning struct, an assignment over a live `dyn`, a lent and a
+> moved call argument, a return, a field store, a temporary nobody takes, a coroutine across a suspension) and the
+> two controls, each in a function that returns; exit 0 at both legs, 95 on the parent. No refusal added or
+> removed; the emitted text moves for every program holding an explicit `=> dyn` cast (the second slot, flag and
+> stores gone).
+
+> **DEF-228 — OPEN (2026-10-07; owner: the compiler seat; the library listener's O-N38 item 1, found by its
+> benchmark round; measured by the listener at `93bcb66` and `5fbaf4a`, here at `93bcb66`, both legs). THE
+> TEMPLATE SPLICE `&{ }` LEAKS ITS `to_string` TEMPORARY.** `string:s = \`n&{i}\`;` run 1,000 times prints
+> `heap: allocated=27890 peak_live=24004 count=2000` under `NPK_HEAP_STATS`, where the explicit
+> `string_concat("n", int_to_string(i))` prints `peak_live=28`: `emit_template` (ir_expr.npk) calls `emit_tostring`
+> for a non-string item, hands the owned result to `npk_string_concat`, which copies both operands and frees neither,
+> and drops nothing -- one owned block per spliced value and one per intermediate concatenation, never freed and
+> invisible to D-151 (managed storage). The template's FINAL value is a statement temporary (`temp_producer` lists
+> the literal); its intermediates are nobody's. SILENT (a leak). The reproductions are the listener's `tleak.npk` /
+> `tleak_x.npk` (its workbench's `.internal/bench-2026-10-05/leak/`); no library uses `&{ }` (its measurement). Planned
+> as landing 95: each `to_string` result and each replaced intermediate registered as the statement's temporary
+> (D-246's own mechanism), the final value registered once as today.
+
+> **DEF-229 — OPEN (2026-10-07; owner: the compiler seat; the library listener's F-041 in O-N36; measured by the
+> listener at three compilers and here at `93bcb66`). THE COMPILER DOES NOT TERMINATE ON AN UNBOUNDED GENERIC
+> INSTANTIATION.** `func:deep<T> = int32(move T:x) never fails { Box<T>:b = Box{ v: move(x) }; pass (raw
+> deep::<Box<T>>(move(b))); }` called at `int32`: no exit in 60 s here at 1.16 GB resident (the listener: 4.4 GB at
+> 300 s), no output. TRAITS_REFERENCE:586 promises the cap of 64 "with the instantiation stack printed"; the cap
+> that exists (`NITPICK-TYPE-018`, `resolve_named`'s `r.depth` against `GENERIC_DEPTH`) bounds the RESOLVER's
+> recursion through nested type arguments, and the emitter's transitive monomorphization -- `fninst_concrete`
+> (ir_expr.npk) records the concrete instance a specialization's call asks for, and `emit_program`'s loop re-reads
+> the table's count -- consults no depth at all, so `deep<Box<Box<…>>>` is recorded without end. The bounded control
+> (three deep) compiles and runs. A hang, not a wrong answer; a build machine can be driven into its OOM killer.
+> Planned as landing 95: the depth of a recorded instance's arguments (the type's nesting) held to `GENERIC_DEPTH`
+> at `fninst_concrete`, refused by name with the instance chain -- the one constant, as type_resolve.npk's comment
+> promised ("Phase B's monomorphizer inherits the same constant").
+
+> **DEF-230 — OPEN, WITH S-129 (2026-10-07; owner: the user, then the compiler seat; the library listener's F-047
+> in O-N36; measured by the listener at three compilers and here at `93bcb66`, both legs). A WRITE THROUGH A
+> `fixed uint8[]` LANDS.** `func:m11w = NIL(fixed uint8[]:v) never fails { v[0i64] = 9u8; pass NIL; };` called over
+> `arr[0i64...4i64]` changes `arr[0]` in the caller (exit 10 at both legs; a local `fixed uint8[]` view written
+> likewise); a `fixed int32` written again is ASSIGN-002 and a plain slice parameter writes, as it may. Not an
+> accident: `place_fixed` (type_stmt.npk) answers false for an index whose base is a slice, a pointer or a handle,
+> by D-287's reading ("the storage there is not the binding's own"), so `fixed` fixes the view's header and not the
+> bytes; while D-074 retired the `binary` type on the promise that "an immutable byte view is `fixed uint8[]`",
+> which TYPE_REFERENCE §22 teaches. A silent wrong answer under the reference's reading, a documentation error under
+> D-287's: the user's decision (S-129). Measured: every `fixed uint8[]` in the tree (seven files) is the `Writer`
+> trait's `write` parameter, none written through; no library uses one.
+
+> **DEF-231 — OPEN, UNDER THE USER'S RULING (2026-10-07; owner: the compiler seat; the fuzzer's `ty1657` in O-N36,
+> found by M11's TYPE run; measured here at `93bcb66`, both legs, `wt/31a`-era probe `frac_probe.npk`). A `frac`
+> PRINTS ITS STORED PARTS, WHICH READ AS ANOTHER NUMBER, AND ONE VALUE HAS TWO STORED FORMS.** `-(1 3/8)` prints
+> "-2 5/8" (whole −2, num 5, denom 8: the normaliser's last step borrows from the whole so `num` is never negative
+> beside a nonzero whole, the prototype's rule carried into D-198), which a reader of mixed numbers takes for
+> −2.625; `-(2 5/8)` prints "-3 3/8". And −3/8 is stored as {−1, 5, 8} when computed as `(-1) + 5/8` -- printing
+> "-1 5/8", read as −1.625 -- and as {0, −3, 8} when computed as `1/8 - 1/2`, printing "-3/8"; `==` says they are
+> equal (the core compares improper forms), the parts differ, so anything that reads the parts (the members, a
+> derived `Hash`, a `Debug`) sees two values. The user ruled the print a wrong answer (2026-10-05, in
+> `nitpick-compiler_31`'s session) and the principle: everything a person or a program READS from a value shows it
+> as it would be used, never the stored form. The decision in preparation (D-347): the stored parts ARE the readable
+> parts -- whole and num of one sign (or zero), |num| < denom, value = whole + num/denom in every case, one form
+> per value; the print shows the sign once ("-1 3/8", "-3/8"); `.whole` −1, `.num` −3. Touches: `npk_frac_norm`'s
+> last block and the four `ToString` impls (prelude.npk), `emit_frac_cast`'s integer exit (the "+1 when negative"
+> goes), `frac_basic.npk`'s expectations, TYPE_REFERENCE's invariant sentence and example, D-198's dated note.
+
+> **DEF-232 — OPEN (2026-10-07; the listener's F-048 in O-N36; measured by it at `5fbaf4a` and `93bcb66`). A STRUCT
+> WITH A `NIL` FIELD IS ACCEPTED AND EMITTED AS `type { i32, void }`**, which `llc` and `opt` refuse; the control
+> without the field runs. LOUD (the wrong tool refuses). Either the checker refuses a `NIL` field by name or the
+> layout gives it no slot; to be decided by reading D-105's `NIL` rules.
+
+> **DEF-233 — OPEN (2026-10-07; the listener's F-038 in O-N36). `npkc` EXITS 3 WITH NO MESSAGE on `give` or `fall`
+> OUTSIDE A `pick` ARM.** A compiler trap where a refusal by name is owed (the resolver's or the checker's).
+
+> **DEF-234 — OPEN (2026-10-07; the listener's F-034 in O-N36), three rows of the MODULE run.** (a) An `extern`
+> method with an `int8[]`/`uint8[]` parameter generates a bridge stub the compiler refuses -- `NITPICK-TYPE-072` at
+> `<bridge-1>:10:5`, a `while` with no `decreases` in the GENERATED source (`bridge_stubs.npk`, written before
+> 1.5.8c's rule): no driver method can take a byte payload, which nitpick-sockets needs. (b) `use mod.f;` is
+> RESOLVE-002, against MODULE_REFERENCE:68/111/119 and D-273 (which lists `use nested.f;` among the forms). (c) A
+> constant cycle's RESOLVE-006 never names the cycle. All loud.
+
+> **DEF-235 — OPEN (2026-10-07; the listener's F-036 (a) and F-029 in O-N35/O-N36; measured at `9126350`,
+> `5fbaf4a` and `93bcb66`). KEYWORDS ACCEPTED AS DECLARED NAMES AND THEN UNUSABLE: DEF-103's SHAPE, TWICE MORE.**
+> `acquire`, `any`, `trit` and `nit` are accepted as a module-level function's name and every call of one is
+> PARSE-002 (DEF-103, 1.6.0 step 3g, exempted METHOD names and these four are the names that intern themselves
+> only after a `.`); and `wild int8->:buffer = alloc(16i64);` compiles while `int64:buffer` is refused at its
+> declaration -- its first use is PARSE-002, so the block can never be freed. F-036 (b), `10_i32` accepted against
+> the DecimalLiteral production, is DEF-190's shape (a trailing `_`) and is recorded on it.
+
+> **DEF-236 — OPEN (2026-10-07; the listener's F-039 and F-042 in O-N36), four rows of the AST and TRAITS runs.**
+> (a) A `comptime` VALUE PARAMETER passes the checker and is EMIT-002. (c) A non-constant `joins` deadline is
+> accepted (D-182 asks a constant). (d) An unknown attribute name is accepted and ignored. (e) `opaque struct` is
+> accepted at module level, against AST_REFERENCE:43 and TRAITS_REFERENCE:368 (F-042 is the same row). F-039 (b) is
+> not a defect: `<|` takes its function on the RIGHT, as `|>` does, and corrects F-031's pipe row (DEF-239).
+
+> **DEF-237 — OPEN (2026-10-07; the listener's F-045 in O-N36). `??` ON A `Result` IS TYPE-007 WITH ADVICE NAMING
+> THE RETIRED `?`** ("`?` is the one that unwraps a `Result`"): followed, the advice is PARSE-011 (D-175). A
+> diagnostic's text; `?!`/`?|` are the spellings.
+
+> **DEF-238 — OPEN (2026-10-07; the listener's F-046 in O-N36), two TYPE rows.** (a) A frac `.num` assignment
+> passes the checker and is EMIT-002 (D-198: the members are read-only views; the refusal is the checker's to make,
+> by name). (b) A `fixed` PARAMETER can be reassigned inside its callee (the ASSIGN-002 the bindings analysis gives a
+> local is not asked of a parameter); no effect outside the callee.
+
+> **DEF-239 — OPEN, DOCUMENTATION (2026-10-07; the listener's F-030, F-031, F-032 in O-N35, F-033, F-035, F-040,
+> F-043, F-044 in O-N36, and O-N39's two rows; each checked by it against `93bcb66`). REFERENCE SENTENCES THE
+> COMPILER CONTRADICTS, BY FILE:** MEMORY_REFERENCE 8 rows (F-030: `wildx_alloc`'s example, `#wild_ptr`'s argument
+> and its acceptance outside `wild`, `= nodrop alloc(...)`, the move example's `malloc`/`free`/`buffer`/NITPICK-019,
+> the bare `?` fallback twice, the un-destroyed arena "leak" stale since D-183) plus O-N39's MEMORY:370–371 (the
+> heap described as single-threaded; `npk_dalloc`/`npk_alloc_impl` lock `@npk_heap_mx`); OP_REFERENCE 5 rows
+> (F-031: `**`, the ternary's `is (cond)`, the pipe examples -- read with DEF-236's correction -- and OP:171's `?`);
+> CONTROL_REFERENCE 6 rows (F-032: `println`, the removed `MyMacro!(a, b) where` pattern, §4.2's IF-001/IF-002/
+> WHEN-001 the compiler never emits, `ok()` removed by D-097); MODULE_REFERENCE 7 (F-033); LEXICAL_REFERENCE 6
+> (F-035); AST_REFERENCE 18 (F-040); TRAITS_REFERENCE 13 (F-043); TYPE_REFERENCE 32 (F-044: §6's `tbb128`/`tbb256`
+> alignment 8 against §5's 16, §15's layouts -- `vec3` 32 bytes, `matrix<int64>` 40, `tensor<int64>` 104 -- a
+> never-fails function emitted as `{ i32, i32 }`, §28's IR columns, eight IR rows whose patterns are absent) plus
+> O-N39's TYPE:1583 (§12.2's `%Arena = type { ptr, i64, i64 }` where the compiler emits `npk_arena_make(i64, i64)`
+> returning `{ ptr, ptr, i64, i64, i64 }`; BUILTIN_REFERENCE's `arena_make` row is right). The rows live in
+> nitpick-fuzz's `findings/F-0NN-…/` at `d44dfe3`. A doc-sync landing, each row READ against the tree before it is
+> corrected: a row may be the compiler's defect on reading (a code the reference promises and the compiler never
+> emits is one or the other).
+
+> **DEF-240 — OPEN (2026-10-07; the listener's observation in O-N36). `npkg`'s UNKNOWN-STAGE REFUSAL
+> (`npkg/manifest.npk:274`) OMITS `explore`**, which `manifest.npk:41` accepts: the list the refusal prints is not
+> the list the reader reads.
+
+> **DEF-241 — OPEN (2026-10-07; owner: the compiler seat; found by `nitpick-compiler_31` probing DEF-228's
+> lowering, `tpl_one.npk`; measured at `93bcb66`). A TEMPLATE WHOSE ONLY ITEM IS A STRING ALIASES IT.**
+> `string:t = \`&{ s }\`;` hands `t` the HEADER of `s` -- `emit_template` passes a lone item through as the
+> template's value and the producer rule registers that header as the statement's temporary -- so `t` and `s` are
+> one body with two owners: in a function that returns, the scope's exit frees it twice and the allocator's check
+> traps (exit 95, `Unreachable`, at both legs); in `main` the second free waits for the first `exit`. A lone
+> string-typed CALL item is the same shape with the call's own registration beside the template's (F-037's double
+> registration again). SILENT (a memory fault in safe code). Fixed with DEF-228 in landing 95: a lone item is
+> COPIED (`npk_string_concat` with the empty header), so the template's value is always a body of its own.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

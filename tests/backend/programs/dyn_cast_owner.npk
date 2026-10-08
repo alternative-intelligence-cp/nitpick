@@ -1,0 +1,149 @@
+// expect-exit: 0
+//
+// A TRAIT OBJECT BUILT BY THE EXPLICIT CAST IS OWNED ONCE (DEF-227, 1.6.1e; the
+// library listener's F-037). `x => dyn Trait` lowers through `emit_fit`, exactly
+// as the implicit coercion into a `dyn` slot does, and the fit registers the
+// cell as the statement's temporary; the cast node registered it a SECOND time
+// under its own name, the binding took one registration and the statement
+// dropped the other -- so `dyn Speaks:d = move(l) => dyn Speaks;` read the
+// allocator's 0xAA poison through `d` (170 for 7) and freed the cell again at
+// the scope's exit. Every road the cast's value can take is below, each in a
+// function that RETURNS so the scope's drops run; the controls are the
+// implicit coercion and the direct call, which always answered 7.
+mod:dyn_cast_owner;
+
+trait:Speaks = { func:say = int32(Self:self); };
+
+struct:Pod = { int32:v; int32:w; };
+impl:Pod:Speaks = { func:say = int32(Pod:self) { pass self.v; }; };
+
+struct:Loud = { string:name; int32:v; };
+impl:Loud:Speaks = { func:say = int32(Loud:self) { pass (self.v + (self.name.len =>! int32)); }; };
+
+struct:Holder = { dyn Speaks:s; int32:n; };
+
+func:v32 = int32(int32:x) never fails { pass x; };
+
+// (a) the declaration, moved operand (F-037's u1).
+func:road_decl_move = int32() {
+    Pod:l = Pod{ v: raw v32(7i32), w: 8i32 };
+    dyn Speaks:d = move(l) => dyn Speaks;
+    pass (relay d.say());
+};
+
+// (b) the declaration, a copied POD operand (u2).
+func:road_decl_copy = int32() {
+    Pod:l = Pod{ v: raw v32(7i32), w: 8i32 };
+    dyn Speaks:d = l => dyn Speaks;
+    pass ((relay d.say()) + l.v);
+};
+
+// (c) an owning struct behind the object (u3): "ab" is 2, so 7 + 2.
+func:road_decl_owning = int32() {
+    Loud:l = Loud{ name: string_concat("a", "b"), v: raw v32(7i32) };
+    dyn Speaks:d = move(l) => dyn Speaks;
+    pass (relay d.say());
+};
+
+// (d) an assignment over a live `dyn` binding: the old cell is dropped, the
+// new one kept.
+func:road_assign = int32() {
+    Pod:a = Pod{ v: raw v32(1i32), w: 0i32 };
+    Pod:b = Pod{ v: raw v32(7i32), w: 0i32 };
+    dyn Speaks:d = move(a) => dyn Speaks;
+    d = move(b) => dyn Speaks;
+    pass (relay d.say());
+};
+
+// (e) a call argument: lent to a by-value `dyn` parameter (the temporary is
+// the statement's and drops after the call) and moved into a `move` one.
+func:hear = int32(dyn Speaks:who) { pass (relay who.say()); };
+func:keep = int32(move dyn Speaks:who) { pass (relay who.say()); };
+func:road_argument = int32() {
+    Pod:a = Pod{ v: raw v32(3i32), w: 0i32 };
+    Pod:b = Pod{ v: raw v32(4i32), w: 0i32 };
+    int32:x = relay hear(move(a) => dyn Speaks);
+    int32:y = relay keep(move(b) => dyn Speaks);
+    pass (x + y);
+};
+
+// (f) a return: the cast's value leaves with the function.
+func:make_speaker = dyn Speaks(int32:v) never fails {
+    Pod:p = Pod{ v: v, w: 0i32 };
+    pass (move(p) => dyn Speaks);
+};
+func:road_return = int32() {
+    dyn Speaks:d = raw make_speaker(raw v32(7i32));
+    pass (relay d.say());
+};
+
+// (g) a field store, and the struct's own drop at the scope's end.
+func:road_field = int32() {
+    Pod:p = Pod{ v: raw v32(7i32), w: 0i32 };
+    Pod:q = Pod{ v: raw v32(2i32), w: 0i32 };
+    Holder:h = Holder{ s: move(p) => dyn Speaks, n: 1i32 };
+    h.s = move(q) => dyn Speaks;
+    pass ((relay h.s.say()) + 5i32);
+};
+
+// (h) the cast's value used and dropped as a statement temporary, nobody taking it.
+func:road_temporary = int32() {
+    Pod:p = Pod{ v: raw v32(7i32), w: 0i32 };
+    int32:r = relay (move(p) => dyn Speaks).say();
+    pass r;
+};
+
+// (i) the coroutine twin: the cell lives in the frame across a suspension.
+async func:road_coroutine = int32() {
+    Pod:p = Pod{ v: raw v32(7i32), w: 0i32 };
+    dyn Speaks:d = move(p) => dyn Speaks;
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    pass (relay d.say());
+};
+
+// The controls: the implicit coercion (ctl_u4) and the direct call (ctl_u5).
+func:control_implicit = int32() {
+    Pod:l = Pod{ v: raw v32(7i32), w: 8i32 };
+    dyn Speaks:d = move(l);
+    pass (relay d.say());
+};
+func:control_direct = int32() {
+    Pod:l = Pod{ v: raw v32(7i32), w: 8i32 };
+    pass (relay l.say());
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if ((road_decl_move() ?! E9) != 7i32)     { exit 10i32; }
+    if ((road_decl_copy() ?! E9) != 14i32)    { exit 11i32; }
+    if ((road_decl_owning() ?! E9) != 9i32)   { exit 12i32; }
+    if ((road_assign() ?! E9) != 7i32)        { exit 13i32; }
+    if ((road_argument() ?! E9) != 7i32)      { exit 14i32; }
+    if ((road_return() ?! E9) != 7i32)        { exit 15i32; }
+    if ((road_field() ?! E9) != 7i32)         { exit 16i32; }
+    if ((road_temporary() ?! E9) != 7i32)     { exit 17i32; }
+    if ((await road_coroutine() ?! E9) != 7i32) { exit 18i32; }
+    if ((control_implicit() ?! E9) != 7i32)   { exit 20i32; }
+    if ((control_direct() ?! E9) != 7i32)     { exit 21i32; }
+    exit 0i32;
+};
+
+error:E9;
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 9i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 90i32; },
+        (CastRange)         { exit 89i32; },
+        (DeadlineExceeded)  { exit 88i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 99i32;
+};

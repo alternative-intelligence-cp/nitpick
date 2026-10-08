@@ -507,7 +507,14 @@ func:temp_producer = bool(ExprEmitter->:x, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) { pass true; }
     if (n.kind == ExprKind.ExprRawUnwrapExpr)      { pass true; }
     if (n.kind == ExprKind.ExprRelayExpr)          { pass true; }
-    if (n.kind == ExprKind.ExprDynCastExpr)        { pass true; }
+    // A `dyn` CAST IS NOT A PRODUCER HERE (DEF-227, 1.6.1e): its cell is
+    // registered by `emit_fit`'s transfer, exactly as the implicit coercion's
+    // is, and a second registration under the cast's own name was taken once
+    // by the binding and dropped once by the statement -- `dyn Speaks:d =
+    // move(l) => dyn Speaks;` then read the allocator's poison through `d`
+    // and freed the cell again at the scope's exit (the library listener's
+    // F-037). A cast that changes nothing (`emit_fit` hands the value back)
+    // produces nothing new, and its operand's own registration stands.
     pass false;
 };
 
