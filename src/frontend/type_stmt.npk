@@ -1950,6 +1950,14 @@ pub func:report_sealed = NIL(ExprTyper->:e, int32:st, int32:fname, string:what,
     discard(raw te_error(e, raw TYPE_SEALED_WRITE(),
         string_concat(s7, " is outside it -- call a function of that module, which keeps what the seal protects"),
         at));
+    drop note_sealed_decl(e, st, fname);
+    pass NIL;
+};
+
+// THE NOTE UNDER A SEALED-WRITE REPORT: where the field was declared `sealed`.
+// One per field, under a per-write report (above) and under a struct literal's
+// ONE report for every sealed field it writes (D-337; `type_struct_literal`).
+pub func:note_sealed_decl = NIL(ExprTyper->:e, int32:st, int32:fname) never fails {
     int32:fldd = raw struct_field_decl(e, st, fname);
     if (fldd != 0i32) {
         drop diaglist_push(e.diags, raw diag_note(raw TYPE_SEALED_WRITE(), "declared `sealed` here",

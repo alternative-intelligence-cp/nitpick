@@ -3570,6 +3570,16 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
 
     // THE WINDOW ALTERNATES NAME, VALUE — one window, so the two cannot get out of
     // step the way a second parallel one could.
+    //
+    // ONE LITERAL, ONE REPORT (D-337, DEF-165): a literal that writes several
+    // `sealed` fields from outside their module is one mistake -- constructing
+    // the type outside the module that owns its invariants -- so the sealed
+    // fields it writes are COLLECTED here and reported once after the window,
+    // naming them all; a literal writing one keeps the per-field sentence. (It
+    // reported one TYPE-079 per field at one span until landing 100.)
+    int32:nsealed = 0i32;
+    int32:first_sealed = 0i32;
+    string:sealed_names = "";
     int32:i = 0i32;
     while ((i + 1i32) < cnt) decreases cnt - i {
         int32:fname = raw ast_id_at(e.ast, start, i);
@@ -3599,7 +3609,14 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
             if (!(raw refuse_hidden_touch(e, st, fname, "struct literal", n.span))) {
                 if (((raw struct_field_quals(e, st, fname)) & (raw QUAL_SEALED())) != 0i32) {
                     if (raw struct_outside(e, st)) {
-                        drop report_sealed(e, st, fname, "struct literal", n.span);
+                        if (!again) {
+                            nsealed = nsealed + 1i32;
+                            first_sealed = fname;
+                            if (nsealed > 1i32) { sealed_names = string_concat(sealed_names, ", "); }
+                            sealed_names = string_concat(sealed_names, "`");
+                            sealed_names = string_concat(sealed_names, raw intern_get(e.interns, fname));
+                            sealed_names = string_concat(sealed_names, "`");
+                        }
                     }
                 }
             }
@@ -3630,6 +3647,34 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
             }
         }
         i = i + 2i32;
+    }
+
+    // THE SEALED WRITES, REPORTED ONCE (D-337): one field keeps `report_sealed`'s
+    // sentence; several are named together, with the note under each.
+    if (nsealed == 1i32) {
+        drop report_sealed(e, st, first_sealed, "struct literal", n.span);
+    }
+    if (nsealed > 1i32) {
+        string:ts = raw type_display(e.types, e.interns, st);
+        string:m1 = string_concat("`", ts);
+        string:m2 = string_concat(m1, "`'s `sealed` fields ");
+        string:m3 = string_concat(m2, sealed_names);
+        string:m4 = string_concat(m3, " are written by this struct literal outside the module that declares `");
+        string:m5 = string_concat(m4, raw struct_decl_name(e, st));
+        discard(raw te_error(e, raw TYPE_SEALED_WRITE(),
+            string_concat(m5, "` (D-313, D-337): a `sealed` field is read anywhere and written only by its module, and a literal that writes several is ONE mistake -- call a function of that module, which keeps what the seal protects"),
+            n.span));
+        int32:k = 0i32;
+        while ((k + 1i32) < cnt) decreases cnt - k {
+            int32:fn2 = raw ast_id_at(e.ast, start, k);
+            FieldInfo:f2 = raw struct_field(@r, st, fn2, e.scope);
+            if (f2.found) {
+                if (((raw struct_field_quals(e, st, fn2)) & (raw QUAL_SEALED())) != 0i32) {
+                    drop note_sealed_decl(e, st, fn2);
+                }
+            }
+            k = k + 2i32;
+        }
     }
 
     drop check_literal_complete(e, n, st, start, cnt);

@@ -18196,6 +18196,13 @@ linked binaries differ by the linker's `.comment` string alone. So across this p
 the emission held of the objects too — and the pin stays a VERSION: the `.comment` byte is exactly the kind of difference
 a tool-binary digest would refuse every machine for.]**
 
+**[2026-10-08, measured across two BUILDS of one release by the library seat (`nitpick-libs_14`'s newcomer VM, Ubuntu
+Server 26.04.1 with the archive's `llvm-20` 1:20.1.8-2ubuntu8, following INSTALL.md at landing 99's commit `5309ede`): ALL
+SIX ladder artefacts -- `npkrt.o`, `builder.o`, `builder`, `npkc.ll`, `npkc.o`, `npkc` -- byte-identical to the rows this
+machine recorded under apt.llvm.org's noble build of 20.1.8, binaries included; a rebuild with only `llc`, `opt`, `ld.lld`
+and `mkdir` on PATH gave the same six. Two distribution builds of one release reproduced each other to the byte. Welcome,
+and still not the claim: the claim stays the emission, and the pin a version (recorded at landing 100).]**
+
 ## D-266 — a lending `pick` binds views; the selector is frozen while a view is live — **SETTLED (user decision, 2026-09-06: "yes, ratify it as stated with the frozen-selector rule"; OPEN_DECISIONS S-41; lands at 1.5.2h)**
 
 The question D-264 left. A `pick` binds a payload to a name in its arm, and
@@ -20792,6 +20799,9 @@ length the program can scribble on.
    - a compound assignment;
    - a struct literal, which sets every field, so a struct with a sealed field
      is built only inside its module, by that module's functions;
+     *[2026-10-08, landing 100 (DEF-165 under D-337): a literal writing SEVERAL
+     sealed fields is ONE report naming them all -- it was one per field at one
+     span until then.]*
    - a move or `pass` out of the field, which leaves the vacant value;
    - a write-capable address of it: `@`, `$$m`, or a `Self->` receiver call.
 
@@ -22122,6 +22132,13 @@ other write form (an assignment, a compound, `@`, `$$m`, a `Self->` receiver, a 
 report per write: each is its own statement. Lands as DEF-165's fix, with its advance notice: the
 expected counts of `nitpick-regex`'s `pattern_error_literal.npk` and `nitpick-time`'s
 `probe15_civil_literal_bypass.npk` move from one line per field to one line, as their headers say.
+
+> *[2026-10-08, LANDED as landing 100 (DEF-165; `nitpick-compiler_32`; `1.6.1e.md`'s record).]* `type_struct_literal` collects the
+> `sealed` fields a literal writes from outside their module and reports ONCE at the literal, naming them all, with the "declared
+> `sealed` here" note under each field (`note_sealed_decl`); a literal writing one keeps the per-field sentence; every other write
+> form stays one report per write, and a `hidden` field in a literal stays one TYPE-080 per field (D-314). `sealed_literal.npk`'s
+> five literals: the parent 13 TYPE-079, this compiler 5. The sweep over 5,074 files: 16 per-field reports collapsed
+> (1 in `list_fields.npk` and 8 in the new `sealed_literal.npk`, 7 in the library listener's `pattern_error_literal.npk` (3 sites fewer), `probe15_civil_literal_bypass.npk` (2 sites fewer), `probe20_instant_literal_refused.npk` (1 site fewer), `probe21_timestamp_literal_refused.npk` (1 site fewer)), nothing appeared; no emission moves.
 
 ## D-338 — `comptime` ORDERS STRINGS: the evaluator holds a payload-less enum value and runs a `pick` — **SETTLED (user decision, 2026-09-30: "go with your recommendations on all three"; S-118, the library listener's F-027 row `mc0309b`)**
 

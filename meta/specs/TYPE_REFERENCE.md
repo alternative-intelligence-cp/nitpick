@@ -1081,7 +1081,11 @@ mod:bank = {
   - an assignment through any path, including a part of a sealed value
     (`h.inner.x`) and a sealed field reached through a pointer;
   - a compound assignment;
-  - a struct literal naming the field;
+  - a struct literal naming the field -- ONE report per literal, naming every
+    sealed field it writes (D-337: the literal is the mistake, constructing the
+    type outside the module that owns its invariants; the fix is one action,
+    the owning module's constructor), where every other form is one report per
+    write;
   - a `move` or `pass` out of an OWNING sealed field (the vacant value it leaves
     is a write, D-254);
   - `@` and `$$m`;

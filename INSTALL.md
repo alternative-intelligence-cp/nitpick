@@ -11,7 +11,12 @@ Everything here was run, in this order, on a fresh clone.
   its own runtime, nothing else.
 - **LLVM 20** — the three tools `llc`, `opt` and `ld.lld`. **Prefer your
   distribution's own packages where it ships LLVM 20** — Ubuntu 26.04 and the
-  Debian releases that carry `llvm-20` do (about 235 MB installed):
+  Debian releases that carry `llvm-20` do (about 715 MB installed, because
+  `llvm-20` recommends `llvm-20-dev` and eight more packages; with
+  `--no-install-recommends` about 235 MB, and everything this guide uses is
+  still there: `llc` and `opt` are in `llvm-20`, `ld.lld` in `lld-20` --
+  `llvm-20-dev` is needed only to build cycle 1.6's analyzers, never the
+  compiler. `apt` asks `[Y/n]` once; answer `y`):
 
   ```sh
   sudo apt install llvm-20 lld-20
@@ -35,9 +40,7 @@ Everything here was run, in this order, on a fresh clone.
   `apt-get update` fails. The recovery: delete the file it wrote under
   `/etc/apt/sources.list.d/` (named for `llvm-toolchain-<release>-20`) and the
   key it added under `/etc/apt/trusted.gpg.d/`, then `sudo apt-get update`, and
-  take the distribution route above. Do not pass `--no-install-recommends` to
-  either route: `llc` and `opt` arrive through the `llvm-20` package, which the
-  recommends pull in.
+  take the distribution route above.
 
   On a machine that also holds the distribution's 32-bit LLVM library
   (`libllvm20:i386`, pulled in by the 32-bit Mesa drivers that Steam and Wine
@@ -92,18 +95,23 @@ Everything here was run, in this order, on a fresh clone.
 > Ubuntu 24.04's own archive stops at 20.1.2, so on it §6 needs the apt.llvm.org
 > route.
 
-**What it was tested at.** This procedure was run, in this order, on Linux
-Mint 22.3 (an Ubuntu 24.04 base), x86-64, LLVM 20.1.2, and on a fresh Ubuntu
-Server 26.04.1 LTS virtual machine (16 vCPUs, 15 GiB; the distribution's LLVM
-20.1.8; §§2–5 and the optimised build, 2026-10-08). On 2026-10-08 the Mint machine moved to LLVM 20.1.8 by §1's prefix route (its `apt` route was blocked by the 32-bit Mesa drivers' `libllvm20:i386`), and the project's full test suite ran green under it (D-349's landing). The build runs ONE process
-at a time — it uses no parallelism, so the number of cores does not matter —
-and its peak memory is 345 MB, in `llc` assembling the compiler's 31 MB of IR
-(measured with `/usr/bin/time -v` on both machines); 1 GB of free memory is
-ample. It takes about fifty seconds of CPU on a 2024 desktop processor (52 s on
-the VM). Disk: the clone is about 100 MB, the build adds about 80 MB, the
-installed pair of §4 is 11 MB, and LLVM itself is the figure given above for
-the route you took. Compiling a small program afterwards takes a quarter of a
-second and about 75 MB.
+**What it was tested at.** This procedure was run, in this order, on Linux Mint
+22.3 (an Ubuntu 24.04 base), x86-64, at LLVM 20.1.2 and again at 20.1.8 after
+§1's prefix route moved the machine (its `apt` route was blocked by the 32-bit
+Mesa drivers' `libllvm20:i386`; the project's full test suite ran green under
+it, D-349's landing, 2026-10-08); and twice on a fresh Ubuntu Server 26.04.1 LTS
+virtual machine (16 vCPUs, 15 GiB; the distribution's LLVM 20.1.8): §§2–5 and
+the optimised build on 2026-10-08, then the whole guide, §§1–6, at the commit
+that moved the pin, every step exiting 0 and the six build artefacts
+byte-identical to the project's own. The build runs ONE process at a time — it
+uses no parallelism, so the number of cores does not matter — and its peak
+memory is 349 MB, in `llc` assembling the compiler's 31 MB of IR (measured with
+`/usr/bin/time -v` on both machines); 1 GB of free memory is ample. It takes
+about fifty seconds of CPU on a 2024 desktop processor (50 s on the VM). Disk:
+the clone is about 100 MB, the build adds about 80 MB, the installed pair of §4
+is 11 MB, and LLVM itself is the figure given above for the route you took.
+Compiling a small program afterwards takes a quarter of a second and about 75
+MB.
 
 ## 2. Get the source
 
@@ -111,6 +119,9 @@ second and about 75 MB.
 git clone https://github.com/alternative-intelligence-cp/nitpick.git
 cd nitpick
 ```
+
+The clone is the folder `nitpick/`, about 100 MB; every command below runs from
+inside it.
 
 ## 3. Build the compiler
 
@@ -214,7 +225,10 @@ ld.lld -static -o hello hello.o ~/.local/lib/nitpick/npkrt.o
 ```
 
 Both forms must behave identically; the project's own tests run every program
-both ways. A three-line script saves the typing:
+both ways. A six-line script saves the typing. Save it as
+`~/.local/bin/npkbuild` (a folder §1 put on your `PATH`), make it executable
+with `chmod +x ~/.local/bin/npkbuild`, and call it with the program's name
+without the extension -- `npkbuild hello` compiles `hello.npk` to `hello`:
 
 ```sh
 #!/bin/sh
@@ -238,11 +252,16 @@ ld.lld -static -o build/npkg build/npkg.o build/npkrt.o
 ./build/npkg build
 ```
 
-It prints one `sha256` line per intermediate. The line for `build/npkc.ll` is
+It takes about a minute, rewrites `build/` with the same bytes §3 made (and
+adds `build/datalayout_probe.ll`, its probe of the toolchain's data layout),
+and prints one `sha256` line per intermediate. The line for `build/npkc.ll` is
 the one that must match across machines on the same LLVM release: the emitted
 IR is the project's cross-machine claim (D-265), and the notice each landing
 sends to the library repositories carries the project's digest for it; the
-object and the binary belong to your toolchain build. `npkg build` refuses an
+object and the binary belong to your toolchain build (two distribution builds
+of 20.1.8, apt.llvm.org's for Ubuntu 24.04 and Ubuntu 26.04's own, reproduced
+each other to the byte in the project's test of 2026-10-08: welcome, not
+promised). `npkg build` refuses an
 LLVM release other than the one `nitpick.toml` records (20.1.8; §1's note). `npkg
 test` runs the whole suite and takes about three hours.
 
@@ -266,7 +285,7 @@ test` runs the whole suite and takes about three hours.
 | What you see | What it means |
 |---|---|
 | `llc: command not found` | the versioned names are installed and the links of §1 are not on your `PATH` |
-| `ld.lld: error: unable to find library` or an undefined `npk_...` symbol | the link line is missing `npkrt.o` (§3 step 1, §4) |
+| `ld.lld: error: undefined symbol: __morestack`, then seven undefined `npk_...` symbols | the link line is missing `npkrt.o` (§3 step 1, §4) |
 | `NITPICK-RESOLVE-012 file 'x.npk' declares 'mod:y;' first` | the file's `mod:` name does not match its file name |
 | `NITPICK-RESOLVE-005` | a `mod:` or `use` names a file that does not exist |
 | `NITPICK-REACH-002 failsafe does not name X` | add the arm `(X) { exit N; }` to `failsafe` |

@@ -1,0 +1,74 @@
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 44
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 49
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 55
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 61
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 66
+// expect-error: NITPICK-TYPE-028
+// expect-error-at: 61
+//
+// HEADER MEASURED on the step's checker (D-332: one line per site); the parent reports 13 TYPE-079 at these five literals.
+mod:sealed_literal;
+
+// A STRUCT LITERAL THAT WRITES SEVERAL `sealed` FIELDS FROM OUTSIDE THEIR MODULE
+// IS ONE MISTAKE -- constructing the type outside the module that owns its
+// invariants -- AND ONE REPORT (D-337, DEF-165): one NITPICK-TYPE-079 at the
+// literal, its message naming every sealed field the literal writes, with the
+// note "declared `sealed` here" under each. Before landing 100 it was one report
+// PER FIELD at one span (the library listener's `PatternError{ kind, offset,
+// span_len, detail }` was four). A literal writing ONE sealed field keeps the
+// per-field sentence (`sealed_fields.npk`); every other write form stays one
+// report per write, each its own statement (D-337). The owning module's own
+// literal passes, as it always did.
+mod:owner = {
+    pub struct:PatternError = { sealed int32:kind; sealed int64:offset; sealed int64:span_len; sealed int32:detail; };
+    pub struct:Mixed = { int32:open; sealed int32:a; int32:more; sealed int32:b; };
+    pub struct:One = { sealed int32:k; int32:open; };
+    pub func:make = PatternError(int32:k) never fails {
+        PatternError:p = PatternError{ kind: k, offset: 0i64, span_len: 0i64, detail: 0i32 };
+        pass p;
+    };
+    pub func:mixed = Mixed() never fails {
+        Mixed:m = Mixed{ open: 1i32, a: 2i32, more: 3i32, b: 4i32 };
+        pass m;
+    };
+};
+use owner.*;
+
+// FOUR sealed fields, one report naming all four.
+func:four = PatternError() never fails {
+    PatternError:p = PatternError{ kind: 1i32, offset: 2i64, span_len: 3i64, detail: 4i32 };
+    pass p;
+};
+// Sealed fields among plain ones: the two sealed ones are named, the plain ones are not.
+func:two_among_four = Mixed() never fails {
+    Mixed:m = Mixed{ open: 1i32, a: 2i32, more: 3i32, b: 4i32 };
+    pass m;
+};
+// The values read from a sealed field are reads (allowed); the literal still writes.
+func:copied_in = PatternError() never fails {
+    PatternError:q = raw make(7i32);
+    PatternError:p = PatternError{ kind: q.kind, offset: 9i64, span_len: q.span_len, detail: q.detail };
+    pass p;
+};
+// A sealed field given twice: TYPE-093's neighbour TYPE_FIELD_TWICE reports the
+// repeat, and the one sealed-write report names each field once.
+func:twice = Mixed() never fails {
+    Mixed:m = Mixed{ open: 1i32, a: 2i32, more: 3i32, b: 4i32, a: 5i32 };
+    pass m;
+};
+// ONE sealed field: the per-field sentence, one report (unchanged).
+func:one = One() never fails {
+    One:o = One{ k: 1i32, open: 2i32 };
+    pass o;
+};
+// The owning module's constructors pass.
+func:ok = PatternError() never fails { PatternError:p = raw make(1i32); pass p; };
+func:ok2 = Mixed() never fails { Mixed:m = raw mixed(); pass m; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

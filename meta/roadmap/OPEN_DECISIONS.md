@@ -2954,7 +2954,7 @@ defect declares a `DEF-` in §2f.
 > `NITPICK-TYPE-014` ("does not have the signature its trait declares"), the comparison reading the refused type
 > as a mismatch (`th2`).
 
-> **DEF-165 — OPEN, THE READING SETTLED 2026-09-30 as D-337 (one report per literal, naming every sealed field it writes; the fix its own landing with an advance notice) (2026-09-27; owner: the compiler seat; found by D-332's
+> **DEF-165 — FIXED 2026-10-08 (landing 100, `nitpick-compiler_32`): `type_struct_literal` collects the sealed fields a literal writes from outside their module and reports ONCE at the literal, naming them all (`sealed_literal.npk`: the parent reported 13 TYPE-079 at its five literals, this compiler 5; a literal writing one sealed field keeps the per-field sentence; the "declared `sealed` here" note stays under each field). THE READING SETTLED 2026-09-30 as D-337 (one report per literal, naming every sealed field it writes; the fix its own landing with an advance notice) (2026-09-27; owner: the compiler seat; found by D-332's
 > count rule over the listener's corpus: `nitpick-regex/tests/rejection/pattern_error_literal.npk`,
 > `nitpick-time/tests/probe/probe15_civil_literal_bypass.npk`). A STRUCT LITERAL OF A TYPE WITH SEALED FIELDS,
 > WRITTEN OUTSIDE ITS MODULE, IS REPORTED ONCE PER FIELD:** `PatternError{ kind: …, offset: …, span_len: …,
