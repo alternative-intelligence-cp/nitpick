@@ -800,7 +800,11 @@ func:depth_chain = string(TypeResolver->:r, int32:name) never fails {
     pass (string_concat(out, raw intern_get(r.interns, name)));
 };
 
-func:GENERIC_DEPTH = int32() never fails { pass 64i32; };
+// ONE NUMBER for the resolver's recursion above and for the emitter's
+// transitive monomorphization (`fninst_concrete`, ir_expr.npk; DEF-229,
+// landing 96) -- "Phase B's monomorphizer inherits the same constant", as the
+// comment above promised and the emitter did not keep until then.
+pub func:GENERIC_DEPTH = int32() never fails { pass 64i32; };
 
 // ONE ARGUMENT, AGAINST THE PARAMETER IT FILLS. Which of the two kinds it must be
 // is decided by the PARAMETER, not by what was written -- the parser cannot tell

@@ -2292,3 +2292,141 @@ pub func:type_kind_stateful = bool(int32:kind) never fails {
     if (kind == (raw TY_DYN()))          { pass true; }
     pass false;
 };
+
+// --- walks over a type's structure (moved here from ir_types.npk at 1.6.1e landing 96) ----
+
+// DOES THIS TYPE MENTION A GENERIC PARAMETER anywhere in its structure? (1.0.7)
+// A `List<T>` recorded for a literal inside `list_make<T>`'s body is
+// template-shaped: it names the declaration's own parameter, and has no
+// representation until the parameter is bound. Walked by kind, because each
+// kind keeps its operands in different slots (the accessors above say which).
+// Lived in ir_types.npk until landing 96, when the checker needed the same
+// walk (DEF-229): one walker, read by both halves.
+pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
+                                    int32:fuel) never fails {
+    pass (raw type_mentions_params_of(t, ast, id, 0i32, 0i32, fuel));
+};
+
+// DOES THIS TYPE MENTION ONE OF THESE PARAMETERS -- the `count` declarations
+// whose ids sit at `start` in the AST's id pool -- or, with `count` 0, ANY
+// parameter? (DEF-229, landing 96.) A parameter's type carries its declaration
+// in slot `a` (`tt_param`), which is what tells a function's own `T` from an
+// enclosing impl's `U`.
+pub func:type_mentions_params_of = bool(TypeTable->:t, Ast->:ast, int32:id,
+                                        int32:start, int32:count,
+                                        int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (id == 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_PARAM())) {
+        if (count == 0i32) { pass true; }
+        int32:pd = (raw tt_get(t, id)).a;
+        for (int32:q in 0i32...count) {
+            if ((raw ast_id_at(ast, start, q)) == pd) { pass true; }
+        }
+        pass false;
+    }
+    if (k == (raw TY_ASSOC())) {
+        pass (raw type_mentions_params_of(t, ast, raw type_assoc_base(t, id),
+                                          start, count, fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT())) { pass (raw args_mention_params_of(t, ast, id, start, count, fuel)); }
+    if (k == (raw TY_ENUM()))   { pass (raw args_mention_params_of(t, ast, id, start, count, fuel)); }
+    // BOTH function kinds (1.4.1 — the variadic kind was invisible here, the
+    // walkers-total instrument's find; `type_is_func` is the predicate
+    // `type_subst` has always used for the same pair).
+    if (raw type_is_func(t, id)) {
+        if (raw type_mentions_params_of(t, ast, (raw tt_get(t, id)).a, start, count, fuel - 1i32)) {
+            pass true;
+        }
+        int32:ps = (raw tt_get(t, id)).b;
+        int32:pc = (raw tt_get(t, id)).c;
+        for (int32:i in 0i32...pc) {
+            if (raw type_mentions_params_of(t, ast, raw ast_id_at(ast, ps, i), start, count, fuel - 1i32)) {
+                pass true;
+            }
+        }
+        pass false;
+    }
+    if (k == (raw TY_DYN()))    { pass false; }
+    if (k == (raw TY_TRAIT()))  { pass false; }
+    if (raw type_kind_has_elem(k)) {
+        pass (raw type_mentions_params_of(t, ast, (raw tt_get(t, id)).a, start, count, fuel - 1i32));
+    }
+    pass false;
+};
+
+func:args_mention_params_of = bool(TypeTable->:t, Ast->:ast, int32:id,
+                                   int32:start, int32:count, int32:fuel) never fails {
+    int32:n = raw type_args_count_of(t, id);
+    int32:astart = raw type_args_start_of(t, id);
+    for (int32:i in 0i32...n) {
+        if (raw type_mentions_params_of(t, ast, raw ast_id_at(ast, astart, i), start, count, fuel - 1i32)) {
+            pass true;
+        }
+    }
+    pass false;
+};
+
+// The kinds that keep ONE operand in slot `a`: pointer, slice, array,
+// `Optional`, `Result`, arena, shared arena, `Handle`, range -- and `atomic<T>`,
+// `simd`, `Channel<T, LEVEL, CAP>`, the locks and their guards (1.1.10-D3: the
+// channel was missed here once, and a generic pool copied nothing into its
+// ring because an unsubstituted parameter measures zero).
+func:type_kind_has_elem = bool(int32:k) never fails {
+    if (k == (raw TY_POINTER()))      { pass true; }
+    if (k == (raw TY_SLICE()))        { pass true; }
+    if (k == (raw TY_ARRAY()))        { pass true; }
+    if (k == (raw TY_OPTIONAL()))     { pass true; }
+    if (k == (raw TY_RESULT()))       { pass true; }
+    if (k == (raw TY_ARENA()))        { pass true; }
+    if (k == (raw TY_SHARED_ARENA())) { pass true; }
+    if (k == (raw TY_HANDLE()))       { pass true; }
+    if (k == (raw TY_RANGE()))        { pass true; }
+    if (k == (raw TY_ATOMIC()))       { pass true; }
+    if (k == (raw TY_SIMD()))         { pass true; }
+    if (k == (raw TY_CHANNEL()))      { pass true; }
+    if (k == (raw TY_MUTEX()))        { pass true; }
+    if (k == (raw TY_GUARD()))        { pass true; }
+    if (k == (raw TY_RWLOCK()))       { pass true; }
+    if (k == (raw TY_RGUARD()))       { pass true; }
+    pass false;
+};
+
+// HOW DEEPLY THIS TYPE NESTS (DEF-229, landing 96): a leaf is 1, a kind with
+// operands is one more than the deepest of them -- `Box<Box<int32>>` is 3.
+// The measure the emitter's transitive monomorphization holds to the generic
+// depth cap, since every expansion of `deep<T>` into `deep<Box<T>>` nests its
+// argument one level deeper. The walk fails CLOSED when its fuel is spent: a
+// type deeper than the fuel reads as deeper than any cap.
+pub func:type_nest_depth = int32(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass 1000000i32; }
+    if (id == 0i32) { pass 0i32; }
+    int32:k = raw type_kind(t, id);
+    int32:deepest = 0i32;
+    if (k == (raw TY_ASSOC())) {
+        deepest = raw type_nest_depth(t, ast, raw type_assoc_base(t, id), fuel - 1i32);
+    }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
+        int32:n = raw type_args_count_of(t, id);
+        int32:astart = raw type_args_start_of(t, id);
+        for (int32:i in 0i32...n) {
+            int32:dd = raw type_nest_depth(t, ast, raw ast_id_at(ast, astart, i), fuel - 1i32);
+            if (dd > deepest) { deepest = dd; }
+        }
+    }
+    if (raw type_is_func(t, id)) {
+        deepest = raw type_nest_depth(t, ast, (raw tt_get(t, id)).a, fuel - 1i32);
+        int32:ps = (raw tt_get(t, id)).b;
+        int32:pc = (raw tt_get(t, id)).c;
+        for (int32:i in 0i32...pc) {
+            int32:dp = raw type_nest_depth(t, ast, raw ast_id_at(ast, ps, i), fuel - 1i32);
+            if (dp > deepest) { deepest = dp; }
+        }
+    }
+    if (raw type_kind_has_elem(k)) {
+        deepest = raw type_nest_depth(t, ast, (raw tt_get(t, id)).a, fuel - 1i32);
+    }
+    if (deepest >= 1000000i32) { pass deepest; }
+    pass (deepest + 1i32);
+};

@@ -39,6 +39,7 @@ use "../../frontend/parse_pick.npk".*;
 use "../../frontend/type_layout.npk".*;
 use "../../frontend/type_generic.npk".*;
 use "../../frontend/diagnostics.npk".*;
+use "../../frontend/type_codes.npk".*;   // TYPE_GENERIC_DEPTH: the depth cap's refusal (DEF-229, landing 96)
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
 use "../../frontend/symbols.npk".*;
@@ -3063,6 +3064,17 @@ pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
     drop llctx_set_subst(x.fe.ctx, gp.start, gp.count, args_start);
     IrVal:r = raw emit_function_body_subst(x, did, d, mangled_name, g, true);
     drop llctx_set_subst(x.fe.ctx, 0i32, 0i32, 0i32);
+    // A DEPTH-CAP REFUSAL THE BODY LEFT AND NO CALL CARRIED OUT (DEF-229,
+    // landing 96): a family method's instance is recorded through paths that
+    // are not a direct call (`note_family_instance`), so the refusal leaves
+    // with the specialization that asked instead.
+    if (raw iv_is_ok(r)) {
+        if (x.inst_refusal.len > 0i64) {
+            string:why = string_concat(x.inst_refusal, "");
+            x.inst_refusal = "";
+            pass (raw iv_refused(raw TYPE_GENERIC_DEPTH(), move(why), x.inst_refusal_at));
+        }
+    }
     pass r;
 };
 

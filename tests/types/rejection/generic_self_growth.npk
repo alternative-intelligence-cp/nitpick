@@ -1,0 +1,92 @@
+// expect-error: NITPICK-TYPE-018
+// expect-error-at: 31:19
+// expect-error: NITPICK-TYPE-018
+// expect-error-at: 36:20
+// expect-error: NITPICK-TYPE-018
+// expect-error-at: 40:22
+// expect-error: NITPICK-TYPE-018
+// expect-error-at: 46:21
+// A GENERIC FUNCTION INSTANTIATING ITSELF AT A TYPE BUILT FROM ITS OWN PARAMETER
+// (DEF-229, 1.6.1e landing 96; the library listener's F-041). `deep<T>` calling
+// `deep::<Box<T>>(…)` asks, at every instance, for one nested a level deeper,
+// and the emitter's transitive monomorphization expanded it without end -- no
+// exit, 4.4 GB -- where TRAITS_REFERENCE promises the cap of 64 and the
+// instantiation stack. The direct shape is the checker's refusal at the call
+// (NITPICK-TYPE-018, the depth cap's own code): a self-call whose argument is
+// not the bare parameter and mentions one of the function's OWN parameters.
+// The controls compile: the bare parameter (the same instance), a concrete
+// type, an enclosing impl's parameter (one instance per `U`, finite), and a
+// growing argument handed to a DIFFERENT function that does not call back.
+// (The parent's checker reports nothing on this file: every refused call is
+// well-typed, and only the growth refuses it.)
+mod:generic_self_growth;
+
+struct:Box<T> = { T:v; };
+struct:Pair<A, B> = { A:a; B:b; };
+
+func:v32 = int32(int32:x) never fails { pass x; };
+
+func:deep<T> = int32(move T:x) never fails {
+    Box<T>:b = Box{ v: move(x) };
+    pass (raw deep::<Box<T>>(move(b)));
+};
+
+func:wider<T> = int32(move T:x) never fails {
+    Pair<T, int32>:p = Pair{ a: move(x), b: 1i32 };
+    pass (raw wider::<Pair<T, int32>>(move(p)));
+};
+
+func:pointed<T> = int32(move T:x) never fails {
+    pass (raw pointed::<T->>(@x));
+};
+
+// The second parameter grows while the first stays: still every instance deeper.
+func:second<A, B> = int32(A:a, move B:b) never fails {
+    Box<B>:w = Box{ v: move(b) };
+    pass (raw second::<A, Box<B>>(a, move(w)));
+};
+
+// CONTROLS.
+func:same<T> = int32(move T:x, int32:n) never fails {
+    if (n <= 0i32) { pass 1i32; }
+    pass (raw same::<T>(move(x), n - 1i32));
+};
+
+func:concrete<T> = int32(move T:x, int32:n) never fails {
+    if (n <= 0i32) { pass 2i32; }
+    pass (raw concrete::<int32>(raw v32(n), n - 1i32));
+};
+
+func:helper<T> = int32(move T:x) never fails { pass 3i32; };
+func:hands_on<T> = int32(move T:x) never fails {
+    Box<T>:b = Box{ v: move(x) };
+    pass (raw helper::<Box<T>>(move(b)));
+};
+
+trait:Grow = { func:grow = int32(Self:self); };
+impl:<U>:Box<U>:Grow = {
+    // `f<T>` inside `impl:<U>` calling `f::<Box<U>>`: `U` is the impl's, not
+    // `f`'s own -- one instance per `U`, which is finite.
+    func:grow = int32(Box<U>:self) {
+        pass (relay f::<int32>(1i32));
+    };
+};
+func:f<T> = int32(move T:x) { pass 4i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (IntOverflow)    { exit 93i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

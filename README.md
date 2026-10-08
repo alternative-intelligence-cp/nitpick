@@ -20,6 +20,12 @@ run; the runtime floor is hand-written LLVM IR and nothing else is linked. The
 build and test driver `npkg` is Nitpick too. What comes next is verification
 (cycle 1.5) — the reason the language exists in this form.
 
+## Getting started
+
+[`INSTALL.md`](INSTALL.md) takes a clean Linux machine to a working compiler in
+about a minute — LLVM 20, a clone, three commands — and through a first program.
+Everything in it was run as written.
+
 ## What it is
 
 Nitpick is built for software where a failure is a physical event rather than a

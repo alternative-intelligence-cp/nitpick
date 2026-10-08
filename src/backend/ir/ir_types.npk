@@ -50,6 +50,11 @@ pub func:LL_BROKEN = int32() never fails { pass 2i32; };
 // THE VERIFIED BUILD'S REFUSAL (1.5.4 step 4, L-16): a `prove` the manifest
 // handed to `--elide` does not discharge -- neither a rung nor a defect.
 pub func:LL_VERIFY = int32() never fails { pass 3i32; };
+// AN EMITTER REFUSAL BY NAME (1.6.1e landing 96, DEF-229): a rule the emitter
+// alone can see -- the generic depth cap over transitive monomorphization --
+// carries its own code in `rung` and its sentence in `what`; `emit_program`'s
+// `refuse` pushes them as they are. Neither a rung nor a defect.
+pub func:LL_REFUSED = int32() never fails { pass 4i32; };
 
 pub struct:LlType = {
     int32:state;
@@ -427,82 +432,11 @@ pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) never fails {
     pass id;
 };
 
-// DOES THIS TYPE MENTION A GENERIC PARAMETER anywhere in its structure? (1.0.7)
-// A `List<T>` recorded for a literal inside `list_make<T>`'s body is
-// template-shaped: it names the declaration's own parameter, and has no
-// representation until the parameter is bound. Walked by kind, because each
-// kind keeps its operands in different slots (the accessors above say which).
-pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
-                                    int32:fuel) never fails {
-    if (fuel <= 0i32) { pass false; }
-    if (id == 0i32) { pass false; }
-    int32:k = raw type_kind(t, id);
-    if (k == (raw TY_PARAM())) { pass true; }
-    if (k == (raw TY_ASSOC())) {
-        pass (raw type_mentions_param(t, ast, raw type_assoc_base(t, id), fuel - 1i32));
-    }
-    if (k == (raw TY_STRUCT())) { pass (raw args_mention_param(t, ast, id, fuel)); }
-    if (k == (raw TY_ENUM()))   { pass (raw args_mention_param(t, ast, id, fuel)); }
-    // BOTH function kinds (1.4.1 — the variadic kind was invisible here, the
-    // walkers-total instrument's find; `type_is_func` is the predicate
-    // `type_subst` has always used for the same pair).
-    if (raw type_is_func(t, id)) {
-        if (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32)) {
-            pass true;
-        }
-        int32:ps = (raw tt_get(t, id)).b;
-        int32:pc = (raw tt_get(t, id)).c;
-        for (int32:i in 0i32...pc) {
-            if (raw type_mentions_param(t, ast, raw ast_id_at(ast, ps, i), fuel - 1i32)) {
-                pass true;
-            }
-        }
-        pass false;
-    }
-    if (k == (raw TY_DYN()))    { pass false; }
-    if (k == (raw TY_TRAIT()))  { pass false; }
-    // Every remaining kind with an operand keeps it in slot `a`: pointer,
-    // slice, array, `Optional`, `Result`, arena, shared arena, `Handle`, range.
-    bool:has_elem = false;
-    if (k == (raw TY_POINTER()))      { has_elem = true; }
-    if (k == (raw TY_SLICE()))        { has_elem = true; }
-    if (k == (raw TY_ARRAY()))        { has_elem = true; }
-    if (k == (raw TY_OPTIONAL()))     { has_elem = true; }
-    if (k == (raw TY_RESULT()))       { has_elem = true; }
-    if (k == (raw TY_ARENA()))        { has_elem = true; }
-    if (k == (raw TY_SHARED_ARENA())) { has_elem = true; }
-    if (k == (raw TY_HANDLE()))       { has_elem = true; }
-    if (k == (raw TY_RANGE()))        { has_elem = true; }
-    // `atomic<T>` and `Channel<T, LEVEL, CAP>` keep their element in slot `a`
-    // like the rest (1.1.10-D3). Added to the type system at 1.1.10-A/B and
-    // missed here, which made `subst_emitted_type` answer "nothing to
-    // substitute" for `Channel<J, …>`: the channel was then opened with `J`'s
-    // size, and an unsubstituted parameter measures ZERO, so a generic pool
-    // copied nothing into its ring and every job arrived blank. Nothing
-    // failed; the values were simply zero.
-    if (k == (raw TY_ATOMIC()))       { has_elem = true; }
-    if (k == (raw TY_SIMD()))         { has_elem = true; }
-    if (k == (raw TY_CHANNEL()))      { has_elem = true; }
-    if (k == (raw TY_MUTEX()))        { has_elem = true; }
-    if (k == (raw TY_GUARD()))        { has_elem = true; }
-    if (k == (raw TY_RWLOCK()))       { has_elem = true; }
-    if (k == (raw TY_RGUARD()))       { has_elem = true; }
-    if (has_elem) {
-        pass (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32));
-    }
-    pass false;
-};
-
-func:args_mention_param = bool(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) never fails {
-    int32:n = raw type_args_count_of(t, id);
-    int32:start = raw type_args_start_of(t, id);
-    for (int32:i in 0i32...n) {
-        if (raw type_mentions_param(t, ast, raw ast_id_at(ast, start, i), fuel - 1i32)) {
-            pass true;
-        }
-    }
-    pass false;
-};
+// `type_mentions_param` -- does this type mention a generic parameter anywhere
+// in its structure? -- lived here from 1.0.7 until 1.6.1e landing 96, when the
+// checker needed the same walk for DEF-229's rule; it is types.npk's now, beside
+// `type_mentions_params_of` (a parameter among a window) and `type_nest_depth`
+// (the measure the expansion below holds to the generic depth cap).
 
 // WHAT A TYPE STANDS FOR IN THE SPECIALIZATION BEING EMITTED (1.0.7), or
 // itself when it names no bound parameter, or when nothing is bound. A bare

@@ -1,0 +1,61 @@
+// expect-exit: 0
+//
+// THE SHAPES THE DEPTH CAP MUST LEAVE ALONE (DEF-229, 1.6.1e landing 96): a
+// generic nesting that is deep but finite -- the fuzzer's bounded control
+// three deep, a cycle through two functions that closes at a concrete type
+// (`f<T>` -> `g<Box<T>>` -> `f<int32>`: `f<int32>` asks for `g<Box<int32>>`,
+// which asks for `f<int32>` again, already recorded), and a self-call at the
+// bare parameter. Each answers a value the program checks; the refused shapes
+// are `generic_self_growth.npk`'s (the checker) and the emitter's cap's.
+mod:generic_nesting_bounded;
+
+struct:Box<T> = { T:v; };
+
+func:v32 = int32(int32:x) never fails { pass x; };
+
+// The fuzzer's control: three levels, written out.
+func:leaf = int32(move Box<Box<Box<int32>>>:b) never fails { pass b.v.v.v; };
+func:three = int32(move int32:x) never fails {
+    Box<int32>:a = Box{ v: move(x) };
+    Box<Box<int32>>:b = Box{ v: move(a) };
+    Box<Box<Box<int32>>>:c = Box{ v: move(b) };
+    pass (raw leaf(move(c)));
+};
+
+// The cycle that closes at a concrete type.
+func:unbox<T> = int32(move Box<T>:b) never fails { pass 5i32; };
+func:f<T> = int32(move T:x, int32:n) never fails {
+    if (n <= 0i32) { pass 7i32; }
+    Box<T>:b = Box{ v: move(x) };
+    pass (raw g::<Box<T>>(move(b), n - 1i32));
+};
+func:g<U> = int32(move U:y, int32:n) never fails {
+    pass (raw f::<int32>(raw v32(n), n));
+};
+
+// A self-call at the bare parameter: one instance, a plain recursion.
+func:same<T> = int32(move T:x, int32:n) never fails {
+    if (n <= 0i32) { pass 9i32; }
+    pass (raw same::<T>(move(x), n - 1i32));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw three(raw v32(11i32))) != 11i32)              { exit 10i32; }
+    if ((raw f::<int32>(raw v32(3i32), 2i32)) != 7i32)      { exit 11i32; }
+    if ((raw same::<int32>(raw v32(1i32), 3i32)) != 9i32)   { exit 12i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (Unreachable)    { exit 95i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

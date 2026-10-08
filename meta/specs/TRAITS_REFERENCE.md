@@ -638,6 +638,15 @@ using modules can instantiate it, and **mangled names are readable and
 reversible** — no hash — because an auditor reading a verification report has to
 map a symbol back to its declaration by inspection (D-064).
 
+> **Note (2026-10-08, 1.6.1e landing 96 — DEF-229, the library listener's F-041):** the cap bounded the
+> resolver's recursion through nested type ARGUMENTS alone until this landing, and the emitter's transitive
+> monomorphization expanded `deep<T>` → `deep<Box<T>>` → … without end (no exit, 4.4 GB). Now a function's direct
+> self-call at a type built from its own parameter is `NITPICK-TYPE-018` at the call (every instance would ask for
+> one nested a level deeper), and an indirect cycle through another function is refused by the emitter when the
+> requested type nests past 64, under the same code; "the instantiation stack printed" is the requested type's own
+> nesting, which is the chain of instances behind it. A cycle that closes at a concrete type instantiates finitely
+> and is fine.
+
 There is **no specialization**: one instantiation cannot be given a different body
 from another.
 

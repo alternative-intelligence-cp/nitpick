@@ -72,6 +72,15 @@ func:refuse = NIL(DiagList->:diags, IrVal:v) never fails {
         drop diaglist_push(diags, raw diag_error(raw VERIFY_UNPROVEN(), move(vm), v.at));
         pass NIL;
     }
+    // AN EMITTER REFUSAL BY NAME (landing 96, DEF-229): the code and the
+    // sentence are the value's own -- the generic depth cap over transitive
+    // monomorphization, which only the emitter can see.
+    if (v.state == (raw LL_REFUSED())) {
+        string:rc = string_concat(v.rung, "");
+        string:rm = string_concat(v.what, "");
+        drop diaglist_push(diags, raw diag_error(move(rc), move(rm), v.at));
+        pass NIL;
+    }
     // EVERY `iv_broken` ARRIVES HERE, not only an unclassified kind — a
     // pattern with no variant, a slot nothing opened. What they share is that
     // the frontend promised this program valid and the emitter could not keep

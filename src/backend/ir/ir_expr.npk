@@ -40,6 +40,7 @@ use "../../frontend/ast_kind.npk".*;
 use "../../frontend/ast.npk".*;
 use "../../frontend/parse_expr.npk".*;
 use "../../frontend/diagnostics.npk".*;
+use "../../frontend/type_codes.npk".*;   // TYPE_GENERIC_DEPTH: the depth cap's refusal (DEF-229, landing 96)
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
 use "../../frontend/type_layout.npk".*;
@@ -112,6 +113,15 @@ pub func:iv_verify = IrVal(move string:what, Span:at) never fails {
 
 pub func:iv_broken = IrVal(Span:at) never fails {
     IrVal:v = IrVal{ state: raw LL_BROKEN(), rung: "", what: "", at: at,
+                     ll: "", ref: "",
+                     type_id: 0i32, wrapped: false, inner: "" };
+    pass v;
+};
+
+// AN EMITTER REFUSAL BY NAME (landing 96, DEF-229): the code rides in `rung`,
+// the sentence in `what`; `emit_program`'s `refuse` pushes both as they are.
+pub func:iv_refused = IrVal(move string:code, move string:what, Span:at) never fails {
+    IrVal:v = IrVal{ state: raw LL_REFUSED(), rung: move(code), what: move(what), at: at,
                      ll: "", ref: "",
                      type_id: 0i32, wrapped: false, inner: "" };
     pass v;
@@ -272,6 +282,14 @@ pub struct:ExprEmitter = {
     // undefined symbol. This field is the definition side's authority for
     // that module; `impl_decl_for` is the call sites' -- one rule, both ends.
     int32:cur_impl;
+    // THE GENERIC DEPTH CAP'S REFUSAL (DEF-229, landing 96): the transitive
+    // monomorphization (`fninst_concrete`, `note_family_instance`) records the
+    // instances a specialization's calls ask for, and one asking for a type
+    // nested past `GENERIC_DEPTH` is not recorded -- its sentence is left
+    // here, and the call that asked carries it out as `iv_refused`, by the
+    // checker's own code for the shape (TYPE-018). Empty when nothing refused.
+    string:inst_refusal;
+    Span:inst_refusal_at;
 };
 
 pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
@@ -282,7 +300,8 @@ pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
     ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
                                  interns: interns, strs: strs, sm: sm, tr: tr,
                                  fninsts: fninsts, scope: scope,
-                                 cur_trait: 0i32, cur_impl: 0i32 };
+                                 cur_trait: 0i32, cur_impl: 0i32,
+                                 inst_refusal: "", inst_refusal_at: raw span_none() };
     pass x;
 };
 
@@ -7667,6 +7686,15 @@ func:emit_direct_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:decl
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: decl });
     if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
         int32:spec = raw fninst_for_call(x, decl, id);
+        // THE DEPTH CAP'S REFUSAL (DEF-229, landing 96): the instance this call
+        // asked for nests past `GENERIC_DEPTH` and was not recorded; the
+        // sentence waits in the emitter, and this is the call that carries it
+        // out, by the checker's own code for the shape.
+        if (x.inst_refusal.len > 0i64) {
+            string:why = string_concat(x.inst_refusal, "");
+            x.inst_refusal = "";
+            pass (raw iv_refused(raw TYPE_GENERIC_DEPTH(), move(why), x.inst_refusal_at));
+        }
         if (spec != 0i32) {
             sym = raw mangled_fn_sym(x.fe.ctx, decl,
                       raw intern_get(x.interns, spec));
@@ -9143,6 +9171,17 @@ func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) ne
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     ExprNode:cn = raw ast_expr(x.ast, call);
+    // THE GENERIC DEPTH CAP (DEF-229, landing 96; D-064 §6, TRAITS_REFERENCE's
+    // "capped at 64"). This table is the worklist of transitive
+    // monomorphization, and an instance asking for one nested a level deeper
+    // than itself -- `f<T>` calling `g::<Box<T>>`, `g<U>` calling `f::<U>` --
+    // grew it without end: no exit, 4.4 GB. An argument nested past the cap
+    // is not recorded; the sentence waits in `inst_refusal` for the call that
+    // asked to carry it out. The resolver's own cap bounds its recursion
+    // through nested type ARGUMENTS (`resolve_named`), which this expansion
+    // never goes through; the direct self-call is the checker's (TYPE-018 at
+    // the call, `type_generic_call`), so what arrives here is the indirect shape.
+    if (raw inst_args_too_deep(x, e.decl, w, cn.span)) { pass e; }
     int32:ft = raw type_subst(x.tr, e.type_id,
                                 raw subst_emitted_scope(x.fe.ctx), cn.span,
                                 raw SUBST_FUEL_LL(), x.fe.ctx.impls);
@@ -9173,6 +9212,43 @@ func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) ne
         k = k + 1i32;
     }
     pass e;
+};
+
+// DOES THE INSTANCE ASKED FOR NEST PAST THE CAP (DEF-229, landing 96)? The
+// arguments at `w` are the concrete ones a specialization's call asks for; an
+// argument nested deeper than `GENERIC_DEPTH` is the signature of an expansion
+// that never ends (`f<T>` -> `g<Box<T>>` -> `f<Box<T>>` -> ...: each instance
+// asks for one a level deeper, so the argument's own nesting IS the chain of
+// instances behind it). The sentence is left for the asking call to carry out
+// (`iv_refused`); the first one stands until it is carried.
+func:inst_args_too_deep = bool(ExprEmitter->:x, int32:decl, IdSpan:w, Span:at) never fails {
+    int32:deepest = 0i32;
+    int32:i = 0i32;
+    while (i < w.count) decreases w.count - i {
+        int32:dd = raw type_nest_depth(x.fe.ctx.types, x.ast,
+                                       raw ast_id_at(x.ast, w.start, i), 512i32);
+        if (dd > deepest) { deepest = dd; }
+        i = i + 1i32;
+    }
+    if (deepest <= (raw GENERIC_DEPTH())) { pass false; }
+    if (x.inst_refusal.len == 0i64) {
+        DeclNode:d = raw ast_decl(x.ast, DeclId{ index: decl });
+        string:m = string_concat("generic instantiation is nested more than 64 deep, which is the cap (D-064); the expansion is refused rather than truncated, because an instance asking for one nested a level deeper than itself never ends -- this call asked for `",
+                                 raw intern_get(x.interns, raw decl_name(d)));
+        m = string_concat(m, "<");
+        i = 0i32;
+        while (i < w.count) decreases w.count - i {
+            if (i > 0i32) { m = string_concat(m, ", "); }
+            m = string_concat(m, raw type_display(x.fe.ctx.types, x.interns,
+                                      raw ast_id_at(x.ast, w.start, i)));
+            i = i + 1i32;
+        }
+        m = string_concat(m, ">` (an argument nested ");
+        m = string_concat(m, int_to_string(deepest => int64));
+        x.inst_refusal = string_concat(m, " deep: its nesting is the chain of instances behind this one); call it at a concrete type, or carry the growth in a value");
+        x.inst_refusal_at = at;
+    }
+    pass true;
 };
 
 // `extract<int32>` — the same D-108 spelling `emit_program` gives the definition,
@@ -9846,6 +9922,12 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
                             FamilyBind:fb = raw family_bind(x.ast, x.fe.ctx.types,
                                                             e.decl, e.target, conc);
                             if (!fb.ok) { pass NIL; }
+                            // THE DEPTH CAP (DEF-229, landing 96), here as in
+                            // `fninst_concrete`: a family method asked for at
+                            // a receiver nested past the cap is not recorded,
+                            // and the instance being emitted carries the
+                            // refusal out (`emit_fn_instance`).
+                            if (raw inst_args_too_deep(x, mdecl, fb.args, at)) { pass NIL; }
                             drop fninst_record(x.fninsts, x.ast, mdecl, fb.args.start,
                                                fb.args.count, pw.start, pw.count,
                                                e.decl, 0i32, at);

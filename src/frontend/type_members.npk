@@ -1774,6 +1774,37 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     if (raw type_is_invalid(e.types, ft)) { pass 0i32; }
     if (!(raw type_is_func(e.types, ft))) { pass 0i32; }
 
+    // A FUNCTION INSTANTIATING ITSELF AT A TYPE BUILT FROM ITS OWN PARAMETER
+    // NEVER FINISHES (DEF-229, 1.6.1e landing 96; the library listener's
+    // F-041): `deep<T>` calling `deep::<Box<T>>(…)` asks, at every instance,
+    // for one nested a level deeper, and the emitter's transitive
+    // monomorphization expanded it without end -- 4.4 GB and no exit, where
+    // TRAITS_REFERENCE promises the cap of 64 and the instantiation stack. The
+    // direct shape is decided here, at the call, where the sentence can name
+    // the function and the type: a self-call whose argument is not the bare
+    // parameter and mentions one of the function's OWN parameters (an
+    // enclosing impl's `U` is somebody else's: `f<T>` calling `f::<Box<U>>`
+    // inside `impl:<U>` is one instance per `U`, finite). The indirect shapes
+    // -- a cycle through another function -- are the emitter's cap to refuse.
+    if (cd == e.fn_decl) {
+        int32:q = 0i32;
+        while (q < args.count) decreases args.count - q {
+            int32:aty = raw ast_id_at(e.ast, args.start, q);
+            if ((raw type_kind(e.types, aty)) != (raw TY_PARAM())) {
+                if (raw type_mentions_params_of(e.types, e.ast, aty, gp.start, gp.count, 64i32)) {
+                    string:m1 = string_concat("`", raw intern_get(e.interns, raw decl_name(d)));
+                    string:m2 = string_concat(m1, "` instantiates itself at `");
+                    string:m3 = string_concat(m2, raw type_display(e.types, e.interns, aty));
+                    discard(raw te_error(e, raw TYPE_GENERIC_DEPTH(),
+                        string_concat(m3, "`, a type built from its own parameter: every instance asks for one nested a level deeper and the expansion never ends -- the cap of 64 (D-064) would only be reached and refused; call it at the parameter itself or at a concrete type, or carry the growth in a value"),
+                        n.span));
+                    pass 0i32;
+                }
+            }
+            q = q + 1i32;
+        }
+    }
+
     // RECORD THE INSTANTIATION (1.0.2b). Every argument is solved and bound-
     // checked by here, and the window is committed into the AST's id pool, so it
     // outlives this call — which is what lets the emitter walk the set. Deduped

@@ -4639,6 +4639,17 @@ truncation. Recursive generic instantiation is otherwise non-terminating, and an
 unbounded expansion in the frontend is the same hazard D-057 bounded for macros —
 same problem, same answer.
 
+> **Note (2026-10-08, 1.6.1e landing 96 — DEF-229, the library listener's F-041):** the cap existed in ONE place
+> from 1.0.2b until this landing — `resolve_named`'s recursion through nested type ARGUMENTS (`NITPICK-TYPE-018`) —
+> and the emitter's transitive monomorphization (`fninst_concrete`, which records the instance a specialization's
+> call asks for) consulted no depth at all, so `deep<T>` calling `deep::<Box<T>>(…)` expanded without end (no exit,
+> 4.4 GB) where this paragraph promised a compile error with the stack printed. Landing 96 keeps the promise in two
+> places under the one code: a function's direct self-call at a type built from its OWN parameter is `NITPICK-TYPE-018`
+> at the call, by the checker (no instance of it can end, so the cap would only be reached); an indirect cycle
+> (`f<T>` → `g::<Box<T>>` → `f::<U>`) is refused by the emitter when the requested type nests past `GENERIC_DEPTH`
+> (`type_nest_depth`; the one constant for both halves at last), the sentence naming the call, the requested type and
+> its nesting — which IS the chain of instances behind it: that is "the instantiation stack printed".
+
 **Deduplication.** Instantiations are keyed by mangled name; a repeat request
 returns the existing specialization. The prototype already does this for structs
 via a `getStructType(mangledName)` lookup.
@@ -22486,3 +22497,141 @@ constant today, so it stands second in the queue.
 > (`m10/programs/c25_flt32_literal_16_digits.npk`, `m11/programs/vf0983.npk`, `m11/programs/vf1149.npk`); the 18 are
 > NITPICK-TYPE-031 in `float_fit.npk`; no file of the libraries, the applications or the fuzzer's corpus writes a
 > float literal that does not fit.
+
+## D-347 — A `frac`'S STORED PARTS ARE ITS READABLE PARTS: WHOLE AND NUM OF ONE SIGN, VALUE = WHOLE + NUM/DENOM, ONE FORM PER VALUE; THE PRINT SHOWS THE SIGN ONCE — **SETTLED (user decision, 2026-10-05 and 2026-10-08: "your recommendations are fine with me")**
+
+**The question, as it was put (DEF-231; the fuzzer's `ty1657`, the library listener's O-N36).** TYPE_REFERENCE's
+`ToString` row for a `frac` — `"whole num/denom"`: "3 1/3", "-2 5/8", "0", "ERR" — printed the STORED parts, and the
+stored form was the prototype's five invariants carried into D-198: `num ≥ 0 when whole ≠ 0`, the normaliser's last
+step borrowing from the whole so the fraction is never negative beside a nonzero whole. So `-(1 3/8)` was stored
+{−2, 5, 8} and printed "-2 5/8", which a reader of mixed numbers takes for −2.625; `-(2 5/8)` printed "-3 3/8".
+Measured at `93bcb66` before the question was put, both legs (`frac_probe.npk`): and ONE VALUE HAD TWO STORED FORMS —
+`(-1) + 5/8` was {−1, 5, 8}, printing "-1 5/8" (read as −1.625), while `1/8 - 1/2` was {0, −3, 8}, printing "-3/8";
+`==` said they were equal (the core compares improper forms), the parts differed. Everything that READ the parts — the
+members `.whole`/`.num`/`.denom`, a `Debug` through `to_string`, a derived `Hash` — saw two values for one number.
+
+**Where it stood.** The user ruled the print a wrong answer on 2026-10-05 (in `nitpick-compiler_31`'s session, during
+the Fable pause): "i think the issue seemed to be whether printing it gave the internal representation or the
+representation a human might expect to read. [...] to me it seemed that if you are printing a thing out you want the
+readable representation most of the time, not details about how it's stored." And the principle behind it, the same
+day: "we don't like surprises, especially when safety could be involved. we also don't want to force people into doing
+conversions in their head when working with the fractions. someone who is fresh and sharp may be able to do it fine.
+someone who is nearing the end of a long an arduous shift may no longer have the sharpness to rememeber whether they
+are looking at the number as they would use it or the way it's being stored. that seems to me to be a sure fire way
+for lots of mistakes to happen." Two candidates were put to him: (1) keep the floor form stored and make every reader
+answer the readable parts; (2) make the STORED form the readable one, so stored, read and printed are one thing and
+there is nothing to convert anywhere. His answer: "the second actually makes the most sense to me too. I didn't know
+if perhaps it was being stored the other way for performance or something but i'm of the mind that the less
+conversions there are the better for everyone." No performance reason is recorded anywhere for the floor form; it was
+the prototype's rule.
+
+**The decision: candidate 2, with a signed `num` — the recommendation, ratified as written.** A `frac`'s stored
+parts satisfy: `denom > 0`; `|num| < denom`; `gcd(|num|, denom) = 1` (and `denom = 1` when `num = 0`); **`whole` and
+`num` never have opposite signs** — one may be zero; and **value = whole + num/denom in every case.** So the form is
+UNIQUE: `whole` is the value truncated toward zero and `num/denom` the rest, with the value's sign on both. −1 3/8 is
+{−1, −3, 8}; −3/8 is {0, −3, 8} however it was computed; 2 5/8 is {2, 5, 8}. The members answer those parts:
+`.whole` −1, `.num` −3, `.denom` 8 — so `whole + num/denom` is the value with no special case for a negative, which
+is the rule the user gave in code form. The print shows the sign ONCE and the magnitude after it: "-1 3/8", "-3/8",
+"2 5/8", "0", "ERR" — the mixed-number notation a reader expects; `Debug` prints the same. The alternative considered
+and not taken: `num` as a magnitude with the sign on `whole` alone ({−1, 3, 8}) — the notation's own parts, but
+`whole + num/denom` is then wrong for every negative value with a fraction, and a reader who computes it by hand
+makes the exact mistake the rule exists to prevent.
+
+**In one line.** Stored = read = printed: a `frac` is `whole + num/denom` with `whole` and `num` of one sign and
+`|num| < denom`; one form per value; "-1 3/8".
+
+**How it was ratified.** The ruling and the principle, 2026-10-05, in the user's own words above; the candidate,
+2026-10-05 ("the second actually makes the most sense to me too"); the recommendation as written in this seat's
+00:28 report of 2026-10-08 (the signed `num`, the print, the members), ratified 2026-10-08 in `nitpick-compiler_31`'s
+session: "your recommendations are fine with me". Recorded by landing 96, built as landing 97.
+
+**What it changes.** `npk_frac_norm`'s last block (prelude.npk): the borrow that made `num` non-negative beside a
+nonzero whole becomes the sign-sharing step (a positive whole with a negative fraction borrows one; a negative whole
+with a positive fraction carries one); the four `ToString` impls print `|num|` beside a nonzero whole; the emitter's
+frac→integer cast is the `whole` field alone (its "plus one when whole is negative and num nonzero" was the floor
+form's correction); `frac_basic.npk`'s expectations of the floor form; TYPE_REFERENCE's invariant sentence and the
+members' description (its example "-2 5/8" stands: it is −2.625 now, as a reader always took it); D-198's dated note.
+A COMPUTED ANSWER changes for every negative `frac` with a fraction — its print, its `.whole`, its `.num` — and no
+program of the tree, the libraries or the applications reads a negative frac's parts (measured by the sweep at the
+landing); the fuzzer's `ty1657` expects the old print and is told in advance.
+
+## D-348 — A `fixed` SLICE IS READ-ONLY THROUGH IT: D-074'S PROMISE MADE TRUE — THE WRITE REFUSAL NOW, `fixed T[]` AS A TYPE AS ITS SECOND STEP — **SETTLED (user decision, 2026-10-08: "your recommendations are fine with me")**
+
+**The question, as it was put (S-129; DEF-230, the library listener's F-047 in O-N36).** IS A `fixed` SLICE READ-ONLY
+THROUGH IT. The recap: D-074 (settled at 0.7) retired the `binary` type because "immutability is a BINDING property in
+Nitpick rather than a type property, so an immutable byte view is `fixed uint8[]`" — TYPE_REFERENCE §22 teaches
+exactly that; D-287 (1.5.5) made a `fixed` binding addressless (TYPE-071) and DEF-106's TYPE-086 refuses a write into
+a PART of one, and both stop at a pointer, slice or handle base, "the storage there is not the binding's own". So a
+callee declaring `fixed uint8[]:v` wrote `v[0] = 9` and the caller's bytes changed (measured at `93bcb66`, both legs),
+which is what D-287 says and the opposite of what D-074 promised. Measured: every `fixed uint8[]` in the tree (seven
+files) is the `Writer` trait's `write` parameter and none writes through it; no library uses a fixed slice view.
+
+**Where it stood.** OPEN — the user's; DEF-230 lands on the answer.
+
+**The decision: R1, the recommendation, ratified as written.** D-074's promise is made true, in two steps. **(i) A
+write through a `fixed` slice is refused** — an element, a range, `@`/`$$m` of its elements, a stateful operation on
+one — with the existing TYPE-086 (`place_fixed` walking into a slice base when the slice binding is `fixed`); pointers
+and handles stay as D-287 has them: an address is not a view. This closes F-047's two programs and refuses nothing that
+exists. **(ii) `fixed T[]` becomes a TYPE** — a read-only view: `T[]` converts to it implicitly (fewer rights), never
+back, so a `fixed uint8[]` cannot be handed to a plain `uint8[]` parameter whose callee writes — the hole (i) leaves. A
+language change before the freeze, its own landing after the wrong answers, PLANNED first (where the qualifier enters
+the type table, the conversion rule at every fit, the prelude's and the libraries' signatures, the sweep). The
+alternatives not taken: R2, (i) alone with the pass-through hole documented; R3, correct D-074's sentence instead and
+let the reference stop promising an immutable byte view. Against the no-surprises rule a signature that says `fixed`
+and lets the callee write is the worse reading.
+
+**In one line.** `fixed uint8[]` is the immutable byte view D-074 promised: no write through it (now), and no handing
+it to something that writes (the type rule, planned next).
+
+**How it was ratified.** The recommendation as written in this seat's 00:28 report of 2026-10-08 (S-129's row in
+OPEN_DECISIONS §2e-quinquies as it stood at landing 94), ratified 2026-10-08 in `nitpick-compiler_31`'s session: "your
+recommendations are fine with me". Recorded by landing 96; (i) built as landing 98; (ii) planned after it.
+
+**What it changes.** (i): a refusal ADDED (TYPE-086 at a write through a `fixed` slice binding, or through a slice
+held in a `fixed` aggregate), announced in advance; the sweep measures that no existing file moves. (ii): a type
+qualifier, a conversion rule and a sweep of every slice parameter in the tree, the prelude and the libraries — its
+plan says what refuses.
+
+## D-349 — THE TOOLCHAIN PIN MOVES TO THE LLVM 20.1 RELEASE THE DISTRIBUTIONS SERVE (20.1.8 TODAY), AND THE DEPENDENCY CHAIN MOVES WITH IT — **SETTLED (user decision, 2026-10-08: "i'm fine with moving the pin … we just can't forget the dependency chain beyond just the compiler itself")**
+
+**The question, as it was put (S-131; the library seat's VM test of the install README, 2026-10-08).** `npkg build`
+refuses LLVM 20.1.8 against `nitpick.toml`'s pin of 20.1.2 ("llc is 20.1.8 but nitpick.toml pins 20.1.2 … Install the
+pinned version, or update the pin AND regenerate every expected hash"), and NO package source serves 20.1.2 any more:
+apt.llvm.org's noble suite ships 20.1.8 (build 20250804), Ubuntu 26.04's own archive ships 1:20.1.8, and apt.llvm.org
+serves no LLVM 20 at all for 26.04 (its `llvm.sh` exits 100 and leaves a dead source behind). So a newcomer following
+the README cannot satisfy the pin by any route the README can give; with only the pin edited, `npkg build` passes in
+60.7 s. The options: (a) move the pin to 20.1.8 and regenerate the expected hashes — a D-204 toolchain change, its own
+landing, every digest re-recorded, the floor and the explorer re-measured, the library side told (its CI pins the
+same); (b) keep 20.1.2 and have the README say §6 (`npkg`) is for the project's own machines only. The recommendation:
+(a) — a pin nobody can install is a pin that tests nothing on a second machine, which is what D-265 exists for.
+
+**Where it stood.** D-204 (1.4.5) pins the toolchain as an exact patch release, because a patch release can change
+instruction selection and the project's results are recorded against one; D-265 (1.5.2g) made the EMISSION the
+cross-machine claim and the pin a version, never a tool digest. Neither foresaw the pinned release leaving every
+package source while the project still needed a second machine to run `npkg`.
+
+**The decision, in the user's words (2026-10-08 01:15, in `nitpick-compiler_31`'s session):** "i'm fine with moving
+the pin. the one consideration we may need to think about with regards to that is do we also need to update NIKOS as
+well? normal IKOS is still on like LLVM 14 or some shit so that is why we even made the NIKOS to begin with as 14 was
+entirely incompatible with 20 which the compiler used. its something we should investigate i think. i mean, in any case
+we need to go with the updated toolchain rather than one that is a pain in the ass to get for newer distros. we just
+can't forget the dependency chain beyond just the compiler itself."
+
+**What it decides.** The pin moves to the LLVM 20.1 release the distributions serve — 20.1.8 today — as an EXACT patch
+release still (D-204's rule stands: pinned, the hashes re-recorded), and the dependency chain moves WITH it and is
+checked before the landing is called done: (1) NIKOS — the user's own port of IKOS to LLVM 20 (`REPOS/nikos`, pinned
+at `db47f9d` in `meta/roadmap/1.6/tools/pins.txt`, built by `engines.sh` into `~/.local/src/1.6/`) — is rebuilt
+against 20.1.8's headers and libraries, the gate's runner re-run over the eight planted controls (7 of 8 found, both
+modes, 1.6.0 step 3) and the compiler's datalayout twin, and every digest re-pinned; a patch release within LLVM 20
+should be source-compatible, but that is measured, not assumed. (2) Alive2 (its pinned commit plus the recorded
+`rlimit` patch, linking the pinned z3 as a shared library): the same rebuild and smoke (`dyn_slots`, deterministic,
+the two vtable-thunk "incorrect" verdicts as before). (3) Clam/Crab is at LLVM 18 by design and is unaffected. (4)
+z3's digest pin is unaffected. (5) In the tree: `nitpick.toml`'s `llvm = "20.1.8"`, the expected hashes npkg's refusal
+names (toolchain.npk says which), the ladder rows — the OBJECTS and the BINARIES move; `npkc.ll`, `stage1.ll` and every
+obligation row are TEXT and do not — the explorer's schedule hashes (steps, not instructions: expected unmoved,
+measured by D-303's sweep), the floor's rows (over IR text: expected unmoved). (6) The library side is told in
+advance; its CI pins the same release. (7) INSTALL.md then documents the distributions' own `llvm-20` packages as THE
+route. Its own landing, after the five in flight at the decision (94…98); `nitpick-compiler_32` holds it.
+
+**In one line.** The toolchain is pinned to a release a fresh machine can install, and every tool downstream of LLVM
+— NIKOS and Alive2 first — is rebuilt and re-measured against it in the same landing.
