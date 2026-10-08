@@ -1,0 +1,33 @@
+// expect-exit: 0
+// A template with nothing to splice is its text (DEF-241's edge, landing 95; `tests/cost/template_literal.toml`):
+// 1000i64 trip(s) of the plain literal -- `\`plain\`` lowers to the literal's own header exactly as `"plain"` does, so the
+// template loop's peak under NPK_HEAP_STATS is held to the plain literal loop's (bound 1: neither allocates).
+mod:template_literal_plain;
+
+func:main = int32(cstring[]:_~argv) {
+    int64:sum = 0i64;
+    int64:i = 0i64;
+    while (i < 1000i64) decreases 1000i64 - i {
+        string:t = "plain";
+        sum = sum +% t.len;
+        i = i + 1i64;
+    }
+    if (sum != 1000i64 * 5i64) { exit 10i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 90i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 99i32;
+};

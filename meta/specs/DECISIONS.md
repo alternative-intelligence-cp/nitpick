@@ -12248,6 +12248,18 @@ the braces is a second language with its own rules to remember.
 derived `ToString` (D-123) renders a struct's fields with the same rule, and
 `Debug` stays the separate question it is.
 
+> **Note (2026-10-08, 1.6.1e landing 95 — DEF-228, DEF-241):** "a template lowers to a `string_concat` chain over its
+> parts" said nothing about who frees the chain. `npk_string_concat` copies both operands and frees neither, so every
+> `to_string` result and every intermediate concatenation the chain made was a block nobody dropped — 24 bytes per
+> spliced value per evaluation, invisible to D-151 (the library listener's `tleak`: 24,004 bytes live after 1,000
+> trips where 28 are right) — and a template whose ONLY item was a string was handed that item's header as its value,
+> two owners of one body, a double free at the function's return. Landing 95 states the rest of the rule: the chain's
+> intermediates and every `to_string` result are the statement's temporaries (D-246), dropped at its end; a string
+> ITEM is borrowed and never registered; the template's value is a body of its own (a lone string place or call item
+> is copied) except that a template with NOTHING TO SPLICE is its text -- the literal's own header, as `"plain"` is,
+> at no cost; the final value is registered once, by the producer rule. The emitted text moves for every program
+> holding a template with a splice.
+
 ## D-169 — `==` on a non-scalar type is refused; equality is `Eq` — **SETTLED**
 
 1.0.9's T-5. `type_comparison` unified its operands and checked only ordering,

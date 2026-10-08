@@ -1,0 +1,13 @@
+# DEF-241's edge (1.6.1e landing 95): a template with NOTHING TO SPLICE is its text. The landing's
+# first form copied every lone string item -- a place's, a call's AND a literal's -- so `\`plain\``
+# allocated a body per evaluation where `"plain"` allocates nothing (measured: one
+# `npk_string_concat` per evaluation, op0391's emission moved). A lone LITERAL is handed through
+# as the literal's own header now, as `"plain"` is (D-049): `template_literal_churn.npk` runs
+# a thousand splice-free templates, `template_literal_plain.npk` a thousand plain literals, and
+# under NPK_HEAP_STATS the template loop's peak must stay within `bound` times the literal
+# loop's -- bound 1: neither loop allocates.
+kind    = "probe"
+program = "tests/backend/programs/template_literal_churn.npk"
+against = "tests/backend/programs/template_literal_plain.npk"
+bound   = 1
+expect  = "pass"

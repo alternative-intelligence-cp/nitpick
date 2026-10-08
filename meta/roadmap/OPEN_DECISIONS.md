@@ -3758,18 +3758,19 @@ defect declares a `DEF-` in §2f.
 > removed; the emitted text moves for every program holding an explicit `=> dyn` cast (the second slot, flag and
 > stores gone).
 
-> **DEF-228 — OPEN (2026-10-07; owner: the compiler seat; the library listener's O-N38 item 1, found by its
-> benchmark round; measured by the listener at `93bcb66` and `5fbaf4a`, here at `93bcb66`, both legs). THE
-> TEMPLATE SPLICE `&{ }` LEAKS ITS `to_string` TEMPORARY.** `string:s = \`n&{i}\`;` run 1,000 times prints
-> `heap: allocated=27890 peak_live=24004 count=2000` under `NPK_HEAP_STATS`, where the explicit
-> `string_concat("n", int_to_string(i))` prints `peak_live=28`: `emit_template` (ir_expr.npk) calls `emit_tostring`
-> for a non-string item, hands the owned result to `npk_string_concat`, which copies both operands and frees neither,
-> and drops nothing -- one owned block per spliced value and one per intermediate concatenation, never freed and
-> invisible to D-151 (managed storage). The template's FINAL value is a statement temporary (`temp_producer` lists
-> the literal); its intermediates are nobody's. SILENT (a leak). The reproductions are the listener's `tleak.npk` /
-> `tleak_x.npk` (its workbench's `.internal/bench-2026-10-05/leak/`); no library uses `&{ }` (its measurement). Planned
-> as landing 95: each `to_string` result and each replaced intermediate registered as the statement's temporary
-> (D-246's own mechanism), the final value registered once as today.
+> **DEF-228 — FIXED 2026-10-08 (landing 95, `nitpick-compiler_31`, landed by `nitpick-compiler_32`; the library
+> listener's O-N38 item 1, found by its benchmark round; measured by the listener at `93bcb66` and `5fbaf4a`, here at
+> `93bcb66`, both legs). THE TEMPLATE SPLICE `&{ }` LEAKED ITS `to_string` TEMPORARY.** -- `string:s = \`n&{i}\`;` run
+> 1,000 times printed `heap: allocated=27890 peak_live=24004 count=2000` under `NPK_HEAP_STATS`, where the explicit
+> `string_concat("n", int_to_string(i))` prints `peak_live=28`: `emit_template` (ir_expr.npk) called `emit_tostring`
+> for a non-string item, handed the owned result to `npk_string_concat`, which copies both operands and frees
+> neither, and dropped nothing -- one owned block per spliced value and one per intermediate concatenation, never
+> freed and invisible to D-151. The fix is D-246's own mechanism: each `to_string` result and each replaced
+> intermediate is registered as the statement's temporary once it has been concatenated past, and dropped at the
+> statement's end; a string ITEM is never registered (a place's header is borrowed, a call's result is that call's
+> own temporary); the template's FINAL value is registered once, by the producer rule, as before. `tleak`: 24,004 ->
+> 28 bytes live, the explicit concat's number; `tests/cost/template_splice.toml` holds `template_churn.npk` (1,000
+> trips of `n&{ i }-&{ s }`) to twice `template_once.npk`'s peak (42 against 36); `template_owner.npk`'s nine roads.
 
 > **DEF-229 — OPEN (2026-10-07; owner: the compiler seat; the library listener's F-041 in O-N36; measured by the
 > listener at three compilers and here at `93bcb66`). THE COMPILER DOES NOT TERMINATE ON AN UNBOUNDED GENERIC
@@ -3873,15 +3874,18 @@ defect declares a `DEF-` in §2f.
 > (`npkg/manifest.npk:274`) OMITS `explore`**, which `manifest.npk:41` accepts: the list the refusal prints is not
 > the list the reader reads.
 
-> **DEF-241 — OPEN (2026-10-07; owner: the compiler seat; found by `nitpick-compiler_31` probing DEF-228's
-> lowering, `tpl_one.npk`; measured at `93bcb66`). A TEMPLATE WHOSE ONLY ITEM IS A STRING ALIASES IT.**
-> `string:t = \`&{ s }\`;` hands `t` the HEADER of `s` -- `emit_template` passes a lone item through as the
-> template's value and the producer rule registers that header as the statement's temporary -- so `t` and `s` are
-> one body with two owners: in a function that returns, the scope's exit frees it twice and the allocator's check
-> traps (exit 95, `Unreachable`, at both legs); in `main` the second free waits for the first `exit`. A lone
-> string-typed CALL item is the same shape with the call's own registration beside the template's (F-037's double
-> registration again). SILENT (a memory fault in safe code). Fixed with DEF-228 in landing 95: a lone item is
-> COPIED (`npk_string_concat` with the empty header), so the template's value is always a body of its own.
+> **DEF-241 — FIXED 2026-10-08 (landing 95, with DEF-228; found by `nitpick-compiler_31` probing DEF-228's lowering;
+> measured at `93bcb66`). A TEMPLATE WHOSE ONLY ITEM WAS A STRING ALIASED IT.** -- `emit_template` passed a lone
+> item through as the template's value, and the producer rule registered that header as the statement's temporary:
+> `string:t = \`&{ s }\`;` made `t` and `s` one body with two owners, and a function's return freed it twice (the
+> allocator's check: exit 95, `Unreachable`, both legs); a lone string-typed CALL item was the same body under two
+> registrations, the F-037 shape. A lone string PLACE or CALL item is COPIED now (`npk_string_concat` with the empty
+> header), so the template's value is a body of its own; a lone LITERAL -- a template with nothing to splice,
+> `\`plain\`` -- is the literal's own header, as `"plain"` is (D-049): nothing owns a constant, so nothing is aliased,
+> and the landing's first form, which copied it too, cost an allocation per evaluation where the plain literal costs
+> none (found reading the sweep: the fuzzer's `op0391`, "a backtick template with nothing interpolated is its text",
+> had moved). `template_owner.npk`'s first road (3 + 3 where the parent trapped) and its tenth; `tests/cost/
+> template_literal.toml` holds a thousand splice-free templates to a thousand plain literals' peak.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

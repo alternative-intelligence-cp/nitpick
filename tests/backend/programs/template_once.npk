@@ -1,0 +1,36 @@
+// expect-exit: 0
+// The template splice's cost twin (DEF-228, landing 95; `tests/cost/template_splice.toml`): 1i64 trip(s) of
+// `n&{ i }-&{ s }` -- every trip's `to_string` result and intermediate concatenation must be freed by the
+// end of its statement, so the churn's peak under NPK_HEAP_STATS stays within the once's bound.
+mod:template_once;
+
+func:mk = string(string:a) never fails { pass (string_concat(a, "!")); };
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = raw mk("x");
+    int64:sum = 0i64;
+    int64:i = 0i64;
+    while (i < 1i64) decreases 1i64 - i {
+        string:t = `n&{ i }-&{ s }`;
+        sum = sum +% t.len;
+        i = i + 1i64;
+    }
+    if (sum < 1i64) { exit 10i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 90i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 99i32;
+};

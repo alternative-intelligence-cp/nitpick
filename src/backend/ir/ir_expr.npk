@@ -1493,26 +1493,53 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 // lot joined with `string_concat`. A `string` part is itself; any other is
 // `to_string`'d at its concrete type. The checker proved every part stringable,
 // so a missing `to_string` here is a defect, not a rung.
+// A TEMPLATE OWNS WHAT IT BUILDS, AND ONLY THAT (DEF-228, DEF-241; 1.6.1e landing
+// 95). Every `to_string` result and every intermediate concatenation is a body
+// this function made; `npk_string_concat` copies both operands and frees
+// neither, so each one that has been concatenated past is registered as the
+// statement's temporary (D-246) and dropped at its end -- until this landing
+// none was, one block per spliced value and per join leaked, invisible to
+// D-151 (the library listener's `tleak`: 24,004 bytes live after 1,000 trips
+// where 28 are right). A string ITEM is somebody else's: a place's header is
+// borrowed, a call's result is that call's own temporary, and neither is
+// registered here. The template's FINAL value is registered once, by the
+// producer rule (`temp_producer` lists the literal), so it is never registered
+// here either -- and it must be a body of its own: a lone string item used to
+// be handed through as the value, so `string:t = \`&{ s }\`;` aliased `s` and
+// the scope's exit freed one body twice (DEF-241); a lone string PLACE or CALL
+// item is copied now. A lone LITERAL -- a template with nothing to splice,
+// `\`plain\`` -- is the literal's own header, as `"plain"` is (D-049): nothing
+// owns a constant, so nothing is aliased and nothing is freed; a template with
+// nothing to splice is its text, at no cost.
 func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
+    int32:stid = raw exprtypes_get(x.et, id);
     string:acc = "";
     bool:have = false;
+    bool:acc_owned = false;   // `acc` is a body this template made
+    bool:acc_lit = false;     // `acc` is a string literal's header (nobody's to free)
     for (int32:i in 0i32...count) {
         ExprId:item = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         int32:itype = raw exprtypes_get(x.et, item);
         string:sref = "";
+        bool:owned = false;
+        bool:lit = false;
         if ((raw type_kind(x.fe.ctx.types, itype)) == (raw TY_STRING())) {
             IrVal:sv = raw emit_expr(x, item);
             if (!(raw iv_is_ok(sv))) { pass sv; }
             sref = move(sv.ref);
+            if ((raw ast_expr(x.ast, item)).kind == ExprKind.ExprStringLiteral) { lit = true; }
         } else {
             IrVal:tv = raw emit_tostring(x, item, itype);
             if (!(raw iv_is_ok(tv))) { pass tv; }
             sref = move(tv.ref);
+            owned = true;
         }
         if (!have) {
             acc = move(sref);
+            acc_owned = owned;
+            acc_lit = lit;
             have = true;
         } else {
             string:cc = raw irw_temp(x.fe.w);
@@ -1524,24 +1551,48 @@ func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat3(cv,
                 " = extractvalue { { ptr, i64, i64 }, i32 } ",
                 string_concat(cc, ", 0")));
+            // The two operands are spent: what this template made of them is
+            // the statement's to drop, now that it has been copied past.
+            if (acc_owned) { drop temp_register(x, stid, "{ ptr, i64, i64 }", acc); }
+            if (owned)     { drop temp_register(x, stid, "{ ptr, i64, i64 }", sref); }
             acc = move(cv);
+            acc_owned = true;
         }
     }
     if (!have) {
         // An empty template is the empty string.
-        string:g = raw strtab_add(x.strs, "");
-        string:a = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat4(a,
-            " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", g, ", 0"));
-        string:b = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(b,
-            " = insertvalue { ptr, i64, i64 } ", a, ", i64 0", ", 1"));
-        string:c = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(c,
-            " = insertvalue { ptr, i64, i64 } ", b, ", i64 0", ", 2"));
-        pass (raw iv("{ ptr, i64, i64 }", move(c), raw exprtypes_get(x.et, id)));
+        pass (raw iv("{ ptr, i64, i64 }", raw template_empty(x), stid));
     }
-    pass (raw iv("{ ptr, i64, i64 }", move(acc), raw exprtypes_get(x.et, id)));
+    if ((!acc_owned) && (!acc_lit)) {
+        // A lone string PLACE or CALL item: the value is a COPY of it, never
+        // its header (a lone LITERAL is handed through: nobody owns it).
+        string:cc = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cc,
+            " = call { { ptr, i64, i64 }, i32 } @npk_string_concat({ ptr, i64, i64 } ",
+            acc, ", { ptr, i64, i64 } ",
+            raw cat3(raw template_empty(x), ")", "")));
+        string:cv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(cv,
+            " = extractvalue { { ptr, i64, i64 }, i32 } ",
+            string_concat(cc, ", 0")));
+        acc = move(cv);
+    }
+    pass (raw iv("{ ptr, i64, i64 }", move(acc), stid));
+};
+
+// The empty string's header, built in place: a cap-0 view of the empty literal.
+func:template_empty = string(ExprEmitter->:x) never fails {
+    string:g = raw strtab_add(x.strs, "");
+    string:a = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(a,
+        " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", g, ", 0"));
+    string:b = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(b,
+        " = insertvalue { ptr, i64, i64 } ", a, ", i64 0", ", 1"));
+    string:c = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c,
+        " = insertvalue { ptr, i64, i64 } ", b, ", i64 0", ", 2"));
+    pass c;
 };
 
 // CALL `to_string` FOR A VALUE (D-168): resolve the `ToString` impl for its

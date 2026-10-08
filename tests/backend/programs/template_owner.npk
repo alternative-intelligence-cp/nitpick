@@ -1,0 +1,125 @@
+// expect-exit: 0
+//
+// A TEMPLATE OWNS WHAT IT BUILDS, AND ONLY THAT (DEF-228, DEF-241; 1.6.1e landing 95; the
+// library listener's O-N38 item 1). `emit_template` handed each spliced value's `to_string`
+// result and each intermediate concatenation to `npk_string_concat`, which copies and frees
+// nothing, and dropped none of them -- one block per splice, never freed, invisible to D-151
+// (the listener's `tleak`: 24,004 bytes live after 1,000 trips where 28 are right). And a
+// template whose ONLY item is a string ALIASED it: `string:t = \`&{ s }\`;` handed `t` the
+// header of `s`, so the scope's exit freed one body twice (the allocator's check: exit 95
+// on the compiler before this one). Every road below runs in a function that RETURNS, so
+// the scope's drops run; `template_churn.npk` against `template_once.npk` holds the leak.
+mod:template_owner;
+
+func:v32 = int32(int32:x) never fails { pass x; };
+func:mk = string(string:a) never fails { pass (string_concat(a, "!")); };
+
+// (a) the lone string item: `t` must be its own copy.
+func:road_lone_string = int64() {
+    string:s = raw mk("ab");
+    string:t = `&{ s }`;
+    pass (s.len + t.len);
+};
+
+// (b) the lone spliced value.
+func:road_lone_value = int64() {
+    int32:n = raw v32(1234i32);
+    string:t = `&{ n }`;
+    pass t.len;
+};
+
+// (c) text, a value, text, a string: the listener's shape with a tail.
+func:road_mixed = int64() {
+    string:s = raw mk("x");
+    int64:total = 0i64;
+    for (int32:i in 0i32...5i32) {
+        string:t = `n&{ i }-&{ s }`;
+        total = total + t.len;
+    }
+    pass total;
+};
+
+// (d) two string items, then a value: the first item is the accumulator.
+func:road_two_strings = int64() {
+    string:a = raw mk("a");
+    string:b = raw mk("b");
+    string:t = `&{ a }&{ b }&{ raw v32(7i32) }`;
+    pass (a.len + b.len + t.len);
+};
+
+// (e) a string-typed CALL item is the statement's temporary already: taken once.
+func:road_call_item = int64() {
+    string:t = `[&{ raw mk("q") }]`;
+    pass t.len;
+};
+
+// (f) a template inside a template.
+func:road_nested = int64() {
+    int32:n = raw v32(9i32);
+    string:t = `<&{ `&{ n }&{ n }` }>`;
+    pass t.len;
+};
+
+// (g) the template's value leaves with the function, and goes straight into a call.
+func:road_returned = string(int32:v) never fails { pass (`v=&{ v }`); };
+func:len_of = int64(string:s) never fails { pass s.len; };
+func:road_leaves = int64() {
+    string:t = raw road_returned(raw v32(42i32));
+    pass (t.len + (raw len_of(`&{ raw v32(5i32) }&{ raw v32(6i32) }`)));
+};
+
+// (h) the coroutine twin: the pieces outlive a suspension.
+async func:road_coroutine = int64() {
+    string:s = raw mk("co");
+    string:t = `&{ s }:&{ raw v32(3i32) }`;
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    pass (s.len + t.len);
+};
+
+// (i) the empty template.
+func:road_empty = int64() {
+    string:t = ``;
+    pass t.len;
+};
+
+// (j) a template with nothing to splice is its text: the literal's own header,
+// as `"plain"` is -- no copy, no body of its own (`template_literal.toml` holds
+// a thousand of them to a thousand plain literals' peak).
+func:road_lone_literal = int64() {
+    string:t = `plain`;
+    pass t.len;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if ((road_lone_string() ?! E9) != 6i64)   { exit 10i32; }
+    if ((road_lone_value() ?! E9) != 4i64)    { exit 11i32; }
+    if ((road_mixed() ?! E9) != 25i64)        { exit 12i32; }
+    if ((road_two_strings() ?! E9) != 9i64)   { exit 13i32; }
+    if ((road_call_item() ?! E9) != 4i64)     { exit 14i32; }
+    if ((road_nested() ?! E9) != 4i64)        { exit 15i32; }
+    if ((road_leaves() ?! E9) != 6i64)        { exit 16i32; }
+    if ((await road_coroutine() ?! E9) != 8i64) { exit 17i32; }
+    if ((road_empty() ?! E9) != 0i64)         { exit 18i32; }
+    if ((road_lone_literal() ?! E9) != 5i64)  { exit 19i32; }
+    exit 0i32;
+};
+
+error:E9;
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 9i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 90i32; },
+        (DeadlineExceeded)  { exit 88i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 99i32;
+};

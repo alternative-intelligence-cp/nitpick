@@ -1,0 +1,13 @@
+# DEF-228 (1.6.1e landing 95; the library listener's O-N38 item 1): the template splice
+# `&{ }` handed every spliced value's `to_string` result and every intermediate
+# concatenation to `npk_string_concat`, which copies both operands and frees neither,
+# and dropped none of them -- one block per splice, never freed and invisible to D-151
+# (32,789 bytes live after 1,000 trips of `n&{ i }-&{ s }` on 93bcb66, where 36 are
+# right). `template_churn.npk` runs the splice a thousand times, `template_once.npk`
+# once, and under NPK_HEAP_STATS the churn's peak must stay within `bound` times the
+# once's.
+kind    = "probe"
+program = "tests/backend/programs/template_churn.npk"
+against = "tests/backend/programs/template_once.npk"
+bound   = 2
+expect  = "pass"
