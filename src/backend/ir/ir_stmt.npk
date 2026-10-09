@@ -1132,8 +1132,12 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                 }
             }
         }
-        drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
-                          string_concat(", ptr ", place.addr)));
+        // A `NIL` PLACE TAKES NO STORE (DEF-232): a `NIL` field is a zero-sized
+        // `{}` member; the value was evaluated for its effects and nothing lands.
+        if ((raw type_kind(x.fe.ctx.types, place.type_id)) != (raw TY_NIL())) {
+            drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
+                              string_concat(", ptr ", place.addr)));
+        }
         if (aflag.len > 0i64) {
             drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", aflag, ""));
         }

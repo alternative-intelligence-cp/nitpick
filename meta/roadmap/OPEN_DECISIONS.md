@@ -3882,7 +3882,18 @@ defect declares a `DEF-` in §2f.
 > frac with a fraction (its print, `.whole`, `.num`): the landing's sweep and emission comparison name every
 > program that reads one (the record).
 
-> **DEF-232 — OPEN (2026-10-07; the listener's F-048 in O-N36; measured by it at `5fbaf4a` and `93bcb66`). A STRUCT
+> **DEF-232 — FIXED 2026-10-09 (landing 112, `nitpick-compiler_35`): the LAYOUT gives a `NIL` member no slot, as D-084
+> promises ("a `NIL` struct field occupies nothing" -- the decision to read was D-084, not D-105). A `NIL` field or array
+> element lowers as the zero-sized `{}` (`ll_member_type`, ir_types.npk; a struct whose fields are all `NIL` is `i8` by the
+> zero-field rule), an enum whose payloads are all `NIL` has a `[0 x iK]` slot (its header was never written before: `llc`
+> met an unsized type), the struct literal inserts nothing into a `NIL` field, a read of one is the sentinel's `i32 0`, a
+> store into one lands nowhere, the module-constant renderer writes `{} zeroinitializer`, and an enum constructor stores no
+> `NIL` payload. Measured first on landing 111's compiler: the literal, a module constant and `Box<NIL>` reach `llc` ("void
+> type only allowed for function results"), `enum:E = { A(NIL); B; }` too ("Cannot allocate unsized type"); after: all six
+> probes exit 0, `#size_of<S>()` of `{ int32; NIL; int32 }` is 8, a `NIL` payload bound by name binds. `tests/backend/
+> programs/nil_field.npk` (the literal, reads, a store, the size, a module constant, a generic instance at `NIL`, an array,
+> a struct with a string beside the `NIL` field, an enum with a `NIL` payload constructed and matched). WAS: OPEN
+> (2026-10-07; the listener's F-048 in O-N36; measured by it at `5fbaf4a` and `93bcb66`). A STRUCT
 > WITH A `NIL` FIELD IS ACCEPTED AND EMITTED AS `type { i32, void }`**, which `llc` and `opt` refuse; the control
 > without the field runs. LOUD (the wrong tool refuses). Either the checker refuses a `NIL` field by name or the
 > layout gives it no slot; to be decided by reading D-105's `NIL` rules.

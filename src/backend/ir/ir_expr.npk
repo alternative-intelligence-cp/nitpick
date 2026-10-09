@@ -10613,11 +10613,15 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
         av = raw emit_fit(x, ptid, move(av), at);
         if (raw iv_is_ok(av)) { drop temp_take(x, av.ref); }   // the variant keeps it (D-246)
         if (!(raw iv_is_ok(av))) { pass av; }
-        string:pp = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(pp, " = getelementptr ", ell.text,
-                          ", ptr ", string_concat(tmp, ", i32 0, i32 1")));
-        drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
-                          string_concat(", ptr ", pp)));
+        // A `NIL` PAYLOAD IS STORED NOWHERE (DEF-232): the slot is zero-sized and
+        // the tag says everything; the sentinel's `i32 0` would land past it.
+        if ((raw type_kind(x.fe.ctx.types, ptid)) != (raw TY_NIL())) {
+            string:pp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(pp, " = getelementptr ", ell.text,
+                              ", ptr ", string_concat(tmp, ", i32 0, i32 1")));
+            drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
+                              string_concat(", ptr ", pp)));
+        }
     }
 
     // MULTI-PAYLOAD CONSTRUCTION (1.0.9c): each argument stored at its payload's
@@ -10635,6 +10639,8 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
             cav = raw emit_fit(x, pslot.type_id, move(cav), at);
             if (raw iv_is_ok(cav)) { drop temp_take(x, cav.ref); }   // the variant keeps it (D-246)
             if (!(raw iv_is_ok(cav))) { pass cav; }
+            // A `NIL` PAYLOAD IS STORED NOWHERE (DEF-232).
+            if ((raw type_kind(x.fe.ctx.types, pslot.type_id)) == (raw TY_NIL())) { continue; }
             LlType:cpll = raw ll_type(x.fe.ctx, pslot.type_id);
             if (!(raw ll_is_ok(cpll))) {
                 pass (raw iv_from_ll_at(x, cpll, pslot.type_id, at));
@@ -10936,6 +10942,11 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         if (!fi.found) { pass (raw iv_broken(n.span)); }
         idx = fi.index;
         fty = fi.type_id;
+        // A `NIL` FIELD IS READ AS THE `NIL` VALUE (DEF-232): the member is `{}`
+        // and holds nothing; the sentinel's own register form is the answer.
+        if ((raw type_kind(x.fe.ctx.types, fi.type_id)) == (raw TY_NIL())) {
+            pass (raw iv("i32", "0", fty));
+        }
         LlType:fl = raw ll_type(x.fe.ctx, fi.type_id);
         if (!(raw ll_is_ok(fl))) {
             pass (raw iv_from_ll_at(x, fl, fi.type_id, n.span));
@@ -11259,12 +11270,17 @@ func:emit_global_struct_into = bool(ExprEmitter->:x, ExprId:eid,
             if (!found) { pass false; }
             FieldInfo:info = raw struct_field(x.tr, stid, fname, x.scope);
             if (!info.found) { pass false; }
-            LlType:fll = raw ll_type(x.fe.ctx, info.type_id);
+            LlType:fll = raw ll_member_type(x.fe.ctx, info.type_id);
             if (!(raw ll_is_ok(fll))) { pass false; }
             if (emitted > 0i32) { drop sink_write(out, ", "); }
             drop sink_write(out, fll.text);
             drop sink_write(out, " ");
-            if (!(raw emit_global_const_into(x, vid, out))) { pass false; }
+            // A `NIL` FIELD IS `{} zeroinitializer` (DEF-232): nothing to render.
+            if ((raw type_kind(x.fe.ctx.types, info.type_id)) == (raw TY_NIL())) {
+                drop sink_write(out, "zeroinitializer");
+            } else {
+                if (!(raw emit_global_const_into(x, vid, out))) { pass false; }
+            }
             emitted = emitted + 1i32;
         }
         fi = fi + 1i32;
@@ -11324,12 +11340,18 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
                                                    vid.index, n.span);
             if (!(raw iv_is_ok(lck))) { pass lck; }
         }
-        string:r = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", sll.text, " ",
-                          raw cat5(acc, ", ", v.ll, " ",
-                              raw cat4(v.ref, ", ",
-                                  int_to_string(fi.index => int64), ""))));
-        acc = move(r);
+        // A `NIL` FIELD IS `{}` AND TAKES NO VALUE (DEF-232): the value was
+        // evaluated above for its effects; `zeroinitializer` already holds the
+        // member, and an `insertvalue` of the sentinel's `i32 0` into a `{}`
+        // slot is the type error `llc` refused.
+        if ((raw type_kind(x.fe.ctx.types, fi.type_id)) != (raw TY_NIL())) {
+            string:r = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", sll.text, " ",
+                              raw cat5(acc, ", ", v.ll, " ",
+                                  raw cat4(v.ref, ", ",
+                                      int_to_string(fi.index => int64), ""))));
+            acc = move(r);
+        }
         i = i + 1i32;
     }
     pass (raw iv(move(sll.text), move(acc), stid));

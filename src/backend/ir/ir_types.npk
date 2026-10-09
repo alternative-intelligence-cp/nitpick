@@ -906,7 +906,7 @@ func:ll_int_bits = LlType(int32:bits) never fails {
 // an array of something unlowerable is unlowerable, and reporting it as the array
 // would name the wrong construct.
 func:ll_array = LlType(LlCtx->:c, int32:id) never fails {
-    LlType:el = raw ll_type(c, raw type_elem(c.types, id));
+    LlType:el = raw ll_member_type(c, raw type_elem(c.types, id));   // a `NIL` element is `{}` (DEF-232)
     if (el.state != (raw LL_OK())) { pass el; }
     string:a = string_concat("[",
                    int_to_string((raw type_array_count(c.types, id)) => int64));
@@ -980,6 +980,19 @@ func:ll_enum = LlType(LlCtx->:c, int32:id) never fails {
 // bounded the same way the frontend bounds it.
 pub func:SUBST_FUEL_LL = int32() never fails { pass 64i32; };
 
+// A MEMBER'S TYPE INSIDE AN AGGREGATE (DEF-232, 1.6.1e landing 112): `NIL` is
+// zero-sized (D-084) and `void` is a return type LLVM puts in no struct or array
+// ("void type only allowed for function results"), so a `NIL` field or element
+// is the empty struct `{}` -- size 0, alignment 1, nothing stored into it and
+// nothing loaded from it (the literal, the read, the store and the renderer each
+// skip a `NIL` member; its value in a register stays the sentinel's `i32 0`).
+// Every other member type is `ll_type`'s. A struct whose fields are ALL `NIL` is
+// `i8` by the zero-field rule in `ll_struct_body` (two of them need two addresses).
+pub func:ll_member_type = LlType(LlCtx->:c, int32:t) never fails {
+    if ((raw type_kind(c.types, t)) == (raw TY_NIL())) { pass (raw ll_ok("{}")); }
+    pass (raw ll_type(c, t));
+};
+
 pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
                                  int32:scope) never fails {
     if ((raw type_kind(c.types, id)) != (raw TY_STRUCT())) { pass (raw ll_broken()); }
@@ -1009,6 +1022,7 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
 
     string:body = "";
     int32:n = 0i32;
+    int32:nsized = 0i32;   // fields that are not `NIL` (DEF-232)
     int32:i = 0i32;
     int32:nmembers = raw item_member_count(c.ast, d);
     while (i < nmembers) decreases nmembers - i {
@@ -1018,7 +1032,7 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
             int32:ft0 = raw resolve_type(r, raw field_type(m), scope);
             int32:ft = raw type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL(),
                             c.impls);
-            LlType:ll = raw ll_type(c, ft);
+            LlType:ll = raw ll_member_type(c, ft);
             if (ll.state != (raw LL_OK())) {
                 r.generics = saved;
                 pass ll;
@@ -1026,11 +1040,14 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
             if (n > 0i32) { body = string_concat(body, ", "); }
             body = string_concat(body, ll.text);
             n = n + 1i32;
+            if ((raw type_kind(c.types, ft)) != (raw TY_NIL())) { nsized = nsized + 1i32; }
         }
         i = i + 1i32;
     }
     r.generics = saved;
-    if (n == 0i32) { body = "i8"; }
+    // No field, or no field with a size (every one `NIL`): one byte, so two
+    // values of the type have two addresses.
+    if (nsized == 0i32) { body = "i8"; }
 
     string:a = string_concat("{ ", body);
     pass (raw ll_ok(string_concat(a, " }")));
@@ -1065,7 +1082,12 @@ pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) never fails {
     if (al > 16i32)  { pass bad; }
     int64:tag = raw align_up(4i64, al);
     int64:bytes = sz - tag;
-    if (bytes <= 0i64) { pass bad; }
+    // ZERO BYTES PAST THE TAG IS A SLOT (DEF-232, landing 112): a payload-carrying
+    // enum whose payloads are all `NIL` has nothing to store, and `[0 x iK]` is a
+    // legal zero-sized area -- construction and binding skip a `NIL` payload.
+    // Before this the slot was "bad" and the enum's type header was never written,
+    // so `llc` met an unsized type at the first `alloca`.
+    if (bytes < 0i64) { pass bad; }
     EnumSlot:out = EnumSlot{ ok: true, kbits: al * 8i32,
                              count: bytes / (al => int64) };
     pass out;

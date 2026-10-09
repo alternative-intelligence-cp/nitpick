@@ -2198,7 +2198,10 @@ Everything below follows from that one sentence, and nothing beyond it is part o
 - To call a NIL-returning function without checking: `drop(myFunc());`
 - **`NIL` is zero-sized** (D-084). Its only value carries no information, so it
   occupies nothing: a `NIL` struct field takes no space and `pass(NIL)` moves
-  nothing.
+  nothing. In an aggregate the emitter lowers a `NIL` member as the zero-sized
+  `{}` -- nothing is stored into it and a read of it is the `NIL` value -- and an
+  enum whose payloads are all `NIL` carries a zero-sized payload slot (DEF-232,
+  1.6.1e landing 112; before it such a program reached `llc` and was refused there).
 - **`NIL` is also the empty `Optional<T>`** (D-099): `int32?:a = NIL;`, and
   `a == NIL` is how an `Optional` is tested. That is not a second meaning — "no
   value" is what it says in both positions, which is what lets one spelling do

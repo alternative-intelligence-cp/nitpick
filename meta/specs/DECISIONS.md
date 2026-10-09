@@ -6021,6 +6021,12 @@ strictly subordinate to safety.
 
 ---
 
+> **Note (2026-10-09, 1.6.1e landing 112 — DEF-232):** "a `NIL` struct field occupies nothing" was the layout's word
+> and not the emitter's: a struct with a `NIL` field was emitted as `{ i32, void, i32 }` and an enum whose payload is
+> `NIL` got no type header at all, so `llc` refused programs the checker had accepted. A `NIL` member is the
+> zero-sized `{}` now (`ll_member_type`), stored into nowhere and read as the sentinel's `i32 0`; an all-`NIL`
+> payload set is a `[0 x iK]` slot; `#size_of` of `{ int32; NIL; int32 }` answers 8, as this decision says.
+
 ## D-085 — The bootstrap seed is purpose-built, not the prototype — **SETTLED**
 
 > **[1.4.0 note]** The "byte-identical" fixpoint wording this record
@@ -22181,6 +22187,13 @@ roadmap (`ROADMAP.md`, "The freeze"), planned execution-grade when the last lang
 is in sight. **Decided out with it:** a `language = "1"` manifest row. A missing row can be read as
 version 1 the day a version is first needed, so adding it now is complexity with no present need.
 
+> **Note (2026-10-15):** THE FREEZE HAS NO DATE. The user, at 07:50:47, through `management_0`: "There isn't really any fixed
+> time for that except 'when we are ready'", and "there is no need to defer anything just because of the freeze is what i'm trying
+> to say i guess." The freeze was meant to spare Nikola language churn and to keep programs working far into the future; Nikola
+> itself is paused until further notice while he re-plans it after reading the terms of service. So "before the freeze" is not a
+> deadline: nothing is rushed, refused or deferred because a freeze might come, and with D-354's RESERVED verdict a reserved form
+> (D-353's value parameters) is designed whenever a need appears -- S-135's "now-or-never" is moot.
+
 ## D-337 — a struct literal that writes sealed fields from outside their module is ONE report, naming every sealed field it writes — **SETTLED (user decision, 2026-09-30: "go with your recommendations on all three"; DEF-165)**
 
 **The history.** D-313 (1.5.8b) made a `sealed` field readable anywhere and writable only by the module
@@ -22922,3 +22935,95 @@ named there -- a `failsafe` a large project importing many libraries can keep, a
 unacknowledged -- are the balance this decision strikes with the mechanism the language already has (one macro, one arm
 set, the acknowledgement forced at the one pick); the broader question (arm-level composition across many libraries'
 error sets: a macro in ARM position does not exist) is registered as S-134 in OPEN_DECISIONS, not acted on.
+
+## D-353 — GENERIC VALUE PARAMETERS ARE OUT UNTIL DESIGNED: A `comptime` VALUE PARAMETER IS REFUSED AT ITS DECLARATION BY A CODE OF ITS OWN, AND THE FORM IS RESERVED — **SETTLED (user decision, 2026-10-15: "all the recommendations look fine to me. Lets go with those.")**
+
+Settles S-135 (DEF-236 (a); the library listener's F-039 (a), the fuzzer's `as0062`). The ruling, the user, 2026-10-15 at 07:42:39 (management_0's transcript; it first gave the time as "about 07:50"), through `management_0` -- the overall-manager seat he set up on 2026-10-12, which batched S-135, S-136 and the RESERVED question for him and relayed the ruling to `nitpick-compiler_37` at 07:53: "I just finished looking over the questions and from the best i can tell all the recommendations look fine to me. Lets go with those."
+The recommendation as put (OPEN_DECISIONS S-135, (ii)): `func:scale<comptime int32:K> = int32(int32:x) never fails { pass (x * K); };`
+and its call `scale::<3i32>(2i32)` -- a form AST_REFERENCE §4's `GenericParam` row promises, which the checker ACCEPTS and the
+emitter, monomorphising by TYPE argument alone (D-191's instance key), stops on with EMIT-002 -- is refused at the declaration by
+name with a diagnostic code of its own whose sentence says the form is RESERVED (landing 116), AST_REFERENCE §4 and
+TRAITS_REFERENCE amended to say so; a compile-time value is written as a macro parameter (MACRO_REFERENCE §4) or a `fixed`
+module binding; no design of value generics now. Weighed with it, the library side's input (nitpick-libs_19, 2026-10-15, relayed
+verbatim per S-134's practice): no planned library needs user-declared value parameters -- the fixed-capacity structures the plans
+name each have one capacity, which a `fixed` constant covers -- and the language already gives value parameters to one builtin,
+`Channel<T, LEVEL, CAP>`, compiler-known. The dedicated code is what lets D-354's RESERVED verdict hold this form: IN stays open
+after the freeze without a red run. Measured 2026-10-15: no file of the tree, the libraries or the applications declares one.
+
+## D-354 — D-336'S FROZEN CORPUS MAY RECORD A RESERVED VERDICT: A REFUSAL OF A NOT-YET-DESIGNED FORM, KEYED TO ONE DEDICATED CODE, THAT MAY MOVE TO ACCEPTED AFTER THE FREEZE AND NEVER BACK — **SETTLED (user decision, 2026-10-15: "all the recommendations look fine to me. Lets go with those.")**
+
+An amendment to D-336 (the frozen compatibility corpus, S-117). The ruling, the user, 2026-10-15 at 07:42:39 (management_0's transcript; it first gave the time as "about 07:50"), through `management_0` -- the overall-manager seat he set up on 2026-10-12, which batched S-135, S-136 and the RESERVED question for him and relayed the ruling to `nitpick-compiler_37` at 07:53: "I just finished looking over the questions and from the best i can tell all the recommendations look fine to me. Lets go with those." The
+question as put: may the corpus, which records refusals too ("the diagnostic set with its per-code site counts"), mark a refusal
+of a not-yet-designed feature RESERVED -- a verdict that may move from refused to accepted and never back? Proposed by
+nitpick-libs_19 (2026-10-15) from the user's own words on the freeze (2026-09-27): after the freeze "we can still make changes and
+improvements, they just can't make it where old programs can't work" -- lifting a refusal breaks no working program, but a frozen
+rejection test would have made the later acceptance a red run. The guard, the library side's own: a RESERVED verdict is keyed to
+ONE dedicated diagnostic code, or a program refused for another reason could start compiling unnoticed. The first RESERVED code is
+D-353's (landing 116); the corpus built at the freeze carries the verdict beside the per-code counts.
+
+## D-355 — `NULL` IS LEGAL ONLY FOR A `wild` POINTER; "MAYBE NO POINTER" IS THE OPTIONAL `T->?` WITH `NIL`; A PLAIN `T->` IS NEVER NULL — **SETTLED (user decision, 2026-10-15: "all the recommendations look fine to me. Lets go with those.")**
+
+Settles S-136 as its option (c), raised at DEF-251's registration (the library seats' report of 2026-10-12: a store through a
+`NULL` pointer in safe code faulted into `MachineFault` at -O0 and fell through into the next function at -O2). The ruling,
+the user, 2026-10-15 at 07:42:39 (management_0's transcript; it first gave the time as "about 07:50"), through `management_0` -- the overall-manager seat he set up on 2026-10-12, which batched S-135, S-136 and the RESERVED question for him and relayed the ruling to `nitpick-compiler_37` at 07:53: "I just finished looking over the questions and from the best i can tell all the recommendations look fine to me. Lets go with those." The recommendation as put: (a) landing 115 regardless -- LLVM's `null_pointer_is_valid` on every
+emitted `define`, so both legs fault and the fault is D-307's (DEF-251 (i)); then (c): a plain `T->` holds an address always
+(D-120's "a live managed value by contract"), `int64->:p = NULL;` is refused by name, `NULL` keeps its meaning in a `wild`
+pointer context alone (`wild int64->:p = NULL;` -- the allocator's and the floor's shapes; a `wild` dereference is already the
+author's responsibility under the TOS, and under (a) it faults controlled), and a pointer that may be absent is the Optional
+`T->?` tested against `NIL` (D-099) -- so the hazard leaves safe code by TYPE, as D-010 removed the uninitialised read; (b), a
+checked dereference with a `NullDeref` identity and `null-deref` rows, is the fallback the ruling did not take. The census the
+ruling rests on (2026-10-15, comments excluded): the compiler's own `src/` holds no plain `T->:p = NULL;` declaration -- 22 sites
+of one idiom, the emitter's and the encoder's CONTEXT pointers (`impls`, `tr`, `obl`, `mod_of`) compared against or initialised
+with `NULL`, which become `T->?`; `lib/` and `npkg/` 9 `wild` buffer resets; the tree's tests 81 plain declarations in 6 files;
+the six libraries and the applications 0. A LANGUAGE CHANGE (D-336's freeze has no date -- its note of 2026-10-15 -- so nothing is rushed for it), planned into the compiler seat's queue
+where it judges best (the user: "plan it into your queue where you judge best"); the libraries re-pin after landing 115, one
+re-pin carrying landings 104-115.
+
+## D-356 — A PAYLOAD-LESS ENUM VARIANT IS A CONSTANT OUTSIDE THE EVALUATOR: A MODULE BINDING (A STRUCT'S OR AN ARRAY'S MEMBER TOO) MAY BE INITIALISED WITH ONE, AND `comptime(…)` MAY YIELD ONE — **SETTLED (user decision, 2026-10-15: "yes, pass those to compiler_37 too")**
+
+Settles S-127 (raised 2026-10-01 by `nitpick-compiler_28` with D-338's landing). The ruling, the user, 2026-10-15 at 07:50:47 (management_0's transcript; first given as "about 08:05"), through `management_0`, which relayed it to `nitpick-compiler_37` at about 08:15 with the three recommendations it had batched: "yes, pass those to compiler_37 too" -- the recommendation
+as put (OPEN_DECISIONS S-127): admit it, in both positions, as its own landing. `fixed Ordering:O = Ordering.Less;` (NITPICK-TYPE-035
+since landing 90) and `comptime(Ordering.Less)` (NITPICK-TYPE-004 with its own sentence) compile; the constant is the tag the
+variant already has (`i32`, or the enum's aggregate with a zeroed payload) -- the value `Enum.Variant` builds at run time -- and
+D-165's rule is unchanged ("a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`":
+decided by what the evaluator folds, and the evaluator has held the value since D-338). The two refusals are one test each
+(`const_init_verdict`, `type_comptime`); the module-constant renderer writes the tag. Its own landing, in the queue after the
+correctness items.
+
+## D-357 — A `comptime func:` EXISTS AT COMPILE TIME ONLY: A CALL OF ONE OUTSIDE A CONSTANT CONTEXT IS REFUSED BY NAME — **SETTLED (user decision, 2026-10-15: "yes, pass those to compiler_37 too")**
+
+Settles S-128 as its R1 (DEF-214, found writing D-338's tests). The ruling, the user, 2026-10-15 at 07:50:47 (management_0's transcript; first given as "about 08:05"), through `management_0`, which relayed it to `nitpick-compiler_37` at about 08:15 with the three recommendations it had batched: "yes, pass those to compiler_37 too" -- the recommendation as put (OPEN_DECISIONS
+S-128): a `comptime func:` is evaluated inside `comptime(…)`, at a constant site (an array size, a module initialiser) or in another
+`comptime func:`'s body, and a call anywhere else is refused by the checker at the call, the sentence saying to write `comptime(…)` or
+an ordinary function -- where today it compiles and `llc` refuses an undefined symbol at both legs. One body then never has two
+executions that must agree, the evaluator's and the machine's (the class DEF-29, DEF-130 and DEF-196 came from), and the marker means
+one thing (the blueprint rule). R2 -- emit it as an ordinary function too -- is not taken. DEF-214 lands on this.
+
+## D-358 — THE RUNTIME FLOOR IS BUILT THROUGH THE PINNED `opt -O2` + `llc -O2`, AS A MEASURED LANDING WITH ADVANCE NOTICE; THE OTHER PERFORMANCE FINDINGS WAIT FOR THE POST-1.6 EXAMINATION — **SETTLED (user decision, 2026-10-15: "yes, pass those to compiler_37 too")**
+
+Settles S-130 (the library seat's benchmark rounds, registered 2026-10-07 by `nitpick-compiler_31`): part (1) as recommended, parts
+(2) and (3) deferred, part (4) with the E-4/E-6 work. The ruling, the user, 2026-10-15 at 07:50:47 (management_0's transcript; first given as "about 08:05"), through `management_0`, which relayed it to `nitpick-compiler_37` at about 08:15 with the three recommendations it had batched: "yes, pass those to compiler_37 too" Part (1): the floor's object is built from the pinned
+`opt -O2`'s output over `runtime/npkrt.ll` and `llc -O2`, where it is built at -O0 today (`nitpick.toml`'s `llc-flags`); the listener's
+measurements: a 10 MB zeroing loop's verified build 120,076,387 instructions against 1,589,667 with the floor optimised, `alloc_churn`'s
+allocator 1,245,083,684 → 300,030,724, binary-trees at depth 16 14,499,678,447 → 6,207,367,212 (the -O0 floor 57% of the total), and
+four floor symbols that must lose `internal` for `opt` to keep them (`npk_start`, `npk_start_main`, `npk_fs_stack_top`, `npk_fs_stack_limit`).
+Its own landing, measured first and announced in advance (the floor's bytes move: a re-pin for the libraries), which settles by
+measurement what the optimised object changes for the floor's evidence -- the spec's rows read the floor's SOURCE text and stand; the
+explorer's transformer puts its step points into the floor's text BEFORE `llc` and the explored floor must be the shipped one, so the
+transform and the optimisation compose in one order (D-303's sweep decides); the `floor-stack-reserve` belt and the kernel-effects probe
+re-measured; TCB.md's generated regions re-written. Parts (2) (a checked path beside the `{ T, i32 }` envelope defeating LLVM's
+inlining threshold) and (3) (the allocator's per-free cost) stay deferred to the post-1.6 examination phase; part (4) is read with the
+E-4/E-6 work.
+
+## D-359 — THE ORPHAN RULE: AN IMPL NAMES AT LEAST ONE TYPE OR TRAIT DECLARED IN ITS OWN MANIFEST'S TREE — **SETTLED (user decision, 2026-10-15: "go with the S-37 recommendation")**
+
+Settles S-37 (1.5.2b §9 Q7, registered 2026-09-05 and left open for the library era, as recommended then). The question as put: a
+program may implement a prelude trait for a builtin the prelude does not cover (`impl:bool:Ord`, measured admitted at 1.5.2b),
+and two libraries doing it collide under coherence (TYPE-013) in the program that imports both -- an orphan rule? The ruling, the
+user, 2026-10-15 at 07:54:31 (management_0's transcript; first given as "about 08:20"), through `management_0`, which relayed it to `nitpick-compiler_37` at about 08:25: "go with the S-37
+recommendation" -- the shape the row recorded: an impl names at least one type or trait declared in its own manifest's tree (the
+prelude's impls are the prelude's own, and a library's impl of a prelude trait for its own type, or of its own trait for a prelude
+type, stands; a program's or a library's impl of a prelude trait for a builtin or a prelude type is refused by name). Its own landing
+-- a refusal added, announced in advance -- measured first over the tree, the libraries and the applications (which impls name no
+type or trait of their own tree), the code and the sentence the landing's; the manifest root the driver already finds is the tree's
+edge (D-236).
