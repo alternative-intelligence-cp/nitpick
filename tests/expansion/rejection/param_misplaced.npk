@@ -1,35 +1,43 @@
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 72:26
-// expect-error: NITPICK-MACRO-011
-// expect-error-at: 73:36
-// expect-error: NITPICK-MACRO-011
-// expect-error-at: 74:37
-// expect-error: NITPICK-MACRO-011
-// expect-error-at: 75:49
-// expect-error: NITPICK-MACRO-011
-// expect-error-at: 76:51
-// expect-error: NITPICK-MACRO-011
-// expect-error-at: 77:50
-// expect-error: NITPICK-MACRO-011
-// expect-error-at: 78:39
-// expect-error: NITPICK-MACRO-011
 // expect-error-at: 81:26
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 82:38
+// expect-error-at: 82:36
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 83:49
+// expect-error-at: 83:37
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 84:51
+// expect-error-at: 84:49
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 85:45
+// expect-error-at: 85:51
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 87:5
+// expect-error-at: 86:50
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 92:24
+// expect-error-at: 87:39
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 93:29
+// expect-error-at: 90:26
 // expect-error: NITPICK-MACRO-011
-// expect-error-at: 93:47
+// expect-error-at: 91:38
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 92:49
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 93:51
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 94:45
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 96:5
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 101:24
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 102:29
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 102:47
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 114:28
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 115:30
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 116:42
+// expect-error: NITPICK-MACRO-011
+// expect-error-at: 117:28
 //
 // WHAT A MACRO'S PARAMETER CANNOT BE (DEF-189, 1.6.1e step 3a; MACRO_REFERENCE §3).
 //
@@ -51,12 +59,13 @@
 // below is invoked), ONCE PER PARAMETER, at its first such spelling in source
 // order -- `two_ways` is one report, at the type; `two_params` is two.
 //
-// A NAME THE BODY DECLARES AND NEVER WRITES AS AN EXPRESSION IS NOT REFUSED. That is
-// MACRO_REFERENCE §10's open question -- may a parameter name an emitted
-// declaration? `macro:m = (N) { func:N = …; };` emits a function literally called
-// `N`, "unimplemented rather than refused" -- and it stays open (S-123): the
-// `*_unused` controls below are accepted, each beside the body that is refused
-// for calling or reading the name it declared.
+// A NAME THE BODY DECLARES AND NEVER WRITES AS AN EXPRESSION IS REFUSED TOO (D-343,
+// 1.6.1e landing 106). It was MACRO_REFERENCE §10's open question -- may a parameter
+// name an emitted declaration? `macro:m = (N) { func:N = …; };` emitted a function
+// literally called `N`, the argument silently DROPPED, "unimplemented rather than
+// refused" -- and the user settled it (S-123, 2026-10-01): the `*_unused` shapes
+// below are refused at the declaration with their own sentence, beside the bodies
+// refused for calling or reading the name they declared.
 //
 // AND WHERE A COMPILE-TIME VALUE IS MEANT, THE PARAMETER GOES IN PARENTHESES. A
 // bare identifier in a type-argument list is a type's name by the parser's rule
@@ -98,9 +107,10 @@ macro:two_params = (A, B) { A:a = #caller(v); int32:B = 1i32; discard(a + B); };
 // identifier: they are reached through `.` and never replaced). They are not
 // invoked here -- a program refused at a declaration is not expanded -- and
 // tests/backend/programs/macro_param_positions.npk runs the same shapes.
-// A name DECLARED and never written as an expression (§10, S-123): a local, an emitted
-// function, a generic parameter. And the name inside `#caller(…)`, which is copied by
-// name and is no use of the parameter.
+// A name DECLARED and never written as an expression (D-343): a local, an emitted
+// function, a generic parameter -- each refused at the declaration since landing 106.
+// `caller_named` declares `N` too (the name inside `#caller(…)` is copied by name and
+// is no use of the parameter; the declaration is what the rule refuses).
 macro:local_unused = (N) { int32:N = 1i32; };
 macro:emitted_unused = (F) { func:F = int32() never fails { pass 1i32; }; };
 macro:generic_unused = (G) { func:gen_fn<G> = int32(int32:a) never fails { pass a; }; };

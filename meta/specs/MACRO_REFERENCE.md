@@ -168,12 +168,17 @@ such spelling:
   every USE of the name is, so each use would be the argument and not that
   declaration.
 
-A name the body declares and never writes as an expression is NOT refused: that is
-§10's open question (may a parameter name an emitted declaration? — `func:N` is
-literally called `N`), left open. A FIELD and a VARIANT of a parameter's spelling
-are neither — they are reached through `.`, are not identifiers, and are left
-alone (`Box{ v: v }` substitutes the value and keeps the field). And the name in
-`#caller(N)` is copied by name; it is no use of the parameter.
+- **a name the body declares and never writes as an expression** (D-343, settled
+  2026-10-01, landed 2026-10-09 at 1.6.1e landing 106 — it was §10's open question):
+  `macro:m = (N) { func:N = …; };` emitted a function literally called `N` with the
+  argument silently dropped, and a second invocation was a duplicate-name error that
+  named neither cause. A macro cannot name what it emits from an argument: name it
+  in the body, or pass what the declaration should hold.
+
+A FIELD and a VARIANT of a parameter's spelling are neither — they are reached
+through `.`, are not identifiers, and are left alone (`Box{ v: v }` substitutes the
+value and keeps the field). And the name in `#caller(N)` is copied by name; it is no
+use of the parameter.
 
 **A compile-time VALUE in an argument list is written in parentheses.** A bare
 identifier there is read as a type's name (D-064 §2) — for a macro parameter as for
@@ -807,6 +812,9 @@ Recorded as open rather than invented:
   (`NITPICK-MACRO-011`, §3) is the half of it that answered WRONGLY: a body that
   declares a parameter's name and also writes it as an expression, whose every
   such use was the argument instead.
+  *[2026-10-09, 1.6.1e landing 106.]* SETTLED as **D-343** (the user, 2026-10-01: "all the
+  recommendations look fine to me") and LANDED: refused at the macro's declaration,
+  `NITPICK-MACRO-011`, used or not — §3's list above has the sentence.
 
 > **Settled since: are emitted names hygienic?** No — **a macro never renames what
 > it emits** (D-128), and a collision is an error like any other name declared

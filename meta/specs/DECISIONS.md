@@ -22425,6 +22425,13 @@ is ONE refusal added to `check_enum_values`, its own landing with an advance not
 mix: `enumvals.py` finds them; none in the libraries or the applications). TYPE_REFERENCE §9.3 and `enum_values.npk`
 move with it.
 
+> **Landed (2026-10-09, 1.6.1e landing 106 — `nitpick-compiler_34`):** `check_enum_values` (type_stmt.npk) refuses a
+> mix once, at the first variant whose spelling differs from the first variant's, with its own TYPE-093 sentence, and a
+> mixed enum's unvalued variants take no part in the tag table (D-240: the position they would get is the mistake
+> already reported). `enum_values.npk`'s `ByPosition`, `PositionLater` and `Mixed` are the sites (`Mixed`, a control
+> until this landing, is refused at `Tenth`); `enums_pick.npk`'s `Flat` values every variant. The two library enums the
+> scan flagged (`tr0266`, `tr0554`) are `Opt<T> = { Some(T); None; }`, unvalued: no library file moves.
+
 ## D-343 — A MACRO PARAMETER THAT ONLY NAMES AN EMITTED DECLARATION IS REFUSED AT THE MACRO'S DECLARATION — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-123)**
 
 **The question, as it was put (S-123).** MAY A MACRO PARAMETER NAME AN EMITTED DECLARATION (raised 2026-10-01 by
@@ -22458,6 +22465,14 @@ recorded here by landing 90.
 **What it changes.** `check_macro_params` (expand.npk) drops its "AND writes it as an expression" half, so a
 declared parameter name alone is MACRO-011; the listener's `mc0388` moves, so an advance notice goes first. Its own
 landing.
+
+> **Landed (2026-10-09, 1.6.1e landing 106 — `nitpick-compiler_34`):** `check_macro_params` (expand.npk) reports
+> MACRO-011 for a parameter the body DECLARES, used or not — the declared-and-used sentence as before (DEF-189), and a
+> new sentence for the declared-only shape ("a declaration's name is never substituted, so the argument would be
+> dropped and the declaration literally called `N`"), at the declaration, once per parameter.
+> `param_misplaced.npk`'s four `*_unused` shapes (a local, an emitted function, a generic parameter, a local beside
+> `#caller(N)`) are refused; the library listener's `mc0388` (which pinned the old behaviour as running) moves under
+> the refusal, told in advance (NOTICES F48).
 
 ## D-344 — A MACRO BODY DOES NOT NAME THE TYPE PARAMETER OF THE DECLARATION IT IS INVOKED IN — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-124)**
 

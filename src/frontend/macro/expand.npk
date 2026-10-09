@@ -3293,12 +3293,14 @@ func:refuse_nested_macros = NIL(Expander->:x, DeclId:id, int32:fuel) never fails
 //     pattern's binding, a function's parameter and a declaration the body emits
 //     each do this.
 //
-// A NAME THE BODY DECLARES AND NEVER WRITES AS AN EXPRESSION IS LEFT ALONE. It is
-// MACRO_REFERENCE §10's open question -- "may a parameter name an emitted
-// declaration?": `macro:m = (N) { func:N = …; };` emits a function literally
-// called `N`, "unimplemented rather than refused" -- and refusing it would be
-// settling that question here (S-123, the user's). What IS refused is the half of
-// it that answers wrongly: the same body calling `N()` would call the ARGUMENT.
+// A NAME THE BODY DECLARES AND NEVER WRITES AS AN EXPRESSION IS REFUSED TOO (D-343,
+// 1.6.1e landing 106; it was MACRO_REFERENCE §10's open question, S-123, and the
+// user settled it 2026-10-01): `macro:m = (N) { func:N = …; };` emitted a function
+// literally called `N` with the argument silently DROPPED -- the author almost
+// certainly meant "the function named by the argument", and a second invocation
+// was a duplicate-name error naming neither cause. Step 3a (DEF-189) had refused the
+// half that answered wrongly (the same body calling `N()` called the ARGUMENT) and
+// left this half as it was; both are MACRO-011 now, each with its own sentence.
 // A field and a variant are reached through `.`, are no identifier, and are no
 // declaration in this sense at all.
 //
@@ -3482,7 +3484,7 @@ func:check_macro_params = NIL(Expander->:x, DeclNode:md, List<ParamUse>->:uses,
         ParamUse:u = (<-uses)[r => int64];
         // The two violations, and the earlier of them where a parameter has both.
         bool:bad_type = u.names_type;
-        bool:bad_decl = (u.declared && u.used);
+        bool:bad_decl = u.declared;   // used or not (D-343)
         if ((!bad_type) && (!bad_decl)) { continue; }
         if (bad_type && bad_decl) {
             if (raw span_before(u.decl_at, u.type_at)) { bad_type = false; } else { bad_decl = false; }
@@ -3496,9 +3498,17 @@ func:check_macro_params = NIL(Expander->:x, DeclNode:md, List<ParamUse>->:uses,
                 string_concat(m3, "`, and here it stands where a type's name stands: an argument is an expression and cannot name a type, so nothing would be substituted and this would mean whatever the name means where the macro is written. Rename the parameter or the type; where a compile-time VALUE is meant in an argument list, write the parameter in parentheses -- `simd<int32, (N)>` (MACRO_REFERENCE §3)"),
                 u.type_at);
         } else {
-            drop expand_err(x, raw MACRO_PARAM_FORM(),
-                string_concat(m3, "`, and the body both declares that name here and writes it as an expression: a declaration's name is never substituted and every use of the name is, so each use would be the argument and not this declaration. Rename one of them (MACRO_REFERENCE §3)"),
-                u.decl_at);
+            if (u.used) {
+                drop expand_err(x, raw MACRO_PARAM_FORM(),
+                    string_concat(m3, "`, and the body both declares that name here and writes it as an expression: a declaration's name is never substituted and every use of the name is, so each use would be the argument and not this declaration. Rename one of them (MACRO_REFERENCE §3)"),
+                    u.decl_at);
+            } else {
+                string:m4 = string_concat(m3, "`, and the body declares that name here: a declaration's name is never substituted, so the argument would be dropped and the declaration literally called `");
+                string:m5 = string_concat(m4, pname);
+                drop expand_err(x, raw MACRO_PARAM_FORM(),
+                    string_concat(m5, "` (D-343, MACRO_REFERENCE §3): a macro cannot name what it emits from an argument -- name it in the body, or pass what the declaration should hold"),
+                    u.decl_at);
+            }
         }
     }
     pass NIL;

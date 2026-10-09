@@ -1,27 +1,29 @@
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 53:23
+// expect-error-at: 60:23
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 54:20
+// expect-error-at: 61:20
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 55:23
+// expect-error-at: 62:23
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 56:23
+// expect-error-at: 63:23
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 59:19
+// expect-error-at: 66:19
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 62:30
+// expect-error-at: 69:30
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 63:28
+// expect-error-at: 70:24
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 64:34
+// expect-error-at: 71:34
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 65:40
+// expect-error-at: 72:31
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 65:50
+// expect-error-at: 73:40
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 66:21
+// expect-error-at: 73:50
 // expect-error: NITPICK-TYPE-093
-// expect-error-at: 69:49
+// expect-error-at: 74:21
+// expect-error: NITPICK-TYPE-093
+// expect-error-at: 77:49
 //
 // AN ENUM VARIANT'S EXPLICIT VALUE IS HELD TO THE RULE THE EMITTER USES (DEF-193,
 // 1.6.1e).
@@ -41,9 +43,14 @@
 //   * a value past `int32` was truncated into the tag.
 //
 // Each is refused at the declaration, `NITPICK-TYPE-093`. What a value MAY be
-// beyond a literal -- a constant expression, a negative tag -- and what an
-// unvalued variant beside a valued one is, are S-122, the user's; until then an
-// unvalued variant is its position, as it always was, and a collision says so.
+// beyond a literal, and what an unvalued variant beside a valued one is, were
+// S-122, the user's -- SETTLED as D-342 R1 (2026-10-01; landing 106): a value is a
+// bare non-negative `int32` literal, and AN ENUM VALUES EVERY VARIANT OR NONE. A
+// mix (`ByPosition`, `PositionLater`, `Mixed` below) is refused ONCE, at the first
+// variant whose spelling differs from the first's, because `{ A = 5i32; B; }` makes
+// `B` 1 (its position) where a reader from C or Rust expects 6 -- and a mixed
+// enum's unvalued variants take no part in the tag table (the position they would
+// get is the mistake already reported, D-240).
 mod:enum_values;
 
 fixed int32:BASE = 40i32;
@@ -62,6 +69,7 @@ enum:Wide = { X = 4294967297i64; Y = 2i32; };
 enum:Twice = { A = 3i32; B = 3i32; };
 enum:ByPosition = { A; B = 0i32; };          // `A` is its position, 0
 enum:PositionLater = { A = 1i32; B; C; };    // `B` is its position, 1
+enum:Mixed = { First; Second; Tenth = 10i32; };  // a mix: refused at `Tenth` (D-342 R1), where it was accepted as positions 0 and 1, then 10
 enum:Three = { A = 5i32; B = 6i32; C = 5i32; D = 6i32; };
 enum:Folded = { A = 4294967296i64; B = 0i32; };      // refused for its range, ONCE: no second report at `B`
 
@@ -72,7 +80,6 @@ mod:nested = { pub enum:Inner = { A = 1i32; B = 1i32; }; };
 enum:Plain = { Red; Green; Blue; };
 enum:Valued = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 enum:Sparse = { Low = 10i32; Mid = 20i32; High = 30i32; };
-enum:Mixed = { First; Second; Tenth = 10i32; };          // positions 0 and 1, then 10
 enum:Expanded = { One = 1i32; Three = #three(); };       // an invocation that expands to a literal
 enum:Grouped = { X = (5i32); Y = 2i32; };                // parentheses build no node: this IS the literal
 enum:Payload<T> = { Some(T); None; };

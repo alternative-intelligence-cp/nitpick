@@ -2649,6 +2649,37 @@ func:check_enum_values = NIL(ExprTyper->:e, DeclNode:d) never fails {
     List<int32>:owners = raw list_init::<int32>(8i64);
     List<bool>:spelled = raw list_init::<bool>(8i64);
     string:ename = raw intern_get(e.interns, raw decl_name(d));
+    // AN ENUM VALUES EVERY VARIANT OR NONE (D-342 R1, 1.6.1e landing 106): `{ A = 5i32;
+    // B; }` makes `B` 1 (its position) where a reader from C or Rust expects 6 -- the
+    // look-alike trap the renaming rule exists to remove -- so a mix is refused ONCE,
+    // at the first variant whose spelling differs from the first variant's, and a
+    // mixed enum's unvalued variants take no part in the tag table: the position a
+    // mixed enum would hand them is the mistake already reported (D-240).
+    bool:first_seen = false;
+    bool:first_valued = false;
+    bool:mixed = false;
+    for (int32:j in 0i32...n) {
+        DeclNode:mj = raw ast_decl(e.ast, raw item_member(e.ast, d, j));
+        if (mj.kind != DeclKind.DeclEnumVariant) { continue; }
+        bool:vj = !(raw expr_is_none(raw variant_value(mj)));
+        if (!first_seen) { first_seen = true; first_valued = vj; continue; }
+        if (vj == first_valued) { continue; }
+        if (!mixed) {
+            mixed = true;
+            string:w1 = string_concat("`", ename);
+            string:w2 = string_concat(w1, ".");
+            string:w3 = string_concat(w2, raw intern_get(e.interns, raw decl_name(mj)));
+            string:w4 = "";
+            if (vj) {
+                w4 = string_concat(w3, "` has an explicit value where the variants before it have none");
+            } else {
+                w4 = string_concat(w3, "` has no explicit value where the variants before it have one");
+            }
+            discard(raw te_error(e, raw TYPE_ENUM_VALUE(),
+                string_concat(w4, ": an enum values every variant or none (D-342) -- an unvalued variant's tag is its POSITION, which a reader beside explicit values takes for the previous value plus one; write every value, or none"),
+                mj.span));
+        }
+    }
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
         if (m.kind != DeclKind.DeclEnumVariant) { continue; }
@@ -2657,6 +2688,9 @@ func:check_enum_values = NIL(ExprTyper->:e, DeclNode:d) never fails {
         bool:valued = false;
         Span:at = m.span;
         ExprId:ve = raw variant_value(m);
+        if (mixed) {
+            if (raw expr_is_none(ve)) { continue; }   // its position is the mix's mistake, reported once above
+        }
         if (!(raw expr_is_none(ve))) {
             ExprNode:vn = raw ast_expr(e.ast, ve);
             at = vn.span;

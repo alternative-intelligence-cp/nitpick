@@ -328,17 +328,21 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw one_diag(@v13, raw MACRO_PARAM_FORM())))               { exit 106i32; }
     Ex:v14 = raw expanded("mod:m; macro:bump = (N) { int32:N = 1i32; #caller(g) = N + 1i32; };", @it);
     if (!(raw one_diag(@v14, raw MACRO_PARAM_FORM())))               { exit 107i32; }
-    // A FIELD of the parameter's spelling is no identifier and is left alone; a
-    // name declared and never written as an expression is MACRO_REFERENCE §10's
-    // open question and is left alone too (`func:N` is literally called `N`); and
-    // the name inside `#caller(…)` is copied by name, no use of the parameter.
+    // A FIELD of the parameter's spelling is no identifier and is left alone. A
+    // name declared and never written as an expression was MACRO_REFERENCE §10's
+    // open question (`func:N` was literally called `N`, the argument dropped) and is
+    // REFUSED since D-343 (1.6.1e landing 106), one MACRO-011 at the declaration; a
+    // program refused at a macro's declaration is not expanded, so no `N` is
+    // emitted. The name inside `#caller(…)` is copied by name, no use of the
+    // parameter -- but `esc` declares `N` too, and the declaration is what the rule
+    // refuses.
     Ex:v15 = raw expanded("mod:m; struct:B = { int32:v; }; macro:ok = (v) { B{ v: v }; };", @it);
     if ((raw diaglist_count(@v15.diags)) != 0i64)                   { exit 108i32; }
     Ex:v16 = raw expanded("mod:m; macro:mk = (N) { func:N = int32() never fails { pass 5i32; }; }; #mk(7i32);", @it);
-    if ((raw diaglist_count(@v16.diags)) != 0i64)                   { exit 109i32; }
-    if (!(raw has_member(@v16, @it, DeclKind.DeclFunctionDecl, "N"))) { exit 110i32; }
+    if (!(raw one_diag(@v16, raw MACRO_PARAM_FORM())))               { exit 109i32; }
+    if (raw has_member(@v16, @it, DeclKind.DeclFunctionDecl, "N"))   { exit 110i32; }
     Ex:v17 = raw expanded("mod:m; macro:esc = (N) { int32:N = 1i32; #caller(g) = #caller(N); };", @it);
-    if ((raw diaglist_count(@v17.diags)) != 0i64)                   { exit 111i32; }
+    if (!(raw one_diag(@v17, raw MACRO_PARAM_FORM())))               { exit 111i32; }
 
     wild_release_all();
     exit 0i32;

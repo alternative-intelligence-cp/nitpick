@@ -1287,8 +1287,9 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 
 **A variant's explicit value (DEF-193, 2026-10-01).** A variant's tag is the integer LITERAL its
 declaration gives — `Late = 9i32;` — and its POSITION among the enum's members where it gives none:
-`enum:Flat = { A; B; Late = 9i32; };` is 0, 1, 9. The declaration is held to that rule, and what it
-cannot honour is `NITPICK-TYPE-093`, at the value:
+`enum:Flat = { A = 0i32; B = 1i32; Late = 9i32; };` is 0, 1, 9, and `enum:Plain = { A; B; C; };` is
+0, 1, 2 (a mix of the two spellings is refused: below). The declaration is held to that rule, and
+what it cannot honour is `NITPICK-TYPE-093`, at the value:
 
 - **a value that is not a bare integer literal** — `X = 7i32 + 1i32`, `X = BASE`, `X = -3i32`,
   `X = 'a'`. Nothing evaluates an expression there, and until this check the variant silently took
@@ -1302,10 +1303,18 @@ cannot honour is `NITPICK-TYPE-093`, at the value:
   (`{ A; B = 0i32; }`, and `{ A = 1i32; B; }`, whose `B` is its position, 1). The two were one value
   to `==`, and a `pick` naming both reached `llc` as a duplicate case.
 
+- **a mix of valued and unvalued variants** (D-342 R1, 2026-10-01; landing 106) — `{ A = 5i32; B; }`
+  makes `B` 1 (its position) where a reader from C or Rust expects 6, the look-alike trap the
+  language's renaming rule exists to remove. AN ENUM VALUES EVERY VARIANT OR NONE: the first variant
+  whose spelling differs from the first variant's is refused, once, and a mixed enum's unvalued
+  variants take no part in the tag table (the position they would get is the mistake already
+  reported). An enum with a payload variant can value none, since a payload variant takes no value.
+
 A refused value takes no part in the duplicate check (one mistake, one report — D-240); a variant
 that carries a payload takes no value at all (`Some(T) = 4i32;` does not parse). What a value may be
-beyond a bare literal — a constant expression, a negative tag — and what an unvalued variant after a
-valued one should be are **S-122**, the user's; these refusals foreclose neither answer.
+beyond a bare literal — a constant expression, a negative tag — was **S-122**, settled by D-342 as
+R1: a bare non-negative `int32` literal and nothing else (R2, constant-expression values, is a
+feature nothing in the tree, the libraries or the applications needed among 455 existing values).
 
 **A generic enum is a family, exactly as a generic struct is (D-261, 1.5.2c).**
 `enum:Opt<T> = { Some(T); None; };` is a template; `Opt<int32>` and
