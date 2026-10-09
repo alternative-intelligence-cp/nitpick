@@ -95,8 +95,10 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
                   raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
     }
     if (k == (raw TY_SLICE())) {
-        pass (raw tt_slice(r.types,
-                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+        int32:sel = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        // a read-only view stays one through substitution (D-348 (ii))
+        if (raw type_slice_fixed(r.types, t)) { pass (raw tt_slice_fixed(r.types, sel)); }
+        pass (raw tt_slice(r.types, sel));
     }
     if (k == (raw TY_ARRAY())) {
         int32:el = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);

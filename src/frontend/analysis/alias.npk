@@ -604,7 +604,7 @@ func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
 func:decode_path = NIL(Alias->:x, int32:path, List<Step>->:out) never fails {
     if (path == 0i32) { pass NIL; }
     string:t = raw intern_get(x.it, path);
-    uint8[]:b = string_bytes(t);
+    fixed uint8[]:b = string_bytes(t);   // the bridge's view is read-only (D-351)
     int64:i = 0i64;
     while (i < b.len) decreases b.len - i {
         int64:j = i;
@@ -618,7 +618,7 @@ func:decode_path = NIL(Alias->:x, int32:path, List<Step>->:out) never fails {
     pass NIL;
 };
 
-func:decode_step = NIL(Alias->:x, uint8[]:b, int64:lo, int64:hi, List<Step>->:out) never fails {
+func:decode_step = NIL(Alias->:x, fixed uint8[]:b, int64:lo, int64:hi, List<Step>->:out) never fails {
     if (lo >= hi) { pass NIL; }
     uint8:c = b[lo];
     if (c == 102u8) {   // 'f'
@@ -652,7 +652,7 @@ func:decode_step = NIL(Alias->:x, uint8[]:b, int64:lo, int64:hi, List<Step>->:ou
 };
 
 // A decimal integer (a leading '-' allowed) between two byte offsets.
-func:decode_int = int64(uint8[]:b, int64:lo, int64:hi) never fails {
+func:decode_int = int64(fixed uint8[]:b, int64:lo, int64:hi) never fails {
     int64:v = 0i64;
     bool:neg = false;
     int64:i = lo;

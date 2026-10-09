@@ -402,6 +402,14 @@ func:p_cast = ExprId(Parser->:p) never fails {
         // where a program says the result is unmanaged. Sixteen of the compiler's
         // own files write one, and none of them parsed.
         int32:quals = raw p_qualifiers(p);
+        // `fixed` ON A CAST TARGET NAMES NOTHING (D-348 (ii), D-350; landing 103): a
+        // cast makes no read-only view -- a plain `T[]` converts to `fixed T[]` where
+        // it is used, and a `fixed` view converts back to nothing.
+        if ((quals & (raw QUAL_FIXED())) != 0i32) {
+            drop p_error_at(p, raw PARSE_FIXED_VIEW(),
+                "`fixed` on a cast target names nothing (D-348): a cast makes no read-only view -- a plain `T[]` converts to `fixed T[]` where it is used, and a `fixed` view converts back to nothing",
+                sp);
+        }
 
         TypeId:t = raw p_parse_type(p);
         // A cast TO a `dyn` type is its own node (AST_REFERENCE 3.6). Building a

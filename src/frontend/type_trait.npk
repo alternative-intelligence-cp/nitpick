@@ -1615,9 +1615,35 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     string:m3 = string_concat(m2,
                     raw type_display(r.types, r.interns, e.trait_id));
     string:m4 = string_concat(m3, "` declares for it");
+    // A `fixed T[]` PARAMETER IS `fixed` IN THE IMPL EXACTLY WHERE THE TRAIT'S IS
+    // (D-348 (ii), D-350; DEF-246's sixth face): a caller through the bound reads
+    // the TRAIT's signature, hands a read-only view where it says `fixed T[]`, and
+    // an impl that dropped the word wrote the caller's bytes -- DEF-116's shape.
+    if (raw sig_fixed_view_differs(r, want, got)) {
+        m4 = string_concat(m4, ": a slice parameter is `fixed` in the impl exactly where the trait declares it `fixed`, and plain where the trait's is plain (D-348) -- the caller through the bound reads the trait's signature");
+    }
     drop diaglist_push(r.diags,
         raw diag_error(raw TYPE_IMPL_INCOMPLETE(), move(m4), im.span));
     pass NIL;
+};
+
+// DO TWO FUNCTION TYPES DIFFER BY A SLICE PARAMETER'S RIGHTS ALONE AT SOME
+// POSITION (D-348 (ii))? Read for the mismatch sentence, never for the verdict.
+func:sig_fixed_view_differs = bool(TypeResolver->:r, int32:want, int32:got) never fails {
+    if (!(raw type_is_func(r.types, want))) { pass false; }
+    if (!(raw type_is_func(r.types, got))) { pass false; }
+    int32:n = raw type_param_count_of(r.types, want);
+    if (n != (raw type_param_count_of(r.types, got))) { pass false; }
+    for (int32:i in 0i32...n) {
+        int32:a = raw type_param_at_of(r.ast, r.types, want, i);
+        int32:b = raw type_param_at_of(r.ast, r.types, got, i);
+        if (a == b) { continue; }
+        if ((raw type_kind(r.types, a)) != (raw TY_SLICE())) { continue; }
+        if ((raw type_kind(r.types, b)) != (raw TY_SLICE())) { continue; }
+        if ((raw type_elem(r.types, a)) != (raw type_elem(r.types, b))) { continue; }
+        if ((raw type_slice_fixed(r.types, a)) != (raw type_slice_fixed(r.types, b))) { pass true; }
+    }
+    pass false;
 };
 
 // THE TRAIT'S PARAMETERS, BOUND TO WHAT THE IMPL NAMED. `Into<int32>` carries its

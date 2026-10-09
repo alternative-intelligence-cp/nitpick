@@ -28,28 +28,28 @@ func:main = int32(cstring[]:_~argv) {
     // (1) `@x` to the callee that moves the whole pointee out: BORROW-015
     {
         string:x = raw mk();
-        uint8[]:v = string_bytes(x);
+        fixed uint8[]:v = string_bytes(x);
         drop take_whole(@x);
         if (v[0i64] == 170u8) { exit 70i32; }
     }
     // (2) `$$i y` to the same callee: BORROW-013
     {
         string:y = raw mk();
-        uint8[]:w = string_bytes(y);
+        fixed uint8[]:w = string_bytes(y);
         drop take_whole($$i y);
         if (w[0i64] == 170u8) { exit 70i32; }
     }
     // (3) `@bx` to a callee that moves a FIELD out: BORROW-015 (unchanged)
     {
         Box:bx = Box{ s: raw mk() };
-        uint8[]:u = string_bytes(bx.s);
+        fixed uint8[]:u = string_bytes(bx.s);
         drop take_field(@bx);
         if (u[0i64] == 170u8) { exit 70i32; }
     }
     // (4) CONTROL: a callee that only reads through its pointer
     {
         string:z = raw mk();
-        uint8[]:zz = string_bytes(z);
+        fixed uint8[]:zz = string_bytes(z);
         int64:n = raw read_only(@z);
         if (zz[0i64] == 170u8) { exit 70i32; }
         if (n != 3i64) { exit 2i32; }

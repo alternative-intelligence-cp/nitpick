@@ -568,10 +568,23 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
         if ((raw type_kind(e.types, idx)) == (raw TY_RANGE())) {
             if (base == 0i32) { pass 0i32; }
             int32:bk = raw type_kind(e.types, base);
+            // A RANGE OF `fixed` STORAGE IS THE READ-ONLY VIEW (D-348 (ii), D-350;
+            // DEF-246's faces 2 and 3): a `fixed` array binding, a `fixed` module
+            // array, a slice held in a `fixed` aggregate -- the view carries the
+            // rights of what it views. Ranging a read-only view keeps them.
             if (bk == (raw TY_ARRAY())) {
+                if (raw place_fixed(e, raw expr_lhs(n), 64i32)) {
+                    pass (raw tt_slice_fixed(e.types, raw type_elem(e.types, base)));
+                }
                 pass (raw tt_slice(e.types, raw type_elem(e.types, base)));
             }
-            if (bk == (raw TY_SLICE())) { pass base; }
+            if (bk == (raw TY_SLICE())) {
+                if (raw type_slice_fixed(e.types, base)) { pass base; }
+                if (raw place_fixed(e, raw expr_lhs(n), 64i32)) {
+                    pass (raw tt_slice_fixed(e.types, raw type_elem(e.types, base)));
+                }
+                pass base;
+            }
             // A `List<T>` RANGES AS A SLICE DOES (D-314 §2, 1.5.8b step 1b):
             // `l[lo...hi]` is a `T[]` view of elements `lo…hi−1`, checked
             // against `count`. A view of the list's storage borrows the list
@@ -579,7 +592,10 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
             if (bk == (raw TY_STRUCT())) {
                 TypeResolver:rlr = raw etyper_resolver(e);
                 int32:rlel = raw list_elem_type(@rlr, base);
-                if (rlel != 0i32) { pass (raw tt_slice(e.types, rlel)); }
+                if (rlel != 0i32) {
+                    if (raw place_fixed(e, raw expr_lhs(n), 64i32)) { pass (raw tt_slice_fixed(e.types, rlel)); }
+                    pass (raw tt_slice(e.types, rlel));
+                }
             }
             string:r1 = string_concat("`",
                             raw type_display(e.types, e.interns, base));
@@ -2764,7 +2780,10 @@ func:check_task_builtin = NIL(ExprTyper->:e, ExprNode:n) never fails {
 //
 // A MEMORY QUALIFIER IS DOCUMENTATION here, exactly as it is in source:
 // qualifiers are not part of a type (parse_type.npk), so `wild any->` and
-// `any->` name the same interned id.
+// `any->` name the same interned id -- with the one exception the source has
+// too (D-348 (ii), D-350): `fixed uint8[]` IS a type, the read-only view, and
+// `string_bytes` hands one out (D-351: a string's bytes are read through the
+// bridge and written by nothing).
 func:builtin_text_type = int32(ExprTyper->:e, string:t) never fails {
     if (raw string_eq(t, "int32"))   { pass (raw tt_int(e.types, 32i32, true)); }
     if (raw string_eq(t, "int64"))   { pass (raw tt_int(e.types, 64i32, true)); }
@@ -2775,8 +2794,8 @@ func:builtin_text_type = int32(ExprTyper->:e, string:t) never fails {
     if (raw string_eq(t, "buffer"))  { pass (raw tt_buffer(e.types)); }
     if (raw string_eq(t, "fd"))      { pass (raw tt_kernel(e.types, raw KERNEL_FD())); }
     if (raw string_eq(t, "OwnedFd")) { pass (raw tt_ownedfd(e.types)); }
-    if (raw string_eq(t, "uint8[]")) {
-        pass (raw tt_slice(e.types, raw tt_int(e.types, 8i32, false)));
+    if (raw string_eq(t, "fixed uint8[]")) {
+        pass (raw tt_slice_fixed(e.types, raw tt_int(e.types, 8i32, false)));
     }
     // `environ()`'s shape (1.4.8, D-206): the argv slice, as a return.
     if (raw string_eq(t, "cstring[]")) {
@@ -3203,6 +3222,12 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) nev
                                     raw type_display(e.types, e.interns, want));
     string:m2 = string_concat(m1, "`, found `");
     string:m3 = string_concat(m2, raw type_display(e.types, e.interns, got));
+    // A `fixed` VIEW INTO A PLAIN SLOT (D-348 (ii), D-350): the rule, not the shapes.
+    if (raw fixed_view_into_plain(e, want, got)) {
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+                      string_concat(m3, "`: a `fixed` view converts to no plain view (D-348), it is read-only through it -- declare the slot `fixed T[]`, read or range the view, or copy the bytes out"), at));
+        pass NIL;
+    }
     discard(raw te_error(e, raw TYPE_MISMATCH(),
                   string_concat(m3, "`"), at));
     pass NIL;
@@ -3719,7 +3744,7 @@ func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         }
     }
     if (!am_aliased) {
-        drop require_place_operand(e, amop, "an atomic operation");
+        discard(raw require_place_operand(e, amop, "an atomic operation"));
     }
 
     int32:want_args = 0i32;
@@ -3771,7 +3796,7 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     int32:elem = (raw tt_get(e.types, recv)).a;
     // Every operation takes the arena's ADDRESS, so the receiver must be a
     // place — an arena returned by a call has no home to allocate into.
-    drop require_place_operand(e, raw expr_operand(n), "an arena operation");
+    discard(raw require_place_operand(e, raw expr_operand(n), "an arena operation"));
 
     if (raw string_eq(m, "alloc")) {
         if (count != 0i32) {

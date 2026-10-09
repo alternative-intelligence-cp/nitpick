@@ -1,21 +1,23 @@
 // expect-error: NITPICK-TYPE-086
-// expect-error-at: 46:5
+// expect-error-at: 48:5
 // expect-error: NITPICK-TYPE-086
-// expect-error-at: 52:5
+// expect-error-at: 54:5
 // expect-error: NITPICK-TYPE-086
-// expect-error-at: 58:5
+// expect-error-at: 60:5
 // expect-error: NITPICK-TYPE-086
-// expect-error-at: 64:5
+// expect-error-at: 66:5
 // expect-error: NITPICK-TYPE-086
-// expect-error-at: 72:5
+// expect-error-at: 74:5
 // expect-error: NITPICK-TYPE-086
-// expect-error-at: 78:5
+// expect-error-at: 80:5
 // expect-error: NITPICK-TYPE-071
-// expect-error-at: 84:17
+// expect-error-at: 86:17
 // expect-error: NITPICK-TYPE-071
-// expect-error-at: 90:17
+// expect-error-at: 92:17
 // expect-error: NITPICK-TYPE-071
-// expect-error-at: 96:18
+// expect-error-at: 98:18
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 115:21
 //
 // D-348 (i) (1.6.1e landing 98; DEF-230, the library listener's F-047 in O-N36): A
 // `fixed` SLICE IS READ-ONLY THROUGH IT -- D-074's "an immutable byte view is
@@ -27,10 +29,10 @@
 // sub-range, a write through a slice held in a `fixed` aggregate and a write
 // through a `fixed` slice FIELD are TYPE-086 with the view's own sentence, and
 // `@`, `$$m` and a pointer-receiver call on an element are TYPE-071 (D-287's code,
-// the same walk). A plain slice still writes, a `fixed` slice is read, ranged and
-// passed on, and a `fixed` slice handed to a PLAIN parameter still compiles -- the
-// hole D-348's step (ii), `fixed T[]` as a type, closes (the controls carry no
-// code).
+// the same walk). A plain slice still writes, and a `fixed` slice is read, ranged and
+// passed on. A `fixed` slice handed to a PLAIN parameter compiled until landing 103
+// (the hole step (i) left) and is TYPE-007 since D-348's step (ii) made `fixed T[]` a
+// type: the one line below that reports, beside the controls that carry no code.
 mod:fixed_slice_write;
 
 struct:P = { int64:x; };
@@ -104,7 +106,7 @@ func:plain_view = NIL(uint8[]:v) never fails {
 };
 
 // A `fixed` view is read, ranged, and handed on -- to a reader, and (the hole
-// step (ii) closes) to a writer taking a plain view.
+// step (ii) closed, landing 103) to a writer taking a plain view: TYPE-007.
 func:reads = int64(fixed uint8[]:v) never fails {
     int64:n = v.len;
     uint8:b = v[0i64];

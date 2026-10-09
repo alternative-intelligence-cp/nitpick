@@ -6,12 +6,12 @@ mod:views;
 struct:Named = { string:name; int32:n; };
 
 // a view of a by-value parameter's storage returned: the caller owns the string
-func:tail = uint8[](string:s) never fails {
+func:tail = fixed uint8[](string:s) never fails {
     pass (string_bytes(s));
 };
 
 // a view through a `->` parameter's field: the pointee is the caller's or older
-func:name_bytes = uint8[](Named->:h) never fails {
+func:name_bytes = fixed uint8[](Named->:h) never fails {
     pass (string_bytes(h.name));
 };
 func:name_view = string(Named->:h) never fails {
@@ -31,12 +31,12 @@ func:one_byte = string(uint8:b) never fails {
 };
 
 // a view of a string literal: static storage
-func:lit = uint8[]() never fails {
+func:lit = fixed uint8[]() never fails {
     pass (string_bytes("abc"));
 };
 
 // a view used INSIDE its frame and passed down (the workbench's case 6)
-func:count_digits = int64(uint8[]:src, int64:from) never fails {
+func:count_digits = int64(fixed uint8[]:src, int64:from) never fails {
     int64:i = from;
     int64:n = 0i64;
     while (i < src.len) decreases src.len - i {
@@ -50,7 +50,7 @@ func:count_digits = int64(uint8[]:src, int64:from) never fails {
 };
 func:in_frame = int64() never fails {
     string:s = string_concat("2026", "-09-03");
-    uint8[]:v = string_bytes(s);
+    fixed uint8[]:v = string_bytes(s);
     pass ((raw count_digits(v, 0i64)) + (raw count_digits(v, 5i64)));
 };
 
@@ -74,7 +74,7 @@ func:inner = string(string:s) never fails {
 // binding is an integer and can carry no borrow, whatever the bound mentions
 func:count_lower = int64(string:s) never fails {
     string:ln = string_from_bytes(s.ptr, s.len);
-    uint8[]:bs = string_bytes(ln);
+    fixed uint8[]:bs = string_bytes(ln);
     int64:n = 0i64;
     for (int64:j in 0i64...ln.len) {
         if (bs[j] >= 97u8) { if (bs[j] <= 122u8) { n = n + 1i64; } }

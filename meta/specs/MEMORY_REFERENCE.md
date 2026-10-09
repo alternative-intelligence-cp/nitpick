@@ -236,7 +236,13 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   argument of, or the scope of the pointer local holding it); a static
   overlap is refused (`NITPICK-BORROW-013`), a computed-index overlap is
   guarded at run time (`BorrowOverlap`) and proven away by the verified build.
-  **A view's root is frozen while the view is live** (D-325, 1.6.1 step 0): a
+  **A view's rights are its TYPE's** (D-348 (ii), D-350, D-351; 1.6.1e landing 103):
+  `fixed T[]` is the read-only view, produced by a `fixed` binding of slice type,
+  by ranging `fixed` storage, by reading a slice off a `fixed` struct and by
+  `string_bytes`; a plain `T[]` converts to it and it converts back to nothing,
+  so no road -- an argument, a field, a return, a `List` element, a trait method's
+  parameter -- lets a write reach bytes a `fixed` promised (TYPE_REFERENCE §9.2.1,
+  §26). **A view's root is frozen while the view is live** (D-325, 1.6.1 step 0): a
   view of a binding — a view-maker's result (`string_bytes`, `string_from_bytes`),
   a range view (`l[lo...hi]`), the result of a call whose own body views what
   it was handed (`@d`, or a `string` passed by value), a view moved through a

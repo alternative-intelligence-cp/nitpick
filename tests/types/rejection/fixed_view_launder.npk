@@ -1,0 +1,169 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 67:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 73:21
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 79:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 84:16
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 91:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 99:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 105:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 113:5
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 119:5
+// expect-error: NITPICK-TYPE-071
+// expect-error-at: 126:17
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 132:5
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 141:5
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 149:19
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 150:19
+//
+// `fixed T[]` IS A TYPE, THE READ-ONLY VIEW (D-348 (ii), D-350, D-351; 1.6.1e landing
+// 103; DEF-246): a plain `T[]` converts to it where it is used and it converts back to
+// nothing, a view of `fixed` storage is PRODUCED as one, and a write through one is
+// refused wherever the view travelled. Until this landing the only carrier of
+// "read-only through it" was the qualifier on a BINDING, and a view left its binding
+// by six roads carrying none of it (DEF-246's faces, measured on landing 100's
+// compiler): `string_bytes` of a `fixed` module string written through
+// (`MachineFault`), a `fixed` module array ranged and written (`MachineFault`), a
+// `fixed` local array ranged into a plain view, a view copied out of a `fixed`
+// struct, a `fixed` view assigned to a plain binding, and an impl of `Writer`
+// dropping the trait's `fixed` -- each writing the fixed bytes in silence.
+//
+// TYPE-007 where a `fixed` view meets a plain slot (an assignment, an argument, a
+// return, a field, a local from a range of fixed storage, a local from a view read
+// off a fixed struct, a local from the bridge -- D-351); TYPE-086 at a write through
+// a view that reached a plain slot by its type alone (a generic cell's field, a
+// `List<fixed uint8[]>` element); TYPE-071 at the address of such an element;
+// TYPE-014 at an impl that drops the trait's `fixed` and at one that adds it;
+// TYPE-032 at a cast between the two views in either spelling. The controls: a plain
+// view into a `fixed` slot (the conversion), a `fixed` view read, ranged, handed on
+// and returned as one, `string_bytes` into a `fixed` slot, a struct holding a
+// `fixed` view built from a plain one.
+mod:fixed_view_launder;
+
+struct:Holder = { uint8[]:view; };
+struct:FHolder = { fixed uint8[]:data; };
+struct:Cell<T> = { T:item; };
+struct:Sink = { int64:n; };
+struct:Src = { int64:n; };
+
+// A function returning the read-only view: the return position's spelling.
+func:same = fixed uint8[](fixed uint8[]:v) never fails { pass v; };
+func:plain_sink = NIL(uint8[]:v) never fails { v[0i64] = 9u8; pass NIL; };
+func:fixed_sink = int64(fixed uint8[]:v) never fails { pass v.len; };
+
+// s1: a `fixed` view assigned to a plain binding (DEF-246's fifth face).
+func:assign_plain = int64(fixed uint8[]:v) never fails {
+    uint8[]:w = v;
+    pass w.len;
+};
+
+// s2: a `fixed` view handed to a plain parameter (the hole step (i) left).
+func:arg_plain = NIL(fixed uint8[]:v) never fails {
+    drop plain_sink(v);
+    pass NIL;
+};
+
+// s3: a `fixed` view returned as a plain one.
+func:return_plain = uint8[](fixed uint8[]:v) never fails {
+    pass v;
+};
+
+// s4: a `fixed` view into a plain field.
+func:field_plain = int64(fixed uint8[]:v) never fails {
+    Holder:h = Holder{ view: v };
+    pass h.view.len;
+};
+
+// s5: a range of a `fixed` local array is the read-only view (the third face).
+func:range_fixed_array = int64() never fails {
+    fixed uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    uint8[]:w = arr[0i64...4i64];
+    pass w.len;
+};
+
+// s6: a view read off a `fixed` struct is the read-only view (the fourth face).
+func:read_off_fixed = int64() never fails {
+    uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    fixed Holder:h = Holder{ view: arr[0i64...4i64] };
+    uint8[]:w = h.view;
+    pass w.len;
+};
+
+// s7: the bridge's view into a plain binding (D-351; the first face's road).
+func:bridge_plain = int64(string:s) never fails {
+    uint8[]:b = string_bytes(s);
+    pass b.len;
+};
+
+// s8: a write through a read-only view held in a generic cell's plain field --
+// no binding says `fixed`; the TYPE does.
+func:write_cell = NIL(fixed uint8[]:v) never fails {
+    Cell<fixed uint8[]>:c = Cell{ item: v };
+    c.item[0i64] = 9u8;
+    pass NIL;
+};
+
+// s9: a write through a `List<fixed uint8[]>` element.
+func:write_list_elem = NIL(List<fixed uint8[]>->:l) never fails {
+    (<-l)[0i64][0i64] = 9u8;
+    pass NIL;
+};
+
+// s10: the address of an element reached by type alone.
+func:addr_cell = uint8(fixed uint8[]:v) never fails {
+    Cell<fixed uint8[]>:c = Cell{ item: v };
+    uint8->:p = @c.item[0i64];
+    pass (<-p);
+};
+
+// s11: an impl that DROPS the trait's `fixed` on `wsrc` (the sixth face).
+impl:Sink:Writer = {
+    async func:write = int64(Sink->:self, uint8[]:wsrc, Duration:_~within) {
+        self.n = self.n + wsrc.len;
+        pass wsrc.len;
+    };
+    async func:flush = NIL(Sink->:self, Duration:_~within) { pass NIL; };
+};
+
+// s12: an impl that ADDS `fixed` where the trait's `dest` is plain.
+impl:Src:Reader = {
+    async func:read = int64(Src->:self, fixed uint8[]:dest, Duration:_~within) {
+        self.n = self.n + dest.len;
+        pass 0i64;
+    };
+};
+
+// s13, s14: a cast between the two views, either spelling.
+func:cast_back = int64(fixed uint8[]:v) never fails {
+    uint8[]:a = v =>! uint8[];
+    uint8[]:b = v => uint8[];
+    pass a.len + b.len;
+};
+
+// THE CONTROLS.
+func:controls = int64(uint8[]:plain, fixed uint8[]:v, string:s) never fails {
+    fixed uint8[]:a = plain;                 // a plain view converts to the read-only one
+    int64:n = raw fixed_sink(plain);         // and so does an argument
+    fixed uint8[]:b = v[0i64...1i64];        // ranging keeps the rights
+    uint8:x = v[0i64];                       // reading
+    fixed uint8[]:c = string_bytes(s);       // the bridge into a `fixed` slot (D-351)
+    FHolder:h = FHolder{ data: plain };      // a struct holding the view, built from a plain one
+    fixed uint8[]:d = raw same(v);           // a `fixed` result into a `fixed` slot
+    Cell<fixed uint8[]>:cell = Cell{ item: v };
+    uint8:y = cell.item[0i64];               // read through the cell
+    pass a.len + n + b.len + (x => int64) + c.len + h.data.len + d.len + (y => int64);
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

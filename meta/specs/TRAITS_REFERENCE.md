@@ -67,7 +67,13 @@ T:p` is a consuming parameter (D-183) and the caller spends its argument where
 the TRAIT's declaration says `move` — a call through a bound or a `dyn` reads
 nothing else. An impl that adds `move` to a lent parameter frees what the caller
 still owns (a double free at the caller's drop); one that lends a parameter its
-trait consumes leaks what the caller spent. The function type carries no
+trait consumes leaks what the caller spent. **And a slice parameter's RIGHTS**
+(D-348 (ii), D-350; 1.6.1e landing 103): `fixed T[]` is a type, so an impl's slice
+parameter is `fixed` exactly where the trait's is and plain where the trait's is
+plain -- the signatures differ by type otherwise (`NITPICK-TYPE-014`, the sentence
+naming the slice) -- because a caller through a bound hands a read-only view where
+the trait says `fixed T[]`, and an impl that dropped the word wrote the caller's
+bytes (DEF-246's sixth face). The function type carries no
 `move`, so the two declarations are compared, parameter by parameter.
 
 ### 2.1 Default Methods

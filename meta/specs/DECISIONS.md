@@ -5435,6 +5435,10 @@ prototype's own `bug403` comment states the rule — so an immutable byte view i
 `binary` is therefore redundant twice over and is **removed**, along with its
 seven `binary_*` operations, which are slice operations under other names.
 
+> **Note (2026-10-08, 1.6.1e landing 103 — D-348 (ii), D-350):** the promise is a TYPE now: `fixed uint8[]` is the
+> read-only view, which a plain view converts to and which converts back to nothing, so "an immutable byte view is
+> `fixed uint8[]`" is kept on every road a view takes, not only through the binding that spelled it.
+
 > **Note (2026-10-08, 1.6.1e landing 98 — DEF-230, D-348):** "an immutable byte view is `fixed uint8[]`" was a
 > promise the compiler did not keep from this decision until that landing: D-287 (1.5.5) and DEF-106's TYPE-086
 > stopped at a slice base ("the storage there is not the binding's own"), so a write through a `fixed uint8[]` landed
@@ -22689,6 +22693,15 @@ plan says what refuses.
 > `Writer` trait's `write` parameter, six files) compiles as before. The measurements are in `1.6.1e.md`'s record of
 > landing 98. Step (ii) remains planned.
 
+> **Landing note (2026-10-08, 1.6.1e landing 103 — step (ii) built, `nitpick-compiler_33`; D-350, D-351; DEF-246 and
+> DEF-247 FIXED):** `fixed T[]` is a TYPE — `TY_SLICE` with its `b` slot set (`tt_slice_fixed`), a distinct id with
+> every kind-keyed walker's answer kept — spelled by the qualifier at a declaration (R1: a `fixed` binding of slice
+> type has the type, `ast_type_mark_fixed`) and by `fixed` before a slice type in a bare position (`PARSE-013`
+> otherwise); `fits` admits the plain view into it and never the reverse; a range of `fixed` storage, a slice read
+> off a `fixed` struct and `string_bytes` produce it; `place_fixed` reads the base's type, so TYPE-086 and TYPE-071
+> hold in any slot; the trait comparison sees the difference by id (TYPE-014). The six faces of DEF-246 refuse; the
+> tree's seven readers of the bridge spell `fixed uint8[]`; the measurements are in `1.6.1e.md`'s record of landing 103.
+
 ## D-349 — THE TOOLCHAIN PIN MOVES TO THE LLVM 20.1 RELEASE THE DISTRIBUTIONS SERVE (20.1.8 TODAY), AND THE DEPENDENCY CHAIN MOVES WITH IT — **SETTLED (user decision, 2026-10-08: "i'm fine with moving the pin … we just can't forget the dependency chain beyond just the compiler itself")**
 
 **The question, as it was put (S-131; the library seat's VM test of the install README, 2026-10-08).** `npkg build`
@@ -22783,6 +22796,10 @@ with their recommendations: "your recommendation for those questions looks fine 
 `tt_slice_fixed`), the display (`fixed T[]`), PARSE-013. The sweep of D-348 (ii)'s landing measures that no existing file moves
 but by the rules of D-348 and D-351.
 
+> **Landing note (2026-10-08, 1.6.1e landing 103, `nitpick-compiler_33`):** built as decided; `parse_fixed_view.npk`
+> holds the spellings and PARSE-013's faces, `fixed_view_spellings.npk` every position accepted and emitted,
+> `fixed_view_launder.npk` the fourteen refusals; the record is `1.6.1e.md`'s.
+
 ## D-351 — `string_bytes` RETURNS THE READ-ONLY VIEW, `fixed uint8[]`, ALWAYS — **SETTLED (user decision, 2026-10-08: "your recommendation for those questions looks fine to me.")**
 
 **The question, as it was put (S-133; D-348 step (ii)'s plan §3.3 item 4).** Does the string→slice bridge hand out the
@@ -22805,3 +22822,7 @@ looks fine to me." Recorded by landing 102; built as landing 103.
 escape analysis's `paths_overlap` and `header_field_disjoint_text`, the alias analysis's `decode_path`, `decode_step` and
 `decode_int`), a WRITER through the bridge is refused outright (none known). The landing's sweep names every library site, and
 the advance notice carries them before the landing.
+
+> **Landing note (2026-10-08, 1.6.1e landing 103, `nitpick-compiler_33`):** `string → fixed uint8[]` in
+> BUILTIN_REFERENCE and the generated table; the sweep's count of the libraries' readers is in `1.6.1e.md`'s record
+> of landing 103 and in NOTICES F45.

@@ -1,0 +1,114 @@
+// `fixed T[]` IN EVERY POSITION IT CAN BE WRITTEN, which the frontend must ACCEPT and
+// the compiler under test must EMIT (D-348 (ii), D-350, D-351; 1.6.1e landing 103).
+//
+// The counterweight to `types/rejection/fixed_view_launder.npk`. A declaration's
+// `fixed` before a slice type (a local, a parameter, a field, a module binding of a
+// view is not a thing -- a module binding holds no view), the bare positions (a
+// return type, a type argument, a function type's parameter, a nested element), the
+// conversion of a plain view into each of them, the bridge's read-only view into
+// each, and the prelude's own `Writer` through a `dyn` and through a bound.
+
+mod:fixed_view_spellings;
+
+struct:Pair = { fixed uint8[]:head; uint8[]:tail; };
+struct:Cell<T> = { T:item; };
+
+// a parameter, a return, a local
+func:same = fixed uint8[](fixed uint8[]:v) never fails {
+    fixed uint8[]:w = v;
+    pass w;
+};
+
+// a type argument, in a struct and in a List
+func:cells = int64(fixed uint8[]:v) never fails {
+    Cell<fixed uint8[]>:c = Cell{ item: v };
+    List<fixed uint8[]>:l = raw list_init::<fixed uint8[]>(1i64);
+    drop list_push(@l, c.item);
+    pass l[0i64].len + c.item.len;
+};
+
+// a function type's parameter, and a function value of it
+func:total = int64(fixed uint8[]:v) never fails { pass v.len; };
+func:through = int64(fixed uint8[]:v) never fails {
+    func int64(fixed uint8[]) never fails:f = total;
+    pass (raw f(v));
+};
+
+// a nested element: a read-only view of plain views (the qualifier marks the OUTER
+// slice, R1), and a plain slice of read-only views (the group spells the inner one)
+func:nested = int64(fixed uint8[][]:views, (fixed uint8[])[]:more) never fails {
+    pass views.len + more.len;
+};
+
+// the conversion: a plain view into every read-only slot
+func:convert = int64(uint8[]:plain) never fails {
+    fixed uint8[]:a = plain;
+    Pair:p = Pair{ head: plain, tail: plain };
+    Cell<fixed uint8[]>:c = Cell{ item: plain };
+    pass (raw total(plain)) + a.len + p.head.len + p.tail.len + c.item.len;
+};
+
+// the bridge's view (D-351) into every read-only slot, and ranged
+func:bridge = int64(string:s) never fails {
+    uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    fixed uint8[]:b = string_bytes(s);
+    Pair:p = Pair{ head: string_bytes(s), tail: arr[0i64...4i64] };
+    pass b.len + p.head.len + p.tail.len + (raw total(string_bytes(s)[0i64...b.len]));
+};
+
+// a PLAIN binding of the read-only view, re-pointed: the grouped type keeps the
+// type's `fixed` off the binding's qualifier (D-350). (A cursor that re-points to
+// a range of ITSELF is D-325's view-root freeze, whatever the rights: walk a view
+// by an offset.)
+func:repoint = int64(fixed uint8[]:v, fixed uint8[]:w) never fails {
+    (fixed uint8[]):cur = v;
+    int64:n = cur.len;
+    cur = w;
+    pass n + cur.len;
+};
+
+// a view read off a `fixed` struct and ranged, passed on as a read-only view
+func:off_fixed = int64() never fails {
+    uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    fixed Pair:p = Pair{ head: arr[0i64...2i64], tail: arr[2i64...4i64] };
+    pass (raw total(p.tail)) + (raw total(p.tail[0i64...1i64])) + (raw total(p.head));
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

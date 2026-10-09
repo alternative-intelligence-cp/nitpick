@@ -1684,6 +1684,13 @@ pub func:place_fixed = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
             // question goes on to the view's own root, so `v[i]` over a
             // `fixed uint8[]:v`, `h.view[i]` over a `fixed Holder:h` and
             // `s.bytes[i]` over a `fixed uint8[]` field are all fixed storage.
+            // AND A READ-ONLY VIEW IS FIXED STORAGE BY ITS TYPE (D-348 (ii),
+            // D-350; landing 103), wherever it travelled: a `List<fixed
+            // uint8[]>` element, a pointee, a generic `T` bound to one, a
+            // function's `fixed uint8[]` result -- no binding need say `fixed`.
+            if (bk == (raw TY_SLICE())) {
+                if (raw type_slice_fixed(e.types, bt)) { pass true; }
+            }
             if (bk == (raw TY_HANDLE()))  { pass false; }
         }
         pass (raw place_fixed(e, raw expr_lhs(n), fuel - 1i32));
@@ -2176,7 +2183,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     }
 
     int32:want = raw type_of_expr(e, target);
-    drop require_place(e, target, s.span);
+    if (!(raw require_place(e, target, s.span))) { pass NIL; }
     // A WRITE INTO A VIEW OR A FROZEN SELECTOR (D-266, 1.5.2h): the compound
     // spelling routes through here too.
     if (raw refuse_write_path(e, target, "assignment", s.span)) { pass NIL; }
@@ -2373,13 +2380,16 @@ func:is_bitwise_assign = bool(TokenKind:op) never fails {
 // The message names the form rather than saying "not assignable", because the
 // mistake is usually a comparison written with one `=` and the reader needs to be
 // pointed at that rather than at a definition.
-func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) never fails {
-    if (raw expr_is_none(id)) { pass NIL; }
-    if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
+// TRUE WHEN THE TARGET IS A PLACE; false after the report (1.6.1e landing 103):
+// the assignment stops at a value, so `(raw f(v))[0i64] = b` over a read-only
+// view is one report, the value's, and not also TYPE-086's (D-240).
+func:require_place = bool(ExprTyper->:e, ExprId:id, Span:at) never fails {
+    if (raw expr_is_none(id)) { pass true; }
+    if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass true; }
     discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
         "this is a value, not somewhere to store one; only a name, a field, an element or a `<-` dereference can be assigned to — and `==` is the comparison",
         at));
-    pass NIL;
+    pass false;
 };
 
 // `pass v;` desugars to `return Result{err: 0tbb32, value: v};` — so `v` is

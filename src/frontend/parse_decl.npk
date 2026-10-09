@@ -79,8 +79,8 @@ pub func:DECL_DERIVED = int32() never fails   { pass 4096i32; };
 // They shift up so they never collide with the visibility and modifier bits.
 pub func:DECL_RET_WILD = int32() never fails  { pass 64i32; };
 pub func:DECL_RET_WILDX = int32() never fails { pass 128i32; };
-pub func:DECL_RET_STACK = int32() never fails { pass 256i32; };
-pub func:DECL_RET_FIXED = int32() never fails { pass 1024i32; };
+// 256 (`DECL_RET_STACK`) and 1024 (`DECL_RET_FIXED`) are FREE since landing 103
+// (DEF-247): both were set by `p_return_quals` and read by nothing.
 // `thread` (D-181): this function is a THREAD BODY — it owns an executor and
 // the arena its task frames come from (D-034), which is what makes it a
 // different kind of function from a task rather than the same one used
@@ -95,8 +95,10 @@ func:p_return_quals = int32(Parser->:p) never fails {
         int32:bit = 0i32;
         if (k == TokenKind.KwWild)  { bit = raw DECL_RET_WILD(); }
         if (k == TokenKind.KwWildx) { bit = raw DECL_RET_WILDX(); }
-        if (k == TokenKind.KwStack) { bit = raw DECL_RET_STACK(); }
-        if (k == TokenKind.KwFixed) { bit = raw DECL_RET_FIXED(); }
+        // `stack` and `fixed` were read here too until landing 103 (DEF-247): the
+        // bits they set were read by nothing. `fixed` now reaches `p_parse_type`,
+        // where it marks a slice return type as the read-only view (D-348 (ii)) and
+        // is PARSE-013 before any other type; `stack` is PARSE-013 there.
         if (bit == 0i32) { break; }
         discard(raw p_advance(p));
         q = q | bit;
@@ -848,6 +850,7 @@ pub func:p_parse_param = DeclId(Parser->:p) never fails {
         lim = (raw p_parse_limit(p)).index;
     }
     TypeId:ty = raw p_parse_type(p);
+    drop p_fixed_view_decl(p, quals, ty);   // `fixed T[]:x` is a `fixed T[]` (D-350)
     discard(raw p_expect(p, TokenKind.PColon));
 
     // `Type:_~name` -- this parameter is DELIBERATELY unused (D-089). The marker
@@ -1192,6 +1195,7 @@ func:p_parse_field = DeclId(Parser->:p) never fails {
         lim = (raw p_parse_limit(p)).index;
     }
     TypeId:ty = raw p_parse_type(p);
+    drop p_fixed_view_decl(p, quals, ty);   // `fixed T[]:x` is a `fixed T[]` (D-350)
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_advance(p);
     discard(raw p_expect(p, TokenKind.PSemi));
@@ -1699,6 +1703,7 @@ func:p_parse_failure = DeclId(Parser->:p) never fails {
 func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     int32:quals = raw p_qualifiers(p);
     TypeId:ty = raw p_parse_type(p);
+    drop p_fixed_view_decl(p, quals, ty);   // `fixed T[]:x` is a `fixed T[]` (D-350)
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_advance(p);
     int32:init = 0i32;

@@ -1,0 +1,165 @@
+// `fixed T[]` IN THE PARSER (D-348 (ii), D-350; 1.6.1e landing 103; DEF-247).
+//
+// In a bare type position -- a return type, a type argument, a function type's
+// parameter -- `fixed` precedes a slice type and marks its node as the read-only
+// view (`type_fixed_view`); before any other type it names nothing and is
+// NITPICK-PARSE-013 at the `fixed`, once, the type built all the same (D-240). At a
+// DECLARATION the qualifier loop reads `fixed` as the binding's (R1), and the
+// declaration parser marks a slice-typed binding's node from it, so a `fixed
+// uint8[]:v` parameter or local carries the view type while a `fixed int32:n` keeps
+// its type unmarked. `stack` on a return and `fixed` on a cast target are PARSE-013
+// too: both parsed and meant nothing until this landing (DEF-247). A parse refusal
+// is a UNIT case (D-085: the grammar stage feeds every tree file through the parser).
+
+mod:parse_fixed_view;
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+
+struct:Parsed = {
+    Ast:ast;
+    DiagList:diags;
+    DeclId:root;
+};
+
+func:parsed = Parsed(string:src, InternTable->:it) never fails {
+    Ast:ast = raw ast_init();
+    DiagList:diags = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @diags);
+    Parser:p = raw parser_init(@toks, @ast, @diags, it);
+    DeclId:root = raw p_parse_module(@p);
+    Parsed:out = Parsed{ ast: move(ast), diags: diags, root: root };
+    pass out;
+};
+
+func:one_diag = bool(Parsed->:x, string:code) never fails {
+    if ((raw diaglist_count(@x.diags)) != 1i64) { pass false; }
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (raw string_eq(d.code, code));
+};
+
+// The first function declared in the module.
+func:first_func = DeclNode(Parsed->:x) never fails {
+    DeclNode:m = raw ast_decl(@x.ast, x.root);
+    int32:n = raw item_member_count(@x.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclNode:d = raw ast_decl(@x.ast, raw item_member(@x.ast, m, i));
+        if (d.kind == DeclKind.DeclFunctionDecl) { pass d; }
+    }
+    pass (raw ast_decl(@x.ast, x.root));
+};
+
+// Is the function's return type node a marked slice?
+func:ret_is_view = bool(Parsed->:x) never fails {
+    DeclNode:f = raw first_func(x);
+    TypeNode:t = raw ast_type(@x.ast, raw fn_return(@x.ast, f));
+    pass (raw type_fixed_view(t));
+};
+
+// Is the function's i-th parameter's type node a marked slice?
+func:param_is_view = bool(Parsed->:x, int32:i) never fails {
+    DeclNode:f = raw first_func(x);
+    DeclNode:pd = raw ast_decl(@x.ast, raw fn_param(@x.ast, f, i));
+    TypeNode:t = raw ast_type(@x.ast, raw param_type(pd));
+    pass (raw type_fixed_view(t));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // (a) a return type `fixed uint8[]`: no diagnostic, the return node marked.
+    Parsed:a = raw parsed("mod:m; func:f = fixed uint8[](fixed uint8[]:v) never fails { pass v; };", @it);
+    if ((raw diaglist_count(@a.diags)) != 0i64)                     { exit 10i32; }
+    if (!(raw ret_is_view(@a)))                                      { exit 11i32; }
+    // ... and the `fixed uint8[]:v` parameter's node marked from the qualifier (R1).
+    if (!(raw param_is_view(@a, 0i32)))                              { exit 12i32; }
+
+    // (b) a `fixed int32:n` parameter and a plain `uint8[]:w` one: neither marked.
+    Parsed:b = raw parsed("mod:m; func:f = int32(fixed int32:n, uint8[]:w) never fails { pass n; };", @it);
+    if ((raw diaglist_count(@b.diags)) != 0i64)                     { exit 20i32; }
+    if (raw param_is_view(@b, 0i32))                                 { exit 21i32; }
+    if (raw param_is_view(@b, 1i32))                                 { exit 22i32; }
+
+    // (c) `fixed` before a non-slice RETURN type: PARSE-013, once (DEF-247's face).
+    Parsed:c = raw parsed("mod:m; func:f = fixed int32() never fails { pass 1i32; };", @it);
+    if (!(raw one_diag(@c, raw PARSE_FIXED_VIEW())))                 { exit 30i32; }
+
+    // (d) `stack` on a return: PARSE-013, once.
+    Parsed:d = raw parsed("mod:m; func:f = stack int32() never fails { pass 1i32; };", @it);
+    if (!(raw one_diag(@d, raw PARSE_FIXED_VIEW())))                 { exit 40i32; }
+
+    // (e) `fixed` before a non-slice type ARGUMENT: PARSE-013, once.
+    Parsed:e = raw parsed("mod:m; func:f = NIL(List<fixed int32>:l) never fails { pass NIL; };", @it);
+    if (!(raw one_diag(@e, raw PARSE_FIXED_VIEW())))                 { exit 50i32; }
+
+    // (f) a slice type ARGUMENT marked, no diagnostic.
+    Parsed:f = raw parsed("mod:m; func:f = NIL(List<fixed uint8[]>:l) never fails { pass NIL; };", @it);
+    if ((raw diaglist_count(@f.diags)) != 0i64)                     { exit 60i32; }
+
+    // (g) `fixed` before a non-slice parameter of a FUNCTION TYPE: PARSE-013, once;
+    //     a slice one parses clean.
+    Parsed:g = raw parsed("mod:m; func:f = NIL(func NIL(fixed int32):cb) never fails { pass NIL; };", @it);
+    if (!(raw one_diag(@g, raw PARSE_FIXED_VIEW())))                 { exit 70i32; }
+    Parsed:g2 = raw parsed("mod:m; func:f = NIL(func NIL(fixed uint8[]):cb) never fails { pass NIL; };", @it);
+    if ((raw diaglist_count(@g2.diags)) != 0i64)                    { exit 71i32; }
+
+    // (h) `fixed` on a cast target: PARSE-013, once.
+    Parsed:h = raw parsed("mod:m; func:f = NIL(uint8[]:v) never fails { uint8[]:w = v =>! fixed uint8[]; pass NIL; };", @it);
+    if (!(raw one_diag(@h, raw PARSE_FIXED_VIEW())))                 { exit 80i32; }
+
+    // (i) a `fixed` LOCAL of slice type: no diagnostic (its node is marked by the
+    //     declaration parser; the checker's tests read the type).
+    Parsed:i = raw parsed("mod:m; func:f = int64(uint8[]:v) never fails { fixed uint8[]:w = v; pass w.len; };", @it);
+    if ((raw diaglist_count(@i.diags)) != 0i64)                     { exit 90i32; }
+
+    // (j) a PLAIN local of the read-only view, by the grouped type: no diagnostic,
+    //     and the local's node marked (the qualifier loop saw no `fixed`).
+    Parsed:j = raw parsed("mod:m; func:f = NIL((fixed uint8[]):cur) never fails { cur = cur; pass NIL; };", @it);
+    if ((raw diaglist_count(@j.diags)) != 0i64)                     { exit 100i32; }
+    if (!(raw param_is_view(@j, 0i32)))                              { exit 101i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsIndex) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (ShiftRange)  { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (BoundsId) { exit 1i32; },
+        (BoundsScratch) { exit 1i32; },
+        (BoundsWindow) { exit 1i32; },
+        (DeadlineExceeded) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (ProvenSlice) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
+        (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

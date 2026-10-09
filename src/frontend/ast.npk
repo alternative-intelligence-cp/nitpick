@@ -748,6 +748,20 @@ pub func:ast_type = TypeNode(Ast->:ast, TypeId:id) never fails {
 
 pub func:ast_type_count = int32(Ast->:ast) never fails { pass (raw ast_id(ast.types.count)); };
 
+// MARK A SLICE TYPE NODE AS THE READ-ONLY VIEW `fixed T[]` (D-348 (ii), D-350; 1.6.1e
+// landing 103): the one write onto a type node after its construction. The parser
+// learns the mark after the node exists -- from a `fixed` written before the type in
+// a bare position, or before the declaration (the qualifier, R1) -- and slot `c` was
+// 0 on every array node until this landing, so the write collides with nothing.
+pub func:ast_type_mark_fixed = NIL(Ast->:ast, TypeId:id) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if ((id.index => int64) >= ast.types.count) { !!! BoundsId; }
+    TypeNode:n = ast.types[id.index => int64];
+    ast.types[id.index => int64] = TypeNode{ kind: n.kind, span: n.span, a: n.a, b: n.b,
+                                             c: 1i32, payload: n.payload };
+    pass NIL;
+};
+
 // --- patterns -------------------------------------------------------------------
 
 pub func:ast_add_pat = PatId(Ast->:ast, PatKind:kind, Span:span,

@@ -344,6 +344,10 @@ pub func:resolve_type = int32(TypeResolver->:r, TypeId:id, int32:scope) never fa
     if (n.kind == TypeKind.TypeArrayType) {
         int32:elem = raw resolve_type(r, raw type_element(n), scope);
         if (raw type_is_slice(n)) {
+            // `fixed T[]` -- the read-only view (D-348 (ii), D-350): the node's
+            // mark, written by the type parser in a bare position or by the
+            // declaration parser for a `fixed` binding of slice type (R1).
+            if (raw type_fixed_view(n)) { pass (raw tt_slice_fixed(r.types, elem)); }
             pass (raw tt_slice(r.types, elem));
         }
         pass (raw resolve_fixed_array(r, n, elem, scope));

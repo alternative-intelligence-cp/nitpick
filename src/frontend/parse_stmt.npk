@@ -676,6 +676,7 @@ func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) never fails {
         lim = (raw p_parse_limit(p)).index;
     }
     TypeId:ty = raw p_parse_type(p);
+    drop p_fixed_view_decl(p, quals, ty);   // `fixed T[]:x` is a `fixed T[]` (D-350)
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_advance(p);
     int32:init = 0i32;

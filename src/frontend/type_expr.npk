@@ -711,14 +711,17 @@ pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     pass NIL;
 };
 
-pub func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) never fails {
-    if (raw expr_is_none(id)) { pass NIL; }
-    if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
+// TRUE WHEN THE OPERAND IS A PLACE; false after the report (1.6.1e landing 103):
+// the callers stop at a value, so `@(raw f(v))[0i64]` over a read-only view is
+// one report, the value's, and not also TYPE-071's (D-240).
+pub func:require_place_operand = bool(ExprTyper->:e, ExprId:id, string:what) never fails {
+    if (raw expr_is_none(id)) { pass true; }
+    if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass true; }
     ExprNode:n = raw ast_expr(e.ast, id);
     string:m1 = string_concat("`", what);
     string:m2 = string_concat(m1, "` needs a place — a name, a field or element of one, or what a pointer points at — and this expression is a value with no address");
     discard(raw te_error(e, raw TYPE_NOT_A_PLACE(), move(m2), n.span));
-    pass NIL;
+    pass false;
 };
 
 // --- the common type of two operands (D-092, corrected) ----------------------------------
@@ -1551,11 +1554,26 @@ pub func:why_not_numeric = string(ExprTyper->:e, int32:t) never fails {
     pass "it is not a numeric type";
 };
 
+// IS `got` THE READ-ONLY VIEW OF THE PLAIN VIEW `want` (D-348 (ii))? The one
+// refused pair that is not two types but two rights over one shape; both
+// mismatch reporters say the rule rather than "write the cast you mean".
+pub func:fixed_view_into_plain = bool(ExprTyper->:e, int32:want, int32:got) never fails {
+    if (!(raw type_slice_fixed(e.types, got))) { pass false; }
+    if ((raw type_kind(e.types, want)) != (raw TY_SLICE())) { pass false; }
+    if (raw type_slice_fixed(e.types, want)) { pass false; }
+    pass ((raw type_elem(e.types, want)) == (raw type_elem(e.types, got)));
+};
+
 pub func:te_mismatch = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) never fails {
     string:m1 = string_concat("`", raw type_display(e.types, e.interns, lt));
     string:m2 = string_concat(m1, "` and `");
     string:m3 = string_concat(m2, raw type_display(e.types, e.interns, rt));
     string:m4 = string_concat(m3, "` are different types; write the cast you mean");
+    // A `fixed` VIEW WHERE A PLAIN ONE IS WANTED (D-348 (ii), D-350): the one
+    // pair whose cast does not exist either way, and the reason is the rule.
+    if (raw fixed_view_into_plain(e, lt, rt)) {
+        m4 = string_concat(m3, "` are different types: a `fixed` view converts to no plain view (D-348), it is read-only through it -- read it, range it, hand it to a `fixed T[]` slot, or copy the bytes out");
+    }
     // Two integers differing only in width is the case that looks like it ought
     // to work, so it gets the reason rather than just the refusal.
     if (raw type_is_integer(e.types, lt)) {
@@ -2643,6 +2661,16 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
         }
     }
     if (raw types_agree(e, want, got)) { pass true; }
+    // A PLAIN VIEW CONVERTS TO THE READ-ONLY VIEW OF ITS ELEMENT, AND NEVER BACK
+    // (D-348 (ii), D-350; 1.6.1e landing 103): fewer rights over one
+    // representation -- the one conversion beside D-099's wrap that changes no
+    // bits. The reverse is the laundering DEF-246 measured (a `fixed` view assigned
+    // to a plain binding, handed to a plain parameter, returned as a plain view).
+    if (raw type_slice_fixed(e.types, want)) {
+        if ((raw type_kind(e.types, got)) == (raw TY_SLICE())) {
+            if ((raw type_elem(e.types, want)) == (raw type_elem(e.types, got))) { pass true; }
+        }
+    }
     if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) {
         if ((raw type_elem(e.types, want)) == got) { pass true; }
     }
@@ -3047,6 +3075,10 @@ pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at)
     string:m2 = string_concat(m1, "`, found `");
     string:m3 = string_concat(m2, gd);
     string:m4 = string_concat(m3, "`");
+    // A `fixed` VIEW INTO A PLAIN SLOT (D-348 (ii), D-350): the rule, not the shapes.
+    if (raw fixed_view_into_plain(e, want, got)) {
+        m4 = string_concat(m4, ": a `fixed` view converts to no plain view (D-348), it is read-only through it -- declare the slot `fixed T[]`, read or range the view, or copy the bytes out");
+    }
     // The widths case is worth naming, since it is the one that looks like it
     // ought to work and no longer does (D-092, corrected).
     if (raw type_is_integer(e.types, want)) {
@@ -3721,6 +3753,24 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
         pass 0i32;
     }
     int32:t = raw type_of_expr_inner(e, id);
+    // A SLICE READ OFF A `fixed` PLACE IS THE READ-ONLY VIEW (D-348 (ii), D-350;
+    // DEF-246's fourth face): `h.view` over a `fixed Holder:h` carries the rights
+    // of the storage it was read from, as a range of fixed storage does
+    // (`type_index`) and a `fixed` binding's own type does (the parser's mark).
+    // Through a pointer the base is no `fixed` place (D-287: an address is not a
+    // view), so a field's declared type stands.
+    if (t != 0i32) {
+        if ((raw type_kind(e.types, t)) == (raw TY_SLICE())) {
+            if (!(raw type_slice_fixed(e.types, t))) {
+                ExprNode:vn = raw ast_expr(e.ast, id);
+                if (vn.kind == ExprKind.ExprMemberAccessExpr) {
+                    if (raw place_fixed(e, id, 64i32)) {
+                        t = raw tt_slice_fixed(e.types, raw type_elem(e.types, t));
+                    }
+                }
+            }
+        }
+    }
     drop exprtypes_set(e.expr_types, id, t);
     pass t;
 };
@@ -4218,7 +4268,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
 
     // --- the pointer family (OP_REFERENCE §0 level 5) -----------------------------
     if (n.kind == ExprKind.ExprAddressOfExpr) {
-        drop require_place_operand(e, raw expr_operand(n), "@");
+        if (!(raw require_place_operand(e, raw expr_operand(n), "@"))) { pass 0i32; }
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1; DEF-43): the
@@ -4264,7 +4314,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // level and the borrow checker (0.5) is what makes it second-class; the
     // distinction is about where the value may travel, not about what it is.
     if (n.kind == ExprKind.ExprBorrowExpr) {
-        drop require_place_operand(e, raw expr_operand(n), "a borrow");
+        if (!(raw require_place_operand(e, raw expr_operand(n), "a borrow"))) { pass 0i32; }
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1): a claim of
@@ -4315,7 +4365,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // `move(place)` (D-065) transfers ownership and yields the same type; what it
     // does to the SOURCE is the borrow checker's business in 0.5.
     if (n.kind == ExprKind.ExprMoveExpr) {
-        drop require_place_operand(e, raw expr_operand(n), "move");
+        if (!(raw require_place_operand(e, raw expr_operand(n), "move"))) { pass 0i32; }
         int32:mvt = raw type_of_expr(e, raw expr_operand(n));
         // A `move` OF A FROZEN SELECTOR OR ANY PART OF IT (D-266, 1.5.2h) --
         // the nested `pick (move(v))` included, whose selector is typed here.

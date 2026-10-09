@@ -1230,6 +1230,22 @@ internal-defect refusal where a slice asking the same compiled).
 - **A slice is a second-class borrow** (D-004): it passes down the call stack and
   never up, cannot outlive the storage it views, and cannot cross a thread spawn
   or an `await`.
+- **`fixed T[]` is the READ-ONLY VIEW** (D-348 (ii), D-350, D-351; 1.6.1e landing
+  103): the same `{ ptr, i64 }`, the same borrow, fewer rights. A plain `T[]`
+  converts to it wherever one is expected -- an argument, a field, a return, a
+  `List<fixed T[]>` element -- and it converts back to nothing (`NITPICK-TYPE-007`
+  naming the rule; a cast in either spelling `NITPICK-TYPE-032`). A write through
+  it is `NITPICK-TYPE-086` and the address of its element `NITPICK-TYPE-071` in
+  whatever slot it sits: the type carries the promise the binding's `fixed` made
+  (§26). It is PRODUCED by a `fixed` binding of slice type, by ranging `fixed`
+  storage (`ARR[lo...hi]` over a `fixed` array, a slice held in a `fixed`
+  aggregate), by reading a slice off a `fixed` struct, and by `string_bytes`
+  (always: a string's bytes are read through the bridge and written by nothing).
+  In a bare type position -- a type argument, a function type's parameter, a return
+  type, a grouped element `(fixed T[])[]` -- `fixed` precedes a slice type and
+  nothing else (`NITPICK-PARSE-013`). An impl's slice parameter is `fixed` exactly
+  where its trait's is (`NITPICK-TYPE-014`, TRAITS_REFERENCE §3): a caller through
+  the bound reads the trait's signature.
 
 Constructed by ranging a fixed array or another slice — `arr[0...n]` — or, in
 `wild` context only, from a raw pointer and a length with
@@ -1884,8 +1900,9 @@ property, so an immutable byte view is `fixed uint8[]`.
 > listener's F-047). A write through a `fixed` slice — an element, a compound assignment, a sub-range's element, a
 > slice held in a `fixed` aggregate or declared a `fixed` field — is `NITPICK-TYPE-086`, and `@`, `$$i`/`$$m` or a
 > pointer-receiver call on an element is `NITPICK-TYPE-071`, each with the view's own sentence (§26). What step (i)
-> leaves: a `fixed uint8[]` handed to a PLAIN `uint8[]` parameter whose callee writes; D-348's step (ii), `fixed T[]`
-> as a TYPE that a plain view converts to and never back, closes it (planned before it is built).
+> left — a `fixed uint8[]` handed to a PLAIN `uint8[]` parameter whose callee writes — step (ii) closed at landing 103
+> (D-350, D-351): `fixed T[]` is a TYPE a plain view converts to and never back (§9.2.1), so the immutable byte view
+> this decision promised is one the compiler keeps on every road a view takes.
 
 Redundant twice over. `binary` and its seven `binary_*` operations are removed;
 use `uint8[]`. `buffer` (§23) is retained, because a slice cannot own and the
@@ -2058,10 +2075,24 @@ READ-ONLY THROUGH IT — the bytes it views are written by no path that spells
 `NITPICK-TYPE-086` (the code a write into a part of a `fixed` binding carries,
 DEF-106); the address of an element — `@`, `$$i`/`$$m`, the implicit address a
 pointer-receiver call takes — is `NITPICK-TYPE-071` (D-287's: an address of fixed
-storage). Reading, ranging and passing the view on are free. Handing a `fixed`
-view to a plain `T[]` parameter still compiles until D-348's step (ii) makes
-`fixed T[]` a type; until then `fixed` at a call site protects nothing a callee
-declares plain.
+storage). Reading, ranging and passing the view on are free.
+
+**And the view's TYPE carries the rights** (D-348 (ii), D-350; 1.6.1e landing
+103): a `fixed` binding of slice type has the type `fixed T[]`, the read-only
+view (§9.2.1), so the bytes stay unwritable wherever the view goes -- a plain
+`T[]` parameter refuses it (`NITPICK-TYPE-007`), a plain field or return refuses
+it, a `List<fixed T[]>` element or a generic cell holding it is written through by
+nobody (`NITPICK-TYPE-086`), and an impl of a trait whose method takes `fixed
+uint8[]` declares the parameter `fixed` too (`NITPICK-TYPE-014`). The reading is
+D-074's completed: for a scalar `fixed` says the value never changes; for a view
+the value is the view, its header and the bytes it shows, and the type says the
+second half. A `fixed` parameter of any other type keeps its type and may not be
+reassigned (`NITPICK-ASSIGN-002`, DEF-248). What R1 does not spell is a
+RE-POINTABLE binding of a read-only view: walk a view by an offset, or with a
+`for`. `fixed` before a slice type in a bare position (`List<fixed uint8[]>`, `func
+NIL(fixed uint8[])`, `= fixed uint8[](…)`) is the type's spelling; before any other
+type there, `stack` on a return, and `fixed` on a cast target are
+`NITPICK-PARSE-013`.
 
 **And the value need not be known at compile time.** Where you want to say it
 *is*, wrap the initialiser: `comptime(…)` refuses an expression that does not

@@ -25,7 +25,7 @@
 mod:view_escape;
 
 struct:Holder = { int32->:p; };
-struct:Viewer = { uint8[]:view; };
+struct:Viewer = { (fixed uint8[]):view; };   // a PLAIN field of the read-only view: the group keeps the type's `fixed` off the field (D-350)
 
 // (1) the rule that always existed: `@x` returned
 func:esc_addr = int32->() never fails {
@@ -40,7 +40,7 @@ func:esc_struct = Holder() never fails {
 };
 
 // (3) NEW: the reporter's case -- a view of a local string, returned
-func:esc_view = uint8[]() never fails {
+func:esc_view = fixed uint8[]() never fails {
     string:s = string_concat("abcd", "efgh");
     pass (string_bytes(s));
 };
@@ -59,7 +59,7 @@ func:esc_range = int32[]() never fails {
 
 // (6) NEW: a view stored into an outer struct through a pointer parameter --
 // rule B: a local-rooted borrow beside a destination that can hold it
-func:stash = NIL(Viewer->:h, uint8[]:v) never fails {
+func:stash = NIL(Viewer->:h, fixed uint8[]:v) never fails {
     h.view = v;
     pass NIL;
 };
@@ -70,6 +70,6 @@ func:leak_view = NIL(Viewer->:h) never fails {
 };
 
 // (7) NEW: a view of a TEMPORARY -- no name, dead at the statement's end
-func:esc_temp = uint8[]() never fails {
+func:esc_temp = fixed uint8[]() never fails {
     pass (string_bytes(string_concat("ab", "cd")));
 };

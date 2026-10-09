@@ -33,6 +33,11 @@ trait:Writer = {
 };
 ```
 
+> **`write` takes the READ-ONLY VIEW and `read` the plain one** (D-348 (ii), D-350, D-351; 1.6.1e landing 103):
+> `fixed uint8[]` is a type since that landing, so a writer's source is bytes it cannot change and a reader's
+> destination is bytes it fills; a plain view converts into `write`'s slot, `string_bytes(s)` IS one (D-351), and
+> an impl declares `wsrc` as the trait does (`NITPICK-TYPE-014` otherwise, TRAITS_REFERENCE §3).
+
 > **As built (D-185, 1.1.12b):** receivers are `Self->` — the first draft's
 > by-value `self` predates the move-only rule for owners (D-183), under which
 > a by-value receiver would CONSUME the stream per call. Deadline parameters

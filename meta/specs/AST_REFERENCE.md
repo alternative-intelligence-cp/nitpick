@@ -485,7 +485,7 @@ are ordinary values referenced by `IdentifierExpr`.
 | `NamedType` | `name`, `generic_args` | |
 | `PointerType` | `pointee` | `T->` — **thin**, one word, no bounds metadata (D-038) |
 | `OptionalType` | `inner` | `T?` |
-| `ArrayType` | `element`, `size: Expr?` | value type; does not decay |
+| `ArrayType` | `element`, `size: Expr?`, `fixed: bool` | value type; does not decay. An absent size is the slice `T[]`; `fixed` marks the slice as the READ-ONLY VIEW `fixed T[]` (D-348 (ii), D-350; 1.6.1e landing 103) — written by the type parser for `fixed` before a slice type in a bare position, and by a declaration parser for a `fixed`-qualified binding of slice type (R1); slot `c`, the one write onto a type node after its construction (`ast_type_mark_fixed`); the clone copies it |
 | `FuncType` | `params`, `return_type`, `never_fails: bool` | D-163 |
 | `DynType` | `traits: TypeNode[]` | `dyn A & B` |
 | `FuncType` | `params`, `return_type`, `never_fails: bool` | **`func RetType(ParamTypes) [never fails]`** (D-087; D-163) — the same parts, in the same order, as the declaration it is the type of; the contract is part of the type's identity, and a may-fail function cannot fill a `never fails` slot |
@@ -497,6 +497,12 @@ are ordinary values referenced by `IdentifierExpr`.
 
 Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
 `const`, `fixed`, ~~`borrow_imm`, `borrow_mut`~~. **`gc` does not exist** (D-003).
+
+> **[D-348 (ii), D-350 (2026-10-08, 1.6.1e landing 103).]** One exception, stated: a `fixed`-qualified binding of
+> SLICE type has its type node marked (`ArrayType.fixed`), because for a view the qualifier says something about
+> memory the binding does not own, and the TYPE is what travels. `fixed` is read by the type parser in a bare
+> type position for the same mark, and before anything but a slice type it is `NITPICK-PARSE-013`; `stack` and
+> `fixed` are no longer return qualifiers (`DECL_RET_STACK`/`DECL_RET_FIXED` were set and read by nothing, DEF-247).
 
 > **[D-286, 1.5.5 (2026-09-11).]** `borrow_imm` / `borrow_mut` are STRUCK:
 > neither was ever a keyword or a parsed qualifier (0.5.1 recorded the gap),

@@ -50,3 +50,8 @@ pub func:PARSE_BARE_QUESTION_REMOVED = string() never fails { pass "NITPICK-PARS
 // and refuses the 257th level here, where the compiler's own recursions (the folder,
 // the analyses at 256 by their fuels) would otherwise run off the compiler's stack.
 pub func:PARSE_TOO_DEEP = string() never fails { pass "NITPICK-PARSE-012"; };
+// `fixed` IN A TYPE NAMES THE READ-ONLY VIEW, `fixed T[]`, AND NOTHING ELSE (D-348 (ii),
+// D-350; 1.6.1e landing 103): before any other type in a bare type position (a type
+// argument, a function type's parameter, a return type), on a cast target, and
+// `stack` on a return -- each a spelling that parsed and meant nothing (DEF-247).
+pub func:PARSE_FIXED_VIEW = string() never fails { pass "NITPICK-PARSE-013"; };

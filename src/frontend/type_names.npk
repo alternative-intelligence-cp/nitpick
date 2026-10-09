@@ -228,7 +228,10 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
         pass (string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "->"));
     }
     if (k == (raw TY_SLICE())) {
-        pass (string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "[]"));
+        string:sl = string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "[]");
+        // the read-only view spells its rights (D-348 (ii), D-350)
+        if (raw type_slice_fixed(tyt, t)) { pass (string_concat("fixed ", sl)); }
+        pass sl;
     }
     if (k == (raw TY_OPTIONAL())) {
         pass (string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "?"));

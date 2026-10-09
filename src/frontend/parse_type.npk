@@ -64,6 +64,18 @@ pub func:type_is_slice = bool(TypeNode:t) never fails {
     pass (t.b == 0i32);
 };
 
+// `fixed T[]` -- THE READ-ONLY VIEW (D-348 (ii), D-350; 1.6.1e landing 103): a slice
+// node whose `c` slot is set. The type parser sets it for `fixed` written before a
+// slice type in a bare type position, and a declaration parser sets it for a
+// `fixed`-qualified binding of slice type (`p_fixed_view_decl`): the qualifier stays
+// the declaration's, and the view's TYPE carries the rights the qualifier names, so
+// the view leaves its binding with them. The only write onto a type node after its
+// construction (`ast_type_mark_fixed`); the clone copies `c`.
+pub func:type_fixed_view = bool(TypeNode:t) never fails {
+    if (!(raw type_is_slice(t))) { pass false; }
+    pass (t.c == 1i32);
+};
+
 // A `ComptimeArg`'s value. Its own accessor because slot `a` holds an ExprId
 // here and a TypeId on every other node that uses it -- reading one through
 // `type_pointee` would hand a type-node index to something expecting an
@@ -119,6 +131,7 @@ func:type_arg_starts_type = bool(TokenKind:k) never fails {
     if (k == TokenKind.KwSelf)   { pass true; }
     if (k == TokenKind.KwCstring){ pass true; }
     if (k == TokenKind.KwAny)    { pass true; }
+    if (k == TokenKind.KwFixed)  { pass true; }   // `fixed T[]` (D-348 (ii))
     pass (raw token_kind_is_builtin_type(k));
 };
 
@@ -152,6 +165,32 @@ pub func:p_expect_gt = bool(Parser->:p) never fails {
 pub func:p_parse_type = TypeId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     TokenKind:k = raw p_kind(p);
+
+    // `fixed T[]` -- THE READ-ONLY VIEW TYPE (D-348 (ii), D-350; landing 103). In a
+    // bare type position (a type argument, a function type's parameter, a return
+    // type, an element) `fixed` precedes a slice type and marks it; before anything
+    // else it names nothing: NITPICK-PARSE-013 at the `fixed`, the type built all the
+    // same (D-240). At a DECLARATION the qualifier loop has eaten `fixed` before this
+    // is reached, and the declaration parser marks the node from the qualifier (R1).
+    if (k == TokenKind.KwFixed) {
+        discard(raw p_advance(p));
+        TypeId:fixed_t = raw p_parse_type(p);
+        if (!(raw p_mark_fixed_view(p, fixed_t))) {
+            drop p_error_at(p, raw PARSE_FIXED_VIEW(),
+                "`fixed` in a type names the read-only view `fixed T[]`, and what follows here is not a slice type (D-348): on a binding `fixed` is the qualifier written before its type, and a return, a type argument or a function type's parameter is not a binding",
+                sp);
+        }
+        pass fixed_t;
+    }
+    // `stack` IS A BINDING'S QUALIFIER AND NO TYPE'S (DEF-247): it reached the
+    // return position through `p_return_quals` and meant nothing there.
+    if (k == TokenKind.KwStack) {
+        drop p_error_at(p, raw PARSE_FIXED_VIEW(),
+            "`stack` qualifies a binding and is not part of a type (D-348, DEF-247): a return, a type argument or a function type's parameter is not a binding",
+            sp);
+        discard(raw p_advance(p));
+        pass (raw p_parse_type(p));
+    }
 
     // `dyn A & B` -- a set of traits, combined with `&` (D-029).
     if (k == TokenKind.KwDyn) {
@@ -359,4 +398,25 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
         }
     }
     pass cur;
+};
+
+// MARK A SLICE TYPE NODE AS THE READ-ONLY VIEW (D-348 (ii), D-350). True when the
+// node is a slice and is marked; false (and nothing written) for any other node.
+pub func:p_mark_fixed_view = bool(Parser->:p, TypeId:ty) never fails {
+    if (raw type_is_none(ty)) { pass false; }
+    TypeNode:n = raw ast_type(p.ast, ty);
+    if (!(raw type_is_slice(n))) { pass false; }
+    drop ast_type_mark_fixed(p.ast, ty);
+    pass true;
+};
+
+// A `fixed` BINDING OF SLICE TYPE HAS THE TYPE `fixed T[]` (D-350, R1; landing 103;
+// DEF-246): called by the four declaration parsers -- a local, a parameter, a field,
+// a module binding -- after the type is parsed, with the qualifiers the loop read.
+// A `fixed` binding of any other type keeps its type: only a view's `fixed` says
+// something about memory the binding does not own.
+pub func:p_fixed_view_decl = NIL(Parser->:p, int32:quals, TypeId:ty) never fails {
+    if ((quals & (raw QUAL_FIXED())) == 0i32) { pass NIL; }
+    discard(raw p_mark_fixed_view(p, ty));
+    pass NIL;
 };

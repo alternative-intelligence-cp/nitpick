@@ -1,0 +1,121 @@
+// expect-exit: 0
+//
+// `fixed T[]` IS A TYPE, THE READ-ONLY VIEW (D-348 (ii), D-350, D-351; 1.6.1e landing
+// 103): the positive side. Every spelling position and every road a read-only view
+// takes compiles and reads the bytes it was given, unchanged: the bridge's view into
+// a `fixed uint8[]` parameter, a `fixed uint8[]` RETURN, a `List<fixed uint8[]>`, a
+// generic `fixed T[]` parameter fed a plain view and a read-only one, a function TYPE
+// with a `fixed uint8[]` parameter, a range of a `fixed` local array, a cursor over a
+// read-only view by offset, a struct holding the view built from a plain one, a view
+// read off a `fixed` struct and passed on. Each case answers a number; a wrong one is
+// the exit code. On every compiler before this landing the file is refused (the
+// spellings in bare positions do not parse).
+mod:fixed_view_type;
+
+struct:Holder = { uint8[]:view; };
+struct:FHolder = { fixed uint8[]:data; };
+
+func:total = int64(fixed uint8[]:v) never fails {
+    int64:acc = 0i64;
+    int64:i = 0i64;
+    while (i < v.len) decreases v.len - i {
+        acc = acc + (v[i] => int64);
+        i = i + 1i64;
+    }
+    pass acc;
+};
+
+// A `fixed uint8[]` RETURN: the bare position's spelling, the rights kept.
+func:tail = fixed uint8[](fixed uint8[]:v, int64:from) never fails {
+    pass v[from...v.len];
+};
+
+// A generic read-only view: fed a plain view (converts) and a read-only one.
+func:head<T: Copy> = T(fixed T[]:xs) never fails { pass xs[0i64]; };
+
+// A cursor over a read-only view by OFFSET (the idiom R1 leaves: a read-only
+// view binding is written once, so a walk keeps a position beside it).
+func:count_spaces = int64(fixed uint8[]:v) never fails {
+    int64:n = 0i64;
+    int64:pos = 0i64;
+    while (pos < v.len) decreases v.len - pos {
+        if (v[pos] == 32u8) { n = n + 1i64; }
+        pos = pos + 1i64;
+    }
+    pass n;
+};
+
+func:holder_total = int64(fixed Holder:h) never fails {
+    // a view read off a `fixed` struct is the read-only view, passed on as one
+    pass (raw total(h.view));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // 1: the bridge's view (D-351) into a `fixed uint8[]` parameter.
+    if ((raw total(string_bytes("abc"))) != 294i64) { exit 1i32; }
+
+    // 2: a `fixed uint8[]` result, read and ranged.
+    fixed uint8[]:t = raw tail(string_bytes("hello"), 3i64);
+    if (t.len != 2i64) { exit 2i32; }
+    if ((raw total(t)) != 219i64) { exit 3i32; }
+
+    // 3: a `List<fixed uint8[]>`, read element by element.
+    List<fixed uint8[]>:l = raw list_init::<fixed uint8[]>(2i64);
+    drop list_push(@l, string_bytes("ab"));
+    drop list_push(@l, string_bytes("cde"));
+    if (l.count != 2i64) { exit 4i32; }
+    if (l[1i64][2i64] != 101u8) { exit 5i32; }
+    if ((raw total(l[0i64])) + (raw total(l[1i64])) != 495i64) { exit 6i32; }
+
+    // 4: a generic `fixed T[]` parameter: a plain view converts, a read-only one is one.
+    int32[3]:nums = [7i32, 8i32, 9i32];
+    int32[]:plain = nums[0i64...3i64];
+    if ((raw head(plain)) != 7i32) { exit 7i32; }
+    fixed int32[]:ro = nums[1i64...3i64];
+    if ((raw head(ro)) != 8i32) { exit 8i32; }
+
+    // 5: a function TYPE with a `fixed uint8[]` parameter.
+    func int64(fixed uint8[]) never fails:f = total;
+    if ((raw f(string_bytes("z"))) != 122i64) { exit 9i32; }
+
+    // 6: a range of a `fixed` local array is a read-only view, read.
+    fixed uint8[4]:arr = [1u8, 2u8, 3u8, 4u8];
+    fixed uint8[]:mid = arr[1i64...3i64];
+    if ((raw total(mid)) != 5i64) { exit 10i32; }
+
+    // 7: a cursor by offset.
+    if ((raw count_spaces(string_bytes("a b c"))) != 2i64) { exit 11i32; }
+
+    // 8: a struct holding the read-only view, built from a plain one.
+    uint8[4]:bytes = [10u8, 20u8, 30u8, 40u8];
+    FHolder:fh = FHolder{ data: bytes[0i64...4i64] };
+    if ((raw total(fh.data)) != 100i64) { exit 12i32; }
+
+    // 9: a view read off a `fixed` struct, passed on as a read-only view.
+    fixed Holder:h = Holder{ view: bytes[2i64...4i64] };
+    if ((raw holder_total(h)) != 70i64) { exit 13i32; }
+
+    // 10: the bytes behind every view are what they were.
+    if (bytes[0i64] + bytes[3i64] != 50u8) { exit 14i32; }
+    if (arr[0i64] + arr[3i64] != 5u8) { exit 15i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1168,6 +1168,24 @@ pub func:tt_slice = int32(TypeTable->:t, int32:elem) never fails {
     pass (raw tt_intern(t, raw TY_SLICE(), elem, 0i32, 0i32, 16i64, 8i32, 0i32));
 };
 
+// `fixed T[]` -- THE READ-ONLY VIEW (D-348 (ii), D-350; 1.6.1e landing 103): the
+// same kind with its `b` slot set, so it is a DISTINCT interned id (the index keys
+// on `b`) -- two types to `fits` and to a signature comparison -- while every walker
+// that asks the KIND keeps its answer: a borrow, not a channel element, holds a
+// pointer, is ranged and indexed, lowers to `{ ptr, i64 }`, carries a length term.
+// A plain `T[]` converts to it where it is used and it converts back to nothing
+// (`fits`); a write through it is TYPE-086 and an address of its element TYPE-071
+// wherever the view travels (`place_fixed` reads the base's type). What the
+// qualifier on a binding said about bytes the binding does not own, the type says.
+pub func:tt_slice_fixed = int32(TypeTable->:t, int32:elem) never fails {
+    pass (raw tt_intern(t, raw TY_SLICE(), elem, 1i32, 0i32, 16i64, 8i32, 0i32));
+};
+pub func:type_slice_fixed = bool(TypeTable->:t, int32:id) never fails {
+    if (id == 0i32) { pass false; }
+    if ((raw type_kind(t, id)) != (raw TY_SLICE())) { pass false; }
+    pass ((raw tt_get(t, id)).b == 1i32);
+};
+
 // A VALUE type with static bounds, which does not decay. Its size is the
 // element's times the count — which is exactly why a struct containing one of
 // itself cannot be sized, and why 0.3.3 treats a fixed array as containment and a

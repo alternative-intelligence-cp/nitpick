@@ -3807,7 +3807,7 @@ defect declares a `DEF-` in §2f.
 > at the bare parameter; exit 0 at both legs). The emitter's refusal has no suite that expects it (a backend refusal
 > is tested by no `[[test]]` kind; recorded as measured by hand) -- the one code is asserted by the rejection file.
 
-> **DEF-230 — FIXED 2026-10-08 (landing 98, `nitpick-compiler_32`, under D-348 step (i); the library listener's
+> **DEF-230 — FIXED 2026-10-08 (step (i) at landing 98, `nitpick-compiler_32`; step (ii) at landing 103, `nitpick-compiler_33`: `fixed T[]` is a type, D-350/D-351, and the hole step (i) left is closed -- see DEF-246). WAS, at landing 98: FIXED (landing 98, `nitpick-compiler_32`, under D-348 step (i); the library listener's
 > F-047 in O-N36; measured by the listener at three compilers and here at `93bcb66`, both legs). A WRITE THROUGH A
 > `fixed uint8[]` LANDED.** `func:m11w = NIL(fixed uint8[]:v) never fails { v[0i64] = 9u8; pass NIL; };` called over
 > `arr[0i64...4i64]` changed `arr[0]` in the caller (exit 10 at both legs; a local `fixed uint8[]` view written
@@ -3984,7 +3984,7 @@ defect declares a `DEF-` in §2f.
 > `extern`, `impl`, `trait`, `struct`, `enum`, `macro`, `mod` -- measured over the tree and the listener's corpus with both checkers
 > before it lands, since every parse-error count moves with it.
 
-> **DEF-246 — OPEN (registered 2026-10-08 by `nitpick-compiler_33`, found by the probes of D-348 step (ii)'s planning; HIGH:
+> **DEF-246 — FIXED 2026-10-08 (landing 103, `nitpick-compiler_33`; D-348 (ii), D-350, D-351): all six faces refuse -- TYPE-007 where a `fixed` view meets a plain slot, TYPE-086 through a view that reached a plain slot by its type, TYPE-014 at an impl that drops the trait's `fixed`; `fixed_view_launder.npk` (fourteen sites), `fixed_view_type.npk`. WAS: OPEN (registered 2026-10-08 by `nitpick-compiler_33`, found by the probes of D-348 step (ii)'s planning; HIGH:
 > two faces are `MachineFault` in safe code, DEF-106's class). A PLAIN VIEW MINTED FROM, OR COPIED OUT OF, `fixed` STORAGE
 > WRITES IT.** The compiler's only carrier of "read-only through it" is a qualifier on a BINDING (`QUAL_FIXED`, read by
 > `place_fixed`), and a view leaves its binding by six roads carrying none of it -- measured on landing 100's compiler
@@ -4002,7 +4002,7 @@ defect declares a `DEF-` in §2f.
 > comparison sees the difference by id -- all six closed by construction; S-132 (the spelling) and S-133 (the bridge) are the
 > user's. Until it lands: write through no view of anything `fixed`, and spell `write`'s parameter as the trait does.
 
-> **DEF-247 — OPEN (registered 2026-10-08 by `nitpick-compiler_33`, found by the same probes; low). `fixed` AND `stack` AS
+> **DEF-247 — FIXED 2026-10-08 (landing 103, `nitpick-compiler_33`): `fixed` before a slice return type is the type's, before any other return type NITPICK-PARSE-013, `stack` on a return PARSE-013, the two bits deleted; `parse_fixed_view.npk`. WAS: OPEN (registered 2026-10-08 by `nitpick-compiler_33`, found by the same probes; low). `fixed` AND `stack` AS
 > RETURN QUALIFIERS PARSE AND MEAN NOTHING.** `func:f = fixed int32() never fails { pass 1i32; };` compiles and runs
 > (`probes_d348/probe_retfixed.npk`: exit 0). `p_return_quals` (parse_decl.npk) reads `wild`, `wildx`, `stack` and `fixed` into
 > `DECL_RET_*` bits; `DECL_RET_WILD` and `DECL_RET_WILDX` are read (wild_places.npk, pipeline.npk), `DECL_RET_FIXED` and

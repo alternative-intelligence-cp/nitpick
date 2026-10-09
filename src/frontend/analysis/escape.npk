@@ -482,8 +482,8 @@ func:paths_overlap = bool(Escape->:x, int32:a, int32:b) never fails {
     if ((a == 0i32) || (b == 0i32)) { pass true; }
     string:ta = raw path_text(x, a);
     string:tb = raw path_text(x, b);
-    uint8[]:ba = string_bytes(ta);
-    uint8[]:bb = string_bytes(tb);
+    fixed uint8[]:ba = string_bytes(ta);   // the bridge's view is read-only (D-351)
+    fixed uint8[]:bb = string_bytes(tb);
     int64:i = 0i64;
     int64:j = 0i64;
     while ((i < ba.len) && (j < bb.len)) decreases (ba.len - i) + (bb.len - j) {
@@ -523,7 +523,7 @@ func:paths_overlap = bool(Escape->:x, int32:a, int32:b) never fails {
 // The field named by the intern index between `lo` and `hi` of `f`, met
 // against the element step at `ei` of `other` (whose next step begins at
 // `enext`): a `List` header field the element leaves alone?
-func:header_field_disjoint_text = bool(Escape->:x, uint8[]:f, int64:lo, int64:hi, uint8[]:other,
+func:header_field_disjoint_text = bool(Escape->:x, fixed uint8[]:f, int64:lo, int64:hi, fixed uint8[]:other,
                                        int64:ei, int64:enext) never fails {
     int64:id = 0i64;
     int64:q = lo;

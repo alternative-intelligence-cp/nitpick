@@ -1441,7 +1441,7 @@ async func:tw_write_all<W: Writer> = NIL(W->:sink, string:s, Duration:within) {
         int64:rem = give_up - (mono_now());
         if (rem <= 0i64) { fail DeadlineExceeded; }
         string:sview = relay string_slice(s, done, s.len);
-        uint8[]:bytes = string_bytes(sview);
+        fixed uint8[]:bytes = string_bytes(sview);   // the bridge's view is read-only (D-351)
         int64:n = relay await sink.write(bytes, raw duration_ns(rem));
         done = done + n;
     }
