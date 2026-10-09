@@ -425,6 +425,12 @@ Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `rel
 **`exit code;`** terminates the process, and may appear only in `main` or
 `failsafe`.
 
+> **Note (2026-10-09, 1.6.1e landing 104 — DEF-249):** `code` is an `int32`, exactly, held to it by the checker since this
+> landing (`NITPICK-TYPE-007` at the operand otherwise; an entry point whose signature is already refused keeps that one report). Before it the operand was typed under the expectation and
+> never held to it, so `exit may(argv.len);` of a fallible `may` passed the checker and `llc` refused the emitted module (the
+> `Result`'s pair where an `i32` stands) — a loud failure in the wrong phase. A fallible value is unwrapped first: `?!`, `?|` or a
+> `pick`.
+
 A successful `exit` requires that **no unchecked manual memory remains
 allocated** — the `<wildx-states>` map must be empty. Reaching `exit` with live
 `wild` or `wildx` memory triggers the `failsafe` trap instead of returning;

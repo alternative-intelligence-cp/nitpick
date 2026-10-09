@@ -1,0 +1,59 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 37:37
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 38:34
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 39:34
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 49:39
+//
+// `exit`'S OPERAND FITS `int32` AS ANY SLOT'S VALUE DOES (DEF-249, 1.6.1e landing
+// 104; the library seat's O-N41, found by nitpick-time 0.3.2's planner). On every
+// compiler before this one `exit may(argv.len);` of a fallible `may` passed the
+// checker: the operand was typed under the `int32` expectation and never held to
+// it, so the emitter wrote the `Result`'s pair where an `i32` stands and `llc`
+// refused the module ("'%t3' defined with type '{ i32, i32 }' but expected 'i32'")
+// -- a loud failure in the wrong phase, DEF-243's family -- while the control that
+// assigns first, `int32:v = may(argv.len); exit v;`, was TYPE-007 all along. The
+// operand is held to `int32` EXACTLY now (no conversion enters an exit code), in
+// `main` and in `failsafe` alike; `?!`, `?|` and a `pick` are the spellings that
+// turn a fallible value into the code. Beside the four sites, the shapes that
+// stay silent: an unwrapped call, a defaulted one, a `never fails` callee, a
+// binding (an entry point whose signature is refused keeps that one report).
+mod:exit_operand;
+error:EBoom;
+
+func:may = int32(int64:k) {
+    if (k > 5i64) { fail EBoom; }
+    pass 7i32;
+};
+
+func:sure = int32(int64:k) never fails {
+    if (k > 5i64) { pass 1i32; }
+    pass 7i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len == 2i64) { exit may(argv.len); }                 // a fallible call: `Result<int32>` where `int32` stands
+    if (argv.len == 3i64) { exit 5i64; }                          // a wider integer: no implicit narrowing (D-092)
+    if (argv.len == 4i64) { exit true; }                          // a `bool`
+    if (argv.len == 5i64) { exit (may(argv.len) ?! EBoom); }      // control: unwrapped, an `int32`
+    if (argv.len == 6i64) { exit (may(argv.len) ?| 1i32); }       // control: defaulted, an `int32`
+    if (argv.len == 7i64) { exit (raw sure(argv.len)); }          // control: a `never fails` callee's bare `int32`
+    int32:v = may(argv.len) ?! EBoom;
+    exit v;                                                       // control: a binding
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EBoom)             { exit may(1i64); },                  // the same rule in `failsafe`
+        (Unreachable)       { exit 42i32; },
+        (HeapBadRequest)    { exit 85i32; },
+        (HeapOom)           { exit 86i32; },
+        (WildLeak)          { exit 87i32; },
+        (StackExhausted)    { exit 88i32; },
+        (MachineFault)      { exit 89i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

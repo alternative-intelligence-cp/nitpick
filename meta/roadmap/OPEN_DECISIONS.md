@@ -4020,9 +4020,15 @@ defect declares a `DEF-` in §2f.
 > qualifier, under a comment that said a parameter carries no `fixed` -- false since 0.7.3 (`param_quals`; `place_fixed` reads
 > the bit for an address and a part write).
 
-> **DEF-249 — OPEN (registered 2026-10-08 by `nitpick-compiler_33`; the library seat's O-N41, found by nitpick-time 0.3.2's
-> planner at `5fbaf4a` and reproduced here at landing 102's compiler; low: a loud failure in the wrong phase, DEF-243's family).
-> `exit` OF A FALLIBLE CALL COMPILES AND `llc` REFUSES THE IR.** `exit may(argv.len);` with `func:may = int32(int64:k) { … fail
+> **DEF-249 — FIXED 2026-10-09 (landing 104, `nitpick-compiler_34`): `check_exit` (type_stmt.npk) holds the operand to `int32`
+> exactly, reporting through the one mismatch reporter as a declaration's initialiser does (TYPE-007 at the operand:
+> `Result<int32>`, `int64`, `bool`; not `fits` — no conversion enters an exit code, and the slot-sites instrument refused that
+> form; an entry point whose signature is already refused keeps its one report, D-240); `tests/types/rejection/exit_operand.npk`,
+> four sites in `main` and `failsafe` beside the unwrapped, defaulted, `never fails` and bound controls; CONTROL_REFERENCE §4.6
+> carries the note. WAS: OPEN (registered 2026-10-08 by
+> `nitpick-compiler_33`; the library seat's O-N41, found by nitpick-time 0.3.2's planner at `5fbaf4a` and reproduced here at
+> landing 102's compiler; low: a loud failure in the wrong phase, DEF-243's family). `exit` OF A FALLIBLE CALL COMPILES AND
+> `llc` REFUSES THE IR.** `exit may(argv.len);` with `func:may = int32(int64:k) { … fail
 > EBoom; … }` passes the checker and the emitted IR is refused by `llc` ("'%t3' defined with type '{ i32, i32 }' but expected
 > 'i32'"); the control that assigns first, `int32:v = may(argv.len); exit v;`, is NITPICK-TYPE-007 "expected `int32`, found
 > `Result<int32>`" as it should be. The `exit` statement's operand is typed without the fit an assignment or an argument makes

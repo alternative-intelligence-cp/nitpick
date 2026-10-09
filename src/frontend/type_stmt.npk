@@ -2557,10 +2557,29 @@ func:check_exit = NIL(ExprTyper->:e, StmtNode:s) never fails {
     }
     ExprId:c = raw stmt_operand(s);
     if (raw expr_is_none(c)) { pass NIL; }
+    int32:want = raw tt_int(e.types, 32i32, true);
     int32:saved = e.expected;
-    e.expected = raw tt_int(e.types, 32i32, true);
-    discard(raw type_of_expr(e, c));
+    e.expected = want;
+    int32:got = raw type_of_expr(e, c);
     e.expected = saved;
+    // THE OPERAND IS AN `int32`, EXACTLY (DEF-249, 1.6.1e landing 104): it was typed under
+    // the expectation and never held to it, so `exit may(x);` of a fallible `may` passed the
+    // checker and the emitter wrote the `Result`'s pair where an `i32` stands -- `llc` refused
+    // the module, a loud failure in the wrong phase (DEF-243's family). Not `fits`: no
+    // conversion enters an exit code (no `Optional` wrap, no `dyn`, no view), the emitter
+    // stores the operand raw, and `check_slot_sites_agree` holds every `fits` site to an
+    // `emit_fit` partner for exactly that reason -- the condition's `!= t_bool` is the shape.
+    // ONE MISTAKE, ONE REPORT (D-240): a refused operand (`got == 0`) is already reported; an
+    // `exit` outside `main`/`failsafe` has its sentence above; an entry point declared with
+    // another return type has TYPE-083/TYPE-044 at its signature, and the operand that
+    // follows that signature (`int64(…) { exit 0i64; }`) is not reported a second time.
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+    if (!e.fn_terminal) { pass NIL; }
+    if (e.fn_success != want) { pass NIL; }
+    if (got != want) {
+        drop te_assign_mismatch(e, want, got, (raw ast_expr(e.ast, c)).span);
+    }
     pass NIL;
 };
 
