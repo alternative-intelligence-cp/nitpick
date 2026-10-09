@@ -1,0 +1,39 @@
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 23:5
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 24:5
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 25:20
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 26:22
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 27:22
+//
+// A `frac`'S MEMBERS ARE READ-ONLY VIEWS OF ONE VALUE (D-198; DEF-238 (a), 1.6.1e
+// landing 111; the library listener's F-046). `.whole`, `.num` and `.denom` are
+// the value's parts as the type's invariants keep them (D-347), typed as VALUES by
+// the member typer -- but a member access on a local walks to a root, so a write
+// or an address through one passed the place question and died in the emitter
+// (EMIT-002). Refused by name now, at every form: an assignment, a compound
+// assignment, `@`, `$$m`, `$$i`. The reads below the sites compile.
+mod:frac_member_write;
+
+func:writes = int32(frac32:f) never fails {
+    frac32:g = f;
+    g.num = 1i32;
+    g.whole += 1i32;
+    uint32->:p = @g.denom;
+    int32->:q = $$m g.num;
+    int32->:r = $$i g.whole;
+    pass 0i32;
+};
+
+func:reads = int32(frac32:f) never fails {
+    int32:w = f.whole;
+    int32:n = f.num;
+    uint32:d = f.denom;
+    pass (w + n + (d =>! int32));
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

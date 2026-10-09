@@ -1827,7 +1827,10 @@ is AUTOMATIC after every operation, never a call:
   (values, not places — the invariants cannot be broken through them), and
   they are the READABLE parts (D-347): `.whole` is the value truncated
   toward zero, `.num` is signed like it, so `whole + num/denom` is the value
-  with no special case — −1 3/8 answers −1, −3, 8.
+  with no special case — −1 3/8 answers −1, −3, 8. A member standing where a
+  place is needed — `f.num = …`, `f.whole += …`, `@f.denom`, `$$m`/`$$i`,
+  `move(f.num)` — is `NITPICK-TYPE-024` by name (DEF-238, 1.6.1e landing 111):
+  a frac is written whole, by its arithmetic or a cast.
 - **Casts**: widths widen `=>`, narrow `=>!` (absorbing as ERR when the
   reduced form does not fit); `frac =>! flt64` rounds (the acknowledged
   form — this section's old `frac_to_flt64` implied a checked conversion,

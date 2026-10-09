@@ -171,7 +171,21 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     }
     if (s.kind == StmtKind.StmtPickArm) {
         discard(raw type_of_expr(e, raw arm_guard(s)));
+        // The walk knows it is inside a pick arm (DEF-233): a `fall` there is in
+        // its place; a `give` is not (a statement pick's arm gives nothing,
+        // WHATEVER ENCLOSES IT -- the innermost pick governs, as it does for
+        // `fall`), so `givex_depth` is ZERO inside the arm: a statement pick
+        // nested in a pick expression's arm would otherwise carry the outer
+        // depth in, and its arm's `give` reached the emitter, which found the
+        // statement pick's empty slot and refused as its own defect (EMIT-002;
+        // found by the landing seat's probe before the record). An expression
+        // pick nested inside this arm raises the depth again for its own arms.
+        int32:saved_givex = e.givex_depth;
+        e.arm_depth = e.arm_depth + 1i32;
+        e.givex_depth = 0i32;
         drop check_stmt(e, raw arm_body(s));
+        e.givex_depth = saved_givex;
+        e.arm_depth = e.arm_depth - 1i32;
         pass NIL;
     }
 
@@ -191,7 +205,46 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     // this function exists to keep apart.
     if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
     if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
-    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+    // A `fall` OUTSIDE A `pick` ARM, A `give` OUTSIDE A `pick` EXPRESSION'S ARM
+    // (DEF-233, landing 111): each means something only there, and the emitter's
+    // lookup for the enclosing pick trapped the compiler on one outside (exit 3,
+    // no message). Refused by name here; inside an arm a `fall` has nothing to
+    // type, and a `give`'s operand is typed by the generic walk below.
+    // INSIDE A `defer` BODY EITHER ONE IS AN EXIT FROM A CLEANUP (D-163 rule 7's
+    // family, TYPE-040, beside `fail` and `relay`): the body runs at its scope's
+    // exit, after the arm it was written in has finished -- the emitter writes it
+    // at each exit, when the enclosing pick is no longer open -- so a `give` or
+    // a `fall` there had no pick to reach and trapped the compiler in silence
+    // (found by the landing seat's probe before the record). Asked FIRST: it is
+    // the one mistake, whatever arm encloses the `defer` (D-240).
+    if (s.kind == StmtKind.StmtFallStmt) {
+        if (e.in_defer) {
+            discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
+                "a `defer` body may not `fall` (D-163): a cleanup runs while the scope unwinds, after the `pick` arm it was written in has finished, and must not itself leave for another arm",
+                s.span));
+            pass NIL;
+        }
+        if (e.arm_depth == 0i32) {
+            discard(raw te_error(e, raw TYPE_OUTSIDE_PICK_ARM(),
+                "`fall` moves to another arm of the enclosing `pick`, and no `pick` arm encloses this statement: it is legal only inside a `pick` arm (DEF-233)",
+                s.span));
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        if (e.in_defer) {
+            discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
+                "a `defer` body may not `give` (D-163): a cleanup runs while the scope unwinds, after the `pick` arm it was written in has finished, and has no `pick` expression to hand a value to",
+                s.span));
+            pass NIL;
+        }
+        if (e.givex_depth == 0i32) {
+            discard(raw te_error(e, raw TYPE_OUTSIDE_PICK_ARM(),
+                "`give` hands a `pick` EXPRESSION its value, and no such arm encloses this statement: it is legal only inside an arm of a `pick` used as a value (DEF-233) -- a statement `pick`'s arm gives nothing, whatever encloses it",
+                s.span));
+            pass NIL;
+        }
+    }
 
     // A BARE EXPRESSION STATEMENT — rule 6 of D-163's closed list. A `Result`
     // may never be discarded without a keyword, and every call yields one. The
@@ -2385,6 +2438,16 @@ func:is_bitwise_assign = bool(TokenKind:op) never fails {
 // view is one report, the value's, and not also TYPE-086's (D-240).
 func:require_place = bool(ExprTyper->:e, ExprId:id, Span:at) never fails {
     if (raw expr_is_none(id)) { pass true; }
+    // A `frac`'S MEMBERS ARE READ-ONLY VIEWS OF ONE VALUE (D-198; DEF-238 (a),
+    // landing 111): `f.num = 1i32;` walked to its root and passed, and the
+    // emitter died (EMIT-002). Refused by name before the walk; the address forms
+    // ask `require_place_operand`, which asks the same question.
+    if (raw frac_member_target(e, id)) {
+        discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
+            "a `frac`'s `whole`, `num` and `denom` are read-only views of one value (D-198): a frac is written whole, by its arithmetic or a cast, never through a member",
+            at));
+        pass false;
+    }
     if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass true; }
     discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
         "this is a value, not somewhere to store one; only a name, a field, an element or a `<-` dereference can be assigned to — and `==` is the comparison",

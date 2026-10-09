@@ -64,6 +64,14 @@ In a lending `pick` these names are views of `event`'s fields and payload
         the selector may not hold; fall only to an arm whose pattern binds nothing (a value, a
         payload-less variant, `(*)`). A label no arm of the `pick` carries is the identifier's own
         RESOLVE-002. The falling arm's own bindings are dropped at the `fall`, as at every exit from it.
+    *   **Only inside a `pick` arm** (DEF-233, 1.6.1e landing 111; `NITPICK-TYPE-094`): a `fall` outside
+        any `pick` arm, and a `give` outside a `pick` EXPRESSION's arm (a statement `pick`'s arm gives
+        nothing, whatever encloses it: the INNERMOST pick governs, for `give` as for `fall`, so a `give`
+        in a statement `pick`'s arm nested inside a `pick` expression's arm is refused too), are refused
+        at the statement -- each means something only there, and until landing 111 either one in a
+        plain body reached the emitter and stopped the compiler without a message. Inside a `defer`
+        body either one is `NITPICK-TYPE-040`, the cleanup rule's (§4.5): the body runs at its scope's
+        exit, after the arm it was written in has finished.
 *   **A `where` guard decides and does not consume** (DEF-138; 1.6.1d step 3; `NITPICK-TYPE-089`): a
     `move` of the arm's own binding inside its guard is refused — the guard runs before the arm is
     chosen, over bindings copied out of the selector, and a guard that fails hands the same payload
@@ -412,6 +420,8 @@ defer { dalloc(buf); }
 ```
 
 Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `relay`, `exit` — **after the exit's value is evaluated** (D-136): `pass v` returns the `v` that was read at the `pass`, whatever the defers then do. LIFO, innermost scope first.
+
+A `defer` body decides nothing about the function's outcome and leaves for nowhere (D-163 rule 7, `NITPICK-TYPE-040`): `fail` and `relay` are refused inside one, and since 1.6.1e landing 111 (DEF-233) so are `give` and `fall` -- the body runs at the scope's exit, after the `pick` arm it was written in has finished, so neither has a `pick` to reach (the compiler exited 3 in silence on either until then).
 
 > **`defer` does NOT run on a trap** (D-014). `!!!` and `?!` transfer control
 > directly to `failsafe` without unwinding. At trap time the state of the system

@@ -11803,6 +11803,14 @@ failure is a `failsafe` event — "a failed close is reported, never swallowed")
 an `is_err` branch, or the explicit `?| NIL`. `drop` in a defer is licensed as
 anywhere else.
 
+> **Note (2026-10-09, 1.6.1e landing 111 — DEF-233):** `give` and `fall` join
+> `fail` and `relay` under this rule (`NITPICK-TYPE-040`): a `defer` body written
+> inside a `pick` arm runs at the scope's exit, after the arm has finished and
+> the pick is no longer open, so a `give` or a `fall` in it had no pick to reach
+> and the emitter — which writes the body at each exit — trapped the compiler in
+> silence (exit 3). Found by the landing seat's probe of the arm rule before the
+> landing's record.
+
 **8. Function types.** `func T(P…) never fails` is a distinct interned type. A
 `never fails` function is assignable to either spelling; a may-fail function
 only to the unmarked one — the mark *adds* a guarantee, so it flows one way.

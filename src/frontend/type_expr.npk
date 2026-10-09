@@ -119,6 +119,12 @@ pub struct:ExprTyper = {
     // with an `async` callee is a bare call, which has no frame to run the
     // machine in (D-058/D-177) and is refused by `type_call`.
     int32:await_operand;
+    // INSIDE A `pick` ARM (DEF-233, landing 111): how many pick arms enclose the
+    // statement being checked (`fall` is legal at a depth above 0), and how many
+    // of those are a pick EXPRESSION's (`give` is legal at a depth above 0).
+    // Raised around the arm body in both spellings' walks; a body starts at 0.
+    int32:arm_depth;
+    int32:givex_depth;
 
     // HOW MANY COUNTED LOOPS ENCLOSE THE EXPRESSION BEING TYPED (1.0.8). `$`
     // names the innermost one's counter; outside any, it names nothing — and
@@ -225,7 +231,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, expect_refused: false, scope: scope,
-                             fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
+                             fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, arm_depth: 0i32, givex_depth: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
@@ -711,11 +717,45 @@ pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     pass NIL;
 };
 
+// IS `id` A MEMBER ACCESS ON A `frac` -- `.whole`, `.num`, `.denom` (D-198)? The
+// base's recorded type decides (the target is typed before the place question is
+// asked, in the assignment and at `@`/`$$i`/`$$m`); an untyped or refused base
+// answers false and the place walk speaks.
+pub func:frac_member_target = bool(ExprTyper->:e, ExprId:id) never fails {
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+    if (bt == 0i32) { pass false; }
+    if (raw type_is_invalid(e.types, bt)) { pass false; }
+    pass ((raw type_kind(e.types, bt)) == (raw TY_FRAC()));
+};
+
+// REFUSE A `frac` MEMBER STANDING WHERE A PLACE IS NEEDED (DEF-238 (a), landing
+// 111): true after the report. Asked by `require_place_operand` (which runs
+// BEFORE the operand is typed in the address typers, so the base's type is
+// recorded only for a caller that typed first) and again by the `@`, `$$i`/`$$m`
+// and `move` typers once their operand IS typed -- the same question, one
+// sentence, one report (the first asker that can answer reports; the second
+// finds the typer's 0 and stops).
+pub func:refuse_frac_member = bool(ExprTyper->:e, ExprId:id, string:what) never fails {
+    if (!(raw frac_member_target(e, id))) { pass false; }
+    ExprNode:fn = raw ast_expr(e.ast, id);
+    discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
+        string_concat(string_concat("`", what), "` needs a place, and a `frac`'s `whole`, `num` and `denom` are read-only views of one value (D-198): a frac is written whole, by its arithmetic or a cast, never through a member"),
+        fn.span));
+    pass true;
+};
+
 // TRUE WHEN THE OPERAND IS A PLACE; false after the report (1.6.1e landing 103):
 // the callers stop at a value, so `@(raw f(v))[0i64]` over a read-only view is
 // one report, the value's, and not also TYPE-071's (D-240).
 pub func:require_place_operand = bool(ExprTyper->:e, ExprId:id, string:what) never fails {
     if (raw expr_is_none(id)) { pass true; }
+    // A `frac`'S MEMBERS ARE READ-ONLY VIEWS OF ONE VALUE (D-198; DEF-238 (a),
+    // landing 111): the member typer types `.whole`/`.num`/`.denom` as VALUES,
+    // but a member access on a local walks to a root, so `@f.num` passed here and
+    // the emitter died (EMIT-002). Refused by name before the walk.
+    if (raw refuse_frac_member(e, id, what)) { pass false; }
     if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass true; }
     ExprNode:n = raw ast_expr(e.ast, id);
     string:m1 = string_concat("`", what);
@@ -3310,8 +3350,13 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
 
         // EVERY ARM IS WALKED AS A STATEMENT, so a mistake anywhere in its body is
         // reported; the `give` is then looked for on top of that rather than
-        // instead of it.
+        // instead of it. The walk knows it is inside a pick EXPRESSION's arm
+        // (DEF-233): a `give` or a `fall` there is in its place.
+        e.arm_depth = e.arm_depth + 1i32;
+        e.givex_depth = e.givex_depth + 1i32;
         drop check_stmt(e, raw arm_body(a));
+        e.arm_depth = e.arm_depth - 1i32;
+        e.givex_depth = e.givex_depth - 1i32;
         if (frz) { discard(raw list_pop(@e.frozen)); }
         given = raw arm_give_type(e, raw arm_body(a), given, n.span);
     }
@@ -4292,6 +4337,8 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (!(raw require_place_operand(e, raw expr_operand(n), "@"))) { pass 0i32; }
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
+        if (raw refuse_frac_member(e, raw expr_operand(n), "@")) { pass 0i32; }
         // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1; DEF-43): the
         // pointer type carries no mutability, so `@` of an immutable is a
         // write path no rule sees -- a `fixed` module binding is read-only
@@ -4338,6 +4385,8 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (!(raw require_place_operand(e, raw expr_operand(n), "a borrow"))) { pass 0i32; }
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
+        if (raw refuse_frac_member(e, raw expr_operand(n), "a borrow")) { pass 0i32; }
         // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1): a claim of
         // either kind is an address, and a shared claim's read-only promise
         // is the aliasing analysis's, not the pointer type's.
@@ -4388,6 +4437,8 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprMoveExpr) {
         if (!(raw require_place_operand(e, raw expr_operand(n), "move"))) { pass 0i32; }
         int32:mvt = raw type_of_expr(e, raw expr_operand(n));
+        // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
+        if (raw refuse_frac_member(e, raw expr_operand(n), "move")) { pass 0i32; }
         // A `move` OF A FROZEN SELECTOR OR ANY PART OF IT (D-266, 1.5.2h) --
         // the nested `pick (move(v))` included, whose selector is typed here.
         // A view's own `move` is the lent-binding rule's below (TYPE-047).

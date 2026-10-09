@@ -175,7 +175,10 @@ pub func:TYPE_NEVER_FAILS_ASSIGN = string() never fails { pass "NITPICK-TYPE-038
 // A `Result` (or any non-`NIL` value) discarded by a bare expression statement,
 // with no keyword — rule 6's closed list.
 pub func:TYPE_RESULT_DISCARDED = string() never fails { pass "NITPICK-TYPE-039"; };
-// `fail` or `relay` inside a `defer` body (rule 7): a cleanup must not exit.
+// `fail` or `relay` inside a `defer` body (rule 7): a cleanup must not exit. And
+// since 1.6.1e landing 111 (DEF-233) a `give` or a `fall` there: the body runs at
+// its scope's exit, after the `pick` arm it was written in has finished, so
+// either one had no pick to reach and trapped the compiler in silence.
 pub func:TYPE_DEFER_EXIT = string() never fails { pass "NITPICK-TYPE-040"; };
 // An impl method dropping the `never fails` its trait declares.
 pub func:TYPE_NEVER_FAILS_IMPL = string() never fails { pass "NITPICK-TYPE-041"; };
@@ -636,3 +639,17 @@ pub func:TYPE_CSTRING_LITERAL_NUL = string() never fails { pass "NITPICK-TYPE-09
 // integer literal, a value outside `int32`, and a tag another variant of the enum
 // already has (an unvalued variant's tag is its position).
 pub func:TYPE_ENUM_VALUE = string() never fails { pass "NITPICK-TYPE-093"; };
+
+// A `give` OR A `fall` OUTSIDE A `pick` ARM (DEF-233, 1.6.1e landing 111): a `give`
+// hands a `pick` EXPRESSION its value and a `fall` moves to another arm of the
+// enclosing `pick`, so each means something only inside an arm -- and the checker
+// let both stand anywhere (`fall` by a deliberate "nothing to type", `give` by the
+// generic operand walk), so `give x;` or `fall two;` in a plain function body
+// reached the emitter, whose lookup for the enclosing pick's slot trapped the
+// compiler: exit 3 and no message (the library listener's F-038). Refused at the
+// statement: a `fall` outside any pick arm, a `give` outside a pick EXPRESSION's
+// arm (a statement pick's arm has no value to give, whatever encloses it: the
+// innermost pick governs, so a `give` in a statement pick's arm nested in a pick
+// expression's arm is refused too -- the emitter met the statement pick's empty
+// slot there). Inside a `defer` body either one is TYPE-040's, the cleanup rule.
+pub func:TYPE_OUTSIDE_PICK_ARM = string() never fails { pass "NITPICK-TYPE-094"; };

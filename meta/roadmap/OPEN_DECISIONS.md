@@ -3887,8 +3887,24 @@ defect declares a `DEF-` in §2f.
 > without the field runs. LOUD (the wrong tool refuses). Either the checker refuses a `NIL` field by name or the
 > layout gives it no slot; to be decided by reading D-105's `NIL` rules.
 
-> **DEF-233 — OPEN (2026-10-07; the listener's F-038 in O-N36). `npkc` EXITS 3 WITH NO MESSAGE on `give` or `fall`
-> OUTSIDE A `pick` ARM.** A compiler trap where a refusal by name is owed (the resolver's or the checker's).
+> **DEF-233 — FIXED 2026-10-09 (landing 111, built by `nitpick-compiler_35`, landed by `nitpick-compiler_36`): `NITPICK-TYPE-094`
+> at the statement -- a `fall` outside any `pick` arm, a `give` outside a `pick` EXPRESSION's arm (a statement pick's arm gives
+> nothing, whatever encloses it: the innermost pick governs); the expression typer counts the arms that enclose the statement
+> being checked (`arm_depth`, `givex_depth`, raised around the arm body in both spellings' walks; a statement pick's arm zeroes
+> `givex_depth` for its body), and `check_stmt` (type_stmt.npk) refuses at depth 0 where `fall` was "nothing to type" and
+> `give` the generic operand walk; inside a `defer` body either one is `NITPICK-TYPE-040`, the cleanup rule's (D-163 rule 7).
+> Measured first on landing 108's compiler: exit 3 and 0 bytes of stderr, the trap at `ir_func.fnem_pick_slot` under
+> `ir_stmt.emit_give` (gdb). TWO MORE FACES found by the landing seat's probes before the record, on landing 110's and the
+> first form's compilers alike: a `give` in a statement pick's arm NESTED in a pick expression's arm passed the first form
+> (the outer depth carried in) and was EMIT-002 (the emitter met the statement pick's empty slot); a `give` or a `fall` in a
+> `defer` body written in an arm still exited 3 in silence (the body is written at the scope's exit, when the pick is no
+> longer open). `tests/types/rejection/give_fall_outside.npk` (seven sites: a `give` and a `fall` in a plain body, a `give` in a
+> statement pick's arm, a `give` in each arm of a statement pick nested in an expression pick's arm, a `give` and a `fall` in
+> a `defer` body; the controls a `give` in an expression pick's arm, a `fall` in each spelling's arm, a `give` through an `if`
+> and a loop, and a pick expression nested inside a statement pick's arm inside a pick expression's arm, each `give` reaching
+> its own pick -- the last three measured at both legs by the seat's probes, with no leak of an owning local the `give`
+> leaves behind). WAS: OPEN (2026-10-07; the listener's F-038 in O-N36). `npkc` EXITS 3 WITH NO
+> MESSAGE on `give` or `fall` OUTSIDE A `pick` ARM.** A compiler trap where a refusal by name is owed (the resolver's or the checker's).
 
 > **DEF-234 — OPEN (2026-10-07; the listener's F-034 in O-N36), three rows of the MODULE run.** (a) An `extern`
 > method with an `int8[]`/`uint8[]` parameter generates a bridge stub the compiler refuses -- `NITPICK-TYPE-072` at
@@ -3915,7 +3931,15 @@ defect declares a `DEF-` in §2f.
 > THE RETIRED `?`** ("`?` is the one that unwraps a `Result`"): followed, the advice is PARSE-011 (D-175). A
 > diagnostic's text; `?!`/`?|` are the spellings.
 
-> **DEF-238 — OPEN (2026-10-07; the listener's F-046 in O-N36), two TYPE rows.** (a) A frac `.num` assignment
+> **DEF-238 — FIXED 2026-10-09 (landing 111, built by `nitpick-compiler_35`, landed by `nitpick-compiler_36`), both rows.** (a) A `frac` member standing where a
+> place is needed is `NITPICK-TYPE-024` by name -- `f.num = 1i32;`, `f.whole += 1i32;`, `@f.denom`, `$$m f.num`, `$$i f.whole`,
+> `move(f.num)` -- "a `frac`'s `whole`, `num` and `denom` are read-only views of one value (D-198): a frac is written whole,
+> by its arithmetic or a cast, never through a member"; one question (`frac_member_target`, type_expr.npk: the base's
+> recorded type is a frac), asked by the assignment's place check and, with the base typed, by the `@`, `$$i`/`$$m` and
+> `move` typers (`refuse_frac_member`). Measured first on landing 108's compiler: EMIT-002 at the assignment.
+> `tests/types/rejection/frac_member_write.npk` (five sites; the reads compile). (b) was DEF-248's shape and landed at 102
+> (a `fixed` parameter's assignment is ASSIGN-002; `fixed_param_assign.npk`): recorded here, nothing more to build. WAS:
+> OPEN (2026-10-07; the listener's F-046 in O-N36), two TYPE rows. (a) A frac `.num` assignment
 > passes the checker and is EMIT-002 (D-198: the members are read-only views; the refusal is the checker's to make,
 > by name). (b) A `fixed` PARAMETER can be reassigned inside its callee (the ASSIGN-002 the bindings analysis gives a
 > local is not asked of a parameter); no effect outside the callee.
