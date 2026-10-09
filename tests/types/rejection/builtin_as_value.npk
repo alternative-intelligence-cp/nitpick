@@ -1,0 +1,76 @@
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 29:34
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 33:22
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 36:27
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 40:10
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 44:9
+//
+// A BUILTIN NAMED AS A VALUE IS REFUSED (DEF-243, 1.6.1e landing 107; the library
+// seat's O-N40, found by nitpick-time 0.3.1's planning). The generated signature
+// table types a builtin's CALLS (D-201) and said nothing about the bare name, so
+// `func int64() never fails:f = mono_now;` passed the checker and died in the
+// emitter as EMIT-002 -- a builtin is the emitter's intrinsic, with no symbol to
+// hand out -- where the same shapes over an ordinary function compile and run.
+// The name standing where a VALUE stands is `NITPICK-TYPE-054` at the name, once
+// per site (the slot's fit asks nothing more, D-240): an initialiser, an argument,
+// a struct literal's field, a `pass`, an assignment. The controls: an ordinary
+// function in each position, and the builtin CALLED.
+mod:builtin_as_value;
+
+struct:Holder = { func int64() never fails:f; };
+func:seven = int64() never fails { pass 7i64; };
+func:call_it = int64(func int64() never fails:g) never fails { pass raw g(); };
+
+func:as_initialiser = int64() never fails {
+    func int64() never fails:f = mono_now;
+    pass raw f();
+};
+func:as_argument = int64() never fails {
+    pass raw call_it(mono_now);
+};
+func:as_field = int64() never fails {
+    Holder:h = Holder{ f: mono_now };
+    pass raw h.f();
+};
+func:as_return = func int64() never fails() never fails {
+    pass mono_now;
+};
+func:as_assignment = int64() never fails {
+    func int64() never fails:f = seven;
+    f = mono_now;
+    pass raw f();
+};
+
+// controls: an ordinary function in every position, and the builtin called
+func:ctl_values = int64() never fails {
+    func int64() never fails:f = seven;
+    Holder:h = Holder{ f: seven };
+    int64:a = raw f();
+    int64:b = raw call_it(seven);
+    int64:c = raw h.f();
+    f = seven;
+    pass a + b + c + (raw f());
+};
+func:ctl_called = int64() never fails {
+    int64:t = mono_now();
+    pass t;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

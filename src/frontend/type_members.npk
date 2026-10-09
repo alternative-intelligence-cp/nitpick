@@ -892,7 +892,21 @@ func:type_direct_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:sym,
 };
 
 pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
-    int32:callee = raw type_of_expr(e, raw expr_callee(n));
+    // A BARE BUILTIN'S NAME AS THE CALLEE IS NOT TYPED AS A VALUE (DEF-243, 1.6.1e landing
+    // 107): it has no symbol and no value type -- the builtin table types the call below
+    // (D-201) -- and `type_ident` now refuses a builtin's name standing where a value
+    // stands, so the callee of a call is read here by its spelling and never handed to it.
+    ExprNode:cn0 = raw ast_expr(e.ast, raw expr_callee(n));
+    bool:bare_builtin = false;
+    if (cn0.kind == ExprKind.ExprIdentifierExpr) {
+        if (cn0.a == 0i32) {
+            if (cn0.payload != 0i64) {
+                bare_builtin = raw is_builtin_name(raw intern_get(e.interns, cn0.payload =>! int32));
+            }
+        }
+    }
+    int32:callee = 0i32;
+    if (!bare_builtin) { callee = raw type_of_expr(e, raw expr_callee(n)); }
     int32:gcount = raw expr_generic_count(n);
     int32:start = (raw expr_list_start(n)) + gcount;
     int32:count = (raw expr_list_count(n)) - gcount;

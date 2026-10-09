@@ -61,6 +61,12 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 > the libraries and the apps before adding it, and tell the library listener
 > before it lands.
 
+> **A builtin's name is not a VALUE either (DEF-243, 2026-10-09, 1.6.1e landing 107; the library seat's O-N40).** The
+> rows above type a builtin's CALLS (D-201); the bare name standing where a value stands — `func int64() never fails:f =
+> mono_now;`, `call_it(mono_now)`, `Holder{ f: mono_now }`, `pass mono_now;`, `f = mono_now;` — passed the checker and died in
+> the emitter as EMIT-002, because a builtin is the emitter's intrinsic and has no symbol to hand out. It is
+> `NITPICK-TYPE-054` at the name now: write a function that calls the builtin and name that.
+
 > **The Signature column is machine-read (D-201, 1.4.2).** Every row inside a
 > marked region carries a signature in ONE syntax, and `gen_tables.py` hard-fails
 > on a row it cannot parse — the checker types builtin calls from what it emits,

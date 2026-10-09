@@ -3943,7 +3943,13 @@ defect declares a `DEF-` in §2f.
 > (the ids are the emission's own constants, so a per-program numbering is sound), its own small landing with the
 > comparison tool as its measure; the examination phase's otherwise.
 
-> **DEF-243 — OPEN (registered 2026-10-08 by `nitpick-compiler_32`; the library seat's O-N40 item 1, found by nitpick-time
+> **DEF-243 — FIXED 2026-10-09 (landing 107, `nitpick-compiler_34`): `type_ident` (type_expr.npk) refuses an identifier that has no
+> symbol and a builtin's spelling, `NITPICK-TYPE-054` at the name ("a builtin is called, never named as a value"), and `type_call`
+> (type_members.npk) reads a bare builtin callee by its spelling instead of handing it to the identifier typer (the first form
+> reported every builtin call in the prelude; the test's own `mono_now()` control and the prelude caught it);
+> `tests/types/rejection/builtin_as_value.npk` (five sites: an initialiser, an argument, a struct literal's field, a `pass`, an
+> assignment; the controls an ordinary function in every position and the builtin called). WAS: OPEN (registered 2026-10-08 by
+> `nitpick-compiler_32`; the library seat's O-N40 item 1, found by nitpick-time
 > 0.3.1's planning at its pin `5fbaf4a`; measured here at landing 98's compiler, `9fede45`, both shapes beside their
 > controls). A BUILTIN NAMED AS A FUNCTION VALUE PASSES THE FRONTEND AND DIES IN THE EMITTER.** -- `func int64() never
 > fails:f = mono_now; int64:t = raw f();` is NITPICK-EMIT-002 at the initialiser (5:34), and `raw call_it(mono_now)` with

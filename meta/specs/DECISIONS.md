@@ -19638,6 +19638,12 @@ varies by circumstance, and the circumstance is invisible where it matters.
 > declarations in 778 tracked files: 8 methods, 3 parse-level `extern`
 > fixtures, nothing the loader refuses).
 
+> **Note (2026-10-09, 1.6.1e landing 107 — DEF-243):** the name is the compiler's and it is not a VALUE: a builtin's bare
+> name standing where a value stands (an initialiser, an argument, a field, a `pass`, an assignment) passed the checker, whose
+> table types a builtin's CALLS alone (D-201), and died in the emitter (EMIT-002: no symbol to hand out). `type_ident` refuses it
+> by name, `NITPICK-TYPE-054`; the call typer reads a bare builtin callee by its spelling and never hands it to the identifier
+> typer. Nothing in the tree, the libraries or the applications named a builtin as a value.
+
 ## D-295 — The floor's protocol models are read a SECOND way: exhaustive explicit-state search, a belt in both runners beside the solver's rows — **SETTLED (user decision, 2026-09-17: "go with your recommendations on all three"; S-75)**
 
 D-289 decides each model's bad predicates by unrolling the model to a depth

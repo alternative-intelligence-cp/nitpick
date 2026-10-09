@@ -2440,6 +2440,27 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
         // with its own node, `ExprResultValueExpr`, typed in
         // `type_of_expr_inner`; the step-2 name-in-context arm that stood
         // here is gone with the resolver's exemption.)
+        //
+        // A BUILTIN NAMED AS A VALUE IS REFUSED HERE (DEF-243, 1.6.1e landing 107;
+        // the library seat's O-N40). A call's callee never comes through this
+        // function -- the call typer reads the name itself -- so an identifier
+        // that reaches here with no symbol and a builtin's spelling is the name
+        // standing where a VALUE stands: an initialiser, an argument, a field, a
+        // `pass`. The generated signature table types a builtin's CALLS (D-201)
+        // and the emitter has no symbol to hand out (a builtin is its intrinsic,
+        // `ir_runtime.npk`), so `func int64() never fails:f = mono_now;` passed
+        // the checker and died as EMIT-002 at the initialiser. D-294 makes the
+        // name the compiler's; the shape is wrong, not unlowered. The 0 this
+        // returns is D-240's "refused and reported": the slot's fit asks nothing more.
+        if (n.payload != 0i64) {
+            string:bname = raw intern_get(e.interns, n.payload =>! int32);
+            if (raw is_builtin_name(bname)) {
+                string:b1 = string_concat("`", bname);
+                discard(raw te_error(e, raw TYPE_BUILTIN_ARGS(),
+                    string_concat(b1, "` is a builtin, and a builtin is called, never named as a value (D-201, D-294): its calls are typed by its own rules and the emitter has no symbol for it to stand in for -- write a function that calls it (`func:now = int64() never fails { pass mono_now(); };`) and name that"),
+                    n.span));
+            }
+        }
         pass 0i32;
     }
     Symbol:s = raw symtab_get(e.tab, sym);
