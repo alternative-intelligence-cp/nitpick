@@ -2801,6 +2801,37 @@ func:fold_string_builtin = ConstVal(TypeResolver->:r, ExprNode:e, string:name,
 // marker that says a name may stand in a constant expression — nothing has to be
 // inferred, and a `fixed` binding, which is assigned once at RUN time, is correctly
 // not one.
+// THE `fixed` MODULE BINDING AN IDENTIFIER NAMES, as its symbol id, or 0 (DEF-202,
+// 1.6.1e). The node's recorded symbol first -- the resolver's, never the spelling
+// (DEF-196). A NAME IN A TYPE POSITION WAS NEVER BOUND BY THE RESOLVER, and that is
+// by design: `resolve.npk` does not enter type nodes, because a type is more than
+// a name and answering that is this module's job (0.3.5's header says so). So
+// `int32[SIZE]` arrives with no binding recorded, and looking it up in `scope` is
+// not a second computation of a fact somebody else already has -- it is the first.
+// An initialiser's name arrives the other way round, already bound, because an
+// initialiser is an ordinary expression in a declaration; the recorded binding wins
+// where there is one. Then: a declaration, a module binding, `fixed` -- a plain
+// module binding is D-211's refusal at its own line and names no constant.
+// READ BY THREE: the folder's identifier arm (`fold_ident`), the module-constant
+// gate (`const_init_verdict`, type_stmt.npk) and the global renderer
+// (`emit_global_const_into`, ir_expr.npk), so a name the folder cannot hold the
+// value of -- a struct's, an array's, an Optional's `NIL` -- is admitted and
+// rendered by following it to the binding's initialiser, never by a second walk.
+pub func:fixed_global_sym = int32(TypeResolver->:r, ExprNode:e, int32:scope) never fails {
+    if (e.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    int32:symid = e.a;
+    if (symid == 0i32) {
+        symid = raw scope_lookup(r.tab, scope, (raw expr_name(e)) =>! int32);
+    }
+    if (symid == 0i32) { pass 0i32; }
+    Symbol:sym = raw symtab_get(r.tab, symid);
+    if (sym.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    DeclNode:d = raw ast_decl(r.ast, DeclId{ index: sym.origin });
+    if (d.kind != DeclKind.DeclGlobalDecl) { pass 0i32; }
+    if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) { pass 0i32; }
+    pass symid;
+};
+
 func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) never fails {
     // A LOCAL OF THE `comptime func:` BEING EVALUATED IS ASKED FIRST -- BY THE
     // SYMBOL THE RESOLVER RECORDED, not by the spelling (DEF-196): a parameter
@@ -2821,26 +2852,14 @@ func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
         if (raw cv_folded(bound)) { pass bound; }
     }
 
-    // A NAME IN A TYPE POSITION WAS NEVER BOUND BY THE RESOLVER, and that is by
-    // design: `resolve.npk` does not enter type nodes, because a type is more than
-    // a name and answering that is this module's job (0.3.5's header says so). So
-    // `int32[SIZE]` reaches here with no binding recorded, and looking it up is not
-    // a second computation of a fact somebody else already has — it is the first.
-    //
-    // A `const` initialiser arrives the other way round, already bound, because an
-    // initialiser is an ordinary expression in a declaration. Both are handled, and
-    // the recorded binding wins where there is one.
-    int32:symid = e.a;
-    if (symid == 0i32) {
-        symid = raw scope_lookup(r.tab, scope, (raw expr_name(e)) =>! int32);
-    }
+    // WHICH `fixed` MODULE BINDING THE NAME STANDS FOR IS ONE WALK, SHARED with
+    // the module-constant gate and the global renderer (`fixed_global_sym`,
+    // DEF-202): what this folds, what the gate admits and what the renderer
+    // follows are one answer to one question.
+    int32:symid = raw fixed_global_sym(r, e, scope);
     if (symid == 0i32) { pass (raw cv_none()); }
     Symbol:sym = raw symtab_get(r.tab, symid);
-    if (sym.origin_kind != (raw SYM_DECL())) { pass (raw cv_none()); }
-
     DeclNode:d = raw ast_decl(r.ast, DeclId{ index: sym.origin });
-    if (d.kind != DeclKind.DeclGlobalDecl) { pass (raw cv_none()); }
-    if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) { pass (raw cv_none()); }
 
     // THE INITIALISER IS FOLDED IN THE SCOPE IT WAS WRITTEN IN, not the one the
     // reference stands in. A `const` in another module means what it meant there.

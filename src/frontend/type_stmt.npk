@@ -3098,6 +3098,18 @@ func:const_init_verdict = int32(ExprTyper->:e, ExprId:eid) never fails {
     if (k == (raw TY_TBB()))  { carried = true; }
     if (k == (raw TY_TERN())) { carried = true; }
     if (!(raw cv_folded(cv))) {
+        // A REFERENCE TO A `fixed` MODULE BINDING THE FOLDER DOES NOT HOLD IS A
+        // CONSTANT (DEF-202, 1.6.1e): `fixed Pt:Q = P;`, `fixed int32[3]:B = A;`,
+        // `fixed int32?:O2 = O;` -- D-165's "another module binding", for every
+        // type. The folder holds a scalar's and a string's value and nothing
+        // else, so a name standing for a struct, an array or a sentinel folded
+        // to nothing and this said "not a constant" in the sentence that lists
+        // the reference as legal. The TARGET'S declaration answers for its own
+        // initialiser (every module binding is checked; a cycle is RESOLVE-006
+        // before this runs), so the reference is a constant here -- D-240, one
+        // mistake, one report, at the binding that holds it -- and the renderer
+        // follows the name to the initialiser (`emit_global_const_into`).
+        if ((raw fixed_global_sym(@cr, n, e.scope)) != 0i32) { pass 0i32; }
         if (carried) { pass 2i32; }
         pass 1i32;
     }

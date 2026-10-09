@@ -12174,6 +12174,16 @@ them.
 > and "nothing else". Whether a payload-less variant should be a module constant — and a `comptime(…)` value — is
 > S-127, the user's.
 
+> **A REFERENCE TO AN AGGREGATE BINDING, HELD AT LAST** (2026-10-09, landing 108, DEF-202; found by landing 87's probes,
+> 2026-10-01): "a reference to another module-level binding" held for a scalar's and a string's value -- the folder's --
+> and not for a struct's, an array's or a sentinel's, because the gate and the renderer asked only the folder for a name:
+> `fixed Pt:Q = P;`, `fixed int32[3]:B = A;` and `fixed int32?:O2 = O;` were NITPICK-TYPE-035, in the sentence that lists
+> the reference as legal, since 1.0.9d. One walk (`fixed_global_sym`, type_resolve.npk) now answers the folder's identifier
+> arm, the module-constant gate and the global renderer: the gate admits a reference the folder cannot hold (the target's
+> own declaration answers for its initialiser; a cycle is RESOLVE-006 before it), and the renderer follows the name to the
+> target's initialiser, rendered in the target's home scope. The folder's own answer comes first on both sides, so every
+> initialiser it folded before is checked and written as it was. `tests/backend/programs/module_ref.npk`.
+
 ## D-166 — What `for` iterates: a range, a slice, an array, or an `Iterator` — **SETTLED**
 
 1.0.9's T-2. D-023 said "a range or collection" and the backend lowered ranges,

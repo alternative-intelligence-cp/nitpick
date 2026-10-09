@@ -3362,8 +3362,17 @@ defect declares a `DEF-` in §2f.
 > there (a string constant read as 0). **FIXED:** each asks an integer constant of a plain type and its range before
 > narrowing (NITPICK-TYPE-004 for the array, the sites' own codes for the other two). `comptime_width.npk`.
 >
-> **DEF-202 — OPEN (2026-10-01; owner: the compiler seat; found by landing 87's probes). A REFERENCE TO AN AGGREGATE
-> MODULE BINDING IS NOT A CONSTANT.** D-165 lists "a reference to another module-level binding"; `fixed Pt:Q = P;`
+> **DEF-202 — FIXED 2026-10-09 (landing 108, `nitpick-compiler_35`): one walk in the resolver, `fixed_global_sym`
+> (type_resolve.npk), answers which `fixed` module binding a name stands for -- read by the folder's identifier arm, by the
+> module-constant gate (`const_init_verdict`, type_stmt.npk: a reference the folder cannot hold is a constant, the target's
+> own declaration answering for its initialiser -- D-240, one report, at the binding that holds the mistake) and by the
+> global renderer (`emit_global_const_into`, ir_expr.npk: a reference the folder cannot hold is followed to the target's
+> initialiser, rendered in the target's home scope); the folder's own answer comes first on both sides, so every
+> initialiser it folded before is checked and written as it was. `tests/backend/programs/module_ref.npk` (a struct, a
+> chain of references, an array, a sentinel-initialised `Optional`, a struct holding an array, an array of structs, a
+> struct holding a string, references inside a literal's members, a reference across an inline module; the scalar, the
+> float and the string references as the controls). WAS: OPEN (2026-10-01; owner: the compiler seat; found by landing
+> 87's probes). A REFERENCE TO AN AGGREGATE MODULE BINDING IS NOT A CONSTANT.** D-165 lists "a reference to another module-level binding"; `fixed Pt:Q = P;`
 > and `fixed int32[3]:B = A;` are NITPICK-TYPE-035, because the folder holds no struct or array value and the gate
 > and the renderer ask only the folder for a name (probe `mj1`; a reference to a sentinel-initialised binding
 > likewise). Refused, not wrong. **Recommended:** the gate and the renderer follow an identifier that names a module

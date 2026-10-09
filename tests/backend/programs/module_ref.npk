@@ -1,0 +1,85 @@
+// expect-exit: 0
+// DEF-202 (1.6.1e, landing 108): A REFERENCE TO AN AGGREGATE MODULE BINDING IS A
+// CONSTANT. D-165 lists "another module binding" among a module initialiser's
+// constant forms, and the folder holds a scalar's and a string's value and
+// nothing else -- so `fixed Pt:Q = P;`, `fixed int32[3]:B = A;` and
+// `fixed int32?:ON2 = ON;` were NITPICK-TYPE-035, in the sentence that lists
+// the reference as legal. The gate admits a reference to a `fixed` module
+// binding the folder cannot hold (the target's own declaration answers for its
+// initialiser), and the renderer follows the name to that initialiser, in its
+// home scope. Each constant is compared where it is read; the scalar, the float
+// and the string references at the end are the controls that compiled before.
+mod:module_ref;
+
+use inner.{Far, FAR};
+
+struct:Pt = { int32:x; int32:y; };
+struct:Named = { string:name; int32:n; };
+struct:Box = { Pt:at; int32[3]:dims; };
+
+fixed Pt:P = Pt{ x: 1i32, y: 2i32 };
+fixed Pt:Q = P;
+fixed Pt:Q2 = Q;                       // a chain: the reference's reference
+fixed int32[3]:A = [1i32, 2i32, 3i32];
+fixed int32[3]:B = A;
+fixed int32?:ON = NIL;
+fixed int32?:ON2 = ON;                 // a sentinel-initialised binding
+fixed Box:BX = Box{ at: Pt{ x: 5i32, y: 6i32 }, dims: [7i32, 8i32, 9i32] };
+fixed Box:BY = BX;                     // a struct holding an array, followed whole
+fixed Pt[2]:PA = [Pt{ x: 3i32, y: 4i32 }, Pt{ x: 5i32, y: 6i32 }];
+fixed Pt[2]:PB = PA;                   // an array of structs
+fixed Named:NM = Named{ name: "abc", n: 42i32 };
+fixed Named:NM2 = NM;                  // a struct holding a string
+fixed Box:BZ = Box{ at: P, dims: A };  // references INSIDE a literal's members
+fixed Far:F2 = FAR;                    // a reference across a module boundary
+// the controls: references the folder held before this landing
+fixed int32:K = 7i32;
+fixed int32:K2 = K;
+fixed flt64:PI = 3.25f64;
+fixed flt64:TAU = PI;
+fixed string:S = "hello";
+fixed string:S2 = S;
+
+mod:inner = {
+    pub struct:Far = { int32:v; };
+    pub fixed Far:FAR = Far{ v: 11i32 };
+};
+
+func:main = int32(cstring[]:argv) {
+    if (Q.x != 1i32)           { exit 1i32; }
+    if (Q.y != 2i32)           { exit 2i32; }
+    if (Q2.x != 1i32)          { exit 3i32; }
+    if (Q2.y != 2i32)          { exit 4i32; }
+    if (B[0i64] != 1i32)       { exit 5i32; }
+    if (B[1i64] != 2i32)       { exit 6i32; }
+    if (B[2i64] != 3i32)       { exit 7i32; }
+    if (ON2 != NIL)            { exit 8i32; }
+    if (BY.at.x != 5i32)       { exit 9i32; }
+    if (BY.at.y != 6i32)       { exit 10i32; }
+    if (BY.dims[2i64] != 9i32) { exit 11i32; }
+    if (PB[1i64].x != 5i32)    { exit 12i32; }
+    if (PB[0i64].y != 4i32)    { exit 13i32; }
+    if (NM2.n != 42i32)        { exit 14i32; }
+    if (NM2.name.len != 3i64)  { exit 15i32; }
+    if (BZ.at.y != 2i32)       { exit 16i32; }
+    if (BZ.dims[1i64] != 2i32) { exit 17i32; }
+    if (F2.v != 11i32)         { exit 18i32; }
+    if (K2 != 7i32)            { exit 19i32; }
+    if (TAU != 3.25f64)        { exit 20i32; }
+    if (S2.len != 5i64)        { exit 21i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

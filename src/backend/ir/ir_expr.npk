@@ -11183,7 +11183,28 @@ pub func:emit_global_const_into = bool(ExprEmitter->:x, ExprId:eid,
     }
 
     ConstVal:cv = raw fold_const(x.tr, eid, x.scope);
-    if (!(raw cv_folded(cv))) { pass false; }
+    if (!(raw cv_folded(cv))) {
+        // A REFERENCE THE FOLDER DOES NOT HOLD IS FOLLOWED TO ITS BINDING'S
+        // INITIALISER (DEF-202, 1.6.1e): a struct's, an array's, an Optional's
+        // `NIL` -- rendered in the TARGET'S home scope, where its field names and
+        // its own references resolve (D-137), as `emit_one_global` renders the
+        // target itself. The folder's own answer comes first, so every
+        // initialiser it folds is written exactly as it was; the gate admitted
+        // the reference on the same walk (`fixed_global_sym`).
+        int32:gsym = raw fixed_global_sym(x.tr, n, x.scope);
+        if (gsym == 0i32) { pass false; }
+        Symbol:gs = raw symtab_get(x.tab, gsym);
+        DeclNode:td = raw ast_decl(x.ast, DeclId{ index: gs.origin });
+        ExprId:tinit = raw global_init(td);
+        // A `fixed` binding without an initialiser is ASSIGN-001 at its own
+        // line; its vacant value (D-225) keeps this total.
+        if (raw expr_is_none(tinit)) { drop sink_write(out, "zeroinitializer"); pass true; }
+        int32:saved_scope = x.scope;
+        x.scope = raw symtab_home_scope(x.tab, gs.origin, x.scope);
+        bool:followed = raw emit_global_const_into(x, tinit, out);
+        x.scope = saved_scope;
+        pass followed;
+    }
     if (cv.kind == (raw CV_STRING())) {
         string:g = raw strtab_add(x.strs, string_concat(cv.text, ""));
         string:ln = int_to_string(cv.text.len);
