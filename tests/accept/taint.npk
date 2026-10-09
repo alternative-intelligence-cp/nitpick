@@ -97,6 +97,31 @@ func:reads_the_error = Error(bool:c) never fails {
     pass (r.err);
 };
 
+// --- the `pick` form's check leaves the `pick` (DEF-226, landing 110) -----------------
+//
+// The error arm LEAVES (a trap, or the bare `#unreachable();` DEF-225 made a leaver),
+// so every path past the `pick` ran the safe arm, and the read after it is checked --
+// as it is after `if (r.is_error) { !!! Unreachable; }`. The analysis took `must` out
+// of a total `pick` and not `checked` until this landing.
+
+func:pick_leaver_trap = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    pick (r.is_error) {
+        (true) { !!! Unreachable; },
+        (false) { }
+    }
+    pass (r.value);
+};
+
+func:pick_leaver_unreachable = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    pick (r.is_error) {
+        (true) { #unreachable(); },
+        (false) { }
+    }
+    pass (r.value);
+};
+
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };

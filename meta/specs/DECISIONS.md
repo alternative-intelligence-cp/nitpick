@@ -9133,6 +9133,13 @@ followed by the read is TAINT-001 with every leaver, where the `if` form compile
 
 ---
 
+> **Note (2026-10-09, 1.6.1e landing 110 — DEF-226):** "the same refinement an `if` gets" held INSIDE the safe arm and
+> ended with the `pick`: the bindings analysis took `must` out of a total pick (the intersection over the arms that fall
+> through) and not `checked`, so `pick (r.is_error) { (true) { exit 10i32; }, (false) { } }` followed by `r.value` was
+> TAINT-001 with every leaver in the error arm, where the `if` form compiled. `state_take_definite` takes both now --
+> `checked` is a permission that intersects across the falling-through arms exactly as `must` does, and every path out
+> of a total pick ran one of them. A pick whose error arm falls through stays refused (the intersection, never a union).
+
 ## D-122 — What marks an acquisition is a contract, not a name
 
 **Settled in cycle 0.5.6**, completing D-056 and extending D-113 by one form.

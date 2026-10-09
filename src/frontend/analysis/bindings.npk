@@ -1021,10 +1021,22 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails 
     pass NIL;
 };
 
-func:state_take_must = NIL(AssignState:dst, AssignState:src) never fails {
+// THE DEFINITE FACTS A TOTAL `pick` ESTABLISHES, taken out of it: `must` (a
+// binding assigned on every arm that falls through is assigned after the pick)
+// and, since DEF-226 (1.6.1e landing 110), `checked` (a `Result` checked on every
+// arm that falls through is checked after the pick: `pick (r.is_error) { (true)
+// { exit …; }, (false) { } }` then `r.value` -- the `if` form's twin, which D-121
+// promised and which carried `must` alone, so the refinement held inside the safe
+// arm and ended with the pick). Both are PERMISSIONS that intersect across the
+// arms (`state_intersect_must` intersects `checked` too), and both are sound to
+// take for one reason: every path out of a TOTAL pick ran some arm that falls
+// through, so a fact true at the end of every such arm is true after the pick.
+// `moved`/`freed` are may-facts and are absorbed arm by arm (`state_absorb_may`).
+func:state_take_definite = NIL(AssignState:dst, AssignState:src) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = src.must[i];
+        dst.checked[i] = src.checked[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -1121,7 +1133,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     // kept whatever the answer here.
     if (total) {
         if (seen) {
-            drop state_take_must(st, acc);
+            drop state_take_definite(st, acc);
         }
     }
     // The gathered may/moved/freed land ONCE (F-6): after every exclusive arm

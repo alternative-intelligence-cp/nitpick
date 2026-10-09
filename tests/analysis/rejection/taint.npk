@@ -85,3 +85,22 @@ func:pick_on_the_error_arm = int32(bool:c) never fails {
     }
     pass v;
 };
+
+// --- the error arm FALLS THROUGH, so the check does not leave the `pick` ------------------
+//
+// DEF-226 (landing 110) carries `checked` out of a total `pick` as `must` is carried:
+// the INTERSECTION over the arms that fall through. Here the error arm falls through
+// unchecked, so the read after the `pick` is tainted -- the control that the take is
+// an intersection, never a union (a wrong answer towards `checked` admits a tainted
+// read, D-007).
+
+// expect-error: NITPICK-TAINT-001
+func:pick_error_arm_falls_through = int32(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    int32:v = 0i32;
+    pick (r.is_error) {
+        (true) { v = 0i32; },
+        (false) { v = 1i32; }
+    }
+    pass (r.value + v);
+};

@@ -1,0 +1,63 @@
+// expect-exit: 0
+// DEF-226 (1.6.1e, landing 110): THE `pick (r.is_error)` FORM'S CHECK IS CARRIED
+// OUT OF THE `pick`. `pick (r.is_error) { (true) { exit 10i32; }, (false) { } }`
+// and then `r.value` was NITPICK-TAINT-001 with every leaver in the error arm --
+// `exit`, `!!! Unreachable;`, a bare `#unreachable();` -- where the `if` form of
+// the same program compiled: the bindings analysis took `must` out of a total
+// `pick` and not `checked` (D-121 promised the pick "the same refinement an `if`
+// gets", and it held inside the safe arm and ended with the pick). Both are
+// permissions that intersect across the arms that fall through, and both leave
+// the pick now. Three leavers, the value read after each; a pick whose error arm
+// falls through stays refused (`tests/analysis/rejection/taint.npk`).
+mod:pick_checked_leaver;
+
+error:E9;
+
+func:might_fail = int32(bool:c) { if (c) { fail E9; } pass 7i32; };
+
+func:after_trap = int32(bool:c) {
+    Result<int32>:r = might_fail(c);
+    int32:v = 1i32;
+    pick (r.is_error) {
+        (true) { !!! Unreachable; },
+        (false) { }
+    }
+    pass (r.value + v);
+};
+
+func:after_unreachable = int32(bool:c) {
+    Result<int32>:r = might_fail(c);
+    int32:v = 2i32;
+    pick (r.is_error) {
+        (true) { #unreachable(); },
+        (false) { }
+    }
+    pass (r.value + v);
+};
+
+func:main = int32(cstring[]:argv) {
+    Result<int32>:r = might_fail(false);
+    pick (r.is_error) {
+        (true) { exit 10i32; },
+        (false) { }
+    }
+    if (r.value != 7i32)                   { exit 1i32; }
+    if ((after_trap(false) ?! E9) != 8i32)  { exit 2i32; }
+    if ((after_unreachable(false) ?! E9) != 9i32) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 81i32; },
+        (Unreachable) { exit 95i32; },
+        (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak) { exit 96i32; },
+        (IntOverflow) { exit 93i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
