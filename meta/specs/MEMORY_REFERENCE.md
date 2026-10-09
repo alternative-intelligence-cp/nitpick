@@ -117,6 +117,16 @@ holds the type's canonical vacant value after `move(x)` or `pass x`, exactly as
 a moved-out field or element does (D-254): `p = @x; string:t = move(x); (<-p) =
 v;` frees nothing of `t`'s.
 
+**And the value stored back is dropped (DEF-159, 1.6.1e landing 105).** In that
+shape the move had also cleared `x`'s drop flag, so the scope exit skipped the
+drop and the `v` written through `p` leaked (192,094 bytes live after two
+thousand rounds of three kinds against 190 for one). The flag is the scope-exit
+drop's FAST PATH and nothing more now: for a binding whose address the function
+has taken (`@x`, `$$i x`/`$$m x`, a pointer-receiver call on it) the drop runs
+over the slot unconditionally -- a vacant slot's drop is a no-op, a re-filled
+one's is the drop the value was owed -- and only a binding nobody addressed
+keeps the one-byte test.
+
 ### 1.1d The four store shapes, and what each drops (D-186, DEF-120)
 
 Assigning over an owning value releases the old one first, after the right-hand

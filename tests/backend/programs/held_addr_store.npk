@@ -1,0 +1,137 @@
+// expect-exit: 0
+//
+// A VALUE STORED THROUGH A HELD `@x` AFTER `move(x)` IS THE BINDING'S AGAIN, AND
+// THE SCOPE EXIT DROPS IT (DEF-159, 1.6.1e landing 105). `string->:p = @x;
+// string:t = move(x); (<-p) = v;` is legal (a held `@` is D-286's plain party,
+// and `move(x)` is not its conflict); before this landing the move cleared `x`'s
+// drop flag, the store put a live `v` into the vacated slot, and the scope exit
+// read the flag and dropped nothing. The drop of an ADDRESS-TAKEN binding runs
+// over the slot without the flag test now (every moved-out place is vacant,
+// D-225/DEF-120, so the no-op case costs one call). Each road here moves a
+// value out past a held address, stores a new one back through the pointer and
+// checks both bodies; `held_addr_churn.npk` measures what this file cannot see.
+mod:held_addr_store;
+error:EAsync;
+
+func:mk_a = string() never fails { pass string_concat("alpha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "a"); };
+func:mk_b = string() never fails { pass string_concat("beta-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "b"); };
+func:first = uint8(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 0u8; }
+    fixed uint8[]:bs = string_bytes(v);
+    pass bs[0i64];
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+struct:Holder = { string:name; int64:n; };
+func:mkh = Holder(int64:n) never fails { pass Holder{ name: raw mk_a(), n: n }; };
+struct:Reg = { Holder->:slot; };
+impl:Holder = {
+    // the implicit `@self` kept by the callee: the registry holds the receiver's address
+    func:keep = NIL(Holder->:self, Reg->:r) never fails { r.slot = self; pass NIL; };
+};
+
+// road 1: a local string, the finding's shape
+func:road_local = int32() never fails {
+    string:x = raw mk_a();
+    string->:p = @x;
+    string:t = move(x);
+    (<-p) = raw mk_b();
+    if ((raw first(t)) != 97u8) { pass 1i32; }
+    if ((raw first((<-p))) != 98u8) { pass 2i32; }
+    pass 0i32;
+};
+
+// road 2: a `move` parameter (its flag is the prologue's; its drop is the function's exit's)
+func:road_param = int32(move string:q) never fails {
+    string->:p = @q;
+    string:t = move(q);
+    (<-p) = raw mk_b();
+    if ((raw first(t)) != 97u8) { pass 3i32; }
+    if ((raw first((<-p))) != 98u8) { pass 4i32; }
+    pass 0i32;
+};
+
+// road 3: a List
+func:road_list = int32() never fails {
+    List<int64>:l = raw mkl(5i64);
+    List<int64>->:p = @l;
+    List<int64>:t = move(l);
+    (<-p) = raw mkl(7i64);
+    if (t[0i64] != 5i64) { pass 5i32; }
+    if ((<-p)[0i64] != 7i64) { pass 6i32; }
+    pass 0i32;
+};
+
+// road 4: a struct with an owning field
+func:road_struct = int32() never fails {
+    Holder:h = raw mkh(1i64);
+    Holder->:p = @h;
+    Holder:t = move(h);
+    (<-p) = Holder{ name: raw mk_b(), n: 2i64 };
+    if (t.n != 1i64) { pass 7i32; }
+    if (p.n != 2i64) { pass 8i32; }
+    if ((raw first(p.name)) != 98u8) { pass 9i32; }
+    pass 0i32;
+};
+
+// road 5: the address a pointer-receiver call takes, kept by the callee in a registry
+func:road_receiver = int32() never fails {
+    Holder:h = raw mkh(3i64);
+    Reg:reg = Reg{ slot: @h };
+    drop h.keep(@reg);
+    Holder:t = move(h);
+    (<-reg.slot) = Holder{ name: raw mk_b(), n: 4i64 };
+    if (t.n != 3i64) { pass 10i32; }
+    if (reg.slot.n != 4i64) { pass 11i32; }
+    pass 0i32;
+};
+
+// road 6: a coroutine -- the binding and its flag are frame-resident, the store lands after a suspension
+async func:road_async = int32() {
+    string:x = raw mk_a();
+    string->:p = @x;
+    string:t = move(x);
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    (<-p) = raw mk_b();
+    if ((raw first(t)) != 97u8) { pass 12i32; }
+    if ((raw first((<-p))) != 98u8) { pass 13i32; }
+    pass 0i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:r = raw road_local();
+    if (r != 0i32) { exit r; }
+    r = raw road_param(raw mk_a());
+    if (r != 0i32) { exit r; }
+    r = raw road_list();
+    if (r != 0i32) { exit r; }
+    r = raw road_struct();
+    if (r != 0i32) { exit r; }
+    r = raw road_receiver();
+    if (r != 0i32) { exit r; }
+    Result<int32>:ar = await road_async();
+    if (ar.is_error) { exit 14i32; }
+    if (ar.value != 0i32) { exit ar.value; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EAsync)            { exit 90i32; },
+        (DeadlineExceeded)  { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (HeapOom)           { exit 94i32; },
+        (OutOfBounds)       { exit 95i32; },
+        (IntOverflow)       { exit 96i32; },
+        (Unreachable)       { exit 97i32; },
+        (WildLeak)          { exit 98i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (LimitViolated)     { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+};

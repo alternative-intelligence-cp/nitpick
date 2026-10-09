@@ -2879,7 +2879,13 @@ defect declares a `DEF-` in §2f.
 > fix corrects. `tests/cost/destroy_field.toml` (`destroy_field_churn.npk` against `destroy_field_once.npk`,
 > peak 628 and 628 on both legs; 72,592 before).
 
-> **DEF-159 — OPEN (owner: the compiler seat; found by 1.6.1e step 1's probes of DEF-120's own shape, 2026-09-26).
+> **DEF-159 — FIXED 2026-10-09 (landing 105, `nitpick-compiler_34`): the emitter marks a binding whose address the
+> function has taken (`emit_addr_op` for `@`/`$$i`/`$$m`, the pointer receiver of `emit_method_call`, the awaited
+> receiver of `emit_child_frame` — `mark_root_taken`, `FnEmitter.ltaken`) and `emit_one_flagged_drop` drops such a
+> binding's slot without the flag test; the flag stays the fast path for a binding nobody addressed. Measured by
+> `tests/cost/held_addr.toml`'s twins (192,094 bytes live against 190 before; 190 against 190 after) and the six roads
+> of `held_addr_store.npk` (a local, a `move` parameter, a List, a struct, a kept receiver address, a coroutine).
+> WAS: OPEN (owner: the compiler seat; found by 1.6.1e step 1's probes of DEF-120's own shape, 2026-09-26).
 > A VALUE STORED THROUGH A HELD `@x` AFTER `move(x)` LEAKS**: `string->:p = @x; string:t = move(x); (<-p) = v;` —
 > the shape DEF-120's record calls legal (a held `@` is D-286's plain party, and `move(x)` is not its conflict) —
 > clears `x`'s drop flag at the move and stores a live `v` into the vacated slot through `p`; the scope exit reads

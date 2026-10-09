@@ -5312,6 +5312,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (cwant_ptr) {
             PlaceVal:crp = raw addr_of(x, raw expr_operand(cn));
             if (crp.state != (raw LL_OK())) { pass (raw iv_from_place(move(crp))); }
+            drop mark_root_taken(x, raw expr_operand(cn));   // the awaited receiver's `@` (DEF-159)
             string:rg0 = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
             drop irw_line(x.fe.w, raw cat3("store ptr ", crp.addr,
                               string_concat(", ptr ", rg0)));
@@ -9654,6 +9655,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         if (want_ptr) {
             PlaceVal:rp = raw addr_of(x, rid);
             if (rp.state != (raw LL_OK())) { pass (raw iv_from_place(move(rp))); }
+            drop mark_root_taken(x, rid);   // the implicit `@recv` (DEF-159; DEF-94's escape)
             args = string_concat("ptr ", rp.addr);
         } else {
             // A VALUE RECEIVER THROUGH A POINTER IS THE POINTEE, LOADED (DEF-134,
@@ -11113,6 +11115,8 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 func:emit_addr_op = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     PlaceVal:p = raw addr_of(x, raw expr_operand(n));
     if (p.state != (raw LL_OK())) { pass (raw iv_from_place(move(p))); }
+    // The root's scope-exit drop runs unconditionally from here on (DEF-159).
+    drop mark_root_taken(x, raw expr_operand(n));
     // A PARTY THE ANALYSIS PAIRED WITH A LATER GUARD SITE (D-286): a
     // call-duration claim's address is kept for the compare in this statement.
     if (raw exprtypes_alias_is_party(x.et, id.index)) { drop fnem_claim_put(x.fe, id.index, p.addr); }

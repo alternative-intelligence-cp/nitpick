@@ -17562,6 +17562,15 @@ rule can admit.
 > `emit_move_out` vacates a whole binding as it vacates a field or an element (the flag clear stays
 > as the scope-exit drop's fast path): one rule for every moved-out place.
 
+> **Note (2026-10-09, 1.6.1e landing 105 — DEF-159):** the fast path hid the value written back. In
+> the same shape the store through `p` put a live `v` into the vacated slot and the scope exit, reading
+> the cleared flag, dropped nothing — a leak the move analysis also hides, since `x` is moved-from to
+> every reader. The emitter marks a binding whose address it has taken (`@`, `$$i`/`$$m`, the implicit
+> pointer receiver) and drops such a binding's slot WITHOUT the flag test at every scope exit; the flag
+> stays the fast path for a binding nobody addressed. Sound because every site that clears a local's
+> flag vacates the slot first (this note's rule, and DEF-158's for `destroy`), so the unconditional
+> drop meets a vacant value or the value it was owed.
+
 ## D-255 — the statement after `wild_release_all()` must be `exit` — **SETTLED (user decision, 2026-09-04; 1.5.1b S-27; landed at 1.5.1b step 5 as the fix, NITPICK-TYPE-062)**
 
 The call unmaps every chunk of both regimes (D-151), so no drop, no

@@ -1,0 +1,67 @@
+// expect-exit: 0
+//
+// THE CHURN TWIN of `held_addr_once.npk` (DEF-159, 1.6.1e landing 105): a
+// string, a List and a struct each moved out past a held `@x` and stored over
+// through the pointer, two thousand rounds. `tests/cost/held_addr.toml` holds
+// this program's peak to the once's: before the fix the move cleared each
+// binding's drop flag and the scope exit dropped nothing of the stored-back
+// bodies (86,046 bytes live after two thousand string rounds against 89 for
+// one), and the peak grew with the count.
+mod:held_addr_churn;
+
+func:mk_a = string() never fails { pass string_concat("alpha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "a"); };
+func:mk_b = string() never fails { pass string_concat("beta-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "b"); };
+func:first = uint8(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 0u8; }
+    fixed uint8[]:bs = string_bytes(v);
+    pass bs[0i64];
+};
+func:mkl = List<int64>(int64:v) never fails {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push::<int64>(@l, v);
+    pass l;
+};
+struct:Holder = { string:name; int64:n; };
+func:mkh = Holder(int64:n) never fails { pass Holder{ name: raw mk_a(), n: n }; };
+
+func:once = int32() never fails {
+    string:x = raw mk_a();
+    string->:p = @x;
+    string:t = move(x);
+    (<-p) = raw mk_b();
+    if ((raw first(t)) != 97u8) { pass 1i32; }
+    if ((raw first((<-p))) != 98u8) { pass 2i32; }
+    List<int64>:l = raw mkl(5i64);
+    List<int64>->:lp = @l;
+    List<int64>:lt = move(l);
+    (<-lp) = raw mkl(7i64);
+    if (lt[0i64] != 5i64) { pass 3i32; }
+    if ((<-lp)[0i64] != 7i64) { pass 4i32; }
+    Holder:h = raw mkh(1i64);
+    Holder->:hp = @h;
+    Holder:ht = move(h);
+    (<-hp) = Holder{ name: raw mk_b(), n: 2i64 };
+    if (ht.n != 1i64) { pass 5i32; }
+    if (hp.n != 2i64) { pass 6i32; }
+    pass 21i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = 0i32;
+    for (int32:i in 0i32...2000i32) {
+        r = raw once();
+        if (r != 21i32) { exit r; }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

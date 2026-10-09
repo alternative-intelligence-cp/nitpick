@@ -451,6 +451,17 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int64:depth) never fails {
 // storage a container still owns, safe precisely because they never drop.
 // The test is one load and one branch; a moved-out binding's flag is zero, so
 // the drop is skipped exactly where D-065 says the binding no longer owns.
+//
+// EXCEPT FOR A BINDING WHOSE ADDRESS WAS TAKEN (DEF-159, 1.6.1e landing 105):
+// `string->:p = @x; string:t = move(x); (<-p) = v;` is legal (a held `@` is
+// D-286's plain party, and `move(x)` is not its conflict), the move cleared
+// the flag, the store through `p` put a live `v` into the vacated slot, and
+// the scope exit read the flag and dropped nothing -- 86,046 bytes live after
+// two thousand rounds against 89 for one. Since DEF-120 every moved-out (and
+// every destroyed) place holds the type's canonical vacant value, whose drop
+// is a no-op (D-225), so the flag's one remaining job is the fast path -- and
+// for a binding a pointer may reach, the fast path is what hides the value
+// written back. Such a binding's drop runs over the slot unconditionally.
 pub func:run_scope_drops = IrVal(ExprEmitter->:x, int64:f) never fails {
     int64:lhi = raw fnem_scope_lhi(x.fe, f);
     int64:llo = raw fnem_scope_lmark(x.fe, f);
@@ -489,6 +500,14 @@ func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int64:i) never fails {
     // default, for the next hunt.
     string->:fl = raw fnem_local_flag_at(x.fe, i);
     if (fl.len == 0i64) { pass NIL; }
+    if (raw fnem_local_taken_at(x.fe, i)) {
+        drop irw_line(x.fe.w, raw cat3("call void ",
+                          raw drop_fn_sym(x.fe.ctx, raw fnem_local_type_at(x.fe, i)),
+                          string_concat(
+                              string_concat("(ptr ",
+                                  raw fnem_local_slot_at(x.fe, i)), ")")));
+        pass NIL;
+    }
     string:lf = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(lf, " = load i8, ptr ", <-fl, ""));
     string:lb = raw irw_temp(x.fe.w);
@@ -889,6 +908,28 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     string->:fl = raw fnem_local_flag_at(x.fe, li);
     if (fl.len == 0i64) { pass NIL; }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", <-fl, ""));
+    pass NIL;
+};
+
+// THE ADDRESS OF A PLACE WAS TAKEN -- MARK ITS ROOT (DEF-159, 1.6.1e landing
+// 105): `@x`, `@x.f`, `@l[i]`, `$$i x`, `$$m x`, and the implicit `@x` a pointer
+// receiver takes. The root's scope-exit drop then runs without the flag test
+// (`emit_one_flagged_drop`), because a pointer into the slot may store a live
+// value after a move has cleared the flag. A root that is not a flagged local --
+// a pointer parameter's pointee, a global, a temporary -- needs no mark: the
+// drop walk never reaches it.
+pub func:mark_root_taken = NIL(ExprEmitter->:x, ExprId:vid) never fails {
+    if (raw expr_is_none(vid)) { pass NIL; }
+    PlaceRoot:r = raw place_root(x.ast, vid, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    int64:li = raw ident_slot(x, rn);   // by the resolver's symbol (DEF-144)
+    if (li < 0i64) { pass NIL; }
+    string->:fl = raw fnem_local_flag_at(x.fe, li);
+    if (fl.len == 0i64) { pass NIL; }   // no flag, no drop: nothing to protect
+    drop fnem_mark_taken(x.fe, li);
     pass NIL;
 };
 

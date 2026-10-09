@@ -91,6 +91,14 @@ pub struct:FnEmitter = {
     // D-266 (1.5.2h): true for a lending pick's VIEW binding -- its slot holds
     // the payload's address, and a read loads through it.
     List<bool>:lviews;
+    // ADDRESS-TAKEN (DEF-159, 1.6.1e landing 105): true once the function has
+    // taken the binding's address -- `@x`, `$$i x`/`$$m x`, a pointer-receiver
+    // call on it -- so a held pointer may write into the slot after a move. Its
+    // scope-exit drop then runs UNCONDITIONALLY over the slot (every moved-out
+    // or destroyed place holds the type's vacant value, whose drop is a no-op,
+    // D-225/DEF-120); the drop flag stays the fast path for a binding whose
+    // address nobody took. Parallel to `lnames`.
+    List<bool>:ltaken;
     // THE DECLARING STATEMENT PER BINDING (D-286, 1.5.5 step 2): a guard site
     // loads a held party's address from its HOLDER's slot, found by the
     // holder's declaring statement rather than its name -- a nested block may
@@ -321,6 +329,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         lflags: raw list_init::<string>(32i64),
         lrules: raw list_init::<int32>(32i64),
         lviews: raw list_init::<bool>(32i64),
+        ltaken: raw list_init::<bool>(32i64),
         ldecls: raw list_init::<int32>(32i64),
         claim_sites: raw list_init::<int32>(4i64),
         claim_refs: raw list_init::<string>(4i64),
@@ -413,6 +422,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     drop list_clear(@fe.lflags);
     drop list_clear(@fe.lrules);
     drop list_clear(@fe.lviews);
+    drop list_clear(@fe.ltaken);
     drop list_clear(@fe.ldecls);
     drop list_clear(@fe.claim_sites);
     drop list_clear(@fe.claim_refs);
@@ -968,8 +978,23 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
     drop list_push(@fe.lflags, "");
     drop list_push(@fe.lrules, 0i32);
     drop list_push(@fe.lviews, false);
+    drop list_push(@fe.ltaken, false);
     drop list_push(@fe.ldecls, 0i32);
     pass NIL;
+};
+
+// THE BINDING'S ADDRESS HAS BEEN TAKEN (DEF-159, 1.6.1e landing 105): set by the
+// three address-producing lowerings (`emit_addr_op`, a pointer receiver in
+// `emit_method_call`, an awaited method's receiver in `emit_child_frame`) through
+// `mark_root_taken`; read by `emit_one_flagged_drop`, which then drops the slot
+// without consulting the flag. A mark is never cleared: the question is "could a
+// pointer into this slot exist", and once it could, it could until the scope ends.
+pub func:fnem_mark_taken = NIL(FnEmitter->:fe, int64:i) never fails {
+    fe.ltaken[i => int64] = true;
+    pass NIL;
+};
+pub func:fnem_local_taken_at = bool(FnEmitter->:fe, int64:i) never fails {
+    pass fe.ltaken[i => int64];
 };
 
 // THE DECLARING STATEMENT of the most recent binding (D-286, 1.5.5 step 2),
@@ -1076,6 +1101,7 @@ pub func:fnem_release = NIL(FnEmitter->:fe, int64:mark) never fails {
     drop list_truncate(@fe.lflags, mark);
     drop list_truncate(@fe.lrules, mark);
     drop list_truncate(@fe.lviews, mark);
+    drop list_truncate(@fe.ltaken, mark);
     drop list_truncate(@fe.ldecls, mark);
     pass NIL;
 };

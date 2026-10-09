@@ -1,0 +1,14 @@
+# DEF-159 (1.6.1e landing 105): a value stored through a held `@x` after
+# `move(x)` is the binding's again, and the scope exit drops it -- the drop of
+# an address-taken binding runs over the slot without the flag test the move
+# cleared. `held_addr_churn.npk` moves a string, a List and a struct out past a
+# held address and stores over each through the pointer, two thousand rounds;
+# `held_addr_once.npk` does it once. Under NPK_HEAP_STATS the churn's peak must
+# stay within `bound` times the once's: before the fix the churn's peak grew
+# with the count (86,046 bytes live after two thousand string rounds against 89
+# for one -- the stored-back bodies, never dropped).
+kind    = "probe"
+program = "tests/backend/programs/held_addr_churn.npk"
+against = "tests/backend/programs/held_addr_once.npk"
+bound   = 2
+expect  = "pass"
