@@ -1,0 +1,40 @@
+// expect-exit: 70
+// DEF-224, D-352 (1.6.1e, landing 109): `failsafe`'S PICK MAY COME FROM A
+// STATEMENT MACRO. A statement-position expansion is a BLOCK holding the
+// statements (MACRO_REFERENCE §5), and the reach analysis read `failsafe`'s own
+// statements alone, so the one shape that lets a project keep ONE arm set for
+// many utilities (the library seat's PX-010: sixty of them) was REACH-001. The
+// pick is found through bare blocks now -- a bare block runs unconditionally,
+// so every trap reaches it, which is all D-179 asks. The trap is real: an
+// index the compiler cannot fold reaches the runtime bounds check, the arm
+// answers 70. The same program with the pick written by hand in a bare block
+// is `failsafe_pick_block.npk`; a pick inside a CONDITIONAL block stays
+// REACH-001 (`tests/analysis/rejection/failsafe_cond_pick.npk`).
+mod:failsafe_pick_macro;
+
+macro:shared_failsafe = (E) {
+    pick (E) {
+        (OutOfBounds)       { exit 70i32; },
+        (IntOverflow)       { exit 71i32; },
+        (Unreachable)       { exit 72i32; },
+        (HeapOom)           { exit 73i32; },
+        (HeapBadRequest)    { exit 74i32; },
+        (WildLeak)          { exit 75i32; },
+        (StackExhausted)    { exit 76i32; },
+        (MachineFault)      { exit 77i32; },
+        (DecreasesViolated) { exit 78i32; },
+        (*)                 { exit 79i32; }
+    }
+};
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int64:i = argv.len * 10i64;
+    int32:v = a[i];
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    #shared_failsafe(e);
+    exit 9i32;
+};

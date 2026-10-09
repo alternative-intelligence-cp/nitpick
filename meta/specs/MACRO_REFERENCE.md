@@ -419,6 +419,11 @@ The **block** is worth stating rather than treating as an implementation detail.
 collide with a caller's `tmp`, it cannot be read after the invocation, and a free
 name in the body walks up past the caller's locals to the module. One node carries
 the whole rule, which is why statement-position hygiene needs no check anywhere.
+And the block is BARE -- it runs unconditionally where the invocation stood -- so a
+statement macro invoked in `failsafe`'s body may supply its exhaustive `pick`: the
+reach analysis finds the pick through bare blocks at any depth and never through a
+conditional, a loop or an arm (D-352, DEF-224; landing 109), which is how a project
+keeps ONE arm set for many entry points.
 
 > **This flips the prototype (D-057).** There, an identifier resolving differently
 > in the two scopes emitted `NITPICK-061 MACRO_HYGIENE_VIOLATION` and then **kept

@@ -1,0 +1,34 @@
+// expect-exit: 70
+// DEF-224, D-352 (1.6.1e, landing 109): `failsafe`'S PICK MAY STAND IN A BARE
+// BLOCK, hand-written here, nested twice -- the reach analysis finds it through
+// bare blocks at any depth (a bare block runs unconditionally, so every trap
+// reaches the pick). The twin of `failsafe_pick_macro.npk` with no macro, so a
+// failure here is the walk's and not the expander's.
+mod:failsafe_pick_block;
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int64:i = argv.len * 10i64;
+    int32:v = a[i];
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    {
+        {
+            pick (e) {
+                (OutOfBounds)       { exit 70i32; },
+                (IntOverflow)       { exit 71i32; },
+                (Unreachable)       { exit 72i32; },
+                (HeapOom)           { exit 73i32; },
+                (HeapBadRequest)    { exit 74i32; },
+                (WildLeak)          { exit 75i32; },
+                (StackExhausted)    { exit 76i32; },
+                (MachineFault)      { exit 77i32; },
+                (DecreasesViolated) { exit 78i32; },
+                (*)                 { exit 79i32; }
+            }
+        }
+    }
+    exit 9i32;
+};

@@ -12880,6 +12880,12 @@ finally get names.
 > roots gained an arm. The set this decision promises is computed over what the
 > program REACHES, not over what its own text spells.
 
+> **Note (2026-10-09, 1.6.1e landing 109 — DEF-224, D-352):** "must contain a `pick`" was read by the reach analysis as
+> "among the body's own statements", so a statement macro's expansion (a bare block) and a hand-written bare block hid the
+> pick: REACH-001 for the one shape that lets a project keep ONE arm set for many utilities. The pick is found through
+> bare blocks now, never through a conditional, a loop or an arm -- a bare block runs unconditionally, so every trap reaches
+> the pick, which is all this decision asks. D-352 is the user's ratification, with his words.
+
 ## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED; the sanctioned-crossing list grew a fifth member at 1.4.4 (user-ratified)**
 
 C-8, settled at 1.1.8's close, on evidence that did not exist when the
@@ -22866,3 +22872,38 @@ the advance notice carries them before the landing.
 > **Landing note (2026-10-08, 1.6.1e landing 103, `nitpick-compiler_33`):** `string → fixed uint8[]` in
 > BUILTIN_REFERENCE and the generated table; the sweep's count of the libraries' readers is in `1.6.1e.md`'s record
 > of landing 103 and in NOTICES F45.
+
+## D-352 — `failsafe`'S PICK IS FOUND THROUGH BARE BLOCKS: A STATEMENT MACRO MAY SUPPLY IT — **SETTLED (user decision, 2026-10-09: "I am pretty much fine with recommendations that attempt to strike the best balance of those goals and from the best i can figure what you are proposing does so.")**
+
+**The question, as it was put (DEF-224; the library seat's PX-010).** nitpick-posix wants one shared statement macro to
+supply the exhaustive `pick` for its sixty utilities. A statement macro's expansion is a block (MACRO_REFERENCE §5), and the
+reach analysis looked for the `pick` among `failsafe`'s own top-level statements, so the macro form was `NITPICK-REACH-001`
+("no pick") -- and so was a hand-written `{ pick (e) { … } }`. D-179's own words are that `failsafe` "must contain a `pick`
+over its `Error` parameter whose named arms cover the computed set"; the top-level restriction was the analysis's
+convenience, not the decision's text. What D-179 does require is that every trap REACH that pick, so a pick inside a
+conditional or a loop cannot be the exhaustive one. Recommended: the reach analysis finds the pick through bare blocks,
+nested to any depth (a statement macro's expansion is one), and never through an `if`, a `when`, a loop or another
+`pick`'s arm; one pick, as now -- D-179's guarantee intact (a bare block runs unconditionally), the library seat's shared
+macro possible, a refusal removed and no rule changed. The alternative: keep the top-level rule and have nitpick-posix
+generate a `failsafe` per utility.
+
+**The decision: the recommendation, ratified as written.** `failsafe_pick_in` (reach.npk) walks the body depth-first
+through `StmtBlockStmt` children only and takes the last pick it meets; every other statement kind that holds a block --
+a conditional's, a loop's, an arm's, a `defer`'s -- is not entered, and REACH-001 stands as before for a pick inside one.
+The arm contract (REACH-002) is asked of the pick wherever it was found, so a macro-supplied pick names what the program
+reaches exactly as a hand-written one does, and MACRO-009's note points the report into the macro body.
+
+**How it was ratified.** In `nitpick-compiler_35`'s session, 2026-10-09, about 12:50, to the question as put above with
+its recommendation. The user's words, verbatim: "so this is something i have been actually thining about for a while
+because there isn't really a solution, just tradeoffs. On the one hand i have to think about what it would be like for
+larger projets that may be importing many libraires. Does their failsafe eventually become unmanageable if we don't make
+some accomodations or ways to do things. i'm not suggesting what those accomodations might be in any sense it was just a
+general question. the other side was how do i ensure there are no situations in which an error will be able to fall
+through the cracks. i can't actually guarantee anyone will handle them properly but my thought was that i could at least
+ensure they acknowledged their existance and so we tried to design something around that. I don't know that i have come
+up with any actual insights since i last thought of this though so I am pretty much fine with recommendations that attempt
+to strike the best balance of those goals and from the best i can figure what you are proposing does so." The two goals
+named there -- a `failsafe` a large project importing many libraries can keep, and no error falling through the cracks
+unacknowledged -- are the balance this decision strikes with the mechanism the language already has (one macro, one arm
+set, the acknowledgement forced at the one pick); the broader question (arm-level composition across many libraries'
+error sets: a macro in ARM position does not exist) is registered as S-134 in OPEN_DECISIONS, not acted on.

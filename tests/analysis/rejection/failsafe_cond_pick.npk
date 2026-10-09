@@ -1,0 +1,30 @@
+// expect-error: NITPICK-REACH-001
+//
+// DEF-224, D-352 (1.6.1e, landing 109): the pick is found through BARE blocks
+// and never through a conditional one. A `pick` inside an `if` is not every
+// trap's -- the path on which the condition is false reaches no arm -- so
+// `failsafe` has no pick as far as D-179 is concerned, whatever the condition
+// says (`ALWAYS` here is a constant the analysis does not read: the rule is
+// syntactic, as the rest of the reach analysis is). The same pick in a bare
+// block or in a statement macro's expansion compiles (`failsafe_pick_block.npk`,
+// `failsafe_pick_macro.npk`).
+mod:failsafe_cond_pick;
+
+fixed bool:ALWAYS = true;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+
+func:failsafe = int32(Error:e) {
+    if (ALWAYS) {
+        pick (e) {
+            (Unreachable)       { exit 72i32; },
+            (HeapOom)           { exit 73i32; },
+            (HeapBadRequest)    { exit 74i32; },
+            (WildLeak)          { exit 75i32; },
+            (StackExhausted)    { exit 76i32; },
+            (MachineFault)      { exit 77i32; },
+            (*)                 { exit 79i32; }
+        }
+    }
+    exit 9i32;
+};

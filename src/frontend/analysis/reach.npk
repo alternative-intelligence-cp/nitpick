@@ -965,6 +965,31 @@ func:reach_expr_window = NIL(Reach->:x, int32:start, int32:count,
 // --- the verdict --------------------------------------------------------------------
 
 // After the walk: fold in the system family, find failsafe's pick, compare.
+// `failsafe`'s pick: the LAST pick statement in a depth-first walk of `sid`
+// through BARE blocks, or 0 (DEF-224, D-352). A block that is not bare -- a
+// conditional's, a loop's, an arm's, a `defer`'s -- is another statement kind
+// and is not entered. `fuel` is the tree's own bound (`REACH_DEPTH`): the parser
+// refuses a deeper tree (NITPICK-PARSE-012), so the walk ends by construction.
+func:failsafe_pick_in = int32(Reach->:x, StmtId:sid, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass 0i32; }
+    StmtNode:bn = raw ast_stmt(x.ast, sid);
+    if (bn.kind != StmtKind.StmtBlockStmt) { pass 0i32; }
+    int32:found = 0i32;
+    int32:i = 0i32;
+    int32:nstmts = raw stmt_list_count(bn);
+    while (i < nstmts) decreases nstmts - i {
+        StmtId:cid = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(bn), i) };
+        StmtNode:sn = raw ast_stmt(x.ast, cid);
+        if (sn.kind == StmtKind.StmtPickStmt) { found = cid.index; }
+        if (sn.kind == StmtKind.StmtBlockStmt) {
+            int32:inner = raw failsafe_pick_in(x, cid, fuel - 1i32);
+            if (inner != 0i32) { found = inner; }
+        }
+        i = i + 1i32;
+    }
+    pass found;
+};
+
 pub func:reach_settle = NIL(Reach->:x) never fails {
     // EVERYTHING THE PROGRAM REACHES IS WALKED BEFORE THE SET IS READ (DEF-86,
     // 1.5.8b step 6b): the queue holds every callee the module walk met that
@@ -1046,21 +1071,18 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     }
     DeclNode:fsd = raw ast_decl(x.ast, DeclId{ index: x.failsafe_decl });
 
-    // Find the ONE top-level pick over the parameter in failsafe's body.
+    // THE PICK IS FOUND THROUGH BARE BLOCKS (DEF-224, D-352; 1.6.1e landing 109).
+    // D-179 says `failsafe` "must contain" the pick, and what the rule needs is
+    // that every trap REACHES it: a bare block runs unconditionally, so a pick
+    // inside one is every trap's, and a statement macro's expansion IS a bare
+    // block (expand.npk builds it as one) -- which is how a project keeps ONE
+    // arm set for many utilities (the library seat's PX-010). Until this landing
+    // the walk read the body's own statements alone, and the macro form and a
+    // hand-written `{ pick (e) { … } }` were REACH-001. A pick inside an `if`,
+    // a `when`, a loop or another pick's arm is not every trap's and is not
+    // found: REACH-001, as before.
     StmtId:body = raw fn_body(x.ast, fsd);
-    StmtNode:bn = raw ast_stmt(x.ast, body);
-    int32:pick_at = 0i32;
-    if (bn.kind == StmtKind.StmtBlockStmt) {
-        int32:i = 0i32;
-        int32:nstmts = raw stmt_list_count(bn);
-        while (i < nstmts) decreases nstmts - i {
-            StmtId:sid = StmtId{ index: raw ast_id_at(x.ast,
-                                     raw stmt_list_start(bn), i) };
-            StmtNode:sn = raw ast_stmt(x.ast, sid);
-            if (sn.kind == StmtKind.StmtPickStmt) { pick_at = sid.index; }
-            i = i + 1i32;
-        }
-    }
+    int32:pick_at = raw failsafe_pick_in(x, body, raw REACH_DEPTH());
     if (pick_at == 0i32) {
         drop diaglist_push(x.diags, raw diag_error(raw REACH_NO_PICK(),
             "`failsafe` names what can reach it (D-179): its body carries a `pick` over its `Error` parameter whose arms NAME every reachable error — the compiler computed the set, and `(*)` may stand beneath the names but not in for them",
