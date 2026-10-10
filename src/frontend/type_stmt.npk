@@ -36,7 +36,8 @@ use "./expr_types.npk".*;
 use "./type_expr.npk".*;
 use "./type_members.npk".*;
 use "./type_trait.npk".*;   // assoc_binding_of (D-166)
-use "./resolve_codes.npk".*;   // RESOLVE_UNKNOWN: a `(module.Name)` arm naming nothing is the identifier's own code (D-275, D-240)
+use "./resolve_codes.npk".*;   // RESOLVE_UNKNOWN: a `(module.Name)` arm naming nothing is the id
+use "./macro/derive_codes.npk".*;   // DERIVE_ATTRIBUTE: an attribute on a binding (DEF-236 (d), landing 113)entifier's own code (D-275, D-240)
 use "./builtins.npk".*;        // is_builtin_name: the names a CALLABLE binding cannot take (D-296)
 
 // A CALLABLE BINDING MAY NOT TAKE A BUILTIN'S NAME (D-296, 1.5.6b step 4b) --
@@ -2103,6 +2104,20 @@ pub func:refuse_hidden_touch = bool(ExprTyper->:e, int32:sty, int32:fname, strin
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
 // inferred, the type was written down and the literal reads it.
 func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
+    // AN ATTRIBUTE DECORATES A DECLARATION, AND A BINDING TAKES NONE (DEF-236
+    // (d), 1.6.1e landing 113; the library listener's F-039 (d)): the parser
+    // gathers `#[…]` before a local as before any declaration, and nothing read
+    // the window -- `#[nosuch] int32:v = 1i32;` compiled with the attribute
+    // ignored in silence. Refused by name, each; `#[derive(…)]` is the one
+    // attribute the language has (D-020) and it generates from a TYPE's shape.
+    int32:vac = raw stmt_decl_attr_count(e.ast, s);
+    for (int32:vai in 0i32...vac) {
+        DeclNode:van = raw ast_decl(e.ast, raw stmt_decl_attr(e.ast, s, vai));
+        discard(raw te_error(e, raw DERIVE_ATTRIBUTE(),
+            string_concat(string_concat("`#[", raw intern_get(e.interns, raw attr_name(van))),
+                "]` decorates nothing here: an attribute belongs to a declaration -- a `struct`, an `enum`, a `trait` or a function -- and a binding takes none; `#[derive(…)]` is the one attribute the language has (D-020)"),
+            van.span));
+    }
     TypeResolver:r = raw etyper_resolver(e);
     TypeId:ann = raw stmt_decl_type(s);
     int32:want = raw resolve_type(@r, ann, e.scope);
@@ -3359,6 +3374,20 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
                         discard(raw te_error(e, raw TYPE_THREAD_RULES(),
                             "`joins` takes a `Duration` (D-181): a deadline is a span, and the executor converts it to an absolute monotonic timepoint once, where it is created",
                             jcv.span));
+                    } else {
+                        // A CONSTANT EXPRESSION ONLY (D-181 §2, D-083; DEF-236 (c),
+                        // 1.6.1e landing 113): the deadline is fixed where the
+                        // executor is created and REVIEWABLE there -- an inline
+                        // `Duration{ ns: … }` of constants, a `fixed` module
+                        // binding of `Duration`, or `comptime(…)`. A call or a
+                        // parameter's value was accepted and computed at the
+                        // spawn, which is what D-083 forbids. The module-constant
+                        // gate's own verdict decides (D-165's notion of constant).
+                        if ((raw const_init_verdict(e, raw contract_cond(jcv))) != 0i32) {
+                            discard(raw te_error(e, raw TYPE_THREAD_RULES(),
+                                "`joins` takes a CONSTANT `Duration` (D-181, D-083): an inline `Duration{ ns: … }` of constants, a `fixed` module binding of `Duration`, or `comptime(…)` -- a join deadline is fixed where the executor is created and reviewed there, so a call or a parameter's value, computed at the spawn, cannot be one",
+                                jcv.span));
+                        }
                     }
                 }
             }

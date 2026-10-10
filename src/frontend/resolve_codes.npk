@@ -60,3 +60,10 @@ pub func:RESOLVE_NO_HEADER = string() never fails   { pass "NITPICK-RESOLVE-012"
 // here, so a library cannot smuggle an entry point and the emitter's by-name
 // `@main`/`@npk_failsafe` is the root's by construction.
 pub func:RESOLVE_ENTRY_OUTSIDE_ROOT = string() never fails { pass "NITPICK-RESOLVE-013"; };
+// AN `extern`-BLOCK ITEM STANDING OUTSIDE ONE (DEF-236 (e), 1.6.1e landing 113;
+// the library listener's F-039 (e) and F-042 (a)): `opaque struct:Name;` at
+// module level, which D-066 (as narrowed by D-149) makes an `extern`-block item
+// only. The parser never restricts (D-085) and accepted it anywhere, with the
+// semantic refusal its own comment promised never written; the loader's
+// owned-name walk refuses it where it stands.
+pub func:RESOLVE_EXTERN_ITEM = string() never fails { pass "NITPICK-RESOLVE-014"; };

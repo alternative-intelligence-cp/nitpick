@@ -1,6 +1,4 @@
 // expect-error: NITPICK-RESOLVE-006
-// expect-error-at: 14:1
-// expect-error: NITPICK-RESOLVE-006
 // expect-error-at: 15:1
 //
 // The second half of D-086's unresolvable-cycle rule. Unlike the struct case
@@ -10,6 +8,9 @@
 // This one could not be checked before names were bound -- it is a question
 // about an EXPRESSION, and until phase 2 there is no way to know which global
 // `SECOND` refers to.
+//
+// ONE CYCLE, ONE REPORT (DEF-234 (c), landing 113; D-240): at the first member in
+// source order, naming the chain -- "`FIRST` reads `SECOND` reads `FIRST`".
 mod:global_cycle;
 pub fixed int32:FIRST = SECOND;
 pub fixed int32:SECOND = FIRST;

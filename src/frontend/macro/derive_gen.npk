@@ -1356,6 +1356,58 @@ pub func:rehome_derived = NIL(ModuleGraph->:g) never fails {
     pass NIL;
 };
 
+// EVERY ATTRIBUTE NAMES THE ONE ATTRIBUTE THERE IS (DEF-236 (d), landing 113):
+// a window of attributes is read for a name that is not `derive`, and each such
+// attribute is refused -- `#[lexical_drop]` (removed, D-003), `#[nosuch]` (never
+// was). Before this the derive reader read the `derive` ones and left the rest
+// standing, accepted and ignored in silence. One sentence for every window:
+// the item kinds', a function's and an impl's.
+func:attrs_known = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
+                       int32:count, DeclNode:d, bool:is_fn, bool:is_impl) never fails {
+    for (int32:a in 0i32...count) {
+        DeclId:aid = DeclId{ index: 0i32 };
+        if (is_fn) { aid = raw fn_attr(ast, d, a); }
+        else { if (is_impl) { aid = raw impl_attr(ast, d, a); } else { aid = raw item_attr(ast, d, a); } }
+        DeclNode:at = raw ast_decl(ast, aid);
+        string:aname = raw intern_get(interns, raw attr_name(at));
+        if (raw string_eq(aname, "derive")) { continue; }
+        string:m1 = string_concat("`#[", aname);
+        string:m2 = string_concat(m1, "]` is not an attribute of the language: `#[derive(…)]` is the one attribute (D-020)");
+        if (raw string_eq(aname, "lexical_drop")) {
+            m2 = string_concat(m2, " -- `#[lexical_drop]` and `#[nll_drop]` were removed (D-003): deterministic RAII at scope exit is the only behaviour, so there is nothing to force");
+        } else {
+            if (raw string_eq(aname, "nll_drop")) {
+                m2 = string_concat(m2, " -- `#[lexical_drop]` and `#[nll_drop]` were removed (D-003): deterministic RAII at scope exit is the only behaviour, so there is nothing to force");
+            } else {
+                m2 = string_concat(m2, "; a name the compiler does not read would be accepted and ignored in silence, which is not what an attribute is for");
+            }
+        }
+        drop diaglist_push(diags, raw diag_error(raw DERIVE_ATTRIBUTE(), move(m2), at.span));
+    }
+    pass NIL;
+};
+
+// THE METHODS OF A TRAIT OR AN IMPL CARRY ATTRIBUTE WINDOWS OF THEIR OWN
+// (functions), read here so a `#[nosuch]` on a method is refused as on a free
+// function; a `#[derive]` on a method is the function case's (DERIVE-004).
+func:attrs_in_members = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
+                            DeclNode:d, bool:is_impl) never fails {
+    int32:n = 0i32;
+    if (is_impl) { n = raw impl_member_count(ast, d); }
+    else { n = raw item_member_count(ast, d); }
+    for (int32:i in 0i32...n) {
+        DeclId:mid = DeclId{ index: 0i32 };
+        if (is_impl) { mid = raw impl_member(ast, d, i); }
+        else { mid = raw item_member(ast, d, i); }
+        DeclNode:mem = raw ast_decl(ast, mid);
+        if (mem.kind == DeclKind.DeclFunctionDecl) {
+            drop attrs_known(ast, interns, diags, raw fn_attr_count(ast, mem), mem, true, false);
+            drop derive_on_function(ast, interns, diags, mem);
+        }
+    }
+    pass NIL;
+};
+
 pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
                              DeclId:mod_id) never fails {
     DeclNode:m = raw ast_decl(ast, mod_id);
@@ -1366,6 +1418,30 @@ pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 
         bool:is_type = (d.kind == DeclKind.DeclStructDecl);
         if (d.kind == DeclKind.DeclEnumDecl) { is_type = true; }
+
+        // THE NAMES FIRST (DEF-236 (d)): every window this declaration carries.
+        if (d.kind == DeclKind.DeclStructDecl) { drop attrs_known(ast, interns, diags, raw item_attr_count(ast, d), d, false, false); }
+        if (d.kind == DeclKind.DeclEnumDecl) { drop attrs_known(ast, interns, diags, raw item_attr_count(ast, d), d, false, false); }
+        if (d.kind == DeclKind.DeclTraitDecl) {
+            drop attrs_known(ast, interns, diags, raw item_attr_count(ast, d), d, false, false);
+            drop attrs_in_members(ast, interns, diags, d, false);
+        }
+        if (d.kind == DeclKind.DeclFunctionDecl) { drop attrs_known(ast, interns, diags, raw fn_attr_count(ast, d), d, true, false); }
+        if (d.kind == DeclKind.DeclImplDecl) {
+            // an impl carries a window too (`#[derive]` on one is the function
+            // case's sentence: there is no shape to generate from)
+            drop attrs_known(ast, interns, diags, raw impl_attr_count(ast, d), d, false, true);
+            int32:iac = raw impl_attr_count(ast, d);
+            for (int32:ia in 0i32...iac) {
+                DeclNode:iat = raw ast_decl(ast, raw impl_attr(ast, d, ia));
+                if (raw string_eq(raw intern_get(interns, raw attr_name(iat)), "derive")) {
+                    drop diaglist_push(diags, raw diag_error(raw DERIVE_TARGET(),
+                        "`#[derive]` generates an implementation from a type's shape — its fields, or its variants — so it belongs on a `struct` or an `enum` and there is nothing here to generate from",
+                        iat.span));
+                }
+            }
+            drop attrs_in_members(ast, interns, diags, d, true);
+        }
 
         if (d.kind == DeclKind.DeclModuleDecl) {
             drop derive_module(ast, interns, diags, id);

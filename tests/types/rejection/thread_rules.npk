@@ -3,6 +3,8 @@
 // expect-error: NITPICK-TYPE-043
 // expect-error: NITPICK-TYPE-045
 // expect-error: NITPICK-TYPE-045
+// expect-error: NITPICK-TYPE-045
+// expect-error: NITPICK-TYPE-045
 //
 // D-181's rules for the `thread` modifier. A thread body owns an executor
 // and the arena its task frames come from (D-034), which is what makes it a
@@ -16,7 +18,23 @@
 // last declaration earns FOUR refusals between D-177 and D-181 — async
 // failsafe, thread failsafe, and a non-NIL success — which is the rules
 // composing rather than overlapping: each names a different thing wrong.
+//
+// And the deadline is a CONSTANT (D-181 §2, D-083; DEF-236 (c), landing 113):
+// `joins raw duration_secs(1i64)` (a call) and `joins Duration{ ns: n }` (a
+// parameter's value) were accepted and computed at the spawn; a literal of
+// constants and a `fixed` module binding (the two controls) are what the rule
+// admits.
 mod:thread_rules;
+
+fixed Duration:LIMIT = Duration{ ns: 1000000000i64 };
+
+thread async func:deadline_call = NIL(int64:_~n) joins raw duration_secs(1i64) { pass NIL; };
+
+thread async func:deadline_param = NIL(int64:n) joins Duration{ ns: n } { pass NIL; };
+
+thread async func:deadline_literal = NIL(int64:_~n) joins Duration{ ns: 1000000000i64 } { pass NIL; };
+
+thread async func:deadline_fixed = NIL(int64:_~n) joins LIMIT { pass NIL; };
 
 thread func:not_async = NIL(int32:_~v) {
     pass NIL;

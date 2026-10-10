@@ -740,6 +740,22 @@ func:owned_names_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:pscope) n
             drop owned_names_in_members(g, pscope, d, true);
             continue;
         }
+        // AN `opaque struct` IS AN `extern`-BLOCK ITEM (D-066 as narrowed by
+        // D-149; DEF-236 (e), 1.6.1e landing 113): one at module level declares a
+        // type nothing can ever give a layout, and the parser -- which never
+        // restricts (D-085) -- accepted it in silence where its own comment
+        // promised "an opaque struct is only legal inside an extern block" from
+        // this phase. Refused here, where the module's own declarations are read;
+        // inside a block it is the Bridge reader's (EXTERN-001, the reserved
+        // wire-handle tier, D-190).
+        if (d.kind == DeclKind.DeclOpaqueDecl) {
+            string:opq_name = raw intern_get(g.interns, raw decl_name(d));   // (`on` is a keyword: DEF-235's own lesson, met writing its landing)
+            string:o1 = string_concat("`opaque struct:", opq_name);
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_EXTERN_ITEM(),
+                string_concat(o1, ";` is an `extern`-block item (D-066, D-149): a type whose layout belongs to a DRIVER, legal only inside `extern:\"…\" = { … };` -- at module level it names a type nothing can give a size; declare a `struct` with fields, or move it into the driver's block (where the wire-handle tier is still the reserved one, D-190)"),
+                d.span));
+            continue;
+        }
         drop owned_name_error(g, pscope, raw decl_name(d), raw owned_what(d), d.span, false);
         if (d.kind == DeclKind.DeclFunctionDecl) {
             // D-294. A generated function (an `extern` method's stub) was

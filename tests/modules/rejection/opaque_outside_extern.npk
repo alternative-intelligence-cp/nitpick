@@ -1,0 +1,21 @@
+// expect-error: NITPICK-RESOLVE-014
+// expect-error-at: 14:1
+// expect-error: NITPICK-RESOLVE-014
+// expect-error-at: 17:5
+//
+// AN `opaque struct` IS AN `extern`-BLOCK ITEM (D-066, as narrowed by D-149;
+// DEF-236 (e), 1.6.1e landing 113; the library listener's F-039 (e) / F-042 (a)).
+// The parser accepts it anywhere (D-085: the parser never restricts) and the
+// semantic refusal its comment promised was never written, so `opaque
+// struct:OpHandle;` at module level -- and inside an inline module -- compiled
+// and declared a type nothing could ever give a layout. Refused where the
+// module's declarations are read, at the declaration.
+mod:opaque_outside_extern;
+opaque struct:OpHandle;
+
+mod:inner = {
+    opaque struct:DbHandle;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

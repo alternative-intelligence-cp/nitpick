@@ -517,7 +517,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         if (raw is_digit(c)) {
             FloatScan:fs = raw num_float_scan(lx.text, start, lx.pos);
             if (fs.is_float) {
-                while (lx.pos < fs.end) decreases fs.end - lx.pos {
+                while (lx.pos < fs.tail_end) decreases fs.tail_end - lx.pos {
                     discard(raw lexer_advance(lx));
                 }
                 Span:fsp = raw lexer_span_from(lx, start, line, col);
@@ -528,7 +528,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 // have the parser say "expected an expression" about the same
                 // mistake (D-240), and the driver stops before expansion on
                 // any diagnostic, so nothing reads the literal further.
-                string:tail = raw slice_proven(lx.text, fs.body_end, fs.end);
+                string:tail = raw slice_proven(lx.text, fs.body_end, fs.tail_end);
                 NumWidth:fw = NumWidth.WNone;
                 if (tail.len > 0i64) {
                     fw = raw num_width_of(tail);

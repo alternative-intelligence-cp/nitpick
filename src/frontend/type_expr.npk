@@ -2299,7 +2299,11 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) never fails {
                                         raw type_display(e.types, e.interns, t));
         string:m2 = string_concat(m1, "`");
         if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
-            m2 = string_concat(m2, "; `?` is the one that unwraps a `Result`");
+            // THE ADVICE NAMES THE LIVING SPELLINGS (DEF-237, landing 113; the
+            // library listener's F-045): it said "`?` is the one that unwraps a
+            // `Result`", and `?` was retired by D-175 -- followed, the advice was
+            // PARSE-011.
+            m2 = string_concat(m2, "; a `Result` is unwrapped by `?!` (trap on the error) or `?|` (a fallback value), D-175 -- the bare `?` is retired");
         }
         // A POINTER IS THE MISTAKE WORTH NAMING, because the prototype accepted
         // it and somebody may arrive expecting it to work. Both halves of what it

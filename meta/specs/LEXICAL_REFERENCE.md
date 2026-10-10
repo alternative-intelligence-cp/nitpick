@@ -124,6 +124,17 @@ BuiltinType         ::= "int8" | "int16" | "int32"
 BuiltinHelper       ::= "is" | "in" | "is_err"
 ```
 
+> **Note (2026-10-09, 1.6.1e landing 113 — DEF-235, DEF-103):** no keyword is a
+> declared name of ANY kind — a function, a type, a trait, a module, an error, a
+> unit, a rule, a macro, a local or module binding, a parameter, a `for` binding, a
+> field or a variant — and the parser refuses the declaration (`NITPICK-PARSE-001`
+> naming the keyword) where it is written. `acquire`, `any`, `trit` and `nit` were
+> exempt for method names from DEF-103 (1.6.0) until landing 113; the exemption
+> could never work (a keyword token in declaration position carries no intern, so
+> such a method was never found) and let `func:any`, `struct:any` and `mod:trit`
+> through at module level. The dotted spellings `m.acquire()`, `v.any()`,
+> `t.trit(i)` and `n.nit(i)` are the compiler's own intercepts, declared nowhere.
+
 > **`vec2`, `vec3`, `vec9`, `matrix`, `tmatrix`, `tensor` and `ttensor` were
 > keywords and are not** (D-135). They are **library types** now, built on
 > `simd<T, N>`, and a library cannot declare a type whose name is a keyword — so

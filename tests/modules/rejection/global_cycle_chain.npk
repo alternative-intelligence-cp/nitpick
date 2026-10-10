@@ -1,0 +1,24 @@
+// expect-error: NITPICK-RESOLVE-006
+// expect-error-at: 15:1
+// expect-error: NITPICK-RESOLVE-006
+// expect-error-at: 20:1
+//
+// A CONSTANT CYCLE IS ONE REPORT NAMING ITS MEMBERS IN ORDER (MODULE_REFERENCE §1
+// rule 2; DEF-234 (c), 1.6.1e landing 113; the library listener's F-034 (c)). Every
+// member of a three-way cycle was "initialised from itself" in a sentence of its
+// own -- three reports, none saying through what. The report stands at the first
+// member in source order and reads "`A` reads `B` reads `C` reads `A`"; a second,
+// separate cycle (through a struct literal's field) is its own report. A binding
+// that merely READS a member of a cycle (`USES`) is not reported: its own value
+// would compute if the cycle were broken.
+mod:global_cycle_chain;
+fixed int32:A = B + 1i32;
+fixed int32:B = C + 1i32;
+fixed int32:C = A + 1i32;
+fixed int32:USES = A * 2i32;
+struct:P = { int32:x; int32:y; };
+fixed P:Q = P{ x: R.y, y: 1i32 };
+fixed P:R = P{ x: 2i32, y: Q.x };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

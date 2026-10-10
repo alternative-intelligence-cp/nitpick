@@ -1,0 +1,18 @@
+// expect-error: NITPICK-DERIVE-007
+// expect-error-at: 14:32
+// expect-error: NITPICK-DERIVE-007
+// expect-error-at: 15:32
+//
+// A BINDING TAKES NO ATTRIBUTE (DEF-236 (d), 1.6.1e landing 113; the library
+// listener's F-039 (d)). The parser gathers `#[…]` before a local as before any
+// declaration, and nothing read the window: `#[nosuch] int32:v = 1i32;` compiled
+// with the attribute ignored in silence. The checker refuses each (`check_var_decl`;
+// the same code the derive reader gives an unknown attribute on a declaration,
+// `tests/derive/rejection/attribute_unknown.npk`, since the attribute vocabulary is
+// the derive reader's: `#[derive(…)]` is the one attribute, D-020).
+mod:attribute_on_binding;
+func:h = int32() never fails { #[nosuch] int32:v = 1i32; pass v; };
+func:k = int32() never fails { #[derive(Eq)] int32:w = 2i32; pass w; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

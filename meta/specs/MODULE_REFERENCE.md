@@ -186,6 +186,11 @@ The loader must therefore:
    depends on itself other than through a pointer, or a `const` whose initialiser
    depends on itself. The diagnostic names the members in the order they refer to
    each other; "circular import" is not something a reader can act on.
+   > **Note (2026-10-09, 1.6.1e landing 113 — DEF-234 (c)):** kept for a constant
+   > cycle at last: ONE `NITPICK-RESOLVE-006`, at the first member in source order,
+   > reading "`A` is initialised from itself, so its value cannot be computed: `A`
+   > reads `B` reads `C` reads `A`". Until then every member was a report of its own
+   > and none said through what.
 3. **Never make resolution order-dependent.** The same module graph must produce
    the same program regardless of which member the loader entered first. This is
    a reproducibility requirement before it is a convenience: a build that depends

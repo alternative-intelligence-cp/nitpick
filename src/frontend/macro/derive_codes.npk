@@ -54,3 +54,11 @@ pub func:DERIVE_SIMD_FIELD = string() never fails   { pass "NITPICK-DERIVE-005";
 // rendering, and copies only when its elements are scalars. The impl is
 // written by hand and says what the comparison, hash, rendering or copy means.
 pub func:DERIVE_UNCOMPARABLE = string() never fails { pass "NITPICK-DERIVE-006"; };
+// AN ATTRIBUTE THE LANGUAGE DOES NOT HAVE, OR ONE WHERE NONE BELONGS (DEF-236 (d),
+// 1.6.1e landing 113; the library listener's F-039 (d)): `#[derive(…)]` is the
+// one attribute (D-020); `#[lexical_drop]` and `#[nll_drop]` were removed (D-003)
+// and `#[nosuch]` never existed -- each was accepted and ignored in silence on a
+// struct, an enum, a trait, a function, an impl and a local binding. The derive
+// reader, the one consumer of attributes, refuses a name it does not read, and
+// the statement checker refuses any attribute on a binding.
+pub func:DERIVE_ATTRIBUTE = string() never fails    { pass "NITPICK-DERIVE-007"; };

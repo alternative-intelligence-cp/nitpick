@@ -184,7 +184,7 @@ func:strip_type_suffix = int64(string:run) never fails {
 pub struct:FloatScan = {
     bool:is_float;     // false: not `digits . digit`, and the caller scans an integer
     int64:body_end;    // one past the numeric body
-    int64:end;         // one past the tail: where the token ends
+    int64:tail_end;    // one past the tail: where the token ends (`end` is a keyword: DEF-235, landing 113)
 };
 
 func:dec_digit = bool(uint8:c) never fails {
@@ -208,7 +208,7 @@ func:skip_digit_run = int64(string:text, int64:at) never fails {
 // `text` is the SOURCE, `start` the literal's first byte and `dot` the byte
 // after the lexer's first [0-9a-zA-Z_] run -- where a float's dot stands.
 pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never fails {
-    FloatScan:no = FloatScan{ is_float: false, body_end: dot, end: dot };
+    FloatScan:no = FloatScan{ is_float: false, body_end: dot, tail_end: dot };
     // A FLOAT NEEDS A DIGIT AFTER THE DOT: `0...4` is a range, and this is the
     // check that keeps it one (the seed walked into that case in 0.0.2).
     if ((dot + 1i64) >= text.len) { pass no; }
@@ -274,7 +274,7 @@ pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never f
             }
         }
     }
-    pass FloatScan{ is_float: true, body_end: body_end, end: p };
+    pass FloatScan{ is_float: true, body_end: body_end, tail_end: p };
 };
 
 // THE TEXT A FLOAT KEEPS: its numeric body without the `_` separators, then
@@ -291,7 +291,7 @@ pub func:num_float_text = string(string:text, int64:start, FloatScan:fs) never f
         i = i + 1i64;
     }
     out = string_concat(out, raw slice_proven(text, lo, fs.body_end));
-    pass (string_concat(out, raw slice_proven(text, fs.body_end, fs.end)));
+    pass (string_concat(out, raw slice_proven(text, fs.body_end, fs.tail_end)));
 };
 
 // --- the scan ---------------------------------------------------------------

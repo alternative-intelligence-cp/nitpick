@@ -329,6 +329,24 @@ pub func:p_qualifiers = int32(Parser->:p) never fails {
     pass q;
 };
 
+// A BINDING'S, A FIELD'S, A VARIANT'S OR A PARAMETER'S NAME IS AN IDENTIFIER
+// (DEF-235 (b), landing 113; the library listener's F-029): `wild int8->:buffer
+// = alloc(16i64);` was accepted at its declaration while `int64:buffer` was
+// refused -- the qualifier settled "this is a declaration" before the
+// declaration-recognition scan could ask whether the name was one -- and the
+// block could then never be freed (`buffer` reads as the type keyword). The same
+// read served a parameter, a `for` binding, a field and a variant; one helper
+// now, one sentence.
+pub func:p_binding_name = Token(Parser->:p) never fails {
+    Token:name = raw p_advance(p);
+    if (name.kind == TokenKind.Ident) { pass name; }
+    drop p_error_at(p, raw PARSE_EXPECTED(),
+        string_concat(string_concat("expected a name: `", raw token_kind_name(name.kind)),
+            "` is a keyword and cannot name a binding, a parameter, a field or a variant, since it reads as the keyword wherever it is used and the declaration could never be named"),
+        name.span);
+    pass name;
+};
+
 // Called by every loop that reads a SEQUENCE of items -- block statements,
 // module items, struct fields, `pick` arms.
 //

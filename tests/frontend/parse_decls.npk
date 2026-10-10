@@ -54,8 +54,14 @@ func:main = int32(cstring[]:_~argv) {
     // --- a declared name is an identifier (DEF-103, 1.6.0 step 3g) --------------
     // `release` is a keyword wherever it is USED, so a function so named could be
     // declared and never called; the declaration refuses now (PARSE-001), as a
-    // keyword-named binding already did. A keyword the lexer interns as a name
-    // after a `.` (`acquire`) stays a legal method name.
+    // keyword-named binding already did. NO KEYWORD IS EXEMPT (DEF-235, 1.6.1e
+    // landing 113): `acquire`, `any`, `trit` and `nit` were let through for the
+    // method names the expression parser interns after a `.`, and the exemption
+    // was dead where it meant to help (a keyword token in declaration position
+    // carries no intern, so `func:acquire` in an `impl` declared a method that
+    // `x.acquire()` could never find) and live where it did not (a module-level
+    // `func:any` compiled and could never be called). The dotted spellings are the
+    // compiler's own intercepts, declared nowhere; the declaration refuses now.
     {
         TokenList:k7 = raw lex_all(0i32, "func:release = int32(int32:x) never fails { pass x; };", @it, @ld);
         Ast:a7 = raw ast_init();
@@ -69,7 +75,47 @@ func:main = int32(cstring[]:_~argv) {
         Parser:p8 = raw parser_init(@k8, @a8, @g8, @it);
         DeclNode:n8 = raw ast_decl(@a8, raw p_parse_decl(@p8));
         if (n8.kind != DeclKind.DeclFunctionDecl)                 { exit 18i32; }
-        if (raw diaglist_count(@g8) != 0i64)                      { exit 19i32; }
+        if (raw diaglist_count(@g8) != 1i64)                      { exit 19i32; }
+    }
+
+    // --- a binding's, a parameter's, a for binding's and a field's name is an
+    // identifier (DEF-235 (b), landing 113; the library listener's F-029) ----------
+    // `wild int8->:buffer = …` was accepted at its declaration (the qualifier
+    // settled "a declaration" before the name was looked at) and the block could
+    // never be freed; a parameter `int32:any`, a `for` binding `int32:trit` and a
+    // field `int32:nit` were accepted the same way. Each is ONE diagnostic now
+    // (PARSE-001 naming the keyword), the rest of the declaration parsing on.
+    {
+        TokenList:k9 = raw lex_all(0i32, "func:f = int32() never fails { wild int8->:buffer = alloc(16i64); pass 1i32; };", @it, @ld);
+        Ast:a9 = raw ast_init();
+        DiagList:g9 = raw diaglist_init();
+        Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
+        discard(raw p_parse_decl(@p9));
+        if (raw diaglist_count(@g9) != 1i64)                      { exit 151i32; }
+        TokenList:k10 = raw lex_all(0i32, "func:f = int32(int32:any) never fails { pass 1i32; };", @it, @ld);
+        Ast:a10 = raw ast_init();
+        DiagList:g10 = raw diaglist_init();
+        Parser:p10 = raw parser_init(@k10, @a10, @g10, @it);
+        discard(raw p_parse_decl(@p10));
+        if (raw diaglist_count(@g10) != 1i64)                     { exit 152i32; }
+        TokenList:k11 = raw lex_all(0i32, "func:f = int32() never fails { int32:s = 0i32; for (int32:trit in 0i32...3i32) { s = s + 1i32; } pass s; };", @it, @ld);
+        Ast:a11 = raw ast_init();
+        DiagList:g11 = raw diaglist_init();
+        Parser:p11 = raw parser_init(@k11, @a11, @g11, @it);
+        discard(raw p_parse_decl(@p11));
+        if (raw diaglist_count(@g11) != 1i64)                     { exit 153i32; }
+        TokenList:k12 = raw lex_all(0i32, "struct:S = { int32:nit; int32:ok; };", @it, @ld);
+        Ast:a12 = raw ast_init();
+        DiagList:g12 = raw diaglist_init();
+        Parser:p12 = raw parser_init(@k12, @a12, @g12, @it);
+        discard(raw p_parse_decl(@p12));
+        if (raw diaglist_count(@g12) != 1i64)                     { exit 154i32; }
+        TokenList:k13 = raw lex_all(0i32, "func:f = int32() never fails { wild int8->:buf = alloc(16i64); dalloc(buf); pass 1i32; };", @it, @ld);
+        Ast:a13 = raw ast_init();
+        DiagList:g13 = raw diaglist_init();
+        Parser:p13 = raw parser_init(@k13, @a13, @g13, @it);
+        discard(raw p_parse_decl(@p13));
+        if (raw diaglist_count(@g13) != 0i64)                     { exit 155i32; }
     }
 
     // --- generics come AFTER the name (D-030) ----------------------------------
@@ -438,8 +484,10 @@ func:main = int32(cstring[]:_~argv) {
 
         // --- A MACRO BODY IS DECLARATIONS OR STATEMENTS, NOT BOTH (DEF-150's c1) ------
         // `NITPICK-MACRO-010` once, at the first statement of a declaring body; the
-        // parser reports it, so it is tested here for the reason above. A pure
-        // declaration body is silent.
+        // parser reports it, so it is tested here for the reason above. A body of
+        // declarations alone is silent. (The macro was named `pure` until landing
+        // 113 -- a KEYWORD, accepted as a name by the bare read DEF-235 closed; the
+        // case is about the body, so the macro is `decls_only`.)
         TokenList:km1 = raw lex_all(0i32, "macro:mixed = () { func:f = int32() never fails { pass 1i32; }; int32:x = 2i32; };", @it, @ld);
         Ast:am1 = raw ast_init();
         DiagList:gm1 = raw diaglist_init();
@@ -447,7 +495,7 @@ func:main = int32(cstring[]:_~argv) {
         discard(raw p_parse_decl(@pm1));
         if (raw diaglist_count(@gm1) != 1i64)             { exit 148i32; }
         if (!(raw string_eq((raw diaglist_at(@gm1, 0i64)).code, raw MACRO_MIXED_BODY()))) { exit 149i32; }
-        TokenList:km2 = raw lex_all(0i32, "macro:pure = () { func:g = int32() never fails { pass 3i32; }; };", @it, @ld);
+        TokenList:km2 = raw lex_all(0i32, "macro:decls_only = () { func:g = int32() never fails { pass 3i32; }; };", @it, @ld);
         Ast:am2 = raw ast_init();
         DiagList:gm2 = raw diaglist_init();
         Parser:pm2 = raw parser_init(@km2, @am2, @gm2, @it);

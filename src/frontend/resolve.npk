@@ -1073,6 +1073,112 @@ pub func:resolve_audit = int32(Ast->:ast, SymbolTable->:_~tab,
 //
 // Unlike the struct case there is no `->` to break it: a value is a value.
 
+// THE CHAIN OF GLOBALS from this expression back to `target`, in the order they
+// refer to each other (DEF-234 (c), landing 113): the globals the expression
+// reads (`init_mentions`), each followed in turn until one is `target` or reads
+// it; the symbols passed through are pushed onto `chain`, `target` itself last.
+// Depth-first, bounded by `fuel` as `init_reaches` is; a global visited once is
+// not entered again (`seen`), so a side branch that loops without reaching the
+// target cannot spin. Answers whether the target was reached; a chain that stops
+// short is popped back to where it was.
+func:init_cycle_chain = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel,
+                             List<int32>->:chain) never fails {
+    if (fuel <= 0i32) { pass false; }
+    List<int32>:here = raw list_init::<int32>(8i64);
+    drop init_mentions(r, id, 64i32, @here);
+    for (int64:k in 0i64...here.count) {
+        int32:g = here[k];
+        if (g == target) { drop list_push(chain, g); pass true; }
+        bool:seen = false;
+        for (int64:q in 0i64...(<-chain).count) { if ((<-chain)[q] == g) { seen = true; } }
+        if (seen) { continue; }
+        Symbol:gs = raw symtab_get(r.tab, g);
+        if (gs.origin_kind != (raw SYM_DECL())) { continue; }
+        DeclNode:gd = raw ast_decl(r.ast, DeclId{ index: gs.origin });
+        if (gd.kind != DeclKind.DeclGlobalDecl) { continue; }
+        int64:mark = (<-chain).count;
+        drop list_push(chain, g);
+        if (raw init_cycle_chain(r, raw global_init(gd), target, fuel - 1i32, chain)) { pass true; }
+        drop list_truncate(chain, mark);
+    }
+    pass false;
+};
+
+// THE GLOBALS AN EXPRESSION READS DIRECTLY (not transitively): every bound
+// identifier whose symbol is a module binding, in source order, pushed once.
+// The same shape table `init_reaches` walks, shape for shape, for the same
+// reason: a kind that gains a shape gains it in both.
+func:init_mentions = NIL(Resolver->:r, ExprId:id, int32:fuel, List<int32>->:out) never fails {
+    if (fuel <= 0i32) { pass NIL; }
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:e = raw ast_expr(r.ast, id);
+    if (e.kind == ExprKind.ExprIdentifierExpr) {
+        if (e.a == 0i32) { pass NIL; }
+        Symbol:s = raw symtab_get(r.tab, e.a);
+        if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
+        DeclNode:dnode = raw ast_decl(r.ast, DeclId{ index: s.origin });
+        if (dnode.kind != DeclKind.DeclGlobalDecl) { pass NIL; }
+        for (int64:q in 0i64...(<-out).count) { if ((<-out)[q] == e.a) { pass NIL; } }
+        drop list_push(out, e.a);
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(e.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop init_mentions_window(r, raw expr_list_start(e), raw expr_list_count(e), fuel, out);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        if (e.kind == ExprKind.ExprStructLiteralExpr) {
+            int32:spairs = (raw expr_list_count(e)) / 2i32;
+            for (int32:sli in 0i32...spairs) {
+                drop init_mentions(r, ExprId{ index: raw ast_id_at(r.ast, raw expr_list_start(e), (sli * 2i32) + 1i32) }, fuel - 1i32, out);
+            }
+            pass NIL;
+        }
+        int32:gcount = 0i32;
+        if (e.kind == ExprKind.ExprCallExpr)    { gcount = raw expr_generic_count(e); }
+        if (e.kind == ExprKind.ExprBuiltinExpr) { gcount = raw builtin_generic_count(e); }
+        if (e.kind == ExprKind.ExprCallExpr) {
+            drop init_mentions(r, raw expr_callee(e), fuel - 1i32, out);
+        }
+        drop init_mentions_window(r, (raw expr_list_start(e)) + gcount,
+                                  (raw expr_list_count(e)) - gcount, fuel, out);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass NIL; }
+    drop init_mentions(r, ExprId{ index: e.a }, fuel - 1i32, out);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop init_mentions_window(r, raw expr_list_start(e), raw expr_list_count(e), fuel, out);
+        pass NIL;
+    }
+    drop init_mentions(r, ExprId{ index: e.b }, fuel - 1i32, out);
+    if (shape == (raw EXPR_SHAPE_THREE())) {
+        drop init_mentions(r, ExprId{ index: e.c }, fuel - 1i32, out);
+    }
+    pass NIL;
+};
+
+func:init_mentions_window = NIL(Resolver->:r, int32:start, int32:count, int32:fuel,
+                                List<int32>->:out) never fails {
+    for (int32:i in 0i32...count) {
+        drop init_mentions(r, ExprId{ index: raw ast_id_at(r.ast, start, i) }, fuel - 1i32, out);
+    }
+    pass NIL;
+};
+
+// Is the global `sym` declared before member `i` of module `m`? -- the rule that
+// puts one cycle's report at its first member in source order.
+func:global_declared_before = bool(Resolver->:r, DeclNode:m, int32:i, int32:sym) never fails {
+    Symbol:s = raw symtab_get(r.tab, sym);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    for (int32:j in 0i32...i) {
+        if ((raw item_member(r.ast, m, j)).index == s.origin) { pass true; }
+    }
+    pass false;
+};
+
 // Does the expression reach `target` by following bound identifiers into other
 // globals? `fuel` bounds the walk so a graph the checker has not yet rejected
 // cannot spin.
@@ -1181,12 +1287,39 @@ pub func:check_global_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:scope) nev
             int32:sym = raw scope_lookup_local(r.tab, scope, raw decl_name(d));
             if (sym != 0i32) {
                 if (raw init_reaches(r, raw global_init(d), sym, 64i32)) {
-                    string:nm = raw intern_get(r.interns, raw decl_name(d));
-                    string:m1 = string_concat("`", nm);
-                    string:m2 = string_concat(m1,
-                        "` is initialised from itself, so its value cannot be computed");
-                    drop diaglist_push(r.diags,
-                        raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
+                    // ONE CYCLE, ONE REPORT, THE MEMBERS NAMED IN THE ORDER THEY
+                    // REFER TO EACH OTHER (MODULE_REFERENCE's promise; DEF-234 (c),
+                    // 1.6.1e landing 113; D-240): every member was "initialised
+                    // from itself" in a sentence of its own, and none said through
+                    // what. The chain is walked from this binding back to itself
+                    // (`init_cycle_chain`), and the report stands at the FIRST
+                    // member in source order -- a member whose chain passes
+                    // through a binding declared before it in this module has
+                    // been reported with that one.
+                    List<int32>:chain = raw list_init::<int32>(8i64);
+                    bool:found = raw init_cycle_chain(r, raw global_init(d), sym, 64i32, @chain);
+                    bool:earlier = false;
+                    for (int64:ci in 0i64...chain.count) {
+                        if (raw global_declared_before(r, m, i, chain[ci])) { earlier = true; }
+                    }
+                    if (!earlier) {
+                        string:nm = raw intern_get(r.interns, raw decl_name(d));
+                        string:m1 = string_concat("`", nm);
+                        string:m2 = string_concat(m1,
+                            "` is initialised from itself, so its value cannot be computed");
+                        if (found) {
+                            m2 = string_concat(m2, ": ");
+                            m2 = string_concat(m2, string_concat("`", nm));
+                            for (int64:cj in 0i64...chain.count) {
+                                Symbol:cs = raw symtab_get(r.tab, chain[cj]);
+                                m2 = string_concat(m2, "` reads `");
+                                m2 = string_concat(m2, raw intern_get(r.interns, cs.name));
+                            }
+                            m2 = string_concat(m2, "` -- a module binding's value is computed before `main` from literals and other bindings alone (D-165), so one of them must be written as a value");
+                        }
+                        drop diaglist_push(r.diags,
+                            raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
+                    }
                 }
             }
         }

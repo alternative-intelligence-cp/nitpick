@@ -40,7 +40,7 @@ Top-level items. A source file parses to `ModuleDecl`.
 | `MacroDecl` | `name`, `params`, `body_kind`, `body` | invoked as **`#name(args)`** (D-046). The body is declarations, statements, or one expression, and `body_kind` says which — that is what decides where the macro may be invoked (`MACRO_REFERENCE.md` §1) |
 | `MacroSplice` | `invocation: BuiltinExpr` | an invocation standing **where a declaration is expected** — module level, a `struct` body, an `impl` body. Expression position needs no node of its own: there the invocation already *is* a `BuiltinExpr`. Expansion replaces it with whatever the body emits |
 | `ExternBlock` | `library`, `items: ExternFn[]` | **`extern:"libc" = { … };`** (D-088) — the name slot holds a string because a library name is not an identifier |
-| `OpaqueDecl` | `name` | `opaque struct:OpHandle;` — **`extern`-block item only**, carries no fields, no value semantics (D-066) |
+| `OpaqueDecl` | `name` | `opaque struct:OpHandle;` — **`extern`-block item only**, carries no fields, no value semantics (D-066). One at module level (an inline module's too) is `NITPICK-RESOLVE-014` at the declaration since 1.6.1e landing 113 (DEF-236 (e)): the parser accepts it anywhere (D-085) and the loader refuses it where the module's declarations are read; inside a block it is the Bridge reader's reserved tier (EXTERN-001, D-190) |
 | `GlobalDecl` | `name`, `visibility`, `qualifiers`, `type`, `init` | `pub const int32:MAX = 100i32;` |
 | `UnitDecl` | `name`, `expr: Expr` — **`unit:Hertz = 1 / Seconds;`** (D-196, 1.3.3): a named unit for `dim256<U>`. The RHS is unit algebra only — unit names, `1`, `*`, `/`, parentheses — evaluated to an exponent vector at resolve; slot `a` carries visibility flags, slot `b` the RHS `ExprId`, `payload` the name intern. Erased before lowering |
 
@@ -558,7 +558,7 @@ D-230; `whence`, `fcmd` and `advice` are the prelude enums `Whence`, `Fcmd` and
 | `InvariantNode` | `conditions: Expr[]` — attached to loop statements |
 | `LimitNode` | `rule: Ident`, `target: DeclId` (slot `a`, written once by resolve — `limit_target`, 1.5.1) — `limit<r_pos>` on a declaration, a parameter, or as a refinement inside a `Rules` body |
 | `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
-| `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
+| `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only — checked since 1.6.1e landing 113 (DEF-236 (c)): an inline `Duration{ ns: … }` of constants, a `fixed` module binding of `Duration` or `comptime(…)` by the module-constant gate's own verdict (D-165), else `NITPICK-TYPE-045` at the clause (a call or a parameter's value was accepted and computed at the spawn); the program default applies where the clause is absent. |
 | `Gives` | *(no fields)* — the **`gives`** marker clause (D-183, 1.2.6): the function is a factory whose return hands its channels to the caller, which must stash them. A channel-returning function without it is a getter, and creating a channel inside one is refused. |
 | `Pure` | *(no fields)* — the **`pure`** marker clause (D-221, 1.5.1): the body is a function of its arguments and nothing else — no allocation, no I/O, no suspension, no store the caller can see, no callee that is not itself `pure` and NAMED — checked in the body (`NITPICK-TYPE-061`) and read by name at call sites inside contracts, which admit only `never fails` `pure` callees. An impl keeps its trait method's `pure`. Orthogonal to `never fails`: a pure function may `fail`; a contract writes both words. |
 | `DecreasesNode` | `unbounded: bool` (slot `a`: 0 for `decreases E`, 1 for `unbounded`), `measure: Expr?` (slot `b`; none under `unbounded`), `written: int` (slot `c`: how many termination clauses the loop wrote — one is the rule, more is TYPE-072), `after_invariant: bool` (payload: a clause found after `invariant`, the wrong order, TYPE-072) — **the termination clause of a `while`/`when` loop** (D-304, 1.5.8c): `while (c) decreases n - i invariant P { … }` or `while (c) unbounded { … }`, the clause BEFORE `invariant`. The parser keeps every shape (D-085) and the checker refuses by name; `for`, `loop` and `till` carry the slot too, always refused (bounded by construction, D-234/D-022). A function's `decreases E` is a `ContractNode` of kind `decreases` (`CONTRACT_DECREASES`), not this node |
@@ -589,6 +589,13 @@ node tables in §§1–5 and this section is neither one of those nor a table.
 `#[lexical_drop]` and `#[nll_drop]` are **removed** — they existed to force
 deterministic RAII "bypassing standard GC", which is now the only behaviour
 (D-003).
+
+**An attribute the language does not have is refused** (DEF-236 (d), 1.6.1e
+landing 113; `NITPICK-DERIVE-007`): `#[derive(…)]` is the one attribute (D-020),
+so `#[lexical_drop]`, `#[nll_drop]` and any name the compiler does not read are
+refused at the attribute wherever it stands — a struct, an enum, a trait, a
+function, an impl, a method — and a local binding takes no attribute at all. Until
+then each was accepted and ignored in silence.
 
 ---
 

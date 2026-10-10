@@ -1399,6 +1399,14 @@ danger tier in the name, and follows the `#name<T>(...)` builtin convention
 
 ## D-020 — `@` is address-of only; `#` is the compiler-directive sigil — **SETTLED**
 
+> **Note (2026-10-09, 1.6.1e landing 113 — DEF-236 (d)):** `#[derive(…)]` being the
+> ONE attribute, an attribute of any other name is `NITPICK-DERIVE-007` at the
+> attribute wherever it stands (a struct, an enum, a trait, a function, an impl, a
+> method), and a local binding takes no attribute at all. `#[lexical_drop]`,
+> `#[nll_drop]` (D-003's removals) and `#[nosuch]` were each accepted and ignored in
+> silence until then: the derive reader, the one consumer of attributes, read the
+> `derive` ones and left the rest standing.
+
 **Every `@`-prefixed builtin in the specs is wrong.** `@` is the address-of
 operator and nothing else. `@cast<T>(x)` reads as "the address of `cast<T>` of
 x", which is both confusing and a direct blueprint violation — a symbol must not
@@ -4773,6 +4781,13 @@ immediately; a type-varying one costs a new trait and a context-dependent readin
 ---
 
 ## D-066 — `opaque struct:Name;` is the one form, and is `extern`-only — **SETTLED; the C-pointer half is superseded by D-149** (there is no in-process C to point at — an `extern` block is a driver interface, and an opaque struct declared in one is a TYPED WIRE HANDLE the Bridge round-trips by value, never an address)
+
+> **Note (2026-10-09, 1.6.1e landing 113 — DEF-236 (e)):** "`extern`-only" is
+> refused at last: `opaque struct:Name;` at module level (an inline module's too) is
+> `NITPICK-RESOLVE-014` at the declaration, in the loader's owned-name walk. The
+> parser accepted it anywhere by D-085 and the semantic refusal its comment promised
+> was never written; inside a block the wire-handle tier stays EXTERN-001's reserved
+> one (D-190), so no program declares an `opaque struct` today.
 
 Resolves conflict **49**, which recorded two spellings for one concept:
 `FORMAL_DRAFT` 02 §2.7.1's `StructType ::= "struct" | "opaque" "struct"` against
@@ -12501,6 +12516,10 @@ two rows.
 
 ## D-175 — The `Result` fallback is `?|`, not a bare `?`; D-167 kept the wrong survivor — **SETTLED; amends D-167**
 
+> **Note (2026-10-09, 1.6.1e landing 113 — DEF-237):** the one diagnostic that still
+> advised the retired `?` -- `??` on a `Result`, TYPE-007: "`?` is the one that
+> unwraps a `Result`", which followed was PARSE-011 -- names `?!` and `?|` now.
+
 D-167 was right that `?` and `?|` were redundant — one operation, two spellings —
 but it kept the *accidental* spelling and struck the *intended* one. The user's
 design, stated directly: the fallback is `?|`, and a bare `?` was never meant to
@@ -13036,6 +13055,15 @@ answers "how many threads does this program have" exactly and completely,
 and because `main` already works this way.
 
 ### 2. `joins <const Duration>` — where the join deadline is stated
+
+> **Note (2026-10-09, 1.6.1e landing 113 — DEF-236 (c)):** the CONSTANT is checked
+> now. `joins raw duration_secs(1i64)` (a call) and `joins Duration{ ns: n }` (a
+> parameter's value) were accepted and computed at the spawn, which is what D-083's
+> "fixed where the executor is created" forbids; the checker asks the module-constant
+> gate's own verdict of the deadline (D-165's notion: an inline `Duration{ ns: … }`
+> of constants, a `fixed` module binding of `Duration`, `comptime(…)`) and refuses
+> anything else as `NITPICK-TYPE-045` at the clause. `const` here reads `fixed` since
+> D-222.
 
 D-083 requires the deadline fixed where the executor is created, and
 *reviewable*. It rides the declaration in the contract position, beside

@@ -416,6 +416,12 @@ type whose representation belongs to a DRIVER, and it is legal **only inside an
 round-trips by value, minted and honoured on the driver's side of the process
 boundary.
 
+> **Note (2026-10-09, 1.6.1e landing 113 — DEF-236 (e)):** one at module level is
+> `NITPICK-RESOLVE-014` at the declaration now; it was accepted in silence (the
+> parser never restricts, D-085, and the loader's refusal had never been written).
+> Inside a block the wire-handle tier is still the reserved one (EXTERN-001,
+> D-190), so no program declares an `opaque struct` today.
+
 ```nitpick
 extern:"storage_driver" = {
     opaque struct:DbHandle;

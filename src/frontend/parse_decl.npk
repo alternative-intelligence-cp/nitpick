@@ -867,7 +867,7 @@ pub func:p_parse_param = DeclId(Parser->:p) never fails {
         flags = flags | (raw DECL_DISCARDED());
     }
 
-    Token:name = raw p_advance(p);
+    Token:name = raw p_binding_name(p);   // an identifier (DEF-235, landing 113)
     pass (raw ast_add_decl(p.ast, DeclKind.DeclParamDecl, sp,
                              ty.index, lim, flags, name.payload));
 };
@@ -1053,18 +1053,25 @@ func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
 // listener's item): `func:release = …` declared, and every call to it was
 // PARSE-002 "expected an expression", because `release` is a KEYWORD wherever
 // it is used -- a name that can be declared and never named. Refused where it
-// is written, as a keyword-named binding already was. The four keywords the
-// lexer interns as a name after a `.` (`acquire`, `any`, `trit`, `nit`) stay
-// legal method names: the prelude's `Mutex.acquire` is one.
-func:p_declared_name = Token(Parser->:p) never fails {
+// is written, as a keyword-named binding already was.
+//
+// NO KEYWORD IS EXEMPT (DEF-235, 1.6.1e landing 113; the library listener's
+// F-036 (a)). DEF-103 let `acquire`, `any`, `trit` and `nit` through for the
+// method names the expression parser interns after a `.` -- and the exemption
+// was dead where it meant to help and live where it did not: a keyword token in
+// DECLARATION position carries no intern, so `func:acquire` inside an `impl`
+// declared a method named nothing that `x.acquire()` could never find
+// (TYPE-019, measured), while a module-level `func:any`, a `struct:any` and a
+// `mod:trit` were accepted and could never be named. The dotted spellings
+// (`m.acquire()`, `v.any()`, `t.trit(i)`) are the compiler's own intercepts,
+// declared nowhere. Every declared name of every kind comes through here or
+// through `p_binding_name`, and both demand an identifier.
+pub func:p_declared_name = Token(Parser->:p) never fails {
     Token:name = raw p_advance(p);
     if (name.kind == TokenKind.Ident) { pass name; }
-    if (name.kind == TokenKind.KwAcquire) { pass name; }
-    if (name.kind == TokenKind.KwAny) { pass name; }
-    if (name.kind == TokenKind.KwTrit) { pass name; }
-    if (name.kind == TokenKind.KwNit) { pass name; }
     drop p_error_at(p, raw PARSE_EXPECTED(),
-        "expected a name: a keyword cannot be declared as a function, type or module name, since it could never be named where it is used",
+        string_concat(string_concat("expected a name: `", raw token_kind_name(name.kind)),
+            "` is a keyword and cannot be declared as a function, type, trait, module, error, unit, rule or macro name, since it reads as the keyword wherever it is used and the declaration could never be named"),
         name.span);
     pass name;
 };
@@ -1197,7 +1204,7 @@ func:p_parse_field = DeclId(Parser->:p) never fails {
     TypeId:ty = raw p_parse_type(p);
     drop p_fixed_view_decl(p, quals, ty);   // `fixed T[]:x` is a `fixed T[]` (D-350)
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_binding_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.PSemi));
     pass (raw ast_add_decl(p.ast, DeclKind.DeclFieldDecl, sp,
                              ty.index, lim, quals, name.payload));
@@ -1205,7 +1212,7 @@ func:p_parse_field = DeclId(Parser->:p) never fails {
 
 func:p_parse_variant = DeclId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
-    Token:name = raw p_advance(p);
+    Token:name = raw p_binding_name(p);   // an identifier (DEF-235, landing 113)
     int32:value = 0i32;
     int32:pstart = 0i32;
     int32:pcount = 0i32;
@@ -1238,7 +1245,7 @@ func:p_parse_variant = DeclId(Parser->:p) never fails {
 func:p_parse_trait = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never fails {
     discard(raw p_expect(p, TokenKind.KwTrait));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     IdSpan:generics = raw p_parse_generics(p);
     discard(raw p_expect(p, TokenKind.OpAssign));
 
@@ -1310,7 +1317,7 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never
 func:p_parse_assoc = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.KwAssoc));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     int32:def = 0i32;
     if (raw p_accept(p, TokenKind.OpAssign)) {
         def = (raw p_parse_type(p)).index;
@@ -1325,7 +1332,7 @@ func:p_parse_opaque = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.KwOpaque));
     discard(raw p_expect(p, TokenKind.KwStruct));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.PSemi));
     pass (raw ast_add_decl(p.ast, DeclKind.DeclOpaqueDecl, sp,
                              flags, 0i32, 0i32, name.payload));
@@ -1340,7 +1347,7 @@ func:p_parse_opaque = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
 func:p_parse_errdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.KwError));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     int32:code = 0i32;
     if (raw p_accept(p, TokenKind.OpAssign)) {
         code = (raw p_parse_expr(p)).index;
@@ -1358,7 +1365,7 @@ func:p_parse_errdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
 func:p_parse_unitdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.KwUnit));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.OpAssign));
     ExprId:rhs = raw p_parse_expr(p);
     discard(raw p_expect(p, TokenKind.PSemi));
@@ -1374,7 +1381,7 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     TypeId:subject = raw p_parse_type(p);
     discard(raw p_expect_gt(p));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.OpAssign));
     discard(raw p_expect(p, TokenKind.PLBrace));
 
@@ -1427,7 +1434,7 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
 func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never fails {
     discard(raw p_expect(p, TokenKind.KwMacro));
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.OpAssign));
     discard(raw p_expect(p, TokenKind.PLParen));
     int32:pmark = raw ast_scratch_mark(p.ast);
@@ -1705,7 +1712,7 @@ func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     TypeId:ty = raw p_parse_type(p);
     drop p_fixed_view_decl(p, quals, ty);   // `fixed T[]:x` is a `fixed T[]` (D-350)
     discard(raw p_expect(p, TokenKind.PColon));
-    Token:name = raw p_advance(p);
+    Token:name = raw p_binding_name(p);   // an identifier (DEF-235, landing 113)
     int32:init = 0i32;
     if (raw p_accept(p, TokenKind.OpAssign)) {
         init = (raw p_parse_expr(p)).index;

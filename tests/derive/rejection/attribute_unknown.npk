@@ -1,0 +1,38 @@
+// expect-error: NITPICK-DERIVE-007
+// expect-error-at: 22:1
+// expect-error: NITPICK-DERIVE-007
+// expect-error-at: 25:1
+// expect-error: NITPICK-DERIVE-007
+// expect-error-at: 28:1
+// expect-error: NITPICK-DERIVE-007
+// expect-error-at: 30:5
+// expect-error: NITPICK-DERIVE-004
+// expect-error-at: 34:1
+//
+// AN ATTRIBUTE THE LANGUAGE DOES NOT HAVE IS REFUSED, WHEREVER IT STANDS (DEF-236
+// (d), 1.6.1e landing 113; the library listener's F-039 (d)). `#[derive(…)]` is
+// the one attribute (D-020); `#[lexical_drop]` was removed (D-003) and
+// `#[nosuch]` never was -- each was accepted and ignored in silence on a struct,
+// a function, an impl and a method (the derive reader's stage; an attribute on a
+// LOCAL is the checker's refusal, `tests/types/rejection/attribute_on_binding.npk`).
+// A `#[derive]` on an impl has no shape to generate from (DERIVE-004, the
+// function case's sentence).
+mod:attribute_unknown;
+
+#[lexical_drop]
+struct:Named = { int32:n; };
+
+#[nosuch_attribute]
+func:f = int32() never fails { pass 1i32; };
+
+#[nosuch]
+impl:Named = {
+    #[nosuch_method_attr]
+    func:g = int32(Named:self) never fails { pass self.n; };
+};
+
+#[derive(Eq)]
+impl:Named = { func:k = int32(Named:self) never fails { pass self.n; }; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

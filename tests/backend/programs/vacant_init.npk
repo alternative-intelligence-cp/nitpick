@@ -19,7 +19,7 @@ mod:vacant_init;
 error:E1;
 
 struct:Holder = { string:name; };
-struct:FdHolder = { OwnedFd:fd; };
+struct:FdHolder = { OwnedFd:desc; };   // `fd` is a type keyword and no field name (DEF-235, landing 113)
 
 // The out-parameter idiom `src/npkc.npk` documents: declared uninitialised and
 // filled through the pointer, which is what puts a never-written owning field
@@ -37,7 +37,7 @@ func:fill_twice = NIL(Holder->:h) never fails {
 };
 
 func:fill_fd = NIL(FdHolder->:f) never fails {
-    f.fd = own_fd((-1i32) =>! fd);   // the vacant descriptor: its drop is a no-op
+    f.desc = own_fd((-1i32) =>! fd);   // the vacant descriptor: its drop is a no-op
     pass NIL;
 };
 

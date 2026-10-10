@@ -50,11 +50,12 @@ func:make3 = int32[#three()]() never fails { int32[3]:r = [7i32, 8i32, 9i32]; pa
 enum:P = { Arr(int32[#three()]); Nope; };
 func:bytes_of<T> = int64() never fails { pass #size_of<T>(); };
 
-// --- a variant's value, a unit's right-hand side, an attribute's argument ---------
+// --- a variant's value, a unit's right-hand side -------------------------------------
+// (an attribute's argument stood here until DEF-236 (d), landing 113: `#[derive(...)]` is the
+// one attribute the language has, and its argument is a trait's name, never an expression --
+// the walk's attribute arm is covered by the expansion suite's `#[derive(TR)]` cases.)
 enum:E = { A = #one(); B = #three(); };
 unit:PerSec = 1 / #sec();
-#[align(#four())]
-struct:Al = { int32:x; };
 
 // --- a body whose type and pattern hold invocations, instantiated twice -----------
 macro:tally = () {
@@ -122,13 +123,12 @@ func:main = int32(cstring[]:_~argv) {
     S:s = S{ arr: [4i32, 5i32, 6i32], b: 2i32 };
     int32[3]:m3 = raw make3();
     Lease:l = take_low() ?| Lease{ v: 0i32 };
-    Al:al = Al{ x: 1i32 };
     dim256<PerSec>:rate = 2.0dim256<PerSec>;
     discard(rate);
     int32:total = (raw req(1i32)) + (raw ens(1i32)) + (raw rec(2i32))
-                + (raw last_of(arr)) + s.arr[0i64] + G[1i64] + m3[0i64] + v[3i64] + k + l.v + al.x;
+                + (raw last_of(arr)) + s.arr[0i64] + G[1i64] + m3[0i64] + v[3i64] + k + l.v;
     pick (E.B) { (E.A) { total = total + 100i32; }, (E.B) { total = total + 0i32; } }
-    exit total - 44i32;
+    exit total - 43i32;
 };
 
 func:failsafe = int32(Error:e) {
