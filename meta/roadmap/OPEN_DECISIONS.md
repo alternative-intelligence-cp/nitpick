@@ -4156,7 +4156,12 @@ defect declares a `DEF-` in §2f.
 > are the spellings), with the unit beside `tests/types/rejection/`; the reproduction is nitpick-time's
 > `meta/roadmap/0.3/0.3.2_tools/facts.sh` §1.7 (`sh_exit.npk`, `sh_exitv.npk`), kept at `.internal/handoff_33/probes_on41/`.
 
-> **DEF-250 — OPEN (registered 2026-10-15 by `nitpick-compiler_37`; the library seats' report of 2026-10-12 -- nitpick-libs_19,
+> **DEF-250 — FIXED 2026-10-15 (landing 114, built by `nitpick-compiler_37`, landed by `nitpick-compiler_38`): the D-211 check is
+> asked of every module binding, initialiser or not -- hoisted out of the initialiser's branch in `check_decl`'s global arm
+> (type_stmt.npk) -- so `int64:counter;` is NITPICK-TYPE-055 at the declaration, once, as `int64:counter = 0i64;` always was;
+> `global_mutable.npk`'s four no-initialiser sites (a bare `int64`, a bare `pub int32`, a bare struct, a bare `atomic<int64>`);
+> TYPE_REFERENCE's module-binding paragraph and D-211's dated note carry it; `1.6.1e.md`'s record has the measurements.
+> Registered 2026-10-15 by `nitpick-compiler_37`; the library seats' report of 2026-10-12 -- nitpick-libs_19,
 > relaying the Team seat's nitpick-time 0.3.3 plan, its §1.2; found at `7e91730`, reproduced here at `e50eaf4`, landing 111's
 > compiler; HIGH: a silent wrong answer at -O2 in safe code). A MODULE BINDING WITH NO INITIALISER COMPILES, AGAINST D-211.**
 > `int64:counter;` at module level passes the checker -- so do a struct, a `stack`, `wild`, `wildx` or `pub` binding, an

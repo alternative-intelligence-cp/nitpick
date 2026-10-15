@@ -31,6 +31,31 @@ stack int32:scoped_global = 1i32;
 // expect-error: NITPICK-TYPE-055
 pub bool:ready = false;
 
+// A BINDING WITH NO INITIALISER IS THE SAME MISTAKE (DEF-250, 1.6.1e landing
+// 114): until it landed the check above sat inside the initialiser's branch,
+// so `int64:counter;` was asked nothing, lowered to a read-only constant, and
+// `counter = 5i64;` faulted at -O0 (`MachineFault`) while `opt -O2` deleted the
+// store and read back zero -- a wrong answer from a program the checker had
+// accepted (the library seats' report, 2026-10-12). The qualifier changes
+// nothing here either, nor does the type: a struct, an atomic.
+// expect-error: NITPICK-TYPE-055
+int64:counter;
+// expect-error: NITPICK-TYPE-055
+pub int32:exported_later;
+// expect-error: NITPICK-TYPE-055
+Pair:pair_later;
+// expect-error: NITPICK-TYPE-055
+atomic<int64>:ticks;
+
+struct:Pair = { int32:a; int32:b; };
+
+func:writes = NIL() never fails {
+    counter = 5i64;
+    exported_later = 2i32;
+    pair_later = Pair{ a: 1i32, b: 2i32 };
+    pass NIL;
+};
+
 func:reads = int32() never fails {
     if (ready) { pass LIMIT + started; }
     pass mutable_counter + scoped_global;

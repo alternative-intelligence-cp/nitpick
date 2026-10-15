@@ -2120,7 +2120,11 @@ immutability is the checker's, and no LLVM attribute is needed because nothing
 can emit a second write. A module binding lowers to `@"npk.<module>.name" =
 constant <T> <v>` — read-only memory, since D-165 already requires the
 initialiser to be a compile-time constant and D-211 requires the keyword, so
-every module binding qualifies.
+every module binding qualifies. The keyword is required with or without an
+initialiser: a bare `int64:counter;` is NITPICK-TYPE-055 (DEF-250, 1.6.1e landing
+114 -- until it landed the check was asked only of a binding WITH an initialiser,
+and the bare one lowered to a `constant` the program then wrote: a fault at -O0, a
+deleted store at -O2).
 
 **What the initialiser may be, by the binding's type** (D-165; DEF-179 and DEF-197,
 1.6.1e):

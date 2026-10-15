@@ -3039,6 +3039,24 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
         drop refuse_field_quals(e, raw global_quals(d), "a module binding", d.span);
         TypeResolver:gr = raw etyper_resolver(e);
         int32:want = raw resolve_type(@gr, raw global_type(d), scope);
+        // D-211 (1.4.2b): MODULE STATE IS `fixed`, AND NOTHING ELSE -- ASKED OF
+        // EVERY MODULE BINDING, INITIALISER OR NOT (DEF-250, 1.6.1e landing 114):
+        // this check sat inside the initialiser's branch below, so a bare
+        // `int64:counter;` was asked nothing, lowered to a read-only constant,
+        // and a write to it faulted at -O0 and was deleted at -O2.
+        // A plain binding lowered to a mutable global that any task
+        // could write with no rule anywhere about the crossing — process
+        // state that changes, reachable from everywhere, ordered by
+        // nothing. The compiler is the largest program in this ecosystem
+        // and has never declared one (measured at 1.4.2b: zero in `src/`,
+        // `lib/` and `tools/`), which is the evidence the restriction
+        // costs nothing real. Mutable process state lives in `main`'s
+        // scope and flows explicitly through the calls that need it.
+        if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) {
+            discard(raw te_error(e, raw TYPE_GLOBAL_MUTABLE(),
+                "module state is `fixed` (D-211): a plain module-level binding is a mutable global any task can write, ordered by nothing — write `fixed` for a value assigned exactly once, and keep mutable process state in `main`'s scope where it flows through the calls that need it",
+                d.span));
+        }
         ExprId:init = raw global_init(d);
         if (!(raw expr_is_none(init))) {
             int32:saved = e.expected;
@@ -3062,20 +3080,6 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
                         }
                     }
                 }
-            }
-            // D-211 (1.4.2b): MODULE STATE IS `fixed`, AND NOTHING ELSE.
-            // A plain binding lowered to a mutable global that any task
-            // could write with no rule anywhere about the crossing — process
-            // state that changes, reachable from everywhere, ordered by
-            // nothing. The compiler is the largest program in this ecosystem
-            // and has never declared one (measured at 1.4.2b: zero in `src/`,
-            // `lib/` and `tools/`), which is the evidence the restriction
-            // costs nothing real. Mutable process state lives in `main`'s
-            // scope and flows explicitly through the calls that need it.
-            if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) {
-                discard(raw te_error(e, raw TYPE_GLOBAL_MUTABLE(),
-                    "module state is `fixed` (D-211): a plain module-level binding is a mutable global any task can write, ordered by nothing — write `fixed` for a value assigned exactly once, and keep mutable process state in `main`'s scope where it flows through the calls that need it",
-                    d.span));
             }
             // D-165: EVERY MODULE BINDING'S INITIALISER IS A COMPILE-TIME
             // CONSTANT. No module initialiser runs before `main`, so a value

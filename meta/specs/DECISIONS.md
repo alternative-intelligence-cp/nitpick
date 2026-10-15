@@ -15576,6 +15576,15 @@ implementation's first step audits `src/`'s own usage (the compiler is
 the largest program; if npkc needs no mutable global, the language
 doesn't either). Lands at 1.4.2b beside D-210.
 
+> **Note (2026-10-15, 1.6.1e landing 114 — DEF-250):** the refusal this decision promised was asked only of a
+> module binding WITH an initialiser: the D-211 check in `check_decl`'s global arm (type_stmt.npk) sat inside
+> the initialiser's branch, so `int64:counter;` -- and a bare struct, a `stack`, `wild`, `wildx` or `pub`
+> binding, an `atomic<int64>`, a channel -- passed the checker, was emitted as a read-only `constant`, and a
+> write to it faulted at -O0 (`MachineFault`) while `opt -O2` deleted the store and read back zero: a wrong
+> answer from a program the checker had accepted (the library seats' report of 2026-10-12, nitpick-time 0.3.3's
+> plan, §1.2). The check is asked of every module binding now, initialiser or not; `fixed` with a constant
+> initialiser stays the one spelling of module state.
+
 ## D-212 — the deterministic schedule-exploration harness — **SETTLED (coverage-audit batch, user-ratified)**
 
 Closes G-5 on the r6 evidence (95/4/0 exploration/random/stress on the
