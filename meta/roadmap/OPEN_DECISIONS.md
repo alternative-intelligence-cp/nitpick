@@ -4177,7 +4177,15 @@ defect declares a `DEF-` in §2f.
 > measured first on 113's compiler. Reproducers: the library seat's
 > `nitpick-libs/.internal/defects/2026-10-12-null-store-legs/bare_binding.npk`; `.internal/handoff_37/probes/`.
 
-> **DEF-251 — OPEN (registered 2026-10-15 by `nitpick-compiler_37`; the same report; found at `7e91730`, reproduced here at
+> **DEF-251 — (i) FIXED 2026-10-15 (landing 115, built by `nitpick-compiler_37`, landed by `nitpick-compiler_38`): every emitted
+> `define` carries LLVM's `null_pointer_is_valid` beside `"split-stack"` (`ll_fn_open`, ir_types.npk; the quoted string
+> `"null-pointer-is-valid"` is an attribute no pass reads -- measured), so a store to or a load from `null` is a memory operation
+> to every pass, nothing is inferred from a dereference, both legs fault and the fault is D-307's `MachineFault`;
+> `null_store_legs.npk` (107 at both legs where the base gave 107 and 0 -- the empty `main` fell into `helper`); the emission
+> comparison read with the attribute stripped (`meta/roadmap/1.6/tools/attrnorm.py`); the cost a sample of eight -O2 objects,
+> 7 byte-identical, `dyn_slots` +64 B; `1.6.1e.md`'s record has the measurements. (ii) IS D-355's (S-136 settled by the user
+> 2026-10-15 through `management_0`: `NULL` legal only for a `wild` pointer, `T->?` with `NIL` for "maybe no pointer", a plain
+> `T->` never null -- PLANNED FIRST, its own landing). Registered 2026-10-15 by `nitpick-compiler_37`; the same report; found at `7e91730`, reproduced here at
 > `e50eaf4`; HIGH: an uncontrolled path in safe code at -O2 -- the class the language exists to prevent). A STORE THROUGH A
 > `NULL` POINTER COMPILES, AND -O2 TURNS THE FAULT INTO FALL-THROUGH.** `int64->:p = NULL; <-p = 5i64;` in `main` passes the
 > checker (TYPE_REFERENCE §27: `NULL` is valid in a pointer context, and no rule checks a dereference) and is emitted as a

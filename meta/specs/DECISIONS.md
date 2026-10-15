@@ -20454,6 +20454,18 @@ lack the flag. The schedule explorer's shim is not reentrant, so a fault
 inside the shim's own code is the verdict `SHIM FAULT` (exit 97, K-13), never
 an explored trap. TCB.md §5, item 19, names what stays uncontrolled.]*
 
+> **Note (2026-10-15, 1.6.1e landing 115 — DEF-251):** the last net held at -O0 and not at -O2. A store
+> through a `NULL` pointer in safe code (`int64->:p = NULL; <-p = 5i64;`, legal by TYPE_REFERENCE §27)
+> faulted into `MachineFault` on the plain leg, but `opt -O2` read the store to `null` as undefined behaviour
+> and lowered `main` to an empty body -- `unreachable` and nothing after it -- so the processor ran into the
+> function the linker placed next (`npk_failsafe` with a garbage argument, exit 99; a `never fails` helper,
+> exit 0: success reported). Every emitted `define` carries LLVM's `null_pointer_is_valid` attribute now,
+> beside `"split-stack"` in `ll_fn_open`: address zero is a memory location like any other to every pass, a
+> store to `null` is a store, both legs fault, and the fault is this decision's. The quoted string
+> `"null-pointer-is-valid"` is an attribute no pass reads (measured: it changed nothing). Whether a plain
+> pointer's dereference is checked, or `NULL` leaves the plain pointer by type, is S-136 -- the library seats'
+> report of 2026-10-12.
+
 ## D-308 — A struct field may carry `limit<Rules>`: a rule about that one field, checked at every write to it and a fact at every read; the built-in lengths' bound is PROVEN where every length is made — **SETTLED (user decision, 2026-09-19: "as far as the limit thing, I am in agreement with your recommendation. It sounds like it extends limit into an even more capable construct than the one I originally imagined. Lets ratify that."; S-88)**
 
 Found at 1.5.8b's planning, by a throw-away prototype that wrote an `overflow`

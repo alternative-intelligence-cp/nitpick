@@ -2231,6 +2231,11 @@ Everything below follows from that one sentence, and nothing beyond it is part o
 - ONLY valid in pointer contexts: `int32->:p = NULL;`
 - NOT valid as a general "no value" — that's `NIL`
 - IR: `ptr null`
+- A store through or a load from a `NULL` pointer is a hardware fault that reaches
+  `failsafe` as `MachineFault` (D-307) at BOTH legs: every emitted function carries
+  LLVM's `null_pointer_is_valid` attribute (DEF-251, 1.6.1e landing 115), so the
+  optimiser never reads the dereference as undefined and never folds the body that
+  holds it. Whether a plain pointer may hold `NULL` at all is S-136 (OPEN_DECISIONS).
 
 ### `void` — C Interop Only
 

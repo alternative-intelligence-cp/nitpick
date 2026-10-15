@@ -1,0 +1,40 @@
+// expect-exit: 107
+//
+// A STORE THROUGH A `NULL` POINTER FAULTS AT BOTH LEGS, AND THE FAULT IS THE TRAP
+// ROUTE'S (DEF-251, 1.6.1e landing 115; the library seats' report of 2026-10-12).
+// `int64->:p = NULL; <-p = 5i64;` compiles (TYPE_REFERENCE §27: `NULL` is legal in
+// a pointer context; S-136 asks whether it should stay so for a plain pointer). At
+// -O0 the hardware fault entered the trap route as `MachineFault` (107) on every
+// compiler; at -O2 `opt` read the store to `null` as undefined behaviour and
+// lowered `main` to an EMPTY body -- `unreachable` -- so the processor ran into
+// the function the linker placed next: `helper` here, so the program exited 0
+// and REPORTED SUCCESS (without the helper it ran into `npk_failsafe` and exited
+// 99 by the `(*)` arm). Every emitted `define` carries LLVM's
+// `null_pointer_is_valid` attribute now (`ll_fn_open`, beside `"split-stack"`):
+// a store to `null` is a store, both legs fault, and `failsafe` sees
+// `MachineFault`. The harness runs this program at -O0 and after `opt -O2` and
+// requires the same exit of both.
+mod:null_store_legs;
+
+func:main = int32(cstring[]:_~argv) {
+    int64->:p = NULL;
+    <-p = 5i64;
+    exit 0i32;
+};
+
+// Declared between `main` and `failsafe` on purpose: the function the linker
+// placed after `main`, which an empty `main` fell into.
+func:helper = int32(int32:x) never fails { pass x; };
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
