@@ -4247,7 +4247,13 @@ defect declares a `DEF-` in §2f.
 > (exit 170), `probe08g_holder_outlives_view.npk` (the BORROW-002 control), the README beside them. Lands as its own landing
 > after 115 (the libraries' re-pin after 115 does not wait for it; nitpick-parse holds a review rule, PD-132, until it lands).
 
-> **DEF-253 — OPEN (registered 2026-10-15 by `nitpick-compiler_38`; the same report; reproduced here on landing 113's compiler
+> **DEF-253 — FIXED 2026-10-16 (landing 118, `nitpick-compiler_38`): the emitter's SYNC bound-call branch (`emit_method_call`,
+> ir_expr.npk) peels a pointer receiver BEFORE it builds the method's symbol and notes the family instance, as the async
+> twin (`async_callee_name`) has since 1.1.12c -- `Count:Src.step`, the impl's own symbol, where it built `Count->:Src.step`;
+> `bound_ptr_receiver.npk` (the row's shape with the turbofish and inferred, probe06's two impls, the by-value and concrete
+> controls, a family impl through `F->`, a trait default through `F->`, a two-trait bound, a field receiver: exit 0 at both
+> legs); D-156 carries the dated note, TRAITS_REFERENCE 5.1 the sentence; `1.6.1e.md`'s record has the measurements.
+> Registered 2026-10-15 by `nitpick-compiler_38`; the same report; reproduced here on landing 113's compiler
 > at 09:21; LOUD: `llc` refuses the module -- normal priority, after DEF-252's landing (116) and D-353's (117): landing 118). A
 > SYNCHRONOUS `Self->` TRAIT METHOD
 > CALLED THROUGH A GENERIC BOUND DOES NOT LINK.** `trait:Src = { func:step = int32(Self->:self) never fails; }; impl:Count:Src =
@@ -4261,6 +4267,30 @@ defect declares a `DEF-` in §2f.
 > tree's generic bound calls (the library seat's sweep: no library calls a `Self->` method through a bound today; nitpick-parse
 > needs it from its 0.2.2, PD-131). Reproducers: `probe06_trait_bound.npk` (the failure), `case2_bound_by_value.npk` (exit 5),
 > `case3_concrete_pointer.npk` (exit 1), beside DEF-252's.
+
+> **DEF-254 — FIXED 2026-10-16 WITH DEF-253 (landing 118, `nitpick-compiler_38`; found by `bound_ptr_receiver.npk`'s first run,
+> the groundwork's unverified neighbour). A TRAIT DEFAULT WHOSE RECEIVER IS `Self->` CALLING ANOTHER OF ITS TRAIT'S
+> METHODS ON `self` DID NOT LINK, through a bound or not.** `trait:Pace = { func:tick = int32(Self->:self) never fails;
+> func:tock = int32(Self->:self) never fails { pass ((raw self.tick()) * 2i32); }; };` called `c.tock()` on a `Count->`:
+> inside the default `self` is the POINTER to `Self`, the emitter's `Self`-receiver test (`emit_method_call`'s `msym == 0`
+> branch, and `async_callee_name`'s twin) read the pointer's kind, missed, and the call named the bare `tick` -- a symbol
+> nothing defines; `llc` refused the module on every compiler since 1.1.12d admitted `Self->` receivers (D-185). An
+> `async` default awaiting a sibling method on `self` had the same miss by construction (an async receiver is always a
+> pointer). Both branches peel the one pointer level before the `Self` test now; `bound_ptr_receiver.npk`'s shapes (5)
+> (through a bound) and (8) (concrete) pin it.
+
+> **DEF-255 — OPEN (registered 2026-10-15 by `nitpick-compiler_38` at DEF-253's landing; found by the probe the DEF-253
+> groundwork asked for -- `.internal` probe `ufcs_bound.npk`, measured on landing 112's checker; LOW: a refusal where the
+> reference promises acceptance, nothing of the libraries writes the form). THE QUALIFIED TRAIT CALL DOES NOT REACH A
+> BOUND OR A POINTER RECEIVER.** TRAITS_REFERENCE (D-172's paragraph) says `Ta.tag(p)` "reaches a method on a generic
+> receiver through the receiver's bound"; the checker's `type_trait_qualified_call` (type_members.npk) searches the impl
+> table for the receiver's UNPEELED type alone, so `Src.step(f)` with `F->:f` under `F: Src`, `Src.val(f)` with `F:f` under
+> the same bound, and `Src.step(c)` with a CONCRETE `Count->:c` are each `NITPICK-TYPE-019` ("`F->` does not implement
+> `Src`, or that trait has no method `step`"); only the concrete by-value `Src.val(c)` compiles. The dotted call `f.step()`
+> reaches all four (DEF-253). RECOMMENDED: the qualified call peels one pointer level and consults the bound for a
+> `TY_PARAM` receiver, as `type_method_call` does (`access_base`, `find_in_bounds`), then records what the dotted form
+> records; its own landing, low priority, measured over the three trees (no library spells `Trait.m(x)` on a bound or a
+> pointer today).
 
 > **DEF-256 — OPEN (registered 2026-10-15 by `nitpick-compiler_38` at landing 116; the fuzzer's F-049 -- `nitpick-fuzz_2`'s
 > report of 2026-10-15 20:35, nitpick-fuzz main `f31dfc6`, `findings/F-049-pick-binding-reinit-refused/`, `nitpick-libs_19`

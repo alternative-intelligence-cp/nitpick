@@ -795,6 +795,13 @@ Non-object-safe traits cannot be used with `dyn`.
 The default. Trait implementations resolve at compile time, which keeps the
 abstraction zero-cost and lets LLVM inline aggressively.
 
+A call through a bound names the impl of the receiver's TYPE, a pointer receiver's
+pointee: `func:drive<F: Src> = int32(F->:f) never fails { pass (raw f.step()); }`
+called at `Count` reaches `impl:Count:Src`'s `step`, whether `step` takes `Self` or
+`Self->`, is the impl's own or the trait's default, or the impl is a family's (DEF-253,
+1.6.1e landing 118: until it landed the `Self->` form through a bound named a symbol
+spelled with the pointer, which nothing defined -- `llc` refused the module).
+
 ### 5.2 Dynamic (`dyn`)
 
 > **A bare trait is not a value type** — `Shape:x` as a parameter, field, local

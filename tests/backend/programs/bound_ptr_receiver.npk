@@ -1,0 +1,129 @@
+// A `Self->` TRAIT METHOD CALLED THROUGH A GENERIC BOUND LINKS (DEF-253, 1.6.1e;
+// the library seat's report of 2026-10-15, nitpick-parse's probe06). `func:drive<F:
+// Src> = int32(F->:f)` calling `f.step()` built the method's symbol from the
+// receiver's type as written at the call -- the pointer, `Count->:Src.step` -- where
+// the impl defines `Count:Src.step` (D-156: the impl's target qualifies a method),
+// and `llc` refused the module for the undefined symbol; the by-value bound and the
+// concrete pointer call ran. The sync bound branch peels the pointer before it
+// builds the name and notes the family instance now, as the async twin has since
+// 1.1.12c. Its first run found DEF-254 beside it, shape (8). Each shape below is
+// checked once; exit 0 at both legs.
+mod:bound_ptr_receiver;
+
+// (1) the row's shape: a `never fails` `Self->` method through a bound, called with
+//     the turbofish and inferred.
+trait:Src = { func:step = int32(Self->:self) never fails; };
+struct:Count = { int32:n; };
+impl:Count:Src = { func:step = int32(Count->:self) never fails { self.n = self.n + 1i32; pass self.n; }; };
+func:drive<F: Src> = int32(F->:f) never fails { pass (raw f.step()); };
+
+// (2) probe06's shape: a failable method, two impls, `relay`, a `pick` over the
+//     stepped value, the call inferred.
+enum:Step = { Ev(int32); Done; };
+trait:Gen = { func:next = Step(Self->:self); };
+struct:Upto = { int32:n; int32:hi; };
+impl:Upto:Gen = {
+    func:next = Step(Upto->:self) {
+        if (self.n >= self.hi) { pass Step.Done; }
+        self.n = self.n + 1i32;
+        pass Step.Ev(self.n);
+    };
+};
+struct:Twice = { int32:n; };
+impl:Twice:Gen = {
+    func:next = Step(Twice->:self) {
+        if (self.n >= 4i32) { pass Step.Done; }
+        self.n = self.n + 2i32;
+        pass Step.Ev(self.n);
+    };
+};
+func:total<G: Gen> = int32(G->:g) {
+    int32:sum = 0i32;
+    int32:guard = 0i32;
+    while (guard < 100i32) decreases 100i32 - guard {
+        guard = guard + 1i32;
+        Step:s = relay g.next();
+        pick (s) {
+            (Step.Ev(v)) { sum = sum + v; },
+            (Step.Done)  { pass sum; }
+        }
+    }
+    pass 0i32 - 1i32;
+};
+
+// (3) the controls: the by-value bound and the concrete pointer call, which ran
+//     on every compiler.
+trait:Val = { func:val = int32(Self:self) never fails; };
+impl:Count:Val = { func:val = int32(Count:self) never fails { pass self.n; }; };
+func:by_value<F: Val> = int32(F:f) never fails { pass (raw f.val()); };
+func:concrete = int32(Count->:f) never fails { pass (raw f.step()); };
+
+// (4) a FAMILY impl answering through `F->`: the instance is noted from the peeled
+//     type, so the specialization is emitted.
+struct:Box<T> = { T:inner; int32:hits; };
+impl:<T>:Box<T>:Src = { func:step = int32(Box<T>->:self) never fails { self.hits = self.hits + 10i32; pass self.hits; }; };
+
+// (5) a trait DEFAULT body reached through `F->`: the default calls another `Self->`
+//     method of its own trait on `self`.
+trait:Pace = {
+    func:tick = int32(Self->:self) never fails;
+    func:tock = int32(Self->:self) never fails { pass ((raw self.tick()) * 2i32); };
+};
+impl:Count:Pace = { func:tick = int32(Count->:self) never fails { self.n = self.n + 100i32; pass self.n; }; };
+func:drive_default<F: Pace> = int32(F->:f) never fails { pass (raw f.tock()); };
+
+// (6) a bound naming two traits.
+func:drive_both<F: Src & Val> = int32(F->:f) never fails { pass ((raw f.step()) + (raw f.val())); };
+
+// (7) the receiver a FIELD of pointer-to-parameter type.
+struct:Holder<F> = { F->:f; int32:pad; };
+func:drive_field<F: Src> = int32(Holder<F>->:h) never fails { pass (raw h.f.step()); };
+
+// (8) DEF-254, found by this file's first run: the trait default of (5) called on a
+//     CONCRETE pointer, no bound anywhere. Inside the default `self` is `Self->`, and
+//     the emitter's `Self` test read the pointer's kind and left the bare `tick`.
+func:concrete_default = int32(Count->:c) never fails { pass (raw c.tock()); };
+
+func:run = int32() {
+    Count:c = Count{ n: 0i32 };
+    if ((raw drive::<Count>(@c)) != 1i32) { pass 10i32; }
+    if ((raw drive(@c)) != 2i32) { pass 11i32; }
+    Upto:u = Upto{ n: 0i32, hi: 3i32 };
+    Twice:t = Twice{ n: 0i32 };
+    int32:a = relay total(@u);
+    int32:b = relay total(@t);
+    if (a != 6i32) { pass 12i32; }
+    if (b != 6i32) { pass 13i32; }
+    if ((raw by_value(c)) != 2i32) { pass 14i32; }
+    if ((raw concrete(@c)) != 3i32) { pass 15i32; }
+    Box<int32>:bx = Box{ inner: 7i32, hits: 0i32 };
+    if ((raw drive(@bx)) != 10i32) { pass 16i32; }
+    if ((raw drive::<Box<int32>>(@bx)) != 20i32) { pass 17i32; }
+    if ((raw drive_default(@c)) != 206i32) { pass 18i32; }
+    if ((raw drive_both(@c)) != 208i32) { pass 19i32; }
+    Holder<Count>:h = Holder{ f: @c, pad: 0i32 };
+    if ((raw drive_field(@h)) != 105i32) { pass 20i32; }
+    if ((raw concrete_default(@c)) != 410i32) { pass 21i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Result<int32>:r = run();
+    if (r.is_error) { exit 30i32; }
+    exit r.value;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

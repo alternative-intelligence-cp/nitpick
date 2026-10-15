@@ -11285,6 +11285,17 @@ before, so every pre-D-163 symbol is unchanged.
 > needs both impls writes each beside its own type, where the module halves
 > differ.
 
+> **Note (2026-10-15, 1.6.1e landing 118 — DEF-253):** the `<Target>` half is the IMPL'S TARGET -- for a
+> pointer receiver, the POINTEE -- at every end. The definition mints it from the impl's resolved target
+> (`impl_method_sym`), the checker records it from the peeled receiver (`Count:Src.step`), and the emitter's
+> SYNC bound-call branch, which rebuilds the name from the substituted receiver when the checker recorded
+> no symbol (a call on a parameter `F` has no impl at check time), built it from the receiver AS WRITTEN:
+> `func:drive<F: Src> = int32(F->:f)` calling `f.step()` named `Count->:Src.step`, a symbol nothing
+> defines, and `llc` refused the module (the library seat's probe06, nitpick-parse's intended plugin path);
+> the async twin had peeled the pointer since 1.1.12c. The sync branch peels it before the name and the
+> family-instance note now (`bound_ptr_receiver.npk`: the row's shape, two impls through one bound, a
+> family impl, a trait default, a two-trait bound, a field receiver).
+
 ## D-157 — Object safety: `Self` nowhere but the receiver — **SETTLED**
 
 OPEN_DECISIONS C-2, a safety hole: `check_object_safe` inspected only the

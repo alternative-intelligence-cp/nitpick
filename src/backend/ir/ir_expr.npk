@@ -5415,8 +5415,9 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         // spelling (`Wrap<W>:Writer.write`), and awaiting it built a frame
         // type nothing emits. When the receiver's type mentions a parameter,
         // the specialization's name is derived from the SUBSTITUTED receiver
-        // below, exactly as the sync path derives its symbol; the recorded
-        // symbol stands for every concrete receiver.
+        // below, exactly as the sync path derives its symbol (both peel a
+        // pointer receiver first: here since 1.1.12c, there since DEF-253);
+        // the recorded symbol stands for every concrete receiver.
         int32:msym = raw exprtypes_callee_sym(x.et, cid);
         ExprId:presub_rid = raw expr_operand(cn);
         int32:presub_rty = raw exprtypes_get(x.et, presub_rid);
@@ -5443,7 +5444,14 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         // written.
         ExprId:rid = raw expr_operand(cn);
         int32:rty = raw exprtypes_get(x.et, rid);
-        if ((raw type_kind(x.fe.ctx.types, rty)) == (raw TY_SELF())) {
+        // `Self->` peels before the `Self` test here too (DEF-254): an async
+        // method's receiver is always a pointer (D-185), so an async default
+        // awaiting another of its trait's methods on `self` read the pointer.
+        int32:rself = rty;
+        if ((raw type_kind(x.fe.ctx.types, rself)) == (raw TY_POINTER())) {
+            rself = raw type_elem(x.fe.ctx.types, rself);
+        }
+        if ((raw type_kind(x.fe.ctx.types, rself)) == (raw TY_SELF())) {
             if (x.tr.self_type != 0i32) {
                 int32:sq = cdi;
                 if (x.cur_impl != 0i32) { sq = x.cur_impl; }
@@ -9745,7 +9753,18 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     // is what turns one typed body into the right call in each copy.
     if (msym == 0i32) {
         int32:rty = raw exprtypes_get(x.et, rid);
-        if ((raw type_kind(x.fe.ctx.types, rty)) == (raw TY_SELF())) {
+        // THE DEFAULT'S RECEIVER MAY BE `Self->` (DEF-254, 1.6.1e, found by
+        // DEF-253's test): a trait default `func:tock = int32(Self->:self)
+        // never fails { pass ((raw self.tick()) * 2i32); }` types `self` as
+        // the POINTER to `Self`, and the test below read the pointer's kind,
+        // missed, and left the bare `tick` -- a symbol nothing defines, on
+        // every compiler, through a bound or not. The one pointer level peels
+        // first, as `.` always peels (D-098).
+        int32:rself = rty;
+        if ((raw type_kind(x.fe.ctx.types, rself)) == (raw TY_POINTER())) {
+            rself = raw type_elem(x.fe.ctx.types, rself);
+        }
+        if ((raw type_kind(x.fe.ctx.types, rself)) == (raw TY_SELF())) {
             if (x.tr.self_type != 0i32) {
                 fname = raw method_symbol_name(x.fe.ctx.types, x.interns,
                             x.tr.self_type, x.cur_trait, fname);
@@ -9778,15 +9797,24 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         if (raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32)) {
             int32:conc = raw subst_emitted_type(x.fe.ctx, rty);
             if (conc != rty) {
+                // THE RECEIVER MAY BE `F->`, A POINTER TO THE TARGET (DEF-253,
+                // 1.6.1e): the impl's symbol names the TARGET (`Count:Src.step`,
+                // `impl_method_sym`), so the one pointer level peels here BEFORE
+                // the name and the instance note -- as `.` always peels (D-098)
+                // and as the async twin (`async_callee_name`) has peeled since
+                // 1.1.12c. Until this landing the peel served `impl_decl_for`
+                // alone: the name was built from the pointer (`Count->:Src.step`),
+                // a symbol nothing defines, and `llc` refused the module; a
+                // family impl answering through `F->` recorded no instance
+                // (`type_decl_of` answers 0 for a pointer).
+                if ((raw type_kind(x.fe.ctx.types, conc)) == (raw TY_POINTER())) {
+                    conc = raw type_elem(x.fe.ctx.types, conc);
+                }
                 int32:btrait = raw exprtypes_callee_trait(x.et, id);
                 fname = raw method_symbol_name(x.fe.ctx.types, x.interns,
                             conc, btrait, fname);
                 drop note_family_instance(x, conc, btrait, raw decl_name(d), n.span);
-                int32:bconc = conc;
-                if ((raw type_kind(x.fe.ctx.types, bconc)) == (raw TY_POINTER())) {
-                    bconc = raw type_elem(x.fe.ctx.types, bconc);
-                }
-                int32:bq = raw impl_decl_for(x, bconc, btrait);
+                int32:bq = raw impl_decl_for(x, conc, btrait);
                 if (bq != 0i32) { qual = bq; }
             }
         }
