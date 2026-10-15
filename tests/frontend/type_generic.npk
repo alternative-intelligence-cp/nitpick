@@ -90,6 +90,15 @@ func:gx = Gx(string:src, InternTable->:it) never fails {
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @fninsts, @ets);
 
+    // THIS HELPER WALKS THE MODULE'S FUNCTIONS ITSELF and hands each body to
+    // `check_stmt`: a copy of `check_function`'s prologue, not the checker's
+    // entry. So a rule `check_decl` asks of a DECLARATION (an enum's values, a
+    // `Rules` block, a unit) is invisible here, and so is every impl METHOD's
+    // body -- measured at landing 117, where routing this through
+    // `check_module` made f10's `pass self.b` of a bare `T` refuse (D-264) in
+    // a fixture written before the rule. D-353's reserved value parameter is
+    // refused in the bounds collection (`collect_param_bounds`), which this
+    // helper and the pipeline both run, so the cases below do count it.
     DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
     int32:nmembers = raw item_member_count(@ast, mn);
@@ -306,12 +315,14 @@ func:main = int32(cstring[]:_~argv) {
     //
     // `<comptime int32:LEVEL>` introduces a compile-time CONSTANT, and the
     // marker is exactly what makes the two readable apart (D-064 §2). Written
-    // where a type belongs it is refused by name — becoming an opaque type would
-    // push the mistake somewhere further along with a worse message.
+    // where a type belongs it WAS refused by name (TYPE_NOT_A_TYPE); since D-353
+    // (landing 117) the FORM is reserved -- refused once at the parameter's
+    // declaration by TYPE_VALUE_PARAM_RESERVED, and its uses say nothing more
+    // (D-240), so the one report here is the declaration's.
     Gx:v12 = raw gx(
         "func:f<comptime int32:LEVEL> = LEVEL() never fails { pass 1i32; };", @it);
     if (raw errs(@v12) != 1i64)                                 { exit 28i32; }
-    if (!(raw string_eq(raw code0(@v12), raw TYPE_NOT_A_TYPE()))) { exit 29i32; }
+    if (!(raw string_eq(raw code0(@v12), raw TYPE_VALUE_PARAM_RESERVED()))) { exit 29i32; }
 
     // A PARAMETER SHADOWS A MODULE-LEVEL TYPE OF THE SAME NAME, because it is
     // the inner binding. The struct `T` here is a different thing from the
@@ -449,17 +460,31 @@ func:main = int32(cstring[]:_~argv) {
     // a type-argument list took a type per entry and `2` is not one, so the form
     // D-056's lock levels are built on answered "expected a type". It was also
     // absent from `whole_grammar.npk`, which is why nothing caught that.
+    //
+    // THE FORM IS RESERVED SINCE D-353 (landing 117; DEF-236 (a): the emitter
+    // monomorphises by type argument alone, so a call of such a function was
+    // EMIT-002). Every case below declares one, so each counts ONE
+    // TYPE_VALUE_PARAM_RESERVED at the declaration; the argument rules D-109 gave
+    // the live form -- a suffix that is not the declared type (c3), a type where a
+    // value was wanted (c6), a name that does not fold (c8b) -- are silent under
+    // D-240 and stand in TRAITS_REFERENCE for the day the form is designed, while
+    // a value argument that folds still interns, so the BODY's own checks stay:
+    // two instances that differ by their value are two types (c4), and `LEVEL`
+    // read as a value is still an `int32` (c10). The compiler-known value
+    // arguments (a lock level, a lane count) are not this form and keep their own
+    // gates (c7's TYPE_GENERIC_KIND on a type parameter stands).
     Gx:c1 = raw gx(
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, 2i32>:m; pass NIL; };",
         @it);
-    if (raw errs(@c1) != 0i64)                                  { exit 61i32; }
+    if (raw errs(@c1) != 1i64)                                  { exit 61i32; }
+    if (!(raw string_eq(raw code0(@c1), raw TYPE_VALUE_PARAM_RESERVED()))) { exit 76i32; }
 
     // AN UNSUFFIXED LITERAL TAKES THE PARAMETER'S TYPE, which is D-092's context
     // rule applied to the one context a generic argument has.
     Gx:c2 = raw gx(
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, 2>:m; pass NIL; };",
         @it);
-    if (raw errs(@c2) != 0i64)                                  { exit 62i32; }
+    if (raw errs(@c2) != 1i64)                                  { exit 62i32; }
 
     // …and a SUFFIXED one must already be that type. `2i64` against `comptime
     // int32:LEVEL` is a mismatch somebody wrote, not a width to be adjusted —
@@ -468,7 +493,7 @@ func:main = int32(cstring[]:_~argv) {
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, 2i64>:m; pass NIL; };",
         @it);
     if (raw errs(@c3) != 1i64)                                  { exit 63i32; }
-    if (!(raw string_eq(raw code0(@c3), raw TYPE_MISMATCH())))   { exit 64i32; }
+    if (!(raw string_eq(raw code0(@c3), raw TYPE_VALUE_PARAM_RESERVED()))) { exit 64i32; }
 
     // TWO DIFFERENT VALUES ARE TWO DIFFERENT TYPES. That is the whole reason a
     // value argument is interned like one: `Mutex<T, 2>` and `Mutex<T, 3>` are
@@ -476,13 +501,13 @@ func:main = int32(cstring[]:_~argv) {
     Gx:c4 = raw gx(
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) never fails { Lock<Point, 3i32>:b = a; pass NIL; };",
         @it);
-    if (raw errs(@c4) != 1i64)                                  { exit 65i32; }
+    if (raw errs(@c4) != 2i64)                                  { exit 65i32; }
 
     // …and the same value twice is one type, which is the other half.
     Gx:c5 = raw gx(
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) never fails { Lock<Point, 2i32>:b = a; pass NIL; };",
         @it);
-    if (raw errs(@c5) != 0i64)                                  { exit 66i32; }
+    if (raw errs(@c5) != 1i64)                                  { exit 66i32; }
 
     // THE WRONG KIND OF ARGUMENT SAYS WHICH KIND WAS WANTED. "there is no type
     // named `2`" would be true and useless; the mistake is about the position.
@@ -490,7 +515,7 @@ func:main = int32(cstring[]:_~argv) {
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, int32>:m; pass NIL; };",
         @it);
     if (raw errs(@c6) != 1i64)                                  { exit 67i32; }
-    if (!(raw string_eq(raw code0(@c6), raw TYPE_GENERIC_KIND()))) { exit 68i32; }
+    if (!(raw string_eq(raw code0(@c6), raw TYPE_VALUE_PARAM_RESERVED()))) { exit 68i32; }
 
     Gx:c7 = raw gx(
         "struct:Container<T> = { T:value; }; func:f = NIL() never fails { Container<2i32>:c; pass NIL; };",
@@ -505,7 +530,7 @@ func:main = int32(cstring[]:_~argv) {
     Gx:c8 = raw gx(
         "pub fixed int32:COUNT = 4i32; struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, (COUNT)>:m; pass NIL; };",
         @it);
-    if (raw errs(@c8) != 0i64)                                  { exit 71i32; }
+    if (raw errs(@c8) != 1i64)                                  { exit 71i32; }
 
     // WHAT IS STILL REFUSED, AND IT IS THE RULE RATHER THAN THE RUNG. A LOCAL is
     // not a constant however the expression around it is written — `const` is the
@@ -518,20 +543,20 @@ func:main = int32(cstring[]:_~argv) {
         "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { int32:n = 4i32; Lock<Point, (n)>:m; pass NIL; };",
         @it);
     if (raw errs(@c8b) != 1i64)                                 { exit 72i32; }
-    if (!(raw string_eq(raw code0(@c8b), raw TYPE_NOT_CONSTANT()))) { exit 75i32; }
+    if (!(raw string_eq(raw code0(@c8b), raw TYPE_VALUE_PARAM_RESERVED()))) { exit 75i32; }
 
     // A VALUE PARAMETER IS READABLE AS A VALUE IN THE BODY, with the type it was
     // declared with. That is the entire content of `comptime int32:LEVEL`, and it
     // is why a value parameter carries a type where a type parameter carries
     // bounds.
     Gx:c9 = raw gx("func:f<comptime int32:LEVEL> = int32() never fails { pass LEVEL; };", @it);
-    if (raw errs(@c9) != 0i64)                                  { exit 73i32; }
+    if (raw errs(@c9) != 1i64)                                  { exit 73i32; }
 
     // …and it is not interchangeable with the type it holds: `LEVEL` is an
     // `int32` value, so a mismatched declaration is a mismatch.
     Gx:c10 = raw gx(
         "func:f<comptime int32:LEVEL> = NIL() never fails { string:s = LEVEL; pass NIL; };", @it);
-    if (raw errs(@c10) != 1i64)                                 { exit 74i32; }
+    if (raw errs(@c10) != 2i64)                                 { exit 74i32; }
 
     // --- THE CALL SITE: INFERENCE AND THE TURBOFISH (3.3, D-064 section 3) ---
     //

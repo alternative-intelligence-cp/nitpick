@@ -3957,8 +3957,14 @@ defect declares a `DEF-` in §2f.
 > declaration -- its first use is PARSE-002, so the block can never be freed. F-036 (b), `10_i32` accepted against
 > the DecimalLiteral production, is DEF-190's shape (a trailing `_`) and is recorded on it.
 
-> **DEF-236 — (c), (d) and (e) FIXED 2026-10-09 (landing 113, `nitpick-compiler_36`); (a) OPEN with S-135 (2026-10-07; the
-> listener's F-039 and F-042 in O-N36), four rows of the AST and TRAITS runs.**
+> **DEF-236 — (c), (d) and (e) FIXED 2026-10-09 (landing 113, `nitpick-compiler_36`); (a) FIXED 2026-10-15 UNDER D-353
+> (landing 117, built by `nitpick-compiler_37`, landed by `nitpick-compiler_38`): a `comptime` VALUE PARAMETER is
+> NITPICK-TYPE-095 at its declaration, once, whatever declares it -- a function, a struct, a trait, an enum, an impl
+> (`collect_param_bounds`, type_trait.npk: the one pass every declaration's generic window goes through) -- and its uses
+> say nothing more (D-240); the form parses, so D-336's frozen corpus records it RESERVED under this one code (D-354);
+> `value_param_reserved.npk` (five kinds), `generics.npk`'s two use-rule cases re-spelled on the compiler-known `Mutex`,
+> `type_generic.npk`'s value-parameter cases re-pointed; AST_REFERENCE section 4 and TRAITS_REFERENCE 3.1.1 say RESERVED.
+> Was: (a) OPEN with S-135 (2026-10-07; the listener's F-039 and F-042 in O-N36), four rows of the AST and TRAITS runs.**
 > (a) A `comptime` VALUE PARAMETER passes the checker and is EMIT-002. (c) A non-constant `joins` deadline is
 > accepted (D-182 asks a constant). (d) An unknown attribute name is accepted and ignored. (e) `opaque struct` is
 > accepted at module level, against AST_REFERENCE:43 and TRAITS_REFERENCE:368 (F-042 is the same row). F-039 (b) is

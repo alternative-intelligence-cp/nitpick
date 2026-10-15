@@ -1,0 +1,66 @@
+// expect-error: NITPICK-TYPE-095
+// expect-error-at: 28:12
+// expect-error: NITPICK-TYPE-095
+// expect-error-at: 33:16
+// expect-error: NITPICK-TYPE-095
+// expect-error-at: 37:14
+// expect-error: NITPICK-TYPE-095
+// expect-error-at: 38:10
+// expect-error: NITPICK-TYPE-095
+// expect-error-at: 39:7
+//
+// A `comptime` VALUE PARAMETER IS A RESERVED FORM (D-353, 1.6.1e landing 117; DEF-236
+// (a), the fuzzer's `as0062`). AST_REFERENCE §4 promised `func:scale<comptime int32:K>`,
+// the checker accepted it and the emitter stopped on the call with EMIT-002 -- the
+// wrong tool, no sentence. Generic value parameters are OUT until designed: a
+// declaration of one is NITPICK-TYPE-095 at the parameter, once, whatever declares it,
+// and its USES say nothing more (D-240) -- a value argument that folds interns as
+// before, a type where the value was wanted, a suffix that is not the declared type
+// and a name that does not fold are silent here (D-109's argument rules were theirs
+// while the form was live and stand in TRAITS_REFERENCE for the day it is designed).
+// The form PARSES, so that D-336's frozen corpus can record it RESERVED under this
+// one code (D-354): a verdict that may move from refused to accepted and never back.
+mod:value_param_reserved;
+
+struct:Point = { int32:x; };
+
+// A function: the fuzzer's shape. Its call `scale::<3i32>(2i32)` adds nothing.
+func:scale<comptime int32:K> = int32(int32:x) never fails { pass (x * K); };
+
+// A struct: the specification's own example. Its instances add nothing -- the
+// right argument, a suffix that is not the declared type, a type where a value
+// was wanted, a name that does not fold.
+struct:Lock<T, comptime int32:LEVEL> = { T:held; };
+
+// A trait, an enum, and an impl of the trait (its own parameter the declaration
+// refused; `Staged<S>` the use, silent): the five declaration kinds with a window.
+trait:Staged<comptime int32:STAGE> = { func:stage = int32(Self:self) never fails; };
+enum:Opt<comptime int32:N> = { A; B; };
+impl:<comptime int32:S>:Point:Staged<S> = { func:stage = int32(Point:self) never fails { pass S; }; };
+
+func:uses = NIL() never fails {
+    int32:v = raw scale::<3i32>(2i32);
+    Lock<Point, 2i32>:a;
+    Lock<Point, 2i64>:b;
+    Lock<Point, int32>:c;
+    int32:n = 4i32;
+    Lock<Point, (n)>:d;
+    pass NIL;
+};
+
+// THE CONTROLS: the compiler-known value arguments are not this form -- a lock
+// level, a lane count, an array size, a channel's constants -- and a `fixed`
+// module binding is the constant the reserved form would have carried.
+fixed int32:LVL = 3i32;
+fixed int32:N = 4i32;
+func:known = NIL() never fails {
+    Mutex<Point, 2>:m;
+    Mutex<Point, (LVL)>:m2;
+    simd<int32, 4>:lanes = simd(1i32);
+    int32[N]:arr;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

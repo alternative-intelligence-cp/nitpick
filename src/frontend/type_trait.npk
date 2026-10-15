@@ -631,6 +631,22 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
     // the type slot rather than by a flag -- `parse_decl.npk` says why that is an
     // exact discriminator rather than a coincidence.
     if (raw generic_is_value(g)) {
+        // A `comptime` VALUE PARAMETER IS A RESERVED FORM (D-353; TYPE-095, landing
+        // 117): refused HERE, at its declaration, once per parameter, whatever declares
+        // it -- a function, a struct, an enum, a trait, an impl, their methods -- because
+        // this walk is the one pass every declaration's generic window goes through in
+        // the pipeline AND in the frontend's unit fixtures (`type_generic.npk`'s helper
+        // walks function bodies itself and never reaches `check_decl`). The form parses
+        // and is refused by this code alone, so that D-336's corpus can record it
+        // RESERVED (D-354); its uses add nothing (the resolver accepts a value argument
+        // in silence: `resolve_one_arg`), the bound table still records the parameter's
+        // type so the body types as before, and the compiler-known value arguments -- a
+        // lock level, a lane count, a channel's constants -- are not parameters anybody
+        // declares and keep their own gates.
+        string:v1 = string_concat("`", raw intern_get(r.interns, raw decl_name(g)));
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_VALUE_PARAM_RESERVED(),
+            string_concat(v1, "` is a `comptime` value parameter, a form the language reserves and has not designed (D-353): generic value parameters are refused at their declaration until they are -- write the constant as a `fixed` module binding or a macro parameter (MACRO_REFERENCE §4); the compiler-known value arguments (a lock level, a `simd` lane count, a channel's constants) are not this form"),
+            g.span));
         int32:vt = raw resolve_type(r, raw generic_value_type(g), scope);
         drop bound_push(t, gp.index, 0i32, 0i32, vt);
         pass NIL;

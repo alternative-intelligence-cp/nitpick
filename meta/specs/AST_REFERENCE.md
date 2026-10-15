@@ -72,6 +72,19 @@ GenericParam
   `value_type` instead. The `comptime` marker is what keeps the two readable
   apart, since otherwise the introduced name would sit on opposite sides of the
   same colon in the two forms (D-064).
+  > **The value form is RESERVED (D-353, 2026-10-15; 1.6.1e landing 117).** It
+  > parses as above and is refused at the parameter's declaration, once, by
+  > `NITPICK-TYPE-095` — whatever declares it: a function, a struct, an enum, a
+  > trait, an impl — and its uses say nothing more (D-240). The emitter
+  > monomorphises by TYPE argument alone (D-191's instance key), so a call of
+  > such a function stopped the compiler with EMIT-002 (DEF-236 (a), the fuzzer's
+  > `as0062`); the user ruled the form out until it is designed. A compile-time
+  > value is written as a `fixed` module binding or a macro parameter
+  > (MACRO_REFERENCE §4). The compiler-known value arguments — a lock level, a
+  > `simd` lane count, a channel's constants, an array's size — are not this
+  > form and keep their own gates. The dedicated code is what lets D-336's
+  > frozen corpus hold the form as RESERVED (D-354): a verdict that may move
+  > from refused to accepted when value generics are designed, and never back.
 - **Not to be confused with `type:T`**, which is an ordinary `ParamDecl` in a
   `comptime` function, legal nowhere else, and produces no specialization
   (D-064 §5).

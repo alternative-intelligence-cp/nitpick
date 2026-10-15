@@ -653,3 +653,15 @@ pub func:TYPE_ENUM_VALUE = string() never fails { pass "NITPICK-TYPE-093"; };
 // expression's arm is refused too -- the emitter met the statement pick's empty
 // slot there). Inside a `defer` body either one is TYPE-040's, the cleanup rule.
 pub func:TYPE_OUTSIDE_PICK_ARM = string() never fails { pass "NITPICK-TYPE-094"; };
+
+// A `comptime` VALUE PARAMETER IS A RESERVED FORM (D-353, 1.6.1e landing 117). AST_REFERENCE
+// §4 promised `func:scale<comptime int32:K>` and the parser, the type resolver and the typer
+// carried it, but the emitter monomorphises by TYPE argument alone (D-191's instance key), so
+// a call of such a function stopped the compiler with EMIT-002 -- the wrong tool, no sentence
+// (DEF-236 (a), the fuzzer's `as0062`). The user ruled the form OUT until it is designed:
+// refused at the parameter's declaration, once, by THIS code and no other -- the code is what
+// lets D-336's frozen corpus hold the form as RESERVED (D-354), a verdict that may move from
+// refused to accepted when value generics are designed and never back. The form still PARSES
+// (a corpus can only hold what parses), and its uses say nothing more (D-240): the resolver
+// accepts a value argument in silence where this code already stands at the declaration.
+pub func:TYPE_VALUE_PARAM_RESERVED = string() never fails { pass "NITPICK-TYPE-095"; };

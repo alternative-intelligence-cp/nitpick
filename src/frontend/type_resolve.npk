@@ -289,6 +289,10 @@ func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name,
 // audit found it pointing at `<comptime int32:LEVEL>` for a `LEVEL:x` written
 // lines away).
 func:value_param_in_type_position = int32(TypeResolver->:r, DeclNode:pn, Span:at) never fails {
+    // SILENT (D-353, landing 117): the value parameter is refused at its declaration
+    // by TYPE-095, and `LEVEL:x` written against it adds nothing (D-240); the
+    // sentence below is the live form's, kept for the day the form is designed.
+    if (true) { pass 0i32; }
     string:m1 = string_concat("`", raw intern_get(r.interns, raw decl_name(pn)));
     pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(),
         string_concat(m1,
@@ -2909,9 +2913,14 @@ pub func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:
     bool:is_value = (anode.kind == TypeKind.TypeComptimeArg);
 
     if (wants_value) {
-        if (!is_value) {
-            pass (raw arg_kind_error(r, gpn, anode.span, true));
-        }
+        // THE PARAMETER IS A RESERVED FORM, REFUSED AT ITS DECLARATION (D-353,
+        // TYPE-095, landing 117): nothing more is said at a use (D-240). A type
+        // where the value was wanted, a value that does not fold, a suffix that
+        // is not the declared type -- each was a report of its own while the form
+        // was live (D-109's rules, kept in TRAITS_REFERENCE for the day it is
+        // designed); a value argument that folds still interns, so the body and
+        // the instances type as before and no second sentence follows.
+        if (!is_value) { pass 0i32; }
         pass (raw resolve_value_arg(r, anode, gpn, scope));
     }
     if (is_value) {
@@ -2948,10 +2957,9 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
 
     ConstVal:cv = raw fold_const(r, raw type_comptime_value(anode), scope);
     if (!(raw cv_is_int(cv))) {
-        if (raw fold_gave_up(r)) { pass 0i32; }
-        pass (raw ty_error(r, raw TYPE_NOT_CONSTANT(),
-            "a `comptime` argument must be a constant expression; a name folds only if it is a module-level `fixed` binding (D-222)",
-            v.span));
+        // SILENT (D-353, D-240): the parameter's declaration carries TYPE-095; the
+        // argument that does not fold was TYPE_NOT_CONSTANT while the form was live.
+        pass 0i32;
     }
 
     // AN UNSUFFIXED LITERAL TAKES THE PARAMETER'S TYPE, which is D-092's context
@@ -2963,7 +2971,11 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
     // — so `Mutex<Config, 2>` and `Mutex<Config, SIZE * 2>` take the parameter's
     // type while `Mutex<Config, 2i64>` is checked against it. The debt paid here was
     // "must be a literal", never "must be valid": this check stays.
-    if (cv.type_id != 0i32) {
+    // SILENT TOO (D-353, D-240; found by the landing's own test at `Lock<Point, 2i64>`):
+    // the mismatch sentence below was the live form's and is kept for the day it is
+    // designed; the folded value still interns under the parameter's type, so two
+    // instances that differ by their value stay two types for the body's own checks.
+    if ((cv.type_id != 0i32) && false) {
         int32:got = cv.type_id;
         if (got != want) {
             string:m1 = string_concat("this `comptime` argument is `",
@@ -3055,8 +3067,8 @@ func:resolve_channel_type = int32(TypeResolver->:r, TypeNode:n, int32:scope,
     // and returned: the diagnostic is the refusal, and a channel whose element
     // was refused should not cascade into "unknown type" at every use.
     drop check_channel_elem(r, elem, scope, n.span);
-    int32:lvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
-    int32:cap = raw channel_const_arg(r, n, 2i32, scope, "the capacity");
+    int32:lvl = raw channel_const_arg(r, n, 1i32, scope, "`Channel`", "lock level");
+    int32:cap = raw channel_const_arg(r, n, 2i32, scope, "`Channel`", "capacity");
     pass (raw tt_channel(r.types, elem, lvl, cap));
 };
 
@@ -3064,15 +3076,19 @@ func:resolve_channel_type = int32(TypeResolver->:r, TypeNode:n, int32:scope,
 // constants: a level decided at runtime is a level the lock analysis (D-056)
 // cannot reason about, and a capacity decided at runtime is the `mode` field
 // D-072 removed.
+// THE OWNER IS NAMED BY THE CALLER (landing 117): this helper reads a `Mutex`'s,
+// an `RwLock`'s, a `CondVar`'s and a `Barrier`'s level too, and every one of them
+// said "`Channel`'s the lock level ..." until then (and the `what` strings carry no
+// article now: "`Mutex`'s lock level is a constant, not a type").
 func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
-                               int32:scope, string:what) never fails {
+                               int32:scope, string:owner, string:what) never fails {
     TypeNode:an = raw ast_type(r.ast, TypeId{ index: raw ast_id_at(r.ast,
                       raw type_args_start(n), i) });
     if (an.kind != TypeKind.TypeComptimeArg) {
-        string:c1 = string_concat("`Channel`'s ", what);
+        string:c1 = string_concat(string_concat(owner, "'s "), what);
         discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(),
             string_concat(c1,
-                " is a constant, not a type: it is part of the channel's identity, and one decided at runtime is the `mode` field D-072 removed"),
+                " is a constant, not a type: it is part of the type's identity (a level the lock analysis reasons about, D-056; a capacity decided at runtime was the `mode` field D-072 removed)"),
             n.span));
         pass 0i32;
     }
@@ -3086,7 +3102,7 @@ func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
         if ((cv.num < (0i64 - 2147483648i64)) || (cv.num > 2147483647i64)) { cbad = true; }
     }
     if (cbad) {
-        string:c2 = string_concat("`Channel`'s ", what);
+        string:c2 = string_concat(string_concat(owner, "'s "), what);
         discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(),
             string_concat(c2,
                 " must fold to an integer constant at compile time, one an `int32` holds (D-072): the level the lock analysis reasons about, and the capacity that monomorphizes the behaviour"),
@@ -3330,7 +3346,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         int32:melem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
                           raw type_args_start(n), 0i32) }, scope);
         if (raw type_is_invalid(r.types, melem)) { pass melem; }
-        int32:mlvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+        int32:mlvl = raw channel_const_arg(r, n, 1i32, scope, "`Mutex`", "lock level");
         pass (raw tt_mutex(r.types, melem, mlvl));
     }
     // `RwLock<T, LEVEL>` — the same two arguments, the same reasons.
@@ -3343,7 +3359,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         int32:rwelem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
                            raw type_args_start(n), 0i32) }, scope);
         if (raw type_is_invalid(r.types, rwelem)) { pass rwelem; }
-        int32:rwlvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+        int32:rwlvl = raw channel_const_arg(r, n, 1i32, scope, "`RwLock`", "lock level");
         pass (raw tt_rwlock(r.types, rwelem, rwlvl));
     }
     // `CondVar<LEVEL>` — one constant: the level of the wait itself (D-056:
@@ -3354,7 +3370,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                 "`CondVar<LEVEL>` takes one argument, the D-056 lock level of the wait",
                 n.span));
         }
-        int32:cvlvl = raw channel_const_arg(r, n, 0i32, scope, "the lock level");
+        int32:cvlvl = raw channel_const_arg(r, n, 0i32, scope, "`CondVar`", "lock level");
         pass (raw tt_condvar(r.types, cvlvl));
     }
     // `Barrier<N, LEVEL>` — the spec's table wrote `Barrier<N>`, and D-056's
@@ -3367,8 +3383,8 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                 "`Barrier<N, LEVEL>` takes two arguments: how many tasks meet, and the D-056 lock level of the wait",
                 n.span));
         }
-        int32:bn = raw channel_const_arg(r, n, 0i32, scope, "the party count");
-        int32:blvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+        int32:bn = raw channel_const_arg(r, n, 0i32, scope, "`Barrier`", "party count");
+        int32:blvl = raw channel_const_arg(r, n, 1i32, scope, "`Barrier`", "lock level");
         if (bn < 1i32) {
             pass (raw ty_error(r, raw TYPE_UNKNOWN(),
                 "a barrier needs at least one party; zero tasks can never meet",

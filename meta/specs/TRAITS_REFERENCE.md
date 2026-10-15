@@ -492,6 +492,22 @@ a `List<string>` handed to it is `NITPICK-TYPE-017` at the call, naming `Copy`.
 Parameters may carry a compile-time **value** as well as a type, marked
 `comptime` (D-064). D-056's lock levels are the motivating case.
 
+> **RESERVED (D-353, 2026-10-15; 1.6.1e landing 117).** A user-declared value
+> parameter — `struct:Lock<T, comptime int32:LEVEL>`, `func:scale<comptime
+> int32:K>` — parses and is refused at the parameter's declaration, once, by
+> `NITPICK-TYPE-095`; its uses say nothing more (D-240), so the four D-109 rules
+> below are the live form's and stand here for the day it is designed. The
+> compiler accepted the form and the emitter stopped on a call of it with
+> EMIT-002 (it monomorphises by type argument alone, D-191; DEF-236 (a), the
+> fuzzer's `as0062`). D-056's lock levels never needed it: `Mutex<T, LEVEL>`,
+> `RwLock<T, LEVEL>`, `CondVar<LEVEL>`, `Barrier<N, LEVEL>` and
+> `Channel<T, LEVEL, CAP>` are compiler-known and take their constants through
+> their own gate (D-072), as a `simd` lane count and an array size do. A
+> compile-time value a program needs is a `fixed` module binding or a macro
+> parameter (MACRO_REFERENCE §4). The dedicated code is what lets D-336's frozen
+> corpus record the form RESERVED (D-354). No file of the tree, the libraries or
+> the applications declared one (measured 2026-10-15).
+
 ```nitpick
 struct:Mutex<T, comptime int32:LEVEL> = { … };
 
@@ -560,6 +576,8 @@ Three rules follow, all D-107:
   perfectly reasonable type.
 - **A `comptime` value parameter is not a type.** `LEVEL:x` is as wrong as
   `MAX:x`; the marker is what makes the two kinds of parameter readable apart.
+  (Silent since D-353: the parameter's own declaration carries the one report,
+  `NITPICK-TYPE-095`; the sentence stands for the day the form is designed.)
 
 A parameter **shadows** a module-level type of the same name, being the inner
 binding. The diagnostic for an undeclared capability **names the bounds the

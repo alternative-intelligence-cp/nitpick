@@ -23019,6 +23019,15 @@ name each have one capacity, which a `fixed` constant covers -- and the language
 `Channel<T, LEVEL, CAP>`, compiler-known. The dedicated code is what lets D-354's RESERVED verdict hold this form: IN stays open
 after the freeze without a red run. Measured 2026-10-15: no file of the tree, the libraries or the applications declares one.
 
+> **Note (2026-10-15, 1.6.1e landing 117 — the refusal landed):** `NITPICK-TYPE-095` at the parameter, once, in the
+> bounds walk every declaration's generic window goes through (`collect_param_bounds`, type_trait.npk) -- a function,
+> a struct, a trait, an enum, an impl -- and the use sites silent under D-240 (a value argument that folds, a type where a
+> value was wanted, a suffix that is not the declared type, a name that does not fold: D-109's argument rules stand in
+> TRAITS_REFERENCE for the day the form is designed). The compiler-known value arguments (`Mutex`'s level, `simd`'s lane
+> count, an array size, a channel's constants) are not this form and are unchanged. The sweep moved the fuzz corpus's
+> eight programs that declare one (two claims overturned: `tr0432` "expect: compile", `as0062` "expect: run:0"); no
+> library or application declares one. `value_param_reserved.npk`, `generics.npk` (its two use-rule cases on `Mutex`).
+
 ## D-354 — D-336'S FROZEN CORPUS MAY RECORD A RESERVED VERDICT: A REFUSAL OF A NOT-YET-DESIGNED FORM, KEYED TO ONE DEDICATED CODE, THAT MAY MOVE TO ACCEPTED AFTER THE FREEZE AND NEVER BACK — **SETTLED (user decision, 2026-10-15: "all the recommendations look fine to me. Lets go with those.")**
 
 An amendment to D-336 (the frozen compatibility corpus, S-117). The ruling, the user, 2026-10-15 at 07:42:39 (management_0's transcript; it first gave the time as "about 07:50"), through `management_0` -- the overall-manager seat he set up on 2026-10-12, which batched S-135, S-136 and the RESERVED question for him and relayed the ruling to `nitpick-compiler_37` at 07:53: "I just finished looking over the questions and from the best i can tell all the recommendations look fine to me. Lets go with those." The
