@@ -1,0 +1,63 @@
+// expect-exit: 0
+// A VIEW RE-SEATED BY A CALLEE, THE LEGAL WAYS (DEF-252, 1.6.1e; the twin of
+// tests/analysis/rejection/view_reseat_call.npk). The holder declared in the block
+// that declares the string; the string declared with the holder; a callee that
+// stores a COPY into an outer owner; a callee that reads the view and stores a
+// scalar. Each reads the re-seated bytes after the store and exits 0 at both legs.
+mod:view_reseat_ok;
+
+struct:Cursor = { fixed uint8[]:src; int64:pos; };
+struct:Owner  = { string:text; };
+
+func:reset      = NIL(Cursor->:c, fixed uint8[]:src) never fails { <-c = Cursor{ src: src, pos: 0i64 }; pass NIL; };
+func:reads_only = NIL(Cursor->:c, fixed uint8[]:src) never fails { c.pos = src.len; pass NIL; };
+func:copy_in    = NIL(Owner->:o, string:s) never fails { o.text = string_concat(s, ""); pass NIL; };
+
+func:main = int32(cstring[]:_~argv) {
+    // the holder inside the string's block
+    string:s = string_concat("abc", "def");
+    if (s.len == 6i64) {
+        string:t = string_concat("ghij", "klmn");
+        Cursor:c = Cursor{ src: string_bytes(s), pos: 0i64 };
+        drop reset(@c, string_bytes(t));
+        if (c.src.len != 8i64) { exit 10i32; }
+        if (c.src[0i64] != 103u8) { exit 11i32; }
+    }
+    // the string declared with the holder
+    string:u = string_concat("mnop", "qrst");
+    Cursor:d = Cursor{ src: string_bytes(s), pos: 0i64 };
+    drop reset(@d, string_bytes(u));
+    if (d.src[0i64] != 109u8) { exit 12i32; }
+    // a copy stored into an outer owner: the inner string may die
+    Owner:o = Owner{ text: string_concat("", "") };
+    if (s.len == 6i64) {
+        string:v = string_concat("wx", "yz");
+        drop copy_in(@o, v);
+    }
+    if (o.text.len != 4i64) { exit 13i32; }
+    if (string_bytes(o.text)[0i64] != 119u8) { exit 14i32; }
+    if (string_bytes(o.text)[3i64] != 122u8) { exit 17i32; }
+    // a reader stores a scalar off the inner string's view
+    Cursor:e = Cursor{ src: string_bytes(s), pos: 0i64 };
+    if (s.len == 6i64) {
+        string:w = string_concat("12345", "6");
+        drop reads_only(@e, string_bytes(w));
+    }
+    if (e.pos != 6i64) { exit 15i32; }
+    if (e.src[0i64] != 97u8) { exit 16i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

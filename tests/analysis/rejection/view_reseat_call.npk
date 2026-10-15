@@ -1,0 +1,302 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 81:20
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 91:27
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 101:28
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 112:24
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 121:26
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 131:14
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 141:14
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 152:17
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 162:26
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 172:30
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 183:20
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 193:20
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 203:20
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 215:20
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 225:20
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 237:20
+//
+// A VIEW RE-SEATED BY A CALLEE OUTLIVES THE STORAGE IT VIEWS (DEF-252, 1.6.1e; D-004
+// rule 3, DEF-42). `c = Cursor{ src: string_bytes(t) }` with `c` declared outside the
+// block that declares `t` is BORROW-002 (DEF-42, 1.5.5 step 0): the holder outlives
+// the storage the view names. The same re-seat done by a CALLEE -- `reset(@c,
+// string_bytes(t))`, whose body stores its view parameter into the pointee -- was
+// connected by D-325's store matrix (the holder marked, so a later `pass c` refused)
+// and asked NO scope question: the program compiled and read the block's freed
+// string after it (exit 170 at both legs, the allocator's free poison; the library
+// seat's probe08h). Every store a callee makes into a destination this frame owns --
+// a local, a by-value parameter -- asks DEF-42's question of the arguments that flow
+// into it now, and a destination behind a dereferenced pointer (`@(<-p)`) is refused
+// as the direct `(<-p) = …` of a frame view is. EVERY CASE HERE TYPE-CHECKS (the
+// analyses run only over a program the checker accepted); the controls at the end
+// carry no code.
+mod:view_reseat_call;
+
+struct:Cursor = { fixed uint8[]:src; int64:pos; };     // the probe's: a write-once field, re-seated WHOLE
+struct:Seat   = { (fixed uint8[]):src; int64:pos; };   // the grouped view type: a field written again
+struct:Pack   = { fixed uint8[]:v; };
+struct:Holder = { int32->:p; };
+struct:Owner  = { string:text; };
+
+// THE CALLEES. Each of the first five stores its view (or address) parameter into
+// the pointee: whole, by a field, through a nested call, out of a struct argument,
+// an address. `reads_only` stores a scalar read off the view and `copy_in` stores a
+// COPY: their matrices connect nothing, and the controls use them.
+func:reset         = NIL(Cursor->:c, fixed uint8[]:src) never fails { <-c = Cursor{ src: src, pos: 0i64 }; pass NIL; };
+func:reseat_field  = NIL(Seat->:c, fixed uint8[]:src) never fails { c.src = src; pass NIL; };
+func:reseat_nested = NIL(Cursor->:c, fixed uint8[]:src) never fails { drop reset(c, src); pass NIL; };
+func:unpack_into   = NIL(Seat->:c, Pack:pk) never fails { c.src = pk.v; pass NIL; };
+func:point         = NIL(Holder->:h, int32->:q) never fails { h.p = q; pass NIL; };
+func:reads_only    = NIL(Cursor->:c, fixed uint8[]:src) never fails { c.pos = src.len; pass NIL; };
+func:copy_in       = NIL(Owner->:o, string:s) never fails { o.text = string_concat(s, ""); pass NIL; };
+async func:areset  = NIL(Cursor->:c, fixed uint8[]:src) { <-c = Cursor{ src: src, pos: 0i64 }; pass NIL; };
+
+trait:Reseat = { func:seat = NIL(Self->:self, fixed uint8[]:src) never fails; };
+impl:Seat:Reseat = { func:seat = NIL(Self->:self, fixed uint8[]:src) never fails { self.src = src; pass NIL; }; };
+
+func:fresh = string() never fails { pass string_concat("ghij", "klmn"); };
+func:seated = Cursor() never fails { pass Cursor{ src: string_bytes("abcdefgh"), pos: 0i64 }; };
+func:seated2 = Seat() never fails { pass Seat{ src: string_bytes("abcdefgh"), pos: 0i64 }; };
+
+// (1) probe08h: the whole-pointee store.
+func:whole = int64() never fails {
+    Cursor:c = raw seated();
+    if (true) {
+        string:t = raw fresh();
+        drop reset(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (2) a field store in the callee.
+func:field = int64() never fails {
+    Seat:c = raw seated2();
+    if (true) {
+        string:t = raw fresh();
+        drop reseat_field(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (3) the store two calls down (the matrix's transitive step).
+func:nested = int64() never fails {
+    Cursor:c = raw seated();
+    if (true) {
+        string:t = raw fresh();
+        drop reseat_nested(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (4) the prelude's `list_push` and `list_insert` of a view into a list declared
+// outside the view's block (the List's own matrix: DEF-112).
+func:pushed = int64() never fails {
+    List<fixed uint8[]>:views = raw list_init::<fixed uint8[]>(2i64);
+    if (true) {
+        string:t = raw fresh();
+        drop list_push(@views, string_bytes(t));
+    }
+    pass views.count;
+};
+
+func:inserted = int64() never fails {
+    List<fixed uint8[]>:views = raw list_init::<fixed uint8[]>(2i64);
+    if (true) {
+        string:t = raw fresh();
+        drop list_insert(@views, 0i64, string_bytes(t));
+    }
+    pass views.count;
+};
+
+// (5) a method's implicit receiver address is the destination.
+func:method = int64() never fails {
+    Seat:c = raw seated2();
+    if (true) {
+        string:t = raw fresh();
+        drop c.seat(string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (6) through a `dyn`: the trait method's summary is the union of its impls'.
+func:through_dyn = int64() never fails {
+    dyn Reseat:d = raw seated2();
+    if (true) {
+        string:t = raw fresh();
+        drop d.seat(string_bytes(t));
+    }
+    pass 0i64;
+};
+
+// (7) a function value: an unknown callee stores every argument into every pointee.
+func:through_value = int64() never fails {
+    Cursor:c = raw seated();
+    func NIL(Cursor->, fixed uint8[]) never fails:fv = reset;
+    if (true) {
+        string:t = raw fresh();
+        drop fv(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (8) the view arrives inside a struct argument.
+func:packed = int64() never fails {
+    Seat:c = raw seated2();
+    if (true) {
+        string:t = raw fresh();
+        drop unpack_into(@c, Pack{ v: string_bytes(t) });
+    }
+    pass c.pos;
+};
+
+// (9) an awaited async callee: its summary is walked as any other body's.
+async func:awaited = int64() {
+    Cursor:c = raw seated();
+    if (true) {
+        string:t = raw fresh();
+        discard(await areset(@c, string_bytes(t)) ?| NIL);
+    }
+    pass c.pos;
+};
+
+// (10) an ADDRESS of an inner local, stored through a callee (DEF-42's own shape,
+// `h = Holder{ p: @x }`, done by the callee).
+func:pointed = int32() never fails {
+    Holder:h = Holder{ p: NULL };
+    if (true) {
+        int32:x = 41i32;
+        drop point(@h, @x);
+    }
+    pass 0i32;
+};
+
+// (11) the holder outside a loop, the string declared in its body.
+func:looped = int64() never fails {
+    Cursor:c = raw seated();
+    for (int32:i in 0i32...2i32) {
+        string:t = raw fresh();
+        drop reset(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (12) a by-value `move` parameter is the holder: the function's scope encloses
+// every block of the body.
+func:param_holder = int64(move Cursor:c) never fails {
+    if (true) {
+        string:t = raw fresh();
+        drop reset(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (13) the destination is what a dereferenced pointer points at (`@(<-cp)`): the
+// direct `(<-cp) = …` of a frame view is rule 3's generic refusal, and so is this.
+func:through_deref = int64() never fails {
+    Cursor:c = raw seated();
+    Cursor->:cp = @c;
+    if (true) {
+        string:t = raw fresh();
+        drop reset(@(<-cp), string_bytes(t));
+    }
+    pass c.pos;
+};
+
+// (14) the caller's own pointer parameter as the destination: refused at the call
+// since 1.6.1 step 0 (the pointee outlives the frame), whatever the block.
+func:param_pointee = NIL(Cursor->:c) never fails {
+    if (true) {
+        string:t = raw fresh();
+        drop reset(c, string_bytes(t));
+    }
+    pass NIL;
+};
+
+// (15) the view carried by a view-holding local of the inner block: the holder
+// local is the bound (its scope encloses every borrow it holds).
+func:carried = int64() never fails {
+    Cursor:c = raw seated();
+    if (true) {
+        string:t = raw fresh();
+        fixed uint8[]:v = string_bytes(t);
+        drop reset(@c, v);
+    }
+    pass c.pos;
+};
+
+// THE CONTROLS: no code. The same block; the holder declared inside the view's
+// block; a callee that reads the view and stores a scalar; a callee that stores a
+// copy; a by-value parameter holder with the string in the body's own block (the
+// two die with the frame); a literal's view (it roots nothing); a parameter-rooted
+// view (older than the frame).
+func:same_block = int64() never fails {
+    string:t = raw fresh();
+    Cursor:c = raw seated();
+    drop reset(@c, string_bytes(t));
+    pass c.pos;
+};
+
+func:inner_holder = int64() never fails {
+    string:s = raw fresh();
+    if (true) {
+        Cursor:c = raw seated();
+        drop reset(@c, string_bytes(s));
+        pass c.pos;
+    }
+    pass 0i64;
+};
+
+func:reader = int64() never fails {
+    Cursor:c = raw seated();
+    if (true) {
+        string:t = raw fresh();
+        drop reads_only(@c, string_bytes(t));
+    }
+    pass c.pos;
+};
+
+func:copier = int64() never fails {
+    Owner:o = Owner{ text: string_concat("", "") };
+    if (true) {
+        string:t = raw fresh();
+        drop copy_in(@o, t);
+    }
+    pass o.text.len;
+};
+
+func:literal_view = int64() never fails {
+    Cursor:c = raw seated();
+    if (true) {
+        drop reset(@c, string_bytes("ghijklmn"));
+    }
+    pass c.pos;
+};
+
+func:param_body = int64(move Cursor:c) never fails {
+    string:t = raw fresh();
+    drop reset(@c, string_bytes(t));
+    pass c.pos;
+};
+
+func:param_view = int64(fixed uint8[]:src) never fails {
+    Cursor:c = raw seated();
+    if (true) {
+        drop reset(@c, src);
+    }
+    pass c.pos;
+};

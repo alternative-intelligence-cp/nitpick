@@ -303,6 +303,17 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   and cannot travel up; a LENT `dyn`'s cell is the caller's (the one owning-by-cell
   kind a loan may write, through its methods), so a borrow stored into it refuses
   at the call (`NITPICK-BORROW-002`, DEF-115).
+  **A holder this frame owns is bound by its block** (D-004 rule 3 as DEF-42 reads it, 1.5.5
+  step 0; asked of a callee's store since DEF-252, 1.6.1e landing 116): a borrow of a local
+  declared inside a block, stored into a binding declared outside that block -- by an
+  assignment, a struct literal, a copied holder, a call's result, or a CALLEE whose matrix
+  stores its argument into the binding's pointee (`reset(@c, string_bytes(t))`) -- refuses
+  at the store or at the call (`NITPICK-BORROW-002`): the holder outlives the storage the
+  view names (a block-scoped `string`'s heap body is freed at the block's end; the callee's
+  form compiled and read the freed body until landing 116). A by-value parameter holder is
+  bound by the body's block (it dies with the frame, as the body's own locals do); a
+  destination behind a dereferenced pointer (`@(<-p)`) refuses as the direct `(<-p) = …`
+  does. Declare the holder inside the block, store a copy, or pass the borrow down.
   **A moved-out OWNING value carries what its place holds, not its root's identity**
   (DEF-125, 1.6.1d step 4): `move(self.v)` of a `string` — a `cstring`, a `buffer`, an
   `OwnedFd`, a struct or an enum of such, a `List` of such: a type holding no FOREIGN

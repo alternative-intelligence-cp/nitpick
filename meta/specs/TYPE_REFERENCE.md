@@ -1855,7 +1855,7 @@ is AUTOMATIC after every operation, never a call:
 Generic complex number type with real and imaginary components.
 
 ```nitpick
-complex<flt64>:z = complex(3.0flt64, 4.0flt64);  // 3 + 4i
+complex<flt64>:z = complex(3.0f64, 4.0f64);  // 3 + 4i (this line spelled `3.0flt64` until landing 116: a type's name is no suffix, LEX-009)
 ```
 
 ```llvm

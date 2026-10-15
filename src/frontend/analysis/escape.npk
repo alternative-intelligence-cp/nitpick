@@ -992,10 +992,16 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
         ExprId:dp = raw dest_place(x, aj, aj_auto);
         if (raw expr_is_none(dp)) { continue; }
         List<ViewRef>:got = raw list_init::<ViewRef>(4i64);
+        // THE ARGUMENTS THAT CONTRIBUTED (DEF-252): each argument whose refs the
+        // matrix flows into this destination, so the holder-scope question can
+        // be asked of the argument's own text (`collect_local_roots`), exactly
+        // as the direct assignment asks it of its value.
+        List<ExprId>:srcs = raw list_init::<ExprId>(4i64);
         for (int32:k in 0i32...total) {
             ExprId:ak = recv;
             bool:ak_auto = auto_ref;
             if (k >= base) { ak = ExprId{ index: raw ast_id_at(x.ast, start, k - base) }; ak_auto = false; }
+            int64:before = got.count;
             // the view entries (k, path) of the callee's matrix for j
             if (callee <= 0i32) {
                 drop arg_refs_view(x, ak, ak_auto, 0i32, depth, @got);
@@ -1010,9 +1016,10 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
                 }
             }
             if (raw sum_has(fp, k)) { drop arg_refs_pass(x, ak, ak_auto, depth, @got); }
+            if (got.count > before) { drop list_push(@srcs, ak); }
         }
         if (got.count == 0i64) { continue; }
-        drop refuse_view_escape_into(x, dp, aj, aj_auto, @got);
+        drop refuse_view_escape_into(x, dp, aj, aj_auto, @got, @srcs);
         drop record_view_refs_at_place(x, dp, @got);
         drop fold_flow_into_param(x, dp, @got);
     }
@@ -1025,8 +1032,19 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
 // name -- is the escape rule 2 refuses at a return, and it refuses here: the
 // callee's own body said the store happens (its matrix), so this is not the
 // shape-based rule B of D-117 but its exact reading. A local destination is
-// marked as holding a borrow (rule 2 and 3 then guard it) and keeps the refs.
-func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_ref, List<ViewRef>->:got) never fails {
+// marked as holding a borrow (rule 2 and 3 then guard it) and keeps the refs
+// -- AFTER THE HOLDER-SCOPE QUESTION (DEF-252, 1.6.1e; D-004 rule 3, DEF-42):
+// a view of a local declared inside a block, stored by the callee into a
+// binding declared outside that block, outlives the storage it names exactly
+// as the direct assignment `c = Cursor{ src: string_bytes(t) }` does, and that
+// one is BORROW-002 since 1.5.5 step 0; until this landing the callee's store
+// was marked and never asked, and `reset(@c, string_bytes(t))` read the
+// block's freed string after it (exit 170 at both legs, the free poison). The
+// by-value parameter holder (the function's scope) is asked the same; a
+// destination behind a dereferenced pointer (`@(<-p)`) is refused as the
+// direct `(<-p) = …` of a frame view is (nothing names the pointee's life).
+func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_ref, List<ViewRef>->:got,
+                                   List<ExprId>->:srcs) never fails {
     bool:frame_view = false;
     for (int64:i in 0i64...got.count) {
         ViewRef:r = (<-got)[i];
@@ -1034,12 +1052,20 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
         if (raw ref_root_is_frame_owned(x, r)) { frame_view = true; }
     }
     if (!frame_view) { pass NIL; }
+    ExprNode:an = raw ast_expr(x.ast, arg);
     ExprId:rid = raw root_ident_id(x, dp);
-    if (raw expr_is_none(rid)) { pass NIL; }
+    if (raw expr_is_none(rid)) {
+        // THE DESTINATION IS WHAT A DEREFERENCED POINTER POINTS AT (`@(<-p)`,
+        // DEF-252's adjacent gap): the direct store `(<-p) = …` of a frame view
+        // is rule 3's generic refusal, and the callee's store is the same store.
+        drop escape_err(x, raw BORROW_STORED(),
+            "a view of this frame's storage is stored by this call into what a dereferenced pointer points at (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and nothing here names how long that memory lives -- store a copy, or hand the callee `@place` of a binding this frame owns",
+            an.span);
+        pass NIL;
+    }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a == 0i32) { pass NIL; }
     Symbol:sy = raw symtab_get(x.tab, rn.a);
-    ExprNode:an = raw ast_expr(x.ast, arg);
     if (sy.origin_kind == (raw SYM_DECL())) {
         DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sy.origin });
         if (pd.kind == DeclKind.DeclParamDecl) {
@@ -1065,6 +1091,10 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
                     pass NIL;
                 }
             }}
+            // THE PARAMETER'S BOUND IS THE BODY'S BLOCK (DEF-252): a view rooted
+            // in a block INSIDE the body outlives nothing it should; one rooted
+            // in the body itself dies with the parameter, at the frame's end.
+            if (raw refuse_call_holder_scope(x, sy.scope, true, srcs, an.span)) { pass NIL; }
             drop escape_mark_param(x, sy.origin);
             pass NIL;
         }
@@ -1081,9 +1111,32 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
             }}
         }
     }
-    // a local: it holds a borrow now (rules 2 and 3 guard it), and the refs
-    if (sy.origin_kind == (raw SYM_STMT())) { drop escape_mark(x, sy.origin); }
+    // a local: it holds a borrow now (rules 2 and 3 guard it), and the refs --
+    // once the holder-scope question is answered (DEF-252, DEF-42)
+    if (sy.origin_kind == (raw SYM_STMT())) {
+        if (raw refuse_call_holder_scope(x, sy.scope, false, srcs, an.span)) { pass NIL; }
+        drop escape_mark(x, sy.origin);
+    }
     pass NIL;
+};
+
+// THE HOLDER-SCOPE QUESTION AT A CALL (DEF-252): the destination's binding is
+// declared in `holder_scope`; is any contributing argument's borrow rooted at a
+// local declared strictly inside that block? Then the holder outlives the
+// storage the view names -- DEF-42's reading, asked of the callee's store. One
+// report per destination.
+func:refuse_call_holder_scope = bool(Escape->:x, int32:holder_scope, bool:param_holder, List<ExprId>->:srcs,
+                                     Span:at) never fails {
+    for (int64:i in 0i64...srcs.count) {
+        ExprId:src = (<-srcs)[i];
+        if (raw holder_scope_violated(x, holder_scope, src, param_holder)) {
+            drop escape_err(x, raw BORROW_STORED(),
+                "a view of a local declared inside a block is stored by this call into a binding declared outside that block (D-004 rule 3, DEF-42; D-325: the callee's own body stores what it is handed here), so the holder outlives the storage the view names -- declare the holder inside that block, store a copy, or pass the borrow down",
+                at);
+            pass true;
+        }
+    }
+    pass false;
 };
 
 // Is a ref's root frame-owned -- a local, a pattern binding, or a by-value
@@ -2938,15 +2991,18 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
                     // `int32->:p = NULL; if (c) { int32:x = 41i32; p = $$m x; }
                     // … <-p` was accepted: `p` outlives the block that
                     // declares `x`, which is rule 3's "not provably
-                    // shorter-lived" in its own words. Benign at run time by
-                    // construction (every local is a function-lifetime alloca,
+                    // shorter-lived" in its own words. Benign at run time for
+                    // an ADDRESS (every local is a function-lifetime alloca,
                     // D-173; an address-taken local is frame-resident to the
-                    // function's end in a coroutine) and unstated as a rule --
-                    // and the aliasing lifetimes of 1.5.5 assume a holder never
+                    // function's end in a coroutine) and NOT for a view of a
+                    // block-scoped string's heap body, which is freed at the
+                    // block's end (DEF-252: exit 170, the free poison) -- and
+                    // the aliasing lifetimes of 1.5.5 assume a holder never
                     // outlives its root. A DECLARATION-initialised holder needs
                     // no check: its roots are in scope at the declaration, so
-                    // their blocks enclose its own; only an ASSIGNMENT to a
-                    // holder declared earlier can reach outward.
+                    // their blocks enclose its own; an ASSIGNMENT to a holder
+                    // declared earlier reaches outward, and so does a CALLEE's
+                    // store into it (`refuse_call_holder_scope`, DEF-252).
                     drop check_holder_scope(x, sym.scope, val, s.span);
                     drop escape_mark(x, sym.origin);
                 }
@@ -2988,18 +3044,34 @@ func:scope_strictly_inside = bool(SymbolTable->:tab, int32:inner, int32:outer) n
     pass true;
 };
 
-func:check_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, Span:at) never fails {
+// THE PREDICATE (DEF-42; asked of a direct store by `check_holder_scope` and of a
+// callee's store by `refuse_call_holder_scope`, DEF-252): does `val` carry a
+// borrow rooted at a local or pattern binding declared strictly inside the
+// holder's scope?
+// A PARAMETER HOLDER'S BOUND IS THE BODY'S BLOCK (DEF-252): the resolver declares
+// a parameter in the FUNCTION scope and opens the body as a block one scope
+// below it (resolve.npk's `resolve_decl` and the block statement's
+// `scope_open`), while a by-value parameter's storage and the body's own
+// locals die together, with the frame -- so with `param_holder` a root
+// declared directly in the body's block is no violation, and one declared in
+// any block inside it is.
+func:holder_scope_violated = bool(Escape->:x, int32:holder_scope, ExprId:val, bool:param_holder) never fails {
     List<int32>:roots = raw list_init::<int32>(4i64);
     drop collect_local_roots(x, val, raw ESCAPE_DEPTH(), @roots);
     for (int64:i in 0i64...roots.count) {
         Symbol:rs = raw symtab_get(x.tab, roots[i]);
         if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) { continue; }
-        if (raw scope_strictly_inside(x.tab, rs.scope, holder_scope)) {
-            drop escape_err(x, raw BORROW_STORED(),
-                "a borrow cannot be stored here: this binding is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42) -- declare the holder inside that block, or pass the borrow down",
-                at);
-            pass NIL;
-        }
+        if (param_holder) { if ((raw scope_parent(x.tab, rs.scope)) == holder_scope) { continue; } }
+        if (raw scope_strictly_inside(x.tab, rs.scope, holder_scope)) { pass true; }
+    }
+    pass false;
+};
+
+func:check_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, Span:at) never fails {
+    if (raw holder_scope_violated(x, holder_scope, val, false)) {
+        drop escape_err(x, raw BORROW_STORED(),
+            "a borrow cannot be stored here: this binding is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42) -- declare the holder inside that block, or pass the borrow down",
+            at);
     }
     pass NIL;
 };

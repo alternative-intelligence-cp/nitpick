@@ -575,7 +575,7 @@ context (`CTX_DECREASES`), with TYPE-060's admission and nothing more.
 # 6. Attributes
 
 ```
-Attribute { name: Ident, args: Expr[] }      // #[align(16)], #[cfg(...)], #[derive(...)]
+Attribute { name: Ident, args: Expr[] }      // #[derive(...)] -- the one attribute (D-020; any other name is DERIVE-007 since landing 113, DEF-236 (d))
 ```
 
 Attach to declarations. **`#[derive(…)]`**, not `@derive` (D-020).

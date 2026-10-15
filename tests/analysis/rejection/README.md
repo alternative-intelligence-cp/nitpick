@@ -31,7 +31,7 @@ Silence has no stage.
 | Code | Rule | Case |
 |---|---|---|
 | `BORROW-001` | D-004 rule 2 — a borrow may not travel up | `borrows.npk`, five forms |
-| `BORROW-002` | D-004 rule 3 — nor be stored in something longer-lived: a field, a local aggregate, or (DEF-42, 1.5.5 step 0) a local holder declared outside the block that declares the borrowed local, directly, through a copy of a holder, through a literal or through a call's result | `borrows.npk` |
+| `BORROW-002` | D-004 rule 3 — nor be stored in something longer-lived: a field, a local aggregate, or (DEF-42, 1.5.5 step 0) a local holder declared outside the block that declares the borrowed local, directly, through a copy of a holder, through a literal or through a call's result, or (DEF-252, 1.6.1e landing 116) by a CALLEE whose store matrix stores its argument into the holder's pointee -- a local or a by-value parameter holder, the latter bound by the body's block -- and a destination behind a dereferenced pointer (`@(<-p)`) | `borrows.npk`; `view_reseat_call.npk` (sixteen sites, seven controls) |
 | `BORROW-013` | D-286 (1.5.5 step 1) — an access conflicts with a live claim: a read or a write-capable access under `$$m`, a write-capable access under `$$i`, a claim on storage a held `@` reaches, a write through a shared claim's holder, a call's arguments among themselves, a `defer` body against its block's claims; a STATIC overlap (a computed one is the `BorrowOverlap` guard's, 1.5.5 step 2) | `aliasing.npk` |
 | `REACH-002` | D-286 (1.5.5 step 2) — a guard site arms `BorrowOverlap`, which `failsafe` must name | `reach_alias.npk` |
 | `REACH-002` | D-306 (1.5.8 step 1) — a float's `=>!` cast to an integer arms `CastRange`, which `failsafe` must name | `reach_cast_range.npk` |

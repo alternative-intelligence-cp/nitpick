@@ -267,6 +267,21 @@ swap through a lent `dyn` was BORROW-002 with no view anywhere (the library list
 The return seam's implicit move (`pass self.v`, S-26) reads the same way. A struct with a raw
 pointer field, a slice, a `dyn` keep the conservative reading (`type_holds_foreign_pointer`).
 
+> **Note (2026-10-15, 1.6.1e landing 116 — DEF-252, with DEF-42's rule stated):** rule 3's "provably
+> shorter-lived" is decided by BLOCK NESTING for a holder this frame owns: a borrow stored into a local
+> binding refuses (`NITPICK-BORROW-002`) when the binding is declared outside the block that declares the
+> borrowed local -- DEF-42's reading (1.5.5 step 0, `check_holder_scope` in escape.npk), stated here for the
+> first time -- and the same question is asked of a CALLEE'S store since landing 116: `reset(@c,
+> string_bytes(t))`, whose body stores its view parameter into the pointee (D-325's store matrix), re-seated
+> `c` over the block's string `t` and the program read the freed body after the block (exit 170 at both
+> legs, the allocator's free poison: the library seats' probe08h). DEF-42 had called the unchecked shape
+> "benign by construction"; that holds for an ADDRESS (a function-lifetime alloca, D-173) and not for a
+> view of a block-scoped string's heap body. A by-value `move` parameter holder is bound by the body's
+> block (its storage and the body's own locals die with the frame; a local of a block inside the body does
+> not), a destination behind a dereferenced pointer (`@(<-p)`) refuses as the direct `(<-p) = …` of a frame
+> view does, and a `dyn` or bound call is a KNOWN callee (the union of its impls' summaries, D-325), not the
+> unknown this decision's shape rule keeps for a function value.
+
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
@@ -10846,6 +10861,11 @@ the default 16 (`#[align(N)]` types will lower onto it): power-of-two only,
 served by the large path with the alignment contract asserted at the
 production site. D-149's "the four above are the WHOLE allocator API" line
 becomes five.
+
+> **Note (2026-10-15, 1.6.1e landing 116 — the fuzzer's F-049 documentation rows):** the language has no
+> `#[align(N)]` attribute — `#[derive(…)]` is the one attribute, and an attribute of any other name is
+> `NITPICK-DERIVE-007` since landing 113 (D-020's note, DEF-236 (d)) — so `aalloc` is reached by its call alone, and
+> a type-level alignment, if one ever comes, is a language question (the user's), not an attribute today.
 
 **Single-threaded at this rung**, stated rather than implied: programs have
 one thread until 1.1, and the heap's lock discipline lands with 1.1's

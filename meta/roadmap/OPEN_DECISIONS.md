@@ -1235,7 +1235,10 @@ the holder and compares no scopes ("A BARE LOCAL NAME, and nothing else"),
 so rule 3's "not provably shorter-lived" is unchecked for a local holder.
 Benign at run time BY CONSTRUCTION — every local is a function-lifetime
 alloca (D-173) and an address-taken local is frame-resident to the
-function's end in a coroutine — and unstated as a rule; the aliasing
+function's end in a coroutine — and unstated as a rule (2026-10-15, DEF-252:
+benign for an ADDRESS; a view of a block-scoped string's heap body is freed at
+the block's end, and the CALLEE's form of this shape, never asked the question,
+read it -- landing 116 asks it of a callee's store too); the aliasing
 lifetimes of S-60 assume a holder never outlives its root. The fix, landed: the
 holder's declaring scope may not be an ancestor of the root's (or of a
 copied holder's) — `check_holder_scope` in `escape_assign`'s bare-local
@@ -4204,7 +4207,14 @@ defect declares a `DEF-` in §2f.
 > type, is a language question: S-136, the user's. Reproducers: the library seat's `null_store.npk` (above, beside
 > `bare_binding.npk`), `/home/randy/Team/REPORTS/defects/2026-10-12-null-store-legs/README.md` (the variants, gdb notes).
 
-> **DEF-252 — OPEN (registered 2026-10-15 by `nitpick-compiler_38`; the library seat's report of 2026-10-15 09:20 --
+> **DEF-252 — FIXED 2026-10-15 (landing 116, `nitpick-compiler_38`): the holder-scope question (DEF-42's) is asked of a
+> CALLEE'S store -- `refuse_view_escape_into` (escape.npk) asks `holder_scope_violated` (the predicate factored out of
+> `check_holder_scope`) of every argument the callee's matrix flows into a destination this frame owns, a local or a by-value
+> parameter (bound by the body's block), and refuses a destination behind a dereferenced pointer (`@(<-p)`, the groundwork's
+> adjacent gap) as the direct `(<-p) = …` is: `NITPICK-BORROW-002` at the destination argument, one per destination;
+> `view_reseat_call.npk` (sixteen sites, seven controls), `view_reseat_ok.npk` (the legal ways at both legs); D-004 carries
+> the dated note that states DEF-42's rule, MEMORY_REFERENCE the sentence; `1.6.1e.md`'s record has the measurements.
+> Registered 2026-10-15 by `nitpick-compiler_38`; the library seat's report of 2026-10-15 09:20 --
 > nitpick-libs_19, from nitpick-parse's cycle-0.0 probes, found by the Team seat's planner and reproduced by Ailp-team_1 and by
 > the library seat at `7e91730`; reproduced here on landing 113's compiler at 09:21; HIGH: a use-after-free in safe code, at both
 > legs -- memory-safety under-enforcement, the class the author treats as blocking; placed right behind landings 114 and 115 and
@@ -4245,6 +4255,34 @@ defect declares a `DEF-` in §2f.
 > tree's generic bound calls (the library seat's sweep: no library calls a `Self->` method through a bound today; nitpick-parse
 > needs it from its 0.2.2, PD-131). Reproducers: `probe06_trait_bound.npk` (the failure), `case2_bound_by_value.npk` (exit 5),
 > `case3_concrete_pointer.npk` (exit 1), beside DEF-252's.
+
+> **DEF-256 — OPEN (registered 2026-10-15 by `nitpick-compiler_38` at landing 116; the fuzzer's F-049 -- `nitpick-fuzz_2`'s
+> report of 2026-10-15 20:35, nitpick-fuzz main `f31dfc6`, `findings/F-049-pick-binding-reinit-refused/`, `nitpick-libs_19`
+> copied -- reproduced here at 20:42 on landing 115's compiler (7992c77) and on landing 116's; LOWER PRIORITY: a refusal of
+> what MEMORY_REFERENCE §2.3 admits, nothing unsafe accepted). A CONSUMING `pick`'S BINDING RE-ASSIGNED AFTER A MOVE IS STILL
+> MOVE-001 AT ITS NEXT READ.** `pick (move(e)) { (Som(x)) { string:t = move(x); x = raw nw(); int32:o = raw obs_s(x); exit o; },
+> (*) { exit 24i32; } }` is `NITPICK-MOVE-001` at the read of `x` ("this binding was moved out of and is invalid until it is
+> assigned again", D-065) one line after its re-assignment (`pick_reinit_read.npk`, 31:33), and the same move and
+> re-assignment in a `for` body is MOVE-001 at the second trip's move and at the read after the loop (`pick_reinit_loop.npk`,
+> two reports); the local twin (`string:x = raw mk(); string:t = move(x); x = raw nw();` then the read) compiles and answers 22,
+> the new value, at both legs on every compiler (`ctl_local_reinit_read.npk`), and the control that moves and does NOT
+> re-assign is refused, rightly (`ctl_pick_moved_read.npk`: before landing 74 it compiled and read the moved-out original,
+> DEF-118's shape). The reference: "It may be reinitialized by assignment, after which it is live again" (MEMORY_REFERENCE
+> §2.3). New at landing 74 (`40deffa`, 1.6.1d step 1, where DEF-118 put a pattern binding under the move rules; at 73,
+> `bbb1530`, both programs compiled and answered 22): the fuzzer's bisection over the M9 grid's 24 moved cells (`pick_own ×
+> loop_move` 16, `pick_own × swap` 8), measured by M12 and its verifier. THE CAUSE, READ HERE (the fuzzer inferred it):
+> `assign_assign` (bindings.npk) marks a bare-name target assigned on two roads -- a parameter's under `SYM_DECL` (DEF-124's
+> branch, 1.6.1d step 4) and a local's under `SYM_STMT` (`state_mark`, which clears the moved bit) -- and returns in silence
+> for every other symbol kind (`if (sym.origin_kind != SYM_STMT) { pass NIL; }`), so a `SYM_PAT` symbol, the kind DEF-118
+> gave a consuming arm's binding (`symbol_slot` numbers it as a local), is never marked: the move stands and the next read is
+> refused. DEF-124's shape (F-009) at a third binding kind. RECOMMENDED: the `SYM_PAT` symbol takes the local's road
+> (`state_mark(st, symbol_slot(x, tn.a))`; no `fixed` question -- a pattern binding carries no qualifier, and a LENDING arm's
+> view is TYPE-066 at any assignment already, D-266), measured on the fuzzer's four programs (the two reproducers 0/22/22,
+> `ctl_pick_moved_read` still MOVE-001, the local twin unchanged) and the tree's consuming picks under both checkers; its own
+> landing, after the queue's wrong answers. The same report's three documentation rows are corrected at this landing:
+> TYPE_REFERENCE's complex example spelled `3.0flt64` (LEX-009; `3.0f64` now); AST_REFERENCE §6's node comment named
+> `#[align(16)]` and `#[cfg(...)]` beside the paragraph that makes `#[derive]` the one attribute; D-150's "`#[align(N)]` types
+> will lower onto `aalloc`" carries a dated note (the language has no `#[align]`: D-020's note of landing 113, DERIVE-007).
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,
