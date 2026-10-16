@@ -39,6 +39,7 @@ use "./type_trait.npk".*;   // assoc_binding_of (D-166)
 use "./resolve_codes.npk".*;   // RESOLVE_UNKNOWN: a `(module.Name)` arm naming nothing is the id
 use "./macro/derive_codes.npk".*;   // DERIVE_ATTRIBUTE: an attribute on a binding (DEF-236 (d), landing 113)entifier's own code (D-275, D-240)
 use "./builtins.npk".*;        // is_builtin_name: the names a CALLABLE binding cannot take (D-296)
+use "./analysis/wild_places.npk".*;   // place_wild: an assignment into a wild place admits `NULL` (D-355)
 
 // A CALLABLE BINDING MAY NOT TAKE A BUILTIN'S NAME (D-296, 1.5.6b step 4b) --
 // D-294 inside a function. A bare-name builtin is admitted by the resolver only
@@ -2203,7 +2204,12 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     // resolver refused it (D-240; `expect_refused`).
     bool:rsaved = e.expect_refused;
     e.expect_refused = (want == 0i32);
+    // A `wild`/`wildx` BINDING'S INITIALISER IS A WILD CONTEXT (D-355): `wild int8->:p =
+    // NULL;` stands, a plain pointer binding refuses the sentinel by name.
+    int32:nsv = e.null_ctx;
+    e.null_ctx = raw null_ctx_of_quals(raw stmt_quals(e.ast, s));
     int32:got = raw type_of_expr(e, init);
+    e.null_ctx = nsv;
     e.expect_refused = rsaved;
     e.expected = saved;
 
@@ -2281,7 +2287,13 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
     int32:saved = e.expected;
     e.expected = want;
+    // A STORE INTO A WILD PLACE ADMITS `NULL` (D-355): D-120's one predicate decides the
+    // target's regime -- a `wild` binding, parameter or field, an element of one.
+    int32:nsv = e.null_ctx;
+    e.null_ctx = 0i32;
+    if (raw place_wild(e.ast, e.tab, e.expr_types, e.types, target)) { e.null_ctx = 1i32; }
     int32:got = raw type_of_expr(e, value);
+    e.null_ctx = nsv;
     e.expected = saved;
 
     if (want == 0i32) { pass NIL; }
@@ -2505,7 +2517,13 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // the caller, with no local reclaim scoped to this frame.
     int32:gsaved = e.give_operand;
     e.give_operand = v.index;
+    // A `wild` RETURN IS A WILD CONTEXT FOR ITS `pass` (D-355): `func:f = wild int8->()
+    // … { pass NULL; }` stands, a plain `T->()` refuses the sentinel.
+    int32:nsv = e.null_ctx;
+    e.null_ctx = 0i32;
+    if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
     int32:got = raw type_of_expr(e, v);
+    e.null_ctx = nsv;
     e.give_operand = gsaved;
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
@@ -3061,7 +3079,12 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
         if (!(raw expr_is_none(init))) {
             int32:saved = e.expected;
             e.expected = want;
+            // `fixed wild int64->:P = NULL;` IS THE MODULE-LEVEL SPELLING THAT STAYS (D-355);
+            // a plain pointer binding's `NULL` is refused by name.
+            int32:nsv = e.null_ctx;
+            e.null_ctx = raw null_ctx_of_quals(raw global_quals(d));
             int32:got = raw type_of_expr(e, init);
+            e.null_ctx = nsv;
             e.expected = saved;
             if (want != 0i32) {
                 if (got != 0i32) {

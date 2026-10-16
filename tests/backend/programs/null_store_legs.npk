@@ -3,7 +3,9 @@
 // A STORE THROUGH A `NULL` POINTER FAULTS AT BOTH LEGS, AND THE FAULT IS THE TRAP
 // ROUTE'S (DEF-251, 1.6.1e landing 115; the library seats' report of 2026-10-12).
 // `int64->:p = NULL; <-p = 5i64;` compiles (TYPE_REFERENCE §27: `NULL` is legal in
-// a pointer context; S-136 asks whether it should stay so for a plain pointer). At
+// a pointer context; S-136 asked whether it should stay so for a plain pointer, and
+// D-355 answered: a plain `T->` is never null since 1.6.1e landing 119, so the pointer
+// here is a `wild` one, the one context that keeps `NULL`). At
 // -O0 the hardware fault entered the trap route as `MachineFault` (107) on every
 // compiler; at -O2 `opt` read the store to `null` as undefined behaviour and
 // lowered `main` to an EMPTY body -- `unreachable` -- so the processor ran into
@@ -17,7 +19,7 @@
 mod:null_store_legs;
 
 func:main = int32(cstring[]:_~argv) {
-    int64->:p = NULL;
+    wild int64->:p = NULL;
     <-p = 5i64;
     exit 0i32;
 };

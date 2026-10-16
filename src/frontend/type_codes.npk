@@ -665,3 +665,15 @@ pub func:TYPE_OUTSIDE_PICK_ARM = string() never fails { pass "NITPICK-TYPE-094";
 // (a corpus can only hold what parses), and its uses say nothing more (D-240): the resolver
 // accepts a value argument in silence where this code already stands at the declaration.
 pub func:TYPE_VALUE_PARAM_RESERVED = string() never fails { pass "NITPICK-TYPE-095"; };
+
+// `NULL` IS NO POINTER, AND A PLAIN `T->` ALWAYS POINTS AT SOMETHING (D-355, 1.6.1e landing 119;
+// S-136, the library seats' report of 2026-10-12): `int64->:p = NULL;` compiled -- TYPE_REFERENCE
+// section 27 admitted `NULL` in any pointer context -- and a store through it was a hardware fault
+// (controlled at both legs since landing 115, a fault still). `NULL` keeps its meaning in a `wild`
+// pointer context alone -- a `wild`/`wildx` binding, parameter, field or return, an `=>! wild` cast,
+// a comparison against a wild place: the allocator's and the floor's shapes, where a dereference is
+// the author's responsibility under the TOS -- and a pointer that may be absent is the Optional
+// `T->?` tested against `NIL`. Reported ONCE, at the literal, wherever a pointer or an Optional is
+// expected and the slot is not a wild one; where no pointer is expected at all, TYPE-UNKNOWN's
+// "nothing here says which pointer" stands as before.
+pub func:TYPE_NULL_PLAIN_POINTER = string() never fails { pass "NITPICK-TYPE-096"; };

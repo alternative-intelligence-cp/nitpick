@@ -19,17 +19,17 @@
 // expect-error: NITPICK-BORROW-002
 // expect-error-at: 172:30
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 183:20
+// expect-error-at: 184:20
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 193:20
+// expect-error-at: 194:20
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 203:20
+// expect-error-at: 204:20
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 215:20
+// expect-error-at: 216:20
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 225:20
+// expect-error-at: 226:20
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 237:20
+// expect-error-at: 238:20
 //
 // A VIEW RE-SEATED BY A CALLEE OUTLIVES THE STORAGE IT VIEWS (DEF-252, 1.6.1e; D-004
 // rule 3, DEF-42). `c = Cursor{ src: string_bytes(t) }` with `c` declared outside the
@@ -177,7 +177,8 @@ async func:awaited = int64() {
 // (10) an ADDRESS of an inner local, stored through a callee (DEF-42's own shape,
 // `h = Holder{ p: @x }`, done by the callee).
 func:pointed = int32() never fails {
-    Holder:h = Holder{ p: NULL };
+    int32:z = 0i32;
+    Holder:h = Holder{ p: @z };
     if (true) {
         int32:x = 41i32;
         drop point(@h, @x);

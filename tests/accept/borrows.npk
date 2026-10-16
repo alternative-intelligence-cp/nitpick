@@ -86,13 +86,18 @@ func:rebinds = int32() never fails {
 
 // --- first-class pointers are untouched ----------------------------------------
 //
-// A pointer that is not a borrow is not the analysis's business. `NULL` into a
-// field, and a field read back out, are ordinary pointer traffic — this is the
-// half of the rule that says the checker leaves the type system alone.
+// A pointer that is not a borrow is not the analysis's business. `NIL` into an
+// Optional pointer field, and a field read back out, are ordinary pointer traffic
+// — this is the half of the rule that says the checker leaves the type system
+// alone. (This wrote `NULL` into a plain `int32->` field until D-355, 1.6.1e
+// landing 119: a plain pointer always points at something now, and the pointer
+// that may be absent is `T->?`.)
 
-func:stores_a_non_borrow = Holder() never fails {
-    Holder:h = Holder{ inner: NULL };
-    h.inner = NULL;
+struct:OptHolder = { int32->?:inner; };
+
+func:stores_a_non_borrow = OptHolder() never fails {
+    OptHolder:h = OptHolder{ inner: NIL };
+    h.inner = NIL;
     pass h;
 };
 
@@ -176,13 +181,15 @@ func:builds_a_context = int32() never fails {
 // local, hand it to a helper, return the local — and the exemption is what keeps
 // it compiling.
 
-func:touches = NIL(Ctx->:h) never fails {
-    h.a = NULL;
+struct:OptCtx = { int32->?:a; int32->?:b; };
+
+func:touches = NIL(OptCtx->:h) never fails {
+    h.a = NIL;
     pass NIL;
 };
 
-func:seeds_itself = Ctx() never fails {
-    Ctx:c = Ctx{ a: NULL, b: NULL };
+func:seeds_itself = OptCtx() never fails {
+    OptCtx:c = OptCtx{ a: NIL, b: NIL };
     drop touches(@c);
     pass c;
 };
@@ -213,7 +220,8 @@ func:per_case_fixed = int32(int32:n) never fails {
 // (`rejection/borrows.npk`, `outer_holder` and `outer_copy`).
 func:same_block_holder = int32() never fails {
     int32:x = 5i32;
-    int32->:p = NULL;
+    int32:y = 6i32;
+    int32->:p = @y;
     p = @x;
     pass (<-p);
 };
@@ -222,7 +230,8 @@ func:inner_holder = int32() never fails {
     int32:x = 5i32;
     int32:sum = 0i32;
     if (true) {
-        int32->:p = NULL;
+        int32:y = 6i32;
+        int32->:p = @y;
         p = $$m x;
         sum = <-p;
     }

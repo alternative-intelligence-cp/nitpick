@@ -60,7 +60,7 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) never fails {
     // §27), so a `NULL`-initialised slice is itself an error and every case built
     // on one would have been measuring that instead of what it meant to.
     string:pre = string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) never fails { pass 1i32; }; func:add2 = int32(int32:a, int32:b) never fails { pass 1i32; }; func:vsum = int32(int32:first, ..*int64[]:rest) never fails { pass 1i32; }; ", decls);
-    string:head = string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
+    string:head = string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, wild int32->:wip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
     string:with_body = string_concat(head, body);
     string:src = string_concat(with_body, " pass NIL; };");
     pass (raw run_module(src, "f", it));
@@ -382,9 +382,19 @@ func:main = int32(cstring[]:_~argv) {
         // `NIL == oi` reported the sentinel as homeless while `oi == NIL` worked.
         Ax:e2 = raw ax("bool:b = (NIL == oi);", @it);
         if (raw errs(@e2) != 0i64)                                 { exit 97i32; }
-        // `NULL` had the same defect and is fixed by the same list.
-        Ax:e3 = raw ax("bool:b = (NULL == ip);", @it);
+        // `NULL` had the same defect and is fixed by the same list -- read on a WILD
+        // pointer since D-355 (1.6.1e landing 119): `NULL` is a `wild` pointer's value.
+        Ax:e3 = raw ax("bool:b = (NULL == wip);", @it);
         if (raw errs(@e3) != 0i64)                                 { exit 98i32; }
+        // AGAINST A PLAIN POINTER THE COMPARISON IS REFUSED BY NAME (D-355): a plain
+        // `T->` always points at something, so `p == NULL` is a question it always
+        // answers `false` -- NITPICK-TYPE-096 at the literal, once, in either operand
+        // order (the order fix above still holds: one report, not a homeless sentinel).
+        Ax:e3b = raw ax("bool:b = (NULL == ip);", @it);
+        if (raw errs(@e3b) != 1i64)                                { exit 175i32; }
+        if (!(raw string_eq(raw code0a(@e3b), raw TYPE_NULL_PLAIN_POINTER()))) { exit 176i32; }
+        Ax:e3c = raw ax("bool:b = (ip != NULL);", @it);
+        if (raw errs(@e3c) != 1i64)                                { exit 177i32; }
 
         // `NIL` WITH NO `Optional` IN SIGHT IS STILL THE UNIT VALUE — unlike `NULL`,
         // it has a type of its own to fall back to, and `pass NIL;` is the most

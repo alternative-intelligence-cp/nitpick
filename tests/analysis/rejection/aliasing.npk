@@ -219,7 +219,8 @@ func:pos_nested = int32() never fails {
 // expect-error: NITPICK-BORROW-014
 func:pos_field = int32() never fails {
     int32:x = 1i32;
-    Holder:h = Holder{ inner: NULL };
+    int32:z = 0i32;
+    Holder:h = Holder{ inner: @z };
     h.inner = $$m x;
     pass (<-h.inner);
 };

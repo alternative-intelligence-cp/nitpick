@@ -1,0 +1,100 @@
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 44:19
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 47:56
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 54:17
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 55:9
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 56:31
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 57:15
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 58:21
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 59:14
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 60:9
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 61:18
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 62:23
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 64:23
+//
+// `NULL` LEAVES THE PLAIN POINTER (D-355, 1.6.1e landing 119; S-136, the library seats' report
+// of 2026-10-12): a plain `T->` always points at something, so `NULL` written where a plain
+// pointer or an `Optional` is expected is NITPICK-TYPE-096 at the literal, once per site -- a
+// local's or a module binding's initialiser, an assignment to a plain place, a plain field in a
+// literal, a plain parameter's argument, `pass NULL` from a plain `T->()`, a comparison against a
+// plain pointer in either operand order, an `Optional` slot (which built a PRESENT optional
+// holding a null pointer until this landing), an array literal's element under a plain binding
+// and a `??` default into a plain slot. A pointer that may be absent is the Optional `T->?`
+// (`tests/backend/programs/optional_pointer.npk`). The `wild` contexts carry no code: a
+// `wild`/`wildx` binding, parameter, field or return, a store into a wild place, a comparison
+// against one, the builtins' `wild any->` parameters -- `NULL` keeps its meaning there, the
+// allocator's and the floor's shapes. The header is generated from the checker's report
+// (header_from_check.py) and read site by site.
+mod:null_plain_pointer;
+
+struct:Holder = { int32->:inner; };
+struct:Buf = { wild int8->:data; int64:cap; };
+
+fixed int64->:P = NULL;
+fixed wild int64->:W = NULL;
+
+func:plain_ret = int32->(int32->:p) never fails { pass NULL; };
+func:wild_ret = wild int8->() never fails { pass NULL; };
+func:take_plain = NIL(int32->:p) never fails { pass NIL; };
+func:take_wild = NIL(wild int8->:p) never fails { pass NIL; };
+
+func:sites = NIL() never fails {
+    int32:x = 1i32;
+    int32->:p = NULL;
+    p = NULL;
+    Holder:h = Holder{ inner: NULL };
+    h.inner = NULL;
+    drop take_plain(NULL);
+    if (p == NULL) { pass NIL; }
+    if (NULL != h.inner) { pass NIL; }
+    int32->?:o = NULL;
+    int32->[2]:arr = [NULL, @x];
+    int32->?:o2 = NIL;
+    int32->:u = o2 ?? NULL;
+    pass NIL;
+};
+
+func:controls = NIL() never fails {
+    wild int8->:w = NULL;
+    w = NULL;
+    if (w == NULL) { pass NIL; }
+    if (NULL != w) { pass NIL; }
+    Buf:b = Buf{ data: NULL, cap: 0i64 };
+    b.data = NULL;
+    if (b.data == NULL) { pass NIL; }
+    drop take_wild(NULL);
+    wild int8->:r = raw wild_ret();
+    wild int8->:g = ralloc(NULL, 8i64);
+    dalloc(g);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    drop sites();
+    drop controls();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

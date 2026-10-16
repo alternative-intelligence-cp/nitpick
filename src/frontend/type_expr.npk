@@ -56,6 +56,7 @@ use "./type_stmt.npk".*;
 use "./type_trait.npk".*;
 use "./builtins.npk".*;   // the raw/drop licence reads the builtin column (D-163)
 use "./expr_types.npk".*;
+use "./analysis/wild_places.npk".*;   // expr_wild_provenance: a comparison against a wild place (D-355)
 
 pub struct:ExprTyper = {
     Ast->:ast;
@@ -79,6 +80,18 @@ pub struct:ExprTyper = {
     // stays silent when it is set and nothing else directs it. It can only
     // silence a second report inside a program already refused at its annotation.
     bool:expect_refused;
+
+    // THE `NULL` CONTEXT (D-355, 1.6.1e landing 119): what the slot being typed is, as far as
+    // the sentinel `NULL` is concerned -- 0 a plain slot (TYPE-096), 1 a `wild` pointer context
+    // (admitted: a `wild`/`wildx` binding's, parameter's, field's or return's slot, an
+    // `=>! wild` cast's operand, a comparison against a wild place), 2 a comparison against a
+    // PLAIN pointer (refused with the comparison's own sentence). The declared slots set it
+    // (save, set, type, restore -- `expected`'s discipline) and `type_of_expr` RESETS it to 0
+    // at every node that is not transparent (`null_ctx_passes`), so a wild slot's context
+    // reaches a `NULL` through a ternary's arm, a `??`/`?|` default, a pick expression's
+    // `give` or an array literal's element -- never into a nested call's argument, a literal's
+    // field or a cast's operand, which set their own.
+    int32:null_ctx;
 
     // THE SCOPE NAMES ARE LOOKED UP IN. It lives on the typer rather than being
     // threaded through every walk function for the same reason `expected` does:
@@ -230,7 +243,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  FnInstTable->:fninsts,
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
-                             diags: diags, expected: 0i32, expect_refused: false, scope: scope,
+                             diags: diags, expected: 0i32, expect_refused: false, null_ctx: 0i32, scope: scope,
                              fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, arm_depth: 0i32, givex_depth: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
@@ -1240,7 +1253,26 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:want = raw expected_value(e);
     if (want != 0i32) {
         if ((raw type_kind(e.types, want)) == (raw TY_POINTER())) {
-            pass want;
+            // `NULL` LEAVES THE PLAIN POINTER (D-355, 1.6.1e landing 119): a plain `T->`
+            // always points at something, so `NULL` is admitted where the slot is a `wild`
+            // pointer context (`null_ctx` 1) and refused by name everywhere else -- the
+            // Optional `T->?` with `NIL` is the pointer that may be absent. Three faces, one
+            // code: the plain slot, an `Optional` slot (the present-null hole: this built an
+            // Optional HOLDING a null pointer until this landing), a comparison against a
+            // plain pointer (always `false`).
+            if (e.null_ctx == 1i32) { pass want; }
+            if (e.null_ctx == 2i32) {
+                pass (raw te_error(e, raw TYPE_NULL_PLAIN_POINTER(),
+                    "`NULL` is no pointer, and a plain `T->` always points at something (D-355): `p == NULL` is a question a plain pointer always answers `false` -- a pointer that may be absent is the Optional `T->?`, tested with `== NIL`; `NULL` keeps its meaning in a `wild` pointer context alone",
+                    n.span));
+            }
+            string:m = "`NULL` is no pointer, and a plain `T->` always points at something (D-355): a pointer that may be absent is the Optional `T->?` -- `NIL` when empty, tested with `== NIL`, read with `?? d` or `?.` -- and `NULL` keeps its meaning in a `wild` pointer context alone";
+            if (e.expected != 0i32) {
+                if ((raw type_kind(e.types, e.expected)) == (raw TY_OPTIONAL())) {
+                    m = string_concat(m, "; this slot is an `Optional`: write `NIL`");
+                }
+            }
+            pass (raw te_error(e, raw TYPE_NULL_PLAIN_POINTER(), move(m), n.span));
         }
     }
     pass (raw te_error(e, raw TYPE_UNKNOWN(),
@@ -2065,7 +2097,12 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) never fai
 
     int32:saved = e.expected;
     e.expected = to;
+    // `NULL =>! wild T->` is a wild context by the cast's own qualifier (D-355); a cast to a
+    // plain pointer gives the sentinel nothing.
+    int32:nsv = e.null_ctx;
+    e.null_ctx = raw null_ctx_of_quals(raw expr_cast_quals(n));
     int32:from = raw type_of_expr(e, raw expr_operand(n));
+    e.null_ctx = nsv;
     e.expected = saved;
 
     if (from == 0i32) { pass to; }
@@ -2433,7 +2470,12 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
 
     int32:saved = e.expected;
     e.expected = want;
+    // THE VALUE IS THE FUNCTION'S RETURN SLOT (D-355): wild exactly where the return is.
+    int32:nsv = e.null_ctx;
+    e.null_ctx = 0i32;
+    if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
     int32:vt = raw type_of_expr(e, raw expr_lhs(n));
+    e.null_ctx = nsv;
     e.expected = e.types.t_error;
     int32:et = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
@@ -2683,6 +2725,53 @@ pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprSentinelLiteral) { pass (n.payload != 2i64); }
     if (n.kind != ExprKind.ExprIntLiteral) { pass false; }
     pass (!(raw num_width_is_integer(raw expr_num_width(n))));
+};
+
+// THE `NULL` CONTEXT'S HELPERS (D-355, 1.6.1e landing 119).
+//
+// The expression kinds a `NULL` context passes through unchanged: the sentinel itself, and
+// the forms whose VALUE is one of their operands' -- a ternary's arms, a `??`/`?|` default,
+// a pick expression's `give`s, an array literal's elements. Every other kind resets it.
+pub func:null_ctx_passes = bool(ExprKind:k) never fails {
+    if (k == ExprKind.ExprSentinelLiteral)   { pass true; }
+    if (k == ExprKind.ExprTernaryExpr)       { pass true; }
+    if (k == ExprKind.ExprNullCoalesceExpr)  { pass true; }
+    if (k == ExprKind.ExprDefaultsExpr)      { pass true; }
+    if (k == ExprKind.ExprPickExpr)          { pass true; }
+    if (k == ExprKind.ExprArrayLiteralExpr)  { pass true; }
+    pass false;
+};
+
+// A slot's qualifier word read as a `NULL` context: `wild`/`wildx` admit the sentinel (1),
+// anything else is a plain slot (0).
+pub func:null_ctx_of_quals = int32(int32:q) never fails {
+    if ((q & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32) { pass 1i32; }
+    pass 0i32;
+};
+
+// Does the enclosing function hand back `wild`/`wildx` storage (D-002's own example,
+// `func:malloc = wild any->(int64:size)`; `DECL_RET_WILD` on the declaration, since a
+// qualifier is no part of a type)? Its `pass` operand and its `Result{ value: … }` field
+// are wild contexts then.
+pub func:fn_ret_wild = bool(ExprTyper->:e) never fails {
+    if (e.fn_decl == 0i32) { pass false; }
+    DeclNode:fdecl = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    if (fdecl.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (raw decl_has(fdecl, raw DECL_RET_WILD()))  { pass true; }
+    if (raw decl_has(fdecl, raw DECL_RET_WILDX())) { pass true; }
+    pass false;
+};
+
+// The context a comparison gives its sentinel operand: `w == NULL` is the wild pointer's
+// question (1), `p == NULL` a plain pointer's, always `false` (2); under any other operator
+// `NULL` has no pointer context of its own (0). The other operand was typed first, so its
+// sub-expressions' types are recorded for the provenance walk.
+pub func:null_ctx_against = int32(ExprTyper->:e, TokenKind:op, ExprId:other) never fails {
+    if ((op != TokenKind.OpEqEq) && (op != TokenKind.OpNotEq)) { pass 0i32; }
+    if (raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, other, 16i32)) {
+        pass 1i32;
+    }
+    pass 2i32;
 };
 
 // THE TYPE AN OPERAND SHOULD AIM AT, given the slot it is going into.
@@ -3736,7 +3825,12 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
         } else {
             int32:saved = e.expected;
             e.expected = f.type_id;
+            // A `wild` FIELD IS A WILD CONTEXT FOR ITS VALUE (D-355): `Buf{ data: NULL }`
+            // over `wild int8->:data` stands, a plain pointer field refuses the sentinel.
+            int32:nsv = e.null_ctx;
+            e.null_ctx = raw null_ctx_of_quals(raw struct_field_quals(e, st, fname));
             int32:got = raw type_of_expr(e, val);
+            e.null_ctx = nsv;
             e.expected = saved;
             if (!(raw type_is_invalid(e.types, got))) {
                 if (got != 0i32) {
@@ -3822,7 +3916,14 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
     if (raw expr_is_none(id)) {
         pass 0i32;
     }
+    // THE `NULL` CONTEXT STOPS AT EVERY NODE THAT IS NOT TRANSPARENT (D-355): a declared
+    // slot's context reaches the sentinel through a ternary, a `??`/`?|` default, a pick
+    // expression's `give` or an array literal's element, and through nothing else -- a call,
+    // a literal, a cast, an operator set their own for their own slots.
+    int32:nsaved = e.null_ctx;
+    if (!(raw null_ctx_passes((raw ast_expr(e.ast, id)).kind))) { e.null_ctx = 0i32; }
     int32:t = raw type_of_expr_inner(e, id);
+    e.null_ctx = nsaved;
     // A SLICE READ OFF A `fixed` PLACE IS THE READ-ONLY VIEW (D-348 (ii), D-350;
     // DEF-246's fourth face): `h.view` over a `fixed Holder:h` carries the rights
     // of the storage it was read from, as a range of fixed storage does
@@ -4555,15 +4656,23 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     int32:lt = 0i32;
     int32:rt = 0i32;
 
+    // A COMPARISON'S SENTINEL OPERAND READS THE OTHER OPERAND'S REGIME (D-355): `w == NULL`
+    // over a wild place stands, `p == NULL` over a plain pointer is refused with its own
+    // sentence, and under any other operator `NULL` has no pointer context of its own.
+    int32:nsv = e.null_ctx;
     if (raw takes_type_from_context(e, raw expr_lhs(n))) {
         rt = raw type_of_expr(e, raw expr_rhs(n));
         if (rt != 0i32) { e.expected = rt; }
+        e.null_ctx = raw null_ctx_against(e, op, raw expr_rhs(n));
         lt = raw type_of_expr(e, raw expr_lhs(n));
+        e.null_ctx = nsv;
         e.expected = saved;
     } else {
         lt = raw type_of_expr(e, raw expr_lhs(n));
         if (lt != 0i32) { e.expected = lt; }
+        e.null_ctx = raw null_ctx_against(e, op, raw expr_lhs(n));
         rt = raw type_of_expr(e, raw expr_rhs(n));
+        e.null_ctx = nsv;
         e.expected = saved;
     }
 

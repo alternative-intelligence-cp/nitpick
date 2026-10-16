@@ -7374,6 +7374,14 @@ field, recording the defect as correct. That is the second time in this cycle a
 test has certified a silent discard, and both times the test was written in the
 same commit as the code it was checking.
 
+> *(2026-10-16, D-355, 1.6.1e landing 119.)* The pair stands and `NULL`'s half
+> narrows: `NULL` is no pointer in a **`wild`** pointer context alone, and a plain
+> `T->` always points at something. "Maybe no pointer" is therefore the Optional
+> `T->?` -- built by writing the address, emptied by writing `NIL`, tested with
+> `== NIL`, read with `?? @d` or `p?.f` -- exactly this decision's shape at one
+> more type. `NULL` written where a plain pointer or an `Optional` is expected is
+> `NITPICK-TYPE-096`.
+
 ---
 
 ## D-100 — A variadic function is a different type kind, not a flag
@@ -20495,7 +20503,9 @@ an explored trap. TCB.md §5, item 19, names what stays uncontrolled.]*
 > store to `null` is a store, both legs fault, and the fault is this decision's. The quoted string
 > `"null-pointer-is-valid"` is an attribute no pass reads (measured: it changed nothing). Whether a plain
 > pointer's dereference is checked, or `NULL` leaves the plain pointer by type, is S-136 -- the library seats'
-> report of 2026-10-12.
+> report of 2026-10-12. *(Settled as D-355 and landed 2026-10-16, 1.6.1e landing 119: `NULL` leaves the plain
+> pointer -- a store through `NULL` is a `wild` pointer's store now, the author's responsibility under the TOS,
+> and it still faults into this net at both legs; `null_store_legs.npk` spells its pointer `wild`.)*
 
 ## D-308 — A struct field may carry `limit<Rules>`: a rule about that one field, checked at every write to it and a fact at every read; the built-in lengths' bound is PROVEN where every length is made — **SETTLED (user decision, 2026-09-19: "as far as the limit thing, I am in agreement with your recommendation. It sounds like it extends limit into an even more capable construct than the one I originally imagined. Lets ratify that."; S-88)**
 
@@ -23068,6 +23078,33 @@ the six libraries and the applications 0. A LANGUAGE CHANGE (D-336's freeze has 
 where it judges best (the user: "plan it into your queue where you judge best"); the libraries re-pin after landing 115, one
 re-pin carrying landings 104-115.
 
+> **LANDED 2026-10-16 (1.6.1e landing 119, `nitpick-compiler_38`; planned first at `.internal/handoff_35/D355_PLAN.md`).**
+> `NITPICK-TYPE-096` (`TYPE_NULL_PLAIN_POINTER`) at a `NULL` written where a plain pointer or an `Optional` is expected, once,
+> at the literal: the checker's sentinel arm admits `NULL` only in a `wild` pointer context, which the declared slots name
+> (`ExprTyper.null_ctx`: a `wild`/`wildx` binding's, parameter's, field's or return's slot, an `=>! wild` cast's operand, a
+> comparison against a wild place by D-120's own predicate; a ternary's arm, a `??`/`?|` default, a pick expression's `give`
+> and an array literal's element inherit the slot's context, and every other node resets it, so no context leaks into a nested
+> slot). TWO HOLES CLOSED WITH IT: `int64->?:p = NULL;` compiled and built a PRESENT optional holding a null pointer, and
+> `fixed int64->:P = NULL;` compiled (`fixed wild int64->:P = NULL;` is the module-level spelling that stays). THE CENSUS
+> CORRECTED: the compiler's own 22 sites are not plain pointers "which become `T->?`" -- they are the emitter's context
+> struct's four `wild` fields (`LlCtx.mod_of`, `.tr`, `.obl`, `.impls`, ir_types.npk) and one `wild` parameter
+> (`assoc_binding_of`), legal as they stand, so nothing in `src/` changed; `lib/` and `npkg/` hold 9 `wild` buffer resets,
+> legal; the tree's tests held 107 non-`wild` sites in 10 files, re-spelled (an Optional pointer field with `NIL` where a
+> placeholder was filled later, a `T->?` return with `pass NIL`, a same-block dummy address where the case reads through the
+> pointer, `wild` for the null-store test), each file keeping its refusal set and site count under D-237 and D-332; the
+> libraries and applications 0; the fuzz corpus's claims that stood on a plain nullable pointer are overturned (F61 names
+> them). The reading of a plain `T->` as "a live managed value by contract" this decision cites is DEF-120's (1.6.1d step 3),
+> not D-120's. THE OPTIONAL POINTER, measured: `NIL`, `@x`, `!= NIL`, `?? @d`, `p?.f` (a FIELD, still wrapped; `?.` reaches no
+> method), a parameter, a return, a field, lowered as `{ i8, ptr }`, the escape analysis seeing a borrow inside it -- and how a
+> `T->?` yields its `T->` where no default exists is S-137 (OPEN_DECISIONS; `??!` recommended), asked of the user with this
+> landing. The `wild_places.npk` predicate reads a `wild` MODULE binding and `wildx` as it read a `wild` local, parameter and
+> `=>! wildx` cast, and the compiler-known headers' `ptr` (a `string`'s, `cstring`'s, slice's or `buffer`'s) as a wild place --
+> the allocator's block pointer, null for an empty body by the floor's own representation (TYPE_REFERENCE §23), the shape the
+> prelude's `List` declares as `hidden wild T->:items` -- so `b.ptr != NULL` stands (the fuzz corpus's `ty1755` asked it). Tests: `tests/types/rejection/null_plain_pointer.npk` (twelve sites, the wild controls),
+> `tests/backend/programs/optional_pointer.npk` (the idiom at both legs), `null_store_legs.npk` on a `wild` pointer (107/107),
+> `tests/frontend/type_access.npk`'s comparison cases. The emission of every program that compiles on both compilers is
+> byte-identical (a checker-only landing); no floor byte; no snapshot refresh.
+
 ## D-356 — A PAYLOAD-LESS ENUM VARIANT IS A CONSTANT OUTSIDE THE EVALUATOR: A MODULE BINDING (A STRUCT'S OR AN ARRAY'S MEMBER TOO) MAY BE INITIALISED WITH ONE, AND `comptime(…)` MAY YIELD ONE — **SETTLED (user decision, 2026-10-15: "yes, pass those to compiler_37 too")**
 
 Settles S-127 (raised 2026-10-01 by `nitpick-compiler_28` with D-338's landing). The ruling, the user, 2026-10-15 at 07:50:47 (management_0's transcript; first given as "about 08:05"), through `management_0`, which relayed it to `nitpick-compiler_37` at about 08:15 with the three recommendations it had batched: "yes, pass those to compiler_37 too" -- the recommendation
@@ -23116,3 +23153,40 @@ type, stands; a program's or a library's impl of a prelude trait for a builtin o
 -- a refusal added, announced in advance -- measured first over the tree, the libraries and the applications (which impls name no
 type or trait of their own tree), the code and the sentence the landing's; the manifest root the driver already finds is the tree's
 edge (D-236).
+
+## D-360 — THE OPTIONAL POINTER'S UNWRAP-OR-TRAP IS `??!`: `T->:q = p ??! Unreachable;` IS THE POINTER, OR A TRAP WITH THE NAMED IDENTITY — **SETTLED (user decision, 2026-10-16: "so i ran the usage command here and also looked over all the questions. i can't find anything wrong with the recommendations. lets go with those.")**
+
+Settles S-137 as its option (a), raised 2026-10-16 by `nitpick-compiler_38` from D-355's planning (landing 119's measurement on
+landing 118's compiler: `?.` reaches a FIELD of the pointee only, never a method -- `p?.get()` is TYPE-019 -- so a `Self->` method
+on a `T->?`'s pointee, or a call taking the pointer, was spelled `(p ?? @dummy).m()`, a dummy object of the type the cost). The
+ruling, the user, 2026-10-16 at 07:32:29 (management_0's session), through `management_0`, which relayed it to
+`nitpick-compiler_38` at 07:4x while landing 119's chain ran: "so i ran the usage command here and also looked over all the
+questions. i can't find anything wrong with the recommendations. lets go with those." The recommendation as put (OPEN_DECISIONS
+S-137): `??!` is the Optional twin of `?!` -- `T->:q = p ??! Unreachable;` is the value, or a trap with the NAMED identity through
+`npk_raise` (D-285) as `?!` traps; REACH reads the identity as it reads `?!`'s; D-046's trailing `!` says unchecked/emphatic; one
+token, one typer arm, one emitter arm, no obligation row (a program's raise is not a guard); D-099's one wrapper per unwrap
+operator kept (`?|` and `?!` take a `Result`, `??` and `??!` an `Optional`). (b), a flow refinement (an identifier whose type
+depends on its position), and (c), keeping `(p ?? @dummy)`, are DECLINED; (d), whether `?.` should reach `never fails` methods,
+was put as a separate question and is NOT ruled -- raised on its own if wanted. Its own landing after D-355 (landing 119), with
+an F-notice; nothing existing moves. Recorded at landing 119, whose chain was running when the ruling arrived.
+
+## D-361 — A VALUE OF WILD PROVENANCE ENTERS A PLAIN POINTER SLOT ONLY THROUGH `=>! T->` — **SETTLED (user decision, 2026-10-16: "i am fine with option A. If we find b is neccessary later we can always go with that.")**
+
+Settles S-138 as its option (a), raised 2026-10-16 by `nitpick-compiler_38` from `management_0`'s question about `#ptr_add` under
+D-355 (the groundwork of D-341's plan found the sigil builtin's result a plain `T->` with no context rule where
+BUILTIN_REFERENCE:425 says "legal only in `wild`"; probed on landing 118's and 119's compilers: `int32->:q = w;` from a `wild`
+binding, `int32->:r = #ptr_add<int32>(w, 0i64);`, a wild value handed to a plain parameter and `int32->:c = (alloc(8i64) =>! wild
+int32->);` all compile -- `wild` is a place qualifier, not part of the pointer type, so D-355's "a plain `T->` always points at
+something" kept that seam). The ruling, the user, 2026-10-16 at 07:54:24 (management_0's session), through `management_0`,
+which relayed it to `nitpick-compiler_38` at 08:0x: "i am fine with option A. If we find b is neccessary later we can always go
+with that." The rule as put: a value of WILD PROVENANCE -- a `wild` place's value (a `wild` binding, parameter or field, a `wild`
+module binding, an element of one), a `#ptr_add` or allocator result, an `=>! wild` cast -- written into a PLAIN pointer slot --
+an initialiser, an assignment, a plain parameter's argument, a plain field in a struct literal, a `pass` from a plain `T->()` --
+is refused by name unless written through the explicit crossing `v =>! T->` (the TOS marker, as every `=>!` is); the slots are
+the ones landing 119's `null_ctx` names and the provenance walk is D-120's (`wild_places.npk`); measured over the three trees
+first, the compiler's own copies each given their `=>!`. (b), `wild T->` as a TYPE (D-348's form for `fixed T[]`), stays OPEN as
+the later form if the census or experience shows a provenance road a type would close; (c), leaving the seam, is declined.
+Lands with landing 121 (the `#ptr_add` confinement the user approved at 07:42:02: "I am fine with the fix you mentioned for the
+safety gap."), or split from it if the census makes 121 too big; the texts list the roads the provenance rule covers and the
+ones it does not (a field of an existing struct, a container element, a generic instantiation, a function value), for the
+fuzzer's later family. Recorded at landing 119, whose record was running when the ruling arrived.

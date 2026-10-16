@@ -1,0 +1,97 @@
+// expect-exit: 0
+//
+// THE POINTER THAT MAY BE ABSENT IS THE OPTIONAL `T->?` (D-355, 1.6.1e landing 119): `NIL`
+// when empty, tested with `== NIL`, read with `?? d` or through `?.` -- a FIELD, still wrapped
+// (`?.` reaches no method: a `Self->` method on the pointee is called on `p ?? d`, and the
+// no-default form is S-137's question). A plain `T->` always points at something, so
+// `int64->:p = NULL;` is NITPICK-TYPE-096 now (`tests/types/rejection/null_plain_pointer.npk`),
+// and `NULL` keeps its meaning in a `wild` pointer context alone (the last case). The Optional
+// pointer lowers as `{ i8, ptr }`; the escape analysis sees a borrow inside it as it sees the
+// bare pointer's. Every shape here runs at both legs; each check has its own exit.
+mod:optional_pointer;
+
+struct:Node = { int32:v; Node->?:next; };
+struct:Box = { int32:v; };
+impl:Box = { func:get = int32(Box->:self) never fails { pass self.v; }; };
+
+func:pick_one = int64->?(int64->?:a, bool:want) never fails {
+    if (want) { pass a; }
+    pass NIL;
+};
+
+// A chain walked through the flattening `?.`: `cur?.next` over an `Node->?` field is the
+// field as it is (TYPE_REFERENCE 11.1), so the walk needs no unwrap at all.
+func:sum_chain = int32(Node->?:head) never fails {
+    int32:total = 0i32;
+    int32:guard = 0i32;
+    Node->?:cur = head;
+    while ((cur != NIL) && (guard < 8i32)) decreases 8i32 - guard {
+        total = total + (cur?.v ?? 0i32);
+        cur = cur?.next;
+        guard = guard + 1i32;
+    }
+    pass total;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // 1. Empty, present, the test, the read with a default.
+    int64:x = 5i64;
+    int64->?:p = NIL;
+    if (p != NIL) { exit 10i32; }
+    p = @x;
+    if (p == NIL) { exit 11i32; }
+    int64->:q = p ?? @x;
+    if ((<-q) != 5i64) { exit 12i32; }
+
+    // 2. A parameter and a return, both ways.
+    int64->?:r1 = raw pick_one(@x, true);
+    int64->?:r2 = raw pick_one(@x, false);
+    if (r1 == NIL) { exit 13i32; }
+    if (r2 != NIL) { exit 14i32; }
+    int64->:q1 = r1 ?? @x;
+    if ((<-q1) != 5i64) { exit 15i32; }
+
+    // 3. A field through `?.`, still wrapped; empty stays empty.
+    Box:b = Box{ v: 4i32 };
+    Box->?:op = @b;
+    int32?:a = op?.v;
+    if ((a ?? 0i32) != 4i32) { exit 16i32; }
+    Box->?:none = NIL;
+    int32?:c = none?.v;
+    if (c != NIL) { exit 17i32; }
+
+    // 4. A method on the pointee, through `??` with a default.
+    Box->:bp = op ?? @b;
+    if ((raw bp.get()) != 4i32) { exit 18i32; }
+
+    // 5. A chain of same-block nodes, present and absent heads.
+    Node:n3 = Node{ v: 3i32, next: NIL };
+    Node:n2 = Node{ v: 2i32, next: @n3 };
+    Node:n1 = Node{ v: 1i32, next: @n2 };
+    if ((raw sum_chain(@n1)) != 6i32) { exit 19i32; }
+    if ((raw sum_chain(NIL)) != 0i32) { exit 20i32; }
+
+    // 6. `NULL` keeps its meaning in a `wild` pointer context (D-355).
+    wild int64->:w = NULL;
+    if (w != NULL) { exit 21i32; }
+    w = alloc(8i64) =>! wild int64->;
+    if (w == NULL) { exit 22i32; }
+    dalloc(w);
+    w = NULL;
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (IntOverflow)       { exit 97i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

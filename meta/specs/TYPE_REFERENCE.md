@@ -1424,6 +1424,7 @@ the authority on both.
 | `a == NIL`, `a != NIL` | the test |
 | `a ?? d` | the value, or `d` |
 | `a?.f` | the field, still wrapped |
+| `int32->?:p = NIL;`, `p = @x;`, `p ?? @d`, `p?.v` | **the pointer that may be absent (D-355, 1.6.1e landing 119)**: a plain `T->` always points at something, so "maybe no pointer" is `T->?` -- `NIL` when empty, `== NIL` the test, `?? @d` the pointer or a default, `p?.v` a field of the pointee, still wrapped (`?.` reaches a field, never a method: a `Self->` method on the pointee is called on `p ?? @d`; the no-default form is S-137, OPEN_DECISIONS). Lowers as `{ i8, ptr }`; the escape analysis sees a borrow inside it as it sees the bare pointer's. `NULL` into a `T->?` is NITPICK-TYPE-096 (it built a present optional holding a null pointer until landing 119). |
 | `pick (a ?? d) { … }` | the arms, over the value or the default — a `pick` never selects on the `Optional` itself (D-260, TYPE-065) |
 
 **No `pick` selects on an `Optional` (D-260, 1.5.2c; `NITPICK-TYPE-065`).** An
@@ -1951,7 +1952,9 @@ The surface, exactly (1.3.7 landed this MINIMALLY):
 
 - `buffer_new(n)` — `int64 → buffer`, **never fails**: `n` zeroed bytes with
   `len == cap == n`; `n <= 0` is the EMPTY non-owning buffer (null ptr,
-  `cap == 0`), an answer rather than an error. Allocation failure traps
+  `cap == 0`), an answer rather than an error (the header's `ptr` is a wild
+  place: `b.ptr != NULL` is a wild pointer's question and stands under D-355,
+  landing 119; `b.len`/`b.cap` are the emptiness a program reads). Allocation failure traps
   (D-150). The count is `int64` by declaration — a signature-less builtin
   adopts nothing (the `sys` rule).
 - Members `.ptr` (`uint8->`), `.len`, `.cap` — the string's trio with the
@@ -2134,7 +2137,7 @@ deleted store at -O2).
 | a plain integer, `bool`, `char`, `string`, a flag family | any constant expression the compiler computes: literals, the operators, other module bindings, `comptime(…)`, a `comptime func:` |
 | `flt32`, `flt64`, a `tfp` width, `dim256<U>`, a `tbb` width, the ternary family | a **written** value: a literal, a negated literal, `ERR`, another module binding of that type, or `comptime(…)` of one of those (a `flt32` since landing 88: LLVM spells a `float` constant by its bits unless the decimal is exact, and the compiler makes the bits itself now, DEF-203) |
 | a struct, an array | a literal whose every member is one of the above, or another module binding of that type (followed to its initialiser: DEF-202, landing 108 -- until then a reference to an aggregate binding was refused, by the sentence that listed it as legal) |
-| an `Optional`, a pointer | `NIL`, `NULL`, or another module binding of that type (DEF-202) |
+| an `Optional`, a pointer | `NIL`; `NULL` for a `wild` pointer only (`fixed wild int64->:P = NULL;`, D-355); or another module binding of that type (DEF-202) |
 
 The second row is the rule's point. The compiler computes constants in the plain
 integers, exactly at the width (D-310); a float's arithmetic rounds, a fixed-point
@@ -2228,14 +2231,41 @@ Everything below follows from that one sentence, and nothing beyond it is part o
 ### `NULL` — No Pointer
 
 - Represents address zero — the null pointer
-- ONLY valid in pointer contexts: `int32->:p = NULL;`
+- ONLY valid in a **`wild` pointer context** (D-355, 1.6.1e landing 119): the
+  initialiser of a `wild`/`wildx` binding (`wild int32->:p = NULL;`, a module-level
+  `fixed wild int64->:P = NULL;`), a store into a `wild` place (a `wild` binding,
+  parameter or field, an element of one), a `wild` parameter's argument (the
+  builtins' `wild any->` among them: `dalloc(NULL)` still traps, `ralloc(NULL, n)`
+  is a fresh allocation), a `pass` from a `wild`-returning function, a `wild` field
+  in a struct literal, an `=>! wild T->` cast's operand, and a comparison against a
+  wild place (`w == NULL`) -- the allocator's and the floor's shapes, where a
+  dereference is the author's responsibility under the TOS. The compiler-known
+  headers' `ptr` (a `string`'s, `cstring`'s, slice's or `buffer`'s) is such a place:
+  the allocator's block pointer, null for an empty body (§23), the shape the
+  prelude's `List` declares as `hidden wild T->:items` -- so `b.ptr != NULL` stands.
+- **A plain `T->` always points at something (D-355).** `NULL` written where a plain
+  pointer is expected -- a local's or a module binding's initialiser, an assignment,
+  a plain parameter's argument, a plain field in a literal, `pass NULL` from a plain
+  `T->()`, a comparison (`p == NULL` is a question a plain pointer always answers
+  `false`), an array literal's element -- and where an `Optional` is expected
+  (`int32->?:p = NULL;`, which built a PRESENT optional holding a null pointer until
+  landing 119) is `NITPICK-TYPE-096` at the literal, once. A pointer that may be
+  absent is the Optional `T->?` (§11.1): `NIL` when empty, `== NIL` the test,
+  `?? d` the pointer or a default, `p?.f` a field of the pointee, still wrapped.
+  (This section read "ONLY valid in pointer contexts: `int32->:p = NULL;`" until
+  landing 119; S-136, the library seats' report of 2026-10-12, was settled as D-355.)
+- The plain pointer's invariant is kept by the checker and holds for every READABLE
+  value: a pointer declared without an initialiser holds its vacant bits (address
+  zero, D-225) and is unreadable until assigned (ASSIGN-001); an `=>!` cast of a null
+  `wild` or `any->` pointer to a plain `T->` is the author's assertion, as every `=>!`
+  is (D-095).
 - NOT valid as a general "no value" — that's `NIL`
 - IR: `ptr null`
-- A store through or a load from a `NULL` pointer is a hardware fault that reaches
-  `failsafe` as `MachineFault` (D-307) at BOTH legs: every emitted function carries
-  LLVM's `null_pointer_is_valid` attribute (DEF-251, 1.6.1e landing 115), so the
-  optimiser never reads the dereference as undefined and never folds the body that
-  holds it. Whether a plain pointer may hold `NULL` at all is S-136 (OPEN_DECISIONS).
+- A store through or a load from a `NULL` pointer (a `wild` one, since landing 119)
+  is a hardware fault that reaches `failsafe` as `MachineFault` (D-307) at BOTH legs:
+  every emitted function carries LLVM's `null_pointer_is_valid` attribute (DEF-251,
+  1.6.1e landing 115), so the optimiser never reads the dereference as undefined and
+  never folds the body that holds it.
 
 ### `void` — C Interop Only
 

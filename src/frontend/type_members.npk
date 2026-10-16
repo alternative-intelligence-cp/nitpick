@@ -2611,6 +2611,18 @@ func:param_is_move = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
     pass (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
 };
 
+// Is the callee's parameter at `idx` declared `wild`/`wildx` (D-355)? Its argument slot
+// admits `NULL` then; an unknown callee's (a function value's) never does.
+func:param_is_wild = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
+    if (cdecl == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: cdecl });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (idx < 0i32) { pass false; }
+    if (idx >= (raw fn_param_count(e.ast, d))) { pass false; }
+    DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, d, idx));
+    pass (((raw param_quals(pd)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32);
+};
+
 func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                         int32:skip, Span:at, int32:cdecl) never fails {
     bool:variadic = raw type_is_variadic(e.types, ft);
@@ -2676,7 +2688,12 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
 
         int32:saved = e.expected;
         e.expected = pt;
+        // A `wild` PARAMETER'S SLOT ADMITS `NULL` (D-355); a plain one refuses it by name.
+        int32:nsv = e.null_ctx;
+        e.null_ctx = 0i32;
+        if (raw param_is_wild(e, cdecl, skip + i)) { e.null_ctx = 1i32; }
         int32:got = raw type_of_expr(e, a);
+        e.null_ctx = nsv;
         e.expected = saved;
 
         if (spread) {
@@ -2798,6 +2815,16 @@ func:check_task_builtin = NIL(ExprTyper->:e, ExprNode:n) never fails {
 // too (D-348 (ii), D-350): `fixed uint8[]` IS a type, the read-only view, and
 // `string_bytes` hands one out (D-351: a string's bytes are read through the
 // bridge and written by nothing).
+// Is this signature text a `wild`/`wildx` pointer (D-355)? The four texts `builtin_text_type`
+// interns with a qualifier; a fifth added there is added here.
+func:builtin_text_wild = bool(string:t) never fails {
+    if (raw string_eq(t, "wild any->"))   { pass true; }
+    if (raw string_eq(t, "wildx any->"))  { pass true; }
+    if (raw string_eq(t, "wild int8->"))  { pass true; }
+    if (raw string_eq(t, "wildx int8->")) { pass true; }
+    pass false;
+};
+
 func:builtin_text_type = int32(ExprTyper->:e, string:t) never fails {
     if (raw string_eq(t, "int32"))   { pass (raw tt_int(e.types, 32i32, true)); }
     if (raw string_eq(t, "int64"))   { pass (raw tt_int(e.types, 64i32, true)); }
@@ -2903,7 +2930,16 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         // context for the byte count.
         int32:saved = e.expected;
         e.expected = pt;
+        // A BUILTIN'S `wild any->` PARAMETER ADMITS `NULL` (D-355): `dalloc(NULL)` and
+        // `ralloc(NULL, n)` stay legal (and `dalloc(NULL)` still traps, D-150); the
+        // qualifier is read off the one signature table's text, as the type is.
+        int32:nsv = e.null_ctx;
+        e.null_ctx = 0i32;
+        if (i < want) {
+            if (raw builtin_text_wild(raw builtin_sig_param(name, i))) { e.null_ctx = 1i32; }
+        }
         int32:got = raw type_of_expr(e, a);
+        e.null_ctx = nsv;
         e.expected = saved;
         // A SPREAD ARGUMENT WAS REFUSED ABOVE, BY NAME; measuring the collection
         // against the register it cannot become would be a second report of

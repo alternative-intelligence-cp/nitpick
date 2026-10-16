@@ -285,6 +285,12 @@ value is ERR, so the taint cannot cross silently. See D-008.
 > back is visible. Both halves stay writable and are simply written down:
 > `p == NULL` asks whether a pointer points anywhere, and `<-p` brings the value
 > back.
+>
+> *(2026-10-16, D-355, 1.6.1e landing 119: `p == NULL` is a `wild` pointer's question
+> now -- a plain `T->` always points at something, so the comparison on a plain
+> pointer is NITPICK-TYPE-096, and a pointer that may be absent is the Optional
+> `T->?`, whose test is `== NIL` and whose read is `?? @d`. Both halves stay written
+> down; the pointer half is written on `wild` storage.)*
 
 > ### The two meanings of `!` (D-046)
 >

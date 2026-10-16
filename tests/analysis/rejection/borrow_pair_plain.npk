@@ -28,7 +28,7 @@
 // inside `touch` as BORROW-002, so the return is the one laundry left).
 
 mod:borrow_pair_plain;
-struct:Box  = { int32->:p; int32:n; };
+struct:Box  = { int32->?:p; int32:n; };
 struct:Pair = { Box:b; int32:k; };
 
 func:touch = NIL(Box->:bp, Pair->:op) never fails {
@@ -37,7 +37,7 @@ func:touch = NIL(Box->:bp, Pair->:op) never fails {
 
 // (1) an UNKNOWN callee: the shape rule, the plain slot the destination.
 func:make = Pair() never fails {
-    Box:b = Box{ p: NULL, n: 1i32 };
+    Box:b = Box{ p: NIL, n: 1i32 };
     Pair:tmp = Pair{ b: b, k: 0i32 };
     func NIL(Box->, Pair->) never fails:f = touch;
     drop f(@b, @tmp);
@@ -53,7 +53,7 @@ func:touch_wired = NIL(Box->:bp, Pair->:op) never fails {
     pass NIL;
 };
 func:make_wired = Pair() never fails {
-    Box:b = Box{ p: NULL, n: 1i32 };
+    Box:b = Box{ p: NIL, n: 1i32 };
     Pair:tmp = Pair{ b: b, k: 0i32 };
     drop touch_wired(@b, @tmp);
     Pair:out = Pair{ b: b, k: 7i32 };

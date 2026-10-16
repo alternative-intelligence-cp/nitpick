@@ -101,7 +101,23 @@ pub func:expr_wild_provenance = bool(Ast->:ast, SymbolTable->:tab, InternTable->
     // A READ OF A WILD PLACE keeps its provenance: `fe.dframes` is wild
     // storage, and moving it to another wild slot moves wild storage.
     if (n.kind == ExprKind.ExprIdentifierExpr)   { pass (raw place_wild(ast, tab, etypes, types, id)); }
-    if (n.kind == ExprKind.ExprMemberAccessExpr) { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        // THE COMPILER-KNOWN HEADER'S `ptr` IS THE ALLOCATOR'S BLOCK POINTER (D-355, 1.6.1e landing
+        // 119): a `string`'s, `cstring`'s, slice's or `buffer`'s `.ptr` is manual storage by the floor's
+        // own representation -- null for an empty body (TYPE_REFERENCE §23: `buffer_new(n)` for
+        // `n <= 0` is "null ptr, cap == 0") -- exactly what the prelude's `List` declares as
+        // `hidden wild T->:items`. So `b.ptr != NULL` is a wild pointer's question and stands.
+        int32:hb = raw exprtypes_get(etypes, raw expr_operand(n));
+        if (hb != 0i32) {
+            if ((raw type_kind(types, hb)) == (raw TY_POINTER())) { hb = raw type_elem(types, hb); }
+            int32:hk = raw type_kind(types, hb);
+            bool:header = (hk == (raw TY_STRING())) || (hk == (raw TY_CSTRING())) || (hk == (raw TY_SLICE())) || (hk == (raw TY_BUFFER()));
+            if (header) {
+                if (raw string_eq(raw intern_get(interns, n.payload =>! int32), "ptr")) { pass true; }
+            }
+        }
+        pass (raw place_wild(ast, tab, etypes, types, id));
+    }
     if (n.kind == ExprKind.ExprIndexExpr)        { pass (raw place_wild(ast, tab, etypes, types, id)); }
     // `move(p)`, `raw f()` and `relay f()` pass the operand's provenance through unchanged.
     if (n.kind == ExprKind.ExprMoveExpr) {
@@ -132,7 +148,7 @@ pub func:place_wild = bool(Ast->:ast, SymbolTable->:tab, ExprTypes->:etypes,
         if (sy.origin_kind == (raw SYM_STMT())) {
             StmtNode:ds = raw ast_stmt(ast, StmtId{ index: sy.origin });
             if (ds.kind != StmtKind.StmtVarDeclStmt) { pass false; }
-            pass (((raw stmt_quals(ast, ds)) & (raw QUAL_WILD())) != 0i32);
+            pass (((raw stmt_quals(ast, ds)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32);
         }
         // A `wild`-QUALIFIED PARAMETER IS A WILD PLACE TOO. Found by the D-223
         // audit itself, in `llctx_set_impls(LlCtx->:c, wild ImplTable->:t, …)`
@@ -142,7 +158,14 @@ pub func:place_wild = bool(Ast->:ast, SymbolTable->:tab, ExprTypes->:etypes,
         if (sy.origin_kind == (raw SYM_DECL())) {
             DeclNode:pd = raw ast_decl(ast, DeclId{ index: sy.origin });
             if (pd.kind == DeclKind.DeclParamDecl) {
-                pass (((raw param_quals(pd)) & (raw QUAL_WILD())) != 0i32);
+                pass (((raw param_quals(pd)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32);
+            }
+            // A `wild` MODULE BINDING IS A WILD PLACE TOO (D-355, 1.6.1e landing 119): `fixed wild
+            // int64->:P = NULL;` is the module-level spelling that keeps `NULL`, and a comparison
+            // against `P` reads its regime here. Found by the landing's own probe: the initialiser
+            // was admitted by the declaration's qualifier and `P != NULL` refused by this walk.
+            if (pd.kind == DeclKind.DeclGlobalDecl) {
+                pass (((raw global_quals(pd)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32);
             }
         }
         pass false;

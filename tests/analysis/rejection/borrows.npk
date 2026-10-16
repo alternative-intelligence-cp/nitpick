@@ -13,6 +13,9 @@ mod:borrows;
 error:E9;
 
 struct:Holder = { int32->:inner; };
+// A holder whose pointer may be absent is the Optional `T->?` (D-355): `NIL` carries no
+// borrow, so a case that fills the field later starts from nothing.
+struct:OHolder = { int32->?:inner; };
 struct:Pair = { int32:first; int32:second; };
 
 // A bodied stand-in for what used to be an extern `keepit` (an `extern`
@@ -83,16 +86,16 @@ func:return_indexed = int32->() never fails {
 // loop is the shape cycle 0.5 has to keep catching, and here it was the shape of
 // the analysis itself.
 // expect-error: NITPICK-BORROW-001
-func:return_from_loop = int32->(int32:n) never fails {
+func:return_from_loop = int32->?(int32:n) never fails {
     int32:x = 5i32;
-    int32->:p = NULL;
+    int32->?:p = NIL;
     int32:i = 0i32;
     while (i < n) decreases n - i {
         if (i > 0i32) { pass p; }
         p = @x;
         i = i + 1i32;
     }
-    pass NULL;
+    pass NIL;
 };
 
 // --- rule 3: a borrow may not be stored into anything longer-lived -------------
@@ -113,7 +116,7 @@ func:store_field = NIL(Holder->:h) never fails {
 // expect-error: NITPICK-BORROW-002
 func:store_local_aggregate = NIL() never fails {
     int32:x = 5i32;
-    Holder:h = Holder{ inner: NULL };
+    OHolder:h = OHolder{ inner: NIL };
     h.inner = @x;
     pass NIL;
 };
@@ -126,7 +129,8 @@ func:store_local_aggregate = NIL() never fails {
 // and unchecked as a rule. "Provably shorter-lived" is rule 3's own text.
 // expect-error: NITPICK-BORROW-002
 func:outer_holder = int32() never fails {
-    int32->:p = NULL;
+    int32:z = 0i32;
+    int32->:p = @z;
     if (true) {
         int32:x = 41i32;
         p = $$m x;
@@ -139,7 +143,8 @@ func:outer_holder = int32() never fails {
 // the bound: its own scope encloses no borrow it did not receive inside it.
 // expect-error: NITPICK-BORROW-002
 func:outer_copy = int32() never fails {
-    int32->:q = NULL;
+    int32:z = 0i32;
+    int32->:q = @z;
     if (true) {
         int32:x = 7i32;
         int32->:p = @x;
@@ -154,7 +159,8 @@ func:outer_copy = int32() never fails {
 // outer in both.
 // expect-error: NITPICK-BORROW-002
 func:outer_literal = int32() never fails {
-    Holder:h = Holder{ inner: NULL };
+    int32:z = 0i32;
+    Holder:h = Holder{ inner: @z };
     if (true) {
         int32:x = 3i32;
         h = Holder{ inner: @x };
@@ -164,7 +170,8 @@ func:outer_literal = int32() never fails {
 
 // expect-error: NITPICK-BORROW-002
 func:outer_call = int32() never fails {
-    int32->:q = NULL;
+    int32:z = 0i32;
+    int32->:q = @z;
     if (true) {
         int32:x = 4i32;
         q = raw launder(@x);
@@ -197,7 +204,7 @@ func:returns_laundered = int32->() never fails {
 // into the other is the caller's business. So the CALLER assumes the connection was
 // made.
 
-struct:Cell = { int32->:slot; };
+struct:Cell = { int32->?:slot; };
 
 func:store_through = NIL(Cell->:h, int32->:q) never fails {
     h.slot = q;
@@ -207,7 +214,7 @@ func:store_through = NIL(Cell->:h, int32->:q) never fails {
 // expect-error: NITPICK-BORROW-001
 func:leaks_through_a_callee = Cell() never fails {
     int32:x = 5i32;
-    Cell:c = Cell{ slot: NULL };
+    Cell:c = Cell{ slot: NIL };
     drop store_through(@c, @x);
     pass c;
 };

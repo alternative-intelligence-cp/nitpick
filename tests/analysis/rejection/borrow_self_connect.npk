@@ -1,4 +1,5 @@
 // expect-error: NITPICK-BORROW-001
+// expect-error-at: 27:10
 //
 // D-223 closes rule B's SINGLE-BORROW EXEMPTION, which was false for a
 // self-connectable type. The old reasoning was "with nothing else passed in,
@@ -13,7 +14,7 @@
 // destination — BORROW-011 refuses the store into one outright.
 
 mod:borrow_self_connect;
-struct:Node = { Node->:next; int32:v; };
+struct:Node = { Node->?:next; int32:v; };
 
 func:wire = NIL(Node->:p) never fails {
     p.next = p;
@@ -21,7 +22,7 @@ func:wire = NIL(Node->:p) never fails {
 };
 
 func:make = Node() never fails {
-    Node:n = Node{ next: NULL, v: 1i32 };
+    Node:n = Node{ next: NIL, v: 1i32 };
     drop wire(@n);
     pass n;
 };

@@ -11,6 +11,14 @@ implicitly, and there are no collection pauses.
 
 Variables in Nitpick exist in one of several allocation states. You can use contextual keywords (like `stack`, `wild`) immediately before the type declaration to explicitly control their residency.
 
+> **`NULL` is a `wild` pointer's value (D-355, 1.6.1e landing 119).** A plain `T->`
+> always points at something: `NULL` is legal in a `wild` pointer context alone --
+> a `wild`/`wildx` binding, parameter, field or return, a store into or a comparison
+> against a wild place, the builtins' `wild any->` parameters -- and `NITPICK-TYPE-096`
+> anywhere else a pointer or an `Optional` is expected. A pointer that may be absent
+> is the Optional `T->?`, tested with `== NIL` and read with `?? @d` (TYPE_REFERENCE
+> §11.1, §27).
+
 ### 1.1 Default Managed Memory (Implicit RAII/Scope-based)
 
 > **In a generic body a bare `T` is treated as owning (D-264, 1.5.2f):** the

@@ -34,7 +34,7 @@
 //     a local borrow handed to a method through it refuses at the call.
 
 mod:dyn_dest;
-struct:Box  = { int32->:p; int32:n; };
+struct:Box  = { int32->?:p; int32:n; };
 struct:Pair = { Box:b; int32:k; };
 trait:Sink = { func:put = NIL(Self->:self, int32->:v) never fails; };
 impl:Box:Sink = { func:put = NIL(Self->:self, int32->:v) never fails { self.p = v; pass NIL; }; };
@@ -42,7 +42,7 @@ impl:Box:Sink = { func:put = NIL(Self->:self, int32->:v) never fails { self.p = 
 // (1) DEF-113: the dyn's cell holds a borrow of `k`, and the dyn is returned.
 func:make_dyn = dyn Sink() never fails {
     int32:k = 7i32;
-    dyn Sink:d = Box{ p: NULL, n: 1i32 };
+    dyn Sink:d = Box{ p: NIL, n: 1i32 };
     drop d.put(@k);
     pass move(d);
 };
@@ -53,7 +53,7 @@ func:touch<T: Sink> = NIL(T->:bp, Pair->:op) never fails {
     pass NIL;
 };
 func:make_bound = Pair() never fails {
-    Box:b = Box{ p: NULL, n: 1i32 };
+    Box:b = Box{ p: NIL, n: 1i32 };
     Pair:tmp = Pair{ b: b, k: 0i32 };
     drop touch::<Box>(@b, @tmp);
     Pair:out = Pair{ b: b, k: 7i32 };
@@ -69,7 +69,7 @@ func:touch2<T: Sink2> = NIL(T->:bp, Pair->:op) never fails {
     pass NIL;
 };
 func:make_default = Pair() never fails {
-    Box:b = Box{ p: NULL, n: 1i32 };
+    Box:b = Box{ p: NIL, n: 1i32 };
     Pair:tmp = Pair{ b: b, k: 0i32 };
     drop touch2::<Box>(@b, @tmp);
     Pair:out = Pair{ b: b, k: 7i32 };
