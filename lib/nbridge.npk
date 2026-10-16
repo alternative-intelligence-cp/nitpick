@@ -69,7 +69,7 @@ pub func:shm_create_sealed = Shm(int64:size) {
     // free", which was never true, and BORROW-011 is what asked the question.
     // The pointer exists only to reach the syscall boundary, where an address
     // becomes a number (1.1.12a).
-    uint8->:np = name.ptr;
+    uint8->:np = name.ptr =>! uint8->;   // the crossing (D-361): the header's ptr is the allocator's block, wild by provenance
     Result<int64>:rmfd = sys(raw SYS_MEMFD_CREATE(), np, cf);
     if (rmfd.is_error) { fail EShmCreate; }
     int64:mfd = rmfd.value;

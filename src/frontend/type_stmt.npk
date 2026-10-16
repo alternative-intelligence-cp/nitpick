@@ -2209,6 +2209,7 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     int32:nsv = e.null_ctx;
     e.null_ctx = raw null_ctx_of_quals(raw stmt_quals(e.ast, s));
     int32:got = raw type_of_expr(e, init);
+    drop check_wild_into_plain(e, init, want);   // D-361: wild provenance into a plain pointer binding
     e.null_ctx = nsv;
     e.expect_refused = rsaved;
     e.expected = saved;
@@ -2292,7 +2293,15 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     int32:nsv = e.null_ctx;
     e.null_ctx = 0i32;
     if (raw place_wild(e.ast, e.tab, e.expr_types, e.types, target)) { e.null_ctx = 1i32; }
+    // A STORE THROUGH A POINTER lands in the storage the pointer names (D-361, landing 121): `<-slot = w`
+    // with `wild int8->->:slot` writes a wild cell, which takes a wild value as a wild binding does;
+    // through a plain pointer the cell is a managed slot and the plain rule holds.
+    ExprNode:tgn = raw ast_expr(e.ast, target);
+    if (tgn.kind == ExprKind.ExprDerefExpr) {
+        if (raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, raw expr_operand(tgn), 16i32)) { e.null_ctx = 1i32; }
+    }
     int32:got = raw type_of_expr(e, value);
+    drop check_wild_into_plain(e, value, want);   // D-361: wild provenance into a plain pointer place
     e.null_ctx = nsv;
     e.expected = saved;
 
@@ -2523,6 +2532,7 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     e.null_ctx = 0i32;
     if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
     int32:got = raw type_of_expr(e, v);
+    drop check_wild_into_plain(e, v, want);   // D-361: wild provenance out of a plain `T->()`
     e.null_ctx = nsv;
     e.give_operand = gsaved;
     e.expected = saved;
@@ -3084,6 +3094,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             int32:nsv = e.null_ctx;
             e.null_ctx = raw null_ctx_of_quals(raw global_quals(d));
             int32:got = raw type_of_expr(e, init);
+            drop check_wild_into_plain(e, init, want);   // D-361
             e.null_ctx = nsv;
             e.expected = saved;
             if (want != 0i32) {

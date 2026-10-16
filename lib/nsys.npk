@@ -173,7 +173,10 @@ pub func:open_devnull = int64() {
     // them — so a binding that points at them is an ordinary pointer, not a
     // claim of manual ownership. The pointer exists only to reach the syscall
     // boundary, where an address becomes a number (1.1.12a).
-    uint8->:dp = dn.ptr;
+    // The header's `ptr` is the allocator's block pointer (wild provenance, D-355), so entering
+    // the plain binding is the explicit crossing (D-361, 1.6.1e landing 121): the string is live
+    // for the whole body, so the pointer points at something.
+    uint8->:dp = dn.ptr =>! uint8->;
     int32:ofl = (O_RDWR | O_CLOEXEC) => int32;
     Result<int64>:rf = sys(raw SYS_OPENAT(), raw AT_FDCWD(), dp, ofl, 0i64);
     if (rf.is_error) { fail rf.err; }

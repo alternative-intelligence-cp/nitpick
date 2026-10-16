@@ -1861,7 +1861,10 @@ pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
     if (trait_decl == 0i32) { pass 0i32; }
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
-        ImplEntry:e = raw impl_at(t, i);
+        // THE CROSSING (D-361, 1.6.1e landing 121): `t` is this function's `wild` parameter and
+        // `impl_at` takes the table plain; the cast is the author's assertion that it points at a
+        // live table, which the `NULL` test above has just made true.
+        ImplEntry:e = raw impl_at(t =>! ImplTable->, i);
         if (!e.blanket) {
             if (e.target == base) {
                 if ((raw type_decl_of(r.types, e.trait_id)) == trait_decl) {

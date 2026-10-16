@@ -9916,7 +9916,7 @@ func:impl_decl_for = int32(ExprEmitter->:x, int32:target, int32:trait_ty) never 
     int32:tdecl = raw type_decl_of(x.fe.ctx.types, target);
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
-        ImplEntry:e = raw impl_at(t, i);
+        ImplEntry:e = raw impl_at(t =>! ImplTable->, i);   // the crossing (D-361): a wild parameter into a plain one
         if (!e.blanket) {
             if (e.trait_id == trait_ty) {
                 if (e.target == target) { pass e.decl; }
@@ -9936,7 +9936,7 @@ func:impl_decl_for = int32(ExprEmitter->:x, int32:target, int32:trait_ty) never 
     }
     int32:j = 0i32;
     while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
-        ImplEntry:b = raw impl_at(t, j);
+        ImplEntry:b = raw impl_at(t =>! ImplTable->, j);   // the crossing (D-361)
         if (b.blanket) {
             if (b.trait_id == trait_ty) { pass b.decl; }
         }
@@ -9953,7 +9953,7 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
     if (cdecl == 0i32) { pass NIL; }
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
-        ImplEntry:e = raw impl_at(t, i);
+        ImplEntry:e = raw impl_at(t =>! ImplTable->, i);   // the crossing (D-361): a wild parameter into a plain one
         if (!e.blanket) {
             if (e.trait_id == trait_ty) {
                 if (e.target == conc) { pass NIL; }    // per-instance: its block emits it

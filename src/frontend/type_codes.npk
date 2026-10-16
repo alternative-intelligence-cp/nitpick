@@ -677,3 +677,14 @@ pub func:TYPE_VALUE_PARAM_RESERVED = string() never fails { pass "NITPICK-TYPE-0
 // expected and the slot is not a wild one; where no pointer is expected at all, TYPE-UNKNOWN's
 // "nothing here says which pointer" stands as before.
 pub func:TYPE_NULL_PLAIN_POINTER = string() never fails { pass "NITPICK-TYPE-096"; };
+
+// A VALUE OF WILD PROVENANCE ENTERS A PLAIN POINTER SLOT ONLY THROUGH `=>! T->` (D-361, 1.6.1e landing
+// 121; S-138, and the `#ptr_add` confinement the user approved the same morning). `wild` is a place
+// qualifier and no part of the pointer type, so a `wild` binding's value, a `#ptr_add` or allocator
+// result and an `=>! wild` cast each flowed into a plain pointer binding, parameter, field or return
+// in silence, and the plain pointer's contract (D-355: it always points at something a program may
+// read) was asserted by nobody. Reported once, at the value, by the slots that set landing 119's
+// `null_ctx`: a binding's initialiser (local and module), an assignment, a `pass` and a `Result{ value:
+// … }`, a call's argument (a user function's and a builtin's), a struct literal's field; the explicit
+// crossing `v =>! T->` is the author's assertion and passes; `NULL` keeps its own rule (TYPE-096).
+pub func:TYPE_WILD_INTO_PLAIN = string() never fails { pass "NITPICK-TYPE-097"; };

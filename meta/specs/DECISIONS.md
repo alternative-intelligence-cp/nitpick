@@ -23212,3 +23212,30 @@ Lands with landing 121 (the `#ptr_add` confinement the user approved at 07:42:02
 safety gap."), or split from it if the census makes 121 too big; the texts list the roads the provenance rule covers and the
 ones it does not (a field of an existing struct, a container element, a generic instantiation, a function value), for the
 fuzzer's later family. Recorded at landing 119, whose record was running when the ruling arrived.
+
+> *(2026-10-16, LANDED as 1.6.1e landing 121 by `nitpick-compiler_39`, together with the `#ptr_add` confinement approved at
+> 07:42:02 -- "I am fine with the fix you mentioned for the safety gap." -- read as THIS rule at that one producer: a
+> `#ptr_add` result is of wild provenance, so it enters a plain pointer slot only through `=>! T->`, and a result
+> DEREFERENCED IN PLACE (`<-(#ptr_add<T>(p, k))`, TYPE_REFERENCE §23's own example and the Bridge's idiom) stays legal,
+> as every other wild-provenance producer's does -- a named `wild` binding before the dereference would be the same
+> operation spelled twice, churn without safety; `management_1` agreed on the merits at 12:4x and put the reading to the
+> author -- the stricter form compiler_38's note had described beside it -- and the author APPROVED this form at
+> 13:26:57 through `management_1`: "aprove the #ptr_add form".)* The rule is
+> `NITPICK-TYPE-097` (`check_wild_into_plain`, type_expr.npk), asked right after a value is typed at the eight slots that
+> set landing 119's `null_ctx` -- a local's and a module binding's initialiser, an assignment (a binding, a field through
+> any path, an element; a store THROUGH a pointer takes the context of the storage the pointer names, so `<-slot = w` with
+> a `wild int8->->:slot` is a wild slot, found by the census on the fuzz corpus's `bi0123b`), a `pass` and a `Result{
+> value: … }`, a user call's and a builtin's argument (a function value's and a prelude generic's such as `list_push`'s
+> included), a struct literal's field (a generic instance's included) -- whenever the slot's type is a plain pointer or an
+> `Optional` of one and the value has wild provenance by D-120's one walk; a ternary's arms, a `??`/`?|` default and a
+> fixed array literal's elements are looked into. ROADS NOT COVERED, for the fuzzer's family: a pick expression's `give`
+> and a method call's receiver (`c.get()` on a `wild Cell->` hands the body a plain `Self->`). The census over the three
+> trees found the compiler's own TWELVE copies -- every one a wild table handle (`LlCtx`'s `tr`/`obl`/`impls`, a `wild
+> ImplTable->` binding) handed to a helper's plain parameter -- plus two in the frontend and `lib/` (`impl_at(t, i)` on
+> `assoc_binding_of`'s wild parameter; `nsys.npk`'s `uint8->:dp = dn.ptr`), `nbridge.npk`'s `uint8->:np = name.ptr`,
+> and two tests (`sys_typed.npk`'s header pointer, `moves.npk`'s `takes(p)` on a wild `p`): each given its crossing, so no
+> helper's contract moved. The six libraries and the applications hold no site; the fuzz corpus holds six programs -- two
+> CONFIRMED (`bi0417b`, `me0133`: "`#wild_ptr` is legal only in wild context", refused as claimed at last), two
+> OVERTURNED (`bi0077`: a `wild int8->` value binding to a plain `int8->`; `ty1754`: `uint8->:p = b.ptr`), one gaining a
+> second code (`bi0418b`), one the false refusal the deref arm fixed (`bi0123b`). Tests: `wild_into_plain.npk` (twelve
+> sites, the controls), `wild_crossing.npk` (five crossings at both legs). (b), `wild T->` as a type, stays open.

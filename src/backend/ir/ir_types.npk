@@ -457,7 +457,7 @@ pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) never fails {
     if (c.subst_params_count == 0i32) { pass id; }
     if (c.tr == NULL) { pass id; }
     if (!(raw type_mentions_param(c.types, c.ast, id, 64i32))) { pass id; }
-    pass (raw type_subst(c.tr, id, raw subst_emitted_scope(c), raw span_none(),
+    pass (raw type_subst(c.tr =>! TypeResolver->, id, raw subst_emitted_scope(c), raw span_none(),   // the crossing (D-361): a wild table handle into a plain parameter
                            raw SUBST_FUEL_LL(), c.impls));
 };
 
@@ -791,7 +791,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_ASSOC())) {
         if (c.tr != NULL) {
             int32:ab = raw subst_emitted_param(c, raw type_assoc_base(c.types, id));
-            int32:bound = raw assoc_binding_of(c.tr, c.impls, ab,
+            int32:bound = raw assoc_binding_of(c.tr =>! TypeResolver->, c.impls, ab,   // the crossing (D-361)
                               raw type_assoc_trait(c.types, id),
                               raw type_assoc_name(c.types, id));
             if (bound != 0i32) { pass (raw ll_type(c, bound)); }

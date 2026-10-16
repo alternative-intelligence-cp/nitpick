@@ -43,7 +43,7 @@ func:main = int32(cstring[]:_~argv) {
     // free", which was never true, and BORROW-011 is what asked the question.
     // The pointer exists only to reach the syscall boundary, where an address
     // becomes a number (1.1.12a).
-    uint8->:np = nm.ptr;
+    uint8->:np = nm.ptr =>! uint8->;   // the crossing (D-361): the header's ptr is wild by provenance
     int64:mfd = sys(319i64, np, 1i64) ?! EMemfd;
     uint32:off = 2147483648u32;
     int64:at = sys(8i64, mfd, off, 0i64) ?! ESeek;

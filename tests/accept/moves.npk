@@ -19,8 +19,8 @@ func:takes = NIL(int8->:p) never fails { pass NIL; };
 
 func:passing_does_not_move = NIL() never fails {
     wild int8->:p = alloc(8i64);
-    drop takes(p);
-    drop takes(p);
+    drop takes(p =>! int8->);   // the crossing (D-361): a wild value into a plain parameter
+    drop takes(p =>! int8->);
     dalloc(p);
     pass NIL;
 };

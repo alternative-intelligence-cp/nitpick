@@ -158,6 +158,12 @@ field's, an element's, a vacant one after a move — and a `wild` block cast to 
 plain pointer by `=>! T->` is the author's assertion of exactly that: spell the
 cast `=>! wild T->` for storage that holds no value yet.
 
+> *(2026-10-16, D-361, 1.6.1e landing 121.)* The crossing is CHECKED now: a value of
+> wild provenance (the list above) written into a plain pointer binding, parameter,
+> field or return without the `=>! T->` is `NITPICK-TYPE-097` at the value -- the
+> assertion is made, or the slot is declared `wild`. A dereference in place, a `wild`
+> slot and an `=>! wild` cast take the value as it is (TYPE_REFERENCE §27).
+
 ### 1.2 `stack`
 Forces explicit allocation onto the hardware call stack. Extremely fast (just a pointer bump), with memory reclaimed exactly at the scope's exit.
 ```nitpick
@@ -165,7 +171,7 @@ stack int32:counter = 0i32;
 ```
 
 ### 1.3 `wild` (Unmanaged / Manual Memory)
-Declares the memory as completely unmanaged. `wild` pointers **must** be manually freed. They explicitly bypass RAII tracking. If you fail to free a `wild` pointer, the compiler will abort with a memory leak error on `exit`.
+Declares the memory as completely unmanaged. `wild` pointers **must** be manually freed. They explicitly bypass RAII tracking. If you fail to free a `wild` pointer, the compiler will abort with a memory leak error on `exit`. A `wild` value stays in the manual regime until the author crosses it out by `v =>! T->` (D-361, 1.6.1e landing 121): into a plain pointer binding, parameter, field or return it is `NITPICK-TYPE-097` otherwise.
 ```nitpick
 wild int8->:buffer = alloc(1024i64);
 ```

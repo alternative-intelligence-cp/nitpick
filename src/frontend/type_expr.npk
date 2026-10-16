@@ -2519,6 +2519,7 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     e.null_ctx = 0i32;
     if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
     int32:vt = raw type_of_expr(e, raw expr_lhs(n));
+    drop check_wild_into_plain(e, raw expr_lhs(n), want);   // D-361
     e.null_ctx = nsv;
     e.expected = e.types.t_error;
     int32:et = raw type_of_expr(e, raw expr_rhs(n));
@@ -2816,6 +2817,68 @@ pub func:null_ctx_against = int32(ExprTyper->:e, TokenKind:op, ExprId:other) nev
         pass 1i32;
     }
     pass 2i32;
+};
+
+// A VALUE OF WILD PROVENANCE ENTERS A PLAIN POINTER SLOT ONLY THROUGH `=>! T->` (D-361, 1.6.1e
+// landing 121; S-138). `wild` is a place qualifier and no part of the pointer type (`wild int32->`
+// and `int32->` are one type id, parse_type.npk's second header fact), so until this rule a `wild`
+// binding's value, a `#ptr_add` or allocator result and an `=>! wild` cast each flowed into a plain
+// pointer binding, parameter, field or return in silence -- and the plain pointer's contract (D-355:
+// it always points at something a program may read) was asserted by nobody. The slot's context is
+// the one landing 119 set (`null_ctx`: 1 a wild slot, 0 a plain one -- still the slot's when this
+// is asked, right after the value is typed), the value's provenance is D-120's one walk
+// (`expr_wild_provenance`), and the crossing is the explicit `v =>! T->`, whose plain target the
+// walk answers `false` for: the author's assertion, the TOS marker as every `=>!` is. A ternary's
+// arms and a `??`/`?|` default are looked into (a value can arrive through them, the walk stops at
+// the node); a pick expression's `give`s and a method receiver are not (listed in the
+// landing's record, the fuzzer's family); a fixed array literal's elements are. `NULL` is excluded: its own rule reports it, one mistake one report (D-240).
+// A `#ptr_add` result's sentence names the builtin: BUILTIN_REFERENCE's "legal only in `wild`
+// context", enforced here where the result would leave the manual regime.
+pub func:check_wild_into_plain = NIL(ExprTyper->:e, ExprId:v, int32:slot) never fails {
+    if (e.null_ctx != 0i32) { pass NIL; }
+    if (slot == 0i32) { pass NIL; }
+    if (raw expr_is_none(v)) { pass NIL; }
+    int32:st = slot;
+    if ((raw type_kind(e.types, st)) == (raw TY_OPTIONAL())) { st = raw type_elem(e.types, st); }
+    // A FIXED ARRAY OF POINTERS takes its literal's elements one by one (`int32->[2]:a = [w, w]`):
+    // the slot's type is the array's, the values are the elements'.
+    if ((raw type_kind(e.types, st)) == (raw TY_ARRAY())) {
+        if ((raw type_kind(e.types, raw type_elem(e.types, st))) != (raw TY_POINTER())) { pass NIL; }
+        ExprNode:an = raw ast_expr(e.ast, v);
+        if (an.kind != ExprKind.ExprArrayLiteralExpr) { pass NIL; }
+        for (int32:ai in 0i32...(raw expr_list_count(an))) {
+            drop wild_into_plain_at(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(an), ai) }, 8i32);
+        }
+        pass NIL;
+    }
+    if ((raw type_kind(e.types, st)) != (raw TY_POINTER())) { pass NIL; }
+    drop wild_into_plain_at(e, v, 8i32);
+    pass NIL;
+};
+
+func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
+    if (d <= 0i32) { pass NIL; }
+    if (raw expr_is_none(v)) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, v);
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass NIL; }
+    if (n.kind == ExprKind.ExprTernaryExpr) {
+        drop wild_into_plain_at(e, raw expr_rhs(n), d - 1i32);
+        drop wild_into_plain_at(e, raw expr_third(n), d - 1i32);
+        pass NIL;
+    }
+    if ((n.kind == ExprKind.ExprNullCoalesceExpr) || (n.kind == ExprKind.ExprSafeUnwrapExpr)) {
+        drop wild_into_plain_at(e, raw expr_rhs(n), d - 1i32);
+        pass NIL;
+    }
+    if (!(raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, v, 16i32))) { pass NIL; }
+    string:m = "a value of wild provenance -- a `wild` place's, an allocator's or `#ptr_add`'s result, an `=>! wild` cast -- enters a plain pointer slot only through the explicit crossing `v =>! T->` (D-361): a plain `T->` always points at something a program may read, and that is the author's assertion to make, or the slot is declared `wild`";
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        if (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "ptr_add")) {
+            m = "`#ptr_add`'s result is a wild pointer (BUILTIN_REFERENCE: pointer arithmetic is the manual regime's, legal in a `wild` context alone), and it enters a plain pointer slot only through the explicit crossing `… =>! T->` (D-361): declare the slot `wild`, dereference the result in place, or write the cast";
+        }
+    }
+    discard(raw te_error(e, raw TYPE_WILD_INTO_PLAIN(), move(m), n.span));
+    pass NIL;
 };
 
 // THE TYPE AN OPERAND SHOULD AIM AT, given the slot it is going into.
@@ -3874,6 +3937,7 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
             int32:nsv = e.null_ctx;
             e.null_ctx = raw null_ctx_of_quals(raw struct_field_quals(e, st, fname));
             int32:got = raw type_of_expr(e, val);
+            drop check_wild_into_plain(e, val, f.type_id);   // D-361
             e.null_ctx = nsv;
             e.expected = saved;
             if (!(raw type_is_invalid(e.types, got))) {

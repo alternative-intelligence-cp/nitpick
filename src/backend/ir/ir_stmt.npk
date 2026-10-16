@@ -417,7 +417,7 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int64:depth) never fails {
             // ANOTHER COPY OF THIS BODY (DEF-82, 1.5.8b step 5): the walk
             // recorded its guards once and this is one of the exits that
             // writes them, so the table multiplies those rows' traps.
-            if (x.fe.ctx.obl != NULL) { drop obl_note_defer_copy(x.fe.ctx.obl, body.index); }
+            if (x.fe.ctx.obl != NULL) { drop obl_note_defer_copy(x.fe.ctx.obl =>! ObTable->, body.index); }   // the crossing (D-361)
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }
@@ -565,7 +565,7 @@ pub func:run_exit_defers = IrVal(ExprEmitter->:x) never fails {
             // ANOTHER COPY OF THIS BODY (DEF-82, 1.5.8b step 5): the walk
             // recorded its guards once and this is one of the exits that
             // writes them, so the table multiplies those rows' traps.
-            if (x.fe.ctx.obl != NULL) { drop obl_note_defer_copy(x.fe.ctx.obl, body.index); }
+            if (x.fe.ctx.obl != NULL) { drop obl_note_defer_copy(x.fe.ctx.obl =>! ObTable->, body.index); }   // the crossing (D-361)
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }
@@ -1687,9 +1687,9 @@ func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) never fails {
     Symbol:isym = raw symtab_get(x.tab, iter_sym);
     if (isym.origin_kind != (raw SYM_DECL())) { pass 0i32; }
     int32:i = 0i32;
-    int32:nimpls = raw impl_count(x.fe.ctx.impls);
+    int32:nimpls = raw impl_count(x.fe.ctx.impls =>! ImplTable->);   // the crossing (D-361): the context's wild table handle into a plain parameter
     while (i < nimpls) decreases nimpls - i {
-        ImplEntry:e = raw impl_at(x.fe.ctx.impls, i);
+        ImplEntry:e = raw impl_at(x.fe.ctx.impls =>! ImplTable->, i);
         if (!e.blanket) {
             if (e.target == it1) {
                 if ((raw type_decl_of(x.fe.ctx.types, e.trait_id))
@@ -1714,7 +1714,7 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                                int32:btid, LlType:bll) never fails {
     int32:idx = raw iterator_impl_of(x, itid);
     if (idx == 0i32) { pass (raw iv_broken(s.span)); }
-    ImplEntry:e = raw impl_at(x.fe.ctx.impls, idx - 1i32);
+    ImplEntry:e = raw impl_at(x.fe.ctx.impls =>! ImplTable->, idx - 1i32);   // the crossing (D-361)
 
     int32:it1 = itid;
     string:recv = "";

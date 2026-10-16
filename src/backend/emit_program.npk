@@ -1236,7 +1236,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     while (fv < (raw fninst_count(fninsts))) unbounded {
         FnInstance:fvi = raw fninst_at(fninsts, fv);
         if (fvi.owner_impl != 0i32) {
-            int32:fvhs = raw impl_scope_of(impls, fvi.owner_impl);
+            int32:fvhs = raw impl_scope_of(impls =>! ImplTable->, fvi.owner_impl);   // the crossing (D-361)
             ExprEmitter:fvx = raw exprem_init(@fe, @g.ast, ets, @g.tab,
                                   interns, @st, @g.sm, tr, fninsts, fvhs);
             // A PRELUDE impl's family vtable is an item (D-262 §1).
@@ -1347,7 +1347,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             // AN IMPL HAS NO SYMBOL, so `symtab_home_scope` cannot place it;
             // the impl table recorded the scope it was collected in for
             // exactly this kind of question.
-            int32:ihs = raw impl_scope_of(impls, inst.owner_impl);
+            int32:ihs = raw impl_scope_of(impls =>! ImplTable->, inst.owner_impl);   // the crossing (D-361)
             ExprEmitter:xf = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns,
                                              @st, @g.sm, tr, fninsts, ihs);
             // A PRELUDE impl's instance is an item (D-262 §1): recorded by a

@@ -1959,14 +1959,18 @@ The surface, exactly (1.3.7 landed this MINIMALLY):
   landing 119; `b.len`/`b.cap` are the emptiness a program reads). Allocation failure traps
   (D-150). The count is `int64` by declaration — a signature-less builtin
   adopts nothing (the `sys` rule).
-- Members `.ptr` (`uint8->`), `.len`, `.cap` — the string's trio with the
+- Members `.ptr` (`uint8->`, of WILD provenance: the allocator's block pointer, so it
+  enters a plain binding only as `b.ptr =>! uint8->`, D-361, landing 121), `.len`, `.cap` — the string's trio with the
   string's meanings; `cap == 0` is the same ownership bit, so the drop body
   is SHARED with the string's.
 - The **scope-exit drop is the reclaim** (D-183): a buffer is move-only
   (TYPE-046), rides a channel whole under the send's `move`, and needs no
   `free`.
 - Typed access is `#ptr_add<T>` + `<-` — the general mechanism the Bridge
-  already exercises (D-187).
+  already exercises (D-187). The result stays in the manual regime (D-361, 1.6.1e
+  landing 121): dereferenced in place as above, or stored in a `wild` binding, it
+  needs nothing; written into a PLAIN pointer binding, parameter or field it is
+  `NITPICK-TYPE-097` unless spelled `#ptr_add<T>(…) =>! T->`, the crossing.
 - `==` refuses as the string's does (D-169): the trio would compare the
   address, not the bytes.
 
@@ -2261,6 +2265,22 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   zero, D-225) and is unreadable until assigned (ASSIGN-001); an `=>!` cast of a null
   `wild` or `any->` pointer to a plain `T->` is the author's assertion, as every `=>!`
   is (D-095).
+- **A value of wild provenance enters a plain pointer slot only through `=>! T->`
+  (D-361, 1.6.1e landing 121; S-138 option (a)).** `wild` is a place qualifier and no
+  part of the pointer type, so until landing 121 a `wild` binding's value, a
+  `#ptr_add` or allocator result, an `=>! wild` cast and a compiler-known header's
+  `ptr` each flowed into a plain pointer binding, parameter, field or return in
+  silence. Now `NITPICK-TYPE-097` at the value, once, wherever the slot is a plain
+  pointer (or an `Optional` of one): a local's or a module binding's initialiser, an
+  assignment (a binding, a field through any path, an element), a `pass` or a
+  `Result{ value: … }` from a plain `T->()`, a call's argument (a user function's, a
+  builtin's, a function value's, a prelude generic's such as `list_push`'s), a struct
+  literal's field (a generic instance's included), through a ternary's arms and a
+  `??`/`?|` default, a fixed array literal's elements. The crossing `v =>! T->` is the
+  author's assertion that the pointer points at something a program may read (the
+  TOS marker, as every `=>!` is), and a `wild` slot takes the value as it is. NOT
+  covered, listed for the fuzzer's family: a pick expression's `give`, and a method
+  call's receiver (`c.get()` on a `wild Cell->` hands the body a plain `Self->`).
 - NOT valid as a general "no value" — that's `NIL`
 - IR: `ptr null`
 - A store through or a load from a `NULL` pointer (a `wild` one, since landing 119)

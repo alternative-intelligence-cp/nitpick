@@ -1,0 +1,85 @@
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 43:62
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 49:18
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 50:18
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 51:30
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 53:30
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 54:19
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 55:23
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 55:26
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 57:10
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 58:17
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 59:11
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 61:31
+//
+// A VALUE OF WILD PROVENANCE ENTERS A PLAIN POINTER SLOT ONLY THROUGH `=>! T->` (D-361, 1.6.1e
+// landing 121; S-138 option (a), and the `#ptr_add` confinement BUILTIN_REFERENCE promised): `wild` is a
+// place qualifier and no part of the pointer type, so a `wild` binding's value, a `#ptr_add` or
+// allocator result and an `=>! wild` cast each reached a plain pointer binding, parameter, field or
+// return in silence until this landing. Twelve sites, one report each, at the value: a `pass` from a
+// plain `T->()`; a binding's initialiser from a wild binding, from `#ptr_add` (its own sentence), from
+// an `=>! wild` cast, through a ternary's arm, into an `Optional` slot, as a fixed array literal's two elements; an assignment; a struct
+// literal's field; a field assignment; a plain parameter's argument. The controls carry no code: the
+// explicit crossing `w =>! int32->` (a binding, an argument), a `wild` field and parameter, a
+// `wild`-returning function's `pass`, a dereference in place, a comparison.
+mod:wild_into_plain;
+
+struct:H = { int32->:p; };
+struct:WH = { wild int32->:p; };
+
+func:take_plain = int32(int32->:p) never fails { pass (<-p); };
+func:take_wild = int32(wild int32->:p) never fails { pass (<-p); };
+func:give_plain = int32->(wild int32->:w) never fails { pass w; };
+func:give_wild = wild int32->(wild int32->:w) never fails { pass w; };
+
+func:main = int32(cstring[]:_~argv) {
+    wild int32->:w = alloc(8i64) =>! wild int32->;
+    <-w = 7i32;
+    int32->:q1 = w;
+    int32->:q2 = #ptr_add<int32>(w, 0i64);
+    int32->:q3 = alloc(8i64) =>! wild int32->;
+    int32->:q4 = w =>! int32->;
+    int32->:q5 = is (true) : w : q4;
+    int32->?:o1 = w;
+    int32->[2]:arr = [w, w];
+    int32:v = <-(#ptr_add<int32>(w, 0i64));
+    q4 = w;
+    H:h = H{ p: w };
+    h.p = w;
+    WH:wh = WH{ p: w };
+    int32:t1 = raw take_plain(w);
+    int32:t2 = raw take_wild(w);
+    int32:t3 = raw take_plain(w =>! int32->);
+    int32->:q6 = raw give_plain(w);
+    wild int32->:w2 = raw give_wild(w);
+    int64:n = (q1 == w) => int64;
+    dalloc(w);
+    dalloc(q3 =>! wild int32->);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

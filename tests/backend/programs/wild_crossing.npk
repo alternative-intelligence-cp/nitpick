@@ -1,0 +1,56 @@
+// expect-exit: 0
+//
+// THE EXPLICIT CROSSING FROM WILD STORAGE TO A PLAIN POINTER (D-361, 1.6.1e landing 121): a value
+// of wild provenance -- a `wild` binding, a `#ptr_add` result, an allocator's block, a header's `ptr`
+// -- enters a plain pointer binding, parameter or field only as `v =>! T->`, the author's assertion
+// that it points at something a program may read. The cast between one type id (`wild int32->` and
+// `int32->` are one type, the qualifier a place's) lowers to nothing: the plain pointer reads what the
+// wild one wrote, at both legs. The refused shapes are `tests/types/rejection/wild_into_plain.npk`.
+mod:wild_crossing;
+
+struct:Tab = { int32:n; };
+struct:H = { int32->:p; };
+
+func:read_tab = int32(Tab->:t) never fails { pass (<-t).n; };
+func:read_h = int32(H:h) never fails { pass (<-h.p); };
+
+func:main = int32(cstring[]:_~argv) {
+    // 1. A wild binding's value, crossed into a plain binding.
+    wild int32->:w = alloc(8i64) =>! wild int32->;
+    <-w = 7i32;
+    int32->:q = w =>! int32->;
+    if ((<-q) != 7i32) { exit 10i32; }
+    // 2. A `#ptr_add` result, crossed at a call's argument.
+    wild Tab->:t = alloc(16i64) =>! wild Tab->;
+    (<-t).n = 5i32;
+    (<-(#ptr_add<Tab>(t, 1i64))).n = 6i32;
+    if ((raw read_tab(#ptr_add<Tab>(t, 1i64) =>! Tab->)) != 6i32) { exit 11i32; }
+    if ((raw read_tab(t =>! Tab->)) != 5i32) { exit 12i32; }
+    // 3. A header's `ptr` (the allocator's block pointer), crossed into a plain binding.
+    cstring:dn = to_cstring("/dev") ?! Unreachable;
+    uint8->:dp = dn.ptr =>! uint8->;
+    if ((<-dp) != 47u8) { exit 13i32; }
+    // 4. Into a plain field, through the crossing.
+    H:h = H{ p: w =>! int32-> };
+    if ((raw read_h(h)) != 7i32) { exit 14i32; }
+    // 5. A dereference in place needs no crossing: the manual regime's own read.
+    if ((<-(#ptr_add<int32>(w, 0i64))) != 7i32) { exit 15i32; }
+    dalloc(w);
+    dalloc(t);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
