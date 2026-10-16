@@ -216,6 +216,9 @@ func:p_coalesce = ExprId(Parser->:p) never fails {
         // reachable, and refused by name after the advance.
         if (k == TokenKind.OpQuestion)         { node = ExprKind.ExprDefaultsExpr; }
         if (k == TokenKind.OpQuestionBang)     { node = ExprKind.ExprEmphaticUnwrapExpr; }
+        // `??!` IS THE OPTIONAL'S UNWRAP-OR-TRAP (D-360, 1.6.1e landing 120): `?!`'s twin at
+        // the other wrapper, at `??`'s level -- one token (longest match beats `??`), one node.
+        if (k == TokenKind.OpQuestionQuestionBang) { node = ExprKind.ExprEmphaticCoalesceExpr; }
         if (node == ExprKind.ExprNone) { break; }
         discard(raw p_advance(p));
         if (k == TokenKind.OpQuestion) {

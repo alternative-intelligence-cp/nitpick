@@ -46,6 +46,15 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw kind_at(@b, 4i64)) != TokenKind.OpUnderBang)         { exit 34i32; }
     if ((raw kind_at(@b, 5i64)) != TokenKind.OpFatArrowUnchecked) { exit 35i32; }
 
+    // `??!` IS ONE TOKEN (D-360, 1.6.1e landing 120): longest match, so it beats `??`
+    // and `?!` alike -- the Optional's unwrap-or-trap, `?!`'s twin at the other wrapper.
+    TokenList:b2 = raw lex_all(0i32, "??! ?? ?! ??!x", @it, @dg);
+    if ((raw kind_at(@b2, 0i64)) != TokenKind.OpQuestionQuestionBang) { exit 45i32; }
+    if ((raw kind_at(@b2, 1i64)) != TokenKind.OpQuestionQuestion)     { exit 46i32; }
+    if ((raw kind_at(@b2, 2i64)) != TokenKind.OpQuestionBang)         { exit 47i32; }
+    if ((raw kind_at(@b2, 3i64)) != TokenKind.OpQuestionQuestionBang) { exit 48i32; }
+    if ((raw kind_at(@b2, 4i64)) != TokenKind.Ident)                  { exit 49i32; }
+
     // `!!` is NOT an error and NOT an operator. The tier marker was removed
     // when D-001 removed sys!!! and asm!!!, so `!!x` is simply two negations.
     TokenList:c = raw lex_all(0i32, "!!x", @it, @dg);

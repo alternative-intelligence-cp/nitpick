@@ -1423,8 +1423,9 @@ the authority on both.
 | `int32?:b = 42i32;` | holding `42i32` |
 | `a == NIL`, `a != NIL` | the test |
 | `a ?? d` | the value, or `d` |
+| `a ??! Ident` | the value, or a trap with the named identity (D-360, 1.6.1e landing 120; S-137): `?!`'s twin at the other wrapper, through `npk_raise`, so `failsafe` names the identity as it names `?!`'s |
 | `a?.f` | the field, still wrapped |
-| `int32->?:p = NIL;`, `p = @x;`, `p ?? @d`, `p?.v` | **the pointer that may be absent (D-355, 1.6.1e landing 119)**: a plain `T->` always points at something, so "maybe no pointer" is `T->?` -- `NIL` when empty, `== NIL` the test, `?? @d` the pointer or a default, `p?.v` a field of the pointee, still wrapped (`?.` reaches a field, never a method: a `Self->` method on the pointee is called on `p ?? @d`; the no-default form is S-137, OPEN_DECISIONS). Lowers as `{ i8, ptr }`; the escape analysis sees a borrow inside it as it sees the bare pointer's. `NULL` into a `T->?` is NITPICK-TYPE-096 (it built a present optional holding a null pointer until landing 119). |
+| `int32->?:p = NIL;`, `p = @x;`, `p ?? @d`, `p?.v` | **the pointer that may be absent (D-355, 1.6.1e landing 119)**: a plain `T->` always points at something, so "maybe no pointer" is `T->?` -- `NIL` when empty, `== NIL` the test, `?? @d` the pointer or a default, `p?.v` a field of the pointee, still wrapped (`?.` reaches a field, never a method: a `Self->` method on the pointee is called on `p ?? @d` or, with no default to offer, on `p ??! Ident` -- the pointer, or a trap with the named identity: D-360, landing 120, which settled S-137). Lowers as `{ i8, ptr }`; the escape analysis sees a borrow inside it as it sees the bare pointer's. `NULL` into a `T->?` is NITPICK-TYPE-096 (it built a present optional holding a null pointer until landing 119). |
 | `pick (a ?? d) { … }` | the arms, over the value or the default — a `pick` never selects on the `Optional` itself (D-260, TYPE-065) |
 
 **No `pick` selects on an `Optional` (D-260, 1.5.2c; `NITPICK-TYPE-065`).** An
@@ -1458,7 +1459,7 @@ discarded outcome as a value is an error.
 **An `Optional` has no readable members.** `.has_value` and `.value` are IR field
 names, not source-level members — neither exists in the prototype's source
 surface. `.has_value` duplicates `== NIL`, and `.value` is the unchecked read the
-wrapper exists to prevent; `??` and `?.` are the accessors that cannot be wrong.
+wrapper exists to prevent; `??`, `??!` and `?.` are the accessors that cannot be wrong (`??!`'s absence is a trap with a named identity, never a read, D-360).
 
 **Two inner types are refused**, both naming a state nobody can write down:
 
@@ -1545,6 +1546,7 @@ The compiler WILL NOT allow accessing `.value` without first checking `.is_error
 | Safe unwrap | `expr ? defaultVal` | — | If error, use default value |
 | Null coalesce | `expr ?? defaultVal` | — | **On an `Optional`, not a `Result`** — if it is `NIL`, use the default (D-099) |
 | Emphatic unwrap | `expr ?! errCode` | — | If error, triggers failsafe (Layer 3) |
+| Emphatic coalesce | `expr ??! Ident` | — | **On an `Optional`** -- if it is `NIL`, triggers failsafe with the named identity (D-360, 1.6.1e landing 120) |
 | Raw unwrap | `raw(expr)` or `raw expr` | `_!` | Extract `.value` WITHOUT checking error (unsafe, auditable "TOS keyword") |
 | Drop | `drop(expr)` or `drop expr` | `_?` | Discard the entire Result, don't care about value or error |
 | Discard | `discard(param)` | `_~` | For unused variables/params — semantically different from `drop` |
@@ -2251,7 +2253,7 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   (`int32->?:p = NULL;`, which built a PRESENT optional holding a null pointer until
   landing 119) is `NITPICK-TYPE-096` at the literal, once. A pointer that may be
   absent is the Optional `T->?` (§11.1): `NIL` when empty, `== NIL` the test,
-  `?? d` the pointer or a default, `p?.f` a field of the pointee, still wrapped.
+  `?? d` the pointer or a default, `p ??! Ident` the pointer or a trap with the named identity (D-360, landing 120), `p?.f` a field of the pointee, still wrapped.
   (This section read "ONLY valid in pointer contexts: `int32->:p = NULL;`" until
   landing 119; S-136, the library seats' report of 2026-10-12, was settled as D-355.)
 - The plain pointer's invariant is kept by the checker and holds for every READABLE
@@ -2384,6 +2386,7 @@ level, because `q.x` does.
 | `?` | safe unwrap with default | branch + select | `res ? default` |
 | `?!` | emphatic unwrap | branch → failsafe | No default |
 | `??` | null coalesce | branch + select | `opt ?? default` |
+| `??!` | emphatic coalesce | branch → failsafe | `opt ??! Ident` (D-360): the tag tested, `npk_raise` on the empty path |
 | `?.\|` | safe navigation | branch + select | `opt?.field` |
 | `\|>` | pipe forward | `call f(%v)` | `v \|> f` = `f(v)` |
 | `<\|` | pipe backward | `call f(%v)` | `f <\| v` = `f(v)` |

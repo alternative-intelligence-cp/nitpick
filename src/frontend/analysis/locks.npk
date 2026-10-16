@@ -845,6 +845,9 @@ func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
         pass (raw init_acquires(x, raw expr_lhs(n), depth - 1i32));
     }
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) {   // D-360: the Optional's twin of `?!`
+        pass (raw init_acquires(x, raw expr_lhs(n), depth - 1i32));
+    }
     if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
         pass (raw init_acquires(x, raw expr_lhs(n), depth - 1i32));
     }

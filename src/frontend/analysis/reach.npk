@@ -700,6 +700,13 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         drop reach_operand(x, raw expr_rhs(n));
         pass NIL;
     }
+    // `??!` names one too (D-360, 1.6.1e landing 120): the Optional's unwrap-or-trap raises
+    // the identity on its right where `?!` raises its own, so `failsafe` must name it alike.
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) {
+        drop reach_expr(x, raw expr_lhs(n), fuel - 1i32);
+        drop reach_operand(x, raw expr_rhs(n));
+        pass NIL;
+    }
 
     // The conditional system machinery.
     if (n.kind == ExprKind.ExprBinaryExpr) {

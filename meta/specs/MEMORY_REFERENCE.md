@@ -195,7 +195,7 @@ Because `wild` memory escapes automatic lifecycle tracking, it introduces the ri
 ### 2.1 The `defer` Block
 The canonical method for cleaning up `wild` memory is using a `defer` block immediately following the allocation. This guarantees the free runs on every normal exit path (early `return`, `pass`, `fail`, `relay`, or `exit`).
 
-> **`defer` does not run on a trap.** `!!!` and `?!` transfer control directly to
+> **`defer` does not run on a trap.** `!!!`, `?!` and `??!` transfer control directly to
 > `failsafe` without unwinding (D-014). At trap time the state of the system is
 > unknown, so no cleanup code runs before the handler that understands the
 > situation gets control. `failsafe` receives the allocation registry intact and

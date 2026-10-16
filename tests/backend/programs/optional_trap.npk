@@ -1,0 +1,76 @@
+// expect-exit: 7
+//
+// THE OPTIONAL'S UNWRAP-OR-TRAP IS `??!` (D-360, 1.6.1e landing 120; S-137): `T->:q = p ??! Absent;`
+// is the pointer, or a trap with the NAMED identity through `npk_raise` -- `?!`'s twin at the
+// other wrapper (D-099: `?!` and `?|` take a `Result`, `??` and `??!` an `Optional`). The present
+// road first, each check with its own exit: a `T->?` yields its `T->` and a `Self->` method is
+// called on the pointee with no dummy object; an `int32?` yields its value; a call's Optional
+// unwraps in place; the value feeds a `pick`; the unwrapped pointer is written through. Then the
+// absent road, the program's answer: an empty `int32?` under `??!` reaches `failsafe` with
+// `Absent`, whose arm exits 7 -- at both legs. (`argv.len` is at least 1, so no build can fold
+// the absence away.)
+mod:optional_trap;
+
+error:Absent;
+error:Missing;
+
+struct:Box = { int32:v; };
+impl:Box = { func:get = int32(Box->:self) never fails { pass self.v; }; };
+
+func:pick_one = int64->?(int64->?:a, bool:want) never fails {
+    if (want) { pass a; }
+    pass NIL;
+};
+
+func:maybe = int32?(int32:n, bool:want) never fails {
+    if (want) { pass n; }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    // 1. A present pointer: `??!` yields the `T->` and the pointee reads through it.
+    int64:x = 5i64;
+    int64->?:p = @x;
+    int64->:q = p ??! Absent;
+    if ((<-q) != 5i64) { exit 10i32; }
+    // 2. A method on the pointee, with no dummy object (S-137's case).
+    Box:b = Box{ v: 3i32 };
+    Box->?:ob = @b;
+    if ((raw (ob ??! Absent).get()) != 3i32) { exit 11i32; }
+    // 3. A value Optional: an `int32?` yields its `int32`.
+    int32?:o = 9i32;
+    int32:v = o ??! Missing;
+    if (v != 9i32) { exit 12i32; }
+    // 4. A call's Optional, unwrapped in place; a different identity at each site.
+    if ((raw maybe(4i32, true) ??! Missing) != 4i32) { exit 13i32; }
+    int64->:r = raw pick_one(p, true) ??! Absent;
+    if ((<-r) != 5i64) { exit 14i32; }
+    // 5. The value feeds a `pick` (a `pick` never selects on the Optional itself, D-260).
+    int32:sel = pick (o ??! Missing) { (9i32) { give 1i32; }, (*) { give 0i32; } };
+    if (sel != 1i32) { exit 15i32; }
+    // 6. The unwrapped pointer is a place to write through.
+    (<-q) = 6i64;
+    if (x != 6i64) { exit 16i32; }
+    // 7. THE ABSENT ROAD: `want` is false at run time, the Optional is empty, and the trap
+    //    reaches `failsafe` with `Absent` -- the arm exits 7.
+    bool:want = argv.len == 0i64;
+    int32:dead = raw maybe(1i32, want) ??! Absent;
+    exit (dead + 20i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Absent)            { exit 7i32; },
+        (Missing)           { exit 8i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -111,6 +111,7 @@ OP_NAMES = {
     "=>": "FatArrow", "=>!": "FatArrowUnchecked", "@": "At", "$": "Dollar",
     "$$i": "BorrowImm", "$$m": "BorrowMut", "?": "Question",
     "?.": "QuestionDot", "??": "QuestionQuestion", "?!": "QuestionBang",
+    "??!": "QuestionQuestionBang",   # D-360 (1.6.1e landing 120): the Optional's unwrap-or-trap
     "?|": "QuestionPipe", "_?": "UnderQuestion", "_!": "UnderBang",
     "_~": "UnderTilde", "_^": "UnderCaret", "!!!": "BangBangBang",
     "|>": "PipeFwd", "<|": "PipeBack", "..": "DotDot", "...": "DotDotDot",

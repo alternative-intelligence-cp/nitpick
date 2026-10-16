@@ -423,7 +423,7 @@ Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `rel
 
 A `defer` body decides nothing about the function's outcome and leaves for nowhere (D-163 rule 7, `NITPICK-TYPE-040`): `fail` and `relay` are refused inside one, and since 1.6.1e landing 111 (DEF-233) so are `give` and `fall` -- the body runs at the scope's exit, after the `pick` arm it was written in has finished, so neither has a `pick` to reach (the compiler exited 3 in silence on either until then).
 
-> **`defer` does NOT run on a trap** (D-014). `!!!` and `?!` transfer control
+> **`defer` does NOT run on a trap** (D-014). `!!!`, `?!` and `??!` transfer control
 > directly to `failsafe` without unwinding. At trap time the state of the system
 > is unknown, including how degraded it is, so no cleanup runs before the handler
 > that understands the situation gets control.

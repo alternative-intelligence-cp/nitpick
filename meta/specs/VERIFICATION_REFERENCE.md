@@ -353,7 +353,7 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 >
 > **A contract expression admits only what a proposition can evaluate
 > anywhere** (`NITPICK-TYPE-060`, the message names which): no `await`, no
-> `move`, no `relay`/`?!`/`?|`/`drop`, no `pick` expression, no store, no
+> `move`, no `relay`/`?!`/`?|`/`??!`/`drop`, no `pick` expression, no store, no
 > manufactured view (`#wild_ptr`/`#wild_slice`), no method on a lock, an
 > atomic, a channel endpoint or an arena. A call is to a NAMED function —
 > a user function spelled `raw f(…)` (the licence checks `never fails`) or a
@@ -1422,7 +1422,7 @@ holds compute in floats or vectors.
 > analysis's own refusal (BORROW-013) and has no row.
 
 > **[1.5.4e (2026-09-11), D-285.]** The belts count a guard's trap by its
-> text, `@npk_trap(i32 CODE)`; a PROGRAM's raise — `?!`, `!!!` — is
+> text, `@npk_trap(i32 CODE)`; a PROGRAM's raise — `?!`, `??!`, `!!!` — is
 > `@npk_raise(i32 CODE)`, one call of `npk_trap` under its own name, which
 > the belts do not count. So a verified build of a program that unwraps
 > with a system code (`?! DivByZero`) no longer reads as a guard (DEF-36),

@@ -191,7 +191,7 @@ Operator ::= "+" | "-" | "*" | "/" | "%" | "++" | "--"
            | "&" | "|" | "^" | "~" | "<<" | ">>"
            | "->" | "<-" | "=>" | "=>!"
            | "@" | "$" | "$$i" | "$$m"
-           | "?" | "?." | "??" | "?!" | "?|" | "_?" | "_!" | "_~" | "_^"
+           | "?" | "?." | "??" | "??!" | "?!" | "?|" | "_?" | "_!" | "_~" | "_^"
            | "!!!" | "|>" | "<|" | ".." | "..." | "..*" | "..^"
 
 CompilerSigil ::= "#"
@@ -260,7 +260,10 @@ applies from the token alone, without knowing what surrounds it (D-046):
 | Position | Meaning | Forms |
 |---|---|---|
 | **leading** | negation | `!x`, `!=` |
-| **trailing or repeated** | unchecked / emphatic | `?!`, `=>!`, `_!`, `!!!` |
+| **trailing or repeated** | unchecked / emphatic | `?!`, `??!`, `=>!`, `_!`, `!!!` |
+
+> *(2026-10-16, D-360, 1.6.1e landing 120.)* `??!` joins the trailing forms: the Optional's unwrap-or-trap, `?!`'s twin at the
+> other wrapper (`p ??! Ident` is the value, or a trap with the named identity). One token, longest match -- `??!` beats `??`.
 
 **`!!` no longer exists.** After D-001 removed `sys!!!` and `asm!!!`, the tier
 marker distinguished nothing: `asm` is now the only assembly form, and the

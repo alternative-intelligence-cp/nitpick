@@ -2915,6 +2915,10 @@ in the *same* position meant different things depending on the operand's type.
 - `nlibc`'s `sys_full` wrapper name now matches the language builtin — check for
   shadowing.
 
+> *(2026-10-16, D-360, 1.6.1e landing 120.)* `??!` joins the trailing-`!` forms: the
+> `Optional`'s unwrap-or-trap, read as `?!` is -- emphatic, a trap on the empty case --
+> and lexed as one token ahead of `??` by the longest match.
+
 ---
 
 ## D-047 — `nlibc` drops its syscall wrapper layer; the whitelist policy moves into the builtin — **SETTLED**
@@ -7381,6 +7385,12 @@ same commit as the code it was checking.
 > `== NIL`, read with `?? @d` or `p?.f` -- exactly this decision's shape at one
 > more type. `NULL` written where a plain pointer or an `Optional` is expected is
 > `NITPICK-TYPE-096`.
+
+> *(2026-10-16, D-360, 1.6.1e landing 120.)* The `Optional` has its trapping unwrap now:
+> `p ??! Ident` is the value, or a trap with the named identity -- `?!`'s twin at the
+> other wrapper, so the four operators pair off (`?|`/`?!` a `Result`, `??`/`??!` an
+> `Optional`) and this decision stands as it was: one wrapper per operator, no
+> constructor, no readable member.
 
 ---
 
@@ -23169,6 +23179,18 @@ operator kept (`?|` and `?!` take a `Result`, `??` and `??!` an `Optional`). (b)
 depends on its position), and (c), keeping `(p ?? @dummy)`, are DECLINED; (d), whether `?.` should reach `never fails` methods,
 was put as a separate question and is NOT ruled -- raised on its own if wanted. Its own landing after D-355 (landing 119), with
 an F-notice; nothing existing moves. Recorded at landing 119, whose chain was running when the ruling arrived.
+
+> *(2026-10-16, LANDED as 1.6.1e landing 120 by `nitpick-compiler_39`.)* The token `??!` (one token, longest match ahead of
+> `??`; LEXICAL_REFERENCE §5 and the generated tables), the node `EmphaticCoalesceExpr` at `??`'s level, the typer
+> (`type_emphatic_coalesce`: an `Optional` on the left -- a `Result` is pointed at `?!`/`?|`, a plain pointer at `T->?` -- and
+> one `Error` identity on the right, typed as `?!`'s is and before the left is judged; the result the inner type), the lowering
+> (the tag tested; empty: `npk_chain_reset` at the site and `npk_raise` with the identity -- an ORIGIN, as `!!!`'s is, since no
+> callee stamped a chain for an absence; present: the payload extracted, the Optional taken as the statement's temporary), REACH
+> (the identity joins the arm set as `?!`'s does), the lock walk and the contract rules (`??!` is an outcome, TYPE-060) each
+> gained their arm; the encoder's value is opaque and no row is written (a program's raise is not a guard). Tests:
+> `optional_trap.npk` (exit 7 through the trap at both legs, the present roads before it), `optional_trap_rules.npk`,
+> `reach_optional_trap.npk`, the lexer unit's longest-match case. Nothing existing moves: every program that compiled before
+> emits byte-identical IR. (d) stays unasked.
 
 ## D-361 — A VALUE OF WILD PROVENANCE ENTERS A PLAIN POINTER SLOT ONLY THROUGH `=>! T->` — **SETTLED (user decision, 2026-10-16: "i am fine with option A. If we find b is neccessary later we can always go with that.")**
 

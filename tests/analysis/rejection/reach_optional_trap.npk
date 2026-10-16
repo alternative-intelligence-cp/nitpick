@@ -1,0 +1,30 @@
+// expect-error: NITPICK-REACH-002
+// expect-error-at: 19:5
+//
+// `??!` ARMS `failsafe` AS `?!` DOES (D-360, 1.6.1e landing 120; D-179): the identity on its
+// right can reach `failsafe`, so the pick must name it. This one names every other arm the
+// program can reach and is refused once, for `Absent`.
+mod:reach_optional_trap;
+
+error:Absent;
+
+func:main = int32(cstring[]:argv) {
+    int32?:o = NIL;
+    if (argv.len == 0i64) { o = 3i32; }
+    int32:v = o ??! Absent;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 99i32; },
+        (MachineFault)      { exit 99i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -524,6 +524,7 @@ func:temp_producer = bool(ExprEmitter->:x, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprSafeUnwrapExpr)     { pass true; }
     if (n.kind == ExprKind.ExprNullCoalesceExpr)   { pass true; }
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) { pass true; }
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) { pass true; }   // D-360: the Optional taken, its value fresh
     if (n.kind == ExprKind.ExprRawUnwrapExpr)      { pass true; }
     if (n.kind == ExprKind.ExprRelayExpr)          { pass true; }
     // A `dyn` CAST IS NOT A PRODUCER HERE (DEF-227, 1.6.1e): its cell is
@@ -1068,6 +1069,44 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         LlType:ell2 = raw ll_type(x.fe.ctx, etid0);
         if (!(raw ll_is_ok(ell2))) { pass (raw iv_from_ll_at(x, ell2, etid0, n.span)); }
         pass (raw iv(move(ell2.text), move(ein), etid0));
+    }
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) {
+        // `o ??! Ident` (D-360, 1.6.1e landing 120): the Optional's value, or a trap with
+        // the NAMED identity -- `?!`'s lowering at the other wrapper. The Optional lowers
+        // `{ i8, T }` (TYPE_REFERENCE §11.1): tag 0 is empty. The identity is an ORIGIN here,
+        // as `!!!`'s is (D-179): no callee stamped a chain for an absence, so this site opens
+        // one; and the raise is the PROGRAM's (`npk_raise`, D-285), never a guard's.
+        IrVal:ov = raw emit_expr(x, raw expr_lhs(n));
+        if (!(raw iv_is_ok(ov))) { pass ov; }
+        drop temp_take(x, ov.ref);   // the Optional is taken; its value is the temporary (D-246)
+        IrVal:oc = raw emit_expr(x, raw expr_rhs(n));
+        if (!(raw iv_is_ok(oc))) { pass oc; }
+        int32:otid0 = raw exprtypes_get(x.et, id);
+        if (otid0 == 0i32) { pass (raw iv_broken(n.span)); }
+        string:otag = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(otag, " = extractvalue ", ov.ll, " ",
+                          string_concat(ov.ref, ", 0")));
+        string:oempty = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(oempty, " = icmp eq i8 ",
+                          string_concat(otag, ", 0")));
+        string:ot_l = raw irw_new_label(x.fe.w, "oq.trap");
+        string:oo_l = raw irw_new_label(x.fe.w, "oq.ok");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", oempty, ", label %", ot_l,
+                          string_concat(", label %", oo_l)));
+        drop irw_label(x.fe.w, ot_l);
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          int_to_string((raw x_site(x, n.span)) => int64),
+                          ")"));
+        drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ",
+                          oc.ref, ")"));
+        drop irw_line(x.fe.w, "unreachable");
+        drop irw_label(x.fe.w, oo_l);
+        string:oin = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(oin, " = extractvalue ", ov.ll, " ",
+                          string_concat(ov.ref, ", 1")));
+        LlType:oll = raw ll_type(x.fe.ctx, otid0);
+        if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid0, n.span)); }
+        pass (raw iv(move(oll.text), move(oin), otid0));
     }
     if (n.kind == ExprKind.ExprTemplateLiteral) {
         pass (raw emit_template(x, id, n));

@@ -1769,6 +1769,7 @@ KIND_STATUS = {
     "ExprSafeNavExpr": "lowered", "ExprComptimeExpr": "lowered",  # 1.0.9c — folded at check time
     "ExprSafeUnwrapExpr": "lowered",   # the `?|` Result fallback (D-175 restored the spelling)
     "ExprEmphaticUnwrapExpr": "lowered",  # 0.9.7
+    "ExprEmphaticCoalesceExpr": "lowered",  # 1.6.1e landing 120 -- the Optional's `??!` (D-360)
     "ExprNullCoalesceExpr": "lowered",
     "ExprDefaultsExpr": "inert: a bare `?` and the word `defaults` struck at parse (D-175, PARSE-011); the backend guard is a defensive confession",
     "ExprVectorCtorExpr": "lowered",  # 1.3.1 — simd<T, N> construction (D-194)

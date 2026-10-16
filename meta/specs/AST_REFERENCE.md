@@ -425,14 +425,15 @@ the parse path — so it is recorded here rather than left to the semantic phase
 |---|---|---|
 | `SafeUnwrapExpr` | `expr`, `default` | `e ? d` |
 | `NullCoalesceExpr` | `expr`, `default` | `e ?? d` |
-| `EmphaticUnwrapExpr` | `expr`, `error_code` | **`e ?! code`** — exactly one `tbb32` argument (D-009) |
+| `EmphaticUnwrapExpr` | `expr`, `error_code` | **`e ?! code`** — exactly one argument, an `Error` identity (D-009's derivation, retyped by D-179; this row said `tbb32` until landing 120) |
+| `EmphaticCoalesceExpr` | `expr`, `error_code` | **`e ??! Ident`** (D-360, 1.6.1e landing 120) — the `Optional`'s unwrap-or-trap, `?!`'s twin at the other wrapper: one `Error` identity, as `?!`'s; at `??`'s level |
 | `DefaultsExpr` | `expr`, `fallback` | `?\|` / `defaults` — **struck (D-167)**; the node is still built so the parser never restricts, and refused by name |
 | `RawUnwrapExpr` | `expr` | `raw e` / `_! e` |
 | `DropExpr` | `expr` | `drop e` / `_? e` |
 | **`RelayExpr`** | `expr` | **`relay e` / `_^ e`** (D-080) — on error, returns the same code from the enclosing function; otherwise yields `.value` |
 
 - **`RelayExpr` is a normal exit path**, so `defer` runs on the error branch —
-  unlike `EmphaticUnwrapExpr`, which traps and runs nothing (D-014, amended).
+  unlike `EmphaticUnwrapExpr` and `EmphaticCoalesceExpr`, which trap and run nothing (D-014, amended).
 - It is **illegal in `main` and `failsafe`**, the two functions that return a bare
   `int32` and leave through `exit`, so there is no `Result` to relay into.
 - These five, plus `await`, occupy **precedence level 2** (D-081); they had no

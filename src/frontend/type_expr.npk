@@ -2405,6 +2405,50 @@ func:te_not_result = int32(ExprTyper->:e, ExprNode:n, int32:t, string:op) never 
                          string_concat(m3, "`"), n.span));
 };
 
+// `e ??! Ident` -- THE OPTIONAL'S UNWRAP-OR-TRAP (D-360, 1.6.1e landing 120; S-137). `?!`'s
+// twin at the other wrapper: the Optional's value, or a trap with the NAMED identity through
+// `npk_raise`, exactly as `?!` traps on a `Result`'s error. The lhs is an `Optional` (D-099's
+// one wrapper per unwrap operator: a `Result` is unwrapped by `?!`/`?|`, and a plain pointer
+// always points at something, D-355); the rhs is one `Error` identity, typed as `?!`'s is --
+// and typed BEFORE the lhs is judged, so a refused lhs still types the identity (S-3b's lesson,
+// kept by `type_emphatic_unwrap`). The result is the inner type: a `T->?` yields its `T->`.
+func:type_emphatic_coalesce = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_lhs(n));
+
+    int32:saved = e.expected;
+    e.expected = e.types.t_error;
+    int32:c = raw type_of_expr(e, raw expr_rhs(n));
+    e.expected = saved;
+
+    if (c != 0i32) {
+        if (!(raw type_is_invalid(e.types, c))) {
+            if (c != e.types.t_error) {
+                string:m1 = string_concat(
+                    "`??!` hands its argument to `failsafe`, which takes one `Error` (D-179) — name a declared error constant; this is `",
+                    raw type_display(e.types, e.interns, c));
+                discard(raw te_error(e, raw TYPE_MISMATCH(),
+                              string_concat(m1, "`"), n.span));
+            }
+        }
+    }
+
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_OPTIONAL())) {
+        string:m1 = string_concat("`??!` unwraps an `Optional`, and this is `",
+                                        raw type_display(e.types, e.interns, t));
+        string:m2 = string_concat(m1, "`");
+        if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
+            m2 = string_concat(m2, "; a `Result` is unwrapped by `?!` (trap on the error) or `?|` (a fallback value), D-175");
+        }
+        if ((raw type_kind(e.types, t)) == (raw TY_POINTER())) {
+            m2 = string_concat(m2, "; a plain `T->` always points at something (D-355) -- a pointer that may be absent is the Optional `T->?`");
+        }
+        pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
+    }
+    pass (raw type_elem(e.types, t));
+};
+
 // `is_err(tbbValue)` — THE ONE TEST IN THE LANGUAGE GUARANTEED NOT TO TRAP.
 //
 // ITS OPERAND IS A `tbb`, NOT A `Result`. An earlier reading had it testing a
@@ -3983,11 +4027,12 @@ func:contract_refuses = bool(ExprTyper->:e, ExprNode:n) never fails {
     }
     bool:outcome = n.kind == ExprKind.ExprRelayExpr;
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) { outcome = true; }
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) { outcome = true; }   // D-360: the Optional's trap is an outcome too
     if (n.kind == ExprKind.ExprSafeUnwrapExpr)     { outcome = true; }
     if (n.kind == ExprKind.ExprDropExpr)           { outcome = true; }
     if (outcome) {
         discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
-            "a contract is a proposition, not an outcome (D-221): `relay`, `?!`, `?|` and `drop` decide what happens to an error, and a contract calls only `never fails` functions — spelled `raw f(…)`, whose error path does not exist",
+            "a contract is a proposition, not an outcome (D-221): `relay`, `?!`, `?|`, `??!` and `drop` decide what happens to an error or an absence, and a contract calls only `never fails` functions — spelled `raw f(…)`, whose error path does not exist",
             n.span));
         pass true;
     }
@@ -4425,6 +4470,11 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // about: `?` unwraps a `Result`, `??` unwraps an `Optional`.
     if (n.kind == ExprKind.ExprNullCoalesceExpr) {
         pass (raw type_null_coalesce(e, n));
+    }
+    // `e ??! Ident` -- the Optional's unwrap-or-trap (D-360): the value, or a trap with the
+    // named identity; `?!`'s twin at the other wrapper.
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) {
+        pass (raw type_emphatic_coalesce(e, n));
     }
 
     // --- casts (D-021) --------------------------------------------------------------

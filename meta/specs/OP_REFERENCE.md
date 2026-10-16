@@ -28,7 +28,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | 14 | Bitwise OR | `\|` |
 | 15 | Logical AND | `&&` (short-circuiting) |
 | 16 | Logical OR | `\|\|` (short-circuiting) |
-| 17 | Null Coalescing | `??` |
+| 17 | Null Coalescing | `??` `??!` |
 | 18 | Ternary / Fallback | `is`, `?\|` (bare `?` and `defaults` struck, D-175) |
 | 19 | Assignment | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` |
 
@@ -258,6 +258,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 |---|---|---|---|
 | `?\|` | Result Fallback | Unwraps a **`Result`**. If error, evaluates to the right-hand-side default. | `val = fn() ?\| 0i32;` |
 | `??` | Null Coalesce | Unwraps an **`Optional`**. If `NIL`, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
+| `??!` | Emphatic Coalesce | Unwraps an **`Optional`**. If `NIL`, calls `failsafe(err)` with the named `Error` identity -- `?!`'s twin at the other wrapper (D-360, 1.6.1e landing 120; S-137). **Takes exactly one argument**, an `Error` constant, as `?!` does. Lowers to `npk_raise` as `?!` does; the identity is an origin, as `!!!`'s is. | `T->:q = p ??! Absent;` |
 | `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(err)`. **Takes exactly one argument**, an `Error` constant (D-009's derivation, retyped by D-179). Lowers to `npk_raise`, the program's entry to the one trap route (D-285, 1.5.4e). | `val = fn() ?! Timeout;` |
 
 > **`?\|` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?\|`).
@@ -291,13 +292,18 @@ value is ERR, so the taint cannot cross silently. See D-008.
 > pointer is NITPICK-TYPE-096, and a pointer that may be absent is the Optional
 > `T->?`, whose test is `== NIL` and whose read is `?? @d`. Both halves stay written
 > down; the pointer half is written on `wild` storage.)*
+>
+> *(2026-10-16, D-360, 1.6.1e landing 120: the `Optional` gained its trapping unwrap, `??!` --
+> `p ??! Ident` is the value, or a trap with the named identity -- so the four operators pair
+> off: `?\|` and `?!` take a `Result`, `??` and `??!` an `Optional`. Still one wrapper per
+> operator, still no constructor and no readable member.)*
 
 > ### The two meanings of `!` (D-046)
 >
 > | Position | Meaning | Forms |
 > |---|---|---|
 > | **leading** | negation | `!x`, `!=` |
-> | **trailing or repeated** | unchecked / emphatic | `?!`, `=>!`, `_!`, `!!!` |
+> | **trailing or repeated** | unchecked / emphatic | `?!`, `??!`, `=>!`, `_!`, `!!!` |
 >
 > The distinction is **lexical, not contextual** — which meaning applies is
 > visible from the token itself, without knowing the operand types or the
