@@ -1,0 +1,31 @@
+// comptime_only.npk -- D-357 (landing 122): a `comptime func:` exists at compile time only. The roads that
+// REMAIN -- each a place the compile-time evaluator reads and the emitter never lowers: `comptime(…)`'s operand, a
+// module binding's initialiser, an array size, another `comptime func:`'s body, an `assert_static` proposition --
+// at both legs. Every road a run-time body offers (a bare call, a fixed local, a function value, a `+` node the
+// emitter used to fold, a module-qualified call, a contract) is NITPICK-TYPE-098 now: tests/types/rejection/comptime_only.npk.
+// expect-exit: 0
+mod:comptime_only;
+
+comptime func:dbl = int32(int32:x) never fails { pass (x * 2i32); };
+comptime func:dbl_plus = int32(int32:x) never fails { pass ((raw dbl(x)) + 1i32); };   // a call inside another comptime body
+comptime func:sq = int32(int32:x) pure never fails { pass (x * x); };
+
+fixed int32:K = raw dbl(21i32);          // a module binding's initialiser: the module-constant gate folds the call
+fixed int32:K2 = (raw dbl_plus(3i32)) * 2i32;
+
+func:main = int32(cstring[]:argv) {
+    int32:a = comptime(dbl(3i32));                 // comptime(…)'s operand
+    if (a != 6i32) { exit 1i32; }
+    int32:b = comptime(dbl_plus(3i32));            // the nested body
+    if (b != 7i32) { exit 2i32; }
+    if (K != 42i32) { exit 3i32; }
+    if (K2 != 14i32) { exit 4i32; }
+    int32[dbl(2i32)]:arr = [1i32, 2i32, 3i32, 4i32];   // an array size
+    if (arr[3i64] != 4i32) { exit 5i32; }
+    if (arr.len != 4i64) { exit 6i32; }
+    assert_static((raw sq(5i32)) == 25i32);        // an assert_static proposition: folded, emitted nowhere
+    int32:c = comptime(dbl(3i32)) + 1i32;          // the spelling that replaces a folded `+` node
+    if (c != 7i32) { exit 7i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) { pick (e) { (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; }, (DivByZero) { exit 97i32; }, (DivOverflow) { exit 98i32; }, (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; }, (DecreasesViolated) { exit 109i32; }, (*) { exit 99i32; } } exit 9i32; }; 

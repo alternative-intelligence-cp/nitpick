@@ -165,6 +165,10 @@ pub struct:ExprTyper = {
     // locals and parameters can carry no `limit`, since the frontend folder
     // evaluates it and the check is the emitter's.
     bool:fn_comptime;
+    // The expression being typed stands at a CONSTANT SITE the folder evaluates (D-357, landing 122): a
+    // module binding's initialiser or an `assert_static` proposition. With `fn_comptime`, where a
+    // `comptime func:` may be named (`comptime_fn_admitted`).
+    bool:const_site;
     // The function being checked is declared `pure` (1.5.1 step 4, D-221,
     // S-15): its body may contain no effect — the rules are read in the
     // arms that already exist for calls, declarations and assignment.
@@ -248,7 +252,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
-                             fn_pure: false, fn_comptime: false,
+                             fn_pure: false, fn_comptime: false, const_site: false,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
@@ -2647,6 +2651,14 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
             pass (raw resolve_type(@r, raw variadic_type(dnode), e.scope));
         }
         if (dnode.kind == DeclKind.DeclFunctionDecl) {
+            // A `comptime func:` EXISTS AT COMPILE TIME ONLY (D-357, landing 122): its name stands -- as a
+            // call's callee or as a value -- only where the folder evaluates it. The callee of a bare call
+            // passes through here, so the direct-call typer asks nothing more of a callee typed 0.
+            if (raw decl_has(dnode, raw DECL_COMPTIME())) {
+                if (!(raw comptime_fn_admitted(e))) {
+                    pass (raw refuse_comptime_fn_use(e, s.name, n.span));
+                }
+            }
             pass (raw fn_type(@r, did, s.name, e.scope));
         }
         // AN `extern` FUNCTION IS A FUNCTION. Missing here, its name fell through
@@ -4058,6 +4070,26 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
 // what the proposition is ABOUT: `result` exists under ENSURES alone (and
 // `old`, 1.5.1 step 3), `$` is the subject under RULES, and the emitter's
 // obligation kinds follow the same split. Zero is "not a contract".
+// A `comptime func:` MAY BE NAMED where the folder evaluates the expression (D-357, landing 122): inside
+// another `comptime func:`'s body, or at a constant site the typer walks -- a module binding's initialiser,
+// an `assert_static` proposition. `comptime(…)`'s operand and an array size are typed by nobody (the folder
+// reads them, DEF-205), so they never ask.
+pub func:comptime_fn_admitted = bool(ExprTyper->:e) never fails {
+    if (e.fn_comptime) { pass true; }
+    pass e.const_site;
+};
+
+// THE REFUSAL (TYPE-098): one sentence for the callee of a call and for the name as a value -- the typer
+// cannot tell the two apart at the identifier, and the fix is the same.
+pub func:refuse_comptime_fn_use = int32(ExprTyper->:e, int32:name, Span:at) never fails {
+    string:nm = raw intern_get(e.interns, name);
+    string:m1 = string_concat("`", nm);
+    string:m2 = string_concat(m1, "` is a `comptime func:`, which exists at compile time only (D-357): it is called inside `comptime(…)`, at a constant site -- a module binding's initialiser, an array size, an `assert_static` proposition -- or in another `comptime func:`'s body, and is never named as a value or called where a run-time body stands (the emitter emits no `comptime func:`) -- write `comptime(");
+    string:m3 = string_concat(m2, nm);
+    string:m4 = string_concat(m3, "(…))`, or declare an ordinary `func:`");
+    pass (raw te_error(e, raw TYPE_COMPTIME_ONLY(), move(m4), at));
+};
+
 pub func:CTX_REQUIRES = int32() never fails  { pass 1i32; };
 pub func:CTX_ENSURES = int32() never fails   { pass 2i32; };
 pub func:CTX_INVARIANT = int32() never fails { pass 3i32; };

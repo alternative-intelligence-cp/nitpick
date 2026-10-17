@@ -331,31 +331,13 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssertStaticStmt) {
-        drop check_proposition(e, raw stmt_expr(s), raw CTX_PROVE());
-        // THE FOLD (1.5.4 step 4, L-17; VERIFICATION §1.1): the proposition
-        // must fold to a constant `bool` through 0.6's evaluator, and a
-        // `false` halts compilation. Asked only of a proposition the rule
-        // above typed `bool` (one mistake, one report, D-240), and not in a
-        // `comptime` body, where the evaluator folds it per call (L-18) and
-        // a parameter has no value yet.
-        ExprId:ax = raw stmt_expr(s);
-        if ((raw type_of_expr(e, ax)) != e.types.t_bool) { pass NIL; }
-        if (e.fn_comptime) { pass NIL; }
-        TypeResolver:r = raw etyper_resolver(e);
-        ConstVal:cv = raw fold_const(@r, ax, e.scope);
-        if (!(raw cv_folded(cv)) || (cv.kind != (raw CV_BOOL()))) {
-            if (!(raw fold_gave_up(@r))) {
-                discard(raw te_error(e, raw TYPE_ASSERT_STATIC(),
-                    "an `assert_static` proposition must fold to a constant at compile time, and this one reads a value the evaluator cannot see -- `prove` is the claim about a run-time value, decided by the solver in the verified build",
-                    s.span));
-            }
-            pass NIL;
-        }
-        if (cv.num == 0i64) {
-            discard(raw te_error(e, raw TYPE_ASSERT_STATIC(),
-                "this `assert_static` is false: its proposition folds to `false` at compile time",
-                s.span));
-        }
+        // AN `assert_static` PROPOSITION IS A CONSTANT SITE (D-357, landing 122): it must fold (TYPE-069)
+        // and is emitted nowhere, so a `comptime func:` may be called in it -- the flag held across BOTH
+        // typings of the proposition below (the rule's and the fold's).
+        bool:csv = e.const_site;
+        e.const_site = true;
+        drop check_assert_static(e, s);
+        e.const_site = csv;
         pass NIL;
     }
 
@@ -369,6 +351,37 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     discard(raw te_error(e, raw TYPE_INTERNAL(),
         "this statement kind has no entry in the checker's walk, so its contents cannot be checked",
         s.span));
+    pass NIL;
+};
+
+// THE `assert_static` ARM, factored out so its constant-site flag is set once around both typings
+// (D-357, landing 122); the body is 1.5.1's and 1.5.4's, unchanged.
+func:check_assert_static = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    drop check_proposition(e, raw stmt_expr(s), raw CTX_PROVE());
+    // THE FOLD (1.5.4 step 4, L-17; VERIFICATION §1.1): the proposition
+    // must fold to a constant `bool` through 0.6's evaluator, and a
+    // `false` halts compilation. Asked only of a proposition the rule
+    // above typed `bool` (one mistake, one report, D-240), and not in a
+    // `comptime` body, where the evaluator folds it per call (L-18) and
+    // a parameter has no value yet.
+    ExprId:ax = raw stmt_expr(s);
+    if ((raw type_of_expr(e, ax)) != e.types.t_bool) { pass NIL; }
+    if (e.fn_comptime) { pass NIL; }
+    TypeResolver:r = raw etyper_resolver(e);
+    ConstVal:cv = raw fold_const(@r, ax, e.scope);
+    if (!(raw cv_folded(cv)) || (cv.kind != (raw CV_BOOL()))) {
+        if (!(raw fold_gave_up(@r))) {
+            discard(raw te_error(e, raw TYPE_ASSERT_STATIC(),
+                "an `assert_static` proposition must fold to a constant at compile time, and this one reads a value the evaluator cannot see -- `prove` is the claim about a run-time value, decided by the solver in the verified build",
+                s.span));
+        }
+        pass NIL;
+    }
+    if (cv.num == 0i64) {
+        discard(raw te_error(e, raw TYPE_ASSERT_STATIC(),
+            "this `assert_static` is false: its proposition folds to `false` at compile time",
+            s.span));
+    }
     pass NIL;
 };
 
@@ -2862,8 +2875,22 @@ func:check_enum_values = NIL(ExprTyper->:e, DeclNode:d) never fails {
     pass NIL;
 };
 
+// MODULE-LEVEL TYPING SEES NO FUNCTION (DEF-262, landing 122): `check_function` sets the per-function context
+// (`fn_pure`, `fn_decl`, `fn_is_async`, …) and nothing reset it, so a module binding declared AFTER a `pure`
+// function had its initialiser typed under that function's `pure` -- `fixed int32:K = raw dbl(21i32);` after a
+// `pure` function was TYPE-061 where the same text before it compiled: an order-dependent false refusal, found
+// by this landing's own program test. Every declaration that is not a function restores the constructor's
+// state first (a recorded call's caller 0 is "none" to the recursion analysis, the table's own initial value).
+func:module_level_context = NIL(ExprTyper->:e) never fails {
+    e.fn_success = 0i32; e.fn_decl = 0i32; e.fn_terminal = false; e.fn_never_fails = false; e.in_defer = false;
+    e.fn_is_async = false; e.fn_gives = false; e.give_operand = 0i32; e.await_operand = 0i32;
+    e.fn_pure = false; e.fn_comptime = false;
+    pass NIL;
+};
+
 func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
     DeclNode:d = raw ast_decl(e.ast, id);
+    if (d.kind != DeclKind.DeclFunctionDecl) { drop module_level_context(e); }
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         drop check_function(e, id, scope);
@@ -3093,7 +3120,12 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             // a plain pointer binding's `NULL` is refused by name.
             int32:nsv = e.null_ctx;
             e.null_ctx = raw null_ctx_of_quals(raw global_quals(d));
+            // A MODULE BINDING'S INITIALISER IS A CONSTANT SITE (D-357, landing 122): a `comptime func:` may
+            // be called in it -- the module-constant gate folds the call.
+            bool:csv = e.const_site;
+            e.const_site = true;
             int32:got = raw type_of_expr(e, init);
+            e.const_site = csv;
             drop check_wild_into_plain(e, init, want);   // D-361
             e.null_ctx = nsv;
             e.expected = saved;
@@ -3304,6 +3336,17 @@ func:gives_shape_ok = bool(ExprTyper->:e, int32:t) never fails {
 func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     DeclNode:d = raw ast_decl(e.ast, fid);
     int32:name = raw decl_name(d);
+    // A METHOD CANNOT BE `comptime` (D-357, landing 122): the folder evaluates a call of a NAMED `comptime
+    // func:` and never a method call, so a `comptime` method -- an impl's, a trait's default, a trait's
+    // signature -- could be called nowhere; refused once, at the declaration (its calls say nothing more,
+    // D-240: the program is refused already).
+    if (e.self_type != 0i32) {
+        if (raw decl_has(d, raw DECL_COMPTIME())) {
+            discard(raw te_error(e, raw TYPE_COMPTIME_ONLY(),
+                "a method cannot be `comptime` (D-357): the compile-time evaluator folds a call of a named `comptime func:` and never a method call, so a `comptime` method could be called nowhere -- declare a module-level `comptime func:` and hand it the value",
+                d.span));
+        }
+    }
     TypeResolver:r = raw etyper_resolver(e);
     FnSig:sg = raw fn_signature(@r, fid, name, scope);
     discard(raw fn_type(@r, fid, name, scope));

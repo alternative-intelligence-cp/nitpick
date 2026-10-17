@@ -688,3 +688,14 @@ pub func:TYPE_NULL_PLAIN_POINTER = string() never fails { pass "NITPICK-TYPE-096
 // … }`, a call's argument (a user function's and a builtin's), a struct literal's field; the explicit
 // crossing `v =>! T->` is the author's assertion and passes; `NULL` keeps its own rule (TYPE-096).
 pub func:TYPE_WILD_INTO_PLAIN = string() never fails { pass "NITPICK-TYPE-097"; };
+
+// A `comptime func:` EXISTS AT COMPILE TIME ONLY (D-357, 1.6.1e landing 122; S-128, DEF-214). The emitter
+// emits no `comptime func:` (1.0.9c), and the checker admitted a call of one anywhere a call may stand, so
+// `int32:v = raw dbl(x);` compiled to a call of a symbol nothing defines and `llc` refused the module -- by
+// the wrong tool, with no sentence -- while a call the emitter happened to fold inside an arithmetic node
+// ran. Reported once, at the function's name: a call outside a constant context (another `comptime
+// func:`'s body, a module binding's initialiser, an `assert_static` proposition; `comptime(…)`'s operand
+// and an array size are the folder's alone and never reach the typer), the name as a value, and a
+// `comptime` METHOD at its declaration (the folder evaluates a named call and never a method call, so
+// such a method could be called nowhere).
+pub func:TYPE_COMPTIME_ONLY = string() never fails { pass "NITPICK-TYPE-098"; };

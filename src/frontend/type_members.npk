@@ -851,6 +851,17 @@ func:type_direct_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:sym,
     // under `await`, or as the spawn form `drop f(…)` (D-058). A bare call
     // would be an implicit await -- a suspension the reader cannot see --
     // and the blueprint rule is that nothing suspends silently.
+    // A `comptime func:` CALLED THROUGH A MODULE PATH (D-357, landing 122): `m.c_f(x)` never passes its
+    // callee through the identifier typer, so the question is asked here of a callee typed nonzero; the
+    // bare call's callee was typed 0 by `type_ident` with the report and asks nothing more (D-240).
+    if (callee != 0i32) {
+        if (raw decl_has(d, raw DECL_COMPTIME())) {
+            if (!(raw comptime_fn_admitted(e))) {
+                drop type_args_only(e, start, count);
+                pass (raw refuse_comptime_fn_use(e, raw decl_name(d), n.span));
+            }
+        }
+    }
     if (raw decl_has(d, raw DECL_ASYNC())) {
         if (id.index != e.await_operand) {
             discard(raw te_error(e, raw TYPE_AWAIT_RULES(),

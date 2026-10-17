@@ -95,6 +95,10 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
             FnSig:sg = raw fn_signature(@tr, item, name, scope);
             e.fn_success = sg.success;
             e.fn_terminal = sg.terminal;
+            // A `comptime func:` BODY IS ONE (D-357, landing 122): the checker's own walk sets
+            // `fn_comptime` in `check_function`, and this walk stands in for it, so a call
+            // of a `comptime func:` inside another's body is admitted here as it is there.
+            e.fn_comptime = raw decl_has(d, raw DECL_COMPTIME());
             // ITS GENERIC PARAMETERS TRAVEL WITH IT (0.4.7). `T` inside
             // `func:f<T> = NIL(T:x)` is reachable from the declaration and from
             // nowhere else here -- the walk holds the MODULE scope, not the

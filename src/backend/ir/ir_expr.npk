@@ -1766,6 +1766,12 @@ func:emit_decl_value = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:decl,
     // symbol itself — closures are gone (D-018), so there is no
     // environment to capture and nothing to allocate.
     if (fdecl.kind == DeclKind.DeclFunctionDecl) {
+        // A `comptime func:` HAS NO SYMBOL (D-357, landing 122): the checker refuses its name as a value;
+        // the belt for a road it did not ask.
+        if (raw decl_has(fdecl, raw DECL_COMPTIME())) {
+            string:why = "a `comptime func:` was named as a value where the emitter lowers a function's symbol (D-357): it has none -- a road the checker did not ask; report it";
+            pass (raw iv_refused(raw TYPE_COMPTIME_ONLY(), move(why), at));
+        }
         string:fnm = raw intern_get(x.interns, name);
         pass (raw iv("ptr",
                      raw mangled_fn_sym(x.fe.ctx, decl, fnm),
@@ -7669,6 +7675,13 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 // a second emitter for one call shape is the 1.3.3 `op=` mistake.
 func:emit_direct_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:decl,
                               int32:name, int32:start, int32:count) never fails {
+    // A `comptime func:` IS EMITTED NOWHERE (D-357, landing 122): the checker refuses a call of one outside
+    // the folder's contexts, so one reaching this road is a road the checker did not ask -- refused by
+    // name here, never a symbol `llc` cannot find.
+    if (raw decl_has(raw ast_decl(x.ast, DeclId{ index: decl }), raw DECL_COMPTIME())) {
+        string:why = "a `comptime func:` was called where the emitter lowers a run-time call (D-357): the checker admits such a call only where the folder evaluates it, so this call stood on a road the checker did not ask -- report it; `comptime(…)` is the spelling";
+        pass (raw iv_refused(raw TYPE_COMPTIME_ONLY(), move(why), n.span));
+    }
     // Arguments in source order, each FIT TO ITS PARAMETER (1.0.6e). This loop
     // used to say "no `want` coercion anywhere: D-092 has no implicit widening,
     // so the checker already made every argument EXACTLY its parameter's type"

@@ -666,6 +666,10 @@ work does not silently invent answers.
    block does. A brace form that scopes everywhere except here is exactly the
    context-dependent meaning the blueprint philosophy rejects. `comptime(expr)`
    expresses the same thing as an ordinary expression with an ordinary binding.
+   *[2026-10-16, D-357 (landing 122).]* The modifier means one thing: a `comptime func:`
+   exists at compile time only -- called inside `comptime(…)`, at a constant site or in
+   another `comptime func:`'s body, `NITPICK-TYPE-098` anywhere else, and never a method
+   (MACRO_REFERENCE §8).
 
    `ComptimeExpr` is therefore added to §3; `FunctionDecl.modifiers` already
    carries `comptime`.

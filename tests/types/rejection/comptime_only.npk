@@ -1,0 +1,90 @@
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 50:5
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 53:5
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 54:5
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 61:19
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 65:51
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 75:25
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 76:20
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 77:39
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 78:24
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 79:29
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 80:19
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 81:17
+// expect-error: NITPICK-TYPE-098
+// expect-error-at: 82:16
+// (header generated to a fixed point by .internal/handoff_34/tools/header_from_check.py)
+mod:comptime_only;
+
+// D-357 (landing 122): a `comptime func:` exists at compile time only -- it is called inside `comptime(…)`,
+// at a constant site (a module binding's initialiser, an array size, an `assert_static` proposition) or in
+// another `comptime func:`'s body, and anywhere else NITPICK-TYPE-098 names it, once, at the name. Until this
+// landing every site below compiled and `llc` refused the module for a symbol nothing defines (DEF-214), and
+// the `+` node's call RAN, folded by the emitter's constant fold -- the one shape that worked by accident.
+
+comptime func:dbl = int32(int32:x) never fails { pass (x * 2i32); };
+comptime func:sq = int32(int32:x) pure never fails { pass (x * x); };
+comptime func:cg<T> = int32(T:x) never fails { pass 1i32; };
+comptime func:nested = int32(int32:x) never fails { pass ((raw dbl(x)) + 1i32); };   // CONTROL: a call inside a comptime body
+
+func:takes = int32(int32:v) never fails { pass v; };
+func:plain_pure = int32(int32:x) pure never fails { pass (x + 1i32); };
+
+mod:inner = {
+    pub comptime func:c_f = int32(int32:x) never fails { pass (x * 3i32); };
+};
+
+struct:Box = { int32:v; };
+impl:Box = {
+    comptime func:twice = int32(Box:self) never fails { pass (self.v * 2i32); };   // a comptime METHOD: refused at its declaration
+};
+trait:Sig = {
+    comptime func:k = int32(Self:self) never fails;                                 // a comptime trait SIGNATURE: the same
+    comptime func:dflt = int32(Self:self) never fails { pass 1i32; };              // a comptime trait DEFAULT: the same
+};
+
+fixed int32:K = raw dbl(21i32);                 // CONTROL: a module binding's initialiser is a constant site
+fixed int32:K2 = (raw nested(3i32)) * 2i32;     // CONTROL: through an operator too
+
+func:bare_call = int32() never fails {
+    int32:v = raw dbl(3i32);                    // a bare call in a run-time body
+    pass v;
+};
+
+func:with_contract = int32(int32:n) requires (raw sq(n)) > 0i32 never fails {   // a contract's call
+    pass n;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:a = comptime(dbl(3i32));              // CONTROL: comptime(…)'s operand
+    int32:b = comptime(nested(3i32));           // CONTROL: the nested body, through comptime(…)
+    int32[dbl(2i32)]:arr = [1i32, 2i32, 3i32, 4i32];   // CONTROL: an array size
+    assert_static((raw sq(5i32)) == 25i32);     // CONTROL: an assert_static proposition folds
+    int32:c = comptime(dbl(3i32)) + 1i32;       // CONTROL: the spelling of the folded `+`
+    fixed int32:k = raw dbl(3i32);              // a fixed LOCAL is a run-time binding
+    int32:d = (raw dbl(3i32)) + 1i32;           // the `+` node the emitter used to fold
+    func int32(int32) never fails:g = dbl;      // the name as a value
+    int32:e = raw inner.c_f(3i32);              // a module-qualified call
+    int32:f = raw takes(raw dbl(2i32));         // as an argument
+    int32:h = raw cg::<int32>(3i32);            // a generic comptime function's bare call
+    discard(raw dbl(1i32));                     // as a statement
+    prove((raw sq(2i32)) == 4i32);              // a `prove` is encoded, not folded: not a constant site
+    exit (a + b + c + k + d + e + f + h + (raw with_contract(1i32)) + (raw bare_call()) + arr[0i64] + (raw g(1i32)));
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (RequiresViolated) { exit 89i32; },
+        (*) { exit 99i32; }
+    }
+};

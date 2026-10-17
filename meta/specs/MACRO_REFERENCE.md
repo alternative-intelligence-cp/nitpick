@@ -626,6 +626,20 @@ int32:v = comptime(double(21i32));                            // a forcing form
 `comptime(expr)` is a **keyword operator with a parenthesised operand**, not a
 call — the same shape as `move(place)` (D-065).
 
+**A `comptime func:` exists at compile time only (D-357, landing 122).** It is called
+inside `comptime(…)`, at a constant site -- a module binding's initialiser, an array size,
+an `assert_static` proposition -- or in another `comptime func:`'s body, where the
+evaluator reads the call; its name anywhere else -- a bare or module-qualified call in a
+run-time body, a `fixed` local's initialiser, a contract's or a `prove`'s call, the name as
+a function value -- is `NITPICK-TYPE-098`, once, at the name (the emitter emits no
+`comptime func:`; until landing 122 such a call reached `llc` as an undefined symbol,
+DEF-214, and a call inside an arithmetic node RAN, folded by the emitter). A method cannot
+be `comptime` -- the evaluator folds a named call and never a method call -- so an impl's,
+a trait's default or a trait's signature declared `comptime` is TYPE-098 at the
+declaration. Its body may call other `comptime func:`s and the builtins the evaluator
+knows; a call of an ordinary function inside it does not fold (TYPE-004 at the
+`comptime(…)` that reached it).
+
 ### What the evaluator can do
 
 Recovered from `COMPTIME-001…013`:
@@ -851,5 +865,9 @@ Recorded as open rather than invented:
   call of one outside a constant context compiles and is refused by `llc` as an undefined
   symbol (DEF-214, open). **S-128**, the user's: recommended, a `comptime func:` exists at
   compile time only and the checker refuses such a call by name.
+  *[2026-10-16.]* Settled: D-357 (landing 122) -- a `comptime func:` exists at compile time
+  only; where it may BE called is §8's paragraph (`NITPICK-TYPE-098` anywhere else; DEF-214
+  fixed). What it may call stays the evaluator's: `comptime func:`s and the builtins the
+  evaluator knows; an ordinary function's call does not fold.
 - **What are the bounds, numerically?** D-057 settles that they exist.
   `--comptime-budget <N>` is named as the precedent for the shape.
