@@ -14450,6 +14450,11 @@ mock; the EXEC_NOTIFY full-buffer retry and the SIGTERM-immune SIGKILL
 fixture are recorded on the roadmap as the batched-dispatch tier's
 obligations.
 
+> *[2026-10-16, 1.6.1e landing 125 — a dated note (DEF-234 (a)).]* A method taking `int8[]` or `uint8[]` compiles since
+> landing 125: from 1.5.8c until then the stub this decision generates carried a byte-copy `while` stating no `decreases`,
+> and the compiler's own loop rule refused it (`NITPICK-TYPE-072` at `<bridge-1>`, D-304), so no driver method could carry
+> bytes — the listener's F-034 (a). The generated loop states `decreases data.len - ci` now.
+
 ## D-190 addendum — D-004 rule 4 retires as an ANALYSIS rule; the wire vocabulary carries it
 
 The first full run after the lowering failed five tests, and every failure
@@ -18680,6 +18685,11 @@ namespace's sake; the library workbench has none in 170 `mod` uses.
 > under the file's name). `nitpick.obligations` never moved.
 
 *[2026-09-19, D-314 (1.5.8b step 1). `hidden` became a keyword, the field qualifier that is neither read nor written outside the declaring module. The inline module this decision's tests named `hidden` is `nested` now: `use nested.*;`, `nested.fetch(3i32)`, `(nested.Boom)`. The rule is unchanged.]*
+
+> *[2026-10-16, 1.6.1e landing 125 — a dated note (DEF-234 (b)).]* The single-name form of a LOGICAL path — `use
+> hidden.f;` above, `use network.connect;`, `use core.math.sq;` — binds its member since landing 125. From this decision
+> until then the parser's path walk took the last `.name` as a module segment and the loader refused it as "not a
+> module" (RESOLVE-002); the forms with a quoted file path, `.*`, `.{…}` and `as` were never affected.
 
 ## D-274 — a member-less `mod:name;` import carries the loaded file's scope, as an alias does — **SETTLED (user decision, 2026-09-10: "yes ratify"; OPEN_DECISIONS S-49; lands at 1.5.4d)**
 

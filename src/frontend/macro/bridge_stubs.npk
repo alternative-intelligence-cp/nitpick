@@ -333,7 +333,14 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
             t = raw bs_cat(move(t), raw bs_num(mm => int64));
             t = raw bs_cat(move(t), " < ");
             t = raw bs_cat(move(t), string_concat(pn, ""));
-            t = raw bs_cat(move(t), ".len) {\n        <-(#ptr_add<int8>(bulk, aoff + ci");
+            // THE LOOP STATES WHY IT ENDS (D-304; DEF-234 (a), landing 125): the generated
+            // source is checked like any other, and a `while` with no clause was
+            // TYPE-072 at `<bridge-1>` -- no driver method could take a byte payload.
+            t = raw bs_cat(move(t), ".len) decreases ");
+            t = raw bs_cat(move(t), string_concat(pn, ""));
+            t = raw bs_cat(move(t), ".len - ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), " {\n        <-(#ptr_add<int8>(bulk, aoff + ci");
             t = raw bs_cat(move(t), raw bs_num(mm => int64));
             t = raw bs_cat(move(t), ")) = (");
             t = raw bs_cat(move(t), string_concat(pn, ""));

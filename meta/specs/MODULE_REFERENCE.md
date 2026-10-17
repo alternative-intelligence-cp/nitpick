@@ -102,6 +102,11 @@ The canonical syntax imports directly from an `.npk` file path:
 
 *   **Wildcard** (All `pub` symbols): `use "path/module.npk".*;`
 *   **Single-Name**: `use "path/module.npk".square;`
+    > *[2026-10-16, 1.6.1e landing 125 — a dated note (DEF-234 (b)).]* The single-name form of a LOGICAL path
+    > — `use network.connect;`, `use core.math.sq;`, `use helpers.f;` below — binds the one member since this
+    > landing. Until it the parser's path walk took the last `.name` as a module segment, and the loader refused
+    > it as "not a module" (`NITPICK-RESOLVE-002`) on every compiler since D-273; the file-path form always worked
+    > because the quoted path ends the walk. A `.*`, a `.{…}` and an `as` end the walk as before.
 *   **Selective**: `use "path/module.npk".{square, pi};`
 *   **Namespace (Alias)**: `use "path/module.npk" as math;`
 
@@ -281,6 +286,12 @@ handles. Payloads are **copied out of shared memory before validation** —
 the shared region is an I/O device whose every byte is untrusted input, not
 memory. Nothing address-shaped crosses in either direction: no pointers, no
 slices-as-views, no `void*` (which is now valid nowhere in the language).
+
+> *[2026-10-16, 1.6.1e landing 125 — a dated note (DEF-234 (a)).]* A method taking a sized byte payload
+> (`int8[]:data`, `uint8[]:data`) compiles since this landing. From 1.5.8c until it, the stub the compiler
+> generates for such a method carried a byte-copy `while` stating no `decreases` and was refused by the
+> compiler's own loop rule (`NITPICK-TYPE-072` at `<bridge-1>`, D-304) — so no driver method could carry
+> bytes, the listener's F-034 (a). The generated loop states `decreases data.len - ci` now.
 
 ### 5.4 What makes a driver valid
 

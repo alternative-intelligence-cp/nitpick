@@ -1,0 +1,46 @@
+// use_single_name.npk -- DEF-234 (b) (landing 125): the SINGLE-NAME form of a logical-path import binds the one member
+// bare -- `use network.connect;` (MODULE_REFERENCE's own example), `use core.math.sq;` through a nested path, and a
+// module member -- where the parser took the last `.name` as a module segment and the loader refused it as "not a module"
+// (RESOLVE-002) on every compiler since D-273. Silent, and emitted.
+mod:use_single_name;
+
+mod:network = {
+    pub func:connect = int32() never fails { pass 7i32; };
+    pub struct:Point = { int32:x; };
+};
+mod:core = {
+    pub mod:math = {
+        pub func:sq = int32(int32:n) never fails { pass (n * n); };
+    };
+};
+
+use network.connect;
+use network.Point;
+use core.math.sq;
+use core.math;           // a MODULE member bound bare: `math.sq` resolves through it
+
+func:main = int32(cstring[]:argv) {
+    Point:p = Point{ x: raw connect() };
+    if (p.x != 7i32) { exit 1i32; }
+    if ((raw sq(3i32)) != 9i32) { exit 2i32; }
+    if ((raw math.sq(4i32)) != 16i32) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

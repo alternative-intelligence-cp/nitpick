@@ -1,0 +1,13 @@
+// extern_bytes.npk -- DEF-234 (a) (landing 125): a driver method may take a byte payload, `int8[]` or `uint8[]` -- the
+// v1 wire vocabulary's own words (D-190) -- and the stub the compiler generates for it compiles: its byte-copy loop
+// states why it ends (D-304), where it stated nothing and was NITPICK-TYPE-072 at `<bridge-1>` on every compiler since
+// 1.5.8c -- no driver method could carry bytes (the listener's F-034 (a), `md0270c`). Silent, and emitted.
+mod:extern_bytes;
+
+use "../../lib/nbridge.npk".*;
+
+extern:"bytesif" = {
+    func:put  = int64(Bridge->:b, int8[]:data, Duration:within);
+    func:take = int64(Bridge->:b, uint8[]:data, int32:n, Duration:within);
+    func:both = int64(Bridge->:b, int8[]:a, uint8[]:c, Duration:within);
+};

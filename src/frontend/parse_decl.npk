@@ -981,6 +981,13 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
         while (true) decreases raw p_left(p) {
             if (!(raw p_at(p, TokenKind.PDot))) { break; }
             if ((raw p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
+            // THE LAST `.name` BEFORE `;` IS THE SINGLE-NAME IMPORT'S NAME, NOT A
+            // SEGMENT (DEF-234 (b), landing 125): `use network.connect;` binds the
+            // member `connect` of `network` -- MODULE_REFERENCE's single-name form,
+            // D-273's `use nested.f;` -- where this walk took it as a module segment
+            // and the loader refused it as "not a module". A `.*`, a `.{…}` and an
+            // `as` end the walk as they did; a file path never enters it.
+            if ((raw p_peek_at(p, 2i64)).kind == TokenKind.PSemi) { break; }
             discard(raw p_advance(p));
             Token:sn = raw p_advance(p);
             drop ast_scratch_push(p.ast, sn.payload =>! int32);
