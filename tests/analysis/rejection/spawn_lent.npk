@@ -134,12 +134,17 @@ async func:owner_uses_while_lent = NIL() {
     pass NIL;
 };
 
-// a lock acquired by the owner while a task holds it
+// a lock acquired by the owner while a task holds it -- the guard in a block that
+// ends before the task's join: held to the join it is the lock walk's LOCK-001
+// since landing 127 (D-339: the parent would wait for a child that waits for the
+// parent's guard), a different rule from the one this file is about
 async func:owner_locks_while_lent = NIL() {
     Mutex<int32, 3i32>:m = mutex(0i32) ?! E1;
     drop locker(@m);
-    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
-    g.value = g.value + 1i32;
+    {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+        g.value = g.value + 1i32;
+    }
     pass NIL;
 };
 

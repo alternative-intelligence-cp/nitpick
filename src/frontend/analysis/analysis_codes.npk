@@ -273,6 +273,13 @@ pub func:TAINT_UNCHECKED_VALUE = string() never fails { pass "NITPICK-TAINT-001"
 // A downward acquisition: holding level N and able to reach a level <= N. The
 // message names BOTH levels, because "./acquisition must increase" without them makes
 // the reader work out which two locks are involved.
+//
+// THREE MORE SHAPES since landing 127 (D-339; DEF-181 (1), (3), (4), (5)): a call
+// THROUGH a `<=`-bounded trait method, or of a function that reaches through one,
+// while anything is held -- a ceiling has no floor, so no held level orders it; a
+// spawned task's acquisition judged against what its block holds at the JOIN; a
+// `defer` body's acquisition judged against what its block holds at its EXIT. Each
+// its own sentence.
 pub func:LOCK_ORDER = string() never fails          { pass "NITPICK-LOCK-001"; };
 
 // An implementation that can reach above the bound its trait method declared. Its
@@ -285,13 +292,21 @@ pub func:LOCK_ORDER = string() never fails          { pass "NITPICK-LOCK-001"; }
 // wait, in the body or through what it calls -- under a trait method that
 // declares NO clause, which is a bound of nothing (D-056: "an undeclared method
 // may not acquire at all"). A trait's own default body is held to the same three.
+//
+// AND TWO MORE since landing 127 (D-339; DEF-181 (2)): an implementation reaching
+// BELOW an exact `acquires N` -- or through a `<=`-bounded method -- where the
+// contract says the implementations reach N and nothing else; and a function
+// NAMED AS A VALUE that reaches any level, since a value declares no clause and is
+// called from anywhere.
 pub func:LOCK_EXCEEDS_BOUND = string() never fails  { pass "NITPICK-LOCK-002"; };
 
 // An `acquires` level that is not a constant. Shares nothing with `TYPE_NOT_CONSTANT`
 // because the two are found at different stages and a reader filtering a log is
 // asking a different question — but the rule is deliberately the same, and since
 // 0.6.4 the same EVALUATOR answers it: `acquires LOW` and `acquires BASE + 1i32`
-// fold exactly as an array size does.
+// fold exactly as an array size does. Since landing 127 (DEF-181 (6)) also a level
+// outside `int32`, and the two values the walk spells "none" with (`2147483647`,
+// `-2147483647`); the same two in a lock TYPE's level argument are TYPE-016.
 pub func:LOCK_NOT_CONSTANT = string() never fails   { pass "NITPICK-LOCK-003"; };
 
 // A DEFECT IN THE COMPILER, or a program the walk could not follow: a node kind

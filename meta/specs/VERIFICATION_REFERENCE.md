@@ -839,7 +839,9 @@ first honest:
    its type, and acquisition must strictly increase. Circular wait is impossible
    by construction. A whole-program analysis computes each function's transitive
    acquisition set; dynamically dispatched methods declare a maximum level and
-   are checked against it, and an undeclared method may not acquire at all.
+   are checked against it, and an undeclared method may not acquire at all. A
+   `<=` bound is a ceiling only -- a call through it is legal with nothing held --
+   and an exact `acquires N` is exact (D-339, landing 127).
 
 2. **Residual deadlock is contained, not proven absent.** Every blocking
    operation takes a deadline and returns `Result`; there is no infinitely
@@ -901,6 +903,14 @@ because it invites reliance.
 > error at a known point, never a wedge — and none is proven absent: "lock-order
 > freedom is proven" is the design's claim and, until 1.6.1e step 3c closes these,
 > not yet the compiler's.
+
+> *[2026-10-17, 1.6.1e step 3c (landing 127, built by `nitpick-compiler_39`, landed by `nitpick-compiler_40`) — a dated note: the six and the floor are closed
+> (D-339 (a); DEF-181).]* Each shape the note above lists was measured ACCEPTED on landing 125's compiler and is refused by
+> name now: (1) a direct call of an IMPLEMENTATION bounded `acquires <= N` is judged by the body's own summary, never by the bound (the bound is checked where the body is walked); (2) a function NAMED AS A VALUE reaches nothing -- `NITPICK-LOCK-002` at the name when its summary reaches any level, since a value is called from anywhere with anything held and a function type carries no clause (D-056's sentence for an undeclared dynamic call); (3) a binding raises the held level to the HIGHEST hold its initialiser may carry (`hold_max`, where `hold_min` had let a function that took and released 1 and returned holding 9 leave its caller believing it held 1); (4) a `defer` body is walked at ITS BLOCK'S END with the block's final held level -- D-207's order is join, defers, drops, so every later guard is still held when it runs; (5) a SPAWN (`drop` of an `async` call) is absorbed where it stands and judged at its block's end against the block's final held level, `NITPICK-LOCK-001` at the spawned call -- the parent joins the task holding that level and the child waits for a level at or below it (`pm_join`: exit 21, `DeadlineExceeded`, at both legs before this landing); (6) `2147483647` and `-2147483647`, the walk's own `none` values, are refused as levels -- `NITPICK-LOCK-003` in a clause (with a level outside `int32`, which the cast truncated before), `NITPICK-TYPE-016` in a lock type's level argument (`Mutex`, `RwLock`, `CondVar`, `Barrier`, `Channel`) -- from ONE authority (`LEVEL_RESERVED_HI`/`LO`, type_resolve.npk) the walk's sentinels read; THE FLOOR (D-339 (a)): a call that resolves to a TRAIT'S method bounded `acquires <= N` -- through a `dyn`, a bound `T: Trait`, `Trait.m(x)`, or a concrete receiver whose impl runs the default -- is legal only with NOTHING held, `NITPICK-LOCK-001` otherwise with the floor's own sentence, and the caller is FLOORLESS (propagated by the widening like a level: a call of IT while anything is held is refused the same way, naming the bounded method it reaches through); EXACT IS EXACT (D-339 (a)): every call of a method under an exact `acquires N` on the trait, or of an implementation of it, is judged at N, and an implementation whose body reaches BELOW N (or reaches through a `<=`-bounded method) is `NITPICK-LOCK-002` where it is written, as one reaching above N was -- so the contract IS the summary once the body is legal, and a refused body is reported once (D-240); and THE OVER-RESTRICTION: a binding raises the held level only when the hold is VISIBLE -- the callee declares an exact `acquires N` (its result is the lease), the callee is a bounded trait method, the initialiser is a typed acquisition, or the result's TYPE can carry a `Guard`/`RGuard` (directly or inside a struct, an enum, an `Optional`, a `Result`, an array: the layout bit `tt_hasguard`, ensured before it is read, D-227) -- so a helper that takes and releases inside and returns an `int32` may be bound twice in one block, and a function that hands a user-levelled lease on WRITES `acquires N`. The prelude's traits stay undeclared (D-339 (b)): the guard is taken outside the call. What item 1
+> still does not cover is the second layer's: priority inversion, a peer process that stops responding, a lock held across
+> a boundary the analysis cannot see (`wild` storage shared with code the compiler did not build, a driver), and a function
+> VALUE's acquisitions -- which are not ordered but refused at the name. `tests/analysis/rejection/lock_floor.npk`,
+> `tests/types/rejection/lock_level_sentinel.npk`, `tests/backend/programs/lock_helper_twice.npk`.
 
 ---
 

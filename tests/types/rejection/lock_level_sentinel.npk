@@ -1,0 +1,36 @@
+// expect-error: NITPICK-TYPE-016
+// expect-error-at: 19:22
+// expect-error: NITPICK-TYPE-016
+// expect-error-at: 25:25
+//
+// A LOCK TYPE'S LEVEL IS NEVER ONE OF THE LOCK WALK'S TWO SENTINELS (DEF-181
+// (6); 1.6.1e step 3c, landing 127). The walk spells "no level at all" as
+// `2147483647` (a minimum nothing lowered) and `-2147483647` (a maximum
+// nothing raised), so a `Mutex<int32, 2147483647i32>`'s `acquire` was invisible
+// to the ordering and a channel at the other value waited at a level nobody
+// could compare against (DEF-69's lesson: a sentinel is a value the domain
+// never produces, and nothing kept the domain away from it). TYPE-016 at the
+// type, once; the same two in an `acquires` clause are LOCK-003
+// (`tests/analysis/rejection/lock_floor.npk`). The neighbours are ordinary
+// levels (the controls).
+mod:lock_level_sentinel;
+error:E9;
+
+async func:top = NIL(Mutex<int32, 2147483647i32>->:m) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    g.value = 1i32;
+    pass NIL;
+};
+
+async func:bottom = NIL(Channel<int32, (0i32 - 2147483647i32), 2i64>:ch) {
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E9;
+    pass NIL;
+};
+
+async func:next_to_them = NIL(Mutex<int32, 2147483646i32>->:m,
+                              Channel<int32, (0i32 - 2147483646i32), 2i64>:ch) {
+    await ch.send(1i32, raw duration_ms(5i64)) ?! E9;
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(5i64));
+    g.value = 1i32;
+    pass NIL;
+};

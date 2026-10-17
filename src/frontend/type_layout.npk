@@ -220,6 +220,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     bool:haschan = false;
     bool:hasborrow = false;
     bool:hasshared = false;
+    bool:hasguard = false;
     int32:i = 0i32;
     int32:nmembers = raw item_member_count(r.ast, d);
     while (i < nmembers) decreases nmembers - i {
@@ -249,6 +250,9 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             if (raw type_contains_channel_recorded(r.types, ft, 64i32)) { haschan = true; }
             if (raw type_contains_borrow_recorded(r.types, ft, 64i32)) { hasborrow = true; }
             if (raw type_contains_shared_recorded(r.types, ft, 64i32)) { hasshared = true; }
+            // AND GUARD CONTAINMENT (D-339, landing 127), same walk, same
+            // reason: a struct carries a hold exactly when a field does.
+            if (raw type_contains_guard_recorded(r.types, ft, 64i32)) { hasguard = true; }
         }
         i = i + 1i32;
     }
@@ -262,6 +266,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     drop tt_set_haschan(r.types, struct_type, haschan);
     drop tt_set_hasborrow(r.types, struct_type, hasborrow);
     drop tt_set_hasshared(r.types, struct_type, hasshared);
+    drop tt_set_hasguard(r.types, struct_type, hasguard);
     drop lay_end(@l);
     // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
     // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
@@ -428,6 +433,14 @@ pub func:type_contains_shared = bool(TypeResolver->:r, int32:id, int32:scope,
 // point to the one table in types.npk. An aggregate's answer is layout's
 // `hasborrow` bit, so the layout is computed first -- the query ensures, the
 // caller does not remember (D-227).
+// Guard containment, ensured first (D-339, landing 127): the lock walk's
+// reader, which runs before `finish_layouts` and must never read a 0 bit.
+pub func:type_contains_guard = bool(TypeResolver->:r, int32:id, int32:scope,
+                                    int32:fuel) never fails {
+    drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());
+    pass (raw type_contains_guard_recorded(r.types, id, fuel));
+};
+
 pub func:chan_elem_verdict = int32(TypeResolver->:r, int32:elem, int32:scope,
                                    int32:fuel) never fails {
     drop ensure_layout(r, elem, scope, raw LAYOUT_FUEL());
@@ -522,6 +535,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         bool:ehaschan = false;
         bool:ehasborrow = false;
         bool:ehasshared = false;
+        bool:ehasguard = false;
         // THE POINTER-BEARING BIT OF AN ENUM (DEF-160, 1.6.1d step 4): a
         // payload may be an address, and `field_holds_ptr` answered `false`
         // for EVERY enum since 0.8.1 ("a tag and a word") -- so `E.Some(@local)`
@@ -583,6 +597,9 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         if (raw type_contains_shared_recorded(r.types, pt, 64i32)) {
                             ehasshared = true;
                         }
+                        if (raw type_contains_guard_recorded(r.types, pt, 64i32)) {
+                            ehasguard = true;
+                        }
                     }
                     if (vsize > wsize) { wsize = vsize; }
                 }
@@ -598,6 +615,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         drop tt_set_haschan(r.types, t, ehaschan);
         drop tt_set_hasborrow(r.types, t, ehasborrow);
         drop tt_set_hasshared(r.types, t, ehasshared);
+        drop tt_set_hasguard(r.types, t, ehasguard);
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;

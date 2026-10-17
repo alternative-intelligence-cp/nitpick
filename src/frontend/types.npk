@@ -247,6 +247,11 @@ pub struct:TypeTable = {
     // an arena -- what other tasks may hold a BORROW of across a spawn (D-180),
     // which a channel may therefore not move out from under them.
     List<int32>:hasshared;
+    // Guard containment (D-339, landing 127): a `Guard<T>` or an `RGuard<T>`
+    // inside -- the typed HOLD a value can carry out of a function, which is
+    // what tells the lock walk a binding of a call's result may raise the held
+    // level (DEF-181's over-restriction: a helper's `int32` holds nothing).
+    List<int32>:hasguard;
 
     // THE UNIT TABLE (D-196, 1.3.3): each `unit:` declaration's evaluated
     // exponent vector, keyed by DECL index — visibility stays the symbol
@@ -378,15 +383,16 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     Type:n = Type{ kind: kind, a: a, b: b, c: c,
                    size: size, align: align, name: name };
     int32:id = raw tt_id(t.items.count);   // BEFORE the push
-    // ALL SIX, ALWAYS. The five bit lists get "not computed" explicitly; this
+    // ALL SEVEN, ALWAYS. The six bit lists get "not computed" explicitly; this
     // is the invariant `tt_grow`'s tail fill held for haspt and drops and never
-    // held for haschan and hasborrow.
+    // held for haschan and hasborrow (`hasguard` joined at landing 127).
     drop list_push(@t.items, n);
     drop list_push(@t.haspt, 0i32);
     drop list_push(@t.drops, 0i32);
     drop list_push(@t.haschan, 0i32);
     drop list_push(@t.hasborrow, 0i32);
     drop list_push(@t.hasshared, 0i32);
+    drop list_push(@t.hasguard, 0i32);
     // ... and the instance index's two (DEF-92, 1.5.8c step 4b): not held, hash 0
     // -- the flag is what says so, never the hash.
     drop list_push(@t.inst_hash, 0i64);
@@ -602,6 +608,20 @@ pub func:tt_hasshared = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.hasshared.count) { pass 0i32; }
     pass (t.hasshared[id => int64]);
+};
+
+// The guard-containment bit, written once by layout (D-339, landing 127).
+pub func:tt_set_hasguard = NIL(TypeTable->:t, int32:id, bool:has) never fails {
+    if (id < 0i32) { !!! BoundsId; }
+    if ((id => int64) >= t.hasguard.count) { !!! BoundsId; }
+    t.hasguard[id => int64] = 1i32;
+    if (has) { t.hasguard[id => int64] = 2i32; }
+    pass NIL;
+};
+pub func:tt_hasguard = int32(TypeTable->:t, int32:id) never fails {
+    if (id < 0i32) { pass 0i32; }
+    if ((id => int64) >= t.hasguard.count) { pass 0i32; }
+    pass (t.hasguard[id => int64]);
 };
 
 // DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
@@ -1485,6 +1505,7 @@ pub func:typetable_init = TypeTable() never fails {
         haschan: raw list_init::<int32>(n),
         hasborrow: raw list_init::<int32>(n),
         hasshared: raw list_init::<int32>(n),
+        hasguard: raw list_init::<int32>(n),
         unit_decls: raw list_init::<int32>(16i64),
         unit_vecs: raw list_init::<int64>(16i64),
         index: raw list_init::<int32>(256i64),
@@ -1849,6 +1870,82 @@ pub func:type_contains_shared_recorded = bool(TypeTable->:t, int32:id, int32:fue
     if (k == (raw TY_FUNC()))          { pass false; }
     if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
     // Not runtime values, or resolved before any crossing rule asks.
+    if (k == (raw TY_TRAIT()))    { pass false; }
+    if (k == (raw TY_COMPTIME())) { pass false; }
+    if (k == (raw TY_SELF()))     { pass false; }
+    if (k == (raw TY_PARAM()))    { pass false; }
+    if (k == (raw TY_ASSOC()))    { pass false; }
+    pass false;
+};
+
+// CAN A VALUE OF THIS TYPE CARRY A HOLD (D-339, landing 127; DEF-181's
+// over-restriction)? A `Guard<T>` or an `RGuard<T>` IS the hold -- its drop is
+// the release (D-056) -- and a value that contains one, in a struct, an enum,
+// an `Optional`, a `Result`, an array or a range, carries the hold with it; so
+// the lock walk raises a block's held level at a binding of a call's result
+// only when the result's type can carry a guard (or the callee's own contract
+// says the result is a lease: `acquires N`). A pointer, a slice, a `dyn` or a
+// handle may POINT at a guard and does not carry it: the holder's own binding
+// is where the hold was raised. The bit is layout's, on the same walk as the
+// other four; every kind answers here explicitly, under an EMPTY excuse table
+// in the walkers-total instrument. Reached through type_layout's
+// `type_contains_guard`, which ENSURES first (D-227): the lock rounds run
+// before `finish_layouts`.
+pub func:type_contains_guard_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (id <= 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    // The holds themselves.
+    if (k == (raw TY_GUARD()))   { pass true; }
+    if (k == (raw TY_RGUARD()))  { pass true; }
+    // Wrappers, and a range, answer from what they carry.
+    if (k == (raw TY_ARRAY()))    { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    if (k == (raw TY_RANGE()))    { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    // Structs and enums answer from layout's walk, like the other four bits.
+    if (k == (raw TY_STRUCT()))   { pass ((raw tt_hasguard(t, id)) == 2i32); }
+    if (k == (raw TY_ENUM()))     { pass ((raw tt_hasguard(t, id)) == 2i32); }
+    // Something that may point at a hold does not carry it.
+    if (k == (raw TY_POINTER())) { pass false; }
+    if (k == (raw TY_SLICE()))   { pass false; }
+    if (k == (raw TY_DYN()))     { pass false; }
+    if (k == (raw TY_ANY()))     { pass false; }
+    if (k == (raw TY_HANDLE()))  { pass false; }
+    // The cells, the endpoints and the owning byte cells carry no hold.
+    if (k == (raw TY_MUTEX()))        { pass false; }
+    if (k == (raw TY_RWLOCK()))       { pass false; }
+    if (k == (raw TY_CONDVAR()))      { pass false; }
+    if (k == (raw TY_BARRIER()))      { pass false; }
+    if (k == (raw TY_ATOMIC()))       { pass false; }
+    if (k == (raw TY_ARENA()))        { pass false; }
+    if (k == (raw TY_SHARED_ARENA())) { pass false; }
+    if (k == (raw TY_CHANNEL()))      { pass false; }
+    if (k == (raw TY_OWNEDFD()))      { pass false; }
+    if (k == (raw TY_STRING()))       { pass false; }
+    if (k == (raw TY_CSTRING()))      { pass false; }
+    if (k == (raw TY_BUFFER()))       { pass false; }
+    // Values that carry no hold: the scalars, the tier, a code word, a code
+    // address.
+    if (k == (raw TY_INVALID())) { pass false; }
+    if (k == (raw TY_NIL()))     { pass false; }
+    if (k == (raw TY_BOOL()))    { pass false; }
+    if (k == (raw TY_INT()))     { pass false; }
+    if (k == (raw TY_CHAR()))    { pass false; }
+    if (k == (raw TY_FLOAT()))   { pass false; }
+    if (k == (raw TY_TBB()))     { pass false; }
+    if (k == (raw TY_TFP()))     { pass false; }
+    if (k == (raw TY_DIM()))     { pass false; }
+    if (k == (raw TY_TERN()))    { pass false; }
+    if (k == (raw TY_FRAC()))    { pass false; }
+    if (k == (raw TY_COMPLEX())) { pass false; }
+    if (k == (raw TY_SIMD()))    { pass false; }
+    if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_FLAGS()))   { pass false; }
+    if (k == (raw TY_ERROR()))   { pass false; }
+    if (k == (raw TY_FUNC()))          { pass false; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
+    // Not runtime values, or resolved before any binding asks.
     if (k == (raw TY_TRAIT()))    { pass false; }
     if (k == (raw TY_COMPTIME())) { pass false; }
     if (k == (raw TY_SELF()))     { pass false; }

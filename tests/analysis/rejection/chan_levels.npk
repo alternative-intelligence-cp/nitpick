@@ -19,7 +19,7 @@
 // expect-error: NITPICK-LOCK-001
 // expect-error-at: 147:13
 // expect-error: NITPICK-LOCK-001
-// expect-error-at: 161:21
+// expect-error-at: 164:21
 //
 // A CHANNEL'S LEVEL IS A LOCK LEVEL (D-056; CONCURRENCY_REFERENCE §6.1; 1.6.1e
 // step 3, the library listener's cc0380). "A channel blocks, so it is a blocking
@@ -149,17 +149,20 @@ async func:sends_under_a_returned_guard = NIL(Mutex<int32, 5i32>->:m, Channel<in
 };
 
 // 8. A WAIT DOES NOT LOWER WHAT A RESULT HOLDS. `waits_then_takes` waits at
-// level 2 with nothing held, then takes level 5 and returns the lease: its
-// result holds 5, not the 2 it once waited at.
-async func:waits_then_takes = Lease(Barrier<2i32, 2i32>->:b) {
+// level 2 with nothing held, then takes level 5 and returns the GUARD: its
+// result holds 5, not the 2 it once waited at. (The hold is visible by the
+// result's TYPE -- D-339, landing 127: a `Lease` struct handed back by a
+// function with no `acquires` clause is no hold the walk can see, which is
+// what let a helper's `int32` be bound twice again.)
+async func:waits_then_takes = Guard<int32>(Barrier<2i32, 2i32>->:b, Mutex<int32, 5i32>->:m5) {
     await b.arrive(raw duration_ms(5i64)) ?! E1;
-    Lease:l = take_5() ?! E1;
+    Guard<int32>:l = relay await m5.acquire(raw duration_ms(5i64));
     pass l;
 };
-async func:takes_three_under_five = NIL(Barrier<2i32, 2i32>->:b) {
-    Lease:x = await waits_then_takes(b) ?! E1;
+async func:takes_three_under_five = NIL(Barrier<2i32, 2i32>->:b, Mutex<int32, 5i32>->:m5) {
+    Guard<int32>:x = relay await waits_then_takes(b, m5);
     Lease:y = take_3() ?! E1;
-    discard(x.v);
+    discard(x.value);
     discard(y.v);
     pass NIL;
 };

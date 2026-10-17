@@ -1,19 +1,19 @@
 // expect-error: NITPICK-LOCK-002
-// expect-error-at: 68:5
+// expect-error-at: 70:5
 // expect-error: NITPICK-LOCK-002
-// expect-error-at: 83:5
+// expect-error-at: 85:5
 // expect-error: NITPICK-LOCK-002
-// expect-error-at: 91:5
+// expect-error-at: 93:5
 // expect-error: NITPICK-LOCK-002
-// expect-error-at: 108:5
+// expect-error-at: 110:5
 // expect-error: NITPICK-LOCK-002
-// expect-error-at: 115:5
+// expect-error-at: 117:5
 // expect-error: NITPICK-LOCK-002
-// expect-error-at: 135:5
-// expect-error: NITPICK-LOCK-001
-// expect-error-at: 158:16
+// expect-error-at: 140:5
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 152:5
 // expect-error: NITPICK-LOCK-003
-// expect-error-at: 172:53
+// expect-error-at: 178:53
 //
 // AN UNDECLARED DYNAMICALLY DISPATCHED METHOD MAY NOT ACQUIRE AT ALL (D-056,
 // D-113; VERIFICATION_REFERENCE §7; 1.6.1e step 3, the library listener's
@@ -31,10 +31,12 @@
 // behind a `dyn` its caller reached holding level 9.
 //
 // Two neighbours are pinned beside it. An exact `acquires N` on a trait's method
-// is a ceiling for its implementations too (case 6) -- checked, and not read in
-// place of the body of an implementation named directly (case 6b, the
-// LOCK-001). And a clause that is written and refused is LOCK-003 alone: the
-// absence is what bounds, not the mistake (case 7).
+// is EXACT for its implementations (D-339 (a), landing 127): a call through the
+// trait is judged at N, so an implementation reaches N and nothing else --
+// above it (case 6) or below it (case 6b) -- and a call of an implementation is
+// judged at the contract's N, so the one mistake has one report (D-240). And a
+// clause that is written and refused is LOCK-003 alone: the absence is what
+// bounds, not the mistake (case 7).
 //
 // The controls at the end: an implementation within a declared `acquires <= N`,
 // an inherent impl (nothing dispatches to it dynamically, so nothing bounds
@@ -118,11 +120,14 @@ impl:Busy:Worker = {
     };
 };
 
-// --- an exact clause is a ceiling for its implementations too ---------------------------
+// --- an exact clause is exact (D-339 (a), landing 127) --------------------------------
 //
 // `acquires 3i32` on a trait's method is a FACT about every implementation: a
-// call through the trait is read as taking level 3. An implementation reaching
-// level 9 makes the fact false, and until this step nothing compared the two.
+// call through the trait is judged at level 3, so an implementation reaches 3
+// and nothing else. Above it (case 6) the ceiling was compared since 1.6.1e
+// step 3; below it (case 6b) nothing was, and a caller through the trait
+// holding 2 was told 3 > 2 and passed while the body took 1 -- DEF-181's hole
+// with the exact clause's own face.
 
 trait:Vault = {
     func:open = Lease(Self:self) acquires 3i32;
@@ -140,7 +145,9 @@ impl:Deep:Vault = {
 
 struct:Shallow = { int32:v; };
 
-// (within the ceiling: reaches 1 under `acquires 3`, and is not LOCK-002.)
+// 6b. REACHES 1 UNDER `acquires 3`: below the contract, LOCK-002 at the
+// implementation. Before landing 127 this impl was accepted ("within the
+// ceiling") and the direct call below was LOCK-001 by the body's own 1.
 impl:Shallow:Vault = {
     pub func:open = Lease(Self:self) {
         Lease:g = take_1() ?! E9;
@@ -148,11 +155,10 @@ impl:Shallow:Vault = {
     };
 };
 
-// 6b. THE CEILING IS CHECKED AND DOES NOT STAND IN FOR THE BODY. `Shallow.open`
-// named directly is read by what its body takes -- level 1 -- so calling it
-// with level 2 held is the downward acquisition it is. Reading the trait's 3 in
-// its place would have accepted this (it is LOCK-001 on every compiler before
-// this step, when an exact clause bounded nothing).
+// (control) THE DIRECT CALL IS JUDGED AT THE CONTRACT: `s.open()` with 2 held is
+// read at the trait's 3 once the body is refused -- 3 > 2 -- so the one mistake,
+// the body, has one report (D-240); fix the body to take 3 and this function
+// compiles as it stands.
 func:opens_under_two = NIL(Shallow:s) never fails {
     Lease:a = take_2() ?! E9;
     Lease:b = s.open() ?! E9;

@@ -3069,9 +3069,42 @@ func:resolve_channel_type = int32(TypeResolver->:r, TypeNode:n, int32:scope,
     // and returned: the diagnostic is the refusal, and a channel whose element
     // was refused should not cascade into "unknown type" at every use.
     drop check_channel_elem(r, elem, scope, n.span);
-    int32:lvl = raw channel_const_arg(r, n, 1i32, scope, "`Channel`", "lock level");
+    int32:lvl = raw lock_level_arg(r, n, 1i32, scope, "`Channel`");
     int32:cap = raw channel_const_arg(r, n, 2i32, scope, "`Channel`", "capacity");
     pass (raw tt_channel(r.types, elem, lvl, cap));
+};
+
+// THE TWO VALUES A LOCK LEVEL CANNOT BE (DEF-181 (6), landing 127). The lock
+// walk (locks.npk) spells "no level at all" as the identities of `min` and `max`
+// over `int32` -- `2147483647` for a minimum nothing lowered, `-2147483647` for a
+// maximum nothing raised -- so a level WRITTEN as either read as an absence: a
+// function declared `acquires 2147483647i32` contributed nothing to its callers,
+// and `Mutex<int32, 2147483647i32>`'s `acquire` was invisible to the ordering
+// (DEF-69's lesson: a sentinel is a value the domain never produces, and nothing
+// kept the domain away from it). ONE AUTHORITY for the pair, read by the walk's
+// own sentinels and by the two refusals -- a clause's (`read_acquires`, LOCK-003)
+// and a lock type's level argument (`lock_level_arg`, TYPE-016) -- so the four
+// spellings cannot drift (the shape `check_len_ceiling_agree` holds for 2^47).
+pub func:LEVEL_RESERVED_HI = int32() never fails { pass 2147483647i32; };
+pub func:LEVEL_RESERVED_LO = int32() never fails { pass (0i32 - 2147483647i32); };
+pub func:level_is_reserved = bool(int64:v) never fails {
+    if (v == ((raw LEVEL_RESERVED_HI()) => int64)) { pass true; }
+    if (v == ((raw LEVEL_RESERVED_LO()) => int64)) { pass true; }
+    pass false;
+};
+
+// A LOCK TYPE'S LEVEL ARGUMENT: the constant argument, and not one of the two
+// reserved values. One helper for the five lock kinds, so the refusal is one
+// sentence at one place.
+func:lock_level_arg = int32(TypeResolver->:r, TypeNode:n, int32:i, int32:scope,
+                            string:owner) never fails {
+    int32:lvl = raw channel_const_arg(r, n, i, scope, owner, "lock level");
+    if (raw level_is_reserved(lvl => int64)) {
+        string:c1 = string_concat(owner, "'s lock level is an `int32` the ordering can compare, and `2147483647` and `-2147483647` are the lock analysis's own `none` values (DEF-181 (6)): write a level strictly between them");
+        discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(), move(c1), n.span));
+        pass 0i32;
+    }
+    pass lvl;
 };
 
 // One of the two constant arguments, folded. They must be compile-time
@@ -3348,7 +3381,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         int32:melem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
                           raw type_args_start(n), 0i32) }, scope);
         if (raw type_is_invalid(r.types, melem)) { pass melem; }
-        int32:mlvl = raw channel_const_arg(r, n, 1i32, scope, "`Mutex`", "lock level");
+        int32:mlvl = raw lock_level_arg(r, n, 1i32, scope, "`Mutex`");
         pass (raw tt_mutex(r.types, melem, mlvl));
     }
     // `RwLock<T, LEVEL>` — the same two arguments, the same reasons.
@@ -3361,7 +3394,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         int32:rwelem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
                            raw type_args_start(n), 0i32) }, scope);
         if (raw type_is_invalid(r.types, rwelem)) { pass rwelem; }
-        int32:rwlvl = raw channel_const_arg(r, n, 1i32, scope, "`RwLock`", "lock level");
+        int32:rwlvl = raw lock_level_arg(r, n, 1i32, scope, "`RwLock`");
         pass (raw tt_rwlock(r.types, rwelem, rwlvl));
     }
     // `CondVar<LEVEL>` — one constant: the level of the wait itself (D-056:
@@ -3372,7 +3405,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                 "`CondVar<LEVEL>` takes one argument, the D-056 lock level of the wait",
                 n.span));
         }
-        int32:cvlvl = raw channel_const_arg(r, n, 0i32, scope, "`CondVar`", "lock level");
+        int32:cvlvl = raw lock_level_arg(r, n, 0i32, scope, "`CondVar`");
         pass (raw tt_condvar(r.types, cvlvl));
     }
     // `Barrier<N, LEVEL>` — the spec's table wrote `Barrier<N>`, and D-056's
@@ -3386,7 +3419,7 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                 n.span));
         }
         int32:bn = raw channel_const_arg(r, n, 0i32, scope, "`Barrier`", "party count");
-        int32:blvl = raw channel_const_arg(r, n, 1i32, scope, "`Barrier`", "lock level");
+        int32:blvl = raw lock_level_arg(r, n, 1i32, scope, "`Barrier`");
         if (bn < 1i32) {
             pass (raw ty_error(r, raw TYPE_UNKNOWN(),
                 "a barrier needs at least one party; zero tasks can never meet",

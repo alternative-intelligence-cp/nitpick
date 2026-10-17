@@ -1,0 +1,288 @@
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 66:11
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 80:6
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 92:13
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 112:5
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 128:16
+// expect-error: NITPICK-LOCK-002
+// expect-error-at: 158:34
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 184:36
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 195:29
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 217:15
+// expect-error: NITPICK-LOCK-003
+// expect-error-at: 239:36
+// expect-error: NITPICK-LOCK-003
+// expect-error-at: 240:45
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 271:36
+// expect-error: NITPICK-LOCK-001
+// expect-error-at: 285:36
+//
+// THE LOCK WALK'S SIX HOLES, THE FLOOR AND THE OVER-RESTRICTION (D-339 (a);
+// DEF-181; 1.6.1e step 3c, landing 127). D-056's first layer proves lock-order
+// freedom by LEVELS -- acquisition strictly increases -- and the walk that
+// proves it had six holes, each a shape it ACCEPTED, and one shape it refused
+// that it should not have. Every refusal below compiled on every compiler from
+// 0.5.6 to landing 126 (measured on 2b95bb4: `wt/39g/.internal/probes/locks/`);
+// the controls at the end were refused there and compile now.
+mod:lock_floor;
+error:E9;
+
+struct:Lease = { int32:v; };
+
+func:take_1 = Lease() acquires 1i32 { pass Lease{ v: 1i32 }; };
+func:take_2 = Lease() acquires 2i32 { pass Lease{ v: 2i32 }; };
+func:take_3 = Lease() acquires 3i32 { pass Lease{ v: 3i32 }; };
+
+// --- 1. a direct call of an IMPLEMENTATION is judged by its body (DEF-181 (1)) --------
+
+trait:Storage = {
+    func:commit = NIL(Self:self) acquires <= 3i32;
+};
+
+struct:Low = { int32:v; };
+
+impl:Low:Storage = {
+    pub func:commit = NIL(Self:self) never fails {
+        Lease:g = take_1() ?! E9;
+        discard(g.v);
+        pass NIL;
+    };
+};
+
+// Holding 2, `l.commit()` names Low's own body, which takes 1: downward. Until
+// landing 127 the trait's `<= 3` stood in for a body the walk had summarised,
+// and 3 > 2 passed.
+func:hole_one = NIL(Low:l) never fails {
+    Lease:a = take_2() ?! E9;
+    discard(a.v);
+    drop l.commit();
+    pass NIL;
+};
+
+// --- 2. THE FLOOR (D-339 (a)): a call THROUGH a `<=`-bounded method holds nothing ------
+//
+// `acquires <= 3` is a ceiling only: an implementation may take any level at or
+// below it, so no held level can be ordered against a call through the trait.
+// Legal with nothing held -- and `via`, which makes such a call, has no floor
+// of its own, so a call of IT with anything held is the same call one level up.
+
+func:floor = NIL(dyn Storage:d) never fails {
+    Lease:a = take_2() ?! E9;
+    discard(a.v);
+    d.commit() ?! E9;
+    pass NIL;
+};
+
+func:via = NIL(dyn Storage:d) never fails {
+    d.commit() ?! E9;
+    pass NIL;
+};
+
+func:holds_then_via = NIL(dyn Storage:d) never fails {
+    Lease:a = take_2() ?! E9;
+    discard(a.v);
+    drop via(d);
+    pass NIL;
+};
+
+// --- 3. EXACT IS EXACT (D-339 (a)) ---------------------------------------------------
+//
+// `acquires 3i32` on the trait's method: a call through the trait is judged at
+// 3, so an implementation reaches 3 and nothing else. `Shallow` reaches 1 --
+// below the contract -- and is LOCK-002 where it is written; the direct call
+// under 2 is then judged at the CONTRACT's 3 and says nothing: one mistake, one
+// report (D-240). Through a bound the same call is judged at 3 too, so holding
+// 3 is the downward acquisition and holding 2 (`drive_under_two`, a control) is not.
+
+trait:Vault = {
+    func:open = Lease(Self:self) acquires 3i32;
+};
+
+struct:Shallow = { int32:v; };
+
+impl:Shallow:Vault = {
+    pub func:open = Lease(Self:self) {
+        Lease:g = take_1() ?! E9;
+        pass g;
+    };
+};
+
+func:opens_under_two = NIL(Shallow:s) never fails {
+    Lease:a = take_2() ?! E9;
+    Lease:b = s.open() ?! E9;
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+func:drive_under_three<V: Vault> = NIL(V:v) never fails {
+    Lease:a = take_3() ?! E9;
+    Lease:b = v.open() ?! E9;
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+func:drive_under_two<V: Vault> = NIL(V:v) never fails {
+    Lease:a = take_2() ?! E9;
+    Lease:b = v.open() ?! E9;
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+// --- 4. a function named as a VALUE may reach nothing (DEF-181 (2)) ------------------
+//
+// A value is called from anywhere, with anything held, and a function type
+// carries no `acquires`: D-056's own sentence for an undeclared dynamic call.
+// LOCK-002 at the name, in a body and at module level; a value of a function
+// that acquires nothing is the control.
+
+func:reaches_1 = int32() never fails {
+    Lease:g = take_1() ?! E9;
+    discard(g.v);
+    pass 1i32;
+};
+
+func:reaches_nothing = int32() never fails { pass 7i32; };
+
+func:as_value = int32() never fails {
+    func int32() never fails:f = reaches_1;
+    pass (raw f());
+};
+
+func:quiet_value = int32() never fails {
+    func int32() never fails:q = reaches_nothing;
+    pass (raw q());
+};
+
+// --- 5. a result holds its HIGHEST hold (DEF-181 (3)) ---------------------------------
+//
+// `take_and_return_9` takes and releases 1, then returns holding 9. Until
+// landing 127 the binding raised the held level to the LOWEST hold the callee
+// might hand back -- 1 -- and the `acquire` at 5 after it passed.
+
+async func:take_and_return_9 = Guard<int32>(Mutex<int32, 1i32>->:m1, Mutex<int32, 9i32>->:m9) {
+    {
+        Guard<int32>:a = relay await m1.acquire(raw duration_ms(5i64));
+        a.value = 1i32;
+    }
+    Guard<int32>:b = relay await m9.acquire(raw duration_ms(5i64));
+    pass b;
+};
+
+async func:hole_three = NIL(Mutex<int32, 1i32>->:m1, Mutex<int32, 9i32>->:m9, Mutex<int32, 5i32>->:m5) {
+    Guard<int32>:h = relay await take_and_return_9(m1, m9);
+    Guard<int32>:c = relay await m5.acquire(raw duration_ms(5i64));
+    c.value = h.value;
+    pass NIL;
+};
+
+// --- 6. a `defer` body runs at the block's EXIT (DEF-181 (4); D-207) -----------------
+//
+// Written before the guard at 2 was taken, it runs after -- with 2 held. It was
+// ordered against what was held where it was WRITTEN.
+
+func:deferred = NIL() never fails {
+    defer { Lease:z = take_1() ?! E9; discard(z.v); }
+    Lease:a = take_2() ?! E9;
+    discard(a.v);
+    pass NIL;
+};
+
+// --- 7. a spawned task is joined with the block's guards held (DEF-181 (5); D-207) ----
+//
+// The guard taken AFTER the spawn is held across the block's join: the child
+// waits for the guard, the parent waits for the child (`pm_join`: exit 21,
+// `DeadlineExceeded`, at both legs before landing 127). A guard in an inner
+// block ends before the join (`spawn_hold_inner`, a control).
+
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:child = NIL(Mutex<int32, 3i32>->:m) joins JOIN_2S {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(200i64));
+    g.value = g.value + 1i32;
+    pass NIL;
+};
+
+async func:spawn_then_hold = NIL(Mutex<int32, 3i32>->:m) {
+    drop child(m);
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(100i64));
+    g.value = 5i32;
+    pass NIL;
+};
+
+async func:spawn_hold_inner = NIL(Mutex<int32, 3i32>->:m) {
+    drop child(m);
+    {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(100i64));
+        g.value = 5i32;
+    }
+    pass NIL;
+};
+
+// --- 8. the walk's two sentinels are not levels (DEF-181 (6)) -------------------------
+//
+// `2147483647` and `-2147483647` are how the walk spells "no level at all"; a
+// clause naming one read as an absence (DEF-69's lesson: a sentinel is a value
+// the domain never produces). LOCK-003 at the clause; the same two in a lock
+// TYPE's level argument are `tests/types/rejection/lock_level_sentinel.npk`.
+
+func:at_the_top = Lease() acquires 2147483647i32 { pass Lease{ v: 1i32 }; };
+func:at_the_bottom = Lease() acquires (0i32 - 2147483647i32) { pass Lease{ v: 1i32 }; };
+
+// --- the over-restriction, closed: the controls -----------------------------------------
+//
+// A HELPER'S `int32` HOLDS NOTHING. `helper` takes and releases level 1 inside
+// and returns a number; binding it twice in one block was "holds 1 and can
+// acquire 1" until landing 127. The hold a result carries is visible by the
+// callee's own `acquires N` (its result is the lease), by a bounded trait
+// method, or by the result's TYPE carrying a `Guard` -- directly
+// (`guard_then_lower`) or inside a struct (`wrapped_then_lower`), which is why
+// those two ARE refused while `twice` is not.
+
+func:helper = int32() never fails {
+    Lease:g = take_1() ?! E9;
+    discard(g.v);
+    pass 7i32;
+};
+
+func:twice = int32() never fails {
+    int32:a = raw helper();
+    int32:b = raw helper();
+    pass (a + b);
+};
+
+async func:hand_back_5 = Guard<int32>(Mutex<int32, 5i32>->:m5) {
+    Guard<int32>:g = relay await m5.acquire(raw duration_ms(5i64));
+    pass g;
+};
+
+async func:guard_then_lower = NIL(Mutex<int32, 5i32>->:m5, Mutex<int32, 3i32>->:m3) {
+    Guard<int32>:h = relay await hand_back_5(m5);
+    Guard<int32>:c = relay await m3.acquire(raw duration_ms(5i64));
+    c.value = h.value;
+    pass NIL;
+};
+
+struct:Held = { Guard<int32>:g; int32:tag; };
+
+async func:wrap_5 = Held(Mutex<int32, 5i32>->:m5) {
+    Guard<int32>:g = relay await m5.acquire(raw duration_ms(5i64));
+    pass Held{ g: move(g), tag: 1i32 };
+};
+
+async func:wrapped_then_lower = NIL(Mutex<int32, 5i32>->:m5, Mutex<int32, 3i32>->:m3) {
+    Held:h = relay await wrap_5(m5);
+    Guard<int32>:c = relay await m3.acquire(raw duration_ms(5i64));
+    c.value = h.tag;
+    pass NIL;
+};

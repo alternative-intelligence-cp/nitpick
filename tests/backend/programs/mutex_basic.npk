@@ -58,9 +58,14 @@ async func:main = int32(cstring[]:_~argv) {
     Mutex<int32, 5i32>:h = mutex(0i32) ?! Unreachable;
     drop holder(@h, done);
     discard(await done.recv(raw duration_ms(2000i64)) ?! E9);
-    Result<Guard<int32>>:late = await h.acquire(raw duration_ms(1i64));
-    if (!late.is_error)                  { exit 11i32; }
-    if (late.err != DeadlineExceeded)    { exit 12i32; }
+    // THE POSSIBLE GUARD ENDS BEFORE THE JOIN (D-339, landing 127): `late` may hold level 5, and `holder` -- joined
+    // at this block's exit -- acquires 5, so the binding lives in a block of its own; held to the join it is LOCK-001
+    // (the parent would wait for a child that waits for the parent's guard), and so would `bump`'s level 3 be.
+    {
+        Result<Guard<int32>>:late = await h.acquire(raw duration_ms(1i64));
+        if (!late.is_error)                  { exit 11i32; }
+        if (late.err != DeadlineExceeded)    { exit 12i32; }
+    }
 
     exit 42i32;
 };

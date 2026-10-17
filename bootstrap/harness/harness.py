@@ -961,6 +961,8 @@ WALKER_DEFAULT_OK = {
     ("chan_elem_verdict_recorded", "src/frontend/types.npk"): {},
     # shared-cell containment (D-235): every kind named, like the verdict table
     ("type_contains_shared_recorded", "src/frontend/types.npk"): {},
+    # guard containment (D-339, landing 127): every kind named, the same way
+    ("type_contains_guard_recorded", "src/frontend/types.npk"): {},
     # whether a type carries a channel endpoint (D-183's gives/factory rules)
     ("type_contains_channel_recorded", "src/frontend/types.npk"): {
         "TY_INVALID": "resolution already failed and already said so",
@@ -5946,13 +5948,13 @@ def main(argv):
                 txt = open(tp, encoding="utf-8").read()
                 flipped = 0
                 for fn in ("tt_drops", "tt_haschan", "tt_hasborrow",
-                           "tt_hasshared"):
+                           "tt_hasshared", "tt_hasguard"):
                     old = "(raw %s(t, id)) == 2i32" % fn
                     flipped += txt.count(old)
                     txt = txt.replace(old, "(raw %s(t, id)) != 1i32" % fn)
-                if flipped != 8:
+                if flipped != 10:
                     failures.append(
-                        "absent-fact: expected 8 memoised-bit readings to "
+                        "absent-fact: expected 10 memoised-bit readings to "
                         "flip and found %d -- this check has lost its grip on "
                         "the source it is about, which makes it a check that "
                         "passes without testing anything (D-227)" % flipped)

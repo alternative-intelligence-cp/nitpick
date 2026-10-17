@@ -405,6 +405,25 @@ guard compiled. An implementation of a trait method that declares no `acquires`
 level may not `send` or `recv` either (VERIFICATION_REFERENCE §7).
 `tests/analysis/rejection/chan_levels.npk`.
 
+**A spawned task is judged at its block's join** (landing 127; DEF-181 (5)). `drop
+child(ch)` is absorbed where it stands -- the parent is an acquirer at whatever the
+child waits for -- and ORDERED against what the spawning block holds at its END,
+where D-207 joins the task: a guard taken after the spawn is held across the join,
+so a child that waits at or below it waits for a guard the parent releases only
+after the child is joined (`NITPICK-LOCK-001` at the spawned call). A guard in an
+inner block that ends before the join orders nothing. A `defer` body is ordered
+the same way, at its block's end with the block's final guards held (DEF-181 (4)).
+
+**What a result HOLDS is visible, or it is nothing** (landing 127; D-339). Binding a
+call's result raises the held level only when the callee declares an exact
+`acquires N` (its result is the lease), the callee is a bounded trait method, the
+initialiser is a typed acquisition, or the result's TYPE can carry a `Guard` or an
+`RGuard` -- directly, or inside a struct, an enum, an `Optional`, a `Result` or an
+array. A function that takes a lock, releases it inside and returns a number holds
+nothing, and may be bound twice in a row; a function that hands a user-levelled
+lease on writes `acquires N` (D-056: what marks an acquisition is a contract).
+The level raised is the HIGHEST the result may carry (DEF-181 (3)).
+
 **A rendezvous is not a one-slot buffer.** Its sender waits for a RECEIVER,
 not for buffer space: a `CAP == 0` send deposits only when a receiver is
 registered and therefore certain to take it, and that hand-off is the

@@ -3896,6 +3896,18 @@ succeeds with the guard whole. No floor byte.
 
 *[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `cc0380` and `vf0831`; DEF-181 and S-119 registered).]* Two sentences of this decision were not kept until this step. **"Every blocking primitive … `channel` … carries a compile-time `LEVEL`" was true of the type and read by nothing**: `send` and `recv` are waits at the channel's level now (`sync_wait_level`'s `TY_CHANNEL` arm), ordered against what is held and raising no hold — in the function, and across a call: `LockTable.hold_min` is what a call may leave HELD, fed by a declared `acquires N`, an `acquire`/`read`/`write` and a callee's own hold, and by no wait (the binding rule had read a waiting callee's result as a hold at the wait's level, which refused binding two `recv`s made through one helper — four of the listener's own `expect: run:0` programs the day channels entered the summaries, and a barrier's `arrive` on `5fbaf4a`). **And "an undeclared method may not acquire at all" set nothing**: a trait method with no `acquires` clause now gives its default body and every implementation a BOUND OF NOTHING (`LOCK_NONE_MAX`, read through the one predicate `bound_is_nothing`): `NITPICK-LOCK-002` where the body can reach any level, and a call through the method contributes no level. An exact `acquires N` on a trait's method is a checked ceiling for its implementations. The walk reads the checker's record of a method call (`ExprTypes.callee`) where it re-resolved the receiver and missed a pointer receiver, a free function reached by UFCS, `Trait.m(x)` and a pipe — each an acquisition nobody ordered. **The consequence**: the prelude's traits declare no level, so no implementation of `Writer`, `Reader`, `Iterator`, `ToString` or the rest may acquire or wait; the lock is taken outside the call, the caller's visible act. **What is NOT covered** is stated in VERIFICATION_REFERENCE §7's note of this date: DEF-181's six holes in the walk and the missing floor under a `<=` bound (S-119, the user's) — 1.6.1e step 3c. **Exposure**, by the two-checker sweep over the tree and every `.npk` of the library and application repositories: one file, our own `tests/backend/programs/mutex_basic.npk`, whose channel sat below the mutex its sender held (the channel raised to level 6). `tests/analysis/rejection/chan_levels.npk`, `lock_undeclared.npk`, `lock_calls.npk`; `tests/backend/programs/wait_bound.npk`.
 
+*[2026-10-17, 1.6.1e step 3c (landing 127) — a dated note (DEF-181 closed under D-339).]* The first layer's six holes and
+the floor are closed: a `<=` bound is a ceiling only, so a call through a `<=`-bounded trait method is legal with NOTHING
+held and the caller inherits the missing floor; an exact `acquires N` on a trait's method is exact -- every call of it or
+of an implementation is judged at N, and a body reaching below N is refused as one reaching above it was; a function named
+as a VALUE may reach nothing; a binding raises the held level to the HIGHEST hold its result may carry, and only when that
+hold is visible -- the callee's own `acquires N`, a bounded trait method, a typed acquisition, or a `Guard`/`RGuard` in the
+result's type -- so a function that hands a user-levelled lease on writes `acquires N` ("what marks an acquisition is a
+contract"), and a helper's `int32` holds nothing; a `defer` body and a spawned task are judged at their block's END, where
+D-207 runs the one and joins the other; the walk's two `none` values are refused as levels. "A declared-but-broad dynamic
+bound" leaves the second layer's list: the broad bound is ordered now (with nothing held) or refused. VERIFICATION_REFERENCE
+§7's note of the same date has each rule; D-339 the record.
+
 ## D-057 — Macro hygiene and expansion order — **SETTLED**
 
 The macro system is far larger than either document describes, and **its
@@ -8497,6 +8509,15 @@ reaches, an `impl` method body, a struct's layout — were all closed in 0.4.8.
 *[2026-09-30, 1.6.1e step 3 — a dated note (the library listener's `vf0831`).]* "The natural meaning of no clause" is enforced. `inherit_trait_bound` copies the trait method's bound to each implementation AT THE SEED (it was the first thing each widening round did, so a caller walked before the impl read the method unbounded for a round — an order the modules happen to be in): the ABSENCE as a bound of nothing, a `<=` clause as its level, an exact clause as a checked ceiling (`LockTable.bound_exact`). The exact clause does NOT stand in for the body at a direct call — an implementation named by its own name keeps its own summary — where the step's design had said "as the `<=` form does": measured, the `<=` reading would have silenced a downward acquisition `5fbaf4a` reports (hold 2, call an impl whose body takes 1 under a trait's `acquires 3`). The trait's clause is folded in the trait's home scope (D-137). `seed_trait_bound` gives the trait's own method — what a `dyn`, a bound `T: Trait` and a default body's `self.m()` resolve to — the same three readings, and a default body is walked and held to it as an implementation is. A clause that is written and does not fold is `NITPICK-LOCK-003` alone (`LevelRead.written`: the absence is what bounds, not the mistake — D-240). What a `<=` bound still does not give — a FLOOR under its implementations — is S-119, with DEF-181.
 
 ---
+
+*[2026-10-17, 1.6.1e step 3c (landing 127) — a dated note (D-339 (a)).]* `acquires <= N` is a CEILING ONLY: a call that
+resolves to the trait's method -- a `dyn`, a bound `T: Trait`, `Trait.m(x)`, a concrete receiver whose impl runs the default
+-- is legal with nothing held and `NITPICK-LOCK-001` otherwise (an implementation may take any level at or below N, so no
+held level orders it), and a function that makes such a call has no floor of its own, propagated like a level. A call that
+resolves to an IMPLEMENTATION's method (a concrete receiver, the body known) is judged by the body's own summary (DEF-181 (1));
+the ceiling is checked where the body is walked, as before. An EXACT `acquires N` on a trait's method is exact: every call is
+judged at N and an implementation reaches N or nothing (below N is `NITPICK-LOCK-002`, as above it was). A trait method that
+its callers must be able to call while holding something therefore declares its level exactly.
 
 ## D-114 — An `extern` function has a type, and it is a `Result<T>` like every other — **SETTLED (its open sub-item is queued)**
 
@@ -15524,6 +15545,13 @@ crossing until the block's join — `NITPICK-BORROW-016` on `destroy`, an assign
 `move` out, `$$m` or `@root` to a callee that stores over the pointee; the kind's own concurrent
 operations and a second spawn stay (D-180's note).
 
+*[2026-10-17, 1.6.1e step 3c (landing 127) — a dated note (DEF-181 (4) and (5)).]* The scope-exit order this decision
+fixed -- join, defers, drops -- is what the lock walk reads now: a `defer` body is ordered against what its block holds at
+its END (every later guard still held when the body runs), and a spawned task is ordered against the same final level, since
+the join that waits for it runs before the guards are released -- a guard taken after the spawn and held to the block's end
+is the wedge `pm_join` measured (the child waits for the guard, the parent for the child; exit 21 at both legs). Both are
+`NITPICK-LOCK-001` where the body or the spawn is written; a guard in an inner block that ends before the join orders nothing.
+
 ## D-208 — loop-carried moved-from states — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes S-2. The 0.5 move analysis gains loop-header merge states: a
@@ -22447,6 +22475,28 @@ recorded here by landing 90.
 **What it changes.** It unblocks 1.6.1e step 3c (the lock walk, DEF-181's six holes), measured on the tree first as
 the recommendation says; four of our own test files move with it (`lock_levels` twice, `lock_calls`,
 `lock_undeclared`).
+
+**Landed (2026-10-17, 1.6.1e step 3c, landing 127; built by `nitpick-compiler_39`, landed by `nitpick-compiler_40`; worktree `wt/39h`, branch `39-d339` on landing
+126's commit; planned first at `.internal/handoff_35/D339_PLAN.md`).** Measured first on landing 125's compiler: the
+eight probes of DEF-181 (`wt/39g/.internal/probes/locks/`) -- holes (1), (2), (3), (4), (6) and the floor each ACCEPTED,
+the over-restriction refused (`NITPICK-LOCK-001` at a helper's second binding), `pm_join` (5) compiling and exiting 21
+(`DeadlineExceeded`) at both legs; the census over the three trees: an `acquires` clause outside the compiler's own tree in
+four fuzz programs (`vf0829`, `vf0830`, `vf0831`, each `expect: refuse` and refused; `as0034` in a comment), `acquires <=`
+in `vf0830` alone, a typed acquisition in 27 fuzz programs and in no library or application source. THE RULES, in one walk
+(locks.npk): (1) a direct call of an IMPLEMENTATION bounded `acquires <= N` is judged by the body's own summary, never by the bound (the bound is checked where the body is walked); (2) a function NAMED AS A VALUE reaches nothing -- `NITPICK-LOCK-002` at the name when its summary reaches any level, since a value is called from anywhere with anything held and a function type carries no clause (D-056's sentence for an undeclared dynamic call); (3) a binding raises the held level to the HIGHEST hold its initialiser may carry (`hold_max`, where `hold_min` had let a function that took and released 1 and returned holding 9 leave its caller believing it held 1); (4) a `defer` body is walked at ITS BLOCK'S END with the block's final held level -- D-207's order is join, defers, drops, so every later guard is still held when it runs; (5) a SPAWN (`drop` of an `async` call) is absorbed where it stands and judged at its block's end against the block's final held level, `NITPICK-LOCK-001` at the spawned call -- the parent joins the task holding that level and the child waits for a level at or below it (`pm_join`: exit 21, `DeadlineExceeded`, at both legs before this landing); (6) `2147483647` and `-2147483647`, the walk's own `none` values, are refused as levels -- `NITPICK-LOCK-003` in a clause (with a level outside `int32`, which the cast truncated before), `NITPICK-TYPE-016` in a lock type's level argument (`Mutex`, `RwLock`, `CondVar`, `Barrier`, `Channel`) -- from ONE authority (`LEVEL_RESERVED_HI`/`LO`, type_resolve.npk) the walk's sentinels read; THE FLOOR (D-339 (a)): a call that resolves to a TRAIT'S method bounded `acquires <= N` -- through a `dyn`, a bound `T: Trait`, `Trait.m(x)`, or a concrete receiver whose impl runs the default -- is legal only with NOTHING held, `NITPICK-LOCK-001` otherwise with the floor's own sentence, and the caller is FLOORLESS (propagated by the widening like a level: a call of IT while anything is held is refused the same way, naming the bounded method it reaches through); EXACT IS EXACT (D-339 (a)): every call of a method under an exact `acquires N` on the trait, or of an implementation of it, is judged at N, and an implementation whose body reaches BELOW N (or reaches through a `<=`-bounded method) is `NITPICK-LOCK-002` where it is written, as one reaching above N was -- so the contract IS the summary once the body is legal, and a refused body is reported once (D-240); and THE OVER-RESTRICTION: a binding raises the held level only when the hold is VISIBLE -- the callee declares an exact `acquires N` (its result is the lease), the callee is a bounded trait method, the initialiser is a typed acquisition, or the result's TYPE can carry a `Guard`/`RGuard` (directly or inside a struct, an enum, an `Optional`, a `Result`, an array: the layout bit `tt_hasguard`, ensured before it is read, D-227) -- so a helper that takes and releases inside and returns an `int32` may be bound twice in one block, and a function that hands a user-levelled lease on WRITES `acquires N`. (b) built nothing: every implementation of a prelude trait method is held to a bound of nothing
+since step 3. The tests: `tests/analysis/rejection/lock_floor.npk` (thirteen sites: hole 1, the floor, its propagation,
+`Shallow` below an exact 3, a bound call holding 3, a function value, the highest hold, a `defer`, a spawn, the two
+sentinels, a `Guard` handed back and a struct carrying one; the controls: a direct call judged at the contract, a bound
+call holding 2, a quiet value, a helper bound twice, a spawn whose guard ends in an inner block),
+`tests/types/rejection/lock_level_sentinel.npk` (the two values as a `Mutex`'s and a `Channel`'s level),
+`tests/backend/programs/lock_helper_twice.npk` (the over-restriction's program: exit 3 at both legs, refused by every
+compiler before), `lock_undeclared.npk` re-spelled (case 6b: `Shallow.open` reaching 1 under `acquires 3` is LOCK-002 at
+the implementation, the direct call under 2 judged at the contract and silent), `chan_levels.npk`'s case 8 re-spelled with
+a `Guard` (a `Lease` struct handed back by a clause-less wrapper is no hold the walk can see -- the prediction that the
+file would not move failed there, and was read: the rule's own consequence), `tests/accept/lock_levels.npk` three accepted
+shapes. The sweep under landing 126's checker and this one over 5,211 files: 14 sites appeared (the ten of `lock_floor.npk` the base did not report -- 66:11 hole 1 (judged by the body), 80:6 the floor, 92:13 its propagation through `via`, 112:5 and 158:34 LOCK-002 (`Shallow.open` below its exact 3; `reaches_1` named as a value), 184:36 the highest hold, 195:29 the `defer`, 217:15 the spawn, 239:36 and 240:45 the two sentinels (LOCK-003); its other three sites (a bound call holding 3, the two typed holds) both compilers report -- `lock_undeclared.npk`'s LOCK-002 at 152:5 (`Shallow.open` under `acquires 3`), `lock_level_sentinel.npk`'s two TYPE-016 (19:22, 25:25) and the fuzz corpus's `cc0427` (LOCK-001 at 23:16: its `Result<Guard<int32>>:late` bound in the block that joins `holder`, which acquires the same level 3)), 5 vanished (the base's own readings of the landing's files: `lock_floor.npk`'s two controls (120:16 `opens_under_two`, judged by the body's 1 where the contract's 3 governs now; 260:25 `twice`'s second binding, the over-restriction), `lock_undeclared.npk`'s 164:16 (case 6b's LOCK-001 at the direct call, judged at the contract now), `accept/lock_levels.npk`'s 138:25 (`twice`, the over-restriction) and the program `lock_helper_twice.npk`'s 25:25 (the over-restriction); the three re-spelled tree programs and `chan_levels.npk`'s re-spelled case 8 move nothing (both compilers accept the first, both report the second's 164:21)); the emission 580 programs, 579 byte-identical, 0 different, 0 newly refused, 1 refused by the base alone; the libraries' 4,061 -- 1,894 byte-identical, 2,166 refused by both, 0 different, 1 newly refused (`cc0427`, the fuzz corpus's expiry claim: its spelling, a `Result<Guard>` bound in the block that joins the child). A REFUSAL ADDED in
+seven shapes and ONE REMOVED; no emission moves for a program that compiles on both; no computed answer; no floor byte; no
+snapshot refresh. DEF-181 FIXED.
 
 ## D-340 — A MACRO ARGUMENT IS THE CALLER'S TEXT AND RESOLVES AT THE INVOCATION SITE — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-120)**
 

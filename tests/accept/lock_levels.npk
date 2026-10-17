@@ -119,6 +119,55 @@ impl:Alone = {
     };
 };
 
+// --- what landing 127 lifted and what it kept (DEF-181, D-339) ---------------------
+//
+// A HELPER'S `int32` HOLDS NOTHING. `helper` takes and releases level 1 inside
+// and returns a number, so binding it twice in one block is two bare calls --
+// refused as "holds 1 and can acquire 1" from 1.6.1e step 3 to landing 126. The
+// hold a result carries is visible by the callee's own `acquires N`, by a
+// bounded trait method, or by a `Guard` in the result's type; a number is none
+// of the three.
+func:helper = int32() never fails {
+    Lease:g = take_1() ?! E9;
+    discard(g.v);
+    pass 7i32;
+};
+
+func:twice = int32() never fails {
+    int32:a = raw helper();
+    int32:b = raw helper();
+    pass (a + b);
+};
+
+// A `defer` BODY IS ORDERED AGAINST THE BLOCK'S END, where it runs (D-207):
+// written after the guard at 1 it clears, taking 3 there is upward.
+func:deferred_upward = NIL() never fails {
+    Lease:a = take_1() ?! E9;
+    discard(a.v);
+    defer { Lease:z = take_3() ?! E9; discard(z.v); }
+    pass NIL;
+};
+
+// A SPAWN IS JUDGED AT ITS BLOCK'S JOIN: the guard the parent takes after the
+// spawn lives in an inner block and is released before the block that joins
+// the worker ends, so the worker's wait at 3 is ordered against nothing.
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:worker = NIL(Mutex<int32, 3i32>->:m) joins JOIN_2S {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(200i64));
+    g.value = g.value + 1i32;
+    pass NIL;
+};
+
+async func:spawn_clean = NIL(Mutex<int32, 3i32>->:m) {
+    drop worker(m);
+    {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(100i64));
+        g.value = 5i32;
+    }
+    pass NIL;
+};
+
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
@@ -130,6 +179,7 @@ func:main = int32(cstring[]:_~argv) {
 func:failsafe = int32(Error:e) {
     pick (e) {
         (E9) { exit 80i32; }, (Unreachable) { exit 95i32; },
+        (DeadlineExceeded) { exit 94i32; },
         (HeapOom) { exit 92i32; }, (HeapBadRequest) { exit 91i32; },
         (WildLeak) { exit 96i32; }, (IntOverflow) { exit 93i32; },
         (StackExhausted) { exit 99i32; },

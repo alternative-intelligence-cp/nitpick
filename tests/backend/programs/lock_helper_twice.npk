@@ -1,0 +1,49 @@
+// expect-exit: 3
+//
+// THE OVER-RESTRICTION CLOSED (DEF-181; 1.6.1e step 3c, landing 127). `peek`
+// takes a level-1 mutex, bumps the value, releases the guard at its own scope
+// exit and returns an `int32`. Binding its result twice in one block was
+// `NITPICK-LOCK-001` ("this holds lock level 1 and can acquire level 1") on
+// every compiler from 1.6.1e step 3 to landing 126: a binding raised the held
+// level to whatever the callee might leave held, and an `int32` can hold
+// nothing. The hold a result carries is visible by the callee's own `acquires
+// N`, by a bounded trait method, or by the result's TYPE carrying a `Guard`
+// (D-339); `peek`'s is none of the three. Exit 3, not 0: a mutex lives in
+// `main` at the exit, and D-151's leak count is asked of a 0 alone.
+mod:lock_helper_twice;
+error:E9;
+
+async func:peek = int32(Mutex<int32, 1i32>->:m) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    g.value = g.value + 1i32;
+    pass g.value;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Mutex<int32, 1i32>:m = mutex(0i32) ?! Unreachable;
+    int32:a = await peek(@m) ?! E9;
+    int32:b = await peek(@m) ?! E9;
+    if (a != 1i32) { exit 10i32; }
+    if (b != 2i32) { exit 11i32; }
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (IntOverflow)      { exit 96i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (StackExhausted)   { exit 98i32; },
+        (MachineFault)     { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};
