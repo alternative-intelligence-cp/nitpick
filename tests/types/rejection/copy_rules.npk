@@ -1,18 +1,20 @@
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 29:1
 // expect-error: NITPICK-TYPE-087
-// expect-error-at: 27:1
+// expect-error-at: 33:1
 // expect-error: NITPICK-TYPE-087
-// expect-error-at: 31:1
+// expect-error-at: 38:1
 // expect-error: NITPICK-TYPE-087
-// expect-error-at: 36:1
-// expect-error: NITPICK-TYPE-087
-// expect-error-at: 40:1
+// expect-error-at: 42:1
 // expect-error: NITPICK-TYPE-017
-// expect-error-at: 47:23
+// expect-error-at: 49:23
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 53:5
+// expect-error-at: 55:5
 //
 // D-327 (1.6.1c): `Copy` IS A CLAIM THAT A COPY IS NOT A SECOND OWNER, judged
-// at the impl (`NITPICK-TYPE-087`): (1) an owning builtin; (2) an owning
+// at the impl (`NITPICK-TYPE-087`): (1) an owning builtin -- an ORPHAN first since
+// landing 124 (D-359): `string` and `Copy` are both the prelude's, so the impl is
+// `NITPICK-TYPE-099` and the `Copy` judgement is never reached; (2) an owning
 // struct; (3) a member that is not `Copy` -- `Point` chose not to be; (4) a bare
 // parameter no bound licenses. And the two rules around it: (5) the bound is
 // judged at the instantiation -- a `List<string>` read out by value is
@@ -23,7 +25,7 @@
 // named member IS `Copy`.
 mod:copy_rules;
 
-// (1) an owning builtin
+// (1) an owning builtin -- and an orphan (D-359): neither `string` nor `Copy` is this tree's
 impl:string:Copy = { };
 
 // (2) an owning struct

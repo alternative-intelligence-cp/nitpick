@@ -2391,7 +2391,7 @@ func:args_mention_params_of = bool(TypeTable->:t, Ast->:ast, int32:id,
 // `simd`, `Channel<T, LEVEL, CAP>`, the locks and their guards (1.1.10-D3: the
 // channel was missed here once, and a generic pool copied nothing into its
 // ring because an unsubstituted parameter measures zero).
-func:type_kind_has_elem = bool(int32:k) never fails {
+pub func:type_kind_has_elem = bool(int32:k) never fails {   // pub since D-359 (landing 124): the orphan rule's walk reads it
     if (k == (raw TY_POINTER()))      { pass true; }
     if (k == (raw TY_SLICE()))        { pass true; }
     if (k == (raw TY_ARRAY()))        { pass true; }

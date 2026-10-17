@@ -264,9 +264,10 @@ ladder (the value truncated to 64 bits; never the floats, `tfp`, `frac` or
 `complex`); `string` has `Eq`, `Ord` (byte-lexicographic, the shorter prefix
 `Less`), `PartialOrd`, `Clone` and `Hash` by hand. A twisted scalar's
 `eq`/`cmp` trap on ERR as the operator does (D-008 §5). A program's own impl
-of a pair the prelude covers is TYPE-013 with a note at the prelude's row; a
-pair it does not cover (`impl:bool:Ord`) is admitted — the orphan question is
-OPEN_DECISIONS S-37. The tier scalars' own method sets (`tfp`'s
+of a pair the prelude covers was TYPE-013 with a note at the prelude's row, and
+a pair it does not cover (`impl:bool:Ord`) was admitted, until D-359 (landing
+124): an impl names at least one type or trait declared in its own manifest's
+tree, so both are `NITPICK-TYPE-099` at the impl now — the orphan rule, §4.1b. The tier scalars' own method sets (`tfp`'s
 `floor`/`trunc`, the ternary digits, `complex`'s five, `simd`'s five) come
 first and the impl table second — a struct's inherent-then-trait order; until
 1.5.2b those intercepts refused every other name, in the checker and in the
@@ -740,11 +741,11 @@ first.
 **Every overlap report carries a NOTE at the earlier impl** (D-257's rider,
 1.5.2b), because "at line N" is a line of a file the sentence does not name —
 the prelude's, once a program writes `impl:int32:Ord` beside the prelude's
-generated one. A program's own impl of a (type, trait) pair the prelude covers
-is the overlap it always was; a pair the prelude does NOT cover
-(`impl:bool:Ord`) is admitted, and whether an orphan rule should close that —
-an impl naming at least one type or trait declared in its own tree — is
-OPEN_DECISIONS S-37, the library era's question.
+generated one. Since D-359 (landing 124) a program's impl of a prelude pair is
+refused before coherence sees it — the orphan rule, §4.1b, `NITPICK-TYPE-099` at
+the impl, `impl:int32:Ord` and `impl:bool:Ord` alike — so the prelude's row is
+named in an overlap report only against an impl its tree may write. S-37, the
+library era's question, is closed by it.
 
 **The prelude's generated impls cost a program only what it reaches** (D-262,
 1.5.2d). 1.5.2b's 348 scalar impls were emitted into every program and typed by
@@ -755,6 +756,49 @@ analysis's program-sized state, the type table's and the interner's linear
 dedup: 0.72 s → 0.07 s on that probe, the compiler's own build 242 s → 20 s);
 the emission's share is the trim of BUILD_REFERENCE §4 — an impl's methods and
 vtable are emitted only where the program references them.
+
+### 4.1b The orphan rule (D-359)
+
+**An impl names at least one type or trait declared in its own manifest's tree.**
+`impl:bool:Ord` names a builtin and the prelude's trait, neither its tree's: two
+libraries could each write it and collide under coherence (§4.1) in the program
+that imports both, with no impl of the program's own at fault. Settled as D-359
+(the user, 2026-10-15; S-37, the library era's question since 1.5.2b) and landed
+at 1.6.1e landing 124; `NITPICK-TYPE-099` at the impl, once.
+
+- **A file's tree** is the directory holding the nearest `nitpick.toml` above it
+  (the walk the driver makes for the main file, D-236), else the program's root
+  (the driver's fallback: the main file's directory). The prelude is its own tree,
+  and so is any file nothing opened — a derive's generated impl names its subject
+  by construction and is never asked.
+- **A type of the tree** is named by the target's own declaration or by ANY named
+  type among its type arguments or element types, recursively: `impl:List<Pt>:ToString`
+  names `Pt` and stands; `impl:List<int32>:ToString` and `impl:<T>:List<T>:ToString`
+  name nothing of the tree and are refused. A generic parameter and a builtin
+  name nothing.
+- **A trait of the tree** is named by the trait segment's declaration:
+  `impl:bool:Own` stands for a trait `Own` of the tree.
+- **An inherent impl's target** must be the tree's own (`impl:string = { … }` is
+  refused: methods added to a type the writer does not own collide at the call);
+  **a blanket impl** (`impl:<T: B>:T:Trait`) has a parameter for its target, so
+  its trait must be the tree's own.
+- **One report.** A refused impl is `NITPICK-TYPE-099` and nothing else: it stays
+  in the impl table so a call through it finds its method and reports nothing
+  more (D-240), and the coherence and completeness walks skip it — `impl:int32:Ord`
+  is TYPE-099, not the TYPE-013 against the prelude's row it was; `impl:string:Copy`
+  is TYPE-099, not TYPE-087.
+
+| Impl, in a tree declaring `Pt`, `Box<T>`, `Own` | Verdict |
+|---|---|
+| `impl:Pt:ToString`, `impl:<T>:Box<T>:ToString`, `impl:List<Pt>:ToString` | stands — a type of the tree |
+| `impl:bool:Own`, `impl:Ordering:Own`, `impl:<T: Own>:T:Own2` | stands — a trait of the tree |
+| `impl:bool:Ord`, `impl:int32:Ord`, `impl:Ordering:ToString`, `impl:string:Copy` | TYPE-099 — a builtin or the prelude's type, the prelude's trait |
+| `impl:List<int32>:ToString`, `impl:<T>:List<T>:ToString`, `impl:<T: Own>:T:ToString` | TYPE-099 — no type of the tree in the target, the prelude's trait |
+| `impl:string = { … }` | TYPE-099 — an inherent impl on a builtin |
+
+The sentence names each side — "`bool`, a builtin and `Ord`, the prelude's" —
+and the two spellings that stand: your own trait for the type, or the trait for
+a type of your own.
 
 ### 4.2 Object Safety
 

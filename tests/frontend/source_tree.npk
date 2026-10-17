@@ -1,0 +1,111 @@
+// source_tree.npk -- THE MANIFEST TREE A FILE BELONGS TO (D-359, 1.6.1e landing 124): `srcmgr_tree_of` answers
+// the directory of the nearest `nitpick.toml` above the file, the program's root when none is above it, and
+// "<synthetic>" for a file nothing opened -- the one exercise of the per-file walk until a program imports a file
+// from another manifest's tree. Two pid-tagged temporary trees (DEF-137's fixed-width tag), each with a
+// manifest, a third directory without one, written here and removed before the exit.
+mod:source_tree;
+error:Setup;   // the temporary trees could not be made
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/source.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/paths.npk".*;
+use "../../lib/nsys.npk".*;   // sys_pid_tag (DEF-137)
+
+func:mkdir = NIL(string:p) {
+    cstring:c = relay to_cstring(p);
+    discard(sys(83i64, c.ptr, 448i64) ?| 0i64);   // mkdir, 0700
+    pass NIL;
+};
+func:rmdir = NIL(string:p) {
+    cstring:c = relay to_cstring(p);
+    discard(sys(84i64, c.ptr) ?| 0i64);   // rmdir
+    pass NIL;
+};
+func:unlink = NIL(string:p) {
+    cstring:c = relay to_cstring(p);
+    discard(sys(87i64, c.ptr) ?| 0i64);   // unlink
+    pass NIL;
+};
+
+// THE WORK IS FALLIBLE (the temporary files), so it runs in a helper `main` unwraps with the unit's own identity.
+func:run = int32() {
+    string:me = relay sys_pid_tag();
+    string:base = string_concat("/tmp/npk_tree.", me);
+    string:da = raw path_join(base, "a");
+    string:db = raw path_join(base, "b");
+    string:dc = raw path_join(base, "c");
+    relay mkdir(base); relay mkdir(da); relay mkdir(db); relay mkdir(dc);
+    string:ta = raw path_join(da, "nitpick.toml");
+    string:tb = raw path_join(db, "nitpick.toml");
+    cstring:ca = relay to_cstring(ta);
+    cstring:cb = relay to_cstring(tb);
+    Result<NIL>:wa = write_file(ca, "[package]\nname = \"a\"\n");
+    Result<NIL>:wb = write_file(cb, "[package]\nname = \"b\"\n");
+    if (wa.is_error) { fail Setup; }
+    if (wb.is_error) { fail Setup; }
+
+    SourceManager:sm = raw srcmgr_init();
+    drop srcmgr_set_root(@sm, "/", string_concat(base, ""));   // the program's root: the directory above the three
+    int32:fa = raw srcmgr_add(@sm, raw path_join(da, "x.npk"), "mod:x;");
+    int32:fb = raw srcmgr_add(@sm, raw path_join(db, "y.npk"), "mod:y;");
+    int32:fc = raw srcmgr_add(@sm, raw path_join(dc, "z.npk"), "mod:z;");
+    int32:fs = raw srcmgr_add_synthetic(@sm, "<p>", "");
+
+    int32:verdict = 0i32;
+    string:xa = raw srcmgr_tree_of(@sm, fa);
+    string:xb = raw srcmgr_tree_of(@sm, fb);
+    string:xc = raw srcmgr_tree_of(@sm, fc);
+    string:xs = raw srcmgr_tree_of(@sm, fs);
+    string:xa2 = raw srcmgr_tree_of(@sm, fa);
+    string:xo = raw srcmgr_tree_of(@sm, 99i32);
+    if (!(raw string_eq(xa, da)))      { verdict = 1i32; }   // the nearest manifest above the file
+    if (!(raw string_eq(xb, db)))      { if (verdict == 0i32) { verdict = 2i32; } }
+    if (raw string_eq(xa, xb))         { if (verdict == 0i32) { verdict = 3i32; } }   // two manifests, two trees
+    if (!(raw string_eq(xc, base)))    { if (verdict == 0i32) { verdict = 4i32; } }   // no manifest above: the root
+    if (!(raw string_eq(xs, "<synthetic>"))) { if (verdict == 0i32) { verdict = 5i32; } }
+    if (!(raw string_eq(xa2, xa)))     { if (verdict == 0i32) { verdict = 6i32; } }   // asked twice, kept
+    if (xo.len != 0i64)                { if (verdict == 0i32) { verdict = 7i32; } }   // no such file: ""
+
+    relay unlink(ta); relay unlink(tb);
+    relay rmdir(da); relay rmdir(db); relay rmdir(dc); relay rmdir(base);
+    pass verdict;
+};
+
+// THE FRONTEND'S PATH HELPERS LEAVE WILD BLOCKS BEHIND BY DESIGN (the compiler bulk-releases them before its
+// exit), so this unit releases them too, as every frontend unit does (D-151; TYPE-062 wants the `exit` right after).
+func:main = int32(cstring[]:_~argv) {
+    int32:v = run() ?! Setup;
+    wild_release_all();
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (Setup) { exit 90i32; },
+        (ShiftRange)  { exit 3i32; },
+        (IntOverflow) { exit 101i32; },
+        (DeadlineExceeded) { exit 102i32; },
+        (DivByZero) { exit 103i32; },
+        (DivOverflow) { exit 104i32; },
+        (HeapBadRequest) { exit 105i32; },
+        (HeapOom) { exit 106i32; },
+        (OutOfBounds) { exit 107i32; },
+        (Unreachable) { exit 108i32; },
+        (WildLeak) { exit 109i32; },
+        (intern.BoundsId) { exit 110i32; },
+        (intern.ProvenSlice) { exit 111i32; },
+        (source.BoundsIndex) { exit 112i32; },
+        (source.BoundsOffset) { exit 113i32; },
+        (source.FileUnknown) { exit 114i32; },
+        (StackExhausted) { exit 115i32; },
+        (MachineFault) { exit 116i32; },
+        (LimitViolated) { exit 117i32; },
+        (DecreasesViolated) { exit 118i32; },
+        (*) { exit 119i32; }
+    }
+    exit 99i32;
+};

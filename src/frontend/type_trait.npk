@@ -28,6 +28,7 @@ error:BoundsBound;
 error:BoundsImpl;
 
 use "./source_location.npk".*;
+use "./source.npk".*;   // srcmgr_tree_of: the orphan rule (D-359)
 use "./intern.npk".*;
 use "./token_kind.npk".*;
 use "./ast_kind.npk".*;
@@ -55,6 +56,7 @@ pub struct:ImplEntry = {
     int32:trait_id;   // the trait, or 0 for an inherent impl
     int32:decl;       // the `ImplDecl` node index
     bool:blanket;     // `impl:<T: Bound>:Trait` — the target is a parameter
+    bool:orphan;      // refused by the orphan rule (D-359, landing 124): kept for lookup, skipped by coherence and completeness
 
     // THE SCOPE IT WAS COLLECTED IN. Every later question about this impl —
     // whether its methods match the trait's, whether its supertraits are
@@ -67,10 +69,22 @@ pub struct:ImplEntry = {
 
 pub struct:ImplTable = {
     List<ImplEntry>:v;
+    // THE FILES' TREES, FOR THE ORPHAN RULE (D-359, landing 124): the source manager, set by the driver
+    // before collection (`impltable_set_sources`). NULL in a fixture that never sets it -- the frontend
+    // units build an impl table over one file and no manifest -- which asks no orphan question: one file
+    // is one tree. A `wild` handle, as the emitter's context holds its tables (D-355).
+    wild SourceManager->:sm;
 };
 
 pub func:impltable_init = ImplTable() never fails {
-    pass ImplTable{ v: raw list_init::<ImplEntry>(16i64) };
+    pass ImplTable{ v: raw list_init::<ImplEntry>(16i64), sm: NULL };
+};
+
+// A `wild` parameter, as `llctx_set_impls` takes its tables: a plain address stored into a wild slot is
+// BORROW-011 (D-223), while a wild parameter takes a plain address at its call and is no borrow inside.
+pub func:impltable_set_sources = NIL(ImplTable->:t, wild SourceManager->:sm) never fails {
+    t.sm = sm;
+    pass NIL;
 };
 
 // An index into this table is int32 BY DESIGN -- that is what every
@@ -92,9 +106,9 @@ pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) never fails {
 };
 
 func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
-                     bool:blanket, int32:scope) never fails {
+                     bool:blanket, int32:scope, bool:orphan) never fails {
     ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl,
-                             blanket: blanket, scope: scope };
+                             blanket: blanket, orphan: orphan, scope: scope };
     drop list_push(@t.v, e);
     pass NIL;
 };
@@ -178,7 +192,8 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
                 d.span));
             pass NIL;
         }
-        drop impl_push(t, btarget, bt, id.index, true, scope);
+        bool:borph = raw orphan_check(t, r, d, 0i32, bt);
+        drop impl_push(t, btarget, bt, id.index, true, scope, borph);
         pass NIL;
     }
 
@@ -234,7 +249,8 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     if (raw type_is_invalid(r.types, target)) { pass NIL; }
 
     if (!has_trait) {
-        drop impl_push(t, target, 0i32, id.index, false, scope);
+        bool:iorph = raw orphan_check(t, r, d, target, 0i32);
+        drop impl_push(t, target, 0i32, id.index, false, scope, iorph);
         pass NIL;
     }
 
@@ -252,8 +268,105 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), move(m2), d.span));
         pass NIL;
     }
-    drop impl_push(t, target, trait_id, id.index, false, scope);
+    bool:torph = raw orphan_check(t, r, d, target, trait_id);
+    drop impl_push(t, target, trait_id, id.index, false, scope, torph);
     pass NIL;
+};
+
+// --- the orphan rule (D-359, TRAITS_REFERENCE 4.1b) ---------------------------------------
+
+// AN IMPL NAMES AT LEAST ONE TYPE OR TRAIT DECLARED IN ITS OWN MANIFEST'S TREE (D-359, landing
+// 124; S-37). Asked once the target and the trait have resolved (a refused one has had its
+// sentence, D-240); true -- and reported, NITPICK-TYPE-099 at the impl -- when neither names this
+// tree. The tree is the file's (`srcmgr_tree_of`); an impl in a synthetic file (the prelude's,
+// a derive's) is exempt: the prelude is its own tree, and a derive's impl names its subject by
+// construction. The entry is kept (a call through it finds its method and reports nothing more),
+// marked for the walks that skip it. No source manager (a unit's fixture): no question.
+func:orphan_check = bool(ImplTable->:t, TypeResolver->:r, DeclNode:d,
+                         int32:target, int32:trait_id) never fails {
+    if (t.sm == NULL) { pass false; }
+    SourceManager->:sm = t.sm =>! SourceManager->;
+    string:mine = raw srcmgr_tree_of(sm, d.span.file);
+    if (raw string_eq(mine, "<synthetic>")) { pass false; }
+    if (trait_id != 0i32) {
+        int32:tdecl = raw type_decl_of(r.types, trait_id);
+        if (tdecl != 0i32) {
+            if (raw string_eq(raw tree_of_decl(sm, r, tdecl), mine)) { pass false; }
+        }
+    }
+    if (target != 0i32) {
+        if (raw type_names_tree(sm, r, target, mine, 64i32)) { pass false; }
+    }
+    drop orphan_report(sm, r, d, target, trait_id, mine);
+    pass true;
+};
+
+// THE TREE A DECLARATION WAS WRITTEN IN: its node's file, through the source manager.
+func:tree_of_decl = string(SourceManager->:sm, TypeResolver->:r, int32:decl) never fails {
+    DeclNode:dn = raw ast_decl(r.ast, DeclId{ index: decl });
+    pass (raw srcmgr_tree_of(sm, dn.span.file));
+};
+
+// DOES THIS TYPE NAME A DECLARATION OF THE TREE? A struct, an enum or a trait by its declaration,
+// and an instance through its arguments too (`List<Pt>` names `Pt`); an assoc through its base; a
+// pointer, an array, a slice, an Optional and the other one-operand kinds through their operand. A
+// generic parameter, a builtin, a `dyn` and a function type name nothing. `type_mentions_params_of`'s
+// walk with the question changed, bounded the same way.
+func:type_names_tree = bool(SourceManager->:sm, TypeResolver->:r, int32:id, string:mine,
+                            int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (id == 0i32) { pass false; }
+    int32:k = raw type_kind(r.types, id);
+    if (k == (raw TY_PARAM())) { pass false; }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM())) || (k == (raw TY_TRAIT()))) {
+        int32:dk = raw type_decl_of(r.types, id);
+        if (dk != 0i32) {
+            if (raw string_eq(raw tree_of_decl(sm, r, dk), mine)) { pass true; }
+        }
+        int32:n = raw type_args_count_of(r.types, id);
+        int32:astart = raw type_args_start_of(r.types, id);
+        for (int32:i in 0i32...n) {
+            if (raw type_names_tree(sm, r, raw ast_id_at(r.ast, astart, i), mine, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (k == (raw TY_ASSOC())) {
+        pass (raw type_names_tree(sm, r, raw type_assoc_base(r.types, id), mine, fuel - 1i32));
+    }
+    if (k == (raw TY_DYN())) { pass false; }
+    if (raw type_is_func(r.types, id)) { pass false; }
+    if (raw type_kind_has_elem(k)) {
+        pass (raw type_names_tree(sm, r, raw type_elem(r.types, id), mine, fuel - 1i32));
+    }
+    pass false;
+};
+
+// THE SENTENCE (TYPE-099): the target and the trait displayed, each said to be a builtin, the
+// prelude's or another tree's, and the two spellings that stand.
+func:orphan_report = NIL(SourceManager->:sm, TypeResolver->:r, DeclNode:d, int32:target,
+                         int32:trait_id, string:mine) never fails {
+    string:tgt = "a parameter as its target";
+    if (target != 0i32) { tgt = raw orphan_whose(sm, r, target); }
+    string:tpart = "";
+    if (trait_id != 0i32) { tpart = string_concat(" and ", raw orphan_whose(sm, r, trait_id)); }
+    string:m1 = string_concat("an impl names at least one type or trait declared in its own manifest's tree (D-359): this one names ", tgt);
+    string:m2 = string_concat(m1, tpart);
+    string:nt = ", neither this tree's -- two libraries";
+    if (trait_id == 0i32) { nt = ", not this tree's -- two libraries"; }
+    string:m3 = string_concat(m2, nt);
+    m3 = string_concat(m3, " could each write it and collide in the program that imports both (TYPE-013); implement your own trait for the type, or the trait for a type of your own (a type argument counts: `impl:List<Pt>:ToString` names `Pt`)");
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_ORPHAN_IMPL(), move(m3), d.span));
+    pass NIL;
+};
+
+// "`bool`, a builtin" / "`Ord`, the prelude's" / "`Regex`, another tree's" -- what a name is to this tree.
+func:orphan_whose = string(SourceManager->:sm, TypeResolver->:r, int32:id) never fails {
+    string:w1 = string_concat("`", raw type_display(r.types, r.interns, id));
+    int32:dk = raw type_decl_of(r.types, id);
+    if (dk == 0i32) { pass (string_concat(w1, "`, a builtin")); }
+    string:theirs = raw tree_of_decl(sm, r, dk);
+    if (raw string_eq(theirs, "<synthetic>")) { pass (string_concat(w1, "`, the prelude's")); }
+    pass (string_concat(w1, "`, another tree's"));
 };
 
 // --- coherence (TRAITS_REFERENCE 4.1) ----------------------------------------------------
@@ -281,11 +394,11 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:a = raw impl_at(t, i);
-        if (a.trait_id != 0i32) {
+        if ((a.trait_id != 0i32) && (!a.orphan)) {
             int32:j = i + 1i32;
             while ((j => int64) < t.v.count) decreases t.v.count - (j => int64) {
                 ImplEntry:b = raw impl_at(t, j);
-                if (b.trait_id == a.trait_id) {
+                if ((b.trait_id == a.trait_id) && (!b.orphan)) {
                     if (a.blanket) {
                         if (b.blanket) { drop blanket_overlap(r, a, b); }
                     } else {
@@ -1198,7 +1311,7 @@ pub func:check_impls_complete = NIL(ImplTable->:t, BoundTable->:bounds, TypeReso
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
         ImplEntry:e = raw impl_at(t, i);
-        if (e.trait_id != 0i32) {
+        if ((e.trait_id != 0i32) && (!e.orphan)) {
             drop check_one_impl_complete(r, e, e.scope);
             drop check_copy_impl(t, bounds, r, e);
         }

@@ -475,6 +475,8 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // module declares — so every table has to be complete for the whole program
     // before any question is asked of it. Collecting and checking module by module
     // would make the answer depend on the order the graph happened to load in.
+    // THE ORPHAN RULE READS THE FILES' TREES (D-359, landing 124): the source manager, before the first impl.
+    drop impltable_set_sources(@f.im, @f.g.sm);
     int32:m = 0i32;
     while (m < nmods) decreases nmods - m {
         ModuleEntry:e3 = raw graph_at(@f.g, m);

@@ -699,3 +699,13 @@ pub func:TYPE_WILD_INTO_PLAIN = string() never fails { pass "NITPICK-TYPE-097"; 
 // `comptime` METHOD at its declaration (the folder evaluates a named call and never a method call, so
 // such a method could be called nowhere).
 pub func:TYPE_COMPTIME_ONLY = string() never fails { pass "NITPICK-TYPE-098"; };
+
+// AN IMPL NAMES AT LEAST ONE TYPE OR TRAIT DECLARED IN ITS OWN MANIFEST'S TREE (D-359, 1.6.1e landing 124;
+// S-37). `impl:bool:Ord` names a builtin and the prelude's trait, neither this tree's: two libraries could
+// each write it and collide under coherence (TYPE-013) in the program that imports both. A file's tree is
+// the directory of the nearest `nitpick.toml` above it (D-236's walk), else the program's root; an impl in
+// a synthetic file -- the prelude's, a derive's -- is exempt. A type argument or an element counts
+// (`impl:List<Pt>:ToString` names `Pt`); a generic parameter and a builtin do not; an inherent impl's target
+// must be the tree's own. Reported once at the impl; the entry stays in the table so a call through it
+// reports nothing more (D-240), and the coherence and completeness walks skip it.
+pub func:TYPE_ORPHAN_IMPL = string() never fails { pass "NITPICK-TYPE-099"; };

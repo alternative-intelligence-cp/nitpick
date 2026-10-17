@@ -23,6 +23,8 @@ pub struct:SourceFile = {
     string:path;      // as given on the command line or resolved from a `use` -- what the file was OPENED by
     string:text;      // the whole file; the lexer works over these bytes
     string:shown;     // what diagnostics and the site table PRINT (D-236): relative to the manifest root, or as given
+    string:tree;      // the manifest tree the file belongs to (D-359): "" until asked, then the directory of the nearest
+                      // nitpick.toml above it (or the root); "<synthetic>" for a file nothing opened
 };
 
 // Storage is `List<SourceFile>` (1.4.7). It was hand-written because subset 1
@@ -86,7 +88,7 @@ func:srcmgr_id = int32(int64:n) never fails {
 // Returns the file index, which is what a Span carries.
 pub func:srcmgr_add = int32(SourceManager->:m, move string:path, move string:text) never fails {
     string:shown = raw srcmgr_render(m, path);
-    SourceFile:f = SourceFile{ path: move(path), text: move(text), shown: move(shown) };
+    SourceFile:f = SourceFile{ path: move(path), text: move(text), shown: move(shown), tree: "" };
     int32:index = raw srcmgr_id(m.v.count);
     drop list_push(@m.v, move(f));
     pass index;
@@ -99,7 +101,7 @@ pub func:srcmgr_add = int32(SourceManager->:m, move string:path, move string:tex
 pub func:srcmgr_add_synthetic = int32(SourceManager->:m, move string:path,
                                       move string:text) never fails {
     string:shown = string_concat(path, "");
-    SourceFile:f = SourceFile{ path: move(path), text: move(text), shown: move(shown) };
+    SourceFile:f = SourceFile{ path: move(path), text: move(text), shown: move(shown), tree: "<synthetic>" };
     int32:index = raw srcmgr_id(m.v.count);
     drop list_push(@m.v, move(f));
     pass index;
@@ -160,6 +162,51 @@ pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
         fail FileUnknown;
     }
     pass (string_from_bytes(m.v[file => int64].shown.ptr, m.v[file => int64].shown.len));
+};
+
+// THE MANIFEST TREE A FILE BELONGS TO (D-359, 1.6.1e landing 124): the directory
+// holding the nearest `nitpick.toml` above the file -- the walk `front_set_root`
+// makes for the main file (D-236), made once per file here and kept -- or the
+// program's root when no manifest is above it (a manifest-less project is one
+// tree, and `m.root` is then the main file's directory, the driver's own
+// fallback), or "<synthetic>" for a file nothing opened (the prelude's, a
+// derive's). The orphan rule compares two files' trees by this string; the
+// prelude is its own tree by it. An OWNED copy.
+pub func:srcmgr_tree_of = string(SourceManager->:m, int32:file) never fails {
+    if (file < 0i32) { pass ""; }
+    if ((file => int64) >= m.v.count) { pass ""; }
+    if (m.v[file => int64].tree.len > 0i64) { pass (string_concat(m.v[file => int64].tree, "")); }
+    string:p = string_concat(m.v[file => int64].path, "");
+    string:abs = "";
+    if (raw path_is_absolute(p)) {
+        abs = raw path_normalise(p);
+    } else {
+        if (m.cwd.len == 0i64) {
+            abs = raw path_normalise(p);
+        } else {
+            abs = raw path_normalise(raw path_join(m.cwd, p));
+        }
+    }
+    string:probe = raw path_dirname(abs);
+    string:found = "";
+    bool:looking = true;
+    while (looking) decreases probe.len {
+        Result<cstring>:cc = to_cstring(raw path_join(probe, "nitpick.toml"));
+        if (!cc.is_error) {
+            if (path_exists(cc.value)) {
+                found = string_concat(probe, "");
+                looking = false;
+            }
+        }
+        if (looking) {
+            if (raw string_eq(probe, "/")) { looking = false; }
+            if (probe.len == 0i64) { looking = false; }
+            probe = raw path_dirname(probe);
+        }
+    }
+    if (found.len == 0i64) { found = string_concat(m.root, ""); }
+    m.v[file => int64].tree = string_concat(found, "");
+    pass found;
 };
 
 // THE RESOLVED PATH: what the file was opened by, and what a `use` inside it

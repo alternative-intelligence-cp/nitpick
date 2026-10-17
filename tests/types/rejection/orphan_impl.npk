@@ -1,0 +1,74 @@
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 33:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 34:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 35:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 36:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 37:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 38:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 39:1
+// expect-error: NITPICK-TYPE-099
+// expect-error-at: 40:1
+// (header generated to a fixed point by .internal/handoff_34/tools/header_from_check.py)
+mod:orphan_impl;
+
+// D-359 (landing 124): AN IMPL NAMES AT LEAST ONE TYPE OR TRAIT DECLARED IN ITS OWN MANIFEST'S TREE. An
+// impl whose target names no type of this tree (a builtin, the prelude's, a generic parameter) and whose
+// trait is not this tree's is NITPICK-TYPE-099 at the impl, once -- two libraries could each write it and
+// collide under coherence in the program importing both (S-37's `impl:bool:Ord`, admitted until this
+// landing). A type ARGUMENT counts (`List<Pt>` names `Pt`); an inherent impl's target must be the tree's
+// own; a blanket impl's trait must be. A refused impl is the one report: no TYPE-013 against the prelude's
+// row, no TYPE-087 for `Copy` on an owning type, no completeness question.
+
+trait:Own = { func:own = int32(Self:self) never fails; };
+trait:Own2 = { func:own2 = int32(Self:self) never fails; };
+struct:Pt = { int32:x; };
+struct:Box<T> = { T:v; };
+
+impl:bool:Ord = { func:cmp = Ordering(bool:self, bool:other) { pass Ordering.Equal; }; };          // a builtin, the prelude's trait
+impl:int32:Ord = { func:cmp = Ordering(int32:self, int32:other) { pass Ordering.Equal; }; };       // a pair the prelude covers: TYPE-099 alone
+impl:List<int32>:ToString = { func:to_string = string(List<int32>:self) { pass "l"; }; };          // a prelude type over a builtin argument
+impl:<T>:List<T>:ToString = { func:to_string = string(List<T>:self) { pass "f"; }; };              // a family impl over a prelude type
+impl:<T: Own>:T:ToString = { func:to_string = string(T:self) { pass "b"; }; };                     // a blanket impl of a prelude trait
+impl:string = { func:twice = string(string:self) never fails { pass "s"; }; };                     // an inherent impl on a builtin
+impl:string:Copy = { };                                                                            // TYPE-099 alone, not TYPE-087
+impl:Ordering:ToString = { func:to_string = string(Ordering:self) { pass "o"; }; };                // the prelude's type and trait
+
+// CONTROLS: each names a type or a trait of this tree, and carries no code.
+impl:bool:Own = { func:own = int32(bool:self) never fails { pass 1i32; }; };                       // this tree's trait on a builtin
+impl:Pt:ToString = { func:to_string = string(Pt:self) { pass "p"; }; };                            // the prelude's trait on this tree's type
+impl:List<Pt>:ToString = { func:to_string = string(List<Pt>:self) { pass "lp"; }; };               // a type argument counts
+impl:<T>:Box<T>:ToString = { func:to_string = string(Box<T>:self) { pass "bx"; }; };               // this tree's family
+impl:<T: Own>:T:Own2 = { func:own2 = int32(T:self) never fails { pass 2i32; }; };                   // a blanket impl of this tree's trait
+impl:Ordering:Own = { func:own = int32(Ordering:self) never fails { pass 3i32; }; };               // the prelude's type, this tree's trait
+mod:inner = {
+    pub struct:In = { int32:k; };
+    impl:In:ToString = { func:to_string = string(In:self) { pass "in"; }; };                       // inside an inline module
+};
+
+func:main = int32(cstring[]:argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
