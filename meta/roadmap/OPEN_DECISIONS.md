@@ -4043,7 +4043,18 @@ defect declares a `DEF-` in §2f.
 > had moved). `template_owner.npk`'s first road (3 + 3 where the parent trapped) and its tenth; `tests/cost/
 > template_literal.toml` holds a thousand splice-free templates to a thousand plain literals' peak.
 
-> **DEF-242 — OPEN (registered 2026-10-08 by `nitpick-compiler_32`, reading landing 97's emission comparison; low
+> **DEF-242 — FIXED 2026-10-17 (landing 126, `nitpick-compiler_39`): `emit_all` trims the items FIRST, `irw_renumber_sites`
+> (ir_writer.npk) renumbers the kept text's chain sites densely from 1 in ascending registration order and keeps the old ids in
+> `site_keep`, and `emit_site_tables` writes `@npk.sitep.K`, `@npk.site.lines` and `@npk.site.paths` from that list alone -- the
+> two call shapes `call void @npk_chain_reset(i32 N)` / `@npk_chain_push(i32 N)` are the whole surface of a site reference
+> (every writer goes through `irw_line`; a writer nobody anticipated is caught by the belt, never misnumbered in silence); both
+> runners hold every emitted module to the table being dense against its chain calls (`check_site_table_dense`,
+> `ir_site_table_dense`, three planted self-check cases each); a floor-only program's table 307 -> 14 rows (59,224 -> 25,862 bytes of text), the compiler's own 4,364 -> 4,099;
+> `tests/backend/site_table.npk` (the writer: a registered site nobody references is dropped, the next is renumbered, a `declare`
+> and a string constant spelling the call are untouched), `tests/backend/programs/site_table_rows.npk` (a prelude raise's origin
+> read back through `site_path`/`site_line`, and the whole table walked: the kept prelude bodies' rows (`list_init<int32>` and `list_pop<int32>`), the file's own, nothing else,
+> under forty rows where every earlier compiler wrote some three hundred; exit 42 at both legs). WAS: OPEN (registered 2026-10-08
+> by `nitpick-compiler_32`, reading landing 97's emission comparison; low
 > priority, S-130's neighbourhood: a cost and a churn, not a wrong answer). EVERY EMISSION CARRIES THE PRELUDE'S WHOLE
 > ERROR-ORIGIN SITE TABLE, AND A PRELUDE EDIT MOVES EVERY PROGRAM'S TEXT.** -- D-179's site table (`@npk.sitep.N`,
 > `@npk.site.paths`, `@npk.site.lines`; read by `npk_chain_reset`/`npk_chain_push` to name a trap's origin) numbers the
@@ -4385,6 +4396,17 @@ defect declares a `DEF-` in §2f.
 > compiler and landing 122's before the fix). `module_level_context` restores the constructor's state at every
 > non-function declaration (`check_decl`'s head); the recursion analysis reads a recorded call's caller 0 as none, the
 > table's own initial value, so a module initialiser's call records no edge from the previous function either.
+
+> **DEF-263 — FIXED 2026-10-17 (landing 126, `nitpick-compiler_39`; found by the landing's own program test,
+> `site_table_rows.npk`, the first program of the tree to bind the answer). `site_path` HANDED OUT AN OWNED STRING OVER THE
+> TABLE'S CONSTANT.** The `npk_site_path` lookup `emit_site_tables` writes answered `{ ptr, len, len }` -- its third word,
+> the string's `cap`, was the LENGTH, which is the ownership bit set (D-183: `cap == 0` is a body the value does not own) --
+> so `string:origin = site_path(chain_site(0i32));` in a `failsafe` freed the `@npk.sitep.N` constant at the scope's exit:
+> `npk.drop` -> `npk_dalloc` -> `npk_heap_bad` -> `HeapBadRequest` inside `failsafe`, the re-entry exit 70 at both legs, on
+> every compiler since D-179 landed the table (1.1.6). `origin_chain.npk`, the one program reading the chain, renders ids
+> through `site_line` alone, and no library or application calls `site_path` (census at this landing), so the fault had no
+> witness until the new test bound the answer. The lookup writes `i64 0` as the third word now: the answer is a VIEW of the
+> table's constant, never dropped and never freed; BUILTIN_REFERENCE's row says so.
 
 > **The subcycle 1.6.1d** (PLANNED execution-grade 2026-09-26 by the compiler seat, `meta/roadmap/1.6/1.6.1d.md`;
 > before 1.6.1 step 2; the README row): four landings by severity — step 1 the memory faults (DEF-118, DEF-119,

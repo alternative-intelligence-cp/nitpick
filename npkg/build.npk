@@ -519,6 +519,8 @@ pub async func:emit_and_object = List<string>(Ctx->:c, string:compiler, string:p
     if (!(raw text_eq(compiler, string_from_bytes(c.builder.ptr, c.builder.len)))) {
         List<string>:pt = raw ir_prelude_trimmed(run.x.out, name);
         if (pt.count > 0i64) { pass pt; }
+        List<string>:sd = raw ir_site_table_dense(run.x.out, name);
+        if (sd.count > 0i64) { pass sd; }
         List<string>:hd = raw ir_module_header(run.x.out, name, string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
         if (hd.count > 0i64) { pass hd; }
     }

@@ -96,6 +96,12 @@ pub struct:IrWriter = {
     // discipline is unchanged.
     List<string>:site_paths;
     List<int32>:site_lines;
+    // THE SITES THE EMISSION HOLDS (DEF-242, 1.6.1e landing 126): after the trim,
+    // `irw_renumber_sites` lists the registered ids the KEPT text references, in
+    // ascending registration order, and renumbers the text densely from 1; the
+    // tables are written from this list alone (`emit_site_tables`), so a program
+    // carries its own sites and a prelude edit moves only the programs that reach it.
+    List<int32>:site_keep;
 
     // ITEMS (1.5.2d, D-262 §1): ranges of one module sink the emitter
     // brackets — a non-generic PRELUDE function, a prelude impl's vtable with
@@ -124,6 +130,7 @@ pub func:irw_to_buffer = IrWriter() never fails {
                            stmt_mark: 0i32, alloca_since: 0i32,
                            site_paths: raw list_init::<string>(16i64),
                            site_lines: raw list_init::<int32>(16i64),
+                           site_keep: raw list_init::<int32>(16i64),
                            item_sink: raw list_init::<int32>(64i64),
                            item_start: raw list_init::<int64>(64i64),
                            item_end: raw list_init::<int64>(64i64),
@@ -511,6 +518,157 @@ pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fail
     // (family 5's note). A guarded narrow off the int64 count would have needed
     // a new error identity, and this module declares none.
     pass (i + 1i32);
+};
+
+// --- the sites the emission holds (DEF-242, landing 126) ---------------------------------
+//
+// A STAMP SITE IS REFERENCED BY TWO SHAPES AND NO OTHER: `call void @npk_chain_reset(i32 N)`
+// (an origin) and `call void @npk_chain_push(i32 N)` (a relay), each a line of its own
+// written by `irw_line` (two spaces, the call); the `declare`s carry no number, and a
+// string constant never begins a line with them. After `irw_trim_items` has rebuilt the
+// sinks, this pass reads the kept text for the ids it references, maps them to dense new
+// ids in ascending old-id order -- registration order, which is emission order (D-078) --
+// rewrites the numbers in the text, and leaves the kept old ids in `site_keep` for the
+// tables. A text pass over the two shapes rather than a second enumeration of the thirty-
+// five writers: the two shapes are the whole surface, and the runners' belt holds the
+// tables dense against the calls, so a writer nobody anticipated fails loudly.
+
+// The first digit's position when the line at `p` (its first non-space byte) is a chain
+// call, else -1.
+func:site_call_digits = int64(string:text, int64:p) never fails {
+    int64:q = p;
+    while (q < text.len) decreases text.len - q {
+        if (text.ptr[q] != 32u8) { break; }
+        q = q + 1i64;
+    }
+    string:head = "call void @npk_chain_";
+    if ((q + head.len) > text.len) { pass (0i64 - 1i64); }
+    int64:h = 0i64;
+    while (h < head.len) decreases head.len - h {
+        if (text.ptr[q + h] != head.ptr[h]) { pass (0i64 - 1i64); }
+        h = h + 1i64;
+    }
+    int64:r = q + head.len;
+    string:a = "reset(i32 ";
+    string:b = "push(i32 ";
+    string:tail = "";
+    if ((r + a.len) <= text.len) {
+        bool:ma = true;
+        int64:k = 0i64;
+        while (k < a.len) decreases a.len - k {
+            if (text.ptr[r + k] != a.ptr[k]) { ma = false; break; }
+            k = k + 1i64;
+        }
+        if (ma) { tail = string_concat(a, ""); }
+    }
+    if (tail.len == 0i64) {
+        if ((r + b.len) <= text.len) {
+            bool:mb = true;
+            int64:k2 = 0i64;
+            while (k2 < b.len) decreases b.len - k2 {
+                if (text.ptr[r + k2] != b.ptr[k2]) { mb = false; break; }
+                k2 = k2 + 1i64;
+            }
+            if (mb) { tail = string_concat(b, ""); }
+        }
+    }
+    if (tail.len == 0i64) { pass (0i64 - 1i64); }
+    int64:d = r + tail.len;
+    if (d >= text.len) { pass (0i64 - 1i64); }
+    if ((text.ptr[d] < 48u8) || (text.ptr[d] > 57u8)) { pass (0i64 - 1i64); }
+    pass d;
+};
+
+// The decimal at `d`, and where it ends (the byte after the last digit).
+func:site_digits_value = int64(string:text, int64:d, int64->:end_out) never fails {
+    int64:v = 0i64;
+    int64:q = d;
+    while (q < text.len) decreases text.len - q {
+        uint8:c = text.ptr[q];
+        if ((c < 48u8) || (c > 57u8)) { break; }
+        if (v > 100000000i64) { break; }   // no site id is this large; a bound, not a parse
+        v = (v * 10i64) + ((c - 48u8) => int64);
+        q = q + 1i64;
+    }
+    <-end_out = q;
+    pass v;
+};
+
+// Pass one over a sink's text: mark every referenced id (1 in `used[id]`).
+func:site_mark_used = NIL(Sink->:s, List<int32>->:used) never fails {
+    string:text = raw sink_view(s);
+    int64:p = 0i64;
+    while (p < text.len) decreases text.len - p {
+        int64:d = raw site_call_digits(text, p);
+        if (d >= 0i64) {
+            int64:e = 0i64;
+            int64:id = raw site_digits_value(text, d, @e);
+            if ((id >= 1i64) && (id < (<-used).count)) { (<-used)[id] = 1i32; }
+        }
+        // to the next line
+        while (p < text.len) decreases text.len - p {
+            if (text.ptr[p] == 10u8) { break; }
+            p = p + 1i64;
+        }
+        p = p + 1i64;
+    }
+    pass NIL;
+};
+
+// Pass two: the same text with every referenced id replaced by its new number.
+func:site_rewrite = NIL(Sink->:s, List<int32>->:newid) never fails {
+    Sink:fresh = raw sink_to_buffer(raw sink_length(s));
+    string:text = raw sink_view(s);
+    int64:copied = 0i64;
+    int64:p = 0i64;
+    while (p < text.len) decreases text.len - p {
+        int64:d = raw site_call_digits(text, p);
+        if (d >= 0i64) {
+            int64:e = 0i64;
+            int64:id = raw site_digits_value(text, d, @e);
+            if ((id >= 1i64) && (id < (<-newid).count)) {
+                drop trim_copy(@fresh, s, copied, d);
+                drop sink_write(@fresh, int_to_string((<-newid)[id] => int64));
+                copied = e;
+            }
+        }
+        while (p < text.len) decreases text.len - p {
+            if (text.ptr[p] == 10u8) { break; }
+            p = p + 1i64;
+        }
+        p = p + 1i64;
+    }
+    drop trim_copy(@fresh, s, copied, text.len);
+    drop sink_reset(s);
+    drop sink_append(s, @fresh);
+    pass NIL;
+};
+
+pub func:irw_renumber_sites = NIL(IrWriter->:w) never fails {
+    int64:n = w.site_lines.count;
+    // `used[id]`, id from 1; slot 0 is the runtime's reserved site and never referenced
+    List<int32>:used = raw list_init::<int32>(n + 1i64);
+    int64:z = 0i64;
+    while (z <= n) decreases (n + 1i64) - z {
+        drop list_push(@used, 0i32);
+        z = z + 1i64;
+    }
+    drop site_mark_used(@w.out, @used);
+    drop site_mark_used(@w.tail, @used);
+    drop list_clear(@w.site_keep);
+    int32:next = 1i32;
+    int64:oid = 1i64;   // `old` is the verification keyword (D-243)
+    while (oid <= n) decreases (n + 1i64) - oid {
+        if (used[oid] != 0i32) {
+            used[oid] = next;
+            drop list_push(@w.site_keep, oid =>! int32);
+            next = next + 1i32;
+        }
+        oid = oid + 1i64;
+    }
+    drop site_rewrite(@w.out, @used);
+    drop site_rewrite(@w.tail, @used);
+    pass NIL;
 };
 
 // --- writing --------------------------------------------------------------------

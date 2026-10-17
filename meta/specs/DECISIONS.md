@@ -12982,6 +12982,21 @@ finally get names.
 > bare blocks now, never through a conditional, a loop or an arm -- a bare block runs unconditionally, so every trap reaches
 > the pick, which is all this decision asks. D-352 is the user's ratification, with his words.
 
+> **Note (2026-10-17, 1.6.1e landing 126 — DEF-242):** the per-program site table holds the sites of the functions the
+> emission holds, and no other. From 1.1.6 until this landing every emission carried every prelude site -- the tables were
+> written before D-262's trim, so they were roots the trim kept whole: some 290 `prelude.npk` rows in a program that calls
+> none of those bodies -- numbered before the program's own, so a prelude edit moved every program's text (landing 97: 561
+> of 561). The writer renumbers the kept text's chain sites densely from 1 after the trim (`irw_renumber_sites`, in ascending
+> registration order, D-078) and writes `@npk.sitep.K`, `@npk.site.lines` and `@npk.site.paths` from that list alone; the
+> ids are the emission's own constants, so a per-program numbering changes nothing at run time -- a trap's origin prints
+> the same path and line, and `site_path`/`site_line` answer as before. Both runners hold every emitted module to it
+> (`check_site_table_dense`, `ir_site_table_dense`): the ids its `npk_chain_reset`/`npk_chain_push` calls name are exactly
+> the table's rows. A floor-only program's table: 307 rows -> 14; the compiler's own: 4,364 -> 4,099. Found by the landing's own program test and fixed with it, DEF-263: the
+> `site_path` lookup handed out a string whose `cap` was its LENGTH -- an owned claim over the table's constant -- so a program
+> that bound the answer to a local freed `.rodata` at the scope's exit (`HeapBadRequest` inside `failsafe`, the re-entry exit
+> 70) on every compiler since this decision landed at 1.1.6; nothing in the tree had bound it. The answer is a view (`cap` 0,
+> D-183's ownership bit) now.
+
 ## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED; the sanctioned-crossing list grew a fifth member at 1.4.4 (user-ratified)**
 
 C-8, settled at 1.1.8's close, on evidence that did not exist when the
@@ -18185,6 +18200,11 @@ manifest drops exactly the rows of the prelude functions it does not reference.
 > load and every program's emission is byte-identical, the index answering
 > exactly what the scan answered. Found by measuring 1.5.8c step 3's cost, as
 > §1's rule asks.
+
+> **Note (2026-10-17, 1.6.1e landing 126 — DEF-242):** the trim kept ITEMS, and D-179's site table was a root outside every
+> item, written before the trim ran -- so it kept every prelude site whether the emission held the function or not, the one
+> part of a program's text that still grew with the prelude (a floor-only program carried 307 rows for its own 14). The table follows the trim now: written after it, over the sites the kept text references alone, and
+> both runners hold every emitted module to that (`check_site_table_dense`, `ir_site_table_dense`).
 
 ## D-263 — the prelude's `List<T>` stores through the managed heap's untracked entry; D-151 keeps counting every `wild` block — **SETTLED (user decision, 2026-09-05: "i am fine with your recommendation"; OPEN_DECISIONS S-39; lands at 1.5.2e step 1)**
 

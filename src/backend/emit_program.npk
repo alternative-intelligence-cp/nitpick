@@ -1383,10 +1383,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // registers them, exactly as the generic-instance loop above grows.
     drop emit_drop_bodies(w, @c, tr, @g.ast, @g.tab, diags);
     drop strtab_write_all(@st, w);
-    // The site tables LAST (D-179, 1.1.6): every stamp site has registered by
-    // now — emitting them beside the declares wrote a one-row sentinel table
-    // before any function had spoken.
-    drop emit_site_tables(w);
+    // The site tables come AFTER THE TRIM now (DEF-242, landing 126): see below.
     // THE VECTOR INTRINSICS THE BODIES USED (D-284, 1.5.4e step 0), noted by
     // the vector emitter and declared here, after them.
     for (int64:vdi in 0i64...c.vec_decls.count) {
@@ -1400,6 +1397,13 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // last, over the whole module's text, so every reference — a call, a
     // vtable slot, a function value, a drop body, a spawn — has been written.
     drop irw_trim_items(w);
+    // THE SITE TABLES LAST OF ALL (D-179, 1.1.6; DEF-242, landing 126): every stamp
+    // site has registered, the trim has settled which bodies the module holds, and
+    // the kept text's ids are renumbered densely -- the tables hold the module's own
+    // sites and no other (until this landing they held every prelude site, so a
+    // prelude edit moved every program's text).
+    drop irw_renumber_sites(w);
+    drop emit_site_tables(w);
     pass ((raw diaglist_count(diags)) == before);
 };
 
@@ -2246,7 +2250,10 @@ func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
 // site 0 and anything out of range. Emitted per program, deterministic in
 // registration order (D-078).
 func:emit_site_tables = NIL(IrWriter->:w) never fails {
-    int32:n = (w.site_lines.count) =>! int32;   // bounded by irw_site's own `i + 1i32`
+    // THE KEPT SITES ALONE (DEF-242, landing 126): `irw_renumber_sites` has listed the
+    // registered ids the trimmed text references, in registration order, and renumbered
+    // the text; row k of each table is the kept id `site_keep[k]`'s path and line.
+    int32:n = (w.site_keep.count) =>! int32;   // bounded by irw_site's own `i + 1i32`
     // THE THREE TABLES AS THEIR PIECES (1.5.1b step 3, DEF-1 axis 2): a
     // site's path bytes, its line, and its header pair go into the module
     // stream where they land. This built `enc`, `ls` and `ps` by appending
@@ -2255,7 +2262,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     // the byte constants first
     int32:i = 0i32;
     while (i < n) decreases n - i {
-        string->:sp2 = @w.site_paths[i => int64];   // no claim: `w` is handed on while it lives (D-286)
+        string->:sp2 = @w.site_paths[(w.site_keep[i => int64] => int64) - 1i64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, "@npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, " = internal constant [");
@@ -2278,7 +2285,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     i = 0i32;
     while (i < n) decreases n - i {
         drop irw_write(w, ", i32 ");
-        drop irw_write(w, int_to_string(w.site_lines[i => int64] => int64));
+        drop irw_write(w, int_to_string(w.site_lines[(w.site_keep[i => int64] => int64) - 1i64] => int64));
         i = i + 1i32;
     }
     drop irw_write(w, "]");
@@ -2289,7 +2296,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_write(w, " x { ptr, i64 }] [{ ptr, i64 } { ptr null, i64 0 }");
     i = 0i32;
     while (i < n) decreases n - i {
-        string->:sp3 = @w.site_paths[i => int64];   // no claim: `w` is handed on while it lives (D-286)
+        string->:sp3 = @w.site_paths[(w.site_keep[i => int64] => int64) - 1i64];   // no claim: `w` is handed on while it lives (D-286)
         drop irw_write(w, ", { ptr, i64 } { ptr @npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, ", i64 ");
@@ -2327,7 +2334,11 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "  %lv = load i64, ptr %lp");
     drop irw_raw(w, "  %r0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %hv, 0");
     drop irw_raw(w, "  %r1 = insertvalue { ptr, i64, i64 } %r0, i64 %lv, 1");
-    drop irw_raw(w, "  %r2 = insertvalue { ptr, i64, i64 } %r1, i64 %lv, 2");
+    // `cap` 0: the answer is a VIEW of the table's constant, never dropped and never freed (D-183's ownership
+    // bit). It read `%lv` -- an owned claim over a constant -- from 1.1.6 until 1.6.1e landing 126, so a program
+    // that bound `site_path(...)` to a local freed `.rodata` at the scope's exit (DEF-263: `HeapBadRequest`
+    // inside `failsafe`, exit 70; found by `site_table_rows.npk`, the first program to bind the answer).
+    drop irw_raw(w, "  %r2 = insertvalue { ptr, i64, i64 } %r1, i64 0, 2");
     drop irw_raw(w, "  ret { ptr, i64, i64 } %r2");
     drop irw_raw(w, "out:");
     drop irw_raw(w, "  ret { ptr, i64, i64 } zeroinitializer");

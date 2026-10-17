@@ -232,6 +232,17 @@ snapshot's emissions, which carry the trim only after a refresh. A row of
 `nitpick.obligations` counts for the elision cross-check only when the
 emission holds its function.
 
+The error-origin site table follows the trim (DEF-242, 1.6.1e landing 126):
+written after it, over the sites the kept text references alone, numbered
+densely from 1 in registration order -- so a program's table holds the sites
+of the functions its emission holds and a prelude edit no longer moves every
+program's text. Both runners hold every module the compiler under test emits
+to it: the ids its `npk_chain_reset`/`npk_chain_push` calls name are exactly
+the rows of its `@npk.site.lines` table (`check_site_table_dense`,
+`ir_site_table_dense`; the self-checks plant a table with a spare row and a
+call past the table). A spare row is the renumbering not running; an id past
+the table is a writer that spells a chain call another way.
+
 > **The scan's reader is `npkg`'s own** (`npkg/elf.npk`, 1.4.8): the object's
 > ELF64 symbol table read directly — every `SHN_UNDEF` entry with a name —
 > and held to the allowlist derived from `runtime/npkrt.ll`'s own EXPORTS — its

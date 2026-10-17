@@ -2487,6 +2487,44 @@ def check_prelude_trimmed(ll_text, name):
             "brackets" % (name, len(loose), loose[0])]
 
 
+_SITE_LINES_RE = re.compile(r'^@npk\.site\.lines = internal constant \[(\d+) x i32\]', re.M)
+_SITE_CALL_RE = re.compile(r'^\s*call void @npk_chain_(?:reset|push)\(i32 (\d+)\)', re.M)
+
+
+def check_site_table_dense(ll_text, name):
+    """The site table holds exactly the sites the module's text references
+    (DEF-242, 1.6.1e landing 126).
+
+    The writer renumbers the kept text's chain sites densely from 1 after the
+    trim and writes the tables from that list alone, so the set of ids in
+    `call void @npk_chain_reset(i32 N)` / `@npk_chain_push(i32 N)` lines must
+    be exactly {1..n} where n+1 is the line table's length (row 0 is the
+    runtime's reserved site). A row nobody references is the renumbering not
+    running, or a writer of a chain call that spells the call another way; an
+    id past the table is a reference the renumbering missed. A module with no
+    table and no call passes (the floor, the shim).
+    """
+    m = _SITE_LINES_RE.search(ll_text)
+    ids = set(int(x) for x in _SITE_CALL_RE.findall(ll_text))
+    if m is None:
+        if not ids:
+            return []
+        return ["%s: %d chain-site id(s) referenced and no site table emitted (DEF-242)" % (name, len(ids))]
+    n = int(m.group(1)) - 1
+    want = set(range(1, n + 1))
+    if ids == want:
+        return []
+    spare = sorted(want - ids)
+    past = sorted(ids - want)
+    parts = []
+    if spare:
+        parts.append("%d table row(s) referenced by no chain call (first: %d)" % (len(spare), spare[0]))
+    if past:
+        parts.append("%d chain call(s) naming no table row (first: %d)" % (len(past), past[0]))
+    return ["%s: the site table is not dense against the module's chain calls (DEF-242, landing 126): %s -- "
+            "the renumbering did not run, or a writer spells a chain call another way" % (name, "; ".join(parts))]
+
+
 def check_no_undef(ll_text, name):
     """No `undef` in any IR this project holds or emits (D-218.10, 1.5.0).
 
@@ -2611,6 +2649,9 @@ def emit_and_object(binary, path, name, base, allow):
     pt = check_prelude_trimmed(ir_text, name)
     if pt:
         return pt
+    sd = check_site_table_dense(ir_text, name)
+    if sd:
+        return sd
     hd = check_module_header(ir_text, name)
     if hd:
         return hd
@@ -3872,6 +3913,9 @@ def check_verify_program(path, name, exp, tmp):
     if fails:
         return fails
     fails = check_prelude_trimmed(plain.decode("utf-8", "replace"), name)
+    if fails:
+        return fails
+    fails = check_site_table_dense(plain.decode("utf-8", "replace"), name)
     if fails:
         return fails
     fails = check_module_header(plain.decode("utf-8", "replace"), name)
@@ -5679,6 +5723,9 @@ def main(argv):
                 # itself, and the count it left is the stage's number.
                 s1_text = stage1_ir.decode("utf-8", "replace")
                 pt = check_prelude_trimmed(s1_text, "the compiler's own IR")
+                sd = check_site_table_dense(s1_text, "the compiler's own IR")
+                if sd:
+                    failures.append(sd[0])
                 if pt:
                     failures.append(pt[0])
                 else:

@@ -1256,6 +1256,8 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     if (nu.count > 0i64) { pass nu; }
     List<string>:ptr1 = raw ir_prelude_trimmed(ptext.value, name);
     if (ptr1.count > 0i64) { pass ptr1; }
+    List<string>:sd1 = raw ir_site_table_dense(ptext.value, name);
+    if (sd1.count > 0i64) { pass sd1; }
     List<string>:hdr1 = raw ir_module_header(ptext.value, name, string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
     if (hdr1.count > 0i64) { pass hdr1; }
     Result<List<VRow>>:rows_r = read_rows(obl);
@@ -1405,6 +1407,8 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     if (nu2.count > 0i64) { pass nu2; }
     List<string>:ptr2 = raw ir_prelude_trimmed(vir.value, string_concat(name, " (verified)"));
     if (ptr2.count > 0i64) { pass ptr2; }
+    List<string>:sd2 = raw ir_site_table_dense(vir.value, string_concat(name, " (verified)"));
+    if (sd2.count > 0i64) { pass sd2; }
     List<string>:hdr2 = raw ir_module_header(vir.value, string_concat(name, " (verified)"), string_from_bytes(c.m.triple.ptr, c.m.triple.len), string_from_bytes(c.m.datalayout.ptr, c.m.datalayout.len));
     if (hdr2.count > 0i64) { pass hdr2; }
     List<string>:xc = raw elided_ir_checks(rows, vir.value, name);

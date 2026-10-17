@@ -1388,6 +1388,29 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     drop strlist_push(@report, raw case_line("prelude-trimmed-control", okp2, "a prelude define the module calls must pass"));
     if (!okp2) { drop strlist_push(@report, string_concat("      the trim belt rejected a referenced define: ", raw strlist_view(p2, 0i64))); }
 
+    // THE SITE-TABLE BELT (DEF-242, 1.6.1e landing 126): the table's rows are
+    // exactly the chain-call ids the module's text names -- a spare row (the
+    // renumbering not run) and a call past the table (a reference it missed)
+    // both fail; a dense pair passes. The harness's three cases, byte for byte.
+    string:site_dense = "@npk.site.lines = internal constant [3 x i32] [i32 0, i32 7, i32 9]\ndefine i32 @main() {\nentry:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_chain_push(i32 2)\n  ret i32 0\n}\n";
+    string:site_spare = "@npk.site.lines = internal constant [3 x i32] [i32 0, i32 7, i32 9]\ndefine i32 @main() {\nentry:\n  call void @npk_chain_reset(i32 1)\n  ret i32 0\n}\n";
+    string:site_past = "@npk.site.lines = internal constant [3 x i32] [i32 0, i32 7, i32 9]\ndefine i32 @main() {\nentry:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_chain_reset(i32 2)\n  call void @npk_chain_push(i32 3)\n  ret i32 0\n}\n";
+    List<string>:st1 = raw ir_site_table_dense(site_dense, "site-table-dense-control");
+    bool:okst1 = (st1.count == 0i64);
+    if (!okst1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("site-table-dense-control", okst1, "a table of exactly the referenced sites must pass"));
+    if (!okst1) { drop strlist_push(@report, string_concat("      the site-table belt rejected a dense table: ", raw strlist_view(st1, 0i64))); }
+    List<string>:st2 = raw ir_site_table_dense(site_spare, "site-table-spare-row");
+    bool:okst2 = (st2.count > 0i64);
+    if (!okst2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("site-table-spare-row", okst2, "a table row no chain call references must fail"));
+    if (!okst2) { drop strlist_push(@report, "      the site-table belt accepted it; it should not have"); }
+    List<string>:st3 = raw ir_site_table_dense(site_past, "site-table-past-end");
+    bool:okst3 = (st3.count > 0i64);
+    if (!okst3) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("site-table-past-end", okst3, "a chain call naming no table row must fail"));
+    if (!okst3) { drop strlist_push(@report, "      the site-table belt accepted it; it should not have"); }
+
     // THE BYPASS BELT COUNTS THROUGH THE QUOTES (D-252, 1.5.2 step 4): a
     // `.body` symbol is a D-156 name, quoted, and the code-only text the
     // other counts run over blanks every quoted span -- the belt's first full

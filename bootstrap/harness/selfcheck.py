@@ -1301,6 +1301,36 @@ def main():
             else:
                 print("      check_prelude_trimmed rejected a referenced define: %s" % fails[0])
 
+    # THE SITE-TABLE BELT (DEF-242, 1.6.1e landing 126): the table's rows are
+    # exactly the chain-call ids the module's text names. A spare row (the
+    # renumbering not run) and a call past the table (a reference it missed)
+    # both fail; a dense pair passes, and a module with neither passes.
+    site_dense = ('@npk.site.lines = internal constant [3 x i32] [i32 0, i32 7, i32 9]\n'
+                  'define i32 @main() {\nentry:\n  call void @npk_chain_reset(i32 1)\n'
+                  '  call void @npk_chain_push(i32 2)\n  ret i32 0\n}\n')
+    site_spare = ('@npk.site.lines = internal constant [3 x i32] [i32 0, i32 7, i32 9]\n'
+                  'define i32 @main() {\nentry:\n  call void @npk_chain_reset(i32 1)\n  ret i32 0\n}\n')
+    site_past = ('@npk.site.lines = internal constant [3 x i32] [i32 0, i32 7, i32 9]\n'
+                 'define i32 @main() {\nentry:\n  call void @npk_chain_reset(i32 1)\n'
+                 '  call void @npk_chain_reset(i32 2)\n  call void @npk_chain_push(i32 3)\n  ret i32 0\n}\n')
+    for name, text, must_fail, why in (
+            ("site-table-dense-control", site_dense, False,
+             "a table of exactly the referenced sites must pass"),
+            ("site-table-spare-row", site_spare, True,
+             "a table row no chain call references must fail"),
+            ("site-table-past-end", site_past, True,
+             "a chain call naming no table row must fail")):
+        fails = harness.check_site_table_dense(text, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      check_site_table_dense accepted it; it should not have")
+            else:
+                print("      check_site_table_dense rejected a dense table: %s" % fails[0])
+
     # THE BYPASS BELT COUNTS THROUGH THE QUOTES (D-252, 1.5.2 step 4): a
     # `.body` symbol is a D-156 name, quoted, and the code-only text the other
     # counts run over blanks every quoted span -- the belt's first full run

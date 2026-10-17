@@ -1,0 +1,82 @@
+// site_table.npk -- THE SITE TABLE HOLDS THE SITES THE EMISSION HOLDS (DEF-242, 1.6.1e landing 126). After the trim,
+// `irw_renumber_sites` lists the registered ids the kept text references, in ascending registration order, renumbers
+// them densely from 1 in the text, and leaves the kept old ids in `site_keep` for the tables. Pinned at the writer's
+// level: three registered sites, a text referencing the first and the third (an origin and a relay), nothing
+// referencing the second -- the second is dropped, the third becomes 2, a `declare` without a number and a string
+// constant that spells the call are untouched.
+mod:site_table;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/backend/ir/ir_writer.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    IrWriter:w = raw irw_to_buffer();
+    int32:s1 = raw irw_site(@w, "a.npk", 10i32);
+    int32:s2 = raw irw_site(@w, "a.npk", 20i32);
+    int32:s3 = raw irw_site(@w, "b.npk", 5i32);
+    if (s1 != 1i32) { exit 1i32; }
+    if (s2 != 2i32) { exit 2i32; }
+    if (s3 != 3i32) { exit 3i32; }
+    if ((raw irw_site(@w, "a.npk", 10i32)) != 1i32) { exit 4i32; }   // deduplicated: the same row, the same id
+
+    drop irw_raw(@w, "declare void @npk_chain_reset(i32)");
+    drop irw_raw(@w, "@npk.str.1 = internal constant [34 x i8] c\"  call void @npk_chain_reset(i32 2)\"");
+    drop irw_raw(@w, "define void @f() {");
+    drop irw_raw(@w, "entry:");
+    drop irw_line(@w, "call void @npk_chain_reset(i32 3)");
+    drop irw_line(@w, "call void @npk_chain_push(i32 1)");
+    drop irw_line(@w, "call void @npk_chain_reset(i32 3)");
+    drop irw_raw(@w, "  ret void");
+    drop irw_raw(@w, "}");
+
+    drop irw_renumber_sites(@w);
+
+    if (w.site_keep.count != 2i64) { exit 10i32; }
+    if (w.site_keep[0i64] != 1i32) { exit 11i32; }
+    if (w.site_keep[1i64] != 3i32) { exit 12i32; }
+    string:t = raw irw_text(@w);
+    string:want = string_concat(
+        "declare void @npk_chain_reset(i32)\n@npk.str.1 = internal constant [34 x i8] c\"  call void @npk_chain_reset(i32 2)\"\n",
+        "define void @f() {\nentry:\n  call void @npk_chain_reset(i32 2)\n  call void @npk_chain_push(i32 1)\n  call void @npk_chain_reset(i32 2)\n  ret void\n}\n");
+    if (!(raw string_eq(t, want))) { exit 13i32; }
+
+    // A writer with no reference keeps no site: the tables would be the reserved row alone.
+    IrWriter:w2 = raw irw_to_buffer();
+    discard(raw irw_site(@w2, "c.npk", 1i32));
+    drop irw_raw(@w2, "define void @g() {");
+    drop irw_raw(@w2, "entry:");
+    drop irw_raw(@w2, "  ret void");
+    drop irw_raw(@w2, "}");
+    drop irw_renumber_sites(@w2);
+    if (w2.site_keep.count != 0i64) { exit 20i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (diagnostics.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsIndex) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (ShiftRange)  { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (BoundsId) { exit 1i32; },
+        (DeadlineExceeded) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (ProvenSlice) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
+        (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

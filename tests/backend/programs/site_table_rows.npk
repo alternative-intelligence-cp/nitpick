@@ -1,0 +1,60 @@
+// expect-exit: 42
+//
+// THE SITE TABLE HOLDS THE SITES THE EMISSION HOLDS (DEF-242, 1.6.1e landing 126). D-179's error-origin table
+// (`@npk.sitep.N`, `@npk.site.lines`, `@npk.site.paths`, read by `site_path`/`site_line`) numbered the prelude's
+// sites first and the program's after them, and every emission carried every prelude site -- some 290 rows for
+// bodies the program never calls -- until landing 126 renumbered the kept text's sites densely after D-262's trim
+// and wrote the tables from that set alone. This program raises ONCE through the prelude (`list_pop` on an empty
+// list, `!!! OutOfBounds` in prelude.npk) and reads the whole table back in `failsafe`: the origin is the prelude's
+// site, the table holds the prelude bodies the program REACHES (`list_init<int32>` and `list_pop<int32>`: the raise
+// and their guards -- four rows at this writing, never the prelude's hundreds) beside this file's own rows and nothing else, and it
+// is short -- under forty rows where every compiler before landing 126 wrote some three hundred. A `site_path`
+// past the table is the empty string (the lookup's bound), which is how the walk ends. Binding `site_path`'s
+// answer to a local is the test's second question (DEF-263, found by this program's first run): until landing 126
+// the answer claimed to OWN the table's constant (`cap == len`), and the scope's exit freed `.rodata` --
+// `HeapBadRequest` inside `failsafe`, exit 70 at both legs on every earlier compiler.
+mod:site_table_rows;
+
+func:main = int32(cstring[]:_~argv) {
+    List<int32>:l = raw list_init::<int32>(1i64);
+    int32:v = raw list_pop(@l);     // the prelude's raise: `!!! OutOfBounds` inside `list_pop`
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds) {
+            if (chain_depth() != 1i32) { exit 20i32; }
+            string:origin = site_path(chain_site(0i32));
+            if (!(string_equals(origin, "prelude.npk"))) { exit 21i32; }
+            if (site_line(chain_site(0i32)) <= 0i32) { exit 22i32; }
+            // the whole table: the kept prelude bodies' rows, this file's rows, nothing else, and short
+            int32:prelude_rows = 0i32;
+            int32:own_rows = 0i32;
+            int32:i = 1i32;
+            while (i < 1000i32) decreases 1000i32 - i {
+                string:p = site_path(i);
+                if (p.len == 0i64) { break; }
+                if (string_equals(p, "prelude.npk")) { prelude_rows = prelude_rows + 1i32; }
+                else if (string_equals(p, "tests/backend/programs/site_table_rows.npk")) { own_rows = own_rows + 1i32; }
+                else { exit 23i32; }
+                i = i + 1i32;
+            }
+            if ((prelude_rows < 1i32) || (prelude_rows > 8i32)) { exit 24i32; }   // the kept bodies' sites, not the prelude's
+            if (own_rows < 1i32) { exit 25i32; }
+            if (i >= 40i32) { exit 26i32; }   // the table before landing 126: some 300 rows
+            exit 42i32;
+        },
+        (IntOverflow)    { exit 51i32; },
+        (Unreachable)    { exit 51i32; },
+        (HeapOom)        { exit 52i32; },
+        (HeapBadRequest) { exit 53i32; },
+        (WildLeak)       { exit 54i32; },
+        (StackExhausted) { exit 55i32; },
+        (MachineFault)   { exit 55i32; },
+        (LimitViolated)  { exit 56i32; },
+        (DecreasesViolated) { exit 55i32; },
+        (*)              { exit 55i32; }
+    }
+    exit 9i32;
+};

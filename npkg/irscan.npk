@@ -176,6 +176,151 @@ pub func:ir_prelude_trimmed = List<string>(string:ir, string:name) never fails {
     pass fl;
 };
 
+// `s` holds `p` at offset `at`.
+func:bytes_at = bool(string:s, int64:at, string:p) never fails {
+    if ((at + p.len) > s.len) { pass false; }
+    for (int64:k in 0i64...p.len) {
+        if (s.ptr[at + k] != p.ptr[k]) { pass false; }
+    }
+    pass true;
+};
+
+// The decimal at `at` (its first nine digits: no site id is longer, and the
+// cap is what keeps the read from trapping on an absurd text), and where it
+// ends, through `end_out`; -1 and `at` when no digit stands there.
+func:digits_at = int64(string:s, int64:at, int64->:end_out) never fails {
+    int64:v = 0i64;
+    int64:e = at;
+    while (e < s.len) decreases s.len - e {
+        uint8:g = s.ptr[e];
+        if ((g < 48u8) || (g > 57u8)) { break; }
+        if (v < 100000000i64) { v = (v * 10i64) + ((g - 48u8) => int64); }
+        e = e + 1i64;
+    }
+    <-end_out = e;
+    if (e == at) { pass (0i64 - 1i64); }
+    pass v;
+};
+
+// A chain-call line's site id -- `call void @npk_chain_reset(i32 N)` or
+// `call void @npk_chain_push(i32 N)` after any indentation, the `)` right
+// after the digits (the harness's regex) -- or -1 for any other line.
+func:site_call_id = int64(string:line) never fails {
+    int64:q = 0i64;
+    while (q < line.len) decreases line.len - q {
+        uint8:c = line.ptr[q];
+        if ((c != 32u8) && (c != 9u8)) { break; }
+        q = q + 1i64;
+    }
+    string:a = "call void @npk_chain_reset(i32 ";
+    string:b = "call void @npk_chain_push(i32 ";
+    int64:d = 0i64 - 1i64;
+    if (raw bytes_at(line, q, a)) { d = q + a.len; }
+    if ((d < 0i64) && (raw bytes_at(line, q, b))) { d = q + b.len; }
+    if (d < 0i64) { pass (0i64 - 1i64); }
+    int64:e = 0i64;
+    int64:v = raw digits_at(line, d, @e);
+    if (v < 0i64) { pass (0i64 - 1i64); }
+    if ((e >= line.len) || (line.ptr[e] != 41u8)) { pass (0i64 - 1i64); }   // `)`
+    pass v;
+};
+
+// How many distinct values a list holds (the no-table report's count; the
+// list is short there).
+func:distinct_count = int64(List<int32>:l) never fails {
+    int64:n = 0i64;
+    for (int64:i in 0i64...l.count) {
+        bool:seen = false;
+        for (int64:j in 0i64...i) {
+            if (l[j] == l[i]) { seen = true; break; }
+        }
+        if (!seen) { n = n + 1i64; }
+    }
+    pass n;
+};
+
+// THE SITE TABLE HOLDS EXACTLY THE SITES THE MODULE'S TEXT REFERENCES (DEF-242,
+// 1.6.1e landing 126) -- the harness's `check_site_table_dense`, byte for byte.
+// The writer renumbers the kept text's chain sites densely from 1 after the
+// trim and writes the tables from that list alone, so the set of ids in the
+// module's `call void @npk_chain_reset(i32 N)` / `@npk_chain_push(i32 N)` lines
+// must be exactly {1..n} where n+1 is the lines table's length (row 0 is the
+// runtime's reserved site). A row nobody references is the renumbering not
+// running, or a writer of a chain call that spells the call another way; an id
+// past the table is a reference the renumbering missed. A module with no table
+// and no call passes (the floor, the shim). Asked of what the compiler under
+// test emits and never of the snapshot's emissions (the 1.5.2d rule).
+pub func:ir_site_table_dense = List<string>(string:ir, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(ir);
+    string:head = "@npk.site.lines = internal constant [";
+    int64:rows = 0i64 - 1i64;
+    List<int32>:ids = raw list_init::<int32>(16i64);
+    for (int64:i in 0i64...lines.count) {
+        string:line = raw strlist_view(lines, i);
+        if (raw text_starts_with(line, head)) {
+            int64:e = 0i64;
+            int64:v = raw digits_at(line, head.len, @e);
+            if ((v >= 0i64) && (raw bytes_at(line, e, " x i32]"))) { rows = v; }
+            continue;
+        }
+        int64:id = raw site_call_id(line);
+        if (id >= 0i64) { drop list_push(@ids, id =>! int32); }
+    }
+    if (rows < 0i64) {
+        if (ids.count == 0i64) { pass fl; }
+        string:m0 = string_concat(name, ": ");
+        m0 = string_concat(m0, int_to_string(raw distinct_count(ids)));
+        m0 = string_concat(m0, " chain-site id(s) referenced and no site table emitted (DEF-242)");
+        drop list_push(@fl, move(m0));
+        pass fl;
+    }
+    int64:n = rows - 1i64;
+    List<int32>:seen = raw list_init::<int32>(rows + 1i64);
+    for (int64:k in 0i64..n) { drop list_push(@seen, 0i32); }
+    List<int32>:past = raw list_init::<int32>(4i64);   // the distinct ids past the table
+    for (int64:j in 0i64...ids.count) {
+        int64:id = ids[j] => int64;
+        if ((id >= 1i64) && (id <= n)) { seen[id] = 1i32; continue; }
+        bool:dup = false;
+        for (int64:q in 0i64...past.count) {
+            if (past[q] == ids[j]) { dup = true; break; }
+        }
+        if (!dup) { drop list_push(@past, ids[j]); }
+    }
+    int64:spare = 0i64;
+    int64:spare_first = 0i64;
+    for (int64:k2 in 1i64..n) {
+        if (seen[k2] == 0i32) {
+            if (spare == 0i64) { spare_first = k2; }
+            spare = spare + 1i64;
+        }
+    }
+    if ((spare == 0i64) && (past.count == 0i64)) { pass fl; }
+    int64:past_first = 0i64;
+    for (int64:q2 in 0i64...past.count) {
+        int64:pv = past[q2] => int64;
+        if ((q2 == 0i64) || (pv < past_first)) { past_first = pv; }
+    }
+    string:m = string_concat(name, ": the site table is not dense against the module's chain calls (DEF-242, landing 126): ");
+    if (spare > 0i64) {
+        m = string_concat(m, int_to_string(spare));
+        m = string_concat(m, " table row(s) referenced by no chain call (first: ");
+        m = string_concat(m, int_to_string(spare_first));
+        m = string_concat(m, ")");
+    }
+    if (past.count > 0i64) {
+        if (spare > 0i64) { m = string_concat(m, "; "); }
+        m = string_concat(m, int_to_string(past.count));
+        m = string_concat(m, " chain call(s) naming no table row (first: ");
+        m = string_concat(m, int_to_string(past_first));
+        m = string_concat(m, ")");
+    }
+    m = string_concat(m, " -- the renumbering did not run, or a writer spells a chain call another way");
+    drop list_push(@fl, move(m));
+    pass fl;
+};
+
 // EVERY MODULE STATES THE PINNED LAYOUT AND TRIPLE, ONCE EACH, IN THAT ORDER
 // (E-8, D-322 (5); 1.6.1 step 1) -- the harness's `check_module_header`, byte
 // for byte: the emitter's two header lines, and the floor's and the explorer
