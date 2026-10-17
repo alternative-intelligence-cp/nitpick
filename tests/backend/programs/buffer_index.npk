@@ -1,0 +1,88 @@
+// A `buffer` IS INDEXED AND RANGED LIKE A SLICE OF BYTES (D-341, landing 128):
+// `b[i]` is the checked `uint8` place -- readable, writable, claimable,
+// bounds-checked against `len` with the slice's guard -- and `b[lo...hi]` is
+// the checked `uint8[]` view of bytes `lo…hi-1`, borrowing the buffer and
+// frozen like any view (D-249, D-325). The safe spellings beside `.ptr` and
+// `#ptr_add` (TYPE_REFERENCE §23), which stay. Exit 0 at both legs; every
+// compiler before landing 128 refuses the file ("`buffer` cannot be indexed").
+mod:buffer_index;
+
+func:sum_view = int64(fixed uint8[]:v) never fails {
+    int64:s = 0i64;
+    for (int64:i in 0i64...v.len) { s = s + (v[i] => int64); }
+    pass s;
+};
+
+// A buffer behind a pointer is indexed as `(<-b)[i]` (TYPE-082: `b[i]` would
+// index the pointer).
+func:fill = NIL(buffer->:b, uint8:x) never fails {
+    for (int64:i in 0i64...(<-b).len) { (<-b)[i] = x; }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:b = buffer_new(16i64);
+    // 1. the byte place: written and read back; the raw read sees the same byte
+    b[0i64] = 7u8;
+    b[15i64] = 9u8;
+    if (b[0i64] != 7u8)                          { exit 10i32; }
+    if (b[3i64] != 0u8)                          { exit 11i32; }
+    if (b[15i64] != 9u8)                         { exit 12i32; }
+    if (b.ptr[15i64] != 9u8)                     { exit 13i32; }
+    // 2. a compound write, and a write through a pointer-reached buffer
+    b[3i64] += 5u8;
+    if (b[3i64] != 5u8)                          { exit 14i32; }
+    drop fill(@b, 2u8);
+    if (b[0i64] != 2u8)                          { exit 15i32; }
+    if (b[15i64] != 2u8)                         { exit 16i32; }
+    // 3. the range view: read, and written through -- the write lands in the buffer
+    {
+        uint8[]:v = b[4i64...8i64];
+        if (v.len != 4i64)                       { exit 17i32; }
+        v[1i64] = 40u8;
+        if (raw sum_view(v) != 46i64)            { exit 18i32; }
+    }
+    if (b[5i64] != 40u8)                         { exit 19i32; }
+    // 4. the inclusive range, and a view of the whole buffer
+    {
+        uint8[]:w = b[0i64..15i64];
+        if (w.len != 16i64)                      { exit 20i32; }
+        if (w[5i64] != 40u8)                     { exit 21i32; }
+    }
+    // 5. the step-1b idiom: a string over a checked prefix
+    {
+        b[0i64] = 104u8;
+        b[1i64] = 105u8;
+        string:s = string_from_bytes(b[0i64...2i64].ptr, 2i64);
+        if (s.len != 2i64)                       { exit 22i32; }
+        if (s.ptr[1i64] != 105u8)                { exit 22i32; }
+    }
+    // 6. a claim on an element, handed to a writer
+    {
+        uint8->:p = $$m b[7i64];
+        <-p = 77u8;
+    }
+    if (b[7i64] != 77u8)                         { exit 23i32; }
+    // 7. a computed index at the last byte, then the view's own bound
+    int64:last = b.len - 1i64;
+    b[last] = 1u8;
+    if (b[last] != 1u8)                          { exit 24i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)       { exit 94i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (LimitViolated)     { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

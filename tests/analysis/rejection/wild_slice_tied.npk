@@ -1,0 +1,104 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 31:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 39:21
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 47:10
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 56:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 65:15
+// A `#wild_slice` OVER A MANAGED HEADER'S POINTER IS TIED TO ITS OWNER (D-341's
+// belt, landing 128). `#wild_slice<uint8>(x.ptr, n)` is a VIEW of `x`'s bytes --
+// the reference's Views marker on its row, read as `string_from_bytes(x.ptr, n)`'s
+// column is (D-249) -- so `x` is frozen while the view lives (D-325): an
+// assignment over it, a `move` out of it, `@x` handed to a writer are
+// NITPICK-BORROW-015; a view of a LOCAL's bytes cannot leave its frame
+// (NITPICK-BORROW-001 at the `pass`); one taken through a pointer parameter
+// travels up and freezes the CALLER's buffer (the shape nitpick-time's
+// `bytes_view` hands out, and the use-after-free its `bytes_view_lifetime.npk`
+// reads today). The controls carry no code: the view in an inner block that
+// ends before the write, the view through the pointer parameter itself, and a
+// view over a bare `wild` pointer, whose binding is no frame storage.
+mod:wild_slice_tied;
+
+struct:Box = { buffer:body; int64:len; };
+
+// 1. an assignment over the buffer while its view lives: BORROW-015
+func:assign_under_view = uint8() never fails {
+    buffer:x = buffer_new(8i64);
+    uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64);
+    x = buffer_new(16i64);
+    pass v[0i64];
+};
+
+// 2. a `move` out of it: BORROW-015
+func:move_under_view = uint8() never fails {
+    buffer:x = buffer_new(8i64);
+    uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64);
+    buffer:y = move(x);
+    discard(y.len);
+    pass v[0i64];
+};
+
+// 3. a `pass` of such a view out of a LOCAL's frame: BORROW-001
+func:view_of_local = uint8[]() never fails {
+    buffer:b = buffer_new(8i64);
+    pass #wild_slice<uint8>(b.ptr, b.len);
+};
+
+// 4. the view through a pointer parameter travels up: the CALLER's overwrite
+//    under it is BORROW-015 (the callee is a control)
+func:view_through = uint8[](Box->:bx) never fails { pass #wild_slice<uint8>(bx.body.ptr, bx.len); };
+func:caller_writes = uint8() never fails {
+    Box:bx = Box{ body: buffer_new(4i64), len: 4i64 };
+    uint8[]:w = raw view_through(@bx);
+    bx.body = buffer_new(16i64);
+    pass w[0i64];
+};
+
+// 5. `@x` handed to a writer under the view: BORROW-015
+func:grow = NIL(buffer->:p) never fails { (<-p) = buffer_new(32i64); pass NIL; };
+func:writer_under_view = uint8() never fails {
+    buffer:x = buffer_new(8i64);
+    uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64);
+    drop grow(@x);
+    pass v[0i64];
+};
+
+// CONTROLS
+func:inner_block = uint8() never fails {
+    buffer:x = buffer_new(8i64);
+    uint8:k = 0u8;
+    { uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64); k = v[0i64]; }
+    x = buffer_new(16i64);
+    pass (k + x[0i64]);
+};
+func:bare_wild = uint8() never fails {
+    wild uint8->:w = alloc(16i64) =>! wild uint8->;
+    uint8[]:v = #wild_slice<uint8>(w, 16i64);
+    wild uint8->:w2 = alloc(16i64) =>! wild uint8->;
+    uint8:k = v[0i64];
+    w = w2;
+    dalloc(v.ptr =>! wild any->);
+    dalloc(w =>! wild any->);
+    pass k;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)       { exit 94i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (LimitViolated)     { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

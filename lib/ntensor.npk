@@ -11,7 +11,9 @@
 // containers over `tryte`.
 //
 // Element access is `#ptr_add<T>` over the buffer's bytes — the general
-// mechanism (D-187), not a per-width verb family — and every index is
+// mechanism (D-187), not a per-width verb family; the buffer's own checked
+// `b[i]`/`b[lo...hi]` (D-341, landing 128) are BYTE access, which a `T`
+// element at a stride is not — and every index is
 // BOUNDS-CHECKED here, failing with this library's own declared errors:
 // the buffer's body is in-bounds by construction, so the check at the rim
 // is the whole discipline.

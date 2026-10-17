@@ -2,7 +2,8 @@
 //
 // The string's twin: `{ptr, len, cap}`, born zeroed from `buffer_new(n)`
 // with `len == cap == n`, reached through `.ptr` (reads index it; writes go
-// through `#ptr_add` and `<-`), and DROPPED AT SCOPE EXIT by the 1.2
+// through `#ptr_add` and `<-`) and, since D-341 (landing 128), by the checked
+// `b[i]` and `b[lo...hi]`, and DROPPED AT SCOPE EXIT by the 1.2
 // managed regime — the exit-time leak registry proves the reclaim in the
 // same breath as the `exit 0`. `n <= 0` is the EMPTY buffer — null, no
 // cell, nothing to drop — an answer, not an error: `buffer_new` never
@@ -24,6 +25,15 @@ func:main = int32(cstring[]:_~argv) {
     if (b.ptr[0i64] != 7u8)                      { exit 14i32; }
     if (b.ptr[3i64] != 0u8)                      { exit 15i32; }
     if (b.ptr[15i64] != 9u8)                     { exit 16i32; }
+
+    // THE CHECKED SPELLINGS (D-341, landing 128) beside the raw ones: the same
+    // bytes, bounds-checked -- `b[i]` the byte place, `b[lo...hi]` the view.
+    if (b[0i64] != 7u8)                          { exit 23i32; }
+    b[1i64] = 8u8;
+    if (b.ptr[1i64] != 8u8)                      { exit 24i32; }
+    uint8[]:bv = b[0i64...2i64];
+    if (bv.len != 2i64)                          { exit 25i32; }
+    if (bv[1i64] != 8u8)                         { exit 26i32; }
 
     // Wider elements over the same bytes: an int64 lattice.
     buffer:w = buffer_new(64i64);

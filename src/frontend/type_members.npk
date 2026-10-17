@@ -545,7 +545,8 @@ func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never 
 
 // --- indexing --------------------------------------------------------------------------
 
-// `a[i]` on an array, a slice, or a pointer. The BOUNDS CHECK is a runtime
+// `a[i]` on an array, a slice, a pointer, a `List` (D-314) or a `buffer` (D-341,
+// landing 128). The BOUNDS CHECK is a runtime
 // obligation the backend emits; what this decides is the element type and that
 // the index is an integer.
 //
@@ -597,6 +598,16 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
                     pass (raw tt_slice(e.types, rlel));
                 }
             }
+            // A `buffer` RANGES AS A `List` DOES (D-341, landing 128): `b[lo...hi]`
+            // is a `uint8[]` view of bytes `lo…hi-1`, checked `lo <= hi && hi <= len`
+            // by the emitter with the slice's guard and the slice's `bounds` row,
+            // borrowing the buffer (D-249) and freezing it (D-325); a `fixed`
+            // buffer's range is the read-only view (D-348 (ii)).
+            if (bk == (raw TY_BUFFER())) {
+                int32:bel = raw tt_int(e.types, 8i32, false);
+                if (raw place_fixed(e, raw expr_lhs(n), 64i32)) { pass (raw tt_slice_fixed(e.types, bel)); }
+                pass (raw tt_slice(e.types, bel));
+            }
             string:r1 = string_concat("`",
                             raw type_display(e.types, e.interns, base));
             pass (raw te_error(e, raw TYPE_MISMATCH(),
@@ -623,8 +634,8 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
     if (k == (raw TY_POINTER())) {
         // A POINTER TO A VALUE THAT IS ITSELF INDEXED IS NOT INDEXED (1.5.8b
         // step 1b; D-098's rule). `p[i]` on a pointer is "the i-th value in
-        // memory from `p`" -- and where the pointee is an array, a slice or a
-        // `List`, it has a second reading, the pointee's own element, which
+        // memory from `p`" -- and where the pointee is an array, a slice, a
+        // `List` or (D-341, landing 128) a `buffer`, it has a second reading, the pointee's own element, which
         // is almost always the one meant. The pointer reading is refused;
         // the pointee's is spelled `(<-p)[i]` (one level brought back, as
         // D-098 has `pp.x` write `<-`).
@@ -632,6 +643,7 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
         int32:pek = raw type_kind(e.types, pel);
         bool:indexed = (pek == (raw TY_ARRAY()));
         if (pek == (raw TY_SLICE())) { indexed = true; }
+        if (pek == (raw TY_BUFFER())) { indexed = true; }
         if (pek == (raw TY_STRUCT())) {
             TypeResolver:plr = raw etyper_resolver(e);
             if (raw type_is_list(@plr, pel)) { indexed = true; }
@@ -661,6 +673,12 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
         int32:lel = raw list_elem_type(@lr, base);
         if (lel != 0i32) { pass lel; }
     }
+    // A `buffer` IS INDEXED LIKE A SLICE OF BYTES (D-341, landing 128): `b[i]`
+    // is the `uint8` place -- readable, writable, claimable -- bounds-checked
+    // against `len` by the emitter's own lowering with the slice's guard
+    // (`OutOfBounds`) and the slice's `bounds` row. Access at another width
+    // stays `#ptr_add<T>` + `<-` (TYPE_REFERENCE §23).
+    if (k == (raw TY_BUFFER())) { pass (raw tt_int(e.types, 8i32, false)); }
 
     string:m1 = string_concat("`", raw type_display(e.types, e.interns, base));
     string:m2 = string_concat(m1, "` cannot be indexed");

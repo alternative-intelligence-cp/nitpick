@@ -1,15 +1,17 @@
 // expect-error: NITPICK-TYPE-082
-// expect-error-at: 22
+// expect-error-at: 24:57
 // expect-error: NITPICK-TYPE-082
-// expect-error-at: 23
+// expect-error-at: 25:56
 // expect-error: NITPICK-TYPE-082
-// expect-error-at: 24
+// expect-error-at: 26:59
 // expect-error: NITPICK-TYPE-082
-// expect-error-at: 25
+// expect-error-at: 27:57
+// expect-error: NITPICK-TYPE-082
+// expect-error-at: 28:56
 //
 // A POINTER TO A VALUE THAT IS ITSELF INDEXED IS NOT INDEXED (1.5.8b step 1b; D-098
 // applied to `[]`). `p[i]` on a pointer is "the i-th value in memory from `p`",
-// and where the pointee is an array, a slice or a `List` it has a second reading,
+// and where the pointee is an array, a slice, a `List` or a `buffer` (D-341) it has a second reading,
 // the pointee's own element -- almost always the one meant. D-098 auto-
 // dereferences only where there is one reading (`.`), so here the pointer
 // reading is refused and the element is spelled `(<-p)[i]`, one level brought
@@ -23,11 +25,13 @@ func:arrays = int64(int64[4]->:ap) never fails { pass ap[1i64]; };
 func:slices = int32(int32[]->:sp) never fails { pass sp[0i64]; };
 func:lists = int64(List<int64>->:lp) never fails { pass lp[0i64]; };
 func:list_write = NIL(List<int64>->:lp) never fails { lp[0i64] = 3i64; pass NIL; };
+func:buffers = uint8(buffer->:bp) never fails { pass bp[0i64]; };   // D-341, landing 128: a buffer too
 
 // WHAT PASSES: the element brought back, and a scalar pointer's indexing.
-func:fine = int64(int64[4]->:ap, int32[]->:sp, List<int64>->:lp, wild int64->:raw_elems) never fails {
+func:fine = int64(int64[4]->:ap, int32[]->:sp, List<int64>->:lp, buffer->:bp, wild int64->:raw_elems) never fails {
     int64:a = (<-ap)[1i64] + ((<-sp)[0i64] => int64);
     if ((<-lp).count > 0i64) { (<-lp)[0i64] = a; a = a + (<-lp)[0i64]; }
+    (<-bp)[0i64] = 1u8; a = a + ((<-bp)[0i64] => int64);
     pass (a + raw_elems[2i64]);
 };
 

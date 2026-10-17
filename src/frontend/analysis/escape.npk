@@ -3493,10 +3493,22 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
         int32:bgc = raw builtin_generic_count(n);
-        pass (raw escape_call_like(x, id, raw expr_none(),
-                                     (raw expr_list_start(n)) + bgc,
-                                     (raw expr_list_count(n)) - bgc,
-                                     raw expr_none(), d));
+        bool:bra = raw escape_call_like(x, id, raw expr_none(),
+                                         (raw expr_list_start(n)) + bgc,
+                                         (raw expr_list_count(n)) - bgc,
+                                         raw expr_none(), d);
+        // A `#` BUILTIN THAT VIEWS (D-249's column, read off the sigil table
+        // since D-341, landing 128): `#wild_slice<T>(x.ptr, n)` is a view of
+        // what `x.ptr` reaches, and its verdict is the VIEW's -- a frame borrow
+        // rooted at `x`'s storage, so a `pass` of it out of `x`'s frame is rule
+        // 2's refusal; nothing of this frame over a bare `wild` pointer; a
+        // temporary's view reported -- exactly as the bare-builtin arm above
+        // reads `string_from_bytes(x.ptr, n)`. Every other `#` form keeps the
+        // shape verdict (`#ptr_add<T>(p, k)` carries `p`'s borrow through
+        // arithmetic).
+        ExprId:bvp = raw view_place(x, n);
+        if (!(raw expr_is_none(bvp))) { pass (raw view_verdict(x, bvp, n.span)); }
+        pass bra;
     }
 
     // RULE 4'S THIRD CROSSING, NARROWED TO THE SPAWN (D-180).

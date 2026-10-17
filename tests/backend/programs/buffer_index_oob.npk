@@ -1,0 +1,32 @@
+// expect-exit: 94
+//
+// A `buffer`'s ELEMENT IS BOUNDS-CHECKED AGAINST `len` (D-341, landing 128):
+// the index `len` itself -- one past the last byte, computed at run time so
+// nothing folds it -- traps `OutOfBounds` with the slice's guard, one unsigned
+// compare, and `failsafe` answers 94. Before this landing the only byte access
+// was `b.ptr[i]`, an unguarded pointer index.
+mod:buffer_index_oob;
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:b = buffer_new(4i64);
+    int64:k = b.len;
+    b[k] = 1u8;
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)       { exit 94i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (LimitViolated)     { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

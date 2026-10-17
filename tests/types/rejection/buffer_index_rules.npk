@@ -1,0 +1,64 @@
+// expect-error: NITPICK-TYPE-086
+// expect-error-at: 24:5
+// expect-error: NITPICK-TYPE-085
+// expect-error-at: 31:5
+// expect-error: NITPICK-TYPE-082
+// expect-error-at: 36:56
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 41:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 48:11
+// THE RULES AROUND A `buffer`'s CHECKED INDEX AND RANGE (D-341, landing 128):
+// `b[i]` is a `uint8` place and `b[lo...hi]` a `uint8[]` view, so the rules every
+// other indexed container carries reach a buffer the same way: a `fixed` buffer's
+// element is not written (TYPE-086), a lent by-value parameter's element is not
+// written (TYPE-085: a buffer owns), `p[i]` on a `buffer->` indexes the pointer
+// (TYPE-082: write `(<-p)[i]`), a `fixed` buffer's range is the read-only view
+// and converts to no plain `uint8[]` (TYPE-007, D-348 (ii)), and an index is an
+// integer (TYPE-007). The controls carry no code.
+mod:buffer_index_rules;
+
+// 1. a `fixed` buffer's element write: TYPE-086 (the binding's sentence)
+func:fixed_elem = NIL() never fails {
+    fixed buffer:fb = buffer_new(4i64);
+    fb[1i64] = 5u8;
+    pass NIL;
+};
+
+// 2. a lent parameter's element write: TYPE-085 (a buffer owns, so a plain
+//    by-value parameter is lent and read-only)
+func:lent_elem = NIL(buffer:b) never fails {
+    b[0i64] = 1u8;
+    pass NIL;
+};
+
+// 3. `p[i]` on a `buffer->`: TYPE-082
+func:ptr_index = uint8(buffer->:p) never fails { pass p[0i64]; };
+
+// 4. a `fixed` buffer's range into a plain `uint8[]`: TYPE-007
+func:fixed_range = int64() never fails {
+    fixed buffer:fb = buffer_new(4i64);
+    uint8[]:v = fb[0i64...2i64];
+    pass v.len;
+};
+
+// 5. a non-integer index: TYPE-007
+func:bad_index = uint8() never fails {
+    buffer:b = buffer_new(4i64);
+    pass b[true];
+};
+
+// CONTROLS: a plain local's element and range; a `fixed` buffer's range read as
+// the read-only view; a pointer-reached element, read and written.
+func:fine = int64(buffer->:p) never fails {
+    buffer:b = buffer_new(4i64);
+    b[0i64] = 1u8;
+    uint8[]:v = b[0i64...2i64];
+    fixed buffer:fb = buffer_new(4i64);
+    fixed uint8[]:fv = fb[0i64...2i64];
+    (<-p)[0i64] = v[0i64];
+    pass ((fv.len + v.len) + ((<-p)[0i64] => int64));
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

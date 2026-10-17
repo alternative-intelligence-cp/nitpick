@@ -15000,6 +15000,10 @@ did not yet have:
    per-width read/write verb family (a second copy of `#ptr_add` + `<-`),
    `buffer_free` (the managed drop IS the free), `resize`, and
    `buffer_bytes` (no consumer yet — add by decision when one exists).
+   *[2026-10-17, landing 128 (D-341): the consumer came -- nitpick-time's byte
+   sink -- and the borrow of the body landed as the checked range
+   `b[lo...hi]`, beside the checked byte place `b[i]`; the verb family,
+   `buffer_free` and `resize` stay struck.]*
 2. **`#sqrt` joined the `#`-builtins** (flt32/flt64 → `llvm.sqrt.*`, the
    machine instruction): `length` is ratified, and a prelude Newton
    iteration would compute a subtly DIFFERENT number than the instruction
@@ -21313,6 +21317,21 @@ it, the bounds check at each index trusts it, and a rule about the receiving
 binding's regime would not have changed either.
 
 Lands at 1.5.8b step 6c: the row's sentence, OPEN_DECISIONS S-95, this entry.
+
+> *[2026-10-17, landing 128 (D-341) — a dated note.]* Two things moved beside this
+> decision. The twin sentence on `#ptr_add`'s row (BUILTIN_REFERENCE:425, "legal
+> only in `wild` context") is STRUCK for the same reason: no context rule exists
+> or existed, TYPE_REFERENCE §23's own example dereferences the result in a plain
+> body, thirty-one sites of the three trees spell it so, and what IS the manual
+> regime's -- the RESULT, a pointer of wild provenance -- D-361 confines at its
+> destination (landing 121); the fuzz corpus's `bi0419b`, which expected the
+> refusal the sentence promised, is overturned by the correction. And "a
+> `#wild_slice` is tied to nothing" is no longer so: its row carries the Views
+> marker (`**Views: 1**`, read by the generator as the bare rows' column is, D-249),
+> so a `#wild_slice<uint8>(x.ptr, n)` over a managed header is a VIEW of `x` --
+> frozen while it lives (D-325), refused at a `pass` out of `x`'s frame -- which
+> is D-341's belt; the `#wild_` spelling still acknowledges the extent, and the
+> ceiling still bounds the length.
 ## D-316 — An event loop says `unbounded`, with its reason on the line above; a trip budget is not a measure — **SETTLED (user decision, 2026-09-24: "both of your recommendations are fine"; S-96)**
 
 Raised by 1.5.8c's plan at 1.5.8b step 7. D-304 §4 makes every `while` and
@@ -22630,6 +22649,49 @@ recorded here by landing 90.
 
 **What it changes.** A language addition: its own subcycle plan, execution-grade, before it is built (design work);
 nitpick-time's `bytes.npk` (five slices, `bytes_view`) is the consumer.
+
+**Landed (2026-10-17, 1.6.1e landing 128; `nitpick-compiler_40`; worktree `wt/40a`, branch `40-d341` on landing 127's
+commit; planned first at `.internal/handoff_35/D341_PLAN.md` by `nitpick-compiler_39` over `management_0`'s groundwork report of
+2026-10-15, read whole).** Measured first on landing 127's compiler (twelve probes, `wt/40a/.internal/probes/d341/`, each
+beside its `string_from_bytes` twin where one exists): `b[i]` and `b[lo...hi]` TYPE-007 ("cannot be indexed", "cannot be
+ranged"); `p[0i64]` on a `buffer->` accepted; a `fixed buffer`'s bytes written through `.ptr` accepted and run (the plan's
+question (c): DEF-264, registered, not closed here); `#wild_slice<uint8>(x.ptr, n)` then `x = buffer_new(16i64)` compiled
+and read the freed byte (exit 10 at both legs) where the twin is BORROW-015; the slice returned from a local buffer, and a
+caller's overwrite under a slice taken through a pointer parameter, accepted where the twin is BORROW-001 and BORROW-015; a
+`move` out under the slice accepted where the twin is BORROW-015; over a bare `wild` pointer both twins run. THE CHANGE, as
+the decision says: (a) `b[i]` is the checked `uint8` place -- `type_index`'s element arm (type_members.npk) and
+`addr_of_place`'s buffer arm (ir_expr.npk), the `List` arm's shape over the string's trio (`len` from slot 1 and `ptr` from
+slot 0 loaded after the index, the slice's guard, a `getelementptr i8`); (b) `b[lo...hi]` is the checked `uint8[]` view --
+`type_index`'s range arm (`tt_slice`, `tt_slice_fixed` under `place_fixed`) and `emit_range_slice`'s buffer arm (one combined
+guard, one `bounds` row at the range node), borrowing the buffer (D-249) and frozen (D-325); (c) the place rules reach it
+unchanged (TYPE-086 on a `fixed` buffer's element, TYPE-085 on a lent parameter's); (d) `TY_BUFFER` joins the TYPE-082 set;
+(e) the belt: `#wild_slice`'s row carries `**Views: 1**` -- the `#`-sigil table has no Views column, so the marker in the
+Description is read by `gen_tables.py` as `**Caller-length**` is, into the one `builtin_views` -- and `escape_expr`'s
+`#`-builtin arm gives a viewing builtin the view's verdict (`view_place` -> `view_verdict`), as the bare-builtin arm gives
+`string_from_bytes`; so `#wild_slice<uint8>(x.ptr, n)` roots at `x`: BORROW-015 at a write over `x`, a `move` out of it or
+`@x` handed to a writer while the view lives, BORROW-001 at a `pass` of a local's view out of its frame, a view through a
+pointer parameter travelling up to freeze the caller's, nothing frozen over a bare `wild` pointer; (f) BUILTIN_REFERENCE:425's
+"legal only in `wild` context" on `#ptr_add` struck with a dated note (never the code's rule; D-315's twin; D-361 the rule
+about the result; the fuzz corpus's `bi0419b` overturned). Not built: the verb family and `buffer_resize` (struck by D-200,
+standing); the encoder (a buffer's `.len` was a length term already: `tests/verify/bounds_buffer.npk`'s three `bounds` rows
+discharge), REACH (base-blind) and the snapshot untouched. THE TESTS: `tests/backend/programs/buffer_index.npk` (seven
+sections, exit 0 at both legs; refused by every compiler before), `buffer_index_oob.npk` and `buffer_range_oob.npk` (94),
+`tests/types/rejection/buffer_index_rules.npk` (five sites), `tests/analysis/rejection/wild_slice_tied.npk` (five sites,
+three controls), `tests/verify/bounds_buffer.npk`, `index_pointer.npk`'s fifth site, `buffer_basic.npk`'s checked spellings.
+THE SWEEP under landing 127's checker and this one over 5,217 files: 26 sites appeared (eighteen in nitpick-time, every one the belt's: `src/core/bytes.npk`'s `b.body = move(fresh);` at line 140 is BORROW-015 twice -- 140:6 the write to `b.body` under `from`'s view of `b.body.ptr`, 140:19 the `move(fresh)` under `into`'s view of `fresh.ptr` -- reported in the module and again in each of the seven files that reach it (`src/lib.npk`, `tests/conformance/import.npk`, `tests/probe/probe16e_sealed_reads.npk`, `tests/unit/bytes_growth.npk`, `tests/unit/bytes_put_int.npk`, `tests/unit/bytes_view_lifetime.npk`, `tests/unit/vec_at_pod.npk`), and `bytes_view_lifetime.npk`'s own two `bytes_push` calls after `bytes_view` (77:63, 107:63); the five sites of `wild_slice_tied.npk` (BORROW-015 at 31:5, 39:21, 56:7 and 65:15, BORROW-001 at 47:10); `buffer_index_rules.npk`'s TYPE-082 (36:56) and its `fixed` range's TYPE-007 (41:5) -- its TYPE-086 (24:5) and TYPE-085 (31:5) both checkers report, the base beside its "cannot be indexed"; and `index_pointer.npk`'s fifth TYPE-082 (28:56, the `buffer->` case)),
+44 vanished (every one the base's reading of the landing's own files -- its TYPE-007 "cannot be indexed" or "cannot be ranged" at every buffer index and range of `buffer_index.npk` (20), `buffer_basic.npk`'s checked spellings (3), `buffer_index_oob.npk` (1), `buffer_range_oob.npk` (1), `bounds_buffer.npk` (3) and `wild_slice_tied.npk`'s inner-block control (1); `buffer_index_rules.npk`'s 11 (nine such, a second TYPE-007 at the `bool` index, and a TYPE-047 at `pass p[0i64]`, where the base passed the indexed BUFFER by value); and `index_pointer.npk`'s 4 (the new `buffers` case's TYPE-047 and TYPE-007 at 28:49, `fine`'s two at 34:11 and 34:40)); the emission 584 programs, 579 byte-identical, 0 different,
+5 refused by the base alone (the new program tests `buffer_index.npk`, `buffer_index_oob.npk` and `buffer_range_oob.npk`, `buffer_basic.npk` with its checked spellings, and the verify test `bounds_buffer.npk`: each refused by the base at its first buffer index); the libraries' 4,061 programs, 1,888
+byte-identical, 2,167 refused by both, 0 different, 6 newly refused (nitpick-time's six programs that reach `src/core/bytes.npk` -- `tests/conformance/import.npk`, `tests/probe/probe16e_sealed_reads.npk`, `tests/unit/bytes_growth.npk`, `tests/unit/bytes_put_int.npk`, `tests/unit/bytes_view_lifetime.npk`, `tests/unit/vec_at_pod.npk` -- every one at the module's line 140, and `bytes_view_lifetime.npk` at its own 77:63 and 107:63 besides; no other library or application program moves (nitpick-regex, nitpick-parse, nitpick-sockets, nitpick-tui, the applications and the fuzz corpus: 0 -- `bi0419b` compiles under both compilers as it always did, its claim overturned by the correction)), 0
+refused by the base alone (none). THE CONSUMER: nitpick-time's `bytes.npk` moves at its `b.body =
+move(fresh);` (140) -- BORROW-015 twice, the write under `from`'s view of `b.body.ptr` and the move under `into`'s view of
+`fresh.ptr`: the copy and its two views take a block that ends before the overwrite, D-341's own words -- and its
+`bytes_view_lifetime.npk` at the two `bytes_push` after `bytes_view` (77:63, 107:63), the use-after-free the belt exists
+for; `bytes_push`'s and `bytes_extend`'s views stand (their writes reach the view and a sibling field), `bytes_view` stands
+(a view through a pointer parameter travels up). The manifest: 7,259 obligations (3,522 discharged, 2,800
+open, 0 budget, 932 unencoded, 5 checker), 6,957 -> 6,957 rows, 6,775 shared, ZERO
+verdicts moved, ZERO discharged counts fell; no row added, moved or removed -- the (symbol, kind, verdict) multisets of the two manifests are EQUAL; the 182 rows not shared are re-keyed, an id move read on all 36 functions' texts against landing 127's own (35 byte-identical with ids blanked; `escape_expr`, the one edited function with rows, differing by its edit's four declarations alone, its rows the same kind for kind and verdict for verdict). A language addition (two spellings), a refusal added in three
+shapes, one reference sentence struck; no emission moves for a program that compiles on both; no computed answer; no floor
+byte; no snapshot refresh.
 
 ## D-342 — AN ENUM VARIANT'S VALUE IS A BARE NON-NEGATIVE `int32` LITERAL, NO TWO VARIANTS SHARE A TAG, AND AN ENUM VALUES EVERY VARIANT OR NONE — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-122)**
 

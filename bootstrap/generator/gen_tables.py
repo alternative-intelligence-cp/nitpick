@@ -1315,18 +1315,40 @@ pub func:is_keyword = bool(string:text) {
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")
+    # THE `#`-SIGIL TABLE, split off here for two readers: the Views table just
+    # below (a sigil row's `**Views: N**` marker, D-341, landing 128) and the
+    # `#`-builtin lists further down (`is_hash_builtin`, `builtin_caller_len`,
+    # `builtin_returns_wild`). Scraped from the "Macro | Return | Description"
+    # table ALONE: the section opens with a table of syntactic FORMS --
+    # `#name<T>(...)` versus `#[name]` -- and reading that one too made `name` a
+    # builtin.
+    br = open(os.path.join(ROOT, "meta", "specs", "BUILTIN_REFERENCE.md"),
+              encoding="utf-8").read()
+    br = "\n".join(re.findall(
+        r"<!-- builtins:begin -->(.*?)<!-- builtins:end -->", br, re.S))
+    hsec = br.split("| Macro | Return | Description |", 1)
     # THE VIEWS COLUMN (1.5.1b step 2, D-249). The escape analysis treats a call
     # whose builtin views an argument as `@` of that argument; the index is the
-    # reference's, never a name list here.
+    # reference's, never a name list here. A `#`-sigil row has no Views column
+    # (its three cells are Macro, Return, Description): it says `**Views: N**`
+    # in its Description, read here as `**Caller-length**` is (D-341, landing
+    # 128: `#wild_slice` views the bytes its pointer names).
     bl.append("")
-    bl.append("// Which argument a bare-name builtin's result VIEWS (D-249, 1.5.1b step 2)")
-    bl.append("// -- the reference's Views column, generated: 0 for none, else the 1-based")
-    bl.append("// index of the argument whose storage the result aliases. The escape")
-    bl.append("// analysis treats such a call as `@` written at that argument.")
+    bl.append("// Which argument a builtin's result VIEWS (D-249, 1.5.1b step 2) -- a")
+    bl.append("// bare-name row's Views column, a `#`-sigil row's `**Views: N**` marker")
+    bl.append("// (D-341, landing 128) -- generated: 0 for none, else the 1-based index")
+    bl.append("// of the argument whose storage the result aliases. The escape analysis")
+    bl.append("// treats such a call as `@` written at that argument.")
     bl.append("pub func:builtin_views = int32(string:name) {")
     for n in names:
         if rows[n].views:
             bl.append('    if (raw string_eq(name, "%s")) { pass %di32; }' % (n, rows[n].views))
+    if len(hsec) == 2:
+        for line in hsec[1].split("\n---", 1)[0].split("\n"):
+            hm = re.match(r'^\|\s*`#(\w+)[<(`]', line)
+            vm = re.search(r'\*\*Views: (\d+)\*\*', line)
+            if hm and vm:
+                bl.append('    if (raw string_eq(name, "%s")) { pass %si32; }' % (hm.group(1), vm.group(1)))
     bl.append("    pass 0i32;")
     bl.append("};")
     # THE NINE IRREGULARS (D-201.3). `sys` is variadic, `atomic_from_ptr` reads
@@ -1404,14 +1426,9 @@ pub func:is_keyword = bool(string:text) {
     # (D-046), so after expansion a surviving `#name` is either one of these or a
     # macro nobody declared. Without the list there is no way to tell those apart,
     # and a mistyped macro name compiles to nothing at all.
-    # Scraped from the "Macro | Return | Description" table ALONE. The section
-    # opens with a table of syntactic FORMS -- `#name<T>(...)` versus `#[name]` --
-    # and reading that one too made `name` a builtin.
-    br = open(os.path.join(ROOT, "meta", "specs", "BUILTIN_REFERENCE.md"),
-              encoding="utf-8").read()
-    br = "\n".join(re.findall(
-        r"<!-- builtins:begin -->(.*?)<!-- builtins:end -->", br, re.S))
-    hsec = br.split("| Macro | Return | Description |", 1)
+    # Scraped from the "Macro | Return | Description" table ALONE (`hsec`, split
+    # off above the Views table, which reads the same rows' `**Views: N**`
+    # marker, D-341).
     hnames = []
     if len(hsec) == 2:
         for m in re.finditer(r'^\|\s*`#(\w+)[<(`]', hsec[1].split("\n---", 1)[0], re.M):

@@ -1,0 +1,43 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+// expect-obligation: bounds discharged 3
+// expect-obligation: overflow open 1
+//
+// A `buffer`'s INDEX IS PROVEN INSIDE ITS BOUND (D-341, landing 128; D-070's
+// rows): a buffer's `.len` read off a binding is one length term, the one the
+// `bounds` row of each `b[i]` and the range `b[0i64...b.len]` compare against,
+// so a loop written over the length proves every access inside it and the
+// verified build turns each guard into one `llvm.assume`. The buffer is a local
+// nobody addresses, so its term lives for the whole function (DEF-14).
+mod:bounds_buffer;
+
+func:checksum = int64() never fails {
+    buffer:b = buffer_new(8i64);
+    for (int64:i in 0i64...b.len) { b[i] = 3u8; }
+    int64:s = 0i64;
+    for (int64:i in 0i64...b.len) { s = s +% (b[i] => int64); }
+    uint8[]:v = b[0i64...b.len];
+    pass (s + v.len);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if (raw checksum() != 32i64) { exit 10i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

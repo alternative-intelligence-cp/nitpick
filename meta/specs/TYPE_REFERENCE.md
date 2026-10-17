@@ -1239,7 +1239,8 @@ internal-defect refusal where a slice asking the same compiled).
   whatever slot it sits: the type carries the promise the binding's `fixed` made
   (§26). It is PRODUCED by a `fixed` binding of slice type, by ranging `fixed`
   storage (`ARR[lo...hi]` over a `fixed` array, a slice held in a `fixed`
-  aggregate), by reading a slice off a `fixed` struct, and by `string_bytes`
+  aggregate, a `fixed` `List` or -- since landing 128, D-341 -- a `fixed`
+  `buffer`), by reading a slice off a `fixed` struct, and by `string_bytes`
   (always: a string's bytes are read through the bridge and written by nothing).
   In a bare type position -- a type argument, a function type's parameter, a return
   type, a grouped element `(fixed T[])[]` -- `fixed` precedes a slice type and
@@ -1247,11 +1248,18 @@ internal-defect refusal where a slice asking the same compiled).
   where its trait's is (`NITPICK-TYPE-014`, TRAITS_REFERENCE §3): a caller through
   the bound reads the trait's signature.
 
-Constructed by ranging a fixed array or another slice — `arr[0...n]` — or, in
-`wild` context only, from a raw pointer and a length with
+Constructed by ranging a fixed array or another slice — `arr[0...n]` — a
+`List` (`l[lo...hi]`, D-314 §2) or a `buffer` (`b[lo...hi]`, a `uint8[]`; D-341,
+landing 128), or from a raw pointer and a length with
 **`#wild_slice<T>(ptr, len)`**. That form is deliberately parallel to
 `#wild_ptr<T>(addr)` (D-019): an unverifiable extent is as privileged as an
-unverifiable address, and as greppable.
+unverifiable address, and as greppable. *[2026-10-17, landing 128 (D-341): a
+`#wild_slice` VIEWS the storage its pointer names, as `string_from_bytes` does
+(the reference's Views marker on its row, D-249) -- over a managed header's
+`.ptr` (`#wild_slice<uint8>(x.ptr, n)`) it is a borrow of `x`, frozen while it
+lives (D-325) and refused at a `pass` out of `x`'s frame; over a bare `wild`
+pointer it views the pointee and freezes nothing of the frame. The words "in
+`wild` context only" were struck by D-315.]*
 
 `T[]` **never owns**. Growable owning sequences are a library concern, per D-041.
 
@@ -1947,7 +1955,9 @@ managed regime reclaims it at scope exit.
 buffer:buf = buffer_new(1024i64);          // 1024 zeroed bytes, len == cap
 <-(#ptr_add<int32>(buf.ptr, 0i64)) = 42i32; // a typed write, the general way
 int32:back = <-(#ptr_add<int32>(buf.ptr, 0i64));
-uint8:b0 = buf.ptr[0i64];                  // byte reads index the ptr
+uint8:b0 = buf.ptr[0i64];                  // byte reads index the ptr (unchecked: a pointer carries no length)
+buf[1i64] = 7u8;                           // the CHECKED byte place (D-341, landing 128): bounds-checked against len
+uint8[]:head = buf[0i64...4i64];           // the CHECKED byte view: lo <= hi <= len, a borrow of buf (D-249), frozen (D-325)
 ```
 
 The surface, exactly (1.3.7 landed this MINIMALLY):
@@ -1966,7 +1976,20 @@ The surface, exactly (1.3.7 landed this MINIMALLY):
 - The **scope-exit drop is the reclaim** (D-183): a buffer is move-only
   (TYPE-046), rides a channel whole under the send's `move`, and needs no
   `free`.
-- Typed access is `#ptr_add<T>` + `<-` — the general mechanism the Bridge
+- **Checked byte access (D-341, landing 128):** `b[i]` is the `uint8` PLACE --
+  readable, writable (`b[i] = v`, `b[i] += v`), claimable (`$$m b[i]`) --
+  bounds-checked against `len` with the slice's guard (`OutOfBounds`, one
+  unsigned compare) and the slice's `bounds` row (a length read off a binding is
+  one term, so a loop over `b.len` proves its accesses); `b[lo...hi]` (and the
+  inclusive `b[lo..hi]`) is the `uint8[]` VIEW of bytes `lo…hi-1`, checked
+  `lo <= hi && hi <= len`, borrowing the buffer (D-249) and freezing it for the
+  view's lifetime (D-325); a `fixed` buffer's range is the read-only view
+  `fixed uint8[]` (§9.2.1) and its element is written by nothing (TYPE-086); a
+  plain by-value `buffer` parameter is lent, so its element is not written
+  either (TYPE-085); `p[i]` on a `buffer->` is refused as a pointer's index is
+  for an array, a slice or a `List` (TYPE-082: write `(<-p)[i]`). Every rule
+  follows the `List`'s (D-314 §2); the element is the byte, never a wider type.
+- Typed access at another width is `#ptr_add<T>` + `<-` — the general mechanism the Bridge
   already exercises (D-187). The result stays in the manual regime (D-361, 1.6.1e
   landing 121): dereferenced in place as above, or stored in a `wild` binding, it
   needs nothing; written into a PLAIN pointer binding, parameter or field it is
@@ -1979,6 +2002,10 @@ the per-width `buffer_write_i8/…/read_i64` verb family (a second copy of
 `#ptr_add`), `buffer_free` (the managed drop IS the free; manual reclaim is
 the `wild` regime's spelling), `buffer_resize`, and `buffer_bytes` (a borrow
 of the body — nothing needs it yet; add by decision when a consumer exists).
+*[2026-10-17, landing 128 (D-341): the borrow of the body landed as the range,
+`b[lo...hi]` (`b[0i64...b.len]` is the whole body), when nitpick-time's byte sink
+became its consumer; the verb family, `buffer_free` and `buffer_resize` stay
+struck.]*
 
 ---
 

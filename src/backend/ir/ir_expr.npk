@@ -10464,6 +10464,36 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
                 pass (raw pv(move(lr), elem_tid));
             }
         }
+        // A `buffer`'s BYTE PLACE (D-341, landing 128): the `List` arm's shape
+        // over the string's trio -- the buffer's own address, then the index,
+        // then `len` (slot 1) and `ptr` (slot 0) loaded AFTER the index is
+        // evaluated. `len` is the bound and the guard is the slice's
+        // (`OutOfBounds`, one unsigned compare); the element is the byte at
+        // `ptr + i`.
+        if (okind == (raw TY_BUFFER())) {
+            PlaceVal:bbase = raw index_base_place(x, raw expr_lhs(n));
+            if (bbase.state != (raw LL_OK())) { pass bbase; }
+            LlType:bll = raw ll_type(x.fe.ctx, obj_tid);
+            if (!(raw ll_is_ok(bll))) { pass (raw pv_broken(n.span)); }
+            IrVal:bix = raw emit_expr(x, raw expr_rhs(n));
+            if (!(raw iv_is_ok(bix))) { pass (raw pv_from_iv(move(bix))); }
+            string:bidx64 = raw index_as_i64(x, bix);
+            string:blp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(blp, " = getelementptr ", bll.text,
+                              ", ptr ", string_concat(bbase.addr, ", i32 0, i32 1")));
+            string:blen = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(blen, " = load i64, ptr ", blp));
+            drop emit_bounds_guard(x, bidx64, blen, (raw expr_rhs(n)).index, n.span);
+            string:bpp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(bpp, " = getelementptr ", bll.text,
+                              ", ptr ", string_concat(bbase.addr, ", i32 0, i32 0")));
+            string:bdata = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(bdata, " = load ptr, ptr ", bpp));
+            string:br = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(br, " = getelementptr ", ell.text,
+                              ", ptr ", raw cat4(bdata, ", i64 ", bidx64, "")));
+            pass (raw pv(move(br), elem_tid));
+        }
         pass (raw pv_broken(n.span));
     }
 
@@ -11100,6 +11130,11 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             elem_tid = raw list_elem_type(x.tr, obj_tid);
         }
     }
+    // A `buffer`'s element is the byte: the checker typed the view `uint8[]`
+    // (D-341, landing 128), and the element is read off that type.
+    if (okind == (raw TY_BUFFER())) {
+        elem_tid = raw type_elem(x.fe.ctx.types, raw exprtypes_get(x.et, id));
+    }
     LlType:ell = raw ll_type(x.fe.ctx, elem_tid);
     if (!(raw ll_is_ok(ell))) {
         pass (raw iv_from_ll_at(x, ell, elem_tid, n.span));
@@ -11147,6 +11182,26 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:lcount = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(lcount, " = load i64, ptr ", lcp));
         src_len = move(lcount);
+    }
+    // A `buffer`'s VIEW (D-341, landing 128): its `ptr` and its `len`, read
+    // from the buffer's own address -- the `List` arm over the string's trio.
+    if (okind == (raw TY_BUFFER())) {
+        PlaceVal:bp = raw addr_of(x, raw expr_lhs(n));
+        if (bp.state != (raw LL_OK())) { pass (raw iv_from_place(move(bp))); }
+        LlType:bll = raw ll_type(x.fe.ctx, obj_tid);
+        if (!(raw ll_is_ok(bll))) { pass (raw iv_broken(n.span)); }
+        string:bpp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(bpp, " = getelementptr ", bll.text,
+                          ", ptr ", string_concat(bp.addr, ", i32 0, i32 0")));
+        string:bdata = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(bdata, " = load ptr, ptr ", bpp));
+        base = move(bdata);
+        string:blp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(blp, " = getelementptr ", bll.text,
+                          ", ptr ", string_concat(bp.addr, ", i32 0, i32 1")));
+        string:blen = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(blen, " = load i64, ptr ", blp));
+        src_len = move(blen);
     }
     if (base.len == 0i64) { pass (raw iv_broken(n.span)); }
 

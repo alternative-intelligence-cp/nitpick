@@ -1,0 +1,31 @@
+// expect-exit: 94
+//
+// A `buffer`'s RANGE VIEW MUST FIT (D-341, landing 128; D-070): `lo <= hi` and
+// `hi <= len`, one combined guard, or `OutOfBounds` -- here `hi` is `len + 1`,
+// computed at run time. `failsafe` answers 94.
+mod:buffer_range_oob;
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:b = buffer_new(4i64);
+    int64:hi = b.len + 1i64;
+    uint8[]:v = b[1i64...hi];
+    discard(v.len);
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)       { exit 94i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (LimitViolated)     { exit 99i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
