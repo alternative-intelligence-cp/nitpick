@@ -3168,7 +3168,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
                 }
                 if ((!lit_refused) && (civ == 1i32)) {
                     discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
-                        "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
+                        "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, a payload-less variant of a non-generic enum (D-356), or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
                         d.span));
                 }
                 // THE FAMILIES THE COMPILER CARRIES AND DOES NOT COMPUTE IN (DEF-197,
@@ -3261,11 +3261,12 @@ func:const_init_verdict = int32(ExprTyper->:e, ExprId:eid) never fails {
         if (carried) { pass 2i32; }
         pass 1i32;
     }
-    // AN ENUM'S VARIANT FOLDS SINCE D-338 AND IS STILL NOT A MODULE CONSTANT
-    // (1.6.1e step 3b): D-165's list has none, the renderer writes none, and
-    // `fixed Ordering:O = Ordering.Less;` is refused exactly as it was before
-    // the evaluator could hold the value. Whether it should be one is S-127.
-    if (cv.kind == (raw CV_ENUM())) { pass 1i32; }
+    // AN ENUM'S PAYLOAD-LESS VARIANT IS A MODULE CONSTANT (D-356, landing 123):
+    // the folder has held it since D-338 and the renderer writes its tag now
+    // (`const_scalar_text`'s enum arm) -- `fixed Ordering:O = Ordering.Less;`,
+    // a struct's or an array's member, `comptime(…)` of one. A GENERIC enum's
+    // variant is not folded (its instance is not in the expression, D-338), so
+    // it stays TYPE-035 by the branch above.
     if ((k == (raw TY_TERN())) && (cv.kind == (raw CV_INT())) && (cv.type_id == 0i32)) {
         bool:lit = (n.kind == ExprKind.ExprIntLiteral);
         if (n.kind == ExprKind.ExprUnaryExpr) {

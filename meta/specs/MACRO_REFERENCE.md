@@ -712,9 +712,13 @@ evaluation, never a different value:
 - **No binding pattern is taken** (a struct pattern; a variant that binds a payload, since the
   values the evaluator holds carry none), there is no `ERR:` arm, and a `tbb`, ternary,
   fixed-point or float selector is not selected on.
-- **An enum value does not leave the evaluator**: `comptime(…)` whose value is one, and a
-  module binding initialised with one (`NITPICK-TYPE-035`, as before D-338), are refused where
-  they are written. Whether they should be constants is **S-127**, the user's.
+- **An enum value leaves the evaluator as a constant** (D-356, landing 123): `comptime(…)` whose
+  value is a payload-less variant, and a module binding initialised with one -- a struct's or an
+  array's member too -- are the variant's TAG in the emission: the `i32`, or a tagged enum's
+  aggregate with a zeroed slot (the value `Enum.Variant` builds at run time). A GENERIC enum's
+  variant is not folded (its instance is not in the expression) and is not a constant
+  (`NITPICK-TYPE-035`). Until landing 123 both forms were refused where written (`NITPICK-TYPE-004`
+  with its own sentence; `NITPICK-TYPE-035`): S-127 asked, D-356 answered.
 
 A `comptime func:` that recurses THROUGH A TYPE — `#size_of<int8[comptime(deep())]>()` inside
 `deep` — meets the depth bound like any other recursion (DEF-213; until 1.6.1e step 3b it

@@ -1,23 +1,17 @@
 // expect-error: NITPICK-TYPE-035
-// expect-error-at: 62:1
-// expect-error: NITPICK-TYPE-004
-// expect-error-at: 63:21
+// expect-error-at: 60:1
 // expect-error: NITPICK-TYPE-025
-// expect-error-at: 88:27
+// expect-error-at: 85:27
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 105:20
+// expect-error-at: 104:23
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 106:25
+// expect-error-at: 105:16
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 107:23
+// expect-error-at: 106:16
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 108:16
+// expect-error-at: 107:15
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 109:16
-// expect-error: NITPICK-TYPE-004
-// expect-error-at: 110:15
-// expect-error: NITPICK-TYPE-004
-// expect-error-at: 111:15
+// expect-error-at: 108:15
 //
 // WHERE THE COMPILE-TIME EVALUATOR'S NEW VALUE STOPS (D-338, 1.6.1e step 3b). It
 // holds a payload-less enum variant, compares two with `==`/`!=`, and runs a
@@ -25,12 +19,14 @@
 // below is one step past that, and each is refused where it is written, never
 // handed to an emitter that has nothing to write:
 //
-//   AN ENUM VALUE DOES NOT LEAVE THE EVALUATOR. `comptime(…)` whose value is a
-//   variant is NITPICK-TYPE-004 with its own sentence (`at_site`, `through_call`),
-//   and a module binding initialised with one is NITPICK-TYPE-035, as it was
-//   before the evaluator could hold the value (`AT_MODULE`); a module binding
-//   forced through `comptime(…)` is ONE report, the TYPE-004 (`FORCED`). Whether
-//   either should be a constant is S-127, the user's.
+//   AN ENUM VALUE LEAVES THE EVALUATOR AS A CONSTANT SINCE D-356 (landing 123;
+//   S-127 answered): `comptime(…)` whose value is a variant (`at_site`,
+//   `through_call`) and a module binding initialised with one (`AT_MODULE`,
+//   `FORCED`) are CONTROLS now -- the variant's tag in the emission -- where
+//   landing 90 through 122 refused them (TYPE-004 with its own sentence,
+//   TYPE-035). A GENERIC enum's variant is not folded, since its instance is
+//   not in the expression (D-338), so it is still not a constant
+//   (`GENERIC_AT_MODULE`, TYPE-035).
 //
 //   A `pick` IS EVALUATED ONLY INSIDE A `comptime func:` CALL (`bare_pick`): an
 //   arm is a block of statements, and the evaluator runs statements in a frame.
@@ -59,8 +55,9 @@ comptime func:mode_of = Mode(int32:k) never fails {
     pass Mode.Fast;
 };
 
-fixed Mode:AT_MODULE = Mode.Slow;
-fixed Mode:FORCED = comptime(mode_of(0i32));
+fixed Mode:AT_MODULE = Mode.Slow;                        // CONTROL since D-356: a constant
+fixed Mode:FORCED = comptime(mode_of(0i32));             // CONTROL since D-356: a constant
+fixed Opt<int32>:GENERIC_AT_MODULE = Opt.Nothing;       // a GENERIC enum's variant: not folded, not a constant
 
 comptime func:pass_out = int32(int32:k) never fails {
     int32:r = pick (k) { (1i32) { pass 7i32; }, (*) { give 0i32; } };
@@ -102,8 +99,8 @@ comptime func:str_cmp = bool(string:a, string:b) never fails {
 };
 
 func:main = int32(cstring[]:argv) {
-    Mode:at_site = comptime(Mode.Off);
-    Mode:through_call = comptime(mode_of(1i32));
+    Mode:at_site = comptime(Mode.Off);                    // CONTROL since D-356
+    Mode:through_call = comptime(mode_of(1i32));          // CONTROL since D-356
     int32:bare_pick = comptime(pick (3i32) { (3i32) { give 10i32; }, (*) { give 20i32; } });
     int32:po = comptime(pass_out(1i32));
     int32:ts = comptime(tbb_sel());

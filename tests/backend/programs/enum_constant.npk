@@ -1,0 +1,81 @@
+// enum_constant.npk -- D-356 (landing 123): a payload-less enum variant is a constant outside the evaluator. A module
+// binding may be initialised with one -- bare, through a `comptime func:` that yields one, as a struct's or an array's
+// member, a reference to another such binding, of an enum that carries a payload elsewhere, of an enum with declared
+// tags -- and `comptime(…)` may yield one; each is the TAG the variant already has (the declared literal where one is
+// given, D-342; never the evaluator's position), read back at both legs against the value `Enum.Variant` builds at run
+// time. Landing 122's compiler refuses every module binding here (NITPICK-TYPE-035) and every `comptime(…)` of a
+// variant (NITPICK-TYPE-004 with its own sentence).
+// expect-exit: 0
+mod:enum_constant;
+
+enum:Color = { Red; Green; Blue; };
+enum:Code = { A = 10i32; B = 20i32; C = 30i32; };          // declared tags: position 1 is tag 20, position 2 tag 30
+enum:Sh = { Circle(int32); Rect(int32, int32); Empty; };   // a payload elsewhere: the variant is the aggregate, zeroed
+struct:Pt = { Color:k; int32:n; };
+
+comptime func:pick_c = Color(int32:n) never fails { if (n > 1i32) { pass Color.Blue; } pass Color.Red; };
+comptime func:code_of = Code(int32:n) never fails { if (n == 2i32) { pass Code.C; } pass Code.A; };
+
+fixed Color:C_BARE = Color.Green;                          // a bare variant
+fixed Color:C_CALL = comptime(pick_c(2i32));               // through a comptime function
+fixed Color:C_REF = C_BARE;                                // another module binding of the type (DEF-202's road)
+fixed Pt:P = Pt{ k: Color.Red, n: 7i32 };                   // a struct's member
+fixed Color[3]:A = [Color.Blue, Color.Red, Color.Green];   // an array's members
+fixed Sh:S = Sh.Empty;                                     // a payload-carrying enum's payload-less variant
+fixed Code:K = Code.B;                                     // a declared tag: 20, not the position 1
+fixed Code:K2 = comptime(code_of(2i32));                   // the same through a call: 30
+
+func:paint = int32(Color:c) never fails {
+    pick (c) { (Color.Red) { pass 1i32; }, (Color.Green) { pass 2i32; }, (Color.Blue) { pass 3i32; } }
+};
+func:code_num = int32(Code:c) never fails {
+    pick (c) { (Code.A) { pass 10i32; }, (Code.B) { pass 20i32; }, (Code.C) { pass 30i32; } }
+};
+
+func:main = int32(cstring[]:argv) {
+    if (C_BARE != Color.Green) { exit 1i32; }
+    if (C_CALL != Color.Blue) { exit 2i32; }
+    if (C_REF != Color.Green) { exit 3i32; }
+    if (P.k != Color.Red) { exit 4i32; }
+    if (P.n != 7i32) { exit 5i32; }
+    if (A[0i64] != Color.Blue) { exit 6i32; }
+    if (A[1i64] != Color.Red) { exit 7i32; }
+    if (A[2i64] != Color.Green) { exit 8i32; }
+    pick (S) { (Sh.Empty) { }, (*) { exit 9i32; } }
+    if (K != Code.B) { exit 10i32; }
+    if ((raw code_num(K)) != 20i32) { exit 11i32; }           // the TAG, through a pick's arms
+    if (K2 != Code.C) { exit 12i32; }
+    if ((raw code_num(K2)) != 30i32) { exit 13i32; }
+    Color:c1 = comptime(Color.Blue);                          // comptime(…) yields a variant
+    if (c1 != Color.Blue) { exit 14i32; }
+    Color:c2 = comptime(pick_c(0i32));                        // through a comptime function
+    if (c2 != Color.Red) { exit 15i32; }
+    Code:c3 = comptime(Code.B);                               // a declared tag through comptime(…)
+    if ((raw code_num(c3)) != 20i32) { exit 16i32; }
+    Color:c4 = comptime(C_BARE);                              // a module constant through comptime(…)
+    if (c4 != Color.Green) { exit 17i32; }
+    if ((raw paint(C_BARE)) != 2i32) { exit 18i32; }          // the constant as an argument
+    Sh:s2 = comptime(Sh.Empty);                               // a tagged enum's variant through comptime(…)
+    pick (s2) { (Sh.Empty) { }, (*) { exit 19i32; } }
+    Color:rt = Color.Green;                                   // the run-time value equals the constant
+    if (rt != C_BARE) { exit 20i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

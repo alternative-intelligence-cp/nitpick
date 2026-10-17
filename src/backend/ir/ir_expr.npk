@@ -2183,6 +2183,13 @@ func:emit_float_const = IrVal(ExprEmitter->:x, string:text, bool:neg, int32:ftid
 // Q value of 2.0), and writing it was DEF-197.
 func:const_scalar_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never fails {
     int32:k = raw type_kind(x.fe.ctx.types, sty);
+    // AN ENUM'S PAYLOAD-LESS VARIANT (D-356, landing 123): never `cv.num`, which
+    // is the evaluator's POSITION (D-338) and equals the tag for an unvalued
+    // enum alone -- `const_enum_text` reads the declared tag (D-342's rule).
+    if (cv.kind == (raw CV_ENUM())) {
+        if (k != (raw TY_ENUM())) { pass ""; }
+        pass (raw const_enum_text(x, cv, sty));
+    }
     if (cv.kind == (raw CV_REAL())) {
         bool:neg = (cv.num != 0i64);
         if ((k == (raw TY_TFP())) || (k == (raw TY_DIM()))) {
@@ -2197,6 +2204,25 @@ func:const_scalar_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never f
     if (cv.kind == (raw CV_NONE()))   { pass ""; }
     if ((k == (raw TY_TFP())) || (k == (raw TY_DIM())) || (k == (raw TY_FLOAT()))) { pass ""; }
     pass (int_to_string(cv.num));
+};
+
+// THE TEXT OF AN ENUM CONSTANT (D-356, landing 123): the evaluator's value is the
+// variant's POSITION among the enum's members (`cv_enum`), and the constant is
+// the variant's TAG -- `variant_tag_of`'s one rule, the declared literal where one
+// is given and the position otherwise (D-342: an enum values every variant or
+// none) -- in the shape `ll_enum_tag_const` writes beside the enum's body: the
+// `i32` for a payload-less enum, the aggregate with a zeroed slot for a tagged
+// one, what `emit_ctor` builds for the same variant at run time. "" where the
+// position names no variant: the frontend's broken promise, never a number.
+func:const_enum_text = string(ExprEmitter->:x, ConstVal:cv, int32:sty) never fails {
+    DeclId:did = DeclId{ index: raw type_decl(x.fe.ctx.types, sty) };
+    DeclNode:d = raw ast_decl(x.ast, did);
+    if (cv.num < 0i64) { pass ""; }
+    if (cv.num >= ((raw item_member_count(x.ast, d)) => int64)) { pass ""; }
+    int32:pos = cv.num =>! int32;
+    DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, pos));
+    if (m.kind != DeclKind.DeclEnumVariant) { pass ""; }
+    pass (raw ll_enum_tag_const(x.fe.ctx, sty, raw variant_tag_of(x.ast, m, pos)));
 };
 
 // `tbb` division and remainder: zero divisor or any ERR yields ERR — never a

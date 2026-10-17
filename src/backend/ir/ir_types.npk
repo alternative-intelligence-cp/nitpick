@@ -1107,6 +1107,25 @@ pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) never fails {
     pass (raw ll_ok(string_concat(d2, "] }")));
 };
 
+// THE CONSTANT AN ENUM'S PAYLOAD-LESS VARIANT IS (D-356, landing 123): the tag
+// alone for a payload-less enum (`i32`), and for a tagged one the body
+// `ll_enum_body` writes with the tag in its word and the slot zeroed -- the
+// value `emit_ctor` stores for the same variant (zero first, then the tag).
+// Beside the body on purpose: the two texts must agree shape for shape.
+pub func:ll_enum_tag_const = string(LlCtx->:c, int32:id, int32:tag) never fails {
+    if ((raw type_kind(c.types, id)) != (raw TY_ENUM())) { pass ""; }
+    string:t = int_to_string(tag => int64);
+    if (!(raw enum_has_payload(c.ast, c.types, id))) { pass t; }
+    EnumSlot:sl = raw enum_payload_slot(c, id);
+    if (!sl.ok) { pass ""; }
+    string:a = string_concat("{ i32 ", t);
+    string:b = string_concat(a, ", [");
+    string:d2 = string_concat(b, int_to_string(sl.count));
+    string:e2 = string_concat(d2, " x i");
+    string:f2 = string_concat(e2, int_to_string(sl.kbits => int64));
+    pass (string_concat(f2, "] zeroinitializer }"));
+};
+
 // The ERR sentinel per tbb width, as decimal text (D-008: the most negative
 // value of the carrier). ONE representation, shared by every site that spells
 // it — the arithmetic saturation, the sentinel maps in casts, `is_err`, the

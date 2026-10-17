@@ -12259,6 +12259,13 @@ them.
 > and "nothing else". Whether a payload-less variant should be a module constant — and a `comptime(…)` value — is
 > S-127, the user's.
 
+> *[2026-10-16, landing 123 — a dated note (D-356).]* **An enum's payload-less variant IS a module constant.** The
+> list above gains it: `fixed Ordering:O = Ordering.Less;`, a struct's or an array's member, `comptime(…)` of one, and
+> a reference to another module binding of the type (DEF-202's road) -- the renderer writes the variant's TAG
+> (`const_scalar_text`'s enum arm reads `variant_tag_of`: the declared literal where one is given, D-342), the `i32`
+> or a tagged enum's aggregate with a zeroed slot. A GENERIC enum's variant is not folded (its instance is not in the
+> expression, D-338) and stays NITPICK-TYPE-035. The note above describes landings 90 through 122.
+
 > **A REFERENCE TO AN AGGREGATE BINDING, HELD AT LAST** (2026-10-09, landing 108, DEF-202; found by landing 87's probes,
 > 2026-10-01): "a reference to another module-level binding" held for a scalar's and a string's value -- the folder's --
 > and not for a struct's, an array's or a sentinel's, because the gate and the renderer asked only the folder for a name:
@@ -22353,6 +22360,12 @@ and "anything it can express is something the compiler runs at build time" (MACR
 > before — S-127 asks whether it should); a selector the folder carries and does not compute in (`tbb`, ternary,
 > fixed-point, float) is not selected on. The listener's `mc0309b` answers `run:0`.
 
+> *[2026-10-16, landing 123 — a dated note (D-356).]* The third reading above -- "an enum value does not leave the
+> evaluator" -- stood from landing 90 to landing 122. D-356 (the user, 2026-10-15) admits it in both positions: a
+> `comptime(…)` whose value is a payload-less variant and a module binding initialised with one are the variant's TAG
+> in the emission (landing 123). The value's position (`CV_ENUM`'s `num`) is read through `variant_tag_of` on the way
+> out; a generic enum's variant, which the evaluator never held, is not a constant.
+
 ## D-339 — THE LOCK FLOOR IS CLOSED UNDER A `<=` BOUND, AN EXACT TRAIT CLAUSE IS EXACT, AND THE PRELUDE'S TRAITS DECLARE NO LEVEL — **SETTLED (user decision, 2026-10-01: "all the recommendations look fine to me. lets go with those."; S-119)**
 
 **The question, as it was put (S-119).** the lock levels of a dynamically dispatched call: the FLOOR under a `<=`
@@ -23125,6 +23138,8 @@ D-165's rule is unchanged ("a literal, a sentinel, a struct or array of constant
 decided by what the evaluator folds, and the evaluator has held the value since D-338). The two refusals are one test each
 (`const_init_verdict`, `type_comptime`); the module-constant renderer writes the tag. Its own landing, in the queue after the
 correctness items.
+
+> **Landing note (2026-10-16, 1.6.1e landing 123, `nitpick-compiler_39`):** built as decided. Both positions admitted: `const_init_verdict` no longer answers "not a constant" for a folded enum value and `type_comptime` no longer refuses one (one line each; TYPE-035's sentence names "a payload-less variant of a non-generic enum"); the module-constant renderer writes the TAG -- `const_scalar_text`'s enum arm (`const_enum_text`: the evaluator's position through `variant_tag_of`, D-342's rule) in the shape `ll_enum_tag_const` writes beside `ll_enum_body`: the `i32`, or a tagged enum's `{ i32 TAG, [N x iK] zeroinitializer }`, the value `Enum.Variant` builds at run time. Measured first on landing 122's compiler: nine probes, seven TYPE-035 and three TYPE-004, as the decision says; after, eight run at both legs and the ninth -- a GENERIC enum's variant, which the evaluator never held (its instance is not in the expression, D-338) -- stays TYPE-035 by the same sentence. The sweep 5,172 files (0 appeared: none -- a refusal removed adds no site anywhere; 17 vanished: the base's thirteen on the program test `enum_constant.npk` -- TYPE-035 at its six module bindings (19:1 `C_BARE`, 21:1 `C_REF`, 22:1 `P`, 23:1 `A`, 24:1 `S`, 25:1 `K`) and TYPE-004 with the evaluator's own sentence at its seven `comptime(…)` forms (20:22 `C_CALL`, 26:17 `K2`, and in `main` 49:16, 51:16, 53:15, 55:16, 58:13) -- and the base's four on the rewritten rejection file `comptime_enum_value.npk` (TYPE-035 at 58:1 `AT_MODULE`; TYPE-004 at 59:21 `FORCED`, 102:20 `at_site`, 103:25 `through_call`): the two refusals D-356 lifts, at sites that are controls now; no file of the libraries, the application or the fuzz corpus moves); the emission 578 programs, 577 byte-identical, 0 newly refused, 1 refused by the base alone (the new program test `enum_constant.npk`, which the base refuses at its first module binding (TYPE-035) and at every enum constant after it); the libraries' 4,033, 0 newly refused (none); the manifest 7,121 obligations (6,820 → 6,820 rows, 6,713 shared, ZERO moved, ZERO fell). `enum_constant.npk` (twenty checks), `comptime_enum_value.npk` rewritten; TYPE_REFERENCE's initialiser table, MACRO_REFERENCE §8, D-165's and D-338's dated notes carry the sentence.
 
 ## D-357 — A `comptime func:` EXISTS AT COMPILE TIME ONLY: A CALL OF ONE OUTSIDE A CONSTANT CONTEXT IS REFUSED BY NAME — **SETTLED (user decision, 2026-10-15: "yes, pass those to compiler_37 too")**
 

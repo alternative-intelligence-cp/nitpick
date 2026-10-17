@@ -863,9 +863,11 @@ pub func:CV_REAL = int32() never fails   { pass 5i32; };
 // two variants of one enum never share a tag (DEF-193), so "the same position"
 // and "the same tag" are one question, and the folder needs no copy of the tag
 // rule. It is a value INSIDE the evaluator -- compared with `==`/`!=`, selected
-// on by a `pick` -- and it does not leave it: `comptime(…)` over one and a module
-// binding initialised with one are refused by name where they are written
-// (`type_comptime`, `const_init_verdict`; S-127 asks whether they should be).
+// on by a `pick` -- and since D-356 (landing 123) it LEAVES it as a constant:
+// `comptime(…)` over one and a module binding initialised with one are the
+// variant's TAG in the emission (`const_scalar_text`'s enum arm). `num` here is
+// the POSITION, which equals the tag for an unvalued enum alone: a renderer
+// reads `variant_tag_of`, never `num` (D-342).
 pub func:CV_ENUM = int32() never fails   { pass 6i32; };
 
 // WHETHER IT FOLDED AND WHAT IT IS ARE TWO QUESTIONS, and `kind` answers both

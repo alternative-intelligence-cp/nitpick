@@ -3223,16 +3223,12 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             "`comptime` requires an expression that folds at compile time, and this one does not",
             n.span));
     }
-    // AN ENUM VALUE DOES NOT LEAVE THE EVALUATOR (D-338, 1.6.1e step 3b). It is
-    // typed -- `cv.type_id` is the enum -- so without this it would be taken as
-    // the node's value and reach an emitter that has no constant to write for
-    // it. The evaluator holds one to compare and to select on; whether a
-    // `comptime(…)` or a module binding may BE one is S-127, the user's.
-    if (cv.kind == (raw CV_ENUM())) {
-        pass (raw te_error(e, raw TYPE_NOT_CONSTANT(),
-            "this `comptime` value is an enum's variant, which the compile-time evaluator holds only inside a `comptime func:` — compared with `==`, selected on by `pick` — and nothing writes one into the program (D-338); return the number or the `bool` the caller needs",
-            n.span));
-    }
+    // AN ENUM VALUE LEAVES THE EVALUATOR AS A CONSTANT (D-356, landing 123): a
+    // payload-less variant is typed -- `cv.type_id` is the enum -- and the
+    // emitter writes the tag the variant already has (`const_scalar_text`'s
+    // enum arm, `const_enum_text`): the `i32`, or a tagged enum's aggregate
+    // with a zeroed slot. From D-338 (1.6.1e step 3b) until this landing it
+    // was refused here by name, TYPE-004 with its own sentence (S-127).
     if (cv.type_id != 0i32) { pass cv.type_id; }
 
     int32:want = raw expected_value(e);

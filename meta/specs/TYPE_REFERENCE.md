@@ -2142,6 +2142,7 @@ deleted store at -O2).
 |---|---|
 | a plain integer, `bool`, `char`, `string`, a flag family | any constant expression the compiler computes: literals, the operators, other module bindings, `comptime(…)`, a `comptime func:` |
 | `flt32`, `flt64`, a `tfp` width, `dim256<U>`, a `tbb` width, the ternary family | a **written** value: a literal, a negated literal, `ERR`, another module binding of that type, or `comptime(…)` of one of those (a `flt32` since landing 88: LLVM spells a `float` constant by its bits unless the decimal is exact, and the compiler makes the bits itself now, DEF-203) |
+| a non-generic enum | a payload-less variant (`Ordering.Less`), `comptime(…)` of one, or another module binding of that type -- the variant's TAG, the declared literal where one is given (D-356, landing 123; NITPICK-TYPE-035 from D-338's landing until then). A generic enum's variant is not folded (its instance is not in the expression) and is not a constant |
 | a struct, an array | a literal whose every member is one of the above, or another module binding of that type (followed to its initialiser: DEF-202, landing 108 -- until then a reference to an aggregate binding was refused, by the sentence that listed it as legal) |
 | an `Optional`, a pointer | `NIL`; `NULL` for a `wild` pointer only (`fixed wild int64->:P = NULL;`, D-355); or another module binding of that type (DEF-202) |
 
