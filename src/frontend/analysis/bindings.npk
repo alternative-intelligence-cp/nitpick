@@ -1282,6 +1282,18 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
         pass NIL;
     }
 
+    // A CONSUMING ARM'S BINDING IS RE-ASSIGNABLE (DEF-256, landing 132; the fuzzer's F-049): `x = raw nw();` after
+    // `move(x)` gives the binding a value again -- MEMORY_REFERENCE §2.3: "It may be reinitialized by assignment, after
+    // which it is live again" -- exactly as a local's or a parameter's assignment does (`state_mark` clears the moved
+    // and freed bits). DEF-118 (landing 74) put a pattern binding under the move rules and this arm returned in
+    // silence for its symbol kind, so the re-assigned binding stayed MOVE-001 at its next read where its local twin
+    // compiled: DEF-124's shape at the third binding kind. No `fixed` question (a pattern binding carries no
+    // qualifier), and a LENDING arm's binding is a view, TYPE-066 at any assignment already (D-266).
+    if (sym.origin_kind == (raw SYM_PAT())) {
+        drop state_mark(st, raw symbol_slot(x, tn.a));
+        pass NIL;
+    }
+
     if (sym.origin_kind != (raw SYM_STMT())) { pass NIL; }
 
     // `fixed` — ASSIGNED ONCE, ON ANY PATH. `may` and not `must` is the whole

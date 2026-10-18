@@ -1,0 +1,10 @@
+# DEF-256 (1.6.1e landing 132): a consuming `pick`'s binding re-assigned after a move is live again, and the arm's
+# end drops the new value. `pick_reinit_churn.npk` moves the binding out, re-assigns and reads it two thousand
+# rounds; `pick_reinit_once.npk` does it once. Under NPK_HEAP_STATS the churn's peak must stay within `bound` times
+# the once's: a re-assigned value the arm's end did not drop would grow the peak with the count (measured at the
+# landing: 26 bytes live at 2,000 rounds and at 8,000).
+kind    = "probe"
+program = "tests/backend/programs/pick_reinit_churn.npk"
+against = "tests/backend/programs/pick_reinit_once.npk"
+bound   = 2
+expect  = "pass"

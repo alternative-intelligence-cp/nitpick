@@ -4809,6 +4809,13 @@ un-checkable without inventing an ownership bound to carry the distinction. A
 uniform operator costs one avoidable footgun, which use-after-move catches
 immediately; a type-varying one costs a new trait and a context-dependent reading.
 
+
+> **2026-10-18 (DEF-256, landing 132):** a moved-out binding "is invalid until it is assigned again" holds for a
+> CONSUMING `pick` arm's binding as for a local and a parameter (DEF-124): `x = raw nw();` after `move(x)` marks the
+> binding assigned, and a read after it reads the new value -- MOVE-001 there from landing 74 (DEF-118, which put a
+> pattern binding under the move rules) until this landing, because the bindings analysis marked a local's and a
+> parameter's assignment and returned for the pattern symbol kind. The emitter needed nothing: the assignment drops
+> the old value under its flag and sets the flag, and the arm's end drops the new value (DEF-121).
 ---
 
 ## D-066 — `opaque struct:Name;` is the one form, and is `extern`-only — **SETTLED; the C-pointer half is superseded by D-149** (there is no in-process C to point at — an `extern` block is a driver interface, and an opaque struct declared in one is a TYPED WIRE HANDLE the Bridge round-trips by value, never an address)

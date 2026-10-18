@@ -1,0 +1,44 @@
+// expect-exit: 0
+//
+// THE ONCE TWIN of `pick_reinit_churn.npk` (DEF-256, landing 132): a consuming arm moves its
+// string binding out, re-assigns it and reads it, once; `tests/cost/pick_reinit.toml` holds the churn's peak
+// to the once's -- the arm's end drops the re-assigned value and the moved-out one is dropped by its new owner, so the
+// peak does not grow with the count (measured at the landing: 26 bytes live at 2,000 rounds and at 8,000).
+mod:pick_reinit_once;
+error:E9;
+enum:E = { Som(string); Non; };
+func:mk = string() never fails { pass string_concat("ab", "cd"); };
+func:nw = string() never fails { pass string_concat("0123456789", "012345678901"); };
+func:obs_s = int32(string:s) never fails { pass (s.len =>! int32); };
+func:round = int32() never fails {
+    E:e = E.Som(raw mk());
+    int32:o = 0i32;
+    pick (move(e)) {
+        (Som(x)) { string:t = move(x); x = raw nw(); o = raw obs_s(x); },
+        (*) { o = 1i32; }
+    }
+    pass o;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:acc = 0i32;
+    for (int64:i in 0i64...1i64) { acc = raw round(); }
+    if (acc != 22i32) { exit 3i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DeadlineExceeded)  { exit 97i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

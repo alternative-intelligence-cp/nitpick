@@ -1,0 +1,110 @@
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 30:48
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 45:48
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 61:64
+//
+// DEF-256 (1.6.1e landing 132; the fuzzer's F-049): A CONSUMING `pick`'S BINDING RE-ASSIGNED AFTER A MOVE IS LIVE
+// AGAIN -- WHERE THE ASSIGNMENT IS DEFINITE. A moved binding is refused at a read that ANY path reaches with the
+// binding moved, so a re-assignment on one path only, a re-assignment inside a loop that may run zero times, and a
+// second move after the re-assignment each leave the read refused, exactly as for a local (DEF-124's parameter and
+// D-208's loop-carried states the same). The controls compile: a re-assignment on both paths, and a move and a
+// re-assignment in one loop trip before the trip's read. `pick_reinit.npk` runs the accepted shapes at both legs.
+mod:pick_reinit_rules;
+
+enum:E = { Som(string); Non; };
+func:mk = string() never fails { pass string_concat("ab", "cd"); };
+func:nw = string() never fails { pass string_concat("01", "23"); };
+func:truth = bool(int64:n) never fails { pass n > 0i64; };
+func:len_of = int64(string:v) never fails { pass string_byte_length(v); };
+
+// (1) re-assigned on one path only: MOVE-001 at the read
+func:one_path = int64() never fails {
+    E:e = E.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            string:t = move(x);
+            if (raw truth(1i64)) { x = raw nw(); }
+            total = raw len_of(t) + raw len_of(x);
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+// (2) re-assigned only inside a loop that may run zero times: MOVE-001 at the read after it
+func:loop_zero = int64() never fails {
+    E:e = E.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            string:t = move(x);
+            for (int64:i in 0i64...total) { x = raw nw(); }
+            total = raw len_of(t) + raw len_of(x);
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+// (3) moved again after the re-assignment: MOVE-001 at the read
+func:moved_again = int64() never fails {
+    E:e = E.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            string:t = move(x);
+            x = raw nw();
+            string:u = move(x);
+            total = raw len_of(t) + raw len_of(u) + raw len_of(x);
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+// (4) CONTROL: re-assigned on both paths, then read
+func:both_paths = int64() never fails {
+    E:e = E.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            string:t = move(x);
+            if (raw truth(1i64)) { x = raw nw(); } else { x = raw mk(); }
+            total = raw len_of(t) + raw len_of(x);
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+// (5) CONTROL: a move and a re-assignment in one loop trip, before the trip's read
+func:per_trip = int64() never fails {
+    E:e = E.Som(raw mk());
+    int64:total = 0i64;
+    pick (move(e)) {
+        (Som(x)) {
+            for (int64:i in 0i64...3i64) { string:t = move(x); x = raw nw(); total = total + raw len_of(t) + raw len_of(x); }
+        },
+        (*) { }
+    }
+    pass total;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:s = raw one_path() + raw loop_zero() + raw moved_again() + raw both_paths() + raw per_trip();
+    if (s == 0i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

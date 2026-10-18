@@ -1,0 +1,84 @@
+// expect-exit: 0
+//
+// A CONSUMING `pick`'S BINDING RE-ASSIGNED AFTER A MOVE IS LIVE AGAIN (DEF-256, landing 132; the fuzzer's F-049):
+// `x = raw nw();` after `move(x)` in a consuming arm gives the binding a value, and a read after it reads that value
+// (MEMORY_REFERENCE §2.3: "It may be reinitialized by assignment, after which it is live again"), as its local twin
+// always did. Landing 74 (DEF-118) put a pattern binding under the move rules and the bindings analysis never marked
+// its assignment, so every section below was MOVE-001 at the read from landing 74 to landing 131. The arm's end drops
+// the new value (DEF-121), the moved-out old value is dropped by the binding that took it, and a coroutine's arm keeps
+// the binding's flag in the frame across an `await`; `pick_reinit_churn.npk` holds the peak flat. Exit 0 at both legs.
+mod:pick_reinit;
+error:E9;
+enum:E = { Som(string); Non; };
+func:mk = string() never fails { pass string_concat("ab", "cd"); };
+func:nw = string() never fails { pass string_concat("0123456789", "012345678901"); };   // 22 bytes
+func:obs_s = int32(string:s) never fails { pass (s.len =>! int32); };
+// the read after the re-assignment, beside the moved-out value
+func:read_after = int32() never fails {
+    E:e = E.Som(raw mk());
+    int32:o = 0i32;
+    pick (move(e)) {
+        (Som(x)) { string:t = move(x); x = raw nw(); o = (raw obs_s(x)) + (raw obs_s(t)); },
+        (*) { o = -1i32; }
+    }
+    pass o;      // 22 + 4
+};
+// a loop that moves and re-assigns on every trip, then reads
+func:in_loop = int32() never fails {
+    E:e = E.Som(raw mk());
+    int32:o = 0i32;
+    pick (move(e)) {
+        (Som(x)) {
+            for (int32:i in 0i32...3i32) { string:t = move(x); x = raw nw(); o = o + (raw obs_s(t)); }
+            o = o + (raw obs_s(x));
+        },
+        (*) { o = -1i32; }
+    }
+    pass o;      // 4 + 22 + 22, then 22
+};
+// a re-assignment nothing reads: the arm's end drops the new value
+func:unread = int32() never fails {
+    E:e = E.Som(raw mk());
+    int32:o = 0i32;
+    pick (move(e)) {
+        (Som(x)) { string:t = move(x); x = raw nw(); o = raw obs_s(t); },
+        (*) { o = -1i32; }
+    }
+    pass o;      // 4
+};
+// a coroutine's arm: the binding's flag is a frame byte (DEF-121) and the new value lives across an await
+async func:tick = int32() { pass 0i32; };
+async func:co = int32() {
+    E:e = E.Som(raw mk());
+    int32:o = 0i32;
+    pick (move(e)) {
+        (Som(x)) { string:t = move(x); x = raw nw(); int32:w = await tick() ?| 0i32; o = (raw obs_s(x)) + w; },
+        (*) { o = -1i32; }
+    }
+    pass o;      // 22
+};
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw read_after()) != 26i32) { exit 1i32; }
+    if ((raw in_loop()) != 70i32) { exit 2i32; }
+    if ((raw unread()) != 4i32) { exit 3i32; }
+    int32:c = await co() ?| -1i32;
+    if (c != 22i32) { exit 4i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DeadlineExceeded)  { exit 97i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
