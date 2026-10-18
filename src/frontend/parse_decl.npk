@@ -1046,6 +1046,11 @@ func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     // the message. DEF-103's rule, applied where the name is read.
     Token:name = raw p_declared_name(p);
     IdSpan:members = raw idspan_empty();
+    // NO HEADER BAIL HERE (DEF-245, landing 130; the rule at `p_parse_func`): a module's header can fail only at
+    // its name -- a keyword, refused above -- and a member-less module node is a FILE import to the loader, which
+    // would then look for a file named nothing ("cannot find module ``", a second sentence). The item block is
+    // read as before; read in panic, a sound block reports nothing, and a member of its own that fails is a
+    // second mistake with its own report.
     if (raw p_accept(p, TokenKind.OpAssign)) {
         members = raw p_parse_item_block(p);
     }
@@ -1126,14 +1131,26 @@ func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never
     IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
     discard(raw p_expect(p, TokenKind.PRParen));
 
-    IdSpan:contracts = raw p_parse_contracts(p);
+    // THE HEADER BAIL (DEF-245, landing 130): a header the parser refused is the one report. The contracts and the
+    // body are not read -- a body read in panic is recovered statement by statement, which leaves panic and reports
+    // the misaligned rest of it as new mistakes (the fuzz corpus's `tr0425`: three reports of one `func<T>:name`)
+    // -- and the declaration's recovery skips the balanced block as one token (`p_recover_decl`). The node is the
+    // declaration's own kind with no body and empty windows, so the walks that run before the driver stops (the
+    // depth pass, the file-header check) read a well-formed declaration. Every declaration parser with a body, a
+    // member list or an initialiser bails the same way, at the same point: after its header, before the part that
+    // recovers on its own (`p_parse_mod` is the one exception, and says why). The second test below stands because
+    // a contract may refuse too.
+    IdSpan:contracts = raw idspan_empty();
+    if (!(raw p_in_panic(p))) { contracts = raw p_parse_contracts(p); }
 
     int32:body = 0i32;
-    if (raw p_at(p, TokenKind.PLBrace)) {
-        // Absent in a trait declaration, which gives a signature and no body.
-        body = (raw p_parse_block(p)).index;
+    if (!(raw p_in_panic(p))) {
+        if (raw p_at(p, TokenKind.PLBrace)) {
+            // Absent in a trait declaration, which gives a signature and no body.
+            body = (raw p_parse_block(p)).index;
+        }
+        discard(raw p_expect(p, TokenKind.PSemi));
     }
-    discard(raw p_expect(p, TokenKind.PSemi));
 
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, ret.index);
@@ -1161,33 +1178,39 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
     Token:name = raw p_declared_name(p);
     IdSpan:generics = raw p_parse_generics(p);
     discard(raw p_expect(p, TokenKind.OpAssign));
-    discard(raw p_expect(p, TokenKind.PLBrace));
-
-    int32:imark = raw ast_scratch_mark(p.ast);
-    while (true) decreases raw p_left(p) {
-        if (raw p_at(p, TokenKind.PRBrace)) { break; }
-        if (raw p_at_end(p)) { break; }
-        int64:before = raw p_position(p);
-        if (raw p_at(p, TokenKind.Hash)) {
-            // A splice into a struct or enum body. Whether what it emits FITS is
-            // expansion's question, not the parser's (D-085).
-            Span:msp = raw p_span(p);
-            DeclId:ms = raw p_parse_macro_splice(p, msp);
-            drop ast_scratch_push(p.ast, ms.index);
-        } else {
-        if (is_struct) {
-            DeclId:f = raw p_parse_field(p);
-            drop ast_scratch_push(p.ast, f.index);
-        } else {
-            DeclId:v = raw p_parse_variant(p);
-            drop ast_scratch_push(p.ast, v.index);
-        }}
-        drop p_recover_decl(p);
-        if ((raw p_position(p)) == before) { drop p_sync(p); }
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`): the member list is read, and its `{`
+    // taken, only when the header parsed -- a `{` taken in panic leaves the recovery inside the braces, and the
+    // `}` is then read as a declaration ("expected a type").
+    bool:bail = raw p_in_panic(p);
+    IdSpan:members = raw idspan_empty();
+    if (!bail) {
+        discard(raw p_expect(p, TokenKind.PLBrace));
+        int32:imark = raw ast_scratch_mark(p.ast);
+        while (true) decreases raw p_left(p) {
+            if (raw p_at(p, TokenKind.PRBrace)) { break; }
+            if (raw p_at_end(p)) { break; }
+            int64:before = raw p_position(p);
+            if (raw p_at(p, TokenKind.Hash)) {
+                // A splice into a struct or enum body. Whether what it emits FITS is
+                // expansion's question, not the parser's (D-085).
+                Span:msp = raw p_span(p);
+                DeclId:ms = raw p_parse_macro_splice(p, msp);
+                drop ast_scratch_push(p.ast, ms.index);
+            } else {
+            if (is_struct) {
+                DeclId:f = raw p_parse_field(p);
+                drop ast_scratch_push(p.ast, f.index);
+            } else {
+                DeclId:v = raw p_parse_variant(p);
+                drop ast_scratch_push(p.ast, v.index);
+            }}
+            drop p_recover_decl(p);
+            if ((raw p_position(p)) == before) { drop p_sync(p); }
+        }
+        members = raw ast_scratch_commit(p.ast, imark);
+        discard(raw p_expect(p, TokenKind.PRBrace));
+        discard(raw p_expect(p, TokenKind.PSemi));
     }
-    IdSpan:members = raw ast_scratch_commit(p.ast, imark);
-    discard(raw p_expect(p, TokenKind.PRBrace));
-    discard(raw p_expect(p, TokenKind.PSemi));
 
     DeclKind:kind = DeclKind.DeclEnumDecl;
     if (is_struct) { kind = DeclKind.DeclStructDecl; }
@@ -1265,8 +1288,12 @@ func:p_parse_trait = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     }
     IdSpan:supers = raw ast_scratch_commit(p.ast, smark);
 
-    IdSpan:members = raw p_parse_item_block(p);
-    discard(raw p_expect(p, TokenKind.PSemi));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`).
+    IdSpan:members = raw idspan_empty();
+    if (!(raw p_in_panic(p))) {
+        members = raw p_parse_item_block(p);
+        discard(raw p_expect(p, TokenKind.PSemi));
+    }
     pass (raw p_finish_item(p, sp, DeclKind.DeclTraitDecl, flags, name.payload,
                               generics, members, attrs, supers));
 };
@@ -1303,8 +1330,12 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never
         }
     }
     discard(raw p_expect(p, TokenKind.OpAssign));
-    IdSpan:members = raw p_parse_item_block(p);
-    discard(raw p_expect(p, TokenKind.PSemi));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`).
+    IdSpan:members = raw idspan_empty();
+    if (!(raw p_in_panic(p))) {
+        members = raw p_parse_item_block(p);
+        discard(raw p_expect(p, TokenKind.PSemi));
+    }
 
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, target);
@@ -1356,10 +1387,13 @@ func:p_parse_errdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     int32:code = 0i32;
-    if (raw p_accept(p, TokenKind.OpAssign)) {
-        code = (raw p_parse_expr(p)).index;
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`).
+    if (!(raw p_in_panic(p))) {
+        if (raw p_accept(p, TokenKind.OpAssign)) {
+            code = (raw p_parse_expr(p)).index;
+        }
+        discard(raw p_expect(p, TokenKind.PSemi));
     }
-    discard(raw p_expect(p, TokenKind.PSemi));
     pass (raw ast_add_decl(p.ast, DeclKind.DeclErrorDecl, sp,
                              flags, code, 0i32, name.payload));
 };
@@ -1374,8 +1408,12 @@ func:p_parse_unitdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.OpAssign));
-    ExprId:rhs = raw p_parse_expr(p);
-    discard(raw p_expect(p, TokenKind.PSemi));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`).
+    ExprId:rhs = ExprId{ index: 0i32 };
+    if (!(raw p_in_panic(p))) {
+        rhs = raw p_parse_expr(p);
+        discard(raw p_expect(p, TokenKind.PSemi));
+    }
     pass (raw ast_add_decl(p.ast, DeclKind.DeclUnitDecl, sp,
                              flags, rhs.index, 0i32, name.payload));
 };
@@ -1390,7 +1428,9 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_declared_name(p);   // an identifier (DEF-235, landing 113)
     discard(raw p_expect(p, TokenKind.OpAssign));
-    discard(raw p_expect(p, TokenKind.PLBrace));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`): the body is read, and its `{` taken,
+    // only when the header parsed.
+    bool:bail = raw p_in_panic(p);
 
     // Refinements first, then predicates. Two lists in one window, and gathering
     // them in this order is what keeps them contiguous -- `limit<Other>` clauses
@@ -1398,32 +1438,36 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     // stored with its own kind rather than being mistaken for a predicate.
     int32:rmark = raw ast_scratch_mark(p.ast);
     int32:refines = 0i32;
-    int32:cmark = raw ast_scratch_mark(p.ast);
     int32:clauses = 0i32;
-    while (true) decreases raw p_left(p) {
-        if (raw p_at(p, TokenKind.PRBrace)) { break; }
-        if (raw p_at_end(p)) { break; }
-        if (raw p_at(p, TokenKind.KwLimit)) {
-            // THE NODE, not its name (1.5.1): see the RuleDecl header.
-            VerifyId:l = raw p_parse_limit(p);
-            drop ast_scratch_push(p.ast, l.index);
-            refines = refines + 1i32;
-        } else {
-            break;
+    if (!bail) {
+        discard(raw p_expect(p, TokenKind.PLBrace));
+        while (true) decreases raw p_left(p) {
+            if (raw p_at(p, TokenKind.PRBrace)) { break; }
+            if (raw p_at_end(p)) { break; }
+            if (raw p_at(p, TokenKind.KwLimit)) {
+                // THE NODE, not its name (1.5.1): see the RuleDecl header.
+                VerifyId:l = raw p_parse_limit(p);
+                drop ast_scratch_push(p.ast, l.index);
+                refines = refines + 1i32;
+            } else {
+                break;
+            }
+            if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
-        if (!(raw p_accept(p, TokenKind.PComma))) { break; }
-    }
-    while (true) decreases raw p_left(p) {
-        if (raw p_at(p, TokenKind.PRBrace)) { break; }
-        if (raw p_at_end(p)) { break; }
-        ExprId:c = raw p_parse_expr(p);
-        drop ast_scratch_push(p.ast, c.index);
-        clauses = clauses + 1i32;
-        if (!(raw p_accept(p, TokenKind.PComma))) { break; }
+        while (true) decreases raw p_left(p) {
+            if (raw p_at(p, TokenKind.PRBrace)) { break; }
+            if (raw p_at_end(p)) { break; }
+            ExprId:c = raw p_parse_expr(p);
+            drop ast_scratch_push(p.ast, c.index);
+            clauses = clauses + 1i32;
+            if (!(raw p_accept(p, TokenKind.PComma))) { break; }
+        }
     }
     IdSpan:body = raw ast_scratch_commit(p.ast, rmark);
-    discard(raw p_expect(p, TokenKind.PRBrace));
-    discard(raw p_expect(p, TokenKind.PSemi));
+    if (!bail) {
+        discard(raw p_expect(p, TokenKind.PRBrace));
+        discard(raw p_expect(p, TokenKind.PSemi));
+    }
 
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, refines);
@@ -1454,6 +1498,9 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     }
     IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
     discard(raw p_expect(p, TokenKind.PRParen));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`): the body is scanned, read and closed only
+    // when the header parsed; the tail below builds the node either way, with an empty body.
+    bool:bail = raw p_in_panic(p);
     // THE BODY HAS THREE SHAPES, AND WHAT IS WRITTEN DECIDES WHICH.
     //
     // A macro is not declared to be a declaration-macro or an expression-macro;
@@ -1474,11 +1521,12 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     int32:plo = raw ast_pat_count(p.ast);
     int32:slo = raw ast_stmt_count(p.ast);
     int32:dlo = raw ast_decl_count(p.ast);
-    bool:has_decl = raw p_macro_body_has_decl(p);
+    bool:has_decl = false;
+    if (!bail) { has_decl = raw p_macro_body_has_decl(p); }
     int64:errs_before = raw diaglist_count(p.diags);
     bool:mixed = false;
-    discard(raw p_expect(p, TokenKind.PLBrace));
-    while (true) decreases raw p_left(p) {
+    if (!bail) { discard(raw p_expect(p, TokenKind.PLBrace)); }
+    while (!bail) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
@@ -1512,6 +1560,13 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
             drop ast_scratch_push(p.ast, st2.index);
             bcount = bcount + 1i32;
         }
+        // A MEMBER THAT FAILED ENDS AT A DECLARATION SYNC POINT (DEF-245, landing 130): a declaration body is a
+        // sequence of declarations, recovered as `p_parse_item_block` recovers its members -- without it a
+        // member whose header failed left the loop in panic, the next item was read as "a statement in a
+        // declarations body" and parsed as one, its block's statement recovery left panic, and the member's
+        // own `}` ended the macro (the module loop then reported the macro's `}` as a declaration). A statement
+        // body keeps `p_sync`'s progress rule alone, as before.
+        if (has_decl) { drop p_recover_decl(p); }
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:body = raw ast_scratch_commit(p.ast, bmark);
@@ -1542,8 +1597,10 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
         drop ast_set_expr_flag(p.ast, ExprId{ index: em }, raw HYG_IN_MACRO());
         em = em + 1i32;
     }
-    discard(raw p_expect(p, TokenKind.PRBrace));
-    discard(raw p_expect(p, TokenKind.PSemi));
+    if (!bail) {
+        discard(raw p_expect(p, TokenKind.PRBrace));
+        discard(raw p_expect(p, TokenKind.PSemi));
+    }
     // WHERE THIS DECLARATION STANDS (DEF-192): from its first token to the token
     // after its `;`. Every node of the body lies between the two, and so does
     // every copy an instantiation makes of one -- a clone keeps its span.
@@ -1612,24 +1669,30 @@ func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
         lib = ((raw p_advance(p)).payload) =>! int32;
     }
     discard(raw p_expect(p, TokenKind.OpAssign));
-    discard(raw p_expect(p, TokenKind.PLBrace));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`): the member loop runs only when the block's
+    // header parsed -- `extern func:f = int32() { pass 1i32; };` (the fuzz corpus's `as0100`) was refused at `func`
+    // and then read on as a block whose members were `func:f = int32()` and `pass`, "expected `func`" at the latter.
+    bool:bail = raw p_in_panic(p);
     int32:mark = raw ast_scratch_mark(p.ast);
-    while (true) decreases raw p_left(p) {
-        if (raw p_at(p, TokenKind.PRBrace)) { break; }
-        if (raw p_at_end(p)) { break; }
-        int64:before = raw p_position(p);
-        if (raw p_at(p, TokenKind.KwOpaque)) {
-            DeclId:o = raw p_parse_opaque(p, raw p_span(p), 0i32);
-            drop ast_scratch_push(p.ast, o.index);
-        } else {
-            DeclId:f = raw p_parse_extern_fn(p);
-            drop ast_scratch_push(p.ast, f.index);
+    if (!bail) {
+        discard(raw p_expect(p, TokenKind.PLBrace));
+        while (true) decreases raw p_left(p) {
+            if (raw p_at(p, TokenKind.PRBrace)) { break; }
+            if (raw p_at_end(p)) { break; }
+            int64:before = raw p_position(p);
+            if (raw p_at(p, TokenKind.KwOpaque)) {
+                DeclId:o = raw p_parse_opaque(p, raw p_span(p), 0i32);
+                drop ast_scratch_push(p.ast, o.index);
+            } else {
+                DeclId:f = raw p_parse_extern_fn(p);
+                drop ast_scratch_push(p.ast, f.index);
+            }
+            drop p_recover_decl(p);
+            if ((raw p_position(p)) == before) { drop p_sync(p); }
         }
-        drop p_recover_decl(p);
-        if ((raw p_position(p)) == before) { drop p_sync(p); }
+        discard(raw p_expect(p, TokenKind.PRBrace));
+        discard(raw p_expect(p, TokenKind.PSemi));
     }
-    discard(raw p_expect(p, TokenKind.PRBrace));
-    discard(raw p_expect(p, TokenKind.PSemi));
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_decl(p.ast, DeclKind.DeclExternBlock, sp,
                              flags, w.start, w.count, lib => int64));
@@ -1661,8 +1724,12 @@ func:p_parse_extern_fn = DeclId(Parser->:p) never fails {
     IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
     discard(raw p_expect(p, TokenKind.PRParen));
 
-    DeclId:failure = raw p_parse_failure(p);
-    discard(raw p_expect(p, TokenKind.PSemi));
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`).
+    DeclId:failure = DeclId{ index: 0i32 };
+    if (!(raw p_in_panic(p))) {
+        failure = raw p_parse_failure(p);
+        discard(raw p_expect(p, TokenKind.PSemi));
+    }
 
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, ret.index);
@@ -1721,10 +1788,14 @@ func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_binding_name(p);   // an identifier (DEF-235, landing 113)
     int32:init = 0i32;
-    if (raw p_accept(p, TokenKind.OpAssign)) {
-        init = (raw p_parse_expr(p)).index;
+    // THE HEADER BAIL (DEF-245, landing 130; the rule at `p_parse_func`): the initialiser is read only when the
+    // header parsed (a `pick` expression inside it recovers arm by arm, and would leave panic).
+    if (!(raw p_in_panic(p))) {
+        if (raw p_accept(p, TokenKind.OpAssign)) {
+            init = (raw p_parse_expr(p)).index;
+        }
+        discard(raw p_expect(p, TokenKind.PSemi));
     }
-    discard(raw p_expect(p, TokenKind.PSemi));
     // `flags` (the `pub`) rides the high half of the qualifier slot -- `a` is
     // the type, `b` the initialiser, `payload` the name, and nothing else is
     // free. Dropped on the floor until 1.4.8 (see `decl_flags`).
@@ -1776,9 +1847,21 @@ pub func:p_parse_module = DeclId(Parser->:p) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
     while (!(raw p_at_end(p))) decreases raw p_left(p) {
         int64:before = raw p_position(p);
+        int64:dbefore = raw diaglist_count(p.diags);
         DeclId:item = raw p_parse_decl(p);
         drop ast_scratch_push(p.ast, item.index);
         drop p_recover_decl(p);
+        // THE TAIL OF A BROKEN DECLARATION (DEF-245, landing 130): a `}` or a `;` left standing at the TOP LEVEL
+        // right after a declaration that reported is that declaration's own -- a body whose `{` was the mistake
+        // (`func:f = int32() pass 1i32; };` is refused at `pass`, and its recovery ends at the `;`) -- and reading
+        // it as the next declaration said "expected a type" of it. Nothing of the kind is eaten after a sound
+        // declaration, and never inside an item block, where a `}` is the block's end.
+        if ((raw diaglist_count(p.diags)) != dbefore) {
+            while (true) decreases raw p_left(p) {
+                if (raw p_at(p, TokenKind.PRBrace)) { discard(raw p_advance(p)); } else {
+                if (raw p_at(p, TokenKind.PSemi))   { discard(raw p_advance(p)); } else { break; }}
+            }
+        }
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:members = raw ast_scratch_commit(p.ast, mark);

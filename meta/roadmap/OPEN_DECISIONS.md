@@ -2873,6 +2873,8 @@ defect declares a `DEF-` in §2f.
 > read-only pointer, or the two write forms could ask the header's owner. Its own landing; not closed by 128, which
 > adds the checked spellings beside the raw ones.
 
+> **DEF-265 — OPEN (registered 2026-10-17 by `nitpick-compiler_40` at landing 130, found by that landing's measurement of the fuzz corpus's `tr0550`; LOW: a count defect, DEF-245's family, the file refused either way). A FAILED EXPRESSION FOLLOWED BY A STRUCT LITERAL'S BRACES ENDS THE ENCLOSING BODY EARLY, AND THE STATEMENTS AFTER IT ARE REPORTED AS DECLARATIONS.** `Box<int32>:c = Box<int32>{ v: 5i32, n: 3i32 }; exit 0i32;` inside `main` (a generic struct literal is spelled bare, `Box{ … }`; the `<` reads as a comparison) is PARSE-002 "expected an expression" at `int32` and then PARSE-001 "expected a type" at `exit`: `main`'s body has ended at the literal's `}` and `exit` stands at the module level -- the STATEMENT recovery's doing (the reading, not yet verified line by line: `p_recover` stops at a `{`, which can begin a block statement, and the literal's braces are read as one); before landing 130 the body's own `}` was a third report (the module loop's tail rule eats it now). Probe `wt/40c/.internal/probes/def245/stmt_brace.npk`, 3 -> 2 reports; `tr0550` 4 -> 3; the fuzz corpus's `as0594` (13:5) and `ty1282` (10:5) keep the same statement-level phantom after landing 130's sweep removed their trailing `}` reports. The fix is the statement recovery's -- a `{` reached inside a failed expression statement is the expression's, not a block's -- read `p_recover` and `p_can_start_item`'s `PLBrace` row before changing either. Its own small landing.
+
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
 > (107) in safe code, measured on 3235308: `kill(shared_arena<int64>->:s) { s.destroy(); }` called with `@s` from
@@ -2968,7 +2970,7 @@ defect declares a `DEF-` in §2f.
 > LEX-004 are not followed by PARSE-002; (c) a dangling exponent sign before a terminator is the refused float's tail (`1.5e+`,
 > LEX-009 naming `e+`), `3.5e-x` keeping its reading; (e) a signature holding a refused type is not compared, so TYPE-001 stands
 > alone (`sig_holds_invalid`). `parse_one_report.npk` (the unit test: faces a-d, each one diagnostic, with the recovery controls) and
-> `impl_refused_param.npk` (face e beside a real mismatch, still TYPE-014). WAS: OPEN (2026-09-27; owner: the compiler seat; found by D-332's count rule run over the library
+> `impl_refused_param.npk` (face e beside a real mismatch, still TYPE-014). 2026-10-18 (landing 130): face (a)'s recovery knows a bracket and a consumed terminator now, and every declaration parser bails after a header that failed -- DEF-245 and DEF-260, this row's family. WAS: OPEN (2026-09-27; owner: the compiler seat; found by D-332's count rule run over the library
 > listener's corpus, `nitpick-time/tests/probe/probe14_error_payload_refused.npk`). THE PARSER'S RECOVERY
 > REPORTS ONE MISTAKE TWICE:** `pub error:ETimeValue(ValueFault);` -- an error identity with a payload, which
 > the language does not have -- is PARSE-001 at the `(` ("expected `;`") and PARSE-001 again at the `)`
@@ -4135,7 +4137,7 @@ defect declares a `DEF-` in §2f.
 > directory, never the text) where none does -- decided at one place in the loader, so that RESOLVE-010 means what it
 > says. Nothing in the libraries or the applications takes the shape (nitpick-time measured and worked around nothing).
 
-> **DEF-245 — OPEN (registered 2026-10-08 by `nitpick-compiler_32`, found by landing 101's sweep and read by `nitpick-compiler_33`;
+> **DEF-245 — FIXED 2026-10-18 (landing 130, `nitpick-compiler_40`; planned at `.internal/handoff_35/DEF245_PLAN.md`): every declaration parser BAILS after its header when the parser is in panic (`p_parse_func`'s comment states the rule; `p_parse_mod` the one exception, for the loader's sake), and a declaration's recovery (`p_recover_decl`) stops at a DECLARATION sync point (`is_decl_sync_point`: no statement keyword) at bracket depth 0 only -- `{ … }`, `( … )` and `[ … ]` skipped as one token, a `;` consumed, a `}` left standing -- and skips nothing when it begins right after a consumed `;` (DEF-260); a macro's declaration body recovers per member; `p_parse_module` eats the `}`/`;` tail a declaration that reported leaves at the top level. Six of the fuzz corpus's seven shapes are one report (`tr0550` keeps a statement-level artefact: DEF-265); `parse_one_report.npk` (+24 cases). WAS: OPEN (registered 2026-10-08 by `nitpick-compiler_32`, found by landing 101's sweep and read by `nitpick-compiler_33`;
 > low priority, DEF-164's family). A DECLARATION WHOSE HEADER FAILS IS PARSED ON INTO ITS BODY, AND THE BODY IS REPORTED TWICE MORE.**
 > -- `extern func:f = int32() { pass 1i32; };` (the fuzzer's `as0100`, AST_REFERENCE §100's claim: `extern` is not a modifier) is
 > PARSE-001 at the `func` ("expected `:`") and PARSE-001 again inside the body, because the `extern` declaration's parser goes on
@@ -4390,7 +4392,7 @@ defect declares a `DEF-` in §2f.
 > `wild` or `fixed` is PARSE-001 as the notice said. The right answer is PARSE-001 at the name for the plain local too
 > (DEF-235's helpers). Its own small landing, with DEF-258.
 
-> **DEF-260 — OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 120; the regex planner's observation, relayed
+> **DEF-260 — FIXED 2026-10-18 (landing 130, `nitpick-compiler_40`, with DEF-245): a declaration's recovery that begins right after a consumed `;` skips nothing (`p_recover_decl`, `p_prev_kind`), so `struct:K = { int64:range; int64:limit; int64:in; }` is three reports; `parse_one_report.npk`. WAS: OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 120; the regex planner's observation, relayed
 > by `nitpick-libs_19` on 2026-10-16 09:2x and by `nitpick-libs_20` at 10:5x, measured by them at both pins; LOW: a count
 > defect in DEF-245's family, the file refused either way). THE PARSER'S RECOVERY AFTER A KEYWORD-NAMED FIELD SKIPS THE
 > NEXT FIELD'S REPORT.** `struct:K = { int64:range; int64:limit; int64:in; }` on c9baa9e reports PARSE-001 at `range` and

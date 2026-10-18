@@ -13,6 +13,17 @@
 // recovery still does: a declaration after a sync keyword parses, two broken
 // declarations are two reports, and `3.5e-x` keeps its reading (the literal `3.5e`, a
 // minus and a name -- one report, as before).
+//
+// A DECLARATION WHOSE HEADER FAILS IS NOT PARSED INTO ITS BODY (DEF-245, landing 130): every
+// declaration parser bails after its header when the parser is in panic, and a declaration's
+// recovery skips a bracketed region as one token and stops at a DECLARATION sync point only --
+// `func<T>:f = int32() { pass 1i32; };` was three reports (the header's, then "expected a type"
+// at the `pass` the old recovery stopped at and at the body's `}`). The fuzz corpus's seven shapes
+// and every declaration kind with a block behind its broken header are one report each here; the
+// controls say a sound declaration after a broken one is still parsed, a broken member in an impl
+// or a macro body leaves its siblings alone, and two statement-level mistakes stay two reports.
+// And a recovery that begins right after a consumed `;` skips nothing (DEF-260, the same landing):
+// three keyword-named fields are three reports where the middle one was passed over.
 
 mod:parse_one_report;
 use "../../src/frontend/source_location.npk".*;
@@ -102,6 +113,70 @@ func:main = int32(cstring[]:_~argv) {
     // CONTROL: a sound module parses clean.
     Parsed:h = raw parsed("mod:m; pub error:EPlain; func:f = int32() { pass 1i32; };", @it);
     if ((raw diaglist_count(@h.diags)) != 0i64)                                     { exit 80i32; }
+
+    // --- DEF-245 (landing 130): a header that fails is the one report ------------------------
+    // the fuzz corpus's shapes (as0100, tr0425, cc0151c, md0219, tr0448, vf0580)
+    Parsed:i1 = raw parsed("mod:m; extern func:f = int32() { pass 1i32; };", @it);
+    if (!(raw one_diag(@i1, raw PARSE_EXPECTED())))                                 { exit 110i32; }
+    Parsed:i2 = raw parsed("mod:m; func<T>:process = int32(T:_~x) never fails { pass 0i32; };", @it);
+    if (!(raw one_diag(@i2, raw PARSE_EXPECTED())))                                 { exit 111i32; }
+    Parsed:i3 = raw parsed("mod:m; sync func:f = int32() {\n    pass 1i32;\n};", @it);
+    if (!(raw one_diag(@i3, raw PARSE_EXPECTED())))                                 { exit 112i32; }
+    Parsed:i4 = raw parsed("mod:m; func add(int32:a, int32:b) -> int32 { pass (a + b); };", @it);
+    if (!(raw one_diag(@i4, raw PARSE_EXPECTED())))                                 { exit 113i32; }
+    Parsed:i5 = raw parsed("mod:m; func:f = int32(Lock<int64, 2 > 1>:_~l) never fails { pass 0i32; };", @it);
+    if (!(raw one_diag(@i5, raw PARSE_EXPECTED())))                                 { exit 114i32; }
+    Parsed:i6 = raw parsed("mod:m; func:f = int32(int32:n) unbounded never fails { pass n; };", @it);
+    if (!(raw one_diag(@i6, raw PARSE_EXPECTED())))                                 { exit 115i32; }
+    // the kinds: a struct, an enum, a trait, an impl, a macro, a rule, an inline module, an extern
+    // function inside a sound block, a global, and a nested block behind a broken header
+    Parsed:k1 = raw parsed("mod:m; struct<T>:S = { T:v; int32:n; };", @it);
+    if (!(raw one_diag(@k1, raw PARSE_EXPECTED())))                                 { exit 120i32; }
+    Parsed:k2 = raw parsed("mod:m; enum E = { A; B(int32); };", @it);
+    if (!(raw one_diag(@k2, raw PARSE_EXPECTED())))                                 { exit 121i32; }
+    Parsed:k3 = raw parsed("mod:m; trait<T>:Tr = { func:f = int32(Self:s); };", @it);
+    if (!(raw one_diag(@k3, raw PARSE_EXPECTED())))                                 { exit 122i32; }
+    Parsed:k4 = raw parsed("mod:m; impl Pt = { func:f = int32(Pt:s) never fails { pass 1i32; }; };", @it);
+    if (!(raw one_diag(@k4, raw PARSE_EXPECTED())))                                 { exit 123i32; }
+    Parsed:k5 = raw parsed("mod:m; macro mm = (N) { func:N = int32() { pass 1i32; }; };", @it);
+    if (!(raw one_diag(@k5, raw PARSE_EXPECTED())))                                 { exit 124i32; }
+    Parsed:k6 = raw parsed("mod:m; Rules<int32> R = { $ > 0i32 };", @it);
+    if (!(raw one_diag(@k6, raw PARSE_EXPECTED())))                                 { exit 125i32; }
+    Parsed:k7 = raw parsed("mod:m; mod:error = { func:f = int32() { pass 1i32; }; };", @it);
+    if (!(raw one_diag(@k7, raw PARSE_EXPECTED())))                                 { exit 126i32; }
+    Parsed:k8 = raw parsed("mod:m; extern:\"lib\" = { func f = int32() never fails; func:g = int32() never fails; };", @it);
+    if (!(raw one_diag(@k8, raw PARSE_EXPECTED())))                                 { exit 127i32; }
+    Parsed:k9 = raw parsed("mod:m; fixed int32 K = 5i32;", @it);
+    if (!(raw one_diag(@k9, raw PARSE_EXPECTED())))                                 { exit 128i32; }
+    Parsed:k10 = raw parsed("mod:m; func<T>:f = int32() { if (true) { pass 1i32; } pass 2i32; };", @it);
+    if (!(raw one_diag(@k10, raw PARSE_EXPECTED())))                                { exit 129i32; }
+    // CONTROL: a sound declaration after a broken one is parsed -- the recovery stops at `func`.
+    Parsed:c1 = raw parsed("mod:m; func<T>:f = int32() { pass 1i32; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@c1, raw PARSE_EXPECTED())))                                 { exit 130i32; }
+    if (!(raw has_func(@c1, @it, "g")))                                             { exit 131i32; }
+    // CONTROL: a body whose `{` is the mistake -- the `;` expected at `pass`, the `}` and `;` it
+    // leaves at the top level eaten as its tail, the next declaration parsed.
+    Parsed:c2 = raw parsed("mod:m; func:f = int32() pass 1i32; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@c2, raw PARSE_EXPECTED())))                                 { exit 132i32; }
+    if (!(raw has_func(@c2, @it, "g")))                                             { exit 133i32; }
+    // CONTROL: a broken member in an impl and in a macro's declaration body leaves the siblings
+    // alone -- one report each.
+    Parsed:c3 = raw parsed("mod:m; impl:Pt = { func<T>:f = int32(Pt:s) never fails { pass 1i32; }; func:g = int32(Pt:s) never fails { pass 2i32; }; };", @it);
+    if (!(raw one_diag(@c3, raw PARSE_EXPECTED())))                                 { exit 134i32; }
+    Parsed:c4 = raw parsed("mod:m; macro:mm = () { func<T>:g = int32() { pass 1i32; }; func:h = int32() { pass 2i32; }; };", @it);
+    if (!(raw one_diag(@c4, raw PARSE_EXPECTED())))                                 { exit 135i32; }
+    // CONTROL: two statement-level mistakes inside a sound function stay two reports -- the
+    // statement recovery (`p_recover`) is untouched.
+    Parsed:c5 = raw parsed("mod:m; func:f = int32() { int32:a = ; int32:b = ; pass 1i32; };", @it);
+    if ((raw diaglist_count(@c5.diags)) != 2i64)                                    { exit 136i32; }
+    // DEF-260 (landing 130): a recovery that begins right after a consumed `;` skips nothing -- three
+    // keyword-named fields are three reports (the middle one was passed over), and two keyword-named
+    // error constants are two, the function after them parsed.
+    Parsed:d1 = raw parsed("mod:m; struct:K = { int64:range; int64:limit; int64:in; };", @it);
+    if ((raw diaglist_count(@d1.diags)) != 3i64)                                    { exit 140i32; }
+    Parsed:d2 = raw parsed("mod:m; error:any; error:in; func:g = int32() { pass 2i32; };", @it);
+    if ((raw diaglist_count(@d2.diags)) != 2i64)                                    { exit 141i32; }
+    if (!(raw has_func(@d2, @it, "g")))                                             { exit 142i32; }
 
     wild_release_all();
     exit 0i32;

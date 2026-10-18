@@ -213,6 +213,39 @@ pub func:is_sync_point = bool(TokenKind:k) never fails {
     pass false;
 };
 
+// A DECLARATION'S SYNC POINTS (DEF-245, landing 130): what a declaration-level recovery stops AT -- Eof, `;`, `}`,
+// and the words that begin a declaration: `pub`, the declaration keywords, and the modifiers that may stand before
+// one (`async`, `thread`, `inline`, `noinline`). The STATEMENT keywords are NOT here: `is_sync_point` lists them for
+// `p_sync` and for a statement's recovery, and a declaration's recovery that stopped at the `pass` inside a body the
+// parser had never entered read `pass` and the body's `}` as two declarations, one "expected a type" each (DEF-245).
+// `comptime` is not here either -- it opens `comptime(…)` inside a type, where a stop would be a phantom declaration
+// start -- and neither is `#` (`#size_of<T>()` stands inside a type); a `comptime func:` or a splice written after a
+// broken declaration is lost to the parse, which costs nothing (a parse error stops the driver before resolution).
+pub func:is_decl_sync_point = bool(TokenKind:k) never fails {
+    if (k == TokenKind.Eof)        { pass true; }
+    if (k == TokenKind.PSemi)      { pass true; }
+    if (k == TokenKind.PRBrace)    { pass true; }
+    if (k == TokenKind.KwPub)      { pass true; }
+    if (k == TokenKind.KwFunc)     { pass true; }
+    if (k == TokenKind.KwStruct)   { pass true; }
+    if (k == TokenKind.KwEnum)     { pass true; }
+    if (k == TokenKind.KwTrait)    { pass true; }
+    if (k == TokenKind.KwImpl)     { pass true; }
+    if (k == TokenKind.KwUse)      { pass true; }
+    if (k == TokenKind.KwMod)      { pass true; }
+    if (k == TokenKind.KwExtern)   { pass true; }
+    if (k == TokenKind.KwMacro)    { pass true; }
+    if (k == TokenKind.KwRules)    { pass true; }
+    if (k == TokenKind.KwAssoc)    { pass true; }
+    if (k == TokenKind.KwOpaque)   { pass true; }
+    if (k == TokenKind.KwError)    { pass true; }
+    if (k == TokenKind.KwUnit)     { pass true; }
+    if (k == TokenKind.KwAsync)    { pass true; }
+    if (k == TokenKind.KwThread)   { pass true; }
+    if (k == TokenKind.KwInline)   { pass true; }
+    pass (k == TokenKind.KwNoinline);
+};
+
 // Skip to the next point a rule can restart from, then leave panic mode.
 //
 // Always consumes AT LEAST ONE token unless already at Eof. Without that, a rule
@@ -380,20 +413,46 @@ pub func:p_recover = NIL(Parser->:p) never fails {
     pass NIL;
 };
 
-// A DECLARATION'S RECOVERY SKIPS TO A SYNC POINT (DEF-164 (a), landing 101; D-240): `p_recover` stops at anything
-// that can start an item, and an identifier the broken declaration left behind -- `ValueFault)` after
-// `error:ETimeValue(` was refused at the `(` -- can start one, so it was read as a new declaration and reported a
-// second time ("expected `:`, found `)`"). At the declaration level the broken construct ends at the next `;`,
-// `}` or declaration keyword, which is `is_sync_point`'s set; a declaration that follows without one of those
-// between is lost to the parse, which costs nothing (a parse error stops the driver before resolution). Statements
-// keep `p_recover`: most begin with an identifier or a type.
+// A DECLARATION'S RECOVERY SKIPS TO A DECLARATION SYNC POINT, AND IT KNOWS A BRACKET (DEF-164 (a), landing 101;
+// DEF-245, landing 130; D-240). `p_recover` stops at anything that can start an item, and an identifier the broken
+// declaration left behind -- `ValueFault)` after `error:ETimeValue(` was refused at the `(` -- can start one, so it
+// was read as a new declaration and reported a second time ("expected `:`, found `)`"). At the declaration level the
+// broken construct ends at the next `;`, `}` or declaration keyword OUTSIDE EVERY BRACKET (`is_decl_sync_point`'s
+// set): `{ … }`, `( … )` and `[ … ]` are each one token to this walk, because the first form stopped at
+// `is_sync_point`'s STATEMENT keywords -- at the `pass` inside a body the parser had never entered -- and the module
+// loop then read `pass` and the body's `}` as two declarations, "expected a type" each (DEF-245: `func<T>:f =
+// int32() { pass 1i32; };` was three reports of one mistake). A `;` at depth 0 is consumed (the broken declaration's
+// terminator); a `}` at depth 0 is left standing (the enclosing item block's end, or the tail `p_parse_module` eats);
+// a `)` or `]` at depth 0 is the broken header's own and is stepped over; and a recovery that begins right after a
+// consumed `;` skips nothing at all (DEF-260, below). A declaration that follows without one of those between is lost
+// to the parse, which costs nothing (a parse error stops the driver before resolution). Statements keep `p_recover`:
+// most begin with an identifier or a type.
 pub func:p_recover_decl = NIL(Parser->:p) never fails {
     if (!p.panic) {
         pass NIL;
     }
+    // A RECOVERY THAT BEGINS RIGHT AFTER A CONSUMED `;` SKIPS NOTHING (DEF-260, landing 130): the broken declaration
+    // ended at its own terminator -- a field named with a keyword, `int64:range;`, is refused at the name and parsed
+    // to its `;` -- so what follows is the next member, and skipping to the next sync point from there ate it whole:
+    // `struct:K = { int64:range; int64:limit; int64:in; }` reported `range` and `in` and passed over `limit`, a
+    // count a rejection file could not hold (D-332).
+    if ((raw p_prev_kind(p)) == TokenKind.PSemi) {
+        p.panic = false;
+        pass NIL;
+    }
+    int32:depth = 0i32;
     while (true) decreases raw p_left(p) {
-        if (raw p_at_end(p))               { break; }
-        if (raw is_sync_point(raw p_kind(p))) { break; }
+        if (raw p_at_end(p)) { break; }
+        TokenKind:k = raw p_kind(p);
+        if (depth == 0i32) {
+            if (raw is_decl_sync_point(k)) { break; }
+        }
+        if (k == TokenKind.PLBrace)   { depth = depth + 1i32; }
+        if (k == TokenKind.PLParen)   { depth = depth + 1i32; }
+        if (k == TokenKind.PLBracket) { depth = depth + 1i32; }
+        if (k == TokenKind.PRBrace)   { depth = depth - 1i32; }
+        if (k == TokenKind.PRParen)   { if (depth > 0i32) { depth = depth - 1i32; } }
+        if (k == TokenKind.PRBracket) { if (depth > 0i32) { depth = depth - 1i32; } }
         discard(raw p_advance(p));
     }
     if (raw p_at(p, TokenKind.PSemi)) {
@@ -404,4 +463,9 @@ pub func:p_recover_decl = NIL(Parser->:p) never fails {
 };
 
 pub func:p_in_panic = bool(Parser->:p) never fails { pass p.panic; };
+// THE TOKEN JUST CONSUMED (DEF-260, landing 130): Eof when nothing was.
+func:p_prev_kind = TokenKind(Parser->:p) never fails {
+    if (p.pos <= 0i64) { pass TokenKind.Eof; }
+    pass ((raw tokenlist_at(p.tokens, p.pos - 1i64)).kind);
+};
 pub func:p_position = int64(Parser->:p) never fails { pass p.pos; };
