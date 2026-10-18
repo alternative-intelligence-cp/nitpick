@@ -110,6 +110,15 @@ The canonical syntax imports directly from an `.npk` file path:
 *   **Selective**: `use "path/module.npk".{square, pi};`
 *   **Namespace (Alias)**: `use "path/module.npk" as math;`
 
+> *[2026-10-17, 1.6.1e landing 129 — a dated note (DEF-244).]* A FILE IS ONE MODULE WHATEVER SPELLING NAMES IT. The
+> path in a `use` is resolved against the importing file's directory and the loader keys the module by the FILE's
+> identity -- its absolute normalised path -- so a root named `a.npk` from its own directory and the same file imported
+> back from a sibling as `../b/../a/a.npk` are one module, loaded once. Until this landing the key was the spelling after
+> a textual collapse of `.` and `..`, which cannot know that `../a` is the directory the root stands in: the file was read
+> twice, and the reader met `NITPICK-RESOLVE-010` at its one error constant ("an FNV collision") and `NITPICK-RESOLVE-013`
+> at its `main` -- two symptoms of one double load, now impossible. No import cycle is involved, and none is refused: the
+> import rounds settle a cycle (§2.4, D-273's fixpoint).
+
 ### 2.2 Logical Path Imports
 ```nitpick
 use std.math.*;

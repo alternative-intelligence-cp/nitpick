@@ -1,0 +1,123 @@
+// source_key.npk -- ONE FILE, ONE ID (DEF-244, 1.6.1e landing 129): the source manager keys a file by its IDENTITY --
+// the absolute normalised path under a driver that set the working directory (D-236) -- and not by the spelling it
+// was named by. Before this landing a root named `a.npk` from its own directory and the same file imported back as
+// `../b/../a/a.npk` were two keys (the texts collapse to `a.npk` and `../a/a.npk`, and no text walk knows `../a` is the
+// directory it stands in): the file was read twice, its one error constant declared twice under one code
+// (RESOLVE-010) and its `main` once as the root's and once as a module's (RESOLVE-013). A manager with no working
+// directory (a unit's) keys by the normalised spelling, as before. Two pid-tagged temporary directories under one
+// base (DEF-137's fixed-width tag), written here and removed before the exit.
+mod:source_key;
+error:Setup;   // the temporary files could not be made
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/source.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/paths.npk".*;
+use "../../lib/nsys.npk".*;   // sys_pid_tag (DEF-137)
+
+func:mkdir = NIL(string:p) {
+    cstring:c = relay to_cstring(p);
+    discard(sys(83i64, c.ptr, 448i64) ?| 0i64);   // mkdir, 0700
+    pass NIL;
+};
+func:rmdir = NIL(string:p) {
+    cstring:c = relay to_cstring(p);
+    discard(sys(84i64, c.ptr) ?| 0i64);   // rmdir
+    pass NIL;
+};
+func:unlink = NIL(string:p) {
+    cstring:c = relay to_cstring(p);
+    discard(sys(87i64, c.ptr) ?| 0i64);   // unlink
+    pass NIL;
+};
+
+// THE WORK IS FALLIBLE (the temporary files, the loads), so it runs in a helper `main` unwraps with the unit's own identity.
+func:run = int32() {
+    string:me = relay sys_pid_tag();
+    string:base = string_concat("/tmp/npk_key.", me);
+    string:da = raw path_join(base, "a");
+    string:db = raw path_join(base, "b");
+    relay mkdir(base); relay mkdir(da); relay mkdir(db);
+    string:pa = raw path_join(da, "a.npk");
+    string:pb = raw path_join(db, "b.npk");
+    cstring:ca = relay to_cstring(pa);
+    cstring:cb = relay to_cstring(pb);
+    Result<NIL>:wa = write_file(ca, "mod:a;\n");
+    Result<NIL>:wb = write_file(cb, "mod:b;\n");
+    if (wa.is_error) { fail Setup; }
+    if (wb.is_error) { fail Setup; }
+
+    int32:verdict = 0i32;
+    // 1. UNDER A DRIVER: the working directory is `a/`, the root the base -- the
+    //    shape DEF-244 measured (`npkc a.npk` from `a/`, `b/b.npk` importing
+    //    `../a/a.npk` back).
+    {
+        SourceManager:sm = raw srcmgr_init();
+        drop srcmgr_set_root(@sm, string_concat(da, ""), string_concat(base, ""));
+        int32:fa = relay srcmgr_load(@sm, "a.npk");                    // the root, as the driver was given it
+        int32:fa2 = relay srcmgr_load(@sm, "../a/a.npk");              // the same file, imported back from `b/`
+        int32:fa3 = relay srcmgr_load(@sm, "../b/../a/a.npk");         // the import's spelling before normalising
+        int32:fa4 = raw srcmgr_find(@sm, string_concat(pa, ""));       // the absolute path itself
+        int32:fb = relay srcmgr_load(@sm, "../b/b.npk");               // another file: another id
+        if (fa < 0i32)                        { verdict = 1i32; }
+        if (fa2 != fa)                        { if (verdict == 0i32) { verdict = 2i32; } }   // one file, one id
+        if (fa3 != fa)                        { if (verdict == 0i32) { verdict = 3i32; } }
+        if (fa4 != fa)                        { if (verdict == 0i32) { verdict = 4i32; } }
+        if (fb == fa)                         { if (verdict == 0i32) { verdict = 5i32; } }
+        if ((raw srcmgr_count(@sm)) != 2i32)  { if (verdict == 0i32) { verdict = 6i32; } }   // two files were read
+        // The SHOWN paths do not move (D-236): relative to the root, whatever spelling named the file.
+        string:sa = relay srcmgr_path(@sm, fa);
+        string:sb = relay srcmgr_path(@sm, fb);
+        if (!(raw string_eq(sa, "a/a.npk"))) { if (verdict == 0i32) { verdict = 7i32; } }
+        if (!(raw string_eq(sb, "b/b.npk"))) { if (verdict == 0i32) { verdict = 8i32; } }
+    }
+    // 2. WITHOUT A DRIVER (a unit's manager): the normalised spelling is the key, as before.
+    {
+        SourceManager:sm2 = raw srcmgr_init();
+        int32:ga = raw srcmgr_add(@sm2, "a.npk", "mod:a;");
+        if ((raw srcmgr_find(@sm2, "a.npk")) != ga)   { if (verdict == 0i32) { verdict = 9i32; } }
+        if ((raw srcmgr_find(@sm2, "./a.npk")) != ga) { if (verdict == 0i32) { verdict = 10i32; } }   // normalised
+        if ((raw srcmgr_find(@sm2, "../a/a.npk")) >= 0i32) { if (verdict == 0i32) { verdict = 11i32; } }   // no cwd: another spelling
+    }
+
+    relay unlink(pa); relay unlink(pb);
+    relay rmdir(da); relay rmdir(db); relay rmdir(base);
+    pass verdict;
+};
+
+// THE FRONTEND'S PATH HELPERS LEAVE WILD BLOCKS BEHIND BY DESIGN (the compiler bulk-releases them before its
+// exit), so this unit releases them too, as every frontend unit does (D-151; TYPE-062 wants the `exit` right after).
+func:main = int32(cstring[]:_~argv) {
+    int32:v = run() ?! Setup;
+    wild_release_all();
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED (D-179). Exit 3 for each: a defect in the COMPILER, never
+    // the input's error.
+    pick (e) {
+        (Setup) { exit 90i32; },
+        (ShiftRange)  { exit 3i32; },
+        (IntOverflow) { exit 101i32; },
+        (DeadlineExceeded) { exit 102i32; },
+        (DivByZero) { exit 103i32; },
+        (DivOverflow) { exit 104i32; },
+        (HeapBadRequest) { exit 105i32; },
+        (HeapOom) { exit 106i32; },
+        (OutOfBounds) { exit 107i32; },
+        (Unreachable) { exit 108i32; },
+        (WildLeak) { exit 109i32; },
+        (intern.BoundsId) { exit 110i32; },
+        (intern.ProvenSlice) { exit 111i32; },
+        (source.BoundsIndex) { exit 112i32; },
+        (source.BoundsOffset) { exit 113i32; },
+        (source.FileUnknown) { exit 114i32; },
+        (StackExhausted) { exit 115i32; },
+        (MachineFault) { exit 116i32; },
+        (LimitViolated) { exit 117i32; },
+        (DecreasesViolated) { exit 118i32; },
+        (*) { exit 119i32; }
+    }
+    exit 99i32;
+};

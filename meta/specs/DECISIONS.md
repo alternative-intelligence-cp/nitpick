@@ -17063,6 +17063,23 @@ diagnostic that names `util.npk` without saying which is a worse diagnostic.
 **Declined — an explicit `--root` flag**: a flag nobody passes is the default
 nobody chose, and the manifest already IS the root's declaration.
 
+> *[2026-10-17, 1.6.1e landing 129 — a dated note (DEF-244).]* The two paths this
+> decision gave a file were the SHOWN one, rendered relative to the root, and the
+> one it was opened by, kept as the spelling the command line or a `use` gave --
+> and the spelling was also the source manager's KEY. A root named `a.npk` from
+> its own directory, imported back from a sibling directory as `../b/../a/a.npk`,
+> was two keys (the texts collapse to `a.npk` and `../a/a.npk`; no text walk knows
+> `../a` is the directory it stands in), so the file was read twice -- its one
+> error constant declared twice under one code (RESOLVE-010, "an FNV collision")
+> and its `main` once as the root's and once as a module's (RESOLVE-013); the same
+> program named from the parent directory loaded once. Since landing 129 the key
+> is the file's identity: the absolute normalised path whenever the manager knows
+> the working directory this decision had it record (`srcmgr_key`, source.npk),
+> the normalised spelling in a unit's manager that knows none. The shown path is
+> what it was -- it was rendered from the absolute path already -- so no
+> diagnostic, site-table row or emission moves, and the key never reaches the
+> emission (the repro stage's zero-absolute-rows guard stands over the snapshot).
+
 ## D-237 — a rejection test's diagnostics are matched EXACTLY: every reported finding is expected, every expected finding reported — **SETTLED (user decision, 2026-09-02)**
 
 Closes OPEN_DECISIONS S-9, found at 1.4.8 Part D. BUILD_REFERENCE §7.1 has

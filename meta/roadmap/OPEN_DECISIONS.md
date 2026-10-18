@@ -4113,7 +4113,12 @@ defect declares a `DEF-` in §2f.
 > plan's to choose (TYPE-054's neighbourhood). Nothing in the tree, the libraries or the applications takes the shape
 > (nitpick-time measured it before writing one and wrote none).
 
-> **DEF-244 — OPEN (registered 2026-10-08 by `nitpick-compiler_32`; O-N40 item 2; measured at `9fede45`). THE LOADER
+> **DEF-244 — FIXED 2026-10-17 (1.6.1e landing 129, `nitpick-compiler_40`): the source manager keys a file by its IDENTITY -- the
+> absolute normalised path under a driver that set the working directory (D-236), the normalised spelling in a unit's manager
+> (`srcmgr_key`, source.npk; `srcmgr_find` compares keys, `srcmgr_load` keys, finds, opens and stores by the key) -- so the root
+> named from its own directory and the same file imported back are ONE id; the shown path does not move; `tests/frontend/source_key.npk`
+> (eleven verdicts). Measured on landing 128's compiler first: the probe below reproduced in a manifest tree and outside one. WAS: OPEN
+> (registered 2026-10-08 by `nitpick-compiler_32`; O-N40 item 2; measured at `9fede45`). THE LOADER
 > KEYS A MODULE BY A PATH'S SPELLING, SO A ROOT IMPORTED BACK FROM A SIBLING DIRECTORY IS LOADED TWICE.** -- `a/a.npk`
 > (`mod:a; use "../b/b.npk".g; pub error:EA; pub func:f = …`) compiled AS THE ROOT FROM ITS OWN DIRECTORY (`npkc a.npk`
 > in `a/`), with `b/b.npk` importing it back (`use "../a/a.npk".EA; use "../a/a.npk".f;`), is NITPICK-RESOLVE-010 at

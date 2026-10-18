@@ -20,7 +20,7 @@ use "./intern.npk".*;
 use "./paths.npk".*;   // the relativiser (D-236)
 
 pub struct:SourceFile = {
-    string:path;      // as given on the command line or resolved from a `use` -- what the file was OPENED by
+    string:path;      // THE KEY the file was opened by (`srcmgr_key`, DEF-244): its absolute normalised path under a driver, the spelling as given in a unit
     string:text;      // the whole file; the lexer works over these bytes
     string:shown;     // what diagnostics and the site table PRINT (D-236): relative to the manifest root, or as given
     string:tree;      // the manifest tree the file belongs to (D-359): "" until asked, then the directory of the nearest
@@ -117,17 +117,38 @@ pub func:srcmgr_count = int32(SourceManager->:m) never fails {
 // stdin because that needed no path handling, which was the honest scope at the
 // time. A module loader cannot dodge either.
 
+// THE KEY (DEF-244, landing 129): ONE FILE, ONE ID. The spelling a file was
+// named by is not its identity: a root named `a.npk` from its own directory,
+// imported back from a sibling directory as `../b/../a/a.npk`, was TWO keys --
+// the spellings collapse textually to `a.npk` and `../a/a.npk`, and no text
+// walk can know that `../a` is the directory it stands in -- so the file was
+// read twice, its one error constant declared twice under one code
+// (RESOLVE-010, "an FNV collision") and its `main` once as the root's and once
+// as a module's (RESOLVE-013). The key is the file's ABSOLUTE normalised path
+// whenever the manager knows the working directory (the driver sets it before
+// the first file is added, D-236); a manager without one (a unit's) keys by the
+// normalised spelling, as before. The SHOWN path does not move: it was rendered
+// from the absolute path already (`srcmgr_render`), so no diagnostic, site-table
+// row or emission depends on this, and the key never reaches the emission.
+func:srcmgr_key = string(SourceManager->:m, string:path) never fails {
+    if (m.cwd.len == 0i64)          { pass (raw path_normalise(path)); }
+    if (raw path_is_absolute(path)) { pass (raw path_normalise(path)); }
+    pass (raw path_normalise(raw path_join(m.cwd, path)));
+};
+
 // Already loaded? Returns the existing file id, or -1.
 //
-// THE SAME PATH MUST NEVER PRODUCE TWO FILE IDS. A module loaded twice has every
+// THE SAME FILE MUST NEVER PRODUCE TWO FILE IDS. A module loaded twice has every
 // one of its symbols declared twice, and the duplicate-declaration diagnostic
 // then fires on a file the reader never edited (0.3.1). This is the check that
-// prevents it, and 0.3.2 adds the normalisation that makes it reliable --
-// `./a/../b.npk` and `b.npk` must arrive here as the same text.
+// prevents it; 0.3.2 added the normalisation that made `./a/../b.npk` and
+// `b.npk` one text, and landing 129 the key that makes two spellings of one
+// file one key wherever the compiler was invoked (`srcmgr_key`).
 pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
+    string:key = raw srcmgr_key(m, path);
     int64:i = 0i64;
     while (i < m.v.count) decreases m.v.count - i {
-        if (raw string_eq(m.v[i].path, path)) {
+        if (raw string_eq(m.v[i].path, key)) {
             pass (raw srcmgr_id(i));
         }
         i = i + 1i64;
@@ -142,13 +163,16 @@ pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
 // so an embedded `0u8` is just a byte; terminating it silently would mean the
 // path that was checked and the path that was opened are different paths.
 pub func:srcmgr_load = int32(SourceManager->:m, move string:path) {
-    int32:existing = raw srcmgr_find(m, path);
+    // The file is keyed, found, opened and stored by its identity (DEF-244,
+    // landing 129): the key, never the spelling.
+    string:key = raw srcmgr_key(m, path);
+    int32:existing = raw srcmgr_find(m, key);
     if (existing >= 0i32) {
         pass existing;
     }
-    cstring:cpath = relay to_cstring(path);
+    cstring:cpath = relay to_cstring(key);
     string:text = relay read_file(cpath);
-    pass (raw srcmgr_add(m, move(path), move(text)));
+    pass (raw srcmgr_add(m, move(key), move(text)));
 };
 
 // THE SHOWN PATH (D-236): what a diagnostic prints and a site-table row
