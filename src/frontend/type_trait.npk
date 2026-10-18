@@ -691,6 +691,43 @@ func:find_in_bounds = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
     pass best;
 };
 
+// THE QUALIFIED CALL THROUGH A BOUND (DEF-255, landing 131): `Trait.m(f)` with `F: Trait` names its trait, so the
+// method is THAT trait's member, found among the parameter's bounds by the trait's declaration -- never by the
+// method's name across every bound (`find_in_bounds`' question above, which reports two traits supplying one name as
+// ambiguous: the case the qualified spelling exists to settle, D-172). `owner` is the bound's trait type when the
+// trait is among the bounds (0 when it is not), `found`/`decl` its member when the trait declares one; a parameter's
+// bound entry holds the closure of its supertraits (the walk under `BOUND_FUEL`), so a supertrait's method is
+// reached through the subtrait's bound, as `f.m()` reaches it.
+pub func:find_in_bound_trait = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
+                                          int32:param, int32:trait_decl, int32:name) never fails {
+    MethodFind:best = raw method_none();
+    BoundEntry:e = raw bound_entry_of(bt, param);
+    int32:i = 0i32;
+    while (i < e.count) decreases e.count - i {
+        int32:trait_id = raw ast_id_at(ast, e.start, i);
+        if ((raw type_decl_of(types, trait_id)) == trait_decl) {
+            best.owner = trait_id;
+            int32:m = raw trait_member_named(ast, raw ast_decl(ast, DeclId{ index: trait_decl }), name,
+                                               DeclKind.DeclFunctionDecl);
+            if (m != 0i32) {
+                best.found = true;
+                best.decl = m;
+            }
+            pass best;
+        }
+        i = i + 1i32;
+    }
+    pass best;
+};
+
+// A TRAIT'S OWN METHOD BY NAME, a default or a requirement (DEF-255, landing 131): the qualified call on `Self` in
+// the trait's own body reads it, as `find_method`'s `Self` arm does for `self.m()`.
+pub func:trait_method_named = int32(Ast->:ast, int32:trait_decl, int32:name) never fails {
+    if (trait_decl == 0i32) { pass 0i32; }
+    pass (raw trait_member_named(ast, raw ast_decl(ast, DeclId{ index: trait_decl }), name,
+                                 DeclKind.DeclFunctionDecl));
+};
+
 // FUEL, for the same reason `SUPER_FUEL` exists: a supertrait graph is written by
 // a program, so `trait:A = B & {…}; trait:B = A & {…};` is a cycle somebody can
 // type. The closure walk must terminate before reporting rather than after.

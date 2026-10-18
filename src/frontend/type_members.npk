@@ -722,7 +722,32 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     if (recv == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, recv)) { pass 0i32; }
 
+    // THE RECEIVER PEELS ONE POINTER LEVEL, AS `.` DOES (D-098; DEF-255, landing 131): `Src.step(c)` with `c` a
+    // `Count->` asks for `Count`'s impl, as `c.step()` does -- an impl's target is never a pointer, so the walk below
+    // compared `Count->` with `Count` and answered TYPE-019 -- and the symbol names the TARGET (D-156). The receiver
+    // is still argument 0, held to the method's receiver parameter as written (`Count->:self` takes the pointer,
+    // `Count:self` the value). A pointer to a pointer is refused, as `.` refuses it, in this spelling's sentence.
+    int32:base = recv;
+    if ((raw type_kind(e.types, base)) == (raw TY_POINTER())) {
+        base = raw type_elem(e.types, base);
+        if ((raw type_kind(e.types, base)) == (raw TY_POINTER())) {
+            string:pp1 = string_concat("a `Trait.method(recv, …)` call reaches through one pointer level, as `.` does (D-098), and this receiver is `",
+                             raw type_display(e.types, e.interns, recv));
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                string_concat(pp1, "`; write `<-` for each level beyond the first, so the indirection is visible"),
+                n.span));
+        }
+    }
+
     int32:trait_decl = raw type_decl_of(e.types, trait_ty);
+    // A GENERIC PARAMETER IS ANSWERED FROM ITS BOUNDS, AND `Self` FROM ITS TRAIT (D-064, 1.0.4; DEF-255, landing
+    // 131), as `find_method` answers `f.m()` and `self.m()`: the impls a program happens to contain say nothing about
+    // `F`, so the walk below found none and the call was TYPE-019 where TRAITS_REFERENCE's D-172 paragraph promises
+    // that it reaches the method "through the receiver's bound".
+    int32:bk = raw type_kind(e.types, base);
+    if ((bk == (raw TY_PARAM())) || (bk == (raw TY_SELF()))) {
+        pass (raw type_trait_qualified_bound(e, id, n, trait_ty, trait_decl, base));
+    }
     // THE IMPL OF (receiver, this trait). A loop over the table, because the
     // question names a specific trait — `find_method` searches every trait and
     // reports the two-trait case as ambiguous, which is exactly what the
@@ -735,14 +760,14 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         ImplEntry:en = raw impl_at(e.impls, i);
         if (en.trait_id != 0i32) {
             if ((raw type_decl_of(e.types, en.trait_id)) == trait_decl) {
-                bool:hit = (en.target == recv);
+                bool:hit = (en.target == base);
                 if (!hit) {
                     if ((raw impl_generic_count(e.ast, raw ast_decl(e.ast,
                              DeclId{ index: en.decl }))) > 0i32) {
                         if (en.target != 0i32) {
                             if ((raw type_decl_of(e.types, en.target))
-                                    == (raw type_decl_of(e.types, recv))) {
-                                if ((raw type_decl_of(e.types, recv)) != 0i32) { hit = true; }
+                                    == (raw type_decl_of(e.types, base))) {
+                                if ((raw type_decl_of(e.types, base)) != 0i32) { hit = true; }
                             }
                         }
                     }
@@ -761,7 +786,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     }
     if (mdecl == 0i32) {
         string:q1 = string_concat("`",
-                        raw type_display(e.types, e.interns, recv));
+                        raw type_display(e.types, e.interns, base));
         string:q2 = string_concat(q1, "` does not implement `");
         string:q3 = string_concat(q2, raw type_display(e.types, e.interns, trait_ty));
         string:q4 = string_concat(q3, "`, or that trait has no method `");
@@ -775,7 +800,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // exactly as a `recv.method()` call binds it (1.0.4b/1.0.6b).
     if ((raw impl_generic_count(e.ast, raw ast_decl(e.ast,
              DeclId{ index: owner_impl }))) > 0i32) {
-        r.enclosing = raw bind_blanket(e, owner_impl, recv);
+        r.enclosing = raw bind_blanket(e, owner_impl, base);
     }
     r.self_trait = trait_decl;
     // AND `Self` IS THE RECEIVER (1.4.7): an INHERITED DEFAULT's signature is
@@ -783,8 +808,21 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // refused `Trait.default_method(recv)` with TYPE-005 at the TRAIT's
     // declaration. `recv.method()` binds it (`type_method_call`); the
     // qualified spelling reached only own methods until its first default.
-    r.self_type = recv;
+    r.self_type = base;
     int32:ft = raw fn_type(@r, DeclId{ index: mdecl }, mname, e.scope);
+    // A FAMILY IMPL'S METHOD IS A TEMPLATE, SO THE CALL IS AN INSTANTIATION REQUEST (1.0.4b) IN THIS SPELLING TOO
+    // (DEF-255, landing 131; found by its probe): `Src.val(bx)` on a `Box<int32>` named `Box<int32>:Src.val`, which
+    // nothing emitted unless another call reached the instance -- `llc` refused the module ("use of undefined value")
+    // on every compiler before this landing, where `bx.val()` records the instance and compiles.
+    if ((raw impl_generic_count(e.ast, raw ast_decl(e.ast, DeclId{ index: owner_impl }))) > 0i32) {
+        if (!(raw type_is_none(raw impl_target(e.ast, raw ast_decl(e.ast, DeclId{ index: owner_impl }))))) {
+            drop fninst_record(e.fninsts, e.ast, mdecl,
+                               r.enclosing.args_start, r.enclosing.args_count,
+                               r.enclosing.params_start,
+                               r.enclosing.params_count, owner_impl,
+                               ft, n.span);
+        }
+    }
 
     // Record what a `recv.method()` call records, so the emitter dispatches to
     // the same symbol: the impl method, its trait, its symbol, its signature.
@@ -793,7 +831,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     drop exprtypes_set_callee_trait(e.expr_types, id, trait_ty);
     drop exprtypes_set_callee_sym(e.expr_types, id,
             raw intern_add(e.interns,
-                raw method_symbol_name(e.types, e.interns, recv, trait_ty,
+                raw method_symbol_name(e.types, e.interns, base, trait_ty,
                     raw intern_get(e.interns, mname))));
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     // The receiver is argument 0, matched against the method's receiver
@@ -806,7 +844,87 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // TYPE-046: the callee dropped `t`'s body at its exit and the caller
     // dropped it again at its own.
     drop check_gives_call_position(e, id, n, mdecl);
+    drop refuse_bare_async_method(e, id, n, mdecl);
     pass (raw check_args(e, ft, start, count, 0i32, n.span, mdecl));
+};
+
+// `Trait.m(f)` THROUGH A BOUND, OR ON `Self` IN THE TRAIT'S OWN BODY (DEF-255, landing 131): the member is the named
+// trait's own declaration -- found among the parameter's bounds (`find_in_bound_trait`: by the trait, never by the
+// name alone, so two bounds supplying one name are no ambiguity here, since the trait is written, D-172), or in the
+// enclosing trait for `Self` -- and the call records what `f.m()` through a bound records: the declaration, the
+// trait, the signature, and NO symbol (the receiver has no impl until the specialization is emitted, where
+// `bound_method_sym` names it). So the emitter, REACH, the lock walk and the escape summaries read one call whichever
+// spelling wrote it (D-339 lists `Trait.m(x)` among a bounded method's calls). The trait's own parameters and
+// associated types are bound from the bound that named it, as the dotted call binds them (1.0.6b, D-160).
+func:type_trait_qualified_bound = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:trait_ty,
+                                        int32:trait_decl, int32:base) never fails {
+    int32:mname = n.payload =>! int32;
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    int32:mdecl = 0i32;
+    int32:owner = trait_ty;
+    bool:listed = false;
+    if ((raw type_kind(e.types, base)) == (raw TY_SELF())) {
+        if (e.self_trait == trait_decl) {
+            listed = true;
+            mdecl = raw trait_method_named(e.ast, trait_decl, mname);
+        }
+    } else {
+        MethodFind:bf = raw find_in_bound_trait(e.bounds, e.ast, e.types,
+                            raw type_decl_of(e.types, base), trait_decl, mname);
+        if (bf.owner != 0i32) {
+            listed = true;
+            owner = bf.owner;
+        }
+        if (bf.found) { mdecl = bf.decl; }
+    }
+    if (mdecl == 0i32) {
+        if (!listed) {
+            string:b1 = string_concat("`", raw type_display(e.types, e.interns, base));
+            string:b2 = string_concat(b1, "` is not bounded by `");
+            string:b3 = string_concat(b2, raw type_display(e.types, e.interns, trait_ty));
+            string:b4 = string_concat(b3, "`, so `Trait.method(recv, …)` cannot reach that trait's method through it");
+            if ((raw type_kind(e.types, base)) == (raw TY_PARAM())) {
+                b4 = string_concat(b4, raw bounds_note(e, base));
+            }
+            pass (raw te_error(e, raw TYPE_NO_METHOD(), move(b4), n.span));
+        }
+        string:c1 = string_concat("`", raw type_display(e.types, e.interns, trait_ty));
+        string:c2 = string_concat(c1, "` declares no method `");
+        string:c3 = string_concat(c2, raw intern_get(e.interns, mname));
+        pass (raw te_error(e, raw TYPE_NO_METHOD(), string_concat(c3, "`"), n.span));
+    }
+    TypeResolver:r = raw etyper_resolver(e);
+    if ((raw type_args_count_of(e.types, owner)) > 0i32) {
+        r.enclosing = raw trait_binding(@r, owner);
+    }
+    r.self_trait = trait_decl;
+    r.self_type = base;
+    int32:ft = raw fn_type(@r, DeclId{ index: mdecl }, mname, e.scope);
+    drop exprtypes_set_callee(e.expr_types, id, mdecl);
+    drop exprtypes_set_call(e.expr_types, id, e.fn_decl, mdecl);   // the call graph's edge (1.5.8c step 4)
+    drop exprtypes_set_callee_trait(e.expr_types, id, owner);
+    drop exprtypes_set_callee_ft(e.expr_types, id, ft);
+    drop check_gives_call_position(e, id, n, mdecl);
+    drop refuse_bare_async_method(e, id, n, mdecl);
+    pass (raw check_args(e, ft, start, count, 0i32, n.span, mdecl));
+};
+
+// AN `async` METHOD IS CALLED UNDER `await` OR SPAWNED WITH `drop` IN THE QUALIFIED SPELLING TOO (DEF-149's rule,
+// 1.6.1e step 2, owed to its twin; DEF-255, landing 131): `type_method_call` asks it of `r.run()`, and a bare
+// `Work.run(j)` -- reachable since this landing's peel, through a pointer or a bound -- would call the coroutine's
+// symbol, which nothing defines. The sentence is the dotted call's.
+func:refuse_bare_async_method = NIL(ExprTyper->:e, ExprId:id, ExprNode:n, int32:mdecl) never fails {
+    if (mdecl <= 0i32) { pass NIL; }
+    if (mdecl >= (raw ast_decl_count(e.ast))) { pass NIL; }
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: mdecl });
+    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    if (!(raw decl_has(cdn, raw DECL_ASYNC()))) { pass NIL; }
+    if (id.index == e.await_operand) { pass NIL; }
+    discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+        "an `async` method is called under `await` or spawned with `drop` (D-058/D-177): a bare call would suspend where nothing says so",
+        n.span));
+    pass NIL;
 };
 
 

@@ -9537,6 +9537,39 @@ func:emit_is_trait_qualified = bool(ExprEmitter->:x, ExprNode:n) never fails {
     pass (d.kind == DeclKind.DeclTraitDecl);
 };
 
+// THE SYMBOL OF A METHOD REACHED THROUGH A BOUND (1.0.6b; DEF-253's peel; DEF-255, landing 131): the receiver as
+// substituted in the specialization being emitted, joined with the trait the checker recorded, the family instance
+// noted and the impl that answers returned to qualify the symbol. THE RECEIVER MAY BE `F->`, A POINTER TO THE TARGET
+// (DEF-253, 1.6.1e): the impl's symbol names the TARGET (`Count:Src.step`, `impl_method_sym`), so the one pointer
+// level peels here BEFORE the name and the instance note -- as `.` always peels (D-098) and as the async twin
+// (`async_callee_name`) has peeled since 1.1.12c; built from the pointer the name was `Count->:Src.step`, a symbol
+// nothing defines, and a family impl answering through `F->` recorded no instance (`type_decl_of` answers 0 for a
+// pointer). The dotted call (`emit_method_call`) and the qualified call `Trait.m(f)` (`emit_qualified_call`) ask
+// this one function, so the two spellings cannot name two symbols. An empty `name`: the receiver does not move under
+// the substitution, and the caller keeps its own.
+struct:BoundSym = {
+    string:name;
+    int32:qual;
+};
+
+func:bound_method_sym = BoundSym(ExprEmitter->:x, int32:rty, int32:btrait, string:fname,
+                                 int32:mname, Span:sp) never fails {
+    if (!(raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32))) {
+        pass BoundSym{ name: "", qual: 0i32 };
+    }
+    int32:conc = raw subst_emitted_type(x.fe.ctx, rty);
+    if (conc == rty) {
+        pass BoundSym{ name: "", qual: 0i32 };
+    }
+    if ((raw type_kind(x.fe.ctx.types, conc)) == (raw TY_POINTER())) {
+        conc = raw type_elem(x.fe.ctx.types, conc);
+    }
+    string:full = raw method_symbol_name(x.fe.ctx.types, x.interns, conc, btrait, fname);
+    drop note_family_instance(x, conc, btrait, mname, sp);
+    int32:bq = raw impl_decl_for(x, conc, btrait);
+    pass BoundSym{ name: move(full), qual: bq };
+};
+
 // `Trait.method(recv, …)` lowered as a direct call to the impl's method symbol
 // (D-172), the receiver being argument 0 like any other. The symbol and the
 // signature were recorded by the checker; this is the named-call shape with
@@ -9554,14 +9587,40 @@ func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     if (count > 0i32) {
         int32:qrecv = raw exprtypes_get(x.et,
                           ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
-        if (raw type_mentions_param(x.fe.ctx.types, x.ast, qrecv, 64i32)) {
-            qrecv = raw subst_emitted_type(x.fe.ctx, qrecv);
+        if (sym == 0i32) {
+            // THROUGH A BOUND, OR ON `Self` IN A TRAIT'S BODY (DEF-255, landing 131): the checker recorded no symbol
+            // (the receiver had no impl yet), so the name is built here as the dotted call builds it -- `Self` from
+            // the impl being emitted, a bound's receiver through `bound_method_sym`, the one function both ask.
+            DeclNode:qd = raw ast_decl(x.ast, DeclId{ index: qual });
+            fname = raw intern_get(x.interns, raw decl_name(qd));
+            int32:qself = qrecv;
+            if ((raw type_kind(x.fe.ctx.types, qself)) == (raw TY_POINTER())) {
+                qself = raw type_elem(x.fe.ctx.types, qself);
+            }
+            if ((raw type_kind(x.fe.ctx.types, qself)) == (raw TY_SELF())) {
+                if (x.tr.self_type != 0i32) {
+                    fname = raw method_symbol_name(x.fe.ctx.types, x.interns,
+                                x.tr.self_type, x.cur_trait, fname);
+                    if (x.cur_impl != 0i32) { qual = x.cur_impl; }
+                }
+            } else {
+                BoundSym:qb = raw bound_method_sym(x, qrecv, raw exprtypes_callee_trait(x.et, id),
+                                  fname, raw decl_name(qd), n.span);
+                if (qb.name.len != 0i64) {
+                    if (qb.qual != 0i32) { qual = qb.qual; }
+                    fname = move(qb.name);
+                }
+            }
+        } else {
+            if (raw type_mentions_param(x.fe.ctx.types, x.ast, qrecv, 64i32)) {
+                qrecv = raw subst_emitted_type(x.fe.ctx, qrecv);
+            }
+            if ((raw type_kind(x.fe.ctx.types, qrecv)) == (raw TY_POINTER())) {
+                qrecv = raw type_elem(x.fe.ctx.types, qrecv);
+            }
+            int32:qi = raw impl_decl_for(x, qrecv, raw exprtypes_callee_trait(x.et, id));
+            if (qi != 0i32) { qual = qi; }
         }
-        if ((raw type_kind(x.fe.ctx.types, qrecv)) == (raw TY_POINTER())) {
-            qrecv = raw type_elem(x.fe.ctx.types, qrecv);
-        }
-        int32:qi = raw impl_decl_for(x, qrecv, raw exprtypes_callee_trait(x.et, id));
-        if (qi != 0i32) { qual = qi; }
     }
     string:callsym = raw mangled_fn_sym(x.fe.ctx, qual, fname);
     string:args = "";
@@ -9872,29 +9931,11 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         // and could not — and the instance loop, which re-reads the table,
         // emits it after this body (transitive monomorphization, as for a
         // generic free function).
-        if (raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32)) {
-            int32:conc = raw subst_emitted_type(x.fe.ctx, rty);
-            if (conc != rty) {
-                // THE RECEIVER MAY BE `F->`, A POINTER TO THE TARGET (DEF-253,
-                // 1.6.1e): the impl's symbol names the TARGET (`Count:Src.step`,
-                // `impl_method_sym`), so the one pointer level peels here BEFORE
-                // the name and the instance note -- as `.` always peels (D-098)
-                // and as the async twin (`async_callee_name`) has peeled since
-                // 1.1.12c. Until this landing the peel served `impl_decl_for`
-                // alone: the name was built from the pointer (`Count->:Src.step`),
-                // a symbol nothing defines, and `llc` refused the module; a
-                // family impl answering through `F->` recorded no instance
-                // (`type_decl_of` answers 0 for a pointer).
-                if ((raw type_kind(x.fe.ctx.types, conc)) == (raw TY_POINTER())) {
-                    conc = raw type_elem(x.fe.ctx.types, conc);
-                }
-                int32:btrait = raw exprtypes_callee_trait(x.et, id);
-                fname = raw method_symbol_name(x.fe.ctx.types, x.interns,
-                            conc, btrait, fname);
-                drop note_family_instance(x, conc, btrait, raw decl_name(d), n.span);
-                int32:bq = raw impl_decl_for(x, conc, btrait);
-                if (bq != 0i32) { qual = bq; }
-            }
+        BoundSym:bs = raw bound_method_sym(x, rty, raw exprtypes_callee_trait(x.et, id), fname,
+                          raw decl_name(d), n.span);
+        if (bs.name.len != 0i64) {
+            if (bs.qual != 0i32) { qual = bs.qual; }
+            fname = move(bs.name);
         }
     }
     string:sym = raw mangled_fn_sym(x.fe.ctx, qual, fname);

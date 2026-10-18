@@ -156,6 +156,15 @@ and it reaches a method on a generic receiver through the receiver's bound. No
 new syntax — a trait name in expression position takes members the way an enum or
 a module does.
 
+> **2026-10-18 (DEF-255, landing 131): the bound and pointer forms reach.** `Src.step(f)` with `F->:f` under
+> `F: Src`, `Src.val(f)` with `F:f` under the bound and `Src.step(c)` with a concrete `Count->:c` were each
+> NITPICK-TYPE-019 until landing 131: the call matched the receiver's type as written against the impls' targets.
+> The receiver peels one pointer level as `.` does (a pointer to a pointer is TYPE-007: write `<-`), a generic
+> parameter is answered from its bounds by the trait the call NAMES (so `Src.val(f)` chooses among two bounds that
+> supply `val`), `Self` in a trait's own body from that trait, an `async` method is called under `await` or spawned
+> with `drop` (TYPE-043, as `r.run()` is), and a call on a concrete family instance records the instance, as
+> `bx.val()` does. The awaited form `await Trait.m(x)` is not reached yet (DEF-267): write `await x.m()`.
+
 > **A GENERIC subject has inherent impls now (D-171, 1.0.9b).**
 > `impl:<T>:List<T> = { … }` names its target and is read as an inherent family
 > impl — its methods are templates over the impl's `T`, one specialization per

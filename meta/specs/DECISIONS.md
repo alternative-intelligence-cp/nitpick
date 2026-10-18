@@ -12494,6 +12494,15 @@ and it retires the backend's "a call through a member" refusal for this
 shape. The ambiguity diagnostic names it. The same form disambiguates two
 BOUNDS on a generic parameter, which the old promise could not reach.
 
+> **2026-10-18 (DEF-255, landing 131):** "a generic receiver through its bound" held for no receiver until this
+> landing -- the qualified call matched the receiver's type as written against the impls' targets, so a bound's
+> parameter and a pointer receiver (`Src.step(c)`, `c: Count->`) were TYPE-019 while the dotted call reached both,
+> and the two-bounds case this entry names was unreachable. The receiver peels one pointer level (D-098), a parameter
+> is answered from its bounds by the trait the call names (`find_in_bound_trait`), `Self` from the enclosing trait,
+> and the call records what the dotted call records; the emitter names a bound receiver's symbol through one function
+> both spellings ask (`bound_method_sym`). A call on a concrete family instance records the instance (DEF-266), and
+> DEF-149's `async` rule holds in this spelling too. The awaited form is DEF-267.
+
 ## D-173 — Allocas are hoisted to the entry block — **SETTLED**
 
 Cycle 1.0.9a, found when part one's added source made the seed-built `npkc`

@@ -1,0 +1,87 @@
+// ufcs_bound.npk -- DEF-255 (landing 131): THE QUALIFIED TRAIT CALL `Trait.m(x)` REACHES A BOUND AND A POINTER
+// RECEIVER, AS THE DOTTED CALL DOES. `Src.step(f)` with `F->:f` under `F: Src`, `Src.val(f)` with `F:f` under the
+// bound and `Src.step(c)` with a concrete `Count->:c` were each NITPICK-TYPE-019 on every compiler before landing 131
+// (TRAITS_REFERENCE's D-172 paragraph promised the bound form), where `f.step()`, `f.val()` and `c.step()` compiled:
+// the qualified call matched the receiver's type as written against the impls' targets (never a pointer, never a
+// parameter). Now the receiver peels one pointer level as `.` does, a generic parameter is answered from its bounds by
+// the NAMED trait (so two bounds supplying one name are no ambiguity: `both` below), `Self` in a trait's own body from
+// the trait, and the emitter names the symbol the dotted call names (`bound_method_sym`, one function for both
+// spellings). A qualified call on a concrete family instance records the instance, as the dotted call does (found
+// by this landing's probe: `llc` refused the module before). Every value below is what the dotted twin answers;
+// exit 0 at both legs.
+mod:ufcs_bound;
+trait:Src = {
+    func:step = int32(Self->:self) never fails;
+    func:val = int32(Self:self) never fails;
+    // a default calling its sibling through the qualified spelling on `Self`, in the trait's own body
+    func:tock = int32(Self->:self) never fails { pass ((raw Src.step(self)) * 10i32); };
+};
+trait:Other = { func:val = int32(Self:self) never fails; };
+struct:Count = { int32:n; };
+impl:Count:Src = {
+    func:step = int32(Count->:self) never fails { self.n = self.n + 1i32; pass self.n; };
+    func:val = int32(Count:self) never fails { pass self.n; };
+};
+// a second trait supplying `val`: `f.val()` through `F: Src & Other` is ambiguous (TYPE-020), and the qualified call
+// is the spelling that chooses (D-172)
+impl:Count:Other = { func:val = int32(Count:self) never fails { pass (self.n + 100i32); }; };
+struct:Box<T> = { T:v; int32:k; };
+impl:<T>:Box<T>:Src = {
+    func:step = int32(Box<T>->:self) never fails { self.k = self.k + 2i32; pass self.k; };
+    func:val = int32(Box<T>:self) never fails { pass self.k; };
+};
+func:drive_q<F: Src> = int32(F->:f) never fails { pass (raw Src.step(f)); };          // a bound, a pointer
+func:drive_qv<F: Src> = int32(F:f) never fails { pass (raw Src.val(f)); };            // a bound, a value
+func:drive_tock<F: Src> = int32(F->:f) never fails { pass (raw Src.tock(f)); };       // a default through a bound
+func:both<F: Src & Other> = int32(F:f) never fails {                                  // two bounds, one name
+    pass ((raw Src.val(f)) + (raw Other.val(f)));
+};
+func:conc_q = int32(Count->:c) never fails { pass (raw Src.step(c)); };               // a concrete pointer
+func:conc_qv = int32(Count:c) never fails { pass (raw Src.val(c)); };                 // a concrete value
+func:main = int32(cstring[]:_~argv) {
+    Count:c = Count{ n: 0i32 };
+    int32:a = raw drive_q(@c);              // step: n = 1
+    if (a != 1i32) { exit 1i32; }
+    int32:b = raw drive_qv(c);              // 1
+    if (b != 1i32) { exit 2i32; }
+    int32:d = raw conc_q(@c);               // step: n = 2
+    if (d != 2i32) { exit 3i32; }
+    int32:v = raw conc_qv(c);               // 2
+    if (v != 2i32) { exit 4i32; }
+    int32:t = raw drive_tock(@c);           // tock -> Src.step(self): n = 3, times 10
+    if (t != 30i32) { exit 5i32; }
+    int32:w = raw both(c);                  // Src's 3 + Other's 103
+    if (w != 106i32) { exit 6i32; }
+    Box<int32>:bx = Box{ v: 7i32, k: 0i32 };
+    int32:g = raw drive_q(@bx);             // a family impl through a bound: k = 2
+    if (g != 2i32) { exit 7i32; }
+    int32:h = raw Src.step(@bx);            // a concrete family instance through an address: k = 4
+    if (h != 4i32) { exit 8i32; }
+    int32:u = raw Src.val(bx);              // 4
+    if (u != 4i32) { exit 9i32; }
+    int32:z = raw drive_qv(bx);             // 4
+    if (z != 4i32) { exit 10i32; }
+    // an instance no bound call reaches: the qualified call records it (until landing 131 `Box<int64>:Src.step` and
+    // `Box<int64>:Src.val` were named and never emitted, and `llc` refused the module)
+    Box<int64>:b64 = Box{ v: 9i64, k: 0i32 };
+    int32:p = raw Src.step(@b64);           // k = 2
+    if (p != 2i32) { exit 11i32; }
+    int32:q = raw Src.val(b64);             // 2
+    if (q != 2i32) { exit 12i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

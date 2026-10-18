@@ -2875,6 +2875,24 @@ defect declares a `DEF-` in §2f.
 
 > **DEF-265 — OPEN (registered 2026-10-17 by `nitpick-compiler_40` at landing 130, found by that landing's measurement of the fuzz corpus's `tr0550`; LOW: a count defect, DEF-245's family, the file refused either way). A FAILED EXPRESSION FOLLOWED BY A STRUCT LITERAL'S BRACES ENDS THE ENCLOSING BODY EARLY, AND THE STATEMENTS AFTER IT ARE REPORTED AS DECLARATIONS.** `Box<int32>:c = Box<int32>{ v: 5i32, n: 3i32 }; exit 0i32;` inside `main` (a generic struct literal is spelled bare, `Box{ … }`; the `<` reads as a comparison) is PARSE-002 "expected an expression" at `int32` and then PARSE-001 "expected a type" at `exit`: `main`'s body has ended at the literal's `}` and `exit` stands at the module level -- the STATEMENT recovery's doing (the reading, not yet verified line by line: `p_recover` stops at a `{`, which can begin a block statement, and the literal's braces are read as one); before landing 130 the body's own `}` was a third report (the module loop's tail rule eats it now). Probe `wt/40c/.internal/probes/def245/stmt_brace.npk`, 3 -> 2 reports; `tr0550` 4 -> 3; the fuzz corpus's `as0594` (13:5) and `ty1282` (10:5) keep the same statement-level phantom after landing 130's sweep removed their trailing `}` reports. The fix is the statement recovery's -- a `{` reached inside a failed expression statement is the expression's, not a block's -- read `p_recover` and `p_can_start_item`'s `PLBrace` row before changing either. Its own small landing.
 
+> **DEF-266 — FIXED 2026-10-18 (registered and fixed at landing 131 by `nitpick-compiler_40`, found by DEF-255's probe
+> `fam_only.npk`). A QUALIFIED CALL ON A CONCRETE FAMILY INSTANCE RECORDED NO INSTANCE.** `Src.val(bx)` with
+> `bx: Box<int32>` under `impl:<T>:Box<T>:Src` named `Box<int32>:Src.val`, which nothing emitted unless another call
+> reached the instance, and `llc` refused the module ("use of undefined value") on every compiler since D-172
+> (1.0.9b); `bx.val()` records the instance (`fninst_record`, 1.0.4b) and the qualified spelling did not -- the twin
+> rule again. `type_trait_qualified_call` records it now; `ufcs_bound.npk`'s `Box<int64>` section, an instance no
+> other call reaches.
+
+> **DEF-267 — OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 131, found by DEF-255's probes; LOW: a
+> refusal with the wrong sentence, nothing accepted). THE AWAITED QUALIFIED CALL `await Trait.m(x)` IS REFUSED BY A
+> SENTENCE THAT READS THE TRAIT AS A VALUE.** `int32:a = await Work.run(j) ?! E9;` is NITPICK-TYPE-007 "`Work` is a
+> trait, not a value" at the trait's name (three reports before landing 131: TYPE-043, TYPE-007 and TYPE-019): the
+> await road types the method call's OPERAND -- the trait's name in this spelling -- as a value, and the child-frame
+> builder (`emit_child_frame`) and `async_callee_name` read the receiver from the operand, never from argument 0. No
+> program of the three trees spells it; `await x.m()` is the spelling. The answer is the twin rule's: the awaited
+> form reaches (the await typer, the frame builder and the callee name read argument 0 of a trait-qualified call) or
+> it is refused once by name. Its own small landing; probes `wt/40d/.internal/probes/def255/await_q*.npk`.
+
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
 > (107) in safe code, measured on 3235308: `kill(shared_arena<int64>->:s) { s.destroy(); }` called with `@s` from
@@ -4321,7 +4339,7 @@ defect declares a `DEF-` in §2f.
 > pointer). Both branches peel the one pointer level before the `Self` test now; `bound_ptr_receiver.npk`'s shapes (5)
 > (through a bound) and (8) (concrete) pin it.
 
-> **DEF-255 — OPEN (registered 2026-10-15 by `nitpick-compiler_38` at DEF-253's landing; found by the probe the DEF-253
+> **DEF-255 — FIXED 2026-10-18 (landing 131, `nitpick-compiler_40`; planned at `.internal/handoff_35/DEF255_PLAN.md`): the receiver of `Trait.m(x)` peels one pointer level as `.` does (a pointer to a pointer is TYPE-007), a generic parameter is answered from its bounds by the trait the call names (`find_in_bound_trait`), `Self` in a trait's body from that trait, and the call records what the dotted call records -- the emitter names a bound receiver's symbol through `bound_method_sym`, one function for both spellings; DEF-149's `async` rule (TYPE-043) is asked in this spelling too, and DEF-266 (a concrete family instance's record) is fixed with it; `ufcs_bound.npk` (every section answering what its dotted twin answers, at both legs), `ufcs_bound_rules.npk` (four sites). WAS: OPEN (registered 2026-10-15 by `nitpick-compiler_38` at DEF-253's landing; found by the probe the DEF-253
 > groundwork asked for -- `.internal` probe `ufcs_bound.npk`, measured on landing 112's checker; LOW: a refusal where the
 > reference promises acceptance, nothing of the libraries writes the form). THE QUALIFIED TRAIT CALL DOES NOT REACH A
 > BOUND OR A POINTER RECEIVER.** TRAITS_REFERENCE (D-172's paragraph) says `Ta.tag(p)` "reaches a method on a generic

@@ -1,0 +1,35 @@
+// expect-error: NITPICK-TYPE-019
+// expect-error-at: 27:70
+// expect-error: NITPICK-TYPE-019
+// expect-error-at: 28:66
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 29:65
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 30:61
+// WHAT THE QUALIFIED TRAIT CALL STILL REFUSES THROUGH A BOUND AND A POINTER (DEF-255, landing 131): `Trait.m(f)`
+// reaches `F`'s method only when `Trait` is among `F`'s bounds (TYPE-019 naming the bounds otherwise) and declares
+// the method (TYPE-019); the receiver peels ONE pointer level, as `.` does, and a pointer to a pointer is TYPE-007
+// with the advice to write `<-`; and an `async` method is called under `await` or spawned with `drop` in this
+// spelling too (TYPE-043, DEF-149's rule owed to its twin -- a bare call reached the coroutine's symbol once the peel
+// let it through). The controls: a bound that names the trait, and a concrete pointer.
+mod:ufcs_bound_rules;
+error:E9;
+trait:Src = {
+    func:step = int32(Self->:self) never fails;
+    async func:run = int32(Self->:self);
+};
+trait:Other = { func:other = int32(Self:self) never fails; };
+struct:Count = { int32:n; };
+impl:Count:Src = {
+    func:step = int32(Count->:self) never fails { pass self.n; };
+    async func:run = int32(Count->:self) { pass self.n; };
+};
+func:not_bounded<F: Other> = int32(F->:f) never fails { pass (raw Src.step(f)); };
+func:no_member<F: Src> = int32(F->:f) never fails { pass (raw Src.nosuch(f)); };
+func:two_levels = int32(Count->->:c) never fails { pass (raw Src.step(c)); };
+async func:bare_async<F: Src> = int32(F->:f) { int32:a = Src.run(f) ?! E9; pass a; };
+// controls
+func:bounded<F: Src> = int32(F->:f) never fails { pass (raw Src.step(f)); };
+func:pointer = int32(Count->:c) never fails { pass (raw Src.step(c)); };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };
