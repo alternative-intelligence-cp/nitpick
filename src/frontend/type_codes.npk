@@ -379,13 +379,17 @@ pub func:TYPE_LIMIT_NO_WRITE_POINT = string() never fails { pass "NITPICK-TYPE-0
 // A `pick` DOES NOT SELECT ON AN `Optional` (D-260, 1.5.2c step 0). An
 // `Optional` has no arms of its own (D-099: no constructor, no readable
 // members, one implicit wrap), so its value is reached through `??` --
-// `pick (o ?? default) { … }` -- or tested with `== NIL`. The checker judges
-// a `pick` by its SELECTOR's kind and never types a value pattern against it
+// `pick (o ?? default) { … }` -- or tested with `== NIL`. The checker judged
+// a `pick` by its SELECTOR's kind and never typed a value pattern against it
 // (the emitter's `pattern_const` and the exhaustiveness pass read the arms),
 // which is how `pick (o) { (Ordering.Less) { … } }` over an `Ordering?` was
 // admitted and then refused by the emitter as EMIT-002 (OPEN_DECISIONS
 // DEF-19): a frac and a complex are refused here by name, and now so is an
-// `Optional`. Both the statement form and the expression form.
+// `Optional`. Both the statement form and the expression form. A pointer
+// joined it at landing 133 (DEF-257) and a float at landing 134 (DEF-178),
+// each a selector no case can be taken over; and since landing 134 every
+// value pattern and range bound IS typed against the selector
+// (`check_value_patterns`, TYPE-007).
 pub func:TYPE_PICK_OPTIONAL = string() never fails { pass "NITPICK-TYPE-065"; };
 
 // A LENDING `pick`'S BINDING IS A READ-ONLY VIEW of the payload in place

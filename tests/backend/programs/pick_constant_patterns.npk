@@ -1,0 +1,100 @@
+// expect-exit: 0
+//
+// A VALUE PATTERN IS ANY CONSTANT THE FOLDER DECIDES (DEF-187, landing 134): a `fixed` module binding, `comptime(…)`,
+// constant arithmetic and a negated literal are cases, in the `switch` a plain `pick` lowers to and in the compare chain
+// a guard or a range sends it to, in the statement form and the expression form. An enum constant is its variant's TAG
+// (an enum with declared values here: the folder holds the POSITION, D-356), a `tbb` constant its value, a `fixed`
+// string a compared string. Every compiler before landing 134 refuses this program in the emitter (EMIT-002 at the
+// first `fixed` pattern); its checker never typed a pattern. Exit 0 at both legs.
+mod:pick_constant_patterns;
+error:E9;
+enum:Code = { Low = 10i32; High = 20i32; };
+enum:Shade = { Light; Dark; };
+fixed int32:K = 7i32;
+fixed int32:L = 9i32;
+fixed Code:HIGH = Code.High;
+fixed Shade:DIM = Shade.Dark;
+fixed tbb8:FIVE = 5tbb8;
+fixed char8:UNDER = '_';
+fixed string:GREETING = "hello";
+fixed bool:YES = true;
+func:classify = int32(int32:v) never fails {
+    pick (v) {
+        (K)                     { pass 1i32; },
+        (comptime(2i32 + 2i32)) { pass 2i32; },
+        (10i32 * 10i32)         { pass 3i32; },
+        (-3i32)                 { pass 4i32; },
+        (*)                     { pass 0i32; }
+    }
+};
+func:classify_chain = int32(int32:v, int32:floor) never fails {
+    pick (v) {
+        (K) where (v > floor)   { pass 1i32; },
+        (K..L)                  { pass 2i32; },
+        (comptime(2i32 + 2i32)) { pass 3i32; },
+        (*)                     { pass 0i32; }
+    }
+};
+func:code_of = int32(Code:c) never fails {
+    pick (c) { (HIGH) { pass 2i32; }, (*) { pass 1i32; } }
+};
+func:shade_of = int32(Shade:s) never fails {
+    pick (s) { (DIM) { pass 2i32; }, (*) { pass 1i32; } }
+};
+func:twisted = int32(tbb8:t) never fails {
+    pick (t) { (FIVE) { pass 5i32; }, ERR: { pass 9i32; }, (*) { pass 0i32; } }
+};
+func:letter = int32(char8:c) never fails {
+    pick (c) { (UNDER) { pass 1i32; }, ('A'..'Z') { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:word = int32(string:s) never fails {
+    pick (s) { (GREETING) { pass 1i32; }, ("bye") { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:truth = int32(bool:b) never fails {
+    pick (b) { (YES) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw classify(7i32)) != 1i32)     { exit 1i32; }
+    if ((raw classify(4i32)) != 2i32)     { exit 2i32; }
+    if ((raw classify(100i32)) != 3i32)   { exit 3i32; }
+    if ((raw classify(-3i32)) != 4i32)    { exit 4i32; }
+    if ((raw classify(5i32)) != 0i32)     { exit 5i32; }
+    if ((raw classify_chain(7i32, 6i32)) != 1i32) { exit 6i32; }
+    if ((raw classify_chain(7i32, 8i32)) != 2i32) { exit 7i32; }
+    if ((raw classify_chain(9i32, 0i32)) != 2i32) { exit 8i32; }
+    if ((raw classify_chain(4i32, 0i32)) != 3i32) { exit 9i32; }
+    if ((raw classify_chain(1i32, 0i32)) != 0i32) { exit 10i32; }
+    if ((raw code_of(Code.High)) != 2i32) { exit 11i32; }
+    if ((raw code_of(Code.Low)) != 1i32)  { exit 12i32; }
+    if ((raw shade_of(Shade.Dark)) != 2i32)  { exit 13i32; }
+    if ((raw shade_of(Shade.Light)) != 1i32) { exit 14i32; }
+    if ((raw twisted(5tbb8)) != 5i32)     { exit 15i32; }
+    if ((raw twisted(6tbb8)) != 0i32)     { exit 16i32; }
+    if ((raw letter('_')) != 1i32)        { exit 17i32; }
+    if ((raw letter('Q')) != 2i32)        { exit 18i32; }
+    if ((raw letter('q')) != 0i32)        { exit 19i32; }
+    if ((raw word("hello")) != 1i32)      { exit 20i32; }
+    if ((raw word("bye")) != 2i32)        { exit 21i32; }
+    if ((raw word("other")) != 0i32)      { exit 22i32; }
+    if ((raw truth(true)) != 1i32)        { exit 23i32; }
+    if ((raw truth(false)) != 0i32)       { exit 24i32; }
+    int32:g = pick (L) { (K) { give 1i32; }, (L) { give 2i32; }, (*) { give 0i32; } };
+    if (g != 2i32)                        { exit 25i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (TbbErr)            { exit 90i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+};

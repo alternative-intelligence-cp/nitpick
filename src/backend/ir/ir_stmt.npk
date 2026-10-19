@@ -2246,6 +2246,28 @@ func:pat_q_text = string(ExprEmitter->:x, ExprId:v, int32:bits) never fails {
     pass "";
 };
 
+// A VALUE PATTERN'S CASE AS THE FOLDER DECIDES IT (DEF-187, landing 134): an integer, a `char` or a `bool` constant
+// by its number, an enum constant by its variant's TAG (`variant_tag_of`: the folder holds the POSITION, D-356);
+// "" when nothing folds -- the frontend's broken promise, never a number.
+func:pat_folded_case = string(ExprEmitter->:x, ExprId:v, int32:sel_tid) never fails {
+    if (raw expr_is_none(v)) { pass ""; }
+    ConstVal:cv = raw fold_const(x.tr, v, x.scope);
+    if ((cv.kind == (raw CV_INT())) || (cv.kind == (raw CV_CHAR())) || (cv.kind == (raw CV_BOOL()))) {
+        pass (int_to_string(cv.num));
+    }
+    if (cv.kind == (raw CV_ENUM())) {
+        if ((raw type_kind(x.fe.ctx.types, sel_tid)) != (raw TY_ENUM())) { pass ""; }
+        DeclNode:d = raw ast_decl(x.ast, DeclId{ index: raw type_decl(x.fe.ctx.types, sel_tid) });
+        if (cv.num < 0i64) { pass ""; }
+        if (cv.num >= ((raw item_member_count(x.ast, d)) => int64)) { pass ""; }
+        int32:pos = cv.num =>! int32;
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, pos));
+        if (m.kind != DeclKind.DeclEnumVariant) { pass ""; }
+        pass (int_to_string((raw variant_tag_of(x.ast, m, pos)) => int64));
+    }
+    pass "";
+};
+
 func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) never fails {
     // `(module.Name)` OVER AN `Error` SELECTOR (D-179): a two-segment,
     // bind-free "destructure" is the qualified spelling of an error
@@ -2321,7 +2343,12 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
                 pass (raw iv("", int_to_string(vi.tag => int64), 0i32));
             }
         }
-        // Every literal kind a pattern can legally hold has an arm above;
+        // ANY OTHER CONSTANT, THROUGH THE FOLDER (DEF-187, landing 134): a `fixed` binding `(K)`, `comptime(…)`,
+        // constant arithmetic -- the checker held the value to the selector's type and to the folder's verdict
+        // (`check_value_patterns`), as a range's bound is read (DEF-132).
+        string:fc = raw pat_folded_case(x, raw pat_value(pn), sel_tid);
+        if (fc.len > 0i64) { pass (raw iv("", move(fc), 0i32)); }
+        // Every constant a pattern can legally hold has an arm above;
         // anything else is a walk hole, not a program mistake.
         pass (raw iv_broken(at));
     }

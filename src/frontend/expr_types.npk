@@ -304,6 +304,18 @@ pub func:exprtypes_set = NIL(ExprTypes->:t, ExprId:id, int32:type_id) never fail
     pass NIL;
 };
 
+// A TYPE TAKEN BACK (landing 134): a `pick`'s value pattern is typed under its selector's type to be judged (DEF-178), and
+// the encoder reads a pattern's own literal by its KIND under the selector's type (L-3, `enc_pattern_value`) -- a
+// type recorded on it would turn a `char` arm's condition into a fresh symbol and move every row of a function that
+// picks over characters. So the checker types the pattern, judges it, and takes the record back.
+pub func:exprtypes_unset = NIL(ExprTypes->:t, ExprId:id) never fails {
+    if (id.index < 0i32) { pass NIL; }
+    if (id.index >= t.count) { pass NIL; }
+    t.items[id.index => int64] = 0i32;
+    t.known[id.index => int64] = false;
+    pass NIL;
+};
+
 pub func:exprtypes_known = bool(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass false; }
     if (id.index >= t.count) { pass false; }

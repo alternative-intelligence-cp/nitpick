@@ -620,6 +620,16 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
                 at));
             pass refused;
         }
+        // AND A FLOAT (DEF-178, landing 134): a float is no case a `switch` can take -- `pick (f) { (*) { … } }` reached
+        // `llc` and was refused there ("switch condition must have integer type"), and a value or range pattern over one
+        // was EMIT-002 -- and `==` on a float is no decision: a NaN equals nothing and `-0.0` equals `0.0`, so arms over
+        // one could be neither disjoint nor exhaustive. Its comparisons are the decisions, as a frac's are.
+        if ((raw type_kind(e.types, selt)) == (raw TY_FLOAT())) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_PICK_OPTIONAL(),
+                "a `pick` does not select on a float: `==` on a float is no decision -- a NaN equals nothing, and `-0.0` equals `0.0` -- so its arms could be neither disjoint nor exhaustive; compare it in an `if` chain",
+                at));
+            pass refused;
+        }
     }
     // THE CONSUMING SELECTOR (D-216): `pick (move(v))` takes the value
     // apart, so its arms may bind owning payloads — that is the whole
@@ -662,6 +672,7 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
             drop check_enum_arms(e, selt, start, count);
         }
     }
+    drop check_value_patterns(e, selt, start, count);
     drop type_pick_bindings(e, selt, start, count);
     drop check_pick_view_binds(e, selt, consuming, start, count);
     drop check_arm_control(e, selid, start, count);
@@ -1074,6 +1085,110 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     }
     r.generics = bsaved;
     pass NIL;
+};
+
+// A VALUE PATTERN IS A CONSTANT OF THE SELECTOR'S TYPE (DEF-178, DEF-187; landing 134). Until this landing no rule typed
+// a value pattern or a range bound at all -- the emitter wrote a literal's PAYLOAD as the case whatever the selector --
+// so `(true)` over an `int32` matched 1, `('A')` matched 65, `(300i64)` and `(44u8)` matched by their number, and
+// `(300)` over an `int8` was cut to 44 in silence; and a pattern the emitter could not write as a case -- a local
+// `(n)`, a `fixed` binding `(K)`, `comptime(…)`, `(2i32 + 2i32)`, a float -- passed the checker and died as EMIT-002.
+// Now each value and each bound is typed under the selector's type (an unsuffixed literal takes the selector's width
+// and must fit it, TYPE-031 from the literal's own rule), held to that type exactly (TYPE-007: no conversion enters a
+// case), and must be a CONSTANT -- whatever the compile-time folder decides: a literal, a negated literal, a `fixed`
+// module binding, `comptime(…)`, constant arithmetic (TYPE-007 otherwise; a run-time comparison is a `where` guard).
+// The emitter writes every such constant through the folder (`pat_folded_case`), as a range's bound has been written
+// since DEF-132. A range needs an ordered kind (a float selector is refused whole, above). An `Error` selector's arms are
+// `check_error_arms`' (D-275); an enum's destructures `check_enum_arms`'; this walk reads every other arm.
+func:check_value_patterns = NIL(ExprTyper->:e, int32:selt, int32:start, int32:count) never fails {
+    if (selt == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, selt)) { pass NIL; }
+    int32:sk = raw type_kind(e.types, selt);
+    if (sk == (raw TY_ERROR())) { pass NIL; }
+    for (int32:i in 0i32...count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
+        PatId:vp = raw arm_pattern(arm);
+        if (raw pat_is_none(vp)) { continue; }
+        PatNode:pn = raw ast_pat(e.ast, vp);
+        if (pn.kind == PatKind.PatValue) {
+            discard(raw check_pattern_constant(e, selt, raw pat_value(pn)));
+        }
+        if (pn.kind == PatKind.PatRange) {
+            if (!(raw kind_has_ranges(sk))) {
+                string:r1 = string_concat("a range pattern needs an ordered selector -- an integer, a `char`, a twisted or a fixed-point value -- and a `",
+                                          raw type_display(e.types, e.interns, selt));
+                discard(raw te_error(e, raw TYPE_MISMATCH(),
+                    string_concat(r1, "` has no order a range could cover: name its values one arm each, or `(*)`"),
+                    pn.span));
+                continue;
+            }
+            if (raw check_pattern_constant(e, selt, raw pat_range_lo(pn))) {
+                discard(raw check_pattern_constant(e, selt, raw pat_range_hi(pn)));
+            }
+        }
+    }
+    pass NIL;
+};
+
+// The selector kinds a range pattern orders: the integers and what is carried as one (a `char`, a kernel identifier, a
+// twisted value, a ternary one) and the fixed-point kinds, whose bounds are Q constants (DEF-204).
+func:kind_has_ranges = bool(int32:sk) never fails {
+    if (sk == (raw TY_INT())) { pass true; }
+    if (sk == (raw TY_CHAR())) { pass true; }
+    if (sk == (raw TY_KERNEL())) { pass true; }
+    if (sk == (raw TY_TBB())) { pass true; }
+    if (sk == (raw TY_TERN())) { pass true; }
+    if (sk == (raw TY_TFP())) { pass true; }
+    if (sk == (raw TY_DIM())) { pass true; }
+    pass false;
+};
+
+// A literal, or a negated one: the shapes the encoder reads by kind (`enc_pattern_value`).
+func:pattern_literal_shape = bool(ExprTyper->:e, ExprNode:vn) never fails {
+    if (vn.kind == ExprKind.ExprIntLiteral) { pass true; }
+    if (vn.kind == ExprKind.ExprCharLiteral) { pass true; }
+    if (vn.kind == ExprKind.ExprBoolLiteral) { pass true; }
+    if (vn.kind == ExprKind.ExprFloatLiteral) { pass true; }
+    if (vn.kind == ExprKind.ExprStringLiteral) { pass true; }
+    if (vn.kind == ExprKind.ExprUnaryExpr) {
+        if ((raw expr_op(vn)) == TokenKind.OpMinus) {
+            ExprNode:o = raw ast_expr(e.ast, raw expr_operand(vn));
+            if ((o.kind == ExprKind.ExprIntLiteral) || (o.kind == ExprKind.ExprFloatLiteral)) { pass true; }
+        }
+    }
+    pass false;
+};
+
+// One value or one bound: typed under the selector's type, held to it, and decided by the folder. True when it stands.
+func:check_pattern_constant = bool(ExprTyper->:e, int32:selt, ExprId:v) never fails {
+    if (raw expr_is_none(v)) { pass true; }
+    ExprNode:vn = raw ast_expr(e.ast, v);
+    int32:saved = e.expected;
+    e.expected = selt;
+    int32:pt = raw type_of_expr(e, v);
+    e.expected = saved;
+    // A LITERAL'S record is taken back: the encoder reads a pattern's own literal by its kind under the selector's
+    // type (L-3, `enc_pattern_value`), and a `char` literal's record would make its arm's condition a fresh symbol in
+    // every function that picks over characters. A named constant keeps its record: the string chain emits it.
+    if (raw pattern_literal_shape(e, vn)) { drop exprtypes_unset(e.expr_types, v); }
+    if (pt == 0i32) { pass false; }                      // refused, and said (D-240)
+    if (raw type_is_invalid(e.types, pt)) { pass false; }
+    if (pt != selt) {
+        string:m1 = string_concat("this arm's value is a `", raw type_display(e.types, e.interns, pt));
+        string:m2 = string_concat(m1, "` and the selector a `");
+        string:m3 = string_concat(m2, raw type_display(e.types, e.interns, selt));
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+            string_concat(m3, "`: a value pattern has the selector's type, and no conversion enters a case -- write the value at that type"),
+            vn.span));
+        pass false;
+    }
+    TypeResolver:fr = raw etyper_resolver(e);
+    ConstVal:cv = raw fold_const(@fr, v, e.scope);
+    if (raw fold_gave_up(@fr)) { pass false; }           // the folder said what went wrong, once
+    if (cv.kind != (raw CV_NONE())) { pass true; }
+    discard(raw te_error(e, raw TYPE_MISMATCH(),
+        "a value pattern is a constant the compiler decides -- a literal, a negated literal, a `fixed` module binding, `comptime(…)` -- and this is not one; a value known only at run time is compared in a guard: `(*) where (v == n) { … }`",
+        vn.span));
+    pass false;
 };
 
 // EVERY ARM OVER AN ENUM NAMES ONE OF ITS VARIANTS (DEF-142, 1.6.1d step 4;

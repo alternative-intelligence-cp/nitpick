@@ -1,0 +1,119 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 45:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 48:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 51:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 54:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 57:17
+// expect-error: NITPICK-TYPE-031
+// expect-error-at: 60:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 63:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 66:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 69:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 72:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 75:17
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 78:17
+// expect-error: NITPICK-TYPE-065
+// expect-error-at: 81:5
+// expect-error: NITPICK-TYPE-065
+// expect-error-at: 84:15
+// A VALUE PATTERN IS A CONSTANT OF THE SELECTOR'S TYPE (DEF-178, DEF-187; landing 134). No rule typed a value pattern
+// or a range bound before this landing: the emitter wrote a literal's payload as the case whatever the selector, so
+// `(true)` over an `int32` matched 1, `('A')` matched 65 and `(300)` over an `int8` was cut to 44, in silence; a local,
+// a string over an integer and a float died as EMIT-002; and a `pick` over a float reached `llc`. Each value and bound
+// is typed under the selector's type and held to it (TYPE-007; an unsuffixed literal must fit, TYPE-031), it is a
+// constant the folder decides (TYPE-007 otherwise: a run-time comparison is a `where` guard), a range needs an ordered
+// selector (TYPE-007), and a float selector is refused whole (TYPE-065, the code of a selector no case can be taken
+// over). The controls: a `fixed` binding, a negated literal, `comptime(…)`, constant arithmetic, a string literal over a
+// string, a range of `fixed` bounds, an unsuffixed literal that fits, a `char` range over a `char`, both `bool` values,
+// a `fixed` enum constant over its enum, a guard over a run-time value.
+mod:pick_pattern_types;
+enum:Shade = { Light; Dark; };
+fixed int32:K = 7i32;
+fixed int32:L = 9i32;
+fixed Shade:DIM = Shade.Dark;
+func:bool_over_int = int32(int32:v) never fails {
+    pick (v) { (true) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:wide_over_int = int32(int32:v) never fails {
+    pick (v) { (300i64) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:char_over_int = int32(int32:v) never fails {
+    pick (v) { ('A') { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:int_over_char = int32(char8:c) never fails {
+    pick (c) { (65i32) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:int_over_bool = int32(bool:b) never fails {
+    pick (b) { (1i32) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:too_big = int32(int8:v) never fails {
+    pick (v) { (300) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:local_value = int32(int32:v, int32:n) never fails {
+    pick (v) { (n) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:local_string = int32(string:s, string:t) never fails {
+    pick (s) { (t) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:char_range_over_int = int32(int32:v) never fails {
+    pick (v) { ('A'..'Z') { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:bool_range = int32(bool:b) never fails {
+    pick (b) { (false..true) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:string_range = int32(string:s) never fails {
+    pick (s) { ("a".."z") { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:literal_over_enum = int32(Shade:s) never fails {
+    pick (s) { (1i32) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:float_selector = int32(flt64:f) never fails {
+    pick (f) { (*) { pass 1i32; } }
+};
+func:float_expression = int32(flt64:f) never fails {
+    int32:r = pick (f) { (*) { give 1i32; } };
+    pass r;
+};
+// controls
+func:constants = int32(int32:v) never fails {
+    pick (v) {
+        (K)                        { pass 1i32; },
+        (-3i32)                    { pass 2i32; },
+        (comptime(2i32 + 2i32))    { pass 3i32; },
+        (10i32 * 10i32)            { pass 4i32; },
+        (*)                        { pass 0i32; }
+    }
+};
+func:ranges = int32(int32:v) never fails {
+    pick (v) { (K..L) { pass 1i32; }, (100i32...200i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:narrow = int32(int8:v) never fails {
+    pick (v) { (100) { pass 1i32; }, (-127) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:letters = int32(char8:c) never fails {
+    pick (c) { ('A'..'Z') { pass 1i32; }, ('_') { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:words = int32(string:s) never fails {
+    pick (s) { ("light") { pass 1i32; }, ("dark") { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:truth = int32(bool:b) never fails {
+    pick (b) { (true) { pass 1i32; }, (false) { pass 0i32; } }
+};
+func:shade = int32(Shade:s) never fails {
+    pick (s) { (DIM) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:guarded = int32(int32:v, int32:n) never fails {
+    pick (v) { (*) where (v == n) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) { exit 9i32; };

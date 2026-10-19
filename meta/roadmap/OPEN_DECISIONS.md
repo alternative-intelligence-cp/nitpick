@@ -3066,7 +3066,7 @@ defect declares a `DEF-` in §2f.
 > keywords that name a member after a dot (`acquire`, `any`, `trit`, `nit`, …), and anything else is PARSE-001 at the
 > token -- a unit case, not a rejection file (D-085).
 
-> **DEF-178 — OPEN (2026-09-30; owner: the compiler seat; found by WP-A's implementer). A VALUE PATTERN'S LITERAL IS
+> **DEF-178 — FIXED 2026-10-18 (landing 134, `nitpick-compiler_40`, with DEF-187; step 3d's first checker hole): `check_value_patterns` (type_stmt.npk, called from `type_pick_rules`, both spellings) types every value pattern and range bound under the selector's type and holds it to that type (TYPE-007; an unsuffixed literal must fit, TYPE-031), requires a constant the folder decides (TYPE-007), refuses a range over an unordered selector (TYPE-007), and refuses a float selector whole (TYPE-065, with an `Optional`'s and a pointer's); the emitter writes a folded constant as its case (`pat_folded_case`). Measured on landing 133's compiler: `(true)`, `(300i64)`, `(44u8)` and `('A')` over an `int32` compiled and matched by payload, `(300)` over an `int8` was cut to 44, `(65i32)` over a `char8` and `(1i32)` over a `bool` compiled, `("abc")` and `(2.5f64)` over an `int32` and any pattern over a `flt64` were EMIT-002, and `pick (f) { (*) { … } }` reached `llc`; each is one report now. `tests/types/rejection/pick_pattern_types.npk` (fourteen sites), `tests/backend/programs/pick_constant_patterns.npk`. WAS: OPEN (2026-09-30; owner: the compiler seat; found by WP-A's implementer). A VALUE PATTERN'S LITERAL IS
 > NEVER TYPED AGAINST ITS SELECTOR:** over an `int32` selector `(true)`, `(300i64)`, `(44u8)` and `('A')` compile and
 > match; `("abc")`, `(2.5f64)`, a fraction range and any pattern over a `flt64` selector pass the checker and die as
 > EMIT-002. **Recommended:** `type_pick_rules` types each pattern literal and range bound under the selector's type
@@ -3151,7 +3151,7 @@ defect declares a `DEF-` in §2f.
 > declared. DEF-186, generic arguments on a macro invocation (`#one<int32>()`) are silently ignored -- recommended:
 > refused. DEF-187 (with DEF-178), a value pattern that is not a literal -- a local `(n)`, a `fixed` name `(K)` -- is
 > accepted by the checker and EMIT-002; and `func:lit<comptime int32:K> = int32() never fails { pass K; }` passes
-> the frontend and is EMIT-002. DEF-188, MACRO-009's range is the body items' start lines plus one line of slack:
+> the frontend and is EMIT-002. *[2026-10-18, landing 134 (`nitpick-compiler_40`): DEF-187 FIXED with DEF-178 -- a value pattern is a constant the folder decides: a local `(n)` is TYPE-007 naming the guard spelling, a `fixed` name `(K)`, `comptime(…)` and constant arithmetic are cases the emitter writes through the folder (`pat_folded_case`); the `comptime` value parameter's face is TYPE-095 at its declaration since landing 117 (D-353).]* DEF-188, MACRO-009's range is the body items' start lines plus one line of slack:
 > two adjacent one-line macros get a false note and a diagnostic deep in a multi-line item gets none --
 > recommended: the declaration records its closing brace's line. Scheduled with DEF-176 … DEF-180 as 1.6.1e step
 > 3d (the rows' neighbours), planned execution-grade before it starts, by severity: the traps (DEF-176, DEF-184,

@@ -18084,6 +18084,15 @@ the recommendation and the ratification are the small language.
 > pick_optional.npk`: both forms refused, the `??` form accepted). At step 1 the
 > refusal moved into `type_pick_rules`, the ONE function both spellings of a
 > `pick` call (see D-261's note) — the rule is written once.
+>
+> *[2026-10-18, landing 134 (`nitpick-compiler_40`; DEF-178, DEF-187): the sentence above that the checker "never types
+> a value pattern's expression against the selector" held until this landing and was the hole -- `(true)` over an
+> `int32` matched 1, `('A')` 65, `(300)` over an `int8` was cut to 44, in silence. Every value pattern and range bound
+> is now typed under the selector's type and held to it (TYPE-007; an unsuffixed literal must fit, TYPE-031) and must
+> be a constant the folder decides (TYPE-007 otherwise; a `fixed` binding, `comptime(…)` and constant arithmetic are
+> cases now, the emitter writing them through the folder); a range needs an ordered selector (TYPE-007); and a FLOAT
+> joins this decision's refusal at the selector (TYPE-065, as a pointer did at landing 133, DEF-257): `==` on a float
+> is no decision, and `pick (f) { (*) { … } }` had reached `llc` ("switch condition must have integer type").]*
 
 > **2026-10-18 (DEF-257, landing 133):** TYPE-065 is the code of a selector with no arms of its own, and a POINTER is
 > the second: `pick (w) { (NULL) { … } }` over a `wild` pointer passed the checker and died as EMIT-002 (the emitter
