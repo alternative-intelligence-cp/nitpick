@@ -2436,8 +2436,8 @@ level, because `q.x` does.
 | `??` | null coalesce | branch + select | `opt ?? default` |
 | `??!` | emphatic coalesce | branch → failsafe | `opt ??! Ident` (D-360): the tag tested, `npk_raise` on the empty path |
 | `?.\|` | safe navigation | branch + select | `opt?.field` |
-| `\|>` | pipe forward | `call f(%v)` | `v \|> f` = `f(v)` |
-| `<\|` | pipe backward | `call f(%v)` | `f <\| v` = `f(v)` |
+| `\|>` | pipe forward — **struck (D-362)** | — | `NITPICK-PARSE-014`: write the call `f(v)` |
+| `<\|` | pipe backward — **struck (D-362)** | — | `NITPICK-PARSE-014`: write the call `f(v)` |
 
 ### Cast / Conversion
 | Operator | Meaning | IR | Notes |

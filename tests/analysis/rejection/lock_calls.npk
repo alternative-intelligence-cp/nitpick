@@ -7,7 +7,7 @@
 // expect-error: NITPICK-LOCK-001
 // expect-error-at: 101:16
 // expect-error: NITPICK-LOCK-001
-// expect-error-at: 115:21
+// expect-error-at: 115:24
 // expect-error: NITPICK-LOCK-002
 // expect-error-at: 124:5
 // expect-error: NITPICK-LOCK-001
@@ -22,7 +22,7 @@
 // checker peels off a receiver (D-098), the free function it reaches as a
 // method (UFCS, D-006), the trait a qualified `Trait.method(recv)` names
 // (D-172), and the enclosing trait a default body's `self` call goes through.
-// A piped call `x |> f` had no case at all.
+// A piped call `x |> f` had no case at all (the pipe is struck since landing 133, D-362: case 5 is the call).
 //
 // Measured on 5fbaf4a: cases 1 to 5 below compiled. Each holds level 2 and
 // reaches level 1 through the form it names; case 6 is a default body that
@@ -108,11 +108,11 @@ func:reaches_1 = int32(int32:n) never fails {
     pass n;
 };
 
-// 5. A PIPE: `5i32 |> reaches_1` is `reaches_1(5i32)`.
+// 5. A CALL WRITTEN AS THE STRUCK PIPE ONCE WAS (`5i32 |> reaches_1`, D-362): `reaches_1(5i32)`.
 func:through_a_pipe = int32() never fails {
     Lease:g = take_2() ?! E9;
     discard(g.v);
-    int32:r = (5i32 |> reaches_1) ?| 0i32;
+    int32:r = reaches_1(5i32) ?| 0i32;
     pass r;
 };
 
@@ -145,6 +145,6 @@ func:nothing_held = int32(Cell->:p, Cell:c) never fails {
     drop p.low();
     drop c.settle();
     drop Speaks.say(c);
-    int32:r = (5i32 |> reaches_1) ?| 0i32;
+    int32:r = reaches_1(5i32) ?| 0i32;
     pass r;
 };

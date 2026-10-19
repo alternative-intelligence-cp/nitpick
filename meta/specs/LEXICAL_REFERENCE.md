@@ -199,6 +199,8 @@ CompilerSigil ::= "#"
 Punctuation   ::= "(" | ")" | "{" | "}" | "[" | "]" | "." | "," | ":" | ";" | "`"
 ```
 
+*[2026-10-18, landing 133: `|>` and `<|` are STRUCK (D-362) -- still lexed, so the parser refuses each by name (`NITPICK-PARSE-014`) with the call `f(x)` as the fix; a pipe was a second spelling of a call.]*
+
 > **`=>!` added** — chapter 01 listed only `=>`, but `=>` and `=>!` are the *only*
 > two cast forms (D-021).
 >

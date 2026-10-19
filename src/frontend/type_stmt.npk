@@ -609,6 +609,17 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
                 at));
             pass refused;
         }
+        // AND A POINTER (DEF-257, landing 133): an address has no arms of its own either -- the emitter switches on
+        // a selector as its own discriminant and cannot `switch` over a `ptr`, so `pick (w) { (NULL) { … } }` over a
+        // `wild` pointer passed the checker and died as EMIT-002 (found by D-355's probes; a plain pointer's borrow was
+        // BORROW-009 in the escape analysis, a sentence about borrows). TYPE-065 is the code of a selector with no
+        // arms of its own, an `Optional`'s and a pointer's; a pointer's test is a comparison, or a pick on its pointee.
+        if ((raw type_kind(e.types, selt)) == (raw TY_POINTER())) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_PICK_OPTIONAL(),
+                "a `pick` does not select on a pointer: an address has no arms of its own — compare it (`w == NULL` for a `wild` pointer, D-355) or pick on what it points at (`pick (<-p) { … }`)",
+                at));
+            pass refused;
+        }
     }
     // THE CONSUMING SELECTOR (D-216): `pick (move(v))` takes the value
     // apart, so its arms may bind owning payloads — that is the whole

@@ -18085,6 +18085,12 @@ the recommendation and the ratification are the small language.
 > refusal moved into `type_pick_rules`, the ONE function both spellings of a
 > `pick` call (see D-261's note) — the rule is written once.
 
+> **2026-10-18 (DEF-257, landing 133):** TYPE-065 is the code of a selector with no arms of its own, and a POINTER is
+> the second: `pick (w) { (NULL) { … } }` over a `wild` pointer passed the checker and died as EMIT-002 (the emitter
+> cannot `switch` over a `ptr`), and a plain pointer's selector was BORROW-009 in the escape analysis. `type_pick_rules`
+> refuses it by name at the selector, in both forms; a pointer's test is a comparison (`w == NULL` for a `wild` one,
+> D-355) or a pick on its pointee (`pick (<-p) { … }`).
+
 ## D-261 — a generic enum is a family, exactly as a generic struct is — **SETTLED (user decision, 2026-09-05: "lets go with your recommendations on those"; OPEN_DECISIONS DEF-20; lands at 1.5.2c step 1)**
 
 Found by 1.5.2b step 3's tests: `enum:Opt<T> = { Some(T); None; };` parsed
@@ -23438,3 +23444,32 @@ fuzzer's later family. Recorded at landing 119, whose record was running when th
 > OVERTURNED (`bi0077`: a `wild int8->` value binding to a plain `int8->`; `ty1754`: `uint8->:p = b.ptr`), one gaining a
 > second code (`bi0418b`), one the false refusal the deref arm fixed (`bi0123b`). Tests: `wild_into_plain.npk` (twelve
 > sites, the controls), `wild_crossing.npk` (five crossings at both legs). (b), `wild T->` as a type, stays open.
+
+## D-362 — THE PIPE OPERATORS ARE STRUCK: `x |> f` AND `f <| x` ARE REFUSED BY NAME, AND THE CALL `f(x)` IS THE ONE SPELLING — **SETTLED (user decision, 2026-10-18: "If we don't need them for anything i'm fine with getting rid of them.")**
+
+Settles S-139, raised 2026-10-18 by `nitpick-compiler_40` while fixing DEF-180 (the pipe was a node no analysis read as a
+call, and a pipe into a `move` parameter double-freed in safe code: exit 95 at both legs where `consume(move(s))` answers 8,
+with or without `move(s)` written). Three references disagreed on what a pipe is -- TYPE_REFERENCE's `v |> f` = `f(v)` and
+`f <| v` = `f(v)`, OP_REFERENCE's `val |> func()` inserting the value as `func`'s first argument, AST_REFERENCE's node with a
+direction -- and the compiler implemented the first reading's forward form alone, refusing every `<|`. Nothing in the
+libraries or the applications spells either form; the tree spelled `|>` in two tests and both in the grammar sample; the
+fuzzer filed one claim per reading. The question as put: (a) `|>` kept as `f(v)` and `<|` struck (recommended), (b) both
+kept as TYPE_REFERENCE says, (c) OP_REFERENCE's first-argument reading. The ruling, the user, Sun 2026-10-18 at 15:13:52,
+through `management_1`, which relayed it to `nitpick-compiler_40` at 15:1x: "I have to be honest with you, i have no clue about the <| or |> . seems like i remember it being called a pipeline operator or something and i'm guessing it comes from functional programming but that is as far as i'll venture. the prototype version of nitpick had closures and garbage collection and dynamic types and i feel like it was likely to do with that stuff but i don't actually know. If we don't need them for anything i'm fine with getting rid of them. if we do, i'm fine with your recommendation as i would just be groping in the dark."
+`management_1`'s reading, sent with it: we do not need them -- nothing in the libraries or the applications uses either
+form, without closures (D-018) `x |> f` is only another spelling of `f(x)`, it had just produced a double free, and the
+author places the pipes in the prototype, which had closures, a collector and dynamic types; so strike both, refused by
+name with the plain call as the fix, unless something concrete depends on `|>`. Nothing does (the specs describe the
+operator and nothing more; one library plan lists it among the operators). **The rule.** `|>` and `<|` are
+`NITPICK-PARSE-014` at the operator, once per chain, "`|>` is struck (D-362): a pipe was a second spelling of a call, and
+the language has one -- write the call, `f(x)`". Both stay lexed so the refusal can name them, and the node is still built
+(the grammar is never partial, D-085; D-175's struck `?` and `defaults` likewise), so nothing past the parser moves.
+TYPE_REFERENCE's two rows, OP_REFERENCE's precedence level 3 and its two operator rows, and AST_REFERENCE's `PipeExpr` row
+say struck. DEF-180 closes with the form: the faces its audit found (the double free, the recursion edge no group saw, a
+`pure` body piping into an impure function, a bare pipe into an `async` function reaching `llc`, a generic callee inferring
+nothing) belonged to a spelling the language no longer has. The call-building fix built first (a pipe parsed as the call
+it wrote) was dropped unlanded: it would have kept three spellings of one call.
+
+> **LANDED (1.6.1e landing 133, `nitpick-compiler_40`, with DEF-257).** `PARSE_PIPE_REMOVED` (parse_codes.npk),
+> `p_pipeline`'s refusal (parse_expr.npk), `tests/frontend/parse_pipe_struck.npk` (the unit: each operator one report, a
+> chain one report, the call a control); `pipe.npk`, `lock_calls.npk` and the grammar sample re-spelled.

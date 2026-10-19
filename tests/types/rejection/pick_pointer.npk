@@ -1,0 +1,47 @@
+// expect-error: NITPICK-TYPE-065
+// expect-error-at: 18:5
+// expect-error: NITPICK-TYPE-065
+// expect-error-at: 22:5
+// expect-error: NITPICK-TYPE-065
+// expect-error-at: 26:15
+// expect-error: NITPICK-TYPE-065
+// expect-error-at: 33:5
+// A `pick` DOES NOT SELECT ON A POINTER (DEF-257, landing 133): an address has no arms of its own. The emitter
+// switches on a selector as its own discriminant and cannot `switch` over a `ptr`, so `pick (w) { (NULL) { … } }`
+// over a `wild` pointer passed the checker and died as EMIT-002 (found by D-355's probes at landing 119), and a plain
+// pointer's selector was refused by the escape analysis with a sentence about borrows (BORROW-009). Each is TYPE-065
+// now, the code of a selector with no arms of its own (an `Optional`'s, D-260), once, at the `pick`, in both forms.
+// The controls: a `wild` pointer compared with `NULL` (D-355), and a pick on what a pointer points at.
+mod:pick_pointer;
+func:wild_null_arm = int32() never fails {
+    wild int8->:w = NULL;
+    pick (w) { (NULL) { pass 0i32; }, (*) { pass 1i32; } }
+    pass 2i32;
+};
+func:plain_star = int32(int32->:p) never fails {
+    pick (p) { (*) { pass 0i32; } }
+    pass 1i32;
+};
+func:expression_form = int32(int32->:p) never fails {
+    int32:r = pick (p) { (*) { give 3i32; } };
+    pass r;
+};
+// the old shape of `untracked_borrow.npk`: an address-of expression as the selector
+enum:Tag = { ONE; TWO; };
+struct:Holder = { Tag:t; };
+func:address_of = int32(Holder->:h) never fails {
+    pick (@h.t) { (Tag.ONE) { pass 0i32; }, (Tag.TWO) { pass 1i32; } }
+    pass 2i32;
+};
+// controls
+func:compared = int32() never fails {
+    wild int8->:w = NULL;
+    if (w == NULL) { pass 0i32; }
+    pass 1i32;
+};
+func:on_the_pointee = int32(int32->:p) never fails {
+    pick (<-p) { (0i32) { pass 0i32; }, (*) { pass 1i32; } }
+    pass 2i32;
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

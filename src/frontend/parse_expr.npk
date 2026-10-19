@@ -438,9 +438,15 @@ func:p_cast = ExprId(Parser->:p) never fails {
     pass e;
 };
 
-// 3 -- pipelines
+// 3 -- pipelines: STRUCK (D-362, S-139; 1.6.1e landing 133). `x |> f` was a second spelling of the call `f(x)` and
+// `f <| x` a third; the language has one. Each is refused by name, once per chain, at its first operator -- reported
+// without entering panic, since the expression around it parses as written and a later mistake is its own report --
+// and the node is still built (the grammar is never partial, D-085; the struck `?`/`defaults` of D-175 likewise), so
+// the tree the walks before the driver's stop read is well formed. Until landing 133 the forward form was its own node
+// no analysis read as the call it was: a pipe into a `move` parameter double-freed (DEF-180).
 func:p_pipeline = ExprId(Parser->:p) never fails {
     ExprId:e = raw p_result_unary(p);
+    bool:said = false;
     while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
@@ -450,6 +456,14 @@ func:p_pipeline = ExprId(Parser->:p) never fails {
             if (!back) { break; }
         }
         discard(raw p_advance(p));
+        if ((!said) && (!p.panic)) {
+            string:op = "`|>`";
+            if (back) { op = "`<|`"; }
+            drop diaglist_push(p.diags, raw diag_error(raw PARSE_PIPE_REMOVED(),
+                string_concat(op, " is struck (D-362): a pipe was a second spelling of a call, and the language has one -- write the call, `f(x)`"),
+                sp));
+        }
+        said = true;
         ExprId:rhs = raw p_result_unary(p);
         int64:dir = 0i64;
         if (back) { dir = 1i64; }

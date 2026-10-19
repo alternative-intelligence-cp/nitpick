@@ -14,7 +14,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 |---|---|---|
 | 1 | Postfix | `()` `[]` `.` `?.` (`++` / `--` struck, D-174) |
 | **2** | **Result unary** *(right-assoc)* | **`raw` `_!`** · **`drop` `_?`** · **`await`** · **`relay` `_^`** |
-| 3 | Pipeline | `\|>` `<\|` |
+| 3 | Pipeline — **struck (D-362)**: `\|>` `<\|` are `NITPICK-PARSE-014`, the call `f(x)` the one spelling |
 | 4 | Cast | `=>` `=>!` |
 | 5 | Unary | `!` `~` `-` `@` `<-` `$$i` `$$m` |
 | 6 | Multiplicative | `*` `/` `%` `*%` |
@@ -393,8 +393,8 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `is` | Ternary Conditional | Ternary branching. `is cond : then : else` | `is x > 0 : 1 : -1` |
 | `..` | Inclusive Range | Inclusive range `[a, b]`. Used in `for` and `pick`. | `0..10` |
 | `...` | Exclusive Range | Exclusive range `[a, b)`. Used in `for` and `pick`. | `0...10` |
-| `\|>` | Pipe Forward | Passes the left expression as the first argument to the right function. | `val \|> func()` |
-| `<\|` | Pipe Backward | Evaluates the right expression first, passes to the left function. | `func() <\| val` |
+| `\|>` | Pipe Forward — **struck (D-362)** | Refused by name (`NITPICK-PARSE-014`): a pipe was a second spelling of a call. Until landing 133 this row read it as the first argument's insertion and TYPE_REFERENCE as `f(v)`; the compiler did neither everywhere (S-139). | write `func(val)` |
+| `<\|` | Pipe Backward — **struck (D-362)** | Refused by name (`NITPICK-PARSE-014`); it never compiled in any shape. | write `func(val)` |
 | `$` | Iteration Variable| Safe loop counter explicitly bound inside `till` and `loop`. | `x += $;` |
 
 ---

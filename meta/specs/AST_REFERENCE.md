@@ -311,7 +311,7 @@ names neither the construct nor the rule it broke.
 | `AddressOfExpr` | `operand` | `@x` — yields a **second-class borrow**, not a pointer (D-004) |
 | `DerefExpr` | `operand` | `<-ptr` |
 | `BorrowExpr` | `mutable: bool`, `operand` | `$$i` / `$$m` |
-| `PipeExpr` | `direction`, `value`, `callee` | `\|>` / `<\|` |
+| `PipeExpr` | `direction`, `value`, `callee` | `\|>` / `<\|` — **struck (D-362)**; the node is still built so the parser never restricts, and refused by name (`NITPICK-PARSE-014`) |
 | `RangeExpr` | `lo`, `hi`, `inclusive` | `..` / `...` |
 | `SpreadExpr` | `operand` | **`..^`** — expands a collection at a call site (D-026) |
 | `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |

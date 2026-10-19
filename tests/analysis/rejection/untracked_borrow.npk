@@ -1,11 +1,14 @@
 // expect-error: NITPICK-BORROW-009
+// expect-error-at: 34:21
 // expect-error: NITPICK-BORROW-009
-// expect-error: NITPICK-PICK-003
+// expect-error-at: 43:11
 //
-// (The `pick` also draws `NITPICK-PICK-003`: its selector is a `Tag->` rather than
-// a `Tag`, and coverage is decided from the selector's type. Two rules, two codes,
-// about the same line — which is right, because removing the borrow fixes both and
-// removing only one of them fixes neither.)
+// (2026-10-18, DEF-257, landing 133: the `pick` case picked on an ADDRESS, `pick (@h.t)`,
+// and drew `NITPICK-PICK-003` beside the borrow -- its selector a `Tag->` rather than a
+// `Tag`. A `pick` does not select on a pointer now: that shape is TYPE-065 in the type
+// checker, which runs before the escape analysis, and `tests/types/rejection/pick_pointer.npk`
+// keeps it. The case here picks on an enum that HOLDS a local's address -- the borrow
+// the analysis still refuses to follow into a pattern binding.)
 //
 // A BORROW REACHING A BINDING THE ESCAPE ANALYSIS DOES NOT FOLLOW (D-004, 0.5.1).
 //
@@ -25,9 +28,7 @@ mod:untracked_borrow;
 
 struct:Bag = { int32[4]:items; };
 
-enum:Tag = { ONE; TWO; };
-
-struct:Holder = { Tag:t; };
+enum:Ref = { At(int32->); Nada; };
 
 func:iterate_a_borrow = NIL(Bag->:b) never fails {
     for (int32:v in @b.items) {
@@ -36,10 +37,12 @@ func:iterate_a_borrow = NIL(Bag->:b) never fails {
     pass NIL;
 };
 
-func:pick_on_a_borrow = NIL(Holder->:h) never fails {
-    pick (@h.t) {
-        (Tag.ONE) { pass NIL; },
-        (Tag.TWO) { pass NIL; }
+func:pick_on_a_borrow = NIL() never fails {
+    int32:v = 5i32;
+    Ref:r = Ref.At(@v);
+    pick (r) {
+        (At(q)) { pass NIL; },
+        (Ref.Nada) { pass NIL; }
     }
     pass NIL;
 };

@@ -1,0 +1,112 @@
+// THE PIPE OPERATORS ARE STRUCK (D-362, S-139; 1.6.1e landing 133): `x |> f` and `f <| x` are NITPICK-PARSE-014 at the
+// operator, once per chain, the call `f(x)` the fix. A pipe was a second spelling of a call -- TYPE_REFERENCE read
+// `v |> f` as `f(v)`, OP_REFERENCE read `val |> func()` as the first argument's insertion, the compiler did the forward
+// form alone and refused every `<|` -- and the forward form had double-freed a `move` argument in safe code (DEF-180).
+// A parser refusal is a UNIT case (D-085: the grammar stage parses every tree file). Each operator is one report, a
+// chain is one report, a pipe nested in an argument is its own; the controls: the call, and the same expression with
+// no pipe, parse clean, and a later mistake in the function is still reported (the refusal enters no panic).
+mod:parse_pipe_struck;
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+
+struct:Parsed = {
+    Ast:ast;
+    DiagList:diags;
+    DeclId:root;
+};
+
+// Lex and parse a module, as the driver does, and keep what came out.
+func:parsed = Parsed(string:src, InternTable->:it) never fails {
+    Ast:ast = raw ast_init();
+    DiagList:diags = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @diags);
+    Parser:p = raw parser_init(@toks, @ast, @diags, it);
+    DeclId:root = raw p_parse_module(@p);
+    Parsed:out = Parsed{ ast: move(ast), diags: diags, root: root };
+    pass out;
+};
+
+// Exactly one diagnostic, and it carries `code`.
+func:one_diag = bool(Parsed->:x, string:code) never fails {
+    if ((raw diaglist_count(@x.diags)) != 1i64) { pass false; }
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (raw string_eq(d.code, code));
+};
+
+// How many members the parsed module holds, and whether one is a function named `name`.
+func:has_func = bool(Parsed->:x, InternTable->:it, string:name) never fails {
+    DeclNode:m = raw ast_decl(@x.ast, x.root);
+    int32:n = raw item_member_count(@x.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclNode:d = raw ast_decl(@x.ast, raw item_member(@x.ast, m, i));
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            if (raw string_eq(raw intern_get(it, raw decl_name(d)), name)) { pass true; }
+        }
+    }
+    pass false;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    Parsed:f1 = raw parsed("mod:m; func:g = int32(int32:x) never fails { pass x; }; func:f = int32() { int32:r = (5i32 |> g) ?| 0i32; pass r; };", @it);
+    if (!(raw one_diag(@f1, raw PARSE_PIPE_REMOVED())))                             { exit 10i32; }
+    Parsed:b1 = raw parsed("mod:m; func:g = int32(int32:x) never fails { pass x; }; func:f = int32() { int32:r = (g <| 5i32) ?| 0i32; pass r; };", @it);
+    if (!(raw one_diag(@b1, raw PARSE_PIPE_REMOVED())))                             { exit 11i32; }
+    // a chain is one report
+    Parsed:c1 = raw parsed("mod:m; func:f = int32() { int32:r = (5i32 |> g |> h |> k) ?| 0i32; pass r; };", @it);
+    if (!(raw one_diag(@c1, raw PARSE_PIPE_REMOVED())))                             { exit 12i32; }
+    // a pipe inside an argument is its own expression, and its own report: two here
+    Parsed:n1 = raw parsed("mod:m; func:f = int32() { int32:r = (raw g(1i32 |> h) |> k) ?| 0i32; pass r; };", @it);
+    if ((raw diaglist_count(@n1.diags)) != 2i64)                                    { exit 13i32; }
+    // CONTROL: the call parses clean
+    Parsed:k1 = raw parsed("mod:m; func:g = int32(int32:x) never fails { pass x; }; func:f = int32() { int32:r = g(5i32) ?| 0i32; pass r; };", @it);
+    if ((raw diaglist_count(@k1.diags)) != 0i64)                                    { exit 14i32; }
+    // CONTROL: a later mistake in the same body is still reported -- the refusal enters no panic
+    Parsed:k2 = raw parsed("mod:m; func:f = int32() { int32:r = (5i32 |> g) ?| 0i32; int32:s = ; pass r; };", @it);
+    if ((raw diaglist_count(@k2.diags)) != 2i64)                                    { exit 15i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsIndex) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (ShiftRange)  { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (BoundsId) { exit 1i32; },
+        (BoundsScratch) { exit 1i32; },
+        (BoundsWindow) { exit 1i32; },
+        (DeadlineExceeded) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (ProvenSlice) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
+        (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

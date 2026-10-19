@@ -55,3 +55,8 @@ pub func:PARSE_TOO_DEEP = string() never fails { pass "NITPICK-PARSE-012"; };
 // argument, a function type's parameter, a return type), on a cast target, and
 // `stack` on a return -- each a spelling that parsed and meant nothing (DEF-247).
 pub func:PARSE_FIXED_VIEW = string() never fails { pass "NITPICK-PARSE-013"; };
+// THE PIPE OPERATORS ARE STRUCK (D-362, S-139; 1.6.1e landing 133): `x |> f` was a second spelling of the call `f(x)`
+// and `f <| x` a third -- carried from the prototype, which had closures, a collector and dynamic types -- and the second
+// had produced a double free in safe code (DEF-180: a pipe into a `move` parameter, the argument dropped by the callee
+// and again by the statement). Both are still lexed, so the parser refuses them by name with the call as the fix.
+pub func:PARSE_PIPE_REMOVED = string() never fails { pass "NITPICK-PARSE-014"; };
