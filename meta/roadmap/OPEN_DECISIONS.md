@@ -3129,6 +3129,7 @@ defect declares a `DEF-` in §2f.
 
 > **DEF-182 … DEF-188 — OPEN (2026-09-30; owner: the compiler seat; found by WP-C's implementer around the macro
 > rows; each measured the same on `5fbaf4a` and on step 3's tree; probes in `wt/22d/.internal/probe/`).**
+> *[2026-10-18, landing 135 (`nitpick-compiler_40`): DEF-182 FIXED -- an attribute before anything that keeps no attribute window (a statement other than a local binding, a module binding, a `use`, a `mod`, an `extern` block, a `Rules` declaration, an `assoc`, an `opaque struct`, an `error` constant, a `unit`, a macro invocation) is NITPICK-DERIVE-007 at the attribute, in the parser where the window was dropped (`p_refuse_attrs`, parse_decorate.npk), one report per attribute, the parse going on; a struct, an enum, a trait, an impl, a function and a macro keep their windows for the derive reader, a local binding its own for the checker. Measured on landing 134's compiler: every one of those positions compiled with its attribute ignored. Its second face, a second `decreases` on one loop, was already TYPE-072 ("states more than one") when measured; `parse_attr_dropped.npk` (ten cases, a control).]*
 > DEF-182, THE PARSER DROPS WHAT IT HAS NO NODE FOR, IN SILENCE: an attribute before a statement that is not a
 > declaration, before a global, a `Rules` block, `use`, `mod`, `extern`, `assoc`, `opaque`, `error`, `unit` or a
 > splice is discarded with whatever it holds (`#[note(undefined_name)] while …` compiles), and the second of two
@@ -3199,7 +3200,7 @@ defect declares a `DEF-` in §2f.
 > `tests/frontend/expansion_output.npk` (two instantiations own DIFFERENT array types and the SAME `int32`). PART B —
 > DEF-183, whose scope an ARGUMENT resolves in — waits for S-120.
 
-> **DEF-190 — OPEN (2026-09-30; owner: the compiler seat; found by the seat's review of step 3's float scan against
+> **DEF-190 — FIXED 2026-10-18 (landing 135, `nitpick-compiler_40`, with DEF-182; step 3d): both numeric scans hold every digit run to the production -- it ends in a digit (`seps_between_digits`, numeric.npk): `10_`, `1_i32`, `1_000_i32` and `0FF_hex` are NITPICK-LEX-003 (an integer run), `1_.5f64`, `1.5_f64` and `1.5e10_f64` NITPICK-LEX-009 (a float's), one report each, the token still a literal (D-240). A DOUBLED separator stays: the production `[0-9] ([0-9_]* [0-9])?` admits `1__0` (this row read it as refused; a reading of the grammar, not the grammar). Measured on landing 134's compiler: each compiled as the digits before the separator; `30_000`, `0F_Fhex`, `1__0`, `1_000.5f64` and `1.5e1_0f64` unmoved. `lexer_numeric.npk`'s cases 180-191 (landing 134's lexer fails the first). WAS: OPEN (2026-09-30; owner: the compiler seat; found by the seat's review of step 3's float scan against
 > LEXICAL_REFERENCE §6.2). THE NUMERIC SCANS ACCEPT A `_` THE PRODUCTION DOES NOT:** `DecimalLiteral ::= [0-9]
 > ([0-9_]* [0-9])?` ends a digit run in a digit; the integer scan has always accepted a run that ends in a separator
 > or doubles one (`10_`, `1_i32`, `1_000_i32`, `1__0` -- measured on `5fbaf4a`), and step 3's float scan agrees with

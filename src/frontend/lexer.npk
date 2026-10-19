@@ -529,10 +529,17 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 // mistake (D-240), and the driver stops before expansion on
                 // any diagnostic, so nothing reads the literal further.
                 string:tail = raw slice_proven(lx.text, fs.body_end, fs.tail_end);
+                // A DIGIT RUN ENDS IN A DIGIT (DEF-190, landing 135): the float's own code, as its tail's is.
+                if (fs.bad_sep) {
+                    drop diaglist_push(diags,
+                        raw diag_error(raw LEX_BAD_SUFFIX(),
+                            "a numeral's digit run ends in a digit (LEXICAL_REFERENCE §6.2): a `_` separates digits and never ends a run, so a numeral that ends in one reads as unfinished -- write the digits it was meant to have, or drop the `_`",
+                            fsp));
+                }
                 NumWidth:fw = NumWidth.WNone;
                 if (tail.len > 0i64) {
                     fw = raw num_width_of(tail);
-                    if (fw == NumWidth.WNone) {
+                    if ((fw == NumWidth.WNone) && (!fs.bad_sep)) {   // one report for one literal (D-240)
                         string:b1 = string_concat("`", tail);
                         drop diaglist_push(diags,
                             raw diag_error(raw LEX_BAD_SUFFIX(),
@@ -565,6 +572,14 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 drop diaglist_push(diags,
                     raw diag_error(raw LEX_BAD_DIGIT(),
                         "digit is not valid for this base", nsp));
+                pass (raw token_numeric(TokenKind.IntLit, nsp, 0i64, ns.width));
+            }
+            // A DIGIT RUN ENDS IN A DIGIT (DEF-190, landing 135): `30_` where `30_000` was meant compiled as 30.
+            if (ns.bad_sep) {
+                drop diaglist_push(diags,
+                    raw diag_error(raw LEX_BAD_DIGIT(),
+                        "a numeral's digit run ends in a digit (LEXICAL_REFERENCE §6.2): a `_` separates digits and never ends a run, so a numeral that ends in one reads as unfinished -- write the digits it was meant to have, or drop the `_`",
+                        nsp));
                 pass (raw token_numeric(TokenKind.IntLit, nsp, 0i64, ns.width));
             }
             if (ns.overflow) {

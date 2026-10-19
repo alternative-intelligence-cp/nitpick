@@ -30,6 +30,7 @@ use "./parse_codes.npk".*;
 use "./parser.npk".*;
 use "./parse_type.npk".*;
 use "./parse_expr.npk".*;
+use "./macro/derive_codes.npk".*;   // DERIVE_ATTRIBUTE: an attribute where none is kept (DEF-182, landing 135)
 
 // --- accessors ------------------------------------------------------------------
 
@@ -138,6 +139,27 @@ pub func:p_parse_attributes = IdSpan(Parser->:p) never fails {
         drop ast_scratch_push(p.ast, a.index);
     }
     pass (raw ast_scratch_commit(p.ast, mark));
+};
+
+// AN ATTRIBUTE WHERE NONE IS KEPT IS REFUSED BY NAME (DEF-182, landing 135): a `struct`, an `enum`, a `trait`, an
+// `impl`, a function and a `macro` carry their attribute window (the derive reader reads it, DEF-236 (d)), and a local
+// binding carries its own (the checker refuses it); before anything else -- a statement, a module binding, a `use`, a
+// `mod`, an `extern` block, a `Rules` declaration, an `assoc`, an `opaque struct`, an `error` constant, a `unit`, a
+// macro invocation -- the parser gathered the window and dropped it unread, so `#[note(undefined_name)] while …`
+// compiled with its attribute ignored in silence. DERIVE-007 at each attribute, the code of an attribute that decorates
+// nothing; outside an error region alone (a broken region's tokens are no claim).
+pub func:p_refuse_attrs = NIL(Parser->:p, IdSpan:attrs, string:what) never fails {
+    if (p.panic) { pass NIL; }
+    for (int32:i in 0i32...attrs.count) {
+        DeclNode:a = raw ast_decl(p.ast, DeclId{ index: raw ast_id_at(p.ast, attrs.start, i) });
+        string:m1 = string_concat("`#[", raw intern_get(p.interns, raw attr_name(a)));
+        string:m2 = string_concat(m1, "]` decorates nothing here: an attribute belongs to a `struct`, an `enum`, a `trait`, an `impl`, a function or a `macro`, and ");
+        string:m3 = string_concat(m2, what);
+        drop diaglist_push(p.diags, raw diag_error(raw DERIVE_ATTRIBUTE(),
+            string_concat(m3, " takes none -- it would be dropped unread; `#[derive(…)]` is the one attribute the language has (D-020)"),
+            a.span));
+    }
+    pass NIL;
 };
 
 // --- `limit<Rule>` -----------------------------------------------------------------

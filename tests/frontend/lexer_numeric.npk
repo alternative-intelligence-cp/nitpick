@@ -35,6 +35,20 @@ func:bad_suffix = int32(string:src, int32:run_len, InternTable->:it) never fails
     pass 0i32;
 };
 
+// `src` IS ONE NUMERAL WHOSE DIGIT RUN ENDS IN A `_` (DEF-190): exactly one diagnostic, of `code`, and exactly one
+// token before the end, still a literal. 0 when all of that holds, else which part did not.
+func:one_sep_refusal = int32(string:src, string:code, InternTable->:it) never fails {
+    DiagList:d = raw diaglist_init();
+    TokenList:ts = raw lex_all(0i32, src, it, @d);
+    if (raw diaglist_count(@d) != 1i64) { pass 1i32; }
+    Diagnostic:f = raw diaglist_at(@d, 0i64);
+    if (!(raw string_eq(f.code, code))) { pass 2i32; }
+    Token:t = raw tokenlist_at(@ts, 0i64);
+    if ((t.kind != TokenKind.IntLit) && (t.kind != TokenKind.FloatLit)) { pass 3i32; }
+    if (!(raw token_is_eof(raw tokenlist_at(@ts, 1i64)))) { pass 4i32; }
+    pass 0i32;
+};
+
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
     DiagList:dg = raw diaglist_init();
@@ -248,6 +262,30 @@ func:main = int32(cstring[]:_~argv) {
     DiagList:dg5 = raw diaglist_init();
     discard(raw lex_all(0i32, "0xFF", @it, @dg5));
     if (raw diaglist_count(@dg5) == 0i64) { exit 62i32; }
+
+    // --- a digit run ends in a digit (DEF-190, landing 135) ------------------------------------------------------
+    // LEXICAL_REFERENCE §6.2's `[0-9] ([0-9_]* [0-9])?`: a separator never ends a run -- `10_`, `1_i32`, `1_000_i32` and
+    // a base's `0FF_hex` are NITPICK-LEX-003 (an integer run), `1_.5f64`, `1.5_f64` and an exponent's `1.5e10_f64`
+    // NITPICK-LEX-009 (a float's); one report each, the token still a literal (D-240). The scans admitted every one
+    // before this landing, a numeral ending in `_` compiling as the digits before it. The controls: separators inside
+    // each run, a doubled one too, which the production admits.
+    if ((raw one_sep_refusal("10_", raw LEX_BAD_DIGIT(), @it)) != 0i32)          { exit 180i32; }
+    if ((raw one_sep_refusal("1_i32", raw LEX_BAD_DIGIT(), @it)) != 0i32)        { exit 181i32; }
+    if ((raw one_sep_refusal("1_000_i32", raw LEX_BAD_DIGIT(), @it)) != 0i32)    { exit 182i32; }
+    if ((raw one_sep_refusal("0FF_hex", raw LEX_BAD_DIGIT(), @it)) != 0i32)      { exit 183i32; }
+    if ((raw one_sep_refusal("1_.5f64", raw LEX_BAD_SUFFIX(), @it)) != 0i32)     { exit 184i32; }
+    if ((raw one_sep_refusal("1.5_f64", raw LEX_BAD_SUFFIX(), @it)) != 0i32)     { exit 185i32; }
+    if ((raw one_sep_refusal("1.5e10_f64", raw LEX_BAD_SUFFIX(), @it)) != 0i32)  { exit 186i32; }
+    DiagList:dg13 = raw diaglist_init();
+    Token:s1 = raw one("30_000i64", @it, @dg13);
+    if (s1.payload != 30000i64)                        { exit 187i32; }
+    Token:s2 = raw one("0F_Fhex", @it, @dg13);
+    if (s2.payload != 255i64)                          { exit 188i32; }
+    discard(raw lex_all(0i32, "1_000.5_5e1_0f64", @it, @dg13));
+    if (raw diaglist_count(@dg13) != 0i64)             { exit 189i32; }
+    Token:s3 = raw one("1__0", @it, @dg13);
+    if (s3.payload != 10i64)                           { exit 190i32; }
+    if (raw diaglist_count(@dg13) != 0i64)             { exit 191i32; }
 
     wild_release_all();
     exit 0i32;

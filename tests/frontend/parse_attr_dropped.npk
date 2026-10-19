@@ -1,0 +1,121 @@
+// AN ATTRIBUTE WHERE NONE IS KEPT IS REFUSED BY NAME (DEF-182, landing 135). A `struct`, an `enum`, a `trait`, an
+// `impl`, a function and a `macro` carry their attribute window, and a local binding carries its own (the checker
+// refuses it there, DEF-236 (d)); before anything else the parser gathered the attributes and dropped them unread --
+// `#[note(undefined_name)] while …` compiled with its attribute ignored. Each is NITPICK-DERIVE-007 at the attribute
+// now, one report per attribute, the parse going on as written. A parser refusal is a UNIT case (D-085). The controls:
+// a struct, an enum, a function, a trait and an impl keep their windows clean here (the derive reader judges them), a
+// local binding's attribute is the checker's, and a struck pipe beside it is its own report.
+mod:parse_attr_dropped;
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/macro/derive_codes.npk".*;
+
+struct:Parsed = {
+    Ast:ast;
+    DiagList:diags;
+    DeclId:root;
+};
+
+// Lex and parse a module, as the driver does, and keep what came out.
+func:parsed = Parsed(string:src, InternTable->:it) never fails {
+    Ast:ast = raw ast_init();
+    DiagList:diags = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @diags);
+    Parser:p = raw parser_init(@toks, @ast, @diags, it);
+    DeclId:root = raw p_parse_module(@p);
+    Parsed:out = Parsed{ ast: move(ast), diags: diags, root: root };
+    pass out;
+};
+
+// Exactly one diagnostic, and it carries `code`.
+func:one_diag = bool(Parsed->:x, string:code) never fails {
+    if ((raw diaglist_count(@x.diags)) != 1i64) { pass false; }
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (raw string_eq(d.code, code));
+};
+
+// How many members the parsed module holds, and whether one is a function named `name`.
+func:has_func = bool(Parsed->:x, InternTable->:it, string:name) never fails {
+    DeclNode:m = raw ast_decl(@x.ast, x.root);
+    int32:n = raw item_member_count(@x.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclNode:d = raw ast_decl(@x.ast, raw item_member(@x.ast, m, i));
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            if (raw string_eq(raw intern_get(it, raw decl_name(d)), name)) { pass true; }
+        }
+    }
+    pass false;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    Parsed:a1 = raw parsed("mod:m; func:f = int32() { int32:i = 0i32; #[note(x)] while (i < 3i32) decreases 3i32 - i { i = i + 1i32; } pass i; };", @it);
+    if (!(raw one_diag(@a1, raw DERIVE_ATTRIBUTE())))                               { exit 10i32; }
+    Parsed:a2 = raw parsed("mod:m; func:f = int32() { int32:i = 0i32; #[derive(Eq)] if (i == 0i32) { pass 1i32; } pass i; };", @it);
+    if (!(raw one_diag(@a2, raw DERIVE_ATTRIBUTE())))                               { exit 11i32; }
+    Parsed:a3 = raw parsed("mod:m; func:f = int32() { int32:i = 0i32; #[derive(Eq)] i = 2i32; pass i; };", @it);
+    if (!(raw one_diag(@a3, raw DERIVE_ATTRIBUTE())))                               { exit 12i32; }
+    Parsed:a4 = raw parsed("mod:m; #[derive(Eq)] fixed int32:K = 1i32;", @it);
+    if (!(raw one_diag(@a4, raw DERIVE_ATTRIBUTE())))                               { exit 13i32; }
+    Parsed:a5 = raw parsed("mod:m; #[derive(Eq)] error:E1;", @it);
+    if (!(raw one_diag(@a5, raw DERIVE_ATTRIBUTE())))                               { exit 14i32; }
+    Parsed:a6 = raw parsed("mod:m; #[derive(Eq)] unit:Hz = 1 / Seconds;", @it);
+    if (!(raw one_diag(@a6, raw DERIVE_ATTRIBUTE())))                               { exit 15i32; }
+    Parsed:a7 = raw parsed("mod:m; #[derive(Eq)] mod:inner = { pub fixed int32:Q = 1i32; };", @it);
+    if (!(raw one_diag(@a7, raw DERIVE_ATTRIBUTE())))                               { exit 16i32; }
+    Parsed:a8 = raw parsed("mod:m; #[derive(Eq)] use \"./other.npk\".*;", @it);
+    if (!(raw one_diag(@a8, raw DERIVE_ATTRIBUTE())))                               { exit 17i32; }
+    Parsed:a9 = raw parsed("mod:m; #[derive(Eq)] Rules<int32>:R = { $ > 0i32 };", @it);
+    if (!(raw one_diag(@a9, raw DERIVE_ATTRIBUTE())))                               { exit 18i32; }
+    // two attributes are two reports
+    Parsed:a10 = raw parsed("mod:m; #[derive(Eq)] #[note] error:E1;", @it);
+    if ((raw diaglist_count(@a10.diags)) != 2i64)                                   { exit 19i32; }
+    // CONTROL: the kinds that keep a window, and a local binding, parse clean (their judges come later)
+    Parsed:k1 = raw parsed("mod:m; #[derive(Eq)] struct:P = { int32:x; }; #[derive(Eq)] enum:E = { A; B; }; #[note] func:f = int32() { #[note] int32:v = 1i32; pass v; }; #[note] trait:T = { }; #[note] impl:P = { };", @it);
+    if ((raw diaglist_count(@k1.diags)) != 0i64)                                    { exit 20i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsIndex) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (ShiftRange)  { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (BoundsId) { exit 1i32; },
+        (BoundsScratch) { exit 1i32; },
+        (BoundsWindow) { exit 1i32; },
+        (DeadlineExceeded) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (ProvenSlice) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (StackExhausted) { exit 1i32; },
+        (MachineFault) { exit 1i32; },
+        (LimitViolated) { exit 1i32; },
+        (DecreasesViolated) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

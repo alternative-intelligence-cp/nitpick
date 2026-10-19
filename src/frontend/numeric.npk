@@ -40,6 +40,7 @@ pub struct:NumScan = {
     bool:is_float;
     bool:overflow;
     bool:bad_digit;
+    bool:bad_sep;       // a `_` that ends the digit run (DEF-190, landing 135)
     int64:value;        // integers only; a float keeps its text
     NumBase:base;
     NumWidth:width;
@@ -47,7 +48,7 @@ pub struct:NumScan = {
 
 func:num_fail = NumScan() never fails {
     NumScan:r = NumScan{ is_numeric: false, is_float: false, overflow: false,
-                         bad_digit: false, value: 0i64,
+                         bad_digit: false, bad_sep: false, value: 0i64,
                          base: NumBase.BaseDecimal, width: NumWidth.WNone };
     pass r;
 };
@@ -185,6 +186,7 @@ pub struct:FloatScan = {
     bool:is_float;     // false: not `digits . digit`, and the caller scans an integer
     int64:body_end;    // one past the numeric body
     int64:tail_end;    // one past the tail: where the token ends (`end` is a keyword: DEF-235, landing 113)
+    bool:bad_sep;      // a digit run of the body ends in a `_` (DEF-190, landing 135)
 };
 
 func:dec_digit = bool(uint8:c) never fails {
@@ -205,10 +207,21 @@ func:skip_digit_run = int64(string:text, int64:at) never fails {
     pass p;
 };
 
+// A DIGIT RUN ENDS IN A DIGIT (DEF-190, landing 135): LEXICAL_REFERENCE §6.2's `DecimalLiteral ::= [0-9] ([0-9_]* [0-9])?`
+// lets separators stand anywhere inside a run, doubled too, and never at its end. The scans had always admitted `10_`,
+// `1_i32`, `1_.5f64` and `1.5_f64`: no value changed (a separator is ignored), but a numeral that ends in one reads as an
+// unfinished numeral -- `30_` where `30_000` was meant compiled as 30 -- which a safety-critical language does not
+// accept, and a scan widened at the freeze could never be tightened. True when the run [from, to) is empty or its last
+// byte is not a `_` (a run begins with a digit, and its other bytes are refused as digits before this is asked).
+func:seps_between_digits = bool(string:text, int64:from, int64:to) never fails {
+    if (to <= from) { pass true; }
+    pass ((text.ptr[to - 1i64] => uint8) != 95u8);
+};
+
 // `text` is the SOURCE, `start` the literal's first byte and `dot` the byte
 // after the lexer's first [0-9a-zA-Z_] run -- where a float's dot stands.
 pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never fails {
-    FloatScan:no = FloatScan{ is_float: false, body_end: dot, tail_end: dot };
+    FloatScan:no = FloatScan{ is_float: false, body_end: dot, tail_end: dot, bad_sep: false };
     // A FLOAT NEEDS A DIGIT AFTER THE DOT: `0...4` is a range, and this is the
     // check that keeps it one (the seed walked into that case in 0.0.2).
     if ((dot + 1i64) >= text.len) { pass no; }
@@ -226,6 +239,8 @@ pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never f
         i = i + 1i64;
     }
     int64:p = raw skip_digit_run(text, dot + 1i64);
+    // each digit run's separators sit between digits (DEF-190): the whole part, the fraction, the exponent
+    bool:seps = (raw seps_between_digits(text, start, dot)) && (raw seps_between_digits(text, dot + 1i64, p));
     // THE EXPONENT IS `e`, AN OPTIONAL SIGN, AND A DIGIT -- all three looked at
     // before any is taken, so `3.5e-x` is the literal `3.5e` (a bad tail), a
     // minus and a name, and `3.5-x` is a literal, a minus and a name.
@@ -240,6 +255,7 @@ pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never f
             if (q < text.len) {
                 if (raw dec_digit(text.ptr[q] => uint8)) {
                     p = raw skip_digit_run(text, q);
+                    if (!(raw seps_between_digits(text, q, p))) { seps = false; }
                 }
             }
         }
@@ -274,7 +290,7 @@ pub func:num_float_scan = FloatScan(string:text, int64:start, int64:dot) never f
             }
         }
     }
-    pass FloatScan{ is_float: true, body_end: body_end, tail_end: p };
+    pass FloatScan{ is_float: true, body_end: body_end, tail_end: p, bad_sep: !seps };
 };
 
 // THE TEXT A FLOAT KEEPS: its numeric body without the `_` separators, then
@@ -388,6 +404,15 @@ pub func:num_scan = NumScan(string:run) never fails {
         // a number: a bad digit is a real error, never an identifier rescue.
         out.is_numeric = true;
         out.bad_digit = true;
+        out.base = base;
+        out.width = width;
+        pass out;
+    }
+    // A DIGIT RUN ENDS IN A DIGIT (DEF-190, landing 135): `10_` and `1_i32` are refused, the digits being every byte
+    // before the base and type suffixes; a doubled separator inside the run stands, as the production admits it.
+    if (!(raw seps_between_digits(digits, 0i64, digits.len))) {
+        out.is_numeric = true;
+        out.bad_sep = true;
         out.base = base;
         out.width = width;
         pass out;

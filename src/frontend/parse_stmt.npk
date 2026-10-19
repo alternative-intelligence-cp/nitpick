@@ -494,6 +494,13 @@ pub func:p_parse_stmt = StmtId(Parser->:p) never fails {
     IdSpan:attrs = raw p_parse_attributes(p);
 
     TokenKind:k = raw p_kind(p);
+    // ONLY A LOCAL BINDING KEEPS THE WINDOW (DEF-182, landing 135; the checker refuses it there, DEF-236 (d)): before
+    // any other statement the attributes were dropped unread -- refused by name now (`p_refuse_attrs`). A nested
+    // `func:` is its own refusal (DEF-268), so its attributes are not a second sentence about it.
+    if (attrs.count > 0i32) {
+        bool:nested_fn = (k == TokenKind.KwFunc) && ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon);
+        if ((!nested_fn) && (!(raw p_looks_like_decl(p)))) { drop p_refuse_attrs(p, attrs, "a statement"); }
+    }
 
     if (k == TokenKind.PLBrace) { pass (raw p_parse_block(p)); }
     if (k == TokenKind.KwIf)    { pass (raw p_parse_if(p)); }

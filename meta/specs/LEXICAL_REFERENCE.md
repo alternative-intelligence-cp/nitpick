@@ -333,6 +333,8 @@ TypeSuffix     ::= "u8" | "u16" | "u32" | "u64" | "u128"
                  | "char8" | "char16" | "char32"
 ```
 
+*[2026-10-18, landing 135 (DEF-190): the scans follow these productions now -- a digit run ends in a digit, so `10_`, `1_i32`, `0FF_hex` are NITPICK-LEX-003 and `1_.5f64`, `1.5_f64` NITPICK-LEX-009; they had compiled as the digits before the separator. A doubled separator inside a run stands, as `[0-9_]*` admits.]*
+
 > **A float literal is read by its production** (DEF-166, 1.6.1e step 3). Its
 > numeric BODY is decimal digits, a dot, decimal digits, and an exponent only where
 > the `e`/`E` is followed by a digit, or by a sign and then a digit; `_` separators

@@ -897,6 +897,22 @@ pub func:p_parse_decl = DeclId(Parser->:p) never fails {
     pass d;
 };
 
+// The words for a declaration kind that keeps no attribute window, or "" for one that does (DEF-182, landing 135).
+func:attr_target_word = string(TokenKind:k) never fails {
+    if ((k == TokenKind.KwFunc) || (k == TokenKind.KwStruct) || (k == TokenKind.KwEnum)) { pass ""; }
+    if ((k == TokenKind.KwTrait) || (k == TokenKind.KwImpl) || (k == TokenKind.KwMacro)) { pass ""; }
+    if (k == TokenKind.KwUse)    { pass "a `use`"; }
+    if (k == TokenKind.KwMod)    { pass "a `mod`"; }
+    if (k == TokenKind.KwExtern) { pass "an `extern` block"; }
+    if (k == TokenKind.KwRules)  { pass "a `Rules` declaration"; }
+    if (k == TokenKind.Hash)     { pass "a macro invocation"; }
+    if (k == TokenKind.KwAssoc)  { pass "an `assoc` type"; }
+    if (k == TokenKind.KwOpaque) { pass "an `opaque struct`"; }
+    if (k == TokenKind.KwError)  { pass "an `error` constant"; }
+    if (k == TokenKind.KwUnit)   { pass "a `unit`"; }
+    pass "a module binding";
+};
+
 func:p_parse_decl_item = DeclId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
 
@@ -924,6 +940,12 @@ func:p_parse_decl_item = DeclId(Parser->:p) never fails {
     }
 
     TokenKind:k = raw p_kind(p);
+
+    // THE KINDS THAT DO NOT KEEP AN ATTRIBUTE REFUSE ONE (DEF-182, landing 135): `p_refuse_attrs`.
+    if (attrs.count > 0i32) {
+        string:atw = raw attr_target_word(k);
+        if (atw.len > 0i64) { drop p_refuse_attrs(p, attrs, atw); }
+    }
 
     if (k == TokenKind.KwUse)    { pass (raw p_parse_import(p, sp, flags)); }
     if (k == TokenKind.KwMod)    { pass (raw p_parse_mod(p, sp, flags)); }
