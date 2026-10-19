@@ -345,6 +345,20 @@ pub func:p_is_assign_op = bool(TokenKind:k) never fails {
 // fires first.
 func:DECL_SCAN_LIMIT = int64() never fails { pass 512i64; };
 
+// A KEYWORD THAT COULD BE MISTAKEN FOR A BINDING'S NAME (DEF-259, landing 136): a keyword is spelled as a lowercase word
+// (`end`, `in`, `limit`, `buffer`), where an identifier is `Ident`, a literal `IntLit` and the sentinels `NULL`, `NIL`
+// and `ERR` are upper case -- and the value keywords `true`, `false` and `result` are an expression's operands.
+func:keyword_could_name = bool(TokenKind:k) never fails {
+    if (k == TokenKind.KwTrue)        { pass false; }
+    if (k == TokenKind.KwFalse)       { pass false; }
+    if (k == TokenKind.KwResultValue) { pass false; }
+    string:w = raw token_kind_name(k);
+    if (w.len == 0i64) { pass false; }
+    fixed uint8[]:wb = string_bytes(w);
+    uint8:c0 = wb[0i64];
+    pass ((c0 >= 97u8) && (c0 <= 122u8));
+};
+
 pub func:p_looks_like_decl = bool(Parser->:p) never fails {
     if ((raw p_qualifier_bit(raw p_kind(p))) != 0i32) {
         // A qualifier can begin nothing else, so this is settled already.
@@ -405,7 +419,19 @@ pub func:p_looks_like_decl = bool(Parser->:p) never fails {
             if (t == TokenKind.PColon) {
                 // `Type:name`, and the name must be an identifier -- otherwise
                 // this was something else that happened to contain a colon.
-                pass ((raw p_peek_at(p, k + 1i64)).kind == TokenKind.Ident);
+                TokenKind:nk = (raw p_peek_at(p, k + 1i64)).kind;
+                if (nk == TokenKind.Ident) { pass true; }
+                // A KEYWORD WHERE THE NAME STANDS, FOLLOWED BY `=` OR `;`, IS STILL A DECLARATION (DEF-259, landing
+                // 136): `int64:end = 1i64;`, `int64:limit = 1i64;` and `int32:in;` declare a binding whose name is a
+                // keyword -- PARSE-001 at the name, from `p_binding_name`, as a local led by `wild` or `fixed` always
+                // was -- where this scan answered "an expression" and the parser reported PARSE-002 at the type. A
+                // value keyword (`true`, `false`, `result`) and every literal stay an expression's operand.
+                if (raw keyword_could_name(nk)) {
+                    TokenKind:ak = (raw p_peek_at(p, k + 2i64)).kind;
+                    if (ak == TokenKind.OpAssign) { pass true; }
+                    if (ak == TokenKind.PSemi)    { pass true; }
+                }
+                pass false;
             }
         }
 

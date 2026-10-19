@@ -3091,7 +3091,7 @@ defect declares a `DEF-` in §2f.
 > `tests/backend/programs/module_constants.npk` (sixty cases, each constant against the same value built where it is
 > read; exit 0 at both legs, refused by `f13914c`).
 
-> **DEF-180 — FIXED 2026-10-18 BY D-362 (landing 133, `nitpick-compiler_40`, with DEF-257): the pipe operators are struck -- `|>` and `<|` are `NITPICK-PARSE-014` at the operator, the call `f(x)` the one spelling -- so no analysis owes a pipe an arm. THE AUDIT that raised S-139, by probe on landing 139's WIP compiler (`wt/40m/.internal/probes/def180/`): REACH armed the callee's raises and the run-time `requires` check ran (both read the function value), the lock walk and the `comptime` rule (TYPE-098) had their arms; and the row's faces were live, one a MEMORY-SAFETY HOLE -- `s |> consume` into a `move` parameter compiled with or without `move(s)`, the emitter left the argument on the statement's temporaries after the callee had taken it, and the program double-freed (exit 95 at both legs where `consume(move(s))` answers 8); a recursion through a pipe was no edge of its group (TYPE-075), a `pure` body piped into an impure function, a bare pipe into an `async` function reached `llc` as an undefined symbol, and a generic callee inferred nothing (TYPE-007). A fix that parsed the pipe as the call it wrote was built first and dropped unlanded when the user struck the form (D-362). WAS: OPEN (2026-09-30; owner: the compiler seat; reported by both implementers). THE PIPE FORM `x |> f` IS
+> **DEF-180 — FIXED 2026-10-18 BY D-362 (landing 133, `nitpick-compiler_40`, with DEF-257): the pipe operators are struck -- `|>` and `<|` are `NITPICK-PARSE-014` at the operator, the call `f(x)` the one spelling -- so no analysis owes a pipe an arm. THE AUDIT that raised S-139, by probe on a WIP compiler of the queue (`wt/40m/.internal/probes/def180/`; this said "landing 139's WIP compiler" until landing 136: a number of the queue as it stood on 2026-10-18, which the reorder of 2026-10-19 renumbered): REACH armed the callee's raises and the run-time `requires` check ran (both read the function value), the lock walk and the `comptime` rule (TYPE-098) had their arms; and the row's faces were live, one a MEMORY-SAFETY HOLE -- `s |> consume` into a `move` parameter compiled with or without `move(s)`, the emitter left the argument on the statement's temporaries after the callee had taken it, and the program double-freed (exit 95 at both legs where `consume(move(s))` answers 8); a recursion through a pipe was no edge of its group (TYPE-075), a `pure` body piped into an impure function, a bare pipe into an `async` function reached `llc` as an undefined symbol, and a generic callee inferred nothing (TYPE-007). A fix that parsed the pipe as the call it wrote was built first and dropped unlanded when the user struck the form (D-362). WAS: OPEN (2026-09-30; owner: the compiler seat; reported by both implementers). THE PIPE FORM `x |> f` IS
 > NOT A CALL TO EVERY READER:** a pipe into a bare builtin (`x |> string_byte_length`, `x |> suspend_until`) is
 > silent in the checker and EMIT-002; `type_pipe` records no callee, so a recursive call written as a pipe is no
 > edge of the recursion groups (a measured function is TYPE-075 "nobody calls back" and its `decreases` is not
@@ -4391,7 +4391,7 @@ defect declares a `DEF-` in §2f.
 > `w == NULL` is the test, D-355) in both `pick` forms, TYPE-065's shape; no program of the tree, the libraries or the
 > applications writes one. Its own small landing, after the queue's wrong answers.
 
-> **DEF-258 — OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 120; the library seat's observation from
+> **DEF-258 — FIXED 2026-10-18 (landing 136, `nitpick-compiler_40`, with DEF-259 and DEF-261): the generic window's type and value parameter names, a variadic's and a macro parameter's are read by DEF-235's helpers (`p_declared_name`, `p_binding_name`), PARSE-001 at the keyword, once (the declaration bails at its header, DEF-245); `parse_decls.npk`'s cases 160-164. WAS: OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 120; the library seat's observation from
 > nitpick-regex 0.2.5a's planning, measured on landing 119's compiler; LOW: an acceptance with no run-time consequence -- the
 > name is unusable). A KEYWORD IS ACCEPTED AS THE EMPTY NAME OF A GENERIC PARAMETER, A VARIADIC OR A MACRO PARAMETER.**
 > Notice 113 (DEF-235) said a keyword declared as a name of any kind is PARSE-001, and the library seat's reading of
@@ -4404,7 +4404,7 @@ defect declares a `DEF-` in §2f.
 > name, through the helpers, at the four sites. Nothing in the tree, the libraries or the applications writes the shape (the
 > library seat measured its trees). Its own small landing, with DEF-259.
 
-> **DEF-259 — OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 120; the library seat's observation, measured
+> **DEF-259 — FIXED 2026-10-18 (landing 136): the statement classifier (`p_looks_like_decl`) reads `Type:keyword` followed by `=` or `;` as a declaration (`keyword_could_name`: a lowercase keyword, the value keywords `true`, `false` and `result` excepted), so `p_binding_name` refuses the name, PARSE-001 at it, where PARSE-002 stood at the type; `parse_decls.npk`'s cases 165-167. WAS: OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 120; the library seat's observation, measured
 > on landing 119's compiler; LOW: a wrong sentence, the file refused either way). A LOCAL DECLARED `T:keyword` IS PARSE-002
 > "expected an expression" AT THE DECLARATION, NOT PARSE-001 AT THE NAME.** `int64:end = 1i64;` and `int64:limit = 1i64;`
 > in a body are refused at the type's column with the expression sentence, where notice 113's headline ("a keyword declared
@@ -4420,7 +4420,7 @@ defect declares a `DEF-` in §2f.
 > the second's report (`p_recover_decl`'s neighbourhood, DEF-235). D-240's and D-332's shape -- one mistake, one report, a
 > count a rejection file can hold. Its own small landing, with DEF-245.
 
-> **DEF-261 — OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 122, found by its probes; LOW: a modifier
+> **DEF-261 — FIXED 2026-10-18 (landing 136): a function modifier (`inline`, `noinline`, `comptime`, `async`, `thread`) before any declaration but `func:` is PARSE-001 at the first modifier, once (`p_parse_decl_item`; the declaration after it bails at its header); `parse_decls.npk`'s cases 168-172, the controls `comptime func:` and `pub struct:`. WAS: OPEN (registered 2026-10-16 by `nitpick-compiler_39` at landing 122, found by its probes; LOW: a modifier
 > accepted and read by nobody, DEF-236 (d)'s shape). A FUNCTION MODIFIER ON A NON-FUNCTION DECLARATION IS ACCEPTED AND
 > MEANS NOTHING.** The parser's modifier loop (`p_parse_decl`) reads `comptime`, `async`, `thread`, `inline` and `noinline`
 > before any declaration keyword, so `comptime struct:S`, `async struct:S`, `thread struct:S`, `inline struct:S`,

@@ -802,12 +802,16 @@ func:p_parse_generics = IdSpan(Parser->:p) never fails {
             // (D-064).
             TypeId:vt = raw p_parse_type(p);
             discard(raw p_expect(p, TokenKind.PColon));
-            Token:vn = raw p_advance(p);
+            Token:vn = raw p_binding_name(p);   // an identifier (DEF-258, landing 136)
             DeclId:g = raw ast_add_decl(p.ast, DeclKind.DeclGenericParam, sp,
                                           vt.index, 0i32, 0i32, vn.payload);
             drop ast_scratch_push(p.ast, g.index);
         } else {
-            Token:gn = raw p_advance(p);
+            // A GENERIC PARAMETER'S NAME IS AN IDENTIFIER (DEF-258, landing 136; DEF-235's rule at the four sites it
+            // missed): `func:f<in>` declared a parameter named nothing -- `raw f::<int32>(0i32)` compiled, two keyword
+            // names in one window were RESOLVE-001 "already declared", and a call naming none was TYPE-022 naming ``.
+            // The two helpers are the one rule (`p_declared_name` for a type's name, `p_binding_name` for a value's).
+            Token:gn = raw p_declared_name(p);
             int32:bstart = 0i32;
             int32:bcount = 0i32;
             if (raw p_accept(p, TokenKind.PColon)) {
@@ -926,6 +930,9 @@ func:p_parse_decl_item = DeclId(Parser->:p) never fails {
 
     int32:flags = 0i32;
     if (raw p_accept(p, TokenKind.KwPub)) { flags = flags | (raw DECL_PUB()); }
+    Span:msp = raw p_span(p);
+    TokenKind:mk0 = raw p_kind(p);
+    bool:modded = false;
     while (true) decreases raw p_left(p) {
         TokenKind:m = raw p_kind(p);
         int32:bit = 0i32;
@@ -936,10 +943,23 @@ func:p_parse_decl_item = DeclId(Parser->:p) never fails {
         if (m == TokenKind.KwThread)   { bit = raw DECL_THREAD(); }
         if (bit == 0i32) { break; }
         flags = flags | bit;
+        modded = true;
         discard(raw p_advance(p));
     }
 
     TokenKind:k = raw p_kind(p);
+    // A FUNCTION MODIFIER STANDS BEFORE `func:` ALONE (DEF-261, landing 136): `comptime struct:S`, `async enum:E`,
+    // `thread impl:S`, `inline fixed int32:K` parsed and meant nothing -- the flag was read by nobody (D-357 refuses a
+    // `comptime` METHOD by name; every other kind kept the word in silence). PARSE-001 at the first modifier, once:
+    // the declaration after it is read in panic and bails at its header (DEF-245), so its body says nothing more.
+    if (modded) {
+        if (k != TokenKind.KwFunc) {
+            drop p_error_at(p, raw PARSE_EXPECTED(),
+                string_concat(string_concat("`", raw token_kind_name(mk0)),
+                    "` is a function modifier and stands before `func:` alone: a struct, an enum, a trait, an impl, a module binding, a macro, a rule, an `error`, a `unit`, a `use`, a `mod` and an `extern` block take `pub` and nothing else"),
+                msp);
+        }
+    }
 
     // THE KINDS THAT DO NOT KEEP AN ATTRIBUTE REFUSE ONE (DEF-182, landing 135): `p_refuse_attrs`.
     if (attrs.count > 0i32) {
@@ -1140,7 +1160,7 @@ func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never
             discard(raw p_advance(p));
             TypeId:et = raw p_parse_type(p);
             discard(raw p_expect(p, TokenKind.PColon));
-            Token:vn = raw p_advance(p);
+            Token:vn = raw p_binding_name(p);   // an identifier (DEF-258, landing 136)
             DeclId:v = raw ast_add_decl(p.ast, DeclKind.DeclVariadicSpec, vs,
                                           et.index, 0i32, 0i32, vn.payload);
             variadic = v.index;
@@ -1514,7 +1534,7 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) neve
     while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRParen)) { break; }
         if (raw p_at_end(p)) { break; }
-        Token:pn = raw p_advance(p);
+        Token:pn = raw p_binding_name(p);   // an identifier (DEF-258, landing 136): a keyword was the EMPTY name
         drop ast_scratch_push(p.ast, pn.payload =>! int32);
         if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }

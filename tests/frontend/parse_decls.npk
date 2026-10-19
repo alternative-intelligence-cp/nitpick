@@ -502,6 +502,126 @@ func:main = int32(cstring[]:_~argv) {
         discard(raw p_parse_decl(@pm2));
         if (raw diaglist_count(@gm2) != 0i64)             { exit 150i32; }
 
+        // --- DEF-258, DEF-259, DEF-261 (landing 136): a keyword is never a generic, variadic or macro parameter's
+        // name (one PARSE-001 at the name, the declaration bailing at its header), a local `T:keyword` is PARSE-001
+        // at the name (not PARSE-002 at the type), and a function modifier stands before `func:` alone (PARSE-001 at
+        // the modifier). The controls parse clean.
+        TokenList:kq0 = raw lex_all(0i32, "func:f<in> = int32(int32:x) never fails { pass x; };", @it, @ld);
+        Ast:aq0 = raw ast_init();
+        DiagList:gq0 = raw diaglist_init();
+        Parser:pq0 = raw parser_init(@kq0, @aq0, @gq0, @it);
+        discard(raw p_parse_decl(@pq0));
+        if (raw diaglist_count(@gq0) != 1i64)               { exit 160i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq0, 0i64)).code, raw PARSE_EXPECTED()))) { exit 180i32; }
+        TokenList:kq1 = raw lex_all(0i32, "func:f<end, in> = int32(int32:x) never fails { pass x; };", @it, @ld);
+        Ast:aq1 = raw ast_init();
+        DiagList:gq1 = raw diaglist_init();
+        Parser:pq1 = raw parser_init(@kq1, @aq1, @gq1, @it);
+        discard(raw p_parse_decl(@pq1));
+        if (raw diaglist_count(@gq1) != 1i64)               { exit 161i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq1, 0i64)).code, raw PARSE_EXPECTED()))) { exit 181i32; }
+        TokenList:kq2 = raw lex_all(0i32, "func:f<comptime int32:end> = int32(int32:x) never fails { pass x; };", @it, @ld);
+        Ast:aq2 = raw ast_init();
+        DiagList:gq2 = raw diaglist_init();
+        Parser:pq2 = raw parser_init(@kq2, @aq2, @gq2, @it);
+        discard(raw p_parse_decl(@pq2));
+        if (raw diaglist_count(@gq2) != 1i64)               { exit 162i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq2, 0i64)).code, raw PARSE_EXPECTED()))) { exit 182i32; }
+        TokenList:kq3 = raw lex_all(0i32, "func:g = int32(..*int64[]:end) never fails { pass 1i32; };", @it, @ld);
+        Ast:aq3 = raw ast_init();
+        DiagList:gq3 = raw diaglist_init();
+        Parser:pq3 = raw parser_init(@kq3, @aq3, @gq3, @it);
+        discard(raw p_parse_decl(@pq3));
+        if (raw diaglist_count(@gq3) != 1i64)               { exit 163i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq3, 0i64)).code, raw PARSE_EXPECTED()))) { exit 183i32; }
+        TokenList:kq4 = raw lex_all(0i32, "macro:m = (end) { int32:k = 1i32; };", @it, @ld);
+        Ast:aq4 = raw ast_init();
+        DiagList:gq4 = raw diaglist_init();
+        Parser:pq4 = raw parser_init(@kq4, @aq4, @gq4, @it);
+        discard(raw p_parse_decl(@pq4));
+        if (raw diaglist_count(@gq4) != 1i64)               { exit 164i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq4, 0i64)).code, raw PARSE_EXPECTED()))) { exit 184i32; }
+        TokenList:kq5 = raw lex_all(0i32, "func:f = int32() never fails { int64:end = 1i64; pass 1i32; };", @it, @ld);
+        Ast:aq5 = raw ast_init();
+        DiagList:gq5 = raw diaglist_init();
+        Parser:pq5 = raw parser_init(@kq5, @aq5, @gq5, @it);
+        discard(raw p_parse_decl(@pq5));
+        if (raw diaglist_count(@gq5) != 1i64)               { exit 165i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq5, 0i64)).code, raw PARSE_EXPECTED()))) { exit 185i32; }
+        TokenList:kq6 = raw lex_all(0i32, "func:f = int32() never fails { int64:limit = 1i64; pass 1i32; };", @it, @ld);
+        Ast:aq6 = raw ast_init();
+        DiagList:gq6 = raw diaglist_init();
+        Parser:pq6 = raw parser_init(@kq6, @aq6, @gq6, @it);
+        discard(raw p_parse_decl(@pq6));
+        if (raw diaglist_count(@gq6) != 1i64)               { exit 166i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq6, 0i64)).code, raw PARSE_EXPECTED()))) { exit 186i32; }
+        TokenList:kq7 = raw lex_all(0i32, "func:f = int32() never fails { int32:in; pass 1i32; };", @it, @ld);
+        Ast:aq7 = raw ast_init();
+        DiagList:gq7 = raw diaglist_init();
+        Parser:pq7 = raw parser_init(@kq7, @aq7, @gq7, @it);
+        discard(raw p_parse_decl(@pq7));
+        if (raw diaglist_count(@gq7) != 1i64)               { exit 167i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq7, 0i64)).code, raw PARSE_EXPECTED()))) { exit 187i32; }
+        TokenList:kq8 = raw lex_all(0i32, "comptime struct:S = { int32:x; };", @it, @ld);
+        Ast:aq8 = raw ast_init();
+        DiagList:gq8 = raw diaglist_init();
+        Parser:pq8 = raw parser_init(@kq8, @aq8, @gq8, @it);
+        discard(raw p_parse_decl(@pq8));
+        if (raw diaglist_count(@gq8) != 1i64)               { exit 168i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq8, 0i64)).code, raw PARSE_EXPECTED()))) { exit 188i32; }
+        TokenList:kq9 = raw lex_all(0i32, "async enum:E = { A; };", @it, @ld);
+        Ast:aq9 = raw ast_init();
+        DiagList:gq9 = raw diaglist_init();
+        Parser:pq9 = raw parser_init(@kq9, @aq9, @gq9, @it);
+        discard(raw p_parse_decl(@pq9));
+        if (raw diaglist_count(@gq9) != 1i64)               { exit 169i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq9, 0i64)).code, raw PARSE_EXPECTED()))) { exit 189i32; }
+        TokenList:kq10 = raw lex_all(0i32, "thread impl:S = { };", @it, @ld);
+        Ast:aq10 = raw ast_init();
+        DiagList:gq10 = raw diaglist_init();
+        Parser:pq10 = raw parser_init(@kq10, @aq10, @gq10, @it);
+        discard(raw p_parse_decl(@pq10));
+        if (raw diaglist_count(@gq10) != 1i64)               { exit 170i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq10, 0i64)).code, raw PARSE_EXPECTED()))) { exit 190i32; }
+        TokenList:kq11 = raw lex_all(0i32, "inline fixed int32:K = 1i32;", @it, @ld);
+        Ast:aq11 = raw ast_init();
+        DiagList:gq11 = raw diaglist_init();
+        Parser:pq11 = raw parser_init(@kq11, @aq11, @gq11, @it);
+        discard(raw p_parse_decl(@pq11));
+        if (raw diaglist_count(@gq11) != 1i64)               { exit 171i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq11, 0i64)).code, raw PARSE_EXPECTED()))) { exit 191i32; }
+        TokenList:kq12 = raw lex_all(0i32, "noinline macro:m = () { };", @it, @ld);
+        Ast:aq12 = raw ast_init();
+        DiagList:gq12 = raw diaglist_init();
+        Parser:pq12 = raw parser_init(@kq12, @aq12, @gq12, @it);
+        discard(raw p_parse_decl(@pq12));
+        if (raw diaglist_count(@gq12) != 1i64)               { exit 172i32; }
+        if (!(raw string_eq((raw diaglist_at(@gq12, 0i64)).code, raw PARSE_EXPECTED()))) { exit 192i32; }
+        TokenList:kq13 = raw lex_all(0i32, "func:f<T, U> = int32(T:x) never fails { pass 1i32; };", @it, @ld);
+        Ast:aq13 = raw ast_init();
+        DiagList:gq13 = raw diaglist_init();
+        Parser:pq13 = raw parser_init(@kq13, @aq13, @gq13, @it);
+        discard(raw p_parse_decl(@pq13));
+        if (raw diaglist_count(@gq13) != 0i64)               { exit 173i32; }
+        TokenList:kq14 = raw lex_all(0i32, "func:f = int32(bool:c) never fails { int64:x = 1i64; bool:t = true; pass 1i32; };", @it, @ld);
+        Ast:aq14 = raw ast_init();
+        DiagList:gq14 = raw diaglist_init();
+        Parser:pq14 = raw parser_init(@kq14, @aq14, @gq14, @it);
+        discard(raw p_parse_decl(@pq14));
+        if (raw diaglist_count(@gq14) != 0i64)               { exit 174i32; }
+        TokenList:kq15 = raw lex_all(0i32, "comptime func:f = int32() never fails { pass 1i32; };", @it, @ld);
+        Ast:aq15 = raw ast_init();
+        DiagList:gq15 = raw diaglist_init();
+        Parser:pq15 = raw parser_init(@kq15, @aq15, @gq15, @it);
+        discard(raw p_parse_decl(@pq15));
+        if (raw diaglist_count(@gq15) != 0i64)               { exit 175i32; }
+        TokenList:kq16 = raw lex_all(0i32, "pub struct:S = { int32:x; };", @it, @ld);
+        Ast:aq16 = raw ast_init();
+        DiagList:gq16 = raw diaglist_init();
+        Parser:pq16 = raw parser_init(@kq16, @aq16, @gq16, @it);
+        discard(raw p_parse_decl(@pq16));
+        if (raw diaglist_count(@gq16) != 0i64)               { exit 176i32; }
+
         wild_release_all();
         exit 0i32;
     }
