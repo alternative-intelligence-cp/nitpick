@@ -5355,9 +5355,13 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     int32:base = 0i32;
     // A NAMESPACE CALL (D-273, 1.5.4c) has no receiver: `await m.run(x)`
     // seeds the frame from its window alone, as a direct await does.
+    // NOR HAS A TRAIT-QUALIFIED CALL (DEF-267, landing 137): `await Work.run(j)` names the trait where a receiver
+    // stands, and its receiver is argument 0 of the window, held by the checker to the method's receiver parameter
+    // as written (D-172) -- so the window seeds slot 12 onward as a direct await's does, the receiver first.
     bool:cf_ns = false;
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
         if ((raw exprtypes_ns_decl(x.et, cid)) != 0i32) { cf_ns = true; }
+        if (raw emit_is_trait_qualified(x, cn)) { cf_ns = true; }
     }
     if ((cn.kind == ExprKind.ExprMethodCallExpr) && (!cf_ns)) {
         // A POINTER RECEIVER IS PASSED BY ADDRESS (1.0.9b's rule, ported to
@@ -5490,7 +5494,14 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         // pointer receiver first: here since 1.1.12c, there since DEF-253);
         // the recorded symbol stands for every concrete receiver.
         int32:msym = raw exprtypes_callee_sym(x.et, cid);
+        // THE RECEIVER OF A TRAIT-QUALIFIED CALL IS ARGUMENT 0 (DEF-267, landing 137): `await Work.run(j)`'s operand
+        // is the trait's name, so every reading of the receiver below reads the window's first argument instead.
         ExprId:presub_rid = raw expr_operand(cn);
+        if (raw emit_is_trait_qualified(x, cn)) {
+            if ((raw expr_list_count(cn)) > 0i32) {
+                presub_rid = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(cn), 0i32) };
+            }
+        }
         int32:presub_rty = raw exprtypes_get(x.et, presub_rid);
         if (raw type_mentions_param(x.fe.ctx.types, x.ast, presub_rty, 64i32)) {
             msym = 0i32;
@@ -5513,7 +5524,7 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         // — so the two combine into the name the impl was emitted under. This
         // is the call `Work` exists for, so without it the pool cannot be
         // written.
-        ExprId:rid = raw expr_operand(cn);
+        ExprId:rid = presub_rid;
         int32:rty = raw exprtypes_get(x.et, rid);
         // `Self->` peels before the `Self` test here too (DEF-254): an async
         // method's receiver is always a pointer (D-185), so an async default

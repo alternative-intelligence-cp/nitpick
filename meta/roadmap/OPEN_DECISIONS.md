@@ -2884,7 +2884,7 @@ defect declares a `DEF-` in §2f.
 > rule again. `type_trait_qualified_call` records it now; `ufcs_bound.npk`'s `Box<int64>` section, an instance no
 > other call reaches.
 
-> **DEF-267 — OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 131, found by DEF-255's probes; LOW: a
+> **DEF-267 — FIXED 2026-10-18 (landing 137, `nitpick-compiler_40`): the awaited and the spawned qualified call reach -- the await typer skips its receiver probe when the operand names a trait (`trait_qualified_trait`, made `pub`), and `emit_child_frame` and `async_callee_name` read the receiver from argument 0 of the window (`emit_is_trait_qualified`); measured first: `await Work.run(j)` TYPE-007 at the trait's name, and the SPAWN `drop Work.poke(j)` -- a second face the row had not named -- passed the checker and was EMIT-002; `ufcs_await.npk` (a pointer receiver written through, a value's address, a bound, a trait default awaiting its sibling as `Work.run(self)`, an inherited default, a spawn; exit 0 at both legs, where landing 136's compiler refuses it TYPE-007 at its five awaits). WAS: OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 131, found by DEF-255's probes; LOW: a
 > refusal with the wrong sentence, nothing accepted). THE AWAITED QUALIFIED CALL `await Trait.m(x)` IS REFUSED BY A
 > SENTENCE THAT READS THE TRAIT AS A VALUE.** `int32:a = await Work.run(j) ?! E9;` is NITPICK-TYPE-007 "`Work` is a
 > trait, not a value" at the trait's name (three reports before landing 131: TYPE-043, TYPE-007 and TYPE-019): the

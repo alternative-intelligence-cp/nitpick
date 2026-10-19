@@ -4489,9 +4489,15 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
             // m.run()` is a direct call of the member, and its receiver is a
             // namespace no value typer may see -- the probe reports nothing,
             // and the call's own typer reports a bad path once.
+            // AND UNLESS IT NAMES A TRAIT (DEF-267, landing 137): `await Work.run(j)` is the qualified call D-172
+            // spells, its receiver argument 0 and its operand the trait's name -- typed as a value it was "`Work` is a
+            // trait, not a value" (TYPE-007), the one report left once landing 131 taught the call its bounds and its
+            // pointer receiver. The call's own typer reads the trait; no intrinsic suspension is a trait's method.
             int32:awrt = 0i32;
             if (!((raw namespace_path(e, raw expr_operand(awn), false)).is_ns)) {
-                awrt = raw type_of_expr(e, raw expr_operand(awn));
+                if ((raw trait_qualified_trait(e, awn)) == 0i32) {
+                    awrt = raw type_of_expr(e, raw expr_operand(awn));
+                }
             }
             if (awrt != 0i32) {
                 if ((raw type_kind(e.types, awrt)) == (raw TY_CHANNEL())) {

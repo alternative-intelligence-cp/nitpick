@@ -1,0 +1,76 @@
+// expect-exit: 0
+//
+// THE AWAITED AND THE SPAWNED QUALIFIED CALL (DEF-267, landing 137; DEF-255's twin): `await Work.run(j)` and
+// `drop Work.poke(j)` reach what `await j.run()` and `drop j.poke()` reach. The await typer probed the call's
+// operand -- the trait's name in this spelling -- as a value ("`Work` is a trait, not a value", TYPE-007), and the
+// child-frame builder and the async callee's name read the receiver from that operand; the receiver is argument 0
+// of the window (D-172), held by the checker to the method's receiver parameter as written. Every value below is the
+// dotted spelling's. Exit 0 at both legs.
+mod:ufcs_await;
+error:E9;
+
+trait:Work = {
+    async func:run = int32(Self->:self);
+    async func:poke = NIL(Self:self);
+    // a default awaiting its sibling through the qualified spelling: `Self` from the impl being emitted
+    async func:twice = int32(Self->:self) {
+        int32:a = await Work.run(self) ?! E9;
+        pass (a * 2i32);
+    };
+};
+struct:Job = { int32:n; };
+impl:Job:Work = {
+    async func:run = int32(Job->:self) { self.n = self.n + 1i32; pass self.n; };
+    async func:poke = NIL(Job:self) { pass NIL; };
+};
+
+// a concrete pointer receiver, written through
+async func:by_ptr = int32(Job->:j) { int32:a = await Work.run(j) ?! E9; pass a; };
+// a concrete value's address
+async func:by_addr = int32() { Job:j = Job{ n: 10i32 }; int32:a = await Work.run(@j) ?! E9; pass a; };
+// through a bound
+async func:drive<F: Work> = int32(F->:f) { int32:a = await Work.run(f) ?! E9; pass a; };
+// the inherited default, reached through the qualified spelling
+async func:dflt = int32(Job->:j) { int32:a = await Work.twice(j) ?! E9; pass a; };
+// a spawn of the qualified call, joined at the function's end
+async func:spawned = int32() {
+    Job:j = Job{ n: 5i32 };
+    drop Work.poke(j);
+    pass j.n;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Job:a = Job{ n: 1i32 };
+    int32:r1 = await by_ptr(@a) ?! E9;
+    if (r1 != 2i32) { exit 1i32; }
+    int32:r2 = await by_addr() ?! E9;
+    if (r2 != 11i32) { exit 2i32; }
+    Job:b = Job{ n: 20i32 };
+    int32:r3 = await drive(@b) ?! E9;
+    if (r3 != 21i32) { exit 3i32; }
+    Job:c = Job{ n: 3i32 };
+    int32:r4 = await dflt(@c) ?! E9;
+    if (r4 != 8i32) { exit 4i32; }
+    int32:r5 = await spawned() ?! E9;
+    if (r5 != 5i32) { exit 5i32; }
+    if (a.n != 2i32) { exit 6i32; }
+    if (b.n != 21i32) { exit 7i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DeadlineExceeded)  { exit 97i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

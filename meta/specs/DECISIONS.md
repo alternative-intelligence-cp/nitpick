@@ -12510,6 +12510,10 @@ BOUNDS on a generic parameter, which the old promise could not reach.
 > both spellings ask (`bound_method_sym`). A call on a concrete family instance records the instance (DEF-266), and
 > DEF-149's `async` rule holds in this spelling too. The awaited form is DEF-267.
 
+> **2026-10-18 (DEF-267, landing 137):** the awaited form `await Trait.m(x)` and the spawn `drop Trait.m(x)` reach as
+> their dotted twins do: the await typer no longer types the trait's name as a value, and the coroutine child frame
+> and the async callee's name read the receiver from argument 0 (the spawn passed the checker and was EMIT-002).
+
 ## D-173 — Allocas are hoisted to the entry block — **SETTLED**
 
 Cycle 1.0.9a, found when part one's added source made the seed-built `npkc`

@@ -165,6 +165,11 @@ a module does.
 > with `drop` (TYPE-043, as `r.run()` is), and a call on a concrete family instance records the instance, as
 > `bx.val()` does. The awaited form `await Trait.m(x)` is not reached yet (DEF-267): write `await x.m()`.
 
+> **2026-10-18 (DEF-267, landing 137): the awaited and spawned forms reach.** `await Work.run(j)` was NITPICK-TYPE-007
+> "`Work` is a trait, not a value" (the await typer probed the operand, the trait's name, as a value) and
+> `drop Work.poke(j)` passed the checker and died in the emitter as EMIT-002; both reach now, a pointer receiver, a
+> bound's parameter, `Self` in a trait's default and an inherited default alike, the receiver being argument 0.
+
 > **A GENERIC subject has inherent impls now (D-171, 1.0.9b).**
 > `impl:<T>:List<T> = { … }` names its target and is read as an inherent family
 > impl — its methods are templates over the impl's `T`, one specialization per
