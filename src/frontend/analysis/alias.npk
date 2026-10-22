@@ -404,6 +404,12 @@ func:root_ident_is_pointer = bool(Alias->:x, ExprId:place) never fails {
         if (r.exhausted) { pass false; }
         if (raw expr_is_none(r.id)) { pass false; }
         ExprNode:rn = raw ast_expr(x.ast, r.id);
+        // AN EXPLICIT `<-` IS A STEP TO THE POINTER'S NAME (DEF-272, landing 138):
+        // `(<-p).f` and `p.f` are one storage (D-098), and `(<-lp)[i]` is the one
+        // spelling of an element behind a pointer (TYPE-082); a write through
+        // either is a write-capable access of what `p` reaches, as the
+        // auto-dereference's always was.
+        if (rn.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(rn); continue; }
         if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
         if (rn.a == 0i32) { pass false; }
         if (!(raw sym_is_view(x.tab, x.ast, rn.a))) {
@@ -447,6 +453,7 @@ func:place_root_symbol = int32(Alias->:x, ExprId:id) never fails {
         if (r.exhausted) { pass 0i32; }
         if (raw expr_is_none(r.id)) { pass 0i32; }
         ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(rn); continue; }   // DEF-272: see `root_ident_is_pointer`
         if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
         if (rn.a == 0i32) { pass 0i32; }
         if (!(raw sym_is_view(x.tab, x.ast, rn.a))) { pass rn.a; }
@@ -504,6 +511,10 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
             cur = raw expr_lhs(n);
             continue;
         }
+        // AN EXPLICIT `<-` IS NO STEP (DEF-272): `(<-p).f`'s steps are `p.f`'s,
+        // and the whole pointee `<-p` is the root with no step -- which is why
+        // `check_access_reported`'s pointer-root exemption asks for the bare name.
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             if (n.a == 0i32) { pass false; }
             // THROUGH A VIEW (D-266): the binding stands in for the payload it
@@ -830,7 +841,13 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // moves the name, not the storage (the pointee is another owner's;
         // D-286: the pointee is no named root). A write INTO the pointee --
         // `b.s = …`, a path below the root -- is the hazard and stays refused.
-        if (summary_judged && p.root_ptr && (ap.count == 0i64)) { continue; }
+        // THE REASSIGNMENT IS THE BARE NAME, WRITTEN DIRECTLY (DEF-272, landing
+        // 138): `<-b = …` is zero steps below `b` too and writes the pointee,
+        // and a callee's write through `b` (a `CHECK_VIEWS` or `CHECK_LENT`
+        // check, the whole pointee an empty path) never reassigns the binding
+        // -- neither is exempt.
+        if (summary_judged && p.root_ptr && (ap.count == 0i64) && (mode == (raw CHECK_ALL()))
+            && ((raw ast_expr(x.ast, place)).kind == ExprKind.ExprIdentifierExpr)) { continue; }
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
         // A COMPUTED PAIR IS A GUARD SITE (D-286, 1.5.5 step 2): the emitter
@@ -1270,8 +1287,9 @@ func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
             cur = raw expr_lhs(n);
             continue;
         }
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }   // DEF-272: `<-` is a step
         if (n.kind == ExprKind.ExprIdentifierExpr) { pass NIL; }
-        // a non-place base (a call, a deref): walked as an ordinary expression
+        // a non-place base (a call, an operator, a deref of one): walked as an ordinary expression
         drop acc_expr(x, cur, raw ACC_READ(), depth - 1i32);
         pass NIL;
     }
@@ -1286,6 +1304,7 @@ func:is_place_chain = bool(Alias->:x, ExprId:id) never fails {
         ExprNode:n = raw ast_expr(x.ast, cur);
         if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
         if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }   // DEF-272: `<-` is a step
         pass (n.kind == ExprKind.ExprIdentifierExpr);
     }
     pass false;
@@ -1359,9 +1378,13 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
     }
     int32:dd = depth - 1i32;
 
-    // A PLACE: one access, at the top of the chain.
+    // A PLACE: one access, at the top of the chain. A dereference whose operand
+    // is a chain -- `<-p`, `(<-p).f`, `(<-p)[i]` -- is a place rooted at the
+    // pointer's name (DEF-272, landing 138), as `p.f` always was; a deref of
+    // anything else keeps its own arm below.
     if ((n.kind == ExprKind.ExprIdentifierExpr) || (n.kind == ExprKind.ExprMemberAccessExpr)
-        || (n.kind == ExprKind.ExprSafeNavExpr) || (n.kind == ExprKind.ExprIndexExpr)) {
+        || (n.kind == ExprKind.ExprSafeNavExpr) || (n.kind == ExprKind.ExprIndexExpr)
+        || ((n.kind == ExprKind.ExprDerefExpr) && (raw is_place_chain(x, id)))) {
         if (n.kind == ExprKind.ExprIndexExpr) {
             ExprNode:ixn = raw ast_expr(x.ast, raw expr_rhs(n));
             // A RANGE VIEW hands out the base's address (D-249): write-capable
@@ -1404,9 +1427,10 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
         drop acc_place(x, raw expr_operand(n), raw ACC_WRITE(), raw expr_none(), dd);
         pass NIL;
     }
-    // `<-p` reads the pointer binding; the pointee is no named root -- but a
-    // SHARED holder's pointee is readers-only storage, and a write-capable
-    // access through it is D-286's refusal (DEF-123).
+    // `<-(…)` OF SOMETHING THAT IS NOT A CHAIN (a call's result, an operator):
+    // the pointee is no named root -- but a SHARED holder's pointee is
+    // readers-only storage, and a write-capable access through it is D-286's
+    // refusal (DEF-123). A deref of a chain is a place above (DEF-272).
     if (n.kind == ExprKind.ExprDerefExpr) {
         if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
             discard(raw refuse_shared_holder_write(x, raw deref_holder_of(x, id), n.span));

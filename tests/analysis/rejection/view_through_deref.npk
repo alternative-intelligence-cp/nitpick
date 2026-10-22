@@ -1,0 +1,218 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 67:19
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 77:19
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 88:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 98:18
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 106:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 115:8
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 128:19
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 139:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 149:10
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 158:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 165:16
+//
+// AN EXPLICIT `<-` IS A PLACE STEP TO THE POINTER'S NAME (DEF-272, landing 138; the
+// fuzzer's F-050). `(<-p).f` and `p.f` are one storage (D-098), and `(<-lp)[i]` is
+// the ONLY spelling of an element behind a pointer (TYPE-082) -- yet the escape
+// analysis's root walk stopped at the `<-`, so a callee's store through `(<-a)[0i64]`
+// entered no store matrix, its write no mutation summary, its view no view summary
+// and its move no write: `drop seti(@cs, string_bytes(t))` with `t` declared in a
+// block inside `cs`'s was asked no holder-scope question (DEF-252's question, asked
+// of `h.items[0i64] = …` since landing 116) and `cs[0i64].src` read the block's freed
+// string after the block (exit 170 at both legs, the allocator's free poison); a
+// callee overwriting or moving out of `(<-a)[0i64]` was handed `@arr` under a live
+// view of `arr[0i64]`; a view the callee returned of `(<-a)[0i64]` froze nothing; and
+// the aliasing walk, blind to the same places, let `(<-a)[0i64] = …`, `<-h = …` and
+// `(<-h).items[0i64] = …` rewrite viewed bytes inside one function. And the
+// DESTINATION of a callee's store reached through a POINTER LOCAL -- `@lp.inn`,
+// `@((<-lp)[0i64])` -- names the pointee's storage, whose life the local's scope
+// says nothing about: refused as `@(<-p)` was. EVERY CASE HERE TYPE-CHECKS; the
+// controls at the end carry no code.
+mod:view_through_deref;
+
+struct:Cursor = { fixed uint8[]:src; int64:pos; };     // re-seated WHOLE
+struct:Seat   = { (fixed uint8[]):src; int64:pos; };   // the grouped view type: a field written again
+struct:Inner  = { (fixed uint8[]):src; int64:pos; };
+struct:Outer  = { Inner:inn; int64:n; };
+struct:Holder = { string[2]:items; int64:n; };
+
+func:fresh = string() never fails { pass string_concat("ghij", "klmn"); };
+
+// THE CALLEES, each storing, writing, viewing or moving through an explicit `<-`.
+func:seti  = NIL(Cursor[2]->:a, fixed uint8[]:src) never fails { (<-a)[0i64] = Cursor{ src: src, pos: 0i64 }; pass NIL; };
+func:setf  = NIL(Seat[2]->:a, fixed uint8[]:src) never fails { (<-a)[0i64].src = src; pass NIL; };
+func:setd  = NIL(Seat->:s, fixed uint8[]:src) never fails { (<-s).src = src; pass NIL; };
+func:setv  = NIL(Inner->:i, fixed uint8[]:src) never fails { i.src = src; pass NIL; };
+func:clobber = NIL(string[2]->:a) never fails { (<-a)[0i64] = raw fresh(); pass NIL; };
+func:take  = NIL(string[2]->:a) never fails { string:t = move((<-a)[0i64]); pass NIL; };
+func:peek  = fixed uint8[](string[2]->:a) never fails { pass string_bytes((<-a)[0i64]); };
+
+// (1) F-050's own shape: the callee stores its view into an ELEMENT of the array
+// behind its pointer argument, and the holder `cs` outlives the block that declares
+// `t` -- BORROW-002 at the call, as the direct `cs[0i64] = Cursor{ … }` is (DEF-42).
+func:elem_callee = int32() never fails {
+    Cursor[2]:cs = [Cursor{ src: string_bytes("abcdef"), pos: 0i64 }, Cursor{ src: string_bytes("abcdef"), pos: 0i64 }];
+    if (cs[1i64].pos == 0i64) {
+        string:t = raw fresh();
+        drop seti(@cs, string_bytes(t));
+    }
+    pass (cs[0i64].src[0i64] => int32);
+};
+
+// (2) the callee writes an element's view FIELD.
+func:elem_field_callee = int32() never fails {
+    Seat[2]:cs = [Seat{ src: string_bytes("abcdef"), pos: 0i64 }, Seat{ src: string_bytes("abcdef"), pos: 0i64 }];
+    if (cs[1i64].pos == 0i64) {
+        string:t = raw fresh();
+        drop setf(@cs, string_bytes(t));
+    }
+    pass (cs[0i64].src[0i64] => int32);
+};
+
+// (3) the callee writes the pointee's field through an explicit `<-`: `(<-s).src`,
+// the spelling `s.src` is one storage with.
+func:deref_field_callee = int32() never fails {
+    Seat:se = Seat{ src: string_bytes("abcdef"), pos: 0i64 };
+    if (se.pos == 0i64) {
+        string:t = raw fresh();
+        drop setd(@se, string_bytes(t));
+    }
+    pass (se.src[0i64] => int32);
+};
+
+// (4) THE MUTATION SUMMARY: the callee overwrites `(<-a)[0i64]`, and `@arr` is handed
+// to it while `v` views `arr[0i64]` -- BORROW-015 at the argument (D-325's freeze).
+func:mut_elem = int32() never fails {
+    string[2]:arr = [string_concat("abc", "def"), string_concat("abc", "def")];
+    fixed uint8[]:v = string_bytes(arr[0i64]);
+    drop clobber(@arr);
+    pass (v[0i64] => int32);
+};
+
+// (5) A MOVE OUT OF `(<-a)[0i64]` is a write of the pointee (DEF-119): the same freeze.
+func:move_elem = int32() never fails {
+    string[2]:arr = [string_concat("abc", "def"), string_concat("abc", "def")];
+    fixed uint8[]:v = string_bytes(arr[0i64]);
+    drop take(@arr);
+    pass (v[0i64] => int32);
+};
+
+// (6) THE VIEW SUMMARY: the callee returns a view of `(<-a)[0i64]`, so `v` holds a view
+// of `arr[0i64]` (D-326, rule A by provenance) and the write to it is BORROW-015.
+func:view_elem = int32() never fails {
+    string[2]:arr = [string_concat("abc", "def"), string_concat("abc", "def")];
+    fixed uint8[]:v = raw peek(@arr);
+    arr[0i64] = raw fresh();
+    pass (v[0i64] => int32);
+};
+
+// (7) THE DESTINATION IS WHAT A POINTER LOCAL POINTS AT, through the auto-dereference:
+// `@lp.inn` names `o`'s storage, whose life `lp`'s scope says nothing about -- the
+// holder-scope question asked of `lp` admitted this (the old form read `t` and `lp`
+// as siblings), and `o.inn.src` read the freed string. BORROW-002 at the argument.
+func:ptr_local_dest = int32() never fails {
+    Outer:o = Outer{ inn: Inner{ src: string_bytes("abcdef"), pos: 0i64 }, n: 0i64 };
+    if (o.n == 0i64) {
+        Outer->:lp = @o;
+        string:t = raw fresh();
+        drop setv(@lp.inn, string_bytes(t));
+    }
+    pass (o.inn.src[0i64] => int32);
+};
+
+// (8) the same destination through an explicit `<-` and an element.
+func:ptr_local_elem_dest = int32() never fails {
+    Inner[2]:arr = [Inner{ src: string_bytes("abcdef"), pos: 0i64 }, Inner{ src: string_bytes("abcdef"), pos: 0i64 }];
+    if (arr[1i64].pos == 0i64) {
+        Inner[2]->:lp = @arr;
+        string:t = raw fresh();
+        drop setv(@((<-lp)[0i64]), string_bytes(t));
+    }
+    pass (arr[0i64].src[0i64] => int32);
+};
+
+// (9) THE ALIASING WALK, inside one function: a write through `(<-a)[0i64]` while a
+// view of the same element lives -- BORROW-015 at the write, as `h.items[0i64] = …`
+// under a view of it has been since D-325.
+func:freeze_elem = int32(string[2]->:a) never fails {
+    fixed uint8[]:v = string_bytes((<-a)[0i64]);
+    (<-a)[0i64] = raw fresh();
+    pass (v[0i64] => int32);
+};
+
+// (10) the whole pointee replaced under a view of one of its elements: `<-h = …` is
+// zero steps below `h` and writes the pointee -- not the pointer binding's own
+// reassignment (`h = other`), which leaves the viewed pointee alone.
+func:whole_deref_write = int32(Holder->:h) never fails {
+    fixed uint8[]:v = string_bytes(h.items[0i64]);
+    <-h = Holder{ items: [raw fresh(), raw fresh()], n: 1i64 };
+    pass (v[0i64] => int32);
+};
+
+// (11) the explicit spelling of the auto-dereferenced write.
+func:deref_field_write = int32(Holder->:h) never fails {
+    fixed uint8[]:v = string_bytes(h.items[0i64]);
+    (<-h).items[0i64] = raw fresh();
+    pass (v[0i64] => int32);
+};
+
+// THE CONTROLS, carrying no code.
+// The storage outlives the holder: `t` is declared before the array, so the callee's
+// element store is the ordinary re-seat (the program test runs it: it reads the new
+// bytes).
+func:ctl_elem_outlives = int32() never fails {
+    string:t = raw fresh();
+    Cursor[2]:cs = [Cursor{ src: string_bytes("abcdef"), pos: 0i64 }, Cursor{ src: string_bytes("abcdef"), pos: 0i64 }];
+    if (cs[1i64].pos == 0i64) { drop seti(@cs, string_bytes(t)); }
+    pass (cs[0i64].src[0i64] => int32);
+};
+// A callee that READS through the explicit `<-` stores and writes nothing: no
+// summary entry, no freeze.
+func:reads_elem = int64(Cursor[2]->:a) never fails { pass (<-a)[0i64].pos; };
+func:ctl_read_only = int32() never fails {
+    Cursor[2]:cs = [Cursor{ src: string_bytes("abcdef"), pos: 0i64 }, Cursor{ src: string_bytes("abcdef"), pos: 0i64 }];
+    fixed uint8[]:v = cs[0i64].src;
+    int64:p = raw reads_elem(@cs);
+    pass ((v[0i64] => int32) + (p =>! int32));
+};
+// The write after the view's block has ended: the freeze is lexical (D-325).
+func:ctl_view_then_write = int32(string[2]->:a) never fails {
+    int32:first = 0i32;
+    { fixed uint8[]:v = string_bytes((<-a)[0i64]); first = v[0i64] => int32; }
+    (<-a)[0i64] = raw fresh();
+    pass first;
+};
+// A returned address into the pointee of a pointer parameter, through `<-`: the
+// pointee outlives the frame, as `@(h.items[0i64])` always did (a refusal lifted here).
+func:ctl_addr_elem = string->(string[2]->:a) never fails { pass @((<-a)[0i64]); };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

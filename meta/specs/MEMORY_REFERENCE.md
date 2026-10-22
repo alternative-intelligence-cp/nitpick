@@ -321,13 +321,16 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   step 0; asked of a callee's store since DEF-252, 1.6.1e landing 116): a borrow of a local
   declared inside a block, stored into a binding declared outside that block -- by an
   assignment, a struct literal, a copied holder, a call's result, or a CALLEE whose matrix
-  stores its argument into the binding's pointee (`reset(@c, string_bytes(t))`) -- refuses
+  stores its argument into the binding's pointee (`reset(@c, string_bytes(t))`; through an
+  explicit `<-` too, `(<-a)[0i64] = Cursor{ src: src, … }` -- DEF-272, landing 138) -- refuses
   at the store or at the call (`NITPICK-BORROW-002`): the holder outlives the storage the
   view names (a block-scoped `string`'s heap body is freed at the block's end; the callee's
   form compiled and read the freed body until landing 116). A by-value parameter holder is
   bound by the body's block (it dies with the frame, as the body's own locals do); a
-  destination behind a dereferenced pointer (`@(<-p)`) refuses as the direct `(<-p) = …`
-  does. Declare the holder inside the block, store a copy, or pass the borrow down.
+  destination reached through a POINTER -- `@(<-p)`, `@lp.f`, `@((<-lp)[i])`, `@s.next.f`
+  (DEF-272) -- refuses as the direct `(<-p) = …` does, since a holder's block bounds the
+  pointer and not what it points at (a pointer PARAMETER's pointee outlives the frame and has
+  its own sentence). Declare the holder inside the block, store a copy, or pass the borrow down.
   **A moved-out OWNING value carries what its place holds, not its root's identity**
   (DEF-125, 1.6.1d step 4): `move(self.v)` of a `string` — a `cstring`, a `buffer`, an
   `OwnedFd`, a struct or an enum of such, a `List` of such: a type holding no FOREIGN

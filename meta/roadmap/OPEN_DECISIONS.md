@@ -2894,6 +2894,82 @@ defect declares a `DEF-` in §2f.
 > form reaches (the await typer, the frame builder and the callee name read argument 0 of a trait-qualified call) or
 > it is refused once by name. Its own small landing; probes `wt/40d/.internal/probes/def255/await_q*.npk`.
 
+> **DEF-272 — FIXED 2026-10-21 (landing 138, `nitpick-compiler_41`; the fuzzer's F-050, filed 2026-10-21 by `nitpick-fuzz_2`
+> at `e289864`, verified at `c72639f`, `0c0f5a3` and the baseline `c3bdae2`; registered and fixed the same day; HIGH: a
+> use-after-free in safe code at both legs, placed ahead of DEF-265's landing by `management_1`'s order of 20:01 -- safety
+> first). AN EXPLICIT `<-` WAS NO PLACE STEP TO THE ESCAPE AND ALIASING ANALYSES.** A callee `seti(Cursor[2]->:a, fixed
+> uint8[]:src)` doing `(<-a)[0i64] = Cursor{ src: src, pos: 0i64 }`, called `drop seti(@cs, string_bytes(t))` with `t`
+> declared in a block inside `cs`'s, compiled, and `cs[0i64].src[0i64]` read 170 (the free poison) after the block at both
+> legs -- DEF-252's shape at a destination landing 116 never reached. `place_root` (expr_types.npk) stops at `<-` by design,
+> and the escape analysis's root walkers (`root_ident_id`, `root_symbol`, `arg_place_chain` and eight direct callers)
+> stopped with it, so a place whose `<-` sat under a `.`/`[]` step had NO ROOT -- where the auto-dereference
+> `h.items[0i64]` roots at `h` (D-098) and has been BORROW-002 since 116. `(<-lp)[i]` is the ONLY spelling of an element
+> behind a pointer (TYPE-082), so the whole family was unseen: the store matrix (F-050's `elem_callee` and
+> `elem_field_callee`; `(<-c).src = src`), the mutation summary (a callee overwriting `(<-a)[0i64]`, handed `@arr` under a
+> live view of `arr[0i64]`: 170), the view summary (a callee returning `string_bytes((<-a)[0i64])`, the write after it:
+> 170), DEF-119's move-as-write (`move((<-a)[0i64])` in a callee: 170), and the aliasing walk's own parties inside one
+> function (`(<-a)[0i64] = …`, `<-h = …`, `(<-h).items[0i64] = …` under a view of the element: 170 each, where
+> `h.items[0i64] = …` is BORROW-015) -- eight faces, each measured on landing 137's compiler beside its auto-dereference
+> twin, which refuses (`wt/41a/.internal/probes/f050/`). And the DESTINATION of a callee's store reached through a POINTER
+> LOCAL by the auto-dereference (`@lp.inn` with `Outer->:lp = @o`) was asked the holder-scope question with `lp`'s scope,
+> which bounds the pointer and not what it points at: `o.inn.src` read the freed string (170) where `@(<-lp)` was refused.
+> NOW: an explicit `<-` is a step to the pointer's name in both analyses -- `esc_place_root` (escape.npk: `place_root`
+> continued through a `DerefExpr`, as `view_root` has read `<-` since 1.5.8b step 1b), `path_rel_compute`'s no-op step,
+> and alias.npk's `is_place_chain`, `path_steps`, `acc_indices`, `place_root_symbol`, `root_ident_is_pointer` and
+> `acc_expr` (a chain-shaped deref is a place) -- so `(<-p).f` and `p.f` are one place with one path and `<-p` the root
+> with no step; the pointer-root exemption of `check_access_reported` (a view through `Box->:b` survives `b = other`)
+> asks for the BARE NAME written DIRECTLY, so `<-b = …` and a callee's write through `b` are not exempt; and a destination
+> reached through a pointer -- `@(<-p)`, `@lp.f`, `@((<-lp)[i])`, `@s.next.f`, the receiver `lp.f.m(view)`
+> (`place_through_pointer`) -- is BORROW-002 at the argument unless its root is a pointer PARAMETER, whose own sentence
+> stands. One refusal LIFTED: `pass @((<-a)[0i64])` from a pointer parameter's element was BORROW-001 where
+> `pass @(h.items[0i64])` ran. `view_through_deref.npk` (eleven sites, four controls), `deref_place_views.npk` (the
+> shapes that stand, exit 0 at both legs; the base refuses it BORROW-001); D-004, D-098 and D-325 carry dated notes,
+> MEMORY_REFERENCE the sentence; `1.6.1e.md`'s record has the measurements. The fuzzer's five programs answer as its
+> verdict table expects, the two holes BORROW-002. The DEF-269 agent's four defects (the brief's §3) take DEF-276 onward.
+
+> **DEF-273 — OPEN (registered 2026-10-21 by `nitpick-compiler_41` from the fuzzer's F-051, filed the same morning at
+> `e289864`; scope `wild`, LOW: TYPE_REFERENCE §27's claim against a measurement, nothing accepted that should not be).
+> A DEAD LOAD THROUGH A `wild` NULL POINTER FAULTS AT -O0 AND IS DELETED AT -O2**: `wild int64->:p = NULL; int64:v =
+> <-p;` with `v` never read, then `if (p == NULL) { exit 14i32; }`, is 107 (`MachineFault`) at -O0 and 14 at -O2 (0
+> without the test: a reported success), at `c72639f`, `0c0f5a3` and the baseline; a USED load faults at both legs
+> (107/107); a struct load the same. DEF-251 (i)'s `null_pointer_is_valid` makes a load a memory operation to every
+> pass, and the dead-load elimination still removes an unused one -- §27's "faults at BOTH legs" holds for a used load.
+> The sentence or the dereference's lowering (a `volatile` load) must change: the author's call, or the plan's.
+> Programs: `nitpick-fuzz/findings/F-051-wild-dead-load-legs-disagree/`.
+
+> **DEF-274 — OPEN (registered 2026-10-21 by `nitpick-compiler_41` from the fuzzer's F-052, filed the same morning; LOW:
+> a loud wrong-tool refusal, nothing accepted). AN ATOMIC'S METHOD CALLED THROUGH A POINTER WITH `.` IS EMIT-002**:
+> `p.store(7i64)` and `p.load()` with `atomic<int64>->:p`, and `q.store(7i64)` through a local `atomic<int64>->:q =
+> @t;`, pass the checker and die in the emitter at `c72639f`, `0c0f5a3` and the baseline; `(<-p).load()` and the
+> methods on the atomic itself lower. D-098's one-level auto-dereference and CONCURRENCY_REFERENCE §4.2's UFCS dispatch
+> say it should lower: the emitter's atomic intercept reads its receiver as the atomic, never through a pointer. Its own
+> small landing (the intercept peels one level, as `emit_method_call`'s value branch does since DEF-134). Programs:
+> `nitpick-fuzz/findings/F-052-atomic-method-through-pointer-not-lowered/`.
+
+> **DEF-275 — OPEN (registered 2026-10-21 by `nitpick-compiler_41`, found by DEF-272's probes on landing 137's compiler
+> and measured again on 138's, where it stands; HIGH by its class -- a use-after-free in safe code at both legs -- and
+> narrow: a pointer LOCAL handed by VALUE). A POINTER LOCAL HANDED BY VALUE TO A CALLEE THAT WRITES THROUGH IT IS NOT
+> CHECKED AGAINST THE VIEWS THROUGH IT**: `Holder->:b = @hd; fixed uint8[]:v = string_bytes(b.items[0i64]); drop
+> clobber(b);` with `clobber(Holder->:h) { <-h = Holder{ … }; }` compiles and `v[0i64]` reads 170
+> (`wt/41a/.internal/probes/f050/ptr_local_whole.npk`), where `drop clobber(@hd)` under a view of `hd.items[0i64]` is
+> BORROW-015. The aliasing walk reads a plain `@place` argument against the callee's mutation summary (`admit_written`,
+> D-325) and a pointer-typed VALUE argument as a READ of the binding (DEF-123 (b)'s shared-claim check aside), so the
+> callee's writes through the value are judged against no view party rooted at the pointer binding; the escape analysis
+> already folds a pointer value's mutations into the caller's summary (`record_mut_of_call`). The fix is the alias walk's:
+> a pointer-typed place-chain argument to a known callee is `check_written` against the view parties of its root, and the
+> whole pointee for an unknown non-builtin callee -- BUILT and measured on landing 138's compiler (`wt/41b`): the hole
+> closes (BORROW-015 at `clobber(b)`), and the compiler's own source gains FOUR BORROW-015 sites in three files --
+> `ir_writer.npk` 642:21 and 643:22, `module_graph.npk` 818:26, `ir_stmt.npk` 4082:21 -- each a pointer value handed to
+> a writer while a rule-A view through the same value (a call's result holding what it was handed) lives, to be READ
+> one by one before the landing -- two read on the spot: `site_rewrite`'s is a lexical-freeze violation of its own
+> (`text` views the sink that `sink_reset`/`sink_append` rewrite, unread after them: end the view's block first), and
+> `graph_load_imports`'s is a precision limit of alias.npk's `header_field_disjoint` (a view of an element's STRING
+> field's heap body, `g.sm.v[i].path.ptr`, survives the list's growth as `[i].ptr` does, and the refinement knows
+> `[i].ptr` alone); the libraries not yet measured -- the check refuses the compiler's own `module_graph.npk`, so the
+> tools cannot be built under it until the four sites are re-spelled or the refinement lands. Its own landing,
+> Fable-class: it decides what the compiler's own idiom means and extends the refinement soundly (an owned heap body
+> through a field, never a slice's target).
+
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
 > (107) in safe code, measured on 3235308: `kill(shared_arena<int64>->:s) { s.destroy(); }` called with `@s` from

@@ -453,6 +453,14 @@ func:path_rel_compute = int32(Escape->:x, ExprId:place) never fails {
             cur = raw expr_operand(n);
             continue;
         }
+        // AN EXPLICIT `<-` IS NO STEP (DEF-272, landing 138): `(<-p).f`'s path is
+        // `p.f`'s, `f` below the pointer's name, as `esc_place_root` reads it;
+        // the whole pointee `<-p` is the empty path, as the peel in
+        // `record_flow_of_store` always made it.
+        if (n.kind == ExprKind.ExprDerefExpr) {
+            cur = raw expr_operand(n);
+            continue;
+        }
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             if (n.a == 0i32) { break; }
             if (raw sym_is_view(x.tab, x.ast, n.a)) {
@@ -888,7 +896,7 @@ func:arg_place_chain = ExprId(Escape->:x, ExprId:a) never fails {
         if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
         if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
             || (n.kind == ExprKind.ExprIndexExpr) || (n.kind == ExprKind.ExprIdentifierExpr)) {
-            PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+            PlaceRoot:r = raw esc_place_root(x, cur);
             if (r.exhausted) { pass (raw expr_none()); }
             if (raw expr_is_none(r.id)) { pass (raw expr_none()); }
             ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -1054,14 +1062,39 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
     if (!frame_view) { pass NIL; }
     ExprNode:an = raw ast_expr(x.ast, arg);
     ExprId:rid = raw root_ident_id(x, dp);
-    if (raw expr_is_none(rid)) {
-        // THE DESTINATION IS WHAT A DEREFERENCED POINTER POINTS AT (`@(<-p)`,
-        // DEF-252's adjacent gap): the direct store `(<-p) = …` of a frame view
-        // is rule 3's generic refusal, and the callee's store is the same store.
-        drop escape_err(x, raw BORROW_STORED(),
-            "a view of this frame's storage is stored by this call into what a dereferenced pointer points at (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and nothing here names how long that memory lives -- store a copy, or hand the callee `@place` of a binding this frame owns",
-            an.span);
-        pass NIL;
+    // THE DESTINATION IS WHAT A POINTER POINTS AT (DEF-252's adjacent gap, read
+    // whole at DEF-272, landing 138): a place reached through a `<-` or through
+    // a pointer-typed base -- `@(<-p)`, `@lp.f`, `@((<-lp)[i])`, `@s.next.f`
+    // with a pointer field on the way, the receiver `lp.f.m(view)` -- names
+    // the POINTEE's storage, whose life nothing here names: a binding's scope
+    // bounds the pointer, not what it points at, so the holder-scope question
+    // asked of `lp` admitted `Outer->:lp = @o; … setv(@lp.inn, string_bytes(t))`
+    // with `t` declared beside `lp` and `o` outside (exit 170). The direct
+    // store `(<-p) = …` of a frame view is rule 3's generic refusal, and the
+    // callee's store is the same store. A pointer PARAMETER's pointee outlives
+    // the frame and has its own sentence below.
+    bool:through = raw place_through_pointer(x, dp);
+    if (raw expr_is_none(rid)) { through = true; }
+    if (through) {
+        bool:param_ptr = false;
+        if (!(raw expr_is_none(rid))) {
+            ExprNode:rn0 = raw ast_expr(x.ast, rid);
+            if (rn0.a != 0i32) {
+                Symbol:sy0 = raw symtab_get(x.tab, rn0.a);
+                if (sy0.origin_kind == (raw SYM_DECL())) {
+                    DeclNode:pd0 = raw ast_decl(x.ast, DeclId{ index: sy0.origin });
+                    if (pd0.kind == DeclKind.DeclParamDecl) {
+                        if (raw base_is_pointer(x, rid)) { param_ptr = true; }
+                    }
+                }
+            }
+        }
+        if (!param_ptr) {
+            drop escape_err(x, raw BORROW_STORED(),
+                "a view of this frame's storage is stored by this call into what a pointer points at (`@(<-p)`, `@p.f`, `@((<-p)[i])`; D-004 rule 3, D-325: the callee's own body stores what it is handed here), and nothing here names how long that memory lives -- store a copy, or hand the callee `@place` of a binding this frame owns",
+                an.span);
+            pass NIL;
+        }
     }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a == 0i32) { pass NIL; }
@@ -1239,7 +1272,9 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
     // whole pointee, the vacant value stored -- recorded nothing here while
     // `record_flow_of_store` peeled the deref itself for `(<-p) = v`; the
     // caller's freeze then let `@x` reach a callee that freed the viewed body.
-    // Peeled here, once, so every caller agrees.
+    // Peeled here, once, so every caller agrees. Since DEF-272 (landing 138)
+    // the root walk itself sees through every `<-` (`esc_place_root`), so
+    // `(<-p)[i]` and `(<-p).f` root at `p` too; the peel stays, harmless.
     ExprId:pl = place;
     ExprNode:pn0 = raw ast_expr(x.ast, pl);
     if (pn0.kind == ExprKind.ExprDerefExpr) { pl = raw expr_operand(pn0); }
@@ -1393,7 +1428,7 @@ func:record_view_refs = NIL(Escape->:x, int32:stmt, ExprId:val) never fails {
 // destination, D-325): the callee may have stored any view it was handed
 // into what the destination points at.
 func:record_view_refs_at_place = NIL(Escape->:x, ExprId:place, List<ViewRef>->:refs) never fails {
-    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, place);
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -1471,7 +1506,7 @@ func:collect_moved_place_refs = bool(Escape->:x, ExprId:operand, List<ViewRef>->
     if (pt == 0i32) { pass false; }
     if (!(raw type_drops_recorded(x.types, pt, 64i32))) { pass false; }
     if (raw type_holds_foreign_pointer(x, pt, 16i32)) { pass false; }
-    PlaceRoot:r = raw place_root(x.ast, pl, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, pl);
     if (r.exhausted) { pass false; }
     if (raw expr_is_none(r.id)) { pass false; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -2748,12 +2783,92 @@ func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
     pass ((raw type_kind(x.types, pt)) == (raw TY_POINTER()));
 };
 
+// THE ESCAPE ANALYSIS'S ROOT WALK (DEF-272, landing 138; the fuzzer's F-050):
+// `place_root`'s steps -- `.`, `[]` -- and, where that walk stops at an
+// explicit `<-`, on into the pointer's name. `(<-p).f` and `p.f` are one
+// storage (D-098's one-level auto-dereference), and `(<-lp)[i]` is the ONLY
+// spelling of an element behind a pointer (TYPE-082), so a walk that stopped
+// at the `<-` saw no root for a store through it, a write to it, a view of it
+// or a move out of it: a callee's `(<-a)[0i64] = Cursor{ src: src, … }`
+// recorded nothing in its store matrix, the caller's `drop seti(@cs,
+// string_bytes(t))` was asked no holder-scope question, and `cs[0i64].src`
+// read the block's freed string after the block (exit 170 at both legs, the
+// free poison) -- where `h.items[0i64] = Cursor{ … }` has been BORROW-002 since
+// landing 116; the mutation summary, the view summary and DEF-119's move-as-
+// write missed the same places, and the aliasing walk's parties were blind to
+// them (alias.npk, the same landing). A deref of a TEMPORARY still roots
+// nowhere (the operand's root is the call), and `view_root` has read `<-` this
+// way since 1.5.8b step 1b. The one reader that must NOT see through is the
+// DESTINATION of a callee's store (`refuse_view_escape_into`): a view stored
+// into what a pointer points at is refused, and it asks
+// `place_through_pointer` before this walk's answer. Fuel-bounded like every
+// walk here.
+func:esc_place_root = PlaceRoot(Escape->:x, ExprId:id) never fails {
+    ExprId:cur = id;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass r; }
+        if (raw expr_is_none(r.id)) { pass r; }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind != ExprKind.ExprDerefExpr) { pass r; }
+        cur = raw expr_operand(rn);
+    }
+    pass PlaceRoot{ id: cur, exhausted: true };
+};
+
+// DOES THIS PLACE REACH ITS ROOT THROUGH A POINTER (DEF-272)? An explicit `<-`
+// on the way, a `?.` (an Optional pointer's pointee), or a `.`/`[]` step whose
+// base is pointer-typed (D-098's auto-dereference; `p[i]` on a `uint8->`): the
+// storage the place names is a POINTEE's, not the root binding's own, and the
+// root binding's scope says nothing about how long it lives. Through casts and
+// a view binding's selector, as the root walk goes.
+func:place_through_pointer = bool(Escape->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprDerefExpr) { pass true; }
+        if (n.kind == ExprKind.ExprSafeNavExpr) { pass true; }
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            if (raw base_is_pointer(x, raw expr_operand(n))) { pass true; }
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            if (raw base_is_pointer(x, raw expr_lhs(n))) { pass true; }
+            cur = raw expr_lhs(n);
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+            cur = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            if (n.a == 0i32) { pass false; }
+            if (raw sym_is_view(x.tab, x.ast, n.a)) {
+                cur = ExprId{ index: (raw symtab_get(x.tab, n.a)).link };
+                continue;
+            }
+            pass false;
+        }
+        pass false;
+    }
+    pass false;
+};
+
+func:base_is_pointer = bool(Escape->:x, ExprId:b) never fails {
+    if (raw expr_is_none(b)) { pass false; }
+    int32:bt = raw exprtypes_get(x.etypes, b);
+    if (bt == 0i32) { pass false; }
+    pass ((raw type_kind(x.types, bt)) == (raw TY_POINTER()));
+};
+
 // The identifier node at a place's root, through views (the walk `root_symbol`
 // makes, answering the NODE rather than its symbol), or none.
 func:root_ident_id = ExprId(Escape->:x, ExprId:id) never fails {
     ExprId:cur = id;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
-        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        PlaceRoot:r = raw esc_place_root(x, cur);
         if (r.exhausted) { pass (raw expr_none()); }
         if (raw expr_is_none(r.id)) { pass (raw expr_none()); }
         ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -2772,7 +2887,7 @@ func:root_ident_id = ExprId(Escape->:x, ExprId:id) never fails {
 func:root_symbol = int32(Escape->:x, ExprId:id) never fails {
     ExprId:cur = id;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
-        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        PlaceRoot:r = raw esc_place_root(x, cur);
         if (r.exhausted) { pass 0i32; }
         if (raw expr_is_none(r.id)) { pass 0i32; }
         ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -3893,7 +4008,7 @@ func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
                                  int32:lbn) never fails {
     if (raw expr_is_none(a)) { pass NIL; }
     if (!(raw arg_can_hold_one(x, a, lb_tys, lbn))) { pass NIL; }
-    PlaceRoot:r = raw place_root(x.ast, a, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, a);
     if (r.exhausted)            { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -3958,7 +4073,7 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
         pl = raw view_root_ident(x, vpa);
         if (raw expr_is_none(pl)) { pass false; }
     }
-    PlaceRoot:r = raw place_root(x.ast, pl, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, pl);
     if (r.exhausted)            { pass false; }
     if (raw expr_is_none(r.id)) { pass false; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -4373,7 +4488,7 @@ func:escape_connect = NIL(Escape->:x, ExprId:a) never fails {
 
     // `@place` — the binding under the place is what may now hold a borrow, and it
     // can be named.
-    PlaceRoot:r = raw place_root(x.ast, a, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, a);
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -4401,7 +4516,7 @@ func:escape_connect = NIL(Escape->:x, ExprId:a) never fails {
 
 // The binding under a place expression, marked as holding a borrow.
 func:escape_mark_place = NIL(Escape->:x, ExprId:place) never fails {
-    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, place);
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
@@ -4436,7 +4551,7 @@ func:escape_yields = bool(Escape->:x, ExprId:id) never fails {
         if (!(raw expr_is_none(vri))) { if (raw escape_yields(x, vri)) { pass true; } }
         pass (raw view_is_frame_borrow(x, vt));
     }
-    PlaceRoot:r = raw place_root(x.ast, id, raw BORROW_FUEL());
+    PlaceRoot:r = raw esc_place_root(x, id);
     if (r.exhausted) { pass true; }
     if (raw expr_is_none(r.id)) { pass false; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);

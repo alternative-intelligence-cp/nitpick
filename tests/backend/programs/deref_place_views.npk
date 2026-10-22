@@ -1,0 +1,67 @@
+// expect-exit: 0
+// AN EXPLICIT `<-` IS A PLACE STEP (DEF-272, landing 138): the shapes that STAND --
+// a callee's element store whose storage outlives the holder, a returned address
+// into the pointee through `<-` (a refusal lifted here: `@((<-a)[0i64])` was
+// BORROW-001 where `@(h.items[0i64])` ran), a view through `<-` whose write comes
+// after the view's block, and a whole pointee replaced after its view's block.
+// Every value read back is the NEW bytes, never the free poison; exit 0 at both legs.
+mod:deref_place_views;
+
+struct:Cursor = { fixed uint8[]:src; int64:pos; };
+struct:Holder = { string[2]:items; int64:n; };
+
+func:fresh = string() never fails { pass string_concat("ghij", "klmn"); };
+func:seti = NIL(Cursor[2]->:a, fixed uint8[]:src) never fails { (<-a)[0i64] = Cursor{ src: src, pos: 0i64 }; pass NIL; };
+func:at   = string->(string[2]->:a) never fails { pass @((<-a)[0i64]); };
+func:peek = fixed uint8[](string[2]->:a) never fails { pass string_bytes((<-a)[0i64]); };
+func:clobber = NIL(string[2]->:a) never fails { (<-a)[0i64] = raw fresh(); pass NIL; };
+func:replace = NIL(Holder->:h) never fails { <-h = Holder{ items: [raw fresh(), raw fresh()], n: 1i64 }; pass NIL; };
+
+func:main = int32(cstring[]:_~argv) {
+    // (a) the storage outlives the holder: the callee's element store reads back
+    string:t = raw fresh();
+    Cursor[2]:cs = [Cursor{ src: string_bytes("abcdef"), pos: 0i64 }, Cursor{ src: string_bytes("abcdef"), pos: 0i64 }];
+    if (cs[1i64].pos == 0i64) { drop seti(@cs, string_bytes(t)); }
+    if (cs[0i64].src[0i64] != 103u8) { exit 1i32; }
+    if (cs[0i64].src.len != 8i64) { exit 2i32; }
+
+    // (b) a returned address into the pointee, through `<-`
+    string[2]:arr = [string_concat("abc", "def"), string_concat("abc", "def")];
+    string->:p = raw at(@arr);
+    if ((<-p).len != 6i64) { exit 3i32; }
+    if ((<-p).ptr[0i64] != 97u8) { exit 4i32; }
+
+    // (c) a view through `<-`, read inside its block; the write after it
+    int32:first = 0i32;
+    { fixed uint8[]:v = raw peek(@arr); first = v[0i64] => int32; }
+    if (first != 97i32) { exit 5i32; }
+    drop clobber(@arr);
+    if (arr[0i64].ptr[0i64] != 103u8) { exit 6i32; }
+
+    // (d) the whole pointee replaced after its view's block
+    Holder:hd = Holder{ items: [string_concat("abc", "def"), string_concat("abc", "def")], n: 0i64 };
+    int32:second = 0i32;
+    { fixed uint8[]:w = string_bytes(hd.items[1i64]); second = w[0i64] => int32; }
+    if (second != 97i32) { exit 7i32; }
+    drop replace(@hd);
+    if (hd.n != 1i64) { exit 8i32; }
+    if (hd.items[1i64].ptr[0i64] != 103u8) { exit 9i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

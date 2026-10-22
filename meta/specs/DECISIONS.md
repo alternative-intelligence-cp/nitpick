@@ -282,6 +282,18 @@ pointer field, a slice, a `dyn` keep the conservative reading (`type_holds_forei
 > view does, and a `dyn` or bound call is a KNOWN callee (the union of its impls' summaries, D-325), not the
 > unknown this decision's shape rule keeps for a function value.
 
+> **Note (2026-10-21, 1.6.1e landing 138 — DEF-272, the fuzzer's F-050):** the holder-scope question of
+> landing 116 is asked of a store through an EXPLICIT `<-` now -- `(<-a)[0i64] = Cursor{ src: src, … }`,
+> `(<-a)[0i64].src = src`, `(<-c).src = src` in the callee -- because the escape analysis's root walk goes on
+> through a `<-` to the pointer's name (`esc_place_root`, escape.npk), as the auto-dereference `h.items[0i64]`
+> always rooted at `h` (D-098): `drop seti(@cs, string_bytes(t))` read the block's freed string after the
+> block (exit 170 at both legs) until this landing, and `(<-lp)[i]` is the ONLY spelling of an element behind
+> a pointer (TYPE-082). And a DESTINATION reached through a pointer -- `@(<-p)`, `@lp.f`, `@((<-lp)[i])`,
+> `@s.next.f`, the receiver `lp.f.m(view)` -- is refused whatever its root's kind unless that root is a
+> pointer PARAMETER (its own sentence): a holder's block bounds the POINTER, not what it points at, so the
+> question asked of `lp` had admitted `Outer->:lp = @o; … setv(@lp.inn, string_bytes(t))` with `o` declared
+> outside the block (170). The by-value pointer argument is DEF-275, open.
+
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
@@ -7217,6 +7229,16 @@ at -O0 and garbage at -O2, in safe code, at every compiler that ever existed. Th
 LOADS the pointee for that shape (`emit_method_call`'s value branch), one level, exactly as
 `.` reads a field through a pointer. Found by 1.6.1d step 1's own accept file, not by the
 library listener's fuzzer; `tests/backend/programs/byval_recv_ptr.npk` pins every shape.
+
+*[2026-10-21, 1.6.1e landing 138 — a dated note (DEF-272, the fuzzer's F-050).]* The two borrow
+analyses read the EXPLICIT dereference as the auto-dereference's twin: `(<-p).f` is `p.f`'s place
+and path to the escape analysis's root walk (`esc_place_root`) and the aliasing walk's chain
+(`is_place_chain`, `path_steps`), and `(<-lp)[i]` -- the spelling TYPE-082 leaves for an element
+behind a pointer -- roots at `lp` with the element's step. Until this landing `place_root`'s stop
+at `<-` ("everything else IS the root") left every such place rootless in both analyses, and a
+callee's store, write, view or move through one went unrecorded: a use-after-free in safe code
+(F-050, exit 170 at both legs). `place_root` itself still stops there: the bindings analysis, the
+suspend walk and the emitter read `<-p` as the value it yields, which is right for them.
 
 ## D-099 — `NIL` is the empty `Optional`; `Some` and `Optional{…}` are both struck
 
@@ -22043,6 +22065,22 @@ leading dereference before asking the root (as the assignment's recorder already
 handed to it while a view of `x` is live is BORROW-015 — the freeze's gap the library
 listener's F-004 found (the overwriting twin `(<-p) = v` had been refused all along). The
 `$$i x` face of the same program is BORROW-013 under D-286's dated note of the same day.
+
+*[2026-10-21, 1.6.1e landing 138 — a dated note (DEF-272, the fuzzer's F-050).]* The freeze, the
+store matrix, the view summary and DEF-119's move-as-write read an explicit `<-` as the place step
+it is: `(<-p).f` and `p.f` are one storage, `(<-lp)[i]` is the one spelling of an element behind a
+pointer (TYPE-082), and both the escape analysis's root walk (`esc_place_root`) and the aliasing
+walk's chain (`is_place_chain`, `path_steps`) go on through the `<-` to the pointer's name -- where
+`place_root`'s stop at `<-` had left every such place rootless, so a callee's store, write, view or
+move through one was recorded nowhere and a caller read freed memory in safe code (exit 170 at both
+legs, eight faces measured beside their auto-dereference twins). A callee overwriting or moving out
+of `(<-a)[0i64]` is a write of its parameter's pointee at that path; a view it returns of
+`(<-a)[0i64]` is a view entry; inside one function `(<-a)[0i64] = …`, `<-h = …` and
+`(<-h).items[0i64] = …` are write-capable accesses of what `a`/`h` reach, BORROW-015 under a live
+view of the element. The pointer-root exemption (`b = other` leaves the viewed pointee alone) asks
+for the bare name written directly: `<-b = …` writes the pointee, and a callee's write through `b`
+never reassigns `b`. DEF-275 records what the exemption's neighbour still misses: a pointer local
+handed by VALUE to a writer.
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 
