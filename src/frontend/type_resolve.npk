@@ -1626,6 +1626,12 @@ func:fold_k_raw_unwrap_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, 
     pass (raw fold_expr(r, raw expr_operand(e), scope, f));
 };
 
+// THE `ExprMoveExpr` ARM OF `fold_expr` (DEF-280, landing 147): the operand's value. The move itself is the checker's
+// business -- the body is checked as any body is -- and the evaluator's values are copies, so nothing is vacated.
+func:fold_k_move_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_expr(r, raw expr_operand(e), scope, f));
+};
+
 // THE `ExprEmphaticUnwrapExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
 // a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
 // folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
@@ -1695,6 +1701,13 @@ func:fold_expr_rest = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:sc
 
     if (e.kind == ExprKind.ExprUnaryExpr)  { pass (raw fold_unary(r, e, scope, f)); }
     if (e.kind == ExprKind.ExprBinaryExpr) { pass (raw fold_binary(r, e, scope, f)); }
+
+    // `move(x)` FOLDS AS ITS OPERAND'S VALUE (DEF-280, landing 147): the evaluator's
+    // values are copies, and the move rules are the checker's, enforced on the body
+    // as on any (MOVE-001 on a later read of `x`). Until this landing the kind had
+    // no arm, so a body that bound a `move T:x` parameter to a local -- the ONLY
+    // spelling for a move-only `T` (D-264), or for a `string` -- failed the fold.
+    if (e.kind == ExprKind.ExprMoveExpr) { pass (raw fold_k_move_expr(r, id, e, scope, fuel, f)); }
 
     // A CAST IS A CONVERSION AND KEEPS THE VALUE. `=>` between integer types is the
     // only folding form: a checked cast that would not hold is a question for the
@@ -2200,6 +2213,41 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
     int32:ac = (raw expr_list_count(e)) - gc;
     if (ac != pc) { pass (raw cv_none()); }
 
+    // THE TYPE ARGUMENTS BIND THE CALLEE'S GENERIC WINDOW (DEF-270, landing 147):
+    // `width::<int32>()` names `T` in the body's types -- `#size_of<T>()`, a local
+    // `T:y`, an array `T[3]` -- as the checker's generic instance binds them
+    // (`bind_instance`'s shape: the window's parameters over a window of concrete
+    // type ids). Each argument is resolved HERE, in the caller's scope and under the
+    // caller's generic scope, before the frame is entered; the body is evaluated
+    // below under the callee's window bound to them and under NO enclosing scope (a
+    // `comptime func:` is a module-level declaration: the call site's impl or
+    // function parameters are not its to see, DEF-192's rule). Until this landing
+    // the evaluator bound the arguments for VALUES alone and resolved the body's
+    // types in the declaration's scope with nothing bound -- TYPE-001 "there is no
+    // type named `T`" at the body's `T`, TYPE-004 at the `comptime(…)`. A call with
+    // no turbofish binds nothing and folds as it always did (`same(21i32)`); a count
+    // that is not the window's is the checker's arity report, and the evaluator adds
+    // no second sentence (D-240). An argument the resolver refused has had its own
+    // sentence: the call does not fold, and nothing more is said. The window is
+    // committed to the AST's id pool per evaluation, as a generic CALL's is per site;
+    // the fuel bounds how many.
+    IdSpan:gw = raw decl_generic_window(r.ast, fndecl);
+    IdSpan:targs = IdSpan{ start: 0i32, count: 0i32 };
+    bool:bind_targs = false;
+    if ((gc > 0i32) && (gc == gw.count)) {
+        int32:tmark = raw ast_scratch_mark(r.ast);
+        bool:targs_ok = true;
+        for (int32:ti in 0i32...gc) {
+            TypeId:ta = TypeId{ index: raw ast_id_at(r.ast, raw expr_list_start(e), ti) };
+            int32:tt = raw resolve_type(r, ta, scope);
+            if (tt == 0i32) { targs_ok = false; }
+            drop ast_scratch_push(r.ast, tt);
+        }
+        targs = raw ast_scratch_commit(r.ast, tmark);
+        if (!targs_ok) { pass (raw cv_none()); }
+        bind_targs = true;
+    }
+
     // THE ARGUMENTS ARE FOLDED IN THE CALLER'S FRAME, and the new frame is built
     // only once they all have values. Building it first and folding into it would
     // let an argument see a parameter it is being passed to.
@@ -2233,7 +2281,19 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
     r.fold_depth = saved_depth + 1i32;
     // A FRAME IS OPEN (`fold_frames`): the one place it is raised and lowered.
     r.fold_frames = r.fold_frames + 1i32;
+    // THE BODY'S TYPES RESOLVE UNDER THE CALL'S TYPE ARGUMENTS (DEF-270): the
+    // callee's window bound to `targs`, the enclosing scope none; both restored
+    // with the environment.
+    GenericScope:gsaved = r.generics;
+    GenericScope:esaved = r.enclosing;
+    if (bind_targs) {
+        r.generics = GenericScope{ params_start: gw.start, params_count: gw.count,
+                                   args_start: targs.start, args_count: targs.count };
+        r.enclosing = raw generic_scope_none();
+    }
     FoldFlow:flow = raw fold_stmt(r, raw fn_body(r.ast, fndecl), sym.scope, fuel - 1i32);
+    r.generics = gsaved;
+    r.enclosing = esaved;
     r.fold_frames = r.fold_frames - 1i32;
     r.env = move(saved);
     r.fold_depth = saved_depth;

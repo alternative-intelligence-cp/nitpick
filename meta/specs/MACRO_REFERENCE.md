@@ -659,6 +659,15 @@ declaration. Its body may call other `comptime func:`s and the builtins the eval
 knows; a call of an ordinary function inside it does not fold (TYPE-004 at the
 `comptime(…)` that reached it).
 
+**A generic `comptime func:` is called with its type arguments written (DEF-270, landing 147).**
+`width::<int32>()` binds the callee's generic window to the call's type arguments while the
+evaluator runs the body, as the checker's generic instance binds them: `#size_of<T>()`, a local
+`T:y` and an array `T[3]` in the body mean the argument's type, and the arguments are resolved at
+the call, in the caller's scope, before the body is entered. A call with no turbofish binds
+nothing: a body that names `T` in a type is TYPE-001 there (write the type arguments), and a body
+that only passes values folds as it always did. And a `move(x)` in a body folds as its operand's
+value (DEF-280, landing 147): the move rules are the checker's, enforced on the body as on any.
+
 ### What the evaluator can do
 
 Recovered from `COMPTIME-001…013`:
@@ -669,6 +678,8 @@ Recovered from `COMPTIME-001…013`:
 | **mutable locals and assignment** — `x = x + n`, and chains | `COMPTIME-002` |
 | **loops** — `loop(lo, hi, step) { … }` | `COMPTIME-001` |
 | calls to `comptime func:` declarations, nested | `COMPTIME-001`, `COMPTIME-009` |
+| a generic `comptime func:` called with its type arguments, the body's types resolved under them | DEF-270, landing 147 |
+| `move(x)` — its operand's value | DEF-280, landing 147 |
 | **strings** — concatenation, equality, ordering, length | `COMPTIME-005` |
 | an enum's payload-less variant as a value; `==` and `!=` on two | D-338 |
 | `pick`, statement and expression form, over a constant selector — inside a `comptime func:` | D-338 |

@@ -3076,6 +3076,17 @@ defect declares a `DEF-` in §2f.
 > top mask, the row left `open`), with the probe as its test. Its own small landing; `npkg verify` over the fuzz corpus
 > would meet it first.
 
+> **DEF-280 — FIXED 2026-10-22 (landing 147, `nitpick-compiler_42`; registered the same day, found by DEF-270's test; LOW: a loud
+> refusal of a legal body, nothing accepted or run wrongly). THE EVALUATOR FOLDED NO `move` EXPRESSION.** `comptime func:first<T> =
+> T(move T:x) never fails { T:y = move(x); pass y; };` is a legal body (D-264: a `T` is move-only, so a body that binds its parameter
+> to a local MUST write `move(x)`), and `comptime(first::<int32>(5i32))` was TYPE-004 "requires an expression that folds" at the
+> `comptime(…)` on landing 146's compiler and every one before it -- `fold_expr_rest` had no `ExprMoveExpr` arm, so the statement
+> failed the fold (MACRO_REFERENCE §8: a kind not named fails the fold) -- and so were the non-generic twins, `int32:y = move(x)` of a
+> `move int32:x` and `string:t = move(s)` of a `move string:s` (`wt/42b/.internal/probes/def270/move_generic.npk`, `move_plain.npk`,
+> `move_string.npk`); a body that only passes its parameter (`pass x;`) folded. NOW: `fold_k_move_expr` folds the operand's value --
+> the evaluator's values are copies, and the move rules are the checker's, enforced on the body as on any (MOVE-001 on a later read) --
+> so the three probes fold and `comptime_generic_type.npk`'s local-type case binds a `T` by `move`.
+
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
 > (107) in safe code, measured on 3235308: `kill(shared_arena<int64>->:s) { s.destroy(); }` called with `@s` from
@@ -3500,7 +3511,7 @@ defect declares a `DEF-` in §2f.
 > against D-064 §2 and D-109 (what a value parameter is FOR beyond the compiler-known `Mutex`/`simd` positions)
 > before step 3d plans it.
 
-> **DEF-270 — OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 144, DEF-194's third face; LOW: a loud refusal of a legal program). A GENERIC `comptime func:` CANNOT NAME ITS TYPE PARAMETER IN A TYPE UNDER EVALUATION.** `comptime func:width<T> = int64() never fails { pass #size_of<T>(); };` and `fixed int64:W = comptime(width::<int32>());` is TYPE-001 "there is no type named `T`" at the body's `T` and TYPE-004 at the `comptime(…)` (measured on a WIP compiler of the queue and again on landing 143's, `wt/40o/.internal/probes/step3d_x/d194d.npk`): the evaluator binds a call's type arguments for VALUES (`comptime func:twice<T> = T(move T:x)` folds `twice::<int32>(4i32)` to 4) and never for the types the body resolves, so a `#size_of<T>()` or a `T[3]` inside the body is resolved in the declaration's scope with nothing bound. The fix binds the call's type-argument window around the body's type resolution, as the checker's generic instance does; its own landing.
+> **DEF-270 — FIXED 2026-10-22 (landing 147, `nitpick-compiler_42`): `fold_call` resolves a comptime call's type arguments in the caller's scope and binds the callee's generic window to them around the body's evaluation (`bind_instance`'s shape, the enclosing scope none), so `#size_of<T>()`, a local `T:y` and `T[3]` in the body mean the argument's type (`tests/backend/programs/comptime_generic_type.npk`, exit 0 at both legs; landing 146's compiler refuses it TYPE-001 and TYPE-004); a call with no turbofish binds nothing and folds as before. WAS: OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 144, DEF-194's third face; LOW: a loud refusal of a legal program). A GENERIC `comptime func:` CANNOT NAME ITS TYPE PARAMETER IN A TYPE UNDER EVALUATION.** `comptime func:width<T> = int64() never fails { pass #size_of<T>(); };` and `fixed int64:W = comptime(width::<int32>());` is TYPE-001 "there is no type named `T`" at the body's `T` and TYPE-004 at the `comptime(…)` (measured on a WIP compiler of the queue and again on landing 143's, `wt/40o/.internal/probes/step3d_x/d194d.npk`): the evaluator binds a call's type arguments for VALUES (`comptime func:twice<T> = T(move T:x)` folds `twice::<int32>(4i32)` to 4) and never for the types the body resolves, so a `#size_of<T>()` or a `T[3]` inside the body is resolved in the declaration's scope with nothing bound. The fix binds the call's type-argument window around the body's type resolution, as the checker's generic instance does; its own landing.
 
 > **DEF-195 — FIXED at 1.6.1e step 3a (2026-10-01; found by `nitpick-compiler_24` asking what DEF-191's fix did to
 > the verified build; A SOUNDNESS HOLE OF THE VERIFICATION LEG, on every compiler since 1.5.3). A GENERIC `pure never

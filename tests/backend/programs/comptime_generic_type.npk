@@ -1,0 +1,59 @@
+// expect-exit: 0
+//
+// A GENERIC `comptime func:` NAMES ITS TYPE PARAMETER IN A TYPE UNDER EVALUATION (DEF-270, landing 147): a
+// call's type arguments bind the callee's generic window while the evaluator runs the body, as the checker's generic
+// instance binds them -- so `#size_of<T>()`, a local declared `T:x` and an array `T[3]` in the body mean the
+// argument's type; and a `move(x)` in the body folds as its operand's value (DEF-280, found by this test: the evaluator had
+// no `move` arm, so the ONE spelling that binds a move-only `T` to a local never folded). Until this landing the evaluator bound the arguments for VALUES alone and resolved the body's
+// types in the declaration's scope with nothing bound: `comptime func:width<T> = int64() never fails { pass
+// #size_of<T>(); };` under `comptime(width::<int32>())` was TYPE-001 "there is no type named `T`" at the body's `T`
+// and TYPE-004 at the `comptime(…)`. The value-only shapes (`same::<int32>(4i32)`, and `same(21i32)` with no
+// turbofish) folded before and fold still -- the controls. Exit 0 at both legs; landing 146's compiler refuses the
+// file at `width`'s `#size_of<T>()`.
+mod:comptime_generic_type;
+
+struct:Pt = { int32:x; int32:y; int64:z; };
+
+comptime func:width<T> = int64() never fails { pass #size_of<T>(); };
+comptime func:triple_width<T> = int64() never fails { pass #size_of<T[3]>(); };
+comptime func:first<T> = T(move T:x) never fails { T:y = move(x); pass y; };   // a `T` is move-only (D-264): `move(x)` folds since DEF-280
+comptime func:first_copy<T: Copy> = T(T:x) never fails { T:y = x; pass y; };
+comptime func:same<T> = T(move T:x) never fails { pass x; };
+
+fixed int64:W32 = comptime(width::<int32>());
+fixed int64:W64 = comptime(width::<int64>());
+fixed int64:WPT = comptime(width::<Pt>());
+fixed int64:W3 = comptime(triple_width::<int16>());
+fixed int32:F = comptime(first::<int32>(5i32));
+fixed int32:FC = comptime(first_copy::<int32>(6i32));
+fixed int32:S2 = comptime(same::<int32>(4i32));
+fixed int32:S3 = comptime(same(21i32));
+
+func:main = int32(cstring[]:_~argv) {
+    if (W32 != 4i64) { exit 11i32; }                       // `#size_of<T>()` at `int32`
+    if (W64 != 8i64) { exit 12i32; }                       // at `int64`
+    if (WPT != 16i64) { exit 13i32; }                      // at a struct: 4 + 4 + 8
+    if (W3 != 6i64) { exit 14i32; }                        // `T[3]` at `int16`
+    if (F != 5i32) { exit 15i32; }                         // a local declared `T:y` in the body, bound by `move`
+    if (FC != 6i32) { exit 19i32; }                        // the same under `T: Copy`, bound by a copy
+    if (S2 != 4i32) { exit 16i32; }                        // the control: a value-only generic, with the turbofish
+    if (S3 != 21i32) { exit 17i32; }                       // the control: the same with no turbofish
+    int64:w = comptime(width::<int8>());                   // the forcing form in a body
+    if (w != 1i64) { exit 18i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
