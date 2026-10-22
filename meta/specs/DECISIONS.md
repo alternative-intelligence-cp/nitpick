@@ -23528,3 +23528,71 @@ it wrote) was dropped unlanded: it would have kept three spellings of one call.
 > **LANDED (1.6.1e landing 133, `nitpick-compiler_40`, with DEF-257).** `PARSE_PIPE_REMOVED` (parse_codes.npk),
 > `p_pipeline`'s refusal (parse_expr.npk), `tests/frontend/parse_pipe_struck.npk` (the unit: each operator one report, a
 > chain one report, the call a control); `pipe.npk`, `lock_calls.npk` and the grammar sample re-spelled.
+
+## D-363 — A `pick` ARM NAMES SEVERAL VALUES WITH ONE BODY; THE LIBRARY ERROR BUDGET IS A NORM OF LIBRARIES.md; FROZEN NAMED SETS ARE DECLINED; A GENERATED `failsafe` STAYS A LIBRARY TOOL, AND THE COMPILER OWES A `--reach` LISTING — **SETTLED (user decision, 2026-10-22: "reviwed your recommendations about failsafe ( i agree with your recommendations, go with those)")**
+
+**The question (S-134, OPEN_DECISIONS).** Raised by the user on 2026-10-09 while ratifying D-352: does a large project
+importing many libraries need an accommodation for its `failsafe` beyond one shared macro -- "does their failsafe
+eventually become unmanageable". The recap stood in the row: D-179 demands that `failsafe`'s one pick NAME every
+reachable identity (the acknowledgement the user wants forced), D-352 lets one statement macro supply the pick for a
+module's entry points, and a macro is invocable only in its declaring module (D-124), so the cross-module shape was a
+generator's (nitpick-posix's PX-100). The library side sent three ideas at the author's word (2026-10-09,
+`nitpick-libs_17`): a frozen, versioned set acknowledged by name; the generator as toolchain; a library-side error
+budget. **The recommendation as put** (2026-10-21, `nitpick-compiler_41`, Fable, in the S-134 row, measured first:
+the prelude declares 31 system identities, so the compiler's own `failsafe` carries 40 arms, `npkg`'s 41, a small
+program's 9 to 13, nitpick-time's consumers' 13 to 14 with one of them the library's -- the system set is the bulk of
+every bill, and the accommodation that pays collapses ARMS, not identities): (R1) an arm names several values -- a
+`pick` arm's parentheses take a comma list of value patterns of the selector's type with one body,
+`(ntime.ETimeValue, ntime.ETzMissing) { exit 87i32; }`, `(HeapOom, HeapBadRequest, WildLeak) { exit 92i32; }`, for any
+selector `(1i32, 2i32, 5i32) { … }`; each value still a constant held to the selector's type (DEF-178), no bindings, a
+value repeated across alternatives or arms refused by name (which also closes DEF-212's `llc` duplicate case), lowered
+as several `switch` cases to one block; the reach analysis reads every alternative as a named arm, so REACH-002 is
+unchanged and every identity is still written by the program's author; the spelling is the COMMA, not the bar -- the
+bar is bitwise-or everywhere else, and a construct that means one thing in a pattern and another beside it is what the
+blueprint philosophy forbids; (R2) the budget norm, as guidance in LIBRARIES.md: a library publishes its arm bill with
+its errors, keeps public identities few, declares an umbrella where the distinction buys a consumer nothing; (R3)
+frozen named sets NOT adopted -- an arm `(ntime_v1)` acknowledges a name whose membership only a pin outside the source
+holds immutable, the wildcard in disguise the library seat itself named; (R4) the generator NOT in the gate -- a
+generated `failsafe` turns acknowledgement into the rubber stamp of a diff, so it stays a library's own tool, and what
+the compiler owes is the LIST: a `--reach` listing of the reachable identity set grouped by declaring module, the arms
+a program must write.
+
+**The ruling.** The user, 2026-10-22 at 03:44:01, relayed by `management_2` at 03:45:43: "reviwed your
+recommendations about failsafe ( i agree with your recommendations, go with those)". So R1 through R4 as put, with
+the comma spelling. R2 is the library side's (management sent it to the library seat the same morning). **What lands,
+and when.** R1 and R4 join the end of the landing queue as Opus-able work (sized at landing 142): R4, the `--reach`
+listing, is a small landing -- the reach analysis already computes the set, and the driver prints it grouped by
+declaring module -- and may ride with DEF-274's; R1 is one landing of its own with an F-notice (a language addition):
+the pattern grammar (a comma list in an arm's parentheses: AST_REFERENCE §5, CONTROL_REFERENCE §1.2),
+`check_value_patterns` over each alternative, `pat_folded_case` and the compare chain (several cases, one block), the
+reach analysis's arm reader (`reach_settle`), the encoder's arm condition (a disjunction), and the tests of both `pick`
+spellings. Nothing else moves: REACH-002's demand, D-179's rule and D-352's macro form stand.
+
+## D-364 — A LOAD WHOSE VALUE THE PROGRAM USES FAULTS AT BOTH LEGS; A DEAD LOAD THROUGH A `wild` NULL POINTER IS NO READ AT -O2, THE LEGS' ONE PERMITTED DISAGREEMENT — **SETTLED (user decision, 2026-10-22: "for the two questions i agree with the recommendations")**
+
+**The question (S-140, OPEN_DECISIONS; DEF-273, the fuzzer's F-051).** `wild int64->:p = NULL; int64:v = <-p;` with `v`
+never read, then `if (p == NULL) { exit 14i32; }`, is 107 (`MachineFault`) at -O0 and 14 at -O2 -- 0 without the test,
+a reported success -- while a USED load is 107 at both legs; TYPE_REFERENCE §27 said a dereference through `NULL`
+faults at BOTH legs. The cause is not undefined behaviour: DEF-251 (i)'s `null_pointer_is_valid` keeps every load a
+memory operation to every pass, and LLVM's dead-code elimination still removes a non-volatile load whose value nothing
+uses -- legal for any load from valid memory, and no attribute keeps one. Nothing wrong is computed and nothing runs
+uncontrolled: at -O2 the read does not happen, the pointer is still `NULL`, and any USE of it faults at both legs; the
+difference is the exit code of a program whose only effect was the fault itself. **The options as put** (2026-10-22,
+`nitpick-compiler_41`, in the S-140 row): (R1, recommended) amend §27 to what is true -- a load whose value the program
+uses faults at both legs; a load nothing uses is no read at -O2 -- and record F-051's programs in the fuzz corpus as
+the legs' one permitted disagreement; no compiler change, no cost. (R2) every load through a `wild` pointer `volatile`:
+both legs fault, at the price of every optimisation over every `wild` load -- the prelude's `List` keeps its elements
+behind one, so every `l[i]` and every string byte read pays it in every program and in the compiler itself. (R3) a
+`p == NULL` guard at every `wild` dereference trapping `MachineFault` before the access: both legs agree by
+construction, at one compare on the same hot paths, unmeasured. (R4) a checker rule refusing an unused read: narrow,
+and a false refusal of the one program that reads to trigger a fault on purpose.
+
+**The ruling.** The user, 2026-10-22 at 03:49:41, relayed by `management_2` at 03:50:16: "for the two questions i
+agree with the recommendations" -- R1. **The rule.** TYPE_REFERENCE §27 says what is true: a load whose value the
+program uses faults at both legs; a load through a `wild` `NULL` pointer whose value nothing uses is no read at -O2.
+THE ALLOWANCE IS NARROW, so that it cannot hide a real disagreement between the legs: it covers an UNUSED load through a
+`wild` NULL pointer and nothing else -- a used load, a store, a plain pointer (which is never `NULL`, D-355), and every
+other construct still answer alike at -O0 and -O2, and the harness holds every program test to one exit at both legs
+as before. F-051's programs are recorded in the fuzz corpus as the legs' one permitted disagreement (management told the
+fuzzer, whose -O0-against-O2 comparison allows exactly this shape). No compiler change; DEF-273 closes as a
+documentation row.

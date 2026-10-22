@@ -1,0 +1,42 @@
+// expect-exit: 0
+//
+// THE EMITTER'S FRAMES HOLD A CHAIN AT THE DEPTH BOUND (DEF-176, landing 142): a non-folding `x + x + … + x` of 54
+// operands made `npkc` exit 3 with no message -- the emitter recursed through `emit_expr_kind`, whose one frame held
+// every arm's locals (1,565 slots, allocas being hoisted, D-173), and through `emit_binary` (547), and the
+// compile-time folder the emitter asks at every level recursed through frames as large; the AST's own bound (256
+// levels, DEF-150) never protected the emitter. The arms live in frames of their own now, a binary node and the other
+// kinds a chain nests through reach their emitters from a small dispatch, and each of these compiles: a left-deep
+// sum at the bound (254 operands), a right-nested sum, a product, a unary chain and nested calls 240 levels deep.
+// Every value is checked. Exit 0 at both legs; landing 141's compiler exits 3 on the first.
+mod:chain_deep;
+error:E9;
+func:g = int32(int32:a) never fails { pass a; };
+func:sum_left = int32(int32:x) { int32:y = x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x; pass y; };
+func:sum_right = int32(int32:x) { int32:y = x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x + (x)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))); pass y; };
+func:product = int32(int32:x) { int32:y = x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x * x; pass y; };
+func:negations = int32(int32:x) { int32:y = -(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(-(x)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))); pass y; };
+func:nested_calls = int32(int32:x) never fails { int32:y = raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(raw g(x)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))); pass y; };
+func:main = int32(cstring[]:_~argv) {
+    if ((sum_left(1i32) ?! E9) != 254i32) { exit 1i32; }
+    if ((sum_right(1i32) ?! E9) != 127i32) { exit 2i32; }
+    if ((product(1i32) ?! E9) != 1i32) { exit 3i32; }
+    if ((negations(5i32) ?! E9) != 5i32) { exit 4i32; }
+    if ((raw nested_calls(7i32)) != 7i32) { exit 5i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (DecreasesViolated) { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

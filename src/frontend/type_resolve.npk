@@ -1498,6 +1498,174 @@ func:fold_exhausted = NIL(TypeResolver->:r, Span:sp) never fails {
     pass NIL;
 };
 
+// THE `ExprIntLiteral` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_int_literal = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    // AN UNSUFFIXED LITERAL CARRIES NO TYPE, and says so with 0 rather than
+    // guessing `int32`. The site that receives it supplies the context type,
+    // which is D-092's rule applied where it belongs.
+    NumWidth:w = raw expr_num_width(e);
+    if (w == NumWidth.WNone) { pass (raw cv_int(0i32, e.payload)); }
+    if (raw num_width_is_integer(w)) {
+        pass (raw cv_int(raw tt_int(r.types, raw num_width_bits(w), raw num_width_signed(w)),
+                         e.payload));
+    }
+    // A SUFFIX OF ANOTHER FAMILY NAMES THAT FAMILY (DEF-197, 1.6.1e). Every
+    // one of these was an untyped plain integer here -- "no width was
+    // written" about a literal that wrote one -- so `2tfp64` reached a
+    // module binding as the integer 2 (its Q value is 2 * 2^32) and
+    // `100tbb8 + 100tbb8` as 200.
+    pass (raw fold_suffixed_literal(r, e, scope, w, true));
+};
+
+// THE `ExprFloatLiteral` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_float_literal = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_suffixed_literal(r, e, scope, raw expr_num_width(e), false));
+};
+
+// THE `ExprBoolLiteral` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_bool_literal = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw cv_bool(r.types.t_bool, e.payload != 0i64));
+};
+
+// THE `ExprCharLiteral` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_char_literal = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw cv_char(raw tt_char(r.types, raw char_lit_bits(e.width)), e.payload));
+};
+
+// THE `ExprStringLiteral` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_string_literal = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw cv_str(r.types.t_string, raw intern_get(r.interns,
+                                                        e.payload =>! int32)));
+};
+
+// THE `ExprComptimeExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_comptime_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_expr(r, raw expr_operand(e), scope, f));
+};
+
+// THE `ExprCastExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_cast_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    ConstVal:v = raw fold_expr(r, raw expr_operand(e), scope, f);
+    if (!(raw cv_is_int(v))) { pass (raw cv_none()); }
+    int32:target = raw resolve_type(r, raw expr_cast_type(e), scope);
+    if (!(raw type_is_integer(r.types, target))) { pass (raw cv_none()); }
+    // THE VALUE, NOT ITS REPRESENTATION (DEF-80): a `uint64` past 2^63-1 is
+    // held as its bit pattern, which read as another type's value is a
+    // different number -- it folds only to a `uint64`; a value the target
+    // cannot hold declines (the cast rules refuse a narrowing `=>`).
+    if (!(raw fold_value_fits(v.num, raw fold_width(r, v.type_id), raw fold_width(r, target)))) {
+        pass (raw cv_none());
+    }
+    pass (raw cv_int(target, v.num));
+};
+
+// THE `ExprUncheckedCastExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_unchecked_cast_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    ConstVal:uv = raw fold_expr(r, raw expr_operand(e), scope, f);
+    if (!(raw cv_is_int(uv))) { pass (raw cv_none()); }
+    int32:utarget = raw resolve_type(r, raw expr_cast_type(e), scope);
+    if ((raw type_kind(r.types, utarget)) != (raw TY_FLAGS())) { pass (raw cv_none()); }
+    pass (raw cv_int(utarget, uv.num));
+};
+
+// THE `ExprBuiltinExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_builtin_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_builtin(r, e, scope, f));
+};
+
+// THE `ExprIdentifierExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_identifier_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_ident(r, e, scope, f));
+};
+
+// THE `ExprCallExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_call_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_call(r, e, scope, f));
+};
+
+// THE `ExprIterationVarExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_iteration_var_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    if (!(r.fold_counting)) { pass (raw cv_none()); }
+    if (r.fold_subject_ty != 0i32) {
+        int32:sk = raw type_kind(r.types, r.fold_subject_ty);
+        if (sk == (raw TY_BOOL())) { pass (raw cv_bool(r.fold_subject_ty, r.fold_counter != 0i64)); }
+        if (sk == (raw TY_CHAR())) { pass (raw cv_char(r.fold_subject_ty, r.fold_counter)); }
+        pass (raw cv_int(r.fold_subject_ty, r.fold_counter));
+    }
+    pass (raw cv_int(raw tt_int(r.types, 64i32, true), r.fold_counter));
+};
+
+// THE `ExprRawUnwrapExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_raw_unwrap_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_expr(r, raw expr_operand(e), scope, f));
+};
+
+// THE `ExprEmphaticUnwrapExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_emphatic_unwrap_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_expr(r, raw expr_lhs(e), scope, f));
+};
+
+// THE `ExprSafeUnwrapExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_safe_unwrap_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_expr(r, raw expr_lhs(e), scope, f));
+};
+
+// THE `ExprMemberAccessExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_member_access_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_variant(r, e));
+};
+
+// THE `ExprMethodCallExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_method_call_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    pass (raw fold_string_cmp(r, e, scope, f));
+};
+
+// THE `ExprPickExpr` ARM OF `fold_expr`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): every level of
+// a folded expression's recursion paid for every arm's locals (allocas are hoisted, D-173), and the emitter asks the
+// folder at every level of a chain -- a 250-term `x + x + …` exhausted the stack inside the fold. The dispatch calls it.
+func:fold_k_pick_expr = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+    if (r.fold_frames <= 0i32) { pass (raw cv_none()); }
+    FoldFlow:xf = raw fold_pick(r, raw pickx_selector(e), raw pickx_arm_start(e),
+                                raw pickx_arm_count(e), e.span, scope, f);
+    if (xf.failed) { pass (raw cv_none()); }
+    if (!(xf.gave)) { pass (raw cv_none()); }
+    pass (xf.value);
+};
+
 func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) never fails {
     if (raw expr_is_none(id)) { pass (raw cv_none()); }
     ExprNode:e = raw ast_expr(r.ast, id);
@@ -1506,43 +1674,24 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
         pass (raw cv_none());
     }
     int32:f = fuel - 1i32;
+    // THE DISPATCH IS TWO FRAMES, AND A BINARY NODE TAKES THE SMALL ONE (DEF-176, landing 142): `emit_const_fold` asks
+    // this function at every level of a chain the emitter walks, so a binary node goes to `fold_binary` from a frame
+    // that holds two calls, and every other kind to `fold_expr_rest`, whose arms are what this function's were.
+    if (e.kind == ExprKind.ExprBinaryExpr) { pass (raw fold_binary(r, e, scope, f)); }
+    pass (raw fold_expr_rest(r, id, e, scope, fuel, f));
+};
 
-    if (e.kind == ExprKind.ExprIntLiteral) {
-        // AN UNSUFFIXED LITERAL CARRIES NO TYPE, and says so with 0 rather than
-        // guessing `int32`. The site that receives it supplies the context type,
-        // which is D-092's rule applied where it belongs.
-        NumWidth:w = raw expr_num_width(e);
-        if (w == NumWidth.WNone) { pass (raw cv_int(0i32, e.payload)); }
-        if (raw num_width_is_integer(w)) {
-            pass (raw cv_int(raw tt_int(r.types, raw num_width_bits(w), raw num_width_signed(w)),
-                             e.payload));
-        }
-        // A SUFFIX OF ANOTHER FAMILY NAMES THAT FAMILY (DEF-197, 1.6.1e). Every
-        // one of these was an untyped plain integer here -- "no width was
-        // written" about a literal that wrote one -- so `2tfp64` reached a
-        // module binding as the integer 2 (its Q value is 2 * 2^32) and
-        // `100tbb8 + 100tbb8` as 200.
-        pass (raw fold_suffixed_literal(r, e, scope, w, true));
-    }
-    if (e.kind == ExprKind.ExprFloatLiteral) {
-        pass (raw fold_suffixed_literal(r, e, scope, raw expr_num_width(e), false));
-    }
-    if (e.kind == ExprKind.ExprBoolLiteral) {
-        pass (raw cv_bool(r.types.t_bool, e.payload != 0i64));
-    }
-    if (e.kind == ExprKind.ExprCharLiteral) {
-        pass (raw cv_char(raw tt_char(r.types, raw char_lit_bits(e.width)), e.payload));
-    }
-    if (e.kind == ExprKind.ExprStringLiteral) {
-        pass (raw cv_str(r.types.t_string, raw intern_get(r.interns,
-                                                            e.payload =>! int32)));
-    }
+func:fold_expr_rest = ConstVal(TypeResolver->:r, ExprId:id, ExprNode:e, int32:scope, int32:fuel, int32:f) never fails {
+
+    if (e.kind == ExprKind.ExprIntLiteral) { pass (raw fold_k_int_literal(r, id, e, scope, fuel, f)); }
+    if (e.kind == ExprKind.ExprFloatLiteral) { pass (raw fold_k_float_literal(r, id, e, scope, fuel, f)); }
+    if (e.kind == ExprKind.ExprBoolLiteral) { pass (raw fold_k_bool_literal(r, id, e, scope, fuel, f)); }
+    if (e.kind == ExprKind.ExprCharLiteral) { pass (raw fold_k_char_literal(r, id, e, scope, fuel, f)); }
+    if (e.kind == ExprKind.ExprStringLiteral) { pass (raw fold_k_string_literal(r, id, e, scope, fuel, f)); }
 
     // `comptime(expr)` IS A FORCING FORM, not a different evaluator. It says "this
     // has to fold", and what folds inside it is what folds anywhere.
-    if (e.kind == ExprKind.ExprComptimeExpr) {
-        pass (raw fold_expr(r, raw expr_operand(e), scope, f));
-    }
+    if (e.kind == ExprKind.ExprComptimeExpr) { pass (raw fold_k_comptime_expr(r, id, e, scope, fuel, f)); }
 
     if (e.kind == ExprKind.ExprUnaryExpr)  { pass (raw fold_unary(r, e, scope, f)); }
     if (e.kind == ExprKind.ExprBinaryExpr) { pass (raw fold_binary(r, e, scope, f)); }
@@ -1550,20 +1699,7 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
     // A CAST IS A CONVERSION AND KEEPS THE VALUE. `=>` between integer types is the
     // only folding form: a checked cast that would not hold is a question for the
     // cast rules (0.4.4), and this does not answer it.
-    if (e.kind == ExprKind.ExprCastExpr) {
-        ConstVal:v = raw fold_expr(r, raw expr_operand(e), scope, f);
-        if (!(raw cv_is_int(v))) { pass (raw cv_none()); }
-        int32:target = raw resolve_type(r, raw expr_cast_type(e), scope);
-        if (!(raw type_is_integer(r.types, target))) { pass (raw cv_none()); }
-        // THE VALUE, NOT ITS REPRESENTATION (DEF-80): a `uint64` past 2^63-1 is
-        // held as its bit pattern, which read as another type's value is a
-        // different number -- it folds only to a `uint64`; a value the target
-        // cannot hold declines (the cast rules refuse a narrowing `=>`).
-        if (!(raw fold_value_fits(v.num, raw fold_width(r, v.type_id), raw fold_width(r, target)))) {
-            pass (raw cv_none());
-        }
-        pass (raw cv_int(target, v.num));
-    }
+    if (e.kind == ExprKind.ExprCastExpr) { pass (raw fold_k_cast_expr(r, id, e, scope, fuel, f)); }
 
     // `int32 =>! oflags` FOLDS (D-230, 1.4.8) — the ONE unchecked cast that
     // does. A flag constant is a literal asserted into its family (the
@@ -1573,43 +1709,20 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
     // "a cast keeps the value" is false for a narrowing, and a folded 300
     // in an `int8` slot would be exactly the silent wrong constant the folder
     // exists to refuse.
-    if (e.kind == ExprKind.ExprUncheckedCastExpr) {
-        ConstVal:uv = raw fold_expr(r, raw expr_operand(e), scope, f);
-        if (!(raw cv_is_int(uv))) { pass (raw cv_none()); }
-        int32:utarget = raw resolve_type(r, raw expr_cast_type(e), scope);
-        if ((raw type_kind(r.types, utarget)) != (raw TY_FLAGS())) { pass (raw cv_none()); }
-        pass (raw cv_int(utarget, uv.num));
-    }
+    if (e.kind == ExprKind.ExprUncheckedCastExpr) { pass (raw fold_k_unchecked_cast_expr(r, id, e, scope, fuel, f)); }
 
-    if (e.kind == ExprKind.ExprBuiltinExpr) {
-        pass (raw fold_builtin(r, e, scope, f));
-    }
+    if (e.kind == ExprKind.ExprBuiltinExpr) { pass (raw fold_k_builtin_expr(r, id, e, scope, fuel, f)); }
 
-    if (e.kind == ExprKind.ExprIdentifierExpr) {
-        pass (raw fold_ident(r, e, scope, f));
-    }
+    if (e.kind == ExprKind.ExprIdentifierExpr) { pass (raw fold_k_identifier_expr(r, id, e, scope, fuel, f)); }
 
-    if (e.kind == ExprKind.ExprCallExpr) {
-        pass (raw fold_call(r, e, scope, f));
-    }
+    if (e.kind == ExprKind.ExprCallExpr) { pass (raw fold_k_call_expr(r, id, e, scope, fuel, f)); }
 
-    if (e.kind == ExprKind.ExprIterationVarExpr) {
-        if (!(r.fold_counting)) { pass (raw cv_none()); }
-        if (r.fold_subject_ty != 0i32) {
-            int32:sk = raw type_kind(r.types, r.fold_subject_ty);
-            if (sk == (raw TY_BOOL())) { pass (raw cv_bool(r.fold_subject_ty, r.fold_counter != 0i64)); }
-            if (sk == (raw TY_CHAR())) { pass (raw cv_char(r.fold_subject_ty, r.fold_counter)); }
-            pass (raw cv_int(r.fold_subject_ty, r.fold_counter));
-        }
-        pass (raw cv_int(raw tt_int(r.types, 64i32, true), r.fold_counter));
-    }
+    if (e.kind == ExprKind.ExprIterationVarExpr) { pass (raw fold_k_iteration_var_expr(r, id, e, scope, fuel, f)); }
 
     // `raw f(x)` AND `raw f(x)` ARE THE CALL WITH ITS ERROR HANDLING SPELLED.
     // A comptime function cannot fail — there is no runtime for it to fail into —
     // so folding through the wrapper is folding the call.
-    if (e.kind == ExprKind.ExprRawUnwrapExpr) {
-        pass (raw fold_expr(r, raw expr_operand(e), scope, f));
-    }
+    if (e.kind == ExprKind.ExprRawUnwrapExpr) { pass (raw fold_k_raw_unwrap_expr(r, id, e, scope, fuel, f)); }
     // `f(x) ?! E` AND `f(x) ?| d` ARE THE SAME CALL WITH ITS FAILURE ROUTED
     // ELSEWHERE (D-338, 1.6.1e step 3b; the library listener's `mc0309b` writes
     // `a.cmp(b) ?! E9`). An operand the evaluator folded is a call that
@@ -1617,22 +1730,14 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
     // names is never taken, and `?|`'s fallback is lazy at run time (it is
     // evaluated on the error path alone), so it is not evaluated here either.
     // Both spellings, because a rule written for one is owed to its twin.
-    if (e.kind == ExprKind.ExprEmphaticUnwrapExpr) {
-        pass (raw fold_expr(r, raw expr_lhs(e), scope, f));
-    }
-    if (e.kind == ExprKind.ExprSafeUnwrapExpr) {
-        pass (raw fold_expr(r, raw expr_lhs(e), scope, f));
-    }
+    if (e.kind == ExprKind.ExprEmphaticUnwrapExpr) { pass (raw fold_k_emphatic_unwrap_expr(r, id, e, scope, fuel, f)); }
+    if (e.kind == ExprKind.ExprSafeUnwrapExpr) { pass (raw fold_k_safe_unwrap_expr(r, id, e, scope, fuel, f)); }
 
     // `Enum.Variant` -- a payload-less variant, as a value (D-338).
-    if (e.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (raw fold_variant(r, e));
-    }
+    if (e.kind == ExprKind.ExprMemberAccessExpr) { pass (raw fold_k_member_access_expr(r, id, e, scope, fuel, f)); }
 
     // THE ONE METHOD CALL THAT FOLDS: `a.cmp(b)` on two constant strings (D-338).
-    if (e.kind == ExprKind.ExprMethodCallExpr) {
-        pass (raw fold_string_cmp(r, e, scope, f));
-    }
+    if (e.kind == ExprKind.ExprMethodCallExpr) { pass (raw fold_k_method_call_expr(r, id, e, scope, fuel, f)); }
 
     // A `pick` EXPRESSION, INSIDE A `comptime func:` CALL AND NOWHERE ELSE
     // (D-338). An arm is a block of STATEMENTS, and the evaluator runs
@@ -1650,14 +1755,7 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
     // carrying a pending return across every expression site would be a second
     // control channel whose one missed check hands a caller its callee's
     // value. Declined; the statement form returns from its arms.
-    if (e.kind == ExprKind.ExprPickExpr) {
-        if (r.fold_frames <= 0i32) { pass (raw cv_none()); }
-        FoldFlow:xf = raw fold_pick(r, raw pickx_selector(e), raw pickx_arm_start(e),
-                                    raw pickx_arm_count(e), e.span, scope, f);
-        if (xf.failed) { pass (raw cv_none()); }
-        if (!(xf.gave)) { pass (raw cv_none()); }
-        pass (xf.value);
-    }
+    if (e.kind == ExprKind.ExprPickExpr) { pass (raw fold_k_pick_expr(r, id, e, scope, fuel, f)); }
 
     // EVERYTHING ELSE DOES NOT FOLD, and that is not an error here. `fold_const`
     // answers "is this a constant"; the caller decides whether a non-constant is
@@ -1816,6 +1914,14 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
 
     ConstVal:rr = raw fold_expr(r, raw expr_rhs(e), scope, fuel);
     if (!(raw cv_folded(rr))) { pass (raw cv_none()); }
+    // THE OPERANDS ARE FOLDED IN THIS SMALL FRAME AND COMBINED IN THE NEXT (DEF-176, landing 142): `fold_expr` recurses
+    // through here once per level of a chain, and every operator family's locals sat in this frame too.
+    pass (raw fold_binary_values(r, e, scope, fuel, op, move(l), move(rr)));
+};
+
+// THE COMBINING HALF OF `fold_binary` (DEF-176, landing 142): both operands folded, moved in; the arms verbatim.
+func:fold_binary_values = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel, TokenKind:op,
+                                  move ConstVal:l, move ConstVal:rr) never fails {
 
     // TWO VALUES OF ONE ENUM ARE EQUAL OR THEY ARE NOT (D-338), where the run
     // time's `==` exists: an enum that carries no payload anywhere is its tag,

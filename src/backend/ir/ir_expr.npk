@@ -734,131 +734,841 @@ pub func:emit_opt_wrap = IrVal(ExprEmitter->:x, int32:opt_ty, IrVal:v,
 // bytes of allocator poison emitted as a type. A helper that derives a string
 // from a lent parameter hands back a body the caller owns.)
 
-func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
-    ExprNode:n = raw ast_expr(x.ast, id);
+// THE `ExprBoolLiteral` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_bool_literal = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    if (n.payload == 1i64) { pass (raw iv("i8", "1", 0i32)); }
+    pass (raw iv("i8", "0", 0i32));
+};
 
-    if (n.kind == ExprKind.ExprIntLiteral)    { pass (raw emit_int(x, id, n)); }
-    if (n.kind == ExprKind.ExprBoolLiteral) {
-        if (n.payload == 1i64) { pass (raw iv("i8", "1", 0i32)); }
-        pass (raw iv("i8", "0", 0i32));
+// THE `ExprCharLiteral` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_char_literal = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `i8` or `i32` BY THE LITERAL'S WIDTH (DEF-145): `i8 128577` was
+    // what LLVM truncated to `'A'`.
+    if ((raw char_lit_bits(n.width)) == 32i32) {
+        pass (raw iv("i32", int_to_string(n.payload), 0i32));
     }
-    if (n.kind == ExprKind.ExprCharLiteral) {
-        // `i8` or `i32` BY THE LITERAL'S WIDTH (DEF-145): `i8 128577` was
-        // what LLVM truncated to `'A'`.
-        if ((raw char_lit_bits(n.width)) == 32i32) {
-            pass (raw iv("i32", int_to_string(n.payload), 0i32));
-        }
-        if ((raw char_lit_bits(n.width)) == 16i32) {
-            pass (raw iv("i16", int_to_string(n.payload), 0i32));
-        }
-        pass (raw iv("i8", int_to_string(n.payload), 0i32));
+    if ((raw char_lit_bits(n.width)) == 16i32) {
+        pass (raw iv("i16", int_to_string(n.payload), 0i32));
     }
-    if (n.kind == ExprKind.ExprSentinelLiteral) {
-        // NIL is the zero-width value; its `i32 0` exists only to have something
-        // to hand `Result<NIL>` machinery. NULL is the pointer. ERR (0.9.5) is
-        // the `tbb` taint (D-008): the sentinel of whatever width the checker
-        // gave this position, from the one shared table.
-        // `NIL` WHERE AN `Optional<T>` IS EXPECTED IS THE EMPTY ONE (D-099,
-        // 1.0.7): the checker typed it AS the `Optional`, and it lowers to
-        // `zeroinitializer` — tag 0 and a ZEROED value half, never `undef`. The
-        // spec's IR comment writes `i32 undef` for the empty value; a defined
-        // byte is what the `fail` desugar already chooses for a `Result`'s
-        // value half (§11.2), and what a verifier can reason about.
-        if (n.payload == 0i64) {
-            int32:ntid = raw exprtypes_get(x.et, id);
-            if ((raw type_kind(x.fe.ctx.types, ntid)) == (raw TY_OPTIONAL())) {
-                LlType:nll = raw ll_type(x.fe.ctx, ntid);
-                if (!(raw ll_is_ok(nll))) {
-                    pass (raw iv_from_ll_at(x, nll, ntid, n.span));
-                }
-                pass (raw iv(move(nll.text), "zeroinitializer", ntid));
+    pass (raw iv("i8", int_to_string(n.payload), 0i32));
+};
+
+// THE `ExprSentinelLiteral` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_sentinel_literal = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // NIL is the zero-width value; its `i32 0` exists only to have something
+    // to hand `Result<NIL>` machinery. NULL is the pointer. ERR (0.9.5) is
+    // the `tbb` taint (D-008): the sentinel of whatever width the checker
+    // gave this position, from the one shared table.
+    // `NIL` WHERE AN `Optional<T>` IS EXPECTED IS THE EMPTY ONE (D-099,
+    // 1.0.7): the checker typed it AS the `Optional`, and it lowers to
+    // `zeroinitializer` — tag 0 and a ZEROED value half, never `undef`. The
+    // spec's IR comment writes `i32 undef` for the empty value; a defined
+    // byte is what the `fail` desugar already chooses for a `Result`'s
+    // value half (§11.2), and what a verifier can reason about.
+    if (n.payload == 0i64) {
+        int32:ntid = raw exprtypes_get(x.et, id);
+        if ((raw type_kind(x.fe.ctx.types, ntid)) == (raw TY_OPTIONAL())) {
+            LlType:nll = raw ll_type(x.fe.ctx, ntid);
+            if (!(raw ll_is_ok(nll))) {
+                pass (raw iv_from_ll_at(x, nll, ntid, n.span));
             }
-            pass (raw iv("i32", "0", 0i32));
+            pass (raw iv(move(nll.text), "zeroinitializer", ntid));
         }
-        if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
-        int32:stid = raw exprtypes_get(x.et, id);
-        // A tfp-element complex's ERR is the both-components pair (D-199).
-        if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_COMPLEX())) {
-            int32:sxe = raw type_elem(x.fe.ctx.types, stid);
-            LlType:sxl = raw ll_type(x.fe.ctx, sxe);
-            if (!(raw ll_is_ok(sxl))) { pass (raw iv_from_ll_at(x, sxl, sxe, n.span)); }
-            string:sxm = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, sxe));
-            if (sxm.len == 0i64) { pass (raw iv_broken(n.span)); }
-            LlType:sxll = raw ll_type(x.fe.ctx, stid);
-            if (!(raw ll_is_ok(sxll))) { pass (raw iv_from_ll_at(x, sxll, stid, n.span)); }
-            string:sxc = string_concat("{ ", sxl.text);
-            sxc = string_concat(sxc, " ");
-            sxc = string_concat(sxc, sxm);
-            sxc = string_concat(sxc, ", ");
-            sxc = string_concat(sxc, sxl.text);
-            sxc = string_concat(sxc, " ");
-            sxc = string_concat(sxc, sxm);
-            sxc = string_concat(sxc, " }");
-            pass (raw iv(move(sxll.text), move(sxc), stid));
-        }
-        // A frac's ERR is the canonical TRIPLE (D-198): {minN, minN, 0},
-        // spelled as the aggregate constant.
-        if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_FRAC())) {
-            int32:fsb = raw type_int_bits(x.fe.ctx.types, stid);
-            string:fsmn = raw tbb_min_decimal(fsb);
-            if (fsmn.len == 0i64) { pass (raw iv_broken(n.span)); }
-            string:fscll = raw frac_comp_ll(fsb);
-            LlType:fsll = raw ll_type(x.fe.ctx, stid);
-            if (!(raw ll_is_ok(fsll))) {
-                pass (raw iv_from_ll_at(x, fsll, stid, n.span));
-            }
-            string:fsc = string_concat("{ ", fscll);
-            fsc = string_concat(fsc, " ");
-            fsc = string_concat(fsc, fsmn);
-            fsc = string_concat(fsc, ", ");
-            fsc = string_concat(fsc, fscll);
-            fsc = string_concat(fsc, " ");
-            fsc = string_concat(fsc, fsmn);
-            fsc = string_concat(fsc, ", ");
-            fsc = string_concat(fsc, fscll);
-            fsc = string_concat(fsc, " 0 }");
-            pass (raw iv(move(fsll.text), move(fsc), stid));
-        }
-        int32:sbits2 = raw type_int_bits(x.fe.ctx.types, stid);
-        string:smn = raw tbb_min_decimal(sbits2);
-        if (smn.len == 0i64) { pass (raw iv_broken(n.span)); }
-        LlType:sll = raw ll_type(x.fe.ctx, stid);
-        if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, stid, n.span)); }
-        pass (raw iv(move(sll.text), move(smn), stid));
-    }
-    if (n.kind == ExprKind.ExprStringLiteral) { pass (raw emit_string(x, id, n)); }
-    if (n.kind == ExprKind.ExprIdentifierExpr){ pass (raw emit_ident(x, id, n)); }
-    if (n.kind == ExprKind.ExprUnaryExpr)     { pass (raw emit_unary(x, id, n)); }
-    if (n.kind == ExprKind.ExprBinaryExpr)    { pass (raw emit_binary(x, id, n)); }
-    if (n.kind == ExprKind.ExprCastExpr)      { pass (raw emit_cast(x, id, n)); }
-    if (n.kind == ExprKind.ExprUncheckedCastExpr) { pass (raw emit_cast(x, id, n)); }
-    if (n.kind == ExprKind.ExprCallExpr)      { pass (raw emit_call(x, id, n)); }
-    if (n.kind == ExprKind.ExprRawUnwrapExpr) { pass (raw emit_raw(x, id, n)); }
-    if (n.kind == ExprKind.ExprDropExpr) {
-        // The SPAWN form (D-058/D-177 stage E): `drop` of an `async` call
-        // links a child onto the join list instead of calling anything.
-        int32:spd = raw await_callee_decl(x, raw expr_operand(n));
-        if (spd != 0i32) {
-            if (raw decl_has(raw ast_decl(x.ast, DeclId{ index: spd }),
-                             raw DECL_THREAD())) {
-                pass (raw emit_thread_spawn(x, raw expr_operand(n), n, spd));
-            }
-            pass (raw emit_spawn(x, raw expr_operand(n), n, spd));
-        }
-        IrVal:v = raw emit_expr(x, raw expr_operand(n));
-        if (v.state != (raw LL_OK())) { pass v; }
         pass (raw iv("i32", "0", 0i32));
     }
+    if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
+    int32:stid = raw exprtypes_get(x.et, id);
+    // A tfp-element complex's ERR is the both-components pair (D-199).
+    if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_COMPLEX())) {
+        int32:sxe = raw type_elem(x.fe.ctx.types, stid);
+        LlType:sxl = raw ll_type(x.fe.ctx, sxe);
+        if (!(raw ll_is_ok(sxl))) { pass (raw iv_from_ll_at(x, sxl, sxe, n.span)); }
+        string:sxm = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, sxe));
+        if (sxm.len == 0i64) { pass (raw iv_broken(n.span)); }
+        LlType:sxll = raw ll_type(x.fe.ctx, stid);
+        if (!(raw ll_is_ok(sxll))) { pass (raw iv_from_ll_at(x, sxll, stid, n.span)); }
+        string:sxc = string_concat("{ ", sxl.text);
+        sxc = string_concat(sxc, " ");
+        sxc = string_concat(sxc, sxm);
+        sxc = string_concat(sxc, ", ");
+        sxc = string_concat(sxc, sxl.text);
+        sxc = string_concat(sxc, " ");
+        sxc = string_concat(sxc, sxm);
+        sxc = string_concat(sxc, " }");
+        pass (raw iv(move(sxll.text), move(sxc), stid));
+    }
+    // A frac's ERR is the canonical TRIPLE (D-198): {minN, minN, 0},
+    // spelled as the aggregate constant.
+    if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_FRAC())) {
+        int32:fsb = raw type_int_bits(x.fe.ctx.types, stid);
+        string:fsmn = raw tbb_min_decimal(fsb);
+        if (fsmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:fscll = raw frac_comp_ll(fsb);
+        LlType:fsll = raw ll_type(x.fe.ctx, stid);
+        if (!(raw ll_is_ok(fsll))) {
+            pass (raw iv_from_ll_at(x, fsll, stid, n.span));
+        }
+        string:fsc = string_concat("{ ", fscll);
+        fsc = string_concat(fsc, " ");
+        fsc = string_concat(fsc, fsmn);
+        fsc = string_concat(fsc, ", ");
+        fsc = string_concat(fsc, fscll);
+        fsc = string_concat(fsc, " ");
+        fsc = string_concat(fsc, fsmn);
+        fsc = string_concat(fsc, ", ");
+        fsc = string_concat(fsc, fscll);
+        fsc = string_concat(fsc, " 0 }");
+        pass (raw iv(move(fsll.text), move(fsc), stid));
+    }
+    int32:sbits2 = raw type_int_bits(x.fe.ctx.types, stid);
+    string:smn = raw tbb_min_decimal(sbits2);
+    if (smn.len == 0i64) { pass (raw iv_broken(n.span)); }
+    LlType:sll = raw ll_type(x.fe.ctx, stid);
+    if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, stid, n.span)); }
+    pass (raw iv(move(sll.text), move(smn), stid));
+};
 
-    if (n.kind == ExprKind.ExprRelayExpr)    { pass (raw emit_relay(x, id, n)); }
+// THE `ExprDropExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_drop_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // The SPAWN form (D-058/D-177 stage E): `drop` of an `async` call
+    // links a child onto the join list instead of calling anything.
+    int32:spd = raw await_callee_decl(x, raw expr_operand(n));
+    if (spd != 0i32) {
+        if (raw decl_has(raw ast_decl(x.ast, DeclId{ index: spd }),
+                         raw DECL_THREAD())) {
+            pass (raw emit_thread_spawn(x, raw expr_operand(n), n, spd));
+        }
+        pass (raw emit_spawn(x, raw expr_operand(n), n, spd));
+    }
+    IrVal:v = raw emit_expr(x, raw expr_operand(n));
+    if (v.state != (raw LL_OK())) { pass v; }
+    pass (raw iv("i32", "0", 0i32));
+};
 
+// THE `ExprMethodCallExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_method_call_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `Ev.Move(5i32)` parses as a method call; the receiver naming an enum
+    // DECLARATION is what distinguishes a constructor from a real method,
+    // exactly the test the checker makes.
+    int32:edecl = raw member_enum_decl(x, n);
+    if (edecl != 0i32) {
+        pass (raw emit_ctor(x, id, n.span, raw exprtypes_get(x.et, id),
+                  n.payload =>! int32, raw expr_list_start(n),
+                  raw expr_list_count(n)));
+    }
+    // THE ARENA'S OWN OPERATIONS (D-152) lower here; every other method
+    // call stays 1.0's.
+    int32:amrecv = raw exprtypes_get(x.et, raw expr_operand(n));
+    int32:amk = raw type_kind(x.fe.ctx.types, amrecv);
+    if (amk == (raw TY_ARENA())) {
+        pass (raw emit_arena_method(x, id, n, amrecv));
+    }
+    if (amk == (raw TY_SHARED_ARENA())) {
+        pass (raw emit_sarena_method(x, id, n, amrecv));
+    }
+    if (amk == (raw TY_ATOMIC())) {
+        pass (raw emit_atomic_method(x, id, n, amrecv));
+    }
+    // A TIER SCALAR'S OWN METHODS LOWER HERE; EVERY OTHER NAME IS AN IMPL'S
+    // (D-257, 1.5.2b step 2) and takes the ordinary method-call path below,
+    // through the callee the checker recorded. Until this step the four
+    // intercepts dispatched on the receiver's KIND alone -- `emit_tfp_method`
+    // lowered `self.to_string()` on a `tfp32` as `.floor()` and handed an
+    // `i32` to a site expecting a string envelope, which `llc` refused
+    // ("extractvalue operand must be aggregate type") the moment the
+    // prelude's generated `tfp32:Debug` body existed. The gate is the
+    // checker's own predicate (types.npk), so the two sides read one set.
+    string:amname = raw intern_get(x.interns, n.payload =>! int32);
+    if (amk == (raw TY_SIMD())) {
+        if (raw simd_own_method(amname)) {
+            pass (raw emit_simd_method(x, id, n, amrecv));
+        }
+    }
+    if (amk == (raw TY_TFP())) {
+        if (raw tfp_own_method(amname)) {
+            pass (raw emit_tfp_method(x, id, n, amrecv));
+        }
+    }
+    // `dim256` has exactly the tfp256 method set (D-196): same masked
+    // adds at 256 bits; the unit is the checker's alone.
+    if (amk == (raw TY_DIM())) {
+        if (raw tfp_own_method(amname)) {
+            pass (raw emit_tfp_method(x, id, n, amrecv));
+        }
+    }
+    // The ternary digit extraction (D-197).
+    if (amk == (raw TY_TERN())) {
+        if (raw tern_own_method(amname)) {
+            pass (raw emit_tern_method(x, id, n, amrecv));
+        }
+    }
+    // The complex methods (D-199).
+    if (amk == (raw TY_COMPLEX())) {
+        if (raw complex_own_method(amname)) {
+            pass (raw emit_complex_method(x, id, n, amrecv));
+        }
+    }
+    if (amk == (raw TY_CHANNEL())) {
+        pass (raw emit_channel_method(x, id, n, amrecv));
+    }
+    if (amk == (raw TY_CONDVAR())) {
+        pass (raw emit_condvar_method(x, id, n, amrecv));
+    }
+    if (amk == (raw TY_POINTER())) {
+        if ((raw type_kind(x.fe.ctx.types,
+                 raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_CONDVAR())) {
+            pass (raw emit_condvar_method(x, id, n, amrecv));
+        }
+    }
+    if (amk == (raw TY_POINTER())) {
+        if ((raw type_kind(x.fe.ctx.types,
+                 raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_ARENA())) {
+            pass (raw emit_arena_method(x, id, n, amrecv));
+        }
+        // A BORROWED SHARED ARENA (D-154/D-207, 1.4.4): the sanctioned
+        // spawn crossing arrives here, since a worker holds
+        // `shared_arena<T>->` and `.` peels one level like any access.
+        if ((raw type_kind(x.fe.ctx.types,
+                 raw type_elem(x.fe.ctx.types, amrecv)))
+                == (raw TY_SHARED_ARENA())) {
+            pass (raw emit_sarena_method(x, id, n, amrecv));
+        }
+    }
+    pass (raw emit_method_call(x, id, n));
+};
+
+// THE `ExprSafeUnwrapExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_safe_unwrap_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `r ?| default` (D-175): the value, or the default — LAZY, so the
+    // default only evaluates on the error path. Reached via `?|` now (D-175
+    // restored it as the fallback); a bare `?` is refused at parse.
+    IrVal:qv = raw emit_expr(x, raw expr_lhs(n));
+    if (!(raw iv_is_ok(qv))) { pass qv; }
+    int32:qtid = raw exprtypes_get(x.et, id);
+    // `r ?| NIL` — a NIL success has NO value channel (found by 1.1.1's
+    // `?| NIL` statements: this arm allocated a `void` slot, which LLVM
+    // refuses). Both arms produce nothing, so the whole expression is the
+    // evaluation of `r`; the error is deliberately ignored either way.
+    if (qtid == x.fe.ctx.types.t_nil) {
+        pass (raw iv_nil());
+    }
+    // THE RECORDED TYPE IS THE SLOT'S SHAPE. Until 1.4.2 a signature-less
+    // callee recorded none and the shape was derived from the operand's
+    // own LLVM text; every builtin has a signature now (D-201), so an
+    // unrecorded operand here is this compiler's defect.
+    if (qtid == 0i32) { pass (raw iv_broken(n.span)); }
+    LlType:qll = raw ll_type(x.fe.ctx, qtid);
+    if (!(raw ll_is_ok(qll))) { pass (raw iv_from_ll_at(x, qll, qtid, n.span)); }
+    string:qtext = string_concat(qll.text, "");
+    string:qslot = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, qslot, string_concat(qtext, ""));
+    string:qerr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(qerr, " = extractvalue ", qv.ll, " ",
+                      string_concat(qv.ref, ", 1")));
+    string:qbad = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(qbad, " = icmp ne i32 ",
+                      string_concat(qerr, ", 0")));
+    string:qd_l = raw irw_new_label(x.fe.w, "q.def");
+    string:qo_l = raw irw_new_label(x.fe.w, "q.ok");
+    string:qj_l = raw irw_new_label(x.fe.w, "q.done");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", qbad, ", label %", qd_l,
+                      string_concat(", label %", qo_l)));
+    drop irw_label(x.fe.w, qo_l);
+    string:qin = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(qin, " = extractvalue ", qv.ll, " ",
+                      string_concat(qv.ref, ", 0")));
+    drop irw_line(x.fe.w, raw cat5("store ", qtext, " ", qin,
+                      string_concat(", ptr ", qslot)));
+    drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
+    drop irw_label(x.fe.w, qd_l);
+    IrVal:qdv = raw emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(qdv))) { pass qdv; }
+    // THE DEFAULT IS A SLOT (1.0.6e), of the Result's `T`.
+    qdv = raw emit_fit(x, qtid, move(qdv), n.span);
+    if (!(raw iv_is_ok(qdv))) { pass qdv; }
+    // THE RESULT AND THE DEFAULT ARE TAKEN (D-246): whichever the slot
+    // holds is this expression's value, registered as its temporary.
+    drop temp_take(x, qv.ref);
+    drop temp_take(x, qdv.ref);
+    drop irw_line(x.fe.w, raw cat5("store ", qdv.ll, " ", qdv.ref,
+                      string_concat(", ptr ", qslot)));
+    drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
+    drop irw_label(x.fe.w, qj_l);
+    string:qout = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(qout, " = load ", qtext, ", ptr ",
+                      string_concat(qslot, "")));
+    pass (raw iv(move(qtext), move(qout), qtid));
+};
+
+// THE `ExprEmphaticUnwrapExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_emphatic_unwrap_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `r ?! code` (0.9.7, OP §187): the value, or `failsafe(code)` through
+    // the D-142 trap route — the CALLER'S code, not the Result's, because
+    // the operator is the site saying what this failure means here.
+    IrVal:ev2 = raw emit_expr(x, raw expr_lhs(n));
+    if (!(raw iv_is_ok(ev2))) { pass ev2; }
+    drop temp_take(x, ev2.ref);   // the Result is taken; its value is the temporary (D-246)
+    IrVal:ec2 = raw emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(ec2))) { pass ec2; }
+    // `Result<NIL>` is `{ i32 }` — the error rides slot 0 and there is no
+    // value channel (found by 1.1.1's `f() ?! c;` statements, the first to
+    // emit this arm over NIL: slot 1 does not exist, and the "value"
+    // extract would have read the error).
+    int32:etid0 = raw exprtypes_get(x.et, id);
+    if (etid0 == 0i32) { pass (raw iv_broken(n.span)); }
+    string:eslot = ", 1";
+    if (etid0 == x.fe.ctx.types.t_nil) { eslot = ", 0"; }
+    string:eerr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(eerr, " = extractvalue ", ev2.ll, " ",
+                      string_concat(ev2.ref, eslot)));
+    string:ebad = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(ebad, " = icmp ne i32 ",
+                      string_concat(eerr, ", 0")));
+    string:et_l = raw irw_new_label(x.fe.w, "eq.trap");
+    string:eo_l = raw irw_new_label(x.fe.w, "eq.ok");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", ebad, ", label %", et_l,
+                      string_concat(", label %", eo_l)));
+    drop irw_label(x.fe.w, et_l);
+    // `?!` EXTENDS the chain (D-179): the error carries its stamps from
+    // the callee; this site is one more hop, not a new origin. The raise
+    // is the PROGRAM's (D-285, 1.5.4e step 1): `npk_raise`, one call of
+    // `npk_trap` under a name the belts do not count as a guard's.
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
+                      int_to_string((raw x_site(x, n.span)) => int64),
+                      ")"));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ",
+                      ec2.ref, ")"));
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, eo_l);
+    if (etid0 == x.fe.ctx.types.t_nil) { pass (raw iv_nil()); }
+    string:ein = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ein, " = extractvalue ", ev2.ll, " ",
+                      string_concat(ev2.ref, ", 0")));
+    LlType:ell2 = raw ll_type(x.fe.ctx, etid0);
+    if (!(raw ll_is_ok(ell2))) { pass (raw iv_from_ll_at(x, ell2, etid0, n.span)); }
+    pass (raw iv(move(ell2.text), move(ein), etid0));
+};
+
+// THE `ExprEmphaticCoalesceExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_emphatic_coalesce_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `o ??! Ident` (D-360, 1.6.1e landing 120): the Optional's value, or a trap with
+    // the NAMED identity -- `?!`'s lowering at the other wrapper. The Optional lowers
+    // `{ i8, T }` (TYPE_REFERENCE §11.1): tag 0 is empty. The identity is an ORIGIN here,
+    // as `!!!`'s is (D-179): no callee stamped a chain for an absence, so this site opens
+    // one; and the raise is the PROGRAM's (`npk_raise`, D-285), never a guard's.
+    IrVal:ov = raw emit_expr(x, raw expr_lhs(n));
+    if (!(raw iv_is_ok(ov))) { pass ov; }
+    drop temp_take(x, ov.ref);   // the Optional is taken; its value is the temporary (D-246)
+    IrVal:oc = raw emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(oc))) { pass oc; }
+    int32:otid0 = raw exprtypes_get(x.et, id);
+    if (otid0 == 0i32) { pass (raw iv_broken(n.span)); }
+    string:otag = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(otag, " = extractvalue ", ov.ll, " ",
+                      string_concat(ov.ref, ", 0")));
+    string:oempty = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(oempty, " = icmp eq i8 ",
+                      string_concat(otag, ", 0")));
+    string:ot_l = raw irw_new_label(x.fe.w, "oq.trap");
+    string:oo_l = raw irw_new_label(x.fe.w, "oq.ok");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", oempty, ", label %", ot_l,
+                      string_concat(", label %", oo_l)));
+    drop irw_label(x.fe.w, ot_l);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, n.span)) => int64),
+                      ")"));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ",
+                      oc.ref, ")"));
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, oo_l);
+    string:oin = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(oin, " = extractvalue ", ov.ll, " ",
+                      string_concat(ov.ref, ", 1")));
+    LlType:oll = raw ll_type(x.fe.ctx, otid0);
+    if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid0, n.span)); }
+    pass (raw iv(move(oll.text), move(oin), otid0));
+};
+
+// THE `ExprTemplateLiteral` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_template_literal = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    pass (raw emit_template(x, id, n));
+};
+
+// THE `ExprComptimeExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_comptime_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // THE FOLDED CONSTANT (1.0.9c). `comptime(expr)` forced the fold at check
+    // time (`type_comptime`), so the value is a compile-time constant and is
+    // emitted as one — not as the runtime evaluation of `expr`, which is the
+    // point of writing `comptime` in a value position, and the only way
+    // `comptime(GLOBAL)` reaches a value before module-level bindings lower
+    // (1.0.9d). The checker proved it folds, so a miss here is a defect.
+    int32:ctid = raw exprtypes_get(x.et, id);
+    LlType:ct = raw node_ll(x, id);
+    if (ct.state != (raw LL_OK())) {
+        pass (raw iv_from_ll_at(x, ct, ctid, n.span));
+    }
+    ConstVal:cv = raw fold_const(x.tr, ExprId{ index: n.a }, x.scope);
+    if (!(raw cv_folded(cv))) { pass (raw iv_broken(n.span)); }
+    if (cv.kind == (raw CV_STRING())) {
+        string:sg = raw strtab_add(x.strs, string_concat(cv.text, ""));
+        string:slen = int_to_string(cv.text.len);
+        string:s1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(s1,
+            " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", sg, ", 0"));
+        string:s2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(s2,
+            " = insertvalue { ptr, i64, i64 } ", s1, ", i64 ",
+            string_concat(slen, ", 1")));
+// CAPACITY ZERO MEANS THE BODY IS NOT OURS (D-183). A literal's body is a
+// module constant, so a drop must never hand it to `npk_dalloc` — which
+// validates and traps, correctly. The capacity field is read by nothing
+// (not the runtime, not this emitter, not the seed), so it carries the
+// ownership bit: 0 here, `n` on a heap-built string, and the string drop
+// is `if cap != 0`. It says the same thing from the other side too — a
+// literal is not growable in place.
+        string:s3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(s3,
+            " = insertvalue { ptr, i64, i64 } ", s2, ", i64 0, 2"));
+        pass (raw iv("{ ptr, i64, i64 }", move(s3), ctid));
+    }
+    // A CARRIED FLOAT (DEF-179): the literal's text under its sign, the
+    // constant a literal of that text is (`emit_float_const`).
+    if ((cv.kind == (raw CV_REAL())) && ((raw type_kind(x.fe.ctx.types, ctid)) == (raw TY_FLOAT()))) {
+        pass (raw emit_float_const(x, cv.text, cv.num != 0i64, ctid, n.span));
+    }
+    // int, bool and char are one numeric constant at the node's width; a
+    // fixed-point value is its Q constant.
+    string:cst = raw const_scalar_text(x, cv, ctid);
+    if (cst.len == 0i64) { pass (raw iv_broken(n.span)); }
+    pass (raw iv(move(ct.text), move(cst), ctid));
+};
+
+// THE `ExprRangeExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_range_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    int32:rtid = raw exprtypes_get(x.et, id);
+    LlType:rll = raw ll_type(x.fe.ctx, rtid);
+    if (!(raw ll_is_ok(rll))) { pass (raw iv_from_ll_at(x, rll, rtid, n.span)); }
+    IrVal:rlo = raw emit_expr(x, raw expr_lhs(n));
+    if (!(raw iv_is_ok(rlo))) { pass rlo; }
+    IrVal:rhi = raw emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(rhi))) { pass rhi; }
+    string:incl = "0";
+    if (n.payload == 1i64) { incl = "1"; }
+    string:ra = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ra, " = insertvalue ", rll.text,
+                      " zeroinitializer, ", raw cat5(rlo.ll, " ", rlo.ref, ", 0", "")));
+    string:rb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rb, " = insertvalue ", rll.text, " ",
+                      raw cat5(ra, ", ", rhi.ll, " ",
+                          string_concat(rhi.ref, ", 1"))));
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = insertvalue ", rll.text, " ",
+                      raw cat4(rb, ", i8 ", incl, ", 2")));
+    pass (raw iv(move(rll.text), move(rc), rtid));
+};
+
+// THE `ExprSpreadExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_spread_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // A `..^` outside a variadic call's tail is refused by the CHECKER
+    // (position rules in check_args; type_args_only for signature-less
+    // callees) — and a spread IN the tail is consumed by the call
+    // emitters without ever dispatching this node. Reaching here is the
+    // frontend's promise broken, not a rung (1.1.13-close).
+    pass (raw iv_broken(n.span));
+};
+
+// THE `ExprTernaryExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_ternary_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    int32:ttid = raw exprtypes_get(x.et, id);
+    LlType:tll = raw ll_type(x.fe.ctx, ttid);
+    if (!(raw ll_is_ok(tll))) { pass (raw iv_from_ll_at(x, tll, ttid, n.span)); }
+    string:slot = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, slot, tll.text);
+    IrVal:tc = raw emit_cond(x, ExprId{ index: n.a });
+    if (!(raw iv_is_ok(tc))) { pass tc; }
+    string:then_l = raw irw_new_label(x.fe.w, "is.then");
+    string:else_l = raw irw_new_label(x.fe.w, "is.else");
+    string:done_l = raw irw_new_label(x.fe.w, "is.done");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", tc.ref, ", label %", then_l,
+                      string_concat(", label %", else_l)));
+    drop irw_label(x.fe.w, then_l);
+    IrVal:tv = raw emit_expr(x, ExprId{ index: n.b });
+    if (!(raw iv_is_ok(tv))) { pass tv; }
+    drop irw_line(x.fe.w, raw cat5("store ", tv.ll, " ", tv.ref,
+                      string_concat(", ptr ", slot)));
+    drop temp_take(x, tv.ref);   // the slot keeps it; the load is the temporary (D-246)
+    drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
+    drop irw_label(x.fe.w, else_l);
+    IrVal:ev = raw emit_expr(x, ExprId{ index: n.c });
+    if (!(raw iv_is_ok(ev))) { pass ev; }
+    drop irw_line(x.fe.w, raw cat5("store ", ev.ll, " ", ev.ref,
+                      string_concat(", ptr ", slot)));
+    drop temp_take(x, ev.ref);
+    drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
+    drop irw_label(x.fe.w, done_l);
+    string:out = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(out, " = load ", tll.text, ", ptr ",
+                      slot));
+    pass (raw iv(move(tll.text), move(out), ttid));
+};
+
+// THE `ExprPostfixExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_postfix_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `++`/`--` are struck (D-174): redundant with `x += 1`, hidden mutation
+    // in expression position, and no cycle ever owned them. The parser
+    // refuses them by name (`PARSE-010`), so this is a defensive confession.
+    pass (raw iv_broken(n.span));
+};
+
+// THE `ExprFloatLiteral` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_float_literal = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    int32:ftid = raw exprtypes_get(x.et, id);
+    // A `tfp` LITERAL IS ITS EXACT Q CONSTANT (D-195, 1.3.2): the same
+    // conversion the checker range-tested emits the `iN` decimal here —
+    // one implementation, no drift. Non-empty by the checker's proof.
+    bool:fq = ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_TFP()));
+    if ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_DIM())) { fq = true; }
+    if (fq) {
+        int32:qb = raw type_int_bits(x.fe.ctx.types, ftid);
+        string:qtx2 = raw intern_get(x.interns, n.payload =>! int32);
+        string:qv2 = raw tfp_q_decimal(qtx2, qb);
+        if (qv2.len == 0i64) { pass (raw iv_broken(n.span)); }
+        LlType:qll2 = raw ll_type(x.fe.ctx, ftid);
+        if (!(raw ll_is_ok(qll2))) { pass (raw iv_from_ll_at(x, qll2, ftid, n.span)); }
+        pass (raw iv(move(qll2.text), move(qv2), ftid));
+    }
+    pass (raw emit_float_const(x, raw intern_get(x.interns, n.payload =>! int32),
+                               false, ftid, n.span));
+};
+
+// THE `ExprPipeExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_pipe_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    pass (raw emit_pipe(x, id, n));
+};
+
+// THE `ExprDefaultsExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_defaults_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // The node a struck bare `?` and the word `defaults` build (D-175): the
+    // fallback is `?|`, which builds ExprSafeUnwrapExpr instead. The parser
+    // refuses `?`/`defaults` by name (`PARSE-011`), so this is a defensive
+    // confession -- a clean program never reaches it.
+    pass (raw iv_broken(n.span));
+};
+
+// THE `ExprIsErrExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_is_err_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    IrVal:ov = raw emit_expr(x, raw expr_operand(n));
+    if (!(raw iv_is_ok(ov))) { pass ov; }
+    // A tfp-element complex's look is the pair disjunction (D-199); the
+    // checker gated float elements away.
+    if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_COMPLEX())) {
+        int32:cxe = raw type_elem(x.fe.ctx.types, ov.type_id);
+        LlType:cxl = raw ll_type(x.fe.ctx, cxe);
+        if (!(raw ll_is_ok(cxl))) { pass (raw iv_from_ll_at(x, cxl, cxe, n.span)); }
+        string:cxm = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, cxe));
+        if (cxm.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:cxt2 = raw cplx_err_test(x, ov, cxl.text, cxm);
+        string:cxz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(cxz, " = zext i1 ",
+                          string_concat(cxt2, " to i8")));
+        pass (raw iv("i8", move(cxz), 0i32));
+    }
+    // A frac's look is the aggregate disjunction (D-198): whole or num
+    // at the sentinel, or denom 0.
+    if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_FRAC())) {
+        int32:zb = raw type_int_bits(x.fe.ctx.types, ov.type_id);
+        string:zmn = raw tbb_min_decimal(zb);
+        if (zmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:ze = raw frac_err_test(x, ov, raw frac_comp_ll(zb), zmn);
+        string:zz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(zz, " = zext i1 ",
+                          string_concat(ze, " to i8")));
+        pass (raw iv("i8", move(zz), 0i32));
+    }
+    int32:obits = raw type_int_bits(x.fe.ctx.types, ov.type_id);
+    string:mn = raw tbb_min_decimal(obits);
+    if (mn.len == 0i64) { pass (raw iv_broken(n.span)); }
+    string:ec = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ec, " = icmp eq ", ov.ll, " ",
+                      raw cat3(ov.ref, ", ", mn)));
+    string:ez = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(ez, " = zext i1 ",
+                      string_concat(ec, " to i8")));
+    pass (raw iv("i8", move(ez), 0i32));
+};
+
+// THE `ExprVectorCtorExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_vector_ctor_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // `complex(re, im)` shares the ctor node (D-199, 1.3.6): two
+    // insertvalues build the pair — the checker proved the count and
+    // the element types.
+    if (((n.payload =>! int32) =>! TokenKind) == TokenKind.KwComplex) {
+        int32:cxt = raw exprtypes_get(x.et, id);
+        LlType:cxll = raw ll_type(x.fe.ctx, cxt);
+        if (!(raw ll_is_ok(cxll))) { pass (raw iv_from_ll_at(x, cxll, cxt, n.span)); }
+        int32:cxstart = raw expr_list_start(n);
+        IrVal:rev = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, cxstart, 0i32) });
+        if (!(raw iv_is_ok(rev))) { pass rev; }
+        IrVal:imv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, cxstart, 1i32) });
+        if (!(raw iv_is_ok(imv))) { pass imv; }
+        string:cu0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cu0, " = insertvalue ", cxll.text,
+                          " zeroinitializer, ",
+                          string_concat(raw cat3(rev.ll, " ", rev.ref), ", 0")));
+        string:cu1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cu1, " = insertvalue ", cxll.text, " ",
+                          string_concat(
+                              raw cat5(cu0, ", ", imv.ll, " ", imv.ref), ", 1")));
+        pass (raw iv(move(cxll.text), move(cu1), cxt));
+    }
+    // `simd(a, …)` (D-194, 1.3.1): N `insertelement`s build the value
+    // over `poison`; ONE argument is the splat — the same inserts, one
+    // operand emitted once. The checker proved the count and each
+    // element's fit, and rung "1.3 (G-3)" retired here when it did.
+    int32:vt = raw exprtypes_get(x.et, id);
+    LlType:vll = raw ll_type(x.fe.ctx, vt);
+    if (!(raw ll_is_ok(vll))) { pass (raw iv_from_ll_at(x, vll, vt, n.span)); }
+    int32:velem = raw type_elem(x.fe.ctx.types, vt);
+    LlType:vel = raw ll_type(x.fe.ctx, velem);
+    if (!(raw ll_is_ok(vel))) { pass (raw iv_from_ll_at(x, vel, velem, n.span)); }
+    int32:vlanes = (raw tt_get(x.fe.ctx.types, vt)).b;
+    int32:vcnt = raw expr_list_count(n);
+    int32:vstart = raw expr_list_start(n);
+    string:vcur = "zeroinitializer";
+    string:vone = "";
+    if (vcnt == 1i32) {
+        IrVal:vsv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, 0i32) });
+        if (!(raw iv_is_ok(vsv))) { pass vsv; }
+        vsv = raw emit_fit(x, velem, move(vsv), n.span);
+        if (!(raw iv_is_ok(vsv))) { pass vsv; }
+        vone = string_concat(vsv.ref, "");
+    }
+    for (int32:vi in 0i32...vlanes) {
+        string:vref = string_concat(vone, "");
+        if (vcnt != 1i32) {
+            IrVal:vav = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, vi) });
+            if (!(raw iv_is_ok(vav))) { pass vav; }
+            vav = raw emit_fit(x, velem, move(vav), n.span);
+            if (!(raw iv_is_ok(vav))) { pass vav; }
+            vref = string_concat(vav.ref, "");
+        }
+        string:vtp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(vtp, " = insertelement ", vll.text, " ",
+                          raw cat5(vcur, ", ", vel.text, " ",
+                              raw cat4(vref, ", i64 ",
+                                  int_to_string(vi => int64), ""))));
+        vcur = move(vtp);
+    }
+    pass (raw iv(string_concat(vll.text, ""), move(vcur), vt));
+};
+
+// THE `ExprMoveExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_move_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // THE VALUE IS THE OPERAND; THE TRANSFER IS THE FLAG for a whole
+    // binding (D-183, 1.2.3) and THE VACANT VALUE for a field or an
+    // element (1.5.1b step 5) -- `emit_move_out` in ir_stmt.npk says why.
+    pass (raw emit_move_out(x, raw expr_operand(n)));
+};
+
+// THE `ExprIterationVarExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_iteration_var_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    if (x.fe.rule_slot.len > 0i64) {
+        string:rv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(rv, " = load ", x.fe.rule_ll, ", ptr ",
+                                         x.fe.rule_slot));
+        pass (raw iv(string_concat(x.fe.rule_ll, ""), move(rv),
+                     raw exprtypes_get(x.et, id)));
+    }
+    string:islot = raw fnem_iter_slot(x.fe);
+    if (islot.len == 0i64) { pass (raw iv_broken(n.span)); }
+    string:iv2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(iv2, " = load i64, ptr ", islot, "", ""));
+    pass (raw iv("i64", move(iv2), raw exprtypes_get(x.et, id)));
+};
+
+// THE `ExprPickExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_pick_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    int32:ptid = raw exprtypes_get(x.et, id);
+    LlType:pll2 = raw ll_type(x.fe.ctx, ptid);
+    if (!(raw ll_is_ok(pll2))) { pass (raw iv_from_ll_at(x, pll2, ptid, n.span)); }
+    ExprId:psel = ExprId{ index: n.a };
+    int32:pstid = raw exprtypes_get(x.et, psel);
+    // A LENDING PICK'S VIEWS BIND FROM THE SELECTOR'S ADDRESS (D-266,
+    // 1.5.2h): the statement form's rule, for this spelling.
+    SelAddr:psa = raw pick_selector_address(x, psel, pstid, n.b, n.c);
+    if (!(raw iv_is_ok(psa.val))) { pass (move(psa.val)); }
+    IrVal:psv = raw iv(string_concat(psa.val.ll, ""), string_concat(psa.val.ref, ""), psa.val.type_id);
+    string:pdisc = string_concat(psv.ref, "");
+    string:pdll = string_concat(psv.ll, "");
+    if ((raw type_kind(x.fe.ctx.types, pstid)) == (raw TY_ENUM())) {
+        if (raw enum_has_payload(x.ast, x.fe.ctx.types, pstid)) {
+            string:ptag = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ptag, " = extractvalue ",
+                              psv.ll, " ", string_concat(psv.ref, ", 0")));
+            pdisc = move(ptag);
+            pdll = "i32";
+        }
+    }
+    string:pslot = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, pslot, pll2.text);
+    // A pick EXPRESSION consumes when its selector is `move(v)`, exactly
+    // as the statement form does (D-216).
+    bool:pcons = false;
+    if (!(raw expr_is_none(raw expr_lhs(n)))) {
+        if ((raw ast_expr(x.ast, raw expr_lhs(n))).kind == ExprKind.ExprMoveExpr) {
+            pcons = true;
+        }
+    }
+    // A CONSUMING PICK TAKES ITS SELECTOR (D-216, D-246) -- in THIS
+    // spelling too (DEF-141, 1.6.1d step 3): the arms own the payloads
+    // they bind and drop them at their exits, so the selector is no
+    // longer the statement's temporary. The statement form said so since
+    // D-246; the expression form left the moved-in value on the
+    // temporaries list, and the statement's end dropped the whole enum
+    // after an arm had already taken (or `give move(x)`n away) its
+    // payload -- a double free, exit 95 on every compiler before this one.
+    if (pcons) { drop temp_take(x, psv.ref); }
+    IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, move(pdll),
+                    n.b, n.c, string_concat(pslot, ""), string_concat(pll2.text, ""), ptid,
+                    pcons, string_concat(psa.addr, ""));
+    if (!(raw iv_is_ok(pc2))) { pass pc2; }
+    string:pout = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(pout, " = load ", pll2.text, ", ptr ",
+                      string_concat(pslot, "")));
+    pass (raw iv(move(pll2.text), move(pout), ptid));
+};
+
+// THE `ExprAwaitExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_await_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    pass (raw emit_await(x, id, n));
+};
+
+// THE `ExprDynCastExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_dyn_cast_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // A `dyn` CAST IS THE FIT TO THE `dyn` TARGET (D-158/D-159): the same
+    // fat-pointer build a `dyn`-typed slot triggers implicitly, only written
+    // out. `emit_fit` picks between building from a concrete value and
+    // widening an existing `dyn`, so the explicit `=>` and the implicit
+    // coercion lower through one path and cannot drift apart.
+    IrVal:dv = raw emit_expr(x, raw expr_operand(n));
+    if (!(raw iv_is_ok(dv))) { pass dv; }
+    pass (raw emit_fit(x, raw exprtypes_get(x.et, id), move(dv), n.span));
+};
+
+// THE `ExprResultValueExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_result_value_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    if (x.fe.result_ref.len == 0i64) { pass (raw iv_broken(n.span)); }
+    pass (raw iv(string_concat(x.fe.result_ll, ""), string_concat(x.fe.result_ref, ""),
+                 x.fe.ret_type));
+};
+
+// THE `ExprOldExpr` ARM OF `emit_expr_kind`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-176, landing 142): allocas are
+// hoisted to the entry block (D-173), so every arm's locals sat in the one frame every level of an expression's
+// recursion paid for -- a non-folding chain of 54 operands exhausted the compiler's stack. The dispatch calls it.
+func:emit_k_old_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    for (int64:oi in 0i64...x.fe.old_ids.count) {
+        if (x.fe.old_ids[oi] != id.index) { continue; }
+        int32:otid = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, id));
+        LlType:oll = raw ll_type(x.fe.ctx, otid);
+        if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid, n.span)); }
+        string:ov = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ov, " = load ", oll.text, ", ptr ",
+                                         x.fe.old_slots[oi]));
+        pass (raw iv(string_concat(oll.text, ""), move(ov), otid));
+    }
+    pass (raw iv_broken(n.span));
+};
+
+// THE DISPATCH IS TWO FRAMES, AND A BINARY NODE TAKES THE SMALL ONE (DEF-176, landing 142): a frame holds a slot for
+// every call's result of every arm (D-173), and a chain `x + x + … + x` recurses through this function once a level,
+// so a binary node goes to `emit_binary` from a frame that holds two calls, and every other kind to
+// `emit_expr_kind_rest`, whose arms are what this function's were.
+func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprBinaryExpr) { pass (raw emit_binary(x, id, n)); }
+    // THE OTHER KINDS A CHAIN NESTS THROUGH (DEF-176): a unary, a call and its unwrap, a method call, a member, an index,
+    // a cast, a dereference -- each here, so no ordinary chain pays for the whole arm table at every level.
+    if (n.kind == ExprKind.ExprUnaryExpr) { pass (raw emit_unary(x, id, n)); }
+    if (n.kind == ExprKind.ExprCallExpr) { pass (raw emit_call(x, id, n)); }
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) { pass (raw emit_raw(x, id, n)); }
+    if (n.kind == ExprKind.ExprRelayExpr) { pass (raw emit_relay(x, id, n)); }
     if (n.kind == ExprKind.ExprMemberAccessExpr) { pass (raw emit_member(x, id, n)); }
-    if (n.kind == ExprKind.ExprIndexExpr)        { pass (raw emit_index(x, id, n)); }
+    if (n.kind == ExprKind.ExprIndexExpr) { pass (raw emit_index(x, id, n)); }
+    if (n.kind == ExprKind.ExprCastExpr) { pass (raw emit_cast(x, id, n)); }
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) { pass (raw emit_cast(x, id, n)); }
+    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (raw emit_k_method_call_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprDerefExpr) { pass (raw emit_deref(x, id, n)); }
+    if (n.kind == ExprKind.ExprSafeUnwrapExpr) { pass (raw emit_k_safe_unwrap_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) { pass (raw emit_k_emphatic_unwrap_expr(x, id, n)); }
+    pass (raw emit_expr_kind_rest(x, id, n));
+};
+
+func:emit_expr_kind_rest = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+
+    if (n.kind == ExprKind.ExprIntLiteral)    { pass (raw emit_int(x, id, n)); }
+    if (n.kind == ExprKind.ExprBoolLiteral) { pass (raw emit_k_bool_literal(x, id, n)); }
+    if (n.kind == ExprKind.ExprCharLiteral) { pass (raw emit_k_char_literal(x, id, n)); }
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass (raw emit_k_sentinel_literal(x, id, n)); }
+    if (n.kind == ExprKind.ExprStringLiteral) { pass (raw emit_string(x, id, n)); }
+    if (n.kind == ExprKind.ExprIdentifierExpr){ pass (raw emit_ident(x, id, n)); }
+    if (n.kind == ExprKind.ExprBinaryExpr)    { pass (raw emit_binary(x, id, n)); }
+    if (n.kind == ExprKind.ExprDropExpr) { pass (raw emit_k_drop_expr(x, id, n)); }
+
+
     // `@` and `$$` both lower to the address; that a borrow is SECOND-CLASS is
     // the escape analysis's guarantee (0.5), not a difference in representation.
     if (n.kind == ExprKind.ExprAddressOfExpr)    { pass (raw emit_addr_op(x, id, n)); }
     if (n.kind == ExprKind.ExprBorrowExpr)       { pass (raw emit_addr_op(x, id, n)); }
-    if (n.kind == ExprKind.ExprDerefExpr)        { pass (raw emit_deref(x, id, n)); }
     if (n.kind == ExprKind.ExprStructLiteralExpr){ pass (raw emit_struct_lit(x, id, n)); }
     if (n.kind == ExprKind.ExprArrayLiteralExpr) { pass (raw emit_array_lit(x, id, n)); }
     if (n.kind == ExprKind.ExprResultLiteralExpr){ pass (raw emit_result_lit(x, id, n)); }
@@ -870,294 +1580,11 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (raw emit_string(x, id, n)); }
 
     // --- classified refusals, one rung each ---------------------------------
-    if (n.kind == ExprKind.ExprMethodCallExpr) {
-        // `Ev.Move(5i32)` parses as a method call; the receiver naming an enum
-        // DECLARATION is what distinguishes a constructor from a real method,
-        // exactly the test the checker makes.
-        int32:edecl = raw member_enum_decl(x, n);
-        if (edecl != 0i32) {
-            pass (raw emit_ctor(x, id, n.span, raw exprtypes_get(x.et, id),
-                      n.payload =>! int32, raw expr_list_start(n),
-                      raw expr_list_count(n)));
-        }
-        // THE ARENA'S OWN OPERATIONS (D-152) lower here; every other method
-        // call stays 1.0's.
-        int32:amrecv = raw exprtypes_get(x.et, raw expr_operand(n));
-        int32:amk = raw type_kind(x.fe.ctx.types, amrecv);
-        if (amk == (raw TY_ARENA())) {
-            pass (raw emit_arena_method(x, id, n, amrecv));
-        }
-        if (amk == (raw TY_SHARED_ARENA())) {
-            pass (raw emit_sarena_method(x, id, n, amrecv));
-        }
-        if (amk == (raw TY_ATOMIC())) {
-            pass (raw emit_atomic_method(x, id, n, amrecv));
-        }
-        // A TIER SCALAR'S OWN METHODS LOWER HERE; EVERY OTHER NAME IS AN IMPL'S
-        // (D-257, 1.5.2b step 2) and takes the ordinary method-call path below,
-        // through the callee the checker recorded. Until this step the four
-        // intercepts dispatched on the receiver's KIND alone -- `emit_tfp_method`
-        // lowered `self.to_string()` on a `tfp32` as `.floor()` and handed an
-        // `i32` to a site expecting a string envelope, which `llc` refused
-        // ("extractvalue operand must be aggregate type") the moment the
-        // prelude's generated `tfp32:Debug` body existed. The gate is the
-        // checker's own predicate (types.npk), so the two sides read one set.
-        string:amname = raw intern_get(x.interns, n.payload =>! int32);
-        if (amk == (raw TY_SIMD())) {
-            if (raw simd_own_method(amname)) {
-                pass (raw emit_simd_method(x, id, n, amrecv));
-            }
-        }
-        if (amk == (raw TY_TFP())) {
-            if (raw tfp_own_method(amname)) {
-                pass (raw emit_tfp_method(x, id, n, amrecv));
-            }
-        }
-        // `dim256` has exactly the tfp256 method set (D-196): same masked
-        // adds at 256 bits; the unit is the checker's alone.
-        if (amk == (raw TY_DIM())) {
-            if (raw tfp_own_method(amname)) {
-                pass (raw emit_tfp_method(x, id, n, amrecv));
-            }
-        }
-        // The ternary digit extraction (D-197).
-        if (amk == (raw TY_TERN())) {
-            if (raw tern_own_method(amname)) {
-                pass (raw emit_tern_method(x, id, n, amrecv));
-            }
-        }
-        // The complex methods (D-199).
-        if (amk == (raw TY_COMPLEX())) {
-            if (raw complex_own_method(amname)) {
-                pass (raw emit_complex_method(x, id, n, amrecv));
-            }
-        }
-        if (amk == (raw TY_CHANNEL())) {
-            pass (raw emit_channel_method(x, id, n, amrecv));
-        }
-        if (amk == (raw TY_CONDVAR())) {
-            pass (raw emit_condvar_method(x, id, n, amrecv));
-        }
-        if (amk == (raw TY_POINTER())) {
-            if ((raw type_kind(x.fe.ctx.types,
-                     raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_CONDVAR())) {
-                pass (raw emit_condvar_method(x, id, n, amrecv));
-            }
-        }
-        if (amk == (raw TY_POINTER())) {
-            if ((raw type_kind(x.fe.ctx.types,
-                     raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_ARENA())) {
-                pass (raw emit_arena_method(x, id, n, amrecv));
-            }
-            // A BORROWED SHARED ARENA (D-154/D-207, 1.4.4): the sanctioned
-            // spawn crossing arrives here, since a worker holds
-            // `shared_arena<T>->` and `.` peels one level like any access.
-            if ((raw type_kind(x.fe.ctx.types,
-                     raw type_elem(x.fe.ctx.types, amrecv)))
-                    == (raw TY_SHARED_ARENA())) {
-                pass (raw emit_sarena_method(x, id, n, amrecv));
-            }
-        }
-        pass (raw emit_method_call(x, id, n));
-    }
     if (n.kind == ExprKind.ExprSafeNavExpr)     { pass (raw emit_safe_nav(x, id, n)); }
     if (n.kind == ExprKind.ExprNullCoalesceExpr) { pass (raw emit_coalesce(x, id, n)); }
-    if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
-        // `r ?| default` (D-175): the value, or the default — LAZY, so the
-        // default only evaluates on the error path. Reached via `?|` now (D-175
-        // restored it as the fallback); a bare `?` is refused at parse.
-        IrVal:qv = raw emit_expr(x, raw expr_lhs(n));
-        if (!(raw iv_is_ok(qv))) { pass qv; }
-        int32:qtid = raw exprtypes_get(x.et, id);
-        // `r ?| NIL` — a NIL success has NO value channel (found by 1.1.1's
-        // `?| NIL` statements: this arm allocated a `void` slot, which LLVM
-        // refuses). Both arms produce nothing, so the whole expression is the
-        // evaluation of `r`; the error is deliberately ignored either way.
-        if (qtid == x.fe.ctx.types.t_nil) {
-            pass (raw iv_nil());
-        }
-        // THE RECORDED TYPE IS THE SLOT'S SHAPE. Until 1.4.2 a signature-less
-        // callee recorded none and the shape was derived from the operand's
-        // own LLVM text; every builtin has a signature now (D-201), so an
-        // unrecorded operand here is this compiler's defect.
-        if (qtid == 0i32) { pass (raw iv_broken(n.span)); }
-        LlType:qll = raw ll_type(x.fe.ctx, qtid);
-        if (!(raw ll_is_ok(qll))) { pass (raw iv_from_ll_at(x, qll, qtid, n.span)); }
-        string:qtext = string_concat(qll.text, "");
-        string:qslot = raw irw_temp(x.fe.w);
-        drop irw_alloca(x.fe.w, qslot, string_concat(qtext, ""));
-        string:qerr = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(qerr, " = extractvalue ", qv.ll, " ",
-                          string_concat(qv.ref, ", 1")));
-        string:qbad = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(qbad, " = icmp ne i32 ",
-                          string_concat(qerr, ", 0")));
-        string:qd_l = raw irw_new_label(x.fe.w, "q.def");
-        string:qo_l = raw irw_new_label(x.fe.w, "q.ok");
-        string:qj_l = raw irw_new_label(x.fe.w, "q.done");
-        drop irw_line(x.fe.w, raw cat5("br i1 ", qbad, ", label %", qd_l,
-                          string_concat(", label %", qo_l)));
-        drop irw_label(x.fe.w, qo_l);
-        string:qin = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(qin, " = extractvalue ", qv.ll, " ",
-                          string_concat(qv.ref, ", 0")));
-        drop irw_line(x.fe.w, raw cat5("store ", qtext, " ", qin,
-                          string_concat(", ptr ", qslot)));
-        drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
-        drop irw_label(x.fe.w, qd_l);
-        IrVal:qdv = raw emit_expr(x, raw expr_rhs(n));
-        if (!(raw iv_is_ok(qdv))) { pass qdv; }
-        // THE DEFAULT IS A SLOT (1.0.6e), of the Result's `T`.
-        qdv = raw emit_fit(x, qtid, move(qdv), n.span);
-        if (!(raw iv_is_ok(qdv))) { pass qdv; }
-        // THE RESULT AND THE DEFAULT ARE TAKEN (D-246): whichever the slot
-        // holds is this expression's value, registered as its temporary.
-        drop temp_take(x, qv.ref);
-        drop temp_take(x, qdv.ref);
-        drop irw_line(x.fe.w, raw cat5("store ", qdv.ll, " ", qdv.ref,
-                          string_concat(", ptr ", qslot)));
-        drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
-        drop irw_label(x.fe.w, qj_l);
-        string:qout = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(qout, " = load ", qtext, ", ptr ",
-                          string_concat(qslot, "")));
-        pass (raw iv(move(qtext), move(qout), qtid));
-    }
-    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
-        // `r ?! code` (0.9.7, OP §187): the value, or `failsafe(code)` through
-        // the D-142 trap route — the CALLER'S code, not the Result's, because
-        // the operator is the site saying what this failure means here.
-        IrVal:ev2 = raw emit_expr(x, raw expr_lhs(n));
-        if (!(raw iv_is_ok(ev2))) { pass ev2; }
-        drop temp_take(x, ev2.ref);   // the Result is taken; its value is the temporary (D-246)
-        IrVal:ec2 = raw emit_expr(x, raw expr_rhs(n));
-        if (!(raw iv_is_ok(ec2))) { pass ec2; }
-        // `Result<NIL>` is `{ i32 }` — the error rides slot 0 and there is no
-        // value channel (found by 1.1.1's `f() ?! c;` statements, the first to
-        // emit this arm over NIL: slot 1 does not exist, and the "value"
-        // extract would have read the error).
-        int32:etid0 = raw exprtypes_get(x.et, id);
-        if (etid0 == 0i32) { pass (raw iv_broken(n.span)); }
-        string:eslot = ", 1";
-        if (etid0 == x.fe.ctx.types.t_nil) { eslot = ", 0"; }
-        string:eerr = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(eerr, " = extractvalue ", ev2.ll, " ",
-                          string_concat(ev2.ref, eslot)));
-        string:ebad = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(ebad, " = icmp ne i32 ",
-                          string_concat(eerr, ", 0")));
-        string:et_l = raw irw_new_label(x.fe.w, "eq.trap");
-        string:eo_l = raw irw_new_label(x.fe.w, "eq.ok");
-        drop irw_line(x.fe.w, raw cat5("br i1 ", ebad, ", label %", et_l,
-                          string_concat(", label %", eo_l)));
-        drop irw_label(x.fe.w, et_l);
-        // `?!` EXTENDS the chain (D-179): the error carries its stamps from
-        // the callee; this site is one more hop, not a new origin. The raise
-        // is the PROGRAM's (D-285, 1.5.4e step 1): `npk_raise`, one call of
-        // `npk_trap` under a name the belts do not count as a guard's.
-        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
-                          int_to_string((raw x_site(x, n.span)) => int64),
-                          ")"));
-        drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ",
-                          ec2.ref, ")"));
-        drop irw_line(x.fe.w, "unreachable");
-        drop irw_label(x.fe.w, eo_l);
-        if (etid0 == x.fe.ctx.types.t_nil) { pass (raw iv_nil()); }
-        string:ein = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(ein, " = extractvalue ", ev2.ll, " ",
-                          string_concat(ev2.ref, ", 0")));
-        LlType:ell2 = raw ll_type(x.fe.ctx, etid0);
-        if (!(raw ll_is_ok(ell2))) { pass (raw iv_from_ll_at(x, ell2, etid0, n.span)); }
-        pass (raw iv(move(ell2.text), move(ein), etid0));
-    }
-    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) {
-        // `o ??! Ident` (D-360, 1.6.1e landing 120): the Optional's value, or a trap with
-        // the NAMED identity -- `?!`'s lowering at the other wrapper. The Optional lowers
-        // `{ i8, T }` (TYPE_REFERENCE §11.1): tag 0 is empty. The identity is an ORIGIN here,
-        // as `!!!`'s is (D-179): no callee stamped a chain for an absence, so this site opens
-        // one; and the raise is the PROGRAM's (`npk_raise`, D-285), never a guard's.
-        IrVal:ov = raw emit_expr(x, raw expr_lhs(n));
-        if (!(raw iv_is_ok(ov))) { pass ov; }
-        drop temp_take(x, ov.ref);   // the Optional is taken; its value is the temporary (D-246)
-        IrVal:oc = raw emit_expr(x, raw expr_rhs(n));
-        if (!(raw iv_is_ok(oc))) { pass oc; }
-        int32:otid0 = raw exprtypes_get(x.et, id);
-        if (otid0 == 0i32) { pass (raw iv_broken(n.span)); }
-        string:otag = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(otag, " = extractvalue ", ov.ll, " ",
-                          string_concat(ov.ref, ", 0")));
-        string:oempty = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(oempty, " = icmp eq i8 ",
-                          string_concat(otag, ", 0")));
-        string:ot_l = raw irw_new_label(x.fe.w, "oq.trap");
-        string:oo_l = raw irw_new_label(x.fe.w, "oq.ok");
-        drop irw_line(x.fe.w, raw cat5("br i1 ", oempty, ", label %", ot_l,
-                          string_concat(", label %", oo_l)));
-        drop irw_label(x.fe.w, ot_l);
-        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          int_to_string((raw x_site(x, n.span)) => int64),
-                          ")"));
-        drop irw_line(x.fe.w, raw cat3("call void @npk_raise(i32 ",
-                          oc.ref, ")"));
-        drop irw_line(x.fe.w, "unreachable");
-        drop irw_label(x.fe.w, oo_l);
-        string:oin = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(oin, " = extractvalue ", ov.ll, " ",
-                          string_concat(ov.ref, ", 1")));
-        LlType:oll = raw ll_type(x.fe.ctx, otid0);
-        if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid0, n.span)); }
-        pass (raw iv(move(oll.text), move(oin), otid0));
-    }
-    if (n.kind == ExprKind.ExprTemplateLiteral) {
-        pass (raw emit_template(x, id, n));
-    }
-    if (n.kind == ExprKind.ExprComptimeExpr) {
-        // THE FOLDED CONSTANT (1.0.9c). `comptime(expr)` forced the fold at check
-        // time (`type_comptime`), so the value is a compile-time constant and is
-        // emitted as one — not as the runtime evaluation of `expr`, which is the
-        // point of writing `comptime` in a value position, and the only way
-        // `comptime(GLOBAL)` reaches a value before module-level bindings lower
-        // (1.0.9d). The checker proved it folds, so a miss here is a defect.
-        int32:ctid = raw exprtypes_get(x.et, id);
-        LlType:ct = raw node_ll(x, id);
-        if (ct.state != (raw LL_OK())) {
-            pass (raw iv_from_ll_at(x, ct, ctid, n.span));
-        }
-        ConstVal:cv = raw fold_const(x.tr, ExprId{ index: n.a }, x.scope);
-        if (!(raw cv_folded(cv))) { pass (raw iv_broken(n.span)); }
-        if (cv.kind == (raw CV_STRING())) {
-            string:sg = raw strtab_add(x.strs, string_concat(cv.text, ""));
-            string:slen = int_to_string(cv.text.len);
-            string:s1 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat4(s1,
-                " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", sg, ", 0"));
-            string:s2 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(s2,
-                " = insertvalue { ptr, i64, i64 } ", s1, ", i64 ",
-                string_concat(slen, ", 1")));
-    // CAPACITY ZERO MEANS THE BODY IS NOT OURS (D-183). A literal's body is a
-    // module constant, so a drop must never hand it to `npk_dalloc` — which
-    // validates and traps, correctly. The capacity field is read by nothing
-    // (not the runtime, not this emitter, not the seed), so it carries the
-    // ownership bit: 0 here, `n` on a heap-built string, and the string drop
-    // is `if cap != 0`. It says the same thing from the other side too — a
-    // literal is not growable in place.
-            string:s3 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat4(s3,
-                " = insertvalue { ptr, i64, i64 } ", s2, ", i64 0, 2"));
-            pass (raw iv("{ ptr, i64, i64 }", move(s3), ctid));
-        }
-        // A CARRIED FLOAT (DEF-179): the literal's text under its sign, the
-        // constant a literal of that text is (`emit_float_const`).
-        if ((cv.kind == (raw CV_REAL())) && ((raw type_kind(x.fe.ctx.types, ctid)) == (raw TY_FLOAT()))) {
-            pass (raw emit_float_const(x, cv.text, cv.num != 0i64, ctid, n.span));
-        }
-        // int, bool and char are one numeric constant at the node's width; a
-        // fixed-point value is its Q constant.
-        string:cst = raw const_scalar_text(x, cv, ctid);
-        if (cst.len == 0i64) { pass (raw iv_broken(n.span)); }
-        pass (raw iv(move(ct.text), move(cst), ctid));
-    }
+    if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) { pass (raw emit_k_emphatic_coalesce_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprTemplateLiteral) { pass (raw emit_k_template_literal(x, id, n)); }
+    if (n.kind == ExprKind.ExprComptimeExpr) { pass (raw emit_k_comptime_expr(x, id, n)); }
     // A range VALUE (0.9.6, D-093; D-329 at 1.6.1d step 2): `{ T, T, i8 }` --
     // `lo` and `hi` AS WRITTEN and the spelling in the third word (1 for the
     // inclusive `..`, 0 for `...`). D-145 normalised the pair half-open here
@@ -1165,337 +1592,51 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     // maximum into an empty one: `for (uint8:i in 0u8..255u8)` ran zero times
     // (the library listener's F-012, DEF-128). The consumer that reads a range
     // -- the `for` -- reads the flag.
-    if (n.kind == ExprKind.ExprRangeExpr) {
-        int32:rtid = raw exprtypes_get(x.et, id);
-        LlType:rll = raw ll_type(x.fe.ctx, rtid);
-        if (!(raw ll_is_ok(rll))) { pass (raw iv_from_ll_at(x, rll, rtid, n.span)); }
-        IrVal:rlo = raw emit_expr(x, raw expr_lhs(n));
-        if (!(raw iv_is_ok(rlo))) { pass rlo; }
-        IrVal:rhi = raw emit_expr(x, raw expr_rhs(n));
-        if (!(raw iv_is_ok(rhi))) { pass rhi; }
-        string:incl = "0";
-        if (n.payload == 1i64) { incl = "1"; }
-        string:ra = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(ra, " = insertvalue ", rll.text,
-                          " zeroinitializer, ", raw cat5(rlo.ll, " ", rlo.ref, ", 0", "")));
-        string:rb = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(rb, " = insertvalue ", rll.text, " ",
-                          raw cat5(ra, ", ", rhi.ll, " ",
-                              string_concat(rhi.ref, ", 1"))));
-        string:rc = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(rc, " = insertvalue ", rll.text, " ",
-                          raw cat4(rb, ", i8 ", incl, ", 2")));
-        pass (raw iv(move(rll.text), move(rc), rtid));
-    }
-    if (n.kind == ExprKind.ExprSpreadExpr) {
-        // A `..^` outside a variadic call's tail is refused by the CHECKER
-        // (position rules in check_args; type_args_only for signature-less
-        // callees) — and a spread IN the tail is consumed by the call
-        // emitters without ever dispatching this node. Reaching here is the
-        // frontend's promise broken, not a rung (1.1.13-close).
-        pass (raw iv_broken(n.span));
-    }
+    if (n.kind == ExprKind.ExprRangeExpr) { pass (raw emit_k_range_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprSpreadExpr) { pass (raw emit_k_spread_expr(x, id, n)); }
     // `is (cond) : a : b` — LAZY (0.9.6, D-145): only the taken arm runs.
     // Lowered with branches through a slot, NEVER `select` — select evaluates
     // both arms, and `is (b != 0) : a/b : 0` must not divide by the zero it
     // just tested for.
-    if (n.kind == ExprKind.ExprTernaryExpr) {
-        int32:ttid = raw exprtypes_get(x.et, id);
-        LlType:tll = raw ll_type(x.fe.ctx, ttid);
-        if (!(raw ll_is_ok(tll))) { pass (raw iv_from_ll_at(x, tll, ttid, n.span)); }
-        string:slot = raw irw_temp(x.fe.w);
-        drop irw_alloca(x.fe.w, slot, tll.text);
-        IrVal:tc = raw emit_cond(x, ExprId{ index: n.a });
-        if (!(raw iv_is_ok(tc))) { pass tc; }
-        string:then_l = raw irw_new_label(x.fe.w, "is.then");
-        string:else_l = raw irw_new_label(x.fe.w, "is.else");
-        string:done_l = raw irw_new_label(x.fe.w, "is.done");
-        drop irw_line(x.fe.w, raw cat5("br i1 ", tc.ref, ", label %", then_l,
-                          string_concat(", label %", else_l)));
-        drop irw_label(x.fe.w, then_l);
-        IrVal:tv = raw emit_expr(x, ExprId{ index: n.b });
-        if (!(raw iv_is_ok(tv))) { pass tv; }
-        drop irw_line(x.fe.w, raw cat5("store ", tv.ll, " ", tv.ref,
-                          string_concat(", ptr ", slot)));
-        drop temp_take(x, tv.ref);   // the slot keeps it; the load is the temporary (D-246)
-        drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
-        drop irw_label(x.fe.w, else_l);
-        IrVal:ev = raw emit_expr(x, ExprId{ index: n.c });
-        if (!(raw iv_is_ok(ev))) { pass ev; }
-        drop irw_line(x.fe.w, raw cat5("store ", ev.ll, " ", ev.ref,
-                          string_concat(", ptr ", slot)));
-        drop temp_take(x, ev.ref);
-        drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
-        drop irw_label(x.fe.w, done_l);
-        string:out = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(out, " = load ", tll.text, ", ptr ",
-                          slot));
-        pass (raw iv(move(tll.text), move(out), ttid));
-    }
-    if (n.kind == ExprKind.ExprPostfixExpr) {
-        // `++`/`--` are struck (D-174): redundant with `x += 1`, hidden mutation
-        // in expression position, and no cycle ever owned them. The parser
-        // refuses them by name (`PARSE-010`), so this is a defensive confession.
-        pass (raw iv_broken(n.span));
-    }
+    if (n.kind == ExprKind.ExprTernaryExpr) { pass (raw emit_k_ternary_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprPostfixExpr) { pass (raw emit_k_postfix_expr(x, id, n)); }
     // A float literal (0.9.4). The lexer kept the TEXT, and the constant is the
     // nearest value of the literal's type to the number written, in ONE
     // rounding (`emit_float_const`; DEF-203).
-    if (n.kind == ExprKind.ExprFloatLiteral) {
-        int32:ftid = raw exprtypes_get(x.et, id);
-        // A `tfp` LITERAL IS ITS EXACT Q CONSTANT (D-195, 1.3.2): the same
-        // conversion the checker range-tested emits the `iN` decimal here —
-        // one implementation, no drift. Non-empty by the checker's proof.
-        bool:fq = ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_TFP()));
-        if ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_DIM())) { fq = true; }
-        if (fq) {
-            int32:qb = raw type_int_bits(x.fe.ctx.types, ftid);
-            string:qtx2 = raw intern_get(x.interns, n.payload =>! int32);
-            string:qv2 = raw tfp_q_decimal(qtx2, qb);
-            if (qv2.len == 0i64) { pass (raw iv_broken(n.span)); }
-            LlType:qll2 = raw ll_type(x.fe.ctx, ftid);
-            if (!(raw ll_is_ok(qll2))) { pass (raw iv_from_ll_at(x, qll2, ftid, n.span)); }
-            pass (raw iv(move(qll2.text), move(qv2), ftid));
-        }
-        pass (raw emit_float_const(x, raw intern_get(x.interns, n.payload =>! int32),
-                                   false, ftid, n.span));
-    }
+    if (n.kind == ExprKind.ExprFloatLiteral) { pass (raw emit_k_float_literal(x, id, n)); }
     // The four below were found by `check_kinds_lowered_or_refused`'s first run
     // (0.9.1): each fell through to iv_broken — an INTERNAL-defect report for
     // what is really an unlowered language feature. The honest answer is a
     // rung, exactly like their neighbours above.
-    if (n.kind == ExprKind.ExprPipeExpr) {
-        pass (raw emit_pipe(x, id, n));
-    }
-    if (n.kind == ExprKind.ExprDefaultsExpr) {
-        // The node a struck bare `?` and the word `defaults` build (D-175): the
-        // fallback is `?|`, which builds ExprSafeUnwrapExpr instead. The parser
-        // refuses `?`/`defaults` by name (`PARSE-011`), so this is a defensive
-        // confession -- a clean program never reaches it.
-        pass (raw iv_broken(n.span));
-    }
+    if (n.kind == ExprKind.ExprPipeExpr) { pass (raw emit_k_pipe_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprDefaultsExpr) { pass (raw emit_k_defaults_expr(x, id, n)); }
     // `is_err(x)` — THE test that does not trap (D-008 §5): ERR flows through
     // data and stops at branches, and this is the sanctioned way to look.
-    if (n.kind == ExprKind.ExprIsErrExpr) {
-        IrVal:ov = raw emit_expr(x, raw expr_operand(n));
-        if (!(raw iv_is_ok(ov))) { pass ov; }
-        // A tfp-element complex's look is the pair disjunction (D-199); the
-        // checker gated float elements away.
-        if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_COMPLEX())) {
-            int32:cxe = raw type_elem(x.fe.ctx.types, ov.type_id);
-            LlType:cxl = raw ll_type(x.fe.ctx, cxe);
-            if (!(raw ll_is_ok(cxl))) { pass (raw iv_from_ll_at(x, cxl, cxe, n.span)); }
-            string:cxm = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, cxe));
-            if (cxm.len == 0i64) { pass (raw iv_broken(n.span)); }
-            string:cxt2 = raw cplx_err_test(x, ov, cxl.text, cxm);
-            string:cxz = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat3(cxz, " = zext i1 ",
-                              string_concat(cxt2, " to i8")));
-            pass (raw iv("i8", move(cxz), 0i32));
-        }
-        // A frac's look is the aggregate disjunction (D-198): whole or num
-        // at the sentinel, or denom 0.
-        if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_FRAC())) {
-            int32:zb = raw type_int_bits(x.fe.ctx.types, ov.type_id);
-            string:zmn = raw tbb_min_decimal(zb);
-            if (zmn.len == 0i64) { pass (raw iv_broken(n.span)); }
-            string:ze = raw frac_err_test(x, ov, raw frac_comp_ll(zb), zmn);
-            string:zz = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat3(zz, " = zext i1 ",
-                              string_concat(ze, " to i8")));
-            pass (raw iv("i8", move(zz), 0i32));
-        }
-        int32:obits = raw type_int_bits(x.fe.ctx.types, ov.type_id);
-        string:mn = raw tbb_min_decimal(obits);
-        if (mn.len == 0i64) { pass (raw iv_broken(n.span)); }
-        string:ec = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(ec, " = icmp eq ", ov.ll, " ",
-                          raw cat3(ov.ref, ", ", mn)));
-        string:ez = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(ez, " = zext i1 ",
-                          string_concat(ec, " to i8")));
-        pass (raw iv("i8", move(ez), 0i32));
-    }
-    if (n.kind == ExprKind.ExprVectorCtorExpr) {
-        // `complex(re, im)` shares the ctor node (D-199, 1.3.6): two
-        // insertvalues build the pair — the checker proved the count and
-        // the element types.
-        if (((n.payload =>! int32) =>! TokenKind) == TokenKind.KwComplex) {
-            int32:cxt = raw exprtypes_get(x.et, id);
-            LlType:cxll = raw ll_type(x.fe.ctx, cxt);
-            if (!(raw ll_is_ok(cxll))) { pass (raw iv_from_ll_at(x, cxll, cxt, n.span)); }
-            int32:cxstart = raw expr_list_start(n);
-            IrVal:rev = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, cxstart, 0i32) });
-            if (!(raw iv_is_ok(rev))) { pass rev; }
-            IrVal:imv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, cxstart, 1i32) });
-            if (!(raw iv_is_ok(imv))) { pass imv; }
-            string:cu0 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(cu0, " = insertvalue ", cxll.text,
-                              " zeroinitializer, ",
-                              string_concat(raw cat3(rev.ll, " ", rev.ref), ", 0")));
-            string:cu1 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(cu1, " = insertvalue ", cxll.text, " ",
-                              string_concat(
-                                  raw cat5(cu0, ", ", imv.ll, " ", imv.ref), ", 1")));
-            pass (raw iv(move(cxll.text), move(cu1), cxt));
-        }
-        // `simd(a, …)` (D-194, 1.3.1): N `insertelement`s build the value
-        // over `poison`; ONE argument is the splat — the same inserts, one
-        // operand emitted once. The checker proved the count and each
-        // element's fit, and rung "1.3 (G-3)" retired here when it did.
-        int32:vt = raw exprtypes_get(x.et, id);
-        LlType:vll = raw ll_type(x.fe.ctx, vt);
-        if (!(raw ll_is_ok(vll))) { pass (raw iv_from_ll_at(x, vll, vt, n.span)); }
-        int32:velem = raw type_elem(x.fe.ctx.types, vt);
-        LlType:vel = raw ll_type(x.fe.ctx, velem);
-        if (!(raw ll_is_ok(vel))) { pass (raw iv_from_ll_at(x, vel, velem, n.span)); }
-        int32:vlanes = (raw tt_get(x.fe.ctx.types, vt)).b;
-        int32:vcnt = raw expr_list_count(n);
-        int32:vstart = raw expr_list_start(n);
-        string:vcur = "zeroinitializer";
-        string:vone = "";
-        if (vcnt == 1i32) {
-            IrVal:vsv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, 0i32) });
-            if (!(raw iv_is_ok(vsv))) { pass vsv; }
-            vsv = raw emit_fit(x, velem, move(vsv), n.span);
-            if (!(raw iv_is_ok(vsv))) { pass vsv; }
-            vone = string_concat(vsv.ref, "");
-        }
-        for (int32:vi in 0i32...vlanes) {
-            string:vref = string_concat(vone, "");
-            if (vcnt != 1i32) {
-                IrVal:vav = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, vi) });
-                if (!(raw iv_is_ok(vav))) { pass vav; }
-                vav = raw emit_fit(x, velem, move(vav), n.span);
-                if (!(raw iv_is_ok(vav))) { pass vav; }
-                vref = string_concat(vav.ref, "");
-            }
-            string:vtp = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(vtp, " = insertelement ", vll.text, " ",
-                              raw cat5(vcur, ", ", vel.text, " ",
-                                  raw cat4(vref, ", i64 ",
-                                      int_to_string(vi => int64), ""))));
-            vcur = move(vtp);
-        }
-        pass (raw iv(string_concat(vll.text, ""), move(vcur), vt));
-    }
+    if (n.kind == ExprKind.ExprIsErrExpr) { pass (raw emit_k_is_err_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprVectorCtorExpr) { pass (raw emit_k_vector_ctor_expr(x, id, n)); }
     // `move(place)` LOWERS: it yields the place's value, and what it does to
     // the SOURCE is static — the 0.5 move analysis already blessed and tracked
     // the transfer, so there is nothing for the IR to add (D-065). Found by
     // the same first run, miscategorized as iv_broken.
-    if (n.kind == ExprKind.ExprMoveExpr) {
-        // THE VALUE IS THE OPERAND; THE TRANSFER IS THE FLAG for a whole
-        // binding (D-183, 1.2.3) and THE VACANT VALUE for a field or an
-        // element (1.5.1b step 5) -- `emit_move_out` in ir_stmt.npk says why.
-        pass (raw emit_move_out(x, raw expr_operand(n)));
-    }
+    if (n.kind == ExprKind.ExprMoveExpr) { pass (raw emit_k_move_expr(x, id, n)); }
     // `$` — the innermost counted loop's counter (0.9.7), i64 like its slot;
     // or, inside a generated `Rules` predicate, THE SUBJECT (1.5.2 step 2,
     // D-251): its slot, of its type. The two constructs cannot nest (V-5), so
     // a non-empty `rule_slot` decides.
-    if (n.kind == ExprKind.ExprIterationVarExpr) {
-        if (x.fe.rule_slot.len > 0i64) {
-            string:rv = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(rv, " = load ", x.fe.rule_ll, ", ptr ",
-                                             x.fe.rule_slot));
-            pass (raw iv(string_concat(x.fe.rule_ll, ""), move(rv),
-                         raw exprtypes_get(x.et, id)));
-        }
-        string:islot = raw fnem_iter_slot(x.fe);
-        if (islot.len == 0i64) { pass (raw iv_broken(n.span)); }
-        string:iv2 = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(iv2, " = load i64, ptr ", islot, "", ""));
-        pass (raw iv("i64", move(iv2), raw exprtypes_get(x.et, id)));
-    }
+    if (n.kind == ExprKind.ExprIterationVarExpr) { pass (raw emit_k_iteration_var_expr(x, id, n)); }
     // A pick EXPRESSION (0.9.7, D-059): the chain dispatch with a value slot
     // its arms `give` into.
-    if (n.kind == ExprKind.ExprPickExpr) {
-        int32:ptid = raw exprtypes_get(x.et, id);
-        LlType:pll2 = raw ll_type(x.fe.ctx, ptid);
-        if (!(raw ll_is_ok(pll2))) { pass (raw iv_from_ll_at(x, pll2, ptid, n.span)); }
-        ExprId:psel = ExprId{ index: n.a };
-        int32:pstid = raw exprtypes_get(x.et, psel);
-        // A LENDING PICK'S VIEWS BIND FROM THE SELECTOR'S ADDRESS (D-266,
-        // 1.5.2h): the statement form's rule, for this spelling.
-        SelAddr:psa = raw pick_selector_address(x, psel, pstid, n.b, n.c);
-        if (!(raw iv_is_ok(psa.val))) { pass (move(psa.val)); }
-        IrVal:psv = raw iv(string_concat(psa.val.ll, ""), string_concat(psa.val.ref, ""), psa.val.type_id);
-        string:pdisc = string_concat(psv.ref, "");
-        string:pdll = string_concat(psv.ll, "");
-        if ((raw type_kind(x.fe.ctx.types, pstid)) == (raw TY_ENUM())) {
-            if (raw enum_has_payload(x.ast, x.fe.ctx.types, pstid)) {
-                string:ptag = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(ptag, " = extractvalue ",
-                                  psv.ll, " ", string_concat(psv.ref, ", 0")));
-                pdisc = move(ptag);
-                pdll = "i32";
-            }
-        }
-        string:pslot = raw irw_temp(x.fe.w);
-        drop irw_alloca(x.fe.w, pslot, pll2.text);
-        // A pick EXPRESSION consumes when its selector is `move(v)`, exactly
-        // as the statement form does (D-216).
-        bool:pcons = false;
-        if (!(raw expr_is_none(raw expr_lhs(n)))) {
-            if ((raw ast_expr(x.ast, raw expr_lhs(n))).kind == ExprKind.ExprMoveExpr) {
-                pcons = true;
-            }
-        }
-        // A CONSUMING PICK TAKES ITS SELECTOR (D-216, D-246) -- in THIS
-        // spelling too (DEF-141, 1.6.1d step 3): the arms own the payloads
-        // they bind and drop them at their exits, so the selector is no
-        // longer the statement's temporary. The statement form said so since
-        // D-246; the expression form left the moved-in value on the
-        // temporaries list, and the statement's end dropped the whole enum
-        // after an arm had already taken (or `give move(x)`n away) its
-        // payload -- a double free, exit 95 on every compiler before this one.
-        if (pcons) { drop temp_take(x, psv.ref); }
-        IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, move(pdll),
-                        n.b, n.c, string_concat(pslot, ""), string_concat(pll2.text, ""), ptid,
-                        pcons, string_concat(psa.addr, ""));
-        if (!(raw iv_is_ok(pc2))) { pass pc2; }
-        string:pout = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(pout, " = load ", pll2.text, ", ptr ",
-                          string_concat(pslot, "")));
-        pass (raw iv(move(pll2.text), move(pout), ptid));
-    }
-    if (n.kind == ExprKind.ExprAwaitExpr) {
-        pass (raw emit_await(x, id, n));
-    }
-    if (n.kind == ExprKind.ExprDynCastExpr) {
-        // A `dyn` CAST IS THE FIT TO THE `dyn` TARGET (D-158/D-159): the same
-        // fat-pointer build a `dyn`-typed slot triggers implicitly, only written
-        // out. `emit_fit` picks between building from a concrete value and
-        // widening an existing `dyn`, so the explicit `=>` and the implicit
-        // coercion lower through one path and cannot drift apart.
-        IrVal:dv = raw emit_expr(x, raw expr_operand(n));
-        if (!(raw iv_is_ok(dv))) { pass dv; }
-        pass (raw emit_fit(x, raw exprtypes_get(x.et, id), move(dv), n.span));
-    }
+    if (n.kind == ExprKind.ExprPickExpr) { pass (raw emit_k_pick_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprAwaitExpr) { pass (raw emit_k_await_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprDynCastExpr) { pass (raw emit_k_dyn_cast_expr(x, id, n)); }
     // THE VERIFICATION SURFACE'S TWO EXPRESSION KINDS (1.5.1, D-221; lowered
     // at 1.5.3 step 1): `result` is the value being passed, in register while
     // the seam evaluates the `ensures` (`emit_ensures_at`, ir_stmt.npk), of
     // the function's success type; `old(e)` reads the snapshot the entry
     // stored (`emit_function`), found by the node. A `result` outside a seam
     // or an `old` the entry did not list is a defect, never a rung.
-    if (n.kind == ExprKind.ExprResultValueExpr) {
-        if (x.fe.result_ref.len == 0i64) { pass (raw iv_broken(n.span)); }
-        pass (raw iv(string_concat(x.fe.result_ll, ""), string_concat(x.fe.result_ref, ""),
-                     x.fe.ret_type));
-    }
-    if (n.kind == ExprKind.ExprOldExpr) {
-        for (int64:oi in 0i64...x.fe.old_ids.count) {
-            if (x.fe.old_ids[oi] != id.index) { continue; }
-            int32:otid = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, id));
-            LlType:oll = raw ll_type(x.fe.ctx, otid);
-            if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid, n.span)); }
-            string:ov = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(ov, " = load ", oll.text, ", ptr ",
-                                             x.fe.old_slots[oi]));
-            pass (raw iv(string_concat(oll.text, ""), move(ov), otid));
-        }
-        pass (raw iv_broken(n.span));
-    }
+    if (n.kind == ExprKind.ExprResultValueExpr) { pass (raw emit_k_result_value_expr(x, id, n)); }
+    if (n.kind == ExprKind.ExprOldExpr) { pass (raw emit_k_old_expr(x, id, n)); }
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a
     // node it does not know turns that into a lie.
@@ -3338,6 +3479,15 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (lhs.state != (raw LL_OK())) { pass lhs; }
     IrVal:rhs = raw emit_expr(x, raw expr_rhs(n));
     if (rhs.state != (raw LL_OK())) { pass rhs; }
+    // THE OPERANDS ARE EVALUATED IN THIS SMALL FRAME AND COMBINED IN THE NEXT (DEF-176, landing 142): `emit_expr`
+    // recurses through here once per level of a chain, and the combining arms' locals -- every family's -- sat in
+    // this frame too (547 allocas), paid at every level of `x + x + … + x`.
+    pass (raw emit_binary_values(x, id, n, op, move(lhs), move(rhs)));
+};
+
+// THE COMBINING HALF OF `emit_binary` (DEF-176, landing 142): both operands evaluated, moved in; the arms verbatim.
+func:emit_binary_values = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, TokenKind:op,
+                                move IrVal:lhs, move IrVal:rhs) never fails {
 
     // `simd<T, N>` (D-194, 1.3.1): elementwise on the vector registers, one
     // arm for the whole family — placed before the non-scalar compare belt

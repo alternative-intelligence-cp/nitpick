@@ -2311,11 +2311,17 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   call's receiver (`c.get()` on a `wild Cell->` hands the body a plain `Self->`).
 - NOT valid as a general "no value" — that's `NIL`
 - IR: `ptr null`
-- A store through or a load from a `NULL` pointer (a `wild` one, since landing 119)
-  is a hardware fault that reaches `failsafe` as `MachineFault` (D-307) at BOTH legs:
-  every emitted function carries LLVM's `null_pointer_is_valid` attribute (DEF-251,
-  1.6.1e landing 115), so the optimiser never reads the dereference as undefined and
-  never folds the body that holds it.
+- A store through a `NULL` pointer (a `wild` one, since landing 119), or a load from one
+  whose value the program USES, is a hardware fault that reaches `failsafe` as
+  `MachineFault` (D-307) at BOTH legs: every emitted function carries LLVM's
+  `null_pointer_is_valid` attribute (DEF-251, 1.6.1e landing 115), so the optimiser never
+  reads the dereference as undefined and never folds the body that holds it. A load
+  whose value NOTHING uses is no read at -O2 -- dead-code elimination removes an unused
+  load from valid memory, as it may of any load, and no attribute keeps one -- and faults
+  at -O0: the legs' one permitted disagreement, narrow to an unused load through a `wild`
+  `NULL` pointer (D-364, 2026-10-22; DEF-273, the fuzzer's F-051; the fuzz corpus records
+  F-051's programs as that disagreement). This bullet said "a store through or a load
+  from a `NULL` pointer … at BOTH legs" from landing 115 until landing 142.
 
 ### `void` — C Interop Only
 

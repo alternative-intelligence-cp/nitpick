@@ -811,7 +811,7 @@ SLOT_SITE_PAIRS = {
     "type_array_literal":  {"emit_array_lit"},
     "type_result_literal": {"emit_result_lit"},
     "arm_give_type":       {"emit_give"},
-    "type_safe_unwrap":    {"emit_expr_kind"},      # `r ? d` lowers inline
+    "type_safe_unwrap":    {"emit_k_safe_unwrap_expr"},   # `r ?| d`: its arm's own frame since DEF-176 (landing 142)
     "type_arena_method":   {"emit_arena_method"},
     "type_call":           {"call_builtin"},        # `mutex(initial)` fits the element (D-056, 1.1.11)
     # The channel `send` value, built into the element's slot on the frame
@@ -824,9 +824,9 @@ SLOT_SITE_PAIRS = {
     "want_handle_of":      {"emit_arena_method"},
     "type_null_coalesce":  {"emit_coalesce"},          # lowered at 1.0.7
     # The simd constructor's components, fit to the element before their
-    # insertelement (D-194, 1.3.1) -- an inline arm, so the enclosing
-    # emitter function is the partner, the type_safe_unwrap precedent.
-    "type_vector_ctor":    {"emit_expr_kind"},
+    # insertelement (D-194, 1.3.1) -- the arm's own function since DEF-176
+    # (landing 142), when `emit_expr_kind`'s arms moved into frames of their own.
+    "type_vector_ctor":    {"emit_k_vector_ctor_expr"},
     # A BUILTIN'S ARGUMENT SLOTS (D-201, 1.4.2). `call_builtin` is where a
     # builtin's arguments are built, and it is already the partner for the
     # annotation-directed constructors' elements. Nothing is BUILT for a regular
@@ -1398,6 +1398,15 @@ def check_generated_current():
     return []
 
 
+# AN `emit_fit` WITH NO SLOT BEHIND IT, named with its reason (DEF-176, landing 142). The explicit `x => dyn T` cast lowers
+# through `emit_fit`, the implicit coercion's one path (DEF-227), and its frontend check is `type_dyn_cast`'s implements
+# question, not a slot's `fits`; until landing 142 the call sat inside `emit_expr_kind`, which the two pairs above
+# claimed, so it rode on their claim. Each entry must still call `emit_fit`, or the entry is stale and fails.
+EMIT_FIT_WITHOUT_SLOT = {
+    "emit_k_dyn_cast_expr": "the explicit `=> dyn` cast, lowered through the coercion's path (DEF-227)",
+}
+
+
 def check_slot_sites_agree():
     """Every `fits` site has an `emit_fit` partner, by the table above.
 
@@ -1443,6 +1452,11 @@ def check_slot_sites_agree():
             if b not in be:
                 fails.append("slot-sites: `%s` is paired with `%s`, which does not "
                              "call `emit_fit`" % (fn, b))
+    for b in sorted(EMIT_FIT_WITHOUT_SLOT):
+        claimed.add(b)
+        if b not in be:
+            fails.append("slot-sites: EMIT_FIT_WITHOUT_SLOT names `%s`, which no longer "
+                         "calls `emit_fit`" % b)
     for b, where in sorted(be.items()):
         if b not in claimed:
             fails.append("slot-sites: `%s` calls `emit_fit` (%s) and no `fits` "
