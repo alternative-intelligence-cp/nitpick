@@ -275,7 +275,7 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   argument, and every write-capable access of what it views refuses
   (`NITPICK-BORROW-015`): an assignment into it, `@root`/`$$m root` handed to a
   callee that writes through it, a pointer-receiver call, a `move` out of it,
-  `list_push` on the viewed list. Reads, `$$i`, a disjoint field, a disjoint
+  `list_push` on the viewed list. A pointer LOCAL's VALUE handed to a callee is the same access of what it points at as `@place` (DEF-275, landing 140): the callee's written paths are judged against the views rooted at the pointer's name, so `Holder->:b = @hd; … string_bytes(b.items[0i64]); … clobber(b)` refuses as `clobber(@hd)` does; a callee that writes another field, or reads, stands. Reads, `$$i`, a disjoint field, a disjoint
   numeral range, a callee that writes nothing through what it is handed, and a
   pointer root's own reassignment stay. A struct field viewing another field of
   its own struct freezes that field; a view of the very storage a store

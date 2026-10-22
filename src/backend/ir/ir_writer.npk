@@ -618,27 +618,32 @@ func:site_mark_used = NIL(Sink->:s, List<int32>->:used) never fails {
 // Pass two: the same text with every referenced id replaced by its new number.
 func:site_rewrite = NIL(Sink->:s, List<int32>->:newid) never fails {
     Sink:fresh = raw sink_to_buffer(raw sink_length(s));
-    string:text = raw sink_view(s);
-    int64:copied = 0i64;
-    int64:p = 0i64;
-    while (p < text.len) decreases text.len - p {
-        int64:d = raw site_call_digits(text, p);
-        if (d >= 0i64) {
-            int64:e = 0i64;
-            int64:id = raw site_digits_value(text, d, @e);
-            if ((id >= 1i64) && (id < (<-newid).count)) {
-                drop trim_copy(@fresh, s, copied, d);
-                drop sink_write(@fresh, int_to_string((<-newid)[id] => int64));
-                copied = e;
-            }
-        }
+    // THE VIEW'S BLOCK ENDS BEFORE THE SINK IS REWRITTEN (D-325; found by the
+    // DEF-275 check): `text` views `s`'s own buffer, which the reset and the
+    // append below replace, so it lives in a block of its own.
+    {
+        string:text = raw sink_view(s);
+        int64:copied = 0i64;
+        int64:p = 0i64;
         while (p < text.len) decreases text.len - p {
-            if (text.ptr[p] == 10u8) { break; }
+            int64:d = raw site_call_digits(text, p);
+            if (d >= 0i64) {
+                int64:e = 0i64;
+                int64:id = raw site_digits_value(text, d, @e);
+                if ((id >= 1i64) && (id < (<-newid).count)) {
+                    drop trim_copy(@fresh, s, copied, d);
+                    drop sink_write(@fresh, int_to_string((<-newid)[id] => int64));
+                    copied = e;
+                }
+            }
+            while (p < text.len) decreases text.len - p {
+                if (text.ptr[p] == 10u8) { break; }
+                p = p + 1i64;
+            }
             p = p + 1i64;
         }
-        p = p + 1i64;
+        drop trim_copy(@fresh, s, copied, text.len);
     }
-    drop trim_copy(@fresh, s, copied, text.len);
     drop sink_reset(s);
     drop sink_append(s, @fresh);
     pass NIL;

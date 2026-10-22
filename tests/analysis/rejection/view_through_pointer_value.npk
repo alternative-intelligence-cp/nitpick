@@ -1,0 +1,161 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 58:18
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 67:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 76:30
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 87:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 87:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 97:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 107:20
+// A POINTER VALUE HANDED TO A CALLEE IS CHECKED AGAINST THE VIEWS THROUGH IT
+// (DEF-275, landing 140; found by landing 138's probes). `drop clobber(@hd)` under
+// `fixed uint8[]:v = string_bytes(hd.items[0i64])` has been BORROW-015 since D-325
+// (landing 116): the callee's mutation summary says it writes the whole pointee, and
+// a view's root is frozen while the view lives. Hand the callee the same storage as
+// a pointer LOCAL's VALUE -- `Holder->:b = @hd; … drop clobber(b)` -- and the
+// aliasing walk read the argument as a READ of `b`, judged against no view party
+// rooted at the pointer: the callee freed the viewed bytes and `v[0i64]` read the
+// allocator's free poison (exit 170 at both legs). A pointer-typed place-chain
+// argument is checked now as `@place` is -- the callee's written paths against the
+// view parties of the argument's root (`acc_call`, alias.npk): a whole-pointee
+// write, an element write, a move out of an element and an unknown callee (a
+// function value: the whole pointee; the store rule's BORROW-009 stands beside it,
+// as under every compiler since D-325) each refuse. A callee that writes ANOTHER
+// field (`bump`: `n` beside `items`) or reads only stands -- the mutation summary's
+// own precision -- and so does the call after the view's block. AND THE LIMIT the
+// landing measured and KEPT: a view of a List element's STRING body
+// (`string_bytes(rows[0i64].path)`) across `list_push(@rows, …)` is refused as it
+// was, though a push never frees an element's body -- a callee's mutation path
+// `items/[…]` cannot tell a push from an overwrite or a removal, which frees it, so
+// the walk keeps the conservative answer and the author copies the bytes or ends
+// the view's block first (the compiler's own import loader holds a copy for this
+// reason); a view of a `fixed uint8[]` field's bytes across the same push likewise.
+// EVERY CASE HERE TYPE-CHECKS; the controls at the end carry no code.
+mod:view_through_pointer_value;
+
+struct:Holder = { string[2]:items; int64:n; };
+struct:Rec = { string:path; int64:k; };
+struct:Row = { fixed uint8[]:view; int64:k; };
+
+func:fresh = string() never fails { pass string_concat("ghij", "klmn"); };
+func:made = Holder() never fails { pass Holder{ items: [string_concat("abc", "def"), string_concat("abc", "def")], n: 0i64 }; };
+func:clobber = NIL(Holder->:h) never fails { <-h = Holder{ items: [raw fresh(), raw fresh()], n: 1i64 }; pass NIL; };
+func:set_elem = NIL(Holder->:h) never fails { h.items[0i64] = raw fresh(); pass NIL; };
+func:take_elem = string(Holder->:h) never fails { pass move(h.items[0i64]); };
+func:bump = NIL(Holder->:h) never fails { h.n = h.n + 1i64; pass NIL; };
+func:count_only = int64(Holder->:h) never fails { pass h.n; };
+
+// (1) the hole: the whole pointee rewritten through the pointer VALUE under a view through it
+func:whole_value = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    fixed uint8[]:v = string_bytes(b.items[0i64]);
+    drop clobber(b);
+    pass (v[0i64] => int32);
+};
+
+// (2) an element written through the value
+func:elem_value = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    fixed uint8[]:v = string_bytes(b.items[0i64]);
+    drop set_elem(b);
+    pass (v[0i64] => int32);
+};
+
+// (3) a move out of the element through the value (a write: the vacant value lands)
+func:move_value = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    fixed uint8[]:v = string_bytes(b.items[0i64]);
+    string:t = raw take_elem(b);
+    if (t.len == 0i64) { pass 1i32; }
+    pass (v[0i64] => int32);
+};
+
+// (4) an unknown callee: a function value is read as writing the whole pointee
+func:value_fn = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    func NIL(Holder->) never fails:fv = clobber;
+    fixed uint8[]:v = string_bytes(b.items[0i64]);
+    drop fv(b);
+    pass (v[0i64] => int32);
+};
+
+// (5) the limit kept: a view of a `fixed uint8[]` field's bytes across the push
+func:slice_field_push = int32() never fails {
+    string:s = string_concat("abc", "def");
+    List<Row>:rows = raw list_init::<Row>(1i64);
+    drop list_push(@rows, Row{ view: string_bytes(s), k: 1i64 });
+    fixed uint8[]:w = rows[0i64].view[0i64...2i64];
+    drop list_push(@rows, Row{ view: string_bytes(s), k: 2i64 });
+    pass (w[0i64] => int32);
+};
+
+// (6) the limit kept: a view of an element's STRING body across the push -- a push
+// frees no body, but the summary's `items/[…]` could be an overwrite or a removal
+func:string_field_push = int32() never fails {
+    List<Rec>:rows = raw list_init::<Rec>(1i64);
+    drop list_push(@rows, Rec{ path: string_concat("abc", "def"), k: 1i64 });
+    fixed uint8[]:v = string_bytes(rows[0i64].path);
+    drop list_push(@rows, Rec{ path: string_concat("ghi", "jkl"), k: 2i64 });
+    pass (v[0i64] => int32);
+};
+
+// --- the controls: no code ------------------------------------------------------
+
+// the callee writes `n`, not `items`: the mutation summary tells them apart
+func:ctl_other_field = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    fixed uint8[]:v = string_bytes(b.items[0i64]);
+    drop bump(b);
+    pass (v[0i64] => int32);
+};
+
+// a reader through the value
+func:ctl_reader = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    fixed uint8[]:v = string_bytes(b.items[0i64]);
+    int64:c = raw count_only(b);
+    if (c != 0i64) { pass 1i32; }
+    pass (v[0i64] => int32);
+};
+
+// the write after the view's block
+func:ctl_after_block = int32() never fails {
+    Holder:hd = raw made();
+    Holder->:b = @hd;
+    int32:first = 0i32;
+    { fixed uint8[]:v = string_bytes(b.items[0i64]); first = v[0i64] => int32; }
+    drop clobber(b);
+    pass first;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

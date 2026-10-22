@@ -19373,6 +19373,8 @@ callee the analysis cannot see refuses (the closed direction), a bare or `#` bui
 Both are BORROW-013, this decision's code. The tree's own `aliasing.npk` had documented (a)
 since 1.5.5 and the checker had never reported it.
 
+*[2026-10-22, 1.6.1e landing 140 — a dated note (DEF-275).]* A call's argument that is a pointer-typed PLACE CHAIN (`b`, `s.next`, `(<-p).q`) is read by the aliasing walk as an access of what it reaches, not only as a read of the binding: the callee's written paths are checked against the view parties of the argument's root exactly as `@place`'s are, since the callee writes through the value as it would through the address. A bare or `#` builtin is exempt (its aliasing is the reference's own row, D-249). What stays as it was: a view of a `List` element's body across `list_push` conflicts with the push's `items/[…]` (the conservative answer, kept on purpose -- see D-325's note of the same day).
+
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
 Found planning 1.5.5 (2026-09-11, on `cb8cbb0`; DEF-43). `fixed int32:x =
@@ -22081,6 +22083,8 @@ view of the element. The pointer-root exemption (`b = other` leaves the viewed p
 for the bare name written directly: `<-b = …` writes the pointee, and a callee's write through `b`
 never reassigns `b`. DEF-275 records what the exemption's neighbour still misses: a pointer local
 handed by VALUE to a writer.
+
+*[2026-10-22, 1.6.1e landing 140 — a dated note (DEF-275).]* A pointer LOCAL's VALUE handed to a callee is the same write-capable access of what it points at as `@place` (alias.npk's `acc_call`): the callee's mutation summary -- its written paths, the whole pointee for a function value or any callee the escape analysis cannot read -- is judged against the view parties rooted at the pointer's name, so `Holder->:b = @hd; fixed uint8[]:v = string_bytes(b.items[0i64]); drop clobber(b);` is BORROW-015 as `clobber(@hd)` was (it read the freed bytes, 170 at both legs). The compiler's own source met the rule at four sites, each read: two were a lexical-freeze violation of the IR writer's own (`site_rewrite`'s view in its own block now), one a view of a file's path across the loader's pushes (a copy now), and one a SELF-WIRED view the emitter stored into its own fields -- `fnem_cross_gep`'s view of a `cross_geps` element's body, held in `measure_slot` and `old_slots` while the next function's `fnem_open` cleared the list -- found with the landing's `--dump-refs` tool and answered with a copy. And a limit MEASURED AND KEPT: a refinement that read `items` as disjoint from an element's owned string body (`[i].path.ptr`) was built and dropped as unsound, because a callee's mutation path `items/[…]` is `list_push`'s (which frees no body) and `list_remove`'s (which does) alike; a view of a List element's body across a push stays refused, and the author copies the bytes or ends the view's block first.
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 

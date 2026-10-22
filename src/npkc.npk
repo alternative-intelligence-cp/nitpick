@@ -21,6 +21,9 @@
 //   --obligations <dir>          also write the program's proof obligations
 //                                (one SMT-LIB2 file per function, index.txt,
 //                                rows.txt) into <dir> (1.5.0, D-218)
+//   --dump-refs <file>           also write the escape analysis's view refs and
+//                                summaries after its fixpoint (DEF-275's reading
+//                                tool, landing 140; `escape_dump`): no gate reads it
 //   --elide <nitpick.obligations>  emit the VERIFIED build: every guard the
 //                                manifest records as discharged gives way to
 //                                `llvm.assume` of the proven fact (D-219)
@@ -66,7 +69,7 @@ use "../lib/nsys.npk".*;
 // resolve_check and parse_check each kept their own copy of the loop.
 
 func:USAGE = string() never fails {
-    pass "usage: npkc <root.npk> [-o out.ll] [--obligations DIR] [--elide nitpick.obligations] [--extra-picky=no-wildx]";
+    pass "usage: npkc <root.npk> [-o out.ll] [--obligations DIR] [--elide nitpick.obligations] [--dump-refs FILE] [--extra-picky=no-wildx]";
 };
 
 async func:main = int32(cstring[]:argv) {
@@ -79,17 +82,25 @@ async func:main = int32(cstring[]:argv) {
     string:out_path = "";
     string:obl_dir = "";
     string:elide_path = "";
+    string:dump_path = "";
     bool:no_wildx = false;
     int64:ai = 1i64;
     while (ai < argv.len) decreases argv.len - ai {
         string:a = string_from_bytes(argv[ai].ptr, argv[ai].len);
-        if (raw string_eq(a, "-o") || raw string_eq(a, "--obligations") || raw string_eq(a, "--elide")) {
+        if (raw string_eq(a, "-o") || raw string_eq(a, "--obligations") || raw string_eq(a, "--elide")
+            || raw string_eq(a, "--dump-refs")) {
             if ((ai + 1i64) >= argv.len) {
                 await diag_say(string_concat(a, " needs an argument")) ?| NIL;
                 await diag_say(raw USAGE()) ?| NIL;
                 exit 2i32;
             }
             string:val = string_from_bytes(argv[ai + 1i64].ptr, argv[ai + 1i64].len);
+            if (raw string_eq(a, "--dump-refs")) {
+                if (dump_path.len > 0i64) { await diag_say("--dump-refs given twice") ?| NIL; exit 2i32; }
+                dump_path = move(val);
+                ai = ai + 2i64;
+                continue;
+            }
             if (raw string_eq(a, "-o")) {
                 if (out_path.len > 0i64) { await diag_say("-o given twice") ?| NIL; exit 2i32; }
                 out_path = move(val);
@@ -156,8 +167,16 @@ async func:main = int32(cstring[]:argv) {
     // refused, correctly: an immutable borrow of memory nothing has written is
     // a read of it.
     Front:f;
-    int32:fr = raw front_run_mode($$m f, root, no_wildx);   // the build mode is the front half's (DEF-151, 1.6.1e step 2)
+    int32:fr = raw front_run_dump($$m f, root, no_wildx, dump_path.len > 0i64);   // the build mode is the front half's (DEF-151, 1.6.1e step 2)
     if (fr == 2i32) { exit 2i32; }
+    // THE REFS DUMP (DEF-275's reading tool): written whatever the front half said after
+    // the fixpoint, so a refusal of the aliasing walk can be read back to its view.
+    if (dump_path.len > 0i64) {
+        Result<cstring>:dc = to_cstring(dump_path);
+        if (dc.is_error) { await diag_say("npkc: cannot write the refs dump") ?| NIL; exit 2i32; }
+        Result<NIL>:dw = write_file(dc.value, f.refs_dump);
+        if (dw.is_error) { await diag_say("npkc: cannot write the refs dump") ?| NIL; exit 2i32; }
+    }
     if (fr != 0i32) {
         await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
         exit 1i32;

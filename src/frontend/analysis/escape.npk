@@ -4827,3 +4827,147 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
     }
     pass NIL;
 };
+
+// --- the refs dump (DEF-275's reading tool, landing 140) -----------------------------
+//
+// `npkc FILE --dump-refs OUT` writes, after the escape fixpoint, every function's
+// three summaries and every recorded view ref of every holder, one line each --
+// text no gate reads. It is how a refusal of the aliasing walk is READ back to
+// the site that recorded the view (the landing's own ir_stmt.npk site was
+// decided by it, never by guessing). The lines:
+//   FN <decl> <name> <file>:<line>          a function declaration (every one)
+//   SUM pass=<bits> [k:<path>]...           the view summary: the result may view parameter k's bytes at <path>
+//   FLOW j=<j> pass=<bits> [k:<path>]...    the store matrix: what the body may store into parameter j's pointee
+//   MUT k=<k> [<path>]...                   the mutation summary: the paths below parameter k's pointee written
+//   PREF <decl> <name>                      a parameter whose POINTEE holds refs; its refs follow
+//   REF stmt=<s> <file>:<line>:<col> ptr=<0|1>   a holder statement whose chain is not empty; its refs follow
+//     <kind> root=<name> place=<line>:<col> rel=<path> full=<path>
+func:dump_kind_word = string(int32:k) never fails {
+    if (k == (raw VIEW_DIRECT()))    { pass "DIRECT"; }
+    if (k == (raw VIEW_LAUNDERED())) { pass "LAUNDERED"; }
+    if (k == (raw REF_PASS()))       { pass "PASS"; }
+    if (k == (raw REF_ADDR()))       { pass "ADDR"; }
+    pass "?";
+};
+
+func:dump_span = string(Span:sp) never fails {
+    string:t = string_concat(int_to_string(sp.file => int64), ":");
+    t = string_concat(t, int_to_string(sp.line => int64));
+    t = string_concat(t, ":");
+    t = string_concat(t, int_to_string(sp.col => int64));
+    pass t;
+};
+
+func:dump_ref = NIL(Escape->:x, Sink->:s, int32:i) never fails {
+    ViewRef:r = ViewRef{ root: x.vr_root[i => int64], place: x.vr_place[i => int64],
+                         kind: x.vr_kind[i => int64], path: x.vr_path[i => int64] };
+    Symbol:sy = raw symtab_get(x.tab, r.root);
+    ExprNode:pn = raw ast_expr(x.ast, ExprId{ index: r.place });
+    drop sink_write(s, "    ");
+    drop sink_write(s, raw dump_kind_word(r.kind));
+    drop sink_write(s, " root=");
+    drop sink_write(s, raw intern_get(x.tr.interns, sy.name));
+    drop sink_write(s, " place=");
+    drop sink_write(s, raw dump_span(pn.span));
+    drop sink_write(s, " rel=");
+    drop sink_write(s, raw path_text(x, r.path));
+    drop sink_write(s, " full=");
+    drop sink_write(s, raw path_text(x, raw ref_full_path(x, r)));
+    drop sink_write(s, "\n");
+    pass NIL;
+};
+
+pub func:escape_dump = string(Escape->:x) never fails {
+    Sink:s = raw sink_to_buffer(65536i64);
+    for (int32:d in 0i32...x.decl_count) {
+        DeclNode:dn = raw ast_decl(x.ast, DeclId{ index: d });
+        if (dn.kind != DeclKind.DeclFunctionDecl) { continue; }
+        drop sink_write(@s, "FN ");
+        drop sink_write(@s, int_to_string(d => int64));
+        drop sink_write(@s, " ");
+        drop sink_write(@s, raw intern_get(x.tr.interns, raw decl_name(dn)));
+        drop sink_write(@s, " ");
+        drop sink_write(@s, raw dump_span(dn.span));
+        drop sink_write(@s, "\n");
+        // the view summary
+        drop sink_write(@s, "  SUM pass=");
+        drop sink_write(@s, int_to_string(x.sum_pass[d => int64] => int64));
+        int32:e = x.sv_head[d => int64];
+        while (e >= 0i32) decreases e + 1i32 {
+            drop sink_write(@s, " ");
+            drop sink_write(@s, int_to_string(x.sv_param[e => int64] => int64));
+            drop sink_write(@s, ":");
+            drop sink_write(@s, raw path_text(x, x.sv_path[e => int64]));
+            e = x.sv_next[e => int64];
+        }
+        drop sink_write(@s, "\n");
+        // the store matrix and the mutation summary, per parameter slot
+        for (int32:j in 0i32...32i32) {
+            int64:slot = raw flow_slot(d, j);
+            int32:fp = x.flow_pass[slot];
+            int32:f = x.fv_head[slot];
+            if ((fp != 0i32) || (f >= 0i32)) {
+                drop sink_write(@s, "  FLOW j=");
+                drop sink_write(@s, int_to_string(j => int64));
+                drop sink_write(@s, " pass=");
+                drop sink_write(@s, int_to_string(fp => int64));
+                while (f >= 0i32) decreases f + 1i32 {
+                    drop sink_write(@s, " ");
+                    drop sink_write(@s, int_to_string(x.fv_param[f => int64] => int64));
+                    drop sink_write(@s, ":");
+                    drop sink_write(@s, raw path_text(x, x.fv_path[f => int64]));
+                    f = x.fv_next[f => int64];
+                }
+                drop sink_write(@s, "\n");
+            }
+            int32:m = x.mu_head[slot];
+            if (m >= 0i32) {
+                drop sink_write(@s, "  MUT k=");
+                drop sink_write(@s, int_to_string(j => int64));
+                while (m >= 0i32) decreases m + 1i32 {
+                    drop sink_write(@s, " ");
+                    drop sink_write(@s, raw path_text(x, x.mu_path[m => int64]));
+                    m = x.mu_next[m => int64];
+                }
+                drop sink_write(@s, "\n");
+            }
+        }
+        // the parameters' pointees' refs
+        int32:n = raw fn_param_count(x.ast, dn);
+        for (int32:i in 0i32...n) {
+            int32:pd = (raw fn_param(x.ast, dn, i)).index;
+            if (pd < 0i32) { continue; }
+            if (pd >= x.decl_count) { continue; }
+            int32:pi = x.vp_head[pd => int64];
+            if (pi < 0i32) { continue; }
+            DeclNode:pnode = raw ast_decl(x.ast, DeclId{ index: pd });
+            drop sink_write(@s, "  PREF ");
+            drop sink_write(@s, int_to_string(pd => int64));
+            drop sink_write(@s, " ");
+            drop sink_write(@s, raw intern_get(x.tr.interns, raw decl_name(pnode)));
+            drop sink_write(@s, "\n");
+            while (pi >= 0i32) decreases pi + 1i32 {
+                drop dump_ref(x, @s, pi);
+                pi = x.vr_next[pi => int64];
+            }
+        }
+    }
+    // every holder statement with a chain
+    for (int32:st in 0i32...x.holds_count) {
+        int32:i = x.vr_head[st => int64];
+        if (i < 0i32) { continue; }
+        StmtNode:sn = raw ast_stmt(x.ast, StmtId{ index: st });
+        drop sink_write(@s, "REF stmt=");
+        drop sink_write(@s, int_to_string(st => int64));
+        drop sink_write(@s, " ");
+        drop sink_write(@s, raw dump_span(sn.span));
+        drop sink_write(@s, " ptr=");
+        if (x.vr_ptr[st => int64]) { drop sink_write(@s, "1"); } else { drop sink_write(@s, "0"); }
+        drop sink_write(@s, "\n");
+        while (i >= 0i32) decreases i + 1i32 {
+            drop dump_ref(x, @s, i);
+            i = x.vr_next[i => int64];
+        }
+    }
+    pass (raw sink_into_string(move(s)));
+};

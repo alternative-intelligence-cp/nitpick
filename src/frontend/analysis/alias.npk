@@ -1658,6 +1658,18 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             } }
         }
         drop refuse_holder_copy_arg(x, a2, result_carries);
+        // A POINTER VALUE HANDED TO A CALLEE (DEF-275): the callee writes through
+        // the value as it would through `@place` -- what its mutation summary
+        // says it writes (the whole pointee for a callee the escape analysis
+        // cannot read; nothing for a bare or `#` builtin, whose aliasing is the
+        // reference's row) is an access of what the pointer reaches, against
+        // the view parties rooted at the pointer's name.
+        int32:at2 = raw exprtypes_get(x.etypes, a2);
+        if ((at2 != 0i32) && (!(raw escape_call_is_bare_builtin(x.esc, id))) && (n.kind != ExprKind.ExprBuiltinExpr)) {
+            if (((raw type_kind(x.types, at2)) == (raw TY_POINTER())) && (raw is_place_chain(x, a2))) {
+                drop check_written(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
+            }
+        }
         drop acc_expr(x, a2, raw ACC_READ(), depth);
     }
     // Then each claim against the outer parties and the EARLIER claims of the

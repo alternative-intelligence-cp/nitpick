@@ -85,6 +85,11 @@ pub struct:Front = {
     // is the FRONT HALF's mode, set by the driver and by `tools/check.npk` from the same
     // argument, so the mode has a suite (a rejection file's `// npkc-flags:` header).
     bool:no_wildx;
+    // THE REFS DUMP (DEF-275's reading tool, landing 140): `--dump-refs` asks stage 3 for
+    // `escape_dump`'s text, which the driver writes to the named file. An argument of
+    // `front_run_dump` for the same reason as the mode.
+    bool:dump_refs;
+    string:refs_dump;
 };
 
 // Load, expand, resolve, type-check, analyse. Returns 0 with `f` filled and no
@@ -246,6 +251,13 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
 // through the pointer (a field of an unassigned local cannot be written by the
 // caller, ASSIGN-001, which is why it is an argument and not a caller's store).
 pub func:front_run_mode = int32(Front->:f, string:root, bool:no_wildx) never fails {
+    pass (raw front_run_dump(f, root, no_wildx, false));
+};
+
+// The same run with the refs dump asked for (DEF-275's reading tool): the flag is set
+// before the passes, since stage 3 reads it at the escape fixpoint's end.
+pub func:front_run_dump = int32(Front->:f, string:root, bool:no_wildx, bool:dump_refs) never fails {
+    f.dump_refs = dump_refs;
     int32:rc = raw front_run_passes(f, root);
     f.no_wildx = no_wildx;
     drop rehome_derived(@f.g);
@@ -557,6 +569,9 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     }
     drop escape_report_mode(@esc);
     drop escape_walk(@esc, @f.g);
+    // THE REFS DUMP (DEF-275's reading tool): the state after the fixpoint, before the
+    // aliasing walk reads it; `npkc FILE --dump-refs OUT` writes the text.
+    if (f.dump_refs) { f.refs_dump = raw escape_dump(@esc); }
 
     // THE ALIASING HALF OF D-004 (D-286, 1.5.5 step 1): `$$m` excludes, `$$i`
     // shares, `@` claims nothing. One forward walk per function, no fixpoint

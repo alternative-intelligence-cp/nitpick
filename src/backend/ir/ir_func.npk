@@ -597,8 +597,16 @@ pub func:fnem_cross_find = int64(FnEmitter->:fe, int32:stmt_index,
 };
 
 pub func:fnem_cross_gep = string(FnEmitter->:fe, int64:idx) never fails {
-    // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
-    pass (string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len));
+    // A COPY of the entry's text (DEF-275, landing 140): until then this was a VIEW of
+    // the container-owned string (cap 0, D-183), and the emitter STORES the result in
+    // its own fields -- `measure_slot`, `old_slots` (ir_stmt.npk's measure and `old`
+    // slots of a coroutine) -- while the next function's `fnem_open` clears
+    // `cross_geps` under them: a view of the emitter's own element body, wired into
+    // the emitter (D-325's self-wired view; benign at run time, since the holders are
+    // reset before they are read, and refused by the aliasing walk once a pointer
+    // VALUE handed to a writer is judged against the views through it). The text is a
+    // dozen bytes; the copy is what the holders may keep.
+    pass (string_concat("", string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len)));
 };
 
 // The flag slot's GEP for a crossing entry — "" when the entry has none.

@@ -808,7 +808,14 @@ pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) never fails {
 
 func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
     ModuleEntry:e = raw graph_at(g, index);
-    string:from = raw srcmgr_resolved_proven(@g.sm, e.file);   // resolution walks the OPENED path (D-236)
+    // A COPY of the resolved path (DEF-275, landing 140): `srcmgr_resolved_proven` answers a
+    // VIEW of the file's own path bytes, and the walk below pushes the files it loads to
+    // `g.sm.v` under it -- a push never frees an element's string body, but a callee's
+    // mutation summary cannot tell a push from an overwrite or a removal (which would), so
+    // the aliasing walk refuses a view across the push (BORROW-015) once a pointer value
+    // handed to a writer is judged against the views through it; a path's length, once
+    // per module. Resolution walks the OPENED path (D-236).
+    string:from = string_concat("", raw srcmgr_resolved_proven(@g.sm, e.file));
     DeclId:rootId = DeclId{ index: e.root };
     // THE FIRST ITEM IS THE HEADER SLOT (D-248, 1.5.1b step 1):
     // `check_file_header` judged it when the file was parsed, and whatever it
