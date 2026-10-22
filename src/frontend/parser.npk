@@ -157,6 +157,19 @@ pub func:p_error_at = NIL(Parser->:p, move string:code, move string:message, Spa
     pass NIL;
 };
 
+// THE PARSER'S DESCENT IS BOUNDED (DEF-150's c2, 1.6.1e step 2; DEF-184, landing 143): `expr_depth` counts every level
+// the parser is inside -- an expression's operand (`p_unary`) and a type's argument or element (`p_parse_type`) -- and
+// `extra` the levels a loop is about to add (a type's `->`, `?`, `[]` and `.` suffixes, built without recursion). Past
+// `AST_DEPTH_MAX` the parser refuses once (`p_error`'s panic suppresses the cascade) and descends no further, so no
+// walk after it -- the resolver's `resolve_type`, the checker's -- meets a deeper tree.
+pub func:p_too_deep = bool(Parser->:p, int32:extra) never fails {
+    if ((p.expr_depth + extra) < (raw AST_DEPTH_MAX())) { pass false; }
+    p.deep_seen = true;
+    drop p_error(p, raw PARSE_TOO_DEEP(),
+        "this nests deeper than 256 levels; split it into named parts -- no walk of the compiler follows further (MACRO_REFERENCE §7)");
+    pass true;
+};
+
 pub func:p_expect = bool(Parser->:p, TokenKind:k) never fails {
     if (raw p_accept(p, k)) {
         pass true;

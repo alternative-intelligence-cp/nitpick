@@ -3216,7 +3216,7 @@ defect declares a `DEF-` in §2f.
 > arm it takes and not the sum of every arm's temporaries), measured by the frame size and by a 256-deep non-folding
 > chain compiling; a refusal by name is the fallback, never a trap. Its own landing, next after step 3.
 
-> **DEF-177 — OPEN (2026-09-30; owner: the compiler seat; found by WP-A's implementer). A `.` FOLLOWED BY ANY TOKEN IS
+> **DEF-177 — FIXED 2026-10-22 (landing 143; built 2026-10-18 by `nitpick-compiler_40`, landed by `nitpick-compiler_42`; with DEF-184; step 3d): after `.` and after `?.` (the same flaw) the parser takes an identifier or one of the four member keywords (`acquire`, `any`, `trit`, `nit`) and refuses anything else with PARSE-001 at the token (`p_member_name`, parse_expr.npk). Measured on a WIP compiler of the queue and again on landing 142's: `p.386` compiled and read field `x`, `o?.386` passed the parser, `p.99999999` trapped the checker (exit 3); each PARSE-001 now; `parse_one_report.npk`'s cases 178-180. WAS: OPEN (2026-09-30; owner: the compiler seat; found by WP-A's implementer). A `.` FOLLOWED BY ANY TOKEN IS
 > A MEMBER ACCESS BY THAT TOKEN'S PAYLOAD READ AS AN INTERN INDEX** (`parse_expr.npk`, the `PDot` arm): `p.386`
 > reads field `x` of a two-field struct and `p.387` reads `y`, compiled and run; `p.99999999` traps the compiler
 > (exit 3); `p.5` says "no member `Greater`". **Recommended:** after `.` the parser takes an identifier or one of the
@@ -3314,6 +3314,7 @@ defect declares a `DEF-` in §2f.
 > recommended: the declaration records its closing brace's line. Scheduled with DEF-176 … DEF-180 as 1.6.1e step
 > 3d (the rows' neighbours), planned execution-grade before it starts, by severity: the traps (DEF-176, DEF-184,
 > DEF-177's), the checker's holes (DEF-178, DEF-187, DEF-180), DEF-183, then the rest.
+> *[2026-10-22, landing 143 (built 2026-10-18 by `nitpick-compiler_40`, landed by `nitpick-compiler_42`): DEF-184 FIXED -- a type's nesting is the parser's descent: `p_parse_type` counts a level of `expr_depth` at each entry and `p_suffixes` counts its `->`, `?`, `[]` and `.` suffixes, both against `AST_DEPTH_MAX` through one bound shared with the expression parser (`p_too_deep`, parser.npk); measured on a WIP compiler of the queue and again on landing 142's: `List<…>` 9,000 deep as a field or a parameter trapped the checker in the type parser, `int32->…` 13,000 deep trapped it in the resolver (`resolve_type`/`resolve_pointee`), each exit 3 with no message; each is one PARSE-012 now, a type 200 deep parsing as before; `parse_one_report.npk`'s cases 181-183. DEF-185, DEF-186 and DEF-188 stay OPEN (DEF-187 landed at 134, DEF-182 at 135).]*
 
 > **DEF-189 — FIXED at 1.6.1e step 3a (2026-10-01, `nitpick-compiler_24`; registered 2026-09-30, found by WP-C's
 > implementer answering the incoming seat's review question). A MACRO PARAMETER WRITTEN IN A TYPE OR A PATTERN WAS

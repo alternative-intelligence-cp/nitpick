@@ -162,7 +162,19 @@ pub func:p_expect_gt = bool(Parser->:p) never fails {
 
 // --- types --------------------------------------------------------------------
 
+// A TYPE'S NESTING IS THE PARSER'S DESCENT TOO (DEF-184, landing 143): `List<List<…>>` recursed here once a level and
+// about 8,300 levels exhausted the checker's stack (exit 3, no message); `int32->->…`, built by `p_suffixes`' loop,
+// reached the resolver 12,700 deep and recursed there. Each entry counts a level of `expr_depth`, and the suffix loop
+// counts its own, so a type past `AST_DEPTH_MAX` is PARSE-012 once, at the level that passes it.
 pub func:p_parse_type = TypeId(Parser->:p) never fails {
+    if (raw p_too_deep(p, 0i32)) { pass (raw type_none()); }
+    p.expr_depth = p.expr_depth + 1i32;
+    TypeId:t = raw p_parse_type_body(p);
+    p.expr_depth = p.expr_depth - 1i32;
+    pass t;
+};
+
+func:p_parse_type_body = TypeId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     TokenKind:k = raw p_kind(p);
 
@@ -335,6 +347,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
 // pointers rather than a pointer to a slice.
 pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
     TypeId:cur = base;
+    int32:levels = 0i32;   // the suffixes applied: each a level of the type (DEF-184)
     while (true) decreases raw p_left(p) {
         Span:sp = raw p_span(p);
 
@@ -396,6 +409,8 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
             }
         }
         }
+        levels = levels + 1i32;
+        if (raw p_too_deep(p, levels)) { pass cur; }
     }
     pass cur;
 };

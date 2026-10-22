@@ -139,12 +139,27 @@ pub func:char_lit_bits = int32(NumWidth:w) never fails {
 // cannot exhaust the parser's own stack before the tree bound is asked. The
 // refusal is once (`p_error`'s panic suppresses the cascade) and marks the
 // declaration, so the tree measure does not report it again.
+// A MEMBER'S NAME AFTER `.` OR `?.` (DEF-177, landing 143): an identifier, or one of the four keywords that name a
+// member after a dot -- `acquire` (D-056: the mutex operation), `any` (D-194: `simd<bool, N>`'s reduction), `trit` and
+// `nit` (D-197: the digit extractions) -- each interning its own spelling here, since a keyword token carries no
+// intern. Anything else is PARSE-001 at the token, and -1: the token's payload was read as an intern index, so
+// `p.386` named whatever member sat at that slot (field `x` of a two-field struct, compiled and run), `p.5` asked for
+// a member named after another string, and `p.99999999` trapped the compiler.
+func:p_member_name = int64(Parser->:p) never fails {
+    Token:n = raw p_advance(p);
+    if (n.kind == TokenKind.Ident)     { pass n.payload; }
+    if (n.kind == TokenKind.KwAcquire) { pass ((raw intern_add(p.interns, "acquire")) => int64); }
+    if (n.kind == TokenKind.KwAny)     { pass ((raw intern_add(p.interns, "any")) => int64); }
+    if (n.kind == TokenKind.KwTrit)    { pass ((raw intern_add(p.interns, "trit")) => int64); }
+    if (n.kind == TokenKind.KwNit)     { pass ((raw intern_add(p.interns, "nit")) => int64); }
+    drop p_error_at(p, raw PARSE_EXPECTED(),
+        "a `.` is followed by a member's name -- an identifier, or `acquire`, `any`, `trit` or `nit` after a dot -- and this token names none",
+        n.span);
+    pass -1i64;
+};
+
 func:p_depth_refused = bool(Parser->:p) never fails {
-    if (p.expr_depth < (raw AST_DEPTH_MAX())) { pass false; }
-    p.deep_seen = true;
-    drop p_error(p, raw PARSE_TOO_DEEP(),
-        "this nests deeper than 256 levels; split it into named parts -- no walk of the compiler follows further (MACRO_REFERENCE §7)");
-    pass true;
+    pass (raw p_too_deep(p, 0i32));   // the one bound, shared with the type parser (DEF-184, landing 143)
 };
 
 pub func:p_parse_expr = ExprId(Parser->:p) never fails {
@@ -524,29 +539,8 @@ func:p_postfix = ExprId(Parser->:p) never fails {
 
         if (k == TokenKind.PDot) {
             discard(raw p_advance(p));
-            Token:n = raw p_advance(p);
-            // `acquire` WAS RESERVED FOR THE MUTEX OPERATION (D-056), and a
-            // keyword token carries no intern — its one legal home is exactly
-            // this position, the name after the dot, so it interns its own
-            // spelling here and reaches the method dispatch like any name.
-            int64:mnm = n.payload;
-            if (n.kind == TokenKind.KwAcquire) {
-                mnm = (raw intern_add(p.interns, "acquire")) => int64;
-            }
-            // `any` IS THE TYPE KEYWORD (D-194 follows D-056's rule): after a
-            // dot it is `simd<bool, N>`'s reduction, and a keyword token
-            // carries no intern — same treatment, same reason.
-            if (n.kind == TokenKind.KwAny) {
-                mnm = (raw intern_add(p.interns, "any")) => int64;
-            }
-            // `trit` and `nit` ARE THE TYPE KEYWORDS (D-197 follows the same
-            // rule): after a dot they are the digit extractions.
-            if (n.kind == TokenKind.KwTrit) {
-                mnm = (raw intern_add(p.interns, "trit")) => int64;
-            }
-            if (n.kind == TokenKind.KwNit) {
-                mnm = (raw intern_add(p.interns, "nit")) => int64;
-            }
+            int64:mnm = raw p_member_name(p);
+            if (mnm < 0i64) { pass e; }   // refused at the token (DEF-177); the panic stops the rest
             // `p.magnitude()` is a METHOD CALL, not a call over a member access
             // (AST_REFERENCE 3.3). UFCS resolves it to `Point_magnitude(p)`
             // (D-006), which needs the receiver kept apart from the callee --
@@ -561,9 +555,10 @@ func:p_postfix = ExprId(Parser->:p) never fails {
         } else {
             if (k == TokenKind.OpQuestionDot) {
                 discard(raw p_advance(p));
-                Token:n = raw p_advance(p);
+                int64:snm = raw p_member_name(p);
+                if (snm < 0i64) { pass e; }   // refused at the token (DEF-177)
                 e = raw ast_add_expr(p.ast, ExprKind.ExprSafeNavExpr, sp,
-                                       e.index, 0i32, 0i32, n.payload);
+                                       e.index, 0i32, 0i32, snm);
             } else {
                 if (k == TokenKind.PLBracket) {
                     discard(raw p_advance(p));
