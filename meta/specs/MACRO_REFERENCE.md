@@ -72,6 +72,11 @@ body that is one of those is an expression body, and a declaration site refuses 
 #name(a, b)      // with arguments
 ```
 
+**A macro takes no type arguments** (DEF-186, 1.6.1e landing 144): its
+parameters are expressions (§3), so `#one<int32>()` is `NITPICK-MACRO-002` at the
+invocation -- the turbofish is a builtin's (`#size_of<T>()`), and an invocation
+that carried one was expanded as if it were not there.
+
 **Four positions**, and the same spelling in all of them:
 
 ```nitpick
@@ -551,6 +556,20 @@ note "the X at line N lies in a macro body that this invocation expanded"; it
 annotates a diagnostic and never another note (DEF-173: the driver called the
 annotation twice at four of its returns since 0.7.8, and the second pass annotated
 the first pass's notes).
+
+**And the note is at its own invocation** (DEF-188, 1.6.1e landing 144): a body's
+range runs from its first item to the declaration's closing brace, in the byte
+offsets the parser records. It was the items' start lines plus one line of slack,
+which noted an error in the next line's one-line macro at this macro's invocation
+too, and noted an error deep in a multi-line item nowhere.
+
+**A body declares only what an expansion can emit** (DEF-185, landing 144;
+`NITPICK-MACRO-005` at the declaration): functions, structs, enums, traits, impls,
+module bindings and rules. An `error` constant, a `unit`, an `assoc` type, a `use`
+(imports are loaded before expansion begins), an `extern` block (its stubs are
+generated before it) and an `opaque struct` (it lives in an `extern` block) are
+written where they are meant; each was `NITPICK-MACRO-006`, the clone's defect
+code, at the macro's first instantiation.
 
 **And no tree nests deeper than 256 levels**
 (`AST_DEPTH_MAX`, DEF-150, 1.6.1e step 2): no node sits more than 256 levels below

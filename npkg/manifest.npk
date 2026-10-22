@@ -20,26 +20,49 @@ use "./toml.npk".*;
 // `compile` is the default and the only stage with a `kind`.
 pub struct:TestTarget = {
     string:name;
-    string:stage;            // compile | parse | resolve | check | accept | object | fixture | program | runtime | verify | cost
+    string:stage;            // one of `stage_names` (D-238): compile | parse | resolve | check | accept | object | fixture | program | runtime | verify | cost | explore
     string:kind;             // compile only: positive | negative | diagnostic; "" otherwise
     List<string>:paths;      // relative to the root, in declaration order
     bool:recursive;          // sweep subdirectories too
 };
 
+// THE STAGES A `[[test]]` ENTRY MAY NAME (D-238), ONE LIST read by the predicate and by the refusal's sentence (DEF-240,
+// landing 144; the library listener's O-N36): the sentence named ten while the predicate accepted twelve -- `object` and
+// `explore` were accepted and never named -- where the harness's `STAGES` tuple is read by both. In the harness's order.
+func:stage_names = List<string>() never fails {
+    List<string>:v = raw list_init::<string>(12i64);
+    drop strlist_push(@v, "compile");
+    drop strlist_push(@v, "parse");
+    drop strlist_push(@v, "resolve");
+    drop strlist_push(@v, "check");
+    drop strlist_push(@v, "accept");
+    drop strlist_push(@v, "object");
+    drop strlist_push(@v, "fixture");
+    drop strlist_push(@v, "program");
+    drop strlist_push(@v, "runtime");
+    drop strlist_push(@v, "verify");
+    drop strlist_push(@v, "cost");
+    drop strlist_push(@v, "explore");
+    pass v;
+};
+
 func:stage_known = bool(string:s) never fails {
-    if (raw text_eq(s, "compile")) { pass true; }
-    if (raw text_eq(s, "parse"))   { pass true; }
-    if (raw text_eq(s, "resolve")) { pass true; }
-    if (raw text_eq(s, "check"))   { pass true; }
-    if (raw text_eq(s, "accept"))  { pass true; }
-    if (raw text_eq(s, "object"))  { pass true; }
-    if (raw text_eq(s, "fixture")) { pass true; }
-    if (raw text_eq(s, "program")) { pass true; }
-    if (raw text_eq(s, "runtime")) { pass true; }
-    if (raw text_eq(s, "verify"))  { pass true; }
-    if (raw text_eq(s, "cost"))    { pass true; }
-    if (raw text_eq(s, "explore")) { pass true; }
+    List<string>:names = raw stage_names();
+    for (int64:i in 0i64...names.count) {
+        if (raw text_eq(s, names[i])) { pass true; }
+    }
     pass false;
+};
+
+// The stages as the refusal names them: "compile, parse, …, explore".
+func:stage_names_text = string() never fails {
+    List<string>:names = raw stage_names();
+    string:out = "";
+    for (int64:i in 0i64...names.count) {
+        if (i > 0i64) { out = string_concat(out, ", "); }
+        out = string_concat(out, names[i]);
+    }
+    pass out;
 };
 
 pub struct:Manifest = {
@@ -271,7 +294,9 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
         if (!(raw stage_known(stage))) {
             string:w5 = string_concat(who, ": stage `");
             w5 = string_concat(w5, stage);
-            w5 = string_concat(w5, "` is not one this runner knows -- the stages are compile, parse, resolve, check, accept, fixture, program, runtime, verify, cost (D-238); a stage the runner cannot judge is refused, not skipped");
+            w5 = string_concat(w5, "` is not one this runner knows -- the stages are ");
+            w5 = string_concat(w5, raw stage_names_text());
+            w5 = string_concat(w5, " (D-238); a stage the runner cannot judge is refused, not skipped");
             pass (raw refuse(root, w5));
         }
         string:kind = "";

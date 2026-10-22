@@ -1,0 +1,34 @@
+// expect-error: NITPICK-MACRO-002
+// expect-error-at: 17:1
+// expect-error: NITPICK-MACRO-002
+// expect-error-at: 19:15
+// expect-error: NITPICK-MACRO-002
+// expect-error-at: 23:5
+// A MACRO TAKES NO TYPE ARGUMENTS (DEF-186, landing 144). A macro's parameters are expressions (MACRO_REFERENCE §3),
+// and `#one<int32>()` -- the turbofish a builtin such as `#size_of<T>()` takes -- was parsed into the invocation's
+// generic window and ignored in silence by both arity checks, which counted the expression arguments alone: the
+// program compiled as if the type argument were not there. NITPICK-MACRO-002 at the invocation now, in an expression,
+// a statement and a declaration position. The controls: the same macros invoked without one, and the builtin
+// `#size_of<int64>()`, which takes its type argument.
+mod:macro_type_args;
+macro:one = () { 1i32; };
+macro:say = (X) { discard(X); };
+macro:mk = () { func:made = int32() never fails { pass 2i32; }; };
+#mk<int64>();
+func:in_expr = int32() never fails {
+    int32:v = #one<int32>();
+    pass v;
+};
+func:in_stmt = int32() never fails {
+    #say<int32>(1i32);
+    pass 0i32;
+};
+// controls
+func:plain = int32() never fails {
+    int32:v = #one();
+    #say(1i32);
+    int64:w = #size_of<int64>();
+    pass v + (w =>! int32);
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) { exit 9i32; };

@@ -3826,6 +3826,31 @@ func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n)
 
 // --- the composites ---------------------------------------------------------------------
 
+// Does this expression name a generic VALUE parameter (`comptime int32:N`, reserved by D-353)?
+// A struct's field types are not resolved by the resolver (the type resolver owns them, lazily), so the name may carry
+// no symbol: it is looked up in the generic windows the type resolver holds, as a type's name is (`generic_lookup`).
+func:names_value_param = bool(TypeResolver->:r, ExprNode:se) never fails {
+    if (se.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (se.a != 0i32) {
+        Symbol:sym = raw symtab_get(r.tab, se.a);
+        if (sym.origin_kind == (raw SYM_DECL())) {
+            DeclNode:sg = raw ast_decl(r.ast, DeclId{ index: sym.origin });
+            if (sg.kind == DeclKind.DeclGenericParam) { pass (raw generic_is_value(sg)); }
+        }
+    }
+    int32:nm = se.payload =>! int32;
+    if (raw window_has_value_param(r, r.generics, nm)) { pass true; }
+    pass (raw window_has_value_param(r, r.enclosing, nm));
+};
+
+func:window_has_value_param = bool(TypeResolver->:r, GenericScope:w, int32:nm) never fails {
+    for (int32:i in 0i32...w.params_count) {
+        DeclNode:g = raw ast_decl(r.ast, DeclId{ index: raw ast_id_at(r.ast, w.params_start, i) });
+        if ((raw decl_name(g)) == nm) { pass (raw generic_is_value(g)); }
+    }
+    pass false;
+};
+
 // An array size is a CONSTANT EXPRESSION. 0.2.8 made it a real expression rather
 // than one token, so `int32[COUNT]` and `int32[N + 1]` both parse — and this is
 // where a size that cannot be computed is refused rather than becoming whatever
@@ -3844,6 +3869,9 @@ func:resolve_fixed_array = int32(TypeResolver->:r, TypeNode:n, int32:elem,
     if (!not_int) { if (!(raw fold_computes(r, cv.type_id))) { not_int = true; } }
     if (not_int) {
         if (raw fold_gave_up(r)) { pass 0i32; }
+        // A RESERVED VALUE PARAMETER'S USE SAYS NOTHING MORE (D-353, D-240; DEF-194, landing 144): its declaration is
+        // the one report (TYPE-095), and `struct:Buf<comptime int32:N> = { int32[N]:a; };` was that and this too.
+        if (raw names_value_param(r, se)) { pass 0i32; }
         pass (raw ty_error(r, raw TYPE_NOT_CONSTANT(),
             "an array size must be an integer constant expression; a name folds only if it is a module-level `fixed` binding (D-222)",
             se.span));

@@ -1,13 +1,15 @@
 // expect-error: NITPICK-TYPE-095
-// expect-error-at: 28:12
+// expect-error-at: 30:12
 // expect-error: NITPICK-TYPE-095
-// expect-error-at: 33:16
+// expect-error-at: 35:16
 // expect-error: NITPICK-TYPE-095
-// expect-error-at: 37:14
+// expect-error-at: 39:14
 // expect-error: NITPICK-TYPE-095
-// expect-error-at: 38:10
+// expect-error-at: 40:10
 // expect-error: NITPICK-TYPE-095
-// expect-error-at: 39:7
+// expect-error-at: 43:12
+// expect-error: NITPICK-TYPE-095
+// expect-error-at: 44:7
 //
 // A `comptime` VALUE PARAMETER IS A RESERVED FORM (D-353, 1.6.1e landing 117; DEF-236
 // (a), the fuzzer's `as0062`). AST_REFERENCE §4 promised `func:scale<comptime int32:K>`,
@@ -36,6 +38,9 @@ struct:Lock<T, comptime int32:LEVEL> = { T:held; };
 // refused; `Staged<S>` the use, silent): the five declaration kinds with a window.
 trait:Staged<comptime int32:STAGE> = { func:stage = int32(Self:self) never fails; };
 enum:Opt<comptime int32:N> = { A; B; };
+// A value parameter sizing its own struct's field (DEF-194, landing 144): the declaration's one report, the size silent
+// (it was a second report, TYPE-004 "an array size must be an integer constant expression").
+struct:Buf<comptime int32:SZ> = { int32[SZ]:a; };
 impl:<comptime int32:S>:Point:Staged<S> = { func:stage = int32(Point:self) never fails { pass S; }; };
 
 func:uses = NIL() never fails {

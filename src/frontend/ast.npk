@@ -577,6 +577,18 @@ pub func:ast_note_macro = NIL(Ast->:ast, int32:file, int32:lo, int32:hi) never f
     pass NIL;
 };
 
+// THE END OF THE MACRO DECLARATION THAT BEGINS AT (file, lo): one past its closing `}`, as the parser recorded it, or -1
+// (DEF-188, landing 144: MACRO-009's range ends there).
+pub func:ast_macro_end = int32(Ast->:ast, int32:file, int32:lo) never fails {
+    int64:n = ast.macro_spans.count;
+    int64:i = 0i64;
+    while ((i + 2i64) < n) decreases n - i {
+        if ((ast.macro_spans[i] == file) && (ast.macro_spans[i + 1i64] == lo)) { pass ast.macro_spans[i + 2i64]; }
+        i = i + 3i64;
+    }
+    pass (0i32 - 1i32);
+};
+
 // WHICH MACRO BODY A NODE WAS WRITTEN IN: 0 for a span outside every macro
 // declaration, else the declaration's 1-based ordinal in parse order. A macro
 // declaration cannot stand inside another (MACRO-005), so at most one contains

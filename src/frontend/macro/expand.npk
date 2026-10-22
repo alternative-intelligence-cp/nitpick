@@ -106,8 +106,8 @@ pub struct:MacroTable = {
 // them to find its uses.
 pub struct:MacroSite = {
     int32:file;      // the file the BODY lives in
-    int32:lo;        // first line of the body, inclusive
-    int32:hi;        // last line, inclusive
+    int32:lo;        // the body's first item's byte offset, inclusive (DEF-188, landing 144: offsets, not lines)
+    int32:hi;        // the declaration's end -- one past its closing `}` -- exclusive
     Span:site;       // where it was invoked
 };
 
@@ -1320,11 +1320,27 @@ func:macro_here = int32(Expander->:x, ExprNode:n) never fails {
     pass (raw macrotable_find(@x.macros, raw builtin_name(n), x.cur_module));
 };
 
+// A MACRO TAKES NO TYPE ARGUMENTS (DEF-186, landing 144): a macro's parameters are expressions (MACRO_REFERENCE §3,
+// D-057), and `#one<int32>()` -- the turbofish a builtin like `#size_of<T>()` takes -- was parsed into the invocation's
+// generic window and ignored in silence by both arity checks, which counted the expression arguments alone. Refused
+// by name, MACRO-002 (the code of arguments a macro does not take), at the invocation. True when it was refused.
+func:refuse_type_args = bool(Expander->:x, int32:name, int32:gcount, Span:at) never fails {
+    if (gcount <= 0i32) { pass false; }
+    string:t1 = string_concat("`#", raw intern_get(x.interns, name));
+    string:t2 = string_concat(t1, "` is a macro, and a macro takes no type arguments: its parameters are expressions (MACRO_REFERENCE §3) and this invocation passes ");
+    string:t3 = string_concat(t2, int_to_string(gcount => int64));
+    drop expand_err(x, raw MACRO_ARITY(),
+        string_concat(t3, " type argument(s) the expansion would ignore -- write the type inside an argument the body uses, or a generic function"),
+        at);
+    pass true;
+};
+
 // ARITY, AND THE BINDING IT ESTABLISHES. Returns whether the invocation may be
 // instantiated; on `true` the expander's substitution context is the invocation's.
 func:bind_invocation = bool(Expander->:x, DeclNode:md, ExprNode:inv, Span:at) never fails {
     int32:pcount = raw macro_param_count(x.ast, md);
     int32:gcount = raw builtin_generic_count(inv);
+    if (raw refuse_type_args(x, raw builtin_name(inv), gcount, at)) { pass false; }
     int32:acount = (raw expr_list_count(inv)) - gcount;
     if (acount != pcount) {
         string:n1 = string_concat("`#", raw intern_get(x.interns,
@@ -2696,15 +2712,17 @@ func:record_site = NIL(Expander->:x, DeclNode:md, Span:site) never fails {
         } else {
             sp = (raw ast_stmt(x.ast, StmtId{ index: idx })).span;
         }
-        if (first) { lo = sp.line; hi = sp.line; file = sp.file; first = false; }
-        if (sp.line < lo) { lo = sp.line; }
-        if (sp.line > hi) { hi = sp.line; }
+        if (first) { lo = sp.offset; file = sp.file; first = false; }
+        if (sp.offset < lo) { lo = sp.offset; }
     }
 
-    // THE CLOSING BRACE IS NOT A MEMBER, so a diagnostic on the body's last line
-    // could sit one past the last item's start line. One line of slack rather than
-    // a parse of the body's extent, which the AST does not record.
-    MacroSite:e = MacroSite{ file: file, lo: lo, hi: hi + 1i32, site: site };
+    // THE BODY RUNS FROM ITS FIRST ITEM TO THE DECLARATION'S CLOSING BRACE (DEF-188, landing 144), in byte offsets: the
+    // parser records every macro declaration's extent (`ast_note_macro`), so the end is known exactly. The range was the
+    // items' START LINES plus one line of slack, which read a diagnostic in the next line's one-line macro as this
+    // body's (a false note at the wrong invocation) and a diagnostic deep in a multi-line item as nobody's (no note).
+    hi = raw ast_macro_end(x.ast, md.span.file, md.span.offset);
+    if (hi <= lo) { pass NIL; }
+    MacroSite:e = MacroSite{ file: file, lo: lo, hi: hi, site: site };
     drop sitetable_add(@x.sites, e);
     pass NIL;
 };
@@ -2737,8 +2755,8 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
         while (s < x.sites.v.count) decreases x.sites.v.count - s {
             MacroSite:e = x.sites.v[s];
             bool:inside = (g.span.file == e.file);
-            if (inside) { inside = (g.span.line >= e.lo); }
-            if (inside) { inside = (g.span.line <= e.hi); }
+            if (inside) { inside = (g.span.offset >= e.lo); }
+            if (inside) { inside = (g.span.offset < e.hi); }
             if (inside) {
                 // THE NOTE NAMES THE DIAGNOSTIC IT ANNOTATES (1.0.8): it sits
                 // at the INVOCATION, which is not "inside a macro body", and
@@ -3057,6 +3075,7 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
     DeclNode:md = raw ast_decl(x.ast, DeclId{ index: decl });
     int32:pcount = raw macro_param_count(x.ast, md);
     int32:gcount = raw builtin_generic_count(inv);
+    if (raw refuse_type_args(x, name, gcount, d.span)) { pass 0i32; }
     int32:acount = (raw expr_list_count(inv)) - gcount;
 
     if (acount != pcount) {
@@ -3242,10 +3261,32 @@ func:macrotable_index = int32(MacroTable->:t, int32:name, int32:owner) never fai
 // -- MACRO-006, a defect of the compiler by its own sentence, about a program that
 // was simply wrong. The descent is the clone's: the members of the items a body
 // declares, and of an `impl`.
+// What a declaration of this kind needs that a macro body cannot give it, or "" for a kind a body may emit (DEF-185).
+func:unemittable_kind = string(DeclKind:k) never fails {
+    if (k == DeclKind.DeclImportDecl) { pass "a `use`, and imports are loaded before expansion begins, so one an expansion produced would be read by nothing -- write it at the top of the file that needs it"; }
+    if (k == DeclKind.DeclExternBlock) { pass "an `extern` block, and its stubs are generated before expansion begins, so one an expansion produced would have none -- write it where it is meant"; }
+    if (k == DeclKind.DeclOpaqueDecl) { pass "an `opaque struct`, which belongs inside an `extern` block (D-066) -- write it there"; }
+    if (k == DeclKind.DeclUnitDecl) { pass "a `unit`, which no expansion emits: a body emits functions, structs, enums, traits, impls, module bindings and rules -- declare the unit beside the macro"; }
+    if (k == DeclKind.DeclAssocTypeDecl) { pass "an `assoc` type, which no expansion emits: a body emits functions, structs, enums, traits, impls, module bindings and rules -- write the `assoc` in the trait or the impl itself"; }
+    if (k == DeclKind.DeclErrorDecl) { pass "an `error` constant, which no expansion emits: a body emits functions, structs, enums, traits, impls, module bindings and rules -- declare the constant beside the macro"; }
+    pass "";
+};
+
 func:refuse_nested_macros = NIL(Expander->:x, DeclId:id, int32:fuel) never fails {
     if (raw decl_is_none(id)) { pass NIL; }
     if (fuel <= 0i32) { pass NIL; }
     DeclNode:d = raw ast_decl(x.ast, id);
+    // NOR AN `error`, A `unit`, AN `assoc`, A `use`, AN `extern` BLOCK OR AN `opaque struct` (DEF-185, landing 144): the
+    // clone has no form for any of them, so a body declaring one was MACRO-006 at its instantiation -- a defect of the
+    // compiler by its own sentence -- about a body that was simply out of reach. Refused by name where the macro is
+    // declared, before any expansion runs, with what the kind needs instead.
+    string:unemit = raw unemittable_kind(d.kind);
+    if (unemit.len > 0i64) {
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+            string_concat("this macro body declares ", unemit),
+            d.span);
+        pass NIL;
+    }
     if (d.kind == DeclKind.DeclMacroDecl) {
         string:m1 = string_concat("macro `", raw intern_get(x.interns, raw decl_name(d)));
         drop expand_err(x, raw MACRO_WRONG_SHAPE(),

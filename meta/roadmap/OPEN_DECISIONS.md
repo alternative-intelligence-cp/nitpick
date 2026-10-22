@@ -3315,6 +3315,7 @@ defect declares a `DEF-` in §2f.
 > 3d (the rows' neighbours), planned execution-grade before it starts, by severity: the traps (DEF-176, DEF-184,
 > DEF-177's), the checker's holes (DEF-178, DEF-187, DEF-180), DEF-183, then the rest.
 > *[2026-10-22, landing 143 (built 2026-10-18 by `nitpick-compiler_40`, landed by `nitpick-compiler_42`): DEF-184 FIXED -- a type's nesting is the parser's descent: `p_parse_type` counts a level of `expr_depth` at each entry and `p_suffixes` counts its `->`, `?`, `[]` and `.` suffixes, both against `AST_DEPTH_MAX` through one bound shared with the expression parser (`p_too_deep`, parser.npk); measured on a WIP compiler of the queue and again on landing 142's: `List<…>` 9,000 deep as a field or a parameter trapped the checker in the type parser, `int32->…` 13,000 deep trapped it in the resolver (`resolve_type`/`resolve_pointee`), each exit 3 with no message; each is one PARSE-012 now, a type 200 deep parsing as before; `parse_one_report.npk`'s cases 181-183. DEF-185, DEF-186 and DEF-188 stay OPEN (DEF-187 landed at 134, DEF-182 at 135).]*
+> *[2026-10-22, landing 144 (built 2026-10-18 by `nitpick-compiler_40`, landed by `nitpick-compiler_42`): DEF-185, DEF-186 and DEF-188 FIXED (DEF-182 at 135, DEF-187 at 134). DEF-185 -- an `error` constant, a `unit`, an `assoc` type, a `use`, an `extern` block or an `opaque struct` in a macro body is NITPICK-MACRO-005 at the macro's declaration (`unemittable_kind` beside the nested-`macro:` refusal, `check_macro_decls`), naming what the kind needs; each was MACRO-006, the clone's defect code, at the first instantiation (measured on a WIP compiler of the queue and again on landing 143's: all five the row named, and an `extern` block). DEF-186 -- a type argument on a macro invocation is NITPICK-MACRO-002 at the invocation (`refuse_type_args`, both arity paths); `#one<int32>()` compiled as `#one()`. DEF-188 -- MACRO-009's range is the body's first item to the declaration's closing brace in byte offsets (`ast_macro_end` over the extent the parser records); measured: a false second note at the line above's one-line macro's invocation (`round_bound.npk` carried one, unasserted) and no note for an error deep in a multi-line item. `body_unemittable.npk`, `macro_type_args.npk`, `macro_note_range.npk`.]*
 
 > **DEF-189 — FIXED at 1.6.1e step 3a (2026-10-01, `nitpick-compiler_24`; registered 2026-09-30, found by WP-C's
 > implementer answering the incoming seat's review question). A MACRO PARAMETER WRITTEN IN A TYPE OR A PATTERN WAS
@@ -3465,7 +3466,7 @@ defect declares a `DEF-` in §2f.
 > nothing else; the emission of all 536 programs byte-identical. S-122 stays OPEN for what a value MAY
 > be.
 
-> **DEF-194 — OPEN (2026-10-01; owner: the compiler seat; observed by `nitpick-compiler_24`'s probes; with DEF-187,
+> **DEF-194 — CLOSED 2026-10-22 (landing 144; built 2026-10-18 by `nitpick-compiler_40`, landed by `nitpick-compiler_42`): its first two faces are D-353's -- a `comptime` value parameter is TYPE-095 at its declaration since landing 117, and the struct face's second report (TYPE-004 at `int32[N]`, "an array size must be an integer constant expression") is silenced behind it now (`names_value_param`, D-240; `value_param_reserved.npk`'s sixth site). Its third face is not a value parameter's and is registered as DEF-270. WAS: OPEN (2026-10-01; owner: the compiler seat; observed by `nitpick-compiler_24`'s probes; with DEF-187,
 > step 3d). A `comptime` VALUE PARAMETER IS ACCEPTED WHERE NOTHING LOWERS IT.** `func:staged<comptime int32:LEVEL> =
 > int32() never fails { pass LEVEL; };` passes the frontend and is EMIT-002 at the read (`gi5`; DEF-187's last
 > sentence, with its probe); `struct:Buf<comptime int32:N> = { int32[N]:a; };` is TYPE-004, "an array size must be
@@ -3473,6 +3474,8 @@ defect declares a `DEF-` in §2f.
 > func:` cannot be folded at all ("there is no type named `T`", `gi8`). Each is a refusal, none silent. To be read
 > against D-064 §2 and D-109 (what a value parameter is FOR beyond the compiler-known `Mutex`/`simd` positions)
 > before step 3d plans it.
+
+> **DEF-270 — OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 144, DEF-194's third face; LOW: a loud refusal of a legal program). A GENERIC `comptime func:` CANNOT NAME ITS TYPE PARAMETER IN A TYPE UNDER EVALUATION.** `comptime func:width<T> = int64() never fails { pass #size_of<T>(); };` and `fixed int64:W = comptime(width::<int32>());` is TYPE-001 "there is no type named `T`" at the body's `T` and TYPE-004 at the `comptime(…)` (measured on a WIP compiler of the queue and again on landing 143's, `wt/40o/.internal/probes/step3d_x/d194d.npk`): the evaluator binds a call's type arguments for VALUES (`comptime func:twice<T> = T(move T:x)` folds `twice::<int32>(4i32)` to 4) and never for the types the body resolves, so a `#size_of<T>()` or a `T[3]` inside the body is resolved in the declaration's scope with nothing bound. The fix binds the call's type-argument window around the body's type resolution, as the checker's generic instance does; its own landing.
 
 > **DEF-195 — FIXED at 1.6.1e step 3a (2026-10-01; found by `nitpick-compiler_24` asking what DEF-191's fix did to
 > the verified build; A SOUNDNESS HOLE OF THE VERIFICATION LEG, on every compiler since 1.5.3). A GENERIC `pure never
@@ -4224,7 +4227,7 @@ defect declares a `DEF-` in §2f.
 > corrected: a row may be the compiler's defect on reading (a code the reference promises and the compiler never
 > emits is one or the other).
 
-> **DEF-240 — OPEN (2026-10-07; the listener's observation in O-N36). `npkg`'s UNKNOWN-STAGE REFUSAL
+> **DEF-240 — FIXED 2026-10-22 (landing 144; built 2026-10-18 by `nitpick-compiler_40`, landed by `nitpick-compiler_42`): `npkg/manifest.npk` holds ONE stage list, `stage_names`, read by the predicate (`stage_known`) and by the refusal's sentence (`stage_names_text`), in the harness's `STAGES` order -- as the harness's one tuple is read by both of its own. The sentence named ten stages and the predicate accepted twelve (`object` was missing beside `explore`). Measured: a manifest naming stage `nosuch` is refused with all twelve named. WAS: OPEN (2026-10-07; the listener's observation in O-N36). `npkg`'s UNKNOWN-STAGE REFUSAL
 > (`npkg/manifest.npk:274`) OMITS `explore`**, which `manifest.npk:41` accepts: the list the refusal prints is not
 > the list the reader reads.
 

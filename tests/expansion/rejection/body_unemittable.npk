@@ -1,0 +1,40 @@
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 26:23
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 27:22
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 28:23
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 29:21
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 30:24
+// expect-error: NITPICK-MACRO-005
+// expect-error-at: 31:24
+// A MACRO BODY DOES NOT DECLARE WHAT NO EXPANSION CAN EMIT (DEF-185, landing 144). The macro clone has no form for an
+// `error` constant, a `unit`, an `assoc` type, a `use`, an `extern` block or an `opaque struct`, so a body declaring one
+// was refused at its first instantiation as NITPICK-MACRO-006 -- "this declaration kind has no entry in the macro
+// clone", a defect of the compiler by its own sentence, about a program that was only out of reach. Each is
+// NITPICK-MACRO-005 at the declaration now, where the macro is declared, before any expansion runs, naming what the
+// kind needs instead -- an import is loaded before expansion begins, an `extern` block's stubs are generated before it,
+// an `opaque struct` lives in an `extern` block. A program the declaration check refuses is not expanded, so the
+// bodies a macro may emit are the accept suite's to show (`tests/accept/`), not this file's.
+mod:body_unemittable;
+error:Base;
+trait:Holder = { assoc:Item; func:get = int32(Self:s) never fails; };
+struct:Cell = { int32:x; };
+
+macro:mk_error = () { error:Emitted; };
+macro:mk_unit = () { unit:Hertz2 = 1 / Seconds; };
+macro:mk_assoc = () { assoc:Item = int32; };
+macro:mk_use = () { use "./absent.npk".*; };
+macro:mk_extern = () { extern:"ifc" = { func:f = int64(Bridge->:b, Duration:within); }; };
+macro:mk_opaque = () { opaque struct:Q; };
+impl:Cell:Holder = { #mk_assoc(); func:get = int32(Cell:s) never fails { pass s.x; }; };
+#mk_error();
+#mk_unit();
+#mk_use();
+#mk_extern();
+#mk_opaque();
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) { exit 9i32; };

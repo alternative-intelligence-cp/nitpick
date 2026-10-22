@@ -1,0 +1,27 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 16:51
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 24:1
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 20:9
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 25:1
+// A DIAGNOSTIC INSIDE AN EXPANDED BODY IS NOTED AT ITS OWN INVOCATION, AND AT NO OTHER (DEF-188, landing 144). MACRO-009's
+// range was the body items' start lines plus one line of slack: the error in `mk_b`'s one-line body, on the line after
+// `mk_a`'s, was also noted at `mk_a`'s invocation -- a false note -- and the error deep in `mk_c`'s multi-line function,
+// three lines past the item's start, was noted nowhere. The range runs from the body's first item to the declaration's
+// closing brace now, in byte offsets the parser records. `mk_a` expands clean and draws no note.
+mod:macro_note_range;
+macro:mk_a = () { func:fa = int32() never fails { pass 1i32; }; };
+macro:mk_b = () { func:fb = int32() never fails { pass true; }; };
+macro:mk_c = () {
+    func:fc = int32() never fails {
+        int32:v = 1i32;
+        pass false;
+    };
+};
+#mk_a();
+#mk_b();
+#mk_c();
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) { exit 9i32; };
