@@ -472,7 +472,18 @@ pub func:p_looks_like_decl = bool(Parser->:p) never fails {
 
 pub func:p_parse_block = StmtId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
-    discard(raw p_expect(p, TokenKind.PLBrace));
+    // A BLOCK WITHOUT ITS `{` READS NOTHING (DEF-271, landing 139): after a statement header that failed --
+    // `for (int32:i = 0i32; …)` refused at `=`, `if (x = 3i32)` at `=` -- the parser stands short of the body's `{`,
+    // and this loop read what followed as the body's statements, the rest of the header among them, and took the
+    // ENCLOSING block's `}` as its own: the enclosing `{` was "never closed" (PARSE-003 at it, or a later
+    // declaration's `}` closed it), and the declaration after it was read as statements ("expected a type") --
+    // one mistake, three or four reports. The block is empty, and what follows is the enclosing block's, read
+    // under its recovery (a `{` there is the body, parsed as a block statement).
+    if (!(raw p_expect(p, TokenKind.PLBrace))) {
+        int32:m0 = raw ast_scratch_mark(p.ast);
+        IdSpan:w0 = raw ast_scratch_commit(p.ast, m0);
+        pass (raw ast_add_stmt(p.ast, StmtKind.StmtBlockStmt, sp, 0i32, w0.start, w0.count, 0i64));
+    }
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
@@ -736,12 +747,13 @@ func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) never fails {
 func:p_parse_if = StmtId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     discard(raw p_expect(p, TokenKind.KwIf));
-    discard(raw p_expect(p, TokenKind.PLParen));
+    bool:had_paren = raw p_expect(p, TokenKind.PLParen);
     ExprId:cond = raw p_parse_expr(p);
     discard(raw p_expect(p, TokenKind.PRParen));
     // The branches are BLOCKS. There is no braceless form, so there is no
     // dangling `else` to resolve and no `if (c) a(); b();` that reads as two
     // guarded calls.
+    if (p.panic && had_paren) { drop p_recover_header(p); }   // a failed header is skipped to its `)` (DEF-271's landing)
     StmtId:then_b = raw p_parse_block(p);
     int32:else_b = 0i32;
     if (raw p_accept(p, TokenKind.KwElse)) {
@@ -762,7 +774,7 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
 
     if (k == TokenKind.KwWhile) {
         discard(raw p_advance(p));
-        discard(raw p_expect(p, TokenKind.PLParen));
+        bool:had_wparen = raw p_expect(p, TokenKind.PLParen);
         ExprId:c = raw p_parse_expr(p);
         discard(raw p_expect(p, TokenKind.PRParen));
         // `while (i < n) invariant total >= 0i32, i >= 0i32 { … }` -- between the
@@ -771,6 +783,7 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
         // THE TERMINATION CLAUSE (D-304, 1.5.8c) comes BEFORE the invariant;
         // one read after it too, so the wrong order is the checker's TYPE-072
         // and never a parse error some tokens away.
+        if (p.panic && had_wparen) { drop p_recover_header(p); }   // a failed header is skipped to its `)` (DEF-271's landing)
         VerifyId:m1 = raw p_parse_measure(p);
         VerifyId:inv = raw p_parse_invariant(p);
         VerifyId:meas = raw p_merge_measures(p, m1, raw p_parse_measure(p));
@@ -786,7 +799,7 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
 
     if (k == TokenKind.KwFor) {
         discard(raw p_advance(p));
-        discard(raw p_expect(p, TokenKind.PLParen));
+        bool:had_paren = raw p_expect(p, TokenKind.PLParen);
         // The binding is a full ParamDecl with a REQUIRED type:
         // `for (int64:i in 1..3)`. The C three-clause form and untyped bindings
         // are both rejected (D-023) -- and note they are rejected by there being
@@ -803,6 +816,12 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
         discard(raw p_expect(p, TokenKind.KwIn));
         ExprId:iter = raw p_parse_expr(p);
         discard(raw p_expect(p, TokenKind.PRParen));
+        // A FAILED `for` HEADER IS SKIPPED TO ITS `)` (DEF-271's landing, found by its chain's reading of the fuzz
+        // corpus's `ty0982`): the header's rest -- `int64:i in 0i64...3i64` after a refused qualifier, the C
+        // `for`'s clauses after `=` (D-023) -- begins with what a declaration begins with, so the enclosing
+        // block's recovery stopped there and read it as statements ("expected `;`, found `in`"; the clauses).
+        // Skipped to the matching `)`, the body that follows is the `for`'s own and the mistake is one report.
+        if (p.panic && had_paren) { drop p_recover_header(p); }
         // A `for` is bounded by construction (D-234) and takes no termination
         // clause; the parser still reads one so the checker can say so (TYPE-072).
         VerifyId:fm1 = raw p_parse_measure(p);
@@ -841,12 +860,13 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
     // to begin with (D-027). Exactly one fires, and together they partition the
     // outcomes.
     discard(raw p_expect(p, TokenKind.KwWhen));
-    discard(raw p_expect(p, TokenKind.PLParen));
+    bool:had_nparen = raw p_expect(p, TokenKind.PLParen);
     ExprId:wc = raw p_parse_expr(p);
     discard(raw p_expect(p, TokenKind.PRParen));
     // `when` takes an invariant like every other loop. AST_REFERENCE section 2
     // omitted the field while VERIFICATION_REFERENCE section 4 listed `when`
     // among the constructs that accept one; the spec now says so too.
+    if (p.panic && had_nparen) { drop p_recover_header(p); }   // a failed header is skipped to its `)` (DEF-271's landing)
     VerifyId:wm1 = raw p_parse_measure(p);
     VerifyId:winv = raw p_parse_invariant(p);
     VerifyId:wmeas = raw p_merge_measures(p, wm1, raw p_parse_measure(p));

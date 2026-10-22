@@ -256,11 +256,33 @@ pub func:p_sync = NIL(Parser->:p) never fails {
         p.panic = false;
         pass NIL;
     }
+    // A BRACE GROUP IS ONE TOKEN TO THIS WALK (DEF-265, landing 139): a `{` it steps over opens a group whose `}`
+    // is the group's, never the enclosing block's end, and the sync points inside the group are the group's
+    // statements. The first form stopped at the first `}` after a skipped `{` -- so `Box<int32>{ v: 5i32 }` after a
+    // failed expression (`Box < int32` reads as a comparison) had its `{` skipped and its `}` taken as the
+    // enclosing body's end, and every statement after it was reported again as a module-level declaration
+    // ("expected a type"; the fuzz corpus's `tr0550`, `as0594`, `ty1282`). `p_recover_decl` has known a bracket since
+    // landing 130; this is the same rule for the belt every parser loop calls when a rule consumed nothing.
+    int32:depth = 0i32;
+    if (raw p_at(p, TokenKind.PLBrace)) { depth = 1i32; }
     discard(raw p_advance(p));
     while (true) decreases raw p_left(p) {
         TokenKind:k = raw p_kind(p);
         if (k == TokenKind.Eof) { break; }
-        if (raw is_sync_point(k)) { break; }
+        if (k == TokenKind.PLBrace) {
+            depth = depth + 1i32;
+            discard(raw p_advance(p));
+            continue;
+        }
+        if (k == TokenKind.PRBrace) {
+            if (depth == 0i32) { break; }
+            depth = depth - 1i32;
+            discard(raw p_advance(p));
+            continue;
+        }
+        if (depth == 0i32) {
+            if (raw is_sync_point(k)) { break; }
+        }
         discard(raw p_advance(p));
     }
     // A `;` marks the end of the broken construct, so step over it: leaving it
@@ -394,12 +416,41 @@ pub func:p_binding_name = Token(Parser->:p) never fails {
 // NO mandatory advance here, unlike `p_sync` -- the caller may already be sitting
 // on a perfectly good next item, and eating it would turn one lost construct into
 // two.
+// SKIP ONE BRACE GROUP (DEF-265): the parser stands at a `{`; consume it and everything up to and including its
+// matching `}`, or to the end of the file.
+func:p_skip_brace_group = NIL(Parser->:p) never fails {
+    int32:depth = 0i32;
+    while (true) decreases raw p_left(p) {
+        TokenKind:k = raw p_kind(p);
+        if (k == TokenKind.Eof) { break; }
+        discard(raw p_advance(p));
+        if (k == TokenKind.PLBrace) { depth = depth + 1i32; }
+        if (k == TokenKind.PRBrace) {
+            depth = depth - 1i32;
+            if (depth <= 0i32) { break; }
+        }
+    }
+    pass NIL;
+};
+
 pub func:p_recover = NIL(Parser->:p) never fails {
     if (!p.panic) {
         pass NIL;
     }
     while (true) decreases raw p_left(p) {
         if (raw p_at_end(p))        { break; }
+        // A `{` AFTER A NAME OR A `>` IS THE FAILED EXPRESSION'S LITERAL, NEVER A BLOCK (DEF-265, landing 139): a
+        // statement's block opens after `;`, `}`, `{`, `)`, or a keyword (`else`, `then`, `defer`), and a struct
+        // literal's brace after its type's name -- `Foo<bar>{ v: 1i32 }` refused at the `{` (`Foo < bar > {` reads
+        // as two comparisons) stopped here, and the literal's fields were parsed as a block's statements and
+        // reported again. The group is skipped whole, and the recovery goes on to the statement's end.
+        if (raw p_at(p, TokenKind.PLBrace)) {
+            TokenKind:pk = raw p_prev_kind(p);
+            if ((pk == TokenKind.Ident) || (pk == TokenKind.OpGt)) {
+                drop p_skip_brace_group(p);
+                continue;
+            }
+        }
         if (raw p_can_start_item(p)) { break; }
         discard(raw p_advance(p));
     }
@@ -427,6 +478,34 @@ pub func:p_recover = NIL(Parser->:p) never fails {
 // consumed `;` skips nothing at all (DEF-260, below). A declaration that follows without one of those between is lost
 // to the parse, which costs nothing (a parse error stops the driver before resolution). Statements keep `p_recover`:
 // most begin with an identifier or a type.
+// SKIP A FAILED PARENTHESISED HEADER TO ITS `)`: the parser stands inside the header's parentheses (one open);
+// consume to the matching `)` counting parentheses and brace groups (a struct literal inside the header), and
+// leave panic behind so the body that follows is parsed as the statement's own. A `{` met FIRST is the body's
+// (the `)` itself was the mistake): nothing is skipped. A `}` that would close the enclosing block is left
+// standing, and the end of the file stops the walk.
+pub func:p_recover_header = NIL(Parser->:p) never fails {
+    if (raw p_at(p, TokenKind.PLBrace)) { pass NIL; }
+    int32:pdepth = 1i32;
+    int32:bdepth = 0i32;
+    while (true) decreases raw p_left(p) {
+        TokenKind:k = raw p_kind(p);
+        if (k == TokenKind.Eof) { pass NIL; }
+        if (k == TokenKind.PLParen) { pdepth = pdepth + 1i32; }
+        if (k == TokenKind.PRParen) {
+            pdepth = pdepth - 1i32;
+            if (pdepth == 0i32) { discard(raw p_advance(p)); break; }
+        }
+        if (k == TokenKind.PLBrace) { bdepth = bdepth + 1i32; }
+        if (k == TokenKind.PRBrace) {
+            if (bdepth == 0i32) { pass NIL; }
+            bdepth = bdepth - 1i32;
+        }
+        discard(raw p_advance(p));
+    }
+    p.panic = false;
+    pass NIL;
+};
+
 pub func:p_recover_decl = NIL(Parser->:p) never fails {
     if (!p.panic) {
         pass NIL;

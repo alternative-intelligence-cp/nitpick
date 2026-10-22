@@ -315,16 +315,57 @@ func:p_parse_arm = StmtId(Parser->:p) never fails {
 // only in the node they build.
 func:p_parse_pick_selector = ExprId(Parser->:p) never fails {
     discard(raw p_expect(p, TokenKind.KwPick));
-    discard(raw p_expect(p, TokenKind.PLParen));
+    bool:had_paren = raw p_expect(p, TokenKind.PLParen);
     ExprId:sel = raw p_parse_expr(p);
     discard(raw p_expect(p, TokenKind.PRParen));
+    // a failed selector is skipped to its `)` (DEF-271's landing), so the arms that follow are the pick's own
+    if (p.panic && had_paren) { drop p_recover_header(p); }
     pass sel;
+};
+
+// AN ARM'S RECOVERY IS TO THE NEXT ARM (DEF-271's landing, found by its chain's reading of the fuzz corpus's
+// `ct0080` and `mc0374`): after an arm that failed -- a pattern that is no pattern, `MyMacro!(a, b) where (a > b)
+// { … }` -- the rest of it is skipped to the `,` or the pick's `}` at bracket depth 0, never read as the enclosing
+// block's statements. The statement recovery (`p_recover`) stops at anything that can start an item, which the
+// broken pattern's own name can, and once a block without its `{` reads nothing (DEF-271) the pattern's `(a, b)`
+// was read on as statements: "expected `}`", "expected `;`" -- two phantoms. A stray `)` or `]` at depth 0 is the
+// broken arm's own and is stepped over.
+func:p_recover_arm = NIL(Parser->:p) never fails {
+    if (!p.panic) { pass NIL; }
+    int32:depth = 0i32;
+    while (true) decreases raw p_left(p) {
+        TokenKind:k = raw p_kind(p);
+        if (k == TokenKind.Eof) { break; }
+        if ((k == TokenKind.PLParen) || (k == TokenKind.PLBrace) || (k == TokenKind.PLBracket)) {
+            depth = depth + 1i32;
+            discard(raw p_advance(p));
+            continue;
+        }
+        if ((k == TokenKind.PRParen) || (k == TokenKind.PRBrace) || (k == TokenKind.PRBracket)) {
+            if (depth == 0i32) {
+                if (k == TokenKind.PRBrace) { break; }
+                discard(raw p_advance(p));
+                continue;
+            }
+            depth = depth - 1i32;
+            discard(raw p_advance(p));
+            continue;
+        }
+        if ((depth == 0i32) && (k == TokenKind.PComma)) { break; }
+        discard(raw p_advance(p));
+    }
+    p.panic = false;
+    pass NIL;
 };
 
 // Arms are separated by COMMAS, and a trailing one is accepted -- adding an arm
 // should not require editing the line above it.
 func:p_parse_arms = IdSpan(Parser->:p) never fails {
-    discard(raw p_expect(p, TokenKind.PLBrace));
+    // THE ARMS WITHOUT THEIR `{` READ NOTHING (DEF-271's rule at the pick): after a selector that failed the
+    // parser stands short of the `{`, and the arm loop read the selector's rest and then the arms' block as a
+    // broken arm whose recovery ate the pick's own `}` (and the block's after it). What follows is the enclosing
+    // block's, read under its recovery, as a headless body is.
+    if (!(raw p_expect(p, TokenKind.PLBrace))) { pass IdSpan{ start: 0i32, count: 0i32 }; }
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) decreases raw p_left(p) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
@@ -332,7 +373,7 @@ func:p_parse_arms = IdSpan(Parser->:p) never fails {
         int64:before = raw p_position(p);
         StmtId:arm = raw p_parse_arm(p);
         drop ast_scratch_push(p.ast, arm.index);
-        drop p_recover(p);
+        drop p_recover_arm(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
         if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }

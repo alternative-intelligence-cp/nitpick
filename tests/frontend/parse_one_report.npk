@@ -177,6 +177,68 @@ func:main = int32(cstring[]:_~argv) {
     Parsed:d2 = raw parsed("mod:m; error:any; error:in; func:g = int32() { pass 2i32; };", @it);
     if ((raw diaglist_count(@d2.diags)) != 2i64)                                    { exit 141i32; }
     if (!(raw has_func(@d2, @it, "g")))                                             { exit 142i32; }
+    // --- DEF-265 (landing 139): a struct literal's braces after a failed expression are the expression's ------
+    // the fuzz corpus's shape (`tr0550`, `as0594`, `ty1282`): `Box<int32>{ … }` after `Box < int32` failed -- the
+    // belt skipped the literal's `{` and stopped at its `}`, which ended the body, and the statement after it was
+    // a module-level declaration ("expected a type"). One report now.
+    Parsed:s1 = raw parsed("mod:m; struct:Box<T> = { T:v; int32:n; }; func:f = int32() { Box<int32>:c = Box<int32>{ v: 5i32, n: 3i32 }; pass 1i32; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@s1, raw PARSE_UNEXPECTED())))                               { exit 150i32; }
+    if (!(raw has_func(@s1, @it, "g")))                                             { exit 151i32; }
+    // the statement recovery meeting the brace: `Foo<bar>{ … }` refused at the `{` (two comparisons), its fields
+    // were a block's statements and reported again -- one report now.
+    Parsed:s2 = raw parsed("mod:m; struct:Foo = { int32:v; }; func:f = int32() { int32:bar = 1i32; int32:c = Foo<bar>{ v: 1i32 }; pass 1i32; };", @it);
+    if (!(raw one_diag(@s2, raw PARSE_UNEXPECTED())))                               { exit 152i32; }
+    // CONTROL: a block statement after a failed statement's `;` is still a block -- its own mistake a second report.
+    Parsed:s3 = raw parsed("mod:m; func:f = int32() { int32:a = ; { int32:b = ; } pass 1i32; };", @it);
+    if ((raw diaglist_count(@s3.diags)) != 2i64)                                    { exit 153i32; }
+    // CONTROL: an `if`'s body after a failed condition is the `if`'s, and the statement after it is parsed.
+    Parsed:s4 = raw parsed("mod:m; func:f = int32() { if (1i32 + ) { pass 1i32; } int32:z = ; pass 2i32; };", @it);
+    if ((raw diaglist_count(@s4.diags)) != 2i64)                                    { exit 154i32; }
+    // --- DEF-271 (landing 139): a block without its `{` reads nothing -------------------------------------------
+    // after a statement header that failed, the body's block read the rest of the header and what followed as its
+    // statements and took the enclosing body's `}` as its own: the enclosing `{` was never closed and the next
+    // declaration was read as statements -- three or four reports of one mistake. One report now, and `g` parsed.
+    Parsed:t1 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; if (x = 3i32) { x = 2i32; } pass x; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t1, raw PARSE_EXPECTED())))                                 { exit 155i32; }
+    if (!(raw has_func(@t1, @it, "g")))                                             { exit 156i32; }
+    Parsed:t2 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; while (x = 3i32) unbounded { x = 2i32; } pass x; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t2, raw PARSE_EXPECTED())))                                 { exit 157i32; }
+    if (!(raw has_func(@t2, @it, "g")))                                             { exit 158i32; }
+    Parsed:t3 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; loop(0i32, 3i32 1i32) { x += 1i32; } pass x; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t3, raw PARSE_EXPECTED())))                                 { exit 159i32; }
+    if (!(raw has_func(@t3, @it, "g")))                                             { exit 160i32; }
+    // a body whose `{` is missing: the statement after the header is the enclosing block's -- one report.
+    Parsed:t4 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; if (x == 1i32) x = 2i32; pass x; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t4, raw PARSE_EXPECTED())))                                 { exit 161i32; }
+    if (!(raw has_func(@t4, @it, "g")))                                             { exit 162i32; }
+    // the C three-clause `for` (D-023): the refused header is skipped to its `)` and the body is the `for`'s own --
+    // ONE report (the chain's first reading had two: the clauses read as statements); the enclosing body closes and
+    // `g` is parsed.
+    Parsed:t5 = raw parsed("mod:m; func:f = int32() { int32:s = 0i32; for (int32:i = 0i32; i < 3i32; i += 1i32) { s += i; } pass s; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t5, raw PARSE_EXPECTED())))                                 { exit 163i32; }
+    if (!(raw has_func(@t5, @it, "g")))                                             { exit 164i32; }
+    // --- the chain's reading of the fuzz corpus (ct0080, mc0374, ty0982; the pick probe) --------------------------
+    // a pattern that is no pattern (a removed macro pattern): the arm's recovery is to the next arm, never the
+    // enclosing block's statements -- one report, `g` parsed.
+    Parsed:t6 = raw parsed("mod:m; func:f = int32() { int32:n = 1i32; pick (n) { MyMacro!(a, b) where (a > b) { n = 2i32; } } pass n; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t6, raw PARSE_EXPECTED())))                                 { exit 165i32; }
+    if (!(raw has_func(@t6, @it, "g")))                                             { exit 166i32; }
+    // the same arm beside a sound one: still one report, and the sound arm is parsed with the pick.
+    Parsed:t7 = raw parsed("mod:m; func:f = int32() { int32:n = 1i32; int32:r = 0i32; pick (n) { my_macro!(a, b) where (a > b) { r = 1i32; }, (*) { r = 2i32; } } pass r; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t7, raw PARSE_EXPECTED())))                                 { exit 167i32; }
+    if (!(raw has_func(@t7, @it, "g")))                                             { exit 168i32; }
+    // a `for` binding with a qualifier (TYPE_REFERENCE: none is taken): the header is skipped to its `)` -- one report.
+    Parsed:t8 = raw parsed("mod:m; func:f = int32() { int64:t = 0i64; for (sealed int64:i in 0i64...3i64) { t = t + i; } pass 0i32; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t8, raw PARSE_EXPECTED())))                                 { exit 169i32; }
+    if (!(raw has_func(@t8, @it, "g")))                                             { exit 170i32; }
+    // a `pick` whose selector fails: skipped to its `)`, the arms are the pick's own -- one report.
+    Parsed:t9 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; pick (x = 3i32) { (1i32) { x = 2i32; }, (*) { x = 4i32; } } pass x; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t9, raw PARSE_EXPECTED())))                                 { exit 171i32; }
+    if (!(raw has_func(@t9, @it, "g")))                                             { exit 172i32; }
+    // an `if` whose condition fails, with an `else`: one report, both branches the `if`'s.
+    Parsed:t10 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; if (x = 3i32) { x = 2i32; } else { x = 5i32; } pass x; }; func:g = int32() { pass 2i32; };", @it);
+    if (!(raw one_diag(@t10, raw PARSE_EXPECTED())))                                { exit 173i32; }
+    if (!(raw has_func(@t10, @it, "g")))                                            { exit 174i32; }
 
     wild_release_all();
     exit 0i32;
