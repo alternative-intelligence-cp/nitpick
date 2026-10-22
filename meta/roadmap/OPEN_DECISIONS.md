@@ -3051,9 +3051,25 @@ defect declares a `DEF-` in §2f.
 > arms' slots shared), and `emit_builtin`'s, `emit_coalesce`'s, the ternary arm's and `emit_cast`'s frames each want
 > the split `emit_binary` got. Its own landing, with DEF-269's (the encoder's twin) or after it.
 
-> **DEF-277 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report
-> (`.internal/handoff_35/DEF269_AGENT_REPORT.txt`, its first finding); DEF-269's class in the STATEMENT walk). NESTED BLOCKS
-> EXHAUST THE COMPILER'S STACK UNDER `--obligations`.** A body of bare blocks nested 252 deep is `--obligations` exit 3 with
+> **DEF-277 — FIXED 2026-10-22 (landing 149; built by the DEF-277 agent (Opus) under `nitpick-compiler_42`, read whole,
+> checked arm for arm and landed by `nitpick-compiler_42`): `walk_stmt`'s eighteen statement arms are functions of their own
+> (`walk_k_*`, smt_encode.npk, each handed the handle, the id and the node read once in the dispatch; every arm ends in
+> `pass NIL`, so none falls through and none needs landing 145's `ArmTerm`; the Block arm is the dispatch's direct call of
+> `walk_block`, since a wrapper would put a third frame on every level of the very nest this row is about), the dispatch tests
+> the kinds in the one function's old order -- `stmt_carries_expr`'s arm AFTER the Give, Prove and AssertStatic tests, which
+> the predicate also matches -- and holds 4 slots (216 bytes) where the one function held 751 (36,088), so a level of a nest
+> of blocks costs 432 bytes where it cost 36,304 and a nest at the parser's bound (255) decides under `--obligations`
+> (`tests/verify/block_bound.npk`: bare blocks 252 deep and `if`s 126 deep, a `prove` and an `overflow` row at the bottom of
+> each, discharged; the compiler before this landing exits 3 on the blocks with no message, measured: 229 nested blocks
+> decide on it and 230 do not). Every arm's text is the old arm's -- 18 of 18 byte-identical once the dedent is undone, by a
+> script written independently of the one that split them, and the arms re-inlined rebuild the old function -- so the
+> encoder writes what it wrote: the problem texts of the verify suite, of 515 programs and probes, and of the compiler's own
+> build are byte-identical under both compilers, and `walk_stmt`'s 29 rows are five arms' now, kind for kind (the loop arm's
+> 7, the `when` arm's 4, the `prove` and `assert_static` arms' 2 each, the `continue` arm's 14). The test is a coarse guard
+> (it fails only when a level costs some 33 KB again, the split undone), and nothing in the gates measures a frame: a creeping
+> frame is silent until a test at the bound breaks. WAS: OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145,
+> from the DEF-269 agent's report (`.internal/handoff_35/DEF269_AGENT_REPORT.txt`, its first finding); DEF-269's class in the
+> STATEMENT walk). NESTED BLOCKS EXHAUST THE COMPILER'S STACK UNDER `--obligations`.** A body of bare blocks nested 252 deep is `--obligations` exit 3 with
 > no message on landing 144's compiler and on 145's alike: the encoder's statement walk (`walk_stmt`, a 36,088-byte frame,
 > and `walk_block`) recurses once a level with every arm's locals in one frame, as `enc_expr` did before 145, and runs out
 > after some 230 frames -- below the AST's bound (256, DEF-150), where the plain build compiles the program. No program of
@@ -3065,7 +3081,9 @@ defect declares a `DEF-` in §2f.
 > THE FRONT HALF.** A `pick` expression nested in a `pick` expression's arm, and so on, costs about x1.9 per level on both
 > compilers: depth 20 is twelve seconds, depth 30 past five minutes (the agent's measure). The cause is not located: a walk
 > that re-visits every arm of every enclosing pick per level is the shape to look for (the checker's `type_pick_rules` over
-> both spellings, the bindings analysis's arm merge, or the folder). Its own landing, measured first.
+> both spellings, the bindings analysis's arm merge, or the folder). Its own landing, measured first. (2026-10-22, landing 149: the DEF-277 agent located a
+> sibling, DEF-281 -- nested LOOPS at x1.8 per level, `bindings.assign_loop_body` walking every loop body twice -- and its
+> shape is the first place to look here: the bindings analysis walking an expression pick's arms more than once per level.)
 
 > **DEF-279 — FIXED 2026-10-22 (landing 148, `nitpick-compiler_42`): `int_form_and` (smt_encode.npk) answers the width's two
 > edge masks BEFORE its arithmetic -- the top mask `2^63 - 1` as `(mod a 2^63)` for a word of 63 bits or more (the low-bits shape
@@ -3096,6 +3114,23 @@ defect declares a `DEF-` in §2f.
 > `move_string.npk`); a body that only passes its parameter (`pass x;`) folded. NOW: `fold_k_move_expr` folds the operand's value --
 > the evaluator's values are copies, and the move rules are the checker's, enforced on the body as on any (MOVE-001 on a later read) --
 > so the three probes fold and `comptime_generic_type.npk`'s local-type case binds a `T` by `move`.
+
+> **DEF-281 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 149, from the DEF-277 agent's report, its first
+> finding; DEF-229's class -- a compiler that does not finish on a legal program, here by exhausting memory and time -- in the
+> FRONT HALF, on both compilers). NESTED LOOPS TAKE EXPONENTIAL FRONT-HALF TIME AND MEMORY.** A nest of loops -- `while` with its
+> `decreases` or `unbounded`, a counted `loop`, a `for` -- costs about x1.8 per level in time AND peak memory on landing 146's
+> compiler and on 149's alike: `tools/check` over a `while (b) unbounded` nest at 12 levels 0.25 s and 16 MB, at 16 levels
+> 0.36 s and 44 MB, at 20 levels 2.1 s and 476 MB, at 24 levels past a 6 GB address-space cap (exit 3); an uncapped 60-level
+> `while … decreases` nest held 31 GB after 525 s and was killed. LOCATED by callgrind over an 18-level nest (3.75 G
+> instructions): `bindings.assign_loop_body` 74.5% inclusive, recursing through `assign_stmt`/`assign_stmt_window`, the
+> exclusive top `npk_small_alloc` 10.2%, `state_absorb_may` 8.0%, `assign_stmt` 5.8%, `state_copy` 5.0% -- `assign_loop_body`
+> (bindings.npk) walks every loop body TWICE, D-116's silent pre-pass and then the real pass, each over a `state_copy`, so a
+> nest of n loops walks the innermost body 2^n times, and the memory's growth at the same rate says each walk keeps what it
+> allocates (an inference, measured no further). A dozen nested loops compile in a blink; twenty-four are not compiled. The
+> remedy walks a body once per level -- the pre-pass's answer carried down to the nested loops, or the pre-pass memoised per
+> body -- measured first on the probe nests (`wt/42d/.internal/probes/def277/`'s `loops_*` and `whiles_*`, run under
+> `ulimit -v`); DEF-278's growth (x1.9 per level, nested pick EXPRESSIONS) is plausibly the same shape and is measured with it.
+> Its own landing.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

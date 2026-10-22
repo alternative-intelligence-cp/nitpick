@@ -1,0 +1,47 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 2
+// expect-obligation: overflow discharged 2
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// THE ENCODER'S STATEMENT WALK HOLDS A NEST OF BLOCKS AT THE DEPTH BOUND
+// (DEF-277, landing 149): `walk_stmt` held every statement arm's locals in
+// its one frame (751 slots, 36 KB: allocas are hoisted, D-173), and a nest
+// of blocks recursed through it and `walk_block` once a level, so `npkc
+// --obligations` exited 3 with no message after some 230 levels, where the
+// plain build compiles the program -- DEF-269's class in the statement walk.
+// Each arm is a function of its own now, and a level of a nest of blocks
+// costs `walk_stmt`'s and `walk_block`'s 432 bytes. The bare blocks stand
+// 252 deep and the `if`s 126 deep (an `if` is two levels of the tree: the
+// statement and its block), each the deepest the AST's bound admits (256
+// levels, DEF-150) with these two statements at the bottom; there the
+// `prove` reads the value the encoder carried down every level, and the
+// `+` is an `overflow` row decided by it. The compiler before landing 149
+// exits 3 on the blocks under `--obligations`; its frame fits the `if`s.
+mod:block_bound;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:x = 1i32;
+    { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { prove(x == 1i32); x = x + 1i32; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    if (x != 2i32) { exit 1i32; }
+    int32:y = 1i32;
+    if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { if (y > 0i32) { prove(y == 1i32); y = y + 1i32; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    if (y != 2i32) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

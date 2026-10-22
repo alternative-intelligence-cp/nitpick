@@ -6468,598 +6468,660 @@ func:walk_block = NIL(Encoder->:e, StmtId:sid) never fails {
     pass NIL;
 };
 
+// THE `StmtVarDeclStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_var_decl_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    int32:name = raw stmt_name(s);
+    int32:dty = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw stmt_decl_type(s), e.scope));
+    ExprId:init = raw stmt_decl_init(e.ast, s);
+    Term:t = raw term_none();
+    if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
+    int32:vrule = raw limit_rule_of(e, raw stmt_decl_limit(e.ast, s));
+    drop bind_define(e, name, dty, t, vrule, false);
+    if (raw is_simd(e, dty)) { drop bind_lanes_from(e, raw bind_find(e, name), init); }
+    // THE FIRST WRITE POINT (1.5.2 step 3, D-251, L-7): after the new
+    // version and its definition, the site's obligation -- the rule over
+    // the version -- and THEN the rule as a hypothesis, so the goal is
+    // never in its own cone. A declaration without an initialiser is not
+    // a write point and gets no hypothesis: its vacant value is never
+    // read (definite assignment); its first assignment is the write.
+    if ((vrule != 0i32) && (!(raw expr_is_none(init)))) {
+        drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);
+    }
+    pass NIL;
+};
+
+// THE `StmtAssignStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_assign_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    TokenKind:op = raw stmt_op(s);
+    ExprId:target = raw stmt_target(s);
+    ExprNode:tn = raw ast_expr(e.ast, target);
+    Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
+    if (tn.kind != ExprKind.ExprIdentifierExpr) {
+        // A field, element or pointee write: its own subexpressions are
+        // sites; no SCALAR symbol changes (an address-taken local is never
+        // defined, so a write through a pointer invalidates nothing here),
+        // and the AGGREGATE the place is rooted at, when it has a term, gets
+        // its new version and the update frame at the end (D-317,
+        // `agg_write`): the value written is `agg_val` -- the right-hand
+        // side of a plain `=`, the arithmetic's result of `+= -= *=`, none
+        // for the rest (the field's image is fresh).
+        Term:agg_val = raw term_none();
+        if (op == TokenKind.OpAssign) { agg_val = raw term_copy(rhs); }
+        // THE TARGET'S OWN INDEX IS MEMOISED AND THE TARGET IS A GUARD
+        // SITE WHEN MARKED (D-286, 1.5.5 step 2): the children are walked
+        // once, the top node's index kept for the `disjoint` row.
+        // A LIMITED FIELD'S WRITE POINT (D-308 SS2, 1.5.8b step 6): the
+        // rule over the value STORED, at the member access -- the emitter's
+        // own key. A plain `=` stores the right-hand side; a compound
+        // stores the arithmetic's result, which the `fov` branch below
+        // builds as `ft` for the `overflow` row, so the row is recorded
+        // there. A limited ROOT's row is `emit_assign_limit`'s, at the
+        // statement's key: two checks, two keys, both counted.
+        if (tn.kind == ExprKind.ExprMemberAccessExpr) {
+            if (op == TokenKind.OpAssign) {
+                drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
+                                        tn.payload =>! int32, rhs, target.index, s.span);
+            }
+        }
+        if (tn.kind == ExprKind.ExprIndexExpr) {
+            Term:tbase = raw enc_expr(e, raw expr_lhs(tn));
+            Term:tidx = raw enc_expr(e, raw expr_rhs(tn));
+            drop memo_put(e, (raw expr_rhs(tn)).index, tidx);
+            // THE WRITE'S OWN `bounds` ROW (1.5.8b step 5): an element
+            // WRITE is guarded exactly as a read is -- `addr_of_place` is
+            // one function for both -- and until this line only the read
+            // had a row, so `t.haspt[id] = 1i32` left a trap the belts
+            // could not account for (71 of them in the compiler's own
+            // emission). The site is the INDEX node, the key the emitter
+            // elides under, and the length is the target base's.
+            int32:tbty = raw ty_of(e, raw expr_lhs(tn));
+            if ((raw type_kind(e.types, tbty)) != (raw TY_POINTER())) {
+                Term:tlen = raw term_none();
+                if ((raw has_len_term(e, tbty)) || (raw type_is_list(e.tr, tbty))) {
+                    tlen = raw container_len(e, raw expr_lhs(tn), tbase, tbty);
+                }
+                drop record_bounds(e, tidx, tlen, (raw expr_rhs(tn)).index, s.span);
+            }
+        } else {
+            drop walk_children(e, tn);
+        }
+        drop enc_alias_site(e, target);
+        if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
+            int32:pt = raw ty_of(e, target);
+            if (raw is_int(e, pt)) {
+                // THE CURRENT VALUE (D-317): the field's application when the
+                // place is rooted at an aggregate with a term, opaque otherwise.
+                Term:cur = raw agg_read_quiet(e, target);
+                if (!cur.ok) { cur = raw term_opaque(e, pt); }
+                drop record_division(e, pt, cur, rhs, target.index, s.span);
+            }
+            // A `simd` PLACE's compound division (D-284, 1.5.4e step 0;
+            // DEF-39): the any-lane rows over opaque current lanes and the
+            // right-hand side's.
+            if (raw is_simd(e, pt)) {
+                List<Term>:pla = raw lanes_of(e, target, pt);
+                List<Term>:plb = raw lanes_of(e, raw stmt_assigned(s), pt);
+                drop record_division_lanes(e, raw type_elem(e.types, pt), pla, plb, target.index, s.span);
+            }
+        }
+        // A COMPOUND `+= -= *=` THROUGH A FIELD OR ELEMENT (1.5.8b step 3):
+        // the guard's `overflow` row at the target's site, over an opaque
+        // current value (the place has no symbol here) -- the any-lane row
+        // for a `simd` place.
+        bool:fov = ((op == TokenKind.OpPlusAssign) || (op == TokenKind.OpMinusAssign) || (op == TokenKind.OpStarAssign));
+        if (fov) {
+            int32:pt3 = raw ty_of(e, target);
+            TokenKind:fbop = raw arith_base(op);
+            if (raw is_int(e, pt3)) {
+                // THE CURRENT VALUE (D-317): the field's application when the
+                // place is rooted at an aggregate with a term -- so `s.n += 1`
+                // under a rule on `n` decides -- opaque otherwise, as before.
+                Term:fcur = raw agg_read_quiet(e, target);
+                if (!fcur.ok) { fcur = raw term_opaque(e, pt3); }
+                Term:ft = raw term_none();
+                if (rhs.ok && (!rhs.is_bool)) {
+                    if (fbop == TokenKind.OpPlus)  { ft = raw term_app2("+", fcur, rhs, false); }
+                    if (fbop == TokenKind.OpMinus) { ft = raw term_app2("-", fcur, rhs, false); }
+                    if (fbop == TokenKind.OpStar)  { e.nonlinear = true; ft = raw term_app2("*", fcur, rhs, false); }
+                }
+                agg_val = raw term_copy(ft);
+                drop record_overflow(e, pt3, ft, target.index, s.span);
+                // ... and the limited FIELD's row over the same result.
+                if (tn.kind == ExprKind.ExprMemberAccessExpr) {
+                    drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
+                                            tn.payload =>! int32, ft, target.index, s.span);
+                }
+            }
+            if (raw is_simd(e, pt3)) {
+                int32:felem = raw type_elem(e.types, pt3);
+                if (raw is_int(e, felem)) {
+                    List<Term>:fla = raw lanes_of(e, target, pt3);
+                    List<Term>:flb = raw lanes_of(e, raw stmt_assigned(s), pt3);
+                    drop record_overflow_lanes(e, felem, raw overflow_out_lanes(e, fbop, felem, fla, flb, s.span),
+                                               target.index, s.span);
+                }
+            }
+        }
+        // A COMPOUND SHIFT THROUGH A FIELD OR ELEMENT (DEF-41, 1.5.4e step
+        // 0): the emitter has guarded `s.f <<= n` since D-277 and this
+        // branch recorded no row for it, so a verified build carried a
+        // trap the belts could not account for. The scalar row as the
+        // identifier path's, the any-lane row for a `simd` place.
+        if ((op == TokenKind.OpShlAssign) || (op == TokenKind.OpShrAssign)) {
+            int32:pt2 = raw ty_of(e, target);
+            if (raw is_int(e, pt2)) {
+                drop record_shift(e, pt2, rhs, raw stmt_assigned(s), target.index, s.span);
+            }
+            if (raw is_simd(e, pt2)) {
+                List<Term>:plb2 = raw lanes_of(e, raw stmt_assigned(s), pt2);
+                drop record_shift_lanes(e, raw type_elem(e.types, pt2), plb2, target.index, s.span);
+            }
+        }
+        // THE AGGREGATE'S NEW VERSION AND ITS FRAME (D-317), before the
+        // root's own write point below reads the version it asserts over.
+        drop agg_write(e, target, agg_val);
+        // THE SECOND WRITE POINT through a field or element (D-251): the
+        // ROOT's rule over the root's whole value -- `unencoded` while the
+        // root's type is outside the fragment (L-6); over the root's
+        // identity since D-317 (a rule about a struct reads its fields).
+        drop after_write(e, raw limited_root_name(e, target), raw SITE_STMT(), sid.index, s.span);
+        pass NIL;
+    }
+    int32:name = tn.payload =>! int32;
+    drop assign_ident(e, s, op, target, name, rhs);
+    // THE SECOND WRITE POINT (D-251, L-7), AFTER the new version: the
+    // site's obligation, then the rule as a hypothesis.
+    drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);
+    pass NIL;
+};
+
+// THE `StmtIfStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_if_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // THE CONDITION IS A FACT IN THE ARM IT GUARDS (L-1): `c` in the
+    // then-region, `(not c)` in the else-region; nothing when it is
+    // outside the fragment. Encoded LOUD in the parent: it runs on every
+    // path.
+    Term:c = raw enc_expr(e, raw stmt_cond(s));
+    bool:has_c = c.ok && c.is_bool;
+    Term:nc = raw term_none();
+    if (has_c) {
+        nc = Term{ ok: true, is_bool: true, text: raw smt_app1("not", c.text),
+                   syms: raw syms_union(c.syms, raw list_init::<int32>(1i64)) };
+    }
+    StmtId:then_s = raw stmt_then(s);
+    StmtId:else_s = raw stmt_else(s);
+    List<int32>:snap = raw snapshot(e);
+    if (has_c) { drop region_enter_cond(e, c); drop hyp_push(e, c.text, c.syms); } else { drop region_enter(e); }
+    drop walk_block(e, then_s);
+    drop region_leave(e);
+    List<int32>:snap_then = raw snapshot(e);
+    drop restore(e, snap);
+    if (has_c) { drop region_enter_cond(e, nc); drop hyp_push(e, nc.text, nc.syms); } else { drop region_enter(e); }
+    drop walk_block(e, else_s);
+    drop region_leave(e);
+    List<int32>:snap_else = raw snapshot(e);
+    drop restore(e, snap);
+    // AFTER THE `if` (L-2, L-8): the two arms merge -- an arm that never
+    // falls through contributes nothing; a binding the arms left at
+    // different versions is `(ite c then else)` when both are named and
+    // the condition has a term, a havoc otherwise.
+    List<Term>:conds = raw list_init::<Term>(2i64);
+    drop list_push(@conds, raw term_copy(c));
+    drop list_push(@conds, raw term_copy(nc));
+    List<List<int32>>:snaps = raw list_init::<List<int32>>(2i64);
+    drop list_push(@snaps, move(snap_then));
+    drop list_push(@snaps, move(snap_else));
+    List<bool>:fts = raw list_init::<bool>(2i64);
+    drop list_push(@fts, raw stmt_falls_through(e, then_s, 64i32));
+    drop list_push(@fts, raw stmt_falls_through(e, else_s, 64i32));
+    drop merge_arms(e, conds, snaps, fts, snap, has_c);
+    pass NIL;
+};
+
+// THE `StmtWhileStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_while_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    drop walk_loop(e, sid, raw stmt_while_invariant(e.ast, s), raw stmt_body(e.ast, s),
+                   raw stmt_cond(s), raw stmt_label(s), raw counter_none(), raw stmt_while_measure(e.ast, s));
+    pass NIL;
+};
+
+// THE `StmtForStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_for_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // A RANGE `for` (L-12): the bounds are the range node's two operands
+    // (sites, encoded once here), captured at entry (D-234), the limit
+    // exclusive (`..` adds one); the binding's entry version is the low
+    // bound, its body version a havoc inside the bounds. Any other
+    // iterable: the binding opaque, havoced per body.
+    ExprId:iter = raw stmt_for_iter(e.ast, s);
+    Counter:ctr = raw counter_none();
+    DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
+    int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
+    ctr.kind = 1i32;
+    ctr.name = raw decl_name(bd);
+    Term:entry = raw term_none();
+    bool:is_range = false;
+    if (!(raw expr_is_none(iter))) {
+        ExprNode:itn = raw ast_expr(e.ast, iter);
+        if (itn.kind == ExprKind.ExprRangeExpr) { is_range = true; }
+    }
+    if (is_range) {
+        ExprNode:rn = raw ast_expr(e.ast, iter);
+        Term:lo = raw enc_expr(e, raw expr_lhs(rn));
+        Term:hi = raw enc_expr(e, raw expr_rhs(rn));
+        if (rn.payload == 1i64) {
+            if (hi.ok && (!hi.is_bool)) { hi = raw term_app2("+", hi, raw term_lit("1", false), false); }
+            else { hi = raw term_none(); }
+        }
+        ctr.ranged = true;
+        ctr.start = raw term_capture(e, bt, lo);
+        ctr.bound = raw term_capture(e, bt, hi);
+        ctr.step = raw term_lit("1", false);
+        ctr.asc = raw term_lit("true", true);
+        entry = raw term_copy(ctr.start);
+    } else {
+        Term:it = raw enc_expr(e, iter);
+    }
+    int64:mark = raw scope_mark(e);
+    drop bind_define(e, raw decl_name(bd), bt, entry, 0i32, false);
+    drop walk_loop(e, sid, raw stmt_for_invariant(e.ast, s), raw stmt_for_body(e.ast, s),
+                   ExprId{ index: 0i32 }, raw stmt_label(s), ctr, raw verify_none());
+    drop scope_release(e, mark);
+    pass NIL;
+};
+
+// THE `StmtLoopStmt` AND `StmtTillStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_loop_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // THE HEAD (L-11, L-13): `loop(start, limit, step)` or `till(limit,
+    // step)` -- each argument a site, encoded once; the start (`0` for
+    // `till`), the limit and the step captured; the direction `asc =
+    // start < limit` as the emitter computes it once. A COMPUTED step's
+    // positivity is the `loop-step` row (S-46), its compare the guard,
+    // and `step > 0` is then a fact of every continuing execution (the
+    // guard trapped otherwise); a literal step is the checker's (TYPE-068)
+    // -- no row, no guard -- and positive by construction.
+    int32:argc = raw stmt_counted_argc(e.ast, s);
+    int32:i64t = raw tt_int(e.types, 64i32, true);
+    Counter:ctr = raw counter_none();
+    ctr.kind = 2i32;
+    List<Term>:args = raw list_init::<Term>(4i64);
+    for (int32:ai in 0i32...argc) {
+        drop list_push(@args, raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai)));
+    }
+    // THE OPERANDS' GUARDS (1.6.1d step 2; DEF-129, DEF-135): a twisted
+    // bound holding ERR traps `TbbErr` at the head -- the `err-exit` row at
+    // the operand, its goal the operand not ERR -- and a `uint64` bound past
+    // 2^63 traps `IntOverflow` (it does not fit the `int64` counter) -- the
+    // `overflow` row at the operand, its goal the operand below 2^63; each a
+    // fact after the head, as `loop-step`'s is. The emitter elides the guard
+    // where the manifest discharged the row (`counted_trap_if`).
+    for (int32:gi in 0i32...argc) {
+        ExprId:gai = raw stmt_counted_arg(e.ast, s, gi);
+        int32:gty = raw exprtypes_get(e.et, gai);
+        if (gty == 0i32) { continue; }
+        Term:gt = raw term_copy(args[gi => int64]);
+        ExprNode:gan = raw ast_expr(e.ast, gai);
+        if (raw is_twisted(e, gty)) {
+            if (gt.ok) {
+                Term:ge = raw term_app2("=", gt, raw term_lit(raw tw_min(e, gty), false), true);
+                drop record_err_exit(e, raw smt_app1("not", ge.text), ge.syms, gai.index, gan.span);
+            } else {
+                List<int32>:gnone = raw list_init::<int32>(1i64);
+                drop record(e, raw OK_ERR_EXIT(), "", gnone, raw SITE_EXPR(), gai.index, gan.span, false);
+            }
+            continue;
+        }
+        if (raw type_is_integer(e.types, gty)) {
+            if ((!(raw type_is_signed(e.types, gty))) && ((raw type_int_bits(e.types, gty)) == 64i32)) {
+                if (gt.ok) {
+                    Term:gl = raw term_app2("<", gt, raw term_lit("9223372036854775808", false), true);
+                    drop record(e, raw OK_OVERFLOW(), gl.text, gl.syms, raw SITE_EXPR(), gai.index, gan.span, true);
+                    if (e.quiet == 0i32) { drop hyp_push(e, gl.text, gl.syms); }
+                } else {
+                    List<int32>:gnone2 = raw list_init::<int32>(1i64);
+                    drop record(e, raw OK_OVERFLOW(), "", gnone2, raw SITE_EXPR(), gai.index, gan.span, false);
+                }
+            }
+        }
+    }
+    Term:st = raw term_lit("0", false);
+    Term:li = raw term_none();
+    Term:sp = raw term_none();
+    if (s.kind == StmtKind.StmtTillStmt) {
+        if (argc == 2i32) { li = raw term_copy(args[0i64]); sp = raw term_copy(args[1i64]); }
+    } else {
+        if (argc == 3i32) {
+            st = raw term_copy(args[0i64]);
+            li = raw term_copy(args[1i64]);
+            sp = raw term_copy(args[2i64]);
+        }
+    }
+    ctr.start = raw term_capture(e, i64t, st);
+    ctr.bound = raw term_capture(e, i64t, li);
+    ctr.step = raw term_capture(e, i64t, sp);
+    if (ctr.start.ok && ctr.bound.ok) { ctr.asc = raw term_app2("<", ctr.start, ctr.bound, true); }
+    StepLit:sl = raw counted_step_literal(e.ast, s);
+    if (sl.is_lit) {
+        if (argc >= 1i32) {
+            ExprNode:sx = raw ast_expr(e.ast, raw stmt_counted_arg(e.ast, s, argc - 1i32));
+            if (sx.kind == ExprKind.ExprIntLiteral) { ctr.lit_step = sx.payload; }
+        }
+    } else {
+        if (ctr.step.ok) {
+            Term:pos = raw term_app2(">", ctr.step, raw term_lit("0", false), true);
+            drop record_at(e, raw OK_LOOP_STEP(), pos.text, pos.syms, raw SITE_STMT(), sid.index, s.span, true,
+                           raw ROLE_GUARD(), sid.index, 1i32);
+            drop hyp_push(e, pos.text, pos.syms);
+        } else {
+            List<int32>:none = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_LOOP_STEP(), "", none, raw SITE_STMT(), sid.index, s.span, false,
+                           raw ROLE_GUARD(), sid.index, 1i32);
+        }
+    }
+    if (sl.is_lit && ctr.step.ok) {
+        Term:pos2 = raw term_app2(">", ctr.step, raw term_lit("0", false), true);
+        drop hyp_push(e, pos2.text, pos2.syms);
+    }
+    drop walk_loop(e, sid, raw stmt_counted_invariant(e.ast, s), raw stmt_counted_body(s),
+                   ExprId{ index: 0i32 }, raw stmt_label(s), ctr, raw verify_none());
+    pass NIL;
+};
+
+// THE `StmtWhenStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_when_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // The loop half through `walk_loop`; then `then` and `end` as the two
+    // arms of "did the body run" (L-5, D-027): the body ran at least once
+    // exactly when the condition held at the FIRST head visit, over the
+    // pre-loop versions. `then` knows that; `end` knows its negation and
+    // that the loop changed nothing -- every name the body havoced equals
+    // its pre-loop version. The condition over the pre-loop versions is
+    // encoded QUIET (its sites are the body region's, once).
+    List<int32>:ka = raw list_init::<int32>(4i64);
+    List<int32>:kr = raw list_init::<int32>(4i64);
+    drop collect_assigned(e, sid, @ka, @kr);
+    e.quiet = e.quiet + 1i32;
+    Term:cpre = raw enc_expr(e, raw stmt_cond(s));
+    e.quiet = e.quiet - 1i32;
+    bool:has_pre = cpre.ok && cpre.is_bool;
+    List<int32>:snap_pre = raw snapshot(e);
+    drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
+                   raw stmt_cond(s), raw stmt_label(s), raw counter_none(), raw stmt_when_measure(e.ast, s));
+    List<int32>:snap_post = raw snapshot(e);
+    Term:npre = raw term_none();
+    if (has_pre) {
+        npre = Term{ ok: true, is_bool: true, text: raw smt_app1("not", cpre.text),
+                     syms: raw syms_union(cpre.syms, raw list_init::<int32>(1i64)) };
+    }
+    if (has_pre) { drop region_enter_cond(e, cpre); drop hyp_push(e, cpre.text, cpre.syms); } else { drop region_enter(e); }
+    drop walk_block(e, raw stmt_when_then(e.ast, s));
+    drop region_leave(e);
+    List<int32>:snap_then = raw snapshot(e);
+    drop restore(e, snap_post);
+    if (has_pre) { drop region_enter_cond(e, npre); drop hyp_push(e, npre.text, npre.syms); } else { drop region_enter(e); }
+    int64:np = snap_post.count;
+    if (snap_pre.count < np) { np = snap_pre.count; }
+    for (int64:bi in 0i64...np) {
+        int32:post = snap_post[bi];
+        int32:pre = snap_pre[bi];
+        if ((post != pre) && (post >= 0i32) && (pre >= 0i32)) {
+            List<int32>:two = raw list_init::<int32>(2i64);
+            drop list_push(@two, post);
+            drop list_push(@two, pre);
+            drop hyp_push(e, raw smt_app2("=", raw sym_text(e, post), raw sym_text(e, pre)), two);
+        }
+    }
+    drop walk_block(e, raw stmt_when_end(e.ast, s));
+    drop region_leave(e);
+    List<int32>:snap_end = raw snapshot(e);
+    drop restore(e, snap_post);
+    // THE MERGE (L-8): `then` and `end` are the two arms of "did the body
+    // run", the body's own names already havoced by the loop.
+    List<Term>:wconds = raw list_init::<Term>(2i64);
+    drop list_push(@wconds, raw term_copy(cpre));
+    drop list_push(@wconds, raw term_copy(npre));
+    List<List<int32>>:wsnaps = raw list_init::<List<int32>>(2i64);
+    drop list_push(@wsnaps, move(snap_then));
+    drop list_push(@wsnaps, move(snap_end));
+    List<bool>:wfts = raw list_init::<bool>(2i64);
+    drop list_push(@wfts, raw stmt_falls_through(e, raw stmt_when_then(e.ast, s), 64i32));
+    drop list_push(@wfts, raw stmt_falls_through(e, raw stmt_when_end(e.ast, s), 64i32));
+    drop merge_arms(e, wconds, wsnaps, wfts, snap_post, has_pre);
+    pass NIL;
+};
+
+// THE `StmtPickStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_pick_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_STMT(), sid.index, s.span);
+    Term:sel = raw enc_expr(e, raw pick_selector(s));
+    Term:pv = raw walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s), sel, raw ty_of(e, raw pick_selector(s)), false);
+    pass NIL;
+};
+
+// THE `StmtDeferStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_defer_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // Runs at an exit the straight line does not see: every name opaque
+    // while it is walked, the outer state restored after.
+    // AND ONCE PER EXIT (DEF-82, 1.5.8b step 5): the walk sees this body
+    // once, the emitter writes it at every exit that runs it, so a guard
+    // in here is one row and several traps. The rows recorded under this
+    // body carry its statement id, and the table multiplies their traps
+    // by the copies the emitter reports. Nested defers need no special
+    // case: the inner body's id is counted once per copy of the outer.
+    int32:pdefer = e.cur_defer;
+    e.cur_defer = (raw stmt_target(s)).index;
+    List<int32>:snap = raw snapshot(e);
+    drop region_enter(e);
+    drop invalidate_all(e);
+    drop walk_block(e, StmtId{ index: (raw stmt_target(s)).index });
+    drop region_leave(e);
+    drop restore(e, snap);
+    e.cur_defer = pdefer;
+    pass NIL;
+};
+
+// THE `StmtProveStmt` ARM OF `walk_stmt` (DEF-277).
+// `prove(e)` (1.5.4 step 4, L-15; S-48): a guard-less row over the
+// proposition, walked QUIET -- nothing executes, so a division inside is
+// not a site; its conditions are the proposition's (DEF-33: a claim over
+// an expression that would trap is not proven); `unencoded` when the
+// proposition is outside the fragment. THEN
+// the proposition is a hypothesis (L-7's order: never in its own cone):
+// a proven claim is knowledge for every site after it -- sound because
+// the verified build refuses an undischarged `prove` and the plain build
+// elides nothing.
+func:walk_k_prove_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    e.quiet = e.quiet + 1i32;
+    int64:pm = raw prop_begin(e);
+    Term:pv = raw prop_end(e, pm, raw enc_expr(e, raw stmt_expr(s)));
+    e.quiet = e.quiet - 1i32;
+    if (pv.ok && pv.is_bool) {
+        drop record_at(e, raw OK_PROVE(), pv.text, pv.syms, raw SITE_STMT(), sid.index, s.span, true,
+                       raw ROLE_GUARD(), sid.index, 0i32);
+        drop hyp_push(e, pv.text, pv.syms);
+    } else {
+        List<int32>:pnone = raw list_init::<int32>(1i64);
+        drop record_at(e, raw OK_PROVE(), "", pnone, raw SITE_STMT(), sid.index, s.span, false,
+                       raw ROLE_GUARD(), sid.index, 0i32);
+    }
+    pass NIL;
+};
+
+// THE `StmtAssertStaticStmt` ARM OF `walk_stmt` (DEF-277).
+// `assert_static(e)` (L-17, L-20): the frontend folded it; the row is the
+// inventory's, `checker`; the proposition walked QUIET (nothing executes).
+func:walk_k_assert_static_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    e.quiet = e.quiet + 1i32;
+    Term:av = raw enc_expr(e, raw stmt_expr(s));
+    e.quiet = e.quiet - 1i32;
+    drop record_checker(e, raw OK_ASSERT_STATIC(), raw SITE_STMT(), sid.index, s.span);
+    pass NIL;
+};
+
+// THE `StmtGiveStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_give_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // THE ARM'S VALUE (L-9): remembered for the pick expression's chain.
+    e.last_give = raw enc_expr(e, raw stmt_expr(s));
+    pass NIL;
+};
+
+// THE EXPRESSION ARM OF `walk_stmt` (DEF-277): every kind `stmt_carries_expr`
+// names that no test above took -- an expression statement, a trap, a
+// `discard`. Its one expression is a site.
+func:walk_k_expr_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    Term:x = raw enc_expr(e, raw stmt_expr(s));
+    pass NIL;
+};
+
+// THE `StmtPassStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_pass_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    ExprId:pv = raw stmt_operand(s);
+    Term:v = raw enc_expr(e, pv);
+    drop record_seam(e, sid, s.span, v, raw ty_of(e, pv), !(raw expr_is_none(pv)));
+    pass NIL;
+};
+
+// THE `StmtReturnStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_return_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // THE LONG FORM (L-12): `return Result{ value: v }` is a success when
+    // its error field is absent or the literal 0; the value is `result`.
+    ExprId:ro = raw stmt_operand(s);
+    if (!(raw expr_is_none(ro))) {
+        ExprNode:rn = raw ast_expr(e.ast, ro);
+        if (rn.kind == ExprKind.ExprResultLiteralExpr) {
+            Term:rv = raw term_none();
+            bool:has_v = (rn.a != 0i32);
+            int32:vty = 0i32;
+            if (has_v) { rv = raw enc_expr(e, ExprId{ index: rn.a }); vty = raw ty_of(e, ExprId{ index: rn.a }); }
+            bool:success = true;
+            if (rn.b != 0i32) {
+                Term:re = raw enc_expr(e, ExprId{ index: rn.b });
+                success = false;
+                if (re.ok) { if (string_equals(re.text, "0")) { success = true; } }
+            }
+            if (success) { drop record_seam(e, sid, s.span, rv, vty, has_v); }
+            pass NIL;
+        }
+    }
+    Term:rt = raw enc_expr(e, ro);
+    pass NIL;
+};
+
+// THE `StmtExitStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_exit_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    ExprId:xo = raw stmt_operand(s);
+    Term:xv = raw enc_expr(e, xo);
+    // `failsafe`'s POSTCONDITION (L-14, D-267): the code is positive.
+    if (e.is_failsafe) {
+        if (!xv.ok) { xv = raw term_opaque(e, raw ty_of(e, xo)); }
+        if (xv.ok && (!xv.is_bool)) {
+            drop record_at(e, raw OK_FAILSAFE_POST(), raw smt_app2(">", xv.text, "0"), xv.syms,
+                           raw SITE_STMT(), sid.index, s.span, true, raw ROLE_GUARD(), sid.index, 1i32);
+        } else {
+            List<int32>:none = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_FAILSAFE_POST(), "", none, raw SITE_STMT(), sid.index, s.span, false,
+                           raw ROLE_GUARD(), sid.index, 1i32);
+        }
+    }
+    pass NIL;
+};
+
+// THE `StmtFailStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_fail_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    Term:fv = raw enc_expr(e, raw stmt_operand(s));
+    pass NIL;
+};
+
+// THE `StmtContinueStmt` ARM OF `walk_stmt` (DEF-277).
+func:walk_k_continue_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
+    // A HEAD VISIT (L-8): the invariant of the loop this re-enters holds
+    // here -- a preservation row keyed at the `continue`.
+    int64:fr = raw loop_frame(e, raw stmt_label(s));
+    if (fr >= 0i64) {
+        // THE MEASURE AT A `continue` (D-304): the head's check runs again
+        // with the values here -- a row against the body-start value.
+        VerifyId:cmeas = VerifyId{ index: e.loop_meas[fr] };
+        if (raw enc_measure_checks(e, cmeas)) {
+            int32:cmt = 1i32;
+            if (e.loop_msigned[fr]) { cmt = 2i32; }
+            Term:cm0 = raw term_copy(e.loop_mstart[fr]);
+            Term:cmc = raw enc_expr(e, raw measure_expr(raw ast_verify(e.ast, cmeas)));
+            if (cm0.ok && cmc.ok) {
+                Term:clt = raw term_app2("<", cmc, cm0, true);
+                drop record_at(e, raw OK_TERMINATE(), clt.text, clt.syms, raw SITE_STMT(), sid.index, s.span, true,
+                               raw ROLE_GUARD(), e.loop_sids[fr], cmt);
+            } else {
+                List<int32>:cmnone = raw list_init::<int32>(1i64);
+                drop record_at(e, raw OK_TERMINATE(), "", cmnone, raw SITE_STMT(), sid.index, s.span, false,
+                               raw ROLE_GUARD(), e.loop_sids[fr], cmt);
+            }
+        }
+        VerifyId:civ = VerifyId{ index: e.loop_invs[fr] };
+        int32:cnc = raw invariant_clauses(e, civ);
+        if (cnc > 0i32) {
+            // THE HEAD SEES THE INCREMENTED COUNTER (L-11, L-12): a
+            // `continue` re-enters at the increment.
+            int32:ck = e.loop_ckind[fr];
+            if (ck != 0i32) {
+                drop counter_advance(e, ck, e.loop_cname[fr], raw term_copy(e.loop_cstep[fr]),
+                                     raw term_copy(e.loop_casc[fr]), e.loop_cdollar[fr]);
+            }
+            // A VISIT OF THE HEAD, LOUD (DEF-81): its guards' rows too,
+            // under the re-entered loop's clause context.
+            int32:cctx = e.clause_ctx;
+            e.clause_ctx = e.loop_sids[fr];
+            Term:cg = raw invariant_conj(e, civ, false);
+            e.clause_ctx = cctx;
+            if (cg.ok) {
+                drop record_at(e, raw OK_INVARIANT(), cg.text, cg.syms, raw SITE_STMT(), sid.index, s.span, true,
+                               raw ROLE_GUARD(), e.loop_sids[fr], cnc);
+            } else {
+                List<int32>:cnone = raw list_init::<int32>(1i64);
+                drop record_at(e, raw OK_INVARIANT(), "", cnone, raw SITE_STMT(), sid.index, s.span, false,
+                               raw ROLE_GUARD(), e.loop_sids[fr], cnc);
+            }
+        }
+    }
+    pass NIL;
+};
+
+// THE DISPATCH (DEF-277, landing 149). Allocas are hoisted to the entry
+// block (D-173), so a frame holds a slot for every local and every call's
+// result of every arm it contains, and a nest of blocks recurses through
+// this function and `walk_block` once a level: as one function of 751
+// slots (36 KB of frame), `walk_stmt` exhausted the compiler's stack after
+// some 230 nested blocks under `--obligations`, where the plain build
+// compiles them -- DEF-269's class in the statement walk. Each arm is a
+// function of its own (`walk_k_...`), handed the node read here once, and
+// the tests run in the order the one function ran them; every arm ends
+// in `pass NIL`, so no arm falls through to a later test. A block is
+// `walk_block` itself, called from here: a wrapper would put a third frame
+// on every level of a nest of blocks. An arm added later is a function and
+// a test here.
 pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
 
     if (s.kind == StmtKind.StmtBlockStmt) { drop walk_block(e, sid); pass NIL; }
 
-    if (s.kind == StmtKind.StmtVarDeclStmt) {
-        int32:name = raw stmt_name(s);
-        int32:dty = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw stmt_decl_type(s), e.scope));
-        ExprId:init = raw stmt_decl_init(e.ast, s);
-        Term:t = raw term_none();
-        if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
-        int32:vrule = raw limit_rule_of(e, raw stmt_decl_limit(e.ast, s));
-        drop bind_define(e, name, dty, t, vrule, false);
-        if (raw is_simd(e, dty)) { drop bind_lanes_from(e, raw bind_find(e, name), init); }
-        // THE FIRST WRITE POINT (1.5.2 step 3, D-251, L-7): after the new
-        // version and its definition, the site's obligation -- the rule over
-        // the version -- and THEN the rule as a hypothesis, so the goal is
-        // never in its own cone. A declaration without an initialiser is not
-        // a write point and gets no hypothesis: its vacant value is never
-        // read (definite assignment); its first assignment is the write.
-        if ((vrule != 0i32) && (!(raw expr_is_none(init)))) {
-            drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);
-        }
-        pass NIL;
-    }
-
-    if (s.kind == StmtKind.StmtAssignStmt) {
-        TokenKind:op = raw stmt_op(s);
-        ExprId:target = raw stmt_target(s);
-        ExprNode:tn = raw ast_expr(e.ast, target);
-        Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
-        if (tn.kind != ExprKind.ExprIdentifierExpr) {
-            // A field, element or pointee write: its own subexpressions are
-            // sites; no SCALAR symbol changes (an address-taken local is never
-            // defined, so a write through a pointer invalidates nothing here),
-            // and the AGGREGATE the place is rooted at, when it has a term, gets
-            // its new version and the update frame at the end (D-317,
-            // `agg_write`): the value written is `agg_val` -- the right-hand
-            // side of a plain `=`, the arithmetic's result of `+= -= *=`, none
-            // for the rest (the field's image is fresh).
-            Term:agg_val = raw term_none();
-            if (op == TokenKind.OpAssign) { agg_val = raw term_copy(rhs); }
-            // THE TARGET'S OWN INDEX IS MEMOISED AND THE TARGET IS A GUARD
-            // SITE WHEN MARKED (D-286, 1.5.5 step 2): the children are walked
-            // once, the top node's index kept for the `disjoint` row.
-            // A LIMITED FIELD'S WRITE POINT (D-308 SS2, 1.5.8b step 6): the
-            // rule over the value STORED, at the member access -- the emitter's
-            // own key. A plain `=` stores the right-hand side; a compound
-            // stores the arithmetic's result, which the `fov` branch below
-            // builds as `ft` for the `overflow` row, so the row is recorded
-            // there. A limited ROOT's row is `emit_assign_limit`'s, at the
-            // statement's key: two checks, two keys, both counted.
-            if (tn.kind == ExprKind.ExprMemberAccessExpr) {
-                if (op == TokenKind.OpAssign) {
-                    drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
-                                            tn.payload =>! int32, rhs, target.index, s.span);
-                }
-            }
-            if (tn.kind == ExprKind.ExprIndexExpr) {
-                Term:tbase = raw enc_expr(e, raw expr_lhs(tn));
-                Term:tidx = raw enc_expr(e, raw expr_rhs(tn));
-                drop memo_put(e, (raw expr_rhs(tn)).index, tidx);
-                // THE WRITE'S OWN `bounds` ROW (1.5.8b step 5): an element
-                // WRITE is guarded exactly as a read is -- `addr_of_place` is
-                // one function for both -- and until this line only the read
-                // had a row, so `t.haspt[id] = 1i32` left a trap the belts
-                // could not account for (71 of them in the compiler's own
-                // emission). The site is the INDEX node, the key the emitter
-                // elides under, and the length is the target base's.
-                int32:tbty = raw ty_of(e, raw expr_lhs(tn));
-                if ((raw type_kind(e.types, tbty)) != (raw TY_POINTER())) {
-                    Term:tlen = raw term_none();
-                    if ((raw has_len_term(e, tbty)) || (raw type_is_list(e.tr, tbty))) {
-                        tlen = raw container_len(e, raw expr_lhs(tn), tbase, tbty);
-                    }
-                    drop record_bounds(e, tidx, tlen, (raw expr_rhs(tn)).index, s.span);
-                }
-            } else {
-                drop walk_children(e, tn);
-            }
-            drop enc_alias_site(e, target);
-            if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
-                int32:pt = raw ty_of(e, target);
-                if (raw is_int(e, pt)) {
-                    // THE CURRENT VALUE (D-317): the field's application when the
-                    // place is rooted at an aggregate with a term, opaque otherwise.
-                    Term:cur = raw agg_read_quiet(e, target);
-                    if (!cur.ok) { cur = raw term_opaque(e, pt); }
-                    drop record_division(e, pt, cur, rhs, target.index, s.span);
-                }
-                // A `simd` PLACE's compound division (D-284, 1.5.4e step 0;
-                // DEF-39): the any-lane rows over opaque current lanes and the
-                // right-hand side's.
-                if (raw is_simd(e, pt)) {
-                    List<Term>:pla = raw lanes_of(e, target, pt);
-                    List<Term>:plb = raw lanes_of(e, raw stmt_assigned(s), pt);
-                    drop record_division_lanes(e, raw type_elem(e.types, pt), pla, plb, target.index, s.span);
-                }
-            }
-            // A COMPOUND `+= -= *=` THROUGH A FIELD OR ELEMENT (1.5.8b step 3):
-            // the guard's `overflow` row at the target's site, over an opaque
-            // current value (the place has no symbol here) -- the any-lane row
-            // for a `simd` place.
-            bool:fov = ((op == TokenKind.OpPlusAssign) || (op == TokenKind.OpMinusAssign) || (op == TokenKind.OpStarAssign));
-            if (fov) {
-                int32:pt3 = raw ty_of(e, target);
-                TokenKind:fbop = raw arith_base(op);
-                if (raw is_int(e, pt3)) {
-                    // THE CURRENT VALUE (D-317): the field's application when the
-                    // place is rooted at an aggregate with a term -- so `s.n += 1`
-                    // under a rule on `n` decides -- opaque otherwise, as before.
-                    Term:fcur = raw agg_read_quiet(e, target);
-                    if (!fcur.ok) { fcur = raw term_opaque(e, pt3); }
-                    Term:ft = raw term_none();
-                    if (rhs.ok && (!rhs.is_bool)) {
-                        if (fbop == TokenKind.OpPlus)  { ft = raw term_app2("+", fcur, rhs, false); }
-                        if (fbop == TokenKind.OpMinus) { ft = raw term_app2("-", fcur, rhs, false); }
-                        if (fbop == TokenKind.OpStar)  { e.nonlinear = true; ft = raw term_app2("*", fcur, rhs, false); }
-                    }
-                    agg_val = raw term_copy(ft);
-                    drop record_overflow(e, pt3, ft, target.index, s.span);
-                    // ... and the limited FIELD's row over the same result.
-                    if (tn.kind == ExprKind.ExprMemberAccessExpr) {
-                        drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
-                                                tn.payload =>! int32, ft, target.index, s.span);
-                    }
-                }
-                if (raw is_simd(e, pt3)) {
-                    int32:felem = raw type_elem(e.types, pt3);
-                    if (raw is_int(e, felem)) {
-                        List<Term>:fla = raw lanes_of(e, target, pt3);
-                        List<Term>:flb = raw lanes_of(e, raw stmt_assigned(s), pt3);
-                        drop record_overflow_lanes(e, felem, raw overflow_out_lanes(e, fbop, felem, fla, flb, s.span),
-                                                   target.index, s.span);
-                    }
-                }
-            }
-            // A COMPOUND SHIFT THROUGH A FIELD OR ELEMENT (DEF-41, 1.5.4e step
-            // 0): the emitter has guarded `s.f <<= n` since D-277 and this
-            // branch recorded no row for it, so a verified build carried a
-            // trap the belts could not account for. The scalar row as the
-            // identifier path's, the any-lane row for a `simd` place.
-            if ((op == TokenKind.OpShlAssign) || (op == TokenKind.OpShrAssign)) {
-                int32:pt2 = raw ty_of(e, target);
-                if (raw is_int(e, pt2)) {
-                    drop record_shift(e, pt2, rhs, raw stmt_assigned(s), target.index, s.span);
-                }
-                if (raw is_simd(e, pt2)) {
-                    List<Term>:plb2 = raw lanes_of(e, raw stmt_assigned(s), pt2);
-                    drop record_shift_lanes(e, raw type_elem(e.types, pt2), plb2, target.index, s.span);
-                }
-            }
-            // THE AGGREGATE'S NEW VERSION AND ITS FRAME (D-317), before the
-            // root's own write point below reads the version it asserts over.
-            drop agg_write(e, target, agg_val);
-            // THE SECOND WRITE POINT through a field or element (D-251): the
-            // ROOT's rule over the root's whole value -- `unencoded` while the
-            // root's type is outside the fragment (L-6); over the root's
-            // identity since D-317 (a rule about a struct reads its fields).
-            drop after_write(e, raw limited_root_name(e, target), raw SITE_STMT(), sid.index, s.span);
-            pass NIL;
-        }
-        int32:name = tn.payload =>! int32;
-        drop assign_ident(e, s, op, target, name, rhs);
-        // THE SECOND WRITE POINT (D-251, L-7), AFTER the new version: the
-        // site's obligation, then the rule as a hypothesis.
-        drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);
-        pass NIL;
-    }
-
-    if (s.kind == StmtKind.StmtIfStmt) {
-        // THE CONDITION IS A FACT IN THE ARM IT GUARDS (L-1): `c` in the
-        // then-region, `(not c)` in the else-region; nothing when it is
-        // outside the fragment. Encoded LOUD in the parent: it runs on every
-        // path.
-        Term:c = raw enc_expr(e, raw stmt_cond(s));
-        bool:has_c = c.ok && c.is_bool;
-        Term:nc = raw term_none();
-        if (has_c) {
-            nc = Term{ ok: true, is_bool: true, text: raw smt_app1("not", c.text),
-                       syms: raw syms_union(c.syms, raw list_init::<int32>(1i64)) };
-        }
-        StmtId:then_s = raw stmt_then(s);
-        StmtId:else_s = raw stmt_else(s);
-        List<int32>:snap = raw snapshot(e);
-        if (has_c) { drop region_enter_cond(e, c); drop hyp_push(e, c.text, c.syms); } else { drop region_enter(e); }
-        drop walk_block(e, then_s);
-        drop region_leave(e);
-        List<int32>:snap_then = raw snapshot(e);
-        drop restore(e, snap);
-        if (has_c) { drop region_enter_cond(e, nc); drop hyp_push(e, nc.text, nc.syms); } else { drop region_enter(e); }
-        drop walk_block(e, else_s);
-        drop region_leave(e);
-        List<int32>:snap_else = raw snapshot(e);
-        drop restore(e, snap);
-        // AFTER THE `if` (L-2, L-8): the two arms merge -- an arm that never
-        // falls through contributes nothing; a binding the arms left at
-        // different versions is `(ite c then else)` when both are named and
-        // the condition has a term, a havoc otherwise.
-        List<Term>:conds = raw list_init::<Term>(2i64);
-        drop list_push(@conds, raw term_copy(c));
-        drop list_push(@conds, raw term_copy(nc));
-        List<List<int32>>:snaps = raw list_init::<List<int32>>(2i64);
-        drop list_push(@snaps, move(snap_then));
-        drop list_push(@snaps, move(snap_else));
-        List<bool>:fts = raw list_init::<bool>(2i64);
-        drop list_push(@fts, raw stmt_falls_through(e, then_s, 64i32));
-        drop list_push(@fts, raw stmt_falls_through(e, else_s, 64i32));
-        drop merge_arms(e, conds, snaps, fts, snap, has_c);
-        pass NIL;
-    }
-
-    if (s.kind == StmtKind.StmtWhileStmt) {
-        drop walk_loop(e, sid, raw stmt_while_invariant(e.ast, s), raw stmt_body(e.ast, s),
-                       raw stmt_cond(s), raw stmt_label(s), raw counter_none(), raw stmt_while_measure(e.ast, s));
-        pass NIL;
-    }
-
-    if (s.kind == StmtKind.StmtForStmt) {
-        // A RANGE `for` (L-12): the bounds are the range node's two operands
-        // (sites, encoded once here), captured at entry (D-234), the limit
-        // exclusive (`..` adds one); the binding's entry version is the low
-        // bound, its body version a havoc inside the bounds. Any other
-        // iterable: the binding opaque, havoced per body.
-        ExprId:iter = raw stmt_for_iter(e.ast, s);
-        Counter:ctr = raw counter_none();
-        DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
-        int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
-        ctr.kind = 1i32;
-        ctr.name = raw decl_name(bd);
-        Term:entry = raw term_none();
-        bool:is_range = false;
-        if (!(raw expr_is_none(iter))) {
-            ExprNode:itn = raw ast_expr(e.ast, iter);
-            if (itn.kind == ExprKind.ExprRangeExpr) { is_range = true; }
-        }
-        if (is_range) {
-            ExprNode:rn = raw ast_expr(e.ast, iter);
-            Term:lo = raw enc_expr(e, raw expr_lhs(rn));
-            Term:hi = raw enc_expr(e, raw expr_rhs(rn));
-            if (rn.payload == 1i64) {
-                if (hi.ok && (!hi.is_bool)) { hi = raw term_app2("+", hi, raw term_lit("1", false), false); }
-                else { hi = raw term_none(); }
-            }
-            ctr.ranged = true;
-            ctr.start = raw term_capture(e, bt, lo);
-            ctr.bound = raw term_capture(e, bt, hi);
-            ctr.step = raw term_lit("1", false);
-            ctr.asc = raw term_lit("true", true);
-            entry = raw term_copy(ctr.start);
-        } else {
-            Term:it = raw enc_expr(e, iter);
-        }
-        int64:mark = raw scope_mark(e);
-        drop bind_define(e, raw decl_name(bd), bt, entry, 0i32, false);
-        drop walk_loop(e, sid, raw stmt_for_invariant(e.ast, s), raw stmt_for_body(e.ast, s),
-                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr, raw verify_none());
-        drop scope_release(e, mark);
-        pass NIL;
-    }
-
+    if (s.kind == StmtKind.StmtVarDeclStmt) { drop walk_k_var_decl_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtAssignStmt) { drop walk_k_assign_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtIfStmt) { drop walk_k_if_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop walk_k_while_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt) { drop walk_k_for_stmt(e, sid, s); pass NIL; }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
-        // THE HEAD (L-11, L-13): `loop(start, limit, step)` or `till(limit,
-        // step)` -- each argument a site, encoded once; the start (`0` for
-        // `till`), the limit and the step captured; the direction `asc =
-        // start < limit` as the emitter computes it once. A COMPUTED step's
-        // positivity is the `loop-step` row (S-46), its compare the guard,
-        // and `step > 0` is then a fact of every continuing execution (the
-        // guard trapped otherwise); a literal step is the checker's (TYPE-068)
-        // -- no row, no guard -- and positive by construction.
-        int32:argc = raw stmt_counted_argc(e.ast, s);
-        int32:i64t = raw tt_int(e.types, 64i32, true);
-        Counter:ctr = raw counter_none();
-        ctr.kind = 2i32;
-        List<Term>:args = raw list_init::<Term>(4i64);
-        for (int32:ai in 0i32...argc) {
-            drop list_push(@args, raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai)));
-        }
-        // THE OPERANDS' GUARDS (1.6.1d step 2; DEF-129, DEF-135): a twisted
-        // bound holding ERR traps `TbbErr` at the head -- the `err-exit` row at
-        // the operand, its goal the operand not ERR -- and a `uint64` bound past
-        // 2^63 traps `IntOverflow` (it does not fit the `int64` counter) -- the
-        // `overflow` row at the operand, its goal the operand below 2^63; each a
-        // fact after the head, as `loop-step`'s is. The emitter elides the guard
-        // where the manifest discharged the row (`counted_trap_if`).
-        for (int32:gi in 0i32...argc) {
-            ExprId:gai = raw stmt_counted_arg(e.ast, s, gi);
-            int32:gty = raw exprtypes_get(e.et, gai);
-            if (gty == 0i32) { continue; }
-            Term:gt = raw term_copy(args[gi => int64]);
-            ExprNode:gan = raw ast_expr(e.ast, gai);
-            if (raw is_twisted(e, gty)) {
-                if (gt.ok) {
-                    Term:ge = raw term_app2("=", gt, raw term_lit(raw tw_min(e, gty), false), true);
-                    drop record_err_exit(e, raw smt_app1("not", ge.text), ge.syms, gai.index, gan.span);
-                } else {
-                    List<int32>:gnone = raw list_init::<int32>(1i64);
-                    drop record(e, raw OK_ERR_EXIT(), "", gnone, raw SITE_EXPR(), gai.index, gan.span, false);
-                }
-                continue;
-            }
-            if (raw type_is_integer(e.types, gty)) {
-                if ((!(raw type_is_signed(e.types, gty))) && ((raw type_int_bits(e.types, gty)) == 64i32)) {
-                    if (gt.ok) {
-                        Term:gl = raw term_app2("<", gt, raw term_lit("9223372036854775808", false), true);
-                        drop record(e, raw OK_OVERFLOW(), gl.text, gl.syms, raw SITE_EXPR(), gai.index, gan.span, true);
-                        if (e.quiet == 0i32) { drop hyp_push(e, gl.text, gl.syms); }
-                    } else {
-                        List<int32>:gnone2 = raw list_init::<int32>(1i64);
-                        drop record(e, raw OK_OVERFLOW(), "", gnone2, raw SITE_EXPR(), gai.index, gan.span, false);
-                    }
-                }
-            }
-        }
-        Term:st = raw term_lit("0", false);
-        Term:li = raw term_none();
-        Term:sp = raw term_none();
-        if (s.kind == StmtKind.StmtTillStmt) {
-            if (argc == 2i32) { li = raw term_copy(args[0i64]); sp = raw term_copy(args[1i64]); }
-        } else {
-            if (argc == 3i32) {
-                st = raw term_copy(args[0i64]);
-                li = raw term_copy(args[1i64]);
-                sp = raw term_copy(args[2i64]);
-            }
-        }
-        ctr.start = raw term_capture(e, i64t, st);
-        ctr.bound = raw term_capture(e, i64t, li);
-        ctr.step = raw term_capture(e, i64t, sp);
-        if (ctr.start.ok && ctr.bound.ok) { ctr.asc = raw term_app2("<", ctr.start, ctr.bound, true); }
-        StepLit:sl = raw counted_step_literal(e.ast, s);
-        if (sl.is_lit) {
-            if (argc >= 1i32) {
-                ExprNode:sx = raw ast_expr(e.ast, raw stmt_counted_arg(e.ast, s, argc - 1i32));
-                if (sx.kind == ExprKind.ExprIntLiteral) { ctr.lit_step = sx.payload; }
-            }
-        } else {
-            if (ctr.step.ok) {
-                Term:pos = raw term_app2(">", ctr.step, raw term_lit("0", false), true);
-                drop record_at(e, raw OK_LOOP_STEP(), pos.text, pos.syms, raw SITE_STMT(), sid.index, s.span, true,
-                               raw ROLE_GUARD(), sid.index, 1i32);
-                drop hyp_push(e, pos.text, pos.syms);
-            } else {
-                List<int32>:none = raw list_init::<int32>(1i64);
-                drop record_at(e, raw OK_LOOP_STEP(), "", none, raw SITE_STMT(), sid.index, s.span, false,
-                               raw ROLE_GUARD(), sid.index, 1i32);
-            }
-        }
-        if (sl.is_lit && ctr.step.ok) {
-            Term:pos2 = raw term_app2(">", ctr.step, raw term_lit("0", false), true);
-            drop hyp_push(e, pos2.text, pos2.syms);
-        }
-        drop walk_loop(e, sid, raw stmt_counted_invariant(e.ast, s), raw stmt_counted_body(s),
-                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr, raw verify_none());
-        pass NIL;
+        drop walk_k_loop_stmt(e, sid, s); pass NIL;
     }
-
-    if (s.kind == StmtKind.StmtWhenStmt) {
-        // The loop half through `walk_loop`; then `then` and `end` as the two
-        // arms of "did the body run" (L-5, D-027): the body ran at least once
-        // exactly when the condition held at the FIRST head visit, over the
-        // pre-loop versions. `then` knows that; `end` knows its negation and
-        // that the loop changed nothing -- every name the body havoced equals
-        // its pre-loop version. The condition over the pre-loop versions is
-        // encoded QUIET (its sites are the body region's, once).
-        List<int32>:ka = raw list_init::<int32>(4i64);
-        List<int32>:kr = raw list_init::<int32>(4i64);
-        drop collect_assigned(e, sid, @ka, @kr);
-        e.quiet = e.quiet + 1i32;
-        Term:cpre = raw enc_expr(e, raw stmt_cond(s));
-        e.quiet = e.quiet - 1i32;
-        bool:has_pre = cpre.ok && cpre.is_bool;
-        List<int32>:snap_pre = raw snapshot(e);
-        drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
-                       raw stmt_cond(s), raw stmt_label(s), raw counter_none(), raw stmt_when_measure(e.ast, s));
-        List<int32>:snap_post = raw snapshot(e);
-        Term:npre = raw term_none();
-        if (has_pre) {
-            npre = Term{ ok: true, is_bool: true, text: raw smt_app1("not", cpre.text),
-                         syms: raw syms_union(cpre.syms, raw list_init::<int32>(1i64)) };
-        }
-        if (has_pre) { drop region_enter_cond(e, cpre); drop hyp_push(e, cpre.text, cpre.syms); } else { drop region_enter(e); }
-        drop walk_block(e, raw stmt_when_then(e.ast, s));
-        drop region_leave(e);
-        List<int32>:snap_then = raw snapshot(e);
-        drop restore(e, snap_post);
-        if (has_pre) { drop region_enter_cond(e, npre); drop hyp_push(e, npre.text, npre.syms); } else { drop region_enter(e); }
-        int64:np = snap_post.count;
-        if (snap_pre.count < np) { np = snap_pre.count; }
-        for (int64:bi in 0i64...np) {
-            int32:post = snap_post[bi];
-            int32:pre = snap_pre[bi];
-            if ((post != pre) && (post >= 0i32) && (pre >= 0i32)) {
-                List<int32>:two = raw list_init::<int32>(2i64);
-                drop list_push(@two, post);
-                drop list_push(@two, pre);
-                drop hyp_push(e, raw smt_app2("=", raw sym_text(e, post), raw sym_text(e, pre)), two);
-            }
-        }
-        drop walk_block(e, raw stmt_when_end(e.ast, s));
-        drop region_leave(e);
-        List<int32>:snap_end = raw snapshot(e);
-        drop restore(e, snap_post);
-        // THE MERGE (L-8): `then` and `end` are the two arms of "did the body
-        // run", the body's own names already havoced by the loop.
-        List<Term>:wconds = raw list_init::<Term>(2i64);
-        drop list_push(@wconds, raw term_copy(cpre));
-        drop list_push(@wconds, raw term_copy(npre));
-        List<List<int32>>:wsnaps = raw list_init::<List<int32>>(2i64);
-        drop list_push(@wsnaps, move(snap_then));
-        drop list_push(@wsnaps, move(snap_end));
-        List<bool>:wfts = raw list_init::<bool>(2i64);
-        drop list_push(@wfts, raw stmt_falls_through(e, raw stmt_when_then(e.ast, s), 64i32));
-        drop list_push(@wfts, raw stmt_falls_through(e, raw stmt_when_end(e.ast, s), 64i32));
-        drop merge_arms(e, wconds, wsnaps, wfts, snap_post, has_pre);
-        pass NIL;
-    }
-
-    if (s.kind == StmtKind.StmtPickStmt) {
-        drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_STMT(), sid.index, s.span);
-        Term:sel = raw enc_expr(e, raw pick_selector(s));
-        Term:pv = raw walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s), sel, raw ty_of(e, raw pick_selector(s)), false);
-        pass NIL;
-    }
-
-    if (s.kind == StmtKind.StmtDeferStmt) {
-        // Runs at an exit the straight line does not see: every name opaque
-        // while it is walked, the outer state restored after.
-        // AND ONCE PER EXIT (DEF-82, 1.5.8b step 5): the walk sees this body
-        // once, the emitter writes it at every exit that runs it, so a guard
-        // in here is one row and several traps. The rows recorded under this
-        // body carry its statement id, and the table multiplies their traps
-        // by the copies the emitter reports. Nested defers need no special
-        // case: the inner body's id is counted once per copy of the outer.
-        int32:pdefer = e.cur_defer;
-        e.cur_defer = (raw stmt_target(s)).index;
-        List<int32>:snap = raw snapshot(e);
-        drop region_enter(e);
-        drop invalidate_all(e);
-        drop walk_block(e, StmtId{ index: (raw stmt_target(s)).index });
-        drop region_leave(e);
-        drop restore(e, snap);
-        e.cur_defer = pdefer;
-        pass NIL;
-    }
-
-    // `prove(e)` (1.5.4 step 4, L-15; S-48): a guard-less row over the
-    // proposition, walked QUIET -- nothing executes, so a division inside is
-    // not a site; its conditions are the proposition's (DEF-33: a claim over
-    // an expression that would trap is not proven); `unencoded` when the
-    // proposition is outside the fragment. THEN
-    // the proposition is a hypothesis (L-7's order: never in its own cone):
-    // a proven claim is knowledge for every site after it -- sound because
-    // the verified build refuses an undischarged `prove` and the plain build
-    // elides nothing.
-    if (s.kind == StmtKind.StmtProveStmt) {
-        e.quiet = e.quiet + 1i32;
-        int64:pm = raw prop_begin(e);
-        Term:pv = raw prop_end(e, pm, raw enc_expr(e, raw stmt_expr(s)));
-        e.quiet = e.quiet - 1i32;
-        if (pv.ok && pv.is_bool) {
-            drop record_at(e, raw OK_PROVE(), pv.text, pv.syms, raw SITE_STMT(), sid.index, s.span, true,
-                           raw ROLE_GUARD(), sid.index, 0i32);
-            drop hyp_push(e, pv.text, pv.syms);
-        } else {
-            List<int32>:pnone = raw list_init::<int32>(1i64);
-            drop record_at(e, raw OK_PROVE(), "", pnone, raw SITE_STMT(), sid.index, s.span, false,
-                           raw ROLE_GUARD(), sid.index, 0i32);
-        }
-        pass NIL;
-    }
-    // `assert_static(e)` (L-17, L-20): the frontend folded it; the row is the
-    // inventory's, `checker`; the proposition walked QUIET (nothing executes).
-    if (s.kind == StmtKind.StmtAssertStaticStmt) {
-        e.quiet = e.quiet + 1i32;
-        Term:av = raw enc_expr(e, raw stmt_expr(s));
-        e.quiet = e.quiet - 1i32;
-        drop record_checker(e, raw OK_ASSERT_STATIC(), raw SITE_STMT(), sid.index, s.span);
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtGiveStmt) {
-        // THE ARM'S VALUE (L-9): remembered for the pick expression's chain.
-        e.last_give = raw enc_expr(e, raw stmt_expr(s));
-        pass NIL;
-    }
-    if (raw stmt_carries_expr(s.kind)) {
-        Term:x = raw enc_expr(e, raw stmt_expr(s));
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtPassStmt) {
-        ExprId:pv = raw stmt_operand(s);
-        Term:v = raw enc_expr(e, pv);
-        drop record_seam(e, sid, s.span, v, raw ty_of(e, pv), !(raw expr_is_none(pv)));
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtReturnStmt) {
-        // THE LONG FORM (L-12): `return Result{ value: v }` is a success when
-        // its error field is absent or the literal 0; the value is `result`.
-        ExprId:ro = raw stmt_operand(s);
-        if (!(raw expr_is_none(ro))) {
-            ExprNode:rn = raw ast_expr(e.ast, ro);
-            if (rn.kind == ExprKind.ExprResultLiteralExpr) {
-                Term:rv = raw term_none();
-                bool:has_v = (rn.a != 0i32);
-                int32:vty = 0i32;
-                if (has_v) { rv = raw enc_expr(e, ExprId{ index: rn.a }); vty = raw ty_of(e, ExprId{ index: rn.a }); }
-                bool:success = true;
-                if (rn.b != 0i32) {
-                    Term:re = raw enc_expr(e, ExprId{ index: rn.b });
-                    success = false;
-                    if (re.ok) { if (string_equals(re.text, "0")) { success = true; } }
-                }
-                if (success) { drop record_seam(e, sid, s.span, rv, vty, has_v); }
-                pass NIL;
-            }
-        }
-        Term:rt = raw enc_expr(e, ro);
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtExitStmt) {
-        ExprId:xo = raw stmt_operand(s);
-        Term:xv = raw enc_expr(e, xo);
-        // `failsafe`'s POSTCONDITION (L-14, D-267): the code is positive.
-        if (e.is_failsafe) {
-            if (!xv.ok) { xv = raw term_opaque(e, raw ty_of(e, xo)); }
-            if (xv.ok && (!xv.is_bool)) {
-                drop record_at(e, raw OK_FAILSAFE_POST(), raw smt_app2(">", xv.text, "0"), xv.syms,
-                               raw SITE_STMT(), sid.index, s.span, true, raw ROLE_GUARD(), sid.index, 1i32);
-            } else {
-                List<int32>:none = raw list_init::<int32>(1i64);
-                drop record_at(e, raw OK_FAILSAFE_POST(), "", none, raw SITE_STMT(), sid.index, s.span, false,
-                               raw ROLE_GUARD(), sid.index, 1i32);
-            }
-        }
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtFailStmt) {
-        Term:fv = raw enc_expr(e, raw stmt_operand(s));
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtContinueStmt) {
-        // A HEAD VISIT (L-8): the invariant of the loop this re-enters holds
-        // here -- a preservation row keyed at the `continue`.
-        int64:fr = raw loop_frame(e, raw stmt_label(s));
-        if (fr >= 0i64) {
-            // THE MEASURE AT A `continue` (D-304): the head's check runs again
-            // with the values here -- a row against the body-start value.
-            VerifyId:cmeas = VerifyId{ index: e.loop_meas[fr] };
-            if (raw enc_measure_checks(e, cmeas)) {
-                int32:cmt = 1i32;
-                if (e.loop_msigned[fr]) { cmt = 2i32; }
-                Term:cm0 = raw term_copy(e.loop_mstart[fr]);
-                Term:cmc = raw enc_expr(e, raw measure_expr(raw ast_verify(e.ast, cmeas)));
-                if (cm0.ok && cmc.ok) {
-                    Term:clt = raw term_app2("<", cmc, cm0, true);
-                    drop record_at(e, raw OK_TERMINATE(), clt.text, clt.syms, raw SITE_STMT(), sid.index, s.span, true,
-                                   raw ROLE_GUARD(), e.loop_sids[fr], cmt);
-                } else {
-                    List<int32>:cmnone = raw list_init::<int32>(1i64);
-                    drop record_at(e, raw OK_TERMINATE(), "", cmnone, raw SITE_STMT(), sid.index, s.span, false,
-                                   raw ROLE_GUARD(), e.loop_sids[fr], cmt);
-                }
-            }
-            VerifyId:civ = VerifyId{ index: e.loop_invs[fr] };
-            int32:cnc = raw invariant_clauses(e, civ);
-            if (cnc > 0i32) {
-                // THE HEAD SEES THE INCREMENTED COUNTER (L-11, L-12): a
-                // `continue` re-enters at the increment.
-                int32:ck = e.loop_ckind[fr];
-                if (ck != 0i32) {
-                    drop counter_advance(e, ck, e.loop_cname[fr], raw term_copy(e.loop_cstep[fr]),
-                                         raw term_copy(e.loop_casc[fr]), e.loop_cdollar[fr]);
-                }
-                // A VISIT OF THE HEAD, LOUD (DEF-81): its guards' rows too,
-                // under the re-entered loop's clause context.
-                int32:cctx = e.clause_ctx;
-                e.clause_ctx = e.loop_sids[fr];
-                Term:cg = raw invariant_conj(e, civ, false);
-                e.clause_ctx = cctx;
-                if (cg.ok) {
-                    drop record_at(e, raw OK_INVARIANT(), cg.text, cg.syms, raw SITE_STMT(), sid.index, s.span, true,
-                                   raw ROLE_GUARD(), e.loop_sids[fr], cnc);
-                } else {
-                    List<int32>:cnone = raw list_init::<int32>(1i64);
-                    drop record_at(e, raw OK_INVARIANT(), "", cnone, raw SITE_STMT(), sid.index, s.span, false,
-                                   raw ROLE_GUARD(), e.loop_sids[fr], cnc);
-                }
-            }
-        }
-        pass NIL;
-    }
+    if (s.kind == StmtKind.StmtWhenStmt) { drop walk_k_when_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtPickStmt) { drop walk_k_pick_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtDeferStmt) { drop walk_k_defer_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtProveStmt) { drop walk_k_prove_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtAssertStaticStmt) { drop walk_k_assert_static_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtGiveStmt) { drop walk_k_give_stmt(e, sid, s); pass NIL; }
+    if (raw stmt_carries_expr(s.kind)) { drop walk_k_expr_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtPassStmt) { drop walk_k_pass_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtReturnStmt) { drop walk_k_return_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtExitStmt) { drop walk_k_exit_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtFailStmt) { drop walk_k_fail_stmt(e, sid, s); pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { drop walk_k_continue_stmt(e, sid, s); pass NIL; }
     // break, fall, and anything unclassified: no sites, no definitions.
     pass NIL;
 };
