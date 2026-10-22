@@ -90,6 +90,10 @@ pub struct:Front = {
     // `front_run_dump` for the same reason as the mode.
     bool:dump_refs;
     string:refs_dump;
+    // THE REACH LISTING (D-363's R4, landing 146): `--reach` asks the reach analysis for the
+    // identity set a `failsafe` must name (`reach_listing`), written by the driver to the named file.
+    bool:dump_reach;
+    string:reach_dump;
 };
 
 // Load, expand, resolve, type-check, analyse. Returns 0 with `f` filled and no
@@ -251,13 +255,14 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
 // through the pointer (a field of an unassigned local cannot be written by the
 // caller, ASSIGN-001, which is why it is an argument and not a caller's store).
 pub func:front_run_mode = int32(Front->:f, string:root, bool:no_wildx) never fails {
-    pass (raw front_run_dump(f, root, no_wildx, false));
+    pass (raw front_run_dump(f, root, no_wildx, false, false));
 };
 
 // The same run with the refs dump asked for (DEF-275's reading tool): the flag is set
 // before the passes, since stage 3 reads it at the escape fixpoint's end.
-pub func:front_run_dump = int32(Front->:f, string:root, bool:no_wildx, bool:dump_refs) never fails {
+pub func:front_run_dump = int32(Front->:f, string:root, bool:no_wildx, bool:dump_refs, bool:dump_reach) never fails {
     f.dump_refs = dump_refs;
+    f.dump_reach = dump_reach;
     int32:rc = raw front_run_passes(f, root);
     f.no_wildx = no_wildx;
     drop rehome_derived(@f.g);
@@ -654,6 +659,8 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
         rc0 = rc0 + 1i32;
     }
     drop reach_settle(@rch);
+    // THE REACH LISTING (D-363's R4): the set as settled, whatever the arms say.
+    if (f.dump_reach) { f.reach_dump = raw reach_listing(@rch); }
 
     // LOCK LEVELS (D-056, D-113, 0.5.6) — the cycle's only whole-program analysis,
     // affordable because verification is whole-program anyway. Seed every declared

@@ -879,6 +879,18 @@ func:emit_k_method_call_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) nev
     if (amk == (raw TY_ATOMIC())) {
         pass (raw emit_atomic_method(x, id, n, amrecv));
     }
+    // AN ATOMIC BEHIND A POINTER (DEF-274, landing 146; the fuzzer's F-052):
+    // `p.store(v)` with `atomic<int64>->:p` is D-098's one-level auto-dereference,
+    // which the checker peels (type_members.npk's method-call typer) and this
+    // intercept did not -- the call fell to the ordinary method path, found no
+    // impl and was EMIT-002, where `(<-p).store(v)` lowered. The pointee's type
+    // is the atomic's; `emit_atomic_method` reads the cell off the pointer's VALUE.
+    if (amk == (raw TY_POINTER())) {
+        int32:ampt = raw type_elem(x.fe.ctx.types, amrecv);
+        if ((raw type_kind(x.fe.ctx.types, ampt)) == (raw TY_ATOMIC())) {
+            pass (raw emit_atomic_method(x, id, n, ampt));
+        }
+    }
     // A TIER SCALAR'S OWN METHODS LOWER HERE; EVERY OTHER NAME IS AN IMPL'S
     // (D-257, 1.5.2b step 2) and takes the ordinary method-call path below,
     // through the callee the checker recorded. Until this step the four
@@ -6348,6 +6360,16 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                 if (!(raw iv_is_ok(pv))) { pass pv; }
                 cell = string_concat(pv.ref, "");
             }
+        }
+    }
+    // THROUGH A POINTER (DEF-274, landing 146): the receiver's recorded type is
+    // `atomic<T>->`, so its value IS the cell's address -- the one-level
+    // auto-dereference D-098 promises; `(<-p)` takes the place path below.
+    if (cell.len == 0i64) {
+        if ((raw type_kind(x.fe.ctx.types, raw exprtypes_get(x.et, aop))) == (raw TY_POINTER())) {
+            IrVal:ppv = raw emit_expr(x, aop);
+            if (!(raw iv_is_ok(ppv))) { pass ppv; }
+            cell = string_concat(ppv.ref, "");
         }
     }
     if (cell.len == 0i64) {

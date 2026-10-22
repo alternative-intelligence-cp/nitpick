@@ -273,6 +273,43 @@ func:reach_add_system = NIL(Reach->:x, move string:sname) never fails {
     pass NIL;
 };
 
+// THE LISTING (D-363's R4, landing 146): the identities a `failsafe` must name, as the
+// arms spell them -- bare (`(Name)`: the root's own constants and the prelude's system
+// identities) or qualified by the declaring file (`(module.Name)`) -- grouped by that
+// qualifier, each group in the order the walk met its members. `npkc FILE --reach OUT`
+// writes it after the settle; no gate reads it: it is the author's list of the arms to
+// write, the one accommodation D-363 gives a program that imports many libraries.
+pub func:reach_listing = string(Reach->:x) never fails {
+    string:out = "the identities `failsafe` must name (D-179), by the arm's spelling -- `bare` is `(Name)`, a module is `(module.Name)`:\n";
+    List<int32>:quals = raw list_init::<int32>(8i64);
+    int32:i = 0i32;
+    while ((i => int64) < x.rquals.count) decreases x.rquals.count - (i => int64) {
+        int32:q = x.rquals[i => int64];
+        bool:seen_q = false;
+        for (int64:j in 0i64...quals.count) { if (quals[j] == q) { seen_q = true; } }
+        if (!seen_q) { drop list_push(@quals, q); }
+        i = i + 1i32;
+    }
+    for (int64:qi in 0i64...quals.count) {
+        int32:q = quals[qi];
+        if (q == 0i32) { out = string_concat(out, "bare:"); } else {
+            out = string_concat(out, raw intern_get(x.interns, q));
+            out = string_concat(out, ":");
+        }
+        int32:k = 0i32;
+        while ((k => int64) < x.rdecls.count) decreases x.rdecls.count - (k => int64) {
+            if (x.rquals[k => int64] == q) {
+                DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: x.rdecls[k => int64] });
+                out = string_concat(out, " ");
+                out = string_concat(out, raw intern_get(x.interns, raw decl_name(wd)));
+            }
+            k = k + 1i32;
+        }
+        out = string_concat(out, "\n");
+    }
+    pass out;
+};
+
 // --- the walk (statements and expressions, everything observed) --------------------
 
 pub func:reach_module = NIL(Reach->:x, DeclId:mod_id) never fails {

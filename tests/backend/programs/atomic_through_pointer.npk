@@ -1,0 +1,76 @@
+// expect-exit: 0
+//
+// AN ATOMIC'S METHODS THROUGH A POINTER (DEF-274, landing 146; the fuzzer's F-052): `p.store(7i64)` and `p.load()`
+// with `atomic<int64>->:p`, and `q.store(…)` through a local `atomic<int64>->:q = @t;`, passed the checker (D-098's
+// one-level auto-dereference) and died in the emitter as EMIT-002 -- its atomic intercept read the receiver as the atomic
+// itself and never through a pointer -- where `(<-p).load()` and the methods on the atomic lowered. Every method through
+// the pointer now: a load, a store, `fetch_add`, `fetch_sub`, `swap` and `compare_exchange` through a parameter, and a
+// store and a load through a local pointer; the explicit `(<-p)` and the direct call as the controls. Exit 0 at both legs;
+// landing 145's compiler refuses it EMIT-002 at the first call through the pointer.
+mod:atomic_through_pointer;
+
+func:put = NIL(atomic<int64>->:p) never fails { p.store(7i64); pass NIL; };
+func:get = int64(atomic<int64>->:p) never fails { pass p.load(); };
+func:bump = int64(atomic<int64>->:p) never fails { pass p.fetch_add(3i64); };
+func:drop_two = int64(atomic<int64>->:p) never fails { pass p.fetch_sub(2i64); };
+func:take = int64(atomic<int64>->:p) never fails { pass p.swap(100i64); };
+func:cas = int64(atomic<int64>->:p) never fails { pass p.compare_exchange(100i64, 42i64); };
+func:get_explicit = int64(atomic<int64>->:p) never fails { pass (<-p).load(); };
+
+func:main = int32(cstring[]:_~argv) {
+    atomic<int64>:t = 5i64;
+    if ((raw get(@t)) != 5i64) { exit 11i32; }             // a load through the pointer parameter
+    drop put(@t);                                             // a store through it
+    if (t.load() != 7i64) { exit 12i32; }
+    if ((raw bump(@t)) != 7i64) { exit 13i32; }              // fetch_add answers the old value
+    if (t.load() != 10i64) { exit 14i32; }
+    if ((raw drop_two(@t)) != 10i64) { exit 15i32; }
+    if (t.load() != 8i64) { exit 16i32; }
+    if ((raw take(@t)) != 8i64) { exit 17i32; }              // swap answers the old value
+    if (t.load() != 100i64) { exit 18i32; }
+    if ((raw cas(@t)) != 100i64) { exit 19i32; }             // compare_exchange answers the previous value, and wrote
+    if (t.load() != 42i64) { exit 20i32; }
+    if ((raw get_explicit(@t)) != 42i64) { exit 21i32; }     // the control: the explicit dereference
+    atomic<int64>->:q = @t;                                   // through a local pointer
+    q.store(1i64);
+    if (q.load() != 1i64) { exit 22i32; }
+    if (t.load() != 1i64) { exit 23i32; }                    // the direct call, the other control
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

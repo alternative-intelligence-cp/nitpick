@@ -23568,6 +23568,16 @@ the pattern grammar (a comma list in an arm's parentheses: AST_REFERENCE §5, CO
 reach analysis's arm reader (`reach_settle`), the encoder's arm condition (a disjunction), and the tests of both `pick`
 spellings. Nothing else moves: REACH-002's demand, D-179's rule and D-352's macro form stand.
 
+*[2026-10-22, landing 146 (`nitpick-compiler_42`): R4 LANDED -- `npkc FILE --reach OUT` writes the identities a
+`failsafe` must name, grouped by the arm's spelling (`bare` for `(Name)`, a module for `(module.Name)`), each group in
+the order the reach analysis met its members (`reach_listing`, reach.npk, read after `reach_settle`; plumbed as
+`--dump-refs` is: a `Front` flag, `front_run_dump`'s fifth argument, the file the driver writes). The compiler's own
+source lists 38 identities in 15 groups (14 bare, 24 qualified by 14 modules); its `failsafe` names 40, the two beyond
+the list -- `(bindings.Rederived)` and `(escape.Rederived)` -- being arms no reachable raise demands (each module
+declares its `Rederived` and raises it nowhere; an arm nothing reaches is accepted); a small program lists the six
+identities every program can reach. No gate reads it: it is the author's list of the arms to write. R1 (the comma
+list) remains its own landing.]*
+
 ## D-364 — A LOAD WHOSE VALUE THE PROGRAM USES FAULTS AT BOTH LEGS; A DEAD LOAD THROUGH A `wild` NULL POINTER IS NO READ AT -O2, THE LEGS' ONE PERMITTED DISAGREEMENT — **SETTLED (user decision, 2026-10-22: "for the two questions i agree with the recommendations")**
 
 **The question (S-140, OPEN_DECISIONS; DEF-273, the fuzzer's F-051).** `wild int64->:p = NULL; int64:v = <-p;` with `v`
