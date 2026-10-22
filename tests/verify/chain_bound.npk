@@ -1,0 +1,43 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// THE ENCODER'S FRAMES HOLD A CHAIN AT THE DEPTH BOUND (DEF-269, landing
+// 145): `enc_expr` held every arm's locals in its one frame (1,136 slots:
+// allocas are hoisted, D-173), and a chain recursed through it once a level,
+// so `npkc --obligations` exited 3 with no message at the 156th level of a
+// chain the plain build compiles (DEF-176). Each arm is a function of its
+// own now. These two chains stand at the AST's bound (256 levels, DEF-150),
+// every level through the binary arm -- the frame a chain pays for most: a
+// left-deep `&&` of 254 operands, and a right-nested `||` of 254, whose every
+// right-hand side is encoded inside its own arm's region. Neither carries a
+// row, so the solver decides the `failsafe`'s rows alone; the compiler before
+// landing 145 exits 3 on each.
+mod:chain_bound;
+
+func:all_of = bool(bool:b) never fails { bool:y = b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b && b; pass y; };
+func:any_of = bool(bool:b) never fails { bool:y = b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b || (b))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))); pass y; };
+
+func:main = int32(cstring[]:_~argv) {
+    if (!(raw all_of(true))) { exit 1i32; }
+    if (raw all_of(false)) { exit 2i32; }
+    if (!(raw any_of(true))) { exit 3i32; }
+    if (raw any_of(false)) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

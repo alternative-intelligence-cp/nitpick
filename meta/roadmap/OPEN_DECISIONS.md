@@ -3027,7 +3027,7 @@ defect declares a `DEF-` in §2f.
 > `nitpick-compiler_41` at landing 138; built and measured on landing 139's compiler; its probes in
 > `wt/41b/.internal/probes/def275/`.
 
-> **DEF-269 — OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 142, found by its probe of the verified build;
+> **DEF-269 — FIXED 2026-10-22 (landing 145; built 2026-10-19 by the DEF-269 agent under `nitpick-compiler_40`, read whole, checked arm for arm and landed by `nitpick-compiler_42`): `enc_expr`'s arms are frames of their own (`enc_k_*`; five `ArmTerm` arms that may decline their node, the dispatcher testing the kinds in the one function's old order and keeping its tail), every arm verbatim; `enc_expr`'s frame 53,368 -> 6,968 bytes, one binary level 20.5 KB where it was 53.4; `tests/verify/chain_bound.npk`. Measured on landing 144's compiler (`wt/40q/.internal/probes/def269/`): `chain_deep.npk` and eight chains at or near the bound (`&&`, `||`, `simd` sums, prefix `-` and `!`, casts, `??`, ternaries) compile in the plain build and exit 3 under `--obligations`, each decided now. The agent's three other findings are DEF-277, DEF-278 and DEF-279 (DEF-276 was its second). WAS: OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 142, found by its probe of the verified build;
 > DEF-176's class in the SMT encoder). THE OBLIGATION ENCODER EXHAUSTS THE COMPILER'S STACK ON A DEEP CHAIN.** `npkc FILE
 > --obligations DIR` over `chain_deep.npk` (a 254-operand `x + x + …`, legal and compiling in the plain build since landing
 > 142) exits 3 with no message at `enc_expr`'s 156th level: its one frame holds 1,136 slots (allocas are hoisted, D-173).
@@ -3050,6 +3050,31 @@ defect declares a `DEF-` in §2f.
 > remedy is DEF-176's own again: the `_rest` frame is forty call results in one frame (a second dispatch level, or the
 > arms' slots shared), and `emit_builtin`'s, `emit_coalesce`'s, the ternary arm's and `emit_cast`'s frames each want
 > the split `emit_binary` got. Its own landing, with DEF-269's (the encoder's twin) or after it.
+
+> **DEF-277 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report
+> (`.internal/handoff_35/DEF269_AGENT_REPORT.txt`, its first finding); DEF-269's class in the STATEMENT walk). NESTED BLOCKS
+> EXHAUST THE COMPILER'S STACK UNDER `--obligations`.** A body of bare blocks nested 252 deep is `--obligations` exit 3 with
+> no message on landing 144's compiler and on 145's alike: the encoder's statement walk (`walk_stmt`, a 36,088-byte frame,
+> and `walk_block`) recurses once a level with every arm's locals in one frame, as `enc_expr` did before 145, and runs out
+> after some 230 frames -- below the AST's bound (256, DEF-150), where the plain build compiles the program. No program of
+> the three trees nests blocks past a dozen. The remedy is DEF-269's own: the statement arms in frames of their own. Its own
+> landing.
+
+> **DEF-278 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report, its
+> third finding; LOW: a loud slowness, nothing accepted or refused wrongly). NESTED PICK EXPRESSIONS TAKE EXPONENTIAL TIME IN
+> THE FRONT HALF.** A `pick` expression nested in a `pick` expression's arm, and so on, costs about x1.9 per level on both
+> compilers: depth 20 is twelve seconds, depth 30 past five minutes (the agent's measure). The cause is not located: a walk
+> that re-visits every arm of every enclosing pick per level is the shape to look for (the checker's `type_pick_rules` over
+> both spellings, the bindings analysis's arm merge, or the folder). Its own landing, measured first.
+
+> **DEF-279 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report, its
+> fourth finding; a compiler TRAP on a legal program, in the verified build's path). THE ENCODER'S `int_form_and` OVERFLOWS
+> ON THE MASK `9223372036854775807u64`.** `int_form_and` (smt_encode.npk, D-279's Int form of a low-bits mask) computes
+> `m + 1i64` for the mask's numeral, and for the mask 2^63 - 1 that sum does not fit `int64`: the compiler traps
+> `IntOverflow` (-4110) under `--obligations` -- the fuzz corpus's `m11/programs/lx0332b.npk` exits 3 where the plain build
+> exits 0 -- on landing 144's compiler and on 145's. The fix is the mask test in `uint64` (or the Int form declined at the
+> top mask, the row left `open`), with the probe as its test. Its own small landing; `npkg verify` over the fuzz corpus
+> would meet it first.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

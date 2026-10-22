@@ -4871,675 +4871,800 @@ func:walk_children = NIL(Encoder->:e, ExprNode:n) never fails {
     pass NIL;
 };
 
-pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
-    if (raw expr_is_none(id)) { pass (raw term_none()); }
-    ExprNode:n = raw ast_expr(e.ast, id);
-    int32:ty = raw ty_of(e, id);
+// AN ARM THAT MAY DECLINE ITS NODE (DEF-269): five arms of `enc_expr` ask
+// more than the node's kind -- whether a receiver, a base or the value is a
+// `simd`, which method or member is named, which builtin -- and where the
+// answer is no, the node goes on to the tests after them, or to the shared
+// tail. Such an arm answers `mine` false, its `t` a `term_none` nobody reads;
+// with `mine` true, `t` is the arm's term.
+struct:ArmTerm = { bool:mine; Term:t; };
 
-    if (n.kind == ExprKind.ExprIntLiteral) {
-        if (raw is_twisted(e, ty)) { pass (raw twisted_int_literal(e, n.payload, ty)); }
-        if (!(raw is_int(e, ty))) { pass (raw term_none()); }
-        if (raw type_is_signed(e.types, ty)) { pass (raw term_lit(raw smt_int(n.payload), false)); }
-        pass (raw term_lit(raw u64_decimal(n.payload =>! uint64), false));
+// THE `ExprIntLiteral` ARM OF `enc_expr` (DEF-269).
+func:enc_k_int_literal = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if (raw is_twisted(e, ty)) { pass (raw twisted_int_literal(e, n.payload, ty)); }
+    if (!(raw is_int(e, ty))) { pass (raw term_none()); }
+    if (raw type_is_signed(e.types, ty)) { pass (raw term_lit(raw smt_int(n.payload), false)); }
+    pass (raw term_lit(raw u64_decimal(n.payload =>! uint64), false));
+};
+
+// THE `ExprBoolLiteral` ARM OF `enc_expr` (DEF-269).
+func:enc_k_bool_literal = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if (n.payload != 0i64) { pass (raw term_lit("true", true)); }
+    pass (raw term_lit("false", true));
+};
+
+// THE `ExprFloatLiteral` ARM OF `enc_expr` (DEF-269).
+// A `tfp`/`dim256` literal in the fractional form (D-278); a float's
+// literal is its IEEE term (D-281, 1.5.4b step 3; this said "has no term
+// until step 3" until landing 145).
+func:enc_k_float_literal = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if (raw is_twisted(e, ty)) {
+        pass (raw twisted_text_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
     }
-    if (n.kind == ExprKind.ExprBoolLiteral) {
-        if (n.payload != 0i64) { pass (raw term_lit("true", true)); }
-        pass (raw term_lit("false", true));
+    if (raw is_float(e, ty)) {
+        pass (raw fp_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
     }
-    // A `tfp`/`dim256` literal in the fractional form (D-278); a float's
-    // literal has no term until step 3.
-    if (n.kind == ExprKind.ExprFloatLiteral) {
-        if (raw is_twisted(e, ty)) {
-            pass (raw twisted_text_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
+    pass (raw term_none());
+};
+
+// THE `ExprSentinelLiteral` ARM OF `enc_expr` (DEF-269).
+// `ERR` (D-008) at a twisted type is the sentinel; `NIL`, `NULL` and an
+// aggregate family's ERR (a `complex`, a `frac`) have no term.
+func:enc_k_sentinel_literal = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if ((n.payload >= 2i64) && (raw is_twisted(e, ty))) { pass (raw term_lit(raw tw_min(e, ty), false)); }
+    pass (raw term_none());
+};
+
+// THE `ExprIdentifierExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_identifier_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    int64:bi = raw ident_bind(e, n);
+    if (bi >= 0i64) {
+        // A `simd` binding's read: its lane symbols (D-282), no scalar term.
+        if (e.binds[bi].lanes.count > 0i64) {
+            drop lanes_of_binding(e, bi, id.index);
+            pass (raw term_none());
         }
-        if (raw is_float(e, ty)) {
-            pass (raw fp_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
+        // UNDER `old(...)` (D-243): the binding's entry version.
+        int32:want = e.binds[bi].sym;
+        if (e.at_entry) { want = e.binds[bi].entry; }
+        if (want >= 0i32) {
+            int32:si = want;
+            List<int32>:one = raw list_init::<int32>(1i64);
+            drop list_push(@one, si);
+            pass Term{ ok: true, is_bool: e.syms[si => int64].is_bool,
+                       text: raw sym_text(e, si), syms: move(one) };
         }
-        pass (raw term_none());
     }
-    // `ERR` (D-008) at a twisted type is the sentinel; `NIL`, `NULL` and an
-    // aggregate family's ERR (a `complex`, a `frac`) have no term.
-    if (n.kind == ExprKind.ExprSentinelLiteral) {
-        if ((n.payload >= 2i64) && (raw is_twisted(e, ty))) { pass (raw term_lit(raw tw_min(e, ty), false)); }
-        pass (raw term_none());
+    // AN ESCAPED AGGREGATE HAS NO IDENTITY, NOT EVEN AN ANONYMOUS ONE
+    // (D-317 under DEF-14's rule): a fresh symbol per read would buy no
+    // fact and would turn every `bounds` row of an address-taken `List`
+    // -- E-4's residue, `unencoded` by 1.5.8b step 5's accounting -- into
+    // an `open` row over an opaque length, a weaker statement of the same
+    // guard. Its field reads stay opaque per read, as before this step.
+    if ((bi >= 0i64) && (raw is_agg(e, ty))) { pass (raw term_none()); }
+    // A `fixed` GLOBAL IS ITS CONSTANT (1.5.4b step 1): the folder's value
+    // as a numeral wherever it is read, so a flag member or a named mask
+    // takes the Int forms of D-279. A local the folder cannot fold (every
+    // local) answers nothing here, and the read stays opaque.
+    if ((raw is_word(e, ty)) && (bi < 0i64)) {
+        ConstVal:gcv = raw fold_const(e.tr, id, e.scope);
+        if (gcv.kind == (raw CV_INT())) { pass (raw term_lit(raw smt_int(gcv.num), false)); }
     }
-    if (n.kind == ExprKind.ExprIdentifierExpr) {
-        int64:bi = raw ident_bind(e, n);
-        if (bi >= 0i64) {
-            // A `simd` binding's read: its lane symbols (D-282), no scalar term.
-            if (e.binds[bi].lanes.count > 0i64) {
-                drop lanes_of_binding(e, bi, id.index);
-                pass (raw term_none());
-            }
-            // UNDER `old(...)` (D-243): the binding's entry version.
-            int32:want = e.binds[bi].sym;
-            if (e.at_entry) { want = e.binds[bi].entry; }
-            if (want >= 0i32) {
-                int32:si = want;
-                List<int32>:one = raw list_init::<int32>(1i64);
-                drop list_push(@one, si);
-                pass Term{ ok: true, is_bool: e.syms[si => int64].is_bool,
-                           text: raw sym_text(e, si), syms: move(one) };
-            }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprBinaryExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_binary_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    TokenKind:op = raw expr_op(n);
+    Term:a = raw enc_expr(e, raw expr_lhs(n));
+    // THE RIGHT-HAND SIDE OF `&&`/`||` IS AN ARM (1.5.4 step 2, L-10): it
+    // runs only when the left decided nothing, so its sites and its
+    // symbols live under `a` (or `(not a)`), in a region of their own
+    // whose facts come back guarded.
+    Term:b = raw term_none();
+    if (((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) && a.ok && a.is_bool) {
+        Term:ac = raw term_copy(a);
+        if (op == TokenKind.OpOrOr) {
+            ac = Term{ ok: true, is_bool: true, text: raw smt_app1("not", a.text),
+                       syms: raw syms_union(a.syms, raw list_init::<int32>(1i64)) };
         }
-        // AN ESCAPED AGGREGATE HAS NO IDENTITY, NOT EVEN AN ANONYMOUS ONE
-        // (D-317 under DEF-14's rule): a fresh symbol per read would buy no
-        // fact and would turn every `bounds` row of an address-taken `List`
-        // -- E-4's residue, `unencoded` by 1.5.8b step 5's accounting -- into
-        // an `open` row over an opaque length, a weaker statement of the same
-        // guard. Its field reads stay opaque per read, as before this step.
-        if ((bi >= 0i64) && (raw is_agg(e, ty))) { pass (raw term_none()); }
-        // A `fixed` GLOBAL IS ITS CONSTANT (1.5.4b step 1): the folder's value
-        // as a numeral wherever it is read, so a flag member or a named mask
-        // takes the Int forms of D-279. A local the folder cannot fold (every
-        // local) answers nothing here, and the read stays opaque.
-        if ((raw is_word(e, ty)) && (bi < 0i64)) {
-            ConstVal:gcv = raw fold_const(e.tr, id, e.scope);
-            if (gcv.kind == (raw CV_INT())) { pass (raw term_lit(raw smt_int(gcv.num), false)); }
+        drop region_enter_cond(e, ac);
+        drop hyp_push(e, ac.text, ac.syms);
+        b = raw enc_expr(e, raw expr_rhs(n));
+        drop region_leave(e);
+    } else {
+        b = raw enc_expr(e, raw expr_rhs(n));
+    }
+    int32:lt = raw ty_of(e, raw expr_lhs(n));
+    if ((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) {
+        if (a.ok && b.ok && a.is_bool && b.is_bool) {
+            if (op == TokenKind.OpAndAnd) { pass (raw term_app2("and", a, b, true)); }
+            pass (raw term_app2("or", a, b, true));
         }
         pass (raw term_opaque(e, ty));
     }
-    if (n.kind == ExprKind.ExprBinaryExpr) {
-        TokenKind:op = raw expr_op(n);
-        Term:a = raw enc_expr(e, raw expr_lhs(n));
-        // THE RIGHT-HAND SIDE OF `&&`/`||` IS AN ARM (1.5.4 step 2, L-10): it
-        // runs only when the left decided nothing, so its sites and its
-        // symbols live under `a` (or `(not a)`), in a region of their own
-        // whose facts come back guarded.
-        Term:b = raw term_none();
-        if (((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) && a.ok && a.is_bool) {
-            Term:ac = raw term_copy(a);
-            if (op == TokenKind.OpOrOr) {
-                ac = Term{ ok: true, is_bool: true, text: raw smt_app1("not", a.text),
-                           syms: raw syms_union(a.syms, raw list_init::<int32>(1i64)) };
-            }
-            drop region_enter_cond(e, ac);
-            drop hyp_push(e, ac.text, ac.syms);
-            b = raw enc_expr(e, raw expr_rhs(n));
-            drop region_leave(e);
-        } else {
-            b = raw enc_expr(e, raw expr_rhs(n));
+    // A WORD'S BITWISE OPERATORS (D-279, D-280; a flag family's `|`/`&`
+    // too): the Int forms, the bounded crossing, the shift's row.
+    if (raw is_word(e, lt)) {
+        bool:bitop = ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe) || (op == TokenKind.OpCaret));
+        if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) { bitop = true; }
+        if (bitop) {
+            pass (raw enc_bitwise(e, op, lt, a, b, raw expr_lhs(n), raw expr_rhs(n), id.index, n.span, true));
         }
-        int32:lt = raw ty_of(e, raw expr_lhs(n));
-        if ((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) {
-            if (a.ok && b.ok && a.is_bool && b.is_bool) {
-                if (op == TokenKind.OpAndAnd) { pass (raw term_app2("and", a, b, true)); }
-                pass (raw term_app2("or", a, b, true));
-            }
-            pass (raw term_opaque(e, ty));
-        }
-        // A WORD'S BITWISE OPERATORS (D-279, D-280; a flag family's `|`/`&`
-        // too): the Int forms, the bounded crossing, the shift's row.
-        if (raw is_word(e, lt)) {
-            bool:bitop = ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe) || (op == TokenKind.OpCaret));
-            if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) { bitop = true; }
-            if (bitop) {
-                pass (raw enc_bitwise(e, op, lt, a, b, raw expr_lhs(n), raw expr_rhs(n), id.index, n.span, true));
-            }
-            if ((raw type_kind(e.types, lt)) == (raw TY_FLAGS())) {
-                if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
-                    if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
-                    if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
-                }
-                pass (raw term_opaque(e, ty));
-            }
-        }
-        // A FLOAT OPERAND (D-281): the IEEE operations and the ordered
-        // predicates, no row (floats never trap).
-        if (raw is_float(e, lt)) {
-            pass (raw enc_float_binary(e, op, lt, ty, a, b));
-        }
-        // A TWISTED OPERAND (D-278): the operations as the emitter's `ite`
-        // shapes, a comparison the `err-exit` row.
-        if (raw is_twisted(e, lt)) {
-            pass (raw enc_twisted_binary(e, op, lt, ty, a, b, id.index, n.span));
-        }
-        if (raw is_int(e, lt)) {
-            bool:divlike = ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent));
-            if (divlike) {
-                drop record_division(e, lt, a, b, id.index, n.span);
-                if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
-                if (!(raw term_is_numeral(b))) { e.nonlinear = true; }
-                if (raw type_is_signed(e.types, lt)) {
-                    e.uses_sdiv = true;
-                    e.nonlinear = true;
-                    if (op == TokenKind.OpSlash) { pass (raw term_app2("npk_sdiv", a, b, false)); }
-                    pass (raw term_app2("npk_srem", a, b, false));
-                }
-                if (op == TokenKind.OpSlash) { pass (raw term_app2("div", a, b, false)); }
-                pass (raw term_app2("mod", a, b, false));
-            }
-            // THE WRAPPING FAMILY (D-312, 1.5.8b step 4): the exact modular
-            // term, no row and no guard -- and the folder's constant where the
-            // node has one, as the trapping twins take theirs.
-            if (raw wrap_arith_op(op)) {
-                ConstVal:wcv = raw fold_node_constant(e.tr, id, e.scope, ty);
-                if (wcv.kind == (raw CV_INT())) {
-                    pass (raw term_lit(raw smt_int(wcv.num), false));
-                }
-                Term:wt = raw wrap_binop(e, op, ty, a, b);
-                if (!wt.ok) { pass (raw term_opaque(e, ty)); }
-                pass wt;
-            }
-            // `+ - *`: the term, and the `overflow` row at the guard's site --
-            // none where the node is written as its constant (step 2, no guard).
-            bool:ovop = ((op == TokenKind.OpPlus) || (op == TokenKind.OpMinus) || (op == TokenKind.OpStar));
-            if (ovop) {
-                ConstVal:bcv = raw fold_node_constant(e.tr, id, e.scope, ty);
-                if (bcv.kind == (raw CV_INT())) {
-                    pass (raw term_lit(raw smt_int(bcv.num), false));
-                }
-                Term:bt = raw term_none();
-                if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
-                    if (op == TokenKind.OpPlus)  { bt = raw term_app2("+", a, b, false); }
-                    if (op == TokenKind.OpMinus) { bt = raw term_app2("-", a, b, false); }
-                    if (op == TokenKind.OpStar) {
-                        if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
-                        bt = raw term_app2("*", a, b, false);
-                    }
-                }
-                drop record_overflow(e, ty, bt, id.index, n.span);
-                if (!bt.ok) { pass (raw term_opaque(e, ty)); }
-                pass bt;
-            }
-            if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
-            if (a.is_bool || b.is_bool) { pass (raw term_opaque(e, ty)); }
-            if (op == TokenKind.OpLt)    { pass (raw term_app2("<", a, b, true)); }
-            if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", a, b, true)); }
-            if (op == TokenKind.OpGt)    { pass (raw term_app2(">", a, b, true)); }
-            if (op == TokenKind.OpGtEq)  { pass (raw term_app2(">=", a, b, true)); }
-            if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
-            if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
-            if (op == TokenKind.OpSpaceship) { pass (raw spaceship_term(a, b)); }   // DEF-131
-            pass (raw term_opaque(e, ty));
-        }
-        if (raw is_bool(e, lt)) {
-            if (a.ok && b.ok && a.is_bool && b.is_bool) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_FLAGS())) {
+            if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
                 if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
                 if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
             }
             pass (raw term_opaque(e, ty));
         }
-        if (lt != 0i32) {
-            int32:lk = raw type_kind(e.types, lt);
-            // A `simd` OPERATION (D-282): the lanes, and the any-lane rows.
-            if (lk == (raw TY_SIMD())) {
-                drop enc_simd_binary(e, op, lt, id, raw expr_lhs(n), raw expr_rhs(n), n.span);
+    }
+    // A FLOAT OPERAND (D-281): the IEEE operations and the ordered
+    // predicates, no row (floats never trap).
+    if (raw is_float(e, lt)) {
+        pass (raw enc_float_binary(e, op, lt, ty, a, b));
+    }
+    // A TWISTED OPERAND (D-278): the operations as the emitter's `ite`
+    // shapes, a comparison the `err-exit` row.
+    if (raw is_twisted(e, lt)) {
+        pass (raw enc_twisted_binary(e, op, lt, ty, a, b, id.index, n.span));
+    }
+    if (raw is_int(e, lt)) {
+        bool:divlike = ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent));
+        if (divlike) {
+            drop record_division(e, lt, a, b, id.index, n.span);
+            if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
+            if (!(raw term_is_numeral(b))) { e.nonlinear = true; }
+            if (raw type_is_signed(e.types, lt)) {
+                e.uses_sdiv = true;
+                e.nonlinear = true;
+                if (op == TokenKind.OpSlash) { pass (raw term_app2("npk_sdiv", a, b, false)); }
+                pass (raw term_app2("npk_srem", a, b, false));
             }
-            // A `frac` or a tfp-element `complex` comparison traps on ERR too
-            // (D-198, D-199), over an aggregate the walk has no term for: its
-            // `err-exit` row is `unencoded` (L-6).
-            if (((lk == (raw TY_FRAC())) || (lk == (raw TY_COMPLEX()))) && (raw tw_is_cmp(op))) {
-                bool:taints = true;
-                if (lk == (raw TY_COMPLEX())) {
-                    taints = ((raw type_kind(e.types, raw type_elem(e.types, lt))) == (raw TY_TFP()));
-                }
-                if (taints) { drop record_unencoded_err_exit(e, id.index, n.span); }
-            }
+            if (op == TokenKind.OpSlash) { pass (raw term_app2("div", a, b, false)); }
+            pass (raw term_app2("mod", a, b, false));
         }
+        // THE WRAPPING FAMILY (D-312, 1.5.8b step 4): the exact modular
+        // term, no row and no guard -- and the folder's constant where the
+        // node has one, as the trapping twins take theirs.
+        if (raw wrap_arith_op(op)) {
+            ConstVal:wcv = raw fold_node_constant(e.tr, id, e.scope, ty);
+            if (wcv.kind == (raw CV_INT())) {
+                pass (raw term_lit(raw smt_int(wcv.num), false));
+            }
+            Term:wt = raw wrap_binop(e, op, ty, a, b);
+            if (!wt.ok) { pass (raw term_opaque(e, ty)); }
+            pass wt;
+        }
+        // `+ - *`: the term, and the `overflow` row at the guard's site --
+        // none where the node is written as its constant (step 2, no guard).
+        bool:ovop = ((op == TokenKind.OpPlus) || (op == TokenKind.OpMinus) || (op == TokenKind.OpStar));
+        if (ovop) {
+            ConstVal:bcv = raw fold_node_constant(e.tr, id, e.scope, ty);
+            if (bcv.kind == (raw CV_INT())) {
+                pass (raw term_lit(raw smt_int(bcv.num), false));
+            }
+            Term:bt = raw term_none();
+            if (a.ok && b.ok && (!a.is_bool) && (!b.is_bool)) {
+                if (op == TokenKind.OpPlus)  { bt = raw term_app2("+", a, b, false); }
+                if (op == TokenKind.OpMinus) { bt = raw term_app2("-", a, b, false); }
+                if (op == TokenKind.OpStar) {
+                    if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
+                    bt = raw term_app2("*", a, b, false);
+                }
+            }
+            drop record_overflow(e, ty, bt, id.index, n.span);
+            if (!bt.ok) { pass (raw term_opaque(e, ty)); }
+            pass bt;
+        }
+        if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
+        if (a.is_bool || b.is_bool) { pass (raw term_opaque(e, ty)); }
+        if (op == TokenKind.OpLt)    { pass (raw term_app2("<", a, b, true)); }
+        if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", a, b, true)); }
+        if (op == TokenKind.OpGt)    { pass (raw term_app2(">", a, b, true)); }
+        if (op == TokenKind.OpGtEq)  { pass (raw term_app2(">=", a, b, true)); }
+        if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+        if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+        if (op == TokenKind.OpSpaceship) { pass (raw spaceship_term(a, b)); }   // DEF-131
+        pass (raw term_opaque(e, ty));
+    }
+    if (raw is_bool(e, lt)) {
+        if (a.ok && b.ok && a.is_bool && b.is_bool) {
+            if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+            if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+        }
+        pass (raw term_opaque(e, ty));
+    }
+    if (lt != 0i32) {
+        int32:lk = raw type_kind(e.types, lt);
+        // A `simd` OPERATION (D-282): the lanes, and the any-lane rows.
+        if (lk == (raw TY_SIMD())) {
+            drop enc_simd_binary(e, op, lt, id, raw expr_lhs(n), raw expr_rhs(n), n.span);
+        }
+        // A `frac` or a tfp-element `complex` comparison traps on ERR too
+        // (D-198, D-199), over an aggregate the walk has no term for: its
+        // `err-exit` row is `unencoded` (L-6).
+        if (((lk == (raw TY_FRAC())) || (lk == (raw TY_COMPLEX()))) && (raw tw_is_cmp(op))) {
+            bool:taints = true;
+            if (lk == (raw TY_COMPLEX())) {
+                taints = ((raw type_kind(e.types, raw type_elem(e.types, lt))) == (raw TY_TFP()));
+            }
+            if (taints) { drop record_unencoded_err_exit(e, id.index, n.span); }
+        }
+    }
+    pass (raw term_none());
+};
+
+// THE `ExprUnaryExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_unary_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    TokenKind:uop = raw expr_op(n);
+    Term:o = raw enc_expr(e, raw expr_operand(n));
+    // AN INTEGER NEGATION IS `0 - x` AND ITS GUARD'S ROW (1.5.8b step 3),
+    // at the unary node's own site (K-9) -- none where it is written as its
+    // constant, `unencoded` where the operand has no term.
+    if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty))) {
+        ConstVal:ucv = raw fold_node_constant(e.tr, id, e.scope, ty);
+        if (ucv.kind == (raw CV_INT())) { pass (raw term_lit(raw smt_int(ucv.num), false)); }
+        Term:ut = raw term_none();
+        if (o.ok && (!o.is_bool)) { ut = raw term_app2("-", raw term_lit("0", false), o, false); }
+        drop record_overflow(e, ty, ut, id.index, n.span);
+        if (!ut.ok) { pass (raw term_opaque(e, ty)); }
+        pass ut;
+    }
+    if (!o.ok) { pass (raw term_opaque(e, ty)); }
+    // A float negation is `fneg` (D-143): `fp.neg`, exact.
+    if ((uop == TokenKind.OpMinus) && (raw is_float(e, ty)) && (!o.is_bool)) {
+        pass (raw fp_make(e, "neg", ty, o.text, "", raw smt_app1("fp.neg", o.text), o.syms));
+    }
+    // A twisted negation (D-008): ERR in, ERR out; `0 - x` is in range
+    // for every valid `x`, the valid range being symmetric.
+    if ((uop == TokenKind.OpMinus) && (raw is_twisted(e, ty)) && (!o.is_bool)) {
+        string:tmn = raw tw_min(e, ty);
+        pass Term{ ok: true, is_bool: false,
+                   text: raw smt_app3("ite", raw smt_app2("=", o.text, tmn), tmn, raw smt_app2("-", "0", o.text)),
+                   syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+    }
+    if ((uop == TokenKind.OpBang) && o.is_bool) {
+        pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", o.text),
+                   syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+    }
+    // `~x` IN Int (D-279): `-x - 1` on a signed word, `2^W - 1 - x` on an
+    // unsigned one -- the complement is arithmetic, no crossing needed.
+    if ((uop == TokenKind.OpTilde) && (raw is_word(e, ty)) && (!o.is_bool)) {
+        if (raw word_signed(e, ty)) {
+            string:neg = raw smt_app1("-", o.text);
+            pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", neg, "1"),
+                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+        }
+        string:top = raw pow2_minus_one_decimal((raw word_bits(e, ty)) => int64);
+        pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", top, o.text),
+                   syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+    }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprTernaryExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_ternary_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    // THE TWO BRANCHES ARE ARMS (L-10): each under its condition, in a
+    // region of its own (the emitter runs only the taken one, D-145).
+    Term:c = raw enc_expr(e, ExprId{ index: n.a });
+    bool:tc = c.ok && c.is_bool;
+    Term:nc = raw term_none();
+    if (tc) {
+        nc = Term{ ok: true, is_bool: true, text: raw smt_app1("not", c.text),
+                   syms: raw syms_union(c.syms, raw list_init::<int32>(1i64)) };
+    }
+    if (tc) { drop region_enter_cond(e, c); drop hyp_push(e, c.text, c.syms); } else { drop region_enter(e); }
+    Term:t1 = raw enc_expr(e, ExprId{ index: n.b });
+    drop region_leave(e);
+    if (tc) { drop region_enter_cond(e, nc); drop hyp_push(e, nc.text, nc.syms); } else { drop region_enter(e); }
+    Term:t2 = raw enc_expr(e, ExprId{ index: n.c });
+    drop region_leave(e);
+    if (c.ok && t1.ok && t2.ok && c.is_bool && (t1.is_bool == t2.is_bool)) {
+        pass Term{ ok: true, is_bool: t1.is_bool,
+                   text: raw smt_app3("ite", c.text, t1.text, t2.text),
+                   syms: raw syms_union(c.syms, raw syms_union(t1.syms, t2.syms)) };
+    }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprCastExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_cast_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    // `=>` between integers is value-preserving by the checker's own rule
+    // (a lossy `=>` is refused), so the term is the operand's.
+    Term:ct = raw enc_expr(e, raw expr_operand(n));
+    int32:st = raw ty_of(e, raw expr_operand(n));
+    if (ct.ok && (raw is_int(e, st)) && (raw is_int(e, ty)) && (!ct.is_bool)) { pass ct; }
+    Term:fw = raw flag_word_cast(e, ct, st, ty);
+    if (fw.ok) { pass fw; }
+    Term:tw = raw twisted_cast(e, ct, st, ty, false, id.index, n.span);
+    if (tw.ok) { pass tw; }
+    // A FLOAT LEAVING TO AN INTEGER IS A GUARD (D-306): its row here, its
+    // value opaque -- the truncation is not a term the fragment holds.
+    if ((raw is_float(e, st)) && (raw is_int(e, ty))) {
+        drop record_cast_range(e, ct, st, ty, id.index, n.span);
+        pass (raw term_opaque(e, ty));
+    }
+    Term:fc = raw float_cast(e, ct, st, ty);
+    if (fc.ok) { pass fc; }
+    // An elementwise `simd` cast (D-282): the scalar cast per lane.
+    if ((raw is_simd(e, st)) && (raw is_simd(e, ty))) {
+        drop enc_simd_cast(e, raw expr_operand(n), st, ty, id.index, false);
         pass (raw term_none());
     }
-    if (n.kind == ExprKind.ExprUnaryExpr) {
-        TokenKind:uop = raw expr_op(n);
-        Term:o = raw enc_expr(e, raw expr_operand(n));
-        // AN INTEGER NEGATION IS `0 - x` AND ITS GUARD'S ROW (1.5.8b step 3),
-        // at the unary node's own site (K-9) -- none where it is written as its
-        // constant, `unencoded` where the operand has no term.
-        if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty))) {
-            ConstVal:ucv = raw fold_node_constant(e.tr, id, e.scope, ty);
-            if (ucv.kind == (raw CV_INT())) { pass (raw term_lit(raw smt_int(ucv.num), false)); }
-            Term:ut = raw term_none();
-            if (o.ok && (!o.is_bool)) { ut = raw term_app2("-", raw term_lit("0", false), o, false); }
-            drop record_overflow(e, ty, ut, id.index, n.span);
-            if (!ut.ok) { pass (raw term_opaque(e, ty)); }
-            pass ut;
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprUncheckedCastExpr` ARM OF `enc_expr` (DEF-269).
+// `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
+// pattern -- the word re-signed one way, the int re-signed the other; a
+// float leaving to an integer is a `cast-range` row (D-306, 1.5.8b step
+// 5), and every other unchecked cast stays opaque.
+func:enc_k_unchecked_cast_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    Term:ut = raw enc_expr(e, raw expr_operand(n));
+    int32:ust = raw ty_of(e, raw expr_operand(n));
+    Term:fw2 = raw flag_word_cast(e, ut, ust, ty);
+    if (fw2.ok) { pass fw2; }
+    Term:tw2 = raw twisted_cast(e, ut, ust, ty, true, id.index, n.span);
+    if (tw2.ok) { pass tw2; }
+    if ((raw is_float(e, ust)) && (raw is_int(e, ty))) {
+        drop record_cast_range(e, ut, ust, ty, id.index, n.span);
+        pass (raw term_opaque(e, ty));
+    }
+    Term:fc2 = raw float_cast(e, ut, ust, ty);
+    if (fc2.ok) { pass fc2; }
+    if ((raw is_simd(e, ust)) && (raw is_simd(e, ty))) {
+        drop enc_simd_cast(e, raw expr_operand(n), ust, ty, id.index, true);
+        pass (raw term_none());
+    }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprIsErrExpr` ARM OF `enc_expr` (DEF-269).
+// `is_err(x)` (D-008 section 5) on a twisted value is `(= x MIN)`; on a
+// `frac` or a `complex` the look is opaque (their ERR is a pair, L-6).
+func:enc_k_is_err_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    Term:iet = raw enc_expr(e, raw expr_operand(n));
+    int32:iety = raw ty_of(e, raw expr_operand(n));
+    if (iet.ok && (!iet.is_bool) && (raw is_twisted(e, iety))) {
+        pass Term{ ok: true, is_bool: true, text: raw smt_app2("=", iet.text, raw tw_min(e, iety)),
+                   syms: raw syms_union(iet.syms, raw list_init::<int32>(1i64)) };
+    }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprMoveExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_move_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    Term:mt = raw enc_expr(e, raw expr_operand(n));
+    // A MOVE OUT OF A PLACE LEAVES THE VACANT VALUE THERE (S-26): a write
+    // to the root's aggregate (D-317), after the moved value was read.
+    ExprNode:mon = raw ast_expr(e.ast, raw expr_operand(n));
+    if (mon.kind != ExprKind.ExprIdentifierExpr) { drop agg_write(e, raw expr_operand(n), raw term_none()); }
+    if (mt.ok) { pass mt; }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprIterationVarExpr` ARM OF `enc_expr` (DEF-269).
+// `$` -- THE RULE'S SUBJECT (1.5.2 step 3, L-8): inside `enc_rule` it is
+// the term the rule is being instantiated over; outside one it is the
+// innermost counted loop's counter (1.5.4 step 3, L-11): its start at
+// the entry row, a fresh in-range symbol in the body, the incremented
+// value at the preservation and `continue` rows, the exit value after.
+func:enc_k_iteration_var_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if (e.subject.ok) { pass (raw term_copy(e.subject)); }
+    if (e.dollars.count > 0i64) {
+        Term:top = raw term_copy(e.dollars[e.dollars.count - 1i64]);
+        if (top.ok) { pass top; }
+    }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE FIRST `ExprMethodCallExpr` ARM OF `enc_expr` (DEF-269): may decline.
+// `v.sum()`/`.min()`/`.max()`/`.all()`/`.any()` on a `simd` (D-282): the
+// receiver walked, the lanes folded in the emitter's order.
+func:enc_k_method_call_simd = ArmTerm(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    int32:mrt = raw ty_of(e, ExprId{ index: n.a });
+    if ((raw is_simd(e, mrt)) && (n.c == 0i32)) {
+        string:mname = raw intern_get(e.interns, n.payload =>! int32);
+        if (raw simd_own_method(mname)) {
+            Term:mrecv = raw enc_expr(e, ExprId{ index: n.a });
+            pass ArmTerm{ mine: true, t: raw enc_simd_method(e, mname, ExprId{ index: n.a }, mrt, ty, id.index, n.span) };
         }
-        if (!o.ok) { pass (raw term_opaque(e, ty)); }
-        // A float negation is `fneg` (D-143): `fp.neg`, exact.
-        if ((uop == TokenKind.OpMinus) && (raw is_float(e, ty)) && (!o.is_bool)) {
-            pass (raw fp_make(e, "neg", ty, o.text, "", raw smt_app1("fp.neg", o.text), o.syms));
+    }
+    pass ArmTerm{ mine: false, t: raw term_none() };
+};
+
+// THE `ExprCallExpr` AND `ExprMethodCallExpr` ARM OF `enc_expr` (DEF-269).
+// A CALL (1.5.2 step 3, L-10; 1.5.3 step 2, D-268): the receiver and
+// every argument are sites, encoded ONCE; a callee the checker recorded
+// gets its `limit-subsume` row and its `requires` row over the argument
+// terms; the value -- a `Result`, or a bare value nothing unwrapped -- is
+// opaque. The unwrap arms below are where a known callee's value becomes
+// an uninterpreted function and its `ensures` becomes knowledge.
+func:enc_k_call_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    CallEnc:ce = raw enc_call(e, id, n);
+    drop record_call_rows(e, id, n, ce);
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprResultValueExpr` ARM OF `enc_expr` (DEF-269).
+// `result` (D-245): the value being passed, while an `ensures` is
+// encoded at a seam; `old(e)` (D-243): the operand over the entry
+// versions. Outside those contexts each is opaque -- and the checker
+// admits them nowhere else.
+func:enc_k_result_value_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if (e.res_term.ok) { pass (raw term_copy(e.res_term)); }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprOldExpr` ARM OF `enc_expr` (DEF-269).
+func:enc_k_old_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    bool:saved_entry = e.at_entry;
+    e.at_entry = true;
+    Term:ot = raw enc_expr(e, raw expr_operand(n));
+    e.at_entry = saved_entry;
+    if (ot.ok) { pass ot; }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE UNWRAP ARM OF `enc_expr` (DEF-269): `raw`, `?!` and `relay`.
+// AN UNWRAP THAT CONTINUES ONLY ON SUCCESS (1.5.3 step 2, L-3, L-4):
+// `raw f(...)`, `f(...) ?! E`, `relay f(...)`, each over a plain or an
+// awaited call. The call's rows are recorded as above; the VALUE is an
+// uninterpreted function application when the callee is `pure never
+// fails` over the fragment (a `raw` call: equal inputs, equal outputs,
+// D-242), else a fresh opaque symbol; and the callee's `ensures` is
+// pushed as a hypothesis over the arguments and that value -- sound
+// because the callee's seam guards or proves it before any continuing
+// execution reaches here. `?|` pushes nothing: its value may be the
+// default.
+func:enc_k_unwrap_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    ExprId:inner = ExprId{ index: n.a };
+    if (!(raw expr_is_none(inner))) {
+        ExprNode:inn = raw ast_expr(e.ast, inner);
+        if (inn.kind == ExprKind.ExprAwaitExpr) {
+            inner = ExprId{ index: inn.a };
+            if (!(raw expr_is_none(inner))) { inn = raw ast_expr(e.ast, inner); }
         }
-        // A twisted negation (D-008): ERR in, ERR out; `0 - x` is in range
-        // for every valid `x`, the valid range being symmetric.
-        if ((uop == TokenKind.OpMinus) && (raw is_twisted(e, ty)) && (!o.is_bool)) {
-            string:tmn = raw tw_min(e, ty);
-            pass Term{ ok: true, is_bool: false,
-                       text: raw smt_app3("ite", raw smt_app2("=", o.text, tmn), tmn, raw smt_app2("-", "0", o.text)),
-                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
-        }
-        if ((uop == TokenKind.OpBang) && o.is_bool) {
-            pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", o.text),
-                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
-        }
-        // `~x` IN Int (D-279): `-x - 1` on a signed word, `2^W - 1 - x` on an
-        // unsigned one -- the complement is arithmetic, no crossing needed.
-        if ((uop == TokenKind.OpTilde) && (raw is_word(e, ty)) && (!o.is_bool)) {
-            if (raw word_signed(e, ty)) {
-                string:neg = raw smt_app1("-", o.text);
-                pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", neg, "1"),
-                           syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+        if ((!(raw expr_is_none(inner)))
+            && ((inn.kind == ExprKind.ExprCallExpr) || (inn.kind == ExprKind.ExprMethodCallExpr))) {
+            CallEnc:uce = raw enc_call(e, inner, inn);
+            drop record_call_rows(e, inner, inn, uce);
+            if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
+                Term:eb = raw enc_expr(e, ExprId{ index: n.b });
             }
-            string:top = raw pow2_minus_one_decimal((raw word_bits(e, ty)) => int64);
-            pass Term{ ok: true, is_bool: false, text: raw smt_app2("-", top, o.text),
-                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+            Term:val = raw term_none();
+            if (n.kind == ExprKind.ExprRawUnwrapExpr) { val = raw uf_value(e, uce, ty); }
+            if (!val.ok) { val = raw term_opaque(e, ty); }
+            drop push_callee_ensures(e, uce, val);
+            pass val;
         }
+    }
+    drop walk_children(e, n);
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprPickExpr` ARM OF `enc_expr` (DEF-269).
+// A PICK EXPRESSION (DEF-26, 1.5.4 step 0): the selector a site, every
+// arm walked as the statement form's (their guard sites, their bodies'
+// sites and definitions, in regions of their own), the names the arms
+// assign invalidated after; the value opaque until 1.5.4 step 2.
+func:enc_k_pick_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
+    Term:psel = raw enc_expr(e, ExprId{ index: n.a });
+    Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
+    if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && (raw is_named(e, ty))) { pass pval; }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE `ExprVectorCtorExpr` ARM OF `enc_expr` (DEF-269): may decline.
+// `simd(a, ...)` (D-282): the lanes are the arguments' terms, a splat's
+// one term N times; `complex(re, im)` shares the node and stays opaque.
+func:enc_k_vector_ctor_expr = ArmTerm(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if ((((n.payload =>! int32) =>! TokenKind) != TokenKind.KwComplex) && (raw is_simd(e, ty))) {
+        int32:velem = raw type_elem(e.types, ty);
+        int32:vlanes = (raw tt_get(e.types, ty)).b;
+        int32:vcnt = raw expr_list_count(n);
+        int32:vstart = raw expr_list_start(n);
+        List<Term>:vout = raw list_init::<Term>((vlanes => int64) + 1i64);
+        if (vcnt == 1i32) {
+            Term:one = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, vstart, 0i32) });
+            if (!one.ok) { one = raw term_opaque(e, velem); }
+            for (int32:vi in 0i32...vlanes) { drop list_push(@vout, raw term_copy(one)); }
+        } else {
+            for (int32:vj in 0i32...vlanes) {
+                Term:lt2 = raw term_none();
+                if (vj < vcnt) { lt2 = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, vstart, vj) }); }
+                if (!lt2.ok) { lt2 = raw term_opaque(e, velem); }
+                drop list_push(@vout, move(lt2));
+            }
+        }
+        drop lanes_put(e, id.index, move(vout));
+        pass ArmTerm{ mine: true, t: raw term_none() };
+    }
+    pass ArmTerm{ mine: false, t: raw term_none() };
+};
+
+// THE FIRST `ExprIndexExpr` ARM OF `enc_expr` (DEF-269): may decline.
+// `v[i]` on a `simd` with a numeral index is the lane's term (D-282); a
+// computed index is opaque (its bounds row is 1.5.8's).
+func:enc_k_index_simd = ArmTerm(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    int32:ibt = raw ty_of(e, raw expr_lhs(n));
+    if (raw is_simd(e, ibt)) {
+        Term:ibase = raw enc_expr(e, raw expr_lhs(n));
+        Term:iix = raw enc_expr(e, raw expr_rhs(n));
+        int32:ielem = raw type_elem(e.types, ibt);
+        // THE LANE'S OWN `bounds` ROW (1.5.8b step 5): the emitter guards a
+        // lane place against the LANE COUNT, which is the type's own
+        // constant -- so a numeral index discharges outright and a
+        // computed one decides against whatever bounds the path gives it.
+        // This arm returns before the general element arm below, so the
+        // row has to be recorded here: without it the guard was a trap the
+        // belts could not account for (three verify programs, caught by
+        // step 5's own full harness).
+        drop record_bounds(e, iix,
+                           raw term_lit(int_to_string(((raw tt_get(e.types, ibt)).b) => int64), false),
+                           (raw expr_rhs(n)).index, n.span);
+        NumVal:ik = raw numeral_of(e, iix, raw expr_rhs(n));
+        if (ik.ok && (ik.v >= 0i64) && (ik.v < (((raw tt_get(e.types, ibt)).b) => int64))) {
+            List<Term>:il = raw lanes_of(e, raw expr_lhs(n), ibt);
+            if (ik.v < il.count) { pass ArmTerm{ mine: true, t: raw term_copy(il[ik.v]) }; }
+        }
+        pass ArmTerm{ mine: true, t: raw term_opaque(e, ielem) };
+    }
+    pass ArmTerm{ mine: false, t: raw term_none() };
+};
+
+// THE FIRST `ExprMemberAccessExpr` ARM OF `enc_expr` (DEF-269): may decline.
+// `v.len` on a `simd` is its lane count (D-282).
+func:enc_k_member_access_simd = ArmTerm(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    int32:mbt = raw ty_of(e, raw expr_operand(n));
+    if ((raw is_simd(e, mbt)) && (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "len"))) {
+        Term:mbase = raw enc_expr(e, raw expr_operand(n));
+        pass ArmTerm{ mine: true, t: raw term_lit(int_to_string(((raw tt_get(e.types, mbt)).b) => int64), false) };
+    }
+    pass ArmTerm{ mine: false, t: raw term_none() };
+};
+
+// THE SECOND `ExprIndexExpr` ARM OF `enc_expr` (DEF-269).
+// AN ELEMENT READ (D-286, 1.5.5 step 2): the base and the index are
+// sites, the index's term is memoised for the `disjoint` rows, and the
+// access is a guard site when the aliasing analysis marked it. The
+// element's `bounds` row is recorded here since 1.5.8b step 5, at the
+// INDEX EXPRESSION's site -- the emitter's own key -- against the
+// container's length term; a range view's ONE row is the pair's. The
+// value read out stays opaque: what an element HOLDS is nobody's fact.
+func:enc_k_index_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    int32:bty2 = raw ty_of(e, raw expr_lhs(n));
+    Term:ibase = raw enc_expr(e, raw expr_lhs(n));
+    ExprNode:rn2 = raw ast_expr(e.ast, raw expr_rhs(n));
+    if (rn2.kind == ExprKind.ExprRangeExpr) {
+        Term:rlo = raw enc_expr(e, raw expr_lhs(rn2));
+        Term:rhi = raw enc_expr(e, raw expr_rhs(rn2));
+        if (rn2.payload == 1i64) {
+            if (rhi.ok && (!rhi.is_bool)) {
+                rhi = raw term_app2("+", rhi, raw term_lit("1", false), false);
+            }
+        }
+        Term:rlen = raw term_none();
+        if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
+            rlen = raw container_len(e, raw expr_lhs(n), ibase, bty2);
+        }
+        drop record_bounds_range(e, rlo, rhi, rlen, (raw expr_rhs(n)).index, n.span);
+        drop enc_alias_site(e, id);
         pass (raw term_opaque(e, ty));
     }
-    if (n.kind == ExprKind.ExprTernaryExpr) {
-        // THE TWO BRANCHES ARE ARMS (L-10): each under its condition, in a
-        // region of its own (the emitter runs only the taken one, D-145).
-        Term:c = raw enc_expr(e, ExprId{ index: n.a });
-        bool:tc = c.ok && c.is_bool;
-        Term:nc = raw term_none();
-        if (tc) {
-            nc = Term{ ok: true, is_bool: true, text: raw smt_app1("not", c.text),
-                       syms: raw syms_union(c.syms, raw list_init::<int32>(1i64)) };
-        }
-        if (tc) { drop region_enter_cond(e, c); drop hyp_push(e, c.text, c.syms); } else { drop region_enter(e); }
-        Term:t1 = raw enc_expr(e, ExprId{ index: n.b });
-        drop region_leave(e);
-        if (tc) { drop region_enter_cond(e, nc); drop hyp_push(e, nc.text, nc.syms); } else { drop region_enter(e); }
-        Term:t2 = raw enc_expr(e, ExprId{ index: n.c });
-        drop region_leave(e);
-        if (c.ok && t1.ok && t2.ok && c.is_bool && (t1.is_bool == t2.is_bool)) {
-            pass Term{ ok: true, is_bool: t1.is_bool,
-                       text: raw smt_app3("ite", c.text, t1.text, t2.text),
-                       syms: raw syms_union(c.syms, raw syms_union(t1.syms, t2.syms)) };
-        }
-        pass (raw term_opaque(e, ty));
+    Term:iidx = raw enc_expr(e, raw expr_rhs(n));
+    drop memo_put(e, (raw expr_rhs(n)).index, iidx);
+    Term:ilen = raw term_none();
+    if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
+        ilen = raw container_len(e, raw expr_lhs(n), ibase, bty2);
     }
-    if (n.kind == ExprKind.ExprCastExpr) {
-        // `=>` between integers is value-preserving by the checker's own rule
-        // (a lossy `=>` is refused), so the term is the operand's.
-        Term:ct = raw enc_expr(e, raw expr_operand(n));
-        int32:st = raw ty_of(e, raw expr_operand(n));
-        if (ct.ok && (raw is_int(e, st)) && (raw is_int(e, ty)) && (!ct.is_bool)) { pass ct; }
-        Term:fw = raw flag_word_cast(e, ct, st, ty);
-        if (fw.ok) { pass fw; }
-        Term:tw = raw twisted_cast(e, ct, st, ty, false, id.index, n.span);
-        if (tw.ok) { pass tw; }
-        // A FLOAT LEAVING TO AN INTEGER IS A GUARD (D-306): its row here, its
-        // value opaque -- the truncation is not a term the fragment holds.
-        if ((raw is_float(e, st)) && (raw is_int(e, ty))) {
-            drop record_cast_range(e, ct, st, ty, id.index, n.span);
-            pass (raw term_opaque(e, ty));
-        }
-        Term:fc = raw float_cast(e, ct, st, ty);
-        if (fc.ok) { pass fc; }
-        // An elementwise `simd` cast (D-282): the scalar cast per lane.
-        if ((raw is_simd(e, st)) && (raw is_simd(e, ty))) {
-            drop enc_simd_cast(e, raw expr_operand(n), st, ty, id.index, false);
-            pass (raw term_none());
-        }
-        pass (raw term_opaque(e, ty));
+    // A POINTER's element has no bound at all (D-038: pointers are thin),
+    // and the emitter guards nothing there -- so no row either.
+    if ((raw type_kind(e.types, bty2)) != (raw TY_POINTER())) {
+        drop record_bounds(e, iidx, ilen, (raw expr_rhs(n)).index, n.span);
     }
-    // `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
-    // pattern -- the word re-signed one way, the int re-signed the other; a
-    // float leaving to an integer is a `cast-range` row (D-306, 1.5.8b step
-    // 5), and every other unchecked cast stays opaque.
-    if (n.kind == ExprKind.ExprUncheckedCastExpr) {
-        Term:ut = raw enc_expr(e, raw expr_operand(n));
-        int32:ust = raw ty_of(e, raw expr_operand(n));
-        Term:fw2 = raw flag_word_cast(e, ut, ust, ty);
-        if (fw2.ok) { pass fw2; }
-        Term:tw2 = raw twisted_cast(e, ut, ust, ty, true, id.index, n.span);
-        if (tw2.ok) { pass tw2; }
-        if ((raw is_float(e, ust)) && (raw is_int(e, ty))) {
-            drop record_cast_range(e, ut, ust, ty, id.index, n.span);
-            pass (raw term_opaque(e, ty));
+    drop enc_alias_site(e, id);
+    pass (raw term_opaque(e, ty));
+};
+
+// THE SECOND `ExprMemberAccessExpr` ARM OF `enc_expr`, `?.`'s too (DEF-269).
+// A FIELD READ: the base a site, the access a guard site when marked.
+// A CONTAINER'S LENGTH IS THE SAME TERM ITS `bounds` ROWS COMPARE AGAINST
+// (1.5.8b step 5): `.len` on a slice, a `string`, a `cstring` or a
+// `buffer`, and `.count` on a `List`, are `(|npk.len| base)` -- so a loop
+// written over the length bounds the index by the row's own symbol. A
+// fixed array's `.len` is its type's constant (DEF-22). `.cap` and
+// `.ptr` stay opaque: neither bounds anything.
+func:enc_k_member_access_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    Term:mbase2 = raw enc_expr(e, raw expr_operand(n));
+    int32:mbt2 = raw ty_of(e, raw expr_operand(n));
+    string:mfld = raw intern_get(e.interns, n.payload =>! int32);
+    bool:mlen = ((raw string_eq(mfld, "len")) && (raw has_len_term(e, mbt2)));
+    if ((raw string_eq(mfld, "count")) && (raw type_is_list(e.tr, mbt2))) { mlen = true; }
+    if (mlen) {
+        // BY NAME, OR BY IMAGE (D-317): a container held in a field of an
+        // aggregate with a term has its length off the field's image.
+        Term:lt2 = raw container_len(e, raw expr_operand(n), mbase2, mbt2);
+        if (lt2.ok) {
+            // A `List`'s `count` is limited (`ListLen`, D-308 SS6): the rule
+            // over the length SYMBOL, at this read, as at every read.
+            if (raw type_is_list(e.tr, mbt2)) {
+                drop assert_field_rule(e, mbt2, n.payload =>! int32, lt2);
+            }
+            drop enc_alias_site(e, id);
+            pass lt2;
         }
-        Term:fc2 = raw float_cast(e, ut, ust, ty);
-        if (fc2.ok) { pass fc2; }
-        if ((raw is_simd(e, ust)) && (raw is_simd(e, ty))) {
-            drop enc_simd_cast(e, raw expr_operand(n), ust, ty, id.index, true);
-            pass (raw term_none());
+    }
+    drop enc_alias_site(e, id);
+    // A BUILT-IN LENGTH OR CAPACITY READ OFF ANYTHING ELSE -- a call's
+    // result, an element, an escaped name, a container behind a POINTER
+    // (`b.cap` on a `buffer->`: D-098 dereferences the read, so the
+    // operand's type is the pointer's) -- is opaque, and bounded by the
+    // ceiling (D-308 SS7, 1.5.8b step 6c).
+    int32:mvt = mbt2;
+    if ((raw type_kind(e.types, mvt)) == (raw TY_POINTER())) { mvt = raw type_elem(e.types, mvt); }
+    if ((raw has_len_term(e, mvt)) && ((raw string_eq(mfld, "len")) || (raw string_eq(mfld, "cap")))) {
+        Term:mo2 = raw term_opaque(e, ty);
+        drop push_len_fact(e, mo2);
+        pass mo2;
+    }
+    // A FIELD OFF AN AGGREGATE WITH A TERM (D-317, 1.5.8d step 0): the
+    // uninterpreted function of the identity -- the same term at every
+    // read while nothing writes the binding, which is what lets a loop's
+    // condition over `w.count` bound its measure over `w.count`. The
+    // field's resolved type decides the function's sort, so every read and
+    // every frame of one (type, field) agree by construction.
+    if ((n.kind == ExprKind.ExprMemberAccessExpr) && (raw is_agg(e, mbt2)) && mbase2.ok && (!mbase2.is_bool)) {
+        if ((raw type_kind(e.types, mbt2)) == (raw TY_STRUCT())) {
+            FieldInfo:mfi = raw struct_field(e.tr, mbt2, n.payload =>! int32, e.scope);
+            if (mfi.found) {
+                Term:fa = raw field_app(e, mbt2, n.payload =>! int32,
+                                        raw subst_emitted_param(e.ctx, mfi.type_id), raw term_copy(mbase2));
+                if (fa.ok) {
+                    drop assert_field_rule(e, mbt2, n.payload =>! int32, fa);
+                    pass fa;
+                }
+            }
         }
-        pass (raw term_opaque(e, ty));
     }
-    // `is_err(x)` (D-008 section 5) on a twisted value is `(= x MIN)`; on a
-    // `frac` or a `complex` the look is opaque (their ERR is a pair, L-6).
-    if (n.kind == ExprKind.ExprIsErrExpr) {
-        Term:iet = raw enc_expr(e, raw expr_operand(n));
-        int32:iety = raw ty_of(e, raw expr_operand(n));
-        if (iet.ok && (!iet.is_bool) && (raw is_twisted(e, iety))) {
-            pass Term{ ok: true, is_bool: true, text: raw smt_app2("=", iet.text, raw tw_min(e, iety)),
-                       syms: raw syms_union(iet.syms, raw list_init::<int32>(1i64)) };
+    // A LIMITED FIELD'S RULE IS A FACT AT EVERY READ (D-308 SS3; 1.5.8b
+    // step 6): the read's own opaque term satisfies the rule, because
+    // every write to the field was checked against it (or discharged
+    // under these same hypotheses) and the vacant value was proven to
+    // satisfy it at the declaration (TYPE-077). That is what lets a row
+    // over `l.count - 1` decide where a bare opaque term could not.
+    Term:mo = raw term_opaque(e, ty);
+    drop assert_field_rule(e, mbt2, n.payload =>! int32, mo);
+    pass mo;
+};
+
+// THE `ExprBuiltinExpr` ARM OF `enc_expr` (DEF-269): may decline.
+// `#sqrt(x)` (D-200) is the instruction, `fp.sqrt RNE` (D-281); every
+// other builtin's value is opaque, its arguments sites.
+func:enc_k_builtin_expr = ArmTerm(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    string:bname = raw intern_get(e.interns, raw builtin_name(n));
+    if ((raw string_eq(bname, "sqrt")) && (raw is_float(e, ty)) && (n.c > (raw builtin_generic_count(n)))) {
+        Term:sq = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), raw builtin_generic_count(n)) });
+        if (!sq.ok) { sq = raw term_opaque(e, ty); }
+        if (sq.ok && (!sq.is_bool)) {
+            pass ArmTerm{ mine: true, t: raw fp_make(e, "sqrt", ty, sq.text, "", raw smt_app2("fp.sqrt", "RNE", sq.text), sq.syms) };
         }
-        pass (raw term_opaque(e, ty));
+        pass ArmTerm{ mine: true, t: raw term_opaque(e, ty) };
     }
-    if (n.kind == ExprKind.ExprMoveExpr) {
-        Term:mt = raw enc_expr(e, raw expr_operand(n));
-        // A MOVE OUT OF A PLACE LEAVES THE VACANT VALUE THERE (S-26): a write
-        // to the root's aggregate (D-317), after the moved value was read.
-        ExprNode:mon = raw ast_expr(e.ast, raw expr_operand(n));
-        if (mon.kind != ExprKind.ExprIdentifierExpr) { drop agg_write(e, raw expr_operand(n), raw term_none()); }
-        if (mt.ok) { pass mt; }
-        pass (raw term_opaque(e, ty));
-    }
-    // `$` -- THE RULE'S SUBJECT (1.5.2 step 3, L-8): inside `enc_rule` it is
-    // the term the rule is being instantiated over; outside one it is the
-    // innermost counted loop's counter (1.5.4 step 3, L-11): its start at
-    // the entry row, a fresh in-range symbol in the body, the incremented
-    // value at the preservation and `continue` rows, the exit value after.
-    if (n.kind == ExprKind.ExprIterationVarExpr) {
-        if (e.subject.ok) { pass (raw term_copy(e.subject)); }
-        if (e.dollars.count > 0i64) {
-            Term:top = raw term_copy(e.dollars[e.dollars.count - 1i64]);
-            if (top.ok) { pass top; }
+    // `#wild_slice<T>(p, len)` (D-308 SS7, 1.5.8b step 6c): the pointer a
+    // site, the count the ceiling's `bounds` row at the builtin's own node.
+    if (raw builtin_caller_len(bname)) {
+        int32:wg = raw builtin_generic_count(n);
+        if (n.c > (wg + 1i32)) {
+            Term:wp = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), wg) });
+            Term:wl = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), wg + 1i32) });
+            drop record_len_ceiling(e, wl, id.index, n.span);
         }
-        pass (raw term_opaque(e, ty));
+        pass ArmTerm{ mine: true, t: raw term_opaque(e, ty) };
     }
-    // A CALL (1.5.2 step 3, L-10; 1.5.3 step 2, D-268): the receiver and
-    // every argument are sites, encoded ONCE; a callee the checker recorded
-    // gets its `limit-subsume` row and its `requires` row over the argument
-    // terms; the value -- a `Result`, or a bare value nothing unwrapped -- is
-    // opaque. The unwrap arms below are where a known callee's value becomes
-    // an uninterpreted function and its `ensures` becomes knowledge.
-    // `v.sum()`/`.min()`/`.max()`/`.all()`/`.any()` on a `simd` (D-282): the
-    // receiver walked, the lanes folded in the emitter's order.
+    pass ArmTerm{ mine: false, t: raw term_none() };
+};
+
+// THE `ExprStructLiteralExpr` ARM OF `enc_expr` (DEF-269).
+// A STRUCT LITERAL IS A WRITE POINT FOR EVERY LIMITED FIELD IT NAMES
+// (D-308 SS2, 1.5.8b step 6): each value encoded once, its row recorded at
+// the VALUE expression's site -- the emitter's own key, which checks the
+// value in register before it enters the aggregate. The literal's own
+// value stays opaque.
+func:enc_k_struct_literal_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    int32:lpairs = n.c / 2i32;
+    // THE LITERAL'S IDENTITY (D-317): a fresh symbol, each named field with
+    // a term of the field's sort defined equal to it -- a nested literal's
+    // identity composes -- so `P:s = P{ a: 1i32 }` knows `s.a`.
+    Term:lid = raw term_fresh_agg(e, ty);
+    bool:lst = ((raw type_kind(e.types, ty)) == (raw TY_STRUCT()));
+    for (int32:li in 0i32...lpairs) {
+        int32:lfn = raw ast_id_at(e.ast, n.b, li * 2i32);
+        ExprId:lvid = ExprId{ index: raw ast_id_at(e.ast, n.b, (li * 2i32) + 1i32) };
+        Term:lv = raw enc_expr(e, lvid);
+        drop record_field_limit(e, ty, lfn, lv, lvid.index, n.span);
+        if (lid.ok && lv.ok && lst) {
+            FieldInfo:lfi = raw struct_field(e.tr, ty, lfn, e.scope);
+            if (lfi.found) {
+                Term:lfa = raw field_app(e, ty, lfn, raw subst_emitted_param(e.ctx, lfi.type_id), raw term_copy(lid));
+                if (lfa.ok && (lfa.is_bool == lv.is_bool)) {
+                    Term:leq = raw term_app2("=", lfa, lv, true);
+                    drop hyp_push(e, leq.text, leq.syms);
+                }
+            }
+        }
+    }
+    if (lid.ok) { pass lid; }
+    pass (raw term_opaque(e, ty));
+};
+
+// THE DISPATCH (DEF-269, landing 145). Allocas are hoisted to the entry
+// block (D-173), so a frame holds a slot for every local and every call's
+// result of every arm it contains, and an expression recurses through this
+// function once a level: as one function of 1,136 slots (53 KB of frame),
+// `enc_expr` exhausted the compiler's stack at the 156th level of a
+// 254-operand `x + x + ...` under `--obligations`, where the plain build
+// compiles it (DEF-176). Each arm is a function of its own (`enc_k_...`),
+// handed the node and the type computed here once, and the tests run in the
+// order the one function ran them; where an arm fell through, its function
+// answers `mine` false (`ArmTerm`) and the dispatch goes on to the next test
+// -- or to the shared tail -- as it did. An arm added later is a function
+// and a test here; one that can fall through answers an `ArmTerm`.
+pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass (raw term_none()); }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    int32:ty = raw ty_of(e, id);
+
+    if (n.kind == ExprKind.ExprIntLiteral) { pass (raw enc_k_int_literal(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprBoolLiteral) { pass (raw enc_k_bool_literal(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprFloatLiteral) { pass (raw enc_k_float_literal(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass (raw enc_k_sentinel_literal(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprIdentifierExpr) { pass (raw enc_k_identifier_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprBinaryExpr) { pass (raw enc_k_binary_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprUnaryExpr) { pass (raw enc_k_unary_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprTernaryExpr) { pass (raw enc_k_ternary_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprCastExpr) { pass (raw enc_k_cast_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) { pass (raw enc_k_unchecked_cast_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprIsErrExpr) { pass (raw enc_k_is_err_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprMoveExpr) { pass (raw enc_k_move_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprIterationVarExpr) { pass (raw enc_k_iteration_var_expr(e, id, n, ty)); }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
-        int32:mrt = raw ty_of(e, ExprId{ index: n.a });
-        if ((raw is_simd(e, mrt)) && (n.c == 0i32)) {
-            string:mname = raw intern_get(e.interns, n.payload =>! int32);
-            if (raw simd_own_method(mname)) {
-                Term:mrecv = raw enc_expr(e, ExprId{ index: n.a });
-                pass (raw enc_simd_method(e, mname, ExprId{ index: n.a }, mrt, ty, id.index, n.span));
-            }
-        }
+        ArmTerm:simd_call = raw enc_k_method_call_simd(e, id, n, ty);
+        if (simd_call.mine) { pass (move(simd_call.t)); }
     }
     if ((n.kind == ExprKind.ExprCallExpr) || (n.kind == ExprKind.ExprMethodCallExpr)) {
-        CallEnc:ce = raw enc_call(e, id, n);
-        drop record_call_rows(e, id, n, ce);
-        pass (raw term_opaque(e, ty));
+        pass (raw enc_k_call_expr(e, id, n, ty));
     }
-    // `result` (D-245): the value being passed, while an `ensures` is
-    // encoded at a seam; `old(e)` (D-243): the operand over the entry
-    // versions. Outside those contexts each is opaque -- and the checker
-    // admits them nowhere else.
-    if (n.kind == ExprKind.ExprResultValueExpr) {
-        if (e.res_term.ok) { pass (raw term_copy(e.res_term)); }
-        pass (raw term_opaque(e, ty));
-    }
-    if (n.kind == ExprKind.ExprOldExpr) {
-        bool:saved_entry = e.at_entry;
-        e.at_entry = true;
-        Term:ot = raw enc_expr(e, raw expr_operand(n));
-        e.at_entry = saved_entry;
-        if (ot.ok) { pass ot; }
-        pass (raw term_opaque(e, ty));
-    }
-    // AN UNWRAP THAT CONTINUES ONLY ON SUCCESS (1.5.3 step 2, L-3, L-4):
-    // `raw f(...)`, `f(...) ?! E`, `relay f(...)`, each over a plain or an
-    // awaited call. The call's rows are recorded as above; the VALUE is an
-    // uninterpreted function application when the callee is `pure never
-    // fails` over the fragment (a `raw` call: equal inputs, equal outputs,
-    // D-242), else a fresh opaque symbol; and the callee's `ensures` is
-    // pushed as a hypothesis over the arguments and that value -- sound
-    // because the callee's seam guards or proves it before any continuing
-    // execution reaches here. `?|` pushes nothing: its value may be the
-    // default.
+    if (n.kind == ExprKind.ExprResultValueExpr) { pass (raw enc_k_result_value_expr(e, id, n, ty)); }
+    if (n.kind == ExprKind.ExprOldExpr) { pass (raw enc_k_old_expr(e, id, n, ty)); }
     if ((n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticUnwrapExpr)
         || (n.kind == ExprKind.ExprRelayExpr)) {
-        ExprId:inner = ExprId{ index: n.a };
-        if (!(raw expr_is_none(inner))) {
-            ExprNode:inn = raw ast_expr(e.ast, inner);
-            if (inn.kind == ExprKind.ExprAwaitExpr) {
-                inner = ExprId{ index: inn.a };
-                if (!(raw expr_is_none(inner))) { inn = raw ast_expr(e.ast, inner); }
-            }
-            if ((!(raw expr_is_none(inner)))
-                && ((inn.kind == ExprKind.ExprCallExpr) || (inn.kind == ExprKind.ExprMethodCallExpr))) {
-                CallEnc:uce = raw enc_call(e, inner, inn);
-                drop record_call_rows(e, inner, inn, uce);
-                if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
-                    Term:eb = raw enc_expr(e, ExprId{ index: n.b });
-                }
-                Term:val = raw term_none();
-                if (n.kind == ExprKind.ExprRawUnwrapExpr) { val = raw uf_value(e, uce, ty); }
-                if (!val.ok) { val = raw term_opaque(e, ty); }
-                drop push_callee_ensures(e, uce, val);
-                pass val;
-            }
-        }
-        drop walk_children(e, n);
-        pass (raw term_opaque(e, ty));
+        pass (raw enc_k_unwrap_expr(e, id, n, ty));
     }
-    // A PICK EXPRESSION (DEF-26, 1.5.4 step 0): the selector a site, every
-    // arm walked as the statement form's (their guard sites, their bodies'
-    // sites and definitions, in regions of their own), the names the arms
-    // assign invalidated after; the value opaque until 1.5.4 step 2.
-    if (n.kind == ExprKind.ExprPickExpr) {
-        drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
-        Term:psel = raw enc_expr(e, ExprId{ index: n.a });
-        Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
-        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && (raw is_named(e, ty))) { pass pval; }
-        pass (raw term_opaque(e, ty));
-    }
-    // `simd(a, ...)` (D-282): the lanes are the arguments' terms, a splat's
-    // one term N times; `complex(re, im)` shares the node and stays opaque.
+    if (n.kind == ExprKind.ExprPickExpr) { pass (raw enc_k_pick_expr(e, id, n, ty)); }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
-        if ((((n.payload =>! int32) =>! TokenKind) != TokenKind.KwComplex) && (raw is_simd(e, ty))) {
-            int32:velem = raw type_elem(e.types, ty);
-            int32:vlanes = (raw tt_get(e.types, ty)).b;
-            int32:vcnt = raw expr_list_count(n);
-            int32:vstart = raw expr_list_start(n);
-            List<Term>:vout = raw list_init::<Term>((vlanes => int64) + 1i64);
-            if (vcnt == 1i32) {
-                Term:one = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, vstart, 0i32) });
-                if (!one.ok) { one = raw term_opaque(e, velem); }
-                for (int32:vi in 0i32...vlanes) { drop list_push(@vout, raw term_copy(one)); }
-            } else {
-                for (int32:vj in 0i32...vlanes) {
-                    Term:lt2 = raw term_none();
-                    if (vj < vcnt) { lt2 = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, vstart, vj) }); }
-                    if (!lt2.ok) { lt2 = raw term_opaque(e, velem); }
-                    drop list_push(@vout, move(lt2));
-                }
-            }
-            drop lanes_put(e, id.index, move(vout));
-            pass (raw term_none());
-        }
+        ArmTerm:simd_ctor = raw enc_k_vector_ctor_expr(e, id, n, ty);
+        if (simd_ctor.mine) { pass (move(simd_ctor.t)); }
     }
-    // `v[i]` on a `simd` with a numeral index is the lane's term (D-282); a
-    // computed index is opaque (its bounds row is 1.5.8's).
     if (n.kind == ExprKind.ExprIndexExpr) {
-        int32:ibt = raw ty_of(e, raw expr_lhs(n));
-        if (raw is_simd(e, ibt)) {
-            Term:ibase = raw enc_expr(e, raw expr_lhs(n));
-            Term:iix = raw enc_expr(e, raw expr_rhs(n));
-            int32:ielem = raw type_elem(e.types, ibt);
-            // THE LANE'S OWN `bounds` ROW (1.5.8b step 5): the emitter guards a
-            // lane place against the LANE COUNT, which is the type's own
-            // constant -- so a numeral index discharges outright and a
-            // computed one decides against whatever bounds the path gives it.
-            // This arm returns before the general element arm below, so the
-            // row has to be recorded here: without it the guard was a trap the
-            // belts could not account for (three verify programs, caught by
-            // step 5's own full harness).
-            drop record_bounds(e, iix,
-                               raw term_lit(int_to_string(((raw tt_get(e.types, ibt)).b) => int64), false),
-                               (raw expr_rhs(n)).index, n.span);
-            NumVal:ik = raw numeral_of(e, iix, raw expr_rhs(n));
-            if (ik.ok && (ik.v >= 0i64) && (ik.v < (((raw tt_get(e.types, ibt)).b) => int64))) {
-                List<Term>:il = raw lanes_of(e, raw expr_lhs(n), ibt);
-                if (ik.v < il.count) { pass (raw term_copy(il[ik.v])); }
-            }
-            pass (raw term_opaque(e, ielem));
-        }
+        ArmTerm:simd_index = raw enc_k_index_simd(e, id, n, ty);
+        if (simd_index.mine) { pass (move(simd_index.t)); }
     }
-    // `v.len` on a `simd` is its lane count (D-282).
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        int32:mbt = raw ty_of(e, raw expr_operand(n));
-        if ((raw is_simd(e, mbt)) && (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "len"))) {
-            Term:mbase = raw enc_expr(e, raw expr_operand(n));
-            pass (raw term_lit(int_to_string(((raw tt_get(e.types, mbt)).b) => int64), false));
-        }
+        ArmTerm:simd_len = raw enc_k_member_access_simd(e, id, n, ty);
+        if (simd_len.mine) { pass (move(simd_len.t)); }
     }
-    // AN ELEMENT READ (D-286, 1.5.5 step 2): the base and the index are
-    // sites, the index's term is memoised for the `disjoint` rows, and the
-    // access is a guard site when the aliasing analysis marked it. The
-    // element's `bounds` row is recorded here since 1.5.8b step 5, at the
-    // INDEX EXPRESSION's site -- the emitter's own key -- against the
-    // container's length term; a range view's ONE row is the pair's. The
-    // value read out stays opaque: what an element HOLDS is nobody's fact.
-    if (n.kind == ExprKind.ExprIndexExpr) {
-        int32:bty2 = raw ty_of(e, raw expr_lhs(n));
-        Term:ibase = raw enc_expr(e, raw expr_lhs(n));
-        ExprNode:rn2 = raw ast_expr(e.ast, raw expr_rhs(n));
-        if (rn2.kind == ExprKind.ExprRangeExpr) {
-            Term:rlo = raw enc_expr(e, raw expr_lhs(rn2));
-            Term:rhi = raw enc_expr(e, raw expr_rhs(rn2));
-            if (rn2.payload == 1i64) {
-                if (rhi.ok && (!rhi.is_bool)) {
-                    rhi = raw term_app2("+", rhi, raw term_lit("1", false), false);
-                }
-            }
-            Term:rlen = raw term_none();
-            if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
-                rlen = raw container_len(e, raw expr_lhs(n), ibase, bty2);
-            }
-            drop record_bounds_range(e, rlo, rhi, rlen, (raw expr_rhs(n)).index, n.span);
-            drop enc_alias_site(e, id);
-            pass (raw term_opaque(e, ty));
-        }
-        Term:iidx = raw enc_expr(e, raw expr_rhs(n));
-        drop memo_put(e, (raw expr_rhs(n)).index, iidx);
-        Term:ilen = raw term_none();
-        if ((raw has_len_term(e, bty2)) || (raw type_is_list(e.tr, bty2))) {
-            ilen = raw container_len(e, raw expr_lhs(n), ibase, bty2);
-        }
-        // A POINTER's element has no bound at all (D-038: pointers are thin),
-        // and the emitter guards nothing there -- so no row either.
-        if ((raw type_kind(e.types, bty2)) != (raw TY_POINTER())) {
-            drop record_bounds(e, iidx, ilen, (raw expr_rhs(n)).index, n.span);
-        }
-        drop enc_alias_site(e, id);
-        pass (raw term_opaque(e, ty));
-    }
-    // A FIELD READ: the base a site, the access a guard site when marked.
-    // A CONTAINER'S LENGTH IS THE SAME TERM ITS `bounds` ROWS COMPARE AGAINST
-    // (1.5.8b step 5): `.len` on a slice, a `string`, a `cstring` or a
-    // `buffer`, and `.count` on a `List`, are `(|npk.len| base)` -- so a loop
-    // written over the length bounds the index by the row's own symbol. A
-    // fixed array's `.len` is its type's constant (DEF-22). `.cap` and
-    // `.ptr` stay opaque: neither bounds anything.
+    if (n.kind == ExprKind.ExprIndexExpr) { pass (raw enc_k_index_expr(e, id, n, ty)); }
     if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
-        Term:mbase2 = raw enc_expr(e, raw expr_operand(n));
-        int32:mbt2 = raw ty_of(e, raw expr_operand(n));
-        string:mfld = raw intern_get(e.interns, n.payload =>! int32);
-        bool:mlen = ((raw string_eq(mfld, "len")) && (raw has_len_term(e, mbt2)));
-        if ((raw string_eq(mfld, "count")) && (raw type_is_list(e.tr, mbt2))) { mlen = true; }
-        if (mlen) {
-            // BY NAME, OR BY IMAGE (D-317): a container held in a field of an
-            // aggregate with a term has its length off the field's image.
-            Term:lt2 = raw container_len(e, raw expr_operand(n), mbase2, mbt2);
-            if (lt2.ok) {
-                // A `List`'s `count` is limited (`ListLen`, D-308 SS6): the rule
-                // over the length SYMBOL, at this read, as at every read.
-                if (raw type_is_list(e.tr, mbt2)) {
-                    drop assert_field_rule(e, mbt2, n.payload =>! int32, lt2);
-                }
-                drop enc_alias_site(e, id);
-                pass lt2;
-            }
-        }
-        drop enc_alias_site(e, id);
-        // A BUILT-IN LENGTH OR CAPACITY READ OFF ANYTHING ELSE -- a call's
-        // result, an element, an escaped name, a container behind a POINTER
-        // (`b.cap` on a `buffer->`: D-098 dereferences the read, so the
-        // operand's type is the pointer's) -- is opaque, and bounded by the
-        // ceiling (D-308 SS7, 1.5.8b step 6c).
-        int32:mvt = mbt2;
-        if ((raw type_kind(e.types, mvt)) == (raw TY_POINTER())) { mvt = raw type_elem(e.types, mvt); }
-        if ((raw has_len_term(e, mvt)) && ((raw string_eq(mfld, "len")) || (raw string_eq(mfld, "cap")))) {
-            Term:mo2 = raw term_opaque(e, ty);
-            drop push_len_fact(e, mo2);
-            pass mo2;
-        }
-        // A FIELD OFF AN AGGREGATE WITH A TERM (D-317, 1.5.8d step 0): the
-        // uninterpreted function of the identity -- the same term at every
-        // read while nothing writes the binding, which is what lets a loop's
-        // condition over `w.count` bound its measure over `w.count`. The
-        // field's resolved type decides the function's sort, so every read and
-        // every frame of one (type, field) agree by construction.
-        if ((n.kind == ExprKind.ExprMemberAccessExpr) && (raw is_agg(e, mbt2)) && mbase2.ok && (!mbase2.is_bool)) {
-            if ((raw type_kind(e.types, mbt2)) == (raw TY_STRUCT())) {
-                FieldInfo:mfi = raw struct_field(e.tr, mbt2, n.payload =>! int32, e.scope);
-                if (mfi.found) {
-                    Term:fa = raw field_app(e, mbt2, n.payload =>! int32,
-                                            raw subst_emitted_param(e.ctx, mfi.type_id), raw term_copy(mbase2));
-                    if (fa.ok) {
-                        drop assert_field_rule(e, mbt2, n.payload =>! int32, fa);
-                        pass fa;
-                    }
-                }
-            }
-        }
-        // A LIMITED FIELD'S RULE IS A FACT AT EVERY READ (D-308 SS3; 1.5.8b
-        // step 6): the read's own opaque term satisfies the rule, because
-        // every write to the field was checked against it (or discharged
-        // under these same hypotheses) and the vacant value was proven to
-        // satisfy it at the declaration (TYPE-077). That is what lets a row
-        // over `l.count - 1` decide where a bare opaque term could not.
-        Term:mo = raw term_opaque(e, ty);
-        drop assert_field_rule(e, mbt2, n.payload =>! int32, mo);
-        pass mo;
+        pass (raw enc_k_member_access_expr(e, id, n, ty));
     }
-    // `#sqrt(x)` (D-200) is the instruction, `fp.sqrt RNE` (D-281); every
-    // other builtin's value is opaque, its arguments sites.
     if (n.kind == ExprKind.ExprBuiltinExpr) {
-        string:bname = raw intern_get(e.interns, raw builtin_name(n));
-        if ((raw string_eq(bname, "sqrt")) && (raw is_float(e, ty)) && (n.c > (raw builtin_generic_count(n)))) {
-            Term:sq = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), raw builtin_generic_count(n)) });
-            if (!sq.ok) { sq = raw term_opaque(e, ty); }
-            if (sq.ok && (!sq.is_bool)) {
-                pass (raw fp_make(e, "sqrt", ty, sq.text, "", raw smt_app2("fp.sqrt", "RNE", sq.text), sq.syms));
-            }
-            pass (raw term_opaque(e, ty));
-        }
-        // `#wild_slice<T>(p, len)` (D-308 SS7, 1.5.8b step 6c): the pointer a
-        // site, the count the ceiling's `bounds` row at the builtin's own node.
-        if (raw builtin_caller_len(bname)) {
-            int32:wg = raw builtin_generic_count(n);
-            if (n.c > (wg + 1i32)) {
-                Term:wp = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), wg) });
-                Term:wl = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), wg + 1i32) });
-                drop record_len_ceiling(e, wl, id.index, n.span);
-            }
-            pass (raw term_opaque(e, ty));
-        }
+        ArmTerm:builtin = raw enc_k_builtin_expr(e, id, n, ty);
+        if (builtin.mine) { pass (move(builtin.t)); }
     }
-    // A STRUCT LITERAL IS A WRITE POINT FOR EVERY LIMITED FIELD IT NAMES
-    // (D-308 SS2, 1.5.8b step 6): each value encoded once, its row recorded at
-    // the VALUE expression's site -- the emitter's own key, which checks the
-    // value in register before it enters the aggregate. The literal's own
-    // value stays opaque.
-    if (n.kind == ExprKind.ExprStructLiteralExpr) {
-        int32:lpairs = n.c / 2i32;
-        // THE LITERAL'S IDENTITY (D-317): a fresh symbol, each named field with
-        // a term of the field's sort defined equal to it -- a nested literal's
-        // identity composes -- so `P:s = P{ a: 1i32 }` knows `s.a`.
-        Term:lid = raw term_fresh_agg(e, ty);
-        bool:lst = ((raw type_kind(e.types, ty)) == (raw TY_STRUCT()));
-        for (int32:li in 0i32...lpairs) {
-            int32:lfn = raw ast_id_at(e.ast, n.b, li * 2i32);
-            ExprId:lvid = ExprId{ index: raw ast_id_at(e.ast, n.b, (li * 2i32) + 1i32) };
-            Term:lv = raw enc_expr(e, lvid);
-            drop record_field_limit(e, ty, lfn, lv, lvid.index, n.span);
-            if (lid.ok && lv.ok && lst) {
-                FieldInfo:lfi = raw struct_field(e.tr, ty, lfn, e.scope);
-                if (lfi.found) {
-                    Term:lfa = raw field_app(e, ty, lfn, raw subst_emitted_param(e.ctx, lfi.type_id), raw term_copy(lid));
-                    if (lfa.ok && (lfa.is_bool == lv.is_bool)) {
-                        Term:leq = raw term_app2("=", lfa, lv, true);
-                        drop hyp_push(e, leq.text, leq.syms);
-                    }
-                }
-            }
-        }
-        if (lid.ok) { pass lid; }
-        pass (raw term_opaque(e, ty));
-    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) { pass (raw enc_k_struct_literal_expr(e, id, n, ty)); }
     // Everything else: the value is opaque, the children are still sites.
     drop walk_children(e, n);
     pass (raw term_opaque(e, ty));
