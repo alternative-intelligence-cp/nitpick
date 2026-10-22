@@ -2895,7 +2895,7 @@ defect declares a `DEF-` in §2f.
 > form reaches (the await typer, the frame builder and the callee name read argument 0 of a trait-qualified call) or
 > it is refused once by name. Its own small landing; probes `wt/40d/.internal/probes/def255/await_q*.npk`.
 
-> **DEF-268 — OPEN (registered 2026-10-19 by `nitpick-compiler_40` at landing 139, found by its measurement of the fuzz
+> **DEF-268 — FIXED (landing 141; built 2026-10-18 by `nitpick-compiler_40`; registered 2026-10-19 at landing 139 from its measurement of the fuzz corpus): `func` followed by `:` at a statement's start is PARSE-001 at `func`, once, naming the rule ("a function is declared at module level, never inside a body: there are no nested functions and no closures (D-018)"), and the declaration is skipped whole to its `;` (`p_skip_nested_decl`, brace-aware); `as0594` 2 -> 1 report (12:5); `parse_one_report.npk`'s cases 160-162 (the shape, the statement after it parsed, a function-typed local as the control). WAS: OPEN (registered 2026-10-18 by `nitpick-compiler_40` at landing 138, found by its measurement of the fuzz
 > corpus's `as0594`; LOW: a count defect, DEF-245's family, the file refused either way). A FUNCTION DECLARED INSIDE A
 > BODY IS TWO REPORTS.** `func:inner = int32() never fails { pass x; };` inside `main` (D-018: there are no closures, so
 > a function is declared at module level) is PARSE-001 "expected a type" at the `:` -- the statement parser reads `func`

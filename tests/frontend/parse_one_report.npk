@@ -239,6 +239,16 @@ func:main = int32(cstring[]:_~argv) {
     Parsed:t10 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; if (x = 3i32) { x = 2i32; } else { x = 5i32; } pass x; }; func:g = int32() { pass 2i32; };", @it);
     if (!(raw one_diag(@t10, raw PARSE_EXPECTED())))                                { exit 173i32; }
     if (!(raw has_func(@t10, @it, "g")))                                            { exit 174i32; }
+    // --- DEF-268 (landing 141): a function declared inside a body is one report, at `func` -----------------------
+    // the fuzz corpus's `as0594`: PARSE-001 at the `:` and PARSE-002 at the initialiser's type before.
+    Parsed:n1 = raw parsed("mod:m; func:f = int32() { int32:x = 1i32; func:inner = int32() never fails { pass x; }; pass x; };", @it);
+    if (!(raw one_diag(@n1, raw PARSE_EXPECTED())))                                 { exit 175i32; }
+    // the statement after it is parsed: its own mistake is the second report
+    Parsed:n2 = raw parsed("mod:m; func:f = int32() { func:inner = int32() { pass 1i32; }; int32:y = ; pass 1i32; };", @it);
+    if ((raw diaglist_count(@n2.diags)) != 2i64)                                    { exit 176i32; }
+    // CONTROL: a function-typed local is a declaration, its type first.
+    Parsed:n3 = raw parsed("mod:m; func:h = int32() never fails { pass 1i32; }; func:f = int32() { func int32() never fails:g = h; pass 1i32; };", @it);
+    if ((raw diaglist_count(@n3.diags)) != 0i64)                                    { exit 177i32; }
 
     wild_release_all();
     exit 0i32;

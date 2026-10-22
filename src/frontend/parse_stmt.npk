@@ -359,6 +359,32 @@ func:keyword_could_name = bool(TokenKind:k) never fails {
     pass ((c0 >= 97u8) && (c0 <= 122u8));
 };
 
+// SKIP A DECLARATION WRITTEN WHERE A STATEMENT STANDS (DEF-268): to its `;` at brace depth 0, consumed, or to the
+// enclosing block's `}` at depth 0, left standing, or to the end of the file.
+func:p_skip_nested_decl = NIL(Parser->:p) never fails {
+    int32:depth = 0i32;
+    while (true) decreases raw p_left(p) {
+        TokenKind:t = raw p_kind(p);
+        if (t == TokenKind.Eof) { break; }
+        if (t == TokenKind.PRBrace) {
+            if (depth == 0i32) { break; }
+            depth = depth - 1i32;
+            discard(raw p_advance(p));
+            continue;
+        }
+        if (t == TokenKind.PLBrace) {
+            depth = depth + 1i32;
+            discard(raw p_advance(p));
+            continue;
+        }
+        discard(raw p_advance(p));
+        if (t == TokenKind.PSemi) {
+            if (depth == 0i32) { break; }
+        }
+    }
+    pass NIL;
+};
+
 pub func:p_looks_like_decl = bool(Parser->:p) never fails {
     if ((raw p_qualifier_bit(raw p_kind(p))) != 0i32) {
         // A qualifier can begin nothing else, so this is settled already.
@@ -635,6 +661,20 @@ pub func:p_parse_stmt = StmtId(Parser->:p) never fails {
     // parser also reaches -- `pick` is both, and its arms decide which (D-059).
     // That mutual import is legal (D-086).
     if (k == TokenKind.KwPick) { pass (raw p_parse_pick_stmt(p)); }
+
+    // A FUNCTION DECLARED INSIDE A BODY IS ONE REPORT (DEF-268, landing 139): there are no nested functions and no
+    // closures (D-018) -- a function is declared at module level. `func` followed by `:` begins no statement (a
+    // function-typed local is `func int64() never fails:f`, its type first), and read as a function TYPE it was
+    // PARSE-001 at the `:` and then PARSE-002 at the initialiser's type (the fuzz corpus's `as0594`). It is refused at
+    // `func`, by name, and skipped whole to its `;` -- its body a brace group (DEF-265's walk).
+    if (k == TokenKind.KwFunc) {
+        if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
+            drop p_error(p, raw PARSE_EXPECTED(),
+                "a function is declared at module level, never inside a body: there are no nested functions and no closures (D-018) -- declare it beside this one and pass it what it needs");
+            drop p_skip_nested_decl(p);
+            pass (raw ast_add_stmt(p.ast, StmtKind.StmtExprStmt, sp, 0i32, 0i32, 0i32, 0i64));
+        }
+    }
 
     if (raw p_looks_like_decl(p)) {
         pass (raw p_parse_vardecl(p, sp, attrs));
