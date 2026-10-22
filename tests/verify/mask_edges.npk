@@ -1,0 +1,56 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 3
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+//
+// THE ENCODER'S INT FORM OF A MASK HOLDS AT THE WIDTH'S EDGES (DEF-279, landing
+// 148): `int_form_and` (smt_encode.npk; D-279's low-bits and cleared-low-bits
+// shapes) computed `m + 1i64` for a positive mask and `0i64 - m` for a negative
+// one in the folder's `int64`, so the top mask `2^63 - 1` and the bottom mask
+// `-(2^63)` -- legal masks of a 64-bit word -- trapped the COMPILER with
+// IntOverflow under `--obligations` (exit 3 with no message, where the plain
+// build compiles the program): the verified build could not decide a program
+// the compiler accepts (the fuzz corpus's `lx0332b`). Both edges are answered
+// without the arithmetic now, as the Int forms they are: `x & (2^63 - 1)` is
+// `(mod x 2^63)` for a word of 63 bits or more, and `x & -(2^63)` is
+// `(- x (mod x 2^63))` for a signed word of 64 or more. The three `prove`s
+// read those forms: the low 63 bits of a `uint64` are below 2^63, those of an
+// `int64` are non-negative, and the sign bit alone of an `int64` is at most
+// zero. The fourth function, the top bit of a `uint64` through the mask
+// `1u64 << 63u64`, is the crossing's (D-280) and the control. The compiler
+// before this landing exits 3 on this file under `--obligations`, 0 in the
+// plain build.
+mod:mask_edges;
+
+fixed int64:MIN64 = 0i64 - 9223372036854775807i64 - 1i64;
+
+func:low63u = uint64(uint64:v) never fails { uint64:w = v & 9223372036854775807u64; prove(w <= 9223372036854775807u64); pass w; };
+func:low63s = int64(int64:v) never fails { int64:w = v & 9223372036854775807i64; prove(w >= 0i64); pass w; };
+func:top1s = int64(int64:v) never fails { int64:w = v & MIN64; prove(w <= 0i64); pass w; };
+func:top1u = uint64(uint64:v) never fails { uint64:w = v & (1u64 << 63u64); pass w; };
+
+func:main = int32(cstring[]:_~argv) {
+    uint64:v = (1u64 << 63u64) | 04BF29CE484222325hexu64;
+    if ((raw low63u(v)) != 5472609002491880229u64) { exit 11i32; }
+    if ((raw low63s(5472609002491880229i64)) != 5472609002491880229i64) { exit 12i32; }
+    if ((raw low63s(-5i64)) != 9223372036854775803i64) { exit 13i32; }
+    if ((raw top1s(-5i64)) != MIN64) { exit 14i32; }
+    if ((raw top1s(7i64)) != 0i64) { exit 15i32; }
+    if ((raw top1u(v)) != (1u64 << 63u64)) { exit 16i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

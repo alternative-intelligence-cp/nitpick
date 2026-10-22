@@ -2853,6 +2853,15 @@ func:int_form_and = Term(Encoder->:e, int32:ty, Term:a, int64:m) never fails {
     int32:wb = raw word_bits(e, ty);
     if (m == 0i64) { pass (raw term_lit("0", false)); }
     if (m > 0i64) {
+        // THE TOP MASK (DEF-279, landing 148): `2^63 - 1` is the one positive mask whose
+        // `m + 1i64` does not fit the folder's `int64` -- the compiler trapped IntOverflow here
+        // under `--obligations` on a legal program -- and it IS the low-bits shape at `j = 63`,
+        // which `pow2_exp` (bounded at 62) could not answer either: the low 63 bits of any word
+        // of 63 bits or more, `(mod a 2^63)`, written without the sum.
+        if (m == 9223372036854775807i64) {
+            if (wb >= 63i32) { pass (raw term_app2("mod", a, raw term_lit(raw pow2_decimal(63i64), false), false)); }
+            pass (raw term_none());
+        }
         int32:j = raw pow2_exp(m + 1i64, wb + 1i32);
         if (j >= 0i32) {   // 2^j - 1
             pass (raw term_app2("mod", a, raw term_lit(raw pow2_decimal(j => int64), false), false));
@@ -2878,6 +2887,17 @@ func:int_form_and = Term(Encoder->:e, int32:ty, Term:a, int64:m) never fails {
         pass (raw term_none());
     }
     if (raw word_signed(e, ty)) {
+        // THE BOTTOM MASK (DEF-279's second face): the sign bit alone, `-(2^63)`, is the one
+        // negative mask whose `0i64 - m` does not fit -- the same trap -- and it is the
+        // cleared-low-bits shape at `jn = 63` for a signed word of 64 bits or more,
+        // `(- a (mod a 2^63))`, written without the negation.
+        if (m == (0i64 - 9223372036854775807i64 - 1i64)) {
+            if (wb >= 64i32) {
+                Term:low3 = raw term_app2("mod", a, raw term_lit(raw pow2_decimal(63i64), false), false);
+                pass (raw term_app2("-", a, low3, false));
+            }
+            pass (raw term_none());
+        }
         int32:jn = raw pow2_exp(0i64 - m, wb);   // -(2^jn): the low jn bits cleared
         if (jn >= 0i32) {
             Term:low2 = raw term_app2("mod", a, raw term_lit(raw pow2_decimal(jn => int64), false), false);

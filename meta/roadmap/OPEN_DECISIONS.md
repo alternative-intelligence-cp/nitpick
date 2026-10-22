@@ -3067,9 +3067,19 @@ defect declares a `DEF-` in §2f.
 > that re-visits every arm of every enclosing pick per level is the shape to look for (the checker's `type_pick_rules` over
 > both spellings, the bindings analysis's arm merge, or the folder). Its own landing, measured first.
 
-> **DEF-279 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report, its
-> fourth finding; a compiler TRAP on a legal program, in the verified build's path). THE ENCODER'S `int_form_and` OVERFLOWS
-> ON THE MASK `9223372036854775807u64`.** `int_form_and` (smt_encode.npk, D-279's Int form of a low-bits mask) computes
+> **DEF-279 — FIXED 2026-10-22 (landing 148, `nitpick-compiler_42`): `int_form_and` (smt_encode.npk) answers the width's two
+> edge masks BEFORE its arithmetic -- the top mask `2^63 - 1` as `(mod a 2^63)` for a word of 63 bits or more (the low-bits shape
+> at `j = 63`, which `pow2_exp`'s bound of 62 could not answer either) and the bottom mask `-(2^63)` as `(- a (mod a 2^63))` for
+> a signed word of 64 or more (the cleared-low-bits shape at `jn = 63`) -- so the verified build decides what the compiler
+> accepts (`tests/verify/mask_edges.npk`: three `prove` rows over the forms, discharged; the compiler before this landing exits 3
+> on it under `--obligations` and 0 in the plain build). A SECOND FACE, found by the landing's probes
+> (`wt/42e/.internal/probes/def279/`): the mask `INT64_MIN` on a signed word -- `v & (0i64 - 9223372036854775807i64 - 1i64)`, the
+> sign bit alone -- trapped the same way in the signed branch's `0i64 - m`; the top mask on an `int64` word trapped as on a
+> `uint64`. The top bit built arithmetically, `v & (1u64 << 63u64)`, was never the Int form's (the crossing's, D-280: 34 rows,
+> the problem hashes identical under both compilers) and is the test's control; the literal `9223372036854775808u64` is LEX-004
+> (D-148), so no other spelling reaches the arithmetic. WAS: OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145,
+> from the DEF-269 agent's report, its fourth finding; a compiler TRAP on a legal program, in the verified build's path). THE
+> ENCODER'S `int_form_and` OVERFLOWS ON THE MASK `9223372036854775807u64`.** `int_form_and` (smt_encode.npk, D-279's Int form of a low-bits mask) computes
 > `m + 1i64` for the mask's numeral, and for the mask 2^63 - 1 that sum does not fit `int64`: the compiler traps
 > `IntOverflow` (-4110) under `--obligations` -- the fuzz corpus's `m11/programs/lx0332b.npk` exits 3 where the plain build
 > exits 0 -- on landing 144's compiler and on 145's. The fix is the mask test in `uint64` (or the Int form declined at the
