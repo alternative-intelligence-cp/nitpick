@@ -304,6 +304,14 @@ pointer field, a slice, a `dyn` keep the conservative reading (`type_holds_forei
 > the block-nesting question and marked as the binding is. A pointee's field, a slice's element and a borrow rooted at a `for`
 > binding (DEF-288) keep the refusal.
 
+> **Note (2026-10-23, landing 155, DEF-288 and DEF-290):** a `for` binding is a BLOCK-SCOPED LOCAL to rules 2 and 3, bounded
+> by its loop -- a bit copy of the element's header in a slot of this frame, so a view of it views the element and `@` of it is
+> the slot. The escape analysis had read it as a parameter (the resolver declares it as a `DeclParamDecl`), so a view of it handed
+> up, or kept in a holder outside the loop, read freed memory. One predicate says what a parameter is now, and the field store's
+> `for`-binding refusal of landing 154 is the general rule's. A view of the binding is bounded by the LOOP, not by the collection
+> the loop walks: conservative where the collection outlives the loop (write `string_bytes(xs[i])` to hand a parameter's element
+> up). And a self-wired holder (`t.p = @t.a`, the 0.8.1 exemption) is marked, so it cannot leave its frame by value.
+
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**

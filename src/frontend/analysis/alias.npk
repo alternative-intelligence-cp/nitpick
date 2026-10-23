@@ -952,6 +952,34 @@ func:frame_pop = NIL(Alias->:x) never fails {
     pass NIL;
 };
 
+// THE VIEWS A `for` BINDING HOLDS (DEF-288, landing 155): a callee's store into
+// the binding (`put(@h, string_bytes(t))`) records the view on the binding's own
+// chain, which the escape analysis keeps by the binding's declaration in its
+// parameter tables -- the binding is a block-scoped local, live for one iteration
+// -- and those views are parties live over the loop's body, as a local holder's
+// are live from its declaration. Until this landing only a PARAMETER's chain was
+// read (`alias_fn`), so a view of a body local held by the binding froze nothing
+// and the iteration's write to the local freed what the binding viewed (113 at
+// both legs, the bytes reused). Pushed straight into the live set inside the
+// loop's own frame, never into the pre-scan's: `alias_fn` makes every pre-scanned
+// party whose holder is a declaration live at the function's entry.
+func:push_loop_binding_parties = NIL(Alias->:x, DeclId:bind) never fails {
+    int32:bsym = raw decl_symbol_of(x, bind.index);
+    if (bsym == 0i32) { pass NIL; }
+    int32:e = raw escape_param_view_ref_first(x.esc, bind.index);
+    while (e >= 0i32) decreases e + 1i32 {
+        ViewRef:vr = raw escape_view_ref(x.esc, e);
+        e = raw escape_view_ref_next(x.esc, e);
+        if (vr.root == 0i32) { continue; }
+        if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
+        ExprId:place = ExprId{ index: vr.place };
+        drop list_push(@x.live, Party{ site: place, kind: raw PARTY_VIEW(), root: vr.root, holder: bsym,
+                                       place: place, view_kind: vr.kind, root_ptr: raw root_ident_is_pointer(x, place),
+                                       path: vr.path });
+    }
+    pass NIL;
+};
+
 // The parties admitted into this holder, made live now (its declaration).
 func:register_holder = NIL(Alias->:x, int32:hsym) never fails {
     if (hsym == 0i32) { pass NIL; }
@@ -1042,7 +1070,10 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
     }
     if (s.kind == StmtKind.StmtForStmt) {
         drop acc_expr(x, raw stmt_for_iter(x.ast, s), raw ACC_READ(), dd);
+        drop frame_push(x);
+        drop push_loop_binding_parties(x, raw stmt_for_binding(s));
         drop alias_stmt(x, raw stmt_for_body(x.ast, s), dd);
+        drop frame_pop(x);
         pass NIL;
     }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {

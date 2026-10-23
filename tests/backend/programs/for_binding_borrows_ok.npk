@@ -1,0 +1,136 @@
+// expect-exit: 0
+//
+// A `for` BINDING IS A BLOCK-SCOPED LOCAL, LIVE FOR ITS LOOP (DEF-288, landing 155): what may be done with its address
+// and a view of it inside its loop stands. The escape analysis read the binding as a PARAMETER until this landing and
+// admitted more than this (a view of it handed up or kept past the loop, `@` of a pointer-typed one returned --
+// tests/analysis/rejection/for_binding_borrows.npk), never less, so the compiler before this landing compiles this
+// file too and answers 0 at both legs; the test holds the legal half of the rule against a stricter reading. Every
+// value is checked and each check fails at its own exit: a view of the binding used inside its iteration (the bytes are
+// the element's: the binding is a bit copy of the element's header); an owned copy of the element kept past the loop;
+// a holder of the binding's address declared in the loop's body and read there, through a literal and through a
+// pointer local; a callee's store of a view of a body local into the binding, read in the same iteration, and the
+// array's elements untouched by it (the binding is a copy); a view of the ELEMENT itself (`arr[i]`) kept past the loop
+// in the array's own block, the spelling the refusals name; a view of a slice parameter's element handed up; and a
+// pointer binding's VALUE -- the element's pointer, the caller's -- read and handed up (not the binding's slot).
+mod:for_binding_borrows_ok;
+
+struct:Node = { int32:v; Node->?:next; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+
+func:keep = NIL(Holder->:dst, fixed uint8[]:src) never fails {
+    dst.v = src;
+    pass NIL;
+};
+
+// 'a' + 'd' + 'e' + 'h' + 'i' + 'l' = 615
+func:view_inside = int32() never fails {
+    string[3]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh"), string_concat("ij", "kl")];
+    int32:sum = 0i32;
+    for (string:s in arr) {
+        (fixed uint8[]):w = string_bytes(s);
+        sum = sum + (w[0i64] => int32) + (w[3i64] => int32);
+    }
+    pass sum;
+};
+
+// the last element's owned copy: 6 bytes
+func:copy_out = int64() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("efg", "hij")];
+    string:kept = string_concat("", "");
+    for (string:s in arr) {
+        kept = string_concat("", s);
+    }
+    pass kept.len;
+};
+
+// each element read twice through holders of the binding's address declared in the body: 2 * (1 + 2 + 4) = 14
+func:addr_holder_inside = int32() never fails {
+    Node[3]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }, Node{ v: 4i32, next: NIL }];
+    int32:sum = 0i32;
+    for (Node:e in arr) {
+        Node:n = Node{ v: 0i32, next: @e };
+        Node->?:p = @e;
+        sum = sum + (n.next?.v ?? 100i32) + (p?.v ?? 100i32);
+    }
+    pass sum;
+};
+
+// ('m' + 1) + ('m' + 2) = 221, and the array's own views still read "zz" after the loop
+func:callee_store_inside = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 1i32 }, Holder{ v: string_bytes("zz"), k: 2i32 }];
+    int32:sum = 0i32;
+    for (Holder:h in arr) {
+        string:t = string_concat("m", "n");
+        drop keep(@h, string_bytes(t));
+        sum = sum + (h.v[0i64] => int32) + h.k;
+    }
+    if (arr[0i64].v[0i64] != 122u8) { pass 1i32; }
+    if (arr[1i64].v[0i64] != 122u8) { pass 2i32; }
+    pass sum;
+};
+
+// a view of the element itself, kept past the loop in the array's own block: 'e' = 101
+func:element_view_out = int32() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    (fixed uint8[]):v = string_bytes("zz");
+    for (int64:i in 0i64...2i64) {
+        v = string_bytes(arr[i]);
+    }
+    pass (v[0i64] => int32);
+};
+
+// a view of a slice parameter's element handed up: the caller's bytes
+func:param_elem_view = fixed uint8[](string[]:xs) never fails {
+    pass string_bytes(xs[1i64]);
+};
+
+// a pointer binding's value, read and handed up: the element's pointer is the caller's
+func:sum_through_ptrs = int32(Node->:a, Node->:b) never fails {
+    Node->[2]:ptrs = [a, b];
+    int32:sum = 0i32;
+    for (Node->:q in ptrs) {
+        sum = sum + q.v;
+    }
+    pass sum;
+};
+func:first_ptr = Node->(Node->:a, Node->:b) never fails {
+    Node->[2]:ptrs = [b, a];
+    for (Node->:q in ptrs) {
+        pass q;
+    }
+    pass a;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw view_inside()) != 615i32) { exit 1i32; }
+    if ((raw copy_out()) != 6i64) { exit 2i32; }
+    if ((raw addr_holder_inside()) != 14i32) { exit 3i32; }
+    if ((raw callee_store_inside()) != 221i32) { exit 4i32; }
+    if ((raw element_view_out()) != 101i32) { exit 5i32; }
+    string[2]:names = [string_concat("pq", "rs"), string_concat("tu", "vw")];
+    fixed uint8[]:pv = raw param_elem_view(names[0i64...2i64]);
+    if (pv[0i64] != 116u8) { exit 6i32; }
+    if (pv.len != 4i64) { exit 7i32; }
+    Node:na = Node{ v: 30i32, next: NIL };
+    Node:nb = Node{ v: 12i32, next: NIL };
+    if ((raw sum_through_ptrs(@na, @nb)) != 42i32) { exit 8i32; }
+    Node->:fp = raw first_ptr(@na, @nb);
+    if (fp.v != 12i32) { exit 9i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (LimitViolated)     { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

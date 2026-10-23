@@ -41,9 +41,9 @@
 // expect-error: NITPICK-BORROW-002
 // expect-error-at: 285:22
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 300:10
+// expect-error-at: 300:9
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 309:14
+// expect-error-at: 309:13
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 322:5
 // expect-error: NITPICK-BORROW-015
@@ -80,9 +80,9 @@
 // pointer field, `<-`, the auto-dereference) names a POINTEE whose life the binding does not bound (DEF-272); a SLICE's
 // element is whatever the slice views; a `wild` destination is D-223's; a claim is a whole call argument or a pointer
 // local's whole value (D-286); a consuming `pick`'s binding is not admitted as the holder (the bare-local branch admits
-// only a local too); and a value carrying a borrow rooted at a `for` binding keeps the refusal too, because the escape
-// analysis reads a `for` binding as a parameter (a view of one over an array declared in a block the holder outlives
-// read the freed bytes when admitted, exit 170 at both legs). The sites, in order: rule 3 by block nesting (an address,
+// only a local too); and a value carrying a borrow rooted at a `for` binding is refused by the holder-scope question,
+// the binding a block-scoped local bounded by its loop (DEF-288, landing 155: landing 154's own guard refused it, the
+// analysis reading the binding as a parameter). The sites, in order: rule 3 by block nesting (an address,
 // a view, a `move` parameter's field, an array's element, a nested inline field, a `defer`, a loop body's local, a
 // `List` element, a struct value, a call's result); the pointee roads (a pointer parameter's field, a pointer field,
 // `<-`, the auto-dereference) and a slice's element (an address and a view); the claims, the `wild` slot, a pattern
@@ -289,10 +289,10 @@ func:pick_binding_root = int32() never fails {
     pass 0i32;
 };
 
-// --- a `for` binding among the value's roots: kept refused, as every field store was before landing 154 ------------
-// The escape analysis reads a `for` binding as a parameter (`refs_root_loop_binding`), and the field branch does not
-// widen that: the binding's address, and a view of its string over an array declared in a block the holder outlives
-// (admitted, it reads the freed bytes: exit 170 at both legs).
+// --- a `for` binding among the value's roots: the holder outlives the loop -----------------------------------------
+// A `for` binding is a block-scoped local bounded by its loop (DEF-288, landing 155; landing 154 kept these at the
+// refusal below with a guard, `refs_root_loop_binding`, while the analysis read the binding as a parameter): the
+// binding's address, and a view of its string over an array declared in a block the holder outlives (170 if admitted).
 func:loop_binding_addr = int32() never fails {
     Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
     Node:n = Node{ v: 0i32, next: NIL };

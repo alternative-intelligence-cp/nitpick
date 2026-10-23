@@ -734,15 +734,75 @@ func:param_index_of = int32(Escape->:x, int32:sym) never fails {
     if (x.cur_fn < 0i32) { pass (0i32 - 1i32); }
     Symbol:sy = raw symtab_get(x.tab, sym);
     if (sy.origin_kind != (raw SYM_DECL())) { pass (0i32 - 1i32); }
+    pass (raw param_decl_index(x, sy.origin));
+};
+
+// The same index by the parameter's DECLARATION: its position among the current
+// function's parameters, the variadic slot as 31, or -1 when the declaration is
+// no parameter of the function being walked.
+func:param_decl_index = int32(Escape->:x, int32:decl) never fails {
+    if (x.cur_fn < 0i32) { pass (0i32 - 1i32); }
     DeclNode:fdecl = raw ast_decl(x.ast, DeclId{ index: x.cur_fn });
     if (fdecl.kind != DeclKind.DeclFunctionDecl) { pass (0i32 - 1i32); }
     int32:n = raw fn_param_count(x.ast, fdecl);
     for (int32:i in 0i32...n) {
-        if ((raw fn_param(x.ast, fdecl, i)).index == sy.origin) { pass i; }
+        if ((raw fn_param(x.ast, fdecl, i)).index == decl) { pass i; }
     }
     DeclId:vs = raw fn_variadic(x.ast, fdecl);
-    if (!(raw decl_is_none(vs))) { if (vs.index == sy.origin) { pass 31i32; } }
+    if (!(raw decl_is_none(vs))) { if (vs.index == decl) { pass 31i32; } }
     pass (0i32 - 1i32);
+};
+
+// IS THIS SYMBOL A PARAMETER OF THE FUNCTION BEING WALKED (DEF-288, landing
+// 155)? THE ONE ANSWER this analysis gives to that question: a `DeclParamDecl`
+// the current function declares among its parameters (`param_decl_index`), and
+// nothing else. The resolver declares a `for` binding as a `DeclParamDecl` too
+// -- in the BLOCK scope its loop opens (resolve.npk) -- and every site that read
+// the declaration's KIND read the binding as a parameter: its address and a view
+// of its bytes were storage "the caller handed in", so rule 2 let `pass
+// string_bytes(s)` of `for (string:s in arr)` over a local array travel up (the
+// caller read the freed bytes, reused: 120 at both legs) and `pass @q` of a
+// pointer-typed binding hand up the binding's own slot in the dying frame (-O0
+// 107, -O2 0: the legs disagreed); and the holder-scope question left it out, so
+// a view of it kept past its loop read the freed array (170 at both legs). The
+// emitter and the bindings analysis read the binding right since DEF-144 and
+// DEF-127; here every site asks this predicate or its complement below. The
+// variadic slot is no `DeclParamDecl` and answers false here, as it did at every
+// site that asked the kind.
+func:symbol_is_param = bool(Escape->:x, Symbol:sy) never fails {
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    if ((sy.origin < 0i32) || (sy.origin >= x.decl_count)) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
+    if (d.kind != DeclKind.DeclParamDecl) { pass false; }
+    pass ((raw param_decl_index(x, sy.origin)) >= 0i32);
+};
+
+// A `for` BINDING (DEF-288): a `DeclParamDecl` that is no parameter of the
+// function being walked -- the complement of `symbol_is_param` over the kind. It
+// is a BLOCK-SCOPED LOCAL of this frame: declared by its loop, live for one
+// iteration (its `Symbol.scope` is the block scope the loop opens, so the
+// holder-scope question bounds it by the loop), a bit copy of the element it is
+// at (a view of it views the element's bytes; `@` of it is its own slot). Its
+// marks and its view chain live in the parameter tables keyed by its declaration
+// index (`pholds`, `vp_head`), which no parameter shares: those tables are
+// storage, and the binding's facts are kept there as a local's are kept by its
+// declaring statement.
+func:symbol_is_loop_binding = bool(Escape->:x, Symbol:sy) never fails {
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    if ((sy.origin < 0i32) || (sy.origin >= x.decl_count)) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
+    if (d.kind != DeclKind.DeclParamDecl) { pass false; }
+    pass ((raw param_decl_index(x, sy.origin)) < 0i32);
+};
+
+func:sym_is_param = bool(Escape->:x, int32:sym) never fails {
+    if (sym == 0i32) { pass false; }
+    pass (raw symbol_is_param(x, raw symtab_get(x.tab, sym)));
+};
+
+func:sym_is_loop_binding = bool(Escape->:x, int32:sym) never fails {
+    if (sym == 0i32) { pass false; }
+    pass (raw symbol_is_loop_binding(x, raw symtab_get(x.tab, sym)));
 };
 
 // A ref's path RELATIVE TO ITS ROOT: the place's steps from the root, then the
@@ -1091,12 +1151,11 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
         if (!(raw expr_is_none(rid))) {
             ExprNode:rn0 = raw ast_expr(x.ast, rid);
             if (rn0.a != 0i32) {
-                Symbol:sy0 = raw symtab_get(x.tab, rn0.a);
-                if (sy0.origin_kind == (raw SYM_DECL())) {
-                    DeclNode:pd0 = raw ast_decl(x.ast, DeclId{ index: sy0.origin });
-                    if (pd0.kind == DeclKind.DeclParamDecl) {
-                        if (raw base_is_pointer(x, rid)) { param_ptr = true; }
-                    }
+                // a PARAMETER's pointer (DEF-288: a `for` binding's pointee is the
+                // element's target, whose life nothing here names -- the sentence
+                // below, not the parameter's)
+                if (raw sym_is_param(x, rn0.a)) {
+                    if (raw base_is_pointer(x, rid)) { param_ptr = true; }
                 }
             }
         }
@@ -1110,37 +1169,56 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a == 0i32) { pass NIL; }
     Symbol:sy = raw symtab_get(x.tab, rn.a);
+    // A `for` BINDING AS THE DESTINATION (DEF-288): a block-scoped local, its own
+    // slot live for one iteration as a by-value parameter's is live for the body
+    // -- so it is asked the by-value parameter's questions below with the loop
+    // body's block as its bound (`param_holder`), and marked by its declaration --
+    // except that a POINTER-typed one is a pointer binding whose target nothing
+    // names (read as a pointer local's is, after this block), and a `dyn` one
+    // names the ELEMENT's cell (the binding is a copy of the element's header).
+    bool:loopb = raw symbol_is_loop_binding(x, sy);
     if (sy.origin_kind == (raw SYM_DECL())) {
         DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sy.origin });
         if (pd.kind == DeclKind.DeclParamDecl) {
             int32:pt = raw exprtypes_get(x.etypes, rid);
-            if (pt != 0i32) { if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) {
+            bool:pt_ptr = false;
+            if (pt != 0i32) { if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) { pt_ptr = true; } }
+            if (pt_ptr && (!loopb)) {
                 drop escape_err(x, raw BORROW_STORED(),
                     "a view of this frame's storage is stored by this call into what the parameter points at (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and that memory outlives the frame the view names -- store a copy (`.clone()`, `string_concat(\"\", …)`)",
                     an.span);
                 pass NIL;
-            }}
-            // A BY-VALUE PARAMETER (1.6.1 step 0). A `dyn` this frame was LENT
-            // owns a cell that is the CALLER's -- the one owning-by-cell kind a
-            // loan may write, through its methods (TYPE-085's `dyn` exemption)
-            // -- so what this call stores into it escapes the frame here. Any
-            // other by-value parameter (a `move dyn`, a `move` struct, a
-            // copyable struct) is this frame's storage and HOLDS the borrow
-            // from here, as a local would (rules 2 and 3 then guard it).
-            if (pt != 0i32) { if ((raw type_kind(x.types, pt)) == (raw TY_DYN())) {
-                if (((raw param_quals(pd)) & (raw QUAL_MOVE())) == 0i32) {
-                    drop escape_err(x, raw BORROW_STORED(),
-                        "a view of this frame's storage is stored by this call into the cell of a `dyn` this frame was lent (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and that cell is the caller's -- store a copy, or take the `dyn` as `move`",
-                        an.span);
-                    pass NIL;
-                }
-            }}
-            // THE PARAMETER'S BOUND IS THE BODY'S BLOCK (DEF-252): a view rooted
-            // in a block INSIDE the body outlives nothing it should; one rooted
-            // in the body itself dies with the parameter, at the frame's end.
-            if (raw refuse_call_holder_scope(x, sy.scope, true, srcs, an.span)) { pass NIL; }
-            drop escape_mark_param(x, sy.origin);
-            pass NIL;
+            }
+            if (!pt_ptr) {
+                // A BY-VALUE PARAMETER (1.6.1 step 0). A `dyn` this frame was LENT
+                // owns a cell that is the CALLER's -- the one owning-by-cell kind a
+                // loan may write, through its methods (TYPE-085's `dyn` exemption)
+                // -- so what this call stores into it escapes the frame here. Any
+                // other by-value parameter (a `move dyn`, a `move` struct, a
+                // copyable struct) is this frame's storage and HOLDS the borrow
+                // from here, as a local would (rules 2 and 3 then guard it).
+                if (pt != 0i32) { if ((raw type_kind(x.types, pt)) == (raw TY_DYN())) {
+                    if (((raw param_quals(pd)) & (raw QUAL_MOVE())) == 0i32) {
+                        if (loopb) {
+                            drop escape_err(x, raw BORROW_STORED(),
+                                "a view of this frame's storage is stored by this call into the cell of a `dyn` a `for` binding names (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and the binding is a copy of the element's header, so that cell is the collection's and outlives the iteration (DEF-288) -- store a copy",
+                                an.span);
+                            pass NIL;
+                        }
+                        drop escape_err(x, raw BORROW_STORED(),
+                            "a view of this frame's storage is stored by this call into the cell of a `dyn` this frame was lent (D-004 rule 3, D-325: the callee's own body stores what it is handed here), and that cell is the caller's -- store a copy, or take the `dyn` as `move`",
+                            an.span);
+                        pass NIL;
+                    }
+                }}
+                // THE PARAMETER'S BOUND IS THE BODY'S BLOCK (DEF-252): a view rooted
+                // in a block INSIDE the body outlives nothing it should; one rooted
+                // in the body itself dies with the parameter, at the frame's end.
+                // A `for` binding's is its loop body's block, for the same reason.
+                if (raw refuse_call_holder_scope(x, sy.scope, true, srcs, an.span)) { pass NIL; }
+                drop escape_mark_param(x, sy.origin);
+                pass NIL;
+            }
         }
     }
     // a pointer BINDING handed by value: its target cannot be named
@@ -1161,6 +1239,13 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
         if (raw refuse_call_holder_scope(x, sy.scope, false, srcs, an.span)) { pass NIL; }
         drop escape_mark(x, sy.origin);
     }
+    // a POINTER-typed `for` binding whose own slot is the destination (`@q`
+    // handed, DEF-288): it holds what the call stored there, bounded by its loop
+    // body as above, and marked by its declaration
+    if (loopb) {
+        if (raw refuse_call_holder_scope(x, sy.scope, true, srcs, an.span)) { pass NIL; }
+        drop escape_mark_param(x, sy.origin);
+    }
     pass NIL;
 };
 
@@ -1173,12 +1258,18 @@ func:refuse_call_holder_scope = bool(Escape->:x, int32:holder_scope, bool:param_
                                      Span:at) never fails {
     for (int64:i in 0i64...srcs.count) {
         ExprId:src = (<-srcs)[i];
-        if (raw holder_scope_violated(x, holder_scope, src, param_holder)) {
+        int32:vr = raw holder_scope_root(x, holder_scope, src, param_holder);
+        if (vr == 0i32) { continue; }
+        if (raw sym_is_loop_binding(x, vr)) {
             drop escape_err(x, raw BORROW_STORED(),
-                "a view of a local declared inside a block is stored by this call into a binding declared outside that block (D-004 rule 3, DEF-42; D-325: the callee's own body stores what it is handed here), so the holder outlives the storage the view names -- declare the holder inside that block, store a copy, or pass the borrow down",
+                "a borrow of a `for` binding is stored by this call into a binding declared outside its loop (D-004 rule 3, DEF-42, DEF-288; D-325: the callee's own body stores what it is handed here), and a `for` binding lives only for its loop -- its address is its own slot, and a view of it views the element it copies -- declare the holder inside the loop, borrow the element itself, or store a copy",
                 at);
             pass true;
         }
+        drop escape_err(x, raw BORROW_STORED(),
+            "a view of a local declared inside a block is stored by this call into a binding declared outside that block (D-004 rule 3, DEF-42; D-325: the callee's own body stores what it is handed here), so the holder outlives the storage the view names -- declare the holder inside that block, store a copy, or pass the borrow down",
+            at);
+        pass true;
     }
     pass false;
 };
@@ -1189,6 +1280,8 @@ func:ref_root_is_frame_owned = bool(Escape->:x, ViewRef:r) never fails {
     if (r.root == 0i32) { pass false; }
     Symbol:rs = raw symtab_get(x.tab, r.root);
     if ((rs.origin_kind == (raw SYM_STMT())) || (rs.origin_kind == (raw SYM_PAT()))) { pass true; }
+    // a `for` binding is a local of this frame, whatever its type (DEF-288)
+    if (raw symbol_is_loop_binding(x, rs)) { pass true; }
     if (rs.origin_kind == (raw SYM_DECL())) {
         DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: rs.origin });
         if (pd.kind == DeclKind.DeclParamDecl) {
@@ -1647,6 +1740,16 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         if (n.a == 0i32) { pass NIL; }
         Symbol:isy = raw symtab_get(x.tab, n.a);
+        // A `for` BINDING CARRIES WHAT IT HOLDS, as a local does (DEF-288): its
+        // value is the element's, and an iterable whose elements could carry a
+        // borrow of this frame was refused at the loop (`for_binding_can_carry`),
+        // so what it may hold is what was stored into it -- its own chain, kept
+        // by its declaration. It is no parameter, and its value is not "older
+        // than this frame": a PASS ref of it read as the caller's value.
+        if (raw symbol_is_loop_binding(x, isy)) {
+            drop push_binding_refs(x, n.a, out);
+            pass NIL;
+        }
         if (isy.origin_kind == (raw SYM_DECL())) {
             DeclNode:idl = raw ast_decl(x.ast, DeclId{ index: isy.origin });
             if (idl.kind == DeclKind.DeclParamDecl) {
@@ -1973,8 +2076,8 @@ func:escape_param_holds = bool(Escape->:x, int32:decl) never fails {
 func:sym_is_value_param = bool(Escape->:x, Symbol:sy, int32:ident) never fails {
     if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
     if ((sy.origin <= 0i32) || (sy.origin >= x.decl_count)) { pass false; }
-    DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sy.origin });
-    if (pd.kind != DeclKind.DeclParamDecl) { pass false; }
+    // a parameter of the function being walked, never a `for` binding (DEF-288)
+    if (!(raw symbol_is_param(x, sy))) { pass false; }
     if (ident == 0i32) { pass true; }
     int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: ident });
     if (pt == 0i32) { pass true; }
@@ -2273,11 +2376,29 @@ func:escape_return_value = NIL(Escape->:x, StmtNode:s) never fails {
             pass NIL;
         }
         ExprNode:vn = raw ast_expr(x.ast, v);
+        if (raw value_borrows_loop_binding(x, v)) {
+            drop escape_err(x, raw BORROW_RETURNED(),
+                "a borrow of a `for` binding cannot travel up: the binding lives only for its loop -- its address is its own slot in this frame, and a view of it views the element it copies -- and this returns it out of the frame (D-004 rule 2, DEF-288) -- borrow the element itself (a view of `xs[i]` travels up when the collection is the caller's), or return a copy",
+                vn.span);
+            pass NIL;
+        }
         drop escape_err(x, raw BORROW_RETURNED(),
             "a borrow cannot travel up: it is valid only for the frame it was taken in, and this returns it out of that frame (D-004 rule 2)",
             vn.span);
     }
     pass NIL;
+};
+
+// DOES THIS VALUE BORROW A `for` BINDING (DEF-288)? Its frame roots, read by the
+// walk the holder-scope question reads them with -- so rule 2's sentence says
+// what is true of the binding it names.
+func:value_borrows_loop_binding = bool(Escape->:x, ExprId:v) never fails {
+    List<int32>:roots = raw list_init::<int32>(4i64);
+    drop collect_local_roots(x, v, raw ESCAPE_DEPTH(), @roots);
+    for (int64:i in 0i64...roots.count) {
+        if (raw sym_is_loop_binding(x, roots[i])) { pass true; }
+    }
+    pass false;
 };
 
 // RULE 3 — WHERE A BORROW MAY BE PUT.
@@ -2737,9 +2858,11 @@ func:view_root_is_param = bool(Escape->:x, ExprNode:viewnode, ExprId:vp) never f
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a == 0i32) { pass false; }
     Symbol:sy = raw symtab_get(x.tab, rn.a);
-    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    // A PARAMETER of the function being walked (DEF-288): a `for` binding's bytes
+    // are the element's, owned by the collection the loop walks -- no storage the
+    // caller handed in -- and the binding lives for one iteration.
+    if (!(raw symbol_is_param(x, sy))) { pass false; }
     DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
-    if (d.kind != DeclKind.DeclParamDecl) { pass false; }
     if (((raw param_quals(d)) & (raw QUAL_MOVE())) != 0i32) { pass false; }
     int32:pt = raw exprtypes_get(x.etypes, rid);
     if (pt == 0i32) { pass false; }
@@ -2789,9 +2912,12 @@ func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
     int32:sym = rn.a;
     if (sym == 0i32) { pass false; }
     Symbol:sy = raw symtab_get(x.tab, sym);
-    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    // A PARAMETER of the function being walked (DEF-288): a `for` binding is a
+    // block-scoped local, and `@q` of a pointer-typed one is the binding's own
+    // slot in this frame, not what it points at -- `for (Node->:q in ptrs) { pass
+    // @q; }` handed up the slot of a dying frame (-O0 107, -O2 0).
+    if (!(raw symbol_is_param(x, sy))) { pass false; }
     DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
-    if (d.kind != DeclKind.DeclParamDecl) { pass false; }
     // A `move` PARAMETER IS THE CALLEE'S OWN (1.5.1b step 2): consumed at the
     // call and dropped at this frame's exit, so a borrow of it travels up
     // into freed storage exactly as a borrow of a local would. Found writing
@@ -3135,6 +3261,17 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
                                             raw ESCAPE_DEPTH())) {
                 // (A view of the struct's own storage was refused above, before
                 // the verdict; what reaches here holds pointers at fields.)
+                // THE HOLDER HOLDS A BORROW OF ITSELF (DEF-290, landing 155): a
+                // pointer into X held inside X dies with X, so X may not leave its
+                // frame by value -- `t.p = @t.a; pass t;` handed up a struct whose
+                // field pointed into the dead frame (-O0 55, -O2 4: the legs
+                // disagreed). Marked as a local's, a by-value parameter's or a
+                // `for` binding's store is (a pointer parameter's pointee is the
+                // caller's: unmarked), so rule 2 refuses it handed up and rule 3
+                // a copy of it into an outer holder. Measured first: the exemption
+                // fires at one site of the three trees, a test's local never handed
+                // up, and the mark moves no site.
+                drop escape_mark_place(x, tgt);
                 pass NIL;
             }
         }
@@ -3194,19 +3331,21 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     // were; the assignment fell to the refusal below (BORROW-002, the field
     // "storage the frame does not own outright"), the over-restriction DEF-287
     // registered (landing 153's `chain_deep_nav.npk` could not re-link a cut).
-    // A borrow rooted at a `for` BINDING is not admitted here and keeps the
-    // refusal below (`refs_root_loop_binding`): the predicates this branch
-    // asks read such a binding as a PARAMETER.
+    // A borrow rooted at a `for` BINDING is asked the same question (DEF-288,
+    // landing 155): the binding is a block-scoped local of this frame, bounded
+    // by its loop, so a holder declared outside the loop is refused by the
+    // holder-scope question, and a binding's view is no parameter's to exempt.
+    // (Landing 154 kept such a store at the refusal below with a guard of its
+    // own, `refs_root_loop_binding`, while the predicates read the binding as a
+    // parameter; the guard is gone with the misreading.)
     if (fsym != 0i32) {
-        if (!(raw refs_root_loop_binding(x, val))) {
-            if (!(raw borrows_only_param_rooted(x, val, raw ESCAPE_DEPTH()))) {
-                Symbol:fs = raw symtab_get(x.tab, fsym);
-                bool:fparam = (fs.origin_kind == (raw SYM_DECL()));
-                drop check_field_holder_scope(x, fs.scope, val, fparam, s.span);
-                if (fparam) { drop escape_mark_param(x, fs.origin); } else { drop escape_mark(x, fs.origin); }
-            }
-            pass NIL;
+        if (!(raw borrows_only_param_rooted(x, val, raw ESCAPE_DEPTH()))) {
+            Symbol:fs = raw symtab_get(x.tab, fsym);
+            bool:fparam = (fs.origin_kind == (raw SYM_DECL()));
+            drop check_field_holder_scope(x, fs.scope, val, fparam, s.span);
+            if (fparam) { drop escape_mark_param(x, fs.origin); } else { drop escape_mark(x, fs.origin); }
         }
+        pass NIL;
     }
 
     drop escape_err(x, raw BORROW_STORED(),
@@ -3284,51 +3423,30 @@ func:field_store_root = int32(Escape->:x, ExprId:tgt) never fails {
 // names the binding the field belongs to.
 func:check_field_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, bool:param_holder,
                                     Span:at) never fails {
-    if (raw holder_scope_violated(x, holder_scope, val, param_holder)) {
+    int32:vr = raw holder_scope_root(x, holder_scope, val, param_holder);
+    if (vr == 0i32) { pass NIL; }
+    if (raw sym_is_loop_binding(x, vr)) {
         drop escape_err(x, raw BORROW_STORED(),
-            "a borrow cannot be stored here: the binding this field belongs to is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42; a field is its binding's own storage, DEF-287) -- declare the binding inside that block, or pass the borrow down",
+            "a borrow of a `for` binding cannot be stored here: the binding this field belongs to is declared outside the loop, and a `for` binding lives only for its loop -- its address is its own slot, and a view of it views the element it copies (D-004 rule 3, DEF-42, DEF-288; a field is its binding's own storage, DEF-287) -- declare the binding inside the loop, borrow the element itself, or store a copy",
             at);
+        pass NIL;
     }
+    drop escape_err(x, raw BORROW_STORED(),
+        "a borrow cannot be stored here: the binding this field belongs to is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42; a field is its binding's own storage, DEF-287) -- declare the binding inside that block, or pass the borrow down",
+        at);
     pass NIL;
-};
-
-// A `for` BINDING AMONG THE VALUE'S ROOTS (found by DEF-287's probes, landing 154). The escape analysis reads a
-// `for` binding -- a `DeclParamDecl` declared in a block scope the loop opens (resolve.npk) -- as a PARAMETER:
-// `view_root_is_param` and `heap_backed_view` answer that a view of its string's bytes is the storage a caller
-// handed in, so `borrows_only_param_rooted` exempts it from rules 2 and 3 (a function returning
-// `string_bytes(s)` of `for (string:s in arr)` over a local array compiles and its caller reads the freed bytes,
-// on every compiler before this landing), and `push_frame_root` leaves it out of the holder-scope question
-// (`p = @e` into a pointer local outside the loop is admitted). Both are older than DEF-287 and are the bare and
-// literal forms' as well. The field branch does not widen them: a value carrying a borrow rooted at a `for`
-// binding -- read off the refs the value carries (`collect_view_refs` roots `@e`, `$$i e`, `string_bytes(s)` and
-// a pointer binding's carried value at the binding) -- is not admitted there and keeps the refusal every field
-// store had before landing 154 (the array a `for` walks, declared in a block the holder outlives, freed its
-// bytes under the field: exit 170 at both legs, measured). A parameter of the current function is no `for`
-// binding.
-func:refs_root_loop_binding = bool(Escape->:x, ExprId:val) never fails {
-    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
-    drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
-    for (int64:i in 0i64...refs.count) {
-        ViewRef:lr = refs[i];
-        if (lr.root == 0i32) { continue; }
-        Symbol:ls = raw symtab_get(x.tab, lr.root);
-        if (ls.origin_kind != (raw SYM_DECL())) { continue; }
-        DeclNode:ld = raw ast_decl(x.ast, DeclId{ index: ls.origin });
-        if (ld.kind != DeclKind.DeclParamDecl) { continue; }
-        if ((raw param_index_of(x, lr.root)) >= 0i32) { continue; }
-        pass true;
-    }
-    pass false;
 };
 
 // --- rule 3 for a local holder (DEF-42, 1.5.5 step 0) --------------------------
 //
 // THE HOLDER'S BLOCK MUST NOT ENCLOSE THE ROOT'S. A borrow's root is a local
-// (`SYM_STMT`) or a `pick` binding (`SYM_PAT`), each declared in one block
-// scope (`Symbol.scope`; a local is in scope from its declaration to its
-// block's end, resolve.npk); a holder declared in an ANCESTOR of that scope is
-// alive after the root's storage has ended. A parameter or a global root
-// (`SYM_DECL`) outlives every block of the function and is never the subject.
+// (`SYM_STMT`), a `pick` binding (`SYM_PAT`) or a `for` binding (a `SYM_DECL`
+// that is no parameter, DEF-288: declared in the block scope its loop opens),
+// each declared in one block scope (`Symbol.scope`; a local is in scope from its
+// declaration to its block's end, resolve.npk); a holder declared in an ANCESTOR
+// of that scope is alive after the root's storage has ended. A parameter or a
+// global root (`SYM_DECL`) outlives every block of the function and is never the
+// subject.
 // The value is walked for every root it carries: the operands of `@`/`$$`, a
 // binding that already holds a borrow (a COPY of a holder carries the
 // holder's roots -- conservatively, the holder ITSELF is compared, since its
@@ -3350,8 +3468,8 @@ func:scope_strictly_inside = bool(SymbolTable->:tab, int32:inner, int32:outer) n
 
 // THE PREDICATE (DEF-42; asked of a direct store by `check_holder_scope` and of a
 // callee's store by `refuse_call_holder_scope`, DEF-252): does `val` carry a
-// borrow rooted at a local or pattern binding declared strictly inside the
-// holder's scope?
+// borrow rooted at a local, a pattern binding or a `for` binding declared
+// strictly inside the holder's scope?
 // A PARAMETER HOLDER'S BOUND IS THE BODY'S BLOCK (DEF-252): the resolver declares
 // a parameter in the FUNCTION scope and opens the body as a block one scope
 // below it (resolve.npk's `resolve_decl` and the block statement's
@@ -3360,33 +3478,54 @@ func:scope_strictly_inside = bool(SymbolTable->:tab, int32:inner, int32:outer) n
 // declared directly in the body's block is no violation, and one declared in
 // any block inside it is.
 func:holder_scope_violated = bool(Escape->:x, int32:holder_scope, ExprId:val, bool:param_holder) never fails {
+    pass ((raw holder_scope_root(x, holder_scope, val, param_holder)) != 0i32);
+};
+
+// THE ROOT THAT VIOLATES (DEF-288): the first local, pattern binding or `for`
+// binding `val` borrows that is declared strictly inside the holder's scope, or
+// 0 -- so a report can say what is true of the root it names. A `for` binding is
+// declared in the block scope its loop opens (resolve.npk), so a holder declared
+// outside the loop outlives it and one declared in the loop's body does not.
+func:holder_scope_root = int32(Escape->:x, int32:holder_scope, ExprId:val, bool:param_holder) never fails {
     List<int32>:roots = raw list_init::<int32>(4i64);
     drop collect_local_roots(x, val, raw ESCAPE_DEPTH(), @roots);
     for (int64:i in 0i64...roots.count) {
         Symbol:rs = raw symtab_get(x.tab, roots[i]);
-        if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) { continue; }
+        if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) {
+            if (!(raw symbol_is_loop_binding(x, rs))) { continue; }
+        }
         if (param_holder) { if ((raw scope_parent(x.tab, rs.scope)) == holder_scope) { continue; } }
-        if (raw scope_strictly_inside(x.tab, rs.scope, holder_scope)) { pass true; }
+        if (raw scope_strictly_inside(x.tab, rs.scope, holder_scope)) { pass roots[i]; }
     }
-    pass false;
+    pass 0i32;
 };
 
 func:check_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, Span:at) never fails {
-    if (raw holder_scope_violated(x, holder_scope, val, false)) {
+    int32:vr = raw holder_scope_root(x, holder_scope, val, false);
+    if (vr == 0i32) { pass NIL; }
+    if (raw sym_is_loop_binding(x, vr)) {
         drop escape_err(x, raw BORROW_STORED(),
-            "a borrow cannot be stored here: this binding is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42) -- declare the holder inside that block, or pass the borrow down",
+            "a borrow of a `for` binding cannot be stored here: this binding is declared outside the loop, and a `for` binding lives only for its loop -- its address is its own slot, and a view of it views the element it copies (D-004 rule 3, DEF-42, DEF-288) -- declare the holder inside the loop, borrow the element itself, or store a copy",
             at);
+        pass NIL;
     }
+    drop escape_err(x, raw BORROW_STORED(),
+        "a borrow cannot be stored here: this binding is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42) -- declare the holder inside that block, or pass the borrow down",
+        at);
     pass NIL;
 };
 
-// A place's root symbol pushed when it is a frame binding; 0 and parameters
-// are left out (a parameter's target outlives the frame).
+// A place's root symbol pushed when it is a frame binding -- a local, a pattern
+// binding, a `for` binding (DEF-288: a block-scoped local of this frame, which
+// this walk had read as a parameter and left out); 0 and parameters are left out
+// (a parameter's target outlives the frame).
 func:push_frame_root = NIL(Escape->:x, ExprId:place, List<int32>->:out) never fails {
     int32:r = raw root_symbol(x, place);
     if (r == 0i32) { pass NIL; }
     Symbol:rs = raw symtab_get(x.tab, r);
-    if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) { pass NIL; }
+    if ((rs.origin_kind != (raw SYM_STMT())) && (rs.origin_kind != (raw SYM_PAT()))) {
+        if (!(raw symbol_is_loop_binding(x, rs))) { pass NIL; }
+    }
     drop list_push(out, r);
     pass NIL;
 };
@@ -4239,6 +4378,7 @@ func:arg_carries_view = bool(Escape->:x, ExprId:a) never fails {
         if ((r.kind != (raw VIEW_DIRECT())) && (r.kind != (raw VIEW_LAUNDERED()))) { continue; }
         Symbol:rs = raw symtab_get(x.tab, r.root);
         if ((rs.origin_kind == (raw SYM_STMT())) || (rs.origin_kind == (raw SYM_PAT()))) { pass true; }
+        if (raw symbol_is_loop_binding(x, rs)) { pass true; }   // a local of this frame (DEF-288)
         if (rs.origin_kind == (raw SYM_DECL())) {
             DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: rs.origin });
             if (pd.kind == DeclKind.DeclParamDecl) {
@@ -4279,6 +4419,9 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
     Symbol:sym = raw symtab_get(x.tab, rn.a);
     if (sym.origin_kind == (raw SYM_STMT())) { pass true; }
     if (sym.origin_kind == (raw SYM_PAT()))  { pass true; }
+    // a `for` binding is a local of this frame (DEF-288): its slot is this frame's
+    // and its bytes are the element's, whatever its type
+    if (raw symbol_is_loop_binding(x, sym))  { pass true; }
     // A BY-VALUE PARAMETER'S FRAME STORAGE IS THIS FRAME'S (DEF-109): its
     // address or an inline view of it beside a destination can escape exactly
     // as a local's can; a view of the HEAP bytes it references is the
@@ -4675,6 +4818,9 @@ func:escape_mark_place = NIL(Escape->:x, ExprId:place) never fails {
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, rn.a);
+    // a `for` binding holds from here as a local does, whatever its type, marked
+    // by its declaration (DEF-288)
+    if (raw symbol_is_loop_binding(x, s)) { drop escape_mark_param(x, s.origin); pass NIL; }
     // a BY-VALUE parameter is this frame's storage and holds from here (a
     // pointer parameter's target is the caller's: the shape rule refuses it)
     if (raw sym_is_value_param(x, s, r.id.index)) { drop escape_mark_param(x, s.origin); pass NIL; }

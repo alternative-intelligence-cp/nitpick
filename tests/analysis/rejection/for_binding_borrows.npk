@@ -1,0 +1,229 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 57:26
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 66:14
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 78:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 88:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 99:13
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 111:13
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 122:19
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 133:9
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 147:9
+// A `for` BINDING IS A BLOCK-SCOPED LOCAL OF THIS FRAME, LIVE FOR ITS LOOP (DEF-288, landing 155). The resolver declares
+// the binding as a `DeclParamDecl` in the block scope its loop opens, and the escape analysis read every `DeclParamDecl`
+// as a PARAMETER of the function: a view of the binding's bytes was "the storage the caller handed in", `@` of a
+// pointer-typed one "a pointer parameter's target", and the holder-scope question left the binding out. So a function
+// returned `string_bytes(s)` of `for (string:s in arr)` over a LOCAL array and its caller read the freed bytes (reused:
+// 120 at both legs); `for (Node->:q in ptrs) { pass @q; }` handed up the binding's own slot in the dying frame and the
+// caller read through it (-O0 107, -O2 0: the legs disagreed); a view of a binding over an array declared in an inner
+// block, kept in an outer holder past the block, read the freed array (170 at both legs); and a binding that HELD a
+// view a callee stored into it froze nothing, so the iteration's write to the viewed local freed what the binding
+// viewed (113 at both legs). The analysis now asks one predicate -- a `DeclParamDecl` is a parameter exactly when the
+// function being walked declares it among its parameters -- and reads a `for` binding as the local it is: rule 2
+// refuses its address or view handed up (BORROW-001), rule 3 refuses either stored into a holder declared outside the
+// loop (BORROW-002, the holder-scope question, through a bare local, a field and a callee's store alike), and the
+// views the binding holds freeze their roots over the loop's body (BORROW-015). A VIEW of the binding views the
+// ELEMENT it copies (the binding is a bit copy of the element's header: its bytes are the collection's), and `@` of it
+// is its own slot. The sites, one report each: rule 2 for a view and for a pointer binding's slot; rule 3 into a bare
+// pointer local, a bare view local, a bare view local over an inner block's array, a local's field, through a callee,
+// and through a copy of a view-holding body local; the freeze of a local the binding views. The controls at the end
+// carry no code: the binding read inside its loop, a view of it held inside the loop, a holder of its address declared
+// in the loop's body, a callee's store into it read in the same iteration, a copy of the element kept past the loop, a
+// view of the ELEMENT itself (`arr[i]`) kept past the loop in the array's own block, and a view of a slice parameter's
+// element handed up.
+mod:for_binding_borrows;
+
+struct:Node = { int32:v; Node->?:next; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+
+func:keep = NIL(Holder->:dst, fixed uint8[]:src) never fails {
+    dst.v = src;
+    pass NIL;
+};
+
+// --- rule 2: a borrow of a `for` binding handed up ------------------------------------------------------------------
+
+// h13's shape: the view's bytes are the LOCAL array's element's
+func:ret_view = fixed uint8[]() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    for (string:s in arr) {
+        pass string_bytes(s);
+    }
+    pass string_bytes("zz");
+};
+
+// h18's shape: `@q` is the binding's own slot in this frame, not what it points at
+func:ret_slot = Node->->?(Node->:a) never fails {
+    Node->[1]:ptrs = [a];
+    for (Node->:q in ptrs) {
+        pass @q;
+    }
+    pass NIL;
+};
+
+// --- rule 3: a borrow of a `for` binding stored into a holder declared outside its loop -----------------------------
+
+// h03's shape: the binding's address into an outer pointer local
+func:store_addr_bare = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    Node->?:p = NIL;
+    for (Node:e in arr) {
+        p = @e;
+    }
+    pass (p?.v ?? 0i32);
+};
+
+// h07's shape: a view of the binding into an outer view local
+func:store_view_bare = int32() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    (fixed uint8[]):v = string_bytes("zz");
+    for (string:s in arr) {
+        v = string_bytes(s);
+    }
+    pass (v[0i64] => int32);
+};
+
+// h17's shape: the array in an inner block, the view kept past it
+func:store_view_inner_array = int32() never fails {
+    (fixed uint8[]):v = string_bytes("zz");
+    if (true) {
+        string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+        for (string:s in arr) {
+            v = string_bytes(s);
+        }
+    }
+    pass (v[0i64] => int32);
+};
+
+// h16's shape: a view of the binding into an outer local's field
+func:store_view_field = int32() never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    if (true) {
+        string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+        for (string:s in arr) {
+            h.v = string_bytes(s);
+        }
+    }
+    pass (h.v[0i64] => int32);
+};
+
+// the callee's store: `keep` stores its second argument into what its first names
+func:store_view_callee = int32() never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    for (string:s in arr) {
+        drop keep(@h, string_bytes(s));
+    }
+    pass (h.v[0i64] => int32);
+};
+
+// a body local holding a view of the binding, copied into a holder outside the loop
+func:store_view_copied_out = int32() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    (fixed uint8[]):out = string_bytes("zz");
+    for (string:s in arr) {
+        (fixed uint8[]):w = string_bytes(s);
+        out = w;
+    }
+    pass (out[0i64] => int32);
+};
+
+// --- the freeze: a view the binding HOLDS freezes its root over the loop's body -------------------------------------
+
+// p08's shape: `keep` stores a view of the body local `t` into the binding; `t` written while the binding views it
+func:binding_holds_view = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 1i32 }, Holder{ v: string_bytes("zz"), k: 2i32 }];
+    int32:got = 0i32;
+    for (Holder:h in arr) {
+        string:t = string_concat("ab", "cd");
+        drop keep(@h, string_bytes(t));
+        t = string_concat("xy", "zw");
+        got = h.v[0i64] => int32;
+    }
+    pass got;
+};
+
+// --- controls: legal, no code --------------------------------------------------------------------------------------
+
+func:ctl_read_inside = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    int32:sum = 0i32;
+    for (Node:e in arr) {
+        sum = sum + e.v;
+    }
+    pass sum;
+};
+func:ctl_view_inside = int32() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    int32:sum = 0i32;
+    for (string:s in arr) {
+        (fixed uint8[]):w = string_bytes(s);
+        sum = sum + (w[0i64] => int32);
+    }
+    pass sum;
+};
+func:ctl_addr_holder_inside = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    int32:sum = 0i32;
+    for (Node:e in arr) {
+        Node:n = Node{ v: 0i32, next: @e };
+        sum = sum + (n.next?.v ?? 0i32);
+    }
+    pass sum;
+};
+func:ctl_callee_store_inside = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 1i32 }, Holder{ v: string_bytes("zz"), k: 2i32 }];
+    int32:sum = 0i32;
+    for (Holder:h in arr) {
+        string:t = string_concat("ab", "cd");
+        drop keep(@h, string_bytes(t));
+        sum = sum + (h.v[0i64] => int32);
+    }
+    pass sum;
+};
+func:ctl_copy_out = int64() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    string:kept = string_concat("", "");
+    for (string:s in arr) {
+        kept = string_concat("", s);
+    }
+    pass kept.len;
+};
+func:ctl_element_view_out = int32() never fails {
+    string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    (fixed uint8[]):v = string_bytes("zz");
+    for (int64:i in 0i64...2i64) {
+        v = string_bytes(arr[i]);
+    }
+    pass (v[0i64] => int32);
+};
+func:ctl_param_slice_element = fixed uint8[](string[]:xs) never fails {
+    pass string_bytes(xs[0i64]);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (LimitViolated)     { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

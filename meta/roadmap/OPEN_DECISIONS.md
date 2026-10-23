@@ -3303,7 +3303,7 @@ defect declares a `DEF-` in §2f.
 > of 2026-10-15 reads rule 3 as block nesting for a holder this frame owns, and the assignment form hid the hole above.
 > `tests/backend/programs/field_store_borrow.npk`, `tests/analysis/rejection/field_store_scope.npk`.
 
-> **DEF-288 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
+> **DEF-288 — FIXED 2026-10-23 (landing 155; built by the DEF-288 agent (Opus) under `nitpick-compiler_43` from the seat's brief, read whole and landed by `nitpick-compiler_43`; registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
 > use-after-free in safe code at both legs, and a legs disagreement). THE ESCAPE ANALYSIS READS A `for` BINDING AS A PARAMETER OF
 > THE FUNCTION.** The resolver declares a `for` binding as a `DeclParamDecl` in the block scope its loop opens (resolve.npk; the
 > emitter and the bindings analysis read it right since DEF-127 and DEF-144), and escape.npk reads every `DeclParamDecl` symbol
@@ -3325,6 +3325,31 @@ defect declares a `DEF-` in §2f.
 > 07:49 (its 435 files and every plan's .npk patches, lexed with comments and strings blanked: 94 and 114 `for` loops): no view
 > or address of a `for` binding leaves its iteration -- the two statements that carry a binding's value out copy a scalar -- and
 > none of DEF-289's, DEF-290's or DEF-291's shapes; the libraries hold no shape of the four open rows at their pin.
+> FIXED AT 155: ONE PREDICATE -- `param_decl_index(x, decl) >= 0` (escape.npk; the body of `param_index_of`), behind
+> `symbol_is_param` and its complement over the kind `symbol_is_loop_binding` -- at the fifteen sites that asked the
+> declaration's KIND (`root_is_param`, `view_root_is_param`, `collect_view_refs`' identifier arm, `push_frame_root`,
+> `holder_scope_violated` -> `holder_scope_root`, `ref_root_is_frame_owned`, `arg_carries_view`, `arg_root_is_local`,
+> `sym_is_value_param`, `escape_mark_place`, `refuse_view_escape_into`'s three branches, `refuse_call_holder_scope`,
+> `check_field_holder_scope`, `escape_return_value`). A `for` binding is a BLOCK-SCOPED LOCAL of this frame, bounded by its
+> loop (its `Symbol.scope` is the block scope the loop opens), a bit copy of the element's header in a function-lifetime slot
+> (`emit_for_indexed`): rule 2 refuses its view or address handed up (BORROW-001, h13/h18/h18b), rule 3 refuses either
+> stored into a holder declared outside the loop -- a bare local, a field, a callee's store (BORROW-002, h03/h07/h17/h16;
+> `holder_scope_root` answers the VIOLATING root so each sentence names what it refuses), its identifier carries its own
+> chain, it is marked as a local is, and as a destination it takes a by-value parameter's questions with its loop body as its
+> bound (a `dyn` binding's cell is the collection's; a pointer-typed one a pointer local's reading); landing 154's guard
+> `refs_root_loop_binding` is gone. In alias.npk the views a binding HOLDS are parties live over the loop body
+> (`push_loop_binding_parties`, inside a frame the `for` arm pushes): a callee's store of a body local's view into the binding
+> freezes the local (BORROW-015, p08: 113/113 before). THE COST, measured and kept: a view of the binding is bounded by its LOOP,
+> not the collection's storage, so three benign shapes are refused (a view kept past the loop while the array lives, h07;
+> `string_bytes(s)` of a binding over a SLICE PARAMETER returned, p02 -- write `string_bytes(xs[i])`; nested bindings, p13),
+> none in the three trees. THE REFINEMENT NOT BUILT: a view of the binding rooted at the ITERABLE (its scope the collection's,
+> a parameter's when the iterable is one) needs a declaration-to-iterable map recorded at `escape_stmt`'s `for` arm and read by
+> `view_root` and `collect_view_refs`; it would admit the three and still refuse h13, h17 and h16, and would let the identifier
+> arm carry the iterable's refs too (DEF-294) -- to be measured when a program needs it. HOW THE PREDICATE FAILS: it reads
+> `x.cur_fn` (exact inside every function body; a module binding's initialiser declares no `DeclParamDecl`); a NEW kind that
+> declared a `DeclParamDecl` symbol would read as a `for` binding; the destination bound is one level too wide for a binding
+> declared directly IN a body block, which nothing does today. The checker's sentences for the binding are DEF-295.
+> `tests/analysis/rejection/for_binding_borrows.npk`, `tests/backend/programs/for_binding_borrows_ok.npk`.
 
 > **DEF-289 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
 > use-after-free in safe code at both legs). A VIEW OF A POINTER PARAMETER'S POINTEE STORED THROUGH A SLICE'S ELEMENT FREEZES
@@ -3333,19 +3358,76 @@ defect declares a `DEF-` in §2f.
 > ARRAY the slice views, so recording the view on the slice's binding is not the right fix; where a store through a view lands is
 > a design question (`record_flow_of_store` answers it for a pointer local), landing 154 excludes slices from its branch on
 > purpose. Its own landing, with the question answered first.
+> A SECOND FACE (2026-10-23, landing 155, the DEF-288 agent's probe d05b): the same store through a slice PARAMETER into the
+> CALLER's array, the callee then writing the pointee -- 113/113 at both legs. A slice parameter has no store-matrix slot (a
+> pointer parameter's pointee has one), so no caller's freeze could see the store either. The mechanism, read: the target
+> `sl[0i64].v` roots at the slice binding, `field_store_root` excludes a slice base (the store lands in what the slice VIEWS),
+> the value is no borrow of this frame, so the verdict admits it and it is RECORDED NOWHERE. The design question stands: the
+> slice's own chain names what it views (`Holder[]:sl = arr[0i64...2i64]` records a VIEW_DIRECT ref rooted at `arr`), so a
+> store through `sl[i]` could record the value's refs on each view root of the slice's chain and ask the holder-scope question
+> of that root; a slice parameter needs a store-matrix slot as a pointer parameter has. Both faces one landing.
 
-> **DEF-290 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; MEDIUM-HIGH:
+> **DEF-290 — FIXED 2026-10-23 (landing 155, with DEF-288; registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; MEDIUM-HIGH:
 > a legs disagreement, a wrong value at -O0). THE SELF-WIRING EXEMPTION RETURNS BEFORE THE MARK, SO A SELF-WIRED STRUCT IS HANDED
 > UP BY VALUE.** `t.p = @t.a; pass t;` (0.8.1's exemption in `escape_assign`, the shape the compiler's own `f.g = graph_init($$m
 > f.it, …)` has) returns a struct whose field points into the dead frame: the caller reads 55 at -O0 (the next call's stack) and
 > 4 at -O2 (e04b). Marking the self-wired holder would make rule 2 refuse the return; whether any self-wired holder of the three
 > trees is returned by value is measured first (the DEF-288 brief asks the agent for the count). Its own small landing.
+> FIXED AT 155, by the brief's own rule -- one line, the mark alone, nothing of the trees moved: `drop escape_mark_place(x, tgt);`
+> before the exemption's `pass NIL` in `escape_assign` marks the self-wired holder (a local, a by-value parameter or a `for`
+> binding; a pointer parameter's root stays unmarked, `sym_is_value_param` testing the root's type), so rule 2 refuses it handed
+> up (e04b, e04: BORROW-001) and rule 3 a copy of it into an outer holder (BORROW-002). MEASURED FIRST two ways: textually 16
+> assignments of the self-wiring SHAPE in 5,403 files (the pipeline's three `f.g = raw graph_init(@f.it, …)`, types.npk's seven
+> `tt_intern(@t, …)`, type_members' two, floor_cfg's two, floor_explore's one, nitpick-regex's `p.f = raw vec_pop(@p.frames)`),
+> and by a census build that warns where the exemption FIRES, swept over 5,267 files: ONE firing (`view_freeze.npk`:159, a local
+> never handed up), none of the 16 reaching it (their value is no borrow of this frame -- a pointer parameter's pointee, an
+> `int32` result); a trial build with the mark swept against the landing's own sweep: 0 vanished, 0 appeared.
+> `tests/analysis/rejection/self_wire_handed_up.npk`.
 
 > **DEF-291 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; LOW: the wrong
 > tool). A `for` OVER AN ARRAY TEMPORARY PASSES THE CHECKER AND IS EMIT-002.** `for (string:s in [raw mk(), raw mk()]) { … }`
 > passes every analysis and dies in the emitter as `NITPICK-EMIT-002` on both compilers (h10, h12); a view of the binding kept
 > past the loop (h10) is a latent use-after-free the day the emitter learns to lower the shape. Refuse it by name in the checker,
 > or lower it with the temporary the statement's: its own small landing, with DEF-288's reading of the binding.
+
+> **DEF-292 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 155, from the DEF-288 agent's probes; HIGH: a
+> dangling slot handed up, the legs disagreeing). `pass @a` OF A POINTER PARAMETER'S OWN SLOT COMPILES.** `root_is_param`
+> (escape.npk) exempts `@a` of a pointer parameter as "a pointer parameter's target outlives the frame", but the operand is the
+> BARE NAME -- its address is the parameter's slot in the dying frame, not the target. `func:f = Node->->?(Node->:a) never fails {
+> pass @a; }`: compiles on every compiler to date; the caller reads through the result after a clobbering call -O0 107
+> (`MachineFault`), -O2 0 (p01). h18's parameter twin (landing 155 closed the `for` binding's). Candidate fix: in
+> `borrows_only_param_rooted`'s `@`/`$$` arms a bare identifier operand is its own slot -- exempt only a place with a step through
+> the pointer (`@a.f`, `@(<-a)`); unmeasured over the three trees. Its own small landing, measured first.
+
+> **DEF-293 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 155, from the DEF-288 agent's probes; HIGH: a
+> use-after-free in safe code at both legs). THE ITERATED ARRAY WRITTEN WHILE ITS `for` BINDING ALIASES AN OWNING ELEMENT IS
+> REFUSED BY NOTHING.** `for (string:s in arr) { arr[0i64] = string_concat("xy", "zw"); … string_bytes(s) … }`: the binding is a
+> bit copy of the element's header (`emit_for_indexed`), the write drops the old element's body, and the binding's view reads it
+> freed -- 113 at both legs (p04), on both compilers. The aliasing walk reads the iterable as a READ and holds no party for the
+> binding's alias of the element (landing 155's parties are the binding's own, as root and as holder; never the iterable's). A
+> design question: freeze the iterable's root over the loop body when the element type owns (D-325's shape, the `for` statement
+> the view's holder), or over every element type. Measured over the three trees first (a loop that writes its own collection would
+> be refused). Its own landing.
+
+> **DEF-294 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 155, from the DEF-288 agent's probes; HIGH: a
+> dangling pointer handed up, the legs disagreeing). A POINTER'S PROVENANCE IS LAUNDERED THROUGH A `for` BINDING'S VALUE.** An
+> element carrying a PARAMETER's pointer is no borrow of this frame, so the loop does not refuse the iterable (`for_binding_can_carry`),
+> and the binding's VALUE -- that pointer -- returned from the function loses the parameter's provenance in the callee's summary
+> (rule A by provenance, D-326: `collect_view_refs` carries the binding's own chain, never the iterable's refs), so the caller's
+> holder is not marked as borrowing the argument: `Node->[1]:ptrs = [a]; for (Node->:q in ptrs) { pass q; }` handed up with `a`
+> the address of a block-scoped local, read after the block -O0 94, -O2 0 (p10); the index twin `pass ptrs[0i64]` is BORROW-001
+> (p11). The iterable-rooted refinement recorded under DEF-288 would let the identifier arm carry both. Its own landing, with
+> DEF-288's refinement or without it, measured first.
+
+> **DEF-295 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 155, from the DEF-288 agent's report; LOW: text
+> alone). THREE SENTENCES NAME A `for` BINDING A PARAMETER.** The checker's TYPE-047 ("this parameter was lent, not given … the
+> caller still holds it") for a move out of a `for` binding and TYPE-085 ("a plain parameter of an owning type is LENT … the caller
+> still owns") for an assignment to it or an owning field's write (type_expr.npk, type_members.npk: the right refusals, a
+> parameter's words -- the collection holds the element); escape.npk's `refuse_one_param_dest` ("this parameter-rooted
+> destination") for an unknown callee's store into a `for`-binding-rooted destination -- the closed direction, kept on purpose,
+> since answering "a local destination" there needs the `dyn` binding's cell question first; and alias.npk's `bare_local_symbol`
+> and `alias_fn` reading a `for` binding holder's pre-scanned party as a parameter's (live at entry; every store that reaches it is
+> refused by the escape analysis, p14). A sentence each, with DEF-288's reading of the binding; no refusal moves.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

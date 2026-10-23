@@ -1,0 +1,77 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 28:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 33:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 41:9
+// A SELF-WIRED HOLDER HOLDS A BORROW OF ITSELF (DEF-290, landing 155). Storing into a field of `X` a value whose
+// borrows are all rooted at `X` -- `t.p = @t.a`, the pipeline's `f.g = graph_init($$m f.it, …)` shape -- is admitted
+// (0.8.1): a pointer into X held inside X dies with X. Until this landing the admission returned before the holder was
+// MARKED, so nothing remembered that X held a pointer into itself, and `pass t` handed a struct up by value whose field
+// pointed into the dead frame: the caller read the next call's stack through it (-O0 55, -O2 4 -- the legs disagreed),
+// and a copy of X into a holder declared outside X's block carried the same dangling field. The holder is marked now,
+// as a local's, a by-value parameter's or a `for` binding's store marks it, so rule 2 refuses it handed up
+// (BORROW-001) and rule 3 a copy of it into an outer holder (BORROW-002); a pointer parameter's pointee is the
+// caller's storage and is not marked. Measured before the change: the admission fires at one site of the three trees
+// (`view_freeze.npk`'s local, never handed up), and the mark moves no site anywhere. The sites, one report each: a
+// self-wired local handed up, a self-wired by-value parameter handed up, a self-wired local copied into a holder
+// declared outside its block. The controls carry no code: the self-wired local read where it lives, and a pointer
+// parameter's pointee self-wired.
+mod:self_wire_handed_up;
+
+struct:Two = { int32:a; int32->?:p; };
+
+// e04b's shape
+func:local_handed_up = Two() never fails {
+    Two:t = Two{ a: 4i32, p: NIL };
+    t.p = @t.a;
+    pass t;
+};
+
+func:param_handed_up = Two(Two:b) never fails {
+    b.p = @b.a;
+    pass b;
+};
+
+func:local_copied_out = int32() never fails {
+    Two:o = Two{ a: 0i32, p: NIL };
+    if (true) {
+        Two:t = Two{ a: 4i32, p: NIL };
+        t.p = @t.a;
+        o = t;
+    }
+    pass o.a;
+};
+
+// --- controls: legal, no code --------------------------------------------------------------------------------------
+
+func:ctl_local_used = int32() never fails {
+    Two:t = Two{ a: 4i32, p: NIL };
+    t.p = @t.a;
+    int32:dummy = 0i32;
+    pass <-(t.p ?? @dummy);
+};
+func:ctl_ptr_param_pointee = NIL(Two->:t) never fails {
+    t.p = @t.a;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (LimitViolated)     { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
