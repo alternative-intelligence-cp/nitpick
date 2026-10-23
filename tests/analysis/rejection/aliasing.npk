@@ -212,16 +212,22 @@ func:pos_nested = int32() never fails {
     pass v;
 };
 
-// Assigned to a field: the escape rule's BORROW-002 (a borrow stored into an
-// aggregate, D-004 rule 3) and the claim-position rule both speak -- two rules
-// about one statement, each about a different thing it does.
+// Assigned to a field of a holder that outlives the claimed local: the escape
+// rule's BORROW-002 (D-004 rule 3: `h` is declared outside the block that
+// declares `x`) and the claim-position rule both speak -- two rules about one
+// statement, each about a different thing it does. Since DEF-287 (landing 154)
+// a field of a local is that local's own storage, so the same store with `x`
+// beside `h` is the claim-position rule's alone (`field_store_scope.npk`); the
+// case puts `x` in an inner block to keep the escape rule's half.
 // expect-error: NITPICK-BORROW-002
 // expect-error: NITPICK-BORROW-014
 func:pos_field = int32() never fails {
-    int32:x = 1i32;
     int32:z = 0i32;
     Holder:h = Holder{ inner: @z };
-    h.inner = $$m x;
+    if (true) {
+        int32:x = 1i32;
+        h.inner = $$m x;
+    }
     pass (<-h.inner);
 };
 

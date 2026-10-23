@@ -3269,7 +3269,7 @@ defect declares a `DEF-` in §2f.
 > other kind is keyed, and retire the structural comparison; its own landing, measured first -- every emission's drop-body names
 > move once, the manifest re-keys once, and the type table of the compiler's own build shrinks by the duplicates.
 
-> **DEF-287 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 153, found by the DEF-282 agent building the
+> **DEF-287 — FIXED 2026-10-23 (landing 154; built by the DEF-287 agent (Opus) under `nitpick-compiler_43` from the seat's brief, read whole and landed by `nitpick-compiler_43`; registered 2026-10-23 by `nitpick-compiler_43` at landing 153, found by the DEF-282 agent building the
 > landing's test; LOW: a refusal of a legal store, with a spelling that stands). A FIELD STORE OF A SAME-BLOCK LOCAL'S ADDRESS
 > IS REFUSED WHERE THE LITERAL FORM IS ACCEPTED.** `Node:n101 = Node{ v: 1101i32, next: NIL }; Node:n100 = Node{ v: 1100i32,
 > next: @n101 };` compiles, and `n100.next = @n101;` on the same two locals is `NITPICK-BORROW-002` ("only a local binding
@@ -3280,6 +3280,72 @@ defect declares a `DEF-` in §2f.
 > bare-local branch asks it; `chain_deep_nav.npk` cuts a link with `n5.next = NIL;` and never re-links, for this reason. Its
 > own small landing, measured over the three trees first (nothing in them spells the refused shape today, or it would have
 > been found).
+> FIXED AT 154, AND A HOLE CLOSED WITH IT: a field path over a struct (not the prelude's `List`, whose fields are its header),
+> a fixed array's or a `List`'s element, down to a LOCAL of this frame or a BY-VALUE parameter of this function with no pointer,
+> `<-`, `?.` or slice step on the way (`field_store_root`, escape.npk), is that binding's own storage: `escape_assign` asks it
+> rule 3's question as the bare-local branch asks it (`check_field_holder_scope`: the binding's block must not enclose the
+> borrowed local's; a by-value parameter's bound is the body's block, DEF-252) and marks the root as the bare local is marked,
+> so `n100.next = @n101;` on same-block locals compiles, a holder declared outside the block that declares the local is
+> BORROW-002 at the statement with a sentence naming the binding, `pass n100` after the store is BORROW-001 as after the
+> literal, and a callee writing through `@n100` is judged as before (DEF-275). AND THE OTHER HALF OF THE ASSIGNMENT FORM: every
+> ref the stored value carries joins the root's chain (`record_view_refs_at_place`, the DECLARATION form's own record, proven
+> identical through `--dump-refs` on two probe pairs), so a view of a POINTER PARAMETER's pointee stored into a local's field,
+> a fixed array's element, a `List`'s element or a by-value parameter's field FREEZES its root now -- on landing 153's compiler
+> and every one before it `Holder:h = …; h.v = string_bytes(p.s); p.s = string_concat("x", "y"); h.v[0i64]` COMPILED and
+> read 170 at both legs (the free poison), a use-after-free in safe code the literal and bare-local spellings refused (BORROW-
+> 015); all four shapes are BORROW-015 now. NOT admitted by the branch: a slice's element (the store lands in the array the
+> slice views) and any value carrying a borrow rooted at a `for` BINDING (`refs_root_loop_binding`: the analysis reads such a
+> binding as a parameter, DEF-288 -- admitting it stored an inner array's freed bytes under an outer field, 170). THREE
+> rejection tests asserted the refused shape (`borrows.npk`'s `store_local_aggregate`, `path_shapes.npk`'s `escape_from_a_defer`,
+> `aliasing.npk`'s `pos_field`), each re-spelled with the borrowed local in an inner block, its purpose and code kept. This is
+> the relaxation D-004's Consequences anticipated ("relax it then, with evidence"): the evidence is that the literal form and
+> a callee's store through `@n.next` were admitted already, the bare-local branch admits the same-block address, D-004's note
+> of 2026-10-15 reads rule 3 as block nesting for a holder this frame owns, and the assignment form hid the hole above.
+> `tests/backend/programs/field_store_borrow.npk`, `tests/analysis/rejection/field_store_scope.npk`.
+
+> **DEF-288 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
+> use-after-free in safe code at both legs, and a legs disagreement). THE ESCAPE ANALYSIS READS A `for` BINDING AS A PARAMETER OF
+> THE FUNCTION.** The resolver declares a `for` binding as a `DeclParamDecl` in the block scope its loop opens (resolve.npk; the
+> emitter and the bindings analysis read it right since DEF-127 and DEF-144), and escape.npk reads every `DeclParamDecl` symbol
+> as a parameter: `root_is_param`, `view_root_is_param` (so `heap_backed_view` calls the binding's string's bytes "the storage the
+> caller handed in"), `collect_view_refs`' identifier arm (REF_PASS), the parameter tables of `push_binding_refs`/`ident_holds`/
+> `escape_binding`/`record_view_refs_at_place`, and `push_frame_root`, which pushes SYM_STMT and SYM_PAT roots alone, so the
+> holder-scope question never sees one. Measured on landing 153's compiler (`wt/43d/.internal/probes/def287/`): a function
+> returning `string_bytes(s)` of `for (string:s in arr)` over a LOCAL array compiles and its caller reads 120 at both legs, the
+> freed bytes reused (h13; `string_bytes(arr[0i64])` is BORROW-001); a view of a `for` binding over an array declared in an inner
+> block, kept in an outer view local and read after the block, reads 170 at both legs (h17); `for (Node->:q in ptrs) { pass @q; }`
+> returns the address of the binding's own SLOT in the dying frame -- the caller reads through it 107 at -O0 (`MachineFault`) and 0
+> at -O2 (h18b), the legs' one forbidden disagreement; a `for` binding's address or view stored into an outer BARE holder is
+> admitted (h03, h07; benign as measured, the slot a function-lifetime alloca). Landing 154's field branch refuses every such
+> store (`refs_root_loop_binding`) rather than widen the hole. THE FIX: one predicate -- a `DeclParamDecl` symbol is a parameter
+> exactly when `param_index_of` answers one, every other is a block-scoped LOCAL -- asked at every site above; then rule 2 refuses
+> the return and rule 3 the outer store, the freeze and the aliasing walk see the view, and landing 154's guard goes. Its own
+> landing, measured first over the three trees (a library storing or returning a `for` binding's view would be refused). In
+> flight at the registration: built by an agent in `wt/43e` from `.internal/DEF288_BRIEF.md`. The library seat's scan of 2026-10-23
+> 07:49 (its 435 files and every plan's .npk patches, lexed with comments and strings blanked: 94 and 114 `for` loops): no view
+> or address of a `for` binding leaves its iteration -- the two statements that carry a binding's value out copy a scalar -- and
+> none of DEF-289's, DEF-290's or DEF-291's shapes; the libraries hold no shape of the four open rows at their pin.
+
+> **DEF-289 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
+> use-after-free in safe code at both legs). A VIEW OF A POINTER PARAMETER'S POINTEE STORED THROUGH A SLICE'S ELEMENT FREEZES
+> NOTHING.** `uint8[]`-shaped: `sl[0i64].v = string_bytes(p.s);` with `sl` a local slice viewing a local array of structs and `p`
+> an `S->` parameter, then `p.s = …`, then `sl[0i64].v[0i64]`: compiles and reads 170 at both legs (d05). The store lands in the
+> ARRAY the slice views, so recording the view on the slice's binding is not the right fix; where a store through a view lands is
+> a design question (`record_flow_of_store` answers it for a pointer local), landing 154 excludes slices from its branch on
+> purpose. Its own landing, with the question answered first.
+
+> **DEF-290 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; MEDIUM-HIGH:
+> a legs disagreement, a wrong value at -O0). THE SELF-WIRING EXEMPTION RETURNS BEFORE THE MARK, SO A SELF-WIRED STRUCT IS HANDED
+> UP BY VALUE.** `t.p = @t.a; pass t;` (0.8.1's exemption in `escape_assign`, the shape the compiler's own `f.g = graph_init($$m
+> f.it, …)` has) returns a struct whose field points into the dead frame: the caller reads 55 at -O0 (the next call's stack) and
+> 4 at -O2 (e04b). Marking the self-wired holder would make rule 2 refuse the return; whether any self-wired holder of the three
+> trees is returned by value is measured first (the DEF-288 brief asks the agent for the count). Its own small landing.
+
+> **DEF-291 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; LOW: the wrong
+> tool). A `for` OVER AN ARRAY TEMPORARY PASSES THE CHECKER AND IS EMIT-002.** `for (string:s in [raw mk(), raw mk()]) { … }`
+> passes every analysis and dies in the emitter as `NITPICK-EMIT-002` on both compilers (h10, h12); a view of the binding kept
+> past the loop (h10) is a latent use-after-free the day the emitter learns to lower the shape. Refuse it by name in the checker,
+> or lower it with the temporary the statement's: its own small landing, with DEF-288's reading of the binding.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

@@ -1,0 +1,175 @@
+// expect-exit: 0
+//
+// A FIELD OF THIS FRAME'S OWN BINDING IS THAT BINDING'S STORAGE (DEF-287, landing 154): a borrow stored into it by
+// ASSIGNMENT is asked rule 3's question as a bare local is (D-004 rule 3, DEF-42's block nesting) and compiles where
+// the binding's block does not enclose the borrowed local's -- the same answer the literal `Node{ next: @m }` and a
+// callee's store through `@n.next` always gave. Until landing 154 every such store was NITPICK-BORROW-002 ("only a
+// local binding in the borrowing frame ..."), the field read as storage the frame does not own outright, so landing
+// 153's `chain_deep_nav.npk` cut a link and could not re-link it; the compiler before this landing refuses this file at
+// its first link, `n2.next = @n3;` in `chain_by_assignment` (32:7), and at every store after it, fifteen BORROW-002 in
+// all. Every value is checked: a chain of four locals linked by assignment and walked by `?.`, from either end and
+// after a cut and a re-link; a holder YOUNGER than the local whose address it stores (the local outside, the holder in
+// the inner block); a by-value and a `move` parameter's field given the address of a local of the body's own block; a
+// fixed array's element, a `List`'s element and a nested inline field; a view of a same-block string stored into a
+// field and read through; a consuming `pick`'s binding's field address held by a holder declared inside the arm; and
+// the link held across an `await`, where an address-taken local lives in the coroutine's frame. Each check fails at its
+// own exit.
+mod:field_store_borrow;
+error:E9;
+
+struct:Node = { int32:v; Node->?:next; };
+struct:Nest = { int32:k; Node:inner; };
+struct:Holder = { (fixed uint8[]):v; };
+struct:Own = { string:name; int32:v; };
+enum:OptV = { SomeV(Own); NoneV; };
+struct:Cell = { int32->?:p; };
+
+func:chain_by_assignment = int32() never fails {
+    Node:n4 = Node{ v: 4i32, next: NIL };
+    Node:n3 = Node{ v: 3i32, next: NIL };
+    Node:n2 = Node{ v: 2i32, next: NIL };
+    Node:n1 = Node{ v: 1i32, next: NIL };
+    n2.next = @n3;
+    n1.next = @n2;
+    n3.next = @n4;
+    // from the head, three links down; from the second node, two
+    if ((n1.next?.next?.next?.v ?? 0i32) != 4i32) { pass 1i32; }
+    if ((n2.next?.next?.v ?? 0i32) != 4i32) { pass 2i32; }
+    // a cut at n2's link: absent from the head past it, present before it
+    n2.next = NIL;
+    if ((n1.next?.next?.v ?? 0i32) != 0i32) { pass 3i32; }
+    if ((n1.next?.v ?? 0i32) != 2i32) { pass 4i32; }
+    // and the re-link: the walk reaches n4 again
+    n2.next = @n3;
+    if ((n1.next?.next?.next?.v ?? 0i32) != 4i32) { pass 5i32; }
+    // a link re-pointed to another node of the same block
+    n1.next = @n4;
+    if ((n1.next?.v ?? 0i32) != 4i32) { pass 6i32; }
+    pass 0i32;
+};
+
+// The holder is YOUNGER than the local whose address it stores: legal by block nesting.
+func:younger_holder = int32() never fails {
+    Node:m = Node{ v: 21i32, next: NIL };
+    int32:got = 0i32;
+    if (true) {
+        Node:n = Node{ v: 20i32, next: NIL };
+        n.next = @m;
+        got = n.next?.v ?? 0i32;
+    }
+    if (got != 21i32) { pass 7i32; }
+    pass 0i32;
+};
+
+// A by-value parameter's field, and a `move` parameter's, given the address of a local of the body's block.
+func:value_param = int32(Node:b) never fails {
+    Node:x = Node{ v: 31i32, next: NIL };
+    b.next = @x;
+    pass (b.next?.v ?? 0i32);
+};
+func:move_param = int32(move Node:b) never fails {
+    Node:x = Node{ v: 32i32, next: NIL };
+    b.next = @x;
+    pass (b.next?.v ?? 0i32);
+};
+
+// A fixed array's element, a `List`'s element and a nested inline field: the binding's own storage.
+func:element_fields = int32() never fails {
+    Node:x = Node{ v: 41i32, next: NIL };
+    Node:y = Node{ v: 42i32, next: NIL };
+    Node:z = Node{ v: 43i32, next: NIL };
+    Node[2]:arr = [Node{ v: 0i32, next: NIL }, Node{ v: 0i32, next: NIL }];
+    arr[1i64].next = @x;
+    if ((arr[1i64].next?.v ?? 0i32) != 41i32) { pass 8i32; }
+    if ((arr[0i64].next?.v ?? 0i32) != 0i32) { pass 9i32; }
+    List<Node>:l = raw list_init::<Node>(4i64);
+    drop list_push(@l, Node{ v: 0i32, next: NIL });
+    drop list_push(@l, Node{ v: 0i32, next: NIL });
+    l[1i64].next = @y;
+    if ((l[1i64].next?.v ?? 0i32) != 42i32) { pass 10i32; }
+    Nest:o = Nest{ k: 0i32, inner: Node{ v: 0i32, next: NIL } };
+    o.inner.next = @z;
+    if ((o.inner.next?.v ?? 0i32) != 43i32) { pass 11i32; }
+    // a struct value carrying an address, assigned whole to the inline field
+    o.inner = Node{ v: 44i32, next: @x };
+    if ((o.inner.next?.v ?? 0i32) != 41i32) { pass 12i32; }
+    if (o.inner.v != 44i32) { pass 13i32; }
+    pass 0i32;
+};
+
+// A view of a same-block string stored into a field by assignment, read through while the string lives.
+func:mk = string() never fails { pass string_concat("ab", "cd"); };
+func:view_field = int32() never fails {
+    string:t = raw mk();
+    Holder:h = Holder{ v: string_bytes("zz") };
+    h.v = string_bytes(t);
+    if (h.v.len != 4i64) { pass 14i32; }
+    if (h.v[0i64] != 97u8) { pass 15i32; }
+    if (h.v[3i64] != 100u8) { pass 16i32; }
+    pass 0i32;
+};
+
+// A consuming `pick`'s binding as the borrowed local, the holder declared inside the arm (younger than it).
+func:pick_arm_holder = int32() never fails {
+    OptV:o = OptV.SomeV(Own{ name: string_concat("a", "b"), v: 61i32 });
+    int32:got = 0i32;
+    pick (move(o)) {
+        (SomeV(w)) {
+            Cell:h = Cell{ p: NIL };
+            h.p = @w.v;
+            got = <-(h.p ?? @got);
+        },
+        (*) { pass 21i32; }
+    }
+    if (got != 61i32) { pass 22i32; }
+    pass 0i32;
+};
+
+// Across an `await`: the address-taken local is frame-resident in the coroutine, as for the literal (D-173).
+async func:tick = int32() { pass 5i32; };
+async func:across_await = int32() {
+    Node:n2 = Node{ v: 52i32, next: NIL };
+    Node:n1 = Node{ v: 51i32, next: NIL };
+    n1.next = @n2;
+    int32:k = await tick() ?! E9;
+    if (k != 5i32) { pass 17i32; }
+    if ((n1.next?.v ?? 0i32) != 52i32) { pass 18i32; }
+    pass 0i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:r = raw chain_by_assignment();
+    if (r != 0i32) { exit r; }
+    r = raw younger_holder();
+    if (r != 0i32) { exit r; }
+    if ((raw value_param(Node{ v: 30i32, next: NIL })) != 31i32) { exit 19i32; }
+    Node:mv = Node{ v: 30i32, next: NIL };
+    if ((raw move_param(move(mv))) != 32i32) { exit 20i32; }
+    r = raw element_fields();
+    if (r != 0i32) { exit r; }
+    r = raw view_field();
+    if (r != 0i32) { exit r; }
+    r = raw pick_arm_holder();
+    if (r != 0i32) { exit r; }
+    r = await across_await() ?! E9;
+    if (r != 0i32) { exit r; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 90i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (DeadlineExceeded)  { exit 97i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (LimitViolated)     { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

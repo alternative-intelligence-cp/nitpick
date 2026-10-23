@@ -1,0 +1,485 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 118:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 126:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 133:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 141:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 149:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 157:17
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 166:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 176:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 184:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 192:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 201:6
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 209:14
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 218:14
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 227:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 236:16
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 245:16
+// expect-error: NITPICK-BORROW-014
+// expect-error-at: 255:14
+// expect-error: NITPICK-BORROW-014
+// expect-error-at: 261:14
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 267:5
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 274:22
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 285:22
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 300:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 309:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 322:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 330:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 336:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 343:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 348:6
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 356:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 361:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 368:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 377:9
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 387:9
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 396:16
+// A FIELD OF THIS FRAME'S OWN BINDING IS THAT BINDING'S STORAGE (DEF-287, landing 154): `n.next = @m` with `n` and `m`
+// locals of one block is legal now, as the literal `Node{ next: @m }` and a callee's store through `@n.next` always
+// were -- the store is asked rule 3's question as a bare local is (D-004 rule 3, DEF-42's block nesting: the binding's
+// block must not enclose the borrowed local's; a by-value parameter's bound is the body's block, DEF-252) and the
+// binding is marked as holding the borrow, so rules 2 and 3 guard it after (handed up, copied out). The value's refs
+// join the binding's chain as the declaration form records them, so a VIEW stored into a field freezes its root while
+// the binding lives (D-325) -- and this closes a hole the assignment form had beside the over-restriction: a view of a
+// POINTER PARAMETER's pointee is no borrow of this frame, so it was admitted into a local's field, a fixed array's
+// element, a `List`'s element or a by-value parameter's field and recorded NOWHERE, and a later write of the pointee
+// freed what the field viewed (exit 170 at both legs, the free poison) where the literal and the bare-local spellings
+// are BORROW-015. EVERY OTHER TARGET KEEPS THE OLD REFUSAL: a pointer step on the path (a pointer parameter's field, a
+// pointer field, `<-`, the auto-dereference) names a POINTEE whose life the binding does not bound (DEF-272); a SLICE's
+// element is whatever the slice views; a `wild` destination is D-223's; a claim is a whole call argument or a pointer
+// local's whole value (D-286); a consuming `pick`'s binding is not admitted as the holder (the bare-local branch admits
+// only a local too); and a value carrying a borrow rooted at a `for` binding keeps the refusal too, because the escape
+// analysis reads a `for` binding as a parameter (a view of one over an array declared in a block the holder outlives
+// read the freed bytes when admitted, exit 170 at both legs). The sites, in order: rule 3 by block nesting (an address,
+// a view, a `move` parameter's field, an array's element, a nested inline field, a `defer`, a loop body's local, a
+// `List` element, a struct value, a call's result); the pointee roads (a pointer parameter's field, a pointer field,
+// `<-`, the auto-dereference) and a slice's element (an address and a view); the claims, the `wild` slot, a pattern
+// binding as the holder and as the borrowed local; a `for` binding's address and view; then what the mark and the chain
+// guard after an admitted store -- the freeze of a same-block view's root, the pointee hole closed four ways, rule 2
+// for a local, a by-value parameter and a `List`, the holder and its field copied out, a callee writing the viewed
+// root. EVERY CASE HERE TYPE-CHECKS; the controls at the end carry no code.
+mod:field_store_scope;
+
+struct:Node = { int32:v; Node->?:next; };
+struct:Holder = { (fixed uint8[]):v; };
+struct:S = { string:s; };
+struct:Outer = { Node->:ptr; };
+struct:Nest = { int32:k; Node:inner; };
+struct:W = { wild int32->:w; };
+struct:Owning = { string:name; Node->?:next; };
+enum:Opt = { Some(Owning); None; };
+struct:Own = { string:name; int32:v; };
+enum:OptV = { SomeV(Own); NoneV; };
+struct:Cell = { int32->?:p; };
+
+func:mk = string() never fails { pass string_concat("ab", "cd"); };
+func:same = Node->(Node->:q) never fails { pass q; };
+func:reset = NIL(string->:p) never fails { <-p = string_concat("x", "y"); pass NIL; };
+func:put = NIL(Node->?->:slot, Node->:v) never fails { <-slot = v; pass NIL; };
+
+// --- rule 3 by block nesting: the binding outlives the block that declares the borrowed local ---------------------
+
+func:inner_addr = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    if (true) {
+        Node:m = Node{ v: 2i32, next: NIL };
+        n.next = @m;
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:inner_view = int32() never fails {
+    Holder:h = Holder{ v: string_bytes("zz") };
+    if (true) {
+        string:t = raw mk();
+        h.v = string_bytes(t);
+    }
+    pass (h.v[0i64] => int32);
+};
+func:move_param_inner = int32(move Node:b) never fails {
+    if (true) {
+        Node:x = Node{ v: 5i32, next: NIL };
+        b.next = @x;
+    }
+    pass (b.next?.v ?? 0i32);
+};
+func:array_elem_inner = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    if (true) {
+        Node:x = Node{ v: 7i32, next: NIL };
+        arr[1i64].next = @x;
+    }
+    pass (arr[1i64].next?.v ?? 0i32);
+};
+func:nested_inner = int32() never fails {
+    Nest:o = Nest{ k: 0i32, inner: Node{ v: 1i32, next: NIL } };
+    if (true) {
+        Node:x = Node{ v: 7i32, next: NIL };
+        o.inner.next = @x;
+    }
+    pass (o.inner.next?.v ?? 0i32);
+};
+func:defer_inner = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    if (true) {
+        Node:x = Node{ v: 7i32, next: NIL };
+        defer { n.next = @x; }
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:loop_inner = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    int32:i = 0i32;
+    while (i < 3i32) decreases 3i32 - i {
+        Node:m = Node{ v: i, next: NIL };
+        n.next = @m;
+        i = i + 1i32;
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:list_inner = int32() never fails {
+    List<Node>:l = raw list_init::<Node>(4i64);
+    drop list_push(@l, Node{ v: 1i32, next: NIL });
+    if (true) {
+        Node:x = Node{ v: 7i32, next: NIL };
+        l[0i64].next = @x;
+    }
+    pass (l[0i64].next?.v ?? 0i32);
+};
+func:struct_value_inner = int32() never fails {
+    Nest:o = Nest{ k: 0i32, inner: Node{ v: 1i32, next: NIL } };
+    if (true) {
+        Node:m = Node{ v: 2i32, next: NIL };
+        o.inner = Node{ v: 3i32, next: @m };
+    }
+    pass (o.inner.next?.v ?? 0i32);
+};
+func:call_result_inner = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    if (true) {
+        Node:m = Node{ v: 2i32, next: NIL };
+        n.next = raw same(@m);
+    }
+    pass (n.next?.v ?? 0i32);
+};
+
+// --- the pointee roads and a slice's element: the binding's scope bounds nothing the store writes ------------------
+
+func:ptr_param_field = NIL(Node->:p) never fails {
+    Node:x = Node{ v: 5i32, next: NIL };
+    p.next = @x;
+    pass NIL;
+};
+func:ptr_field_step = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    if (true) {
+        Outer:o = Outer{ ptr: @n };
+        Node:x = Node{ v: 7i32, next: NIL };
+        o.ptr.next = @x;
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:deref_step = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    if (true) {
+        Node->:q = @n;
+        Node:x = Node{ v: 7i32, next: NIL };
+        (<-q).next = @x;
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:autoderef_step = int32() never fails {
+    Node:n = Node{ v: 1i32, next: NIL };
+    if (true) {
+        Node->:q = @n;
+        Node:x = Node{ v: 7i32, next: NIL };
+        q.next = @x;
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:slice_elem = int32() never fails {
+    Node[2]:outer = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    if (true) {
+        Node[]:s = outer[0i64...2i64];
+        Node:x = Node{ v: 7i32, next: NIL };
+        s[0i64].next = @x;
+    }
+    pass (outer[0i64].next?.v ?? 0i32);
+};
+func:slice_view = int32() never fails {
+    Holder[2]:outer = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    if (true) {
+        Holder[]:s = outer[0i64...2i64];
+        string:t = raw mk();
+        s[0i64].v = string_bytes(t);
+    }
+    pass (outer[0i64].v[0i64] => int32);
+};
+
+// --- the claims (D-286), the `wild` slot (D-223), the pattern binding ---------------------------------------------
+
+func:claim_shared = int32() never fails {
+    Node:x = Node{ v: 2i32, next: NIL };
+    Node:n = Node{ v: 1i32, next: NIL };
+    n.next = $$i x;
+    pass (n.next?.v ?? 0i32);
+};
+func:claim_mut = int32() never fails {
+    Node:x = Node{ v: 2i32, next: NIL };
+    Node:n = Node{ v: 1i32, next: NIL };
+    n.next = $$m x;
+    pass (n.next?.v ?? 0i32);
+};
+func:wild_slot = NIL() never fails {
+    int32:x = 5i32;
+    W:h = W{ w: NULL };
+    h.w = @x;
+    pass NIL;
+};
+func:pick_binding = int32() never fails {
+    Opt:o = Opt.Some(Owning{ name: string_concat("a", "b"), next: NIL });
+    Node:x = Node{ v: 7i32, next: NIL };
+    pick (move(o)) {
+        (Some(n)) { n.next = @x; if (n.next == NIL) { pass 1i32; } },
+        (*) { pass 2i32; }
+    }
+    pass 0i32;
+};
+
+// A pattern binding as the BORROWED local: the arm's block is inside the holder's.
+func:pick_binding_root = int32() never fails {
+    OptV:o = OptV.SomeV(Own{ name: string_concat("a", "b"), v: 3i32 });
+    Cell:h = Cell{ p: NIL };
+    pick (move(o)) {
+        (SomeV(w)) { h.p = @w.v; },
+        (*) { pass 2i32; }
+    }
+    if (h.p == NIL) { pass 1i32; }
+    pass 0i32;
+};
+
+// --- a `for` binding among the value's roots: kept refused, as every field store was before landing 154 ------------
+// The escape analysis reads a `for` binding as a parameter (`refs_root_loop_binding`), and the field branch does not
+// widen that: the binding's address, and a view of its string over an array declared in a block the holder outlives
+// (admitted, it reads the freed bytes: exit 170 at both legs).
+func:loop_binding_addr = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    Node:n = Node{ v: 0i32, next: NIL };
+    for (Node:e in arr) {
+        n.next = @e;
+    }
+    pass (n.next?.v ?? 0i32);
+};
+func:loop_binding_view = int32() never fails {
+    Holder:h = Holder{ v: string_bytes("zz") };
+    if (true) {
+        string[2]:arr = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+        for (string:s in arr) {
+            h.v = string_bytes(s);
+        }
+    }
+    pass (h.v[0i64] => int32);
+};
+
+// --- what the mark and the chain guard after an admitted store ------------------------------------------------------
+
+// The root of a same-block view, written while the binding holds the view (D-325): freed under it otherwise.
+func:view_root_written = int32() never fails {
+    Holder:h = Holder{ v: string_bytes("zz") };
+    string:t = raw mk();
+    h.v = string_bytes(t);
+    t = raw mk();
+    pass (h.v[0i64] => int32);
+};
+// A view of a pointer parameter's pointee in a local's field, a fixed array's element, a `List`'s element and a
+// by-value parameter's field, the pointee then written: the hole the assignment form had (exit 170 at both legs).
+func:pointee_view_field = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz") };
+    h.v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+func:pointee_view_array = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    arr[0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:pointee_view_list = int32(S->:p) never fails {
+    List<Holder>:l = raw list_init::<Holder>(4i64);
+    drop list_push(@l, Holder{ v: string_bytes("zz") });
+    l[0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (l[0i64].v[0i64] => int32);
+};
+func:pointee_view_param = int32(S->:p, Holder:h) never fails {
+    h.v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+// Rule 2: the binding handed up holds a borrow of the frame -- a local, a by-value parameter, a `List`.
+func:pass_local = Node() never fails {
+    Node:n101 = Node{ v: 1101i32, next: NIL };
+    Node:n100 = Node{ v: 1100i32, next: NIL };
+    n100.next = @n101;
+    pass n100;
+};
+func:pass_param = Node(Node:b) never fails {
+    Node:x = Node{ v: 5i32, next: NIL };
+    b.next = @x;
+    pass b;
+};
+func:pass_list = List<Node>() never fails {
+    List<Node>:l = raw list_init::<Node>(4i64);
+    drop list_push(@l, Node{ v: 1i32, next: NIL });
+    Node:x = Node{ v: 7i32, next: NIL };
+    l[0i64].next = @x;
+    pass l;
+};
+// Rule 3 through the mark: the holder, and its field, copied into a binding that outlives the block.
+func:holder_copied_out = int32() never fails {
+    Node:outer = Node{ v: 0i32, next: NIL };
+    if (true) {
+        Node:m = Node{ v: 2i32, next: NIL };
+        Node:n = Node{ v: 1i32, next: NIL };
+        n.next = @m;
+        outer = n;
+    }
+    pass (outer.next?.v ?? 0i32);
+};
+func:field_copied_out = int32() never fails {
+    Node:outer = Node{ v: 0i32, next: NIL };
+    if (true) {
+        Node:m = Node{ v: 2i32, next: NIL };
+        Node:n = Node{ v: 1i32, next: NIL };
+        n.next = @m;
+        outer.next = n.next;
+    }
+    pass (outer.next?.v ?? 0i32);
+};
+// A callee handed the viewed root, which it overwrites (DEF-275's reading of the call, as after the literal).
+func:callee_writes_root = int32() never fails {
+    string:t = raw mk();
+    Holder:h = Holder{ v: string_bytes("zz") };
+    h.v = string_bytes(t);
+    drop reset(@t);
+    pass (h.v[0i64] => int32);
+};
+
+// --- the controls: no code --------------------------------------------------------------------------------------------
+
+func:ok_same_block = int32() never fails {
+    Node:n101 = Node{ v: 1101i32, next: NIL };
+    Node:n100 = Node{ v: 1100i32, next: NIL };
+    n100.next = @n101;
+    pass (n100.next?.v ?? 0i32);
+};
+func:ok_older_holder = int32() never fails {
+    Node:n100 = Node{ v: 1100i32, next: NIL };
+    Node:n101 = Node{ v: 1101i32, next: NIL };
+    n100.next = @n101;
+    pass (n100.next?.v ?? 0i32);
+};
+func:ok_younger_holder = int32() never fails {
+    Node:m = Node{ v: 2i32, next: NIL };
+    int32:r = 0i32;
+    if (true) {
+        Node:n = Node{ v: 1i32, next: NIL };
+        n.next = @m;
+        r = n.next?.v ?? 0i32;
+    }
+    pass r;
+};
+func:ok_relink = int32() never fails {
+    Node:n6 = Node{ v: 6i32, next: NIL };
+    Node:n5 = Node{ v: 5i32, next: @n6 };
+    n5.next = NIL;
+    n5.next = @n6;
+    pass (n5.next?.v ?? 0i32);
+};
+func:ok_value_param = int32(Node:b) never fails {
+    Node:x = Node{ v: 5i32, next: NIL };
+    b.next = @x;
+    pass (b.next?.v ?? 0i32);
+};
+func:ok_array_list_nested = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    List<Node>:l = raw list_init::<Node>(4i64);
+    drop list_push(@l, Node{ v: 1i32, next: NIL });
+    Nest:o = Nest{ k: 0i32, inner: Node{ v: 1i32, next: NIL } };
+    Node:x = Node{ v: 7i32, next: NIL };
+    arr[1i64].next = @x;
+    l[0i64].next = @x;
+    o.inner.next = @x;
+    pass ((arr[1i64].next?.v ?? 0i32) + (l[0i64].next?.v ?? 0i32) + (o.inner.next?.v ?? 0i32));
+};
+func:ok_defer_same_block = NIL() never fails {
+    Node:x = Node{ v: 1i32, next: NIL };
+    Node:n = Node{ v: 1i32, next: NIL };
+    defer { n.next = @x; }
+    pass NIL;
+};
+func:ok_view_same_block = int32() never fails {
+    string:t = raw mk();
+    Holder:h = Holder{ v: string_bytes("zz") };
+    h.v = string_bytes(t);
+    pass (h.v[0i64] => int32);
+};
+func:ok_callee_writes_holder = int32() never fails {
+    Node:n101 = Node{ v: 1101i32, next: NIL };
+    Node:n100 = Node{ v: 1100i32, next: NIL };
+    n100.next = @n101;
+    drop put(@n100.next, @n101);
+    pass (n100.next?.v ?? 0i32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (OutOfBounds)       { exit 94i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (LimitViolated)     { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

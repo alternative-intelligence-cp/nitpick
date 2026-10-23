@@ -2527,6 +2527,16 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
 // ParamDecl? A parameter's target outlives the frame by construction.
 // --- D-249 (1.5.1b step 2): a VIEW-MAKER'S RESULT BORROWS ITS OPERAND ---------
 //
+// RELAXED WITH EVIDENCE AT LANDING 154 (DEF-287, 2026-10-23): a field of a binding THIS
+// FRAME OWNS -- a struct's member, a fixed array's or a `List`'s element, down to a local
+// or a by-value parameter with no pointer or slice step on the way (`field_store_root`)
+// -- is that binding's own storage, asked the block-nesting question and marked as the
+// bare local is (`escape_assign`'s field branch). The evidence: the literal and the
+// callee's store through `@n.next` were admitted already, the bare-local branch admits
+// the same-block address, and the assignment form's refusal hid a use-after-free (a
+// pointee's view stored into a field froze nothing). A pointee's field, a slice's
+// element and a `for`-binding-rooted borrow (DEF-288) keep the refusal below.
+//
 // `string_bytes(s)` hands out `s`'s bytes as `{ptr, len}`; `string_from_bytes(p,
 // n)` wraps the bytes `p` names; `arr[lo...hi]` hands out `arr`'s address (the
 // emitter takes addr_of of the place, D-191). None of them was a borrow to this
@@ -3084,6 +3094,28 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
         }
     }
 
+    // A FIELD OF THIS FRAME'S OWN BINDING (DEF-287, landing 154) records what the
+    // DECLARATION form records when its initialiser carries the same value: every
+    // ref the value carries joins the root binding's chain -- a view whatever the
+    // verdict below says of it, an address, a carried parameter -- as
+    // `Node:n = Node{ next: @m };` records it on `n` (`record_view_refs`) and as a
+    // bare local's assignment records it above. Before this landing a field
+    // target recorded only a view of its own struct (the self-wiring check
+    // above), so a view of a pointer parameter's pointee -- no borrow of this
+    // frame to the verdict, so admitted -- stored by ASSIGNMENT into a local's
+    // field (`h.v = string_bytes(p.s)`), a fixed array's element, a `List`'s
+    // element or a by-value parameter's field froze nothing, and a later
+    // `p.s = …` freed what the field viewed: exit 170 at both legs (the free
+    // poison), where the literal and the bare-local spellings are BORROW-015.
+    // The holder's pointer-ness (`vr_ptr`) is not set: the binding is a struct,
+    // an array or a `List`, whatever the field's own type (`field_store_root`).
+    int32:fsym = raw field_store_root(x, tgt);
+    if (fsym != 0i32) {
+        List<ViewRef>:fr = raw list_init::<ViewRef>(4i64);
+        drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @fr);
+        if (fr.count > 0i64) { drop record_view_refs_at_place(x, tgt, @fr); }
+    }
+
     if (!(raw verdict_borrowy(x, val,
               raw escape_expr(x, val, raw ESCAPE_DEPTH())))) { pass NIL; }
 
@@ -3108,9 +3140,10 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
         }
     }
 
-    // A BARE LOCAL NAME, and nothing else. `p = @x` records that `p` now holds a
-    // borrow; `p.f = @x`, `arr[i] = @x` and `g = @x` are all stores into
-    // something this frame does not own outright.
+    // A BARE LOCAL NAME. `p = @x` records that `p` now holds a borrow; a field
+    // of this frame's own binding is the branch after this one (DEF-287), and
+    // `p.f = @x` through a pointer, `s[i] = @x` through a slice and `g = @x`
+    // are stores into something this frame does not own outright.
     ExprNode:tn = raw ast_expr(x.ast, tgt);
     if (tn.kind == ExprKind.ExprIdentifierExpr) {
         if (tn.a != 0i32) {
@@ -3146,10 +3179,146 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
         }
     }
 
+    // A FIELD OF THIS FRAME'S OWN BINDING (DEF-287, landing 154): `n.next = @m`,
+    // `o.inner.next = @m`, `arr[i].next = @m`, `l[i].next = @m` -- member steps
+    // over a struct and element steps over a fixed array or a `List`, down to a
+    // local of this frame or a by-value parameter of this function, with no
+    // pointer, `?.`, `<-` or slice step on the way (`field_store_root`) -- is
+    // that binding's own storage, and dies with it. It is asked rule 3's
+    // question as the bare local above is (DEF-42's block nesting: the
+    // binding's block must not enclose the borrowed local's; a by-value
+    // parameter's bound is the body's block, DEF-252) and marked as the bare
+    // local is, so rule 2 refuses the binding handed up and rule 3 a copy of
+    // it into an outer holder. The literal `Node:n = Node{ next: @m };` and a
+    // callee's store through `@n.next` (`refuse_view_escape_into`) always
+    // were; the assignment fell to the refusal below (BORROW-002, the field
+    // "storage the frame does not own outright"), the over-restriction DEF-287
+    // registered (landing 153's `chain_deep_nav.npk` could not re-link a cut).
+    // A borrow rooted at a `for` BINDING is not admitted here and keeps the
+    // refusal below (`refs_root_loop_binding`): the predicates this branch
+    // asks read such a binding as a PARAMETER.
+    if (fsym != 0i32) {
+        if (!(raw refs_root_loop_binding(x, val))) {
+            if (!(raw borrows_only_param_rooted(x, val, raw ESCAPE_DEPTH()))) {
+                Symbol:fs = raw symtab_get(x.tab, fsym);
+                bool:fparam = (fs.origin_kind == (raw SYM_DECL()));
+                drop check_field_holder_scope(x, fs.scope, val, fparam, s.span);
+                if (fparam) { drop escape_mark_param(x, fs.origin); } else { drop escape_mark(x, fs.origin); }
+            }
+            pass NIL;
+        }
+    }
+
     drop escape_err(x, raw BORROW_STORED(),
         "a borrow cannot be stored here: only a local binding in the borrowing frame is provably no longer-lived than the borrow (D-004 rule 3)",
         tn.span);
     pass NIL;
+};
+
+// THE FIELD TARGETS THAT ARE THEIR ROOT BINDING'S OWN STORAGE (DEF-287, landing
+// 154): the symbol of the root, or 0. A chain of at least one step --
+// a member step whose base is a struct (not the prelude's `List`, whose fields
+// are its header), an element step whose base is a fixed array or a `List`
+// (storage the binding owns inline or through its own buffer, freed with it;
+// a range is a view, not a place) -- down to an identifier naming a LOCAL of
+// this frame (`SYM_STMT`) or a BY-VALUE parameter of the current function,
+// whose own type is no pointer. EVERY OTHER TARGET ANSWERS 0 and keeps
+// `escape_assign`'s refusal: a step whose base is a pointer (the
+// auto-dereference, D-098) or an explicit `<-` names a POINTEE, whose life the
+// root binding's scope does not bound (DEF-272: `o.ptr.next = @x` with `o`
+// beside `x` and the pointee outside); a step whose base is a SLICE names
+// whatever the slice views (`s[0].next = @x` lands in the array `s` was taken
+// of); `?.` reaches an Optional's pointee; a view binding (a lending `pick`'s)
+// is the selector's storage and refuses writes besides (TYPE-066); a pattern
+// binding, a global, a `for` binding, a cast and a call are no field of this
+// frame's own binding.
+func:field_store_root = int32(Escape->:x, ExprId:tgt) never fails {
+    ExprId:cur = tgt;
+    int32:steps = 0i32;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass 0i32; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            ExprId:mb = raw expr_operand(n);
+            int32:mt = raw exprtypes_get(x.etypes, mb);
+            if (mt == 0i32) { pass 0i32; }
+            if ((raw type_kind(x.types, mt)) != (raw TY_STRUCT())) { pass 0i32; }
+            if (raw type_is_list(x.tr, mt)) { pass 0i32; }
+            cur = mb;
+            steps = steps + 1i32;
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            if (!(raw expr_is_none(raw view_place(x, n)))) { pass 0i32; }
+            ExprId:ib = raw expr_lhs(n);
+            int32:it = raw exprtypes_get(x.etypes, ib);
+            if (it == 0i32) { pass 0i32; }
+            bool:owned = ((raw type_kind(x.types, it)) == (raw TY_ARRAY()));
+            if (!owned) { owned = raw type_is_list(x.tr, it); }
+            if (!owned) { pass 0i32; }
+            cur = ib;
+            steps = steps + 1i32;
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            if (steps == 0i32) { pass 0i32; }   // a bare name: the branch before
+            if (n.a == 0i32) { pass 0i32; }
+            if (raw sym_is_view(x.tab, x.ast, n.a)) { pass 0i32; }
+            int32:rt = raw exprtypes_get(x.etypes, cur);
+            if (rt == 0i32) { pass 0i32; }
+            if ((raw type_kind(x.types, rt)) == (raw TY_POINTER())) { pass 0i32; }
+            Symbol:sy = raw symtab_get(x.tab, n.a);
+            if (sy.origin_kind == (raw SYM_STMT())) { pass n.a; }
+            if ((raw param_index_of(x, n.a)) < 0i32) { pass 0i32; }
+            if (raw sym_is_value_param(x, sy, cur.index)) { pass n.a; }
+            pass 0i32;
+        }
+        pass 0i32;
+    }
+    pass 0i32;
+};
+
+// RULE 3 FOR A FIELD OF THIS FRAME'S OWN BINDING (DEF-287): `check_holder_scope`'s
+// question asked of the field's root binding -- a by-value parameter bound by the
+// body's block, as a callee's store into one is (DEF-252) -- with a sentence that
+// names the binding the field belongs to.
+func:check_field_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, bool:param_holder,
+                                    Span:at) never fails {
+    if (raw holder_scope_violated(x, holder_scope, val, param_holder)) {
+        drop escape_err(x, raw BORROW_STORED(),
+            "a borrow cannot be stored here: the binding this field belongs to is declared outside the block that declares the borrowed local, so it outlives the storage the borrow names (D-004 rule 3, DEF-42; a field is its binding's own storage, DEF-287) -- declare the binding inside that block, or pass the borrow down",
+            at);
+    }
+    pass NIL;
+};
+
+// A `for` BINDING AMONG THE VALUE'S ROOTS (found by DEF-287's probes, landing 154). The escape analysis reads a
+// `for` binding -- a `DeclParamDecl` declared in a block scope the loop opens (resolve.npk) -- as a PARAMETER:
+// `view_root_is_param` and `heap_backed_view` answer that a view of its string's bytes is the storage a caller
+// handed in, so `borrows_only_param_rooted` exempts it from rules 2 and 3 (a function returning
+// `string_bytes(s)` of `for (string:s in arr)` over a local array compiles and its caller reads the freed bytes,
+// on every compiler before this landing), and `push_frame_root` leaves it out of the holder-scope question
+// (`p = @e` into a pointer local outside the loop is admitted). Both are older than DEF-287 and are the bare and
+// literal forms' as well. The field branch does not widen them: a value carrying a borrow rooted at a `for`
+// binding -- read off the refs the value carries (`collect_view_refs` roots `@e`, `$$i e`, `string_bytes(s)` and
+// a pointer binding's carried value at the binding) -- is not admitted there and keeps the refusal every field
+// store had before landing 154 (the array a `for` walks, declared in a block the holder outlives, freed its
+// bytes under the field: exit 170 at both legs, measured). A parameter of the current function is no `for`
+// binding.
+func:refs_root_loop_binding = bool(Escape->:x, ExprId:val) never fails {
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:lr = refs[i];
+        if (lr.root == 0i32) { continue; }
+        Symbol:ls = raw symtab_get(x.tab, lr.root);
+        if (ls.origin_kind != (raw SYM_DECL())) { continue; }
+        DeclNode:ld = raw ast_decl(x.ast, DeclId{ index: ls.origin });
+        if (ld.kind != DeclKind.DeclParamDecl) { continue; }
+        if ((raw param_index_of(x, lr.root)) >= 0i32) { continue; }
+        pass true;
+    }
+    pass false;
 };
 
 // --- rule 3 for a local holder (DEF-42, 1.5.5 step 0) --------------------------

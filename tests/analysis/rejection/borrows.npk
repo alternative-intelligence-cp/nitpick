@@ -108,16 +108,21 @@ func:store_field = NIL(Holder->:h) never fails {
     pass NIL;
 };
 
-// INTO A LOCAL AGGREGATE, WHICH IS ALSO REFUSED. D-004 asks for "provably
-// shorter-lived", and a struct in this frame is exactly as long-lived as a borrow
-// of another local in this frame — equal is not shorter. Deliberately strict: the
-// decision says to relax it later WITH EVIDENCE, and a test being awkward to write
-// is not evidence.
+// INTO A LOCAL AGGREGATE DECLARED OUTSIDE THE BLOCK THAT DECLARES THE BORROWED
+// LOCAL. A field of a local is that local's own storage, asked rule 3's question
+// as a bare local is (DEF-42's block nesting; DEF-287, landing 154): `h` outlives
+// the block that declares `x`. Until landing 154 every store into a local
+// aggregate's field was refused here -- this case was the same-block
+// `h.inner = @x`, read as "equal is not shorter" -- while the literal
+// `OHolder{ inner: @x }` and a callee's store through `@h.inner` were admitted;
+// the same-block store is legal now (`tests/backend/programs/field_store_borrow.npk`).
 // expect-error: NITPICK-BORROW-002
 func:store_local_aggregate = NIL() never fails {
-    int32:x = 5i32;
     OHolder:h = OHolder{ inner: NIL };
-    h.inner = @x;
+    if (true) {
+        int32:x = 5i32;
+        h.inner = @x;
+    }
     pass NIL;
 };
 

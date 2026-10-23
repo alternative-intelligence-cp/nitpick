@@ -294,6 +294,16 @@ pointer field, a slice, a `dyn` keep the conservative reading (`type_holds_forei
 > question asked of `lp` had admitted `Outer->:lp = @o; … setv(@lp.inn, string_bytes(t))` with `o` declared
 > outside the block (170). The by-value pointer argument is DEF-275, open.
 
+> **Note (2026-10-23, landing 154, DEF-287):** rule 3's "deliberately strict" reading -- a plain local the ONLY destination of a
+> borrow, a field of a struct local refused because "equal is not shorter" -- is relaxed WITH THE EVIDENCE this decision asked for:
+> the literal `Node:n = Node{ next: @m }` and a callee's store through `@n.next` were admitted already, the bare-local branch
+> admits the same-block address, the 2026-10-15 note above reads the rule as block nesting for a holder this frame owns, and the
+> assignment form's refusal hid a use-after-free (a view of a pointer parameter's pointee stored into a local's field froze
+> nothing: 170 at both legs). A field of a binding this frame owns -- a struct's member, a fixed array's or a `List`'s element,
+> down to a local or a by-value parameter with no pointer or slice step on the way -- is that binding's own storage: it is asked
+> the block-nesting question and marked as the binding is. A pointee's field, a slice's element and a borrow rooted at a `for`
+> binding (DEF-288) keep the refusal.
+
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
