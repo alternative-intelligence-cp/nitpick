@@ -3100,7 +3100,17 @@ defect declares a `DEF-` in §2f.
 > the three trees nests blocks past a dozen. The remedy is DEF-269's own: the statement arms in frames of their own. Its own
 > landing.
 
-> **DEF-278 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report, its
+> **DEF-278 — FIXED 2026-10-23 (landing 152, `nitpick-compiler_43`): LOCATED by callgrind over a 12-level nest of pick expressions through
+> `tools/check`, two walks doubling per level -- the escape analysis's `gives_borrowy` re-walking the arms' `give` operands after
+> `escape_stmt_window` had walked them (every operand asked `escape_expr` twice), and the checker's `arm_give_type` re-typing each
+> top-level give's operand after `check_stmt`'s "typed for its own sake" arm had typed it. Both are gone: the escape walk's `give` arm
+> ORs its operand's verdict into the open pick's frame (`Escape.givex`, pushed and popped around the arms' one walk), and the statement
+> walk's `give` arm types its operand ONCE against the pick's running type (`type_give_operand`, type_expr.npk; the frames
+> `ExprTyper.givex_pick`/`givex_cur`, pushed by `type_pick_expr(e, id, n)` and read back after its arms). Measured first on landing 151's
+> compiler (`wt/43b/.internal/probes/def281/results_base.txt`): 12 levels 0.23 s, 16 1.7 s, 20 25.5 s, 24 past 300 s; after: 24 levels
+> 0.13 s, 60 (the deepest the AST's bound admits is 63) 0.13 s. Found and fixed with it: DEF-283 (a give below an arm's top level was
+> typed against nothing) and DEF-284 (an arm that can complete without a `give`). `tests/backend/programs/deep_nests.npk`. WAS: OPEN
+> (registered 2026-10-22 by `nitpick-compiler_42` at landing 145, from the DEF-269 agent's report, its
 > third finding; LOW: a loud slowness, nothing accepted or refused wrongly). NESTED PICK EXPRESSIONS TAKE EXPONENTIAL TIME IN
 > THE FRONT HALF.** A `pick` expression nested in a `pick` expression's arm, and so on, costs about x1.9 per level on both
 > compilers: depth 20 is twelve seconds, depth 30 past five minutes (the agent's measure). The cause is not located: a walk
@@ -3139,7 +3149,16 @@ defect declares a `DEF-` in §2f.
 > the evaluator's values are copies, and the move rules are the checker's, enforced on the body as on any (MOVE-001 on a later read) --
 > so the three probes fold and `comptime_generic_type.npk`'s local-type case binds a `T` by `move`.
 
-> **DEF-281 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 149, from the DEF-277 agent's report, its first
+> **DEF-281 — FIXED 2026-10-23 (landing 152, `nitpick-compiler_43`): `assign_loop_body` (bindings.npk) walks a body ONCE when the walk is
+> already an enclosing loop's silent pre-pass (`x.quiet`): what a silent walk hands up is the four unions `state_absorb_may` takes
+> (`may`, `moved`, `freed`, `sealed_any`), each the start state's bits plus what the body sets, and a second silent walk of the same body
+> from a wider start adds nothing to them; the real pass still walks every loop it meets twice -- its own silent pre-pass, then the
+> reporting walk -- so no report moves (the sweep: no site). A nest of n loops is quadratic in n where it was 2^n. Measured first on
+> landing 151's compiler (`wt/43b/.internal/probes/def281/results_base.txt`, `tools/check` and `npkc` under a 6 GB cap): the `while (b)
+> unbounded`, counted `loop` and `for` nests 16 levels 0.23 s and 37 MB, 20 levels 1.8-2.3 s and 470 MB, 24 past the cap (exit 3); after:
+> 24 levels 0.13 s and 9 MB, 60 levels 0.13 s, 120 nested `while`s (240 of the AST's 256 levels) 0.14 s and 11 MB.
+> `tests/backend/programs/deep_nests.npk` (100 `while`s, 60 `for`s, 60 `loop`s, 40 pick expressions; exit 0 at both legs). WAS: OPEN
+> (registered 2026-10-22 by `nitpick-compiler_42` at landing 149, from the DEF-277 agent's report, its first
 > finding; DEF-229's class -- a compiler that does not finish on a legal program, here by exhausting memory and time -- in the
 > FRONT HALF, on both compilers). NESTED LOOPS TAKE EXPONENTIAL FRONT-HALF TIME AND MEMORY.** A nest of loops -- `while` with its
 > `decreases` or `unbounded`, a counted `loop`, a `for` -- costs about x1.8 per level in time AND peak memory on landing 146's
@@ -3170,6 +3189,63 @@ defect declares a `DEF-` in §2f.
 > node by address would lower every dispatch frame -- an emitter-wide signature change, not made. The frames are -O0
 > frames: a toolchain whose register allocator spills differently moves every number above. Its own landing: the `?.`
 > split, a test for both chains, the signature question measured first.
+
+> **DEF-283 — FIXED 2026-10-23 (landing 152, `nitpick-compiler_43`; registered the same day, found by the landing's probes of DEF-278's
+> fix; a TYPE HOLE: a value of another type stored into a `pick` expression's slot). A `give` BELOW AN ARM'S TOP LEVEL WAS TYPED AGAINST
+> NOTHING.** `int32:y = pick (x) { (1i32) { if (c) { give 7i64; } give 2i32; }, (*) { give 0i32; } };` compiled on landing 151's compiler
+> and every one before it: `type_pick_expr` measured an arm's TOP-LEVEL gives against each other (`arm_give_type`, one level deep by its
+> own comment -- "a `give` nested inside an `if` inside an arm is a shape the corpus does not write"), and a nested give's operand was
+> typed by `check_stmt`'s "for its own sake" arm under whatever expectation stood, held to nothing; the emitter stored the `i64`'s bits
+> into the `i32` slot (`wt/43b/.internal/probes/def281/nested/ng_mixed.npk`: exit 0 at both legs by the truncation's luck; a wider value,
+> or a struct, would have been a wrong value or corruption in silence). NOW every give's operand is typed ONCE by the statement walk's
+> `give` arm against the pick's running type (`type_give_operand`: the slot's expectation, else the first give met in source order sets
+> it and every later give must fit it exactly) -- `NITPICK-TYPE-007` at the give, wherever in the arm it stands.
+> `tests/types/rejection/pick_give_nested.npk` (an `int64` under an `if` in an `int32` pick, an `int32` under an `if` in an `int64` pick:
+> TYPE-007 each; the controls nested gives of the pick's type, and a pick with no expectation whose first give is nested).
+
+> **DEF-284 — FIXED 2026-10-23 (landing 152, `nitpick-compiler_43`; registered the same day, found by the same probes; DEF-108's class --
+> D-323's silent zero -- at a `pick` EXPRESSION's arm). AN ARM OF A `pick` USED AS A VALUE THAT CAN COMPLETE WITHOUT `give` YIELDED THE
+> SLOT'S VACANT ZERO IN SILENCE.** `int32:y = pick (x) { (1i32) { if (c) { give 7i32; } }, (*) { give 5i32; } }; exit y;` with `c` false
+> exited 0 at both legs on landing 151's compiler and every one before it (`wt/43b/.internal/probes/def281/nested/ng_fall.npk`): the arm
+> fell off its end, no `give` wrote the slot, and the statement read the slot's zero -- a number the program never computed, D-323's
+> defect at the one construct its rule had not been asked of (the checker's TYPE_CANNOT_INFER fired only when NO arm gave at its top
+> level and nothing was expected). NOW the bindings analysis asks `stmt_completes` of every arm of a pick expression (its pick arm in
+> `assign_expr`; a `give` never completes, `fall` continues into the next arm, `pass`/`fail`/`exit`/a trap/`break`/`continue` leave, an
+> `if` without `else`, a counted loop and a `when` complete as wholes, a `while (true)` with no `break` of its own never does) and an arm
+> that may complete is `NITPICK-FLOW-001` at the arm with its own sentence. The sweep over the three trees found no such arm outside the
+> landing's own test. `tests/analysis/rejection/pick_arm_falls_off.npk` (a give under an `if` with no `else`, an empty arm, a give inside
+> a counted loop, a give inside a `while` with a condition: FLOW-001 each; the controls an `if`/`else` both giving, a `fall`, an `exit`, a
+> `while (true)`, a trap).
+
+> **DEF-285 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 152, from the library seat's reading of notice 151
+> at 01:59; LOW: a diagnostic's note and position, nothing accepted or refused wrongly). THE EXHAUSTIVENESS ANALYSIS'S REPEATED-ARM
+> REPORT CARRIES NO NOTE AT THE FIRST SPELLING AND STANDS AT THE ARM'S PARENTHESIS, WHERE THE CHECKER'S NOTES AND STANDS AT THE
+> VALUE.** Landing 151 refuses a value, a variant or an error identity repeated in one `pick` (PICK-004 at the second spelling) in
+> two halves: the checker's `refuse_repeated_value` (type_stmt.npk) for a VALUE, which reports at the pattern's value with a
+> `note:` at the first spelling (`pick_values_rules.npk`: 42:29 with its note at 42:17, and three more), and the exhaustiveness
+> analysis's `alt_matched_before` (exhaust.npk) for a VARIANT or an ERROR IDENTITY, which reports at the arm's opening parenthesis
+> with no note (`pick_values_dead.npk`: 20:28, 23:58, 26:40, 29:39 -- the sweep's 16 appeared sites are the twelve codes and the
+> checker's four notes). A repeated `(Boom)` twenty arms below the first in a long `failsafe` is where the note earns its keep. FIX:
+> the analysis's report notes the first spelling as the checker's does, and both report at the pattern's value; the two rejection
+> files' headers move with it (four notes more in `pick_values_dead.npk`; the four analysis sites' columns). With DEF-282's landing,
+> or its own small one.
+
+> **DEF-286 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 152, found by bisecting the landing's two differing
+> emissions; LOW: `types_agree` compares function types structurally, so nothing is judged wrongly). `fn_type` INTERNS A DISTINCT
+> FUNCTION TYPE AT EVERY TYPING OF A CALL WITH A PARAMETER, SO THE TYPE TABLE GROWS WITH THE NUMBER OF TYPINGS AND EVERY TYPE ID
+> AFTER A TYPING ADDED OR REMOVED SHIFTS.** `fn_type` (type_decls.npk) builds a declaration's function type by committing the
+> parameter types from the AST's scratch (`ast_scratch_mark` ... `ast_scratch_commit`) into a FRESH window at every call, and
+> `tt_func` keys the type on the window's START index -- 0.9.6's artifact ("two spellings of one function type never share an id"),
+> which `unify`/`types_agree` compare around structurally. Every typing of a direct call with at least one parameter therefore
+> interns one more `TY_FUNC` (a call with none commits an empty window and interns nothing new), the type table of a program holds
+> one function type per call typed, and every type id after such a typing moves when a typing is added or removed: measured at
+> landing 152, whose single typing of a give's operand (where the base typed it twice) put the enum `Pair`'s id one lower in
+> `pick_binding_churn.npk` and `pick_binding_once.npk` (`wt/43b/.internal/probes/def281/tid_shift/`, ten probes). This is the
+> mechanism behind the per-landing id re-keying of the manifest's rows (D-317's `|npk.f.<TYPEID>.field|` names a struct type by
+> an id that moves whenever the number of typings before it changes) and behind the `npk.drop.N` renumbering `tidnorm.py` reads
+> around. FIX: key a function type on its CONTENT (the return, the `never fails` bit and the parameter types in order), as every
+> other kind is keyed, and retire the structural comparison; its own landing, measured first -- every emission's drop-body names
+> move once, the manifest re-keys once, and the type table of the compiler's own build shrinks by the duplicates.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

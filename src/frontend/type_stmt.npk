@@ -247,6 +247,16 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                 s.span));
             pass NIL;
         }
+        // THE OPERAND IS TYPED HERE, ONCE, against the pick's running type (DEF-278,
+        // DEF-283; landing 152): the frame `type_pick_expr` keeps for the pick
+        // this give stands in. Until this landing the "typed for its own sake" arm
+        // below typed it under whatever expectation stood, and `arm_give_type`
+        // typed an arm's TOP-LEVEL gives again under the pick's type -- a pick
+        // nested in a give's operand was typed twice per level (2^n for a nest
+        // of n), and a give nested under an `if` was never held to the pick's
+        // type at all (a `give 7i64` into an `int32` pick compiled).
+        drop type_give_operand(e, s);
+        pass NIL;
     }
 
     // A BARE EXPRESSION STATEMENT — rule 6 of D-163's closed list. A `Result`

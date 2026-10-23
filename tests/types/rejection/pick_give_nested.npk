@@ -1,0 +1,51 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 25:44
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 27:44
+//
+// DEF-283 (landing 152): a `give` below an arm's top level -- under an `if`,
+// inside a loop -- is held to the pick's type like any other. Until this
+// landing the pick typer measured an arm's TOP-LEVEL gives against each other
+// (`arm_give_type`) and the statement walk typed a nested give's operand "for
+// its own sake", against nothing: `give 7i64` under an `if` in an `int32` pick
+// compiled, and the emitter stored the `i64`'s bits into the `i32` slot (the
+// probe `ng_mixed.npk`, exit 0 by the truncation's luck). Now every give's
+// operand is typed ONCE, by the statement walk's `give` arm, against the
+// pick's running type (`type_give_operand`): the slot's expectation, or the
+// first give's type -- so the two sites below are TYPE-007 at the give, and the
+// controls (nested gives of the pick's type; a pick with no expectation whose
+// first give is nested) compile.
+mod:pick_give_nested;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:x = 1i32;
+    bool:c = true;
+
+    // A NESTED GIVE OF ANOTHER TYPE: an `int64` into an `int32` pick.
+    int32:a = pick (x) { (1i32) { if (c) { give 7i64; } give 2i32; }, (*) { give 0i32; } };
+    // A NESTED GIVE NARROWER THAN THE PICK'S TYPE: no implicit widening (D-092).
+    int64:b = pick (x) { (1i32) { if (c) { give 7i32; } else { give 1i64; } }, (*) { give 0i64; } };
+
+    // THE CONTROLS: nested gives of the pick's type under an `if` and its `else`;
+    int32:g = pick (x) { (1i32) { if (c) { give 7i32; } else { give 2i32; } }, (*) { give 0i32; } };
+    // a pick used where nothing is expected, its first give nested (the first give
+    // met in source order sets the type, the later ones fit it).
+    discard(pick (x) { (1i32) { if (c) { give 7i32; } else { give 2i32; } }, (*) { give 0i32; } });
+
+    if (a + (b =>! int32) + g == 0i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

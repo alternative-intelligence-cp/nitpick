@@ -810,7 +810,7 @@ SLOT_SITE_PAIRS = {
     "type_struct_literal": {"emit_struct_lit"},
     "type_array_literal":  {"emit_array_lit"},
     "type_result_literal": {"emit_result_lit"},
-    "arm_give_type":       {"emit_give"},
+    "type_give_operand":   {"emit_give"},        # a `give`'s operand against the pick's running type (landing 152; `arm_give_type` until then)
     "type_safe_unwrap":    {"emit_k_safe_unwrap_expr"},   # `r ?| d`: its arm's own frame since DEF-176 (landing 142)
     "type_arena_method":   {"emit_arena_method"},
     "type_call":           {"call_builtin"},        # `mutex(initial)` fits the element (D-056, 1.1.11)

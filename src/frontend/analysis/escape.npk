@@ -110,6 +110,16 @@ pub struct:Escape = {
     bool:reporting;
     bool:changed;
 
+    // THE PICK EXPRESSIONS BEING WALKED (DEF-278, landing 152): one frame per open
+    // `pick` used as a value, innermost last, each a 0 that the statement walk's
+    // `give` arm sets to 1 when a give's operand is borrowy. The pick's verdict
+    // is its frame when the walk of its arms returns -- ONE walk of the arms,
+    // where `gives_borrowy` walked them a second time to ask the same question
+    // of each `give`, and a pick nested in a give's operand doubled per level
+    // (x1.9 per level: twenty nested pick expressions twelve seconds, thirty
+    // past five minutes).
+    List<int32>:givex;
+
     // THE VIEW REFERENCES A LOCAL HOLDS (D-325, 1.6.1 step 0; DEF-107). Beside
     // `holds` -- which says only THAT a binding holds a borrow -- this says
     // WHICH storage a binding may VIEW: per declaring statement, a chain of
@@ -263,6 +273,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        diags: diags, tr: tr, holds: mem =>! wild bool->,
                        holds_count: size =>! int32,
                        reporting: false, changed: false,
+                       givex: raw list_init::<int32>(8i64),
                        vr_head: hmem =>! wild int32->, vr_ptr: pmem =>! wild bool->,
                        vr_root: raw list_init::<int32>(64i64),
                        vr_place: raw list_init::<int32>(64i64),
@@ -2205,7 +2216,16 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     // `extern` call with a borrow argument is a rule-4 break wherever it appears,
     // including where its result goes nowhere.
     if (raw stmt_carries_expr(s.kind)) {
-        discard(raw escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH()));
+        bool:borrowy = raw escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH());
+        // A `give` HANDS ITS VERDICT TO THE PICK IT STANDS IN (DEF-278, landing
+        // 152): the innermost open pick expression's frame, which `escape_expr`'s
+        // pick arm reads back as the pick's own verdict. A `give` stands only in
+        // such an arm (the checker's TYPE-094), so the stack is never empty here;
+        // the test is the belt.
+        if (s.kind == StmtKind.StmtGiveStmt) {
+            int64:top = x.givex.count - 1i64;
+            if (top >= 0i64) { if (borrowy) { x.givex[top] = 1i32; } }
+        }
         pass NIL;
     }
 
@@ -3285,8 +3305,8 @@ func:collect_local_roots = NIL(Escape->:x, ExprId:id, int32:depth, List<int32>->
         }
         pass NIL;
     }
-    // A PICK EXPRESSION'S VALUE IS ITS ARMS' `give` VALUES (the shape
-    // `gives_borrowy` walks for the escape verdict).
+    // A PICK EXPRESSION'S VALUE IS ITS ARMS' `give` VALUES (the shape the
+    // escape walk's `give` arm feeds the pick's frame from, DEF-278).
     if (n.kind == ExprKind.ExprPickExpr) {
         for (int32:pi in 0i32...(raw pickx_arm_count(n))) {
             StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, raw pickx_arm_start(n), pi));
@@ -3317,7 +3337,7 @@ func:collect_local_roots = NIL(Escape->:x, ExprId:id, int32:depth, List<int32>->
     pass NIL;
 };
 
-// The `give` values under an arm body, the statement shapes `stmt_gives_borrowy` walks.
+// The `give` values under an arm body, the statement shapes a `give` sits under (a block, an `if`, a statement pick's arm).
 func:collect_gives_roots = NIL(Escape->:x, StmtId:sid, int32:depth, List<int32>->:out) never fails {
     if (depth <= 0i32) { pass NIL; }
     if (sid.index == 0i32) { pass NIL; }
@@ -3679,9 +3699,17 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (n.kind == ExprKind.ExprPickExpr) {
         drop escape_untracked(x, raw pickx_selector(n),
             "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        // THE ARMS ARE WALKED ONCE (DEF-278, landing 152): the statement walk
+        // reaches every `give` under them -- at the arm's top level, under an
+        // `if`, inside a loop -- and its `give` arm ORs the operand's verdict
+        // into this pick's frame (`x.givex`); the frame is the verdict. Until
+        // this landing `gives_borrowy` walked the arms a SECOND time after the
+        // statement walk to ask `escape_expr` the same question of each give's
+        // operand, so a pick nested in a give's operand was walked twice per
+        // level and a nest of n cost 2^n walks.
+        drop list_push(@x.givex, 0i32);
         drop escape_stmt_window(x, raw pickx_arm_start(n), raw pickx_arm_count(n));
-        pass (raw gives_borrowy(x, raw pickx_arm_start(n),
-                                  raw pickx_arm_count(n), depth));
+        pass ((raw list_pop(@x.givex)) != 0i32);
     }
 
     // EVERYTHING ELSE IS DRIVEN BY `expr_shape`, for the reason `resolve_expr`
@@ -4104,51 +4132,6 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
 // somewhere a borrow passed beside it could be stored (F-1). The borrow
 // arguments themselves are counted separately and never double as their own
 // destination.
-// Does any `give` in these arms yield a borrowy value? A statement scan that
-// descends every nested statement window — a `give` can sit under an `if`
-// inside an arm — asking `escape_expr` about each operand.
-func:gives_borrowy = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {
-    for (int32:i in 0i32...count) {
-        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-        if (raw stmt_gives_borrowy(x, raw arm_body(arm), depth)) { pass true; }
-    }
-    pass false;
-};
-
-func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) never fails {
-    if (depth <= 0i32) { pass false; }
-    if (sid.index == 0i32) { pass false; }
-    StmtNode:s = raw ast_stmt(x.ast, sid);
-    if (s.kind == StmtKind.StmtGiveStmt) {
-        pass (raw escape_expr(x, raw stmt_operand(s), depth - 1i32));
-    }
-    if (s.kind == StmtKind.StmtBlockStmt) {
-        int32:n = raw stmt_list_count(s);
-        int32:i = 0i32;
-        while (i < n) decreases n - i {
-            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast,
-                                     raw stmt_list_start(s), i) };
-            if (raw stmt_gives_borrowy(x, sub, depth - 1i32)) { pass true; }
-            i = i + 1i32;
-        }
-        pass false;
-    }
-    if (s.kind == StmtKind.StmtIfStmt) {
-        if (raw stmt_gives_borrowy(x, raw stmt_body(x.ast, s), depth - 1i32)) { pass true; }
-        pass (raw stmt_gives_borrowy(x, raw stmt_else(s), depth - 1i32));
-    }
-    if (s.kind == StmtKind.StmtPickStmt) {
-        int32:pc = raw pick_arm_count(s);
-        int32:ps = raw pick_arm_start(s);
-        for (int32:i in 0i32...pc) {
-            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, ps, i));
-            if (raw stmt_gives_borrowy(x, raw arm_body(parm), depth - 1i32)) { pass true; }
-        }
-        pass false;
-    }
-    pass false;
-};
-
 // The pointee type behind an argument, for the type-aware destination match.
 func:arg_pointee_ty = int32(Escape->:x, ExprId:a) never fails {
     int32:t = raw exprtypes_get(x.etypes, a);

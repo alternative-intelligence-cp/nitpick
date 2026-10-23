@@ -95,7 +95,14 @@ In a lending `pick` these names are views of `event`'s fields and payload
     bindings of `pick (move(v))` are dropped at the arm's end and at every exit from it (`pass`,
     `break`, `give`, `fall`), in the statement form and the expression form alike; a payload the arm
     moves out (`give move(x)`, `string:y = move(x)`) leaves with the move.
-*   **`give expr;`** — yields a value out of the `pick` block when it is used as an expression.
+*   **`give expr;`** — yields a value out of the `pick` block when it is used as an expression. Every path of such an arm ends in
+    `give` or leaves (`pass`, `fail`, `exit`, a trap, `fall` into another arm, `break`, `continue`): an arm that can reach its end
+    without giving is `NITPICK-FLOW-001` (DEF-284, landing 152 -- D-323's rule, asked of an arm), since the `pick` would otherwise
+    yield its slot's vacant zero; an `if` without `else`, a counted loop and a `when` complete as wholes, a `while (true)` with no
+    `break` of its own never does. A `give` anywhere in the arm -- at its top level, under an `if`, inside a loop -- hands the pick
+    its value and is held to the pick's type: the slot's expectation where there is one, else the FIRST `give` met in source order
+    sets it and every later `give` must fit it exactly (`NITPICK-TYPE-007` at the give; DEF-283, landing 152 -- before it a give
+    below the arm's top level was typed against nothing).
 
 > ⚠️ **`(!)` is removed** (D-061). An earlier revision of this section listed it as
 > the *unreachable* marker. It let an arm be **elided from exhaustiveness**, and

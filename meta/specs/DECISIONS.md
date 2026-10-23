@@ -21848,6 +21848,16 @@ unchanged: the builtin under another expression is "every other statement" and c
 ending in `int32:z = #unreachable();` is still refused, and the author answers with the bare
 statement.
 
+*[2026-10-23, 1.6.1e landing 152 (DEF-284) — a dated note.]* **The rule is asked of a `pick` EXPRESSION's
+arm too.** An arm of a `pick` used as a value that could reach its end without a `give` handed the
+pick's slot nothing, and the statement read the slot's vacant zero -- this decision's defect at the one
+construct it had not been asked of, found by a probe of DEF-278's fix (`pick (x) { (1i32) { if (c) { give
+7i32; } }, (*) { give 5i32; } }` with `c` false exited 0 at both legs). The bindings analysis asks
+`stmt_completes` of every such arm (a `give` never completes; `fall` continues into the next arm, judged
+on its own) and refuses an arm that may complete with `NITPICK-FLOW-001` and its own sentence; the
+conservatism is this decision's: a `give` inside a counted loop or a `when`, which complete as wholes,
+is refused, and the author gives after the loop or restructures.
+
 ## D-324 — 1.6.1's process and stage: the NIKOS port on a `nitpick-port` branch the user merges, the second decider on by default, the stage over every plain emission on every run — **SETTLED (user decision, 2026-09-26: "both of your recommendations sound fine to me. lets ratify those."; S-103, S-104, S-105)**
 
 Asked at 1.6.0 step 5 with `meta/roadmap/1.6/1.6.1.md` §3, each with its recommendation, on the

@@ -1,0 +1,63 @@
+// expect-exit: 0
+// DEF-281 AND DEF-278 (landing 152): FOUR NESTS THE FRONT HALF COULD NOT FINISH.
+// A nest of loops walked its innermost body 2^n times in the bindings analysis
+// (`assign_loop_body`'s silent pre-pass repeated at every level: twenty levels
+// two seconds and 476 MB, twenty-four past 6 GB), and a nest of pick EXPRESSIONS
+// was typed and escape-walked twice per level (twenty levels 25 s, twenty-four
+// past five minutes). Each nest here is well past where landing 151's compiler
+// stopped, and well within the AST's bound (a `while` is two levels, a `for`
+// and a `loop` two, a pick expression nested through `give` four). The runners
+// bound a compile's time, so a walk that doubles again is a red, not a hang.
+mod:deep_nests;
+
+// 100 nested `while (b) unbounded` loops whose `b` is false: the body never runs.
+func:whiles = int32() never fails {
+    int32:x = 1i32;
+    bool:b = false;
+    while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { while (b) unbounded { x = x + 1i32; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } 
+    pass x;
+};
+
+// 60 nested `for` loops of one trip each: the innermost body runs once.
+func:fors = int32() never fails {
+    int32:x = 1i32;
+    for (int32:i0 in 0i32...1i32) { for (int32:i1 in 0i32...1i32) { for (int32:i2 in 0i32...1i32) { for (int32:i3 in 0i32...1i32) { for (int32:i4 in 0i32...1i32) { for (int32:i5 in 0i32...1i32) { for (int32:i6 in 0i32...1i32) { for (int32:i7 in 0i32...1i32) { for (int32:i8 in 0i32...1i32) { for (int32:i9 in 0i32...1i32) { for (int32:i10 in 0i32...1i32) { for (int32:i11 in 0i32...1i32) { for (int32:i12 in 0i32...1i32) { for (int32:i13 in 0i32...1i32) { for (int32:i14 in 0i32...1i32) { for (int32:i15 in 0i32...1i32) { for (int32:i16 in 0i32...1i32) { for (int32:i17 in 0i32...1i32) { for (int32:i18 in 0i32...1i32) { for (int32:i19 in 0i32...1i32) { for (int32:i20 in 0i32...1i32) { for (int32:i21 in 0i32...1i32) { for (int32:i22 in 0i32...1i32) { for (int32:i23 in 0i32...1i32) { for (int32:i24 in 0i32...1i32) { for (int32:i25 in 0i32...1i32) { for (int32:i26 in 0i32...1i32) { for (int32:i27 in 0i32...1i32) { for (int32:i28 in 0i32...1i32) { for (int32:i29 in 0i32...1i32) { for (int32:i30 in 0i32...1i32) { for (int32:i31 in 0i32...1i32) { for (int32:i32 in 0i32...1i32) { for (int32:i33 in 0i32...1i32) { for (int32:i34 in 0i32...1i32) { for (int32:i35 in 0i32...1i32) { for (int32:i36 in 0i32...1i32) { for (int32:i37 in 0i32...1i32) { for (int32:i38 in 0i32...1i32) { for (int32:i39 in 0i32...1i32) { for (int32:i40 in 0i32...1i32) { for (int32:i41 in 0i32...1i32) { for (int32:i42 in 0i32...1i32) { for (int32:i43 in 0i32...1i32) { for (int32:i44 in 0i32...1i32) { for (int32:i45 in 0i32...1i32) { for (int32:i46 in 0i32...1i32) { for (int32:i47 in 0i32...1i32) { for (int32:i48 in 0i32...1i32) { for (int32:i49 in 0i32...1i32) { for (int32:i50 in 0i32...1i32) { for (int32:i51 in 0i32...1i32) { for (int32:i52 in 0i32...1i32) { for (int32:i53 in 0i32...1i32) { for (int32:i54 in 0i32...1i32) { for (int32:i55 in 0i32...1i32) { for (int32:i56 in 0i32...1i32) { for (int32:i57 in 0i32...1i32) { for (int32:i58 in 0i32...1i32) { for (int32:i59 in 0i32...1i32) { x = x + 1i32; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } 
+    pass x;
+};
+
+// 60 nested counted loops of one trip each: the innermost body runs once.
+func:loops = int32() never fails {
+    int32:x = 1i32;
+    loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { loop(0i32, 1i32, 1i32) { x = x + 1i32; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } 
+    pass x;
+};
+
+// 40 nested pick expressions, each matching `(1i32)`, the innermost giving `x`.
+func:picks = int32() never fails {
+    int32:x = 1i32;
+    int32:y = pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give pick (x) { (1i32) { give x; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } }; }, (*) { give 0i32; } };
+    pass y;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw whiles()) != 1i32) { exit 1i32; }
+    if ((raw fors()) != 2i32) { exit 2i32; }
+    if ((raw loops()) != 2i32) { exit 3i32; }
+    if ((raw picks()) != 1i32) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

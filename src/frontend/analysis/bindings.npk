@@ -711,6 +711,11 @@ func:stmt_completes = bool(Assign->:x, StmtId:id, int32:depth) never fails {
     if (s.kind == StmtKind.StmtBreakStmt)    { pass false; }
     if (s.kind == StmtKind.StmtContinueStmt) { pass false; }
     if (s.kind == StmtKind.StmtFallStmt)     { pass false; }
+    // A `give` LEAVES ITS ARM with the pick's value (DEF-284, landing 152): the
+    // arm never steps past it. It stands only in a pick EXPRESSION's arm (the
+    // checker's TYPE-094), which no function body reaches as a statement, so
+    // FLOW-001's question of a body is untouched; the question of an ARM asks it.
+    if (s.kind == StmtKind.StmtGiveStmt)     { pass false; }
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:n = raw stmt_list_count(s);
         for (int32:i in 0i32...n) {
@@ -982,8 +987,29 @@ func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
 // is set by an assignment statement and by `$$m`, and neither chains: one walk
 // visits every assignment in the body whatever its order or nesting, so the second
 // walk starts from the answer.
+//
+// AND A PRE-PASS IS NOT REPEATED INSIDE A PRE-PASS (DEF-281, landing 152). A loop
+// met while an enclosing loop's silent walk runs is walked ONCE: what a silent
+// walk hands up is the four unions `state_absorb_may` takes (`may`, `moved`,
+// `freed`, `sealed_any`), each the start state's bits plus what the body sets,
+// and a second silent walk of the same body from a wider start adds nothing to
+// them -- it would only report, and a silent walk reports nothing. Until this
+// landing every level walked its body twice whatever the mode, so a nest of n
+// loops walked the innermost body 2^n times (x1.8 per level in time and memory:
+// twenty nested loops two seconds and 476 MB, twenty-four past 6 GB, sixty
+// never). Now a nest of n loops is n silent walks and n real ones per level,
+// quadratic in the depth, and a nest at the parser's bound compiles in a blink.
+// The real pass still walks every loop it meets twice -- its own silent pre-pass
+// and then the reporting walk -- so no report moves.
 func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth) never fails {
     if (raw stmt_is_none(body)) { pass NIL; }
+
+    if (x.quiet) {
+        AssignState:once = raw state_copy(st);
+        drop assign_stmt(x, once, body, depth);
+        drop state_absorb_may(st, once);
+        pass NIL;
+    }
 
     bool:saved = x.quiet;
     x.quiet = true;
@@ -1476,6 +1502,25 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
     if (n.kind == ExprKind.ExprPickExpr) {
         StmtNode:as_stmt = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
                                      a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        // EVERY ARM OF A `pick` USED AS A VALUE ENDS IN `give` OR LEAVES (DEF-284,
+        // landing 152; D-323's rule, asked of an arm): an arm that can reach its
+        // end without a `give` hands the pick's slot nothing, and the value the
+        // statement then reads is the slot's vacant zero -- a number the program
+        // never computed, at both legs, from an accepted program. `stmt_completes`
+        // is the one judge (a `give` never completes; `fall` goes to the next arm,
+        // which is judged on its own; `pass`, `fail`, `exit`, a trap, `break` and
+        // `continue` leave; an `if` without `else`, a counted loop and a `when`
+        // complete as wholes).
+        int32:pstart = raw pick_arm_start(as_stmt);
+        int32:pcount = raw pick_arm_count(as_stmt);
+        for (int32:pi in 0i32...pcount) {
+            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, pstart, pi));
+            if (raw stmt_completes(x, raw arm_body(parm), raw ASSIGN_DEPTH())) {
+                drop assign_err(x, raw FLOW_FALLS_OFF(),
+                    "this arm of a `pick` used as a value can reach its end without `give`, and the value the `pick` would then yield is nothing the program computed (the slot's zero): end every path of the arm in `give`, or leave it (`pass`, `fail`, `exit`, a trap, `fall`)",
+                    parm.span);
+            }
+        }
         drop assign_pick(x, st, as_stmt, d);
         pass NIL;
     }

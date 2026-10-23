@@ -1,0 +1,64 @@
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 27:26
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 29:49
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 31:26
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 33:26
+//
+// DEF-284 (landing 152; D-323's rule, asked of an ARM): every arm of a `pick`
+// used as a value ends in `give` or leaves. An arm that could reach its end
+// without a `give` handed the pick's slot nothing, and the statement read the
+// slot's vacant zero -- a number the program never computed -- at both legs,
+// from an accepted program (the probe `ng_fall.npk`, exit 0 for a `pick` whose
+// arm gave only under a false condition). `stmt_completes` is the one judge: a
+// `give` never completes, `fall` continues into the next arm (judged on its
+// own), `pass`/`fail`/`exit`/a trap/`break`/`continue` leave, an `if` without
+// `else`, a counted loop and a `when` complete as wholes, a `while (true)`
+// with no `break` of its own never does.
+mod:pick_arm_falls_off;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:x = 1i32;
+    bool:c = false;
+
+    // A GIVE UNDER AN `if` WITH NO `else`: the arm falls off its end when `c` is false.
+    int32:a = pick (x) { (1i32) { if (c) { give 7i32; } }, (*) { give 5i32; } };
+    // AN EMPTY ARM gives nothing.
+    int32:b = pick (x) { (1i32) { give 1i32; }, (*) { } };
+    // A GIVE INSIDE A COUNTED LOOP, which completes as a whole.
+    int32:d = pick (x) { (1i32) { loop(0i32, 1i32, 1i32) { give 1i32; } }, (*) { give 0i32; } };
+    // A GIVE INSIDE A `while` WITH A CONDITION, which may run zero times.
+    int32:f = pick (x) { (1i32) { while (c) unbounded { give 1i32; } }, (*) { give 0i32; } };
+
+    // THE CONTROLS, each arm ending in `give` or leaving:
+    // an `if` with an `else`, both arms giving;
+    int32:g = pick (x) { (1i32) { if (c) { give 1i32; } else { give 2i32; } }, (*) { give 0i32; } };
+    // a `fall` into a labelled arm that gives;
+    int32:h = pick (x) { (1i32) { fall other; }, other: (*) { give 0i32; } };
+    // an arm that leaves the function;
+    int32:k = pick (x) { (1i32) { exit 3i32; }, (*) { give 0i32; } };
+    // a `while (true)` with no `break`, whose only exit is the `give`;
+    int32:m = pick (x) { (1i32) { while (true) unbounded { give 1i32; } }, (*) { give 0i32; } };
+    // a trap.
+    int32:p = pick (x) { (1i32) { !!! Unreachable; }, (*) { give 0i32; } };
+
+    if (a + b + d + f + g + h + k + m + p == 0i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

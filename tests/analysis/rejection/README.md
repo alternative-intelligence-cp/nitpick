@@ -69,6 +69,8 @@ Silence has no stage.
 | `REACH-001` | D-179 — a `failsafe` with no `pick` over its `Error` parameter names nothing | `failsafe_nopick.npk` |
 | `REACH-002` | D-179 — a `failsafe` whose `pick` does not name an error that can reach it (`(*)` counts for nothing) | `failsafe_reach.npk` |
 | `REACH-003` | D-013 — a root that declares `main` and no `failsafe`, refused at `main` with the identities the absent handler owes (1.5.1b step 1b, the workbench's DEF-5) | `missing_failsafe.npk` |
+| `FLOW-001` | D-323 (DEF-108, 1.6.0 step 5c) — a function body that can reach its own closing brace without `pass`, `fail`, `exit` or a trap | `falls_off.npk` |
+| `FLOW-001` | D-323 asked of an ARM (DEF-284, landing 152) — an arm of a `pick` used as a value that can reach its end without `give` (the pick would yield its slot's zero) | `pick_arm_falls_off.npk` |
 
 ### The five with no test, and why they cannot have one
 

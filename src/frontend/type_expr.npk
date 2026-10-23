@@ -138,6 +138,18 @@ pub struct:ExprTyper = {
     // Raised around the arm body in both spellings' walks; a body starts at 0.
     int32:arm_depth;
     int32:givex_depth;
+    // THE PICK EXPRESSIONS BEING TYPED (DEF-278, DEF-283; landing 152): one frame per
+    // open `pick` used as a value, innermost last -- the pick's node (`givex_pick`,
+    // for its span) and its RUNNING TYPE (`givex_cur`: the slot's expectation, then
+    // the first `give`'s type, which every later give must fit). The statement
+    // walk's `give` arm types each give's operand ONCE against the top frame and
+    // writes the type back; `type_pick_expr` reads the frame after its arms. Until
+    // this landing the give's operand was typed by the walk for its own sake and
+    // again by `arm_give_type` for the pick's type -- a pick nested in a give's
+    // operand twice per level -- and a give below an arm's top level was typed
+    // against nothing.
+    List<int32>:givex_pick;
+    List<int32>:givex_cur;
 
     // HOW MANY COUNTED LOOPS ENCLOSE THE EXPRESSION BEING TYPED (1.0.8). `$`
     // names the innermost one's counter; outside any, it names nothing — and
@@ -259,6 +271,8 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              instances: instances, fninsts: fninsts,
                              self_type: 0i32, self_trait: 0i32,
                              frozen: raw list_init::<int32>(8i64),
+                             givex_pick: raw list_init::<int32>(8i64),
+                             givex_cur: raw list_init::<int32>(8i64),
                              expr_types: expr_types };
     pass e;
 };
@@ -3528,7 +3542,7 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
 // THE TYPE COMES FROM THE FIRST `give`, and the rest are measured against it — the
 // same rule the array literal uses, and for the same reason: choosing a "common"
 // type would need a widening rule, and D-092 says there is not one.
-func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
+func:type_pick_expr = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     int32:pselt = raw type_of_expr(e, raw pickx_selector(n));
     int32:start = raw pickx_arm_start(n);
     int32:cnt = raw pickx_arm_count(n);
@@ -3542,7 +3556,12 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     if (!pr.ok) { pass 0i32; }
 
     int32:want = raw expected_value(e);
-    int32:given = want;
+    // THE PICK'S RUNNING TYPE IS A FRAME ON THE TYPER (DEF-278, DEF-283; landing 152):
+    // the slot's expectation to start, then the first `give`'s type, kept by the
+    // statement walk's `give` arm (`type_give_operand`) as it meets each give in
+    // the arms below -- at the top level or nested -- and read back here.
+    drop list_push(@e.givex_pick, id.index);
+    drop list_push(@e.givex_cur, want);
 
     // THE SELECTOR IS FROZEN INSIDE AN ARM THAT BINDS A VIEW (D-266, 1.5.2h) --
     // the statement form's `check_arms` rule, for this spelling.
@@ -3566,9 +3585,10 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
         e.arm_depth = e.arm_depth - 1i32;
         e.givex_depth = e.givex_depth - 1i32;
         if (frz) { discard(raw list_pop(@e.frozen)); }
-        given = raw arm_give_type(e, raw arm_body(a), given, n.span);
     }
 
+    int32:given = raw list_pop(@e.givex_cur);
+    discard(raw list_pop(@e.givex_pick));
     if (given == 0i32) {
         pass (raw te_error(e, raw TYPE_CANNOT_INFER(),
             "this `pick` is used as a value and no arm gives one; an arm that falls off its end has nothing to produce",
@@ -3577,47 +3597,44 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     pass given;
 };
 
-// THE `give` IN AN ARM'S BODY, CHECKED AGAINST WHAT THE OTHERS GAVE.
-//
-// One level, because `give` belongs to the arm it is written in: a `give` nested
-// inside an `if` inside an arm is a shape the corpus does not write, and walking for
-// one would mean deciding what an arm with two of them means.
-func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) never fails {
-    if (raw stmt_is_none(body)) { pass sofar; }
-    StmtNode:b = raw ast_stmt(e.ast, body);
-    if (b.kind != StmtKind.StmtBlockStmt) { pass sofar; }
-
-    int32:n = raw stmt_list_count(b);
-    int32:start = raw stmt_list_start(b);
-    int32:cur = sofar;
-    for (int32:i in 0i32...n) {
-        StmtNode:st = raw ast_stmt(e.ast,
-                          StmtId{ index: raw ast_id_at(e.ast, start, i) });
-        if (st.kind == StmtKind.StmtGiveStmt) {
-            int32:saved = e.expected;
-            e.expected = cur;
-            int32:got = raw type_of_expr(e, ExprId{ index: st.a });
-            // `give` hands the arm's value to the pick's slot (D-183): an
-            // owning PLACE given bare would leave two owners — the binding
-            // and the slot — and one drop later frees the other's body. The
-            // slot that stayed unwired while every other value slot was
-            // swept, and the one that let a shared `{ ptr, i64, i64 }` text
-            // survive into stage 2's emission as sink garbage.
-            drop require_move_if_owning(e, ExprId{ index: st.a }, got, at);
-            e.expected = saved;
-            if (!(raw type_is_invalid(e.types, got))) {
-                if (got != 0i32) {
-                    if (cur == 0i32) { cur = got; }
-                    else {
-                        if (!(raw fits(e, cur, got))) {
-                            drop te_assign_mismatch(e, cur, got, st.span);
-                        }
-                    }
+// A `give`'S OPERAND, TYPED ONCE AGAINST THE PICK IT STANDS IN (DEF-278, DEF-283;
+// landing 152; `arm_give_type`'s rule, moved to the statement walk). The innermost
+// open pick expression's frame says what the arms have given so far: the slot's
+// expectation, or the first give's type -- the same rule the array literal uses,
+// and for the same reason: choosing a "common" type would need a widening rule,
+// and D-092 says there is not one. The first give met in source order sets the
+// type, every later one must fit it (TYPE-007 at the give), and a give below an
+// arm's top level -- under an `if`, inside a loop -- is held to it like any other,
+// where it was typed against nothing (DEF-283: `give 7i64` into an `int32` pick
+// compiled, its bits stored into the slot). The checker's TYPE-094 has refused a
+// give outside such an arm before this is reached, so the stack is never empty
+// here; the test is the belt.
+pub func:type_give_operand = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    int64:top = e.givex_cur.count - 1i64;
+    if (top < 0i64) { pass NIL; }
+    int32:cur = e.givex_cur[top];
+    ExprNode:pn = raw ast_expr(e.ast, ExprId{ index: e.givex_pick[top] });
+    int32:saved = e.expected;
+    e.expected = cur;
+    int32:got = raw type_of_expr(e, ExprId{ index: s.a });
+    // `give` hands the arm's value to the pick's slot (D-183): an owning PLACE
+    // given bare would leave two owners — the binding and the slot — and one
+    // drop later frees the other's body. The slot that stayed unwired while
+    // every other value slot was swept, and the one that let a shared
+    // `{ ptr, i64, i64 }` text survive into stage 2's emission as sink garbage.
+    drop require_move_if_owning(e, ExprId{ index: s.a }, got, pn.span);
+    e.expected = saved;
+    if (!(raw type_is_invalid(e.types, got))) {
+        if (got != 0i32) {
+            if (cur == 0i32) { e.givex_cur[top] = got; }
+            else {
+                if (!(raw fits(e, cur, got))) {
+                    drop te_assign_mismatch(e, cur, got, s.span);
                 }
             }
         }
     }
-    pass cur;
+    pass NIL;
 };
 
 // `[1i32, 2i32, 3i32]` — ONE ELEMENT TYPE, AND A COUNT (D-129, 0.6.7).
@@ -4267,7 +4284,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprArrayLiteralExpr)  { pass (raw type_array_literal(e, n)); }
     if (n.kind == ExprKind.ExprPipeExpr)          { pass (raw type_pipe(e, n)); }
     if (n.kind == ExprKind.ExprDynCastExpr)       { pass (raw type_dyn_cast(e, n)); }
-    if (n.kind == ExprKind.ExprPickExpr)          { pass (raw type_pick_expr(e, n)); }
+    if (n.kind == ExprKind.ExprPickExpr)          { pass (raw type_pick_expr(e, id, n)); }
     if (n.kind == ExprKind.ExprVectorCtorExpr)    { pass (raw type_vector_ctor(e, n)); }
     if (n.kind == ExprKind.ExprBuiltinExpr)  { pass (raw type_builtin(e, id, n)); }
     if (n.kind == ExprKind.ExprComptimeExpr) { pass (raw type_comptime(e, id, n)); }
