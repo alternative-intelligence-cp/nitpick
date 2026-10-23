@@ -1,0 +1,30 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 5
+// expect-obligation: failsafe-post discharged 3
+// expect-obligation: exhaustive checker 2
+//
+// A VALUE LIST'S CONDITION IS THE DISJUNCTION OF ITS ALTERNATIVES (D-363 R1, landing 151): inside the arm
+// `(1i32, 2i32)` the encoder knows `(or (= v 1) (= v 2))`, so `prove(v <= 2i32)` and `prove(v >= 1i32)`
+// discharge; the wildcard's condition is the negation of every prior arm's -- the list's disjunction among
+// them -- so `prove((v != 1i32) && (v != 2i32))` and `prove(v != 7i32)` discharge there. Exit 0 at both legs.
+mod:pick_values;
+func:f = int32(int32:v) never fails {
+    pick (v) {
+        (1i32, 2i32) { prove(v <= 2i32); prove(v >= 1i32); pass 1i32; },
+        (7i32)       { prove(v == 7i32); pass 2i32; },
+        (*)          { prove((v != 1i32) && (v != 2i32)); prove(v != 7i32); pass 0i32; }
+    }
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw f(2i32)) != 1i32) { exit 1i32; }
+    if ((raw f(7i32)) != 2i32) { exit 2i32; }
+    if ((raw f(3i32)) != 0i32) { exit 3i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest, HeapOom, WildLeak, IntOverflow, OutOfBounds, Unreachable) { exit 92i32; },
+        (StackExhausted, MachineFault, DecreasesViolated) { exit 106i32; },
+        (*) { exit 99i32; }
+    }
+};

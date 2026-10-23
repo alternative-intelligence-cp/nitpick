@@ -118,10 +118,130 @@ pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) never fails
     pass (0i32 - 1i32);
 };
 
+// --- the alternatives of an arm (D-363, landing 151) ------------------------------
+//
+// A VALUE LIST is one pattern node holding a window of the alternatives' pattern
+// ids: `(1i32, 2i32, 5i32)`, `(ntime.ETimeValue, ntime.ETzMissing)`. Each
+// alternative is a VALUE or a bind-free PATH (the enum-destructure node with no
+// bindings -- the shape `(Color.Red)` and `(file.Name)` have always parsed to),
+// so every reader of a pattern reads an arm's ALTERNATIVES through the two
+// functions below and keeps its single-pattern logic: one alternative for an
+// ordinary pattern, the window's members for a list. A reader that asked the
+// node's kind directly would see a list where it expects a value and fall to its
+// fail-closed arm, which is the loud way to find a reader this landing missed.
+pub func:pat_list_count = int32(PatNode:p) never fails { pass p.b; };
+pub func:pat_list_alt = PatId(Ast->:ast, PatNode:p, int32:i) never fails {
+    PatId:q = PatId{ index: raw ast_id_at(ast, p.a, i) };
+    pass q;
+};
+pub func:pat_alt_count = int32(Ast->:ast, PatId:id) never fails {
+    if (raw pat_is_none(id)) { pass 0i32; }
+    PatNode:p = raw ast_pat(ast, id);
+    if (p.kind == PatKind.PatValueList) { pass (raw pat_list_count(p)); }
+    pass 1i32;
+};
+pub func:pat_alt_at = PatId(Ast->:ast, PatId:id, int32:i) never fails {
+    PatNode:p = raw ast_pat(ast, id);
+    if (p.kind == PatKind.PatValueList) { pass (raw pat_list_alt(ast, p, i)); }
+    pass id;
+};
+
 // --- patterns ---------------------------------------------------------------------
 
-// The contents of one `( … )`.
+// The contents of one `( … )`: one alternative, or a comma list of them.
 func:p_parse_pattern = PatId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
+    PatId:first = raw p_parse_one_pattern(p);
+    if (!(raw p_at(p, TokenKind.PComma))) { pass first; }
+    // A VALUE LIST (D-363, landing 151): several values, one body. The COMMA is
+    // the spelling -- the bar is bitwise-or everywhere else, and a pattern is a
+    // constant expression, so `(1i32 | 2i32)` is the case of their or. Each
+    // alternative is a value or a bind-free path; a range, `(*)`, a struct
+    // destructure or a destructure that binds stands alone in its own arm, and
+    // is refused HERE by name, at the alternative -- the expression parser could
+    // only say "expected an expression" about a construct the reader meant as a
+    // pattern. A refused alternative leaves the arm without a pattern (the
+    // refusal is the one report, D-240; the arm's recovery is `p_recover_arm`).
+    if (!(raw p_list_alternative_ok(p, first))) { drop p_skip_to_rparen(p); pass (raw pat_none()); }
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, first.index);
+    while (raw p_accept(p, TokenKind.PComma)) decreases raw p_left(p) {
+        if (raw p_at(p, TokenKind.PRParen)) {
+            drop p_error(p, raw PARSE_BAD_PATTERN(),
+                "a value list does not end in a comma: write the next value, or drop the comma (D-363)");
+            discard(raw ast_scratch_commit(p.ast, mark));
+            pass (raw pat_none());
+        }
+        PatId:alt = raw p_parse_one_pattern(p);
+        if (!(raw p_list_alternative_ok(p, alt))) {
+            discard(raw ast_scratch_commit(p.ast, mark));
+            drop p_skip_to_rparen(p);
+            pass (raw pat_none());
+        }
+        drop ast_scratch_push(p.ast, alt.index);
+    }
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (raw ast_add_pat(p.ast, PatKind.PatValueList, sp, w.start, w.count, 0i32, 0i64));
+};
+
+// AFTER A REFUSED ALTERNATIVE the parser stands inside the arm's parentheses, at
+// the list's own `,` or at the alternative's end; the arm's recovery counts
+// brackets from where it starts, so it would stop at that comma and read the
+// next value as the next arm ("expected `(`"). The rest of the pattern is
+// skipped to its `)` first, nested brackets counted, which the arm's own
+// `p_expect` then takes; the body after it parses as written, under panic.
+func:p_skip_to_rparen = NIL(Parser->:p) never fails {
+    int32:depth = 0i32;
+    while (!(raw p_at_end(p))) decreases raw p_left(p) {
+        TokenKind:k = raw p_kind(p);
+        if ((k == TokenKind.PLParen) || (k == TokenKind.PLBrace) || (k == TokenKind.PLBracket)) { depth = depth + 1i32; }
+        if ((k == TokenKind.PRParen) || (k == TokenKind.PRBrace) || (k == TokenKind.PRBracket)) {
+            if (depth == 0i32) { break; }
+            depth = depth - 1i32;
+        }
+        discard(raw p_advance(p));
+    }
+    pass NIL;
+};
+
+// Is this alternative one a value list may hold? A refusal is reported at the
+// alternative, once; an alternative that is no pattern at all has had its own.
+func:p_list_alternative_ok = bool(Parser->:p, PatId:id) never fails {
+    if (raw pat_is_none(id)) { pass false; }
+    PatNode:q = raw ast_pat(p.ast, id);
+    if (q.kind == PatKind.PatValue) { pass true; }
+    if (q.kind == PatKind.PatEnumDestructure) {
+        if ((raw pat_enum_bind_count(p.ast, q)) == 0i32) { pass true; }
+        drop p_error_at(p, raw PARSE_BAD_PATTERN(),
+            "a value list names values, and this alternative binds names: a destructure stands alone in its own arm (D-363)",
+            q.span);
+        pass false;
+    }
+    if (q.kind == PatKind.PatRange) {
+        drop p_error_at(p, raw PARSE_BAD_PATTERN(),
+            "a value list names single values, and this alternative is a range: write the range as its own arm (D-363)",
+            q.span);
+        pass false;
+    }
+    if (q.kind == PatKind.PatWildcard) {
+        drop p_error_at(p, raw PARSE_BAD_PATTERN(),
+            "`(*)` matches everything and stands alone: a value list names the values one body takes (D-363)",
+            q.span);
+        pass false;
+    }
+    if (q.kind == PatKind.PatStructDestructure) {
+        drop p_error_at(p, raw PARSE_BAD_PATTERN(),
+            "a value list names values, and this alternative is a struct destructure: it binds fields and stands alone in its own arm (D-363)",
+            q.span);
+        pass false;
+    }
+    drop p_error_at(p, raw PARSE_BAD_PATTERN(),
+        "this alternative is not a value a list may hold (D-363)", q.span);
+    pass false;
+};
+
+// One alternative: the contents of `( … )` up to a `,` or the `)`.
+func:p_parse_one_pattern = PatId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
 
     // `(*)` -- the catch-all. It may NOT absorb an `ERR` selector; that is a

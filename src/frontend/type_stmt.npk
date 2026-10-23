@@ -40,6 +40,7 @@ use "./resolve_codes.npk".*;   // RESOLVE_UNKNOWN: a `(module.Name)` arm naming 
 use "./macro/derive_codes.npk".*;   // DERIVE_ATTRIBUTE: an attribute on a binding (DEF-236 (d), landing 113)entifier's own code (D-275, D-240)
 use "./builtins.npk".*;        // is_builtin_name: the names a CALLABLE binding cannot take (D-296)
 use "./analysis/wild_places.npk".*;   // place_wild: an assignment into a wild place admits `NULL` (D-355)
+use "./analysis/analysis_codes.npk".*;   // PICK_UNREACHABLE_ARM: a value one arm lists twice, or an earlier arm took (D-363, landing 151)
 
 // A CALLABLE BINDING MAY NOT TAKE A BUILTIN'S NAME (D-296, 1.5.6b step 4b) --
 // D-294 inside a function. A bare-name builtin is admitted by the resolver only
@@ -919,8 +920,11 @@ func:check_error_arms = NIL(ExprTyper->:e, int32:start, int32:count) never fails
     while (i < count) decreases count - i {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:apid = raw arm_pattern(arm);
-        if (!(raw pat_is_none(apid))) {
-            PatNode:pn = raw ast_pat(e.ast, apid);
+        // EVERY ALTERNATIVE of a value list is judged as the arm it stands for
+        // (D-363, landing 151): `(HeapOom, HeapBadRequest)`, `(ntime.A, ntime.B)`.
+        int32:nalt = raw pat_alt_count(e.ast, apid);
+        for (int32:ai in 0i32...nalt) {
+            PatNode:pn = raw ast_pat(e.ast, raw pat_alt_at(e.ast, apid, ai));
             bool:ok = false;
             if (pn.kind == PatKind.PatWildcard) { ok = true; }
             if (pn.kind == PatKind.PatValue) { ok = raw error_value_pattern(e, pn); }
@@ -1104,27 +1108,92 @@ func:check_value_patterns = NIL(ExprTyper->:e, int32:selt, int32:start, int32:co
     if (raw type_is_invalid(e.types, selt)) { pass NIL; }
     int32:sk = raw type_kind(e.types, selt);
     if (sk == (raw TY_ERROR())) { pass NIL; }
+    // THE VALUES ALREADY TAKEN (D-363, landing 151; DEF-212): every value alternative of every arm, with the arm it
+    // stands in and whether that arm is guarded, so a value one list holds twice, or an earlier unguarded arm took,
+    // is refused at its second spelling (`refuse_repeated_value`): the emitter's `switch` carried two equal cases to
+    // `llc` ("duplicate case value", DEF-212), and under the compare chain the second never ran, in silence.
+    List<ConstVal>:seen = raw list_init::<ConstVal>(8i64);
+    List<int32>:seen_arm = raw list_init::<int32>(8i64);
+    List<int32>:seen_guarded = raw list_init::<int32>(8i64);
+    List<int32>:seen_expr = raw list_init::<int32>(8i64);
+    TypeResolver:cmp = raw etyper_resolver(e);
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:vp = raw arm_pattern(arm);
-        if (raw pat_is_none(vp)) { continue; }
-        PatNode:pn = raw ast_pat(e.ast, vp);
-        if (pn.kind == PatKind.PatValue) {
-            discard(raw check_pattern_constant(e, selt, raw pat_value(pn)));
-        }
-        if (pn.kind == PatKind.PatRange) {
-            if (!(raw kind_has_ranges(sk))) {
-                string:r1 = string_concat("a range pattern needs an ordered selector -- an integer, a `char`, a twisted or a fixed-point value -- and a `",
-                                          raw type_display(e.types, e.interns, selt));
-                discard(raw te_error(e, raw TYPE_MISMATCH(),
-                    string_concat(r1, "` has no order a range could cover: name its values one arm each, or `(*)`"),
-                    pn.span));
-                continue;
+        int32:guarded = 0i32;
+        if (!(raw expr_is_none(raw arm_guard(arm)))) { guarded = 1i32; }
+        // EVERY ALTERNATIVE of a value list is a value pattern of its own (D-363).
+        int32:nalt = raw pat_alt_count(e.ast, vp);
+        for (int32:ai in 0i32...nalt) {
+            PatNode:pn = raw ast_pat(e.ast, raw pat_alt_at(e.ast, vp, ai));
+            if (pn.kind == PatKind.PatValue) {
+                ExprId:v = raw pat_value(pn);
+                ConstVal:cv = raw fold_pattern_constant(e, selt, v);
+                if (cv.kind == (raw CV_NONE())) { continue; }
+                drop refuse_repeated_value(e, @cmp, @seen, @seen_arm, @seen_guarded, @seen_expr, cv, i, guarded, v);
+                drop list_push(@seen, move(cv));
+                drop list_push(@seen_arm, i);
+                drop list_push(@seen_guarded, guarded);
+                drop list_push(@seen_expr, v.index);
             }
-            if (raw check_pattern_constant(e, selt, raw pat_range_lo(pn))) {
-                discard(raw check_pattern_constant(e, selt, raw pat_range_hi(pn)));
+            if (pn.kind == PatKind.PatRange) {
+                if (!(raw kind_has_ranges(sk))) {
+                    string:r1 = string_concat("a range pattern needs an ordered selector -- an integer, a `char`, a twisted or a fixed-point value -- and a `",
+                                              raw type_display(e.types, e.interns, selt));
+                    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                        string_concat(r1, "` has no order a range could cover: name its values one arm each, or `(*)`"),
+                        pn.span));
+                    continue;
+                }
+                if (raw check_pattern_constant(e, selt, raw pat_range_lo(pn))) {
+                    discard(raw check_pattern_constant(e, selt, raw pat_range_hi(pn)));
+                }
+            }
+            // A PATH OVER A SELECTOR THAT IS NO ENUM (landing 151): `(m.K)`, `(Some(x))` over an `int32` named
+            // nothing the emitter could compare and died there as EMIT-002 (an enum's variants are
+            // `check_enum_arms`'s, an `Error`'s identities `check_error_arms`'s, above). A qualified `fixed`
+            // binding is brought into scope and written bare: `use m.{K};` and `(K)`.
+            if (pn.kind == PatKind.PatEnumDestructure) {
+                if (sk != (raw TY_ENUM())) {
+                    string:q1 = string_concat("a path in an arm names an enum's variant or an error identity, and the selector is a `",
+                                              raw type_display(e.types, e.interns, selt));
+                    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                        string_concat(q1, "`: write the value to compare against -- a literal, or a `fixed` binding brought into scope (`use m.{K};` and `(K)`) -- or `(*)`"),
+                        pn.span));
+                }
             }
         }
+    }
+    pass NIL;
+};
+
+// A VALUE ALREADY TAKEN (D-363, landing 151; DEF-212): the second spelling of a constant one list holds twice, or an
+// earlier UNGUARDED arm took, is `NITPICK-PICK-004` -- the exhaustiveness analysis's code for what nothing can reach,
+// since the first spelling matches first -- with a note at the first. A guarded arm takes nothing from the arms after
+// it and is taken from nothing before it (the exhaustiveness analysis's own rule); a repeat inside ONE arm's list is
+// dead whatever the guard. Two BARE NAMES are not compared here: the exhaustiveness analysis compares them by
+// spelling (`alt_matched_before`), and one mistake has one report (D-240).
+func:refuse_repeated_value = NIL(ExprTyper->:e, TypeResolver->:cmp, List<ConstVal>->:seen, List<int32>->:seen_arm,
+                                 List<int32>->:seen_guarded, List<int32>->:seen_expr, ConstVal:cv, int32:arm_i,
+                                 int32:guarded, ExprId:v) never fails {
+    ExprNode:vn = raw ast_expr(e.ast, v);
+    int64:n = seen.count;
+    for (int64:j in 0i64...n) {
+        bool:same_arm = ((<-seen_arm)[j] == arm_i);
+        if (!same_arm) {
+            if (guarded != 0i32) { continue; }
+            if ((<-seen_guarded)[j] != 0i32) { continue; }
+        }
+        ExprNode:en = raw ast_expr(e.ast, ExprId{ index: (<-seen_expr)[j] });
+        if (vn.kind == ExprKind.ExprIdentifierExpr) {
+            if (en.kind == ExprKind.ExprIdentifierExpr) { continue; }
+        }
+        if ((raw cv_matches(cmp, (<-seen)[j], cv)) != 1i32) { continue; }
+        string:m = "an earlier arm already matches this value, so it can never run (D-363): drop it, or guard the arm that should take it";
+        if (same_arm) { m = "this value is listed twice in one arm, and a value matches once (D-363): drop the second"; }
+        discard(raw te_error(e, raw PICK_UNREACHABLE_ARM(), move(m), vn.span));
+        drop diaglist_push(e.diags, raw diag_note(raw PICK_UNREACHABLE_ARM(), "first matched here", en.span));
+        pass NIL;
     }
     pass NIL;
 };
@@ -1161,6 +1230,14 @@ func:pattern_literal_shape = bool(ExprTyper->:e, ExprNode:vn) never fails {
 // One value or one bound: typed under the selector's type, held to it, and decided by the folder. True when it stands.
 func:check_pattern_constant = bool(ExprTyper->:e, int32:selt, ExprId:v) never fails {
     if (raw expr_is_none(v)) { pass true; }
+    ConstVal:cv = raw fold_pattern_constant(e, selt, v);
+    pass (cv.kind != (raw CV_NONE()));
+};
+
+// The same question, answering the folded constant itself (`cv_none` where the value is refused and said) -- the
+// value the repeated-value rule compares (D-363, landing 151).
+func:fold_pattern_constant = ConstVal(ExprTyper->:e, int32:selt, ExprId:v) never fails {
+    if (raw expr_is_none(v)) { pass (raw cv_none()); }
     ExprNode:vn = raw ast_expr(e.ast, v);
     int32:saved = e.expected;
     e.expected = selt;
@@ -1170,8 +1247,8 @@ func:check_pattern_constant = bool(ExprTyper->:e, int32:selt, ExprId:v) never fa
     // type (L-3, `enc_pattern_value`), and a `char` literal's record would make its arm's condition a fresh symbol in
     // every function that picks over characters. A named constant keeps its record: the string chain emits it.
     if (raw pattern_literal_shape(e, vn)) { drop exprtypes_unset(e.expr_types, v); }
-    if (pt == 0i32) { pass false; }                      // refused, and said (D-240)
-    if (raw type_is_invalid(e.types, pt)) { pass false; }
+    if (pt == 0i32) { pass (raw cv_none()); }            // refused, and said (D-240)
+    if (raw type_is_invalid(e.types, pt)) { pass (raw cv_none()); }
     if (pt != selt) {
         string:m1 = string_concat("this arm's value is a `", raw type_display(e.types, e.interns, pt));
         string:m2 = string_concat(m1, "` and the selector a `");
@@ -1179,16 +1256,25 @@ func:check_pattern_constant = bool(ExprTyper->:e, int32:selt, ExprId:v) never fa
         discard(raw te_error(e, raw TYPE_MISMATCH(),
             string_concat(m3, "`: a value pattern has the selector's type, and no conversion enters a case -- write the value at that type"),
             vn.span));
-        pass false;
+        pass (raw cv_none());
     }
     TypeResolver:fr = raw etyper_resolver(e);
     ConstVal:cv = raw fold_const(@fr, v, e.scope);
-    if (raw fold_gave_up(@fr)) { pass false; }           // the folder said what went wrong, once
-    if (cv.kind != (raw CV_NONE())) { pass true; }
+    if (raw fold_gave_up(@fr)) { pass (raw cv_none()); } // the folder said what went wrong, once
+    if (cv.kind != (raw CV_NONE())) {
+        // A COPY THAT OWNS ITS TEXT: the folder's value may view its resolver's tables (D-326), and the resolver is
+        // this frame's -- the value itself travels, as the integers it is for every kind but a string.
+        int32:ok_kind = cv.kind;
+        int32:ok_type = cv.type_id;
+        int64:ok_num = cv.num;
+        string:ok_text = string_concat(cv.text, "");
+        ConstVal:own = ConstVal{ kind: ok_kind, type_id: ok_type, num: ok_num, text: move(ok_text) };
+        pass own;
+    }
     discard(raw te_error(e, raw TYPE_MISMATCH(),
         "a value pattern is a constant the compiler decides -- a literal, a negated literal, a `fixed` module binding, `comptime(…)` -- and this is not one; a value known only at run time is compared in a guard: `(*) where (v == n) { … }`",
         vn.span));
-    pass false;
+    pass (raw cv_none());
 };
 
 // EVERY ARM OVER AN ENUM NAMES ONE OF ITS VARIANTS (DEF-142, 1.6.1d step 4;
@@ -1216,45 +1302,48 @@ func:check_enum_arms = NIL(ExprTyper->:e, int32:selt, int32:start, int32:count) 
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:pid2 = raw arm_pattern(arm);
-        if (raw pat_is_none(pid2)) { continue; }
-        PatNode:pn = raw ast_pat(e.ast, pid2);
-        if (pn.kind != PatKind.PatEnumDestructure) { continue; }
-        int32:segs = raw pat_enum_segment_count(e.ast, pn);
-        if (segs <= 0i32) { continue; }
-        int32:vname = raw pat_enum_segment(e.ast, pn, segs - 1i32);
-        if (segs >= 2i32) {
-            int32:head = raw pat_enum_segment(e.ast, pn, 0i32);
-            if (head != ename) {
-                string:h1 = string_concat("this arm names `", raw intern_get(e.interns, head));
-                string:h2 = string_concat(h1, "`, and the selector is a `");
-                string:h3 = string_concat(h2, raw intern_get(e.interns, ename));
-                string:h4 = string_concat(h3, "`: an arm over an enum names that enum's own variant -- `(");
-                string:h5 = string_concat(h4, raw intern_get(e.interns, ename));
-                string:h6 = string_concat(h5, ".");
-                string:h7 = string_concat(h6, raw intern_get(e.interns, vname));
-                string:h8 = string_concat(h7, ")`");
-                drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(), move(h8), pn.span));
-                continue;
+        // EVERY ALTERNATIVE of a value list names a variant (D-363, landing 151).
+        int32:nalt = raw pat_alt_count(e.ast, pid2);
+        for (int32:ai in 0i32...nalt) {
+            PatNode:pn = raw ast_pat(e.ast, raw pat_alt_at(e.ast, pid2, ai));
+            if (pn.kind != PatKind.PatEnumDestructure) { continue; }
+            int32:segs = raw pat_enum_segment_count(e.ast, pn);
+            if (segs <= 0i32) { continue; }
+            int32:vname = raw pat_enum_segment(e.ast, pn, segs - 1i32);
+            if (segs >= 2i32) {
+                int32:head = raw pat_enum_segment(e.ast, pn, 0i32);
+                if (head != ename) {
+                    string:h1 = string_concat("this arm names `", raw intern_get(e.interns, head));
+                    string:h2 = string_concat(h1, "`, and the selector is a `");
+                    string:h3 = string_concat(h2, raw intern_get(e.interns, ename));
+                    string:h4 = string_concat(h3, "`: an arm over an enum names that enum's own variant -- `(");
+                    string:h5 = string_concat(h4, raw intern_get(e.interns, ename));
+                    string:h6 = string_concat(h5, ".");
+                    string:h7 = string_concat(h6, raw intern_get(e.interns, vname));
+                    string:h8 = string_concat(h7, ")`");
+                    drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(), move(h8), pn.span));
+                    continue;
+                }
             }
+            bool:found = false;
+            string:names = "";
+            int32:nmembers = raw item_member_count(e.ast, d);
+            for (int32:vi in 0i32...nmembers) {
+                DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
+                if (m.kind != DeclKind.DeclEnumVariant) { continue; }
+                if ((raw decl_name(m)) == vname) { found = true; }
+                if (names.len > 0i64) { names = string_concat(names, ", "); }
+                names = string_concat(names, raw intern_get(e.interns, raw decl_name(m)));
+            }
+            if (found) { continue; }
+            string:m1 = string_concat("enum `", raw intern_get(e.interns, ename));
+            string:m2 = string_concat(m1, "` has no variant `");
+            string:m3 = string_concat(m2, raw intern_get(e.interns, vname));
+            string:m4 = string_concat(m3, "`; its variants are ");
+            string:m5 = string_concat(m4, names);
+            string:m6 = string_concat(m5, " -- an arm names one of them, or `(*)` covers the rest");
+            drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(), move(m6), pn.span));
         }
-        bool:found = false;
-        string:names = "";
-        int32:nmembers = raw item_member_count(e.ast, d);
-        for (int32:vi in 0i32...nmembers) {
-            DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
-            if (m.kind != DeclKind.DeclEnumVariant) { continue; }
-            if ((raw decl_name(m)) == vname) { found = true; }
-            if (names.len > 0i64) { names = string_concat(names, ", "); }
-            names = string_concat(names, raw intern_get(e.interns, raw decl_name(m)));
-        }
-        if (found) { continue; }
-        string:m1 = string_concat("enum `", raw intern_get(e.interns, ename));
-        string:m2 = string_concat(m1, "` has no variant `");
-        string:m3 = string_concat(m2, raw intern_get(e.interns, vname));
-        string:m4 = string_concat(m3, "`; its variants are ");
-        string:m5 = string_concat(m4, names);
-        string:m6 = string_concat(m5, " -- an arm names one of them, or `(*)` covers the rest");
-        drop diaglist_push(e.diags, raw diag_error(raw RESOLVE_UNKNOWN(), move(m6), pn.span));
     }
     pass NIL;
 };

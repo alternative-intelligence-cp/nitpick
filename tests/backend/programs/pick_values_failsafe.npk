@@ -1,0 +1,24 @@
+// expect-exit: 87
+//
+// `failsafe`'S ARMS NAME SEVERAL IDENTITIES WITH ONE BODY (D-363 R1, landing 151): the accommodation S-134 asked for
+// collapses ARMS, not identities -- every identity is still written by the program's author (D-179; REACH-002 is
+// unchanged: a list the reach analysis reads as the arms it stands for), and one action takes one line. A bare
+// identity and a qualified one (`(E1, pv.E2)`, D-275's `file.Name`) list together. The program raises `E2`, which
+// the first arm's list names second; exit 87 at both legs. Every compiler before landing 151 refuses this program
+// in the parser.
+mod:pick_values_failsafe;
+error:E1;
+error:E2;
+error:E3;
+func:main = int32(cstring[]:_~argv) {
+    !!! E2;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1, pick_values_failsafe.E2) { exit 87i32; },
+        (E3)                          { exit 88i32; },
+        (HeapBadRequest, HeapOom, WildLeak, IntOverflow, OutOfBounds, Unreachable) { exit 92i32; },
+        (StackExhausted, MachineFault, DecreasesViolated)                          { exit 106i32; },
+        (*)                           { exit 99i32; }
+    }
+};

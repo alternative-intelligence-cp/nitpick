@@ -1,0 +1,71 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 30:23
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 33:23
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 36:28
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 39:17
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 42:29
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 45:46
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 48:40
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 51:37
+// A VALUE LIST'S ALTERNATIVES ARE VALUE PATTERNS OF THEIR OWN (D-363 R1, landing 151): each is a constant of the
+// selector's type (DEF-178: TYPE-007 for another type, TYPE-007 for a value known only at run time), an enum path names
+// the enum's own variant (RESOLVE-002, DEF-142), and a path over a selector that is no enum names nothing an arm could
+// compare (TYPE-007, where the emitter died as EMIT-002 before this landing). A VALUE REPEATED is `NITPICK-PICK-004` at
+// its second spelling, with a note at the first: inside one list, taken by an earlier unguarded arm's list, two lone
+// arms of one value (DEF-212's shape, which reached `llc` as a duplicate case), or a `fixed` binding beside the literal
+// it folds to -- the checker's half of the rule, which folds the constants; the exhaustiveness analysis holds the
+// paths and bare names (`pick_values_dead.npk`). The controls at the end report nothing.
+mod:pick_values_rules;
+enum:Color = { Red; Green; Blue; };
+mod:m = { pub fixed int32:K = 5i32; };
+fixed int32:K = 5i32;
+func:other_type = int32(int32:v) never fails {
+    pick (v) { (1i32, 2i64) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:not_constant = int32(int32:v, int32:n) never fails {
+    pick (v) { (1i32, n) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:no_such_variant = int32(Color:c) never fails {
+    pick (c) { (Color.Red, Color.Purple) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:path_over_int = int32(int32:v) never fails {
+    pick (v) { (m.K, 1i32) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:twice_in_list = int32(int32:v) never fails {
+    pick (v) { (1i32, 2i32, 1i32) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:taken_by_earlier_arm = int32(int32:v) never fails {
+    pick (v) { (1i32) { pass 1i32; }, (2i32, 1i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:lone_twice = int32(int32:v) never fails {
+    pick (v) { (3i32) { pass 1i32; }, (3i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:constant_and_literal = int32(int32:v) never fails {
+    pick (v) { (K) { pass 1i32; }, (5i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+// controls: a guarded arm takes nothing from the arms after it; a list of distinct constants; a `fixed`
+// binding beside a literal of another value; both `bool` values in one list.
+func:guard_control = int32(int32:v, int32:f) never fails {
+    pick (v) { (1i32, 2i32) where (v > f) { pass 1i32; }, (1i32, 2i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:distinct = int32(int32:v) never fails {
+    pick (v) { (K, 6i32, -1i32) { pass 1i32; }, (7i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:both_bools = int32(bool:b) never fails {
+    pick (b) { (true, false) { pass 1i32; } }
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest, HeapOom, WildLeak, IntOverflow, OutOfBounds, Unreachable) { exit 92i32; },
+        (StackExhausted, MachineFault, DecreasesViolated) { exit 106i32; },
+        (*) { exit 99i32; }
+    }
+};

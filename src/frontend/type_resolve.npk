@@ -2542,6 +2542,16 @@ func:fold_pat_matches = int32(TypeResolver->:r, ConstVal:sv, PatNode:pn,
                               int32:scope, int32:fuel) never fails {
     int32:cannot = 0i32 - 1i32;
     if (pn.kind == PatKind.PatWildcard) { pass 1i32; }
+    // A VALUE LIST (D-363, landing 151): the selector matches when any alternative
+    // does; an alternative the evaluator cannot decide is the list's `cannot`.
+    if (pn.kind == PatKind.PatValueList) {
+        int32:na = raw pat_list_count(pn);
+        for (int32:i in 0i32...na) {
+            int32:m = raw fold_pat_matches(r, sv, raw ast_pat(r.ast, raw pat_list_alt(r.ast, pn, i)), scope, fuel);
+            if (m != 0i32) { pass m; }
+        }
+        pass 0i32;
+    }
     if (pn.kind == PatKind.PatValue) {
         ConstVal:pv = raw fold_expr(r, raw pat_value(pn), scope, fuel);
         if (!(raw cv_folded(pv))) { pass cannot; }
@@ -2601,7 +2611,7 @@ func:fold_pat_matches = int32(TypeResolver->:r, ConstVal:sv, PatNode:pn,
 // selector's type cannot hold is "cannot say", never "no match" -- the chain
 // compares such a pattern under the SELECTOR's type, where `255` beside an
 // `int8` selector is -1.
-func:cv_matches = int32(TypeResolver->:r, ConstVal:sv, ConstVal:pv) never fails {
+pub func:cv_matches = int32(TypeResolver->:r, ConstVal:sv, ConstVal:pv) never fails {
     int32:cannot = 0i32 - 1i32;
     if (sv.kind != pv.kind) { pass cannot; }
     if (sv.kind == (raw CV_STRING())) {

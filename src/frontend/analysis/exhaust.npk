@@ -108,29 +108,41 @@ func:arm_is_err = bool(Ast->:ast, StmtNode:arm) never fails {
     pass (pn.kind == PatKind.PatErrPattern);
 };
 
-// THE VARIANT AN ARM NAMES, as an intern index, or 0.
+// DOES AN ARM NAME THIS VARIANT? Through every alternative of a value list
+// (D-363, landing 151); an ordinary pattern is its one alternative.
 //
 // `Net.Disconnect(reason)` is a path, and the LAST segment is the variant — the
 // ones before it name the enum. Reading the first segment instead would work for
 // `Net.Disconnect` and quietly break for a qualified `net.Net.Disconnect`.
-func:arm_variant = int32(Ast->:ast, StmtNode:arm) never fails {
-    if (raw arm_is_guarded(arm)) { pass 0i32; }
+func:arm_names_variant = bool(Ast->:ast, StmtNode:arm, int32:vname) never fails {
+    if (raw arm_is_guarded(arm)) { pass false; }
     PatId:p = raw arm_pattern(arm);
-    if (raw pat_is_none(p)) { pass 0i32; }
-    PatNode:pn = raw ast_pat(ast, p);
-    if (pn.kind != PatKind.PatEnumDestructure) { pass 0i32; }
-    int32:n = raw pat_enum_segment_count(ast, pn);
-    if (n <= 0i32) { pass 0i32; }
-    pass (raw pat_enum_segment(ast, pn, n - 1i32));
+    int32:na = raw pat_alt_count(ast, p);
+    for (int32:i in 0i32...na) {
+        PatNode:pn = raw ast_pat(ast, raw pat_alt_at(ast, p, i));
+        if (pn.kind != PatKind.PatEnumDestructure) { continue; }
+        int32:n = raw pat_enum_segment_count(ast, pn);
+        if (n <= 0i32) { continue; }
+        if ((raw pat_enum_segment(ast, pn, n - 1i32)) == vname) { pass true; }
+    }
+    pass false;
 };
 
-// The `bool` an arm matches: 1 for `true`, 2 for `false`, 0 for neither. Two
-// values and a wildcard are all a `bool` has, so this needs no table.
-pub func:arm_bool = int32(Ast->:ast, StmtNode:arm) never fails {
-    if (raw arm_is_guarded(arm)) { pass 0i32; }
+// DOES AN ARM COVER THIS `bool` (1 = `true`, 2 = `false`)? Through every
+// alternative of a value list (D-363); two values and a wildcard are all a `bool`
+// has, so this needs no table.
+pub func:arm_covers_bool = bool(Ast->:ast, StmtNode:arm, int32:which) never fails {
+    if (raw arm_is_guarded(arm)) { pass false; }
     PatId:p = raw arm_pattern(arm);
-    if (raw pat_is_none(p)) { pass 0i32; }
-    PatNode:pn = raw ast_pat(ast, p);
+    int32:na = raw pat_alt_count(ast, p);
+    for (int32:i in 0i32...na) {
+        if ((raw pat_bool(ast, raw ast_pat(ast, raw pat_alt_at(ast, p, i)))) == which) { pass true; }
+    }
+    pass false;
+};
+
+// The `bool` ONE VALUE PATTERN matches: 1 for `true`, 2 for `false`, 0 for neither.
+func:pat_bool = int32(Ast->:ast, PatNode:pn) never fails {
     if (pn.kind != PatKind.PatValue) { pass 0i32; }
     ExprId:v = raw pat_value(pn);
     if (raw expr_is_none(v)) { pass 0i32; }
@@ -270,7 +282,7 @@ func:check_enum_coverage = NIL(Exhaust->:x, int32:ty, int32:start,
 func:variant_is_covered = bool(Ast->:ast, int32:vname, int32:start, int32:count) never fails {
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, start, i));
-        if ((raw arm_variant(ast, arm)) == vname) { pass true; }
+        if (raw arm_names_variant(ast, arm, vname)) { pass true; }
     }
     pass false;
 };
@@ -282,9 +294,8 @@ func:check_bool_coverage = NIL(Exhaust->:x, int32:start, int32:count, Span:at) n
     bool:f = false;
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-        int32:which = raw arm_bool(x.ast, arm);
-        if (which == 1i32) { t = true; }
-        if (which == 2i32) { f = true; }
+        if (raw arm_covers_bool(x.ast, arm, 1i32)) { t = true; }
+        if (raw arm_covers_bool(x.ast, arm, 2i32)) { f = true; }
     }
     if (t) {
         if (f) { pass NIL; }
@@ -319,16 +330,29 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
                 "an earlier `(*)` already matches everything, so this arm can never run",
                 arm.span);
         } else {
-            int32:v = raw arm_variant(x.ast, arm);
-            if (v != 0i32) {
-                // TWO QUALIFIED ERROR CONSTANTS MAY SHARE A LAST NAME
-                // (D-179): `ast.BoundsId` and `types.BoundsId` are distinct
-                // identities, so error-pattern arms compare by RESOLVED
-                // ORIGIN, and only same-origin repeats are dead.
-                if (raw path_matched_before(x, arm, start, i)) {
-                    drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
-                        "an earlier arm already matches this pattern, so this one can never run",
-                        arm.span);
+            // EVERY ALTERNATIVE IS ASKED (D-363, landing 151): a path or a bare
+            // name an earlier unguarded arm already matched, or an earlier value
+            // of the same list, can never run. Equal CONSTANTS -- `(1i32)` twice,
+            // `(K)` beside `(5i32)` -- are the checker's question
+            // (`refuse_repeated_value`, type_stmt.npk), which folds them; the two
+            // rules split the one code's cases by what each can read, and never
+            // both report one pair. Until this landing the name comparison was
+            // asked of variant arms alone, so `(Boom)` twice over an `Error` was
+            // not dead to anyone.
+            PatId:p = raw arm_pattern(arm);
+            int32:na = raw pat_alt_count(x.ast, p);
+            for (int32:j in 0i32...na) {
+                if (raw alt_matched_before(x, start, i, j)) {
+                    if (na > 1i32) {
+                        PatNode:ap = raw ast_pat(x.ast, raw pat_alt_at(x.ast, p, j));
+                        drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
+                            "an earlier arm, or an earlier value of this list, already matches this value, so it can never run (D-363)",
+                            ap.span);
+                    } else {
+                        drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
+                            "an earlier arm already matches this pattern, so this one can never run",
+                            arm.span);
+                    }
                 }
             }
         }
@@ -338,55 +362,53 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
     pass NIL;
 };
 
-// TWO ARMS MATCH THE SAME THING only when their FULL PATHS agree (D-179):
-// `ast.BoundsId` and `types.BoundsId` share a last segment and are distinct
-// identities, so the dead-arm question compares every segment. For true
-// enum patterns the selector already fixes the first segment, so this is
-// the old comparison with the false positive removed.
-func:path_matched_before = bool(Exhaust->:x, StmtNode:arm, int32:start,
-                                int32:upto) never fails {
-    // A GUARD makes an arm conditional — a same-pattern arm behind or after
-    // one is not provably dead, so guarded arms never participate.
+// IS THE j-TH ALTERNATIVE OF ARM i ALREADY MATCHED -- by an alternative of an
+// unguarded earlier arm (when arm i is unguarded), or by an earlier alternative
+// of arm i itself? A GUARD makes an arm conditional, so a same-pattern arm
+// behind or after one is not provably dead and guarded arms never take part
+// across arms; a repeat inside ONE arm's list is dead whatever its guard.
+func:alt_matched_before = bool(Exhaust->:x, int32:start, int32:i, int32:j) never fails {
+    StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+    PatId:ap = raw arm_pattern(arm);
+    PatNode:p = raw ast_pat(x.ast, raw pat_alt_at(x.ast, ap, j));
+    for (int32:k in 0i32...j) {
+        if (raw pats_match_same(x, p, raw ast_pat(x.ast, raw pat_alt_at(x.ast, ap, k)))) { pass true; }
+    }
     if (!(raw expr_is_none(raw arm_guard(arm)))) { pass false; }
-    PatNode:p = raw ast_pat(x.ast, raw arm_pattern(arm));
-    for (int32:i in 0i32...upto) {
-        StmtNode:prev = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-        PatNode:q = raw ast_pat(x.ast, raw arm_pattern(prev));
-        bool:prev_guarded = (!(raw expr_is_none(raw arm_guard(prev))));
-        if (q.kind == p.kind) { if (!prev_guarded) {
-            if (p.kind == PatKind.PatEnumDestructure) {
-                int32:pc = raw pat_enum_segment_count(x.ast, p);
-                if (pc == (raw pat_enum_segment_count(x.ast, q))) {
-                    bool:all = true;
-                    for (int32:k in 0i32...pc) {
-                        if ((raw pat_enum_segment(x.ast, p, k))
-                                != (raw pat_enum_segment(x.ast, q, k))) {
-                            all = false;
-                        }
-                    }
-                    if (all) { pass true; }
-                }
-            }
-            if (p.kind == PatKind.PatValue) {
-                // bare names: same resolved symbol, or same spelling
-                ExprNode:pe = raw ast_expr(x.ast, raw pat_value(p));
-                ExprNode:qe = raw ast_expr(x.ast, raw pat_value(q));
-                if (pe.kind == ExprKind.ExprIdentifierExpr) {
-                    if (qe.kind == ExprKind.ExprIdentifierExpr) {
-                        if (pe.payload == qe.payload) { pass true; }
-                    }
-                }
-            }
-        } }
+    for (int32:a in 0i32...i) {
+        StmtNode:prev = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, a));
+        if (!(raw expr_is_none(raw arm_guard(prev)))) { continue; }
+        PatId:pp = raw arm_pattern(prev);
+        int32:nb = raw pat_alt_count(x.ast, pp);
+        for (int32:b in 0i32...nb) {
+            if (raw pats_match_same(x, p, raw ast_pat(x.ast, raw pat_alt_at(x.ast, pp, b)))) { pass true; }
+        }
     }
     pass false;
 };
 
-func:variant_matched_before = bool(Exhaust->:x, int32:vname, int32:start,
-                                   int32:upto) never fails {
-    for (int32:i in 0i32...upto) {
-        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-        if ((raw arm_variant(x.ast, arm)) == vname) { pass true; }
+// TWO PATTERNS MATCH THE SAME THING only when their FULL PATHS agree (D-179):
+// `ast.BoundsId` and `types.BoundsId` share a last segment and are distinct
+// identities, so the dead-arm question compares every segment. For true enum
+// patterns the selector already fixes the first segment, so this is the old
+// comparison with the false positive removed. Two bare names match when they
+// are one spelling (a scope has one binding per name).
+func:pats_match_same = bool(Exhaust->:x, PatNode:p, PatNode:q) never fails {
+    if (q.kind != p.kind) { pass false; }
+    if (p.kind == PatKind.PatEnumDestructure) {
+        int32:pc = raw pat_enum_segment_count(x.ast, p);
+        if (pc != (raw pat_enum_segment_count(x.ast, q))) { pass false; }
+        for (int32:k in 0i32...pc) {
+            if ((raw pat_enum_segment(x.ast, p, k)) != (raw pat_enum_segment(x.ast, q, k))) { pass false; }
+        }
+        pass true;
+    }
+    if (p.kind == PatKind.PatValue) {
+        ExprNode:pe = raw ast_expr(x.ast, raw pat_value(p));
+        ExprNode:qe = raw ast_expr(x.ast, raw pat_value(q));
+        if (pe.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+        if (qe.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+        pass (pe.payload == qe.payload);
     }
     pass false;
 };
@@ -681,9 +703,8 @@ pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes
         bool:f = false;
         for (int32:j in 0i32...count) {
             StmtNode:arm2 = raw ast_stmt(ast, raw pick_arm_at(ast, start, j));
-            int32:which = raw arm_bool(ast, arm2);
-            if (which == 1i32) { t = true; }
-            if (which == 2i32) { f = true; }
+            if (raw arm_covers_bool(ast, arm2, 1i32)) { t = true; }
+            if (raw arm_covers_bool(ast, arm2, 2i32)) { f = true; }
         }
         if (t) { pass f; }
         pass false;

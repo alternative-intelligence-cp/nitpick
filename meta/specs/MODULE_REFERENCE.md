@@ -83,7 +83,8 @@ Modules can be defined inline or exist in external files.
     `use m.{Name};` then `(Name)` is the bare spelling. EVERY ARM OVER AN
     `Error` SELECTOR IS CHECKED, in `failsafe` and in any other `pick`: an
     arm is `(*)`, an identifier bound to an error constant, or a two-segment
-    bind-free identity; an identity no loaded file's constant hashes to —
+    bind-free identity, or (D-363, landing 151) a comma list of those, each
+    alternative checked as an arm of its own; an identity no loaded file's constant hashes to —
     `(m.Name)` with an inline module `m`, `(file.Nosuch)`, `(nosuch.Name)`,
     `(x.DivByZero)` (a system constant's code is explicit, never a hash) —
     is refused at the arm (`NITPICK-RESOLVE-002`, naming the file that

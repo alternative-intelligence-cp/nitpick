@@ -6276,6 +6276,21 @@ func:pattern_cond = Term(Encoder->:e, PatNode:p, Term:sel, int32:sel_ty, List<Te
     // compares with: an enum's variant is a tag, not an Int; a struct's
     // destructure binds. No condition, as before the identity existed.
     if (raw is_agg(e, sel_ty)) { pass (raw term_none()); }
+    // A VALUE LIST (D-363, landing 151): the disjunction of its alternatives'
+    // conditions; an alternative the encoder cannot state leaves the arm's
+    // condition unstated, as one unencodable value does.
+    if (p.kind == PatKind.PatValueList) {
+        int32:na = raw pat_list_count(p);
+        Term:acc = raw term_none();
+        bool:first = true;
+        for (int32:i in 0i32...na) {
+            Term:ci = raw pattern_cond(e, raw ast_pat(e.ast, raw pat_list_alt(e.ast, p, i)), sel, sel_ty, prior, prior_ok);
+            if (!ci.ok) { pass (raw term_none()); }
+            if (first) { acc = move(ci); first = false; }
+            else { acc = raw term_app2("or", acc, ci, true); }
+        }
+        pass acc;
+    }
     if (p.kind == PatKind.PatValue) {
         Term:v = raw enc_pattern_value(e, raw pat_value(p), sel_ty);
         if (!(v.ok && (v.is_bool == sel.is_bool))) { pass (raw term_none()); }

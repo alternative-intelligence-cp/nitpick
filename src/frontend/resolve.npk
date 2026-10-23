@@ -635,6 +635,15 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, ExprId:sel, int32:scope) neve
     }
     PatNode:p = raw ast_pat(r.ast, id);
 
+    // A VALUE LIST (D-363, landing 151): each alternative is resolved as the
+    // pattern it is -- a value's names, a path's segments (which bind nothing).
+    if (p.kind == PatKind.PatValueList) {
+        int32:na = raw pat_list_count(p);
+        for (int32:i in 0i32...na) {
+            drop resolve_pattern(r, raw pat_list_alt(r.ast, p, i), sel, scope);
+        }
+        pass NIL;
+    }
     if (p.kind == PatKind.PatValue) {
         drop resolve_expr(r, raw pat_value(p), scope);
         pass NIL;

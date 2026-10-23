@@ -967,6 +967,18 @@ func:clone_type_window = IdSpan(Expander->:x, int32:start, int32:count, int32:fu
 func:clone_pat = PatId(Expander->:x, PatId:id, int32:fuel) never fails {
     if (raw pat_is_none(id)) { pass (raw pat_none()); }
     PatNode:p = raw ast_pat(x.ast, id);
+    // A VALUE LIST (D-363, landing 151): each alternative cloned as the pattern
+    // it is, into a window of its own.
+    if (p.kind == PatKind.PatValueList) {
+        int32:na = raw pat_list_count(p);
+        int32:mark = raw ast_scratch_mark(x.ast);
+        for (int32:i in 0i32...na) {
+            PatId:c = raw clone_pat(x, raw pat_list_alt(x.ast, p, i), fuel);
+            drop ast_scratch_push(x.ast, c.index);
+        }
+        IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+        pass (raw ast_add_pat(x.ast, p.kind, p.span, w.start, w.count, 0i32, 0i64));
+    }
     if (p.kind == PatKind.PatValue) {
         ExprId:v = raw clone_expr(x, raw pat_value(p), fuel);
         if (!(raw expr_is_none(v))) {
@@ -1631,6 +1643,10 @@ func:blank_type_window = NIL(Expander->:x, int32:start, int32:count, int32:fuel)
 func:blank_pat = NIL(Expander->:x, PatId:id, int32:fuel) never fails {
     if (raw pat_is_none(id)) { pass NIL; }
     PatNode:p = raw ast_pat(x.ast, id);
+    if (p.kind == PatKind.PatValueList) {   // D-363: each alternative's value
+        int32:na = raw pat_list_count(p);
+        for (int32:i in 0i32...na) { drop blank_pat(x, raw pat_list_alt(x.ast, p, i), fuel); }
+    }
     if (p.kind == PatKind.PatValue) { drop blank_tree(x, raw pat_value(p), fuel); }
     if (p.kind == PatKind.PatRange) {
         drop blank_tree(x, raw pat_range_lo(p), fuel);
@@ -2247,6 +2263,17 @@ func:expand_in_type_window = bool(Expander->:x, int32:start, int32:count) never 
 func:expand_in_pat = bool(Expander->:x, PatId:id) never fails {
     if (raw pat_is_none(id)) { pass false; }
     PatNode:p = raw ast_pat(x.ast, id);
+    // A VALUE LIST (D-363): an invocation in any alternative expands; the kind
+    // of each alternative is the parser's, so a range that lands in one is the
+    // refusal below, at the alternative.
+    if (p.kind == PatKind.PatValueList) {
+        bool:lhit = false;
+        int32:na = raw pat_list_count(p);
+        for (int32:i in 0i32...na) {
+            if (raw expand_in_pat(x, raw pat_list_alt(x.ast, p, i))) { lhit = true; }
+        }
+        pass lhit;
+    }
     if (p.kind == PatKind.PatValue) {
         bool:vhit = raw expand_root_expr(x, raw pat_value(p));
         ExprNode:now = raw ast_expr(x.ast, raw pat_value(p));

@@ -25,6 +25,7 @@ if (x == 1i32) {
 Nitpick's equivalent to `switch` or `match`. Cases are evaluated against the target variable.
 *   Case patterns must be wrapped in parentheses: `(value) { body }`
 *   Cases must be separated by commas `,`
+*   **An arm names several values with one body** (D-363, landing 151): the parentheses take a comma list of value patterns -- `(1i32, 2i32, 5i32) { … }`, `(Color.Red, Color.Green) { … }`, and in `failsafe` `(ntime.ETimeValue, ntime.ETzMissing) { exit 87i32; }` -- each a constant of the selector's type or a bind-free path (an enum's variant, an error identity), lowered as several `switch` cases to one block (the compare chain tests the alternatives in list order); the reach analysis reads every alternative as a named arm, so `failsafe`'s acknowledgement is still written value by value. The comma is the spelling: the bar is bitwise-or everywhere else, and a pattern is a constant expression. A range, `(*)`, a struct destructure or a destructure that binds stands alone in its own arm (`NITPICK-PARSE-005` in a list); a value listed twice in one arm, or already matched by an earlier unguarded arm, is `NITPICK-PICK-004` at its second spelling (DEF-212 closed with it).
 *   The default/catch-all case is designated by `(*)`
 *   **Fallthrough:** Nitpick does not implicitly fall through. To fall through to another case, you must label the target case and use the `fall label;` keyword.
 *   **The selector may not be an `Optional`** (D-260, 1.5.2c; `NITPICK-TYPE-065`): an `Optional` has no arms of its own. Reach the value with `??` — `pick (o ?? default) { … }` — or test it with `== NIL`. A frac (D-198) and a complex (D-199) are refused at the selector by the same rule.
@@ -37,6 +38,7 @@ pick (x) {
     (0i32) { println("Zero"); },
     one: (1i32) { fall two; },            // Explicit fallthrough
     two: (2i32) { println("One or Two"); },
+    (3i32, 4i32, 7i32) { println("Three, four or seven"); },   // several values, one body (D-363)
     (*) { println("Other"); }             // Default case
 }
 ```

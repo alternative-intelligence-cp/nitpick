@@ -951,7 +951,7 @@ pub func:is_keyword = bool(string:text) {
 
     # PickPattern is a variant list in prose rather than a table (2.1).
     cats["Pat"] = ["Value", "Range", "StructDestructure", "EnumDestructure",
-                   "ErrPattern", "Wildcard"]
+                   "ErrPattern", "Wildcard", "ValueList"]
 
     # Sub-structures defined as code blocks rather than table rows -- 1.1, 1.2,
     # 2.1, 6. They are real nodes and need kinds; the table scan cannot see them.

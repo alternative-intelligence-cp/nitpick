@@ -2829,11 +2829,18 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         if (pn.kind == PatKind.PatWildcard) {
             default_l = string_concat(arm_l, "");
         } else {
-            IrVal:c = raw pattern_const(x, pn, sel_tid, arm.span);
-            if (!(raw iv_is_ok(c))) { pass c; }
-            if (cases.len > 0i64) { cases = string_concat(cases, " "); }
-            cases = raw cat5(cases, disc_ll, " ", c.ref,
-                               string_concat(", label %", arm_l));
+            // A VALUE LIST (D-363, landing 151) is several cases to one label;
+            // an ordinary pattern is its one alternative. The checker refused a
+            // value repeated anywhere in the pick, so no two cases are equal.
+            int32:nalt = raw pat_alt_count(x.ast, raw arm_pattern(arm));
+            for (int32:ai in 0i32...nalt) {
+                PatNode:apn = raw ast_pat(x.ast, raw pat_alt_at(x.ast, raw arm_pattern(arm), ai));
+                IrVal:c = raw pattern_const(x, apn, sel_tid, arm.span);
+                if (!(raw iv_is_ok(c))) { pass c; }
+                if (cases.len > 0i64) { cases = string_concat(cases, " "); }
+                cases = raw cat5(cases, disc_ll, " ", c.ref,
+                                   string_concat(", label %", arm_l));
+            }
         }
         i = i + 1i32;
     }
@@ -2880,6 +2887,34 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     drop fnem_pick_pop(x.fe);
     drop s_start(x, done_l);
     pass (raw iv_nil());
+};
+
+// THE TRUTH OF ONE VALUE ALTERNATIVE in the chain (D-363, landing 151): a string
+// selector's byte equality against the alternative's literal, or `icmp eq`
+// against the alternative's constant -- the two tests the chain has always made
+// for a lone value or path, written for one alternative so a list or-s them.
+func:alt_hit = IrVal(ExprEmitter->:x, PatNode:apn, int32:sel_tid, string:disc,
+                     string:disc_ll, Span:at) never fails {
+    if (raw string_eq(disc_ll, "{ ptr, i64, i64 }")) {
+        if (apn.kind != PatKind.PatValue) { pass (raw iv_broken(at)); }
+        IrVal:lit = raw emit_expr(x, raw pat_value(apn));
+        if (!(raw iv_is_ok(lit))) { pass lit; }
+        string:eqv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(eqv,
+                          " = call i8 @npk_string_equals(",
+                          raw cat4(disc_ll, " ", disc, ", "),
+                          raw cat3(disc_ll, " ", lit.ref), ")"));
+        string:eb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(eb, " = icmp ne i8 ",
+                          string_concat(eqv, ", 0")));
+        pass (raw iv("i1", move(eb), 0i32));
+    }
+    IrVal:pc = raw pattern_const(x, apn, sel_tid, at);
+    if (!(raw iv_is_ok(pc))) { pass pc; }
+    string:cc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(cc, " = icmp eq ", disc_ll, " ",
+                      raw cat3(disc, ", ", pc.ref)));
+    pass (raw iv("i1", move(cc), 0i32));
 };
 
 // THE CHAIN (0.9.7): arm-by-arm tests in source order, for the patterns a
@@ -2936,6 +2971,23 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         string:hit = "";
         if (pn.kind == PatKind.PatWildcard) {
             hit = "true";
+        }
+        // A VALUE LIST (D-363, landing 151): the arm matches when any alternative
+        // does -- each alternative's own test (`alt_hit`), or-ed in list order.
+        if (pn.kind == PatKind.PatValueList) {
+            int32:nalt = raw pat_list_count(pn);
+            for (int32:ai in 0i32...nalt) {
+                PatNode:apn = raw ast_pat(x.ast, raw pat_list_alt(x.ast, pn, ai));
+                IrVal:ah = raw alt_hit(x, apn, sel_tid, disc, disc_ll, arm.span);
+                if (!(raw iv_is_ok(ah))) { pass ah; }
+                if (hit.len == 0i64) {
+                    hit = string_concat(ah.ref, "");
+                } else {
+                    string:oc = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat5(oc, " = or i1 ", hit, ", ", ah.ref));
+                    hit = move(oc);
+                }
+            }
         }
         // A STRUCT DESTRUCTURE IS IRREFUTABLE (1.0.9c): it always matches and
         // binds its fields, so it is `true` like a wildcard — and the selector

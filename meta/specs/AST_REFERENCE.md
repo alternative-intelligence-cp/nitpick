@@ -253,7 +253,21 @@ PickPattern = Value(Expr)                    // (200)
             | EnumDestructure(path, binds)   // (Net.Disconnect(reason))
             | ErrPattern                     // ERR:
             | Wildcard                       // (*)
+            | ValueList(Pat[])               // (1i32, 2i32, 5i32) -- several values, one body (D-363)
 ```
+
+- **`ValueList` is a comma list of alternatives with one body** (D-363, landing
+  151): `(ntime.ETimeValue, ntime.ETzMissing) { exit 87i32; }`, `(1i32, 2i32,
+  5i32) { … }`. Each alternative is a `Value` or a bind-free path (`Color.Red`,
+  `file.Name` -- the shape the parser reads as an `EnumDestructure` with no
+  bindings); a range, a wildcard, a struct destructure or a destructure with
+  bindings is refused in a list by the parser (`NITPICK-PARSE-005`), and a value
+  repeated in one list or already matched by an earlier arm by the checker and
+  the exhaustiveness analysis (`NITPICK-PICK-004`). The node holds a window of
+  the alternatives' pattern ids (`a` its start, `b` its count); a lone
+  alternative is the pattern itself, never a list of one. Every walker that
+  reads a pattern reads an arm's alternatives through `pat_alt_count` /
+  `pat_alt_at` (parse_pick.npk), one for an ordinary pattern.
 
 - **`ErrPattern` matches the `tbb` error sentinel.** A `pick` on a `tbb` selector
   **requires** an explicit `ERR:` arm — `Wildcard` may not absorb it, or a

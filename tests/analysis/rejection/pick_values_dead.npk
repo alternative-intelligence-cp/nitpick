@@ -1,0 +1,46 @@
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 20:28
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 23:58
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 26:40
+// expect-error: NITPICK-PICK-004
+// expect-error-at: 29:39
+// A PATH OR A BARE NAME REPEATED IN A `pick` CAN NEVER RUN (D-363 R1, landing 151; the exhaustiveness analysis's
+// half of the repeated-value rule, `NITPICK-PICK-004` at the second spelling): a variant twice in one list, a variant
+// an earlier unguarded arm's list already took, an error identity listed after a lone arm named it, and two lone arms
+// of one identity -- a shape no rule reported before this landing (the name comparison was asked of variant arms
+// alone). Constants are the checker's half (`pick_values_rules.npk`). The controls report nothing: a guarded list arm
+// shadows nothing, and two lists over distinct variants cover the enum without `(*)`.
+mod:pick_values_dead;
+error:Boom;
+error:Bang;
+enum:Color = { Red; Green; Blue; };
+func:variant_twice_in_list = int32(Color:c) never fails {
+    pick (c) { (Color.Red, Color.Red) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:variant_taken_by_earlier_arm = int32(Color:c) never fails {
+    pick (c) { (Color.Red) { pass 1i32; }, (Color.Green, Color.Red) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:identity_twice = int32(Error:e) never fails {
+    pick (e) { (Boom) { pass 1i32; }, (Boom, Bang) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:identity_lone_twice = int32(Error:e) never fails {
+    pick (e) { (Boom) { pass 1i32; }, (Boom) { pass 2i32; }, (*) { pass 0i32; } }
+};
+// controls: a guarded list arm shadows nothing; two lists over distinct variants cover the enum.
+func:guarded_control = int32(Color:c, int32:f) never fails {
+    pick (c) { (Color.Red, Color.Green) where (f > 0i32) { pass 1i32; }, (Color.Red, Color.Green) { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:covered = int32(Color:c) never fails {
+    pick (c) { (Color.Red, Color.Green) { pass 1i32; }, (Color.Blue) { pass 2i32; } }
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Boom, Bang) { exit 20i32; },
+        (HeapBadRequest, HeapOom, WildLeak, IntOverflow, OutOfBounds, Unreachable) { exit 92i32; },
+        (StackExhausted, MachineFault, DecreasesViolated) { exit 106i32; },
+        (*) { exit 99i32; }
+    }
+};

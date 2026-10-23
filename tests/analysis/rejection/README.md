@@ -56,7 +56,7 @@ Silence has no stage.
 | `PICK-001` | D-008 — a case left uncovered | `exhaustiveness.npk` |
 | `PICK-002` | D-008 §5.1 — a `tbb` with no `ERR:` arm | `exhaustiveness.npk` |
 | `PICK-003` | a selector that cannot be covered by listing | `exhaustiveness.npk` |
-| `PICK-004` | an arm nothing can reach | `exhaustiveness.npk` |
+| `PICK-004` | an arm, or one value of an arm's list, nothing can reach (D-363, landing 151: the paths and bare names here; the checker's half, the folded constants, in `tests/types/rejection/pick_values_rules.npk`) | `exhaustiveness.npk`, `pick_values_dead.npk` |
 | `PICK-005` | the walk ran out of depth | none since 1.6.1e step 2: an internal belt behind the tree bound (`AST_DEPTH_MAX`); `too_deep.npk` retired: its shape is a PARSER refusal now (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
 | `TAINT-001` | D-007 — `.value` of an unchecked `Result` | `taint.npk`, `path_shapes.npk` |
 | `LOCK-001` | D-056 — acquiring downward | `lock_levels.npk`, `path_shapes.npk` |

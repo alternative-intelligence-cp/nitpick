@@ -1,0 +1,111 @@
+// expect-exit: 0
+//
+// A `pick` ARM NAMES SEVERAL VALUES WITH ONE BODY (D-363 R1, landing 151): a comma list of value patterns in the
+// arm's parentheses -- `(1i32, 2i32, 5i32)`, `(K, L)`, `(Color.Red, Color.Green)`, `("a", "b")`, `(true, false)` --
+// each value a constant of the selector's type (DEF-178), no bindings, lowered as several `switch` cases to one
+// block, or in the compare chain (a guard or a range anywhere in the pick) as the disjunction of the alternatives'
+// tests; a labelled list arm is `fall`'s target as any arm is; the expression form lists too; the compile-time
+// evaluator runs a list; a macro body's list arm is cloned per instantiation. Every compiler before landing 151
+// refuses this program in the parser (PARSE-002 at the first comma). Exit 0 at both legs.
+mod:pick_values;
+error:E9;
+enum:Color = { Red; Green; Blue; Black; };
+fixed int32:K = 7i32;
+fixed int32:L = 9i32;
+comptime func:cls = int32(int32:v) never fails {
+    pick (v) { (1i32, 2i32) { pass 1i32; }, (7i32, 8i32) { pass 2i32; }, (*) { pass 0i32; } }
+};
+fixed int32:A = raw cls(2i32);
+fixed int32:B = raw cls(8i32);
+fixed int32:C = raw cls(3i32);
+macro:classify = (v) {
+    pick (v) { (1i32, 2i32) { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:bucket = int32(int32:v) never fails {
+    pick (v) {
+        (1i32, 2i32, 5i32) { pass 1i32; },
+        (K, L)             { pass 2i32; },
+        (-3i32, -4i32)     { pass 3i32; },
+        (*)                { pass 0i32; }
+    }
+};
+func:bucket_chain = int32(int32:v, int32:floor) never fails {
+    pick (v) {
+        (1i32, 2i32) where (v > floor) { pass 1i32; },
+        (1i32, 2i32, 5i32)             { pass 2i32; },
+        (10i32..20i32)                 { pass 3i32; },
+        (*)                            { pass 0i32; }
+    }
+};
+func:warm = int32(Color:c) never fails {
+    pick (c) {
+        (Color.Red, Color.Green) { pass 1i32; },
+        (Color.Blue)             { pass 2i32; },
+        (Color.Black)            { pass 3i32; }
+    }
+};
+func:yesno = int32(bool:b) never fails {
+    pick (b) { (true, false) { pass 1i32; } }
+};
+func:word = int32(string:s) never fails {
+    pick (s) { ("a", "b") { pass 1i32; }, ("c") { pass 2i32; }, (*) { pass 0i32; } }
+};
+func:letter = int32(char8:c) never fails {
+    pick (c) { ('a', 'e', 'i', 'o', 'u') { pass 1i32; }, (*) { pass 0i32; } }
+};
+func:fallthrough = int32(int32:v) never fails {
+    int32:r = 0i32;
+    pick (v) {
+        (1i32, 2i32) { r = r + 1i32; fall two; },
+        two: (3i32, 4i32) { r = r + 10i32; },
+        (*) { r = 100i32; }
+    }
+    pass r;
+};
+func:f = int32(int32:x) never fails { #classify(x); };
+func:g = int32(int32:x) never fails { #classify(x); };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw bucket(1i32)) != 1i32) { exit 1i32; }
+    if ((raw bucket(5i32)) != 1i32) { exit 2i32; }
+    if ((raw bucket(7i32)) != 2i32) { exit 3i32; }
+    if ((raw bucket(9i32)) != 2i32) { exit 4i32; }
+    if ((raw bucket(-4i32)) != 3i32) { exit 5i32; }
+    if ((raw bucket(3i32)) != 0i32) { exit 6i32; }
+    if ((raw bucket_chain(2i32, 1i32)) != 1i32) { exit 7i32; }
+    if ((raw bucket_chain(2i32, 5i32)) != 2i32) { exit 8i32; }
+    if ((raw bucket_chain(5i32, 9i32)) != 2i32) { exit 9i32; }
+    if ((raw bucket_chain(15i32, 0i32)) != 3i32) { exit 10i32; }
+    if ((raw bucket_chain(8i32, 0i32)) != 0i32) { exit 11i32; }
+    if ((raw warm(Color.Red)) != 1i32) { exit 12i32; }
+    if ((raw warm(Color.Green)) != 1i32) { exit 13i32; }
+    if ((raw warm(Color.Blue)) != 2i32) { exit 14i32; }
+    if ((raw warm(Color.Black)) != 3i32) { exit 15i32; }
+    if ((raw yesno(true)) != 1i32) { exit 16i32; }
+    if ((raw yesno(false)) != 1i32) { exit 17i32; }
+    if ((raw word("b")) != 1i32) { exit 18i32; }
+    if ((raw word("c")) != 2i32) { exit 19i32; }
+    if ((raw word("zz")) != 0i32) { exit 20i32; }
+    if ((raw letter('o')) != 1i32) { exit 21i32; }
+    if ((raw letter('z')) != 0i32) { exit 22i32; }
+    if ((raw fallthrough(2i32)) != 11i32) { exit 23i32; }
+    if ((raw fallthrough(4i32)) != 10i32) { exit 24i32; }
+    if ((raw fallthrough(9i32)) != 100i32) { exit 25i32; }
+    int32:gv = pick (L) { (K, L) { give 1i32; }, (*) { give 0i32; } };
+    if (gv != 1i32) { exit 26i32; }
+    if (A != 1i32) { exit 27i32; }
+    if (B != 2i32) { exit 28i32; }
+    if (C != 0i32) { exit 29i32; }
+    if ((raw f(2i32)) != 1i32) { exit 30i32; }
+    if ((raw g(3i32)) != 0i32) { exit 31i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                                              { exit 20i32; },
+        (HeapBadRequest, HeapOom, WildLeak)               { exit 92i32; },
+        (IntOverflow, OutOfBounds)                        { exit 93i32; },
+        (Unreachable)                                     { exit 95i32; },
+        (StackExhausted, MachineFault, DecreasesViolated) { exit 106i32; },
+        (*)                                               { exit 99i32; }
+    }
+};

@@ -1109,9 +1109,14 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
             // Recognising only the `if` would push people toward the less
             // idiomatic form, which is the opposite of what an analysis should do.
             int32:want = 2i32;
-            if (et.then_checked) { want = 1i32; }
-            if ((raw arm_bool(x.ast, arm)) == want) {
-                drop state_mark_checked(one, et.slot);
+            int32:other = 1i32;
+            if (et.then_checked) { want = 1i32; other = 2i32; }
+            // A VALUE LIST naming both values (D-363, landing 151) matches the
+            // unsafe one too, so it is refined by nothing.
+            if (raw arm_covers_bool(x.ast, arm, want)) {
+                if (!(raw arm_covers_bool(x.ast, arm, other))) {
+                    drop state_mark_checked(one, et.slot);
+                }
             }
         }
         drop assign_expr(x, one, raw arm_guard(arm), depth);

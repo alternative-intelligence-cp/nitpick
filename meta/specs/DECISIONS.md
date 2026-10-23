@@ -12971,6 +12971,11 @@ permitted and counts for nothing** — the compile-time force (a new failure
 mode anywhere breaks the build until every failsafe names it) and the
 defensive runtime floor beneath the proof, both.
 
+*[2026-10-22, landing 151 (D-363 R1): an arm NAMES several identities with one body --
+`(ntime.ETimeValue, ntime.ETzMissing) { exit 87i32; }`, `(HeapOom, HeapBadRequest, WildLeak) { exit 92i32; }` -- each
+alternative read by the reach analysis as a named arm, so the computed set is still covered by WRITTEN identities and
+`(*)` still counts for nothing; the bill becomes one line per action. A repeated identity is `NITPICK-PICK-004`.]*
+
 ### Amendments from 1.1.7's build
 
 **Error declarations are implicitly `pub`.** An error's identity crosses
@@ -23577,6 +23582,20 @@ the list -- `(bindings.Rederived)` and `(escape.Rederived)` -- being arms no rea
 declares its `Rederived` and raises it nowhere; an arm nothing reaches is accepted); a small program lists the six
 identities every program can reach. No gate reads it: it is the author's list of the arms to write. R1 (the comma
 list) remains its own landing.]*
+
+*[2026-10-22, landing 151 (`nitpick-compiler_43`): R1 LANDED -- a `pick` arm's parentheses take a comma list of value
+patterns with one body, a node of its own (`PatValueList`, AST_REFERENCE §2.1: a window of the alternatives' pattern ids,
+each a value or a bind-free path) that every reader of a pattern walks through `pat_alt_count`/`pat_alt_at`
+(parse_pick.npk): the resolver, the checker's value, enum and `Error` arm rules, the exhaustiveness analysis's coverage
+and dead-arm rules, the reach analysis's `failsafe` coverage, the compile-time evaluator, the encoder (the arm's
+condition a disjunction, the wildcard's negation over it), the expander's clone and the emitter (several `switch` cases
+to one block; the chain or-s the alternatives' tests). The parser refuses a range, `(*)`, a struct destructure or a
+destructure that binds in a list (`NITPICK-PARSE-005`, at the alternative, the pattern skipped to its `)`), and a value
+repeated -- in one list, or taken by an earlier unguarded arm -- is `NITPICK-PICK-004` at its second spelling with a
+note at the first: the checker compares the folded constants (`refuse_repeated_value`), the exhaustiveness analysis the
+paths and bare names (`alt_matched_before`), which closes DEF-212 and makes a repeated error identity dead at last (the
+name comparison had been asked of variant arms alone). A path over a selector that is no enum is TYPE-007 where the
+emitter died (EMIT-002). S-134 is closed: R1 to R4 landed or recorded.]*
 
 ## D-364 — A LOAD WHOSE VALUE THE PROGRAM USES FAULTS AT BOTH LEGS; A DEAD LOAD THROUGH A `wild` NULL POINTER IS NO READ AT -O2, THE LEGS' ONE PERMITTED DISAGREEMENT — **SETTLED (user decision, 2026-10-22: "for the two questions i agree with the recommendations")**
 
