@@ -1851,6 +1851,57 @@ BACKEND_CARRIER_READS = {
 }
 
 
+def check_rest_groups_agree():
+    """The emitter's rest dispatch rests on TWO TABLES agreeing (DEF-276, landing 150):
+    `expr_kind_rest_group` (ir_expr.npk) maps an expression kind to one of the
+    groups `emit_expr_kind_rest_N`, and each group's arms test exactly the kinds
+    the map sends it. A kind in the map and in no group's arm, in a group's arm
+    and not in the map, or sent to one group and tested by another fails CLOSED
+    -- EMIT-002 at the first program that spells the kind, loud but late. This
+    holds the two tables equal on every run, before any program asks."""
+    path = os.path.join(ROOT, "src", "backend", "ir", "ir_expr.npk")
+    src = open(path, encoding="utf-8").read()
+
+    def body(name):
+        m = re.search(r'\nfunc:%s = [^\n]*\{\n(.*?)\n\};\n' % re.escape(name), src, re.S)
+        return m.group(1) if m else None
+
+    fails = []
+    mapping = body("expr_kind_rest_group")
+    if mapping is None:
+        return ["ir_expr.npk: `expr_kind_rest_group`, the rest dispatch's map "
+                "(DEF-276), is not there -- the two-level dispatch has lost its table"]
+    mapped = {}
+    for k, g in re.findall(r'if \(k == ExprKind\.(\w+)\) \{ pass (\d+)i32; \}', mapping):
+        if k in mapped:
+            fails.append("expr_kind_rest_group maps %s twice (groups %d and %s)" % (k, mapped[k], g))
+        mapped[k] = int(g)
+    if not mapped:
+        fails.append("expr_kind_rest_group has no `if (k == ExprKind.X) { pass Ni32; }` row -- "
+                     "the map's spelling moved and this check reads nothing")
+    groups = sorted(set(mapped.values()))
+    for g in groups:
+        b = body("emit_expr_kind_rest_%d" % g)
+        if b is None:
+            fails.append("expr_kind_rest_group sends kinds to group %d and `emit_expr_kind_rest_%d` "
+                         "is not in ir_expr.npk" % (g, g))
+            continue
+        tested = re.findall(r'if \(n\.kind == ExprKind\.(\w+)\)', b)
+        want = sorted(k for k, gg in mapped.items() if gg == g)
+        if sorted(tested) != want:
+            fails.append("emit_expr_kind_rest_%d tests %s where expr_kind_rest_group sends it %s -- "
+                         "the two tables disagree (a kind in one and not the other dies as EMIT-002 "
+                         "at the first program spelling it)" % (g, sorted(tested), want))
+        if len(tested) != len(set(tested)):
+            fails.append("emit_expr_kind_rest_%d tests a kind twice: %s"
+                         % (g, sorted(k for k in set(tested) if tested.count(k) > 1)))
+    for m in re.finditer(r'\nfunc:emit_expr_kind_rest_(\d+) ', src):
+        if int(m.group(1)) not in groups:
+            fails.append("`emit_expr_kind_rest_%s` is declared and expr_kind_rest_group sends no kind to it"
+                         % m.group(1))
+    return fails
+
+
 def check_kinds_lowered_or_refused():
     """Every Expr/Stmt/Decl kind lowers, refuses by name, or is confessed."""
     kinds_path = os.path.join(ROOT, "src", "frontend", "ast_kind.npk")
@@ -5486,6 +5537,7 @@ def main(argv):
         failures += check_kinds_reachable()
         failures += check_kinds_typed()
         failures += check_kinds_lowered_or_refused()
+        failures += check_rest_groups_agree()
         failures += check_codes_tested()
         failures += check_codes_centralised()
         failures += check_no_kind_literals()

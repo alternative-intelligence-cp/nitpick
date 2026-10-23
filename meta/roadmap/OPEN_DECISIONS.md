@@ -3036,7 +3036,31 @@ defect declares a `DEF-` in §2f.
 > so an arm moved out must hand back "not mine" as well as a term. The plain build is unaffected; no program of the
 > three trees reaches the depth. Its own landing, after step 3d's traps.
 
-> **DEF-276 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 142, from the DEF-269 agent's report
+> **DEF-276 — FIXED 2026-10-22 (landing 150; built by the DEF-276 agent (Opus) under `nitpick-compiler_42`, read whole and
+> checked arm for arm by `nitpick-compiler_42`, landed by `nitpick-compiler_43`): `emit_expr_kind_rest` (ir_expr.npk) is a two-level dispatch --
+> `expr_kind_rest_group` maps a kind to one of four groups in a 4-byte frame, and `emit_expr_kind_rest_1..4` hold the 37
+> arms VERBATIM in their old order (10, 10, 10 and 7), each group ending in the fail-closed `iv_broken` the one function
+> ended in -- so the rest path costs 3,096 bytes and a group 6,536 (the fourth 4,808) where the one frame held 22,088 (155
+> call-result slots); `emit_builtin`'s six arms are functions of their own (`emit_builtin_sqrt`, `_size_of`, `_ptr_add`,
+> `_wild_ptr`, `_wild_slice`, `_unreachable`: 17,608 -> 5,144 bytes); `emit_cast` evaluates its operand and hands the value to
+> `emit_cast_values`, the 213 lines of conversion arms (29,144 -> 2,360 bytes on the recursion path; the 28,536-byte leaf
+> evaluates no expression, checked over the 72 functions it reaches); and `emit_coalesce`'s present path and join
+> (`emit_coalesce_present`, `emit_coalesce_tail`) and the ternary's branch, then-arm end and join (`emit_ternary_branch`,
+> `emit_ternary_then_end`, `emit_ternary_tail`) are helpers that write their lines where the lines stood, the values they
+> only read handed by address (8,184 -> 5,544; 6,616 -> 5,448). A level of each chain: `#sqrt` 49,376 -> 27,200 bytes,
+> `#ptr_add` 49,376 -> 28,912, `??` 39,952 -> 24,856, the ternary 38,384 -> 24,760, a cast 38,824 -> 12,040, `?.` 42,080 ->
+> 29,624 -- so every chain compiles at the parser's bound (`#sqrt` 253, `??` 253, the ternary 252, a cast 252, `#ptr_add` 253,
+> `?.` 252; the stack's high-water marks 6,868, 6,304, 6,260, 3,408, 7,292 and 7,480 KiB of 8,192) where landing 146's
+> compiler compiles them 166, 205, 213, 212, 166 and 194 deep and exits 3 with no message past that. Every moved line is
+> byte-identical modulo its dedent (the 37 rest arms, the six builtin arms, the 213 cast lines, the coalesce's 19 and 11,
+> the ternary's 3, 5 and 9; every other function of the file 212 of 212), so the emitter writes the text it wrote: the
+> emission of every program that compiled before is byte-identical under both compilers, and the fixpoint holds. The
+> harness holds the rest dispatch's two tables to each other (`check_rest_groups_agree`: every kind a group's arm tests is
+> in the map under that group, and every mapped kind has its arm). `emit_builtin`'s two `overflow` rows (the `gc + 1i32`
+> of the `#ptr_add` and `#wild_slice` arms) are `emit_builtin_ptr_add`'s and `emit_builtin_wild_slice`'s now, one each.
+> TESTS: `tests/backend/programs/chain_deep_rest.npk` (a `#sqrt` chain 253 deep, a `??` chain 253 deep, a ternary 240 deep
+> and a `=>`/`=>!` cast chain 250 deep, every value checked; exit 0 at both legs; landing 146's compiler exits 3 on it with
+> no message). What the split leaves thin is DEF-282. WAS: OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 142, from the DEF-269 agent's report
 > (`.internal/handoff_35/DEF269_AGENT_REPORT.txt`, its second finding) and the seat's own probes; DEF-176's residue). THE
 > EMITTER STILL EXHAUSTS THE COMPILER'S STACK ON A DEEP CHAIN THROUGH A KIND OF `emit_expr_kind_rest`.** Landing 142
 > moved `emit_expr_kind`'s arms into frames of their own, and a chain through a binary node or the kinds its small
@@ -3131,6 +3155,21 @@ defect declares a `DEF-` in §2f.
 > body -- measured first on the probe nests (`wt/42d/.internal/probes/def277/`'s `loops_*` and `whiles_*`, run under
 > `ulimit -v`); DEF-278's growth (x1.9 per level, nested pick EXPRESSIONS) is plausibly the same shape and is measured with it.
 > Its own landing.
+
+> **DEF-282 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 150, from the DEF-276 agent's report
+> (`wt/42c/.internal/DEF276_AGENT_REPORT.txt`, its §6); DEF-176's class, the margins the split leaves). TWO CHAINS COMPILE AT
+> THE BOUND WITH LITTLE STACK TO SPARE, AND NO TEST HOLDS EITHER.** `emit_safe_nav` (ir_expr.npk, 10,312 bytes, 159 slots,
+> untouched at 150) is the largest frame left on a rest kind's chain: `p?.next?.next … ?.v` 252 deep -- the parser's bound --
+> compiles under landing 150's compiler with 712 KiB of the 8 MiB stack left (a high-water mark of 7,480 KiB), where landing
+> 146's compiles 194 deep and no further; it has `emit_coalesce`'s shape (its operand's recursion first, its whole frame
+> live through it) and takes the same split. `#ptr_add` 253 deep leaves 900 KiB (`emit_builtin_ptr_add`'s two recursions
+> under a 4,456-byte frame). Neither chain has a test; `chain_deep_rest.npk` holds the four others with 1,324 to 1,932 KiB
+> to spare (the cast chain 4,784). Beneath both, the fixed cost of every dispatch level is the `ExprNode` passed by value
+> (11 scalars) and the `IrVal` returned by value (23), about 650 bytes a call at -O0: `emit_expr_kind` (8,328 bytes,
+> fifteen call sites) and a rest group (6,536, ten arms) are the largest fixed costs on every chain's path, and passing the
+> node by address would lower every dispatch frame -- an emitter-wide signature change, not made. The frames are -O0
+> frames: a toolchain whose register allocator spills differently moves every number above. Its own landing: the `?.`
+> split, a test for both chains, the signature question measured first.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

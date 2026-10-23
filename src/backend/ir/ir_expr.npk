@@ -1227,18 +1227,43 @@ func:emit_k_ternary_expr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     string:then_l = raw irw_new_label(x.fe.w, "is.then");
     string:else_l = raw irw_new_label(x.fe.w, "is.else");
     string:done_l = raw irw_new_label(x.fe.w, "is.done");
+    // THE LINES BETWEEN AND AFTER THE RECURSIONS ARE WRITTEN IN FRAMES OF THEIR OWN (DEF-276, landing 150): a chain
+    // through an arm -- `is (c) : x : (is …)` -- recursed through here once a level with every line this function
+    // writes in one frame (6,616 bytes at landing 146). Each helper runs where its lines stood, so the text's order is
+    // the old one, and an arm's value a helper only reads is handed by address: by value, it is copied through here.
+    drop emit_ternary_branch(x, @tc, then_l, else_l);
+    IrVal:tv = raw emit_expr(x, ExprId{ index: n.b });
+    if (!(raw iv_is_ok(tv))) { pass tv; }
+    drop emit_ternary_then_end(x, @tv, slot, done_l, else_l);
+    IrVal:ev = raw emit_expr(x, ExprId{ index: n.c });
+    if (!(raw iv_is_ok(ev))) { pass ev; }
+    pass (raw emit_ternary_tail(x, ttid, move(tll), slot, done_l, @ev));
+};
+
+// THE BRANCH TO THE TERNARY'S ARMS, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the lines after
+// the condition's recursion.
+func:emit_ternary_branch = NIL(ExprEmitter->:x, IrVal->:tc, string:then_l, string:else_l) never fails {
     drop irw_line(x.fe.w, raw cat5("br i1 ", tc.ref, ", label %", then_l,
                       string_concat(", label %", else_l)));
     drop irw_label(x.fe.w, then_l);
-    IrVal:tv = raw emit_expr(x, ExprId{ index: n.b });
-    if (!(raw iv_is_ok(tv))) { pass tv; }
+    pass NIL;
+};
+
+// THE THEN ARM'S END, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the lines after the then arm's
+// recursion -- its store and take, the branch to the join, the else arm's label.
+func:emit_ternary_then_end = NIL(ExprEmitter->:x, IrVal->:tv, string:slot, string:done_l, string:else_l) never fails {
     drop irw_line(x.fe.w, raw cat5("store ", tv.ll, " ", tv.ref,
                       string_concat(", ptr ", slot)));
     drop temp_take(x, tv.ref);   // the slot keeps it; the load is the temporary (D-246)
     drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
     drop irw_label(x.fe.w, else_l);
-    IrVal:ev = raw emit_expr(x, ExprId{ index: n.c });
-    if (!(raw iv_is_ok(ev))) { pass ev; }
+    pass NIL;
+};
+
+// THE JOIN OF THE TERNARY, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the lines after its last
+// recursion -- the else arm's store and take, the join and the load.
+func:emit_ternary_tail = IrVal(ExprEmitter->:x, int32:ttid, move LlType:tll, string:slot, string:done_l,
+                              IrVal->:ev) never fails {
     drop irw_line(x.fe.w, raw cat5("store ", ev.ll, " ", ev.ref,
                       string_concat(", ptr ", slot)));
     drop temp_take(x, ev.ref);
@@ -1565,8 +1590,73 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     pass (raw emit_expr_kind_rest(x, id, n));
 };
 
+// THE REST OF THE DISPATCH IS TWO LEVELS, AND A KIND PAYS FOR ITS OWN GROUP'S ARMS ALONE (DEF-276, landing 150): a
+// frame holds a slot for every call's result (D-173), and a chain through a kind this function serves -- `#sqrt(#sqrt(…))`,
+// `o ?? (o ?? …)`, `is (c) : x : (is …)` -- recursed through it once a level with all thirty-seven arms' results in
+// one frame (22,088 bytes at landing 146), so such a chain exhausted the compiler's stack below the AST's bound. The kind
+// is looked up in `expr_kind_rest_group` and its arm reached through one of four frames of at most ten arms; a kind no
+// group tests lands here, where every unmatched kind always landed.
 func:emit_expr_kind_rest = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    int32:g = raw expr_kind_rest_group(n.kind);
+    if (g == 1i32) { pass (raw emit_expr_kind_rest_1(x, id, n)); }
+    if (g == 2i32) { pass (raw emit_expr_kind_rest_2(x, id, n)); }
+    if (g == 3i32) { pass (raw emit_expr_kind_rest_3(x, id, n)); }
+    if (g == 4i32) { pass (raw emit_expr_kind_rest_4(x, id, n)); }
+    // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
+    // promise that accepted programs are valid; an emitter that guesses at a
+    // node it does not know turns that into a lie.
+    pass (raw iv_broken(n.span));
+};
 
+// WHICH GROUP OF `emit_expr_kind_rest`'S ARMS TESTS A KIND (DEF-276, landing 150): exactly the kinds each
+// `emit_expr_kind_rest_N` below tests, in its order, and 0 for any other -- which the dispatch fails closed on, as it
+// always did. A kind's arm and its row here move together: an arm with no row here is never reached (the dispatch
+// answers EMIT-002 for its kind), and a row whose group has no arm for the kind is that group's own fail-closed line.
+func:expr_kind_rest_group = int32(ExprKind:k) never fails {
+    if (k == ExprKind.ExprIntLiteral) { pass 1i32; }
+    if (k == ExprKind.ExprBoolLiteral) { pass 1i32; }
+    if (k == ExprKind.ExprCharLiteral) { pass 1i32; }
+    if (k == ExprKind.ExprSentinelLiteral) { pass 1i32; }
+    if (k == ExprKind.ExprStringLiteral) { pass 1i32; }
+    if (k == ExprKind.ExprIdentifierExpr) { pass 1i32; }
+    if (k == ExprKind.ExprBinaryExpr) { pass 1i32; }
+    if (k == ExprKind.ExprDropExpr) { pass 1i32; }
+    if (k == ExprKind.ExprAddressOfExpr) { pass 1i32; }
+    if (k == ExprKind.ExprBorrowExpr) { pass 1i32; }
+    if (k == ExprKind.ExprStructLiteralExpr) { pass 2i32; }
+    if (k == ExprKind.ExprArrayLiteralExpr) { pass 2i32; }
+    if (k == ExprKind.ExprResultLiteralExpr) { pass 2i32; }
+    if (k == ExprKind.ExprBuiltinExpr) { pass 2i32; }
+    if (k == ExprKind.ExprRawStringLiteral) { pass 2i32; }
+    if (k == ExprKind.ExprBlockStringLiteral) { pass 2i32; }
+    if (k == ExprKind.ExprSafeNavExpr) { pass 2i32; }
+    if (k == ExprKind.ExprNullCoalesceExpr) { pass 2i32; }
+    if (k == ExprKind.ExprEmphaticCoalesceExpr) { pass 2i32; }
+    if (k == ExprKind.ExprTemplateLiteral) { pass 2i32; }
+    if (k == ExprKind.ExprComptimeExpr) { pass 3i32; }
+    if (k == ExprKind.ExprRangeExpr) { pass 3i32; }
+    if (k == ExprKind.ExprSpreadExpr) { pass 3i32; }
+    if (k == ExprKind.ExprTernaryExpr) { pass 3i32; }
+    if (k == ExprKind.ExprPostfixExpr) { pass 3i32; }
+    if (k == ExprKind.ExprFloatLiteral) { pass 3i32; }
+    if (k == ExprKind.ExprPipeExpr) { pass 3i32; }
+    if (k == ExprKind.ExprDefaultsExpr) { pass 3i32; }
+    if (k == ExprKind.ExprIsErrExpr) { pass 3i32; }
+    if (k == ExprKind.ExprVectorCtorExpr) { pass 3i32; }
+    if (k == ExprKind.ExprMoveExpr) { pass 4i32; }
+    if (k == ExprKind.ExprIterationVarExpr) { pass 4i32; }
+    if (k == ExprKind.ExprPickExpr) { pass 4i32; }
+    if (k == ExprKind.ExprAwaitExpr) { pass 4i32; }
+    if (k == ExprKind.ExprDynCastExpr) { pass 4i32; }
+    if (k == ExprKind.ExprResultValueExpr) { pass 4i32; }
+    if (k == ExprKind.ExprOldExpr) { pass 4i32; }
+    pass 0i32;
+};
+
+// THE FIRST GROUP OF `emit_expr_kind_rest`'S ARMS, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the
+// dispatch calls it for the kinds `expr_kind_rest_group` places in group 1, so a chain through one of them pays for
+// these arms' call results alone at every level.
+func:emit_expr_kind_rest_1 = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprIntLiteral)    { pass (raw emit_int(x, id, n)); }
     if (n.kind == ExprKind.ExprBoolLiteral) { pass (raw emit_k_bool_literal(x, id, n)); }
     if (n.kind == ExprKind.ExprCharLiteral) { pass (raw emit_k_char_literal(x, id, n)); }
@@ -1581,6 +1671,15 @@ func:emit_expr_kind_rest = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     // the escape analysis's guarantee (0.5), not a difference in representation.
     if (n.kind == ExprKind.ExprAddressOfExpr)    { pass (raw emit_addr_op(x, id, n)); }
     if (n.kind == ExprKind.ExprBorrowExpr)       { pass (raw emit_addr_op(x, id, n)); }
+    // A KIND `expr_kind_rest_group` PLACES HERE AND NO ARM ABOVE TESTS: a defect of the two tables, failed closed as
+    // the dispatch fails an unclassified kind.
+    pass (raw iv_broken(n.span));
+};
+
+// THE SECOND GROUP OF `emit_expr_kind_rest`'S ARMS, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the
+// dispatch calls it for the kinds `expr_kind_rest_group` places in group 2, so a chain through one of them pays for
+// these arms' call results alone at every level.
+func:emit_expr_kind_rest_2 = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr){ pass (raw emit_struct_lit(x, id, n)); }
     if (n.kind == ExprKind.ExprArrayLiteralExpr) { pass (raw emit_array_lit(x, id, n)); }
     if (n.kind == ExprKind.ExprResultLiteralExpr){ pass (raw emit_result_lit(x, id, n)); }
@@ -1596,6 +1695,15 @@ func:emit_expr_kind_rest = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     if (n.kind == ExprKind.ExprNullCoalesceExpr) { pass (raw emit_coalesce(x, id, n)); }
     if (n.kind == ExprKind.ExprEmphaticCoalesceExpr) { pass (raw emit_k_emphatic_coalesce_expr(x, id, n)); }
     if (n.kind == ExprKind.ExprTemplateLiteral) { pass (raw emit_k_template_literal(x, id, n)); }
+    // A KIND `expr_kind_rest_group` PLACES HERE AND NO ARM ABOVE TESTS: a defect of the two tables, failed closed as
+    // the dispatch fails an unclassified kind.
+    pass (raw iv_broken(n.span));
+};
+
+// THE THIRD GROUP OF `emit_expr_kind_rest`'S ARMS, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the
+// dispatch calls it for the kinds `expr_kind_rest_group` places in group 3, so a chain through one of them pays for
+// these arms' call results alone at every level.
+func:emit_expr_kind_rest_3 = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprComptimeExpr) { pass (raw emit_k_comptime_expr(x, id, n)); }
     // A range VALUE (0.9.6, D-093; D-329 at 1.6.1d step 2): `{ T, T, i8 }` --
     // `lo` and `hi` AS WRITTEN and the spelling in the third word (1 for the
@@ -1626,6 +1734,15 @@ func:emit_expr_kind_rest = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     // data and stops at branches, and this is the sanctioned way to look.
     if (n.kind == ExprKind.ExprIsErrExpr) { pass (raw emit_k_is_err_expr(x, id, n)); }
     if (n.kind == ExprKind.ExprVectorCtorExpr) { pass (raw emit_k_vector_ctor_expr(x, id, n)); }
+    // A KIND `expr_kind_rest_group` PLACES HERE AND NO ARM ABOVE TESTS: a defect of the two tables, failed closed as
+    // the dispatch fails an unclassified kind.
+    pass (raw iv_broken(n.span));
+};
+
+// THE FOURTH GROUP OF `emit_expr_kind_rest`'S ARMS, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the
+// dispatch calls it for the kinds `expr_kind_rest_group` places in group 4, so a chain through one of them pays for
+// these arms' call results alone at every level.
+func:emit_expr_kind_rest_4 = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // `move(place)` LOWERS: it yields the place's value, and what it does to
     // the SOURCE is static — the 0.5 move analysis already blessed and tracked
     // the transfer, so there is nothing for the IR to add (D-065). Found by
@@ -1649,9 +1766,8 @@ func:emit_expr_kind_rest = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     // or an `old` the entry did not list is a defect, never a rung.
     if (n.kind == ExprKind.ExprResultValueExpr) { pass (raw emit_k_result_value_expr(x, id, n)); }
     if (n.kind == ExprKind.ExprOldExpr) { pass (raw emit_k_old_expr(x, id, n)); }
-    // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
-    // promise that accepted programs are valid; an emitter that guesses at a
-    // node it does not know turns that into a lie.
+    // A KIND `expr_kind_rest_group` PLACES HERE AND NO ARM ABOVE TESTS: a defect of the two tables, failed closed as
+    // the dispatch fails an unclassified kind.
     pass (raw iv_broken(n.span));
 };
 
@@ -5087,6 +5203,14 @@ func:emit_i2f_wide = string(ExprEmitter->:x, string:v, int32:bits, bool:signed, 
 func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
+    // THE OPERAND IS EVALUATED IN THIS SMALL FRAME AND CONVERTED IN THE NEXT (DEF-276, landing 150): `emit_expr`
+    // recurses through here once per level of a cast chain, and every family's conversion locals sat in this frame
+    // too (29,144 bytes at landing 146), paid at every level of `((x => int64) =>! int32) => …`.
+    pass (raw emit_cast_values(x, id, n, move(v)));
+};
+
+// THE CONVERTING HALF OF `emit_cast` (DEF-276, landing 150): the operand evaluated, moved in; the rest verbatim.
+func:emit_cast_values = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, move IrVal:v) never fails {
     LlType:want = raw node_ll(x, id);
     if (want.state != (raw LL_OK())) {
         pass (raw iv_from_ll_at(x, want, raw exprtypes_get(x.et, id), n.span));
@@ -11044,6 +11168,25 @@ func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (!(raw ll_is_ok(cll))) { pass (raw iv_from_ll_at(x, cll, ctid, n.span)); }
     string:cslot = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, cslot, cll.text);
+    // THE DEFAULT'S RECURSION RUNS IN A SMALL FRAME (DEF-276, landing 150): a right-nested `o ?? (o ?? …)` recursed
+    // through here once a level with every line this function writes in one frame (8,184 bytes at landing 146), so
+    // the test and the present path are written by `emit_coalesce_present` before it and the join by
+    // `emit_coalesce_tail` after it, each where its lines stood; the two values they only read are handed by address
+    // (by value, each is copied through here).
+    string:cj_l = raw emit_coalesce_present(x, @cv, cll, cslot);
+    IrVal:cdv = raw emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(cdv))) { pass cdv; }
+    // THE DEFAULT IS A SLOT, of the inner type (D-099's list names it).
+    cdv = raw emit_fit(x, ctid, move(cdv), n.span);
+    if (!(raw iv_is_ok(cdv))) { pass cdv; }
+    // The fit stays in this frame: in the tail it would re-assign a `move` parameter it had moved, which the committed
+    // snapshot that builds `src/` refuses (MOVE-001; it predates DEF-124, D-205).
+    pass (raw emit_coalesce_tail(x, ctid, move(cll), cslot, cj_l, @cv, @cdv));
+};
+
+// THE TEST, THE BRANCH AND THE PRESENT PATH OF `emit_coalesce`, MOVED VERBATIM INTO A FRAME OF THEIR OWN (DEF-276,
+// landing 150): the lines between its two recursions; the join's label is handed back for the tail.
+func:emit_coalesce_present = string(ExprEmitter->:x, IrVal->:cv, LlType:cll, string:cslot) never fails {
     string:ctag = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(ctag, " = extractvalue ", cv.ll, " ",
                       string_concat(cv.ref, ", 0")));
@@ -11063,11 +11206,13 @@ func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                       string_concat(", ptr ", cslot)));
     drop irw_line(x.fe.w, raw cat3("br label %", cj_l, ""));
     drop irw_label(x.fe.w, cd_l);
-    IrVal:cdv = raw emit_expr(x, raw expr_rhs(n));
-    if (!(raw iv_is_ok(cdv))) { pass cdv; }
-    // THE DEFAULT IS A SLOT, of the inner type (D-099's list names it).
-    cdv = raw emit_fit(x, ctid, move(cdv), n.span);
-    if (!(raw iv_is_ok(cdv))) { pass cdv; }
+    pass cj_l;
+};
+
+// THE JOIN OF `emit_coalesce`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the lines that follow
+// its last recursion and the default's fit -- the two values taken, the store, the join and the load.
+func:emit_coalesce_tail = IrVal(ExprEmitter->:x, int32:ctid, move LlType:cll, string:cslot, string:cj_l,
+                               IrVal->:cv, IrVal->:cdv) never fails {
     // THE OPTIONAL AND THE DEFAULT ARE TAKEN (D-246).
     drop temp_take(x, cv.ref);
     drop temp_take(x, cdv.ref);
@@ -11819,103 +11964,36 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     pass (raw iv(move(rll.text), move(b), rtid));
 };
 
-// --- the three compiler builtins ---------------------------------------------------
+// --- the six compiler builtins (sqrt, size_of, ptr_add, wild_ptr, wild_slice, unreachable; "three" until landing 150) ---------------------------------------------------
 
 func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:name = raw intern_get(x.interns, raw builtin_name(n));
     int32:gc = raw builtin_generic_count(n);
     int32:start = raw expr_list_start(n);
+    // EACH BUILTIN'S ARM IS A FRAME OF ITS OWN (DEF-276, landing 150): a frame holds every arm's locals and call
+    // results (D-173), and a chain through a builtin -- `#sqrt(#sqrt(…))` -- recursed through this function once a
+    // level with all six arms' locals in one frame (17,608 bytes at landing 146). The dispatch keeps the name's decode.
 
     // `#sqrt(x)` (D-200, 1.3.7): the instruction, via the declared intrinsic.
-    if (raw string_eq(name, "sqrt")) {
-        IrVal:sqv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
-        if (!(raw iv_is_ok(sqv))) { pass sqv; }
-        string:sqn = "llvm.sqrt.f64";
-        if (raw string_eq(sqv.ll, "float")) { sqn = "llvm.sqrt.f32"; }
-        string:sqr = raw irw_temp(x.fe.w);
-        string:sqh = raw cat5(sqr, " = call ", sqv.ll, " @", sqn);
-        drop irw_line(x.fe.w, string_concat(sqh,
-                          string_concat(
-                              string_concat("(", raw cat3(sqv.ll, " ", sqv.ref)),
-                              ")")));
-        pass (raw iv(string_concat(sqv.ll, ""), move(sqr), sqv.type_id));
-    }
+    if (raw string_eq(name, "sqrt")) { pass (raw emit_builtin_sqrt(x, id, n, start)); }
 
     // `#size_of<T>()` — ASK LLVM, never compute: gep one element past null and
     // read the offset. A hand-rolled size that disagrees with the one LLVM lays
     // out survives testing and corrupts memory later; this costs two
     // instructions `opt` folds away. The seed's shape, exactly.
-    if (raw string_eq(name, "size_of")) {
-        TypeId:ta = TypeId{ index: raw ast_id_at(x.ast, start, 0i32) };
-        int32:sized = raw resolve_type(x.tr, ta, x.scope);
-        LlType:sll = raw ll_type(x.fe.ctx, sized);
-        if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, sized, n.span)); }
-        string:g = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(g, " = getelementptr ", sll.text,
-                          ", ptr null, i32 1", ""));
-        string:r = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(r, " = ptrtoint ptr ",
-                          string_concat(g, " to i64")));
-        pass (raw iv("i64", move(r), raw exprtypes_get(x.et, id)));
-    }
+    if (raw string_eq(name, "size_of")) { pass (raw emit_builtin_size_of(x, id, n, start)); }
 
     // `#ptr_add<T>(ptr, offset)` — pointer arithmetic, ELEMENT-scaled
     // (D-033/D-187): a `getelementptr T`, so the offset counts elements of T
     // and the type carries the stride. Byte math is `T = int8`.
-    if (raw string_eq(name, "ptr_add")) {
-        int32:paet = raw resolve_type(x.tr,
-                         TypeId{ index: raw ast_id_at(x.ast, start, 0i32) }, x.scope);
-        LlType:pael = raw ll_type(x.fe.ctx, paet);
-        if (!(raw ll_is_ok(pael))) { pass (raw iv_from_ll_at(x, pael, paet, n.span)); }
-        ExprId:papid = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
-        ExprId:paoid = ExprId{ index: raw ast_id_at(x.ast, start, gc + 1i32) };
-        IrVal:papv = raw emit_expr(x, papid);
-        if (!(raw iv_is_ok(papv))) { pass papv; }
-        IrVal:paov = raw emit_expr(x, paoid);
-        if (!(raw iv_is_ok(paov))) { pass paov; }
-        string:par = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(par, " = getelementptr ", pael.text,
-                          ", ptr ", raw cat4(papv.ref, ", ", paov.ll,
-                              string_concat(" ", paov.ref))));
-        pass (raw iv("ptr", move(par), raw exprtypes_get(x.et, id)));
-    }
+    if (raw string_eq(name, "ptr_add")) { pass (raw emit_builtin_ptr_add(x, id, n, gc, start)); }
 
     // `#wild_ptr<T>(addr)` — the ONE place an integer becomes a pointer (D-019).
-    if (raw string_eq(name, "wild_ptr")) {
-        ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
-        IrVal:av = raw emit_expr(x, aid);
-        if (!(raw iv_is_ok(av))) { pass av; }
-        string:r = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(r, " = inttoptr ", av.ll, " ",
-                          string_concat(av.ref, " to ptr")));
-        pass (raw iv("ptr", move(r), raw exprtypes_get(x.et, id)));
-    }
+    if (raw string_eq(name, "wild_ptr")) { pass (raw emit_builtin_wild_ptr(x, id, n, gc, start)); }
 
     // `#wild_slice<T>(ptr, len)` — a `{ptr, len}` built from parts the caller
     // vouches for; deliberately parallel to `#wild_ptr` (D-019).
-    if (raw string_eq(name, "wild_slice")) {
-        ExprId:parg = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
-        ExprId:lid = ExprId{ index: raw ast_id_at(x.ast, start, gc + 1i32) };
-        IrVal:pv2 = raw emit_expr(x, parg);
-        if (!(raw iv_is_ok(pv2))) { pass pv2; }
-        IrVal:lv = raw emit_expr(x, lid);
-        if (!(raw iv_is_ok(lv))) { pass lv; }
-        // THE CEILING (D-308 SS7, 1.5.8b step 6c): the count is widened by its
-        // sign and held to `0 <= len <= 2^47` before it becomes a header. The
-        // header took `lv.ref` as an `i64` whatever its width until 6c, so a
-        // narrower count -- any integer, by the checker -- reached `llc` as a
-        // type error (DEF-87).
-        string:len64 = raw widen_len_i64(x, lv.ref, lv.ll, lv.type_id);
-        drop emit_len_ceiling_guard(x, len64, id.index, n.span);
-        string:a = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat3(a,
-            " = insertvalue { ptr, i64 } zeroinitializer, ptr ",
-            string_concat(pv2.ref, ", 0")));
-        string:b = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
-                          ", i64 ", string_concat(len64, ", 1")));
-        pass (raw iv("{ ptr, i64 }", move(b), raw exprtypes_get(x.et, id)));
-    }
+    if (raw string_eq(name, "wild_slice")) { pass (raw emit_builtin_wild_slice(x, id, n, gc, start)); }
 
     // `#unreachable()` — TRAP THROUGH D-142'S ROUTE (D-061, `UNREACHABLE`,
     // −4102). It replaced the removed `(!)`: a point a stricter analysis has
@@ -11925,19 +12003,113 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // lands there, valid but never reached — and the handed-back value is
     // the ZERO of the node's type (never `undef` -- D-218.10), which is
     // never produced.
-    if (raw string_eq(name, "unreachable")) {
-        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4102)");
-        drop irw_line(x.fe.w, "unreachable");
-        string:ual = raw irw_new_label(x.fe.w, "unreach.after");
-        drop irw_label(x.fe.w, ual);
-        int32:utid = raw exprtypes_get(x.et, id);
-        LlType:ull = raw node_ll(x, id);
-        if (ull.state != (raw LL_OK())) {
-            pass (raw iv_from_ll_at(x, ull, utid, n.span));
-        }
-        string:uz = raw ll_zero(ull);
-        pass (raw iv(move(ull.text), move(uz), utid));
-    }
+    if (raw string_eq(name, "unreachable")) { pass (raw emit_builtin_unreachable(x, id, n)); }
 
     pass (raw iv_broken(n.span));
+};
+
+// THE `#sqrt` ARM OF `emit_builtin`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the dispatch
+// calls it with the decoded pieces it reads, so a chain through a builtin pays for this arm's frame alone.
+func:emit_builtin_sqrt = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:start) never fails {
+    IrVal:sqv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+    if (!(raw iv_is_ok(sqv))) { pass sqv; }
+    string:sqn = "llvm.sqrt.f64";
+    if (raw string_eq(sqv.ll, "float")) { sqn = "llvm.sqrt.f32"; }
+    string:sqr = raw irw_temp(x.fe.w);
+    string:sqh = raw cat5(sqr, " = call ", sqv.ll, " @", sqn);
+    drop irw_line(x.fe.w, string_concat(sqh,
+                      string_concat(
+                          string_concat("(", raw cat3(sqv.ll, " ", sqv.ref)),
+                          ")")));
+    pass (raw iv(string_concat(sqv.ll, ""), move(sqr), sqv.type_id));
+};
+
+// THE `#size_of` ARM OF `emit_builtin`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the dispatch
+// calls it with the decoded pieces it reads, so a chain through a builtin pays for this arm's frame alone.
+func:emit_builtin_size_of = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:start) never fails {
+    TypeId:ta = TypeId{ index: raw ast_id_at(x.ast, start, 0i32) };
+    int32:sized = raw resolve_type(x.tr, ta, x.scope);
+    LlType:sll = raw ll_type(x.fe.ctx, sized);
+    if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, sized, n.span)); }
+    string:g = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(g, " = getelementptr ", sll.text,
+                      ", ptr null, i32 1", ""));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(r, " = ptrtoint ptr ",
+                      string_concat(g, " to i64")));
+    pass (raw iv("i64", move(r), raw exprtypes_get(x.et, id)));
+};
+
+// THE `#ptr_add` ARM OF `emit_builtin`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the dispatch
+// calls it with the decoded pieces it reads, so a chain through a builtin pays for this arm's frame alone.
+func:emit_builtin_ptr_add = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:gc, int32:start) never fails {
+    int32:paet = raw resolve_type(x.tr,
+                     TypeId{ index: raw ast_id_at(x.ast, start, 0i32) }, x.scope);
+    LlType:pael = raw ll_type(x.fe.ctx, paet);
+    if (!(raw ll_is_ok(pael))) { pass (raw iv_from_ll_at(x, pael, paet, n.span)); }
+    ExprId:papid = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
+    ExprId:paoid = ExprId{ index: raw ast_id_at(x.ast, start, gc + 1i32) };
+    IrVal:papv = raw emit_expr(x, papid);
+    if (!(raw iv_is_ok(papv))) { pass papv; }
+    IrVal:paov = raw emit_expr(x, paoid);
+    if (!(raw iv_is_ok(paov))) { pass paov; }
+    string:par = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(par, " = getelementptr ", pael.text,
+                      ", ptr ", raw cat4(papv.ref, ", ", paov.ll,
+                          string_concat(" ", paov.ref))));
+    pass (raw iv("ptr", move(par), raw exprtypes_get(x.et, id)));
+};
+
+// THE `#wild_ptr` ARM OF `emit_builtin`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the dispatch
+// calls it with the decoded pieces it reads, so a chain through a builtin pays for this arm's frame alone.
+func:emit_builtin_wild_ptr = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:gc, int32:start) never fails {
+    ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
+    IrVal:av = raw emit_expr(x, aid);
+    if (!(raw iv_is_ok(av))) { pass av; }
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = inttoptr ", av.ll, " ",
+                      string_concat(av.ref, " to ptr")));
+    pass (raw iv("ptr", move(r), raw exprtypes_get(x.et, id)));
+};
+
+// THE `#wild_slice` ARM OF `emit_builtin`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the dispatch
+// calls it with the decoded pieces it reads, so a chain through a builtin pays for this arm's frame alone.
+func:emit_builtin_wild_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:gc, int32:start) never fails {
+    ExprId:parg = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
+    ExprId:lid = ExprId{ index: raw ast_id_at(x.ast, start, gc + 1i32) };
+    IrVal:pv2 = raw emit_expr(x, parg);
+    if (!(raw iv_is_ok(pv2))) { pass pv2; }
+    IrVal:lv = raw emit_expr(x, lid);
+    if (!(raw iv_is_ok(lv))) { pass lv; }
+    // THE CEILING (D-308 SS7, 1.5.8b step 6c): the count is widened by its
+    // sign and held to `0 <= len <= 2^47` before it becomes a header. The
+    // header took `lv.ref` as an `i64` whatever its width until 6c, so a
+    // narrower count -- any integer, by the checker -- reached `llc` as a
+    // type error (DEF-87).
+    string:len64 = raw widen_len_i64(x, lv.ref, lv.ll, lv.type_id);
+    drop emit_len_ceiling_guard(x, len64, id.index, n.span);
+    string:a = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(a,
+        " = insertvalue { ptr, i64 } zeroinitializer, ptr ",
+        string_concat(pv2.ref, ", 0")));
+    string:b = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
+                      ", i64 ", string_concat(len64, ", 1")));
+    pass (raw iv("{ ptr, i64 }", move(b), raw exprtypes_get(x.et, id)));
+};
+
+// THE `#unreachable` ARM OF `emit_builtin`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-276, landing 150): the dispatch
+// calls it with the decoded pieces it reads, so a chain through a builtin pays for this arm's frame alone.
+func:emit_builtin_unreachable = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4102)");
+    drop irw_line(x.fe.w, "unreachable");
+    string:ual = raw irw_new_label(x.fe.w, "unreach.after");
+    drop irw_label(x.fe.w, ual);
+    int32:utid = raw exprtypes_get(x.et, id);
+    LlType:ull = raw node_ll(x, id);
+    if (ull.state != (raw LL_OK())) {
+        pass (raw iv_from_ll_at(x, ull, utid, n.span));
+    }
+    string:uz = raw ll_zero(ull);
+    pass (raw iv(move(ull.text), move(uz), utid));
 };
