@@ -11235,6 +11235,18 @@ func:emit_safe_nav = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     ExprId:base_id = raw expr_operand(n);
     IrVal:bv = raw emit_expr(x, base_id);
     if (!(raw iv_is_ok(bv))) { pass bv; }
+    // THE BASE IS EVALUATED IN THIS SMALL FRAME AND READ IN THE NEXT (DEF-282, landing 153): `emit_expr` recurses
+    // through here once per level of a `p?.next?.next … ?.v` chain, and every line after the base's evaluation sat
+    // in this frame too (10,312 bytes at landing 152), paid at every level. The base is handed by address: the rest
+    // only reads it, and by value it is copied through here.
+    pass (raw emit_safe_nav_values(x, id, n, base_id, @bv));
+};
+
+// THE REST OF `emit_safe_nav`, MOVED VERBATIM INTO A FRAME OF ITS OWN (DEF-282, landing 153): the lines after the
+// base's evaluation -- the slot, the tag test, the empty path, the field read and the join -- read the base value
+// through its address. Nothing it reaches evaluates an expression, so its frame is a chain's leaf.
+func:emit_safe_nav_values = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, ExprId:base_id,
+                                 IrVal->:bv) never fails {
     int32:otid = raw exprtypes_get(x.et, base_id);
     if ((raw type_kind(x.fe.ctx.types, otid)) != (raw TY_OPTIONAL())) {
         pass (raw iv_broken(n.span));
@@ -12051,6 +12063,18 @@ func:emit_builtin_ptr_add = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:
     ExprId:paoid = ExprId{ index: raw ast_id_at(x.ast, start, gc + 1i32) };
     IrVal:papv = raw emit_expr(x, papid);
     if (!(raw iv_is_ok(papv))) { pass papv; }
+    // THE POINTER IS EVALUATED IN THIS FRAME AND THE OFFSET IN THE NEXT (DEF-282, landing 153): a
+    // `#ptr_add<T>(#ptr_add<T>(…p…, k), k)` chain recurses through the pointer's `emit_expr` above once a level, and
+    // the offset's evaluation and the `getelementptr` sat in this frame too (4,456 bytes at landing 152). The two
+    // values the rest only reads are handed by address.
+    pass (raw emit_builtin_ptr_add_offset(x, id, @pael, paoid, @papv));
+};
+
+// THE OFFSET AND THE `getelementptr` OF `#ptr_add`, MOVED VERBATIM INTO A FRAME OF THEIR OWN (DEF-282, landing 153):
+// the lines after the pointer's evaluation; the element's LLVM type and the pointer's value are read through their
+// addresses.
+func:emit_builtin_ptr_add_offset = IrVal(ExprEmitter->:x, ExprId:id, LlType->:pael, ExprId:paoid,
+                                        IrVal->:papv) never fails {
     IrVal:paov = raw emit_expr(x, paoid);
     if (!(raw iv_is_ok(paov))) { pass paov; }
     string:par = raw irw_temp(x.fe.w);

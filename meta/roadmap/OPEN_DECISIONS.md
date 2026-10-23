@@ -3175,7 +3175,7 @@ defect declares a `DEF-` in §2f.
 > `ulimit -v`); DEF-278's growth (x1.9 per level, nested pick EXPRESSIONS) is plausibly the same shape and is measured with it.
 > Its own landing.
 
-> **DEF-282 — OPEN (registered 2026-10-22 by `nitpick-compiler_42` at landing 150, from the DEF-276 agent's report
+> **DEF-282 — FIXED 2026-10-23 (landing 153; built by the DEF-282 agent (Opus) under `nitpick-compiler_43` from the seat's brief, read whole and landed by `nitpick-compiler_43`; registered 2026-10-22 by `nitpick-compiler_42` at landing 150, from the DEF-276 agent's report
 > (`wt/42c/.internal/DEF276_AGENT_REPORT.txt`, its §6); DEF-176's class, the margins the split leaves). TWO CHAINS COMPILE AT
 > THE BOUND WITH LITTLE STACK TO SPARE, AND NO TEST HOLDS EITHER.** `emit_safe_nav` (ir_expr.npk, 10,312 bytes, 159 slots,
 > untouched at 150) is the largest frame left on a rest kind's chain: `p?.next?.next … ?.v` 252 deep -- the parser's bound --
@@ -3189,6 +3189,19 @@ defect declares a `DEF-` in §2f.
 > node by address would lower every dispatch frame -- an emitter-wide signature change, not made. The frames are -O0
 > frames: a toolchain whose register allocator spills differently moves every number above. Its own landing: the `?.`
 > split, a test for both chains, the signature question measured first.
+> FIXED AT 153: `emit_safe_nav` evaluates its base in a 1,928-byte frame and hands the 48 lines after it, verbatim, to
+> `emit_safe_nav_values` (9,256 bytes; it evaluates no expression -- checked over the emitted IR -- so its frame is a chain's
+> leaf); `emit_builtin_ptr_add` evaluates the pointer in 2,888 bytes and hands the offset and the `getelementptr` to
+> `emit_builtin_ptr_add_offset` (2,472); each helper called where its lines stood, the values it reads by address, every
+> emission byte-identical. A `?.` level 29,664 -> 21,280 bytes, a `#ptr_add` level 28,960 -> 27,392; at the bound the `?.`
+> chain keeps 2,776 KiB (712 before) and the `#ptr_add` chain 1,284 (900); `chain_deep_nav.npk` holds both at the bound. The
+> `#ptr_add` split's shape chosen by measurement (the alternative moving the `getelementptr` alone saves 608 bytes a level
+> against 1,568; the one shape the chosen split costs -- a chain through the OFFSET argument, +904 bytes a level -- keeps
+> 1,868 KiB at its bound of 84). THE SIGNATURE QUESTION MEASURED, NOT MADE (`wt/43c/.internal/sigexp/`): the node by address
+> saves 352 to 528 bytes a level (1.7-1.9%): its cost is ~112 bytes per FUNCTION, not per call site; the ~576 bytes a call
+> site is the `IrVal` RETURNED by value (the builder's `{ IrVal, i32 }` envelope and the `IrVal`, 168 + 160 bytes, plus llc's
+> temporary); an out-pointer convention would take a level's fixed dispatch from 17,960 to 248 bytes -- a bound, not a design.
+> The thinnest margins at the bound are `#ptr_add`'s 1,284 KiB and `#sqrt`'s 1,324 now.
 
 > **DEF-283 — FIXED 2026-10-23 (landing 152, `nitpick-compiler_43`; registered the same day, found by the landing's probes of DEF-278's
 > fix; a TYPE HOLE: a value of another type stored into a `pick` expression's slot). A `give` BELOW AN ARM'S TOP LEVEL WAS TYPED AGAINST
@@ -3217,7 +3230,7 @@ defect declares a `DEF-` in §2f.
 > a counted loop, a give inside a `while` with a condition: FLOW-001 each; the controls an `if`/`else` both giving, a `fall`, an `exit`, a
 > `while (true)`, a trap).
 
-> **DEF-285 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 152, from the library seat's reading of notice 151
+> **DEF-285 — FIXED 2026-10-23 (landing 153, with DEF-282; built by the DEF-282 agent under `nitpick-compiler_43`, landed by `nitpick-compiler_43`; registered 2026-10-23 by `nitpick-compiler_43` at landing 152, from the library seat's reading of notice 151
 > at 01:59; LOW: a diagnostic's note and position, nothing accepted or refused wrongly). THE EXHAUSTIVENESS ANALYSIS'S REPEATED-ARM
 > REPORT CARRIES NO NOTE AT THE FIRST SPELLING AND STANDS AT THE ARM'S PARENTHESIS, WHERE THE CHECKER'S NOTES AND STANDS AT THE
 > VALUE.** Landing 151 refuses a value, a variant or an error identity repeated in one `pick` (PICK-004 at the second spelling) in
@@ -3229,6 +3242,15 @@ defect declares a `DEF-` in §2f.
 > the analysis's report notes the first spelling as the checker's does, and both report at the pattern's value; the two rejection
 > files' headers move with it (four notes more in `pick_values_dead.npk`; the four analysis sites' columns). With DEF-282's landing,
 > or its own small one.
+> FIXED AT 153: `check_unreachable` (exhaust.npk) reports a repeated alternative at ITS OWN pattern span whether it stands
+> alone or in a list (the lone pattern's report stood at the arm's start) and pushes the checker's note, `first matched
+> here` under PICK-004, at the first spelling; `alt_matched_before` answers WHICH spelling matches (a `PatId`, or none),
+> searching in source order -- the unguarded earlier arms, then the arm's own earlier alternatives -- so the note stands at
+> the FIRST spelling; the same alternatives are reported. `pick_values_dead.npk`'s one lone-arm site 29:39 -> 29:40 (its
+> three list sites were at the alternative since 151), `exhaustiveness.npk`'s 142:9 -> 142:10, five notes appeared. Not
+> done: the two halves' sentences still differ (the checker's names the value and the list, the analysis's the pattern);
+> and no test asserts either half's NOTES -- the runners' `expect-note` lines would, but `header_from_check.py` cannot
+> interleave them with the `expect-error` run, so a dropped or misplaced note shows only in a sweep.
 
 > **DEF-286 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 152, found by bisecting the landing's two differing
 > emissions; LOW: `types_agree` compares function types structurally, so nothing is judged wrongly). `fn_type` INTERNS A DISTINCT
@@ -3246,6 +3268,18 @@ defect declares a `DEF-` in §2f.
 > around. FIX: key a function type on its CONTENT (the return, the `never fails` bit and the parameter types in order), as every
 > other kind is keyed, and retire the structural comparison; its own landing, measured first -- every emission's drop-body names
 > move once, the manifest re-keys once, and the type table of the compiler's own build shrinks by the duplicates.
+
+> **DEF-287 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 153, found by the DEF-282 agent building the
+> landing's test; LOW: a refusal of a legal store, with a spelling that stands). A FIELD STORE OF A SAME-BLOCK LOCAL'S ADDRESS
+> IS REFUSED WHERE THE LITERAL FORM IS ACCEPTED.** `Node:n101 = Node{ v: 1101i32, next: NIL }; Node:n100 = Node{ v: 1100i32,
+> next: @n101 };` compiles, and `n100.next = @n101;` on the same two locals is `NITPICK-BORROW-002` ("only a local binding
+> in the borrowing frame …", escape.npk's store rule for a field target, ~3150): the rule reads a FIELD target as storage the
+> frame does not own outright -- right for a pointee's field (`p.f = @x` through a pointer) and an over-restriction for a field
+> of a local the frame owns, whose holder-scope question (D-004 rule 3, `check_holder_scope`) the literal form answers. The
+> fix: a field path whose root is a local of this frame is that local's own storage, asked the holder-scope question as the
+> bare-local branch asks it; `chain_deep_nav.npk` cuts a link with `n5.next = NIL;` and never re-links, for this reason. Its
+> own small landing, measured over the three trees first (nothing in them spells the refused shape today, or it would have
+> been found).
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

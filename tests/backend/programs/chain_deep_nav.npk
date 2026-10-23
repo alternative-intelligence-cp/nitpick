@@ -1,0 +1,320 @@
+// expect-exit: 0
+//
+// THE TWO CHAINS THE DEPTH BOUND LEFT WITHOUT A TEST, HELD AT THE BOUND (DEF-282, landing 153): a `?.` chain
+// `p?.next?.next … ?.v` 252 deep -- the parser's bound -- over a struct whose `next` is an Optional pointer, and a
+// `#ptr_add<int8>(#ptr_add<int8>(…p…, 1i64), 1i64)` chain 253 deep over a `wild` block. Both compiled at the bound
+// before this landing, with the thinnest margins measured: the `?.` chain left 712 KiB of the compiler's 8 MiB stack,
+// `emit_safe_nav` holding every line after its base's evaluation in the frame each level paid (10,312 bytes), and the
+// `#ptr_add` chain 900 KiB, `emit_builtin_ptr_add` holding the offset's evaluation with the pointer's (4,456 bytes).
+// The base is evaluated in a small frame now and the rest read in the next (`emit_safe_nav_values`,
+// `emit_builtin_ptr_add_offset`), so the chains keep 2,776 KiB and 1,284 KiB. THIS TEST HOLDS THE MARGIN, not a trap:
+// both chains compile under the compiler before the landing too (exit 0 at both legs), and it fails the day a frame on
+// either chain's path grows enough to exhaust the stack at the bound again. Every value is checked: the field 252 links
+// down, present from two heads, absent at the last link, at the first (`NIL`) and from a cut link, and present again
+// past the cut; the byte 253 on, written through the chain and read at the offset, and back, from two starts.
+mod:chain_deep_nav;
+struct:Node = { int32:v; Node->?:next; };
+func:nav_chain = int32?(Node->?:p) never fails { int32?:y = p?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.next?.v; pass y; };
+func:ptr_put = NIL(wild int8->:p, int8:v) never fails { wild int8->:q = #ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(p, 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64); <-q = v; pass NIL; };
+func:ptr_get = int8(wild int8->:p) never fails { wild int8->:q = #ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(#ptr_add<int8>(p, 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64), 1i64); pass (<-q); };
+func:main = int32(cstring[]:_~argv) {
+    // 260 nodes, each `next` the one after it: n1 -> n2 -> … -> n260, `v` 1000 plus the node's number.
+    Node:n260 = Node{ v: 1260i32, next: NIL };
+    Node:n259 = Node{ v: 1259i32, next: @n260 };
+    Node:n258 = Node{ v: 1258i32, next: @n259 };
+    Node:n257 = Node{ v: 1257i32, next: @n258 };
+    Node:n256 = Node{ v: 1256i32, next: @n257 };
+    Node:n255 = Node{ v: 1255i32, next: @n256 };
+    Node:n254 = Node{ v: 1254i32, next: @n255 };
+    Node:n253 = Node{ v: 1253i32, next: @n254 };
+    Node:n252 = Node{ v: 1252i32, next: @n253 };
+    Node:n251 = Node{ v: 1251i32, next: @n252 };
+    Node:n250 = Node{ v: 1250i32, next: @n251 };
+    Node:n249 = Node{ v: 1249i32, next: @n250 };
+    Node:n248 = Node{ v: 1248i32, next: @n249 };
+    Node:n247 = Node{ v: 1247i32, next: @n248 };
+    Node:n246 = Node{ v: 1246i32, next: @n247 };
+    Node:n245 = Node{ v: 1245i32, next: @n246 };
+    Node:n244 = Node{ v: 1244i32, next: @n245 };
+    Node:n243 = Node{ v: 1243i32, next: @n244 };
+    Node:n242 = Node{ v: 1242i32, next: @n243 };
+    Node:n241 = Node{ v: 1241i32, next: @n242 };
+    Node:n240 = Node{ v: 1240i32, next: @n241 };
+    Node:n239 = Node{ v: 1239i32, next: @n240 };
+    Node:n238 = Node{ v: 1238i32, next: @n239 };
+    Node:n237 = Node{ v: 1237i32, next: @n238 };
+    Node:n236 = Node{ v: 1236i32, next: @n237 };
+    Node:n235 = Node{ v: 1235i32, next: @n236 };
+    Node:n234 = Node{ v: 1234i32, next: @n235 };
+    Node:n233 = Node{ v: 1233i32, next: @n234 };
+    Node:n232 = Node{ v: 1232i32, next: @n233 };
+    Node:n231 = Node{ v: 1231i32, next: @n232 };
+    Node:n230 = Node{ v: 1230i32, next: @n231 };
+    Node:n229 = Node{ v: 1229i32, next: @n230 };
+    Node:n228 = Node{ v: 1228i32, next: @n229 };
+    Node:n227 = Node{ v: 1227i32, next: @n228 };
+    Node:n226 = Node{ v: 1226i32, next: @n227 };
+    Node:n225 = Node{ v: 1225i32, next: @n226 };
+    Node:n224 = Node{ v: 1224i32, next: @n225 };
+    Node:n223 = Node{ v: 1223i32, next: @n224 };
+    Node:n222 = Node{ v: 1222i32, next: @n223 };
+    Node:n221 = Node{ v: 1221i32, next: @n222 };
+    Node:n220 = Node{ v: 1220i32, next: @n221 };
+    Node:n219 = Node{ v: 1219i32, next: @n220 };
+    Node:n218 = Node{ v: 1218i32, next: @n219 };
+    Node:n217 = Node{ v: 1217i32, next: @n218 };
+    Node:n216 = Node{ v: 1216i32, next: @n217 };
+    Node:n215 = Node{ v: 1215i32, next: @n216 };
+    Node:n214 = Node{ v: 1214i32, next: @n215 };
+    Node:n213 = Node{ v: 1213i32, next: @n214 };
+    Node:n212 = Node{ v: 1212i32, next: @n213 };
+    Node:n211 = Node{ v: 1211i32, next: @n212 };
+    Node:n210 = Node{ v: 1210i32, next: @n211 };
+    Node:n209 = Node{ v: 1209i32, next: @n210 };
+    Node:n208 = Node{ v: 1208i32, next: @n209 };
+    Node:n207 = Node{ v: 1207i32, next: @n208 };
+    Node:n206 = Node{ v: 1206i32, next: @n207 };
+    Node:n205 = Node{ v: 1205i32, next: @n206 };
+    Node:n204 = Node{ v: 1204i32, next: @n205 };
+    Node:n203 = Node{ v: 1203i32, next: @n204 };
+    Node:n202 = Node{ v: 1202i32, next: @n203 };
+    Node:n201 = Node{ v: 1201i32, next: @n202 };
+    Node:n200 = Node{ v: 1200i32, next: @n201 };
+    Node:n199 = Node{ v: 1199i32, next: @n200 };
+    Node:n198 = Node{ v: 1198i32, next: @n199 };
+    Node:n197 = Node{ v: 1197i32, next: @n198 };
+    Node:n196 = Node{ v: 1196i32, next: @n197 };
+    Node:n195 = Node{ v: 1195i32, next: @n196 };
+    Node:n194 = Node{ v: 1194i32, next: @n195 };
+    Node:n193 = Node{ v: 1193i32, next: @n194 };
+    Node:n192 = Node{ v: 1192i32, next: @n193 };
+    Node:n191 = Node{ v: 1191i32, next: @n192 };
+    Node:n190 = Node{ v: 1190i32, next: @n191 };
+    Node:n189 = Node{ v: 1189i32, next: @n190 };
+    Node:n188 = Node{ v: 1188i32, next: @n189 };
+    Node:n187 = Node{ v: 1187i32, next: @n188 };
+    Node:n186 = Node{ v: 1186i32, next: @n187 };
+    Node:n185 = Node{ v: 1185i32, next: @n186 };
+    Node:n184 = Node{ v: 1184i32, next: @n185 };
+    Node:n183 = Node{ v: 1183i32, next: @n184 };
+    Node:n182 = Node{ v: 1182i32, next: @n183 };
+    Node:n181 = Node{ v: 1181i32, next: @n182 };
+    Node:n180 = Node{ v: 1180i32, next: @n181 };
+    Node:n179 = Node{ v: 1179i32, next: @n180 };
+    Node:n178 = Node{ v: 1178i32, next: @n179 };
+    Node:n177 = Node{ v: 1177i32, next: @n178 };
+    Node:n176 = Node{ v: 1176i32, next: @n177 };
+    Node:n175 = Node{ v: 1175i32, next: @n176 };
+    Node:n174 = Node{ v: 1174i32, next: @n175 };
+    Node:n173 = Node{ v: 1173i32, next: @n174 };
+    Node:n172 = Node{ v: 1172i32, next: @n173 };
+    Node:n171 = Node{ v: 1171i32, next: @n172 };
+    Node:n170 = Node{ v: 1170i32, next: @n171 };
+    Node:n169 = Node{ v: 1169i32, next: @n170 };
+    Node:n168 = Node{ v: 1168i32, next: @n169 };
+    Node:n167 = Node{ v: 1167i32, next: @n168 };
+    Node:n166 = Node{ v: 1166i32, next: @n167 };
+    Node:n165 = Node{ v: 1165i32, next: @n166 };
+    Node:n164 = Node{ v: 1164i32, next: @n165 };
+    Node:n163 = Node{ v: 1163i32, next: @n164 };
+    Node:n162 = Node{ v: 1162i32, next: @n163 };
+    Node:n161 = Node{ v: 1161i32, next: @n162 };
+    Node:n160 = Node{ v: 1160i32, next: @n161 };
+    Node:n159 = Node{ v: 1159i32, next: @n160 };
+    Node:n158 = Node{ v: 1158i32, next: @n159 };
+    Node:n157 = Node{ v: 1157i32, next: @n158 };
+    Node:n156 = Node{ v: 1156i32, next: @n157 };
+    Node:n155 = Node{ v: 1155i32, next: @n156 };
+    Node:n154 = Node{ v: 1154i32, next: @n155 };
+    Node:n153 = Node{ v: 1153i32, next: @n154 };
+    Node:n152 = Node{ v: 1152i32, next: @n153 };
+    Node:n151 = Node{ v: 1151i32, next: @n152 };
+    Node:n150 = Node{ v: 1150i32, next: @n151 };
+    Node:n149 = Node{ v: 1149i32, next: @n150 };
+    Node:n148 = Node{ v: 1148i32, next: @n149 };
+    Node:n147 = Node{ v: 1147i32, next: @n148 };
+    Node:n146 = Node{ v: 1146i32, next: @n147 };
+    Node:n145 = Node{ v: 1145i32, next: @n146 };
+    Node:n144 = Node{ v: 1144i32, next: @n145 };
+    Node:n143 = Node{ v: 1143i32, next: @n144 };
+    Node:n142 = Node{ v: 1142i32, next: @n143 };
+    Node:n141 = Node{ v: 1141i32, next: @n142 };
+    Node:n140 = Node{ v: 1140i32, next: @n141 };
+    Node:n139 = Node{ v: 1139i32, next: @n140 };
+    Node:n138 = Node{ v: 1138i32, next: @n139 };
+    Node:n137 = Node{ v: 1137i32, next: @n138 };
+    Node:n136 = Node{ v: 1136i32, next: @n137 };
+    Node:n135 = Node{ v: 1135i32, next: @n136 };
+    Node:n134 = Node{ v: 1134i32, next: @n135 };
+    Node:n133 = Node{ v: 1133i32, next: @n134 };
+    Node:n132 = Node{ v: 1132i32, next: @n133 };
+    Node:n131 = Node{ v: 1131i32, next: @n132 };
+    Node:n130 = Node{ v: 1130i32, next: @n131 };
+    Node:n129 = Node{ v: 1129i32, next: @n130 };
+    Node:n128 = Node{ v: 1128i32, next: @n129 };
+    Node:n127 = Node{ v: 1127i32, next: @n128 };
+    Node:n126 = Node{ v: 1126i32, next: @n127 };
+    Node:n125 = Node{ v: 1125i32, next: @n126 };
+    Node:n124 = Node{ v: 1124i32, next: @n125 };
+    Node:n123 = Node{ v: 1123i32, next: @n124 };
+    Node:n122 = Node{ v: 1122i32, next: @n123 };
+    Node:n121 = Node{ v: 1121i32, next: @n122 };
+    Node:n120 = Node{ v: 1120i32, next: @n121 };
+    Node:n119 = Node{ v: 1119i32, next: @n120 };
+    Node:n118 = Node{ v: 1118i32, next: @n119 };
+    Node:n117 = Node{ v: 1117i32, next: @n118 };
+    Node:n116 = Node{ v: 1116i32, next: @n117 };
+    Node:n115 = Node{ v: 1115i32, next: @n116 };
+    Node:n114 = Node{ v: 1114i32, next: @n115 };
+    Node:n113 = Node{ v: 1113i32, next: @n114 };
+    Node:n112 = Node{ v: 1112i32, next: @n113 };
+    Node:n111 = Node{ v: 1111i32, next: @n112 };
+    Node:n110 = Node{ v: 1110i32, next: @n111 };
+    Node:n109 = Node{ v: 1109i32, next: @n110 };
+    Node:n108 = Node{ v: 1108i32, next: @n109 };
+    Node:n107 = Node{ v: 1107i32, next: @n108 };
+    Node:n106 = Node{ v: 1106i32, next: @n107 };
+    Node:n105 = Node{ v: 1105i32, next: @n106 };
+    Node:n104 = Node{ v: 1104i32, next: @n105 };
+    Node:n103 = Node{ v: 1103i32, next: @n104 };
+    Node:n102 = Node{ v: 1102i32, next: @n103 };
+    Node:n101 = Node{ v: 1101i32, next: @n102 };
+    Node:n100 = Node{ v: 1100i32, next: @n101 };
+    Node:n99 = Node{ v: 1099i32, next: @n100 };
+    Node:n98 = Node{ v: 1098i32, next: @n99 };
+    Node:n97 = Node{ v: 1097i32, next: @n98 };
+    Node:n96 = Node{ v: 1096i32, next: @n97 };
+    Node:n95 = Node{ v: 1095i32, next: @n96 };
+    Node:n94 = Node{ v: 1094i32, next: @n95 };
+    Node:n93 = Node{ v: 1093i32, next: @n94 };
+    Node:n92 = Node{ v: 1092i32, next: @n93 };
+    Node:n91 = Node{ v: 1091i32, next: @n92 };
+    Node:n90 = Node{ v: 1090i32, next: @n91 };
+    Node:n89 = Node{ v: 1089i32, next: @n90 };
+    Node:n88 = Node{ v: 1088i32, next: @n89 };
+    Node:n87 = Node{ v: 1087i32, next: @n88 };
+    Node:n86 = Node{ v: 1086i32, next: @n87 };
+    Node:n85 = Node{ v: 1085i32, next: @n86 };
+    Node:n84 = Node{ v: 1084i32, next: @n85 };
+    Node:n83 = Node{ v: 1083i32, next: @n84 };
+    Node:n82 = Node{ v: 1082i32, next: @n83 };
+    Node:n81 = Node{ v: 1081i32, next: @n82 };
+    Node:n80 = Node{ v: 1080i32, next: @n81 };
+    Node:n79 = Node{ v: 1079i32, next: @n80 };
+    Node:n78 = Node{ v: 1078i32, next: @n79 };
+    Node:n77 = Node{ v: 1077i32, next: @n78 };
+    Node:n76 = Node{ v: 1076i32, next: @n77 };
+    Node:n75 = Node{ v: 1075i32, next: @n76 };
+    Node:n74 = Node{ v: 1074i32, next: @n75 };
+    Node:n73 = Node{ v: 1073i32, next: @n74 };
+    Node:n72 = Node{ v: 1072i32, next: @n73 };
+    Node:n71 = Node{ v: 1071i32, next: @n72 };
+    Node:n70 = Node{ v: 1070i32, next: @n71 };
+    Node:n69 = Node{ v: 1069i32, next: @n70 };
+    Node:n68 = Node{ v: 1068i32, next: @n69 };
+    Node:n67 = Node{ v: 1067i32, next: @n68 };
+    Node:n66 = Node{ v: 1066i32, next: @n67 };
+    Node:n65 = Node{ v: 1065i32, next: @n66 };
+    Node:n64 = Node{ v: 1064i32, next: @n65 };
+    Node:n63 = Node{ v: 1063i32, next: @n64 };
+    Node:n62 = Node{ v: 1062i32, next: @n63 };
+    Node:n61 = Node{ v: 1061i32, next: @n62 };
+    Node:n60 = Node{ v: 1060i32, next: @n61 };
+    Node:n59 = Node{ v: 1059i32, next: @n60 };
+    Node:n58 = Node{ v: 1058i32, next: @n59 };
+    Node:n57 = Node{ v: 1057i32, next: @n58 };
+    Node:n56 = Node{ v: 1056i32, next: @n57 };
+    Node:n55 = Node{ v: 1055i32, next: @n56 };
+    Node:n54 = Node{ v: 1054i32, next: @n55 };
+    Node:n53 = Node{ v: 1053i32, next: @n54 };
+    Node:n52 = Node{ v: 1052i32, next: @n53 };
+    Node:n51 = Node{ v: 1051i32, next: @n52 };
+    Node:n50 = Node{ v: 1050i32, next: @n51 };
+    Node:n49 = Node{ v: 1049i32, next: @n50 };
+    Node:n48 = Node{ v: 1048i32, next: @n49 };
+    Node:n47 = Node{ v: 1047i32, next: @n48 };
+    Node:n46 = Node{ v: 1046i32, next: @n47 };
+    Node:n45 = Node{ v: 1045i32, next: @n46 };
+    Node:n44 = Node{ v: 1044i32, next: @n45 };
+    Node:n43 = Node{ v: 1043i32, next: @n44 };
+    Node:n42 = Node{ v: 1042i32, next: @n43 };
+    Node:n41 = Node{ v: 1041i32, next: @n42 };
+    Node:n40 = Node{ v: 1040i32, next: @n41 };
+    Node:n39 = Node{ v: 1039i32, next: @n40 };
+    Node:n38 = Node{ v: 1038i32, next: @n39 };
+    Node:n37 = Node{ v: 1037i32, next: @n38 };
+    Node:n36 = Node{ v: 1036i32, next: @n37 };
+    Node:n35 = Node{ v: 1035i32, next: @n36 };
+    Node:n34 = Node{ v: 1034i32, next: @n35 };
+    Node:n33 = Node{ v: 1033i32, next: @n34 };
+    Node:n32 = Node{ v: 1032i32, next: @n33 };
+    Node:n31 = Node{ v: 1031i32, next: @n32 };
+    Node:n30 = Node{ v: 1030i32, next: @n31 };
+    Node:n29 = Node{ v: 1029i32, next: @n30 };
+    Node:n28 = Node{ v: 1028i32, next: @n29 };
+    Node:n27 = Node{ v: 1027i32, next: @n28 };
+    Node:n26 = Node{ v: 1026i32, next: @n27 };
+    Node:n25 = Node{ v: 1025i32, next: @n26 };
+    Node:n24 = Node{ v: 1024i32, next: @n25 };
+    Node:n23 = Node{ v: 1023i32, next: @n24 };
+    Node:n22 = Node{ v: 1022i32, next: @n23 };
+    Node:n21 = Node{ v: 1021i32, next: @n22 };
+    Node:n20 = Node{ v: 1020i32, next: @n21 };
+    Node:n19 = Node{ v: 1019i32, next: @n20 };
+    Node:n18 = Node{ v: 1018i32, next: @n19 };
+    Node:n17 = Node{ v: 1017i32, next: @n18 };
+    Node:n16 = Node{ v: 1016i32, next: @n17 };
+    Node:n15 = Node{ v: 1015i32, next: @n16 };
+    Node:n14 = Node{ v: 1014i32, next: @n15 };
+    Node:n13 = Node{ v: 1013i32, next: @n14 };
+    Node:n12 = Node{ v: 1012i32, next: @n13 };
+    Node:n11 = Node{ v: 1011i32, next: @n12 };
+    Node:n10 = Node{ v: 1010i32, next: @n11 };
+    Node:n9 = Node{ v: 1009i32, next: @n10 };
+    Node:n8 = Node{ v: 1008i32, next: @n9 };
+    Node:n7 = Node{ v: 1007i32, next: @n8 };
+    Node:n6 = Node{ v: 1006i32, next: @n7 };
+    Node:n5 = Node{ v: 1005i32, next: @n6 };
+    Node:n4 = Node{ v: 1004i32, next: @n5 };
+    Node:n3 = Node{ v: 1003i32, next: @n4 };
+    Node:n2 = Node{ v: 1002i32, next: @n3 };
+    Node:n1 = Node{ v: 1001i32, next: @n2 };
+    // From n1 the chain's 252 links reach n253; from n8 the last node, n260.
+    if (((raw nav_chain(@n1)) ?? 0i32) != 1253i32) { exit 1i32; }
+    if (((raw nav_chain(@n8)) ?? 0i32) != 1260i32) { exit 2i32; }
+    // Absent: from n9 the 252nd link is n260's `next`, `NIL`; from no node at all, at the first.
+    if ((raw nav_chain(@n9)) != NIL) { exit 3i32; }
+    if ((raw nav_chain(NIL)) != NIL) { exit 4i32; }
+    // A cut at n5's link: absent from n1 (the fifth link, carried up through the 248 `?.` after it) and from n5 (the
+    // first); present from n6, whose 252 links all lie past the cut.
+    n5.next = NIL;
+    if ((raw nav_chain(@n1)) != NIL) { exit 5i32; }
+    if ((raw nav_chain(@n5)) != NIL) { exit 6i32; }
+    if (((raw nav_chain(@n6)) ?? 0i32) != 1258i32) { exit 7i32; }
+
+    // A `wild` block of 512 bytes: the chain's address is 253 bytes on from its argument.
+    wild int8->:b = alloc(512i64) =>! wild int8->;
+    drop ptr_put(b, 77i8);
+    if ((<-(#ptr_add<int8>(b, 253i64))) != 77i8) { exit 8i32; }
+    <-(#ptr_add<int8>(b, 253i64)) = -5i8;
+    if ((raw ptr_get(b)) != -5i8) { exit 9i32; }
+    // From another start, 100 bytes in: the byte 353 on, read back both ways, and the first byte untouched.
+    drop ptr_put(#ptr_add<int8>(b, 100i64), 42i8);
+    if ((<-(#ptr_add<int8>(b, 353i64))) != 42i8) { exit 10i32; }
+    if ((raw ptr_get(#ptr_add<int8>(b, 100i64))) != 42i8) { exit 11i32; }
+    if ((raw ptr_get(b)) != -5i8) { exit 12i32; }
+    dalloc(b);
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

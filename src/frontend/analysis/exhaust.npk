@@ -339,20 +339,28 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
             // both report one pair. Until this landing the name comparison was
             // asked of variant arms alone, so `(Boom)` twice over an `Error` was
             // not dead to anyone.
+            //
+            // AT THE REPEATED ALTERNATIVE, WITH A NOTE AT THE FIRST SPELLING (DEF-285, landing 153), as the checker's
+            // half reports a repeated constant: a lone pattern's report stood at its arm's start (its label, or its
+            // opening parenthesis) until this landing, and neither form said where the first spelling was -- a
+            // repeated `(Boom)` twenty arms below the first in a long `failsafe` is where the note earns its keep.
             PatId:p = raw arm_pattern(arm);
             int32:na = raw pat_alt_count(x.ast, p);
             for (int32:j in 0i32...na) {
-                if (raw alt_matched_before(x, start, i, j)) {
+                PatId:first = raw alt_matched_before(x, start, i, j);
+                if (!(raw pat_is_none(first))) {
+                    PatNode:ap = raw ast_pat(x.ast, raw pat_alt_at(x.ast, p, j));
                     if (na > 1i32) {
-                        PatNode:ap = raw ast_pat(x.ast, raw pat_alt_at(x.ast, p, j));
                         drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
                             "an earlier arm, or an earlier value of this list, already matches this value, so it can never run (D-363)",
                             ap.span);
                     } else {
                         drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
                             "an earlier arm already matches this pattern, so this one can never run",
-                            arm.span);
+                            ap.span);
                     }
+                    PatNode:fp = raw ast_pat(x.ast, first);
+                    drop diaglist_push(x.diags, raw diag_note(raw PICK_UNREACHABLE_ARM(), "first matched here", fp.span));
                 }
             }
         }
@@ -362,29 +370,36 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
     pass NIL;
 };
 
-// IS THE j-TH ALTERNATIVE OF ARM i ALREADY MATCHED -- by an alternative of an
-// unguarded earlier arm (when arm i is unguarded), or by an earlier alternative
-// of arm i itself? A GUARD makes an arm conditional, so a same-pattern arm
-// behind or after one is not provably dead and guarded arms never take part
-// across arms; a repeat inside ONE arm's list is dead whatever its guard.
-func:alt_matched_before = bool(Exhaust->:x, int32:start, int32:i, int32:j) never fails {
+// WHICH SPELLING ALREADY MATCHES THE j-TH ALTERNATIVE OF ARM i -- an alternative
+// of an unguarded earlier arm (when arm i is unguarded), or an earlier
+// alternative of arm i itself -- or none (`pat_none`). A GUARD makes an arm
+// conditional, so a same-pattern arm behind or after one is not provably dead
+// and guarded arms never take part across arms; a repeat inside ONE arm's list
+// is dead whatever its guard. The search runs in SOURCE ORDER, the earlier arms
+// before arm i's own alternatives, so the answer is the FIRST spelling, where
+// the report's note stands (DEF-285, landing 153; the checker's half notes the
+// first spelling the same way, `refuse_repeated_value`).
+func:alt_matched_before = PatId(Exhaust->:x, int32:start, int32:i, int32:j) never fails {
     StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
     PatId:ap = raw arm_pattern(arm);
     PatNode:p = raw ast_pat(x.ast, raw pat_alt_at(x.ast, ap, j));
-    for (int32:k in 0i32...j) {
-        if (raw pats_match_same(x, p, raw ast_pat(x.ast, raw pat_alt_at(x.ast, ap, k)))) { pass true; }
-    }
-    if (!(raw expr_is_none(raw arm_guard(arm)))) { pass false; }
-    for (int32:a in 0i32...i) {
-        StmtNode:prev = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, a));
-        if (!(raw expr_is_none(raw arm_guard(prev)))) { continue; }
-        PatId:pp = raw arm_pattern(prev);
-        int32:nb = raw pat_alt_count(x.ast, pp);
-        for (int32:b in 0i32...nb) {
-            if (raw pats_match_same(x, p, raw ast_pat(x.ast, raw pat_alt_at(x.ast, pp, b)))) { pass true; }
+    if (raw expr_is_none(raw arm_guard(arm))) {
+        for (int32:a in 0i32...i) {
+            StmtNode:prev = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, a));
+            if (!(raw expr_is_none(raw arm_guard(prev)))) { continue; }
+            PatId:pp = raw arm_pattern(prev);
+            int32:nb = raw pat_alt_count(x.ast, pp);
+            for (int32:b in 0i32...nb) {
+                PatId:q = raw pat_alt_at(x.ast, pp, b);
+                if (raw pats_match_same(x, p, raw ast_pat(x.ast, q))) { pass q; }
+            }
         }
     }
-    pass false;
+    for (int32:k in 0i32...j) {
+        PatId:q = raw pat_alt_at(x.ast, ap, k);
+        if (raw pats_match_same(x, p, raw ast_pat(x.ast, q))) { pass q; }
+    }
+    pass (raw pat_none());
 };
 
 // TWO PATTERNS MATCH THE SAME THING only when their FULL PATHS agree (D-179):
