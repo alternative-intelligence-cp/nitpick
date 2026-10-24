@@ -1,0 +1,100 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 41:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 49:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 55:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 61:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 68:24
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 73:5
+mod:range_level;
+// A RANGE'S ELEMENT IS ITS STORAGE'S ELEMENT (DEF-303, landing 159). `arr[lo...hi][i]` is `arr[lo + i]`, so the two
+// analyses compare paths LEVELLED: a range step and the index or range step after it stand at ONE position (the
+// escape analysis's `level_path_text`, the aliasing walk's `level_steps`). Unlevelled, every step after the range
+// stood one position too far, and a write of `arr[0...2][0].o` met a view of `arr[0].o.x` field against field --
+// `o` against `x` -- and read the pair disjoint. Before this landing every function below compiled, and each read
+// freed bytes at both legs (`.internal/probes/m2/z300*`, `z303*`: 113 for 97).
+//
+//   l01  a write through a range's element under a view one field deeper                    BORROW-015 at the write
+//   l02  the same through a `List`'s range                                                  BORROW-015 at the write
+//   l03  a range's element handed by address to a writer                                    BORROW-015 at the argument
+//   l04  a callee writing through a range of its pointer parameter's pointee                BORROW-015 at the argument
+//   l05  a computed index into a range                                                      BORROW-015 at the write
+//   l06  a store through a range whose own value views the element it overwrites            BORROW-002 at the store
+//
+// Controls carrying no code: a write to ANOTHER element through a range under a view of the first -- refused by the
+// unlevelled compare (the range met the view's index) and ADMITTED from this landing, as its direct spelling
+// `arr[1].o = …` always was; a range of a range then an index, read after the write; the view's block ended first.
+struct:H4 = { string:x; };
+struct:H3 = { H4:o; };
+struct:H2 = { string:o; };
+struct:A = { string:s; (fixed uint8[]):v; };
+struct:HA = { A:a; };
+func:wq3 = NIL(H3->:q) never fails { q.o = H4{ x: string_concat("x", "y") }; pass NIL; };
+func:wr = NIL(H3[2]->:ap) never fails { (<-ap)[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") }; pass NIL; };
+func:l01 = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o.x);
+    arr[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") };
+    pass (vw[0i64] => int32);
+};
+func:l02 = int32() never fails {
+    List<H3>:l = raw list_init::<H3>(2i64);
+    drop list_push(@l, H3{ o: H4{ x: string_concat("a", "b") } });
+    drop list_push(@l, H3{ o: H4{ x: string_concat("c", "d") } });
+    fixed uint8[]:vw = string_bytes(l[0i64].o.x);
+    l[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") };
+    pass (vw[0i64] => int32);
+};
+func:l03 = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o.x);
+    drop wq3(@arr[0i64...2i64][0i64]);
+    pass (vw[0i64] => int32);
+};
+func:l04 = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o.x);
+    drop wr(@arr);
+    pass (vw[0i64] => int32);
+};
+func:l05 = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o.x);
+    int64:k = arr[1i64].o.x.len - 2i64;
+    arr[0i64...2i64][k].o = H4{ x: string_concat("x", "y") };
+    pass (vw[0i64] => int32);
+};
+func:l06 = int32() never fails {
+    HA[2]:arr = [HA{ a: A{ s: string_concat("a", "b"), v: string_bytes("zz") } }, HA{ a: A{ s: string_concat("c", "d"), v: string_bytes("zz") } }];
+    arr[0i64...2i64][0i64].a = A{ s: string_concat("e", "f"), v: string_bytes(arr[0i64].a.s) };
+    pass (arr[0i64].a.v[0i64] => int32);
+};
+
+// --- controls -------------------------------------------------------------------------------------------------------
+func:ctl_other_element = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    arr[0i64...2i64][1i64].o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ctl_range_of_range = int32() never fails {
+    H2[4]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") },
+                 H2{ o: string_concat("e", "f") }, H2{ o: string_concat("g", "h") }];
+    arr[0i64...4i64][1i64...3i64][0i64].o = string_concat("x", "y");
+    fixed uint8[]:vw = string_bytes(arr[1i64].o);
+    pass (vw[0i64] => int32);
+};
+func:ctl_view_ended = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(arr[0i64].o.x);
+        r = (vw[0i64] => int32);
+    }
+    arr[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") };
+    pass r;
+};

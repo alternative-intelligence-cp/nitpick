@@ -1,0 +1,158 @@
+// expect-exit: 0
+mod:slice_targets_ok;
+// THE LEGAL HALF OF A WRITE OR A STORE THROUGH A SLICE NO RANGE NAMES (DEF-297, DEF-301; landing 159): a slice local,
+// a struct's slice field and a call's result handed to a writer, and a direct write through a slice local and through
+// a struct's slice field, each with no view of the array live; a copy stored through a call's result; the view's
+// block ended before the writer; a pointee's view stored through a call's result and read before the pointee's
+// write; a callee writing through a slice local over its parameter; a `List`'s range in a slice local; and a slice's
+// OWN view, the only one live, under a write through it -- `#wild_slice` over a pointer parameter's wild field, set and
+// popped in a generic body, and over a `buffer` field's `ptr` (nitpick-time's `Vec` and `Bytes` cores, refused by the
+// landing's first build, whose skip of the slice's own view matched its place as well as its holder). Each check fails
+// at its own exit.
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; };
+struct:H2 = { string:o; };
+struct:B2 = { H2[]:sl; };
+func:f = NIL(Holder[]:sl, S->:p) never fails { sl[0i64].v = string_bytes(p.s); pass NIL; };
+func:f2 = NIL(Holder[]:sl, fixed uint8[]:v) never fails { sl[0i64].v = v; pass NIL; };
+func:w = NIL(H2[]:sl) never fails { sl[0i64].o = string_concat("x", "y"); pass NIL; };
+func:view_of = Holder[](Holder[2]->:a) never fails { pass (<-a)[0i64...2i64]; };
+func:view_h = H2[](H2[2]->:a) never fails { pass (<-a)[0i64...2i64]; };
+func:g_direct = NIL(H2[]:sl) never fails { H2[]:t = sl; t[0i64].o = string_concat("x", "y"); pass NIL; };
+func:first = int32(H2[2]->:a) never fails { pass (string_bytes((<-a)[0i64].o)[0i64] => int32); };
+struct:WV<T: Copy> = { wild T->:items; int64:count; };
+struct:WB = { buffer:body; int64:len; };
+func:wv_set<T: Copy> = NIL(WV<T>->:v, int64:i, move T:x) never fails {
+    T[]:s = #wild_slice<T>(v.items, v.count);
+    s[i] = move(x);
+    pass NIL;
+};
+func:wv_pop<T: Copy> = T(WV<T>->:v) never fails {
+    T[]:s = #wild_slice<T>(v.items, v.count);
+    T:answer = move(s[v.count - 1i64]);
+    v.count = v.count - 1i64;
+    pass answer;
+};
+func:wb_push = NIL(WB->:b, uint8:x) never fails {
+    uint8[]:room = #wild_slice<uint8>(b.body.ptr, b.body.cap);
+    room[b.len] = x;
+    b.len = b.len + 1i64;
+    pass NIL;
+};
+func:local_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2[]:t = arr[0i64...2i64];
+    drop w(t);
+    pass (raw first(@arr));
+};
+func:field_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    drop w(b.sl);
+    pass (raw first(@arr));
+};
+func:call_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    drop w(raw view_h(@arr));
+    pass (raw first(@arr));
+};
+func:local_direct = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2[]:t = arr[0i64...2i64];
+    t[0i64].o = string_concat("x", "y");
+    pass (raw first(@arr));
+};
+func:field_direct = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    b.sl[0i64].o = string_concat("x", "y");
+    pass (raw first(@arr));
+};
+func:copy_through_call = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    drop f2(raw view_of(@arr), string_bytes("lit"));
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:view_ended = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(arr[0i64].o);
+        r = (vw[0i64] => int32);
+    }
+    H2[]:t = arr[0i64...2i64];
+    drop w(t);
+    if ((raw first(@arr)) != 120i32) { pass 0i32; }
+    pass r;
+};
+func:store_read_in_time = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+        drop f(raw view_of(@arr), p);
+        r = (arr[0i64].v[0i64] => int32);
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:callee_local_direct = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    drop g_direct(arr[0i64...2i64]);
+    pass (raw first(@arr));
+};
+func:list_local_writer = int32() never fails {
+    List<H2>:l = raw list_init::<H2>(2i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    drop list_push(@l, H2{ o: string_concat("c", "d") });
+    H2[]:t = l[0i64...2i64];
+    drop w(t);
+    pass (string_bytes(l[0i64].o)[0i64] => int32);
+};
+func:own_view_set = int32() never fails {
+    wild int8->:mem = alloc(4i64 * #size_of<int32>());
+    WV<int32>:v = WV{ items: mem =>! wild int32->, count: 4i64 };
+    drop wv_set::<int32>(@v, 3i64, 41i32);
+    int32:r = raw wv_pop::<int32>(@v);
+    dalloc(mem);
+    if (v.count != 3i64) { pass 0i32; }
+    pass r;
+};
+func:own_view_bytes = int32() never fails {
+    WB:b = WB{ body: buffer_new(8i64), len: 0i64 };
+    drop wb_push(@b, 97u8);
+    drop wb_push(@b, 98u8);
+    if (b.len != 2i64) { pass 0i32; }
+    pass ((b.body.ptr[0i64] => int32) + (b.body.ptr[1i64] => int32));
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw local_writer()) != 120i32) { exit 11i32; }
+    if ((raw field_writer()) != 120i32) { exit 12i32; }
+    if ((raw call_writer()) != 120i32) { exit 13i32; }
+    if ((raw local_direct()) != 120i32) { exit 14i32; }
+    if ((raw field_direct()) != 120i32) { exit 15i32; }
+    if ((raw copy_through_call()) != 108i32) { exit 16i32; }
+    if ((raw view_ended()) != 97i32) { exit 17i32; }
+    S:s = S{ s: string_concat("a", "b") };
+    if ((raw store_read_in_time(@s)) != 97i32) { exit 18i32; }
+    if ((raw callee_local_direct()) != 120i32) { exit 19i32; }
+    if ((raw list_local_writer()) != 120i32) { exit 20i32; }
+    if ((raw own_view_set()) != 41i32) { exit 21i32; }
+    if ((raw own_view_bytes()) != 195i32) { exit 22i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

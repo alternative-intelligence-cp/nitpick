@@ -363,8 +363,11 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
 // A PATH is the interned text of the steps from a place to the bytes a view
 // names below it, root-outward, `/`-separated: `f<name>` a field (its intern
 // index), `i<n>` an index the folder knows, `x` a computed index, `r<lo>:<hi>`
-// a range with both bounds known (hi exclusive), `R` a computed range or a
-// `pick` binding's opaque step. The empty text (index 0) is the place itself.
+// a range with both bounds known (hi exclusive), `R` a computed range, `P` a
+// `pick` binding's opaque step (`R` until landing 159), and -- a path is kept
+// LEVELLED since landing 159 (`level_path_text`) -- `e<lo>:<hi>` an element
+// somewhere in that extent, `E` one somewhere in an extent nobody knows. The
+// empty text (index 0) is the place itself.
 // The aliasing walk decodes a path into its `Step`s and appends them to the
 // place's own, so a summary's view of `t.v[i].ptr` handed back through `@r`
 // becomes the party `r` + `finterns/fv/x/fptr` -- disjoint from `r.env`.
@@ -394,7 +397,10 @@ func:path_join = int32(Escape->:x, int32:a, int32:b) never fails {
     if (a == 0i32) { pass b; }
     if (b == 0i32) { pass a; }
     string:t = string_concat(raw path_text(x, a), "/");
-    string:joined = string_concat(t, raw path_text(x, b));
+    string:unlevelled = string_concat(t, raw path_text(x, b));
+    // a range ending `a` and an element or range beginning `b` are one step
+    // (DEF-303, landing 159)
+    string:joined = raw level_path_text(unlevelled);
     // count the steps; cut at the separator that would begin the ninth
     int64:steps = 1i64;
     int64:cut = joined.len;
@@ -475,7 +481,8 @@ func:path_rel_compute = int32(Escape->:x, ExprId:place) never fails {
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             if (n.a == 0i32) { break; }
             if (raw sym_is_view(x.tab, x.ast, n.a)) {
-                drop list_push(@rev, string_concat("R", ""));
+                // a level of its own, never a range's element (DEF-303)
+                drop list_push(@rev, string_concat("P", ""));
                 cur = ExprId{ index: (raw symtab_get(x.tab, n.a)).link };
                 continue;
             }
@@ -490,7 +497,141 @@ func:path_rel_compute = int32(Escape->:x, ExprId:place) never fails {
         if (out.len > 0i64) { out = string_concat(out, "/"); }
         out = string_concat(out, rev[k]);
     }
-    pass (raw path_intern(x, move(out)));
+    pass (raw path_intern(x, raw level_path_text(out)));
+};
+
+// A PATH'S TEXT LEVELLED (DEF-303, landing 159). An element of a range IS an
+// element of the range's storage -- `arr[lo...hi][i]` is `arr[lo + i]`, and
+// `arr[a...b][c...d]` is `arr[a + c...a + d]` -- so a range step and the element
+// or range step after it stand at ONE position: `r<a>:<b>/i<n>` is `i<a+n>`, and
+// `r<a>:<b>/r<c>:<d>` is the range `r<a+c>:<a+d>`, when every bound added is in
+// [0, 2^31) (the sums stay small); otherwise the element stands somewhere in the
+// range's extent, `e<a>:<b>`, or in an extent nobody knows, `E` (after `R`), and
+// a range of a range nobody can add is `R`. `e` and `E` are element steps, as
+// `i` and `x` are, and absorb nothing, so a levelled text levels to itself.
+// Unlevelled, every step after the range stood one position too far, and two
+// different fields at a shifted position read two overlapping places as
+// disjoint (`paths_overlap`; the aliasing walk's `overlap_class` levels its
+// `Step`s by this rule, `level_steps`). A `pick` binding's opaque step `P` is a
+// level of its own and merges with nothing.
+func:level_path_text = string(string:t) never fails {
+    fixed uint8[]:b = string_bytes(t);
+    string:out = "";
+    int32:pk = 0i32;     // the pending range: 0 none, 1 `r<plo>:<phi>`, 2 `R`
+    int64:plo = 0i64;
+    int64:phi = 0i64;
+    int64:i = 0i64;
+    while (i < b.len) decreases b.len - i {
+        int64:j = i;
+        while (j < b.len) decreases b.len - j {
+            if (b[j] == 47u8) { break; }   // '/'
+            j = j + 1i64;
+        }
+        uint8:c = b[i];
+        bool:elem = ((c == 105u8) || (c == 120u8) || (c == 101u8) || (c == 69u8));   // 'i', 'x', 'e', 'E'
+        bool:rng = ((c == 114u8) || (c == 82u8));                                      // 'r', 'R'
+        if ((pk != 0i32) && (elem || rng)) {
+            int64:cl = raw level_colon(b, i, j);
+            int64:v1 = raw level_int(b, i + 1i64, cl);
+            int64:v2 = 0i64;
+            if (cl < j) { v2 = raw level_int(b, cl + 1i64, j); }
+            bool:known = ((pk == 1i32) && (plo >= 0i64) && (plo < 2147483648i64)
+                          && (v1 >= 0i64) && (v1 < 2147483648i64) && (v2 >= 0i64) && (v2 < 2147483648i64));
+            if (c == 105u8) {   // 'i': the index into the range
+                if (known) { out = raw level_put(out, string_concat("i", int_to_string(plo + v1))); }
+                else { out = raw level_put(out, raw level_extent(true, pk, plo, phi)); }
+                pk = 0i32;
+            } else {
+                if ((c == 101u8) && known && (cl < j)) {   // 'e': an element in a sub-extent
+                    string:es = string_concat("e", int_to_string(plo + v1));
+                    es = string_concat(es, ":");
+                    out = raw level_put(out, string_concat(es, int_to_string(plo + v2)));
+                    pk = 0i32;
+                } else {
+                    if (elem) {   // 'x', 'E', or an index nobody can add
+                        out = raw level_put(out, raw level_extent(true, pk, plo, phi));
+                        pk = 0i32;
+                    } else {
+                        // a range of the range: still a range, absorbing what follows
+                        if ((c == 114u8) && known && (cl < j)) {
+                            phi = plo + v2;
+                            plo = plo + v1;
+                        } else {
+                            pk = 2i32;
+                        }
+                    }
+                }
+            }
+        } else {
+            if (pk != 0i32) { out = raw level_put(out, raw level_extent(false, pk, plo, phi)); }
+            pk = 0i32;
+            if (rng) {
+                int64:rc = raw level_colon(b, i, j);
+                if ((c == 114u8) && (rc < j)) {
+                    pk = 1i32;
+                    plo = raw level_int(b, i + 1i64, rc);
+                    phi = raw level_int(b, rc + 1i64, j);
+                } else {
+                    pk = 2i32;
+                }
+            } else {
+                out = raw level_put(out, string_slice(t, i, j) ?! ProvenSlice);
+            }
+        }
+        i = j + 1i64;
+    }
+    if (pk != 0i32) { out = raw level_put(out, raw level_extent(false, pk, plo, phi)); }
+    pass out;
+};
+
+// `out/tok`, or `tok` when `out` is empty.
+func:level_put = string(string:out, string:tok) never fails {
+    if (out.len == 0i64) { pass string_concat(tok, ""); }
+    string:s = string_concat(out, "/");
+    pass string_concat(s, tok);
+};
+
+// A pending range's extent as a token: `r<lo>:<hi>` (`e<lo>:<hi>` as an
+// `element`) for a known one, `R` (`E`) for one nobody knows.
+func:level_extent = string(bool:element, int32:pk, int64:lo, int64:hi) never fails {
+    if (pk != 1i32) {
+        if (element) { pass "E"; }
+        pass "R";
+    }
+    string:s = "r";
+    if (element) { s = "e"; }
+    s = string_concat(s, int_to_string(lo));
+    s = string_concat(s, ":");
+    pass string_concat(s, int_to_string(hi));
+};
+
+// The position of the `:` in a token between `lo` and `hi`, or `hi`.
+func:level_colon = int64(fixed uint8[]:b, int64:lo, int64:hi) never fails {
+    int64:q = lo;
+    while (q < hi) decreases hi - q {
+        if (b[q] == 58u8) { pass q; }   // ':'
+        q = q + 1i64;
+    }
+    pass hi;
+};
+
+// A decimal integer (a leading '-' allowed) between two byte offsets, read as
+// the aliasing walk's `decode_int` reads it; an integer too long for `int64` is
+// answered -1, which every reader takes for a bound nobody can add.
+func:level_int = int64(fixed uint8[]:b, int64:lo, int64:hi) never fails {
+    int64:v = 0i64;
+    bool:neg = false;
+    int64:i = lo;
+    if (i < hi) { if (b[i] == 45u8) { neg = true; i = i + 1i64; } }
+    while (i < hi) decreases hi - i {
+        uint8:c = b[i];
+        if ((c < 48u8) || (c > 57u8)) { break; }
+        if (v >= 922337203685477580i64) { pass (0i64 - 1i64); }
+        v = (v * 10i64) + ((c - 48u8) => int64);
+        i = i + 1i64;
+    }
+    if (neg) { pass (0i64 - v); }
+    pass v;
 };
 
 // DO TWO PATHS OVERLAP (D-325)? Step by step: two fields that differ are
@@ -557,6 +698,7 @@ func:header_field_disjoint_text = bool(Escape->:x, fixed uint8[]:f, int64:lo, in
     if (raw string_eq(fname, "cap"))   { pass true; }
     if (raw string_eq(fname, "items")) {
         if ((other[ei] == 114u8) || (other[ei] == 82u8)) { pass false; }   // 'r' / 'R': a slice
+        if (other[ei] == 80u8) { pass false; }   // 'P': a `pick` binding's opaque step, as `R` read it until landing 159
         if (enext >= other.len) { pass false; }
         if (other[enext] != 102u8) { pass false; }
         // the next field's intern id must be `ptr`
@@ -1079,7 +1221,15 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
         bool:aj_auto = auto_ref;
         if (j >= base) { aj = ExprId{ index: raw ast_id_at(x.ast, start, j - base) }; aj_auto = false; }
         ExprId:dp = raw dest_place(x, aj, aj_auto);
-        if (raw expr_is_none(dp)) { continue; }
+        // A SLICE NO PLACE NAMES (DEF-301, landing 159): a call's result, a
+        // ternary, a `pick` -- the callee's stores land in the storage its value
+        // views, read off its refs (`record_refs_into_unnamed_slice`).
+        bool:unnamed = false;
+        if (raw expr_is_none(dp)) {
+            if (aj_auto) { continue; }
+            if (!(raw escape_is_unnamed_slice(x, aj))) { continue; }
+            unnamed = true;
+        }
         List<ViewRef>:got = raw list_init::<ViewRef>(4i64);
         // THE ARGUMENTS THAT CONTRIBUTED (DEF-252): each argument whose refs the
         // matrix flows into this destination, so the holder-scope question can
@@ -1108,6 +1258,7 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
             if (got.count > before) { drop list_push(@srcs, ak); }
         }
         if (got.count == 0i64) { continue; }
+        if (unnamed) { drop record_refs_into_unnamed_slice(x, aj, @got); continue; }
         // A DESTINATION REACHED THROUGH A SLICE whose storage this call cannot
         // name (DEF-289's second face, landing 157): a frame view stored there
         // is refused below and records nothing more (one mistake, one report,
@@ -1174,9 +1325,7 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
     // both, read the local's freed bytes after its block: 113 at both legs on
     // landing 156's compiler). Refused as a pointer binding handed by value is.
     if (raw dest_through_unnamed_slice(x, dp)) {
-        drop escape_err(x, raw BORROW_UNTRACKED(),
-            "a view of this frame's storage is stored by this call into the elements of a slice (D-325: the callee's own body stores what it is handed here), and the storage the slice views cannot be named here -- store a copy, or hand the callee a range of the array or `List` itself (`arr[lo...hi]`)",
-            an.span);
+        drop refuse_frame_view_into_slice(x, an.span);
         pass NIL;
     }
     ExprId:rid = raw root_ident_id(x, dp);
@@ -1538,33 +1687,55 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
                 if (pr.kind == (raw REF_PASS())) { target = ((pt != 0i32) && (pt == ind)); }
             }
         }
-        int32:j = raw param_index_of(x, pr.root);
-        if (j >= 0i32) {
-            if (old_matrix || target) {
-                // a parameter's: the matrix, as before
-                drop mu_add(x, j, raw ref_full_path(x, pr));
-                for (int64:i in 0i64...refs.count) {
-                    ViewRef:r = (<-refs)[i];
-                    int32:k = raw param_index_of(x, r.root);
-                    if (k < 0i32) { continue; }
-                    if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
-                        drop fv_add(x, j, k, raw ref_full_path(x, r));
-                    } else {
-                        drop flow_pass_set(x, j, k);
-                    }
-                }
-            }
-            if (!target) { continue; }
-            // ... and a BY-VALUE parameter's storage is this frame's: the ref is an
-            // address of the parameter itself (`hp = @b`), its type no pointer.
-            if (pt == 0i32) { continue; }
-            if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) { continue; }
-        } else {
-            if (!target) { continue; }
+        if (target) { drop record_refs_at_target(x, pr, refs); continue; }
+        // not a target: the old loop's record into the matrix alone (additive)
+        if (old_matrix) {
+            int32:j = raw param_index_of(x, pr.root);
+            if (j >= 0i32) { drop record_matrix_at(x, j, pr, refs); }
         }
-        int32:key = raw frame_owned_key(x, pr.root);
-        if (key == (0i32 - 1i32)) { continue; }
-        for (int64:i in 0i64...refs.count) { drop escape_add_view_ref(x, key, (<-refs)[i]); }
+    }
+    pass NIL;
+};
+
+// A STORE THAT LANDS ON A TARGET -- what an indirection points at (156's walk) or
+// what a slice no place names views (DEF-301, landing 159; one definition, two
+// readers): a target rooted at a PARAMETER is the caller's storage, the matrix's
+// (`record_matrix_at`); a target this frame owns -- a local, a `for` binding, a
+// by-value parameter itself -- holds the stored refs on its root's chain
+// (`frame_owned_key`), so D-325's freeze has a party for each.
+func:record_refs_at_target = NIL(Escape->:x, ViewRef:pr, List<ViewRef>->:refs) never fails {
+    int32:j = raw param_index_of(x, pr.root);
+    if (j >= 0i32) {
+        drop record_matrix_at(x, j, pr, refs);
+        // ... and a BY-VALUE parameter's storage is this frame's: the ref is an
+        // address of the parameter itself (`hp = @b`), its type no pointer.
+        int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: pr.place });
+        if (pt == 0i32) { pass NIL; }
+        if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) { pass NIL; }
+    }
+    int32:key = raw frame_owned_key(x, pr.root);
+    if (key == (0i32 - 1i32)) { pass NIL; }
+    for (int64:i in 0i64...refs.count) { drop escape_add_view_ref(x, key, (<-refs)[i]); }
+    pass NIL;
+};
+
+// THE STORE MATRIX'S RECORD of a store into parameter `j`'s storage at target
+// `pr`: the write (the mutation summary, at the target's whole extent:
+// `target_whole_path`, `R` for a slice parameter's run reached with no path --
+// DEF-297, landing 159: the empty path was the slice binding itself, which the
+// caller's composition dropped) and each stored ref rooted at a parameter -- a
+// view the matrix's entry, a carried value its pass bit.
+func:record_matrix_at = NIL(Escape->:x, int32:j, ViewRef:pr, List<ViewRef>->:refs) never fails {
+    drop mu_add(x, j, raw target_whole_path(x, pr));
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:r = (<-refs)[i];
+        int32:k = raw param_index_of(x, r.root);
+        if (k < 0i32) { continue; }
+        if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
+            drop fv_add(x, j, k, raw ref_full_path(x, r));
+        } else {
+            drop flow_pass_set(x, j, k);
+        }
     }
     pass NIL;
 };
@@ -1656,8 +1827,9 @@ func:dest_through_unnamed_slice = bool(Escape->:x, ExprId:dp) never fails {
 
 // THE PATH BELOW A SLICE'S ELEMENT (DEF-289's second face, landing 157): a path
 // below a slice parameter begins at the slice's level -- zero or more range steps
-// (a sub-slice is a slice of the same elements) and at most one index step (the
-// element) -- and the rest lies below the element. Composed with a RANGE argument
+// (a sub-slice is a slice of the same elements) and at most one element step
+// (`i`, `x`, or, a path being levelled since landing 159, `e` or `E`) -- and the
+// rest lies below the element. Composed with a RANGE argument
 // (`arr[lo...hi]`, whose own path ends at the elements' level with its range
 // step), those slice-level steps give way to the range's: the element the callee
 // names is one of the range's, at the range step's position. Joined whole, every
@@ -1681,7 +1853,7 @@ pub func:escape_slice_rest_path = int32(Escape->:x, int32:path) never fails {
     }
     // the element
     if (i < b.len) {
-        if ((b[i] == 105u8) || (b[i] == 120u8)) {   // 'i', 'x'
+        if ((b[i] == 105u8) || (b[i] == 120u8) || (b[i] == 101u8) || (b[i] == 69u8)) {   // 'i', 'x', 'e', 'E'
             int64:j2 = i;
             while (j2 < b.len) decreases b.len - j2 {
                 if (b[j2] == 47u8) { break; }
@@ -1693,6 +1865,376 @@ pub func:escape_slice_rest_path = int32(Escape->:x, int32:path) never fails {
     if (i >= b.len) { pass 0i32; }
     if (i == 0i64) { pass path; }
     pass (raw path_intern(x, string_slice(t, i, t.len) ?! ProvenSlice));
+};
+
+// THE STORAGE A SLICE VIEWS WHEN NO RANGE NAMES IT (DEF-297, DEF-301; landing 159):
+// a slice binding or field, a range of one, a call's result, a ternary's arms --
+// the refs its value carries (`collect_view_refs`: a slice local's or a struct's
+// chain through the identifier arm, a call's result by rule A (D-326), each arm
+// of a ternary or a `pick`) that may be the run it views (`escape_ref_is_run_of`:
+// typed at the end of the ref's path, as 156's walk types a slice's targets). A
+// ref rooted nowhere (a `wild` slice, an allocator's) gives none (D-315, D-361).
+// A run the value carries TRANSITIVELY (what the run's elements hold, a
+// recursive element type) counts too: more targets, more freezes, never fewer.
+pub func:escape_slice_targets = NIL(Escape->:x, ExprId:base, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(base)) { pass NIL; }
+    int32:bt = raw exprtypes_get(x.etypes, base);
+    if (bt == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, bt)) != (raw TY_SLICE())) { pass NIL; }
+    int32:pte = raw type_elem(x.types, bt);
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, base, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:r = refs[i];
+        if (r.root == 0i32) { continue; }
+        if (!(raw escape_ref_is_run_of(x, r, pte))) { continue; }
+        drop list_push(out, r);
+    }
+    pass NIL;
+};
+
+// MAY A REF BE A RUN OF `pte` -- the storage a slice of `pte` views? Its place
+// typed and its path followed to the end (`escape_path_end_type`): an array, a
+// slice or the prelude's `List` of `pte` is one; storage that may HOLD one (an
+// inline array field, a `List` field, a pointer's pointee: a laundered view
+// of the whole of it, as an unknown callee's result is) may be one; a type the
+// walk cannot follow answers yes, the closed direction.
+func:escape_ref_is_run_of = bool(Escape->:x, ViewRef:r, int32:pte) never fails {
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: r.place });
+    if (pt == 0i32) { pass true; }
+    int32:et = raw escape_path_end_type(x, pt, r.path);
+    if (et == 0i32) { pass true; }
+    List<int32>:seen = raw list_init::<int32>(4i64);
+    pass (raw escape_type_may_hold_run(x, et, pte, 8i32, @seen));
+};
+
+// THE TYPE AT THE END OF A PATH below a place of type `t0` (D-325's text:
+// `f<name>`, `i<n>`, `x`, `e<lo>:<hi>`, `E`, `r<lo>:<hi>`, `R`), or 0 when a step
+// cannot be typed here (a `pick` binding's `P` among them): a pointer is looked
+// through, a field is read by its name, an element step steps into the
+// element, a range keeps the run (its element is the run's). A
+// path of `PATH_MAX_STEPS` steps may have been cut (a broader place) and
+// answers 0.
+func:escape_path_end_type = int32(Escape->:x, int32:t0, int32:path) never fails {
+    if (path == 0i32) { pass t0; }
+    string:txt = raw path_text(x, path);
+    fixed uint8[]:b = string_bytes(txt);
+    int32:t = t0;
+    int64:steps = 0i64;
+    int64:i = 0i64;
+    while (i < b.len) decreases b.len - i {
+        int64:j = i;
+        while (j < b.len) decreases b.len - j {
+            if (b[j] == 47u8) { break; }   // '/'
+            j = j + 1i64;
+        }
+        steps = steps + 1i64;
+        if (t == 0i32) { pass 0i32; }
+        if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { t = raw type_elem(x.types, t); }
+        if (t == 0i32) { pass 0i32; }
+        int32:k = raw type_kind(x.types, t);
+        bool:run = ((k == (raw TY_ARRAY())) || (k == (raw TY_SLICE())));
+        bool:lst = raw type_is_list(x.tr, t);
+        uint8:c = b[i];
+        if (c == 102u8) {   // 'f': a field, by its name's intern index
+            if ((k != (raw TY_STRUCT())) || lst) { pass 0i32; }
+            int64:nm = 0i64;
+            int64:q = i + 1i64;
+            while (q < j) decreases j - q {
+                uint8:d = b[q];
+                if ((d < 48u8) || (d > 57u8)) { break; }
+                nm = (nm * 10i64) + ((d - 48u8) => int64);
+                q = q + 1i64;
+            }
+            t = raw escape_struct_field_type(x, t, nm =>! int32);
+        } else {
+            if ((c == 105u8) || (c == 120u8) || (c == 101u8) || (c == 69u8)) {   // 'i', 'x', 'e', 'E': the element
+                if (run) { t = raw type_elem(x.types, t); }
+                else {
+                    if (!lst) { pass 0i32; }
+                    t = raw list_elem_type(x.tr, t);
+                }
+            } else {
+                // 'r', 'R': a run of the same elements; any other step is unread
+                if ((c != 114u8) && (c != 82u8)) { pass 0i32; }
+                if ((!run) && (!lst)) { pass 0i32; }
+            }
+        }
+        i = j + 1i64;
+    }
+    if (steps >= ((raw PATH_MAX_STEPS()) => int64)) { pass 0i32; }
+    pass t;
+};
+
+// A struct field's type by its name's intern index, or 0.
+func:escape_struct_field_type = int32(Escape->:x, int32:t, int32:name) never fails {
+    int32:sdi = raw type_decl(x.types, t);
+    if (sdi < 0i32) { pass 0i32; }
+    if (sdi >= (raw ast_decl_count(x.ast))) { pass 0i32; }
+    int32:home = raw symtab_home_scope(x.tab, sdi, 0i32);
+    FieldInfo:fi = raw struct_field(x.tr, t, name, home);
+    if (!fi.found) { pass 0i32; }
+    pass fi.type_id;
+};
+
+// CAN STORAGE OF TYPE `t` BE, OR HOLD, A RUN OF `pte`? An array, a slice or a
+// `List` of `pte` is one; one of another element, a struct, an `Optional`, a
+// `Result`, a pointer's pointee hold one when a member can (a type already on
+// the walk adds nothing: `seen`); a scalar, a `string`, a `cstring` hold none
+// (a string's bytes are viewed read-only, D-351); every other kind -- an enum
+// with payloads, a `dyn`, a `buffer`, `any` -- and fuel run out answer yes,
+// the closed direction.
+func:escape_type_may_hold_run = bool(Escape->:x, int32:t, int32:pte, int32:fuel, List<int32>->:seen) never fails {
+    if (t == 0i32) { pass true; }
+    if (fuel <= 0i32) { pass true; }
+    for (int64:s in 0i64...seen.count) { if ((<-seen)[s] == t) { pass false; } }
+    drop list_push(seen, t);
+    int32:k = raw type_kind(x.types, t);
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_SLICE()))) {
+        int32:el = raw type_elem(x.types, t);
+        if (el == pte) { pass true; }
+        pass (raw escape_type_may_hold_run(x, el, pte, fuel - 1i32, seen));
+    }
+    if ((k == (raw TY_POINTER())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT()))) {
+        pass (raw escape_type_may_hold_run(x, raw type_elem(x.types, t), pte, fuel - 1i32, seen));
+    }
+    if (k == (raw TY_STRUCT())) {
+        if (raw type_is_list(x.tr, t)) {
+            int32:lel = raw list_elem_type(x.tr, t);
+            if (lel == pte) { pass true; }
+            pass (raw escape_type_may_hold_run(x, lel, pte, fuel - 1i32, seen));
+        }
+        int32:sdi = raw type_decl(x.types, t);
+        if (sdi < 0i32) { pass true; }
+        if (sdi >= (raw ast_decl_count(x.ast))) { pass true; }
+        DeclId:did = DeclId{ index: sdi };
+        DeclNode:d = raw ast_decl(x.ast, did);
+        int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
+        int32:nmembers = raw item_member_count(x.ast, d);
+        for (int32:mi in 0i32...nmembers) {
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
+            if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+            FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);
+            if (!fi.found) { pass true; }
+            if (raw escape_type_may_hold_run(x, fi.type_id, pte, fuel - 1i32, seen)) { pass true; }
+        }
+        pass false;
+    }
+    if ((k == (raw TY_STRING())) || (k == (raw TY_CSTRING()))) { pass false; }
+    if (!(raw type_holds_pointer(x.types, t, 8i32))) { pass false; }
+    pass true;
+};
+
+// A SLICE ARGUMENT NO PLACE NAMES (DEF-301, landing 159): a non-`fixed` slice
+// value that is no place chain -- a call's result, a ternary, a `pick`, a
+// `move` -- whose storage only its refs can say.
+func:escape_is_unnamed_slice = bool(Escape->:x, ExprId:a) never fails {
+    if (raw expr_is_none(a)) { pass false; }
+    int32:at = raw exprtypes_get(x.etypes, a);
+    if (at == 0i32) { pass false; }
+    if ((raw type_kind(x.types, at)) != (raw TY_SLICE())) { pass false; }
+    if (raw type_slice_fixed(x.types, at)) { pass false; }   // read-only through it (D-348)
+    pass (raw expr_is_none(raw arg_place_chain(x, a)));
+};
+
+// THE SLICE A WRITE GOES THROUGH WHEN NO RANGE NAMES ITS STORAGE (DEF-297,
+// landing 159): walking inward from the written place, the first non-`fixed`
+// slice-typed expression that is no range of an array, a `List` or a `buffer`
+// (`escape_slice_is_range_of_storage`) -- `t` in `t[0i64].o`, `b.sl` in
+// `b.sl[i].v`, `t[0i64...1i64]` in `t[0i64...1i64][0i64].o` -- or none. The
+// place itself is a slice binding or field rebound, not written through,
+// unless `self_counts` (a path below it is written: a callee's).
+pub func:escape_written_slice_base = ExprId(Escape->:x, ExprId:place, bool:self_counts) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass (raw expr_none()); }
+        if ((cur.index != place.index) || self_counts) {
+            int32:ct = raw exprtypes_get(x.etypes, cur);
+            if ((ct != 0i32) && ((raw type_kind(x.types, ct)) == (raw TY_SLICE()))) {
+                if (!(raw type_slice_fixed(x.types, ct))) {
+                    if (!(raw escape_slice_is_range_of_storage(x, cur))) { pass cur; }
+                }
+            }
+        }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
+            || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprCastExpr)
+            || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        pass (raw expr_none());
+    }
+    pass (raw expr_none());
+};
+
+// THE BINDING WHOSE OWN VIEW A WRITE THROUGH A SLICE SKIPS (DEF-297, landing 159):
+// the root of `base` when it is a SLICE-typed local and `base` is that local or
+// a range chain of it (`t`, `t[lo...hi]`), or a STRUCT-typed local whose type
+// carries one view alone (`escape_view_carriers`) -- the slice -- and `base` a
+// member chain down to it or a range chain of that (`b.sl`, `b.sl[lo...hi]`).
+// A slice binding's own chain entry at a run is its view of that run alone --
+// what its elements hold is rooted elsewhere -- and writing an element through
+// it frees nothing the slice views; a view taken THROUGH it is rooted at it, and
+// the write's own place check meets that one. A struct's chain entry may stand,
+// deduplicated, for a slice field's run AND a deeper view another field holds
+// through it (`b.v = string_bytes(t[0i64].o); b.sl = t;` once `t`'s block has
+// ended), so a struct is asked by its TYPE: one that can carry no view but the
+// slice holds none deeper, whatever its chain's entries stand for; any other
+// struct skips none. 0 otherwise.
+pub func:escape_slice_own_holder = int32(Escape->:x, ExprId:base) never fails {
+    if (raw expr_is_none(base)) { pass 0i32; }
+    PlaceRoot:r = raw esc_place_root(x, base);
+    if (r.exhausted) { pass 0i32; }
+    if (raw expr_is_none(r.id)) { pass 0i32; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    if (rn.a == 0i32) { pass 0i32; }
+    Symbol:sy = raw symtab_get(x.tab, rn.a);
+    if (sy.origin_kind != (raw SYM_STMT())) { pass 0i32; }
+    int32:rt = raw exprtypes_get(x.etypes, r.id);
+    if (rt == 0i32) { pass 0i32; }
+    int32:rk = raw type_kind(x.types, rt);
+    bool:sroot = false;
+    if (rk != (raw TY_SLICE())) {
+        if (rk != (raw TY_STRUCT())) { pass 0i32; }
+        if ((raw escape_view_carriers(x, rt, 8i32)) != 1i32) { pass 0i32; }
+        sroot = true;
+    }
+    ExprId:cur = base;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (cur.index == r.id.index) { pass rn.a; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (sroot && (n.kind == ExprKind.ExprMemberAccessExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind != ExprKind.ExprIndexExpr) { pass 0i32; }
+        ExprNode:ixn = raw ast_expr(x.ast, raw expr_rhs(n));
+        if (ixn.kind != ExprKind.ExprRangeExpr) { pass 0i32; }
+        cur = raw expr_lhs(n);
+    }
+    pass 0i32;
+};
+
+// HOW MANY VIEWS A VALUE OF TYPE `t` CAN CARRY: 0, 1, or 2 for more than one or
+// cannot tell (DEF-297, landing 159). A slice is one; a struct (not the
+// prelude's `List`) counts its fields'; a `string` or a `cstring` owns its bytes
+// and a type that holds no address carries none; every other kind that may
+// hold one -- a pointer, an `Optional`, a `List`, an inline array of such, an
+// enum with payloads, a `dyn` -- and fuel run out answer 2, the closed direction.
+func:escape_view_carriers = int32(Escape->:x, int32:t, int32:fuel) never fails {
+    if (t == 0i32) { pass 2i32; }
+    if (fuel <= 0i32) { pass 2i32; }
+    int32:k = raw type_kind(x.types, t);
+    if ((k == (raw TY_STRING())) || (k == (raw TY_CSTRING()))) { pass 0i32; }
+    if (!(raw type_holds_pointer(x.types, t, 8i32))) { pass 0i32; }
+    if (k == (raw TY_SLICE())) { pass 1i32; }
+    if (k != (raw TY_STRUCT())) { pass 2i32; }
+    if (raw type_is_list(x.tr, t)) { pass 2i32; }
+    int32:sdi = raw type_decl(x.types, t);
+    if (sdi < 0i32) { pass 2i32; }
+    if (sdi >= (raw ast_decl_count(x.ast))) { pass 2i32; }
+    DeclId:did = DeclId{ index: sdi };
+    DeclNode:d = raw ast_decl(x.ast, did);
+    int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
+    int32:nmembers = raw item_member_count(x.ast, d);
+    bool:one = false;
+    for (int32:mi in 0i32...nmembers) {
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
+        if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+        FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);
+        if (!fi.found) { pass 2i32; }
+        int32:c = raw escape_view_carriers(x, fi.type_id, fuel - 1i32);
+        if (c >= 2i32) { pass 2i32; }
+        if (c == 1i32) {
+            if (one) { pass 2i32; }
+            one = true;
+        }
+    }
+    if (one) { pass 1i32; }
+    pass 0i32;
+};
+
+// A CALLEE'S STORES INTO A SLICE NO PLACE NAMES (DEF-301, landing 159): a view of
+// this frame's storage is refused as 157 refuses one stored through a slice
+// binding (`refuse_frame_view_into_slice`: the storage cannot be named here);
+// any other ref lands on each target the slice's value names, as 156's walk
+// records a store through a pointer or a slice local (`record_refs_at_target`).
+func:record_refs_into_unnamed_slice = NIL(Escape->:x, ExprId:a, List<ViewRef>->:got) never fails {
+    if (raw got_carries_frame_view(x, got)) {
+        drop refuse_frame_view_into_slice(x, (raw ast_expr(x.ast, a)).span);
+        pass NIL;
+    }
+    List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
+    drop escape_slice_targets(x, a, @tg);
+    for (int64:i in 0i64...tg.count) { drop record_refs_at_target(x, tg[i], got); }
+    pass NIL;
+};
+
+// A FRAME VIEW STORED THROUGH A SLICE WHOSE STORAGE THE CALL CANNOT NAME
+// (DEF-289's second face, landing 157; a slice no place names, DEF-301,
+// landing 159): the one sentence.
+func:refuse_frame_view_into_slice = NIL(Escape->:x, Span:at) never fails {
+    drop escape_err(x, raw BORROW_UNTRACKED(),
+        "a view of this frame's storage is stored by this call into the elements of a slice (D-325: the callee's own body stores what it is handed here), and the storage the slice views cannot be named here -- store a copy, or hand the callee a range of the array or `List` itself (`arr[lo...hi]`)",
+        at);
+    pass NIL;
+};
+
+// A WRITE THROUGH A SLICE NO RANGE NAMES, IN THE SUMMARY (DEF-297, landing 159):
+// `t[0i64].o = v` with `t` a slice LOCAL over a parameter's elements (`t = sl`,
+// `t = id(sl)`), a callee writing through `t` -- the write lands in what the
+// slice views (`escape_written_slice_base`, `record_mut_of_slice_targets`).
+func:record_mut_through_slice = NIL(Escape->:x, ExprId:place, bool:below) never fails {
+    ExprId:sb = raw escape_written_slice_base(x, place, below);
+    if (raw expr_is_none(sb)) { pass NIL; }
+    drop record_mut_of_slice_targets(x, sb);
+    pass NIL;
+};
+
+// Each target of slice `sb` rooted at a PARAMETER is written: its WHOLE extent
+// (`target_whole_path`), never a path composed below it -- a target may be a
+// run the value carries transitively, at another level than the write's.
+func:record_mut_of_slice_targets = NIL(Escape->:x, ExprId:sb) never fails {
+    List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
+    drop escape_slice_targets(x, sb, @tg);
+    for (int64:i in 0i64...tg.count) {
+        ViewRef:r = tg[i];
+        int32:j = raw param_index_of(x, r.root);
+        if (j < 0i32) { continue; }
+        drop mu_add(x, j, raw target_whole_path(x, r));
+    }
+    pass NIL;
+};
+
+// A TARGET'S WHOLE EXTENT as a path below its root: the ref's own full path, and
+// for a SLICE parameter's run reached with none, `R` -- every element it views
+// (the empty path names the slice binding itself, which `record_mut_of_place`
+// reads as no write of the caller's storage).
+func:target_whole_path = int32(Escape->:x, ViewRef:r) never fails {
+    int32:wp = raw ref_full_path(x, r);
+    if (wp != 0i32) { pass wp; }
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: r.place });
+    if ((pt != 0i32) && ((raw type_kind(x.types, pt)) == (raw TY_SLICE()))) {
+        pass (raw path_intern(x, string_concat("R", "")));
+    }
+    pass 0i32;
+};
+
+// THE TRAILING RUN'S FIRST RANGE of an argument (DEF-297, landing 159): for
+// `t[0i64...1i64][0i64...1i64]`, `t[0i64...1i64]`; for `arr[lo...hi]`, itself;
+// none for an argument that is no range. A callee's path below its slice
+// parameter is composed there, its slice-level steps stripped
+// (`escape_slice_rest_path`): the wider run, one position deep.
+pub func:escape_first_trailing_range = ExprId(Escape->:x, ExprId:a) never fails {
+    ExprId:found = raw expr_none();
+    ExprId:cur = a;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass found; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind != ExprKind.ExprIndexExpr) { pass found; }
+        ExprNode:ixn = raw ast_expr(x.ast, raw expr_rhs(n));
+        if (ixn.kind != ExprKind.ExprRangeExpr) { pass found; }
+        found = cur;
+        cur = raw expr_lhs(n);
+    }
+    pass found;
 };
 
 // A WRITE-CAPABLE ACCESS of a place rooted at a pointer parameter of the current
@@ -1715,7 +2257,13 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
     if (raw expr_is_none(rid)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     int32:k = raw param_index_of(x, rn.a);
-    if (k < 0i32) { pass NIL; }
+    if (k < 0i32) {
+        // THROUGH A SLICE NO RANGE NAMES (DEF-297, landing 159): a write through a
+        // slice local or field over a parameter's run (`t = sl; t[0i64].o = v`) is
+        // a write of that parameter's storage.
+        drop record_mut_through_slice(x, place, sub != 0i32);
+        pass NIL;
+    }
     int32:rt = raw exprtypes_get(x.etypes, rid);
     if (rt == 0i32) { pass NIL; }
     int32:wp = raw path_join(x, raw path_rel(x, pl), sub);
@@ -1759,19 +2307,31 @@ func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_re
         // a shared claim admits readers only: the callee cannot write through it
         if ((an.kind == ExprKind.ExprBorrowExpr) && (!(raw borrow_is_mut(an)))) { continue; }
         ExprId:dp = raw dest_place(x, aj, aj_auto);
-        if (raw expr_is_none(dp)) { continue; }
+        if (raw expr_is_none(dp)) {
+            // A SLICE NO PLACE NAMES (DEF-301, landing 159): a call's result, a
+            // ternary -- the callee writes the storage its value views.
+            if ((!aj_auto) && (raw escape_is_unnamed_slice(x, aj))) { drop record_mut_of_slice_targets(x, aj); }
+            continue;
+        }
         // A SLICE ARGUMENT (DEF-289's second face, landing 157): the callee's
         // path below its slice parameter begins at the slice's level; a RANGE
         // argument's own path ends at the elements' level with its range step,
         // so the slice-level steps give way to it (`escape_slice_rest_path`).
-        // An unknown callee may write every element a slice binding views.
+        // An unknown callee may write every element a slice binding views. A
+        // range of a slice or of a range (DEF-297, landing 159) is composed at
+        // its trailing run's FIRST range (`escape_first_trailing_range`), one
+        // position deep: composed at the last, every later step stood one or
+        // more positions too far.
         bool:sl_arg = false;
         if (!aj_auto) {
             int32:dpt = raw exprtypes_get(x.etypes, dp);
             if (dpt != 0i32) { sl_arg = ((raw type_kind(x.types, dpt)) == (raw TY_SLICE())); }
         }
         bool:sl_range = false;
-        if (sl_arg) { sl_range = raw escape_slice_is_range_of_storage(x, dp); }
+        if (sl_arg) {
+            ExprId:fr = raw escape_first_trailing_range(x, dp);
+            if (!(raw expr_is_none(fr))) { dp = fr; sl_range = true; }
+        }
         if (callee <= 0i32) {
             int32:whole = 0i32;
             if (sl_arg && (!sl_range)) { whole = raw path_intern(x, string_concat("R", "")); }

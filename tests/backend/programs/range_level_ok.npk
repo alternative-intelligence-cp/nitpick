@@ -1,0 +1,80 @@
+// expect-exit: 0
+mod:range_level_ok;
+// THE LEGAL HALF OF A WRITE THROUGH A RANGE'S ELEMENT (DEF-303, landing 159): a write to ANOTHER element through a
+// range under a view of the first, over an array and over a `List` (refused by landing 158's checker, whose
+// unlevelled compare met the range against the view's index; admitted now, as the direct spelling `arr[1].o = …`
+// always was); a range of a range then an index; the view's block ended before the write; a computed index into a
+// range; a callee writing through a range of its pointer parameter's pointee. Each check fails at its own exit.
+struct:H4 = { string:x; };
+struct:H3 = { H4:o; };
+struct:H2 = { string:o; };
+func:wr = NIL(H3[2]->:ap) never fails { (<-ap)[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") }; pass NIL; };
+func:other_element = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    arr[0i64...2i64][1i64].o = string_concat("x", "y");
+    if ((string_bytes(arr[1i64].o)[0i64]) != 120u8) { pass 0i32; }
+    pass (vw[0i64] => int32);
+};
+func:range_of_range = int32() never fails {
+    H2[4]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") },
+                 H2{ o: string_concat("e", "f") }, H2{ o: string_concat("g", "h") }];
+    arr[0i64...4i64][1i64...3i64][0i64].o = string_concat("x", "y");
+    if ((string_bytes(arr[0i64].o)[0i64]) != 97u8) { pass 0i32; }
+    pass (string_bytes(arr[1i64].o)[0i64] => int32);
+};
+func:view_ended = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(arr[0i64].o.x);
+        r = (vw[0i64] => int32);
+    }
+    arr[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") };
+    if ((string_bytes(arr[0i64].o.x)[0i64]) != 120u8) { pass 0i32; }
+    pass r;
+};
+func:computed_index = int32(int64:k) never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    arr[0i64...2i64][k].o = H4{ x: string_concat("x", "y") };
+    pass (string_bytes(arr[1i64].o.x)[0i64] => int32);
+};
+func:list_other_element = int32() never fails {
+    List<H2>:l = raw list_init::<H2>(2i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    drop list_push(@l, H2{ o: string_concat("c", "d") });
+    fixed uint8[]:vw = string_bytes(l[0i64].o);
+    l[0i64...2i64][1i64].o = string_concat("x", "y");
+    if ((string_bytes(l[1i64].o)[0i64]) != 120u8) { pass 0i32; }
+    pass (vw[0i64] => int32);
+};
+func:callee_range_write = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    drop wr(@arr);
+    pass (string_bytes(arr[0i64].o.x)[0i64] => int32);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw other_element()) != 97i32) { exit 11i32; }
+    if ((raw range_of_range()) != 120i32) { exit 12i32; }
+    if ((raw view_ended()) != 97i32) { exit 13i32; }
+    if ((raw computed_index(1i64)) != 120i32) { exit 14i32; }
+    if ((raw list_other_element()) != 97i32) { exit 15i32; }
+    if ((raw callee_range_write()) != 120i32) { exit 16i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

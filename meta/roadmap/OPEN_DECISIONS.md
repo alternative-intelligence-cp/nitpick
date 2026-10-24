@@ -3520,7 +3520,7 @@ defect declares a `DEF-` in §2f.
 > moves. `tests/analysis/rejection/store_through_pointer.npk`, `tests/backend/programs/store_through_pointer_ok.npk`; the 26
 > probes re-run under this compiler in `wt/43g/.internal/def296/probes_sib_43g.txt`.
 
-> **DEF-297 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe m2; HIGH: a
+> **DEF-297 — FIXED 2026-10-24 (landing 159; built, chained, recorded and landed by `nitpick-compiler_48` by the plan's M2) (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe m2; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date). A SLICE LOCAL HANDED TO A WRITER UNDER A LIVE VIEW OF WHAT IT
 > VIEWS FREEZES NOTHING.** `H2[2]:arr = …; fixed uint8[]:vw = string_bytes(arr[0i64].o); H2[]:t = arr[0i64...2i64]; drop w(t);`
 > with `w` overwriting `sl[0i64].o`, then `vw[0i64]`: 113/113 at both legs under landing 156's compiler and 157's
@@ -3540,6 +3540,30 @@ defect declares a `DEF-` in §2f.
 > scratch checker warning at every shape of DEF-297..DEF-301 and their pointer twins, swept over 5,272 files) found none in the
 > libraries, the applications or the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M2 (an argument's storage
 > read off its refs), with DEF-301.
+> FIXED AT 159 (2026-10-24): THE STORAGE A SLICE VIEWS WHEN NO RANGE NAMES IT IS READ OFF ITS REFS. `escape_slice_targets`
+> (escape.npk) answers, for a slice value -- a slice local, a struct's slice field, a range of either, a call's result, a
+> ternary's arms -- the refs `collect_view_refs` carries that may be the run it views, typed at the end of each ref's path
+> (`escape_ref_is_run_of`: an array, a slice or a `List` of the slice's element, or storage that may hold one; a run carried
+> transitively counts too -- more targets, never fewer; a ref rooted nowhere, none). The aliasing walk checks a write through
+> such a slice -- direct (`t[0i64].o = …`, the slice found by `escape_written_slice_base`), `@t[0i64]` or the slice handed to a
+> writer -- at each target, over its WHOLE extent, against the view and lent parties rooted there (`check_slice_targets`,
+> `check_view_parties_at`, alias.npk), every party the slice binding itself holds skipped by its holder
+> (`escape_slice_own_holder`: a slice local, or a struct whose one view is its slice field, `escape_view_carriers`); a range of a
+> slice or of a slice parameter is composed at its trailing run's FIRST range (`escape_first_trailing_range`), so a field after
+> it no longer stands one position too far (n297k, n297l); and a callee's write through a slice local over its parameter's run
+> enters its mutation summary (`record_mut_through_slice`, `record_mut_of_slice_targets`). `NITPICK-BORROW-015` at the write or
+> the argument. Measured first on landing 158's compiler (`wt/48a/.internal/probes/m2/`, 123 probes at both legs where they
+> compile): the faces t297a, t297b, t297f and t297h and their siblings n297k-n, n297u-w, n297y and n297z, each 113/113, are
+> refused now. THREE SAFE SHAPES COST, refused by the whole-extent check (a target read off refs may stand for a run at another
+> level, so a callee's path is never composed below it): a writer handed a COPY of a slice local while the original lives
+> (c297p: the original is a view party -- hand the slice itself with no copy live), a view of ANOTHER element of the run (c297s:
+> hand the range of the elements written, `drop w(arr[0i64...1i64])`), a view of ANOTHER field (c297t: hand the range itself,
+> where the callee's path composes field by field); none is in the three trees. THE FIRST BUILD matched a slice's own party by
+> its place and path as well as its holder and refused five legal sites of nitpick-time's core (`T[]:s = #wild_slice<T>(v.items,
+> v.count); s[i] = x;` in a generic body, and a buffer's `ptr` written through: the slice's chain carries the parameter `v`'s
+> value too, whose target is the whole of `v`); the chain's sweep found them, the skip is by holder alone, and
+> `slice_targets_ok.npk`'s checks 21-22 hold those shapes. `tests/analysis/rejection/slice_targets.npk` (eighteen sites, with
+> DEF-301's), `tests/backend/programs/slice_targets_ok.npk` (the legal half).
 
 > **DEF-298 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r1; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date). A BY-VALUE STRUCT PARAMETER'S SLICE FIELD HANDED ON RECORDS
@@ -3596,7 +3620,7 @@ defect declares a `DEF-` in §2f.
 > unmoved. `tests/analysis/rejection/range_store.npk` (eight sites), `tests/backend/programs/range_store_ok.npk` (the legal
 > half).
 
-> **DEF-301 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe cr; HIGH: a
+> **DEF-301 — FIXED 2026-10-24 (landing 159; built, chained, recorded and landed by `nitpick-compiler_48` by the plan's M2) (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe cr; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date). A SLICE ARGUMENT THAT IS A CALL'S RESULT IS NO
 > DESTINATION.** `func:view_of = Holder[](Holder[2]->:a) never fails { pass (<-a)[0i64...2i64]; }` and `drop f(raw
 > view_of(@arr), p);` with `f` storing `string_bytes(p.s)` into `sl[0i64].v`, then `p.s = …` and `arr[0i64].v[0i64]`: 113/113 at
@@ -3610,6 +3634,59 @@ defect declares a `DEF-` in §2f.
 > landing 156's compiler, 157's and 158's; a slice LOCAL initialised from the call (t301d) is BORROW-015 since 157. The census
 > found none in the libraries, the applications or the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M2, with
 > DEF-297.
+> FIXED AT 159 (2026-10-24), with DEF-297 and by its helper: a slice argument no place names -- a call's result, a ternary, a
+> `pick` (`escape_is_unnamed_slice`) -- is read off its own refs (`escape_slice_targets`). A callee's STORE through it lands on
+> each target as landing 156's walk records a store through a pointer or a slice local (`record_refs_into_unnamed_slice`, its
+> per-target body `record_refs_at_target`, one definition and two readers: a parameter-rooted target the matrix, a frame target
+> its chain), so D-325's freeze refuses the pointee's later write (`NITPICK-BORROW-015`); a FRAME view stored through it is
+> `NITPICK-BORROW-009` at the argument with landing 157's sentence (`refuse_frame_view_into_slice`, one definition); a callee's
+> WRITE through it enters the caller's mutation summary at each parameter-rooted target (`record_mut_of_slice_targets`) and is
+> checked at each target against the view parties there (`acc_call`, `check_slice_targets`: BORROW-015 at the argument).
+> Measured first on landing 158's compiler: t301a (the agent's cr), t301b, t301c and the siblings n301e-g and n301i, each
+> 113/113, are refused now (n301e BORROW-009, the rest BORROW-015); a copy stored through a call's result (c301k) and a call's
+> result handed to a writer with no view live (c301j) run 0/0 and are admitted.
+
+> **DEF-302 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 159, from its M2 probes; HIGH: a use-after-free in
+> safe code at both legs). A VIEW TAKEN THROUGH ONE NAME AND A WRITE THROUGH ANOTHER, ONE OF THEM A POINTER TO THE SAME STORAGE,
+> ARE NEVER COMPARED.** `H2:h = …; H2->:hp = @h; fixed uint8[]:vw = string_bytes(h.o); hp.o = string_concat("x", "y");` then
+> `vw[0i64]`: 113/113 at both legs under landing 157's compiler and 158's (`wt/48a/.internal/probes/m2/q275b_*.npk`). DEF-297's
+> row named it ("DEF-275 has the same limit for a pointer value (a view taken through another name)"): landing 140 checks a
+> pointer LOCAL handed by value to a writer against the views taken THROUGH that pointer, and nothing compares a write through a
+> pointer with a view of its pointee taken by the pointee's own name, or the reverse -- the aliasing walk roots the write at `hp`
+> and the view at `h`, and no reader of the write asks the pointer's chain where it points. FOURTEEN SHAPES, each 113/113 at both
+> legs under 158's compiler and landing 159's (q275a-c under 157's too; `wt/48a/.internal/probes/m2/gen_c302.py`): the view by
+> the pointee's own name and the write through the pointer -- `hp.o = …` (q275b), `(<-hp).o = …` (q302d), `<-hp = H2{ … }`
+> (q302e), `drop wp(hp);` with `wp(H2->:q)` writing `q.o` (q275a); the reverse, the view through the pointer and the write by the
+> pointee's name -- `h.o = …` (q275c), `h = H2{ … }` (q302j), `drop wp(@h);` (q302i); two pointers to one pointee, the view
+> through `hp` and the write through `hq` (q302f); the pointer at an element or a field -- `hp = @arr[0i64]` (q302g), `H4->:hp =
+> @h.o` (q302h); the pointer reached another way -- held in a struct's field and written through (q302k) or viewed through
+> (q302n), returned by a callee (q302l), copied (q302m). NINE CONTROLS run 0/0: the view's block ended, the view taken after the
+> write, disjoint fields both ways, a reading callee, a pointer to another local or another element, a read through the
+> pointer, the pointer re-pointed by name. A CENSUS CHECKER (`wt/48b`, branch `48-census302`, never landed: a write through a
+> pointer re-rooted at each typed target of its root's chain -- `REF_ADDR` of the pointee's type, `REF_PASS` of the pointer's
+> -- against the view parties there, and a write to a root against the views taken through a pointer whose chain targets it)
+> refuses the fourteen and passes the nine; its sweep of the three trees runs in landing 159's harness window, and a hit outside
+> the compiler's own tests goes to the library seat at once. Fix direction: that check as `check_view_parties_at`'s second reader
+> (landing 159's, alias.npk), the census first. Next in management's order (2026-10-24), before DEF-298 and DEF-299.
+
+> **DEF-303 — FIXED 2026-10-24 (landing 159; registered and fixed there by `nitpick-compiler_48`, found measuring M2; HIGH: a
+> use-after-free in safe code at both legs). A RANGE'S ELEMENT WAS COMPARED ONE POSITION OFF.** `H3[2]:arr = …; fixed uint8[]:vw
+> = string_bytes(arr[0i64].o.x); arr[0i64...2i64][0i64].o = H4{ x: string_concat("x", "y") };` then `vw[0i64]`: 113/113 at both
+> legs under landing 158's compiler (`wt/48a/.internal/probes/m2/z300g_*.npk`). `arr[lo...hi][i]` is `arr[lo + i]`, but both
+> analyses kept the range step and the index after it at two positions, so every later step stood one position too far: the
+> write's `[r0:2, i0, f<o>]` against the view's `[i0, f<o>, f<x>]` met `f<o>` against `f<x>` and read the pair disjoint
+> (`paths_overlap`, `overlap_class`). Six shapes, each 113/113 under 158's: the direct write (z300g), a `List`'s range (z300h), a
+> range's element handed by `@` to a writer (z300i), a callee writing through a range of its pointer parameter's pointee
+> (z303e), a computed index into a range (z303g), and a store through a range whose own value views the element it overwrites
+> (z303c, a self-wiring through a range). The same mis-levelling REFUSED a safe shape under landings 157 and 158: a write to
+> element 1 through a range under a view of element 0 (z303i: the range met the view's index, overlapping). FIXED AT 159: a
+> path's text is LEVELLED (`level_path_text`, escape.npk, at `path_join` and `path_rel_compute`): `r<a>:<b>/i<n>` is `i<a+n>`
+> and `r<a>:<b>/r<c>:<d>` the range `r<a+c>:<a+d>` when every bound is known and in [0, 2^31); otherwise the element is
+> `e<lo>:<hi>`, somewhere in the range's extent, or `E`, in an extent nobody knows; a `pick` binding's opaque step is `P`, a
+> level of its own, where it was `R`. The aliasing walk reads the three tokens (`Step` kinds 3 and 4) and levels both lists
+> before every `overlap_class` (`level_steps`, the same rule). The six are refused (BORROW-015; z303c BORROW-002 at the store),
+> z303i is admitted, as its direct spelling `arr[1i64].o = …` always was. `tests/analysis/rejection/range_level.npk` (six
+> sites), `tests/backend/programs/range_level_ok.npk` (the legal half; refused by 158's compiler at the shape admitted now).
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

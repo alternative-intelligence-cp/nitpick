@@ -22158,6 +22158,16 @@ slice field handed to a writer (DEF-297), a by-value struct parameter's slice or
 parameter's pointee's slice or POINTER field (DEF-299) -- the pointer twins measured 2026-10-24 -- and a slice argument that
 is a call's result or a ternary (DEF-301).
 
+*[2026-10-24, 1.6.1e landing 159 — a dated note (DEF-297, DEF-301, DEF-303).]* A slice that no range of an array or a
+`List` names -- a slice local, a slice field, a range of either, a call's result, a ternary -- views the storage its
+value's refs say, and this decision's write rule is asked THERE: a write through it, direct or a callee's, is checked
+against the view and lent parties rooted at each such storage over the target's whole extent, the slice binding's own
+views excepted, and a callee's store through it lands there. And a range's element IS its storage's element:
+`arr[lo...hi][i]` is compared as `arr[lo + i]`, in the escape analysis's path texts and the aliasing walk's steps alike (an
+element somewhere in a range's extent where the sum is unknown). Open in the same class: a view taken through one name
+and a write through a pointer to the same storage by another (DEF-302), a by-value struct parameter's slice or pointer
+field (DEF-298), a pointer parameter's pointee's slice or pointer field (DEF-299).
+
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 
 **The history.** D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$`

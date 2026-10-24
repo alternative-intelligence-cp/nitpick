@@ -2026,6 +2026,21 @@ that carried them retired at the cycle close):
   write) and asks rule 3 of a frame borrow (a holder outside the borrowed local's block BORROW-002 at the statement; the same
   block admitted, as `arr[i].next = @x`). A range of a SLICE is an indirection (landing 156's walk), and a range of named storage
   is none (`path_indirection_base_type` skips it): a new walk over a store's place steps asks of a range which of the two it is,
-  or the store lands nowhere. STILL OPEN, each HIGH: DEF-297, DEF-298, DEF-299 (both with POINTER twins: a by-value struct
-  parameter's pointer field handed on or stored through, a pointee's pointer field stored through), DEF-301 -- do not write those
-  shapes in `src/`.
+  or the store lands nowhere. STILL OPEN, each HIGH: DEF-298, DEF-299 (both with POINTER twins: a by-value struct parameter's
+  pointer field handed on or stored through, a pointee's pointer field stored through) -- do not write those shapes in
+  `src/` (DEF-297 and DEF-301 are recorded since landing 159: "A slice's storage is read off its refs, and a path's text is
+  LEVELLED").
+- **A slice's storage is read off its refs, and a path's text is LEVELLED** (DEF-297, DEF-301, DEF-303; landing 159):
+  a write through a slice no range of an array or a `List` names (a slice local, a slice field, a range of either, a call's
+  result, a ternary) lands in the storage `escape_slice_targets` (escape.npk) reads off the slice's refs, and the aliasing walk
+  asks the view parties THERE (`check_slice_targets`, `check_view_parties_at`), skipping every party the slice binding itself
+  holds BY ITS HOLDER (`escape_slice_own_holder`). A match on the party's place and path as well missed the slice's own view
+  whenever its chain carries a parameter's value too (`T[]:s = #wild_slice<T>(v.items, v.count); s[i] = x;` in a generic body:
+  landing 159's first build refused nitpick-time's core, five sites). A new reader of a slice's storage asks
+  `escape_slice_targets`, never the slice binding's own root. A path's text is LEVELLED (`level_path_text`): `arr[lo...hi][i]`
+  is `i<lo+i>` and a range of a range one range; `e<lo>:<hi>` and `E` are an element somewhere in an extent, `P` a `pick`
+  binding's opaque step (it was `R` until 159). A new producer of a path text goes through `path_join` or `path_rel_compute`,
+  which level it; a new reader reads `P`, `e` and `E` (alias.npk's `decode_step`: `Step` kinds 3 and 4) and compares LEVELLED
+  (`level_steps` before `overlap_class`), or a range's element stands one position too far and two overlapping places read
+  disjoint. STILL OPEN, each HIGH: DEF-302 (a view taken through one name and a write through a pointer to the same storage by
+  another: fourteen shapes), DEF-298, DEF-299 -- do not write those shapes in `src/`.

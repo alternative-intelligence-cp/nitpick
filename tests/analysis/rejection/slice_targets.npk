@@ -1,0 +1,258 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 91:12
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 98:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 107:12
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 114:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 126:12
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 133:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 146:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:21
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 158:22
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 164:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 170:12
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 177:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 184:12
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 190:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 196:6
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 203:17
+mod:slice_targets;
+// THE STORAGE A SLICE VIEWS WHEN NO RANGE NAMES IT (DEF-297, DEF-301; landing 159). A slice binding, a slice field,
+// a range of either, a call's result or a ternary carries the refs of what it views -- the run of an array's or a
+// `List`'s elements (`escape_slice_targets`) -- so a callee's store through it lands on that storage and a write
+// through it, direct or a callee's, is checked against the view parties rooted THERE. Before this landing every
+// function below compiled, and each read freed bytes at both legs (`.internal/probes/def297/t297*`, `t301*` and
+// `.internal/probes/m2/n297*`, `n301*`: 113 for 97).
+//
+//   s01  a slice LOCAL handed to a writer under a view of the array (DEF-297's own shape)   BORROW-015 at the argument
+//   s02  a struct's slice FIELD handed to a writer                                          BORROW-015 at the argument
+//   s03  a slice local over a `List`'s range                                                BORROW-015 at the argument
+//   s04  a range of a slice local, the view one field deeper                                BORROW-015 at the argument
+//   s05  a range of a slice PARAMETER, the view one field deeper                            BORROW-015 at the argument
+//   s06  a direct write through a slice local's element                                     BORROW-015 at the write
+//   s07  a direct write through a struct's slice field's element                            BORROW-015 at the write
+//   s08  a slice local's element handed by address to a writer                              BORROW-015 at the argument
+//   s09  a struct holding the slice AND a view of an element, written through the slice     BORROW-015 at the write
+//   s10  a callee handing its slice parameter on through a slice local to a writer          BORROW-015 at the argument
+//   s11  a callee writing directly through a slice local over its parameter                 BORROW-015 at the argument
+//   s12  a call's result handed to a callee that stores a pointee's view (DEF-301's own)    BORROW-015 at the write
+//   s13  a call's result handed to a writer                                                 BORROW-015 at the argument
+//   s14  a ternary handed to a callee that stores a pointee's view                          BORROW-015 at the write
+//   s15  a ternary handed to a writer                                                       BORROW-015 at the argument
+//   s16  a callee handing a call's result over its parameter to a writer                    BORROW-015 at the argument
+//   s17  a callee handing a call's result over its parameter to a storing callee            BORROW-015 at the write
+//   s18  a FRAME view stored through a call's result                                        BORROW-009 at the argument
+//
+// Controls carrying no code: a slice local, a struct's slice field and a call's result handed to a writer with no
+// view live; a direct write through a slice local and through a struct's slice field with no view live; a COPY
+// stored through a call's result; the view's block ended before the writer.
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; };
+struct:H2 = { string:o; };
+struct:B2 = { H2[]:sl; };
+struct:BW = { H2[]:sl; (fixed uint8[]):w; };
+struct:H4 = { string:x; };
+struct:H3 = { H4:o; };
+func:f = NIL(Holder[]:sl, S->:p) never fails { sl[0i64].v = string_bytes(p.s); pass NIL; };
+func:f2 = NIL(Holder[]:sl, fixed uint8[]:v) never fails { sl[0i64].v = v; pass NIL; };
+func:w = NIL(H2[]:sl) never fails { sl[0i64].o = string_concat("x", "y"); pass NIL; };
+func:w3 = NIL(H3[]:sl) never fails { sl[0i64].o = H4{ x: string_concat("x", "y") }; pass NIL; };
+func:wq = NIL(H2->:q) never fails { q.o = string_concat("x", "y"); pass NIL; };
+func:view_of = Holder[](Holder[2]->:a) never fails { pass (<-a)[0i64...2i64]; };
+func:view_h = H2[](H2[2]->:a) never fails { pass (<-a)[0i64...2i64]; };
+func:id_h = H2[](H2[]:s) never fails { pass s; };
+func:id_hl = Holder[](Holder[]:s) never fails { pass s; };
+func:g_local = NIL(H2[]:sl) never fails { H2[]:t = sl; drop w(t); pass NIL; };
+func:g_direct = NIL(H2[]:sl) never fails { H2[]:t = sl; t[0i64].o = string_concat("x", "y"); pass NIL; };
+func:g_call = NIL(H2[]:sl) never fails { drop w(raw id_h(sl)); pass NIL; };
+func:g_store = NIL(Holder[]:sl, S->:p) never fails { drop f(raw id_hl(sl), p); pass NIL; };
+func:s01 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    H2[]:t = arr[0i64...2i64];
+    drop w(t);
+    pass (vw[0i64] => int32);
+};
+func:s02 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    drop w(b.sl);
+    pass (vw[0i64] => int32);
+};
+func:s03 = int32() never fails {
+    List<H2>:l = raw list_init::<H2>(2i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    drop list_push(@l, H2{ o: string_concat("c", "d") });
+    fixed uint8[]:vw = string_bytes(l[0i64].o);
+    H2[]:t = l[0i64...2i64];
+    drop w(t);
+    pass (vw[0i64] => int32);
+};
+func:s04 = int32() never fails {
+    H3[2]:arr = [H3{ o: H4{ x: string_concat("a", "b") } }, H3{ o: H4{ x: string_concat("c", "d") } }];
+    H3[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(t[0i64].o.x);
+    drop w3(t[0i64...1i64]);
+    pass (vw[0i64] => int32);
+};
+func:s05 = int32(H3[]:sl) never fails {
+    fixed uint8[]:vw = string_bytes(sl[0i64].o.x);
+    drop w3(sl[0i64...1i64]);
+    pass (vw[0i64] => int32);
+};
+func:s06 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    H2[]:t = arr[0i64...2i64];
+    t[0i64].o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:s07 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    b.sl[0i64].o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:s08 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    H2[]:t = arr[0i64...2i64];
+    drop wq(@t[0i64]);
+    pass (vw[0i64] => int32);
+};
+func:s09 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    BW:b = BW{ sl: arr[0i64...2i64], w: string_bytes(arr[0i64].o) };
+    b.sl[0i64].o = string_concat("x", "y");
+    pass (b.w[0i64] => int32);
+};
+func:s10 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop g_local(arr[0i64...2i64]);
+    pass (vw[0i64] => int32);
+};
+func:s11 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop g_direct(arr[0i64...2i64]);
+    pass (vw[0i64] => int32);
+};
+func:s12 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    drop f(raw view_of(@arr), p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s13 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop w(raw view_h(@arr));
+    pass (vw[0i64] => int32);
+};
+func:s14 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    bool:c = p.s.len > 0i64;
+    drop f(is (c) : arr[0i64...2i64] : arr[1i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s15 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    bool:c = arr[1i64].o.len > 0i64;
+    drop w(is (c) : arr[0i64...2i64] : arr[0i64...1i64]);
+    pass (vw[0i64] => int32);
+};
+func:s16 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop g_call(arr[0i64...2i64]);
+    pass (vw[0i64] => int32);
+};
+func:s17 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    drop g_store(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s18 = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    {
+        string:ls = string_concat("a", "b");
+        drop f2(raw view_of(@arr), string_bytes(ls));
+    }
+    pass (arr[0i64].v[0i64] => int32);
+};
+
+// --- controls -------------------------------------------------------------------------------------------------------
+func:ctl_local_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2[]:t = arr[0i64...2i64];
+    drop w(t);
+    if (arr[0i64].o.len != 2i64) { pass 1i32; }
+    pass 0i32;
+};
+func:ctl_field_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    drop w(b.sl);
+    if (arr[0i64].o.len != 2i64) { pass 1i32; }
+    pass 0i32;
+};
+func:ctl_call_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    drop w(raw view_h(@arr));
+    if (arr[0i64].o.len != 2i64) { pass 1i32; }
+    pass 0i32;
+};
+func:ctl_local_direct = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2[]:t = arr[0i64...2i64];
+    t[0i64].o = string_concat("x", "y");
+    if (arr[0i64].o.len != 2i64) { pass 1i32; }
+    pass 0i32;
+};
+func:ctl_field_direct = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    b.sl[0i64].o = string_concat("x", "y");
+    if (arr[0i64].o.len != 2i64) { pass 1i32; }
+    pass 0i32;
+};
+func:ctl_copy_through_call = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz") }, Holder{ v: string_bytes("zz") }];
+    drop f2(raw view_of(@arr), string_bytes("lit"));
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:ctl_view_ended = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(arr[0i64].o);
+        r = (vw[0i64] => int32);
+    }
+    H2[]:t = arr[0i64...2i64];
+    drop w(t);
+    pass r;
+};

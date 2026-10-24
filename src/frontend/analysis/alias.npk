@@ -466,9 +466,13 @@ func:place_root_symbol = int32(Alias->:x, ExprId:id) never fails {
 //
 // A step outward from the root: a field (its interned name), an index (its
 // expression, and its value when the folder knows it), or a range view (the
-// whole extent at that position -- it overlaps every index there).
+// whole extent at that position -- it overlaps every index there). Since
+// landing 159 two more kinds are read and compared as a range, and never
+// merge with the step after them (`level_steps`): a `pick` binding's opaque
+// step, and an element somewhere in an extent (the escape analysis's levelled
+// `e<lo>:<hi>` and `E`).
 pub struct:Step = {
-    int32:kind;      // 0 field, 1 index, 2 range
+    int32:kind;      // 0 field, 1 index, 2 range, 3 opaque, 4 an element in an extent
     int32:name;
     ExprId:index;
     bool:numeral;    // an index the folder knows; a range whose BOTH bounds it knows
@@ -523,7 +527,7 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
             // a part of the selector nobody can name here, so it overlaps every
             // part of it (conservative).
             if (raw sym_is_view(x.tab, x.ast, n.a)) {
-                drop list_push(@rev, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+                drop list_push(@rev, Step{ kind: 3i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
                 cur = ExprId{ index: (raw symtab_get(x.tab, n.a)).link };
                 continue;
             }
@@ -540,9 +544,68 @@ func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
     pass false;
 };
 
+// A RANGE'S ELEMENT IS ITS STORAGE'S ELEMENT (DEF-303, landing 159): `arr[lo...hi][i]`
+// is `arr[lo + i]`, so two paths are compared LEVELLED, by the escape analysis's
+// rule for its texts (`level_path_text`): a range step and the index, element
+// or range step after it stand at ONE position -- the index `lo + i`, the range
+// `[lo + c...lo + d]` (which still takes the step after it), when every bound
+// added is known and in [0, 2^31); otherwise the element somewhere in the
+// range's extent, and a range of a range nobody can add the computed range.
+// Unlevelled, every step after a range stood one position too far: `arr[0...2][0].o`
+// written against a view of `arr[0].o.x` met `o` against `x` and read the pair
+// disjoint. A `pick` binding's opaque step (kind 3) and an element in an extent
+// (kind 4) take nothing after them, and leave as the range step they compare
+// as; the levelled list holds fields, indexes and ranges alone.
+func:level_steps = List<Step>(List<Step>:a) never fails {
+    List<Step>:out = raw list_init::<Step>(8i64);
+    bool:open = false;   // the last step pushed is a range that takes the next
+    for (int64:i in 0i64...a.count) {
+        Step:s = a[i];
+        if (open && (out.count > 0i64) && ((s.kind == 1i32) || (s.kind == 2i32) || (s.kind == 4i32))) {
+            int64:last = out.count - 1i64;
+            Step:pr = out[last];
+            bool:known = (pr.numeral && s.numeral && (pr.value >= 0i64) && (pr.value < 2147483648i64)
+                          && (s.value >= 0i64) && (s.value < 2147483648i64) && (s.hi >= 0i64) && (s.hi < 2147483648i64));
+            if (s.kind == 1i32) {
+                if (known) {
+                    out[last] = Step{ kind: 1i32, name: 0i32, index: s.index, numeral: true, value: pr.value + s.value, hi: 0i64 };
+                }
+                // else the range's own extent stands for the element
+                open = false;
+                continue;
+            }
+            if (s.kind == 4i32) {
+                if (known) {
+                    out[last] = Step{ kind: 2i32, name: 0i32, index: s.index, numeral: true, value: pr.value + s.value, hi: pr.value + s.hi };
+                }
+                open = false;
+                continue;
+            }
+            // a range of the range: still a range, taking the step after it
+            if (known) {
+                out[last] = Step{ kind: 2i32, name: 0i32, index: s.index, numeral: true, value: pr.value + s.value, hi: pr.value + s.hi };
+            } else {
+                out[last] = Step{ kind: 2i32, name: 0i32, index: s.index, numeral: false, value: 0i64, hi: 0i64 };
+            }
+            continue;
+        }
+        if ((s.kind == 3i32) || (s.kind == 4i32)) {
+            drop list_push(@out, Step{ kind: 2i32, name: 0i32, index: s.index, numeral: s.numeral, value: s.value, hi: s.hi });
+            open = false;
+            continue;
+        }
+        drop list_push(@out, s);
+        open = (s.kind == 2i32);
+    }
+    pass out;
+};
+
 // The overlap class of two paths under one root, and whether a computed pair
-// exists along the common prefix.
-func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
+// exists along the common prefix -- the two compared LEVELLED (`level_steps`,
+// DEF-303, landing 159).
+func:overlap_class = int32(Alias->:x, List<Step>:a0, List<Step>:b0) never fails {
+    List<Step>:a = raw level_steps(a0);
+    List<Step>:b = raw level_steps(b0);
     int64:n = a.count;
     if (b.count < n) { n = b.count; }
     bool:computed = false;
@@ -609,9 +672,10 @@ func:overlap_class = int32(Alias->:x, List<Step>:a, List<Step>:b) never fails {
 };
 
 // A PATH DECODED (D-325): the escape analysis's interned text of steps below a
-// place -- `f<name>`, `i<n>`, `x`, `r<lo>:<hi>`, `R`, `/`-separated -- appended
-// as `Step`s to a list. A token this reader does not know is an opaque range
-// (overlaps everything at its position: the closed direction).
+// place -- `f<name>`, `i<n>`, `x`, `r<lo>:<hi>`, `R`, and since landing 159 `P`,
+// `e<lo>:<hi>`, `E`, `/`-separated -- appended as `Step`s to a list. A token
+// this reader does not know is an opaque step (overlaps everything at its
+// position: the closed direction).
 func:decode_path = NIL(Alias->:x, int32:path, List<Step>->:out) never fails {
     if (path == 0i32) { pass NIL; }
     string:t = raw intern_get(x.it, path);
@@ -644,21 +708,32 @@ func:decode_step = NIL(Alias->:x, fixed uint8[]:b, int64:lo, int64:hi, List<Step
         drop list_push(out, Step{ kind: 1i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
         pass NIL;
     }
-    if (c == 114u8) {   // 'r' lo:hi
+    if ((c == 114u8) || (c == 101u8)) {   // 'r' lo:hi, a range; 'e' lo:hi, an element in that extent
+        int32:ek = 2i32;
+        if (c == 101u8) { ek = 4i32; }
         int64:colon = lo + 1i64;
         while (colon < hi) decreases hi - colon {
             if (b[colon] == 58u8) { break; }
             colon = colon + 1i64;
         }
         if (colon >= hi) {
-            drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+            drop list_push(out, Step{ kind: ek, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
             pass NIL;
         }
-        drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: true,
+        drop list_push(out, Step{ kind: ek, name: 0i32, index: raw expr_none(), numeral: true,
                                   value: raw decode_int(b, lo + 1i64, colon), hi: raw decode_int(b, colon + 1i64, hi) });
         pass NIL;
     }
-    drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+    if (c == 82u8) {   // 'R', a computed range
+        drop list_push(out, Step{ kind: 2i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+        pass NIL;
+    }
+    if (c == 69u8) {   // 'E', an element in an extent nobody knows
+        drop list_push(out, Step{ kind: 4i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
+        pass NIL;
+    }
+    // 'P', a `pick` binding's opaque step, and any token this reader does not know
+    drop list_push(out, Step{ kind: 3i32, name: 0i32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
     pass NIL;
 };
 
@@ -733,6 +808,7 @@ func:render_place = string(Alias->:x, int32:root, List<Step>:steps) never fails 
                 s = string_concat(s, "[…]");
             }
         }
+        if ((st.kind == 3i32) || (st.kind == 4i32)) { s = string_concat(s, "[…]"); }
     }
     pass s;
 };
@@ -889,6 +965,82 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         }
         m1 = string_concat(m1, " (D-286): end the claim's scope with a block, or spell `@` for an address that claims nothing");
         drop alias_err(x, raw BORROW_CONFLICT(), move(m1), at);
+        pass true;
+    }
+    // THROUGH A SLICE NO RANGE NAMES (DEF-297, landing 159): a write through a
+    // slice binding or field, or a range of one -- `t[0i64].o = v`, `@t[0i64]` or
+    // `t` handed to a writer -- lands in the storage the slice views, whose view
+    // parties are rooted THERE: asked at each target (`check_slice_targets`),
+    // the claims left to their own rule (D-286).
+    if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_CLAIMS()))) {
+        ExprId:sb = raw escape_written_slice_base(x.esc, place, (extra != 0i32) || (akind == (raw ACC_EXCLUSIVE())));
+        if (!(raw expr_is_none(sb))) {
+            if (raw check_slice_targets(x, sb, akind, at, mode)) { pass true; }
+        }
+    }
+    pass false;
+};
+
+// A WRITE THROUGH SLICE `sb` AT EACH STORAGE IT VIEWS (DEF-297, DEF-301; landing
+// 159): the targets the escape analysis reads off the slice's value
+// (`escape_slice_targets`), each checked WHOLE -- the target's own place and
+// path, nothing composed below them: a target a value carries transitively is
+// a run at another level than the write's -- against the view and lent parties
+// rooted at the target's root. A target rooted where the slice itself is
+// rooted is the place check's own; every view the slice binding itself holds
+// is skipped (`escape_slice_own_holder`, `check_view_parties_at`).
+func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int32:mode) never fails {
+    int32:own_root = raw place_root_symbol(x, sb);
+    int32:own_holder = raw escape_slice_own_holder(x.esc, sb);
+    List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
+    drop escape_slice_targets(x.esc, sb, @tg);
+    for (int64:i in 0i64...tg.count) {
+        ViewRef:r = tg[i];
+        if (r.root == own_root) { continue; }
+        List<Step>:ap = raw list_init::<Step>(8i64);
+        if (raw path_steps(x, ExprId{ index: r.place }, @ap)) {
+            drop decode_path(x, r.path, @ap);
+        } else {
+            drop list_truncate(@ap, 0i64);   // the whole root, the closed direction
+        }
+        if (raw check_view_parties_at(x, r, ap, own_holder, akind, at, mode)) { pass true; }
+    }
+    pass false;
+};
+
+// THE VIEW AND LENT PARTIES ROOTED AT A TARGET's root against a write-capable
+// access of the steps `ap` below it -- storage reached through another name (a
+// slice's target, DEF-297, landing 159), so no party is the access's own but
+// those the slice binding itself holds (`self_holder`, `escape_slice_own_holder`:
+// a slice local, or a struct whose one view is its slice field) -- EVERY one of
+// them, matched by its holder alone: a slice's parties are its views of the
+// runs it spans, and writing an element through it frees none of them. A
+// match on the target's place and path as well missed the slice's own view
+// whenever the target was spelled otherwise -- `T[]:s = #wild_slice<T>(v.items,
+// v.count); s[i] = x;` carries `v`'s own value too (a parameter's value, typed
+// as one that may hold the run), whose target is the whole of `v`, so the
+// write met `s`'s own view of `v.items` and was refused (the chain's sweep of
+// landing 159's first build: five sites of nitpick-time's `Vec` and `Bytes`).
+// DEF-275's twin through a pointer is the next reader.
+func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:self_holder, int32:akind,
+                                  Span:at, int32:mode) never fails {
+    for (int64:i in 0i64...x.live.count) {
+        Party:p = x.live[i];
+        if (p.root != tgt.root) { continue; }
+        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_LENT()))) { continue; }
+        if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
+        if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
+        if ((self_holder != 0i32) && (p.holder == self_holder)) { continue; }
+        if (!(raw conflicts(p.kind, akind))) { continue; }
+        List<Step>:pp = raw list_init::<Step>(8i64);
+        if (!(raw party_steps(x, p, @pp))) { continue; }
+        int32:cls = raw overlap_class(x, pp, ap);
+        if (cls == (raw OV_DISJOINT())) { continue; }
+        if (p.kind == (raw PARTY_VIEW())) {
+            drop report_view_conflict(x, p, akind, tgt.root, ap, cls, at);
+            pass true;
+        }
+        drop report_lent_conflict(x, p, akind, tgt.root, ap, at);
         pass true;
     }
     pass false;
@@ -1206,17 +1358,27 @@ func:check_written_mode = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, 
 // range's, at the range step's position) -- or the whole argument for a callee
 // the escape analysis cannot read. The argument's own view party (a range view
 // as a whole argument is one, for the call) is the access's own and is skipped.
+// A RANGE OF A SLICE OR OF A RANGE (DEF-297, landing 159) is composed as a range
+// of storage is, at its trailing run's FIRST range (`escape_first_trailing_range`):
+// composed at the argument itself, the callee's element step stood one position
+// past the range's, and a later field could read disjoint (`sl[0i64...1i64]`
+// handed a callee writing `sl[0i64].o` under a view of `sl[0i64].o.x`: 113 at
+// both legs on landing 158's compiler). A slice binding or field handed to a
+// callee the analysis cannot read is written through WHOLE: its targets too.
 func:check_written_slice = NIL(Alias->:x, ExprId:a, int32:callee, int32:pos, Span:at) never fails {
-    bool:on_rng = raw escape_slice_is_range_of_storage(x.esc, a);
+    ExprId:pl = raw escape_first_trailing_range(x.esc, a);
+    bool:on_rng = !(raw expr_is_none(pl));
+    if (!on_rng) { pl = a; }
     int32:e = raw escape_mut_first(x.esc, callee, pos);
     if (e == (0i32 - 2i32)) {
-        drop check_access_ex(x, a, 0i32, raw ACC_WRITE(), a, at, raw CHECK_VIEWS());
+        if (raw check_access_reported(x, pl, 0i32, raw ACC_WRITE(), a, at, raw CHECK_VIEWS())) { pass NIL; }
+        if (!on_rng) { discard(raw check_slice_targets(x, a, raw ACC_WRITE(), at, raw CHECK_VIEWS())); }
         pass NIL;
     }
     while (e >= 0i32) decreases e + 1i32 {
         int32:wp = raw escape_mut_path(x.esc, e);
         if (on_rng) { wp = raw escape_slice_rest_path(x.esc, wp); }
-        if (raw check_access_reported(x, a, wp, raw ACC_WRITE(), a, at, raw CHECK_VIEWS())) { pass NIL; }
+        if (raw check_access_reported(x, pl, wp, raw ACC_WRITE(), a, at, raw CHECK_VIEWS())) { pass NIL; }
         e = raw escape_mut_next(x.esc, e);
     }
     pass NIL;
@@ -1733,6 +1895,16 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             if (((raw type_kind(x.types, at2)) == (raw TY_SLICE())) && (raw is_place_chain(x, a2))) {
                 if (!(raw type_slice_fixed(x.types, at2))) {   // read-only through it (D-348)
                     drop check_written_slice(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
+                }
+            }
+            // A SLICE NO PLACE NAMES handed to a callee that writes through it
+            // (DEF-301, landing 159): a call's result, a ternary -- each storage
+            // its value views, whole, against the view parties there.
+            if (((raw type_kind(x.types, at2)) == (raw TY_SLICE())) && (!(raw is_place_chain(x, a2)))) {
+                if (!(raw type_slice_fixed(x.types, at2))) {
+                    if ((raw escape_mut_first(x.esc, callee_fn, pos_base + j)) != (0i32 - 1i32)) {
+                        discard(raw check_slice_targets(x, a2, raw ACC_WRITE(), (raw ast_expr(x.ast, a2)).span, raw CHECK_VIEWS()));
+                    }
                 }
             }
         }
