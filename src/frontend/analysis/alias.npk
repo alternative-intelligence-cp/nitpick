@@ -1198,6 +1198,30 @@ func:check_written_mode = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, 
     pass NIL;
 };
 
+// THE VIEW PARTIES AGAINST WHAT A CALLEE WRITES THROUGH A SLICE ARGUMENT
+// (DEF-289's second face, landing 157): each written path below the callee's
+// slice parameter, composed with the argument -- for a RANGE of an array or a
+// `List` the path's slice-level steps give way to the range's own step
+// (`escape_slice_rest_path`: the element the callee names is one of the
+// range's, at the range step's position) -- or the whole argument for a callee
+// the escape analysis cannot read. The argument's own view party (a range view
+// as a whole argument is one, for the call) is the access's own and is skipped.
+func:check_written_slice = NIL(Alias->:x, ExprId:a, int32:callee, int32:pos, Span:at) never fails {
+    bool:on_rng = raw escape_slice_is_range_of_storage(x.esc, a);
+    int32:e = raw escape_mut_first(x.esc, callee, pos);
+    if (e == (0i32 - 2i32)) {
+        drop check_access_ex(x, a, 0i32, raw ACC_WRITE(), a, at, raw CHECK_VIEWS());
+        pass NIL;
+    }
+    while (e >= 0i32) decreases e + 1i32 {
+        int32:wp = raw escape_mut_path(x.esc, e);
+        if (on_rng) { wp = raw escape_slice_rest_path(x.esc, wp); }
+        if (raw check_access_reported(x, a, wp, raw ACC_WRITE(), a, at, raw CHECK_VIEWS())) { pass NIL; }
+        e = raw escape_mut_next(x.esc, e);
+    }
+    pass NIL;
+};
+
 // A HOLDER IS USED, NOT COPIED (D-286): a value that is a bare identifier
 // holding a live claim, or a literal carrying one, cannot initialise or be
 // assigned to another binding.
@@ -1699,6 +1723,17 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         if ((at2 != 0i32) && (!(raw escape_call_is_bare_builtin(x.esc, id))) && (n.kind != ExprKind.ExprBuiltinExpr)) {
             if (((raw type_kind(x.types, at2)) == (raw TY_POINTER())) && (raw is_place_chain(x, a2))) {
                 drop check_written(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
+            }
+            // A SLICE HANDED TO A CALLEE (DEF-289's second face, landing 157):
+            // the callee writes the elements the slice views -- what its
+            // mutation summary says it writes below its slice parameter -- and
+            // that is an access of the argument's storage against the view
+            // parties rooted where the argument roots (a range `arr[lo...hi]`
+            // at `arr`, a slice binding at the binding).
+            if (((raw type_kind(x.types, at2)) == (raw TY_SLICE())) && (raw is_place_chain(x, a2))) {
+                if (!(raw type_slice_fixed(x.types, at2))) {   // read-only through it (D-348)
+                    drop check_written_slice(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
+                }
             }
         }
         drop acc_expr(x, a2, raw ACC_READ(), depth);

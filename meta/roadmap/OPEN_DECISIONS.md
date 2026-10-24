@@ -3353,7 +3353,7 @@ defect declares a `DEF-` in §2f.
 > declared directly IN a body block, which nothing does today. The checker's sentences for the binding are DEF-295.
 > `tests/analysis/rejection/for_binding_borrows.npk`, `tests/backend/programs/for_binding_borrows_ok.npk`.
 
-> **DEF-289 — THE FIRST FACE FIXED 2026-10-23 (landing 156, with DEF-296); THE SECOND FACE OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
+> **DEF-289 — FIXED: THE FIRST FACE 2026-10-23 (landing 156, with DEF-296), THE SECOND FACE 2026-10-24 (landing 157; built by the DEF-289 agent (Opus) under `nitpick-compiler_44` from its brief, read whole and chained by `nitpick-compiler_44`, recorded and landed by `nitpick-compiler_46`) (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
 > use-after-free in safe code at both legs). A VIEW OF A POINTER PARAMETER'S POINTEE STORED THROUGH A SLICE'S ELEMENT FREEZES
 > NOTHING.** `uint8[]`-shaped: `sl[0i64].v = string_bytes(p.s);` with `sl` a local slice viewing a local array of structs and `p`
 > an `S->` parameter, then `p.s = …`, then `sl[0i64].v[0i64]`: compiles and reads 170 at both legs (d05). The store lands in the
@@ -3377,6 +3377,34 @@ defect declares a `DEF-` in §2f.
 > PARAMETER's element (d05b) stores into the CALLER's array, and the store matrix has no slot for a view-typed parameter
 > (`.internal/handoff_35/DEF296_289_PLAN.md`'s third case: a slot for a view-typed parameter, recommended, or a by-name
 > refusal); its own landing.
+> THE SECOND FACE FIXED AT 157 (2026-10-24): A SLICE PARAMETER'S ELEMENTS ARE A STORE-MATRIX SLOT AND A MUTATION-SUMMARY SLOT, AS A
+> POINTER PARAMETER'S POINTEE IS, AND A SLICE ARGUMENT IS A DESTINATION. In the callee `fold_flow_into_param` admits a slice
+> parameter's root (an empty path below it reassigns this frame's copy and is skipped, except at a call, where the slice handed on
+> IS the destination) and `record_mut_of_place` records a write through it with a non-empty path; at the caller `dest_place`
+> answers a non-`fixed` slice-typed place chain (a range of an array, a `List` or a `buffer`, rooted at it; a slice local; a slice
+> field; the caller's own slice parameter), so `record_dest_refs` applies the callee's matrix there and the view lands on the
+> storage's root -- the pointee's later write BORROW-015, at the call when the callee writes the pointee itself -- and
+> `record_mut_of_call` and alias.npk's new `check_written_slice` read the callee's writes through the slice against the views live
+> on what the argument views (BORROW-015 at the argument). A RANGE argument composes with the callee's path at the range step
+> (`escape_slice_rest_path`). A FRAME view stored through a slice the call cannot name (`dest_through_unnamed_slice`) is BORROW-009
+> at the argument (`refuse_view_escape_into`, its opening loop now `got_carries_frame_view`). THE REFINEMENTS NOT BUILT (the
+> seat's rulings on the agent's questions, recorded by `nitpick-compiler_44` 2026-10-24): (1) THE PRECISE FRAME-VIEW RULE -- the
+> holder-scope question asked of each frame target on the slice's chain, a parameter target or no target refused -- would admit
+> fb1 (a frame view stored through a slice local with the array, the slice and the viewed local in one block: 0/0 on the base,
+> BORROW-009 now) and still refuse q2; it needs the sources and the span inside the indirection walk; the conservative rule is
+> KEPT (g4f, a frame view stored into `wild` storage through a slice, is refused in line with D-223: a borrow never enters a `wild`
+> slot). (2) THE PRECISE COMPOSITION -- a constant `lo` and a constant callee index composed to `i(lo+k)`, the range otherwise
+> (about 30 lines in `escape_slice_rest_path`'s callers and `check_written_slice`) -- would admit fr3 (a view of `arr[1i64].o`
+> against a callee writing `sl[0i64].o` through `arr[0i64...2i64]`: 0/0 on the base, BORROW-015 now); the widened element index is
+> D-325's element rule, KEPT. fr1 (a view of `buf[0...k]` while `buf[k...8]` goes to a writer) is D-325's own rule, its direct twin
+> `buf[k] = …` refused on every compiler (fr2). One report per call level (two levels twice, three three times), as the pointer
+> twin has reported since landing 116 (D-240: one mistake per call). None of fb1, g4f, fr1 and fr3 is in the three trees. THE
+> FIVE RESIDUALS the agent's probes found, each 113/113 at both legs under landing 156's compiler and 157's, are registered as
+> DEF-297 (a slice local handed to a writer), DEF-298 (a by-value struct parameter's slice field handed on), DEF-299 (a slice field
+> of a pointer parameter's pointee), DEF-300 (a direct store through a range of the array itself) and DEF-301 (a slice argument
+> that is a call's result). `tests/analysis/rejection/slice_param_store.npk` (sixteen sites),
+> `tests/backend/programs/slice_param_store_ok.npk` (the legal half); the probes in `wt/44a/.internal/probes/def289b/`
+> (`results_base.txt`, `results_new_final.txt`), the agent's report `wt/44a/.internal/DEF289B_AGENT_REPORT.txt`.
 
 > **DEF-290 — FIXED 2026-10-23 (landing 155, with DEF-288; registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; MEDIUM-HIGH:
 > a legs disagreement, a wrong value at -O0). THE SELF-WIRING EXEMPTION RETURNS BEFORE THE MARK, SO A SELF-WIRED STRUCT IS HANDED
@@ -3491,6 +3519,55 @@ defect declares a `DEF-` in §2f.
 > sites appeared, every one the new rejection file's, 0 vanished; no file of the libraries, the applications or the fuzz corpus
 > moves. `tests/analysis/rejection/store_through_pointer.npk`, `tests/backend/programs/store_through_pointer_ok.npk`; the 26
 > probes re-run under this compiler in `wt/43g/.internal/def296/probes_sib_43g.txt`.
+
+> **DEF-297 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe m2; HIGH: a
+> use-after-free in safe code at both legs, on every compiler to date). A SLICE LOCAL HANDED TO A WRITER UNDER A LIVE VIEW OF WHAT IT
+> VIEWS FREEZES NOTHING.** `H2[2]:arr = …; fixed uint8[]:vw = string_bytes(arr[0i64].o); H2[]:t = arr[0i64...2i64]; drop w(t);`
+> with `w` overwriting `sl[0i64].o`, then `vw[0i64]`: 113/113 at both legs under landing 156's compiler and 157's
+> (`wt/44a/.internal/probes/def289b/m2_slice_local_writer.npk`). The callee's mutation summary has the slot since 157 and
+> alias.npk reads it (`check_written_slice`), but against the view parties rooted at the ARGUMENT's root (`t`), and `vw`'s party
+> roots at `arr`; the range itself as the argument (`drop w(arr[0i64...2i64]);`) is BORROW-015 at the argument since 157
+> (`slice_param_store.npk`'s s13). The mutation face of the class, as DEF-289's second face is its store face. Fix direction: read
+> the slice local's typed targets off its chain, as `record_refs_through_indirection` does for a store, and check the write at each
+> target's place -- DEF-275 has the same limit for a pointer value (a view taken through another name). Planned and measured
+> first (management's order, 2026-10-24: DEF-297..DEF-301 before DEF-286).
+
+> **DEF-298 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r1; HIGH: a
+> use-after-free in safe code at both legs, on every compiler to date). A BY-VALUE STRUCT PARAMETER'S SLICE FIELD HANDED ON RECORDS
+> NOTHING.** `func:g = NIL(Box:b, S->:p) never fails { drop f(b.sl, p); pass NIL; }` with `f` storing `string_bytes(p.s)` into
+> `sl[0i64].v`, called `drop g(Box{ sl: arr[0i64...2i64] }, @s);`, then `s.s = …` and `arr[0i64].v[0i64]`: 113/113 at both legs
+> under landing 156's compiler and 157's (`r1_struct_param_slice_field.npk`). The store matrix's slots are per parameter, keyed by
+> the parameter's own type, so `g`'s summary cannot say that the storage its `b.sl` views receives the view. The same hole stands
+> for a POINTER field of a by-value struct parameter (unmeasured). Fix direction: a slot for a by-value aggregate parameter's view-
+> and pointer-typed fields (the path below the parameter kept), or a by-name refusal. Planned and measured first.
+
+> **DEF-299 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe pf; HIGH: a
+> use-after-free in safe code at both legs, on every compiler to date). A STORE THROUGH A SLICE FIELD OF A POINTER PARAMETER'S
+> POINTEE FREEZES THE POINTEE, NOT WHAT THE FIELD VIEWS.** `func:f = NIL(Box->:q, S->:p) never fails { q.sl[0i64].v =
+> string_bytes(p.s); pass NIL; }` called `drop f(@b, p);` with `Box:b = Box{ sl: arr[0i64...2i64] }` in an inner block, then
+> `p.s = …` after the block and `arr[0i64].v[0i64]`: 113/113 at both legs under landing 156's compiler and 157's
+> (`pf_ptr_param_slice_field.npk`). The matrix records the store into `q`'s slot, so the caller records it on `b`, the pointee,
+> whose block ends before the write; the array `b.sl` views is never frozen. The escape paths have no step for "through the slice a
+> field holds" (`f<sl>/i0/f<v>` claims a write inside the pointee). Fix direction: a path step for an indirection through a field's
+> slice or pointer, so the matrix entry names the viewed storage. Planned and measured first.
+
+> **DEF-300 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r2; HIGH: a
+> use-after-free in safe code at both legs, on every compiler to date; an odd spelling). A DIRECT STORE THROUGH A RANGE OF THE ARRAY
+> ITSELF IS RECORDED NOWHERE.** `arr[0i64...2i64][0i64].v = string_bytes(p.s); p.s = …;` then `arr[0i64].v[0i64]`, with `arr` a
+> local array and `p` an `S->` parameter: 113/113 at both legs under landing 156's compiler and 157's (`r2_direct_range_elem.npk`),
+> where `arr[0i64].v = …` is BORROW-015 at the write since landing 154. `field_store_root` excludes a slice base, and
+> `path_indirection_base_type` skips a range of named storage (correctly: it is no indirection), so the store lands at `arr` and is
+> recorded nowhere. Fix direction: in landing 154's direct-store branch, an element step whose base is a range of named storage
+> continues to the range's base. Planned and measured first.
+
+> **DEF-301 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe cr; HIGH: a
+> use-after-free in safe code at both legs, on every compiler to date). A SLICE ARGUMENT THAT IS A CALL'S RESULT IS NO
+> DESTINATION.** `func:view_of = Holder[](Holder[2]->:a) never fails { pass (<-a)[0i64...2i64]; }` and `drop f(raw
+> view_of(@arr), p);` with `f` storing `string_bytes(p.s)` into `sl[0i64].v`, then `p.s = …` and `arr[0i64].v[0i64]`: 113/113 at
+> both legs under landing 156's compiler and 157's (`cr_call_result_slice.npk`). `arg_place_chain` answers none for a call, so the
+> slice is no destination (`dest_place`) and the store is recorded nowhere, though rule A (D-326) knows the result views `arr`. A
+> ternary's or a `pick` expression's slice is the same road (unmeasured). Fix direction: read the destination off the argument's
+> own refs (`collect_view_refs`). Planned and measured first.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

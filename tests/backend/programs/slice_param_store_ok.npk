@@ -1,0 +1,106 @@
+// expect-exit: 0
+mod:slice_param_store_ok;
+// THE LEGAL HALF OF DEF-289's SECOND FACE (landing 157): a callee storing a view of its pointer parameter's pointee into
+// an element of the slice it was handed, the caller reading the stored view while the pointee stands, or after the array's
+// block ended; a callee storing a COPY, or reading the slice only, with the pointee written after; a slice of `wild`
+// storage (D-315); a frame view stored into a range of an array declared beside the viewed local; a middle function handing
+// its slice parameter on; an owning element overwritten through a range that excludes the element a view names. Exit 0 at
+// both legs under this compiler and under landing 156's (the base admitted more, never less); each check fails at its own
+// exit.
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+struct:H2 = { string:o; };
+func:put = NIL(Holder[]:sl, S->:p) never fails { sl[0i64].v = string_bytes(p.s); pass NIL; };
+func:put_i = NIL(Holder[]:sl, S->:p, int64:i) never fails { sl[i].v = string_bytes(p.s); pass NIL; };
+func:pass_on = NIL(Holder[]:sl, S->:p) never fails { drop put(sl, p); pass NIL; };
+func:keep_copy = NIL(H2[]:sl, S->:p) never fails { sl[0i64].o = string_concat("", p.s); pass NIL; };
+func:read_only = int32(Holder[]:sl, S->:p) never fails { pass (sl[1i64].v[0i64] => int32); };
+func:w_own = NIL(H2[]:sl) never fails { sl[0i64].o = string_concat("x", "y"); pass NIL; };
+
+func:read_first = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put(arr[0i64...2i64], p);
+    pass ((arr[0i64].v[0i64] => int32) + (arr[0i64].v[1i64] => int32));
+};
+func:computed_index = int32(S->:p, int64:n) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put_i(arr[0i64...2i64], p, n);
+    pass ((arr[n].v[0i64] => int32) + (arr[0i64].v[0i64] => int32));
+};
+func:two_levels = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop pass_on(arr[0i64...2i64], p);
+    pass (arr[0i64].v[1i64] => int32);
+};
+func:block_ends = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+        drop put(arr[0i64...2i64], p);
+        r = arr[0i64].v[0i64] => int32;
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:copy_then_write = int32(S->:p) never fails {
+    H2[2]:arr = [H2{ o: string_concat("z", "z") }, H2{ o: string_concat("y", "y") }];
+    drop keep_copy(arr[0i64...2i64], p);
+    p.s = string_concat("q", "r");
+    pass ((string_bytes(arr[0i64].o))[0i64] => int32);
+};
+func:read_then_write = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    int32:r = raw read_only(arr[0i64...2i64], p);
+    p.s = string_concat("m", "n");
+    pass r;
+};
+func:wild_slice = int32(S->:p) never fails {
+    wild Holder->:w = calloc(2i64, 24i64) =>! wild Holder->;
+    Holder[]:ws = #wild_slice<Holder>(w, 2i64);
+    drop put(ws, p);
+    int32:r = ws[0i64].v[0i64] => int32;
+    dalloc(w);
+    pass r;
+};
+func:frame_same_block = int32() never fails {
+    S:ls = S{ s: string_concat("k", "l") };
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put(arr[0i64...2i64], @ls);
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:other_element = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[1i64].o);
+    drop w_own(arr[0i64...1i64]);
+    pass ((vw[0i64] => int32) + ((string_bytes(arr[0i64].o))[0i64] => int32));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    S:s = S{ s: string_concat("a", "b") };
+    if ((raw read_first(@s)) != 195i32) { exit 11i32; }        // 'a' + 'b'
+    if ((raw computed_index(@s, 1i64)) != 219i32) { exit 12i32; }   // 'a' + 'z'
+    if ((raw two_levels(@s)) != 98i32) { exit 13i32; }         // 'b'
+    if ((raw block_ends(@s)) != 97i32) { exit 14i32; }         // 'a', then s.s is "xy"
+    if ((raw copy_then_write(@s)) != 120i32) { exit 15i32; }   // 'x': the copy of "xy"
+    if ((raw read_then_write(@s)) != 121i32) { exit 16i32; }   // 'y'
+    if ((raw wild_slice(@s)) != 109i32) { exit 17i32; }        // 'm': s.s is "mn"
+    if ((raw frame_same_block()) != 107i32) { exit 18i32; }    // 'k'
+    if ((raw other_element()) != 219i32) { exit 19i32; }       // 'c' + 'x'
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

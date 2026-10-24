@@ -1,0 +1,269 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 93:34
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 99:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 108:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 114:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 120:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 126:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 132:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 138:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 146:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 153:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 160:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 167:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 173:19
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 180:14
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 188:22
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 194:18
+mod:slice_param_store;
+// A STORE THROUGH A SLICE PARAMETER'S ELEMENT LANDS IN THE CALLER'S STORAGE (DEF-289's second face, landing 157).
+// A callee that stores a VIEW of its pointer parameter's pointee (`string_bytes(p.s)`, `S->:p`) into an element of a
+// slice it was handed (`sl[0i64].v = …`) stores into the storage the CALLER's argument views -- `arr[0i64...2i64]` roots
+// at `arr` -- and the callee's store matrix records it (`fold_flow_into_param` admits a slice parameter's elements, as a
+// pointer parameter's pointee): the caller records the view where its argument roots, and D-325's freeze refuses the
+// pointee's write while the array lives (`NITPICK-BORROW-015`), at the call when the callee writes it itself (s01: the
+// pointer handed on is DEF-275's write, s12's road) or at the caller's own write. A write THROUGH the slice -- an
+// owning element's field overwritten -- enters the callee's mutation summary, and the caller's freeze reads it against
+// a live view of that element (s13). A FRAME view stored into the elements of a slice whose storage the call cannot
+// name -- a slice binding, an element reached through one, a slice parameter -- is `NITPICK-BORROW-009`, as a pointer
+// binding handed by value is (s14-s16). Before this landing every function below compiled, and the hazardous ones read
+// freed bytes at both legs (`.internal/probes/def289b/`: 113 for 97).
+//
+//   s01  d05b: the callee stores the view and writes the pointee        BORROW-015 at the pointer argument
+//   s02  the callee stores; the caller writes the pointee after          BORROW-015 at the write
+//   s03  a slice LOCAL over the array as the argument                    BORROW-015 at the write
+//   s04  the element index computed (D-325's element rule)               BORROW-015 at the write
+//   s05  the whole element replaced, `sl[0i64] = Holder{ v: … }`         BORROW-015 at the write
+//   s06  the callee stores through a sub-range of its slice              BORROW-015 at the write
+//   s07  the callee copies its slice to a local and stores through it    BORROW-015 at the write
+//   s08  a middle function handing its own slice parameter on            BORROW-015 at the write
+//   s09  a `List`'s range as the argument                                BORROW-015 at the write
+//   s10  a range taken through a pointer local to the array              BORROW-015 at the write
+//   s11  a struct's slice FIELD as the argument                          BORROW-015 at the write
+//   s12  a DIRECT store through a struct's slice field's element         BORROW-015 at the write
+//   s13  the callee overwrites an owning element under a live view       BORROW-015 at the argument
+//   s14  a FRAME view stored through a slice LOCAL argument              BORROW-009 at the argument
+//   s15  a FRAME view stored through `@t[0i64]`, `t` a slice local       BORROW-009 at the address
+//   s16  a FRAME view stored through `@sl[0i64]`, `sl` a slice parameter BORROW-009 at the address
+//
+// Controls carrying no code: a callee storing a COPY; a callee that only reads the slice; a slice of `wild` storage
+// (D-315, D-361); the view read before the pointee's write; the array's block ending before the write; a frame view
+// stored into a range of an array declared beside the viewed local; a view of an element outside the range written.
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+struct:H2 = { string:o; };
+struct:Box = { Holder[]:sl; };
+func:put = NIL(Holder[]:sl, S->:p) never fails { sl[0i64].v = string_bytes(p.s); pass NIL; };
+func:put_w = NIL(Holder[]:sl, S->:p) never fails {
+    sl[0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass NIL;
+};
+func:put_i = NIL(Holder[]:sl, S->:p, int64:i) never fails { sl[i].v = string_bytes(p.s); pass NIL; };
+func:put_whole = NIL(Holder[]:sl, S->:p) never fails { sl[0i64] = Holder{ v: string_bytes(p.s), k: 1i32 }; pass NIL; };
+func:put_sub = NIL(Holder[]:sl, S->:p) never fails { sl[1i64...2i64][0i64].v = string_bytes(p.s); pass NIL; };
+func:put_via_local = NIL(Holder[]:sl, S->:p) never fails {
+    Holder[]:t = sl;
+    t[0i64].v = string_bytes(p.s);
+    pass NIL;
+};
+func:pass_on = NIL(Holder[]:sl, S->:p) never fails { drop put(sl, p); pass NIL; };
+func:w_own = NIL(H2[]:sl) never fails { sl[0i64].o = string_concat("x", "y"); pass NIL; };
+func:put_ptr = NIL(Holder->:q, fixed uint8[]:w) never fails { q.v = w; pass NIL; };
+func:keep_copy = NIL(H2[]:sl, S->:p) never fails { sl[0i64].o = string_concat("", p.s); pass NIL; };
+func:read_only = int32(Holder[]:sl, S->:p) never fails { pass (sl[0i64].v[0i64] => int32); };
+
+func:s01 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put_w(arr[0i64...2i64], p);
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s02 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s03 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    {
+        Holder[]:t = arr[0i64...2i64];
+        drop put(t, p);
+    }
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s04 = int32(S->:p, int64:n) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put_i(arr[0i64...2i64], p, n);
+    p.s = string_concat("x", "y");
+    pass (arr[1i64].v[0i64] => int32);
+};
+func:s05 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put_whole(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s06 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put_sub(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[1i64].v[0i64] => int32);
+};
+func:s07 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put_via_local(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s08 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop pass_on(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s09 = int32(S->:p) never fails {
+    List<Holder>:l = raw list_init::<Holder>(2i64);
+    drop list_push(@l, Holder{ v: string_bytes("zz"), k: 0i32 });
+    drop list_push(@l, Holder{ v: string_bytes("yy"), k: 1i32 });
+    drop put(l[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (l[0i64].v[0i64] => int32);
+};
+func:s10 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    Holder[2]->:ap = @arr;
+    drop put((<-ap)[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s11 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    Box:b = Box{ sl: arr[0i64...2i64] };
+    drop put(b.sl, p);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s12 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    Box:b = Box{ sl: arr[0i64...2i64] };
+    b.sl[0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s13 = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop w_own(arr[0i64...2i64]);
+    pass (vw[0i64] => int32);
+};
+func:s14 = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    S:ls = S{ s: string_concat("a", "b") };
+    Holder[]:t = arr[0i64...2i64];
+    drop put(t, @ls);
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s15 = int32() never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    {
+        string:loc = string_concat("a", "b");
+        Holder[]:t = arr[0i64...2i64];
+        drop put_ptr(@t[0i64], string_bytes(loc));
+    }
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:s16 = NIL(Holder[]:sl) never fails {
+    string:loc = string_concat("a", "b");
+    drop put_ptr(@sl[0i64], string_bytes(loc));
+    pass NIL;
+};
+
+// --- controls -------------------------------------------------------------------------------------------------------
+func:ctl_copy = int32(S->:p) never fails {
+    H2[2]:arr = [H2{ o: string_concat("z", "z") }, H2{ o: string_concat("y", "y") }];
+    drop keep_copy(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass ((string_bytes(arr[0i64].o))[0i64] => int32);
+};
+func:ctl_read_only = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    int32:r = raw read_only(arr[0i64...2i64], p);
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:ctl_wild = int32(S->:p) never fails {
+    wild Holder->:w = calloc(2i64, 24i64) =>! wild Holder->;
+    Holder[]:ws = #wild_slice<Holder>(w, 2i64);
+    drop put(ws, p);
+    p.s = string_concat("x", "y");
+    dalloc(w);
+    pass 0i32;
+};
+func:ctl_read_first = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put(arr[0i64...2i64], p);
+    int32:r = arr[0i64].v[0i64] => int32;
+    pass r;
+};
+func:ctl_block_ends = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+        drop put(arr[0i64...2i64], p);
+        r = arr[0i64].v[0i64] => int32;
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:ctl_frame_same_block = int32() never fails {
+    S:ls = S{ s: string_concat("a", "b") };
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    drop put(arr[0i64...2i64], @ls);
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:ctl_other_element = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[1i64].o);
+    drop w_own(arr[0i64...1i64]);
+    pass (vw[0i64] => int32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    S:s = S{ s: string_concat("a", "b") };
+    int32:r = raw ctl_read_first(@s);
+    if (r != 97i32) { exit 10i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

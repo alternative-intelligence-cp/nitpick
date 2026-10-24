@@ -22130,6 +22130,20 @@ of the freeze, and the pointee's later write is BORROW-015. Until this landing s
 body at both legs. A target in a pointer parameter's pointee is the store matrix's, as before; a slice PARAMETER's element
 (DEF-289's second face) has no matrix slot yet and stays open.
 
+*[2026-10-24, 1.6.1e landing 157 — a dated note (DEF-289's second face).]* A slice PARAMETER's elements are a store-matrix
+slot and a mutation-summary slot, as a pointer parameter's pointee is: a callee's store through `sl[i]` (a sub-range, a local
+copy of `sl`, `sl` handed on) is in its summary, and at the call a non-`fixed` slice argument that is a place chain -- a range
+of an array, a `List` or a `buffer` (rooted at it), a slice local, a slice field, the caller's own slice parameter -- is a
+destination, so a stored view lands on the storage's root and this decision's freeze refuses the pointee's later write; a
+callee's write through the slice is checked at the call against the views live on what the argument views. A range argument
+composes with the callee's path at the range step, so a callee's element index widens to the range handed (the element rule
+above). A view of THIS frame's storage stored by a call through a slice the call cannot name (a slice binding, a slice field,
+a range of a slice, a slice parameter, an element reached through one) is BORROW-009, as a pointer binding handed by value is
+-- conservative: the holder-scope question of each frame target the slice's chain names would admit a same-block shape, and is
+not built. Open in the same class: a slice local handed to a writer (DEF-297), a by-value struct parameter's slice field
+(DEF-298), a pointer parameter's pointee's slice field (DEF-299), a direct store through a range of the array itself
+(DEF-300), a slice argument that is a call's result (DEF-301).
+
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 
 **The history.** D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$`
