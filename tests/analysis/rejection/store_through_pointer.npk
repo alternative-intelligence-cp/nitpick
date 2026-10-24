@@ -1,0 +1,174 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 57:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 64:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 72:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 79:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 85:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 92:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 99:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 106:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 114:6
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 121:7
+mod:store_through_pointer;
+// A STORE THROUGH AN INDIRECTION LANDS WHERE THE INDIRECTION POINTS (DEF-296, landing 156; DEF-289's first face).
+// Every function below stores a VIEW OF A POINTER PARAMETER'S POINTEE (`string_bytes(p.s)`, `S->:p` -- no borrow of this
+// frame, so `escape_assign`'s verdict admits the store) through an indirection whose target is THIS frame's storage, then
+// writes the pointee, then reads the view: the write is `NITPICK-BORROW-015` (D-325's freeze), as it is for the bare
+// local (landing 116) and the direct field store (landing 154). Before this landing every one compiled and read the
+// allocator's free poison at both legs (`.internal/handoff_35/probes_sib/`, 170 for 97).
+//
+//   the indirection                                   the store                              the site
+//   a pointer local at a local, the auto-dereference  `hp.v = string_bytes(p.s);`           f01
+//   the same, the explicit dereference                `(<-hp).v = …`                        f02
+//   a pointer local at a `List`, its element          `(<-lp)[0i64].v = …`                  f03
+//   the whole pointee                                 `<-hp = Holder{ v: …, k: 1i32 };`     f04
+//   a pointer local at a BY-VALUE parameter's field   `hp = @b; hp.v = …`                   f05
+//   a pointer FIELD on the path (D-098)               `o.inner.v = …`, `inner: @h`          f06
+//   THE CALL ROAD: a callee storing into its pointer  `drop put(hp, string_bytes(p.s));`    f07
+//     parameter's pointee, the caller handing the     (`put(@h, …)` was refused already)
+//     pointer LOCAL
+//   a slice local's element (DEF-289's d05)           `sl[0i64].v = …`, `sl` over `arr`     f08
+//   the pointer local inside a coroutine, the view    `hp.v = …; await …; p.s = …`           f09
+//     held across an `await`
+//   a FRAME borrow through the same pointer local     `hp.v = string_bytes(t);`, `t` local   f10 (BORROW-002: the store
+//                                                                                              rule's tail, as before)
+// Controls carrying no code: the view read BEFORE the pointee's write; the indirection's target a pointer PARAMETER's
+// pointee (the caller's business, through the store matrix); the holder's block ending before the write.
+error:E1;
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+struct:Outer = { Holder->:inner; int32:n; };
+func:put = NIL(Holder->:dst, fixed uint8[]:view) never fails { dst.v = view; pass NIL; };
+async func:tick = int32() { pass 1i32; };
+
+func:f01 = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    hp.v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+func:f02 = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    (<-hp).v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+func:f03 = int32(S->:p) never fails {
+    List<Holder>:l = raw list_init::<Holder>(2i64);
+    drop list_push(@l, Holder{ v: string_bytes("zz"), k: 0i32 });
+    List<Holder>->:lp = @l;
+    (<-lp)[0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (l[0i64].v[0i64] => int32);
+};
+func:f04 = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    <-hp = Holder{ v: string_bytes(p.s), k: 1i32 };
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+func:f05 = int32(S->:p, Holder:b) never fails {
+    Holder->:hp = @b;
+    hp.v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (b.v[0i64] => int32);
+};
+func:f06 = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Outer:o = Outer{ inner: @h, n: 0i32 };
+    o.inner.v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+func:f07 = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    drop put(hp, string_bytes(p.s));
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+func:f08 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    Holder[]:sl = arr[0i64...2i64];
+    sl[0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+async func:f09 = int32(S->:p) {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    hp.v = string_bytes(p.s);
+    int32:t = await tick() ?! E1;
+    p.s = string_concat("x", "y");
+    pass ((h.v[0i64] => int32) + t - 1i32);
+};
+func:f10 = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    string:t = string_concat("a", "b");
+    hp.v = string_bytes(t);
+    p.s = string_concat("x", "y");
+    pass (h.v[0i64] => int32);
+};
+
+// --- controls -------------------------------------------------------------------------------------------------------
+func:ctl_read_first = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    hp.v = string_bytes(p.s);
+    int32:r = h.v[0i64] => int32;
+    pass r;
+};
+func:ctl_param_pointee = int32(S->:p, Holder->:q) never fails {
+    Holder->:hp = q;
+    hp.v = string_bytes(p.s);
+    pass (q.v[0i64] => int32);
+};
+func:ctl_block_ends = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+        Holder->:hp = @h;
+        hp.v = string_bytes(p.s);
+        r = h.v[0i64] => int32;
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    S:s = S{ s: string_concat("a", "b") };
+    int32:r = raw ctl_read_first(@s);
+    if (r != 97i32) { exit 10i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)                { exit 90i32; },
+        (DeadlineExceeded)  { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

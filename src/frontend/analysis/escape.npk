@@ -1101,6 +1101,10 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
         drop refuse_view_escape_into(x, dp, aj, aj_auto, @got, @srcs);
         drop record_view_refs_at_place(x, dp, @got);
         drop fold_flow_into_param(x, dp, @got);
+        // THE CALL ROAD (DEF-296, landing 156): a destination handed as a POINTER
+        // LOCAL (`put(hp, view)` with `hp = @h`) is `h`'s storage -- the callee's
+        // stores, recorded on `hp`'s chain above, are recorded where `hp` points.
+        drop record_refs_through_indirection(x, dp, @got, true);
     }
     pass NIL;
 };
@@ -1333,37 +1337,180 @@ func:record_flow_of_store = NIL(Escape->:x, ExprId:tgt, ExprId:val) never fails 
     drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
     if (refs.count == 0i64) { pass NIL; }
     drop fold_flow_into_param(x, t, @refs);
-    // A STORE THROUGH A POINTER LOCAL lands wherever the local may point (its
-    // own refs: `slot = @dst.f`, `slot = raw find(dst, k)`): each ref rooted at
-    // a pointer parameter is a store into that parameter's pointee.
-    ExprId:rid = raw root_ident_id(x, t);
+    // A STORE THROUGH AN INDIRECTION lands wherever the indirection points
+    // (DEF-296, landing 156): the one walk below, shared with a callee's store
+    // at a call (`record_dest_refs`).
+    // (the ORIGINAL target: `<-hp = v` is a store THROUGH `hp`, the bare `hp`
+    // the deref above strips a store INTO it)
+    drop record_refs_through_indirection(x, tgt, @refs, false);
+    pass NIL;
+};
+
+// A STORE THROUGH AN INDIRECTION LANDS WHERE THE INDIRECTION'S REFS SAY (DEF-296,
+// landing 156; DEF-289's first face with it). A destination reached through a
+// pointer or a slice -- a pointer local's pointee (`hp.v`, `(<-hp).v`, `<-hp`,
+// `(<-lp)[i].v`), a pointer field on the way (`o.inner.v`), a slice local's element
+// (`sl[i].v`) -- is storage the LOCAL at the root does not own: the local's own
+// refs (its chain: `hp = @h` recorded "hp holds a borrow of h") say where. A ref
+// rooted at a POINTER PARAMETER says the store lands in that parameter's pointee:
+// the store matrix, exactly as before (`mu_add`, `fv_add`, `flow_pass_set`). A ref
+// rooted at a LOCAL, a BY-VALUE parameter or a `for` binding says it lands in THIS
+// frame's storage: the stored refs are recorded on that root's chain -- what a
+// direct store into the root's own field records since landing 154 -- so D-325's
+// freeze refuses the viewed root's later write. Until this landing a pointer whose
+// target was frame storage recorded NOTHING (`param_index_of(x, pr.root) < 0` was a
+// `continue`), so `Holder->:hp = @h; hp.v = string_bytes(p.s); p.s = …;` with `S->:p`
+// compiled and read the freed body at both legs, in eight spellings
+// (`.internal/handoff_35/probes_sib/`); the slice's element (DEF-289's d05) the
+// same way. A ref rooted nowhere (a `wild` pointer, an allocator's result) records
+// nothing: the author's acknowledgement (D-315, D-361); a pointer with NO refs (a
+// call's result carrying none) records nothing, as before. OVER-APPROXIMATE ON
+// PURPOSE: a struct local holding two pointer fields re-roots a store through
+// either onto every frame root its chain names, and a chain entry that is a view
+// the struct HOLDS counts as a target too -- more freezes, never fewer; measured
+// over the three trees at the landing. ADDITIVE: every record the old loop made
+// is still made.
+func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, bool:call) never fails {
+    if (raw expr_is_none(dest)) { pass NIL; }
+    if (refs.count == 0i64) { pass NIL; }
+    ExprId:rid = raw root_ident_id(x, dest);
     if (raw expr_is_none(rid)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a == 0i32) { pass NIL; }
     Symbol:sy = raw symtab_get(x.tab, rn.a);
+    // A LOCAL's chain is the borrows its value carries -- where a pointer or a
+    // slice points, which frame storage a struct's pointer field names. A
+    // parameter's chain means something else (the views stored INTO its pointee,
+    // `record_view_refs_at_place`'s key), so the walk reads locals alone, as the
+    // loop it replaces did.
     if (sy.origin_kind != (raw SYM_STMT())) { pass NIL; }
     int32:rt = raw exprtypes_get(x.etypes, rid);
     if (rt == 0i32) { pass NIL; }
-    if ((raw type_kind(x.types, rt)) != (raw TY_POINTER())) { pass NIL; }
+    int32:rk = raw type_kind(x.types, rt);
+    ExprNode:dn = raw ast_expr(x.ast, dest);
+    bool:bare = (dn.kind == ExprKind.ExprIdentifierExpr);
+    // THE INDIRECTION'S TYPE: the root itself when it is a pointer or a slice, else
+    // the last pointer-typed base on the path (`o.inner.v`: `Holder->`); a bare
+    // pointer NAME is an indirection only as a call's destination (`put(hp, v)`
+    // stores through `hp`; `hp = @h` stores INTO it).
+    int32:ind = 0i32;
+    if (bare) {
+        if (call && (rk == (raw TY_POINTER()))) { ind = rt; }
+    } else {
+        if ((rk == (raw TY_POINTER())) || (rk == (raw TY_SLICE()))) { ind = rt; }
+        else { ind = raw path_pointer_base_type(x, dest); }
+    }
+    // The loop this walk replaces ran for every store whose root was a pointer
+    // local -- the bare assignment included -- and fed the matrix from every
+    // parameter-rooted ref of its chain: KEPT as it was (additive), beside the
+    // typed walk below.
+    bool:old_matrix = ((!call) && (rk == (raw TY_POINTER())));
+    if ((ind == 0i32) && (!old_matrix)) { pass NIL; }
+    int32:ik = 0i32;
+    int32:pte = 0i32;
+    if (ind != 0i32) { ik = raw type_kind(x.types, ind); pte = raw type_elem(x.types, ind); }
     int32:e = raw escape_view_ref_first(x, sy.origin);
     while (e >= 0i32) decreases e + 1i32 {
         ViewRef:pr = raw escape_view_ref(x, e);
         e = raw escape_view_ref_next(x, e);
-        int32:j = raw param_index_of(x, pr.root);
-        if (j < 0i32) { continue; }
-        drop mu_add(x, j, raw ref_full_path(x, pr));
-        for (int64:i in 0i64...refs.count) {
-            ViewRef:r = refs[i];
-            int32:k = raw param_index_of(x, r.root);
-            if (k < 0i32) { continue; }
-            if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
-                drop fv_add(x, j, k, raw ref_full_path(x, r));
-            } else {
-                drop flow_pass_set(x, j, k);
+        if (pr.root == 0i32) { continue; }
+        // WHICH REFS OF THE ROOT'S CHAIN ARE THE INDIRECTION'S TARGETS, BY TYPE: an
+        // address whose place IS the pointee's type (`hp = @h`: `h` a `Holder`), a
+        // parameter's value carried whose place is the pointer's own type (`hp =
+        // p2`), and for a slice every ref (a slice's chain holds its targets
+        // alone). A pointer local's or a struct's chain also carries the views its
+        // POINTEE or its fields HOLD (`record_view_refs_at_place` keys a
+        // destination's chain by the binding) and the values stored into them,
+        // which name no target: read as one they put the stored view on the viewed
+        // root's own chain and into the matrix as a self-flow (a holder named `p`
+        // for a view of `p.s`, a spurious refusal at the caller -- this walk's first
+        // build, measured on `probes_sib/s24`).
+        int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: pr.place });
+        bool:target = false;
+        if (ind != 0i32) {
+            if (ik == (raw TY_SLICE())) {
+                // a slice's target: a view of an array or a slice whose element is
+                // the slice's -- not what that array HOLDS, which a view of it
+                // carries transitively (`collect_view_refs`' binding step) and which
+                // read as a target put the stored view on a parameter's own chain
+                // ("held by `p`", a self-flow in the matrix: the second build).
+                if (pt != 0i32) {
+                    int32:pk = raw type_kind(x.types, pt);
+                    if ((pk == (raw TY_SLICE())) || (pk == (raw TY_ARRAY()))) {
+                        target = ((raw type_elem(x.types, pt)) == pte);
+                    }
+                }
+            }
+            else {
+                if (pr.kind == (raw REF_ADDR())) { target = ((pt != 0i32) && (pt == pte)); }
+                if (pr.kind == (raw REF_PASS())) { target = ((pt != 0i32) && (pt == ind)); }
             }
         }
+        int32:j = raw param_index_of(x, pr.root);
+        if (j >= 0i32) {
+            if (old_matrix || target) {
+                // a parameter's: the matrix, as before
+                drop mu_add(x, j, raw ref_full_path(x, pr));
+                for (int64:i in 0i64...refs.count) {
+                    ViewRef:r = (<-refs)[i];
+                    int32:k = raw param_index_of(x, r.root);
+                    if (k < 0i32) { continue; }
+                    if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
+                        drop fv_add(x, j, k, raw ref_full_path(x, r));
+                    } else {
+                        drop flow_pass_set(x, j, k);
+                    }
+                }
+            }
+            if (!target) { continue; }
+            // ... and a BY-VALUE parameter's storage is this frame's: the ref is an
+            // address of the parameter itself (`hp = @b`), its type no pointer.
+            if (pt == 0i32) { continue; }
+            if ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) { continue; }
+        } else {
+            if (!target) { continue; }
+        }
+        int32:key = raw frame_owned_key(x, pr.root);
+        if (key == (0i32 - 1i32)) { continue; }
+        for (int64:i in 0i64...refs.count) { drop escape_add_view_ref(x, key, (<-refs)[i]); }
     }
     pass NIL;
+};
+
+// THE LAST POINTER-TYPED BASE ON A PLACE'S PATH (D-098's auto-dereference, or an
+// explicit `<-`): its type, or 0 when the path reaches its root through no
+// pointer. `o.inner.v` answers `Holder->`; `arr[i].v` answers 0.
+func:path_pointer_base_type = int32(Escape->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass 0i32; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        ExprId:base = raw expr_none();
+        if (n.kind == ExprKind.ExprDerefExpr)        { base = raw expr_operand(n); }
+        if (n.kind == ExprKind.ExprMemberAccessExpr) { base = raw expr_operand(n); }
+        if (n.kind == ExprKind.ExprIndexExpr)        { base = raw expr_lhs(n); }
+        if (raw expr_is_none(base)) { pass 0i32; }
+        int32:bt = raw exprtypes_get(x.etypes, base);
+        if ((bt != 0i32) && ((raw type_kind(x.types, bt)) == (raw TY_POINTER()))) { pass bt; }
+        cur = base;
+    }
+    pass 0i32;
+};
+
+// THE CHAIN KEY OF A ROOT THIS FRAME OWNS (`escape_add_view_ref`'s convention): a
+// local's declaring statement; a parameter's or a `for` binding's declaration,
+// spelled -(decl + 1); -1 for anything else. Whether a parameter root is storage
+// of this frame (by value) or the caller's (a pointer) is the CALLER's question,
+// asked of the ref's place before the key is read.
+func:frame_owned_key = int32(Escape->:x, int32:sym) never fails {
+    if (sym == 0i32) { pass (0i32 - 1i32); }
+    Symbol:s = raw symtab_get(x.tab, sym);
+    if (s.origin_kind == (raw SYM_STMT())) { pass s.origin; }
+    if (s.origin_kind != (raw SYM_DECL())) { pass (0i32 - 1i32); }
+    if ((s.origin <= 0i32) || (s.origin >= x.decl_count)) { pass (0i32 - 1i32); }
+    DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: s.origin });
+    if (pd.kind != DeclKind.DeclParamDecl) { pass (0i32 - 1i32); }
+    pass ((0i32 - s.origin) - 1i32);
 };
 
 // A WRITE-CAPABLE ACCESS of a place rooted at a pointer parameter of the current

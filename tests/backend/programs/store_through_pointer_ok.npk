@@ -1,0 +1,79 @@
+// expect-exit: 0
+mod:store_through_pointer_ok;
+// THE LEGAL HALF OF DEF-296 (landing 156): a view of a pointer parameter's pointee stored through a pointer local, a
+// pointer field and a slice's element -- read while the pointee stands, or with the holder's block ended before the
+// pointee is written. (A pointer local at another pointer PARAMETER's pointee is the caller's business: `@s` and `@q` handed
+// to such a callee are refused at the call by D-325's rule at the caller, on every compiler -- `probes_sib/s12`.) Exit 0 at both legs under this
+// compiler and under landing 155's (the base admitted more, never less); each check fails at its own exit.
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+struct:Outer = { Holder->:inner; int32:n; };
+func:put = NIL(Holder->:dst, fixed uint8[]:view) never fails { dst.v = view; pass NIL; };
+
+// the pointer local: the view read before the pointee moves
+func:read_first = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    hp.v = string_bytes(p.s);
+    int32:r = (h.v[0i64] => int32) + (h.v[1i64] => int32);
+    pass r;
+};
+// the holder's block ends, then the pointee is written
+func:block_ends = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+        Holder->:hp = @h;
+        hp.v = string_bytes(p.s);
+        r = h.v[0i64] => int32;
+    }
+    p.s = string_concat("x", "y");
+    pass (r + (p.s.len =>! int32));
+};
+// a pointer field on the path, read first
+func:field_path = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Outer:o = Outer{ inner: @h, n: 3i32 };
+    o.inner.v = string_bytes(p.s);
+    pass ((h.v[0i64] => int32) + o.n);
+};
+// the call road, read first
+func:call_road = int32(S->:p) never fails {
+    Holder:h = Holder{ v: string_bytes("zz"), k: 0i32 };
+    Holder->:hp = @h;
+    drop put(hp, string_bytes(p.s));
+    pass (h.v[1i64] => int32);
+};
+// a slice local's element, read first
+func:slice_elem = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    Holder[]:sl = arr[0i64...2i64];
+    sl[1i64].v = string_bytes(p.s);
+    pass ((arr[1i64].v[0i64] => int32) + arr[1i64].k);
+};
+func:main = int32(cstring[]:_~argv) {
+    S:s = S{ s: string_concat("a", "b") };
+    if ((raw read_first(@s)) != 195i32) { exit 11i32; }      // 'a' + 'b'
+    S:s2 = S{ s: string_concat("c", "d") };
+    if ((raw block_ends(@s2)) != 101i32) { exit 12i32; }     // 'c' + 2
+    if ((raw field_path(@s)) != 100i32) { exit 13i32; }      // 'a' + 3
+    if ((raw call_road(@s)) != 98i32) { exit 14i32; }        // 'b'
+    if ((raw slice_elem(@s)) != 98i32) { exit 15i32; }       // 'a' + 1
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

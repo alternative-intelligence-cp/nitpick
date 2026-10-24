@@ -22119,6 +22119,17 @@ handed by VALUE to a writer.
 
 *[2026-10-22, 1.6.1e landing 140 — a dated note (DEF-275).]* A pointer LOCAL's VALUE handed to a callee is the same write-capable access of what it points at as `@place` (alias.npk's `acc_call`): the callee's mutation summary -- its written paths, the whole pointee for a function value or any callee the escape analysis cannot read -- is judged against the view parties rooted at the pointer's name, so `Holder->:b = @hd; fixed uint8[]:v = string_bytes(b.items[0i64]); drop clobber(b);` is BORROW-015 as `clobber(@hd)` was (it read the freed bytes, 170 at both legs). The compiler's own source met the rule at four sites, each read: two were a lexical-freeze violation of the IR writer's own (`site_rewrite`'s view in its own block now), one a view of a file's path across the loader's pushes (a copy now), and one a SELF-WIRED view the emitter stored into its own fields -- `fnem_cross_gep`'s view of a `cross_geps` element's body, held in `measure_slot` and `old_slots` while the next function's `fnem_open` cleared the list -- found with the landing's `--dump-refs` tool and answered with a copy. And a limit MEASURED AND KEPT: a refinement that read `items` as disjoint from an element's owned string body (`[i].path.ptr`) was built and dropped as unsound, because a callee's mutation path `items/[…]` is `list_push`'s (which frees no body) and `list_remove`'s (which does) alike; a view of a List element's body across a push stays refused, and the author copies the bytes or ends the view's block first.
 
+*[2026-10-23, 1.6.1e landing 156 — a dated note (DEF-296, DEF-289's first face).]* A store THROUGH an indirection -- a
+pointer local's pointee (`hp.v`, `(<-hp).v`, `<-hp = …`, `(<-lp)[i].v`), a pointer field on the path (`o.inner.v` with
+`inner: @h`), a local slice's element (`sl[i].v`), and a callee's store into its pointer parameter's pointee when the caller
+hands a pointer local (`put(hp, v)`) -- lands where the indirection's refs say, and a target that is THIS frame's storage (a
+local, a by-value parameter, a `for` binding) receives the stored refs on its chain (`record_refs_through_indirection`,
+escape.npk), as a direct field store has since landing 154: a view of a pointer parameter's pointee stored that way is a party
+of the freeze, and the pointee's later write is BORROW-015. Until this landing such a pointer recorded the stored view nowhere
+(a pointer local's refs rooted at a local were skipped), and the eight spellings and the slice's compiled and read the freed
+body at both legs. A target in a pointer parameter's pointee is the store matrix's, as before; a slice PARAMETER's element
+(DEF-289's second face) has no matrix slot yet and stays open.
+
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 
 **The history.** D-004 (0.5.0) made a call's result a possible borrow of every `@`/`$$`

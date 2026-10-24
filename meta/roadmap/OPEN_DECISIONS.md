@@ -3324,7 +3324,9 @@ defect declares a `DEF-` in §2f.
 > flight at the registration: built by an agent in `wt/43e` from `.internal/DEF288_BRIEF.md`. The library seat's scan of 2026-10-23
 > 07:49 (its 435 files and every plan's .npk patches, lexed with comments and strings blanked: 94 and 114 `for` loops): no view
 > or address of a `for` binding leaves its iteration -- the two statements that carry a binding's value out copy a scalar -- and
-> none of DEF-289's, DEF-290's or DEF-291's shapes; the libraries hold no shape of the four open rows at their pin.
+> none of DEF-289's, DEF-290's or DEF-291's shapes; the libraries hold no shape of the four open rows at their pin. *[2026-10-23, landing 156: the library seat's correction of 12:02:31 -- its 07:49 scan's method
+> flagged six of `for_binding_borrows.npk`'s nine shapes; widened at 155, all nine of `for_binding_borrows.npk`'s shapes found;
+> the conclusion unchanged.]*
 > FIXED AT 155: ONE PREDICATE -- `param_decl_index(x, decl) >= 0` (escape.npk; the body of `param_index_of`), behind
 > `symbol_is_param` and its complement over the kind `symbol_is_loop_binding` -- at the fifteen sites that asked the
 > declaration's KIND (`root_is_param`, `view_root_is_param`, `collect_view_refs`' identifier arm, `push_frame_root`,
@@ -3351,7 +3353,7 @@ defect declares a `DEF-` in §2f.
 > declared directly IN a body block, which nothing does today. The checker's sentences for the binding are DEF-295.
 > `tests/analysis/rejection/for_binding_borrows.npk`, `tests/backend/programs/for_binding_borrows_ok.npk`.
 
-> **DEF-289 — OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
+> **DEF-289 — THE FIRST FACE FIXED 2026-10-23 (landing 156, with DEF-296); THE SECOND FACE OPEN (registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; HIGH: a
 > use-after-free in safe code at both legs). A VIEW OF A POINTER PARAMETER'S POINTEE STORED THROUGH A SLICE'S ELEMENT FREEZES
 > NOTHING.** `uint8[]`-shaped: `sl[0i64].v = string_bytes(p.s);` with `sl` a local slice viewing a local array of structs and `p`
 > an `S->` parameter, then `p.s = …`, then `sl[0i64].v[0i64]`: compiles and reads 170 at both legs (d05). The store lands in the
@@ -3366,6 +3368,15 @@ defect declares a `DEF-` in §2f.
 > slice's own chain names what it views (`Holder[]:sl = arr[0i64...2i64]` records a VIEW_DIRECT ref rooted at `arr`), so a
 > store through `sl[i]` could record the value's refs on each view root of the slice's chain and ask the holder-scope question
 > of that root; a slice parameter needs a store-matrix slot as a pointer parameter has. Both faces one landing.
+> THE FIRST FACE FIXED AT 156, WITH DEF-296 (one walk answers where a store through an indirection lands:
+> `record_refs_through_indirection`, escape.npk; DEF-296's row): a store through a LOCAL slice's element records the stored
+> refs on the root of what the slice VIEWS -- the slice's chain's views of an array or a slice whose element is the slice's
+> (`Holder[]:sl = arr[0i64...2i64]` names `arr`), never what that array holds, which a view of it carries transitively -- so
+> `p.s = …` is BORROW-015 at the write (d05: 0/170/170 under landing 155's compiler, BORROW-015 at 9:6 now;
+> `store_through_pointer.npk`'s f08 at 106:6). "Both faces one landing" did not hold: THE SECOND FACE STAYS OPEN -- a slice
+> PARAMETER's element (d05b) stores into the CALLER's array, and the store matrix has no slot for a view-typed parameter
+> (`.internal/handoff_35/DEF296_289_PLAN.md`'s third case: a slot for a view-typed parameter, recommended, or a by-name
+> refusal); its own landing.
 
 > **DEF-290 — FIXED 2026-10-23 (landing 155, with DEF-288; registered 2026-10-23 by `nitpick-compiler_43` at landing 154, from the DEF-287 agent's probes; MEDIUM-HIGH:
 > a legs disagreement, a wrong value at -O0). THE SELF-WIRING EXEMPTION RETURNS BEFORE THE MARK, SO A SELF-WIRED STRUCT IS HANDED
@@ -3428,6 +3439,58 @@ defect declares a `DEF-` in §2f.
 > since answering "a local destination" there needs the `dyn` binding's cell question first; and alias.npk's `bare_local_symbol`
 > and `alias_fn` reading a `for` binding holder's pre-scanned party as a parameter's (live at entry; every store that reaches it is
 > refused by the escape analysis, p14). A sentence each, with DEF-288's reading of the binding; no refusal moves.
+
+> **DEF-296 — FIXED 2026-10-23 (landing 156; built by `nitpick-compiler_43` (Fable) by `.internal/handoff_35/DEF296_289_PLAN.md`, its record read and landed by `nitpick-compiler_44`; registered 2026-10-23 by `nitpick-compiler_43` at landing 156, from the seat's sibling sweep of landing 154's
+> use-after-free (`.internal/handoff_35/probes_sib/`, 26 probes: 17 roads freeze the pointee, one road in eight faces does not); HIGH: a
+> use-after-free in safe code at both legs, DEF-289's class). A VIEW OF A POINTER PARAMETER'S POINTEE STORED THROUGH A POINTER
+> LOCAL -- OR THROUGH A POINTER FIELD ON THE PATH -- INTO THIS FRAME'S OWN STORAGE IS RECORDED NOWHERE, SO NOTHING FREEZES THE
+> POINTEE.** `Holder:h = …; Holder->:hp = @h; hp.v = string_bytes(p.s); p.s = string_concat("x", "y"); pass (h.v[0i64] => int32);`
+> with `S->:p` compiles on every compiler and reads 170 at both legs (the allocator's free poison), where the bare-local holder
+> (D-325, landing 116) and the direct field store (landing 154) are `NITPICK-BORROW-015` at the pointee's write. Eight faces, each
+> measured: the auto-dereference `hp.v = …` (s11), the explicit `(<-hp).v = …` (s11b), a `List` behind a pointer local
+> `(<-lp)[0i64].v = …` (s11c), the whole pointee `<-hp = Holder{ v: string_bytes(p.s), k: 1i32 };` (s11d), a pointer local at a
+> BY-VALUE parameter's field `Holder->:hp = @b; hp.v = …` (s11f), and a pointer FIELD on the path `Outer:o = Outer{ inner: @h };
+> o.inner.v = …` (s11g), and the s11 road inside a COROUTINE with the view held across an `await` (s11h), and the CALL road -- a callee storing the view into its pointer parameter's pointee (`dst.v = view`, in its store matrix) while the caller hands a POINTER LOCAL, `put(hp, string_bytes(p.s))` with `hp = @h` (s24; `put(@h, …)` is BORROW-015, s08, and a callee whose own pointer local copies its parameter is BORROW-015 too, s25) -- 170/170 each; the same view stored by every other road probed (a bare local, a local's field, a
+> `list_push`, an `Optional` local, an enum payload, a callee's return or store, another pointer parameter's pointee, a `Self->`
+> method's store, a `List` element overwritten, a ternary or `??` arm, an array literal's element, a struct literal pushed) is
+> BORROW-015 at the write; the FRAME-borrow twin through the same pointer local (s11e: a local's view) is `NITPICK-BORROW-002` by
+> `escape_assign`'s conservative tail. THE MECHANISM (escape.npk): `escape_assign` records the stored value's refs on a root's
+> chain only for a target `field_store_root` names (a local or by-value parameter reached through no pointer, `<-`, `?.` or slice
+> step; landing 154) or for a bare local; a target through a pointer goes to `record_flow_of_store` (1324), which folds the value's
+> refs into the function SUMMARY's store matrix for a pointer PARAMETER's pointee (`fold_flow_into_param`) and, for a pointer
+> local, "wherever the local may point" -- but reads only the local's refs rooted at a pointer PARAMETER (`param_index_of(x,
+> pr.root) < 0` -> `continue`, 1352-1353): a pointer local or a pointer field whose target is THIS frame's storage (`hp = @h`,
+> `lp = @l`, `inner: @h`) is skipped, so the stored view lands on no chain, D-325's freeze has no party for it, and `p.s = …` is
+> admitted; and at a CALL the caller applies the callee's store matrix to the ARGUMENT's root (`record_dest_refs`, `refuse_view_escape_into`), the pointer local itself, never to what the local points at, so the same view stored by the callee lands on no chain of `h` (s24). A pointee's view carries no borrow of this frame, so the tail's "only a local binding in the borrowing frame" verdict
+> (which saves s11e) never fires. THE FIX DIRECTION, as registered (before the build): in `record_flow_of_store`'s pointer-local branch (and for a pointer
+> field on the path, which `place_through_pointer`/`field_store_root` already tell apart), a ref of the pointer rooted at a LOCAL, a
+> by-value parameter or a `for` binding re-roots the stored value's refs onto THAT root's chain at the pointee's path -- what
+> `record_view_refs_at_place` does for a direct field store since landing 154 -- and asks rule 3's holder-scope question of that
+> root for a frame borrow (the tail does today); the aliasing walk then holds the party and `p.s = …` is BORROW-015. DEF-289 (a
+> slice's element) is the same question at a view's target and takes the same answer in one landing: where a store through an
+> indirection lands, when the indirection's target is this frame's own storage. Measured first over the three trees (a library
+> storing a parameter's pointee view through a pointer local into its own frame would be refused anew; the census is the
+> checker's, as D-361's was).
+> FIXED AT 156: ONE WALK, `record_refs_through_indirection(x, dest, refs, call)` (escape.npk), answers where a store through an
+> indirection lands -- called by `record_flow_of_store` with the ORIGINAL target (`<-hp = v` is a store THROUGH `hp`) and by
+> `record_dest_refs` after `fold_flow_into_param` (the call road: a bare pointer NAME handed as a destination is a store through
+> it). The indirection is the root when it is a pointer or a slice, else the last pointer-typed base on the path
+> (`path_pointer_base_type`); its TARGETS are the root's chain entries BY TYPE -- an address whose place is the pointee's type, a
+> parameter's value whose place is the pointer's own type, for a slice a view of an array or a slice of the slice's element. A
+> target rooted at a pointer PARAMETER feeds the store matrix, as before; a target rooted at a local, a by-value parameter or a
+> `for` binding (`frame_owned_key`) receives the stored refs on its chain, as a direct field store has since landing 154, so
+> D-325's freeze refuses the pointee's later write: BORROW-015 ("held by `h`") in all eight faces and DEF-289's first. A ref
+> rooted nowhere (`wild`, an allocator's result) and a pointer with no refs record nothing (D-315, D-361). ADDITIVE (the old
+> loop's matrix records kept for a direct store through a pointer-typed root) and OVER-APPROXIMATE on purpose (a struct with two
+> pointer fields re-roots onto every frame root its chain names; a view the struct holds counts as a target too). HOW IT FAILS,
+> read in the code: a chain entry whose place type is neither the pointee's nor the pointer's is no target, so a store through
+> such an indirection is recorded nowhere, as before the landing; an extra target is a freeze too many, never too few. The first
+> build's untyped target set put the stored view on the viewed root's own chain and into the matrix as a self-flow (a spurious
+> refusal at the caller, `probes_sib/s24`), the second read a slice's transitively carried views as targets ("held by `p`") --
+> both corrected before the chain. THE CENSUS (the chain's sweep over 5,270 files under landing 155's checker and this one): 9
+> sites appeared, every one the new rejection file's, 0 vanished; no file of the libraries, the applications or the fuzz corpus
+> moves. `tests/analysis/rejection/store_through_pointer.npk`, `tests/backend/programs/store_through_pointer_ok.npk`; the 26
+> probes re-run under this compiler in `wt/43g/.internal/def296/probes_sib_43g.txt`.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
