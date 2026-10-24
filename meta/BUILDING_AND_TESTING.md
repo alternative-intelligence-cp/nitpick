@@ -2016,5 +2016,16 @@ that carried them retired at the cycle close):
   (a same-block range through a slice local and `wild` storage through a slice are refused too): hand the callee
   `arr[lo...hi]` itself. STILL OPEN, each HIGH: a slice LOCAL handed to a writer under a live view of the array (DEF-297), a
   by-value struct parameter's slice field handed on (DEF-298), a slice field of a pointer parameter's pointee (DEF-299),
-  `arr[lo...hi][i].v = view` (DEF-300), a slice argument that is a call's result (DEF-301) -- do not write those shapes in
-  `src/`.
+  a slice argument that is a call's result (DEF-301) -- do not write those shapes in `src/` (`arr[lo...hi][i].v = view`,
+  DEF-300, is recorded since landing 158: "A range of named storage on a store's path is a step over that storage").
+- **A range of named storage on a store's path is a step over that storage** (DEF-300; landing 158):
+  `field_store_root` (escape.npk) answers `arr`'s symbol for `arr[lo...hi][i].v`, `arr[lo...hi][i] = …`, `l[lo...hi][i].v` and
+  `arr[0...4][1...3][0].v` -- a range step whose base is a fixed array, a `List` or another such range continues to that base
+  (`view_place` names a range's base; a range is TYPED a slice, so a walk that asks the base's type alone stops at it) -- so
+  landing 154's field branch records the stored refs on `arr`'s chain (a pointee's view: BORROW-015 at the pointee's later
+  write) and asks rule 3 of a frame borrow (a holder outside the borrowed local's block BORROW-002 at the statement; the same
+  block admitted, as `arr[i].next = @x`). A range of a SLICE is an indirection (landing 156's walk), and a range of named storage
+  is none (`path_indirection_base_type` skips it): a new walk over a store's place steps asks of a range which of the two it is,
+  or the store lands nowhere. STILL OPEN, each HIGH: DEF-297, DEF-298, DEF-299 (both with POINTER twins: a by-value struct
+  parameter's pointer field handed on or stored through, a pointee's pointer field stored through), DEF-301 -- do not write those
+  shapes in `src/`.

@@ -1,0 +1,88 @@
+// expect-exit: 0
+mod:range_store_ok;
+// THE LEGAL HALF OF A STORE THROUGH A RANGE (DEF-300, landing 158): a view stored through `arr[lo...hi][i]` and read
+// while the array lives, the pointee written only after the array's block; a copy stored through a range; a frame
+// borrow linked through a range into an array of the same block (as `arr[i].next = @x`, landing 154 -- landing 157's
+// checker refused this one by the store rule's tail); a range of a range; a `List`'s range; computed bounds. Each check
+// fails at its own exit.
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+struct:Node = { int32:v; Node->?:next; };
+func:view_in_block = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+        arr[0i64...2i64][0i64].v = string_bytes(p.s);
+        r = (arr[0i64].v[0i64] => int32);
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:copy_through = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    arr[0i64...2i64][1i64].k = (string_bytes(p.s)[0i64] => int32);
+    p.s = string_concat("xyz", "w");
+    pass arr[1i64].k;
+};
+func:link_same_block = int32() never fails {
+    Node:x = Node{ v: 7i32, next: NIL };
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    arr[0i64...2i64][1i64].next = @x;
+    pass (arr[1i64].next?.v ?? 0i32);
+};
+func:link_nested = int32() never fails {
+    Node:x = Node{ v: 9i32, next: NIL };
+    Node[3]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }, Node{ v: 3i32, next: NIL }];
+    arr[0i64...3i64][1i64...3i64][1i64].next = @x;
+    pass (arr[2i64].next?.v ?? 0i32);
+};
+func:list_in_block = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        List<Holder>:l = raw list_init::<Holder>(2i64);
+        drop list_push(@l, Holder{ v: string_bytes("zz"), k: 0i32 });
+        drop list_push(@l, Holder{ v: string_bytes("yy"), k: 1i32 });
+        l[0i64...2i64][1i64].v = string_bytes(p.s);
+        r = (l[1i64].v[1i64] => int32);
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:computed_in_block = int32(S->:p, int64:lo, int64:hi) never fails {
+    int32:r = 0i32;
+    {
+        Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+        arr[lo...hi][0i64].v = string_bytes(p.s);
+        r = (arr[lo].v[0i64] => int32);
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:main = int32(cstring[]:_~argv) {
+    S:s = S{ s: string_concat("a", "b") };
+    if ((raw view_in_block(@s)) != 97i32) { exit 11i32; }
+    if ((raw copy_through(@s)) != 120i32) { exit 12i32; }
+    if ((raw link_same_block()) != 7i32) { exit 13i32; }
+    if ((raw link_nested()) != 9i32) { exit 14i32; }
+    S:s2 = S{ s: string_concat("c", "d") };
+    if ((raw list_in_block(@s2)) != 100i32) { exit 15i32; }
+    S:s3 = S{ s: string_concat("e", "f") };
+    if ((raw computed_in_block(@s3, 1i64, 2i64)) != 101i32) { exit 16i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -312,6 +312,12 @@ pointer field, a slice, a `dyn` keep the conservative reading (`type_holds_forei
 > the loop walks: conservative where the collection outlives the loop (write `string_bytes(xs[i])` to hand a parameter's element
 > up). And a self-wired holder (`t.p = @t.a`, the 0.8.1 exemption) is marked, so it cannot leave its frame by value.
 
+> **Note (2026-10-24, landing 158, DEF-300):** an element reached through a RANGE of a fixed array or a `List`
+> (`arr[lo...hi][i].next = @x`, a range of a range) is the array's own element, so landing 154's relaxation reaches it: a
+> same-block link through such a range is admitted, and a holder outside the borrowed local's block is refused by the
+> holder-scope question at the statement, where the store rule's tail refused both before. A range of a slice stays an
+> indirection (the slice's element is wherever the slice points).
+
 ## D-005 — `Result<T>` layout — **SETTLED**
 
 Two incompatible layouts existed. The **`{ T value, tbb32 error, bool is_error }`**
@@ -22143,6 +22149,14 @@ a range of a slice, a slice parameter, an element reached through one) is BORROW
 not built. Open in the same class: a slice local handed to a writer (DEF-297), a by-value struct parameter's slice field
 (DEF-298), a pointer parameter's pointee's slice field (DEF-299), a direct store through a range of the array itself
 (DEF-300), a slice argument that is a call's result (DEF-301).
+
+*[2026-10-24, 1.6.1e landing 158 — a dated note (DEF-300).]* A store whose path steps through a range of a fixed array, a
+`List` or another such range is that storage's own element store: `arr[lo...hi][i]` is `arr`'s element, so a view stored
+there joins `arr`'s chain and this decision's freeze refuses the pointee's later write, whatever the range's bounds or the
+element's index; a range of a slice stays an indirection (the note of landing 156). Open in the same class: a slice local or
+slice field handed to a writer (DEF-297), a by-value struct parameter's slice or POINTER field (DEF-298), a pointer
+parameter's pointee's slice or POINTER field (DEF-299) -- the pointer twins measured 2026-10-24 -- and a slice argument that
+is a call's result or a ternary (DEF-301).
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 

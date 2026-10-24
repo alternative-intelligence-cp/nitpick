@@ -3678,7 +3678,8 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
 
     // A FIELD OF THIS FRAME'S OWN BINDING (DEF-287, landing 154): `n.next = @m`,
     // `o.inner.next = @m`, `arr[i].next = @m`, `l[i].next = @m` -- member steps
-    // over a struct and element steps over a fixed array or a `List`, down to a
+    // over a struct and element steps over a fixed array or a `List` (or over a
+    // range of either, DEF-300, landing 158: `arr[lo...hi][i].next = @m`), down to a
     // local of this frame or a by-value parameter of this function, with no
     // pointer, `?.`, `<-` or slice step on the way (`field_store_root`) -- is
     // that binding's own storage, and dies with it. It is asked rule 3's
@@ -3718,8 +3719,10 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
 // 154): the symbol of the root, or 0. A chain of at least one step --
 // a member step whose base is a struct (not the prelude's `List`, whose fields
 // are its header), an element step whose base is a fixed array or a `List`
-// (storage the binding owns inline or through its own buffer, freed with it;
-// a range is a view, not a place) -- down to an identifier naming a LOCAL of
+// (storage the binding owns inline or through its own buffer, freed with it)
+// or a RANGE of one (DEF-300, landing 158: `arr[lo...hi][i]` is `arr`'s own
+// element, so the walk steps over the range to its base; a range alone is a
+// view, not a place) -- down to an identifier naming a LOCAL of
 // this frame (`SYM_STMT`) or a BY-VALUE parameter of the current function,
 // whose own type is no pointer. EVERY OTHER TARGET ANSWERS 0 and keeps
 // `escape_assign`'s refusal: a step whose base is a pointer (the
@@ -3748,12 +3751,31 @@ func:field_store_root = int32(Escape->:x, ExprId:tgt) never fails {
             continue;
         }
         if (n.kind == ExprKind.ExprIndexExpr) {
-            if (!(raw expr_is_none(raw view_place(x, n)))) { pass 0i32; }
+            // A RANGE OF NAMED STORAGE ON THE PATH (DEF-300, landing 158): the element
+            // `arr[lo...hi][i]` names is `arr`'s own element, so the walk continues to
+            // the range's base when that base is an array, a `List` or another such
+            // range (`arr[0...4][1...3][0]`). A range of a SLICE is a view of storage
+            // the slice names (156's indirection walk), and a range as the whole
+            // target is no field store.
+            if (!(raw expr_is_none(raw view_place(x, n)))) {
+                if (steps == 0i32) { pass 0i32; }
+                ExprId:rb = raw expr_lhs(n);
+                int32:rbt = raw exprtypes_get(x.etypes, rb);
+                if (rbt == 0i32) { pass 0i32; }
+                bool:named = ((raw type_kind(x.types, rbt)) == (raw TY_ARRAY()));
+                if (!named) { named = raw type_is_list(x.tr, rbt); }
+                if (!named) { named = !(raw expr_is_none(raw view_place(x, raw ast_expr(x.ast, rb)))); }
+                if (!named) { pass 0i32; }
+                cur = rb;
+                continue;
+            }
             ExprId:ib = raw expr_lhs(n);
             int32:it = raw exprtypes_get(x.etypes, ib);
             if (it == 0i32) { pass 0i32; }
             bool:owned = ((raw type_kind(x.types, it)) == (raw TY_ARRAY()));
             if (!owned) { owned = raw type_is_list(x.tr, it); }
+            // an element of a range: the range step above reads its base
+            if (!owned) { owned = !(raw expr_is_none(raw view_place(x, raw ast_expr(x.ast, ib)))); }
             if (!owned) { pass 0i32; }
             cur = ib;
             steps = steps + 1i32;

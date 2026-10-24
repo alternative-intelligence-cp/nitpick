@@ -3531,6 +3531,15 @@ defect declares a `DEF-` in §2f.
 > the slice local's typed targets off its chain, as `record_refs_through_indirection` does for a store, and check the write at each
 > target's place -- DEF-275 has the same limit for a pointer value (a view taken through another name). Planned and measured
 > first (management's order, 2026-10-24: DEF-297..DEF-301 before DEF-286).
+> MEASURED 2026-10-24 (`nitpick-compiler_46`'s 28 sibling probes, `wt/44a/.internal/probes/def297/`; noted at landing 158 by
+> `nitpick-compiler_48`): the slice LOCAL (t297a, the agent's m2), a slice FIELD of a local struct (`drop w(b.sl);`, t297b), a
+> `List`'s slice local (t297f) and a second slice local declared after the view (t297h) are each 113/113 at both legs under
+> landing 156's compiler, 157's and 158's; a view taken through the slice local with the range itself handed to the writer
+> (t297e) and a slice parameter viewed and then handed to a writer (t297g) are BORROW-015 since 157, and a range taken through a
+> pointer (t297d) is refused by landing 156's walk. The census of 2026-10-24 (`wt/44a/.internal/census157/CENSUS_RESULT.txt`: a
+> scratch checker warning at every shape of DEF-297..DEF-301 and their pointer twins, swept over 5,272 files) found none in the
+> libraries, the applications or the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M2 (an argument's storage
+> read off its refs), with DEF-301.
 
 > **DEF-298 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r1; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date). A BY-VALUE STRUCT PARAMETER'S SLICE FIELD HANDED ON RECORDS
@@ -3540,6 +3549,15 @@ defect declares a `DEF-` in §2f.
 > the parameter's own type, so `g`'s summary cannot say that the storage its `b.sl` views receives the view. The same hole stands
 > for a POINTER field of a by-value struct parameter (unmeasured). Fix direction: a slot for a by-value aggregate parameter's view-
 > and pointer-typed fields (the path below the parameter kept), or a by-name refusal. Planned and measured first.
+> MEASURED 2026-10-24 (the same probes; noted at landing 158 by `nitpick-compiler_48`): WIDER THAN REGISTERED, AND NOT ABOUT
+> SLICES ALONE. The POINTER twin is the same hole: a by-value struct parameter's POINTER field handed on to a storing callee
+> (`func:g = NIL(PB:b, S->:p) never fails { drop put(b.q, p); pass NIL; }` called `drop g(PB{ q: @h }, p);`, t298b) or stored
+> through (`b.q.v = string_bytes(p.s);` in `g`, t298d) -- each 113/113 at both legs under landing 156's compiler, 157's and
+> 158's; so are the slice field's direct store (`b.sl[0i64].v = string_bytes(p.s);`, t298c) and the slice field handed to a
+> writer under a live view (`drop w(b.sl);`, t298e). The pointer-field WRITER (`b.q.o = …`, t298f) is refused only by the
+> address rule at `@h` while a view of `h` is live, not by a summary. The census found none in the libraries, the applications or
+> the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M3 (a destination path in the store matrix and the mutation
+> summary, the census first), with DEF-299.
 
 > **DEF-299 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe pf; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date). A STORE THROUGH A SLICE FIELD OF A POINTER PARAMETER'S
@@ -3550,8 +3568,15 @@ defect declares a `DEF-` in §2f.
 > whose block ends before the write; the array `b.sl` views is never frozen. The escape paths have no step for "through the slice a
 > field holds" (`f<sl>/i0/f<v>` claims a write inside the pointee). Fix direction: a path step for an indirection through a field's
 > slice or pointer, so the matrix entry names the viewed storage. Planned and measured first.
+> MEASURED 2026-10-24 (the same probes; noted at landing 158 by `nitpick-compiler_48`): WIDER THAN REGISTERED, AND NOT ABOUT
+> SLICES ALONE. The POINTER twin is the same hole: a pointer parameter's pointee's POINTER field stored through (`func:fq =
+> NIL(PB->:pb, S->:p) never fails { pb.q.v = string_bytes(p.s); pass NIL; }` called `drop fq(@b, p);` with `b` in an inner block,
+> t299c) -- 113/113 at both legs under landing 156's compiler, 157's and 158's; so is the slice field's writer
+> (`q.sl[0i64].o = …` through `B2->:q` under a live view, `b` in an inner block, t299d). With `b` in the array's own block the
+> store is BORROW-015 (t299b), and the pointer-field writer (t299e) is refused only by the address rule at `@h`. The census found
+> none in the libraries, the applications or the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M3, with DEF-298.
 
-> **DEF-300 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r2; HIGH: a
+> **DEF-300 — FIXED 2026-10-24 (landing 158; built, chained and recorded by `nitpick-compiler_46` by its plan, the record read and landed by `nitpick-compiler_48`) (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r2; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date; an odd spelling). A DIRECT STORE THROUGH A RANGE OF THE ARRAY
 > ITSELF IS RECORDED NOWHERE.** `arr[0i64...2i64][0i64].v = string_bytes(p.s); p.s = …;` then `arr[0i64].v[0i64]`, with `arr` a
 > local array and `p` an `S->` parameter: 113/113 at both legs under landing 156's compiler and 157's (`r2_direct_range_elem.npk`),
@@ -3559,6 +3584,17 @@ defect declares a `DEF-` in §2f.
 > `path_indirection_base_type` skips a range of named storage (correctly: it is no indirection), so the store lands at `arr` and is
 > recorded nowhere. Fix direction: in landing 154's direct-store branch, an element step whose base is a range of named storage
 > continues to the range's base. Planned and measured first.
+> FIXED AT 158 (2026-10-24): A RANGE OF NAMED STORAGE ON A STORE'S PATH IS A STEP OVER THAT STORAGE. `field_store_root`
+> (escape.npk) continues from a range step to the range's base when that base is a fixed array, a `List` or another such range,
+> and an element step whose base is such a range is the storage's element, so `arr[lo...hi][i].v = view` is landing 154's element
+> store: the stored refs join `arr`'s chain and D-325's freeze refuses the pointee's later write (BORROW-015), and a frame borrow
+> stored there is rule 3's question (`check_field_holder_scope`: an outer holder BORROW-002 at the statement). A range of a slice
+> stays an indirection (landing 156's walk); a `buffer`'s range stays out (its elements are bytes). ONE REFUSAL REMOVED, as at
+> landing 154: a frame borrow linked through a range into an array of the same block, which the store rule's tail refused, is
+> admitted. Measured first by `nitpick-compiler_46`'s 28 sibling probes (`wt/44a/.internal/probes/def297/`: t300a-d 113/113 at
+> both legs under landings 156 and 157); after, t300a-d and the agent's r2 are BORROW-015 at the write and the 55 other probes
+> unmoved. `tests/analysis/rejection/range_store.npk` (eight sites), `tests/backend/programs/range_store_ok.npk` (the legal
+> half).
 
 > **DEF-301 — OPEN (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe cr; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date). A SLICE ARGUMENT THAT IS A CALL'S RESULT IS NO
@@ -3568,6 +3604,12 @@ defect declares a `DEF-` in §2f.
 > slice is no destination (`dest_place`) and the store is recorded nowhere, though rule A (D-326) knows the result views `arr`. A
 > ternary's or a `pick` expression's slice is the same road (unmeasured). Fix direction: read the destination off the argument's
 > own refs (`collect_view_refs`). Planned and measured first.
+> MEASURED 2026-10-24 (the same probes; noted at landing 158 by `nitpick-compiler_48`): the call's result handed to a storing
+> callee (t301a, the agent's cr), a call's result handed to a WRITER under a live view (`drop w(raw view_h(@arr));`, t301b) and a
+> ternary's slice (`drop f(is (c) : arr[0i64...2i64] : arr[1i64...2i64], p);`, t301c) are each 113/113 at both legs under
+> landing 156's compiler, 157's and 158's; a slice LOCAL initialised from the call (t301d) is BORROW-015 since 157. The census
+> found none in the libraries, the applications or the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M2, with
+> DEF-297.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

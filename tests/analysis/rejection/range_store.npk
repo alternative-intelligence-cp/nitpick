@@ -1,0 +1,123 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 46:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 52:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 60:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 67:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 73:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 79:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 84:6
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 91:9
+mod:range_store;
+// A STORE THROUGH A RANGE OF NAMED STORAGE IS A STORE INTO THAT STORAGE (DEF-300, landing 158).
+// `arr[lo...hi][i]` names `arr`'s own element, so a store through it is the element store landing 154 records:
+// `field_store_root` continues from a range step to the range's base when that base is an array, a `List` or
+// another such range, and a view of a pointer parameter's pointee stored there freezes the pointee -- its later
+// write is `NITPICK-BORROW-015` while the array lives. A frame borrow stored through a range into an array declared
+// outside the borrowed local's block is rule 3's `NITPICK-BORROW-002`, as `arr[i].next = @x` is. Before this landing
+// every function below compiled, and the hazardous ones read freed bytes at both legs
+// (`.internal/probes/def297/t300*`: 113 for 97).
+//
+//   r01  a field of an element through a range                      BORROW-015 at the write
+//   r02  the whole element replaced through a range                 BORROW-015 at the write
+//   r03  a `List`'s range                                           BORROW-015 at the write
+//   r04  a range of a range (`arr[0...4][1...3][0]` is `arr[1]`)    BORROW-015 at the write
+//   r05  a range with computed bounds                               BORROW-015 at the write
+//   r06  a range of a local struct's array field                    BORROW-015 at the write
+//   r07  a range of a by-value parameter's array field              BORROW-015 at the write
+//   r08  a frame borrow through a range into an outer array         BORROW-002 at the store
+//
+// Controls carrying no code: the array's block ending before the pointee's write; a COPY stored through a range; a
+// frame borrow through a range into an array of the same block -- ADMITTED from this landing, as the element store
+// `arr[i].next = @x` has been since landing 154 (landing 157's checker refuses it by the store rule's tail).
+struct:S = { string:s; };
+struct:Holder = { (fixed uint8[]):v; int32:k; };
+struct:Node = { int32:v; Node->?:next; };
+struct:Bag = { Holder[2]:items; };
+func:r01 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    arr[0i64...2i64][0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:r02 = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    arr[0i64...2i64][1i64] = Holder{ v: string_bytes(p.s), k: 2i32 };
+    p.s = string_concat("x", "y");
+    pass (arr[1i64].v[0i64] => int32);
+};
+func:r03 = int32(S->:p) never fails {
+    List<Holder>:l = raw list_init::<Holder>(2i64);
+    drop list_push(@l, Holder{ v: string_bytes("zz"), k: 0i32 });
+    drop list_push(@l, Holder{ v: string_bytes("yy"), k: 1i32 });
+    l[0i64...2i64][0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (l[0i64].v[0i64] => int32);
+};
+func:r04 = int32(S->:p) never fails {
+    Holder[4]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 },
+                     Holder{ v: string_bytes("xx"), k: 2i32 }, Holder{ v: string_bytes("ww"), k: 3i32 }];
+    arr[0i64...4i64][1i64...3i64][0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (arr[1i64].v[0i64] => int32);
+};
+func:r05 = int32(S->:p, int64:lo, int64:hi) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    arr[lo...hi][0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (arr[0i64].v[0i64] => int32);
+};
+func:r06 = int32(S->:p) never fails {
+    Bag:o = Bag{ items: [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }] };
+    o.items[0i64...2i64][0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (o.items[0i64].v[0i64] => int32);
+};
+func:r07 = int32(Bag:b, S->:p) never fails {
+    b.items[0i64...2i64][0i64].v = string_bytes(p.s);
+    p.s = string_concat("x", "y");
+    pass (b.items[0i64].v[0i64] => int32);
+};
+func:r08 = int32() never fails {
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    if (true) {
+        Node:x = Node{ v: 7i32, next: NIL };
+        arr[0i64...2i64][1i64].next = @x;
+    }
+    pass (arr[1i64].next?.v ?? 0i32);
+};
+
+// --- controls -------------------------------------------------------------------------------------------------------
+func:ctl_block_ended = int32(S->:p) never fails {
+    int32:r = 0i32;
+    {
+        Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+        arr[0i64...2i64][0i64].v = string_bytes(p.s);
+        r = (arr[0i64].v[0i64] => int32);
+    }
+    p.s = string_concat("x", "y");
+    pass r;
+};
+func:ctl_copy = int32(S->:p) never fails {
+    Holder[2]:arr = [Holder{ v: string_bytes("zz"), k: 0i32 }, Holder{ v: string_bytes("yy"), k: 1i32 }];
+    string:c = string_concat("", p.s);
+    {
+        fixed uint8[]:cv = string_bytes(c);
+        int32:n = (cv[0i64] => int32);
+        arr[0i64...2i64][0i64].k = n;
+    }
+    p.s = string_concat("x", "y");
+    pass arr[0i64].k;
+};
+func:ctl_same_block_link = int32() never fails {
+    Node:x = Node{ v: 7i32, next: NIL };
+    Node[2]:arr = [Node{ v: 1i32, next: NIL }, Node{ v: 2i32, next: NIL }];
+    arr[0i64...2i64][1i64].next = @x;
+    pass (arr[1i64].next?.v ?? 0i32);
+};
