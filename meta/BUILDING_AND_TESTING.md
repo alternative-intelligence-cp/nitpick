@@ -2042,5 +2042,22 @@ that carried them retired at the cycle close):
   binding's opaque step (it was `R` until 159). A new producer of a path text goes through `path_join` or `path_rel_compute`,
   which level it; a new reader reads `P`, `e` and `E` (alias.npk's `decode_step`: `Step` kinds 3 and 4) and compares LEVELLED
   (`level_steps` before `overlap_class`), or a range's element stands one position too far and two overlapping places read
-  disjoint. STILL OPEN, each HIGH: DEF-302 (a view taken through one name and a write through a pointer to the same storage by
-  another: fourteen shapes), DEF-298, DEF-299 -- do not write those shapes in `src/`.
+  disjoint. STILL OPEN, each HIGH: DEF-298, DEF-299 -- do not write those shapes in `src/` (DEF-302, the pointer-alias twin named
+  here, is fixed at landing 160 -- the next gotcha).
+
+- **A write through a pointer is a write to its TARGET** (DEF-302, landing 160; alias.npk). The aliasing walk resolves a NAMED
+  pointer rooted at a local to the storage it points at (`pointer_targets_of`: off the root's chain -- a `REF_ADDR` of the
+  pointee's type, a `REF_PASS` of the pointer's -- a two-level `bp.p` one hop at a time, fuel-bounded and OVER-APPROXIMATE, so a
+  re-pointed pointer carries both targets, the one safe refusal k302a), and `check_access_reported` runs two readers for a WRITE
+  or EXCLUSIVE access that is not a `$$`-claim (D-286's same-root rule kept for the claims, `mode != CHECK_CLAIMS`): the forward
+  `check_pointer_targets` (the write re-rooted at each target via `ptr_write_base`, the write's steps BELOW the pointer composed
+  onto the target's own, against the view parties there and the views through a pointer at the same target) and the reverse
+  `check_pointer_view_parties` (a write by the pointee's own name against the views through a pointer at it). A pointer's target
+  is its root COMPOSED WITH THE PATH BELOW IT -- `hp.o` targets `h.o`, not the whole of `h` -- so a write to a disjoint field
+  reads disjoint; a new reader that forgets the composition reads two disjoint places as conflicting, or re-roots at the wrong
+  level. A pointer rooted at a PARAMETER is DEF-275's store-matrix question (unchanged); a pointer with NO name (a call's result)
+  or composed with a slice is DEF-305 (open). A `Self->` pointer-value method receiver routes through `check_written`
+  (`acc_call`'s `recv_ptr_param`). And `decreases fuel` on landing 159's two recursive slice-type helpers
+  (`escape_type_may_hold_run`, `escape_view_carriers`) discharged their stack-depth rows: a new recursive escape or type-graph
+  walk states `decreases <fuel>` or its `stack-depth` row stands `open`. STILL OPEN, each HIGH: DEF-298, DEF-299, DEF-304 (a
+  plain pointer into a `List` element across a reallocating operation), DEF-305 -- do not write those shapes in `src/`.

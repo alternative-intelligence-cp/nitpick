@@ -978,6 +978,18 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
             if (raw check_slice_targets(x, sb, akind, at, mode)) { pass true; }
         }
     }
+    // A WRITE THROUGH A POINTER vs A VIEW OF ITS POINTEE BY ANOTHER NAME, and the
+    // reverse (DEF-302, landing 160): a view taken through one name and a write
+    // through another, one of them a POINTER to the same storage, root at two
+    // different symbols and never meet in the same-root loop above. Two readers,
+    // the pointer's twin of the slice-targets check: the write through a pointer
+    // re-rooted at what the pointer points at, and a write by the pointee's own
+    // name against views taken through a pointer at it. The claims keep D-286's
+    // same-root rule (`mode != CHECK_CLAIMS`).
+    if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_CLAIMS()))) {
+        if (raw check_pointer_targets(x, place, ap, akind, at, mode)) { pass true; }
+        if (raw check_pointer_view_parties(x, root, ap, akind, at, 0i32)) { pass true; }
+    }
     pass false;
 };
 
@@ -1042,6 +1054,212 @@ func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:s
         }
         drop report_lent_conflict(x, p, akind, tgt.root, ap, at);
         pass true;
+    }
+    pass false;
+};
+
+// --- a view and a write through a pointer to one storage (DEF-302, landing 160) -----
+//
+// THE LAST POINTER-TYPED BASE on a place's path (the one nearest the written
+// part), or none: `hp.o` answers `hp`, `o.inner.v` answers `o.inner`, `bp.p.o`
+// answers `bp.p`.
+func:ptr_last_base = ExprId(Alias->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass (raw expr_none()); }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        ExprId:base = raw expr_none();
+        bool:found = false;
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { base = raw expr_operand(n); found = true; }
+        if (n.kind == ExprKind.ExprIndexExpr) { base = raw expr_lhs(n); found = true; }
+        if (n.kind == ExprKind.ExprDerefExpr) { base = raw expr_operand(n); found = true; }
+        if (!found) { pass (raw expr_none()); }
+        int32:t = raw exprtypes_get(x.etypes, base);
+        if (t != 0i32) {
+            if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { pass base; }
+        }
+        cur = base;
+    }
+    pass (raw expr_none());
+};
+
+// THE POINTER an access of `place` with `n` steps goes through: the place itself
+// when the access continues past its own steps and it is a pointer (a bare `hp`
+// handed a written path below it -- a method's `self.o`), else the last
+// pointer-typed base on its path.
+func:ptr_write_base = ExprId(Alias->:x, ExprId:place, int64:n) never fails {
+    List<Step>:own = raw list_init::<Step>(8i64);
+    if (raw path_steps(x, place, @own)) {
+        if (n > own.count) {
+            int32:t = raw exprtypes_get(x.etypes, place);
+            if (t != 0i32) {
+                if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { pass place; }
+            }
+        }
+    }
+    pass (raw ptr_last_base(x, place));
+};
+
+// IS THIS CHAIN REF A TARGET of a pointer of type `pty` (pointee `pte`)? an
+// address whose place IS the pointee type (`hp = @h`), a parameter's value
+// carried whose place is the pointer's own type (`hp = p2`).
+func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never fails {
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: vr.place });
+    if (pt == 0i32) { pass false; }
+    if (vr.kind == (raw REF_ADDR())) { pass (pt == pte); }
+    if (vr.kind == (raw REF_PASS())) { pass (pt == pty); }
+    pass false;
+};
+
+// THE STEPS of a target ref, root-outward (its place's steps, an `@place` peeled,
+// plus its interned path below).
+func:ptr_target_steps = bool(Alias->:x, ViewRef:vr, List<Step>->:out) never fails {
+    ExprId:pl = ExprId{ index: vr.place };
+    if (raw expr_is_none(pl)) { pass false; }
+    ExprNode:pn = raw ast_expr(x.ast, pl);
+    if (pn.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(pn); }
+    if (!(raw path_steps(x, pl, out))) { pass false; }
+    drop decode_path(x, vr.path, out);
+    pass true;
+};
+
+// THE LAST POINTER-TYPED BASE INCLUSIVE of `e` (e itself when it is a pointer,
+// else the last pointer base inside it), or none.
+func:ptr_base_incl = ExprId(Alias->:x, ExprId:e) never fails {
+    if (raw expr_is_none(e)) { pass (raw expr_none()); }
+    int32:t = raw exprtypes_get(x.etypes, e);
+    if ((t != 0i32) && ((raw type_kind(x.types, t)) == (raw TY_POINTER()))) { pass e; }
+    pass (raw ptr_last_base(x, e));
+};
+
+// THE POINTER `pe` IS ITSELF REACHED THROUGH (a two-level pointer): `bp.p` is
+// reached through `bp`, `bp.p.q` through `bp.p`; `hp` and `o.inner` (a field of
+// a local) through none. The structural base of `pe`'s own outermost step,
+// taken to its last pointer base inclusive.
+func:ptr_inner_base = ExprId(Alias->:x, ExprId:pe) never fails {
+    ExprNode:n = raw ast_expr(x.ast, pe);
+    ExprId:base = raw expr_none();
+    if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { base = raw expr_operand(n); }
+    if (n.kind == ExprKind.ExprIndexExpr) { base = raw expr_lhs(n); }
+    if (n.kind == ExprKind.ExprDerefExpr) { base = raw expr_operand(n); }
+    if (raw expr_is_none(base)) { pass (raw expr_none()); }
+    pass (raw ptr_base_incl(x, base));
+};
+
+// THE STORAGE A POINTER PLACE `pe` POINTS AT, as target ViewRefs (DEF-302): read
+// off the chain of `pe`'s root. A bare pointer local or a pointer field of a
+// LOCAL (`hp`, `o.inner`) takes its targets off the root's own chain (`hp = @h`,
+// `o.inner = @h` both recorded `@h` there). A pointer reached THROUGH another
+// pointer (`bp.p`: `bp = @b`, `b.p = @h`) is resolved one hop at a time -- the
+// inner pointer `bp` to its pointees `{b}`, then each pointee's chain for this
+// pointer's own targets (`@h` of type `pte`). Fuel-bounded; over-approximate as
+// `record_refs_through_indirection` is (any ref of the pointee type is a target).
+func:pointer_targets_of = NIL(Alias->:x, ExprId:pe, int32:fuel, List<ViewRef>->:out) never fails {
+    if (fuel <= 0i32) { pass NIL; }
+    if (raw expr_is_none(pe)) { pass NIL; }
+    int32:r = raw place_root_symbol(x, pe);
+    if (r == 0i32) { pass NIL; }
+    Symbol:sy = raw symtab_get(x.tab, r);
+    if (sy.origin_kind != (raw SYM_STMT())) { pass NIL; }   // a local's chain holds where it points
+    int32:pty = raw exprtypes_get(x.etypes, pe);
+    if (pty == 0i32) { pass NIL; }
+    int32:pte = raw type_elem(x.types, pty);
+    ExprId:inner = raw ptr_inner_base(x, pe);
+    if (!(raw expr_is_none(inner))) {
+        // reached through a pointer: resolve it, then each pointee's chain
+        List<ViewRef>:innertgts = raw list_init::<ViewRef>(4i64);
+        drop pointer_targets_of(x, inner, fuel - 1i32, @innertgts);
+        for (int64:ii in 0i64...innertgts.count) {
+            int32:rr = innertgts[ii].root;
+            if (rr == 0i32) { continue; }
+            Symbol:rsy = raw symtab_get(x.tab, rr);
+            if (rsy.origin_kind != (raw SYM_STMT())) { continue; }
+            int32:e2 = raw escape_view_ref_first(x.esc, rsy.origin);
+            while (e2 >= 0i32) decreases e2 + 1i32 {
+                ViewRef:vr2 = raw escape_view_ref(x.esc, e2);
+                e2 = raw escape_view_ref_next(x.esc, e2);
+                if (vr2.root == 0i32) { continue; }
+                if (vr2.root == rr) { continue; }
+                if (!(raw ptr_ref_is_target(x, vr2, pty, pte))) { continue; }
+                drop list_push(out, vr2);
+            }
+        }
+        pass NIL;
+    }
+    int32:e = raw escape_view_ref_first(x.esc, sy.origin);
+    while (e >= 0i32) decreases e + 1i32 {
+        ViewRef:vr = raw escape_view_ref(x.esc, e);
+        e = raw escape_view_ref_next(x.esc, e);
+        if (vr.root == 0i32) { continue; }
+        if (vr.root == r) { continue; }
+        if (!(raw ptr_ref_is_target(x, vr, pty, pte))) { continue; }
+        drop list_push(out, vr);
+    }
+    pass NIL;
+};
+
+// FORWARD (DEF-302): a write through a pointer -- a pointer local's pointee
+// (`hp.o`), a pointer field's, a two-level `bp.p`, a pointer returned or copied --
+// re-rooted at each storage the pointer points at (`pointer_targets_of`), the
+// write's steps below the pointer composed on, against the view parties THERE
+// (`check_view_parties_at`, DEF-297's reader) and the views taken through a
+// pointer at the same target (`check_pointer_view_parties`). A bare pointer NAME
+// written whole under `CHECK_ALL` is a reassignment (`hp = …`), left alone.
+func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:akind, Span:at, int32:mode) never fails {
+    ExprNode:pn = raw ast_expr(x.ast, place);
+    if ((pn.kind == ExprKind.ExprIdentifierExpr) && (ap.count == 0i64) && (mode == (raw CHECK_ALL()))) {
+        if (raw root_ident_is_pointer(x, place)) { pass false; }
+    }
+    ExprId:pe = raw ptr_write_base(x, place, ap.count);
+    if (raw expr_is_none(pe)) { pass false; }
+    int32:r = raw place_root_symbol(x, pe);
+    List<Step>:pre = raw list_init::<Step>(8i64);
+    if (!(raw path_steps(x, pe, @pre))) { pass false; }
+    if (pre.count > ap.count) { pass false; }
+    List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
+    drop pointer_targets_of(x, pe, 8i32, @tgts);
+    for (int64:i in 0i64...tgts.count) {
+        ViewRef:vr = tgts[i];
+        List<Step>:tp = raw list_init::<Step>(8i64);
+        if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
+        for (int64:k in pre.count...ap.count) { drop list_push(@tp, ap[k]); }
+        if (raw check_view_parties_at(x, vr, tp, 0i32, akind, at, mode)) { pass true; }
+        if (raw check_pointer_view_parties(x, vr.root, tp, akind, at, r)) { pass true; }
+    }
+    pass false;
+};
+
+// REVERSE (DEF-302): a write to `root` at `ap` by the pointee's own name, against
+// each live VIEW party taken THROUGH a pointer whose storage includes `root`
+// (`vw = string_bytes(hp.o)`, write `h.o`; two-level `bp.p.o`). `skip` is the
+// write's own pointer root, when this is called from the forward reader.
+func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int32:akind, Span:at, int32:skip) never fails {
+    for (int64:i in 0i64...x.live.count) {
+        Party:p = x.live[i];
+        if (p.kind != (raw PARTY_VIEW())) { continue; }
+        if (p.root == root) { continue; }
+        if ((skip != 0i32) && (p.root == skip)) { continue; }
+        if (!(raw conflicts(p.kind, akind))) { continue; }
+        List<Step>:pp = raw list_init::<Step>(8i64);
+        if (!(raw party_steps(x, p, @pp))) { continue; }
+        ExprId:pe = raw ptr_write_base(x, p.place, pp.count);
+        if (raw expr_is_none(pe)) { continue; }
+        List<Step>:pre = raw list_init::<Step>(8i64);
+        if (!(raw path_steps(x, pe, @pre))) { continue; }
+        if (pre.count > pp.count) { continue; }
+        List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
+        drop pointer_targets_of(x, pe, 8i32, @tgts);
+        for (int64:j in 0i64...tgts.count) {
+            ViewRef:vr = tgts[j];
+            if (vr.root != root) { continue; }
+            List<Step>:tp = raw list_init::<Step>(8i64);
+            if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
+            for (int64:k in pre.count...pp.count) { drop list_push(@tp, pp[k]); }
+            int32:cls = raw overlap_class(x, tp, ap);
+            if (cls == (raw OV_DISJOINT())) { continue; }
+            drop report_view_conflict(x, p, akind, root, ap, cls, at);
+            pass true;
+        }
     }
     pass false;
 };
@@ -1813,6 +2031,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                 drop refuse_shared_to_writer(x, id, 0i32, rsym, (raw ast_expr(x.ast, recv)).span);
             } }
         }
+        bool:recv_ptr_param = ptr_recv;   // the method takes a pointer receiver (Self->)
         if (recv_is_ptr) { ptr_recv = false; }
         if (ptr_recv) { rk = raw ACC_WRITE(); }
         int32:rcallee = raw escape_call_fn(x.esc, id);
@@ -1842,6 +2061,15 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                 x.skip_lent = false;
             } else {
                 drop acc_expr(x, recv, rk, depth);
+            }
+            // A POINTER-VALUE RECEIVER OF A `Self->` METHOD (DEF-302, landing 160):
+            // `hp.set()` where `set` writes `self.o` writes through what `hp`
+            // points at, as `f(hp)` does (DEF-275); checked against the views
+            // there (`check_written` → `check_pointer_targets`). The else branch
+            // read `recv` only; a by-value receiver (`recv_ptr_param` false) gets
+            // a copy and writes through nothing.
+            if (recv_ptr_param && recv_is_ptr && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
+                drop check_written(x, recv, rcallee, 0i32, (raw ast_expr(x.ast, recv)).span);
             }
         }
     }

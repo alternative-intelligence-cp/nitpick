@@ -1984,7 +1984,7 @@ func:escape_struct_field_type = int32(Escape->:x, int32:t, int32:name) never fai
 // (a string's bytes are viewed read-only, D-351); every other kind -- an enum
 // with payloads, a `dyn`, a `buffer`, `any` -- and fuel run out answer yes,
 // the closed direction.
-func:escape_type_may_hold_run = bool(Escape->:x, int32:t, int32:pte, int32:fuel, List<int32>->:seen) never fails {
+func:escape_type_may_hold_run = bool(Escape->:x, int32:t, int32:pte, int32:fuel, List<int32>->:seen) decreases fuel never fails {
     if (t == 0i32) { pass true; }
     if (fuel <= 0i32) { pass true; }
     for (int64:s in 0i64...seen.count) { if ((<-seen)[s] == t) { pass false; } }
@@ -2118,7 +2118,7 @@ pub func:escape_slice_own_holder = int32(Escape->:x, ExprId:base) never fails {
 // and a type that holds no address carries none; every other kind that may
 // hold one -- a pointer, an `Optional`, a `List`, an inline array of such, an
 // enum with payloads, a `dyn` -- and fuel run out answer 2, the closed direction.
-func:escape_view_carriers = int32(Escape->:x, int32:t, int32:fuel) never fails {
+func:escape_view_carriers = int32(Escape->:x, int32:t, int32:fuel) decreases fuel never fails {
     if (t == 0i32) { pass 2i32; }
     if (fuel <= 0i32) { pass 2i32; }
     int32:k = raw type_kind(x.types, t);

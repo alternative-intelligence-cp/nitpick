@@ -1,0 +1,231 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 83:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 90:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 97:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 105:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 112:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 126:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 133:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:8
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 148:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 156:9
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 163:10
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 170:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 179:28
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 189:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 196:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 206:7
+mod:pointer_alias_store;
+// A WRITE THROUGH A POINTER IS A WRITE TO ITS TARGET (DEF-302, the named-pointer layer).
+// A pointer `hp = @h` (or `@arr[i]`, `@h.o`, a pointer field, a copy of another pointer, a pointer two levels
+// down) TARGETS the storage it was taken of, so a write through it -- `hp.o = v`, `(<-hp).o = v`, `<-hp = H2{..}`,
+// `hp.set()`, `move(hp.o)`, a callee `wp(hp)` -- is a write to that target. The aliasing walk now resolves a
+// pointer's target(s) from its place chain (transitively, through fields and copies) and checks both directions:
+// a VIEW of the target held across a write through the pointer, and a view THROUGH the pointer held across a write
+// to the target by another name or a callee. Before this landing every function below compiled, and the hazardous
+// ones read freed bytes at both legs (`.internal/probes/m2/q302*`, `q275*`, `s302*`, `k302a`: 113 for 97).
+//
+//   01  direct write through the pointer                            BORROW-015 at the write
+//   02  explicit dereference `(<-hp).o = v`                         BORROW-015 at the write
+//   03  the whole pointee replaced `<-hp = H2{..}`                  BORROW-015 at the write
+//   04  two pointers to one target: view via one, write via other  BORROW-015 at the write
+//   05  a pointer to an array element                              BORROW-015 at the write
+//   06  a pointer to a field                                       BORROW-015 at the write
+//   07  reverse: view through the pointer, a callee writes the root BORROW-015 at the call
+//   08  a writer callee handed the pointer                         BORROW-015 at the call
+//   09  a pointer in a struct field (`b.p.o = v`)                  BORROW-015 at the write
+//   10  a copy of the pointer (`hq = hp; hq.o = v`)                BORROW-015 at the write
+//   11  a pointer two levels down (`bp.p.o = v`)                   BORROW-015 at the write
+//   12  a method through the pointer (`hp.set()`)                  BORROW-015 at the call
+//   13  a generic instance behind the pointer                     BORROW-015 at the write
+//   14  the write inside a loop                                   BORROW-015 at the write
+//   15  a List of pointers (`ps[0].o = v`)                        BORROW-015 at the write
+//   16  a move out through the pointer (`move(hp.o)`)             BORROW-015 at the move
+//   17  CONSERVATIVE: a re-pointed pointer written under a view of its FIRST target. SAFE (the pointer now targets
+//       `g`, and writing `g.o` does not free the `h.o` the view names), but the walk cannot prove the pointer no
+//       longer targets `h`, so it refuses. 0 tree sites (its census is clean); the one refusal of safe code this
+//       landing adds. Recorded under D-286; store a copy, or read the view before re-pointing.
+//
+// Controls carrying no code (clean -- the rule is precise): the view taken AFTER the write; a write to a DISJOINT
+// field of the target; a pointer to a DIFFERENT local than the one viewed.
+struct:H2 = { string:o; };
+struct:H4 = { string:x; };
+struct:H3 = { H4:o; };
+struct:H5 = { string:a; string:b; };
+struct:PB = { H2->:p; };
+struct:G<T> = { T:o; int32:k; };
+impl:H2 = {
+    func:set = NIL(Self->:self) never fails { self.o = string_concat("x", "y"); pass NIL; };
+};
+func:wp = NIL(H2->:q) never fails { q.o = string_concat("x", "y"); pass NIL; };
+
+func:direct_write = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:explicit_deref = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    (<-hp).o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:whole_pointee = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    <-hp = H2{ o: string_concat("x", "y") };
+    pass (vw[0i64] => int32);
+};
+func:two_pointers = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    H2->:hq = @h;
+    fixed uint8[]:vw = string_bytes(hp.o);
+    hq.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ptr_to_element = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2->:hp = @arr[0i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    hp.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ptr_to_field = int32() never fails {
+    H3:h = H3{ o: H4{ x: string_concat("a", "b") } };
+    H4->:hp = @h.o;
+    fixed uint8[]:vw = string_bytes(h.o.x);
+    hp.x = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:reverse_callee = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(hp.o);
+    drop wp(@h);
+    pass (vw[0i64] => int32);
+};
+func:writer_callee = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wp(hp);
+    pass (vw[0i64] => int32);
+};
+func:ptr_in_struct_field = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    PB:b = PB{ p: @h };
+    fixed uint8[]:vw = string_bytes(h.o);
+    b.p.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ptr_copied = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    H2->:hq = hp;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hq.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:two_level = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    PB:b = PB{ p: @h };
+    PB->:bp = @b;
+    fixed uint8[]:vw = string_bytes(h.o);
+    bp.p.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:method_through_ptr = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop hp.set();
+    pass (vw[0i64] => int32);
+};
+func:generic_instance = int32() never fails {
+    G<string>:h = G{ o: string_concat("a", "b"), k: 0i32 };
+    G<string>->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:loop_write = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    int32:i = 0i32;
+    while (i < 2i32) decreases 2i32 - i {
+        if (i == 1i32) { hp.o = string_concat("x", "y"); }
+        i = i + 1i32;
+    }
+    pass (vw[0i64] => int32);
+};
+func:list_of_ptrs = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    List<H2->>:ps = raw list_init::<H2->>(1i64);
+    drop list_push(@ps, @h);
+    fixed uint8[]:vw = string_bytes(h.o);
+    ps[0i64].o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:move_through_ptr = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    string:t = move(hp.o);
+    if (t.len == 999i64) { pass 0i32; }
+    pass (vw[0i64] => int32);
+};
+func:repointed_then_written = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:hp = @h;
+    hp = @g;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+
+func:ctl_view_after_write = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    hp.o = string_concat("x", "y");
+    fixed uint8[]:vw = string_bytes(h.o);
+    pass (vw[0i64] => int32);
+};
+func:ctl_disjoint_fields = int32() never fails {
+    H5:h = H5{ a: string_concat("a", "b"), b: string_concat("c", "d") };
+    H5->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.a);
+    hp.b = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ctl_ptr_to_other_local = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:hp = @g;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};

@@ -19404,6 +19404,8 @@ since 1.5.5 and the checker had never reported it.
 
 *[2026-10-22, 1.6.1e landing 140 — a dated note (DEF-275).]* A call's argument that is a pointer-typed PLACE CHAIN (`b`, `s.next`, `(<-p).q`) is read by the aliasing walk as an access of what it reaches, not only as a read of the binding: the callee's written paths are checked against the view parties of the argument's root exactly as `@place`'s are, since the callee writes through the value as it would through the address. A bare or `#` builtin is exempt (its aliasing is the reference's own row, D-249). What stays as it was: a view of a `List` element's body across `list_push` conflicts with the push's `items/[…]` (the conservative answer, kept on purpose -- see D-325's note of the same day).
 
+*[2026-10-24, 1.6.1e landing 160 — a dated note (DEF-302).]* Landing 140's reading (above) is widened to a NAMED pointer that is not itself the argument: the aliasing walk resolves a pointer rooted at a local to the storage it points at and compares a write through it with the views of that storage taken by ANY name, and the reverse (`check_pointer_targets`, `check_pointer_view_parties`, alias.npk). These readers run for WRITE and EXCLUSIVE accesses only, NOT for a `$$i`/`$$m` claim (`mode != CHECK_CLAIMS`): this decision's same-root rule for the claims is kept whole. A pointer rooted at a PARAMETER is unchanged (DEF-275). A pointer with NO name (a call's result) or composed with a slice is not yet resolved (DEF-305). A plain address into a `List` element held across a reallocating operation (DEF-304) is the open question for this decision's plain-address rule, waiting on the author (Q75).
+
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
 Found planning 1.5.5 (2026-09-11, on `cb8cbb0`; DEF-43). `fixed int32:x =
@@ -22167,6 +22169,17 @@ views excepted, and a callee's store through it lands there. And a range's eleme
 element somewhere in a range's extent where the sum is unknown). Open in the same class: a view taken through one name
 and a write through a pointer to the same storage by another (DEF-302), a by-value struct parameter's slice or pointer
 field (DEF-298), a pointer parameter's pointee's slice or pointer field (DEF-299).
+
+*[2026-10-24, 1.6.1e landing 160 — a dated note (DEF-302).]* This freeze is asked of a NAMED pointer's target too: the
+aliasing walk resolves a pointer rooted at a local to the storage it points at (`pointer_targets_of`: off its root's
+chain, a two-level pointer one hop at a time, fuel-bounded and over-approximate) and compares both directions -- a view of
+the pointee held by one name across a write through the pointer by another, and the reverse -- so a write through `hp.o`
+is a write-capable access of `h.o` while a view of `h.o` is live (BORROW-015). The pointer's target is its root composed
+with the path below it, so a write to a disjoint field reads disjoint. One safe shape refused by design (k302a, a
+re-pointed pointer written under a view of its first target -- the resolver is flow-insensitive; see D-286's note of the
+same day; 0 tree sites). A pointer rooted at a PARAMETER stays DEF-275's store-matrix question; a pointer with no name or
+composed with a slice is DEF-305. Still open in the same class: DEF-298, DEF-299, and a plain pointer into a `List`
+element across a reallocating operation (DEF-304).
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 

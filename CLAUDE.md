@@ -8,12 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 159** — DEF-297 + DEF-301 (a slice no range names views the storage its refs say: a write or a store through
-  it is checked there) and DEF-303 (a range's element is its storage's element; one refusal removed). Every landing's full paragraph — the defect, what was measured first, the rule now, the
+- **main = landing 160** — DEF-302 (a write through a pointer is a write to its target: the aliasing walk resolves a named
+  pointer's target(s) from its place chain and compares both directions — a view of the pointee by one name across a write through the pointer by another, and the reverse; sixteen spellings closed, one safe shape refused by design). Every landing's full paragraph — the defect, what was measured first, the rule now, the
   tests, the sweep, the emission comparison, the manifest — is at the top of `meta/STATUS_HISTORY.md`, newest first; the cycle history
   0.0–1.5 follows it there. Read the newest few before planning work.
-- **The queue:** DEF-302 (HIGH: a view through one name and a write through a pointer by another, fourteen shapes; registered
-  at 159), then DEF-298 + DEF-299 (HIGH: DEF-289's class's last two faces, with their pointer twins), then DEF-286 (function types keyed by content; the libraries' next re-pin waits for it and carries every safety fix)
+- **The queue:** DEF-304's plan and census (HIGH: a plain pointer into a `List` element held across a reallocating operation;
+  the author needs them for Q75), then DEF-305 (HIGH: a pointer with no name or composed with a slice; registered at 160, smaller than and independent of M3), then DEF-298 + DEF-299 (HIGH: DEF-289's class's last two faces, with their pointer twins, s302k/s302l), then DEF-286 (function types keyed by content; the libraries' next re-pin waits for it and carries every safety fix)
   -- management's order of 2026-10-24, safety before performance -- then DEF-292, DEF-293, DEF-294,
   DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of record is `meta/roadmap/` (start at `ROADMAP.md`; cycle 1.6's map is
   `meta/roadmap/1.6/README.md`, its subcycle record `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is a row of
@@ -286,6 +286,7 @@ Five more, each a 1.4 debugging cycle:
 - Write `comptime(width::<int32>())` — see "A generic `comptime func:` is called with its type arguments written, and a comptime body may `move`"
 - Hand a storing callee `arr[lo...hi]` itself; a slice local or field is BORROW-009 — see "A slice parameter's element is a store-matrix slot, and a slice argument is a destination"
 - Step a store walk over a range of an array or `List`; a slice's range is an indirection — see "A range of named storage on a store's path is a step over that storage"
+- Compose a pointer's path below it onto its target (`hp.o` targets `h.o`, not `h`); give a new recursive escape walk `decreases <fuel>` — see "A write through a pointer is a write to its TARGET"
 - Ask `escape_slice_targets` for a slice's storage; read `P`/`e`/`E` and compare paths levelled — see "A slice's storage is read off its refs, and a path's text is LEVELLED"
 
 ### Reserved words that read like ordinary names

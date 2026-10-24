@@ -1,0 +1,86 @@
+// expect-exit: 0
+mod:pointer_alias_store_ok;
+// THE LEGAL HALF OF A WRITE THROUGH A POINTER (DEF-302, the named-pointer layer): the view taken AFTER the write;
+// the view read inside a block that ends before the write; a write to a DISJOINT field of the target; a callee that
+// only READS through the pointer; a pointer to a DIFFERENT local than the one viewed; the pointer RE-POINTED with no
+// write after. Each exercises the aliasing walk's pointer-target resolution and must stay clean. Each check fails at
+// its own exit; exit 0 at both legs.
+struct:H2 = { string:o; };
+struct:H5 = { string:a; string:b; };
+func:rp = int64(H2->:q) never fails { pass q.o.len; };
+
+func:view_after_write = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    hp.o = string_concat("x", "y");
+    fixed uint8[]:vw = string_bytes(h.o);
+    pass (vw[0i64] => int32);
+};
+func:view_block_ended = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(h.o);
+        r = (vw[0i64] => int32);
+    }
+    hp.o = string_concat("x", "y");
+    pass r;
+};
+func:disjoint_fields = int32() never fails {
+    H5:h = H5{ a: string_concat("a", "b"), b: string_concat("c", "d") };
+    H5->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.a);
+    hp.b = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:reader_callee = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    int64:n = raw rp(hp);
+    if (n != 2i64) { pass 1i32; }
+    pass (vw[0i64] => int32);
+};
+func:ptr_to_other_local = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:hp = @g;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp.o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ptr_reassigned = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp = @g;
+    pass (vw[0i64] => int32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw view_after_write()) != 120i32) { exit 11i32; }
+    if ((raw view_block_ended()) != 97i32) { exit 12i32; }
+    if ((raw disjoint_fields()) != 97i32) { exit 13i32; }
+    if ((raw reader_callee()) != 97i32) { exit 14i32; }
+    if ((raw ptr_to_other_local()) != 97i32) { exit 15i32; }
+    if ((raw ptr_reassigned()) != 97i32) { exit 16i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

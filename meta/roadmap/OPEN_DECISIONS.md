@@ -3646,9 +3646,9 @@ defect declares a `DEF-` in §2f.
 > 113/113, are refused now (n301e BORROW-009, the rest BORROW-015); a copy stored through a call's result (c301k) and a call's
 > result handed to a writer with no view live (c301j) run 0/0 and are admitted.
 
-> **DEF-302 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 159, from its M2 probes; HIGH: a use-after-free in
+> **DEF-302 — FIXED 2026-10-24 (landing 160; registered 2026-10-24 at landing 159 from its M2 probes, fixed here by `nitpick-compiler_48`; HIGH: a use-after-free in
 > safe code at both legs). A VIEW TAKEN THROUGH ONE NAME AND A WRITE THROUGH ANOTHER, ONE OF THEM A POINTER TO THE SAME STORAGE,
-> ARE NEVER COMPARED.** `H2:h = …; H2->:hp = @h; fixed uint8[]:vw = string_bytes(h.o); hp.o = string_concat("x", "y");` then
+> WERE NEVER COMPARED.** `H2:h = …; H2->:hp = @h; fixed uint8[]:vw = string_bytes(h.o); hp.o = string_concat("x", "y");` then
 > `vw[0i64]`: 113/113 at both legs under landing 157's compiler and 158's (`wt/48a/.internal/probes/m2/q275b_*.npk`). DEF-297's
 > row named it ("DEF-275 has the same limit for a pointer value (a view taken through another name)"): landing 140 checks a
 > pointer LOCAL handed by value to a writer against the views taken THROUGH that pointer, and nothing compares a write through a
@@ -3667,7 +3667,26 @@ defect declares a `DEF-` in §2f.
 > -- against the view parties there, and a write to a root against the views taken through a pointer whose chain targets it)
 > refuses the fourteen and passes the nine; its sweep of the three trees runs in landing 159's harness window, and a hit outside
 > the compiler's own tests goes to the library seat at once. Fix direction: that check as `check_view_parties_at`'s second reader
-> (landing 159's, alias.npk), the census first. Next in management's order (2026-10-24), before DEF-298 and DEF-299.
+> (landing 159's, alias.npk), the census first.
+>
+> FIXED AT 160: the aliasing walk resolves a named pointer's target(s) from its place chain (`pointer_targets_of`, alias.npk:
+> a pointer rooted at a LOCAL takes its targets off the root's own chain -- a `REF_ADDR` whose place IS the pointee type, a
+> `REF_PASS` whose place is the pointer's own type, `ptr_ref_is_target`; a two-level pointer one hop at a time, `ptr_inner_base`;
+> fuel-bounded, over-approximate as `record_refs_through_indirection` is; a pointer rooted at a PARAMETER, a `wild` pointer or an
+> allocator's result gives none -- a pointer parameter's pointee stays DEF-275's store-matrix question). `check_access_reported`
+> runs two readers for a write or exclusive access that is not a `$$`-claim (D-286's same-root rule kept for the claims): the
+> forward `check_pointer_targets` (the write re-rooted at each target via `ptr_write_base`, its steps BELOW the pointer composed
+> onto the target's own, so `hp.o` targets `h.o` and a disjoint field reads disjoint, against the view parties there and the
+> views through a pointer at the same target) and the reverse `check_pointer_view_parties` (a write by the pointee's own name
+> against the views taken through a pointer whose resolved storage includes the root). A pointer-value `Self->` method receiver
+> routes through `check_written` (`acc_call`'s `recv_ptr_param`). `decreases fuel` on landing 159's two recursive slice-type
+> helpers (`escape_type_may_hold_run`, `escape_view_carriers`) discharges their `stack-depth` rows. The fourteen shapes and the
+> thirteen further named spellings are refused; ONE SAFE REFUSAL ADDED (k302a, a re-pointed pointer written under a view of its
+> FIRST target -- `pointer_targets_of` is flow-insensitive and carries both targets; recorded under D-286; 0 tree sites). The
+> census over 5,278 files found 0 sites outside the landing's own tests. The residue the named layer does not close -- a pointer
+> with no name (a call's result) and a pointer composed with a slice -- is registered as DEF-305. `tests/analysis/rejection/pointer_alias_store.npk`
+> (seventeen sites, every one BORROW-015: sixteen hazardous shapes and k302a; three controls), `tests/backend/programs/pointer_alias_store_ok.npk`
+> (six checks, exit 0 at both legs under this compiler and landing 159's).
 
 > **DEF-303 — FIXED 2026-10-24 (landing 159; registered and fixed there by `nitpick-compiler_48`, found measuring M2; HIGH: a
 > use-after-free in safe code at both legs). A RANGE'S ELEMENT WAS COMPARED ONE POSITION OFF.** `H3[2]:arr = …; fixed uint8[]:vw
@@ -3687,6 +3706,38 @@ defect declares a `DEF-` in §2f.
 > before every `overlap_class` (`level_steps`, the same rule). The six are refused (BORROW-015; z303c BORROW-002 at the store),
 > z303i is admitted, as its direct spelling `arr[1i64].o = …` always was. `tests/analysis/rejection/range_level.npk` (six
 > sites), `tests/backend/programs/range_level_ok.npk` (the legal half; refused by 158's compiler at the shape admitted now).
+
+> **DEF-304 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 160, found measuring DEF-302's siblings; HIGH: a
+> use-after-free in safe code at both legs; its fix waits for the author's ruling, Q75). A POINTER INTO A `List` ELEMENT IS HELD
+> ACROSS AN OPERATION THAT GROWS, SHRINKS, MOVES OR DROPS THE `List`.** `H2->:hp = @l[0i64];` followed by `list_push`,
+> `list_reserve`, `list_truncate`, `list_clear`, `list_pop` or any other operation that can reallocate or free the backing
+> buffer, an assignment over the `List` or a move out of it, then a read through `hp`: the compiler admits it today and the
+> pointer reads the freed buffer at both legs. A VIEW of the element (`string_bytes(l[0i64].o)`) is refused already (BORROW-015,
+> D-325); a plain address into a `List` element is judged by nothing (D-286's plain-address rule). The library and application
+> trees hold none by a textual census (the two fuzz sites point into fixed arrays). The fix changes D-286's plain-address rule
+> and waits for the author (Q75): freeze a `List` with a live pointer into one of its elements against any reallocating
+> operation, or refuse the pointer. Passed to Ailp-team_19 with rules (6) and (7) via the library seat. Next in management's
+> order (2026-10-24): its plan and census (the author needs them for Q75), after DEF-302, before DEF-305.
+
+> **DEF-305 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 160, from DEF-302's residual probes; HIGH: a
+> use-after-free in safe code at both legs). A POINTER WITH NO NAME, OR A POINTER COMPOSED WITH A SLICE, IS NOT RESOLVED TO ITS
+> TARGET.** DEF-302 (landing 160) resolves a NAMED pointer's target(s) from its place chain and compares both directions; four
+> shapes it does NOT close, each 113/113 at both legs under landing 159's compiler and 160's (`wt/48a/.internal/probes/m2/`): a
+> pointer that is a CALL'S RESULT handed to a writer -- `drop wp(raw idp(@h));` with `idp(H2->:q) = q` returning the pointer and
+> `wp(H2->:q)` writing `q.o`, under a view `string_bytes(h.o)` (k302j) -- or used as a writing RECEIVER -- `(raw idp(@h)).set();`
+> (k302k); and a pointer COMPOSED WITH A SLICE over one storage -- a write through the pointer under a view through a slice of
+> the same array (v302a), and a pointer to a slice local written through under a view of the array (v302e). THE CAUSE: the
+> aliasing walk's pointer-target resolver (landing 160, alias.npk: `pointer_targets_of` via `check_pointer_targets` /
+> `check_pointer_view_parties`) reads a pointer's PLACE CHAIN, and a call's result is none (`place_root_symbol` 0 -- DEF-301's
+> limit, which landing 159 answered for SLICE arguments via `arg_place_chain`/`dest_place`, not for pointers), while a pointer
+> and a slice are resolved by SEPARATE readers that do not compose. TWO MECHANISMS, both INDEPENDENT of M3 (DEF-298/DEF-299, the
+> store-matrix destination path, which s302k/s302l joined 2026-10-24): (a) resolve a call-result pointer operand by its return
+> provenance (D-326 rule A) -- the pointer twin of DEF-301; (b) compose the pointer resolver with the slice resolver
+> (`check_slice_targets`). 0 TREE SITES: landing 160's census over 5,278 files refuses the named-pointer layer and found nothing
+> in `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the applications or the fuzz corpus; a pointer that is a call's result is
+> bound to a local before use in every tree file, and no tree file composes a pointer with an aliasing slice. Please write none
+> of them. Fix direction: the two readers above, extending landing 160's resolvers. Next in management's order (2026-10-24):
+> after DEF-304's plan and census, before DEF-298 and DEF-299.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
