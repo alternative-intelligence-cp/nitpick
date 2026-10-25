@@ -3717,11 +3717,12 @@ defect declares a `DEF-` in §2f.
 > trees hold none by a textual census (the two fuzz sites point into fixed arrays). The fix changes D-286's plain-address rule
 > and waits for the author (Q75): freeze a `List` with a live pointer into one of its elements against any reallocating
 > operation, or refuse the pointer. Passed to Ailp-team_19 with rules (6) and (7) via the library seat. Next in management's
-> order (2026-10-24): its plan and census (the author needs them for Q75), after DEF-302, before DEF-305.
+> order (2026-10-24): its plan and census are DONE (landing 160's record, `DEF304_PLAN.md`); the BUILD waits the author's Q75
+> (freeze vs refuse), after DEF-305, before DEF-298 and DEF-299.
 
-> **DEF-305 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 160, from DEF-302's residual probes; HIGH: a
-> use-after-free in safe code at both legs). A POINTER WITH NO NAME, OR A POINTER COMPOSED WITH A SLICE, IS NOT RESOLVED TO ITS
-> TARGET.** DEF-302 (landing 160) resolves a NAMED pointer's target(s) from its place chain and compares both directions; four
+> **DEF-305 — FIXED 2026-10-24 (landing 161; registered 2026-10-24 at landing 160 from DEF-302's residual probes, fixed here by
+> `nitpick-compiler_48`; HIGH: a use-after-free in safe code at both legs). A POINTER WITH NO NAME, OR A POINTER COMPOSED WITH A
+> SLICE, IS NOW RESOLVED TO ITS TARGET.** DEF-302 (landing 160) resolves a NAMED pointer's target(s) from its place chain and compares both directions; four
 > shapes it does NOT close, each 113/113 at both legs under landing 159's compiler and 160's (`wt/48a/.internal/probes/m2/`): a
 > pointer that is a CALL'S RESULT handed to a writer -- `drop wp(raw idp(@h));` with `idp(H2->:q) = q` returning the pointer and
 > `wp(H2->:q)` writing `q.o`, under a view `string_bytes(h.o)` (k302j) -- or used as a writing RECEIVER -- `(raw idp(@h)).set();`
@@ -3735,9 +3736,32 @@ defect declares a `DEF-` in §2f.
 > provenance (D-326 rule A) -- the pointer twin of DEF-301; (b) compose the pointer resolver with the slice resolver
 > (`check_slice_targets`). 0 TREE SITES: landing 160's census over 5,278 files refuses the named-pointer layer and found nothing
 > in `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the applications or the fuzz corpus; a pointer that is a call's result is
-> bound to a local before use in every tree file, and no tree file composes a pointer with an aliasing slice. Please write none
-> of them. Fix direction: the two readers above, extending landing 160's resolvers. Next in management's order (2026-10-24):
-> after DEF-304's plan and census, before DEF-298 and DEF-299.
+> bound to a local before use in every tree file, and no tree file composes a pointer with an aliasing slice. FIXED HERE by exactly
+> those two mechanisms (alias.npk, escape.npk): (a) `escape_pointer_targets` resolves a call-result (or any no-place-chain)
+> pointer by rule A, and `check_pointer_targets`'s call-result arm (gated on `place_root_symbol` 0), `check_access_reported`'s
+> rootless block and `acc_call`'s pointer-no-place branch route a rootless pointer write / argument / receiver there; (b)
+> `escape_slice_targets` appends `escape_slice_targets_through_pointer`, following the pointer a slice base is reached through to
+> its pointee and reading the pointee's chain, and `escape_slice_own_holder` resolves the single pointee so the slice's own view
+> is skipped (no self-refusal). `decreases fuel` added to `pointer_targets_of` (its stack-depth row, open at 160, discharged).
+> `NITPICK-BORROW-015` at the call or the write; NO SAFE SHAPE REFUSED BY DESIGN. TESTS: `tests/analysis/rejection/pointer_alias_adv.npk`
+> (four sites), `tests/backend/programs/pointer_alias_adv_ok.npk` (four legal checks). Landing 161's sweep over 5,282 files moved
+> only the four sites, all in the landing's own rejection file; nothing of `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the
+> applications or the fuzz corpus moved. DEF-306 registered here.
+
+> **DEF-306 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 161, from DEF-305's probe `s302s2`; HIGH: a
+> use-after-free / data race in safe code at both legs). A LENT CROSSING REASSIGNED OR DROPPED THROUGH AN ALIASED POINTER IS NOT
+> COMPARED AGAINST THE SPAWN'S LEND.** A spawn LENDS its crossing until the block's join (BORROW-016, D-180), tracked by the ROOT
+> SYMBOL handed to the spawn -- `drop filler(@s)` roots the crossing at `s`. A reassignment or drop through a POINTER to that
+> storage by another name is not resolved to the crossing's root: `shared_arena<int64>:s = shared_arena_make(8i64);
+> shared_arena<int64>->:sp = @s; drop filler(@s); drop replace(sp);` (where `replace(shared_arena<int64>->:p)` does `(<-p) =
+> shared_arena_make(4i64)`) drops the old arena -- its storage freed -- while the spawned `filler` task still holds `@s`: a
+> use-after-free / data race in safe code, which the base and every compiler to date admit (measured on landing 160's compiler,
+> `wt/48a/.internal/probes/m2/s302s2`). THE CAUSE: BORROW-016's lend tracks the crossing by its argument's root symbol; a write /
+> reassignment / drop through a pointer to that storage by another name is not re-rooted at the crossing -- the same
+> name-vs-pointer gap DEF-302 and DEF-305 close for the VIEW-aliasing domain, absent in the spawn-lend check. 0 TREE SITES (the
+> compiler's own tree; the census after the DEF-304 build confirms the libraries and applications). Fix direction: the same
+> resolution in the spawn-lend check. Next in management's order (2026-10-24): measured and censused after the DEF-304 build,
+> placed against M3 (DEF-298/DEF-299) by size. Please write none.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

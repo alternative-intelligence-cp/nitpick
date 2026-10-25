@@ -2056,8 +2056,28 @@ that carried them retired at the cycle close):
   is its root COMPOSED WITH THE PATH BELOW IT -- `hp.o` targets `h.o`, not the whole of `h` -- so a write to a disjoint field
   reads disjoint; a new reader that forgets the composition reads two disjoint places as conflicting, or re-roots at the wrong
   level. A pointer rooted at a PARAMETER is DEF-275's store-matrix question (unchanged); a pointer with NO name (a call's result)
-  or composed with a slice is DEF-305 (open). A `Self->` pointer-value method receiver routes through `check_written`
+  or composed with a slice is DEF-305 (fixed at landing 161, below). A `Self->` pointer-value method receiver routes through `check_written`
   (`acc_call`'s `recv_ptr_param`). And `decreases fuel` on landing 159's two recursive slice-type helpers
   (`escape_type_may_hold_run`, `escape_view_carriers`) discharged their stack-depth rows: a new recursive escape or type-graph
   walk states `decreases <fuel>` or its `stack-depth` row stands `open`. STILL OPEN, each HIGH: DEF-298, DEF-299, DEF-304 (a
-  plain pointer into a `List` element across a reallocating operation), DEF-305 -- do not write those shapes in `src/`.
+  plain pointer into a `List` element across a reallocating operation), DEF-306 -- do not write those shapes in `src/`
+  (DEF-305, the pointer-with-no-name-or-slice twin named here, is fixed at landing 161 -- the next gotcha).
+
+- **A call-result pointer has no place chain, and a slice through a pointer reads the pointee's chain** (DEF-305,
+  landing 161; alias.npk, escape.npk). DEF-302's named-pointer walk finds the pointer an access goes through as the last
+  pointer-typed base on its PLACE CHAIN (`ptr_write_base`), and `check_access_reported` keys a write's conflicts on the written
+  place's ROOT symbol -- both answer nothing for a pointer that is a CALL'S RESULT (`place_root_symbol` 0, no place chain), so
+  `drop wp(raw idp(@h));` and `(raw idp(@h)).set();` reached neither reader. Resolve a rootless pointer-typed write by its RETURN
+  PROVENANCE: `escape_pointer_targets` (escape.npk, the twin of `escape_slice_targets`) reads the storage a pointer-valued result
+  points at off the refs `collect_view_refs` carries (rule A, D-326 -- the pointer twin of DEF-301), and `check_pointer_targets`'s
+  call-result arm (routed from `check_access_reported`'s rootless block and `acc_call`'s pointer-no-place branch, for a WRITE or
+  EXCLUSIVE access that is not a `$$`-claim) checks it against the views there. And `escape_slice_targets` STOPS at a pointer -- a
+  deref bails, a member recurses into the pointer LOCAL and reads ITS chain (the address of the pointee), not the runs the pointee
+  views -- so a slice reached through a pointer (`bp.sl[i].o`, `(<-tp)[i].o`) had its targets read from the wrong chain;
+  `escape_slice_targets_through_pointer` follows the first pointer on the base's path to its pointee(s) and reads each pointee's
+  chain, and `escape_slice_own_holder` resolves a pointer root to its SINGLE pointee and tests THAT pointee's type, so the slice's
+  own view is skipped by its holder (the pointee, not the pointer). A new reader of a pointer's or a slice's targets asks: is the
+  root a call's result (resolve by provenance) or a pointer on a slice's path (follow it to the pointee's chain)? `decreases fuel`
+  on `pointer_targets_of` discharged its stack-depth row. STILL OPEN, each HIGH: DEF-298, DEF-299 (the store-matrix faces, M3),
+  DEF-304 (a plain pointer into a `List` element across a reallocating operation; Q75 with the author), DEF-306 (a lent crossing
+  aliased through a pointer) -- do not write those shapes in `src/`.

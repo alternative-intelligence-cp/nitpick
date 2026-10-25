@@ -1,0 +1,69 @@
+// expect-exit: 0
+mod:pointer_alias_adv_ok;
+// THE LEGAL HALF OF DEF-305 (a pointer with no name, and a pointer composed with a slice): a
+// call-result pointer written with no view live; a pointer to a slice FIELD and a pointer to a
+// slice LOCAL written through with no external view (the own-holder skip -- the slice's own view
+// of the array it spans must not block writing an element through it); the view's block ended
+// before the write. Each exercises the call-result / pointer+slice resolution and must stay
+// clean. Each check fails at its own exit; exit 0 at both legs.
+struct:H2 = { string:o; };
+struct:B2 = { H2[]:sl; };
+func:wp = NIL(H2->:q) never fails { q.o = string_concat("x", "y"); pass NIL; };
+func:idp = H2->(H2->:q) never fails { pass q; };
+
+func:call_result_noview = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    drop wp(raw idp(@h));
+    fixed uint8[]:vw = string_bytes(h.o);
+    pass (vw[0i64] => int32);
+};
+func:ptr_slice_field_noview = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    B2->:bp = @b;
+    bp.sl[0i64].o = string_concat("x", "y");
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    pass (vw[0i64] => int32);
+};
+func:ptr_slice_local_noview = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2[]:t = arr[0i64...2i64];
+    H2[]->:tp = @t;
+    (<-tp)[0i64].o = string_concat("x", "y");
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    pass (vw[0i64] => int32);
+};
+func:view_block_ended = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(h.o);
+        r = (vw[0i64] => int32);
+    }
+    drop wp(raw idp(@h));
+    pass r;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw call_result_noview()) != 120i32) { exit 11i32; }
+    if ((raw ptr_slice_field_noview()) != 120i32) { exit 12i32; }
+    if ((raw ptr_slice_local_noview()) != 120i32) { exit 13i32; }
+    if ((raw view_block_ended()) != 97i32) { exit 14i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,67 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 43:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 49:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 57:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 65:17
+mod:pointer_alias_adv;
+// A POINTER WITH NO NAME, AND A POINTER COMPOSED WITH A SLICE, RESOLVED TO ITS TARGET
+// (DEF-305, extending DEF-302's named-pointer layer). DEF-302 resolves a NAMED pointer's
+// target(s) from its PLACE CHAIN; four shapes it does not reach, each compiled before this
+// landing and read freed bytes at both legs (`.internal/probes/m2/k302j`, `k302k`, `v302a`,
+// `v302e`: 113 for 97):
+//
+//   01  a pointer that is a CALL'S RESULT handed to a writer  (`wp(raw idp(@h))`)   BORROW-015 at the call
+//   02  a call-result pointer as a writing RECEIVER           (`(raw idp(@h)).set()`) BORROW-015 at the call
+//   03  a pointer COMPOSED WITH A SLICE FIELD                 (`bp.sl[0].o = v`)     BORROW-015 at the write
+//   04  a pointer to a SLICE LOCAL, written through           (`(<-tp)[0].o = v`)    BORROW-015 at the write
+//
+// 01/02: a call's result has no place chain (`place_root_symbol` 0), so `check_pointer_targets`
+// resolves it by its return provenance (D-326 rule A, `escape_pointer_targets`) -- the pointer
+// twin of DEF-301's slice-no-place-names reader. 03/04: a slice reached THROUGH a pointer views
+// storage recorded in the POINTEE's chain, which `collect_view_refs` stops at the pointer and
+// does not reach; `escape_slice_targets` now follows the pointer to its pointee and reads the
+// runs it holds, and `escape_slice_own_holder` resolves the pointee so the slice's own view is
+// skipped (writing an element through it frees none of its own views).
+//
+// Controls carrying no code (clean -- in `pointer_alias_adv_ok.npk`): a call-result pointer
+// write with no view live; a pointer+slice write with no view live (the own-holder skip); the
+// view's block ended before the write.
+struct:H2 = { string:o; };
+struct:B2 = { H2[]:sl; };
+impl:H2 = {
+    func:set = NIL(Self->:self) never fails { self.o = string_concat("x", "y"); pass NIL; };
+};
+func:wp = NIL(H2->:q) never fails { q.o = string_concat("x", "y"); pass NIL; };
+func:idp = H2->(H2->:q) never fails { pass q; };
+
+func:call_result_writer = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wp(raw idp(@h));
+    pass (vw[0i64] => int32);
+};
+func:call_result_receiver = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop (raw idp(@h)).set();
+    pass (vw[0i64] => int32);
+};
+func:ptr_slice_field = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    B2:b = B2{ sl: arr[0i64...2i64] };
+    B2->:bp = @b;
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    bp.sl[0i64].o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+func:ptr_slice_local = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2[]:t = arr[0i64...2i64];
+    H2[]->:tp = @t;
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-tp)[0i64].o = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};

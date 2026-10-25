@@ -1890,6 +1890,87 @@ pub func:escape_slice_targets = NIL(Escape->:x, ExprId:base, List<ViewRef>->:out
         if (!(raw escape_ref_is_run_of(x, r, pte))) { continue; }
         drop list_push(out, r);
     }
+    // DEF-305 (b), landing 161: a slice reached THROUGH A POINTER -- `bp.sl` (a
+    // slice field of a pointer's pointee) or `<-tp` (a deref of a pointer to a
+    // slice) -- views storage recorded in the POINTEE's chain, which
+    // `collect_view_refs` does not reach: a deref bails, and a member recurses
+    // into the pointer LOCAL and reads ITS chain (the address of the pointee),
+    // not what the pointee views. Resolve the pointer the base is reached
+    // through to its pointee and add the runs the pointee holds. Over-
+    // approximate; adds targets, never removes, and fires only when a pointer
+    // sits on the base's path (a plain `b.sl` or `t` has none).
+    drop escape_slice_targets_through_pointer(x, base, pte, out);
+    pass NIL;
+};
+
+// THE RUNS A SLICE BASE REACHED THROUGH A POINTER VIEWS (DEF-305 (b)): the pointer
+// the base is reached through, resolved to its pointee(s) (`escape_pointer_targets`),
+// each pointee's recorded chain read for runs of `pte` (`push_binding_refs`,
+// `escape_ref_is_run_of`) -- `bp.sl` reads `b`'s view of the array its slice
+// field holds, `<-tp` reads the slice local `t`'s view of the array it ranges.
+// The pointer is the first POINTER-typed sub-expression inward from the base.
+func:escape_slice_targets_through_pointer = NIL(Escape->:x, ExprId:base, int32:pte,
+                                                List<ViewRef>->:out) never fails {
+    ExprId:cur = base;
+    ExprId:ptr = raw expr_none();
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { break; }
+        int32:ct = raw exprtypes_get(x.etypes, cur);
+        if ((ct != 0i32) && ((raw type_kind(x.types, ct)) == (raw TY_POINTER()))) { ptr = cur; break; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
+            || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprCastExpr)
+            || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        break;
+    }
+    if (raw expr_is_none(ptr)) { pass NIL; }
+    List<ViewRef>:ptgs = raw list_init::<ViewRef>(4i64);
+    drop escape_pointer_targets(x, ptr, @ptgs);
+    for (int64:i in 0i64...ptgs.count) {
+        ViewRef:pr = ptgs[i];
+        if (pr.root == 0i32) { continue; }
+        List<ViewRef>:prefs = raw list_init::<ViewRef>(4i64);
+        drop push_binding_refs(x, pr.root, @prefs);
+        for (int64:j in 0i64...prefs.count) {
+            ViewRef:cr = prefs[j];
+            if (cr.root == 0i32) { continue; }
+            if (!(raw escape_ref_is_run_of(x, cr, pte))) { continue; }
+            drop list_push(out, cr);
+        }
+    }
+    pass NIL;
+};
+
+// THE STORAGE A POINTER-VALUED EXPRESSION POINTS AT, as target ViewRefs (DEF-305,
+// the twin of `escape_slice_targets`): a pointer that is a CALL'S RESULT (`raw
+// idp(@h)`) or any pointer expression with no place chain of its own is resolved
+// here by rule A (D-326) -- `collect_view_refs` reads what the result borrows,
+// and each ref that is a TARGET of this pointer (a REF_ADDR whose place is the
+// pointee type, a REF_PASS whose place is the pointer's own type -- as
+// `record_refs_through_indirection` filters a bound pointer's chain, lines just
+// below) is the storage it points at. The place-end-type answers too (a ref the
+// launder typed at its path's end), the closed direction. Over-approximate; a
+// ref rooted nowhere gives none (`wild`, an allocator).
+pub func:escape_pointer_targets = NIL(Escape->:x, ExprId:pe, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(pe)) { pass NIL; }
+    int32:pty = raw exprtypes_get(x.etypes, pe);
+    if (pty == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, pty)) != (raw TY_POINTER())) { pass NIL; }
+    int32:pte = raw type_elem(x.types, pty);
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, pe, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        ViewRef:r = refs[i];
+        if (r.root == 0i32) { continue; }
+        int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: r.place });
+        int32:et = raw escape_path_end_type(x, pt, r.path);
+        bool:target = false;
+        if (r.kind == (raw REF_ADDR())) { target = ((pt != 0i32) && (pt == pte)) || ((et != 0i32) && (et == pte)); }
+        if (r.kind == (raw REF_PASS())) { target = ((pt != 0i32) && (pt == pty)); }
+        if (!target) { continue; }
+        drop list_push(out, r);
+    }
     pass NIL;
 };
 
@@ -2080,6 +2161,15 @@ pub func:escape_written_slice_base = ExprId(Escape->:x, ExprId:place, bool:self_
 // ended), so a struct is asked by its TYPE: one that can carry no view but the
 // slice holds none deeper, whatever its chain's entries stand for; any other
 // struct skips none. 0 otherwise.
+// DEF-305 (b), landing 161: a slice reached THROUGH A POINTER -- `bp.sl` (the
+// pointer's pointee is a one-view struct) or `<-tp` (the pointee is the slice
+// local itself) -- holds its own view in the POINTEE's chain, so the holder to
+// skip is the POINTEE, not the pointer. When the root resolves to a pointer,
+// resolve it to its SINGLE pointee (`escape_pointer_targets`) and test that
+// pointee's type; a pointer with more than one pointee, or a pointee that is
+// neither a slice nor a one-view struct, skips none (the closed direction: a
+// spurious self-refusal, never a missed hazard). The validation walk steps
+// through a pointer deref as it steps a member or a range.
 pub func:escape_slice_own_holder = int32(Escape->:x, ExprId:base) never fails {
     if (raw expr_is_none(base)) { pass 0i32; }
     PlaceRoot:r = raw esc_place_root(x, base);
@@ -2088,21 +2178,39 @@ pub func:escape_slice_own_holder = int32(Escape->:x, ExprId:base) never fails {
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
     if (rn.a == 0i32) { pass 0i32; }
-    Symbol:sy = raw symtab_get(x.tab, rn.a);
-    if (sy.origin_kind != (raw SYM_STMT())) { pass 0i32; }
     int32:rt = raw exprtypes_get(x.etypes, r.id);
     if (rt == 0i32) { pass 0i32; }
     int32:rk = raw type_kind(x.types, rt);
+    int32:ret_sym = rn.a;
+    int32:test_type = rt;
+    if (rk == (raw TY_POINTER())) {
+        List<ViewRef>:ptg = raw list_init::<ViewRef>(4i64);
+        drop escape_pointer_targets(x, r.id, @ptg);
+        if (ptg.count != 1i64) { pass 0i32; }
+        ViewRef:pv = ptg[0i64];
+        if (pv.root == 0i32) { pass 0i32; }
+        Symbol:psy = raw symtab_get(x.tab, pv.root);
+        if (psy.origin_kind != (raw SYM_STMT())) { pass 0i32; }
+        int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: pv.place });
+        if (pt == 0i32) { pass 0i32; }
+        ret_sym = pv.root;
+        test_type = pt;
+        rk = raw type_kind(x.types, pt);
+    } else {
+        Symbol:sy = raw symtab_get(x.tab, rn.a);
+        if (sy.origin_kind != (raw SYM_STMT())) { pass 0i32; }
+    }
     bool:sroot = false;
     if (rk != (raw TY_SLICE())) {
         if (rk != (raw TY_STRUCT())) { pass 0i32; }
-        if ((raw escape_view_carriers(x, rt, 8i32)) != 1i32) { pass 0i32; }
+        if ((raw escape_view_carriers(x, test_type, 8i32)) != 1i32) { pass 0i32; }
         sroot = true;
     }
     ExprId:cur = base;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
-        if (cur.index == r.id.index) { pass rn.a; }
+        if (cur.index == r.id.index) { pass ret_sym; }
         ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }
         if (sroot && (n.kind == ExprKind.ExprMemberAccessExpr)) { cur = raw expr_operand(n); continue; }
         if (n.kind != ExprKind.ExprIndexExpr) { pass 0i32; }
         ExprNode:ixn = raw ast_expr(x.ast, raw expr_rhs(n));

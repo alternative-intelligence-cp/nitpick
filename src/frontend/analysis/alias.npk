@@ -879,6 +879,23 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
                                   int32:mode) never fails {
     int32:root = raw place_root_symbol(x, place);
     if (root == 0i32) {
+        // A WRITE THROUGH A CALL-RESULT POINTER (DEF-305, landing 161): a pointer
+        // that is a call's result -- `wp(raw idp(@h))`, `(raw idp(@h)).set()` --
+        // has no named root, so the same-root loop below never runs and the
+        // DEF-302 readers at the function's tail are never reached. Resolve it
+        // here by rule A to the storage it points at and check the views there
+        // (`check_pointer_targets`' call-result arm, which `ptr_write_base`
+        // sends every rootless pointer place to). Before the shared-holder case,
+        // under the same guard as the named-pointer reader (`mode != CHECK_CLAIMS`,
+        // the claims keep D-286's same-root rule).
+        if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_CLAIMS()))) {
+            int32:plt0 = raw exprtypes_get(x.etypes, place);
+            if ((plt0 != 0i32) && ((raw type_kind(x.types, plt0)) == (raw TY_POINTER()))) {
+                List<Step>:ap0 = raw list_init::<Step>(8i64);
+                drop decode_path(x, extra, @ap0);
+                if (raw check_pointer_targets(x, place, ap0, akind, at, mode)) { pass true; }
+            }
+        }
         // NO NAMED ROOT: a place that bottoms in a DEREFERENCE of a shared
         // holder (`@(<-r)` handed to a writer, DEF-123 (a)) is the holder's
         // storage written through it; every other rootless place is nobody's.
@@ -1154,7 +1171,7 @@ func:ptr_inner_base = ExprId(Alias->:x, ExprId:pe) never fails {
 // inner pointer `bp` to its pointees `{b}`, then each pointee's chain for this
 // pointer's own targets (`@h` of type `pte`). Fuel-bounded; over-approximate as
 // `record_refs_through_indirection` is (any ref of the pointee type is a target).
-func:pointer_targets_of = NIL(Alias->:x, ExprId:pe, int32:fuel, List<ViewRef>->:out) never fails {
+func:pointer_targets_of = NIL(Alias->:x, ExprId:pe, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
     if (fuel <= 0i32) { pass NIL; }
     if (raw expr_is_none(pe)) { pass NIL; }
     int32:r = raw place_root_symbol(x, pe);
@@ -1211,7 +1228,32 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
         if (raw root_ident_is_pointer(x, place)) { pass false; }
     }
     ExprId:pe = raw ptr_write_base(x, place, ap.count);
-    if (raw expr_is_none(pe)) { pass false; }
+    if (raw expr_is_none(pe)) {
+        // DEF-305: a pointer that is a CALL'S RESULT (or any pointer expression
+        // with NO named root) has no place chain -- resolve it by rule A
+        // (`escape_pointer_targets`), the whole write path `ap` composed onto each
+        // target. Gated on a ROOTLESS place (`place_root_symbol` 0): a bare NAMED
+        // pointer whose `ptr_write_base` is none (a whole-pointee write, `ap`
+        // empty) keeps the base's reading -- its reassignment is not a conflict
+        // the view/lent readers judge here (D-286, DEF-272), and resolving it
+        // would fire on a named pointer's whole-pointee write, outside this
+        // defect's scope.
+        int32:plt = raw exprtypes_get(x.etypes, place);
+        if ((plt != 0i32) && ((raw type_kind(x.types, plt)) == (raw TY_POINTER()))
+            && ((raw place_root_symbol(x, place)) == 0i32)) {
+            List<ViewRef>:ctg = raw list_init::<ViewRef>(4i64);
+            drop escape_pointer_targets(x.esc, place, @ctg);
+            for (int64:ci in 0i64...ctg.count) {
+                ViewRef:cvr = ctg[ci];
+                List<Step>:ctp = raw list_init::<Step>(8i64);
+                if (!(raw ptr_target_steps(x, cvr, @ctp))) { continue; }
+                for (int64:ck in 0i64...ap.count) { drop list_push(@ctp, ap[ck]); }
+                if (raw check_view_parties_at(x, cvr, ctp, 0i32, akind, at, mode)) { pass true; }
+                if (raw check_pointer_view_parties(x, cvr.root, ctp, akind, at, 0i32)) { pass true; }
+            }
+        }
+        pass false;
+    }
     int32:r = raw place_root_symbol(x, pe);
     List<Step>:pre = raw list_init::<Step>(8i64);
     if (!(raw path_steps(x, pe, @pre))) { pass false; }
@@ -2067,8 +2109,10 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             // points at, as `f(hp)` does (DEF-275); checked against the views
             // there (`check_written` → `check_pointer_targets`). The else branch
             // read `recv` only; a by-value receiver (`recv_ptr_param` false) gets
-            // a copy and writes through nothing.
-            if (recv_ptr_param && recv_is_ptr && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
+            // a copy and writes through nothing. A call-result pointer receiver
+            // (`(raw idp(@h)).set()`, DEF-305) is no place chain and resolves by
+            // rule A in `check_pointer_targets`' call-result arm.
+            if (recv_ptr_param && recv_is_ptr && (rcallee > 0i32)) {
                 drop check_written(x, recv, rcallee, 0i32, (raw ast_expr(x.ast, recv)).span);
             }
         }
@@ -2134,6 +2178,15 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                         discard(raw check_slice_targets(x, a2, raw ACC_WRITE(), (raw ast_expr(x.ast, a2)).span, raw CHECK_VIEWS()));
                     }
                 }
+            }
+            // A POINTER NO PLACE NAMES handed to a callee that writes through it
+            // (DEF-305): a call's result (`wp(raw idp(@h))`) -- resolved by rule A
+            // (`escape_pointer_targets`), the callee's written path against the
+            // view parties at the storage it points at (check_written →
+            // check_pointer_targets' call-result arm). The place-chain twin is
+            // the branch above.
+            if (((raw type_kind(x.types, at2)) == (raw TY_POINTER())) && (!(raw is_place_chain(x, a2)))) {
+                drop check_written(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
             }
         }
         drop acc_expr(x, a2, raw ACC_READ(), depth);
