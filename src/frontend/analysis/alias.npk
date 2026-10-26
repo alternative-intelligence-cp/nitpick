@@ -84,6 +84,7 @@ use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../parser.npk".*;
 use "../types.npk".*;
+use "../type_layout.npk".*;     // type_is_list: a `List` element address freezes the `List` (DEF-304)
 use "../type_resolve.npk".*;
 use "../type_members.npk".*;   // type_param_at_of: the receiver's parameter
 use "../expr_types.npk".*;
@@ -107,6 +108,12 @@ pub func:PARTY_VIEW = int32() never fails      { pass 3i32; };
 // an operation in the kind's concurrent set, and `@s` to a callee judged, as a
 // view's is, by what the callee's summary writes.
 pub func:PARTY_LENT = int32() never fails      { pass 4i32; };
+// A PLAIN ADDRESS INTO A `List` ELEMENT (DEF-304, landing 162): `@l[i]`, a view-
+// like party (D-325) -- the `List` root is FROZEN against a reallocating or
+// dropping operation while the address is live, as a viewed root is frozen
+// against a write. Caught exactly where a view is (the mutation-summary path,
+// `summary_judged`), reported BORROW-015, differing only in the sentence.
+pub func:PARTY_ELEM_ADDR = int32() never fails { pass 5i32; };
 pub func:ACC_READ = int32() never fails        { pass 0i32; };
 pub func:ACC_WRITE = int32() never fails       { pass 1i32; };
 pub func:ACC_SHARED = int32() never fails      { pass 2i32; };
@@ -349,6 +356,32 @@ func:prescan_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
     pass NIL;
 };
 
+// A PLACE THAT CROSSES A `List` INDEX (DEF-304, landing 162): the operand of an
+// `@` whose path indexes a `List` -- `@l[i]`, `@l[i].f`, `@s.items[i]`, `@a[i][j]`
+// over a `List` at either level -- is a plain address INTO a `List` element, and
+// the buffer it points at is freed when the `List` reallocates (a push that
+// grows, a reserve, a truncate, a clear, a pop) or is reassigned, moved out or
+// dropped. An index of a FIXED ARRAY is not one (arrays never reallocate: the
+// control u304h), nor an index of a SLICE (a view, D-325's own domain).
+func:place_is_list_element = bool(Alias->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprId:base = raw expr_lhs(n);
+            int32:bt = raw exprtypes_get(x.etypes, base);
+            if ((bt != 0i32) && (raw type_is_list(x.tr, bt))) { pass true; }
+            cur = base;
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }
+        pass false;
+    }
+    pass false;
+};
+
 // The party kind an admitted value would make, or -1 for an ordinary value:
 // `$$i` shared, `$$m` exclusive, `@` plain -- the WHOLE value, nothing nested.
 func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
@@ -358,7 +391,11 @@ func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
         if (raw borrow_is_mut(n)) { pass (raw PARTY_EXCLUSIVE()); }
         pass (raw PARTY_SHARED());
     }
-    if (n.kind == ExprKind.ExprAddressOfExpr) { pass (raw PARTY_PLAIN()); }
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        // A plain address INTO a `List` element freezes the `List` (DEF-304).
+        if (raw place_is_list_element(x, raw expr_operand(n))) { pass (raw PARTY_ELEM_ADDR()); }
+        pass (raw PARTY_PLAIN());
+    }
     pass (0i32 - 1i32);
 };
 
@@ -830,6 +867,7 @@ func:party_word = string(Alias->:x, Party:p) never fails {
         if (p.view_kind == (raw VIEW_LAUNDERED())) { pass "the possible view (through a call that was handed the place, D-004 rule A) of"; }
         pass "the view of";
     }
+    if (p.kind == (raw PARTY_ELEM_ADDR())) { pass "the plain address into a `List` element"; }
     pass "the plain address held by a binding";
 };
 
@@ -838,7 +876,10 @@ func:party_word = string(Alias->:x, Party:p) never fails {
 // Does an access of this kind conflict with a party of that kind?
 func:conflicts = bool(int32:pkind, int32:akind) never fails {
     if (pkind == (raw PARTY_EXCLUSIVE())) { pass true; }
-    if ((pkind == (raw PARTY_SHARED())) || (pkind == (raw PARTY_VIEW())) || (pkind == (raw PARTY_LENT()))) {
+    if ((pkind == (raw PARTY_SHARED())) || (pkind == (raw PARTY_VIEW())) || (pkind == (raw PARTY_LENT()))
+        || (pkind == (raw PARTY_ELEM_ADDR()))) {
+        // a plain address into a `List` element is view-like (DEF-304): a write-
+        // capable access of the `List` reallocates and frees the element.
         pass ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE())));
     }
     // a plain address: only a claim conflicts
@@ -915,7 +956,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         Party:p = x.live[i];
         if (p.root != root) { continue; }
         if (p.site.index == self_site.index) { continue; }
-        bool:summary_judged = ((p.kind == (raw PARTY_VIEW())) || (p.kind == (raw PARTY_LENT())));
+        bool:summary_judged = ((p.kind == (raw PARTY_VIEW())) || (p.kind == (raw PARTY_LENT())) || (p.kind == (raw PARTY_ELEM_ADDR())));
         if ((mode == (raw CHECK_VIEWS())) && (!summary_judged)) { continue; }
         if ((mode == (raw CHECK_CLAIMS())) && summary_judged) { continue; }
         if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
@@ -953,6 +994,13 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         if ((cls == (raw OV_COMPUTED())) && (!summary_judged)) {
             drop exprtypes_mark_alias(x.etypes, place.index, p.site.index, p.holder);
             continue;
+        }
+        // A PLAIN ADDRESS INTO A `List` ELEMENT (DEF-304): view-like, frozen
+        // against this reallocating or dropping access; its own distinct
+        // sentence, the BORROW-015 code the view shares.
+        if (p.kind == (raw PARTY_ELEM_ADDR())) {
+            drop report_elem_addr_conflict(x, p, akind, root, ap, cls, at);
+            pass true;
         }
         if (p.kind == (raw PARTY_VIEW())) {
             drop report_view_conflict(x, p, akind, root, ap, cls, at);
@@ -1336,6 +1384,41 @@ func:report_view_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, Lis
     pass NIL;
 };
 
+// A WRITE-CAPABLE ACCESS OF A `List` WHILE A PLAIN ADDRESS INTO ONE OF ITS
+// ELEMENTS IS LIVE (DEF-304, D-325, BORROW-015): a push that reallocates, a
+// reserve, a truncate, a clear, a pop, a reassignment, a move-out or a drop
+// frees the buffer the address points at, as writing a viewed root frees a
+// view's bytes. The `List` is FROZEN against the operation while the address is
+// live, exactly as D-325 freezes a root against a view; the message differs
+// only in the sentence, and the code (BORROW-015) is the view's.
+func:report_elem_addr_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, List<Step>:ap,
+                                     int32:cls, Span:at) never fails {
+    ExprNode:pn = raw ast_expr(x.ast, p.site);
+    string:m = string_concat(raw access_word(akind), " of `");
+    m = string_concat(m, raw render_place(x, root, ap));
+    m = string_concat(m, "` conflicts with ");
+    m = string_concat(m, raw party_word(x, p));
+    m = string_concat(m, " `");
+    m = string_concat(m, raw party_spelling(x, p));
+    m = string_concat(m, "` at ");
+    m = string_concat(m, int_to_string(pn.span.line => int64));
+    m = string_concat(m, ":");
+    m = string_concat(m, int_to_string(pn.span.col => int64));
+    if (p.holder != 0i32) {
+        m = string_concat(m, ", held by `");
+        m = string_concat(m, raw intern_get(x.it, (raw symtab_get(x.tab, p.holder)).name));
+        m = string_concat(m, "` until the end of the block that declares it");
+    } else {
+        m = string_concat(m, ", live for the call it is an argument of");
+    }
+    if (cls == (raw OV_COMPUTED())) {
+        m = string_concat(m, " (a computed index: a `List` element address has no run-time guard, so the pair refuses)");
+    }
+    m = string_concat(m, " -- a `List` is FROZEN while a plain address into one of its elements is live (DEF-304, D-325): a push that reallocates, a reserve, a truncate, a clear, a pop, a reassignment, a move-out or a drop frees the buffer the address points at, leaving it dangling. End the address's block before the operation, or read the element by index (`l[i]`) after it");
+    drop alias_err(x, raw BORROW_VIEW_ROOT(), move(m), at);
+    pass NIL;
+};
+
 // A WRITE-CAPABLE ACCESS OF A LENT ROOT (DEF-148, BORROW-016): the message names
 // the access, the spawn, the block whose exit joins it, why, and the fix.
 func:report_lent_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, List<Step>:ap,
@@ -1444,7 +1527,8 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
         if (pk2 >= 0i32) {
             int32:tsym = raw bare_local_symbol(x, tgt);
             if (tsym == 0i32) {
-                if (pk2 != (raw PARTY_PLAIN())) {
+                // A `List`-element address (DEF-304) assigns like a plain one.
+                if ((pk2 != (raw PARTY_PLAIN())) && (pk2 != (raw PARTY_ELEM_ADDR()))) {
                     drop alias_err(x, raw BORROW_CLAIM_POSITION(),
                         "a `$$i`/`$$m` claim is a whole call argument or a pointer local's whole value (D-286), and this assigns one to a place that is not a local binding -- spell `@` for an address that claims nothing",
                         (raw ast_expr(x.ast, val)).span);
@@ -1563,7 +1647,7 @@ func:admit_value = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never f
     int32:akind = raw ACC_WRITE();
     if (kind == (raw PARTY_SHARED())) { akind = raw ACC_SHARED(); }
     if (kind == (raw PARTY_EXCLUSIVE())) { akind = raw ACC_EXCLUSIVE(); }
-    if (kind != (raw PARTY_PLAIN())) {
+    if ((kind != (raw PARTY_PLAIN())) && (kind != (raw PARTY_ELEM_ADDR()))) {
         if ((raw place_root_symbol(x, place)) == 0i32) {
             drop alias_err(x, raw BORROW_CLAIM_POSITION(),
                 "a `$$i`/`$$m` claim needs a place with a named root (D-286): a call's result or a dereference at the bottom names no binding whose accesses could be checked -- bind the value first, or spell `@`",
@@ -2032,7 +2116,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             drop push_call_view_party(x, a);
             continue;
         }
-        if (pk == (raw PARTY_PLAIN())) { continue; }
+        if ((pk == (raw PARTY_PLAIN())) || (pk == (raw PARTY_ELEM_ADDR()))) { continue; }   // an address is no claim party (DEF-304: handled in the ordinary-arg loop)
         ExprNode:an = raw ast_expr(x.ast, a);
         if (result_carries) {
             drop alias_err(x, raw BORROW_CLAIM_POSITION(),
@@ -2129,7 +2213,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, j) };
         int32:pk2 = raw party_kind_of(x, a2);
         if (pk2 >= 0i32) {
-            if (pk2 == (raw PARTY_PLAIN())) {
+            if ((pk2 == (raw PARTY_PLAIN())) || (pk2 == (raw PARTY_ELEM_ADDR()))) {   // a `List`-element address as an argument is handled as a plain one (DEF-304: the callee road, the freeze fires on the reallocating op itself)
                 if (callee_fn > 0i32) { drop admit_written(x, a2, callee_fn, pos_base + j); }
                 else { drop admit_value(x, a2, pk2, 0i32); }
             }
@@ -2198,7 +2282,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         ExprId:a3 = ExprId{ index: raw ast_id_at(x.ast, start, k) };
         int32:pk3 = raw party_kind_of(x, a3);
         if (pk3 < 0i32) { continue; }
-        if (pk3 == (raw PARTY_PLAIN())) { continue; }
+        if ((pk3 == (raw PARTY_PLAIN())) || (pk3 == (raw PARTY_ELEM_ADDR()))) { continue; }   // an address is no claim (DEF-304)
         if (result_carries) { continue; }
         drop admit_value(x, a3, pk3, 0i32);
         ExprNode:an3 = raw ast_expr(x.ast, a3);

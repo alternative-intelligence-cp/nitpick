@@ -19408,6 +19408,17 @@ since 1.5.5 and the checker had never reported it.
 
 *[2026-10-24, 1.6.1e landing 160 — a dated note (DEF-302).]* Landing 140's reading (above) is widened to a NAMED pointer that is not itself the argument: the aliasing walk resolves a pointer rooted at a local to the storage it points at and compares a write through it with the views of that storage taken by ANY name, and the reverse (`check_pointer_targets`, `check_pointer_view_parties`, alias.npk). These readers run for WRITE and EXCLUSIVE accesses only, NOT for a `$$i`/`$$m` claim (`mode != CHECK_CLAIMS`): this decision's same-root rule for the claims is kept whole. A pointer rooted at a PARAMETER is unchanged (DEF-275). A pointer with NO name (a call's result) or composed with a slice is not yet resolved (DEF-305). A plain address into a `List` element held across a reallocating operation (DEF-304) is the open question for this decision's plain-address rule, waiting on the author (Q75).
 
+*[2026-10-25, 1.6.1e landing 162 — a dated note (DEF-304).]* The plain-address question the note above left open -- a plain
+pointer into a `List` element held across a reallocating operation -- is answered option (a) FREEZE (the author, Q75): a
+plain address `@l[i]` into a `List` element is a VIEW-LIKE party (`PARTY_ELEM_ADDR`) that freezes the `List` against any
+operation reallocating, shrinking, reassigning, moving or dropping it while the address is live, as D-325's freeze does
+for a view (see D-325's note of this day; BORROW-015 at the operation). The conflict stays this decision's shape -- the
+party is judged by the mutation-summary path, conflicting with WRITE|EXCLUSIVE, never with a `$$i`/`$$m` claim where a
+view would not. The by-scope false positive is ACCEPTED under this decision's LEXICAL model: a pointer dead before the
+growth but still in scope refuses the growth (k304b), to be narrowed later with by-last-use liveness of the holder, as
+DEF-302's k302a. The new walk that recognises a `List` element (`place_is_list_element`) is fuel-bounded with a measure
+(D-304). A call-result element pointer and a `List` reallocated through a pointer PARAMETER stay open (DEF-307).
+
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
 Found planning 1.5.5 (2026-09-11, on `cb8cbb0`; DEF-43). `fixed int32:x =
@@ -22182,6 +22193,18 @@ re-pointed pointer written under a view of its first target -- the resolver is f
 same day; 0 tree sites). A pointer rooted at a PARAMETER stays DEF-275's store-matrix question; a pointer with no name or
 composed with a slice is DEF-305. Still open in the same class: DEF-298, DEF-299, and a plain pointer into a `List`
 element across a reallocating operation (DEF-304).
+
+*[2026-10-25, 1.6.1e landing 162 — a dated note (DEF-304).]* This freeze now holds of a plain POINTER into a `List`
+element, not a view alone: `H2->:hp = @l[0i64];` freezes `l` against any operation that reallocates, shrinks, reassigns,
+moves or drops it (`list_push` past `cap`, `list_reserve`, `list_truncate`, `list_pop`, `list_clear`, an assignment over
+the `List`, a move out of it, a `List` field grown) while `hp` is live -- the pointer read the FREED buffer on every
+compiler to date (BORROW-015 at the operation now). Option (a) FREEZE, the author's ruling (Q75, ≈19:55 2026-10-24 via
+management_3): freeze the `List`, do NOT refuse the pointer. A new party kind VIEW-LIKE (`PARTY_ELEM_ADDR`, alias.npk,
+raised at `@place` over a `List` element and judged by the mutation-summary path exactly as the view party is), so it
+never fires on `@l` handed to a read-only callee and never conflicts with a claim where a view would not. The by-scope
+false positive is accepted under D-286's lexical model (k304b; see D-286's note of this day). An element address reached
+OTHER than syntactically -- a call's result, or one handed across a call that reallocates through a pointer parameter --
+is not yet frozen (DEF-307).
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 

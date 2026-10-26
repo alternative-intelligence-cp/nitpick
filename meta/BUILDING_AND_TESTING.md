@@ -2081,3 +2081,23 @@ that carried them retired at the cycle close):
   on `pointer_targets_of` discharged its stack-depth row. STILL OPEN, each HIGH: DEF-298, DEF-299 (the store-matrix faces, M3),
   DEF-304 (a plain pointer into a `List` element across a reallocating operation; Q75 with the author), DEF-306 (a lent crossing
   aliased through a pointer) -- do not write those shapes in `src/`.
+
+  (DEF-304, listed still open here, is FIXED at landing 162 -- the next gotcha.)
+
+- **A new aliasing party that must conflict with writes is VIEW-LIKE, not a standalone kind** (DEF-304, landing 162; alias.npk).
+  A plain pointer into a `List` element held across an operation that reallocates, shrinks, reassigns, moves or drops the `List`
+  (`list_push` past `cap`, `list_reserve`, `list_truncate`, `list_pop`, `list_clear`, an assignment over the `List`, a move out
+  of it, a `List` field grown) read the FREED buffer on every compiler to date -- D-286's plain-address rule judged it by
+  nothing. Option (a) FREEZE (the author's Q75, ≈19:55 2026-10-24 via `management_3`) freezes the `List` as D-325 freezes a
+  view's root. The plan sketched the freeze as a STANDALONE party kind with a blanket `admit_written` of `ACC_WRITE`; the build
+  made `PARTY_ELEM_ADDR` VIEW-LIKE and `summary_judged` instead, so it is judged by the mutation-summary path
+  (`check_written`->CHECK_VIEWS) exactly as the view party is. More precise, and the reason to prefer it: a view-like party never
+  fires on `@l` handed to a READ-ONLY callee (the summary carries no write of `l`), never conflicts with a `$$i`/`$$m` claim where
+  a view would not (the claim keeps D-286's same-root rule), and leaves a claim-held hazard to the claim's own party (u304i stays
+  `NITPICK-BORROW-013`). `place_is_list_element` recognises the element -- `l[i]` canonicalises to `l.items[…]` (D-314 §2), so the
+  party overlaps the element-store path -- and is fuel-bounded with a measure (D-304). The by-scope false positive is ACCEPTED
+  (k304b: the pointer dead before the op but still in scope, so the op is refused; narrow later with by-last-use liveness of the
+  holder, as DEF-302's k302a). When adding a party that freezes a root against a write, model it on the VIEW party, not a new
+  kind. STILL OPEN, each HIGH: DEF-298, DEF-299 (the store-matrix faces, M3), DEF-306 (a lent crossing aliased through a pointer),
+  DEF-307 (a `List`-element pointer reached other than syntactically -- a call's result, or carried into a callee that
+  reallocates through a pointer parameter; DEF-304's residue) -- do not write those shapes in `src/`.

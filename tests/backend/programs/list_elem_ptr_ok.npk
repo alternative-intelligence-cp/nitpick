@@ -1,0 +1,56 @@
+// expect-exit: 0
+mod:list_elem_ptr_ok;
+// THE LEGAL HALF OF DEF-304 (a plain address into a `List` element, option (a)
+// FREEZE): a pointer whose block ENDS before the reallocating op; a read by
+// INDEX after a growth (no pointer held); a pointer into a fixed ARRAY element
+// across a reassignment (arrays never reallocate, so the storage does not move
+// and the address stays valid -- the control u304h). Each must stay clean and
+// exit 0 at both legs; each check fails at its own exit.
+struct:H2 = { string:o; };
+
+func:scope_ended = int64() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    int64:r = 0i64;
+    {
+        H2->:hp = @l[0i64];
+        r = hp.o.len;                                        // reads "ab" (len 2) in hp's block
+    }
+    drop list_push(@l, H2{ o: string_concat("c", "d") });    // hp's block ended: clean
+    pass r;
+};
+func:by_index = int64() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    drop list_push(@l, H2{ o: string_concat("c", "d") });    // no pointer held: clean
+    pass l[0i64].o.len;                                      // reads "ab" (len 2) by index
+};
+func:array_elem = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    H2->:hp = @arr[0i64];
+    arr = [H2{ o: string_concat("eee", "f") }, H2{ o: string_concat("g", "h") }];   // an array's storage does not move
+    pass hp.o.len;                                           // reads "eeef" (len 4) in the same, valid storage
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw scope_ended()) != 2i64) { exit 11i32; }
+    if ((raw by_index()) != 2i64) { exit 12i32; }
+    if ((raw array_elem()) != 4i64) { exit 13i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

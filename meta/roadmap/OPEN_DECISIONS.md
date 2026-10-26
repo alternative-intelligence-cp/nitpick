@@ -3707,18 +3707,32 @@ defect declares a `DEF-` in §2f.
 > z303i is admitted, as its direct spelling `arr[1i64].o = …` always was. `tests/analysis/rejection/range_level.npk` (six
 > sites), `tests/backend/programs/range_level_ok.npk` (the legal half; refused by 158's compiler at the shape admitted now).
 
-> **DEF-304 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 160, found measuring DEF-302's siblings; HIGH: a
-> use-after-free in safe code at both legs; its fix waits for the author's ruling, Q75). A POINTER INTO A `List` ELEMENT IS HELD
-> ACROSS AN OPERATION THAT GROWS, SHRINKS, MOVES OR DROPS THE `List`.** `H2->:hp = @l[0i64];` followed by `list_push`,
-> `list_reserve`, `list_truncate`, `list_clear`, `list_pop` or any other operation that can reallocate or free the backing
-> buffer, an assignment over the `List` or a move out of it, then a read through `hp`: the compiler admits it today and the
-> pointer reads the freed buffer at both legs. A VIEW of the element (`string_bytes(l[0i64].o)`) is refused already (BORROW-015,
-> D-325); a plain address into a `List` element is judged by nothing (D-286's plain-address rule). The library and application
-> trees hold none by a textual census (the two fuzz sites point into fixed arrays). The fix changes D-286's plain-address rule
-> and waits for the author (Q75): freeze a `List` with a live pointer into one of its elements against any reallocating
-> operation, or refuse the pointer. Passed to Ailp-team_19 with rules (6) and (7) via the library seat. Next in management's
-> order (2026-10-24): its plan and census are DONE (landing 160's record, `DEF304_PLAN.md`); the BUILD waits the author's Q75
-> (freeze vs refuse), after DEF-305, before DEF-298 and DEF-299.
+> **DEF-304 — FIXED 2026-10-26 (landing 162; registered 2026-10-24 by `nitpick-compiler_48` at landing 160, found measuring
+> DEF-302's siblings; HIGH: a use-after-free in safe code at both legs). A POINTER INTO A `List` ELEMENT HELD ACROSS AN
+> OPERATION THAT GROWS, SHRINKS, REASSIGNS, MOVES OR DROPS THE `List` IS NOW FROZEN AGAINST IT.** `H2->:hp = @l[0i64];`
+> followed by `list_push` past `cap`, `list_reserve`, `list_truncate`, `list_pop`, `list_clear`, an assignment over the `List`,
+> a move out of it, or a `List` FIELD grown, then a read through `hp`: every compiler to date admitted it and the pointer read
+> the FREED buffer at both legs (exit 10/11, `wt/48a/.internal/probes/m2/u304a-g,k,l`). A VIEW of the element
+> (`string_bytes(l[0i64].o)`) was refused already (BORROW-015, D-325); a plain address into a `List` element was judged by
+> nothing (D-286's plain-address rule). RULED option (a) FREEZE by the author (≈19:55 2026-10-24 via management_3, Q75 — freeze
+> the `List`, do NOT refuse the pointer): a `List` with a live plain pointer into one of its elements is FROZEN against any
+> operation that reallocates, shrinks, reassigns, moves or drops it, EXACTLY as D-325 freezes a root against a held view.
+> FIXED HERE (alias.npk): a new party kind `PARTY_ELEM_ADDR`, raised where `@place` addresses a `List` element
+> (`place_is_list_element`, canonicalising `l[i]` to `l.items[…]`, D-314 §2), VIEW-LIKE and judged by the mutation-summary path
+> (conflicting with WRITE|EXCLUSIVE exactly as the view party does); `NITPICK-BORROW-015` at the operation. DESIGN REFINEMENT
+> (recorded against the plan's standalone-kind sketch): making the kind VIEW-like and `summary_judged` — caught by
+> `check_written`→CHECK_VIEWS as the view twin is — is more precise than the sketch's separate kind relying on a blanket
+> `admit_written` of ACC_WRITE: it never fires on `@l` handed to a READ-ONLY callee, never conflicts with a claim where a view
+> would not, and leaves the claim-held hazard (u304i) to the claim's own party (BORROW-013). The k304b BY-SCOPE false positive
+> is ACCEPTED (the pointer dead before the growth but still in scope → the growth is refused; narrow later with by-last-use
+> liveness of the holder, recorded under D-286, as DEF-302's k302a). 0 TREE SITES: the census found 0 `List`-element pointers in
+> the libraries, applications and fuzz corpus and 9 benign READ-ONLY sites in the compiler (`npkg/floor_model.npk`,
+> `npkg/floor_shared.npk`, `src/backend/emit_program.npk`), none held across a realloc. TESTS:
+> `tests/analysis/rejection/list_elem_ptr.npk` (nine sites, one `NITPICK-BORROW-015` each),
+> `tests/backend/programs/list_elem_ptr_ok.npk` (three legal controls: a pointer whose block ends before the op, a read by
+> INDEX after a growth, and a pointer into a fixed ARRAY element across a reassignment — arrays never reallocate, u304h). The
+> return/callee-provenance faces (a call-result element pointer, u304j; an element pointer carried into a callee that
+> reallocates the `List` through a pointer parameter, u304b) are out of scope here (the plan's §7) and registered DEF-307.
 
 > **DEF-305 — FIXED 2026-10-24 (landing 161; registered 2026-10-24 at landing 160 from DEF-302's residual probes, fixed here by
 > `nitpick-compiler_48`; HIGH: a use-after-free in safe code at both legs). A POINTER WITH NO NAME, OR A POINTER COMPOSED WITH A
@@ -3762,6 +3776,24 @@ defect declares a `DEF-` in §2f.
 > compiler's own tree; the census after the DEF-304 build confirms the libraries and applications). Fix direction: the same
 > resolution in the spawn-lend check. Next in management's order (2026-10-24): measured and censused after the DEF-304 build,
 > placed against M3 (DEF-298/DEF-299) by size. Please write none.
+
+> **DEF-307 — OPEN (registered 2026-10-25 by `nitpick-compiler_48` at landing 162, measuring DEF-304's siblings; HIGH: a
+> use-after-free in safe code at both legs). A POINTER INTO A `List` ELEMENT REACHED OTHER THAN SYNTACTICALLY `@l[i]` IS NOT
+> FROZEN AGAINST A REALLOCATION.** DEF-304 (landing 162) freezes a `List` against a reallocating operation while a plain
+> address `@l[i]` into one of its elements is live, raised SYNTACTICALLY by `place_is_list_element` reading the addressed
+> place. Two faces it does not reach, each 11/11 at both legs (`wt/48a/.internal/probes/m2/results_u304_159.txt`, the plan's
+> §7): (j) a CALL-RESULT element pointer — `H2->:hp = raw first(@l);` with `first(List<H2>->:lp) = @(<-lp)[0i64]` returning the
+> element address, then `list_push(@l, …)` and a read through `hp` (`u304j`); and (b) an element pointer carried into a callee
+> that reallocates the `List` through a pointer PARAMETER — `pushread(@l[0i64], @l)` with `pushread(H2->:e, List<H2>->:lp)`
+> growing `*lp` and reading `*e` (`u304b`). The element-address analogue of the name-vs-pointer-provenance gap DEF-305 closes
+> for the write-aliasing domain (a call-result pointer resolved by its RETURN provenance, `escape_pointer_targets`) and of
+> DEF-275/DEF-289's cross-call question (a mutation carried through a pointer parameter to the caller's storage): DEF-304's
+> freeze party is raised only at a syntactic `@l[i]`, so an element address reached through a call's result or handed across a
+> call is frozen by nothing. 0 TREE SITES (DEF-304's census: no tree file holds a `List`-element pointer across a realloc by
+> any spelling; the two fuzz sites point into fixed arrays). Fix direction: raise `PARTY_ELEM_ADDR` for a call-result pointer
+> whose return provenance points into a `List` element (the freeze-direction twin of DEF-305's `escape_pointer_targets`), and
+> carry the element-address party across a call through the mutation-summary path as DEF-289's second face carries a view.
+> Please write none.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

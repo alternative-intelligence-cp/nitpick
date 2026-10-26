@@ -1,0 +1,127 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 58:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 66:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 75:24
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 84:26
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 92:21
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 100:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 108:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 117:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 125:20
+mod:list_elem_ptr;
+// A PLAIN ADDRESS INTO A `List` ELEMENT, HELD ACROSS A REALLOCATING OR DROPPING
+// OPERATION (DEF-304, landing 162; option (a) FREEZE, the author ≈19:55
+// 2026-10-24 via management_3). A `List`'s backing buffer moves when it grows
+// (`list_push` past `cap`, `list_reserve`), shrinks (`list_truncate`,
+// `list_pop`, `list_clear`), is reassigned, moved out or dropped; a plain
+// address `@l[i]` into one of its elements then dangles. Each shape below
+// compiled on every compiler to date and read the FREED buffer at both legs
+// (`wt/48a/.internal/probes/m2/u304*`: exit 10/11, a use-after-free in safe
+// code). Now the `List` is FROZEN against the operation while the address is
+// live, EXACTLY as D-325 freezes a root against a held view (the view twin
+// `string_bytes(l[0].o)` is BORROW-015 already): `PARTY_ELEM_ADDR`, view-like,
+// caught by the mutation-summary path, reported `NITPICK-BORROW-015` at the op.
+//
+//   01  three `list_push` (the buffer grows)                 BORROW-015 at the push
+//   02  `list_reserve` (grows the buffer)                    BORROW-015 at the reserve
+//   03  `list_truncate` (shrinks/frees)                      BORROW-015 at the truncate
+//   04  `list_pop` (shrinks)                                 BORROW-015 at the pop
+//   05  `list_clear` (frees)                                 BORROW-015 at the clear
+//   06  the `List` reassigned under the pointer              BORROW-015 at the assignment
+//   07  a `List` FIELD grown                                 BORROW-015 at the push
+//   08  the `List` moved out and dropped                     BORROW-015 at the move
+//   09  k304b, ACCEPTED by-scope false positive: the pointer is never used after
+//       the growth (the later read is via `l[0]`), but it is in scope, so the
+//       by-scope party is live and the growth is refused -- narrow later with
+//       by-last-use liveness of the holder (recorded, D-286; as DEF-302's k302a).
+//
+// The CALL-RESULT element pointer (`hp = get0(@l)`, u304j) and a `List`
+// reallocated only through a pointer PARAMETER are the return/callee-provenance
+// face, out of scope here (the plan's §7) -- registered OPEN. An ARRAY element
+// pointer across a reassignment (arrays never reallocate) and a read by index
+// after a growth are clean (controls, in `list_elem_ptr_ok.npk`).
+struct:H2 = { string:o; };
+struct:Bag = { List<H2>:items; };
+
+func:grow_push = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    H2->:hp = @l[0i64];
+    drop list_push(@l, H2{ o: string_concat("c", "d") });
+    discard(hp.o.len);
+    pass NIL;
+};
+func:reserve_op = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    H2->:hp = @l[0i64];
+    drop list_reserve(@l, 64i64);
+    discard(hp.o.len);
+    pass NIL;
+};
+func:truncate_op = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(2i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    drop list_push(@l, H2{ o: string_concat("c", "d") });
+    H2->:hp = @l[0i64];
+    drop list_truncate(@l, 1i64);
+    discard(hp.o.len);
+    pass NIL;
+};
+func:pop_op = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(2i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    drop list_push(@l, H2{ o: string_concat("c", "d") });
+    H2->:hp = @l[0i64];
+    discard(raw list_pop(@l));
+    discard(hp.o.len);
+    pass NIL;
+};
+func:clear_op = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    H2->:hp = @l[0i64];
+    drop list_clear(@l);
+    discard(hp.o.len);
+    pass NIL;
+};
+func:reassign_op = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    H2->:hp = @l[0i64];
+    l = raw list_init::<H2>(1i64);
+    discard(hp.o.len);
+    pass NIL;
+};
+func:field_grow = NIL() never fails {
+    Bag:bag = Bag{ items: raw list_init::<H2>(1i64) };
+    drop list_push(@bag.items, H2{ o: string_concat("a", "b") });
+    H2->:hp = @bag.items[0i64];
+    drop list_push(@bag.items, H2{ o: string_concat("c", "d") });
+    discard(hp.o.len);
+    pass NIL;
+};
+func:eat = NIL(move List<H2>:l) never fails { pass NIL; };   // `l` drops at scope end
+func:move_out = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    H2->:hp = @l[0i64];
+    drop eat(move(l));
+    discard(hp.o.len);
+    pass NIL;
+};
+func:unused_after_growth = int64() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop list_push(@l, H2{ o: string_concat("a", "b") });
+    H2->:hp = @l[0i64];
+    drop list_push(@l, H2{ o: string_concat("c", "d") });   // k304b: hp dead here, but in scope
+    pass l[0i64].o.len;
+};
