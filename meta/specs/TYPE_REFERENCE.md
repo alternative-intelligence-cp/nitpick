@@ -2312,16 +2312,24 @@ Everything below follows from that one sentence, and nothing beyond it is part o
 - NOT valid as a general "no value" — that's `NIL`
 - IR: `ptr null`
 - A store through a `NULL` pointer (a `wild` one, since landing 119), or a load from one
-  whose value the program USES, is a hardware fault that reaches `failsafe` as
-  `MachineFault` (D-307) at BOTH legs: every emitted function carries LLVM's
-  `null_pointer_is_valid` attribute (DEF-251, 1.6.1e landing 115), so the optimiser never
-  reads the dereference as undefined and never folds the body that holds it. A load
-  whose value NOTHING uses is no read at -O2 -- dead-code elimination removes an unused
-  load from valid memory, as it may of any load, and no attribute keeps one -- and faults
-  at -O0: the legs' one permitted disagreement, narrow to an unused load through a `wild`
-  `NULL` pointer (D-364, 2026-10-22; DEF-273, the fuzzer's F-051; the fuzz corpus records
-  F-051's programs as that disagreement). This bullet said "a store through or a load
-  from a `NULL` pointer … at BOTH legs" from landing 115 until landing 142.
+  whose value HAS AN OBSERVABLE EFFECT -- the value decides a branch the run takes, an
+  exit, a trap-checked operation, or any result the program observes -- is a hardware
+  fault that reaches `failsafe` as `MachineFault` (D-307) at BOTH legs: every emitted
+  function carries LLVM's `null_pointer_is_valid` attribute (DEF-251, 1.6.1e landing 115),
+  so the optimiser never reads the dereference as undefined and never folds the body that
+  holds it. A load whose value HAS NO OBSERVABLE EFFECT -- one nothing uses, or one used
+  only where the use decides nothing (a branch the run does not take, a callee that
+  ignores the argument, a copy never read, `v - v`, `v != v`) -- is no read at -O2
+  (dead-code elimination removes it from valid memory, as it may of any load, and no
+  attribute keeps one) and faults at -O0: the legs' one permitted disagreement, narrow to
+  a load through a `wild` `NULL` pointer whose value has no observable effect (D-364,
+  2026-10-22, amended 2026-10-25 for F-053; DEF-273/F-051 was the value never read, F-053
+  the value read but semantically dead; the fuzz corpus records both as that
+  disagreement). This bullet said "a store through or a load from a `NULL` pointer … at
+  BOTH legs" from landing 115 until landing 142, and spoke of a load whose value the
+  program "USES" vs. one "NOTHING uses" until F-053's ruling read "USES" as observable
+  effect (2026-10-25, the author through `nitpick-fuzz_4`: "if option b doesn't actually
+  allow anything unsafe to occur then that seems the best option").
 
 ### `void` — C Interop Only
 

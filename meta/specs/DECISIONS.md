@@ -23742,3 +23742,21 @@ other construct still answer alike at -O0 and -O2, and the harness holds every p
 as before. F-051's programs are recorded in the fuzz corpus as the legs' one permitted disagreement (management told the
 fuzzer, whose -O0-against-O2 comparison allows exactly this shape). No compiler change; DEF-273 closes as a
 documentation row.
+
+*[2026-10-25, F-053 — a dated note. The author, through `nitpick-fuzz_4` at ~08:57, ruled option (b) on the fuzzer's
+F-053: "I am fine with what compiler_48 recommended (b) unless there is some reason not to go with that that i am not
+seeing … if option b doesn't actually allow anything unsafe to occur then that seems the best option to me."]* D-364's
+"USES" / "NOTHING uses" is read as OBSERVABLE EFFECT, not textual presence: a load through a `wild` NULL pointer faults
+at both legs when its value DECIDES SOMETHING THE PROGRAM OBSERVABLY DOES, and is the legs' one permitted disagreement
+(no read at -O2, a fault at -O0) when its value decides nothing observable — whether nothing reads it (F-051/DEF-273)
+or something reads it but the read decides nothing (F-053: a branch the run does not take, a callee that ignores the
+argument, a copy never read, `v - v`, `v != v`). NO COMPILER CHANGE: `null_pointer_is_valid` already keeps every used
+load, and -O2's dead-code elimination already removes only loads whose value nothing observable depends on — so a `wild`
+NULL load whose value feeds a real use (e.g. an overflow check that reads it: F-053's `ctl_wild_dead_add`, 107/107)
+faults at both legs. This widens the SHAPE of the permitted -O0/-O2 disagreement beyond F-051's never-read to F-053's
+read-but-dead; it trades no safety — any value that decides anything still faults both legs, and the NULL still faults
+on any real use; only the exit code of a program whose sole effect was the fault differs. §27 (TYPE_REFERENCE.md) is
+tightened to match. A compile-time warning was considered and set aside as low-value (it can fire only on
+statically-provable NULL derefs, which real run-time NULLs are not); an opt-in checked build (S-140's R3) remains the
+way to make -O2 stop too, available later if wanted. F-053 is nitpick-fuzz's finding (main 70a0d8b,
+findings/F-053-wild-used-load-legs-disagree/).
