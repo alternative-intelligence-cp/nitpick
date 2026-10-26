@@ -1,0 +1,230 @@
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 88:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 97:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 106:34
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 116:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 126:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 135:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 145:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 153:5
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 162:33
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 173:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 183:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 193:13
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 209:18
+mod:spawn_lent_through_pointer;
+// DEF-306 (1.6.1e, landing 163): A SPAWN'S LEND IS COMPARED AGAINST A WRITE OF THE
+// CROSSING REACHED BY ANOTHER NAME, ONE OF THEM A POINTER TO THE SAME STORAGE. A
+// spawn LENDS its crossing until the block's join (BORROW-016, D-180), tracked by
+// the ROOT symbol handed to the spawn. `spawn_lent.npk` (DEF-148) is the same-name
+// case -- lend `@s`, write `s`. This file is the POINTER-ALIASED twin, the lend
+// analogue of DEF-302/DEF-305 for the view domain: a lend THROUGH a pointer and a
+// write of the crossing by its own name (the REVERSE), and a lend by name and a
+// whole-pointee write through a pointer by another name handed to a callee (the
+// FORWARD). Each compiled before this landing and read freed memory at both legs
+// (`.internal/probes/def306/`): the lent arena replaced/destroyed/moved under the
+// live task, exit 107/113 or a WildLeak.
+//
+// The lend's root is resolved from the spawn's pointer argument (`lend_through_pointer`
+// in `lend_spawn_args`): an `@place` by `ptr_last_base`, a named pointer value by
+// `pointer_targets_of`, a call's result by `escape_pointer_targets` (D-326 rule A),
+// a LENT party per target. The forward whole-pointee write through a NAMED pointer
+// handed to a callee is resolved by `ptr_place_written_whole` + `check_pointer_targets`
+// under CHECK_LENT. BORROW-016 at the write, the call, or the spawn.
+//
+// STILL OPEN, split off (the check `matrix306.py` cites these by cell ID, KNOWN-LIMIT):
+// a DIRECT whole-pointee write/move through a CALL-RESULT pointer (`(<-(raw idp(@s))) = …`,
+// DEF-309, HIGH), and `destroy` through a pointer FIELD (`pa.p.destroy()`, which escapes
+// TYPE-091, DEF-310, HIGH). DEF-309/310 land first next week, before M3.
+//
+// Controls carrying no code (clean -- in `spawn_lent_through_pointer_ok.npk`): the
+// lend's block ended before the write; a pointer to a DIFFERENT arena than the one
+// lent; the owner's own concurrent operations through the pointer.
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:PA = { shared_arena<int64>->:p; };
+
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+thread async func:locker = NIL(Mutex<int32, 3i32>->:m) joins J2 {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    g.value = g.value + 1i32;
+    pass NIL;
+};
+thread async func:tw = NIL(shared_arena<int64>->:s) joins J2 {
+    (<-s) = shared_arena_make(4i64);   // the task itself stores over what it was lent
+    pass NIL;
+};
+func:replace = NIL(shared_arena<int64>->:p) never fails {
+    (<-p) = shared_arena_make(4i64);
+    pass NIL;
+};
+func:idp = shared_arena<int64>->(shared_arena<int64>->:p) never fails { pass p; };
+
+// --- REVERSE: lent THROUGH a pointer, the crossing written by its own name --------
+
+// 1. a named pointer, the crossing assigned over
+async func:rev_named_assign = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop filler(sp);
+    s = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 2. a named pointer, the crossing destroyed
+async func:rev_named_destroy = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop filler(sp);
+    s.destroy();
+    pass NIL;
+};
+
+// 3. a named pointer, the crossing moved out
+async func:rev_named_move = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop filler(sp);
+    shared_arena<int64>:t = move(s);
+    t.destroy();
+    pass NIL;
+};
+
+// 4. a named pointer, the crossing replaced by a callee by its own name
+async func:rev_named_replace = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop filler(sp);
+    drop replace(@s);
+    pass NIL;
+};
+
+// 5. a COPY of the pointer
+async func:rev_copy_assign = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    shared_arena<int64>->:sq = sp;
+    drop filler(sq);
+    s = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 6. a pointer in a LOCAL field
+async func:rev_field_assign = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    PA:pa = PA{ p: @s };
+    drop filler(pa.p);
+    s = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 7. a TWO-LEVEL pointer field
+async func:rev_two_level_assign = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    PA:pa = PA{ p: @s };
+    PA->:pap = @pa;
+    drop filler(pap.p);
+    s = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 8. a CALL-RESULT pointer handed to the spawn, the crossing assigned by name
+async func:rev_call_result_assign = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(raw idp(@s));
+    s = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 9. a Mutex lent through a pointer, moved by name
+async func:rev_mutex_move = NIL() {
+    Mutex<int32, 3i32>:m = mutex(0i32) ?! E1;
+    Mutex<int32, 3i32>->:mp = @m;
+    drop locker(mp);
+    Mutex<int32, 3i32>:u = move(m);
+    pass NIL;
+};
+
+// --- FORWARD: lent by name, the whole pointee written through a pointer by another name ---
+
+// 10. the original DEF-306 shape (s302s2): `@s` lent, `replace(sp)` through the pointer
+async func:fwd_named_replace = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop filler(@s);
+    drop replace(sp);
+    pass NIL;
+};
+
+// 11. forward through a SECOND pointer to the same storage
+async func:fwd_second_ptr_replace = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    shared_arena<int64>->:sq = @s;
+    drop filler(sp);
+    drop replace(sq);
+    pass NIL;
+};
+
+// --- THE TASK ITSELF stores over what it was lent, reached through a pointer local ---
+
+// 12. the task body replaces the crossing; refused at the spawn
+async func:task_replaces_through_ptr = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop tw(sp);
+    pass NIL;
+};
+
+// --- the ACCEPTED over-refusal: a re-pointed pointer (DEF-302's k302a's twin, D-286) ---
+
+// 13. `sp` is re-pointed to `t` before the write; SAFE (the pointer now targets `t`),
+// but `pointer_targets_of` is flow-insensitive and still carries `@s`, so the walk
+// cannot prove `sp` no longer targets `s` and refuses. 0 tree sites; store a copy or
+// write before re-pointing. (control: the legal re-point with no write, in the ok file.)
+async func:repointed_over_refusal = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>:t = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    drop filler(@s);
+    sp = @t;
+    drop replace(sp);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (StaleHandle) { exit 92i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (IntOverflow) { exit 90i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

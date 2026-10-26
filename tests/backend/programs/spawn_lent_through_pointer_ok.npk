@@ -1,0 +1,98 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE LEGAL HALF OF DEF-306 (a spawn's lend compared against a write of the crossing
+// reached by another name): a crossing lent THROUGH a pointer, used only by the contract's
+// own operations while lent and reassigned AFTER the block joins the task; a whole-pointee
+// write through a pointer to a DIFFERENT arena while one is lent; and a pointer RE-POINTED
+// with no write through it after. Each must stay clean; exit 0 at both legs. The refusals
+// of the same shape are `tests/analysis/rejection/spawn_lent_through_pointer.npk`.
+mod:spawn_lent_through_pointer_ok;
+error:E9;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+
+thread async func:filler = NIL(shared_arena<int64>->:s, Channel<int64, 4i32, 4i64>:done,
+                               int64:base) joins J2 {
+    int64:i = 0i64;
+    int64:last = 0i64;
+    while (i < 20i64) decreases 20i64 - i {
+        Handle<int64>:h = s.alloc(base + i);
+        last = s.get(h) ?! E9;
+        i = i + 1i64;
+    }
+    await done.send(last, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int64, 4i32, 4i64>:done = channel() ?! Unreachable;
+
+    // 1. lent THROUGH a pointer; the owner uses only alloc/get while lent; the crossing
+    // reassigned AFTER the block's exit joins the task.
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        shared_arena<int64>->:sp = @s;
+        drop filler(sp, done, 1000i64);
+        Handle<int64>:h0 = s.alloc(7i64);
+        if ((s.get(h0) ?! E9) != 7i64) { exit 11i32; }
+    }
+    int64:a = await done.recv(raw duration_ms(5i64)) ?! E9;
+    if (a != 1019i64) { exit 12i32; }
+    s = shared_arena_make(4i64);        // safe: the task joined at the block's exit
+    s.destroy();
+
+    // 2. a whole-pointee write through a pointer to a DIFFERENT arena while one is lent.
+    shared_arena<int64>:u = shared_arena_make(8i64);
+    shared_arena<int64>:w = shared_arena_make(8i64);
+    {
+        shared_arena<int64>->:up = @u;
+        shared_arena<int64>->:wp = @w;
+        drop filler(up, done, 2000i64);
+        (<-wp) = shared_arena_make(4i64);   // writes `w`, not the lent `u`
+    }
+    int64:b = await done.recv(raw duration_ms(5i64)) ?! E9;
+    if (b != 2019i64) { exit 13i32; }
+    u.destroy();
+    w.destroy();
+
+    // 3. a pointer RE-POINTED with no WRITE through it (the legal half of c306f): the lend
+    // is by name (`@p`), and `pp` is re-pointed to `q` and only READ (alloc/get, the
+    // contract's own operations). No write through `pp` frees the lent crossing.
+    shared_arena<int64>:p = shared_arena_make(8i64);
+    shared_arena<int64>:q = shared_arena_make(8i64);
+    {
+        shared_arena<int64>->:pp = @p;
+        drop filler(@p, done, 3000i64);
+        pp = @q;
+        Handle<int64>:hq = pp.alloc(5i64);
+        if ((pp.get(hq) ?! E9) != 5i64) { exit 15i32; }
+    }
+    int64:c = await done.recv(raw duration_ms(5i64)) ?! E9;
+    if (c != 3019i64) { exit 14i32; }
+    p.destroy();
+    q.destroy();
+
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 89i32; },
+        (IntOverflow) { exit 90i32; },
+        (StaleHandle) { exit 92i32; },
+        (ChannelClosed) { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (OutOfBounds) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (DecreasesViolated) { exit 98i32; },
+        (LimitViolated) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

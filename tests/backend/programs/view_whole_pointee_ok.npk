@@ -1,0 +1,69 @@
+// expect-exit: 0
+mod:view_whole_pointee_ok;
+// THE LEGAL HALF OF DEF-308 (a callee that replaces the whole pointee, handed a named
+// pointer, vs a view of the pointee by its own name): the view read inside a block that
+// ENDS before the write; a whole-pointee writer run on a DIFFERENT pointee than the one
+// viewed; and a pointer RE-POINTED with no write through it after. Each must stay clean;
+// exit 0 at both legs. The refusals of the same shape are
+// `tests/analysis/rejection/view_whole_pointee.npk`.
+//
+// NOTE: "the view read BEFORE the write, same scope" is NOT here -- it is REFUSED by the
+// by-scope party model, in parity with the by-name twin that landing 162 refuses the same
+// way (the view party is live to its scope exit, not its last use). End the view's block.
+struct:H2 = { string:o; };
+struct:PH = { H2->:p; };
+func:wr = NIL(H2->:p) never fails { (<-p) = H2{ o: string_concat("x", "y") }; pass NIL; };
+
+// 1. the view lives only in a block that ends before the whole-pointee write
+func:view_block_ended = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    int32:r = 0i32;
+    {
+        fixed uint8[]:vw = string_bytes(h.o);
+        r = vw[0i64] => int32;
+    }
+    drop wr(hp);
+    pass r;
+};
+
+// 2. the writer runs on a DIFFERENT pointee than the one viewed
+func:writer_other_pointee = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:gp = @g;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wr(gp);
+    pass (vw[0i64] => int32);
+};
+
+// 3. the pointer RE-POINTED to `g` with NO write through it after (c308f's legal control)
+func:repoint_no_write = int32() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp = @g;
+    pass (vw[0i64] => int32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw view_block_ended()) != 97i32) { exit 11i32; }
+    if ((raw writer_other_pointee()) != 97i32) { exit 12i32; }
+    if ((raw repoint_no_write()) != 97i32) { exit 13i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

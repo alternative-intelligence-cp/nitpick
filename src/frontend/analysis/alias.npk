@@ -1263,6 +1263,18 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe, int32:fuel, List<ViewRef>->:
     pass NIL;
 };
 
+// IS `place` A NAMED POINTER PLACE THAT `ap` WRITES WHOLE (DEF-306, DEF-308)?
+// pointer-typed, rooted at a name, and `ap` its own steps and nothing below.
+func:ptr_place_written_whole = bool(Alias->:x, ExprId:place, List<Step>:ap) never fails {
+    int32:t = raw exprtypes_get(x.etypes, place);
+    if (t == 0i32) { pass false; }
+    if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
+    if ((raw place_root_symbol(x, place)) == 0i32) { pass false; }
+    List<Step>:own = raw list_init::<Step>(8i64);
+    if (!(raw path_steps(x, place, @own))) { pass false; }
+    pass (own.count == ap.count);
+};
+
 // FORWARD (DEF-302): a write through a pointer -- a pointer local's pointee
 // (`hp.o`), a pointer field's, a two-level `bp.p`, a pointer returned or copied --
 // re-rooted at each storage the pointer points at (`pointer_targets_of`), the
@@ -1270,22 +1282,34 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe, int32:fuel, List<ViewRef>->:
 // (`check_view_parties_at`, DEF-297's reader) and the views taken through a
 // pointer at the same target (`check_pointer_view_parties`). A bare pointer NAME
 // written whole under `CHECK_ALL` is a reassignment (`hp = …`), left alone.
+// A NAMED POINTER HANDED WHOLE TO A CALLEE (DEF-306, DEF-308; landing 163): under
+// a callee's summary (`CHECK_VIEWS`, `CHECK_LENT`) a pointer place the written
+// path ends AT -- a pointer local, a copy, a pointer field, a two-level field --
+// is written THROUGH: the callee holds the pointer's value and cannot reassign
+// the caller's binding, so a write of its whole pointee (`(<-p) = …`) is a write
+// of what the place points at. The place's own pointer is the write's, never an
+// outer one: `ptr_last_base` answers `pap` for `pap.p`, and the write read as
+// `pa.p`'s own reassignment. Until this landing such a write fell to the
+// rootless gate below and was judged by nothing: a lent arena replaced under its
+// task (DEF-306) and a viewed string freed under its view (DEF-308), at both legs.
 func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:akind, Span:at, int32:mode) never fails {
     ExprNode:pn = raw ast_expr(x.ast, place);
     if ((pn.kind == ExprKind.ExprIdentifierExpr) && (ap.count == 0i64) && (mode == (raw CHECK_ALL()))) {
         if (raw root_ident_is_pointer(x, place)) { pass false; }
     }
     ExprId:pe = raw ptr_write_base(x, place, ap.count);
+    if ((mode == (raw CHECK_VIEWS())) || (mode == (raw CHECK_LENT()))) {
+        if (raw ptr_place_written_whole(x, place, ap)) { pe = place; }
+    }
     if (raw expr_is_none(pe)) {
         // DEF-305: a pointer that is a CALL'S RESULT (or any pointer expression
         // with NO named root) has no place chain -- resolve it by rule A
         // (`escape_pointer_targets`), the whole write path `ap` composed onto each
-        // target. Gated on a ROOTLESS place (`place_root_symbol` 0): a bare NAMED
-        // pointer whose `ptr_write_base` is none (a whole-pointee write, `ap`
-        // empty) keeps the base's reading -- its reassignment is not a conflict
-        // the view/lent readers judge here (D-286, DEF-272), and resolving it
-        // would fire on a named pointer's whole-pointee write, outside this
-        // defect's scope.
+        // target. Gated on a ROOTLESS place (`place_root_symbol` 0): a NAMED
+        // pointer place reaching here is written whole under `CHECK_ALL` -- its
+        // reassignment (`pa.p = @t`), which moves the pointer and leaves the
+        // pointee alone (D-286, DEF-272); under a callee's summary it was taken
+        // as the write's pointer above (DEF-306, DEF-308).
         int32:plt = raw exprtypes_get(x.etypes, place);
         if ((plt != 0i32) && ((raw type_kind(x.types, plt)) == (raw TY_POINTER()))
             && ((raw place_root_symbol(x, place)) == 0i32)) {
@@ -2299,7 +2323,9 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
     // `frame_pop`. The party is pushed after the call's own parties are gone,
     // and the callee's mutation summary is then read against it for the
     // spawn's own `@s`: a task that writes or moves out what it was lent is
-    // refused at the spawn, as a later `destroy` by the owner is.
+    // refused at the spawn, as a later `destroy` by the owner is. A crossing
+    // handed through a pointer is lent at what the pointer points at too
+    // (DEF-306, `lend_through_pointer`).
     if (id.index == x.spawn_call.index) {
         if (!(raw expr_is_none(x.spawn_call))) { drop lend_spawn_args(x, id, start, count, pos_base, callee_fn); }
     }
@@ -2315,6 +2341,7 @@ func:lend_spawn_args = NIL(Alias->:x, ExprId:id, int32:start, int32:count, int32
         if ((raw type_kind(x.types, aty)) != (raw TY_POINTER())) { continue; }
         if (!(raw spawn_crossing_kind(raw type_kind(x.types, raw type_elem(x.types, aty))))) { continue; }
         ExprNode:an = raw ast_expr(x.ast, a);
+        drop lend_through_pointer(x, id, a, an, callee_fn, pos_base + i);
         ExprId:place = raw expr_none();
         bool:root_ptr = false;
         if (an.kind == ExprKind.ExprAddressOfExpr) {
@@ -2331,6 +2358,54 @@ func:lend_spawn_args = NIL(Alias->:x, ExprId:id, int32:start, int32:count, int32
         if ((an.kind == ExprKind.ExprAddressOfExpr) && (callee_fn > 0i32)) {
             drop check_written_mode(x, place, callee_fn, pos_base + i, an.span, raw CHECK_LENT());
         }
+    }
+    pass NIL;
+};
+
+// A CROSSING LENT THROUGH A POINTER (DEF-306, landing 163): a spawn handed the
+// crossing by a pointer VALUE -- a pointer local, a copy, a pointer field, a
+// call's result -- or by an `@place` whose path passes a pointer (`@(<-sp)`,
+// `@wp.a`) lends the storage the pointer points at, so a write of it by its own
+// name (`s = …`, `s.destroy()`, `move(s)`, `replace(@s)`) or through another
+// pointer meets the lend (BORROW-016). Until this landing the lend was rooted at
+// the pointer binding (`root_ptr`) or, for a call's result or a field, made
+// nowhere, and the arena was replaced, destroyed or moved under its task at both
+// legs. The targets are `pointer_targets_of`'s for a named pointer place and the
+// escape analysis's rule-A answer for a call's result (`escape_pointer_targets`,
+// DEF-305), each a LENT party as `@s` makes one, beside the party
+// `lend_spawn_args` roots at the pointer itself; an `@place` through a pointer
+// lends each target WHOLE, the closed direction (`@wp.a` lends all of `w`). The
+// spawned callee is read against the lend for what it writes through a pointer
+// VALUE, as `lend_spawn_args` reads `@s`'s (a task that stores over what it was
+// lent). A pointer parameter has no target here (`pointer_targets_of` reads a
+// local's chain): its pointee is the caller's, and its lend is the pointer's.
+func:lend_through_pointer = NIL(Alias->:x, ExprId:id, ExprId:a, ExprNode:an, int32:callee_fn,
+                                int32:pos) never fails {
+    List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
+    bool:addr = (an.kind == ExprKind.ExprAddressOfExpr);
+    if (addr) {
+        ExprId:pb = raw ptr_last_base(x, raw expr_operand(an));
+        if (raw expr_is_none(pb)) { pass NIL; }
+        drop pointer_targets_of(x, pb, 8i32, @tg);
+    } else {
+        if ((raw place_root_symbol(x, a)) == 0i32) {
+            drop escape_pointer_targets(x.esc, a, @tg);
+        } else {
+            drop pointer_targets_of(x, a, 8i32, @tg);
+        }
+    }
+    for (int64:k in 0i64...tg.count) {
+        ViewRef:vr = tg[k];
+        if (vr.root == 0i32) { continue; }
+        ExprId:tpl = ExprId{ index: vr.place };
+        if (raw expr_is_none(tpl)) { continue; }
+        ExprNode:tn = raw ast_expr(x.ast, tpl);
+        if (tn.kind == ExprKind.ExprAddressOfExpr) { tpl = raw expr_operand(tn); }
+        drop list_push(@x.live, Party{ site: id, kind: raw PARTY_LENT(), root: vr.root, holder: 0i32,
+                                       place: tpl, view_kind: 0i32, root_ptr: false, path: vr.path });
+    }
+    if ((tg.count > 0i64) && (callee_fn > 0i32) && (!addr)) {
+        drop check_written_mode(x, a, callee_fn, pos, an.span, raw CHECK_LENT());
     }
     pass NIL;
 };

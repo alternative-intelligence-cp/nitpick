@@ -13183,6 +13183,8 @@ a spawned thread held it, the thread allocating in freed memory — is the shape
 
 *[2026-10-24, 1.6.1e landing 161 — a dated note (DEF-306).]* The lend tracks the crossing by the ROOT SYMBOL handed to the spawn (DEF-148's note above: a write-capable access of `s` before the join is `NITPICK-BORROW-016`); `drop filler(@s)` roots the crossing at `s`. A reassignment or a drop through a POINTER to that storage by ANOTHER name is not resolved to the crossing's root, so `shared_arena<int64>:s = shared_arena_make(8i64); shared_arena<int64>->:sp = @s; drop filler(@s); drop replace(sp);` (where `replace` does `(<-p) = shared_arena_make(4i64)`) drops the old arena — its storage freed — while the spawned `filler` still holds `@s`: a use-after-free / data race in safe code, on every compiler to date (the probe `s302s2`, HIGH). This is the lend-crossing analogue of the name-vs-pointer gap DEF-302 and DEF-305 close for the view-aliasing domain — the crossing's root and the pointer's target are the same storage reached by two names, never compared — and the fix is the same resolution in the spawn-lend check, scheduled against M3 by size after the DEF-304 build (management's order, 2026-10-24). 0 tree sites; the census after the DEF-304 build confirms the libraries and applications. DEF-306 OPEN.
 
+*[2026-10-26, 1.6.1e landing 163 — a dated note (DEF-306).]* The lend is resolved through the pointer now: `lend_through_pointer` (in `lend_spawn_args`) resolves the spawn's pointer argument to the storage it points at — an `@place` by `ptr_last_base`, a named pointer value by `pointer_targets_of`, a call's result by `escape_pointer_targets` (D-326 rule A) — and roots a LENT party at each target; the FORWARD whole-pointee write through a named pointer handed to a callee is routed by `ptr_place_written_whole` + `check_pointer_targets` under CHECK_LENT. So the REVERSE (lent through a pointer, the crossing written by its own name) and the FORWARD (lent by name, the whole pointee written through a pointer by another name) are both `NITPICK-BORROW-016` at the write, the call or the spawn. The VIEW twin is DEF-308 (D-325's note of this day). One safe shape refused by design (a re-pointed pointer written while lent, D-286 / DEF-302's k302a). Measured first on landing 162 and this compiler by a holder×side×write×pointer-path matrix (`.internal/probes/def306/matrix306.py`, a kept tool: exit 0 under the fix, non-zero under 162, a self-test proving each fail-closed exit), 0 tree sites. STILL OPEN in the same class, scheduled FIRST next week before M3 (safety first): a direct whole-pointee write or move through a CALL-RESULT pointer (DEF-309), and `destroy` through a pointer FIELD (DEF-310, a TYPE-091 gap). DEF-306 FIXED.
+
 ## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
 
 C-9's thread half, ratified from `meta/roadmap/1.1/C9_THREAD_STUDY.md`. It
@@ -22205,6 +22207,19 @@ never fires on `@l` handed to a read-only callee and never conflicts with a clai
 false positive is accepted under D-286's lexical model (k304b; see D-286's note of this day). An element address reached
 OTHER than syntactically -- a call's result, or one handed across a call that reallocates through a pointer parameter --
 is not yet frozen (DEF-307).
+
+*[2026-10-26, 1.6.1e landing 163 — a dated note (DEF-308).]* This freeze is asked of a callee that replaces the WHOLE
+pointee, handed a NAMED pointer, against a view of the pointee by the pointee's own name. DEF-302 (landing 160) closed a
+DIRECT whole-pointee write through a named pointer (`(<-hp) = H2{…}`, `move(<-hp)`); the callee face — `drop wr(hp)`,
+`wr(H2->:p)` doing `(<-p) = H2{…}` — is closed now: `ptr_place_written_whole` recognises the whole-pointee write (the
+path ends at the pointer, `ap.count` equals the pointer's own steps) and `check_pointer_targets` resolves it under
+CHECK_VIEWS to the pointee, checking the views there (`NITPICK-BORROW-015` at the call). The VIEW twin of DEF-306 (the
+spawn lend, D-180's note of this day). Two accepted outcomes: a re-pointed pointer (c308f, the flow-insensitive
+over-refusal, D-286); and a view dead by last use but live by scope (c308a, refused in PARITY with the by-name twin the
+party's lexical model already refuses on landing 162 — the party is live from a binding's declaration to its scope
+exit). A DIRECT whole-pointee write or move through a CALL-RESULT pointer in the view domain is not yet resolved
+(DEF-309, scheduled first next week). Measured by the matrix `.internal/probes/def306/matrix306.py` (a kept tool), 0
+tree sites. DEF-308 FIXED.
 
 ## D-326 — A call's result holds a borrow of what the callee's provenance summary says it may view or carry; the shape rule stays for a callee the analysis cannot see — **SETTLED (user decision, 2026-09-26: "the recommendations from earlier you asked about are fine. go with those."; S-107, the library listener's O-N27)**
 

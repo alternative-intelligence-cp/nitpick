@@ -3762,20 +3762,25 @@ defect declares a `DEF-` in §2f.
 > only the four sites, all in the landing's own rejection file; nothing of `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the
 > applications or the fuzz corpus moved. DEF-306 registered here.
 
-> **DEF-306 — OPEN (registered 2026-10-24 by `nitpick-compiler_48` at landing 161, from DEF-305's probe `s302s2`; HIGH: a
-> use-after-free / data race in safe code at both legs). A LENT CROSSING REASSIGNED OR DROPPED THROUGH AN ALIASED POINTER IS NOT
-> COMPARED AGAINST THE SPAWN'S LEND.** A spawn LENDS its crossing until the block's join (BORROW-016, D-180), tracked by the ROOT
-> SYMBOL handed to the spawn -- `drop filler(@s)` roots the crossing at `s`. A reassignment or drop through a POINTER to that
-> storage by another name is not resolved to the crossing's root: `shared_arena<int64>:s = shared_arena_make(8i64);
-> shared_arena<int64>->:sp = @s; drop filler(@s); drop replace(sp);` (where `replace(shared_arena<int64>->:p)` does `(<-p) =
-> shared_arena_make(4i64)`) drops the old arena -- its storage freed -- while the spawned `filler` task still holds `@s`: a
-> use-after-free / data race in safe code, which the base and every compiler to date admit (measured on landing 160's compiler,
-> `wt/48a/.internal/probes/m2/s302s2`). THE CAUSE: BORROW-016's lend tracks the crossing by its argument's root symbol; a write /
-> reassignment / drop through a pointer to that storage by another name is not re-rooted at the crossing -- the same
-> name-vs-pointer gap DEF-302 and DEF-305 close for the VIEW-aliasing domain, absent in the spawn-lend check. 0 TREE SITES (the
-> compiler's own tree; the census after the DEF-304 build confirms the libraries and applications). Fix direction: the same
-> resolution in the spawn-lend check. Next in management's order (2026-10-24): measured and censused after the DEF-304 build,
-> placed against M3 (DEF-298/DEF-299) by size. Please write none.
+> **DEF-306 — FIXED 2026-10-26 (landing 163; registered 2026-10-24 by `nitpick-compiler_48` at landing 161, from DEF-305's probe
+> `s302s2`; HIGH: a use-after-free / data race in safe code at both legs). A LENT CROSSING REASSIGNED, DROPPED OR MOVED THROUGH AN
+> ALIASED POINTER IS COMPARED AGAINST THE SPAWN'S LEND, AND THE LEND IS ROOTED AT THE STORAGE THE SPAWN'S POINTER ARGUMENT POINTS
+> AT.** A spawn LENDS its crossing until the block's join (BORROW-016, D-180). Until this landing the lend was tracked by the ROOT
+> symbol of the spawn's argument, so a lend taken THROUGH a pointer (`sp = @s; drop filler(sp)`) rooted at `sp`, and a write of the
+> crossing by its own name (`s = …`, `s.destroy()`, `move(s)`, `drop replace(@s)`) met no conflict (the REVERSE); and a lend by
+> name (`drop filler(@s)`) with a whole-pointee write through a pointer by another name handed to a callee (`drop replace(sp)`,
+> the original probe `s302s2`) was not resolved to the crossing (the FORWARD). NOW: `lend_through_pointer` (in `lend_spawn_args`)
+> resolves the spawn's pointer argument to the storage it points at -- an `@place` by `ptr_last_base`, a named pointer value by
+> `pointer_targets_of`, a call's result by `escape_pointer_targets` (D-326 rule A) -- and pushes a LENT party per target; the
+> forward whole-pointee write through a named pointer handed to a callee is routed by `ptr_place_written_whole` +
+> `check_pointer_targets` under CHECK_LENT. BORROW-016 at the write, the call or the spawn. MEASURED FIRST on landing 162's
+> compiler and this one by a MATRIX over holder × side × write × pointer-path (`.internal/probes/def306/matrix306.py`, a kept
+> tool, exit 0 under the fix and non-zero under 162, with a self-test proving each fail-closed exit): the lend domain's in-scope
+> cells read freed memory on 162 and are refused now. One safe shape refused by design: a re-pointed pointer written while lent
+> (c306f, flow-insensitive `pointer_targets_of`, D-286 / DEF-302's k302a), 0 tree sites. `tests/analysis/rejection/spawn_lent_through_pointer.npk`
+> (13 sites), the legal half `tests/backend/programs/spawn_lent_through_pointer_ok.npk`. 0 TREE SITES (the sweep over 5,284 files:
+> no file of src/, npkg/, lib/, tools/, the libraries, the applications or the fuzz corpus moves). The call-result direct-deref
+> face and the destroy-through-field face the matrix left open are DEF-309 and DEF-310.
 
 > **DEF-307 — OPEN (registered 2026-10-25 by `nitpick-compiler_48` at landing 162, measuring DEF-304's siblings; HIGH: a
 > use-after-free in safe code at both legs). A POINTER INTO A `List` ELEMENT REACHED OTHER THAN SYNTACTICALLY `@l[i]` IS NOT
@@ -3794,6 +3799,45 @@ defect declares a `DEF-` in §2f.
 > whose return provenance points into a `List` element (the freeze-direction twin of DEF-305's `escape_pointer_targets`), and
 > carry the element-address party across a call through the mutation-summary path as DEF-289's second face carries a view.
 > Please write none.
+
+> **DEF-308 — FIXED 2026-10-26 (landing 163; registered 2026-10-26 by `nitpick-compiler_49`, the VIEW twin of DEF-306, folded in
+> on management's GO 2026-10-26 11:33; HIGH: a use-after-free in safe code at both legs). A CALLEE THAT REPLACES THE WHOLE POINTEE,
+> HANDED A NAMED POINTER, IS CHECKED AGAINST A VIEW OF THE POINTEE BY THE POINTEE'S OWN NAME.** The view twin of DEF-306 and the
+> callee-face of DEF-302. DEF-302 (landing 160) closed a DIRECT whole-pointee write through a named pointer (`(<-hp) = H2{…}`,
+> `move(<-hp)`) against a view by another name; the face left open was a callee whose summary replaces the whole pointee (`drop
+> wr(hp)`, `wr(H2->:p)` doing `(<-p) = H2{…}`), handed a named pointer (named / copy / local field / two-level field / second
+> pointer), under a view `string_bytes(h.o)` by the pointee's own name -- compiled and read 113 for 97 at both legs
+> (`wt/49a/.internal/probes/def306/v306a-d`). NOW: `ptr_place_written_whole` recognises a whole-pointee write (the path ends at the
+> pointer, `ap.count` equals the pointer's own steps) and `check_pointer_targets` resolves it under CHECK_VIEWS to the pointee,
+> checking the view parties there (`check_view_parties_at`). BORROW-015 at the call. `tests/analysis/rejection/view_whole_pointee.npk`
+> (6 sites), the legal half `tests/backend/programs/view_whole_pointee_ok.npk`. Two accepted outcomes: a re-pointed pointer
+> (c308f, the view twin of DEF-302's k302a, over-refusal by design, 0 tree sites); and a view dead by last use but live by scope
+> (c308a, refused in PARITY with the by-name twin landing 162 refuses identically -- the party model is by-scope, from a binding's
+> declaration to its scope exit). 0 TREE SITES (the DEF-306/308 sweep). The call-result direct-deref face is DEF-309.
+
+> **DEF-309 — OPEN (registered 2026-10-26 by `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a
+> use-after-free in safe code at both legs, SILENT on landing 162 and every compiler to date). A DIRECT WHOLE-POINTEE WRITE OR MOVE
+> THROUGH A CALL-RESULT POINTER IS NOT RESOLVED TO ITS TARGET.** The DEF-305 call-result family's direct-deref-write face. DEF-305
+> (landing 161) resolved a call-result pointer handed to a WRITER and used as a writing RECEIVER; a DIRECT whole-pointee write or
+> move through one it does not reach: `(<-(raw idp(@s))) = shared_arena_make(4i64)` under a lend of `s`, and `(<-(raw idh(@h))) =
+> H2{…}` / `H2:u = move(<-(raw idh(@h)))` under a view of `h` -- each compiled and read freed memory at both legs (the matrix cells
+> `m_lend_forward_assign_call_result`, `m_lend_forward_move_call_result`, `m_view_forward_assign_call_result`,
+> `m_view_forward_move_call_result`, exit 107/113). THE CAUSE (alias.npk): `check_access_reported`'s `root==0` call-result arm keys
+> on the written PLACE being pointer-typed, but a direct deref write's place is the POINTEE (struct-typed) and the rootless pointer
+> is the deref's operand one level up, so neither the arm nor the main path fires. 0 TREE SITES (the DEF-306/308 sweep over 5,284
+> files). Fix direction: a deref-of-rootless-pointer arm -- when the written place is `<-E` with E a rootless pointer expression,
+> resolve E by `escape_pointer_targets` and check the parties (view AND lent) at its targets. SCHEDULED FIRST next week, before M3
+> (safety first), measured before fixed. The check `matrix306.py` cites the 4 cells as KNOWN-LIMIT by exact ID and will fail if any
+> turns refused (so the list cannot go stale); DEF-309's landing flips them to REFUSED. Please write none.
+
+> **DEF-310 — OPEN (registered 2026-10-26 by `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a
+> use-after-free in safe code at both legs, SILENT on landing 162). `destroy` THROUGH A POINTER FIELD ESCAPES TYPE-091.** `destroy`
+> takes the OWNING place (TYPE-091 since DEF-159): `sp.destroy()` through a pointer local and `(raw idp(@s)).destroy()` through a
+> call result are both TYPE-091. But `pa.p.destroy()` -- destroy through a pointer FIELD -- compiles and frees the pointee (the
+> matrix cell `m_lend_forward_destroy_local_field`, exit 107); under a lend of the arena it is a use-after-free. A type-checker gap,
+> distinct from the aliasing walk. 0 TREE SITES. Fix direction: extend the TYPE-091 destroy-receiver rule to a pointer reached
+> through a field (and any non-owning pointer place). SCHEDULED FIRST next week, before M3, measured before fixed. `matrix306.py`
+> cites the 1 cell as KNOWN-LIMIT by exact ID and will fail if it turns refused. Please write none.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

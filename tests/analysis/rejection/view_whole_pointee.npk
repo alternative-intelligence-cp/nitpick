@@ -1,0 +1,128 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 47:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 58:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 68:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 79:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 90:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 107:13
+mod:view_whole_pointee;
+// DEF-308 (1.6.1e, landing 163): A CALLEE THAT REPLACES THE WHOLE POINTEE, HANDED A
+// NAMED POINTER, IS CHECKED AGAINST A VIEW OF THE POINTEE BY THE POINTEE'S OWN NAME.
+// The VIEW twin of DEF-306. DEF-302 (landing 160) closed a DIRECT whole-pointee write
+// through a named pointer -- `(<-hp) = H2{ … }`, `move(<-hp)` -- against a view of the
+// pointee by another name. The face left open: a callee whose summary REPLACES the
+// whole pointee (`wr(hp)`, `wr` doing `(<-p) = H2{ … }`), handed a named pointer, under
+// a view `string_bytes(h.o)` taken by the pointee's own name. Each compiled before this
+// landing and read 113 (freed bytes reused, where 97 was stored) at both legs
+// (`.internal/probes/def306/v306a-d`).
+//
+// The write path ends AT the pointer and `ap.count` equals the pointer's own steps, so
+// `ptr_place_written_whole` recognises it and `check_pointer_targets` resolves the
+// pointer to its pointee under CHECK_VIEWS, checking the view parties there
+// (`check_view_parties_at`). BORROW-015 at the call.
+//
+// STILL OPEN, split off (the check `matrix306.py` cites it by cell ID, KNOWN-LIMIT): a
+// DIRECT whole-pointee write/move through a CALL-RESULT pointer in the view domain
+// (`(<-(raw idh(@h))) = …`, `move(<-(raw idh(@h)))`, DEF-309, HIGH). DEF-309 lands first
+// next week, before M3.
+//
+// Controls carrying no code (clean -- in `view_whole_pointee_ok.npk`): the view read
+// before the write; the view's block ended before the write; a writer on a DIFFERENT
+// pointee than the one viewed.
+error:E1;
+struct:H2 = { string:o; };
+struct:PH = { H2->:p; };
+func:wr = NIL(H2->:p) never fails { (<-p) = H2{ o: string_concat("x", "y") }; pass NIL; };
+
+// 1. a named pointer handed to the whole-pointee writer
+func:named_ptr = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wr(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 2. a COPY of the pointer
+func:ptr_copy = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    H2->:hq = hp;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wr(hq);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 3. a pointer in a LOCAL field
+func:ptr_field = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    PH:ph = PH{ p: @h };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wr(ph.p);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 4. a TWO-LEVEL pointer field
+func:two_level_field = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    PH:ph = PH{ p: @h };
+    PH->:pph = @ph;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wr(pph.p);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 5. a SECOND pointer to the pointee: viewed through one, written through the other
+func:second_ptr = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2->:hp = @h;
+    H2->:hq = @h;
+    fixed uint8[]:vw = string_bytes(hp.o);
+    drop wr(hq);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 6. the ACCEPTED over-refusal (c308f): the pointer re-pointed to `g` before the write.
+// SAFE (the pointer now targets `g`, writing `g` frees not the `h.o` the view names), but
+// `pointer_targets_of` is flow-insensitive and still carries `@h`; it cannot prove `hp`
+// no longer targets `h` and refuses. The view twin of DEF-302's k302a (D-286). 0 tree
+// sites; read the view before re-pointing, or store a copy. (control: the legal re-point
+// with no write, in the ok file.)
+func:repointed_over_refusal = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    hp = @g;
+    drop wr(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1) { exit 81i32; },
+        (StaleHandle) { exit 92i32; },
+        (OutOfBounds) { exit 93i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (Unreachable) { exit 96i32; },
+        (WildLeak) { exit 97i32; },
+        (StackExhausted) { exit 98i32; },
+        (MachineFault) { exit 98i32; },
+        (IntOverflow) { exit 90i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

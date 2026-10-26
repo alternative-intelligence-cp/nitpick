@@ -2098,6 +2098,26 @@ that carried them retired at the cycle close):
   party overlaps the element-store path -- and is fuel-bounded with a measure (D-304). The by-scope false positive is ACCEPTED
   (k304b: the pointer dead before the op but still in scope, so the op is refused; narrow later with by-last-use liveness of the
   holder, as DEF-302's k302a). When adding a party that freezes a root against a write, model it on the VIEW party, not a new
-  kind. STILL OPEN, each HIGH: DEF-298, DEF-299 (the store-matrix faces, M3), DEF-306 (a lent crossing aliased through a pointer),
+  kind. STILL OPEN, each HIGH: DEF-298, DEF-299 (the store-matrix faces, M3),
   DEF-307 (a `List`-element pointer reached other than syntactically -- a call's result, or carried into a callee that
   reallocates through a pointer parameter; DEF-304's residue) -- do not write those shapes in `src/`.
+
+- **A spawn's lend and a view of a pointee conflict with a write through an aliased pointer, the pointer resolved to its target**
+  (DEF-306 + DEF-308, landing 163; alias.npk). A spawn LENDS its crossing until the block's join (`NITPICK-BORROW-016`, D-180),
+  and a view freezes its root against a write (`NITPICK-BORROW-015`, D-325) -- both keyed on the crossing's or the view's OWN root.
+  A write of the same storage reached by a POINTER under another name met neither: a crossing handed by a pointer value or an
+  `@place` through a pointer, then reassigned, destroyed or moved by its own name (`drop filler(sp); s = …`), replaced the lent
+  arena under its task; and a callee that replaces the whole pointee (`wr(hp)`, `(<-p) = …`), handed a named pointer, freed a
+  string viewed by the pointee's own name -- use-after-frees / data races in safe code at both legs, on every compiler to date.
+  The fix reuses DEF-302's and DEF-305's pointer resolvers: `ptr_place_written_whole` recognises a whole-pointee write through a
+  named pointer, and `check_pointer_targets` routes it (under `CHECK_VIEWS`/`CHECK_LENT`) to `pe = place`, the pointer re-rooted at
+  its target and checked against the VIEW and LENT parties there; `lend_through_pointer` (in `lend_spawn_args`) resolves a spawn's
+  pointer argument to its target(s) -- `@place` by `ptr_last_base`+`pointer_targets_of`, a named pointer by `pointer_targets_of`, a
+  call's result by `escape_pointer_targets` (D-326 rule A) -- and raises a LENT party there. A pointer PARAMETER has no target here
+  (its pointee is the caller's, its lend the pointer's). When a check keys on a storage's own root, ask whether a POINTER reaches
+  the same storage by another name and resolve it; the lend check needed the same resolution the view check got at landing 160.
+  The class was closed via a kept MATRIX (holder × side × write × pointer-path, `.internal/def306_matrix_kept/`), the check exiting
+  non-zero on any open cell; two over-refusals are ACCEPTED (c306f/c308f, a re-pointed pointer, flow-insensitive
+  `pointer_targets_of`, D-286). STILL OPEN, each HIGH, KNOWN-LIMIT in the matrix by EXACT cell id: DEF-309 (a direct whole-pointee
+  write or move through a CALL-RESULT pointer, four cells) and DEF-310 (`destroy` through a pointer FIELD escaping
+  `NITPICK-TYPE-091`, one cell) -- they land FIRST next week, before M3; do not write those shapes in `src/`.
