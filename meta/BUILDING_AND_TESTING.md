@@ -2167,3 +2167,49 @@ that carried them retired at the cycle close):
   growth, because a `ViewRef` records the ADDRESSED place and not the field it lands in (0 tree sites); k6, DEF-304's by-order false
   positive, stands. Registered OPEN, HIGH: DEF-313 (M3), DEF-315, DEF-316, DEF-317 (landing 166), DEF-312 widened (167); do not write
   those shapes in `src/`.
+  *Correction 2026-10-29 (landing 166, from management's review of 165, its F3 = DEF-320):* "a pointer whose pointee IS the `List`'s
+  own type reaches the header, which never moves" (`type_holds_elem_pointer`'s `pt != pte`) is FALSE for a RECURSIVE element type --
+  `struct:Node = { List<Node>:kids; int64:v; }`: a `List<Node>->` into an element's `kids` sits inside the buffer and moves with it.
+  Landing 168 (DEF-318 to DEF-323). The digest line stands.
+- **A rootless place is asked what its slice views, a carrier is read to the runs its chain holds, the walk fails closed past its fuel, and
+  every kind-enumerating walk steps the unwrap operators and the casts** (DEF-315 + DEF-316 + DEF-317, landing 166; alias.npk, escape.npk).
+  Three rootless shapes compiled and read freed memory at both legs on landing 165, each measured before fixed
+  (`wt/51a/.internal/probes/t166/`, 127 cells; `MEASURED_165.md`, `MEASURED_166.md`). (1) DEF-315: `acc_call`'s receiver branch asked two
+  shapes -- a pointer-typed place chain, a bare call result -- and a `Self->` method on the BARE DEREFERENCE of a call-result pointer,
+  `(<-(raw ids(@h))).sset()`, was neither, so the method's summary write met nothing; the implicit `@recv` is a write at the dereference of a
+  call-result pointer, DEF-309's shape, and takes DEF-309's road (`check_written` -> the root==0 block -> `rootless_deref_base` ->
+  `check_pointer_targets`' call-result arm: a parameter root by DEF-311, two pointees, the LENT parties with the views). A member or an index
+  BELOW the dereference was `acc_place`'s whole-place check already. (2) DEF-316: a write THROUGH A SLICE below such a dereference --
+  `(<-(raw idsl(@t)))[0i64].o`, `(<-(raw idbs(@bs))).sl[0i64].o`, the element moved out, its address handed to a writer, a method on it -- was
+  re-rooted at the POINTEE and never asked what the slice there views; the named path's slice dispatch (`escape_written_slice_base` ->
+  `check_slice_targets`, DEF-297) runs in the root==0 block too, and the slice's OWN holder -- the view a write through the slice frees nothing
+  of -- is read from the pointee or the carrier (`escape_slice_own_holder_rootless`: a SINGLE pointee or root, each pointer-typed ref resolved
+  first, a slice or a one-view struct; two pointees or two roots skip none). (3) DEF-317: a call-result slice handed out of a struct CARRIER
+  (`wsl(raw getsl(@b))`) borrows the carrier whole, a ref `escape_ref_is_run_of` counts as a run (a struct MAY hold one) at the carrier's own
+  root, where no view of the array is rooted; now `escape_carrier_runs` follows a ref that is not a run ITSELF (`escape_ref_is_strict_run`), or
+  is a run reached THROUGH a pointer, into its chain -- the carrier `b`, the pointer `bp`, the field `pb.bp`, the pointer-field links
+  `c3 -> c2 -> c1 -> b`, the slice field copied by name `H2[]:s2 = bp.sl` (DEF-305 (b)'s through-pointer reader looked inward from the slice
+  BASE only, and the refs loop's target was rooted at the pointer) -- and `escape_slice_targets` answers whether EVERY chain was read. THE FUEL
+  FAILS CLOSED: three pointer links resolve; a chain still to follow at fuel 0 is UNRESOLVED and the write is refused, `NITPICK-BORROW-009` at
+  the slice (`escape_unresolved_slice` where the escape pass records the write, the node remembered in `x.unresolved`; `check_slice_targets`
+  adds no second line for a node the escape pass reported and reports itself where it did not) -- never read as "no targets". When you add a
+  reader whose walk is fuel-bounded, decide what fuel-out MEANS before the first cell: here the refusal of a safe shape four links deep (d4n,
+  0 tree sites) is the price of never admitting a deeper one unread. Parity with the NAMED road is the standard for the no-view twins: a
+  pointer with TWO pointees (assigned two carriers in branches, re-pointed before the call) and a COPY of a carrier's slice are refused with no
+  other view live because `wsl(bp.sl)` and `H2[]:s2 = b.sl; s2[0i64].o = …` are (the two-pointee, slice-copy and re-pointed classes of
+  D-286's list), and a chain of two or more links refuses alike on both roads (DEF-325, LOW: the own-holder readers resolve only a
+  pointer-ROOT link); the single-carrier no-view shapes (`wsl(raw getsl(@b))`, `getsl(bp)`, `getsl(pb.bp)`) stay clean. THE WALKS
+  ENUMERATE NODE KINDS, AND A KIND LEFT OUT IS A VERDICT: the first build's own-holder walk stopped at the `raw` node over the call and FIVE
+  controls refused against their own carrier's view (c10, c11, c12, c17n, c18n -- the fix of 04:12 steps `raw`, `relay`, `await` and the
+  casts); with those named it still stopped at `?!`, whose node is `ExprEmphaticUnwrapExpr` (the value in slot a, the trap code in slot b),
+  NOT `ExprRelayExpr` (the `relay` keyword's node), and `??!` is `ExprEmphaticCoalesceExpr` (D-360) -- so t1n/t3n refused against the carrier's
+  own view and t1/t3 refused for the WRONG reason (that view, not `vw`'s); found by a diagnostic build that gave each `pass 0i32` of the two
+  own-holder readers its own negative code and printed it through `alias_err` (an escape reader asked from the aliasing pass reports nothing
+  itself: `escape_err` is silent when `!x.reporting`). Both erred CLOSED (a self-refusal, no hazard admitted); DEF-324's recorder, the same
+  fault class, errs OPEN (`collect_view_refs` bails at a dereference reached as a value, so a getter `pass (<-q).sl` records no ref and the
+  caller is silent) -- landing 167 makes every view-carrying walker fail closed on a kind it does not resolve and carries a mechanical table of
+  expression kinds against each walker. Until then: before a kind-enumerating walk ships, write one cell per transparent kind on each road it
+  can be spelled on (`raw f()`, `f() ?! E`, `g() ??! E`, `relay f()`, `await f()`, `=>`, `=>!`), a hazard that must refuse and its own-view
+  control that must be clean (`cells4/`), and read the refusal's SENTENCE (which view it names), not only its code (`cells4_reason.sh`).
+  Siblings measured REFUSED ALREADY (a04's ternary, b06's slice value, b08/b17's ranges, c05) narrow a registered gap and are recorded as such,
+  not fixed twice.

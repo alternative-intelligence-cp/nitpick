@@ -1,0 +1,348 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 127:14
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 142:14
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 156:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 171:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 185:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 201:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 217:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 233:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 247:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 260:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 273:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 290:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 306:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 320:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 333:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 345:23
+mod:call_result_slice_carrier_chain;
+// DEF-317's POINTER CHAINS (1.6.1e, landing 166; management_4's condition cells of 2026-10-29 03:06, re-cut
+// 04:18 through pointer FIELDS): a call-result slice handed out of a struct carrier reached through a CHAIN
+// of pointers, and the carrier reader's two edges. The carrier reader (`escape_carrier_runs`) follows a ref
+// that is a carrier -- a struct that may hold a run, a pointer, a run reached THROUGH a pointer -- into its
+// chain one pointer LINK at a time (a pointer field `c2.c1p`, a pointer local), four units of fuel, and
+// FAILS CLOSED: a chain still to follow when the fuel is out is UNRESOLVED, refused as BORROW-009 at the
+// slice where the escape pass records the write (`escape_unresolved_slice`; the aliasing pass's
+// `check_slice_targets` adds no second line for a node the escape pass reported), never read as "no
+// targets". The chain here is `C1 = { BS->:bp }`, `C2 = { C1->:c1p }`, `C3 = { C2->:c2p }`, `C4 = { C3->:c3p }`,
+// read by auto-dereferencing getters (`getslc3(C3->:q) = q.c2p.c1p.bp.sl`): three links resolve (site 1,
+// c3 -> c2 -> c1 -> b); four do not (sites 2, 3) -- site 3 is the accepted over-refusal past the fuel, a
+// safe shape (no view live) refused in the closed direction (cell d4n, 0 tree sites by the sweep). A
+// getter that reads the chain through an EXPLICIT dereference (`pass (<-(<-q)).sl`) records no ref at all
+// and is SILENT at every depth: DEF-324 (OPEN, HIGH, landing 167), recorded by probe id (cells d1x, d3x,
+// d4x), not a site here. The own-holder readers (`escape_slice_own_holder_rootless` (ii), and the named
+// road's DEF-305 (b)) resolve ONE pointer link, so a chain of two or more links with NO view live finds no
+// own holder and the write meets the carrier's own view: site 14 (three links, no view) and site 16 (two
+// links BY NAME, `wsl(c2.c1p.bp.sl)`, no view) are DEF-325's over-refusals (LOW; parity: the call-result
+// cell and its by-name twin refuse alike on 166), where site 15 -- the two-link chain by name under a view
+// -- was SILENT on landing 165 (113 at both legs: DEF-305 (b)'s through-pointer reader resolved one link
+// and the refs loop's target sat at the pointer), a by-name face of DEF-317 that the carrier reader closes
+// (cells d2b, d3b). A pointer root with TWO pointees -- assigned two carriers in branches (sites 4, 5),
+// re-pointed before the call (sites 8, 9) -- resolves to no single own holder, so the write meets the
+// carrier's own view even with no other view live: the NAMED road's verdict today (`wsl(bp.sl)` with two
+// carriers is BORROW-015 with or without a view), the two-pointee class of D-286's list; site 8 is safe at
+// run time (the write lands in `p2.arr`, 0/0) and refused by the flow-insensitive chain as its by-name
+// twin is (the re-pointed class, c306f/k302a). A COPY of the carrier's slice written (sites 6, 7, 10-13)
+// meets the carrier's own view: parity with `H2[]:s2 = b.sl; s2[0i64].o = …`, refused by name with or
+// without a view (the slice-copy class). Sites 10-13 are DEF-317's BY-NAME face: the pointer's slice field
+// copied by name (`H2[]:s2 = bp.sl;`) was silent (113 at both legs under a view) because DEF-305 (b)'s
+// through-pointer reader looked inward from the slice BASE only (`s2` has no pointer on its path) and the
+// refs loop's target was rooted at the POINTER, where no view is rooted; the carrier reader follows the
+// ref through the pointer. Every site here compiled on landing 165's compiler
+// (`wt/51a/.internal/probes/t166/cells3/`, `res165/cells3_165.txt`); the hazard sites read freed memory
+// at both legs (113). The clean one-link twins -- the carrier through a named pointer local, behind a
+// pointer field -- are controls 19 and 20 of `tests/backend/programs/call_result_deref_receiver_slice_ok.npk`.
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:H2 = { string:o; int64:k; };
+impl:H2 = { func:hset = NIL(H2->:self) never fails { self.o = string_concat("x", "y"); pass NIL; }; };
+struct:S = { string:s; int64:k; };
+impl:S = {
+    func:sset = NIL(S->:self) never fails { self.s = string_concat("x", "y"); pass NIL; };
+    func:kset = NIL(S->:self) never fails { self.k = 7i64; pass NIL; };
+    func:snoop = NIL(S->:self) never fails { if (self.s.len == 999i64) { pass NIL; } pass NIL; };
+};
+struct:BS = { H2[]:sl; int64:k; };
+struct:O = { BS:b; int64:k; };
+struct:P = { H2[2]:arr; };
+struct:PB = { BS->:bp; int64:k; };
+struct:W = { shared_arena<int64>:a; int32:k; };
+impl:W = {
+    func:rep = NIL(W->:self) never fails { self.a = shared_arena_make(4i64); pass NIL; };
+    func:kset = NIL(W->:self) never fails { self.k = 7i32; pass NIL; };
+};
+struct:HA = { shared_arena<int64>:a; int64:k; };
+struct:BA = { HA[]:sl; int64:k; };
+
+func:ids = S->(S->:x) never fails { pass x; };
+func:pick_s = S->(bool:c, S->:a, S->:b) never fails { if (c) { pass a; } pass b; };
+func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
+func:idbs = BS->(BS->:q) never fails { pass q; };
+func:getslf = H2[](BS->:q) { pass q.sl; };
+func:idbsf = BS->(BS->:q) { pass q; };
+async func:getslaw = H2[](BS->:q) { pass q.sl; };
+async func:idbsaw = BS->(BS->:q) { pass q; };
+func:idbsw = wild BS->(BS->:q) never fails { pass q; };
+func:getsl = H2[](BS->:q) never fails { pass q.sl; };
+func:getsl2 = H2[](O->:q) never fails { pass q.b.sl; };
+struct:C1 = { BS->:bp; int64:k; };
+struct:C2 = { C1->:c1p; int64:k; };
+struct:C3 = { C2->:c2p; int64:k; };
+struct:C4 = { C3->:c3p; int64:k; };
+func:getslc2 = H2[](C2->:q) never fails { pass q.c1p.bp.sl; };
+func:getslc3 = H2[](C3->:q) never fails { pass q.c2p.c1p.bp.sl; };
+func:getslc4 = H2[](C4->:q) never fails { pass q.c3p.c2p.c1p.bp.sl; };
+func:wsl = NIL(H2[]:s) never fails { s[0i64].o = string_concat("x", "y"); pass NIL; };
+func:wsl1 = NIL(H2[]:s) never fails { s[1i64].o = string_concat("x", "y"); pass NIL; };
+func:rsl = NIL(H2[]:s) never fails { if (s[0i64].o.len == 999i64) { pass NIL; } pass NIL; };
+func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+func:idw = W->(W->:q) never fails { pass q; };
+func:idsla = HA[]->(HA[]->:q) never fails { pass q; };
+func:getsla = HA[](BA->:q) never fails { pass q.sl; };
+func:wsla = NIL(HA[]:s) never fails { s[0i64].a = shared_arena_make(4i64); pass NIL; };
+// 1. the carrier behind THREE pointer links (`getslc3(@c3)`: c3 -> c2 -> c1 -> b, each link a pointer FIELD read by an auto-dereferencing getter), under a view of `p.arr` -- the last depth the carrier reader's fuel (4) resolves
+func:carrier_three_hops = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    C1:c1 = C1{ bp: @b, k: 1i64 };
+    C2:c2 = C2{ c1p: @c1, k: 2i64 };
+    C3:c3 = C3{ c2p: @c2, k: 3i64 };
+    drop wsl(raw getslc3(@c3));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 2. the carrier behind FOUR pointer links (`getslc4(@c4)`), past the fuel, under the view: UNRESOLVED, the closed direction -- BORROW-009 at the slice
+func:carrier_four_hops = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    C1:c1 = C1{ bp: @b, k: 1i64 };
+    C2:c2 = C2{ c1p: @c1, k: 2i64 };
+    C3:c3 = C3{ c2p: @c2, k: 3i64 };
+    C4:c4 = C4{ c3p: @c3, k: 4i64 };
+    drop wsl(raw getslc4(@c4));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 3. four links with NO view live: past the fuel the reader fails CLOSED and refuses a safe shape (the accepted over-refusal past the fuel, cell d4n; 0 tree sites)
+func:carrier_four_hops_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    C1:c1 = C1{ bp: @b, k: 1i64 };
+    C2:c2 = C2{ c1p: @c1, k: 2i64 };
+    C3:c3 = C3{ c2p: @c2, k: 3i64 };
+    C4:c4 = C4{ c3p: @c3, k: 4i64 };
+    drop wsl(raw getslc4(@c4));
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 4. a pointer root assigned TWO carriers in branches (`bp = @b; if (…) { bp = @b2; }`), the call-result slice handed to the writer under a view of `p.arr`
+func:two_carriers_in_branches = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    BS->:bp = @b;
+    if (p.arr[0i64].k == 2i64) { bp = @b2; }
+    drop wsl(raw getsl(bp));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 5. the two-carrier pointer with NO view live: two pointees, the own-holder skips none, the write meets `b`'s own view -- the NAMED road's verdict (`wsl(bp.sl)` with two carriers is refused with or without a view), the two-pointee class (D-286)
+func:two_carriers_in_branches_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    BS->:bp = @b;
+    if (p.arr[0i64].k == 2i64) { bp = @b2; }
+    drop wsl(raw getsl(bp));
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 6. the pointer RE-POINTED between the `getsl` and the write (`s2 = raw getsl(bp); bp = @b2; s2[0i64].o = …`), under the view
+func:repointed_between_getsl_and_write = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    BS->:bp = @b;
+    H2[]:s2 = raw getsl(bp);
+    bp = @b2;
+    s2[0i64].o = string_concat("x", "y");
+    discard(bp.k);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 7. the same with NO view live: a write through a COPY of a carrier's slice meets the carrier's own view -- parity with `H2[]:s2 = b.sl; s2[0i64].o = …` (refused by name), the slice-copy class
+func:repointed_between_getsl_and_write_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    BS->:bp = @b;
+    H2[]:s2 = raw getsl(bp);
+    bp = @b2;
+    s2[0i64].o = string_concat("x", "y");
+    discard(bp.k);
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 8. the pointer re-pointed BEFORE the call (`bp = @b; bp = @b2; wsl(raw getsl(bp))`) under a view of `p.arr`: the write lands in `p2.arr` at run time (0/0), refused by the flow-insensitive chain as its by-name twin is -- the re-pointed-pointer class (c306f, k302a)
+func:repointed_before_call = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    BS->:bp = @b;
+    bp = @b2;
+    drop wsl(raw getsl(bp));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 9. the same with NO view: two pointees on the chain, the own-holder skips none -- parity with `wsl(bp.sl)` after the re-pointing (refused by name)
+func:repointed_before_call_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    BS->:bp = @b;
+    bp = @b2;
+    drop wsl(raw getsl(bp));
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 10. (DEF-317's BY-NAME face) the pointer's slice FIELD copied by name (`H2[]:s2 = bp.sl;`), an element written by index under the view -- DEF-305 (b)'s through-pointer reader looked inward from the slice BASE (`s2`, no pointer on its path) only; the carrier reader follows the ref through the pointer
+func:ptr_slice_field_copied_by_name = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    BS->:bp = @b;
+    H2[]:s2 = bp.sl;
+    s2[0i64].o = string_concat("x", "y");
+    discard(bp.k);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 11. the by-name copy through the pointer with NO view: the slice-copy class, parity with `H2[]:s2 = b.sl; s2[0i64].o = …`
+func:ptr_slice_field_copied_by_name_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    BS->:bp = @b;
+    H2[]:s2 = bp.sl;
+    s2[0i64].o = string_concat("x", "y");
+    discard(bp.k);
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 12. the by-name copy, the pointer re-pointed between the copy and the write, under the view
+func:ptr_slice_field_copied_by_name_repointed = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    BS->:bp = @b;
+    H2[]:s2 = bp.sl;
+    bp = @b2;
+    s2[0i64].o = string_concat("x", "y");
+    discard(bp.k);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 13. the same with NO view: the slice-copy class
+func:ptr_slice_field_copied_by_name_repointed_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    P:p2 = P{ arr: [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }] };
+    BS:b2 = BS{ sl: p2.arr[0i64...2i64], k: 2i64 };
+    BS->:bp = @b;
+    H2[]:s2 = bp.sl;
+    bp = @b2;
+    s2[0i64].o = string_concat("x", "y");
+    discard(bp.k);
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 14. three links with NO view live: the own-holder readers (`escape_slice_own_holder_rootless` (ii), DEF-305 (b)) resolve ONE pointer link, so the write meets the carrier's own view -- DEF-325's over-refusal (LOW), parity with site 16 and cell d3bn (`wsl(c3.c2p.c1p.bp.sl)` refused by name on 166)
+func:carrier_three_links_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    C1:c1 = C1{ bp: @b, k: 1i64 };
+    C2:c2 = C2{ c1p: @c1, k: 2i64 };
+    C3:c3 = C3{ c2p: @c2, k: 3i64 };
+    drop wsl(raw getslc3(@c3));
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 15. the two-link chain BY NAME under a view of `p.arr` (`wsl(c2.c1p.bp.sl)`): SILENT on landing 165 (113 at both legs), a by-name face of DEF-317 the carrier reader closes (cell d2b)
+func:two_links_by_name = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    C1:c1 = C1{ bp: @b, k: 1i64 };
+    C2:c2 = C2{ c1p: @c1, k: 2i64 };
+    drop wsl(c2.c1p.bp.sl);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 16. the two-link chain by name with NO view live: DEF-325's over-refusal (parity with site 14; cell d2bn)
+func:two_links_by_name_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    C1:c1 = C1{ bp: @b, k: 1i64 };
+    C2:c2 = C2{ c1p: @c1, k: 2i64 };
+    drop wsl(c2.c1p.bp.sl);
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};

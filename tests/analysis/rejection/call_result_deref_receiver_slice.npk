@@ -1,0 +1,526 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 189:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 197:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 208:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 218:29
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 228:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 238:45
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 249:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 259:28
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 269:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 279:29
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 289:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 300:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 312:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 324:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 335:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 346:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 356:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 367:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 379:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 391:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 402:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 412:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 422:43
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 433:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 443:43
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 454:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 464:44
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 474:45
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 485:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 496:32
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 506:11
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 515:30
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 524:15
+mod:call_result_deref_receiver_slice;
+// DEF-315 + DEF-316 + DEF-317 (1.6.1e, landing 166): THREE ROOTLESS SHAPES RESOLVED TO
+// THE STORAGE THEY REACH. (1) DEF-315: a `Self->` method whose receiver is the BARE
+// DEREFERENCE of a call-result pointer -- `(<-(raw ids(@h))).sset()` -- was neither of
+// the shapes `acc_call`'s receiver branch asks (a pointer-typed place chain, a bare call
+// result), so the method's summary write of `self.s` met nothing: 113 at both legs under
+// a view of `h.s`, a lent arena replaced under its task. The implicit `@recv` is a write
+// at the dereference of a call-result pointer, DEF-309's shape, and takes DEF-309's road
+// (`check_written` -> `check_access_reported`'s root==0 block -> `rootless_deref_base` ->
+// `check_pointer_targets`' call-result arm; rule A reads a PARAMETER root too, DEF-311,
+// and a result with two pointees). (2) DEF-316: a slice reached BELOW the dereference of
+// a call-result pointer -- `(<-(raw idsl(@t)))[0i64].o`, `(<-(raw idbs(@bs))).sl[0i64].o`,
+// the element moved out, its address handed to a writer, a method on it -- was re-rooted
+// at the POINTEE and never asked what the slice there views; the named path's slice
+// dispatch (`escape_written_slice_base` -> `check_slice_targets`, DEF-297) runs for a
+// rootless place now, the call-result pointer on the base's path resolved by rule A
+// (`escape_slice_targets_through_pointer`) and the slice's own holder read from the
+// pointee (`escape_slice_own_holder_rootless`). (3) DEF-317: a call-result slice handed
+// out of a struct CARRIER's slice field -- `wsl(raw getsl(@b))`, the result bound to a
+// local, the carrier nested, literal-only, reached through a call-result or a NAMED
+// pointer or behind a pointer field -- borrows the carrier whole, a ref the slice reader
+// counted as a run at the carrier's own root, where no view of the array is rooted;
+// `escape_carrier_runs` reads the carrier's chain (`b.sl = p.arr[0i64...2i64]`) for the
+// runs it holds, a pointer to the carrier followed one hop at a time. Each shape here
+// compiled on landing 165's compiler and read freed memory at both legs
+// (`wt/51a/.internal/probes/t166/`, 81 cells, `MEASURED_165.md`). BORROW-015 at the
+// method, the write or the call (a view); BORROW-016 (a lend).
+//
+// THE TRANSPARENT KINDS (sites 25-33; management_6's guard of 2026-10-29 04:28:44): the readers that
+// resolve a rootless slice or pointer step the operators that are a call's value on ONE path -- `raw f()`
+// (`ExprRawUnwrapExpr`), `f() ?! E` (`ExprEmphaticUnwrapExpr`: the value in slot a, the trap code in
+// slot b; NOT `ExprRelayExpr`, which is the `relay` keyword's node), `g() ??! E` (D-360's Optional
+// twin), `relay f()`, `await f()`, a cast `=>` or `=>!` -- in `escape_first_pointer_inward` and the
+// two walks of `escape_slice_own_holder_rootless`; `?|` and `??` are TWO values and are not stepped
+// (no own holder: the closed direction). For each kind one hazard site on each road where it is
+// spellable: a may-fail getter's result relayed (`?!`) on the pointer road (25) and the slice road
+// (32), an async getter's awaited result on both roads (26, 33; `async` sites), a call result cast to
+// its own type `=>` (27, 28) and `=>!` (29, 30), a wild call-result pointer cast `=>!` to a plain one
+// (31). Each was SILENT on landing 165 (113 at both legs: `wt/51a/.internal/probes/t166/cells4/`,
+// `res165/cells4_165.txt`). Sites 32 and 33 were refused on this landing's first build for the WRONG
+// reason -- the carrier `b`'s own view, because the `?!` node's kind was not among the stepped ones and
+// the own-holder walk found no holder -- and their no-view twins (controls 31, 32 of the program test)
+// were refused with them; the fix names the kind in the three walks, and the refusal names `vw`'s view.
+//
+// Three sites are PARITY sites, refused because their by-name twins are: element 1
+// written through the dereference under a view of element 0 (`t[1i64].o = …` is refused:
+// a run is judged whole), a COPY of the carrier's slice written with no view live
+// (`H2[]:s2 = b.sl; s2[0i64].o = …` is refused: the write meets the carrier's own view),
+// and a slice field written through the dereference of a call-result struct pointer
+// while a SECOND slice of the array is live (`bsp.sl[0i64].o = …` through a named pointer
+// is refused). Controls carrying no code (clean -- `call_result_deref_receiver_slice_ok.npk`):
+// a method writing a DISJOINT field, a method writing nothing, the view's block ended,
+// another pointee, the write before the view; a write through the dereference with no
+// view live, a slice of ANOTHER array, a READ through the dereference; a READING callee,
+// the call-result slice handed to the writer with no view live, a carrier over another
+// array; the lend twins; and the by-name no-view twins. Closed by OTHER rules, not sites
+// here: a member or an index BELOW the dereference as a receiver (`(<-(raw idt(@t))).inner
+// .sset()`) is `acc_place`'s whole-place check (DEF-309); a TERNARY of addresses
+// dereferenced is BORROW-015 at its `@h` arm; the slice VALUE `<-(raw idsl(@t))` handed to
+// a writer is DEF-301's; a range of the dereference then indexed is BORROW-012; the call-
+// result slice indexed DIRECTLY is TYPE-024. A `Self->` method on a POINTER FIELD below the
+// dereference (`(<-(raw idsp(@sp))).p.sset()`) is DEF-312's two-level family (landing 167).
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:H2 = { string:o; int64:k; };
+impl:H2 = { func:hset = NIL(H2->:self) never fails { self.o = string_concat("x", "y"); pass NIL; }; };
+struct:S = { string:s; int64:k; };
+impl:S = {
+    func:sset = NIL(S->:self) never fails { self.s = string_concat("x", "y"); pass NIL; };
+    func:kset = NIL(S->:self) never fails { self.k = 7i64; pass NIL; };
+    func:snoop = NIL(S->:self) never fails { if (self.s.len == 999i64) { pass NIL; } pass NIL; };
+};
+struct:BS = { H2[]:sl; int64:k; };
+struct:O = { BS:b; int64:k; };
+struct:P = { H2[2]:arr; };
+struct:PB = { BS->:bp; int64:k; };
+struct:W = { shared_arena<int64>:a; int32:k; };
+impl:W = {
+    func:rep = NIL(W->:self) never fails { self.a = shared_arena_make(4i64); pass NIL; };
+    func:kset = NIL(W->:self) never fails { self.k = 7i32; pass NIL; };
+};
+struct:HA = { shared_arena<int64>:a; int64:k; };
+struct:BA = { HA[]:sl; int64:k; };
+
+func:ids = S->(S->:x) never fails { pass x; };
+func:pick_s = S->(bool:c, S->:a, S->:b) never fails { if (c) { pass a; } pass b; };
+func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
+func:idbs = BS->(BS->:q) never fails { pass q; };
+func:getslf = H2[](BS->:q) { pass q.sl; };
+func:idbsf = BS->(BS->:q) { pass q; };
+async func:getslaw = H2[](BS->:q) { pass q.sl; };
+async func:idbsaw = BS->(BS->:q) { pass q; };
+func:idbsw = wild BS->(BS->:q) never fails { pass q; };
+func:getsl = H2[](BS->:q) never fails { pass q.sl; };
+func:getsl2 = H2[](O->:q) never fails { pass q.b.sl; };
+struct:C1 = { BS->:bp; int64:k; };
+struct:C2 = { C1->:c1p; int64:k; };
+struct:C3 = { C2->:c2p; int64:k; };
+struct:C4 = { C3->:c3p; int64:k; };
+func:getslc2 = H2[](C2->:q) never fails { pass q.c1p.bp.sl; };
+func:getslc3 = H2[](C3->:q) never fails { pass q.c2p.c1p.bp.sl; };
+func:getslc4 = H2[](C4->:q) never fails { pass q.c3p.c2p.c1p.bp.sl; };
+func:wsl = NIL(H2[]:s) never fails { s[0i64].o = string_concat("x", "y"); pass NIL; };
+func:wsl1 = NIL(H2[]:s) never fails { s[1i64].o = string_concat("x", "y"); pass NIL; };
+func:rsl = NIL(H2[]:s) never fails { if (s[0i64].o.len == 999i64) { pass NIL; } pass NIL; };
+func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+func:idw = W->(W->:q) never fails { pass q; };
+func:idsla = HA[]->(HA[]->:q) never fails { pass q; };
+func:getsla = HA[](BA->:q) never fails { pass q.sl; };
+func:wsla = NIL(HA[]:s) never fails { s[0i64].a = shared_arena_make(4i64); pass NIL; };
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+// --- THE VIEW DOMAIN ------------------------------------------------------------------
+// 1. (DEF-315) a `Self->` method writing `self.s` on the explicit dereference of a call-result pointer, under a view of `h.s`
+func:method_on_deref_call = NIL() never fails {
+    S:h = S{ s: string_concat("a", "b"), k: 1i64 };
+    fixed uint8[]:vw = string_bytes(h.s);
+    drop (<-(raw ids(@h))).sset();
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 2. (DEF-315) the call result rooted at a pointer PARAMETER (`(<-(raw ids(p))).sset()`), under a view of `p.s` (rule A reads the parameter, DEF-311)
+func:method_on_deref_call_param = NIL(S->:p) never fails {
+    fixed uint8[]:vw = string_bytes(p.s);
+    drop (<-(raw ids(p))).sset();
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 3. (DEF-315) the method on the dereference of a call result that may be either of TWO pointees (`pick_s(c, @h, @g)`), under a view of `h.s`
+func:method_on_deref_two_targets = NIL() never fails {
+    S:h = S{ s: string_concat("a", "b"), k: 1i64 };
+    S:g = S{ s: string_concat("c", "d"), k: 2i64 };
+    fixed uint8[]:vw = string_bytes(h.s);
+    bool:c = (h.k == 1i64);
+    drop (<-(raw pick_s(c, @h, @g))).sset();
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 4. (DEF-316) a slice element's FIELD written through the dereference of a call-result pointer to the slice local, under a view of the array
+func:slice_elem_field_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(raw idsl(@t)))[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 5. (DEF-316) the WHOLE element assigned through the dereference
+func:slice_elem_whole_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(raw idsl(@t)))[0i64] = H2{ o: string_concat("x", "y"), k: 3i64 };
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 6. (DEF-316) the element's field MOVED OUT through the dereference
+func:slice_elem_move_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    string:m = move((<-(raw idsl(@t)))[0i64].o);
+    discard(vw[0i64] => int32);
+    discard(m.len);
+    pass NIL;
+};
+
+// 7. (DEF-316) the element's ADDRESS through the dereference handed to a writer
+func:slice_elem_addr_to_writer_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop wr(@(<-(raw idsl(@t)))[0i64]);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 8. (DEF-316 x DEF-315) a `Self->` method on the element through the dereference
+func:slice_elem_method_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop (<-(raw idsl(@t)))[0i64].hset();
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 9. (DEF-316) a slice FIELD's element written through the dereference of a call-result pointer to the STRUCT holding the slice
+func:slice_field_through_deref_call_struct = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(raw idbs(@bs))).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 10. (DEF-316, parity with `t[1i64].o = …`) element 1 written through the dereference under a view of element 0: a run is judged whole
+func:slice_other_elem_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(raw idsl(@t)))[1i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 11. (DEF-316, parity with `bsp.sl[0i64].o = …` through a NAMED struct pointer) the slice field's element written through the dereference with no view live but a SECOND slice of the array live: the by-name twin is refused
+func:slice_field_through_deref_call_second_slice = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    (<-(raw idbs(@bs))).sl[0i64].o = string_concat("x", "y");
+    discard(t[0i64].o.len);
+    pass NIL;
+};
+
+// 12. (DEF-317) a call-result slice handed out of a struct CARRIER's slice field, handed to a writer (`wsl(raw getsl(@b))`), under a view of the array the field spans
+func:call_result_slice_of_carrier_to_writer = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(raw getsl(@b));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 13. (DEF-317) the call-result slice bound to a LOCAL, an element written by index
+func:call_result_slice_local_indexed = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    H2[]:s2 = raw getsl(@b);
+    s2[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 14. (DEF-317) the call-result slice bound to a local, handed to the writer
+func:call_result_slice_local_to_writer = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    H2[]:s2 = raw getsl(@b);
+    drop wsl(s2);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 15. (DEF-317, parity with `H2[]:s2 = b.sl; s2[0i64].o = …`) a COPY of the carrier's slice written by index with NO view live: the by-name twin is refused, the write meeting the carrier's own view
+func:call_result_slice_local_indexed_no_view = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    H2[]:s2 = raw getsl(@b);
+    s2[0i64].o = string_concat("x", "y");
+    discard(p.arr[0i64].o.len);
+    pass NIL;
+};
+
+// 16. (DEF-317) the carrier NESTED in another struct (`getsl2(@o)` hands out `q.b.sl`)
+func:call_result_slice_nested_carrier = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    O:o = O{ b: BS{ sl: p.arr[0i64...1i64], k: 1i64 }, k: 2i64 };
+    o.b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(raw getsl2(@o));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 17. (DEF-317) the carrier initialised by its LITERAL alone
+func:call_result_slice_literal_carrier = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(raw getsl(@b));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 18. (DEF-317) the carrier reached through a call-result POINTER (`getsl(raw idbs(@b))`), two call results
+func:call_result_slice_carrier_through_call_ptr = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(raw getsl(raw idbs(@b)));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 19. (DEF-317) the carrier reached through a NAMED pointer local (`getsl(bp)`), the pointer followed to the carrier
+func:call_result_slice_carrier_through_named_ptr = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    BS->:bp = @b;
+    drop wsl(raw getsl(bp));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 20. (DEF-317) the carrier behind a pointer FIELD (`getsl(pb.bp)`)
+func:call_result_slice_carrier_behind_ptr_field = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    PB:pb = PB{ bp: @b, k: 1i64 };
+    drop wsl(raw getsl(pb.bp));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 21. (DEF-317, parity with `wsl1(b.sl)`) a writer of element 1 handed the call-result slice under a view of element 0: a run is judged whole
+func:call_result_slice_other_elem_writer = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl1(raw getsl(@b));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 25. (the transparent kinds: Relay `?!` on the pointer road) a MAY-FAIL getter's pointer result relayed, the slice field's element written through its dereference under a view of the array
+func:relay_ptr_road = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(idbsf(@bs) ?! E1)).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 26. (Await on the pointer road) an ASYNC getter's pointer result awaited and relayed, the element written through its dereference under the view
+async func:await_ptr_road = NIL() {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(await idbsaw(@bs) ?! E1)).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 27. (Cast `=>` on the slice road) the call-result slice cast to its own type and handed to the writer under the view
+func:cast_slice_road = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl((raw getsl(@b)) => H2[]);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 28. (Cast `=>` on the pointer road) the call-result pointer cast to its own type, the element written through its dereference under the view
+func:cast_ptr_road = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-((raw idbs(@bs)) => BS->)).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 29. (UncheckedCast `=>!` on the slice road) the call-result slice cast `=>!` to its own type and handed to the writer under the view
+func:ucast_slice_road = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl((raw getsl(@b)) =>! H2[]);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 30. (UncheckedCast `=>!` on the pointer road) the call-result pointer cast `=>!` to its own type, the element written through its dereference under the view
+func:ucast_ptr_road = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-((raw idbs(@bs)) =>! BS->)).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 31. (UncheckedCast `=>!` of a WILD call-result pointer to a plain one, the one cast spelling the tree uses) the element written through its dereference under the view
+func:ucast_wild_ptr_road = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-((raw idbsw(@bs)) =>! BS->)).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 32. (Relay `?!` on the slice road, cells4 t1) a MAY-FAIL getter's slice result relayed (`wsl(getslf(@b) ?! E1)`) and handed to the writer under the view: the `?!` node is `ExprEmphaticUnwrapExpr`, stepped by the own-holder walks since this landing
+func:relay_slice_road = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(getslf(@b) ?! E1);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 33. (Await on the slice road, cells4 t3) an ASYNC getter's slice result awaited and relayed (`wsl(await getslaw(@b) ?! E1)`), handed to the writer under the view
+async func:await_slice_road = NIL() {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(await getslaw(@b) ?! E1);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// --- THE LEND DOMAIN: the crossing lent by its own name --------------------------------
+// 22. (DEF-315, the lend) the method replacing `self.a` on the dereference of a call-result pointer while `w.a` is lent to a task
+async func:lend_method_on_deref_call = NIL() {
+    W:w = W{ a: shared_arena_make(8i64), k: 1i32 };
+    drop filler(@w.a);
+    drop (<-(raw idw(@w))).rep();
+    pass NIL;
+};
+
+// 23. (DEF-316, the lend) the element's arena replaced through the dereference of a call-result pointer to the slice local while `arr[0i64].a` is lent
+async func:lend_slice_elem_arena_through_deref_call = NIL() {
+    HA[1]:arr = [HA{ a: shared_arena_make(8i64), k: 1i64 }];
+    HA[]:t = arr[0i64...1i64];
+    drop filler(@arr[0i64].a);
+    (<-(raw idsla(@t)))[0i64].a = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 24. (DEF-317, the lend) the carrier's slice as a call result handed to a writer replacing the element's arena while `arr[0i64].a` is lent
+async func:lend_call_result_slice_of_carrier = NIL() {
+    HA[1]:arr = [HA{ a: shared_arena_make(8i64), k: 1i64 }];
+    BA:ba = BA{ sl: arr[0i64...1i64], k: 1i64 };
+    drop filler(@arr[0i64].a);
+    drop wsla(raw getsla(@ba));
+    pass NIL;
+};

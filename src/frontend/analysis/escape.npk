@@ -235,6 +235,7 @@ pub struct:Escape = {
     wild bool->:pholds;
     int32:decl_count;
     int32:cur_fn;         // the function whose body is being walked, or -1
+    List<int32>:unresolved;   // the slice nodes refused as UNRESOLVED (DEF-317's fuel, landing 166), read by the aliasing pass
 };
 
 pub func:VIEW_DIRECT = int32() never fails    { pass 1i32; };   // a view-maker's or a range view's operand
@@ -301,7 +302,8 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        mu_next: raw list_init::<int32>(64i64),
                        override_of: ovmem =>! wild int32->, impls: impls,
                        pholds: phmem =>! wild bool->,
-                       decl_count: dsize =>! int32, cur_fn: 0i32 - 1i32 };
+                       decl_count: dsize =>! int32, cur_fn: 0i32 - 1i32,
+                       unresolved: raw list_init::<int32>(4i64) };
     for (int64:i in 0i64...size) {
         x.holds[i] = false;
         x.vr_head[i] = 0i32 - 1i32;
@@ -1876,11 +1878,22 @@ pub func:escape_slice_rest_path = int32(Escape->:x, int32:path) never fails {
 // ref rooted nowhere (a `wild` slice, an allocator's) gives none (D-315, D-361).
 // A run the value carries TRANSITIVELY (what the run's elements hold, a
 // recursive element type) counts too: more targets, more freezes, never fewer.
-pub func:escape_slice_targets = NIL(Escape->:x, ExprId:base, List<ViewRef>->:out) never fails {
-    if (raw expr_is_none(base)) { pass NIL; }
+// DEF-317 (landing 166): a ref that is a CARRIER -- storage that may hold a run
+// rather than a run itself (`escape_ref_is_strict_run`): the struct `b` of
+// `raw getsl(@b)`, borrowed whole, the pointer `bp` of `getsl(bp)`, the pointer
+// field `pb.bp`, a run reached THROUGH a pointer (`s2 = bp.sl`) -- stands for the
+// runs its CHAIN holds, which the loop above counted at the carrier's own root
+// alone, where no view of the array is rooted (113 at both legs under a view of
+// the array, a lent arena replaced under its task, until this landing): the
+// chain is read, transitively and fuel-bounded (`escape_carrier_runs`), and the
+// answer is whether EVERY chain was read -- a carrier still to follow past the
+// fuel is UNRESOLVED, and the readers refuse (the closed direction), never
+// "no targets".
+pub func:escape_slice_targets = bool(Escape->:x, ExprId:base, List<ViewRef>->:out) never fails {
+    if (raw expr_is_none(base)) { pass true; }
     int32:bt = raw exprtypes_get(x.etypes, base);
-    if (bt == 0i32) { pass NIL; }
-    if ((raw type_kind(x.types, bt)) != (raw TY_SLICE())) { pass NIL; }
+    if (bt == 0i32) { pass true; }
+    if ((raw type_kind(x.types, bt)) != (raw TY_SLICE())) { pass true; }
     int32:pte = raw type_elem(x.types, bt);
     List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
     drop collect_view_refs(x, base, raw ESCAPE_DEPTH(), @refs);
@@ -1889,6 +1902,16 @@ pub func:escape_slice_targets = NIL(Escape->:x, ExprId:base, List<ViewRef>->:out
         if (r.root == 0i32) { continue; }
         if (!(raw escape_ref_is_run_of(x, r, pte))) { continue; }
         drop list_push(out, r);
+    }
+    bool:resolved = true;
+    List<int32>:seen = raw list_init::<int32>(4i64);
+    for (int64:ci in 0i64...refs.count) {
+        ViewRef:cr = refs[ci];
+        if (cr.root == 0i32) { continue; }
+        if (raw escape_ref_is_strict_run(x, cr, pte)) {
+            if (raw expr_is_none(raw escape_first_pointer_inward(x, ExprId{ index: cr.place }))) { continue; }
+        }
+        if (!(raw escape_carrier_runs(x, cr.root, pte, 4i32, @seen, out))) { resolved = false; }
     }
     // DEF-305 (b), landing 161: a slice reached THROUGH A POINTER -- `bp.sl` (a
     // slice field of a pointer's pointee) or `<-tp` (a deref of a pointer to a
@@ -1900,7 +1923,101 @@ pub func:escape_slice_targets = NIL(Escape->:x, ExprId:base, List<ViewRef>->:out
     // approximate; adds targets, never removes, and fires only when a pointer
     // sits on the base's path (a plain `b.sl` or `t` has none).
     drop escape_slice_targets_through_pointer(x, base, pte, out);
+    pass resolved;
+};
+
+// IS A REF A RUN OF `pte` ITSELF -- its place's type at the path's end an array, a
+// slice or the prelude's `List` of `pte`, the storage a slice of `pte` spans --
+// against the MAY of `escape_ref_is_run_of` (storage that may HOLD one: a struct
+// with a slice field, a pointer, a pointer's pointee -- a CARRIER). A run itself
+// is a target and the end of a walk; a carrier is followed into its chain
+// (`escape_carrier_runs`). An untyped place or path is no run itself (followed:
+// the closed direction).
+func:escape_ref_is_strict_run = bool(Escape->:x, ViewRef:r, int32:pte) never fails {
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: r.place });
+    if (pt == 0i32) { pass false; }
+    int32:et = raw escape_path_end_type(x, pt, r.path);
+    if (et == 0i32) { pass false; }
+    int32:k = raw type_kind(x.types, et);
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_SLICE()))) { pass ((raw type_elem(x.types, et)) == pte); }
+    if ((k == (raw TY_STRUCT())) && (raw type_is_list(x.tr, et))) { pass ((raw list_elem_type(x.tr, et)) == pte); }
+    pass false;
+};
+
+// THE RUNS A CARRIER'S CHAIN HOLDS, TRANSITIVELY (DEF-317, landing 166): `root` a
+// binding whose value is a carrier -- `b` of `BS{ sl: p.arr[0i64...2i64], … }`,
+// borrowed whole by `raw getsl(@b)`; the pointer `bp = @b` of `getsl(bp)`; `pb` of
+// `getsl(pb.bp)`; the pointer locals of `getsl3(p3)`, hop by hop -- read as
+// `push_binding_refs` reads it (a parameter's chain too): a ref that is a run of
+// `pte` is a target (the MAY reading, as the base's own refs are read); a ref
+// that is a carrier, or a run reached through a pointer, is followed into ITS
+// chain with one unit of fuel less. A root already on the walk adds nothing
+// (`seen`: a cyclic chain spends no fuel). FAILS CLOSED: a chain still to follow
+// when the fuel is out answers false -- UNRESOLVED -- and the readers refuse the
+// write (`escape_unresolved_slice`, `check_slice_targets`), never read it as "no
+// targets". Over-approximate otherwise: adds targets, never removes -- a carrier
+// with two slice fields stands for both runs.
+func:escape_carrier_runs = bool(Escape->:x, int32:root, int32:pte, int32:fuel, List<int32>->:seen,
+                                List<ViewRef>->:out) decreases fuel never fails {
+    if (root == 0i32) { pass true; }
+    for (int64:sn in 0i64...seen.count) { if ((<-seen)[sn] == root) { pass true; } }
+    drop list_push(seen, root);
+    if (fuel <= 0i32) { pass false; }
+    List<ViewRef>:crefs = raw list_init::<ViewRef>(4i64);
+    drop push_binding_refs(x, root, @crefs);
+    bool:resolved = true;
+    for (int64:i in 0i64...crefs.count) {
+        ViewRef:c = crefs[i];
+        if (c.root == 0i32) { continue; }
+        if (raw escape_ref_is_run_of(x, c, pte)) { drop list_push(out, c); }
+        if (raw escape_ref_is_strict_run(x, c, pte)) {
+            if (raw expr_is_none(raw escape_first_pointer_inward(x, ExprId{ index: c.place }))) { continue; }
+        }
+        if (!(raw escape_carrier_runs(x, c.root, pte, fuel - 1i32, seen, out))) { resolved = false; }
+    }
+    pass resolved;
+};
+
+// THE ONE SENTENCE OF AN UNRESOLVED SLICE (DEF-317's fuel, landing 166), said by
+// the escape pass where it records the write and by the aliasing pass where the
+// escape pass did not reach the node.
+pub func:unresolved_slice_text = string() never fails {
+    pass "a write through a slice whose storage this analysis cannot resolve: the slice is handed out of a carrier reached through more pointer hops than the walk follows (D-325: a write through a slice is checked against every view of the storage it spans, and this one's storage cannot be named here); hold the carrier in a local and take the slice from it";
+};
+
+// A SLICE WHOSE STORAGE THE WALK CANNOT RESOLVE is refused where its write is
+// recorded (DEF-317's fuel, landing 166) -- as a frame view stored into a slice no
+// place names is (`refuse_frame_view_into_slice`, BORROW-009) -- and the node is
+// remembered, so the aliasing pass's `check_slice_targets`, which reads the same
+// targets, adds no second line. One report per node; in the reporting round only.
+func:escape_unresolved_slice = NIL(Escape->:x, ExprId:sb) never fails {
+    if (!x.reporting) { pass NIL; }
+    for (int64:i in 0i64...x.unresolved.count) { if (x.unresolved[i] == sb.index) { pass NIL; } }
+    drop list_push(@x.unresolved, sb.index);
+    drop escape_err(x, raw BORROW_UNTRACKED(), raw unresolved_slice_text(), (raw ast_expr(x.ast, sb)).span);
     pass NIL;
+};
+
+// THE FIRST POINTER-TYPED SUB-EXPRESSION INWARD FROM A SLICE BASE, or none: the
+// pointer `bp.sl`, `<-tp`, `(<-(raw idbs(@bs))).sl` or `<-(raw idsl(@t))` is reached
+// through (DEF-305 (b); one walk for the targets reader and, since landing 166, the
+// carrier reader and the own-holder reader).
+func:escape_first_pointer_inward = ExprId(Escape->:x, ExprId:base) never fails {
+    ExprId:cur = base;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass (raw expr_none()); }
+        int32:ct = raw exprtypes_get(x.etypes, cur);
+        if ((ct != 0i32) && ((raw type_kind(x.types, ct)) == (raw TY_POINTER()))) { pass cur; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
+            || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprCastExpr)
+            || (n.kind == ExprKind.ExprUncheckedCastExpr) || (n.kind == ExprKind.ExprRawUnwrapExpr)
+            || (n.kind == ExprKind.ExprRelayExpr) || (n.kind == ExprKind.ExprAwaitExpr)
+            || (n.kind == ExprKind.ExprEmphaticUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticCoalesceExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        pass (raw expr_none());
+    }
+    pass (raw expr_none());
 };
 
 // THE RUNS A SLICE BASE REACHED THROUGH A POINTER VIEWS (DEF-305 (b)): the pointer
@@ -1911,19 +2028,7 @@ pub func:escape_slice_targets = NIL(Escape->:x, ExprId:base, List<ViewRef>->:out
 // The pointer is the first POINTER-typed sub-expression inward from the base.
 func:escape_slice_targets_through_pointer = NIL(Escape->:x, ExprId:base, int32:pte,
                                                 List<ViewRef>->:out) never fails {
-    ExprId:cur = base;
-    ExprId:ptr = raw expr_none();
-    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
-        if (raw expr_is_none(cur)) { break; }
-        int32:ct = raw exprtypes_get(x.etypes, cur);
-        if ((ct != 0i32) && ((raw type_kind(x.types, ct)) == (raw TY_POINTER()))) { ptr = cur; break; }
-        ExprNode:n = raw ast_expr(x.ast, cur);
-        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
-            || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprCastExpr)
-            || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
-        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
-        break;
-    }
+    ExprId:ptr = raw escape_first_pointer_inward(x, base);
     if (raw expr_is_none(ptr)) { pass NIL; }
     List<ViewRef>:ptgs = raw list_init::<ViewRef>(4i64);
     drop escape_pointer_targets(x, ptr, @ptgs);
@@ -2147,6 +2252,100 @@ pub func:escape_written_slice_base = ExprId(Escape->:x, ExprId:place, bool:self_
     pass (raw expr_none());
 };
 
+// THE OWN HOLDER OF A SLICE BASE WITH NO NAMED ROOT (DEF-316, DEF-317; landing 166):
+// the binding whose own view of the run a write through this slice frees nothing of
+// -- (i) the POINTEE of a call-result pointer on the base's path, `t` for
+// `<-(raw idsl(@t))`, `bs` for `(<-(raw idbs(@bs))).sl`, resolved by rule A
+// (`escape_pointer_targets`) to a SINGLE pointee as the named road resolves a named
+// pointer; (ii) the CARRIER a call-result slice is handed out of, `b` for
+// `raw getsl(@b)` and for `raw getsl(bp)` (a range chain of the call too): the one
+// root among the result's refs, each pointer-typed ref resolved to its single
+// pointee first. The holder's type is a slice or a one-view struct, as on the named
+// road; two pointees, two roots, a root that is no local, a type that is neither
+// skip none -- the closed direction, a spurious self-refusal (the matrix's b11, c10,
+// c17n would refuse against their own view), never a missed hazard. The validation
+// walk from the base steps derefs, members (a struct holder), ranges, the unwrap
+// operators (`raw f(@b)` is an unwrap node over the call) and casts down to the
+// pointer or the call, and nothing else.
+func:escape_slice_own_holder_rootless = int32(Escape->:x, ExprId:base) never fails {
+    ExprId:stop = raw escape_first_pointer_inward(x, base);
+    int32:hold = 0i32;
+    int32:ht = 0i32;
+    if (!(raw expr_is_none(stop))) {
+        List<ViewRef>:ptg = raw list_init::<ViewRef>(4i64);
+        drop escape_pointer_targets(x, stop, @ptg);
+        if (ptg.count != 1i64) { pass 0i32; }
+        ViewRef:pv = ptg[0i64];
+        hold = pv.root;
+        ht = raw exprtypes_get(x.etypes, ExprId{ index: pv.place });
+    } else {
+        ExprId:cur0 = base;
+        for (int32:hop0 in 0i32...(raw BORROW_FUEL())) {
+            if (raw expr_is_none(cur0)) { pass 0i32; }
+            ExprNode:n0 = raw ast_expr(x.ast, cur0);
+            if ((n0.kind == ExprKind.ExprCallExpr) || (n0.kind == ExprKind.ExprMethodCallExpr)) { stop = cur0; break; }
+            // `raw f(@b)`, `f(@b) ?! E` (`ExprEmphaticUnwrapExpr`: the value in slot a, the
+            // code in slot b), `g(@b) ??! E` (D-360's twin), `relay f(@b)`, `await f(@b)`, a
+            // cast: the unwrap operators and the casts are the call's value on ONE path (the
+            // success value, or a trap or a return); `?|` and `??` are two values and are not
+            // stepped -- no own holder, the closed direction. `collect_view_refs` steps them
+            // the same way, the two-slot kinds by their shape.
+            if ((n0.kind == ExprKind.ExprRawUnwrapExpr) || (n0.kind == ExprKind.ExprRelayExpr)
+                || (n0.kind == ExprKind.ExprAwaitExpr) || (n0.kind == ExprKind.ExprCastExpr)
+                || (n0.kind == ExprKind.ExprUncheckedCastExpr) || (n0.kind == ExprKind.ExprEmphaticUnwrapExpr)
+                || (n0.kind == ExprKind.ExprEmphaticCoalesceExpr)) { cur0 = raw expr_operand(n0); continue; }
+            if (n0.kind != ExprKind.ExprIndexExpr) { pass 0i32; }
+            if ((raw ast_expr(x.ast, raw expr_rhs(n0))).kind != ExprKind.ExprRangeExpr) { pass 0i32; }
+            cur0 = raw expr_lhs(n0);
+        }
+        if (raw expr_is_none(stop)) { pass 0i32; }
+        List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+        drop collect_view_refs(x, stop, raw ESCAPE_DEPTH(), @refs);
+        for (int64:i in 0i64...refs.count) {
+            ViewRef:r = refs[i];
+            if (r.root == 0i32) { continue; }
+            int32:rr = r.root;
+            int32:rt = raw exprtypes_get(x.etypes, ExprId{ index: r.place });
+            if ((rt != 0i32) && ((raw type_kind(x.types, rt)) == (raw TY_POINTER()))) {
+                List<ViewRef>:ptg2 = raw list_init::<ViewRef>(4i64);
+                drop escape_pointer_targets(x, ExprId{ index: r.place }, @ptg2);
+                if (ptg2.count != 1i64) { pass 0i32; }
+                ViewRef:pv2 = ptg2[0i64];
+                rr = pv2.root;
+                rt = raw exprtypes_get(x.etypes, ExprId{ index: pv2.place });
+            }
+            if ((hold != 0i32) && (hold != rr)) { pass 0i32; }
+            hold = rr;
+            ht = rt;
+        }
+    }
+    if ((hold == 0i32) || (ht == 0i32)) { pass 0i32; }
+    Symbol:hsy = raw symtab_get(x.tab, hold);
+    if (hsy.origin_kind != (raw SYM_STMT())) { pass 0i32; }
+    int32:hk = raw type_kind(x.types, ht);
+    bool:sroot = false;
+    if (hk != (raw TY_SLICE())) {
+        if (hk != (raw TY_STRUCT())) { pass 0i32; }
+        if ((raw escape_view_carriers(x, ht, 8i32)) != 1i32) { pass 0i32; }
+        sroot = true;
+    }
+    ExprId:cur = base;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (cur.index == stop.index) { pass hold; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }
+        if ((n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprRelayExpr)
+            || (n.kind == ExprKind.ExprAwaitExpr) || (n.kind == ExprKind.ExprCastExpr)
+            || (n.kind == ExprKind.ExprUncheckedCastExpr) || (n.kind == ExprKind.ExprEmphaticUnwrapExpr)
+            || (n.kind == ExprKind.ExprEmphaticCoalesceExpr)) { cur = raw expr_operand(n); continue; }
+        if (sroot && (n.kind == ExprKind.ExprMemberAccessExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind != ExprKind.ExprIndexExpr) { pass 0i32; }
+        if ((raw ast_expr(x.ast, raw expr_rhs(n))).kind != ExprKind.ExprRangeExpr) { pass 0i32; }
+        cur = raw expr_lhs(n);
+    }
+    pass 0i32;
+};
+
 // THE BINDING WHOSE OWN VIEW A WRITE THROUGH A SLICE SKIPS (DEF-297, landing 159):
 // the root of `base` when it is a SLICE-typed local and `base` is that local or
 // a range chain of it (`t`, `t[lo...hi]`), or a STRUCT-typed local whose type
@@ -2170,13 +2369,15 @@ pub func:escape_written_slice_base = ExprId(Escape->:x, ExprId:place, bool:self_
 // neither a slice nor a one-view struct, skips none (the closed direction: a
 // spurious self-refusal, never a missed hazard). The validation walk steps
 // through a pointer deref as it steps a member or a range.
+// DEF-316, DEF-317 (landing 166): a base with NO named root -- a call-result pointer
+// on its path, or a call-result slice -- is `escape_slice_own_holder_rootless`'s.
 pub func:escape_slice_own_holder = int32(Escape->:x, ExprId:base) never fails {
     if (raw expr_is_none(base)) { pass 0i32; }
     PlaceRoot:r = raw esc_place_root(x, base);
     if (r.exhausted) { pass 0i32; }
-    if (raw expr_is_none(r.id)) { pass 0i32; }
+    if (raw expr_is_none(r.id)) { pass (raw escape_slice_own_holder_rootless(x, base)); }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
-    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (raw escape_slice_own_holder_rootless(x, base)); }
     if (rn.a == 0i32) { pass 0i32; }
     int32:rt = raw exprtypes_get(x.etypes, r.id);
     if (rt == 0i32) { pass 0i32; }
@@ -2270,7 +2471,7 @@ func:record_refs_into_unnamed_slice = NIL(Escape->:x, ExprId:a, List<ViewRef>->:
         pass NIL;
     }
     List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
-    drop escape_slice_targets(x, a, @tg);
+    if (!(raw escape_slice_targets(x, a, @tg))) { drop escape_unresolved_slice(x, a); }
     for (int64:i in 0i64...tg.count) { drop record_refs_at_target(x, tg[i], got); }
     pass NIL;
 };
@@ -2301,7 +2502,7 @@ func:record_mut_through_slice = NIL(Escape->:x, ExprId:place, bool:below) never 
 // run the value carries transitively, at another level than the write's.
 func:record_mut_of_slice_targets = NIL(Escape->:x, ExprId:sb) never fails {
     List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
-    drop escape_slice_targets(x, sb, @tg);
+    if (!(raw escape_slice_targets(x, sb, @tg))) { drop escape_unresolved_slice(x, sb); }
     for (int64:i in 0i64...tg.count) {
         ViewRef:r = tg[i];
         int32:j = raw param_index_of(x, r.root);

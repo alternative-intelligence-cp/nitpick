@@ -481,8 +481,8 @@ func:pre_has_elem_party = bool(Alias->:x, int32:holder, ExprId:place) never fail
 // `raw mkpe(@l)`, a nested literal -- may carry a pointer into `l`'s buffer in
 // any pointer member whose pointee is not the `List` itself: the element
 // (`H2->`), a field of the element (`string->`, `int64->`), a pointer to either.
-// A pointer whose pointee IS the `List` (`List<H2>->`) reaches the header, which
-// never moves, and is D-286's plain party. A struct, an `Optional`, a `Result`,
+// A pointer whose pointee IS the `List` (`List<H2>->`) is read as the header, D-286's
+// plain party -- FALSE for a recursive element (DEF-320, landing 168). A struct, an `Optional`, a `Result`,
 // an array, a slice, a `List` hold one when a member does; an enum with
 // payloads, a `dyn`, `any`, an unresolved type and fuel run out answer YES, the
 // closed direction (DEF-54); a scalar, a `string`, a `cstring` hold none.
@@ -512,6 +512,10 @@ func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) de
         pass false;
     }
     if (raw type_kind_has_elem(k)) { pass (raw type_holds_elem_pointer(x, raw type_elem(x.types, t), lt, fuel - 1i32)); }
+    // A GENERIC PARAMETER, `Self`, an associated type and an invalid type are the
+    // UNRESOLVED types the comment above gives the closed direction (DEF-54): they fell
+    // to the `false` below until landing 166 (the review of 165, its P4).
+    if ((k == (raw TY_PARAM())) || (k == (raw TY_SELF())) || (k == (raw TY_ASSOC())) || (k == (raw TY_INVALID()))) { pass true; }
     pass false;
 };
 
@@ -1160,6 +1164,21 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
                     }
                 }
             }
+            // THROUGH A SLICE BELOW A ROOTLESS DEREFERENCE (DEF-316, landing 166):
+            // `(<-(raw idsl(@t)))[0i64].o = …`, `(<-(raw idbs(@bs))).sl[0i64].o = …`, the
+            // element moved out, its address handed to a writer, a method on it -- the
+            // arms above re-root the write at the POINTEE (`t`, `bs`) and never ask what
+            // the SLICE there views: the named path's slice dispatch (DEF-297's
+            // `escape_written_slice_base` -> `check_slice_targets`), run for a rootless
+            // place too. The walk is syntactic and needs no root; the targets come from
+            // rule A (`escape_slice_targets_through_pointer` resolving the call-result
+            // pointer on the base's path, DEF-305 (b)) and the slice's own holder from the
+            // pointee (`escape_slice_own_holder_rootless`). 113 at both legs under a view
+            // of the array, a lent arena replaced under its task, until this landing.
+            ExprId:sb0 = raw escape_written_slice_base(x.esc, place, (extra != 0i32) || (akind == (raw ACC_EXCLUSIVE())));
+            if (!(raw expr_is_none(sb0))) {
+                if (raw check_slice_targets(x, sb0, akind, at, mode)) { pass true; }
+            }
         }
         // NO NAMED ROOT: a place that bottoms in a DEREFERENCE of a shared
         // holder (`@(<-r)` handed to a writer, DEF-123 (a)) is the holder's
@@ -1306,7 +1325,17 @@ func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int3
     int32:own_root = raw place_root_symbol(x, sb);
     int32:own_holder = raw escape_slice_own_holder(x.esc, sb);
     List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
-    drop escape_slice_targets(x.esc, sb, @tg);
+    if (!(raw escape_slice_targets(x.esc, sb, @tg))) {
+        // UNRESOLVED (DEF-317's fuel, landing 166): a carrier behind more pointer hops
+        // than `escape_carrier_runs` follows -- the closed direction is a refusal, never
+        // "no targets". The escape pass reported this node where it recorded the write
+        // (`escape_unresolved_slice`); a node it did not reach is reported here, so one
+        // line per site.
+        bool:said = false;
+        for (int64:u in 0i64...x.esc.unresolved.count) { if (x.esc.unresolved[u] == sb.index) { said = true; } }
+        if (!said) { drop alias_err(x, raw BORROW_UNTRACKED(), raw unresolved_slice_text(), at); }
+        pass true;
+    }
     for (int64:i in 0i64...tg.count) {
         ViewRef:r = tg[i];
         if (r.root == own_root) { continue; }
@@ -2579,6 +2608,24 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             // rule A in `check_pointer_targets`' call-result arm.
             if (recv_ptr_param && recv_is_ptr && (rcallee > 0i32)) {
                 drop check_written(x, recv, rcallee, 0i32, (raw ast_expr(x.ast, recv)).span);
+            }
+            // A `Self->` METHOD ON THE BARE DEREFERENCE OF A ROOTLESS POINTER (DEF-315,
+            // landing 166): `(<-(raw ids(@h))).sset()` -- the receiver is the POINTEE, no
+            // place chain and not pointer-typed, so neither call above ran and the method's
+            // summary write of `self.s` met nothing (113 at both legs under a view of `h.s`;
+            // a lent arena replaced under its task). The implicit `@recv` is a write at the
+            // dereference of a call-result pointer, DEF-309's shape, and takes DEF-309's
+            // road: `check_written` -> `check_access_reported`'s root==0 block ->
+            // `rootless_deref_base` -> `check_pointer_targets`' call-result arm, the
+            // summary's paths composed onto each target (rule A: a parameter-rooted result
+            // too, DEF-311; a result with two pointees, both; the LENT parties with the
+            // views). A member or an index BELOW the dereference is `acc_place`'s whole-
+            // place check already (`(<-(raw idt(@t))).inner.sset()`) and is not repeated.
+            if (recv_ptr_param && (!recv_is_ptr) && (rcallee > 0i32)) {
+                ExprNode:rdn = raw ast_expr(x.ast, recv);
+                if ((rdn.kind == ExprKind.ExprDerefExpr) && (!(raw expr_is_none(raw rootless_deref_base(x, recv))))) {
+                    drop check_written(x, recv, rcallee, 0i32, rdn.span);
+                }
             }
         }
     }
