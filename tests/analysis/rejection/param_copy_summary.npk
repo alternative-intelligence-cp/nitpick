@@ -1,0 +1,222 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 66:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 76:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 86:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 96:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 106:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 116:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 126:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 136:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 146:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 156:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 166:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 176:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 186:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 197:18
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 207:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 218:7
+mod:param_copy_summary;
+struct:H2 = { string:o; int64:k; };
+
+// the writer every face hands its pointer to (writes the pointee's `o`)
+func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+// DEF-341: the written place's path carries a CAST of the pointer parameter
+func:wrany = NIL(any->:q) never fails { (<-(q =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrc = NIL(H2->:q) never fails { (<-(q =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrce = NIL(H2->:q) never fails { (<-(q => H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrcw = NIL(H2->:q) never fails { (<-(q =>! H2->)) = H2{ o: string_concat("x", "y"), k: 9i64 }; pass NIL; };
+// DEF-342: a LOCAL COPY of the pointer parameter, written through
+func:wrcopy = NIL(H2->:q) never fails { H2->:q2 = q; q2.o = string_concat("x", "y"); pass NIL; };
+func:wrfwd = NIL(H2->:q) never fails { H2->:q2 = q; drop wr(q2); pass NIL; };
+func:wrcd = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2).o = string_concat("x", "y"); pass NIL; };
+func:wrcwh = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2) = H2{ o: string_concat("x", "y"), k: 9i64 }; pass NIL; };
+func:wrmv = NIL(H2->:q) never fails { H2->:q2 = q; string:t = move(q2.o); discard(t.len); pass NIL; };
+func:wrc2 = NIL(H2->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
+func:wrany2 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
+func:wrc2e = NIL(H2->:q) never fails { H2->:q2 = q => H2->; q2.o = string_concat("x", "y"); pass NIL; };
+// DEF-341's `any->` face, both laundering directions (build 8): a plain parameter copied into an `any->` local, an
+// `any->` parameter's cast copy forwarded to a writer
+func:wrlaund = NIL(H2->:q) never fails { any->:q2 = q =>! any->; (<-(q2 =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrany3 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; drop wr(q2); pass NIL; };
+// the accepted over-refusal: a DISJOINT field written through the copy (the whole extent is recorded)
+func:wrk = NIL(H2->:q) never fails { H2->:q2 = q; q2.k = 9i64; pass NIL; };
+// the control's reader
+func:rdcopy = NIL(H2->:q) never fails { H2->:q2 = q; int64:n = q2.o.len; discard(n); pass NIL; };
+
+// 1. (DEF-341) an `any->` parameter cast back and written through the dereference, the caller viewing the pointee (f9j2)
+func:any_param_cast_deref_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrany(ap);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 2. (DEF-341) the parameter cast to its OWN type with `=>!`, written through the dereference (f9j4)
+func:same_type_ucast_deref_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrc(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 3. (DEF-341) the same with the checked cast `=>` (f9j8)
+func:same_type_cast_deref_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrce(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 4. (DEF-341) the WHOLE pointee assigned through the dereference of the cast parameter (f9j10)
+func:cast_deref_whole_pointee_assign = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrcw(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 5. (DEF-342) a local copy of the pointer parameter, a field written through it (f9j7)
+func:copy_field_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrcopy(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 6. (DEF-342) the copy handed to a writing callee (f9j11)
+func:copy_forwarded_to_writer = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrfwd(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 7. (DEF-342) the copy written through an explicit dereference (f9j12)
+func:copy_explicit_deref_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrcd(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 8. (DEF-342) the whole pointee assigned through the copy (f9j13)
+func:copy_whole_pointee_assign = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrcwh(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 9. (DEF-342) a field MOVED OUT through the copy (f9j15)
+func:copy_field_moved_out = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrmv(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 10. (DEF-342) the copy made through a same-type `=>!` (f9j5)
+func:copy_through_ucast_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrc2(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 11. (DEF-342) an `any->` parameter copied through `=>!` to the pointee's type and written (f9j6)
+func:any_copy_through_ucast_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrany2(ap);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 12. (DEF-342) the copy made through the checked cast `=>` (f9j9)
+func:copy_through_cast_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrc2e(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 13. (DEF-342, the ACCEPTED OVER-REFUSAL, management 2026-10-29 09:57:24) the callee writes the DISJOINT field `k` through the copy while the caller views `o`: the copy's write is recorded at the pointee's WHOLE extent (the store road's design since landing 156), so the call is refused; 0 tree sites
+func:accepted_over_refusal_disjoint_field_through_copy = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrk(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 14. (DEF-341's `any->` face, the REVERSE laundering, f9j6c) a plain pointer parameter copied into an `any->` local and
+// written through the local's cast back, the caller viewing the pointee
+func:plain_param_laundered_through_any_local = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrlaund(hp);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 15. (DEF-341's `any->` face, f9j6e) an `any->` parameter cast into a plain local that is FORWARDED to a writer
+func:any_param_copy_forwarded_to_writer = NIL() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrany3(ap);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 16. (DEF-341's `any->` face in ONE function, f9j6b3) a view through one cast copy of an `any->` parameter, the write
+// through another cast copy of it -- DEF-302's by-another-name rule, the two chains meeting at the parameter
+func:same_fn_view_through_cast_copy_write_through_other_cast_copy = NIL(any->:q) never fails {
+    H2->:hq = q =>! H2->;
+    fixed uint8[]:vw = string_bytes(hq.o);
+    H2->:q2 = q =>! H2->;
+    q2.o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+

@@ -1,0 +1,379 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 112:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 120:21
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 130:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 151:8
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 161:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 173:8
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 185:10
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 194:13
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 203:13
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 212:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 222:15
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 230:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 240:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 250:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 262:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 272:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 282:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 291:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 302:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 311:16
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 322:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 334:13
+//
+// DEF-343 (landing 167): THE ALIAS PASS'S PLACE READERS STEP A CAST AS THEY STEP A DEREFERENCE. Until
+// this landing `path_steps`, `is_place_chain`, `place_root_symbol`, `root_ident_is_pointer`,
+// `pointer_targets_of` and the readers of an admitted value's shape (`party_kind_of`, `prescan_party`,
+// `admit_value`, `admit_written`, `acc_call`'s element-address arm) each stopped at a cast node, so a
+// place spelled through one -- `(<-(q =>! H2->)).o`, `(@h) =>! any->` -- was rootless, stepless or no
+// address to one reader or another, and the party it should have met was skipped or never raised.
+// Every site here compiled on landing 166's compiler; the hazard sites read freed memory (113) at both
+// legs (`wt/51a/.internal/probes/t167/cells_e/`, `cells_e_b/`, `cells_g/`; `*_166.txt`). Site numbers
+// are the file's comments'.
+//   THE SAME-FUNCTION FACES (1-2): a view through the cast dereference of an `any->` PARAMETER, the
+//   pointee written through a cast copy of the parameter or through the cast dereference itself --
+//   the view party's steps were unreadable (`path_steps` fell off at the cast) and BOTH judges skipped
+//   it (f9j6b, f9j6b2; the cast-free twins f9j6b5, f9j6b6 refused since landing 160).
+//   THE REVERSE READER (3-6): a view through the cast dereference of a LOCAL pointer -- an `any->`
+//   laundering or a same-type cast -- and the pointee written by its own name, through another named
+//   pointer, or handed by name to a writer: `place_root_symbol` named no root at the cast, so
+//   `pointer_targets_of` resolved the view to nothing (b8, b9, b11, b14; b10, the no-cast twin, refused).
+//   THE ACCEPTED OVER-REFUSALS (7-8; D-286's list, management 2026-10-29 11:05:40): a view through an
+//   `any->` cast dereference stands for the pointee WHOLE (its steps are the other type's parts and are
+//   dropped), so a DISJOINT field written through another pointer is refused (b11n; the same-type cast
+//   with its steps kept, b11k, is the legal half's control); and a pointer RE-POINTED under a view
+//   through its cast dereference is refused at the new address by the flow-insensitive re-pointed class
+//   (b12), exactly as its no-cast twin b13 is (c306f/k302a, landing 163).
+//   THE CLAIM FACE (9-13): a plain address CAST as it is taken -- `(@h) =>! any->`, `(@h) =>! H2->` --
+//   is D-286's plain party as `@h` is; until this landing `party_kind_of` read it as an ordinary value,
+//   and an exclusive or a shared claim of the pointee was admitted beside it (g2, g3, g4), to one callee
+//   with the cast pointer (g5), and the callee viewing through the claim's holder while writing through
+//   the cast pointer read the freed bytes (g6, 113 at both legs; g1, g4k, g5k, g6k the refused no-cast
+//   twins). NITPICK-BORROW-013 at the claim, as D-286 reports its plain twin.
+//   THE SUMMARY FACE (14-15; DEF-346, build 15 of this landing): a CALLEE writing through a cast to
+//   ANOTHER pointee type -- `(<-(q =>! S->)).x` under an `any->` parameter -- was summarised by the
+//   escape pass as the field `x` of `S` and composed onto the caller's `H2` as a field disjoint from the
+//   view of `h.o`, so the call was admitted and the view read the freed bytes (170) at both legs (f1a,
+//   f1b; `wt/51a/.internal/probes/t167/rev167/`): `path_rel_compute` kept the steps below a
+//   pointee-changing cast, where alias.npk's `path_steps` drops them (DEF-343). The summary path is the
+//   pointee WHOLE now, as alias.npk reads the same cast. Site 15, the address cast INLINE, was REFUSED
+//   on landing 166 by D-286's plain-address party and SILENT on build 14 -- the regression management's
+//   review of build 14 (fb0f3d3) caught; it is the one site landing 166's checker reports on this file.
+mod:cast_place_readers;
+
+struct:H2 = { string:o; int64:k; };
+func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+struct:S = { string:x; int64:k; };
+func:wrs = NIL(any->:q) never fails { (<-(q =>! S->)).x = string_concat("x", "y"); pass NIL; };
+func:wrg2 = NIL(H2->:p, any->:q) never fails { (<-(q =>! H2->)).o = string_concat("z", "w"); p.k = 5i64; pass NIL; };
+impl:S = { func:sset = NIL(S->:self) never fails { self.x = string_concat("x", "y"); pass NIL; }; };
+func:wsx = NIL(S->:p) never fails { p.x = string_concat("x", "y"); pass NIL; };
+func:ids = S->(S->:p) never fails { pass p; };
+func:wrs2 = NIL(any->:q) never fails { drop wsx(@(<-(q =>! S->))); pass NIL; };   // the second callee (build 16)
+func:wrs3 = NIL(any->:q) never fails { drop wsx(q =>! S->); pass NIL; };           // the cast as a value (build 16)
+func:wrsm = NIL(any->:q) never fails { drop (<-(q =>! S->)).sset(); pass NIL; };   // the `Self->` method (build 16)
+func:wk = NIL(any->:q) never fails { (<-(q =>! H2->)).k = 5i64; pass NIL; };       // the round trip to the real type (build 16)
+func:vwg = int32(H2->:p, any->:q) never fails {
+    fixed uint8[]:vw = string_bytes(p.o);
+    (<-(q =>! H2->)).o = string_concat("z", "w");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+func:rdg = int64(H2->:p) never fails { pass p.o.len; };
+
+// 1: a view through the `any->` parameter's cast dereference, the write through a cast COPY (f9j6b)
+func:same_fn_view_through_cast_deref_write_through_cast_copy = int32(any->:q) never fails {
+    fixed uint8[]:vw = string_bytes((<-(q =>! H2->)).o);
+    H2->:q2 = q =>! H2->;
+    q2.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 2: the view and the write both through the cast dereference (f9j6b2)
+func:same_fn_view_and_write_through_cast_deref = int32(any->:q) never fails {
+    fixed uint8[]:vw = string_bytes((<-(q =>! H2->)).o);
+    (<-(q =>! H2->)).o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 3: a view through the cast dereference of a LOCAL `any->` pointer, the pointee written BY NAME (b8)
+func:any_local_cast_deref_view_write_by_name = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes((<-(ap =>! H2->)).o);
+    h.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 4: the same through a SAME-TYPE cast of a plain pointer (b9)
+func:same_type_cast_deref_view_write_by_name = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes((<-(hp =>! H2->)).o);
+    h.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 5: the pointee written through ANOTHER named pointer (b11)
+func:any_local_cast_deref_view_write_through_other_pointer = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    H2->:hp2 = @h;
+    fixed uint8[]:vw = string_bytes((<-(ap =>! H2->)).o);
+    hp2.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 6: the pointee handed by name to a writer (b14)
+func:any_local_cast_deref_view_pointee_handed_to_writer = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes((<-(ap =>! H2->)).o);
+    drop wr(@h);
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 7: ACCEPTED OVER-REFUSAL -- a DISJOINT field written through another pointer under a view through
+// an `any->` cast dereference, whose steps are dropped (b11n)
+func:accepted_over_refusal_disjoint_field_under_any_cast_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    H2->:hp2 = @h;
+    fixed uint8[]:vw = string_bytes((<-(ap =>! H2->)).o);
+    hp2.k = 9i64;
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 8: ACCEPTED OVER-REFUSAL -- the pointer RE-POINTED under a view through its cast dereference (b12;
+// refused at `@g` as its no-cast twin b13 is, the flow-insensitive re-pointed class)
+func:accepted_over_refusal_repointed_under_cast_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes((<-(hp =>! H2->)).o);
+    hp = @g;
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 9: the address cast to `any->` as it is taken, then an exclusive claim of the pointee (g2)
+func:any_cast_address_then_exclusive_claim = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wr($$m h);
+    (<-(ap =>! H2->)).o = string_concat("z", "w");
+    pass 0i32;
+};
+
+// 10: the address cast to its OWN type as it is taken, then the exclusive claim (g3)
+func:same_type_cast_address_then_exclusive_claim = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = (@h) =>! H2->;
+    drop wr($$m h);
+    hp.o = string_concat("z", "w");
+    pass 0i32;
+};
+
+// 11: the cast address held, a SHARED claim of the pointee (g4; D-286 refuses the plain twin g4k)
+func:any_cast_address_then_shared_claim = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    int64:n = raw rdg($$i h);
+    (<-(ap =>! H2->)).o = string_concat("z", "w");
+    if (n != 4i64) { pass 1i32; }
+    pass 0i32;
+};
+
+// 12: the exclusive claim and the cast pointer handed to ONE callee writing through both (g5)
+func:any_cast_address_and_exclusive_claim_to_one_callee = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrg2($$m h, ap);
+    pass 0i32;
+};
+
+// 13: THE HAZARD -- the callee views through the claim's holder and writes through the cast pointer (g6)
+func:any_cast_address_claim_callee_views_through_claim_writes_through_cast = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    pass (raw vwg($$m h, ap));
+};
+
+// 14: THE SUMMARY FACE -- the callee writes through a cast to ANOTHER pointee type under a view of the
+//     pointee, the address cast as it is taken and held in an `any->` local (f1a; silent on landing 166
+//     and on build 14 of this landing: the escape pass summarised the write as `S`'s field `x`)
+func:any_cast_callee_writes_other_struct_named = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrs(ap);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 15: the same callee handed the cast address INLINE (f1b; REFUSED on landing 166 by D-286's plain-
+//     address party, SILENT on build 14 -- the regression management's review of fb0f3d3 caught)
+func:any_cast_callee_writes_other_struct_inline = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrs((@h) =>! any->);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 16: BUILD 16, the review of build 15's F1 (r1e): the callee hands `@(<-(q =>! S->))` to a SECOND callee that writes
+//     `p.x` -- build 15's truncation cleared the steps above the cast and `path_join` put the second callee's
+//     `x` back on `q` (silent on 166 and on build 15, 170 at both legs: the freed bytes read)
+func:any_cast_second_callee_writes_other_struct_named = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrs2(ap);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 17: the same, the cast address INLINE (r1f; REFUSED on 166 by D-286's plain-address party, SILENT on build 15 --
+//     a regression of build 15 against 166, closed by the caller-side rule)
+func:any_cast_second_callee_writes_other_struct_inline = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrs2((@h) =>! any->);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 18: a `Self->` METHOD on the dereference of the cast, named (r1g; silent on 166 and build 15)
+func:any_cast_self_method_on_cast_deref_named = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrsm(ap);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 19: the same, inline (r1h; REFUSED on 166, SILENT on build 15 -- the second regression)
+func:any_cast_self_method_on_cast_deref_inline = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrsm((@h) =>! any->);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 20: F2 (r2a): the cast pointer handed AS A VALUE to the second callee -- `dest_place` answered none for a cast
+//     operand, so the write entered no summary (silent on 166 and build 15)
+func:any_cast_value_to_second_callee_named = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrs3(ap);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 21: the same, inline (r2b; REFUSED on 166, SILENT on build 15 -- the third regression)
+func:any_cast_value_to_second_callee_inline = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrs3((@h) =>! any->);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 22: F3 (r3b): a cast INSIDE a pass-through getter's argument, the write below the result's dereference, inline
+//     (REFUSED on 166, SILENT on build 15 -- the fourth regression; the NAMED twin `raw ids(ap =>! S->)` is
+//     silent on 166, 15 and 16 and is registered for landing 168)
+func:cast_inside_getter_arg_write_below_result_inline = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    fixed uint8[]:vw = string_bytes(h.o);
+    (<-(raw ids(((@h) =>! any->) =>! S->))).x = string_concat("x", "y");
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+// 23: F4, AN ACCEPTED OVER-REFUSAL (r4; D-286's note): the callee writes `(<-(q =>! H2->)).k`, the D-021 round trip
+//     from `any->` back to the REAL type -- the summary cannot know the trip is round, so the write is the pointee
+//     WHOLE and meets the view of `h.o`; landing 166 and build 14 accepted it (0 tree sites)
+func:accepted_over_refusal_any_round_trip_disjoint_field = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wk(ap);
+    if (vw[0i64] != 97u8) { pass 1i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

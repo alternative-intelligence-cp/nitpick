@@ -1,0 +1,86 @@
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 32:17
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 40:32
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 48:17
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 53:58
+// expect-error: NITPICK-TYPE-032
+// expect-error-at: 60:20
+// DEF-332's TYPE-LEVEL HALF (landing 167; the author's ruling of 2026-10-29, relayed 09:13:34): SAFE CODE DOES
+// NOT RETYPE A POINTER. `U-> =>! T->` between two PLAIN pointer types whose pointees differ reinterprets the
+// pointee's layout under another type's names -- a breach of type safety beyond aliasing, which the analyses
+// then read through (the cells f9a and f9g of `wt/51a/.internal/probes/t167/`: a cross-type cast written through
+// under a view read the freed bytes, 113 at both legs, on landing 166) -- so there is no such conversion in safe
+// code, `NITPICK-TYPE-032` at the cast, in EITHER spelling (site 3: `=>` was TYPE-009 "write `=>!`" before, a
+// misdirection). What stays, in `tests/backend/programs/pointer_retype_plain_ok.npk`: the same pointee, `any->`
+// on either side (D-021), and the wild crossings (D-019, D-361) -- a `wild` target qualifier or an operand of
+// wild provenance. Site numbers are the file's comments'.
+mod:pointer_retype_plain;
+error:E1;
+struct:H2 = { string:o; int64:k; };
+struct:S = { string:s; int64:k; };
+struct:BS = { H2[]:sl; int64:k; };
+struct:BS9 = { H2[]:sl; int64:k; };
+func:idbs = BS->(BS->:q) never fails { pass q; };
+
+// 1. a NAMED plain pointer retyped, `hp =>! S->`
+func:named_retyped = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    S->:sp = hp =>! S->;
+    pass sp.k;
+};
+
+// 2. a CALL RESULT retyped, `(raw idbs(@bs)) =>! BS9->`
+func:call_result_retyped = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    BS9->:b9 = (raw idbs(@bs)) =>! BS9->;
+    pass b9.k;
+};
+
+// 3. the CHECKED spelling, `hp => S->` -- TYPE-032 too, not TYPE-009's "write `=>!`"
+func:checked_spelling_retyped = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    S->:sp = hp => S->;
+    pass sp.k;
+};
+
+// 4. a pointer PARAMETER retyped inside a callee, `pass (q =>! BS9->);`
+func:param_retyped = BS9->(BS->:q) never fails { pass (q =>! BS9->); };
+
+// 5. a pointer TO A POINTER retyped, `pp =>! S->->` -- the pointees `H2->` and `S->` differ
+func:ptr_to_ptr_retyped = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->->:pp = @hp;
+    S->->:sp2 = pp =>! S->->;
+    pass (<-sp2).k;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

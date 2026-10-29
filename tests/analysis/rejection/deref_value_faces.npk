@@ -1,0 +1,343 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 104:7
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 114:16
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 122:16
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 130:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 141:19
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 156:18
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 171:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 185:29
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 198:29
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 211:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 223:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 232:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 242:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 251:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 261:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 271:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 282:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 292:22
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 302:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 312:94
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 318:63
+//
+// LANDING 167's POINTER, SLICE AND VIEW READERS (DEF-324, DEF-326, DEF-328, DEF-329, DEF-330, DEF-331,
+// DEF-332, DEF-338): each site here compiled on landing 166's compiler and read freed memory (113) or
+// returned a view of a dead frame at both legs (`wt/51a/.internal/probes/t167/cells_b/`, `faces/`;
+// `cells_b_166.txt`, `faces_166.txt`). Site numbers are the file's comments'.
+//   DEF-324 (1): a pointer COPIED THROUGH A DEREFERENCE, `H2->:p2 = <-pp;`, written under a view of the
+//   pointee -- `collect_view_refs` answered NIL for a dereference read as a value, so p2 had no chain.
+//   DEF-326 (2-4): a view or a slice of a LOCAL returned through an explicit dereference, `pass (<-hp).s;`,
+//   `pass (<-bp).sl;`, `pass move((<-bp).sl);` -- the escape walk's dereference arm asked for a pointer
+//   TYPE alone where `type_holds_pointer` is the question (BORROW-001, as the auto-dereference always was).
+//   DEF-331 (5-7): a view of a block-local carrier stored into a parameter's pointee through an explicit
+//   dereference in a callee -- `dst.sl = (<-pl).sl;`, `store_into(dst, (<-pl).sl)`, `dst.sl = move((<-pl).sl);`
+//   (BORROW-002 at the call, as `dst.sl = pl.sl;` is).
+//   DEF-328 (8-11): a slice COPIED out of a carrier (`H2[]:t = raw getsl(@b);`, `t = bp.sl`) and written
+//   through a call-result or a named pointer to it, or a struct holding the copy, under a view of the array
+//   -- the through-pointer reader read one level of the pointee's chain; it follows the carrier now.
+//   DEF-329 (12-14): the address of a slice FIELD handed out (`raw idsl(@b.sl)`, `@b.sl`, `raw getsl_s(@b.sl)`)
+//   with the holder carrying a SECOND view of the bytes -- the own-holder readers keyed the one-view test
+//   on the field's slice type, not the holder's; and `@b.sl` is a slice-typed run, a VIEW, whose storage
+//   is in b's chain.
+//   DEF-330 (15-17): a getter returning the ADDRESS OF A FIELD, `pass @q.sl;` -- summarised as passing its
+//   parameter through, its result carried a REF_ADDR of `bs` with no path, and the pointee type matched
+//   nothing, so the pointer had zero targets; a place whose type holds the pointee type is a target whole.
+//   DEF-332 (18, 19): a pointer RETYPED IN TWO STEPS THROUGH `any->`, `any->:ap = @s =>! any->;` then
+//   `(<-(ap =>! H2->)).o = …` under a view of `s.s`, by a named pointer and through a call result -- `any->`
+//   is D-021's type-erased crossing and stays legal, and `escape_pointer_targets` typed the pointee by the
+//   CAST (`H2`), which the operand's ref (`s`, an `S`) never equalled: zero targets, the write unjudged. The
+//   cast's pointee is read off its OPERAND now (the targets travel across every pointer-to-pointer cast), and
+//   an `any` pointee makes every ref of the operand a target -- the write resolves to the WHOLE pointee (the
+//   steps below a cross-type cast are the other type's names). The one-step plain-to-plain retyping these faces
+//   were first measured as (`(raw idbs(@bs)) =>! BS9->`, `hp =>! S->`, 113 at both legs on 166) is refused at
+//   the TYPE level by the author's ruling of 2026-10-29 (`tests/types/rejection/pointer_retype_plain.npk`).
+//   DEF-338 (20, 21): a view handed to a call inside a TERNARY or a same-type CAST beside a write of its root
+//   -- the call's view party was raised for a bare view-maker alone.
+// The legal half is `tests/backend/programs/deref_value_faces_ok.npk`.
+mod:deref_value_faces;
+error:E1;
+struct:H2 = { string:o; int64:k; };
+struct:S = { string:s; int64:k; };
+struct:SV = { fixed uint8[]:s; int64:k; };
+struct:BS = { H2[]:sl; int64:k; };
+struct:BS2 = { H2[]:sl; fixed uint8[]:by; };
+struct:P = { H2[2]:arr; };
+func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
+func:idbs = BS->(BS->:q) never fails { pass q; };
+func:getsl = H2[](BS->:q) never fails { pass q.sl; };
+func:getsl_s = H2[](H2[]->:q) never fails { pass (<-q); };
+func:idfld = H2[]->(BS->:q) never fails { pass @q.sl; };
+func:idany = any->(any->:q) never fails { pass q; };
+func:wsl = NIL(H2[]:s) never fails { s[0i64].o = string_concat("x", "y"); pass NIL; };
+func:store_into = NIL(BS->:d, H2[]:s) never fails { d.sl = s; pass NIL; };
+func:pair = int32(string:v, string->:p) never fails { (<-p) = string_concat("x", "y"); string:junk = string_concat("qqqqqqqq", "qqq"); pass (v.ptr[0i64] => int32); };
+func:mk2 = P() never fails { pass P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] }; };
+
+// 1. (DEF-324) a pointer copied through a dereference, `H2->:p2 = <-pp;`, its pointee written under a view of `h.o`
+func:ptr_copied_through_deref = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->->:pp = @hp;
+    H2->:p2 = <-pp;
+    fixed uint8[]:vw = string_bytes(h.o);
+    p2.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 2. (DEF-326) a view of a local returned through an explicit dereference, `pass (<-hp).s;` -- BORROW-001
+func:deref_ret_view = fixed uint8[]() never fails {
+    string:t = string_concat("abc", "def");
+    SV:h = SV{ s: string_bytes(t), k: 1i64 };
+    SV->:hp = @h;
+    pass (<-hp).s;
+};
+
+// 3. (DEF-326) a slice of a local array returned through an explicit dereference, `pass (<-bp).sl;`
+func:deref_ret_slice = H2[]() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    BS->:bp = @b;
+    pass (<-bp).sl;
+};
+
+// 4. (DEF-326) the same slice MOVED out through the dereference, `pass move((<-bp).sl);`
+func:deref_ret_slice_moved = H2[]() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    BS->:bp = @b;
+    pass move((<-bp).sl);
+};
+
+// 5. (DEF-331) a view stored into a parameter's pointee through an explicit dereference, `dst.sl = (<-pl).sl;` -- the caller hands a block-local carrier: BORROW-002 at the call
+func:flow = NIL(BS->:dst, BS->:pl) never fails { dst.sl = (<-pl).sl; pass NIL; };
+func:store_view_through_deref_param = int32() never fails {
+    H2[2]:outer = [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }];
+    BS:keep = BS{ sl: outer[0i64...2i64], k: 0i64 };
+    {
+        H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+        BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+        drop flow(@keep, @b);
+    }
+    string:junk = string_concat("qq", "qq");
+    fixed uint8[]:vb = string_bytes(keep.sl[0i64].o);
+    pass (vb[0i64] => int32);
+};
+
+// 6. (DEF-331) the view handed on as a call ARGUMENT beside the destination, `store_into(dst, (<-pl).sl)` (rule B)
+func:fwd = NIL(BS->:dst, BS->:pl) never fails { drop store_into(dst, (<-pl).sl); pass NIL; };
+func:arg_view_through_deref_param = int32() never fails {
+    H2[2]:outer = [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }];
+    BS:keep = BS{ sl: outer[0i64...2i64], k: 0i64 };
+    {
+        H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+        BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+        drop fwd(@keep, @b);
+    }
+    string:junk = string_concat("qq", "qq");
+    fixed uint8[]:vb = string_bytes(keep.sl[0i64].o);
+    pass (vb[0i64] => int32);
+};
+
+// 7. (DEF-331) the view MOVED through the dereference into the parameter's pointee, `dst.sl = move((<-pl).sl);`
+func:flowm = NIL(BS->:dst, BS->:pl) never fails { dst.sl = move((<-pl).sl); pass NIL; };
+func:store_moved_view_through_deref_param = int32() never fails {
+    H2[2]:outer = [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }];
+    BS:keep = BS{ sl: outer[0i64...2i64], k: 0i64 };
+    {
+        H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+        BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+        drop flowm(@keep, @b);
+    }
+    string:junk = string_concat("qq", "qq");
+    fixed uint8[]:vb = string_bytes(keep.sl[0i64].o);
+    pass (vb[0i64] => int32);
+};
+
+// 8. (DEF-328) a slice copied out of a carrier, `H2[]:t = raw getsl(@b);`, written through a call-result pointer to the copy under a view of the array
+func:deref_call_slice_copied_from_carrier = int32() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    H2[]:t = raw getsl(@b);
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    (<-(raw idsl(@t)))[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 9. (DEF-328) the copy taken from a POINTER's slice field, `H2[]:t = bp.sl;`
+func:deref_call_slice_copied_from_ptr_field = int32() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    BS->:bp = @b;
+    H2[]:t = bp.sl;
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    (<-(raw idsl(@t)))[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 10. (DEF-328) the copy written through a NAMED pointer to it, `H2[]->:tp = @t; (<-tp)[0i64].o = …`
+func:deref_named_ptr_slice_copied_from_carrier = int32() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    H2[]:t = raw getsl(@b);
+    H2[]->:tp = @t;
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    (<-tp)[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 11. (DEF-328) a STRUCT holding the copy, written through a call-result pointer to the struct, `(<-(raw idbs(@bs))).sl[0i64].o = …`
+func:deref_call_struct_slice_field_from_carrier = int32() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    BS:bs = BS{ sl: raw getsl(@b), k: 2i64 };
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    (<-(raw idbs(@bs))).sl[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 12. (DEF-329) the address of a slice FIELD through a call result, `(<-(raw idsl(@b.sl)))[0i64].o = …`, b holding a second view of the bytes
+func:deref_call_addr_of_field_two_view_holder = int32() never fails {
+    P:p = raw mk2();
+    BS2:b = BS2{ sl: p.arr[0i64...2i64], by: string_bytes(p.arr[0i64].o) };
+    (<-(raw idsl(@b.sl)))[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (b.by[0i64] => int32);
+};
+
+// 13. (DEF-329) the same through a NAMED pointer to the field, `H2[]->:tp = @b.sl; (<-tp)[0i64].o = …`
+func:deref_named_ptr_addr_of_field_two_view_holder = int32() never fails {
+    P:p = raw mk2();
+    BS2:b = BS2{ sl: p.arr[0i64...2i64], by: string_bytes(p.arr[0i64].o) };
+    H2[]->:tp = @b.sl;
+    (<-tp)[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (b.by[0i64] => int32);
+};
+
+// 14. (DEF-329) the field's address handed to a getter returning the slice, `wsl(raw getsl_s(@b.sl))` -- a slice-typed run is a VIEW, its storage in b's chain
+func:call_result_slice_through_field_addr_two_view_holder = int32() never fails {
+    P:p = raw mk2();
+    BS2:b = BS2{ sl: p.arr[0i64...2i64], by: string_bytes(p.arr[0i64].o) };
+    drop wsl(raw getsl_s(@b.sl));
+    string:junk = string_concat("qq", "qq");
+    pass (b.by[0i64] => int32);
+};
+
+// 15. (DEF-330) a field-address getter, `idfld(BS->:q) = @q.sl`, the slice written through its result under a view of the array
+func:deref_call_field_addr_getter = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(raw idfld(@bs)))[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 16. (DEF-330) the slice value behind the getter's result handed to a writer, `wsl(<-(raw idfld(@bs)))`
+func:deref_call_field_addr_getter_to_writer = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    drop wsl(<-(raw idfld(@bs)));
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 17. (DEF-330) the getter's result kept in a NAMED pointer local, `H2[]->:tp = raw idfld(@bs); (<-tp)[0i64].o = …`
+func:named_ptr_from_field_addr_getter = int32() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    H2[]->:tp = raw idfld(@bs);
+    (<-tp)[0i64].o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 18. (DEF-332) a pointer retyped in two steps through `any->`, `any->:ap = @s =>! any->; (<-(ap =>! H2->)).o = …`, under a view of `s.s` -- the cast's pointee is its operand's, `any`, which makes every ref of the operand a target
+func:any_two_step_retype_named_deref_write = int32() never fails {
+    S:s = S{ s: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@s) =>! any->;
+    fixed uint8[]:vw = string_bytes(s.s);
+    (<-(ap =>! H2->)).o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 19. (DEF-332) the same through a CALL RESULT, `(<-((raw idany(ap)) =>! H2->)).o = …`
+func:any_two_step_retype_call_result_deref_write = int32() never fails {
+    S:s = S{ s: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@s) =>! any->;
+    fixed uint8[]:vw = string_bytes(s.s);
+    (<-((raw idany(ap)) =>! H2->)).o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    pass (vw[0i64] => int32);
+};
+
+// 20. (DEF-338) a TERNARY of views of `d` handed to a call beside a write of `d`
+func:ternary_of_views_as_call_arg = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int64:z = 0i64;
+    bool:c = (z == 0i64);
+    pass (raw pair(is (c) : string_from_bytes(d.ptr, 5i64) : string_from_bytes(d.ptr, 3i64), @d));
+};
+
+// 21. (DEF-338) a view through a same-type CAST as the call argument, `string_from_bytes(d.ptr, 5i64) =>! string`
+func:cast_view_as_call_arg = int32() never fails {
+    string:d = string_concat("hello", " world");
+    pass (raw pair(string_from_bytes(d.ptr, 5i64) =>! string, @d));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

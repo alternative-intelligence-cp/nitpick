@@ -7043,6 +7043,9 @@ artifact here. Recorded in `PROTOTYPE_DELTA.md`.
 > refusal's lead-in says so since 1.0.8.
 
 ---
+*Note 2026-10-29 (landing 167, D-365):* a `=>!` or `=>` between two PLAIN pointer types with unrelated pointees is refused in safe code,
+`NITPICK-TYPE-032` -- the author's ruling of 2026-10-29 09:06:08, relayed through management; the same pointee, `any->` and the wild
+crossings stay. D-365 has the rule, its cells and its census.
 
 ## D-096 — `is_err` and `Result{…}` are keyword forms with nodes of their own
 
@@ -19449,6 +19452,24 @@ DEF-302's k302a. The new walk that recognises a `List` element (`place_is_list_e
 > named road) resolve only a pointer-ROOT link; parity holds (the call-result cell and its by-name twin refuse alike on 166), and d1bn (a
 > pointer FIELD by name, `wsl(c1.bp.sl)`, no view) was refused on 165 already. Narrow any of these later with by-last-use liveness of the
 > holder, a flow-sensitive chain or the hop-by-hop own-holder resolution of 167, never by weakening the verdicts' parity.
+> *Note 2026-10-29 (landing 167, compiler_51):* SIX MORE ACCEPTED OVER-REFUSALS, five of them parity with a verdict already on this list or
+> the closed direction of a reading (0 tree sites each, by the sweep over the tree, the libraries, the applications and the fuzz corpus):
+> f4g -- a slice copied from a carrier (`H2[]:t = raw getsl(@b)`) and written through a call-result pointer to the copy with no other view
+> live, refused against the carrier's own view (the slice-copy class, as c02n is refused by name); f5f -- the address of a two-view struct's
+> slice field written through with no OTHER view live, refused against the holder's second view (as its by-name twin f5g is on 166); b11n
+> (management_6 11:05:40) -- a view through an `any->` cast dereference stands for the pointee WHOLE, its steps being the other type's names
+> and dropped (`cast_changes_pointee`), so a DISJOINT field written through another pointer is refused, where the same-type cast with its
+> steps kept (b11k) is clean; b12 (11:05:40) -- a pointer RE-POINTED under a view through its cast dereference is refused at the new address
+> by the flow-insensitive re-pointed class, exactly as its no-cast twin b13 (c306f/k302a); and DEF-342's whole extent (management_6
+> 09:57:24) -- a callee's write through a LOCAL COPY of its pointer parameter is recorded as the pointee WHOLE, so a disjoint field written
+> through the copy while the caller views another field is refused (`tests/analysis/rejection/param_copy_summary.npk` site 13); and r4
+> (builds 15 and 16; `management_6` 15:34; the review of build 15's F4) -- a callee writing a field through the D-021 round trip `q =>!
+> H2->`, from an `any->` parameter back to the pointee's REAL type, handed a NAMED `any->` local `ap = (@h) =>! any->` under a view of
+> ANOTHER field `h.o`: the callee's summary is truncated at the pointee-changing cast (build 15, `path_rel_compute`) and the caller composes
+> no steps below an `any` pointee (build 16, `check_pointer_targets`' `erase`), so the write is `h` WHOLE -- neither side can know the trip
+> is round -- and the disjoint write is refused where 166 and build 14 accepted it (97/97) (`cast_place_readers.npk` site 23; write the
+> field through the real type, or end the view first). Narrow any of these later by the roads the entries above name, never by weakening the
+> verdicts' parity.
 
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
@@ -23695,6 +23716,9 @@ fuzzer's later family. Recorded at landing 119, whose record was running when th
 > OVERTURNED (`bi0077`: a `wild int8->` value binding to a plain `int8->`; `ty1754`: `uint8->:p = b.ptr`), one gaining a
 > second code (`bi0418b`), one the false refusal the deref arm fixed (`bi0123b`). Tests: `wild_into_plain.npk` (twelve
 > sites, the controls), `wild_crossing.npk` (five crossings at both legs). (b), `wild T->` as a type, stays open.
+*Note 2026-10-29 (landing 167, D-365):* the crossing `v =>! T->` from WILD provenance stays, whatever the pointee; a cast between two
+PLAIN pointer types with unrelated pointees -- no wild operand, no `any->` -- is refused in safe code since landing 167 (`NITPICK-TYPE-032`,
+D-365, the author's ruling of 2026-10-29 09:06:08).
 
 ## D-362 — THE PIPE OPERATORS ARE STRUCK: `x |> f` AND `f <| x` ARE REFUSED BY NAME, AND THE CALL `f(x)` IS THE ONE SPELLING — **SETTLED (user decision, 2026-10-18: "If we don't need them for anything i'm fine with getting rid of them.")**
 
@@ -23834,3 +23858,33 @@ tightened to match. A compile-time warning was considered and set aside as low-v
 statically-provable NULL derefs, which real run-time NULLs are not); an opt-in checked build (S-140's R3) remains the
 way to make -O2 stop too, available later if wanted. F-053 is nitpick-fuzz's finding (main 70a0d8b,
 findings/F-053-wild-used-load-legs-disagree/).
+
+## D-365 — A `=>!` OR `=>` BETWEEN TWO PLAIN POINTER TYPES WITH UNRELATED POINTEES IS REFUSED IN SAFE CODE (`NITPICK-TYPE-032`); THE SAME POINTEE, `any->` AND THE WILD CROSSINGS STAY — **SETTLED (user decision, 2026-10-29 09:06:08, `management_6`'s session, relayed to `nitpick-compiler_51` at 09:13:34: safe code may not `=>!` between UNRELATED pointee types, plain to plain; the same type, `any->` and the wild crossings of D-019 and D-361 stay)**
+
+Settles the question landing 166's credits diff review raised as DR4 and OPEN_DECISIONS registered as DEF-332's language half
+(2026-10-29, `nitpick-compiler_51`): `type_cast.npk` answered CAST_LOSSY for a pointer cast to ANY pointer type, so `(raw idbs(@bs)) =>! BS9->`
+over a `BS->` -- a reinterpretation of the pointee's layout -- was legal in safe code (the probe f9c, no view, compiled and ran 0/0 at both
+legs on landings 165 and 166), and the aliasing analysis then typed the pointee by the CAST and lost the operand's targets (f9a,
+`(<-((raw idbs(@bs)) =>! BS9->)).sl[0i64].o = …` under a view of the array: 113 at both legs -- the freed bytes read). The analyzer's half
+is DEF-332's (landing 167: the cast is peeled before the pointee is typed, `escape_pointer_targets`; the steps below a pointee-changing cast
+are dropped, `cast_changes_pointee`). THE RULE, as put through management: a cast -- `=>` or `=>!` -- whose operand is a PLAIN pointer
+`U->` and whose target is a plain pointer `T->` with `T` and `U` different types is refused at the cast, `NITPICK-TYPE-032` ("no cast
+between these types"), in both spellings; a cast to the operand's OWN pointer type stays (`hp =>! H2->` over an `H2->`: the identity, which
+landing 166 reads through); a cast to or from `any->` stays (TYPE_REFERENCE §27: `any->` is the one pointer that points at anything, and
+the cast back is the author's assertion, D-095); a cast whose operand is of WILD provenance stays, whatever the pointee (`alloc(n) =>!
+H2->`, `w =>! uint8->` over a `wild int8->`: D-019's unmanaged regime and D-361's crossing, the TOS marker, where the retyping IS the point);
+a cast from a plain pointer to a `wild` one stays (D-361's reverse road is not a plain-to-plain retype). The checker's rule is in
+`type_expr.npk`'s cast typing (ten code lines at landing 167), asked before `check_cast`'s class; a pointer-to-pointer-to-T is a pointer
+type like any other (f9l4 refused, f9r the same type clean). MEASURED FIRST (`wt/51a/.internal/probes/t167/cells_c/`): f9k (a named plain
+pointer), f9l (a call result), f9l2 (the checked spelling `=>`), f9l3 (inside a callee), f9l4 (pointer to pointer, unrelated) each
+NITPICK-TYPE-032; the controls f9m (the same pointee), f9n (to `any->` and back), f9o (plain to wild), f9p (the wild-to-plain crossing),
+f9q (a wild pointer retyped to another pointee), f9r (pointer to pointer, the same type), f9s (a wild operand to another plain pointee)
+clean 0/0; f9a, f9c and f9g (the review's shapes) TYPE-032 now. The census (`census_f9.py`, 405 `=>! T->` casts over the compiler tree,
+the libraries, the applications and the fuzz corpus): a plain `U->` bare-name operand cast to `T->` with T != U in two places -- a rejection
+test (`tests/types/rejection/wild_into_plain.npk:68`, plain to wild, which stays legal) and one fuzz program (`m11/programs/bi0418b.npk:9`,
+`int8-> =>! uint8->`, refused by TYPE-061 already); every `src/` cast is a commented D-361 crossing; 0 sites move. Tests:
+`tests/types/rejection/pointer_retype_plain.npk` (five TYPE-032 sites), `tests/backend/programs/pointer_retype_plain_ok.npk` (seven controls,
+each clean on landing 166's compiler and this one). Why: a pointer retype between unrelated pointee types is a layout reinterpretation the
+checker cannot vouch for -- a type-safety matter beyond aliasing -- and the language's one escape hatch for that is the `wild` regime and
+`any->`, each spelled as such at the site (the TOS, D-095: `=>!` is an audit tool, and a search for it must find every reinterpretation).
+The author's words are recorded as relayed; the question was raised in landing 166's record and answered before landing 167's chain.

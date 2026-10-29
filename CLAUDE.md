@@ -8,34 +8,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 166** — DEF-315 + DEF-316 + DEF-317 (three rootless shapes resolved to the storage they reach: a `Self->` method on the
-  bare dereference of a call-result pointer takes DEF-309's road; a slice reached below such a dereference is asked what it views, its own
-  holder read from the pointee; a call-result slice handed out of a struct CARRIER -- the carrier borrowed whole, behind a call-result or a
-  named pointer, a pointer field, a chain of pointer-field links, or its slice field copied by name -- is resolved through the carrier's
-  chain, fuel-bounded and FAILING CLOSED (BORROW-009 at the fourth pointer link); `raw`, `?!`, `??!`, `relay`, `await` and the casts are
-  transparent to every reader on the way: three use-after-frees in safe code closed -- of 127 measured cells, fifty-four silent on 165 are
-  refused now, thirty-four of them reading the freed bytes at both legs -- no safe single-carrier shape refused, the two-pointee, slice-copy,
-  re-pointed, past-the-fuel and two-link classes refused as the named road refuses them (eleven accepted, 0 tree sites); DEF-324 (HIGH) and
-  DEF-325 (LOW) registered from the condition cells, DEF-318…DEF-323 registered OPEN HIGH from the review of 165). Every landing's full
-  paragraph — the defect, what was measured first, the rule now, the tests, the sweep, the emission comparison, the manifest — is at the top
-  of `meta/STATUS_HISTORY.md`, newest first; the cycle history 0.0–1.5 follows it there. Read the newest few before planning work.
-- **The queue:** landing 167 = DEF-312 widened (HIGH: a pointer field of a call-result pointer's pointee written two levels down, its
-  explicit-deref and pointer-to-pointer spellings F3a/F3b, and a `Self->` method on the pointer field below the dereference, a15) +
-  DEF-324 (HIGH: a getter passing a view through an EXPLICIT dereference records no ref, so its caller's write is silent at every depth;
-  first if 167 splits; 167 makes every view-carrying walker fail closed on a kind it does not resolve and carries a mechanical table of
-  expression kinds against each walker; DEF-325 beside it if the size allows, else after 168), then landing 168 = DEF-318 + DEF-319 +
-  DEF-320 + DEF-321 + DEF-322 + DEF-323 (HIGH: the element-address party's six missed spellings from the review of 165 -- a struct holding
-  the `List` handed to a getter, a call result or struct literal straight to a call, a pointer to the `List`'s own type inside a recursive
-  element, a nested `List`'s level, a rootless element address as an argument, a holder without an initialiser; smallest first: 322, 323,
-  320, 319, 321, 318), both before M3; then DEF-298 + DEF-299 (HIGH: DEF-289's class's last two faces, with their pointer twins, s302k/s302l,
-  the fuzz seat's (A) face q05 and DEF-313 -- a store through a pointer PARAMETER into its pointee, recorded on no chain -- as M3, the
-  store-matrix destination path, the census first), then DEF-286 (function types keyed by content; the libraries' next re-pin waits for it
-  and carries every safety fix) -- management's order of 2026-10-28/29, safety before performance -- then DEF-292, DEF-293, DEF-294,
-  DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of record is `meta/roadmap/` (start at `ROADMAP.md`; cycle
-  1.6's map is `meta/roadmap/1.6/README.md`, its subcycle record `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is a row of
+- **main = landing 167** — DEF-324 + DEF-326 + DEF-328 + DEF-329 + DEF-330 + DEF-331 + DEF-332 + DEF-338 + DEF-341 + DEF-342 + DEF-343 +
+  DEF-346 (the pointer, slice and view readers of BOTH analyses read through an EXPLICIT DEREFERENCE and a CAST as they read the
+  auto-dereference and the name: a getter's `pass (<-q).sl` records the pointee's refs (DEF-324, with its one-hop face), a view or slice
+  returned through a dereference is the frame's (DEF-326), a view stored or handed on through one in a callee is rule 3's (DEF-331), a
+  carrier is followed on the dereference road as on the named one (DEF-328), a two-view holder's field address keys on the HOLDER (DEF-329),
+  a field-address getter's result has its holder as a target (DEF-330), a pointer-to-pointer cast carries its operand's targets and an `any`
+  pointee every ref (DEF-332), a view inside a ternary or a cast raises the call's party (DEF-338), a callee's write through a cast
+  (DEF-341) or a local copy (DEF-342) of its pointer parameter enters its summary — through a cast to ANOTHER pointee type as the pointee
+  WHOLE (DEF-346, builds 15 and 16 of 2026-10-29: build 14's summary kept the cast target's field names, a REGRESSION against 166 in the
+  inline spelling that management's diff review caught; build 15 fixed ONE writer of the summary, so four inline cells refused on 166 stayed
+  silent, and build 16 truncates EVERY writer of a callee's summary at a pointee-changing cast and judges a plain address under such a cast
+  WHOLE at the caller, consulting no summary, as 166 did; neither fb0f3d3 nor 491ae09 landed) —, and the alias pass's place readers step a
+  cast — the same-function, reverse and claim faces (DEF-343); a party whose steps cannot be read stands for its root WHOLE at the view
+  judge and the same-root loop (the pointer judges skip it: DEF-353, landing 168); and safe code does not retype a plain pointer to an
+  unrelated pointee, `NITPICK-TYPE-032` in either spelling (D-365, the author's ruling of 2026-10-29): 71 of 401 measured cells silent on
+  166 are refused now, 57 of them reading freed memory or a dead frame at both legs, no cell refused on 166 silent; SIX over-refusals
+  accepted (0 tree sites); DEF-333 to DEF-337, DEF-339, DEF-340 and DEF-344 registered OPEN HIGH from the kind table's cells, DEF-347 to
+  DEF-353 from the review of build 14 (347 to 350 HIGH, 353 MEDIUM, 351 and 352 LOW), DEF-354 and DEF-355 (HIGH) from the review of build
+  15, the spawn and pick fixes built and measured in the split's second half). Every landing's full paragraph — the defect, what was
+  measured first, the rule now, the tests, the sweep, the emission comparison, the manifest — is at the top of `meta/STATUS_HISTORY.md`,
+  newest first; the cycle history 0.0–1.5 follows it there. Read the newest few before planning work.
+- **The queue:** landing 168 = DEF-327 + DEF-337 + DEF-339 + DEF-340 + DEF-344 + DEF-347 + DEF-349 + DEF-353 + DEF-354 + DEF-355 (HIGH: a
+  holder declared in a pick EXPRESSION's arm has no party; a `give` inside a loop or an `if`'s THEN branch in such an arm is never
+  collected; an async METHOD spawned with `drop recv.m(args)` is no spawn to either pass; a by-value OWNER handed to a spawn is copied as
+  words and freed under the task; an address carried into a struct field, a copy, a callee-built struct or a call result raises no plain
+  party beside a claim — the split's spawn and pick groups, built and measured as `wt/51a/.internal/probes/t167/build167/apply_src168.py`,
+  and management's placement of 11:05:40; and from management's review of build 14 (2026-10-29): a copy of a parameter's pointer PART,
+  `<-pp` or `hh.p`, enters no summary (DEF-347, DEF-342's residual), `push_call_view_party_in` fails OPEN at fuel 0 (DEF-349: a
+  whole-argument party there), the pointer judges skip an unreadable step and `escape_type_holds` answers no for an unknown (DEF-353,
+  MEDIUM: a judge that meets "unknown" answers YES), with `q3 =>! wild int8->` as a control of `pointer_retype_plain_ok.npk` as a test item
+  — management_6's placement of 13:55; and from management's review of build 15 (2026-10-29, 15:34): a pointee-changing cast INSIDE a
+  getter's argument, `(<-(raw ids(ap =>! S->))).x = …`, is no target of the result (DEF-354: a crossing flag out of `collect_view_refs`'
+  cast arm, ≈15 lines), and a view a getter returns through `(<-(q =>! S->)).x` from a NAMED `any->` local does not freeze the owner
+  (DEF-355: the reverse reader through an `any` pointer, to be read before it is sized); DEF-345 joins if the author approves the middle
+  road; the census first; it will pass ≈160 code lines, so it is measured and a split brought to management BEFORE it is cut), then landing
+  169 = DEF-333 + DEF-334 + DEF-335 + DEF-336 (HIGH: a temporary argument under a transparent kind or a ternary, a by-value argument's view
+  returned or carried out of the owning frame, a slice-storing callee's destination spelled through a pointer field, a dereference, a call
+  result, a cast, a move, a ternary or an unwrap, and a builtin view-maker over `#ptr_add` recording no ref — its six tree sites read, none
+  a live hazard), then landing 170 = DEF-312 widened (HIGH: a pointer field of a call-result pointer's pointee written two levels down,
+  F3a/F3b/a15) + DEF-348 + DEF-350 (HIGH, from the review of build 14: a write through a pointer FIELD of a pointer parameter's pointee in
+  every spelling — `hh.p.o`, its explicit dereferences, the pointee whole, a `Self->` method of a struct holding the pointer, plain or
+  through a `dyn` — and a pointer VALUE handed out of a holder's field by a getter; one fix with DEF-312's, a composed path re-resolved at
+  each pointer-typed hop, not M3) + DEF-325 (LOW, while ≤ ~30 code lines), then landing 171 = DEF-318 to DEF-323 (HIGH: the element-address
+  party's six missed spellings; smallest first: 322, 323, 320, 319, 321, 318), all before M3 — and DEF-345 (HIGH: `$$m` of a binding
+  declared without an initialiser reads the previous frame's bytes when the callee leaves it unwritten, nitpick-libs_29's report of
+  2026-10-29, measured 85/85 at both legs; placed after the author's D-004/D-118 ruling, 168 if small), and DEF-351 (the bare-builtin
+  whole-write artefact behind probe10:151) and DEF-352 (a ternary's wild provenance, TYPE-032), LOW, unplaced, after 171; then DEF-298 +
+  DEF-299 (HIGH: DEF-289's class's last two faces, with their pointer twins, s302k/s302l, the fuzz seat's (A) face q05 and DEF-313 — a store
+  through a pointer PARAMETER into its pointee, recorded on no chain — as M3, the store-matrix destination path, the census first), then
+  DEF-286 (function types keyed by content; the libraries' next re-pin waits for it and carries every safety fix) — management's order of
+  2026-10-29 (07:15:11, 07:52:03, 11:05:40), safety before performance — then DEF-292, DEF-293, DEF-294, DEF-291, DEF-295, D-358 (Fable's),
+  step 3d's rest (DEF-239), step 4. The plan of record is `meta/roadmap/` (start at `ROADMAP.md`; cycle 1.6's map is
+  `meta/roadmap/1.6/README.md`, its subcycle record `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is a row of
   `meta/roadmap/OPEN_DECISIONS.md`; the notice log to the library seats is `meta/NOTICES.md`.
-- **The specification set is complete:** `meta/specs/` holds twenty-one documents and `DECISIONS.md` records 362 decisions, D-001
-  through D-362. `meta/specs/` and `DECISIONS.md` are the authority on the language, never a summary of them.
+- **The specification set is complete:** `meta/specs/` holds twenty-one documents and `DECISIONS.md` records 365 decisions, D-001
+  through D-365. `meta/specs/` and `DECISIONS.md` are the authority on the language, never a summary of them.
 - **The live hand-off state** (the RESUME-HERE entries, what is in flight) is the tail of `.internal/handoff_35/STATE.md`, and the seats'
   standing procedure is `.internal/handoff_40/HANDOFF_41.md` §7–§9 (both gitignored, on this machine).
 - **When a landing lands:** insert its head paragraph at the top of `meta/STATUS_HISTORY.md` (the apply scripts' anchor: the previous
@@ -309,7 +337,9 @@ Five more, each a 1.4 debugging cycle:
 - Set `x.esc.cur_fn` when the aliasing pass asks an escape reader (DEF-311); resolve a deref write through `rootless_deref_base` (DEF-309); test every node of a `destroy` receiver's path (DEF-310) — see "An escape reader asked from another pass needs the function it reads SET, and a place written at or below a dereference is resolved through the pointer below it"
 - Raise a new VIEW-like party wherever a view is raised (`prescan_view_parties`, `acc_call`) and admit it wherever a view is judged (`check_view_parties_at`, `check_pointer_view_parties`) — see "An element-address party is raised wherever a holder's refs carry one and judged by every pointer reader, as a view is"
 - Route a rootless written place to the slice dispatch, resolve a carrier through its chain, REFUSE past the fuel (BORROW-009), and step `raw`, `?!` (`ExprEmphaticUnwrapExpr`, not `ExprRelayExpr`), `??!`, `relay`, `await` and the casts in every kind-enumerating walk — see "A rootless place is asked what its slice views, a carrier is read to the runs its chain holds, the walk fails closed past its fuel, and every kind-enumerating walk steps the unwrap operators and the casts"
+- Step a dereference and a cast in every place reader of both analyses (`collect_view_refs`, `arg_place_chain`, `esc_place_root`; `path_steps`, `is_place_chain`, `place_root_symbol`, `peel_ptr_casts`), fail CLOSED where the steps cannot be read, never retype a plain pointer (TYPE-032, D-365), and run `kindtable167.py` before adding a reader or a kind — see "A place reader's default answer is a verdict, and landing 167 made the dereference and the cast steps of every reader"
 - Resolve a spawn's pointer argument and a whole-pointee write's pointer to their target (`lend_through_pointer`, `ptr_place_written_whole`) — see "A spawn's lend and a view of a pointee conflict with a write through an aliased pointer, the pointer resolved to its target"
+- Write a step rule in BOTH path readers (`path_steps`, `path_rel_compute`) and in EVERY writer of the callee summary (`record_mut_of_call`, `record_mut_of_place`, `ref_full_path`, `dest_place`); keep the caller's WHOLE judgment of a plain address across a type boundary (`admit_written`, build 16); vary a cast's TARGET TYPE and cut every cell NAMED and INLINE — see "The two analyses each spell a PATH, and a step rule lands in both"
 
 ### Reserved words that read like ordinary names
 

@@ -1,0 +1,245 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF LANDING 167's POINTER, SLICE AND VIEW READERS (DEF-324, DEF-326, DEF-328, DEF-329, DEF-330,
+// DEF-331, DEF-332, DEF-338): the shapes the precise reading must keep clean. A pointer copied through a
+// dereference and written through with no view live, or after the view's block ended; a view and a slice of a
+// PARAMETER's pointee returned through an explicit dereference (the frame-exit rule refuses a LOCAL's); a view
+// stored or handed on through a dereference in a callee whose carrier lives in the SAME scope as the destination;
+// a slice copied out of a carrier and READ through a call-result pointer under a view (a WRITE through the copy
+// is the slice-copy class, refused by name since 165); a one-view struct's slice field addressed through a call
+// result or handed to a getter and written with no other view live; the field-address getter's result written
+// through with no view live, kept in a named pointer, or READ under a view; a pointer laundered through `any->`
+// and written through with no view live or under a view of ANOTHER struct, a same-type cast written through; a
+// ternary of views of ANOTHER string, and a same-type cast of one, handed to a call beside a write. The
+// hardening row (a write to a place whose steps the aliasing walk cannot spell) has no legal control: it fires
+// only where the walk has no arm. Each control is a function returning a known value, checked in `main` at its
+// own exit (11-28). Exit 0 at both legs under this compiler AND landing 166's. The refusals of the same shapes
+// are `tests/analysis/rejection/deref_value_faces.npk`; the TYPE-level half of DEF-332 (a plain pointer retyped
+// to an unrelated pointee) is `tests/types/rejection/pointer_retype_plain.npk` and its legal half
+// `pointer_retype_plain_ok.npk`.
+mod:deref_value_faces_ok;
+error:E1;
+struct:H2 = { string:o; int64:k; };
+struct:S = { string:s; int64:k; };
+struct:SV = { fixed uint8[]:s; int64:k; };
+struct:BS = { H2[]:sl; int64:k; };
+struct:P = { H2[2]:arr; };
+func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
+func:getsl = H2[](BS->:q) never fails { pass q.sl; };
+func:getsl_s = H2[](H2[]->:q) never fails { pass (<-q); };
+func:idfld = H2[]->(BS->:q) never fails { pass @q.sl; };
+func:idany = any->(any->:q) never fails { pass q; };
+func:wsl = NIL(H2[]:s) never fails { s[0i64].o = string_concat("x", "y"); pass NIL; };
+func:store_into = NIL(BS->:d, H2[]:s) never fails { d.sl = s; pass NIL; };
+func:flow = NIL(BS->:dst, BS->:pl) never fails { dst.sl = (<-pl).sl; pass NIL; };
+func:fwd = NIL(BS->:dst, BS->:pl) never fails { drop store_into(dst, (<-pl).sl); pass NIL; };
+func:pair = int64(string:v, string->:p) never fails { (<-p) = string_concat("x", "y"); string:junk = string_concat("qqqqqqqq", "qqq"); pass (v.ptr[0i64] => int64); };
+func:mk2 = P() never fails { pass P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] }; };
+func:view_of_param = fixed uint8[](SV->:hp) never fails { pass (<-hp).s; };
+func:slice_of_param = H2[](BS->:bp) never fails { pass (<-bp).sl; };
+
+// 1. (DEF-324) a pointer copied through a dereference, `H2->:p2 = <-pp;`, written through with NO view live
+func:ptr_through_deref_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->->:pp = @hp;
+    H2->:p2 = <-pp;
+    p2.o = string_concat("x", "y");
+    pass h.o.len;
+};
+
+// 2. (DEF-324) the view's block ENDED before the write through the copy
+func:ptr_through_deref_view_ended = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->->:pp = @hp;
+    H2->:p2 = <-pp;
+    int64:first = 0i64;
+    {
+        fixed uint8[]:vw = string_bytes(h.o);
+        first = vw[0i64] => int64;
+    }
+    p2.o = string_concat("x", "y");
+    pass (first + h.o.len);
+};
+
+// 3. (DEF-326) a view of a PARAMETER's pointee returned through an explicit dereference, `pass (<-hp).s;` -- the pointee is the caller's
+func:view_of_param_returned = int64() never fails {
+    string:t = string_concat("abc", "def");
+    SV:h = SV{ s: string_bytes(t), k: 1i64 };
+    fixed uint8[]:v = raw view_of_param(@h);
+    pass (v[0i64] => int64);
+};
+
+// 4. (DEF-326) a slice of a parameter's pointee returned through the dereference, `pass (<-bp).sl;`
+func:slice_of_param_returned = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    H2[]:s = raw slice_of_param(@b);
+    pass s[1i64].k;
+};
+
+// 5. (DEF-331) `dst.sl = (<-pl).sl` in a callee, the carrier in the SAME scope as the destination
+func:store_view_through_deref_same_scope = int64() never fails {
+    H2[2]:outer = [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }];
+    BS:keep = BS{ sl: outer[0i64...2i64], k: 0i64 };
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    drop flow(@keep, @b);
+    pass (string_bytes(keep.sl[0i64].o)[0i64] => int64);
+};
+
+// 6. (DEF-331) the view handed on as an argument beside the destination, same scope
+func:arg_view_through_deref_same_scope = int64() never fails {
+    H2[2]:outer = [H2{ o: string_concat("e", "f"), k: 5i64 }, H2{ o: string_concat("g", "h"), k: 6i64 }];
+    BS:keep = BS{ sl: outer[0i64...2i64], k: 0i64 };
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:b = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    drop fwd(@keep, @b);
+    pass (string_bytes(keep.sl[0i64].o)[0i64] => int64);
+};
+
+// 7. (DEF-328) a slice copied out of a carrier and READ through a call-result pointer under a view of the array
+func:slice_copy_read_through_deref_call = int64() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    H2[]:t = raw getsl(@b);
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    int64:k = (<-(raw idsl(@t)))[1i64].k;
+    pass (k + (vw[0i64] => int64));
+};
+
+// 8. (DEF-329) a ONE-view struct's slice field addressed through a call result, written with no other view live
+func:field_addr_one_view_holder_no_view = int64() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...2i64], k: 1i64 };
+    (<-(raw idsl(@b.sl)))[0i64].o = string_concat("x", "y");
+    pass p.arr[0i64].o.len;
+};
+
+// 9. (DEF-329) the field's address handed to a getter returning the slice, `wsl(raw getsl_s(@b.sl))`, one-view holder, no other view
+func:field_addr_getter_one_view_no_view = int64() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...2i64], k: 1i64 };
+    drop wsl(raw getsl_s(@b.sl));
+    pass p.arr[0i64].o.len;
+};
+
+// 10. (DEF-330) the field-address getter's result written through with NO view live
+func:field_addr_getter_write_no_view = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    (<-(raw idfld(@bs)))[0i64].o = string_concat("x", "y");
+    pass arr[0i64].o.len;
+};
+
+// 11. (DEF-330) a NAMED pointer to the field, no view live
+func:named_ptr_to_field_write_no_view = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    H2[]->:tp = @bs.sl;
+    (<-tp)[0i64].o = string_concat("x", "y");
+    pass arr[0i64].o.len;
+};
+
+// 12. (DEF-330) a READ through the getter's result under a view
+func:field_addr_getter_read_under_view = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    int64:k = (<-(raw idfld(@bs)))[1i64].k;
+    pass (k + (vw[0i64] => int64));
+};
+
+// 13. (DEF-332) a pointer laundered through `any->` and written through with NO view live
+func:any_launder_deref_write_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    (<-(ap =>! H2->)).o = string_concat("x", "y");
+    pass h.o.len;
+};
+
+// 14. (DEF-332) the laundered pointer written through under a view of ANOTHER struct
+func:any_launder_deref_write_other_viewed = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vg = string_bytes(g.o);
+    (<-(ap =>! H2->)).o = string_concat("x", "y");
+    pass ((vg[0i64] => int64) + h.o.len);
+};
+
+// 15. (DEF-332) a SAME-type cast of a named pointer written through, no view live
+func:same_type_cast_deref_write_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    (<-(hp =>! H2->)).o = string_concat("x", "y");
+    pass h.o.len;
+};
+
+// 16. (DEF-332) the laundered pointer through a CALL RESULT, written with no view live
+func:any_launder_call_result_write_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    (<-((raw idany(ap)) =>! H2->)).o = string_concat("x", "y");
+    pass h.o.len;
+};
+
+// 17. (DEF-338) a ternary of views of ANOTHER string handed to a call beside a write of `d`
+func:ternary_views_of_other_string = int64() never fails {
+    string:d = string_concat("hello", " world");
+    string:e = string_concat("hello", " there");
+    int64:z = 0i64;
+    bool:c = (z == 0i64);
+    pass (raw pair(is (c) : string_from_bytes(e.ptr, 5i64) : string_from_bytes(e.ptr, 3i64), @d));
+};
+
+// 18. (DEF-338) a same-type cast of a view of ANOTHER string beside the write
+func:cast_view_of_other_string = int64() never fails {
+    string:d = string_concat("hello", " world");
+    string:e = string_concat("hello", " there");
+    pass (raw pair(string_from_bytes(e.ptr, 5i64) =>! string, @d));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw ptr_through_deref_no_view()) != 2i64) { exit 11i32; }
+    if ((raw ptr_through_deref_view_ended()) != 99i64) { exit 12i32; }
+    if ((raw view_of_param_returned()) != 97i64) { exit 13i32; }
+    if ((raw slice_of_param_returned()) != 2i64) { exit 14i32; }
+    if ((raw store_view_through_deref_same_scope()) != 97i64) { exit 15i32; }
+    if ((raw arg_view_through_deref_same_scope()) != 97i64) { exit 16i32; }
+    if ((raw slice_copy_read_through_deref_call()) != 99i64) { exit 17i32; }
+    if ((raw field_addr_one_view_holder_no_view()) != 2i64) { exit 18i32; }
+    if ((raw field_addr_getter_one_view_no_view()) != 2i64) { exit 19i32; }
+    if ((raw field_addr_getter_write_no_view()) != 2i64) { exit 20i32; }
+    if ((raw named_ptr_to_field_write_no_view()) != 2i64) { exit 21i32; }
+    if ((raw field_addr_getter_read_under_view()) != 99i64) { exit 22i32; }
+    if ((raw any_launder_deref_write_no_view()) != 2i64) { exit 23i32; }
+    if ((raw any_launder_deref_write_other_viewed()) != 103i64) { exit 24i32; }
+    if ((raw same_type_cast_deref_write_no_view()) != 2i64) { exit 25i32; }
+    if ((raw any_launder_call_result_write_no_view()) != 2i64) { exit 26i32; }
+    if ((raw ternary_views_of_other_string()) != 104i64) { exit 27i32; }
+    if ((raw cast_view_of_other_string()) != 104i64) { exit 28i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,222 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-343 (landing 167): the alias pass's place readers step a CAST as they step a
+// dereference, and the shapes the precise reading must keep clean are these. A view through the cast
+// dereference of a local `any->` pointer whose block ENDED before the pointee is written by name; a view
+// through a same-type cast dereference of a pointer to one struct while ANOTHER struct is written; a view
+// through a same-type cast dereference (its steps kept) beside a DISJOINT field written through another
+// pointer; a cast address whose block ended before an exclusive claim of the pointee; a cast address of
+// ANOTHER struct held across the claim. Each control returns 0 and its own exit code (11-15) when the
+// shape misbehaves; main exits with the first non-zero. Exit 0 at both legs under this compiler AND landing
+// 166's (`.internal/planted167.sh` plants each wrong expectation and reads its exit).
+mod:cast_place_readers_ok;
+
+struct:H2 = { string:o; int64:k; };
+func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+struct:S = { string:x; int64:k; };
+func:wrs = NIL(any->:q) never fails { (<-(q =>! S->)).x = string_concat("x", "y"); pass NIL; };
+impl:S = { func:sset = NIL(S->:self) never fails { self.x = string_concat("x", "y"); pass NIL; }; };
+func:wsx = NIL(S->:p) never fails { p.x = string_concat("x", "y"); pass NIL; };
+func:ids = S->(S->:p) never fails { pass p; };
+func:getx = fixed uint8[](any->:q) never fails { pass string_bytes((<-(q =>! S->)).x); };
+func:wrs2 = NIL(any->:q) never fails { drop wsx(@(<-(q =>! S->))); pass NIL; };
+func:wrs3 = NIL(any->:q) never fails { drop wsx(q =>! S->); pass NIL; };
+func:wrsm = NIL(any->:q) never fails { drop (<-(q =>! S->)).sset(); pass NIL; };
+func:wk = NIL(any->:q) never fails { (<-(q =>! H2->)).k = 5i64; pass NIL; };
+
+// 11: the view's block ended before the write by name (b8n)
+func:any_cast_view_block_ended_write_by_name = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    {
+        fixed uint8[]:vw = string_bytes((<-(ap =>! H2->)).o);
+        if (vw[0i64] != 97u8) { pass 11i32; }
+    }
+    h.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    if (h.o.len != 2i64) { pass 11i32; }
+    pass 0i32;
+};
+
+// 12: the view through the same-type cast dereference of a pointer to h, ANOTHER struct written (b9n)
+func:same_type_cast_view_other_struct_written = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes((<-(hp =>! H2->)).o);
+    g.o = string_concat("x", "y");
+    string:junk = string_concat("qq", "qq");
+    if (vw[0i64] != 97u8) { pass 12i32; }
+    if (g.o.len != 2i64) { pass 12i32; }
+    pass 0i32;
+};
+
+// 13: the view through a same-type cast dereference (steps kept), a DISJOINT field written through
+// another pointer (b11k; the `any->` twin b11n is the accepted over-refusal, its steps dropped)
+func:same_type_cast_view_disjoint_field_through_other_pointer = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->:hp2 = @h;
+    fixed uint8[]:vw = string_bytes((<-(hp =>! H2->)).o);
+    hp2.k = 9i64;
+    string:junk = string_concat("qq", "qq");
+    if (vw[0i64] != 97u8) { pass 13i32; }
+    if (h.k != 9i64) { pass 13i32; }
+    pass 0i32;
+};
+
+// 14: the cast address's block ended before the exclusive claim (g2n)
+func:any_cast_address_block_ended_then_claim = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    {
+        any->:ap = (@h) =>! any->;
+        (<-(ap =>! H2->)).k = 7i64;
+    }
+    drop wr($$m h);
+    if (h.o.len != 2i64) { pass 14i32; }
+    if (h.k != 7i64) { pass 14i32; }
+    pass 0i32;
+};
+
+// 15: the cast address of ANOTHER struct held across the claim (g3n)
+func:same_type_cast_address_of_other_then_claim = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    H2->:gp = (@g) =>! H2->;
+    drop wr($$m h);
+    gp.k = 9i64;
+    if (h.o.len != 2i64) { pass 15i32; }
+    if (g.k != 9i64) { pass 15i32; }
+    pass 0i32;
+};
+
+// 16: the callee writing through the cast to ANOTHER pointee type with NO view live (f1n)
+func:any_cast_callee_writes_other_struct_no_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrs(ap);
+    if (h.o.len != 2i64) { pass 16i32; }
+    pass 0i32;
+};
+
+// 17: the second callee writing through the cast dereference with NO view live (r1en)
+func:any_cast_second_callee_no_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrs2(ap);
+    if (h.o.len != 2i64) { pass 17i32; }
+    pass 0i32;
+};
+
+// 18: the `Self->` method on the cast dereference with NO view live (r1gn)
+func:any_cast_self_method_no_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrsm(ap);
+    if (h.o.len != 2i64) { pass 18i32; }
+    pass 0i32;
+};
+
+// 19: the cast pointer handed as a value with NO view live (r2an)
+func:any_cast_value_to_callee_no_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrs3(ap);
+    if (h.o.len != 2i64) { pass 19i32; }
+    pass 0i32;
+};
+
+// 20: the cast inside a getter's argument, the write below the result, NO view live (r3an)
+func:cast_inside_getter_arg_no_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    (<-(raw ids(ap =>! S->))).x = string_concat("x", "y");
+    if (h.o.len != 2i64) { pass 20i32; }
+    pass 0i32;
+};
+
+// 21: the round trip from `any->` to the real type writing a DISJOINT field with NO view live (r4n)
+func:any_round_trip_disjoint_field_no_view = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wk(ap);
+    if (h.k != 5i64) { pass 21i32; }
+    pass 0i32;
+};
+
+// 22: a view returned through the cast dereference, READ before the owner is written (r1vn)
+func:view_through_cast_deref_read_before_write = int32() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = raw getx(ap);
+    int32:first = vw[0i64] => int32;
+    h.o = string_concat("zz", "zz");
+    if (first != 97i32) { pass 22i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = raw any_cast_view_block_ended_write_by_name();
+    if (r != 0i32) { exit r; }
+    r = raw same_type_cast_view_other_struct_written();
+    if (r != 0i32) { exit r; }
+    r = raw same_type_cast_view_disjoint_field_through_other_pointer();
+    if (r != 0i32) { exit r; }
+    r = raw any_cast_address_block_ended_then_claim();
+    if (r != 0i32) { exit r; }
+    r = raw same_type_cast_address_of_other_then_claim();
+    if (r != 0i32) { exit r; }
+    r = raw any_cast_callee_writes_other_struct_no_view();
+    if (r != 0i32) { exit r; }
+    r = raw any_cast_second_callee_no_view();
+    if (r != 0i32) { exit r; }
+    r = raw any_cast_self_method_no_view();
+    if (r != 0i32) { exit r; }
+    r = raw any_cast_value_to_callee_no_view();
+    if (r != 0i32) { exit r; }
+    r = raw cast_inside_getter_arg_no_view();
+    if (r != 0i32) { exit r; }
+    r = raw any_round_trip_disjoint_field_no_view();
+    if (r != 0i32) { exit r; }
+    r = raw view_through_cast_deref_read_before_write();
+    if (r != 0i32) { exit r; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (DivByZero) { exit 97i32; },
+        (DivOverflow) { exit 98i32; },
+        (StaleHandle) { exit 100i32; },
+        (DeadlineExceeded) { exit 101i32; },
+        (ChannelClosed) { exit 102i32; },
+        (DriverLeak) { exit 103i32; },
+        (IoEof) { exit 104i32; },
+        (WouldBlock) { exit 105i32; },
+        (StackExhausted) { exit 106i32; },
+        (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; },
+        (DecreasesViolated) { exit 109i32; },
+        (TbbErr) { exit 110i32; },
+        (ShiftRange) { exit 111i32; },
+        (CastRange) { exit 112i32; },
+        (BadStep) { exit 113i32; },
+        (BorrowOverlap) { exit 114i32; },
+        (RequiresViolated) { exit 115i32; },
+        (EnsuresViolated) { exit 116i32; },
+        (InvariantViolated) { exit 117i32; },
+        (Interrupted) { exit 118i32; },
+        (NotFound) { exit 119i32; },
+        (Exists) { exit 120i32; },
+        (CrossDevice) { exit 121i32; },
+        (BadPath) { exit 122i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

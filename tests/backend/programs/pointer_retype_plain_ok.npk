@@ -1,0 +1,108 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-332's TYPE-LEVEL RULE (landing 167): the pointer casts safe code KEEPS. The same
+// pointee (`hp =>! H2->`); `any->` and back (D-021's type-erased crossing, `=>!` on both legs); plain to
+// `wild` (the crossing out, the target qualifier `wild`); `wild` to plain of the same pointee (D-361's
+// crossing in, `v =>! T->`); a wild pointer retyped to another wild pointee, and a WILD operand retyped to a
+// PLAIN pointer of another pointee (the operand's provenance is wild: the manual regime's reinterpretation,
+// under `dalloc`'s discipline); a pointer to a pointer of one type. Each control is a function returning a
+// known value, checked in `main` at its own exit (11-17). Exit 0 at both legs under this compiler AND landing
+// 166's. The refusals are `tests/types/rejection/pointer_retype_plain.npk`.
+mod:pointer_retype_plain_ok;
+error:E1;
+struct:H2 = { string:o; int64:k; };
+
+// 1. the same pointee
+func:same_pointee = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->:hq = hp =>! H2->;
+    pass hq.k;
+};
+
+// 2. `any->` and back
+func:any_and_back = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    H2->:hq = ap =>! H2->;
+    pass hq.k;
+};
+
+// 3. plain to `wild`: the crossing out
+func:plain_to_wild = int64() never fails {
+    int32:v = 7i32;
+    int32->:q3 = @v;
+    wild int32->:w = q3 =>! wild int32->;
+    pass ((<-w) => int64);
+};
+
+// 4. `wild` to plain of the same pointee: D-361's crossing in
+func:wild_to_plain = int64() never fails {
+    wild int8->:buf = alloc(8i64);
+    wild int64->:wi = buf =>! wild int64->;
+    (<-wi) = 7i64;
+    int64->:pi = wi =>! int64->;
+    int64:r = <-pi;
+    dalloc(buf);
+    pass r;
+};
+
+// 5. a wild pointer retyped to another WILD pointee
+func:wild_retyped = int64() never fails {
+    wild int8->:wb = alloc(8i64);
+    (<-wb) = 65i8;
+    wild uint8->:wu = wb =>! wild uint8->;
+    int64:r = (<-wu) => int64;
+    dalloc(wb);
+    pass r;
+};
+
+// 6. a WILD operand retyped to a PLAIN pointer of another pointee: the operand's provenance is wild
+func:wild_operand_to_other_plain = int64() never fails {
+    wild int8->:wb = alloc(8i64);
+    (<-wb) = 65i8;
+    uint8->:pu = wb =>! uint8->;
+    int64:r = (<-pu) => int64;
+    dalloc(wb);
+    pass r;
+};
+
+// 7. a pointer to a pointer of ONE type
+func:ptr_to_ptr_same = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->->:pp = @hp;
+    H2->->:pq = pp =>! H2->->;
+    pass (<-pq).k;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw same_pointee()) != 1i64) { exit 11i32; }
+    if ((raw any_and_back()) != 1i64) { exit 12i32; }
+    if ((raw plain_to_wild()) != 7i64) { exit 13i32; }
+    if ((raw wild_to_plain()) != 7i64) { exit 14i32; }
+    if ((raw wild_retyped()) != 65i64) { exit 15i32; }
+    if ((raw wild_operand_to_other_plain()) != 65i64) { exit 16i32; }
+    if ((raw ptr_to_ptr_same()) != 1i64) { exit 17i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

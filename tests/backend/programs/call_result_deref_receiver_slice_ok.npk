@@ -23,7 +23,8 @@
 // of a call result over ANOTHER `W` while `w.a` is lent, the lend's block ended (joined)
 // before the method, a method writing the DISJOINT field `k` under the lend, by name too.
 // Each control is a function returning a known value, checked in `main` at its own exit
-// (11-42; the two `async` controls are awaited); the lend controls L1-L4 stand in `main` (exits 51-54). Exit 0 at both legs under this
+// (11-46; the two `async` controls are awaited, the two `relay`-keyword ones relayed with `?! E1`; 43-46 are landing 167's DR5 controls: the `relay`
+// KEYWORD and `??!` on both roads with no view live); the lend controls L1-L4 stand in `main` (exits 51-54). Exit 0 at both legs under this
 // compiler AND landing 165's. The refusals of the same shapes are
 // `tests/analysis/rejection/call_result_deref_receiver_slice.npk`.
 mod:call_result_deref_receiver_slice_ok;
@@ -55,6 +56,8 @@ func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
 func:idbs = BS->(BS->:q) never fails { pass q; };
 func:getslf = H2[](BS->:q) { pass q.sl; };
 func:idbsf = BS->(BS->:q) { pass q; };
+func:getslo = H2[]?(BS->:q) never fails { pass q.sl; };
+func:idbso = BS->?(BS->:q) never fails { pass q; };
 async func:getslaw = H2[](BS->:q) { pass q.sl; };
 async func:idbsaw = BS->(BS->:q) { pass q; };
 func:idbsw = wild BS->(BS->:q) never fails { pass q; };
@@ -390,6 +393,40 @@ func:list_level_above_zero = int64() never fails {
     pass (e.o.len + s.l[1i64].k);
 };
 
+// 43. (DR5 r1n, landing 167) the `relay` KEYWORD on the slice road with NO view live: the carrier is the own holder (a fallible control, relayed in `main` with `?! E1`)
+func:relay_keyword_slice_road_no_view = int64() {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    drop wsl(relay getslf(@b));
+    pass p.arr[0i64].o.len;
+};
+
+// 44. (DR5 r2n) the `relay` keyword on the pointer road, no view live
+func:relay_keyword_ptr_road_no_view = int64() {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    (<-(relay idbsf(@bs))).sl[0i64].o = string_concat("x", "y");
+    pass arr[0i64].o.len;
+};
+
+// 45. (DR5 r3n) `??!` on the slice road, no view live
+func:coalesce_slice_road_no_view = int64() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    drop wsl((raw getslo(@b)) ??! E1);
+    pass p.arr[0i64].o.len;
+};
+
+// 46. (DR5 r4n) `??!` on the pointer road, no view live
+func:coalesce_ptr_road_no_view = int64() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    (<-((raw idbso(@bs)) ??! E1)).sl[0i64].o = string_concat("x", "y");
+    pass arr[0i64].o.len;
+};
+
 async func:main = int32(cstring[]:_~argv) {
     if ((raw disjoint_field_method_deref_call()) != 104i64) { exit 11i32; }
     if ((raw disjoint_field_method_by_name()) != 104i64) { exit 12i32; }
@@ -423,6 +460,10 @@ async func:main = int32(cstring[]:_~argv) {
     if ((raw list_callee_writes_other_elem_through_ptr()) != 6i64) { exit 40i32; }
     if ((raw list_level_arith_by_name()) != 9i64) { exit 41i32; }
     if ((raw list_level_above_zero()) != 9i64) { exit 42i32; }
+    if ((relay_keyword_slice_road_no_view() ?! E1) != 2i64) { exit 43i32; }
+    if ((relay_keyword_ptr_road_no_view() ?! E1) != 2i64) { exit 44i32; }
+    if ((raw coalesce_slice_road_no_view()) != 2i64) { exit 45i32; }
+    if ((raw coalesce_ptr_road_no_view()) != 2i64) { exit 46i32; }
     Channel<int64, 4i32, 4i64>:done = channel() ?! Unreachable;
     // L1. (DEF-315, lend) the method on the dereference of a call result over ANOTHER `W` while `w.a` is lent
     W:w = W{ a: shared_arena_make(8i64), k: 1i32 };

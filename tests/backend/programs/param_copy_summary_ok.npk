@@ -1,0 +1,171 @@
+// tests/backend/programs/param_copy_summary_ok.npk -- THE LEGAL HALF of DEF-341 + DEF-342 (landing 167): the shapes
+// `param_copy_summary.npk` refuses, each with the hazard removed -- no view live, the view's block ended, the copy only
+// READ through, another pointee written. Each control is a function failing at its own exit (11-22); exit 0 at both legs
+// under this compiler AND landing 166's. The planted wrong expectations each fail at their own exit (`.internal/planted167.sh`).
+mod:param_copy_summary_ok;
+
+struct:H2 = { string:o; int64:k; };
+
+// the writer every face hands its pointer to (writes the pointee's `o`)
+func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+// DEF-341: the written place's path carries a CAST of the pointer parameter
+func:wrany = NIL(any->:q) never fails { (<-(q =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrc = NIL(H2->:q) never fails { (<-(q =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrce = NIL(H2->:q) never fails { (<-(q => H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrcw = NIL(H2->:q) never fails { (<-(q =>! H2->)) = H2{ o: string_concat("x", "y"), k: 9i64 }; pass NIL; };
+// DEF-342: a LOCAL COPY of the pointer parameter, written through
+func:wrcopy = NIL(H2->:q) never fails { H2->:q2 = q; q2.o = string_concat("x", "y"); pass NIL; };
+func:wrfwd = NIL(H2->:q) never fails { H2->:q2 = q; drop wr(q2); pass NIL; };
+func:wrcd = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2).o = string_concat("x", "y"); pass NIL; };
+func:wrcwh = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2) = H2{ o: string_concat("x", "y"), k: 9i64 }; pass NIL; };
+func:wrmv = NIL(H2->:q) never fails { H2->:q2 = q; string:t = move(q2.o); discard(t.len); pass NIL; };
+func:wrc2 = NIL(H2->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
+func:wrany2 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
+func:wrc2e = NIL(H2->:q) never fails { H2->:q2 = q => H2->; q2.o = string_concat("x", "y"); pass NIL; };
+// DEF-341's `any->` face, both laundering directions (build 8): a plain parameter copied into an `any->` local, an
+// `any->` parameter's cast copy forwarded to a writer
+func:wrlaund = NIL(H2->:q) never fails { any->:q2 = q =>! any->; (<-(q2 =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+func:wrany3 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; drop wr(q2); pass NIL; };
+// the same-function control's body: the view's block ENDED before the write through the other cast copy
+func:sfn_view_block_ended = int64(any->:q) never fails { H2->:hq = q =>! H2->; { fixed uint8[]:vw = string_bytes(hq.o); discard(vw.len); } H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass hq.o.len; };
+// the accepted over-refusal: a DISJOINT field written through the copy (the whole extent is recorded)
+func:wrk = NIL(H2->:q) never fails { H2->:q2 = q; q2.k = 9i64; pass NIL; };
+// the control's reader
+func:rdcopy = NIL(H2->:q) never fails { H2->:q2 = q; int64:n = q2.o.len; discard(n); pass NIL; };
+
+// 11. (f9j14, the control of DEF-342) the copy only READ through, under the view: no write, the view intact
+func:copy_read_only_under_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop rdcopy(hp);
+    pass (vw[0i64] => int64);
+};
+
+// 12. the copy written through with NO view live
+func:copy_write_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrcopy(hp);
+    pass h.o.len;
+};
+
+// 13. the cast parameter written through its dereference with NO view live (DEF-341's shape, no hazard)
+func:cast_deref_write_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrc(hp);
+    pass h.o.len;
+};
+
+// 14. the `any->` parameter cast back and written, NO view live
+func:any_cast_deref_write_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrany(ap);
+    pass h.o.len;
+};
+
+// 15. the copy handed to the writer, NO view live
+func:copy_forwarded_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrfwd(hp);
+    pass h.o.len;
+};
+
+// 16. the view's block ENDED before the write through the copy
+func:copy_write_view_block_ended = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    {
+        fixed uint8[]:vw = string_bytes(h.o);
+        discard(vw[0i64] => int32);
+    }
+    drop wrcopy(hp);
+    pass h.o.len;
+};
+
+// 17. ANOTHER pointee written through a copy while `h.o` is viewed: the view reads what was stored
+func:copy_writes_other_pointee = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    H2->:gp = @g;
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wrcopy(gp);
+    pass (vw[0i64] => int64);
+};
+
+// 18. the WHOLE pointee assigned through the copy, NO view live: the caller reads the new value
+func:copy_whole_assign_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrcwh(hp);
+    pass h.k;
+};
+
+// 19. a field moved out through the copy, NO view live
+func:copy_move_out_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrmv(hp);
+    pass h.k;
+};
+
+// 20. (f9j6cn) a plain pointer parameter copied into an `any->` local and written through its cast back, NO view live
+func:plain_param_laundered_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrlaund(hp);
+    pass h.o.len;
+};
+
+// 21. (f9j6n's forwarding twin) an `any->` parameter's cast copy forwarded to a writer, NO view live
+func:any_param_copy_forwarded_no_view = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrany3(ap);
+    pass h.o.len;
+};
+
+// 22. the same-function shape with the view's block ended before the write through the other cast copy
+func:same_fn_cast_copy_view_block_ended = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    pass (raw sfn_view_block_ended(ap));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw copy_read_only_under_view()) != 97i64) { exit 11i32; }
+    if ((raw copy_write_no_view()) != 2i64) { exit 12i32; }
+    if ((raw cast_deref_write_no_view()) != 2i64) { exit 13i32; }
+    if ((raw any_cast_deref_write_no_view()) != 2i64) { exit 14i32; }
+    if ((raw copy_forwarded_no_view()) != 2i64) { exit 15i32; }
+    if ((raw copy_write_view_block_ended()) != 2i64) { exit 16i32; }
+    if ((raw copy_writes_other_pointee()) != 97i64) { exit 17i32; }
+    if ((raw copy_whole_assign_no_view()) != 9i64) { exit 18i32; }
+    if ((raw copy_move_out_no_view()) != 1i64) { exit 19i32; }
+    if ((raw plain_param_laundered_no_view()) != 2i64) { exit 20i32; }
+    if ((raw any_param_copy_forwarded_no_view()) != 2i64) { exit 21i32; }
+    if ((raw same_fn_cast_copy_view_block_ended()) != 2i64) { exit 22i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

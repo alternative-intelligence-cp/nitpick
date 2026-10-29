@@ -2293,6 +2293,9 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   zero, D-225) and is unreadable until assigned (ASSIGN-001); an `=>!` cast of a null
   `wild` or `any->` pointer to a plain `T->` is the author's assertion, as every `=>!`
   is (D-095).
+  A `=>!` or `=>` between two PLAIN pointer types with unrelated pointees (`hp =>! S->` over an `H2->`) is refused in safe code,
+  `NITPICK-TYPE-032` (D-365, landing 167, the author's ruling of 2026-10-29): a pointer is retyped only to its own type, to or from
+  `any->`, or across the wild boundary.
 - **A value of wild provenance enters a plain pointer slot only through `=>! T->`
   (D-361, 1.6.1e landing 121; S-138 option (a)).** `wild` is a place qualifier and no
   part of the pointer type, so until landing 121 a `wild` binding's value, a

@@ -1,69 +1,77 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 189:11
+// expect-error-at: 199:11
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 197:11
+// expect-error-at: 207:11
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 208:11
+// expect-error-at: 218:11
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 218:29
+// expect-error-at: 228:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 228:23
+// expect-error-at: 238:23
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 238:45
+// expect-error-at: 248:45
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 249:13
+// expect-error-at: 259:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 259:28
+// expect-error-at: 269:28
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 269:33
+// expect-error-at: 279:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 279:29
+// expect-error-at: 289:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 289:33
+// expect-error-at: 299:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 300:14
+// expect-error-at: 310:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 312:13
+// expect-error-at: 322:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 324:14
+// expect-error-at: 334:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 335:13
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 346:14
+// expect-error-at: 345:13
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 356:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 367:14
+// expect-error-at: 366:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 379:14
+// expect-error-at: 377:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 391:14
+// expect-error-at: 389:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 402:15
+// expect-error-at: 401:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 412:36
+// expect-error-at: 412:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 422:43
+// expect-error-at: 422:36
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 433:30
+// expect-error-at: 432:43
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 443:43
+// expect-error-at: 443:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 454:30
+// expect-error-at: 453:43
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 464:44
+// expect-error-at: 464:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 474:45
+// expect-error-at: 474:44
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 485:25
+// expect-error-at: 484:45
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 496:32
+// expect-error-at: 495:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 506:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 518:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 528:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 539:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 549:43
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 506:11
+// expect-error-at: 558:11
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 515:30
+// expect-error-at: 567:30
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 524:15
+// expect-error-at: 576:15
 mod:call_result_deref_receiver_slice;
 // DEF-315 + DEF-316 + DEF-317 (1.6.1e, landing 166): THREE ROOTLESS SHAPES RESOLVED TO
 // THE STORAGE THEY REACH. (1) DEF-315: a `Self->` method whose receiver is the BARE
@@ -154,6 +162,8 @@ func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
 func:idbs = BS->(BS->:q) never fails { pass q; };
 func:getslf = H2[](BS->:q) { pass q.sl; };
 func:idbsf = BS->(BS->:q) { pass q; };
+func:getslo = H2[]?(BS->:q) never fails { pass q.sl; };
+func:idbso = BS->?(BS->:q) never fails { pass q; };
 async func:getslaw = H2[](BS->:q) { pass q.sl; };
 async func:idbsaw = BS->(BS->:q) { pass q; };
 func:idbsw = wild BS->(BS->:q) never fails { pass q; };
@@ -499,6 +509,48 @@ async func:await_slice_road = NIL() {
 };
 
 // --- THE LEND DOMAIN: the crossing lent by its own name --------------------------------
+// 34. (DR5 of the review of 166, landing 167: the `relay` KEYWORD on the slice road -- `ExprRelayExpr`, the keyword's node, not `?!`'s `ExprEmphaticUnwrapExpr`) a may-fail getter's slice result relayed by the keyword and handed to the writer under the view; stepped since 166, TESTED here (t167 faces r1)
+func:relay_keyword_slice_road = NIL() {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl(relay getslf(@b));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 35. (DR5: the `relay` keyword on the pointer road) a may-fail getter's pointer result relayed by the keyword, the slice field's element written through its dereference under a view of the array (faces r2)
+func:relay_keyword_ptr_road = NIL() {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(relay idbsf(@bs))).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 36. (DR5: `??!`, the Optional's unwrap-or-trap, `ExprEmphaticCoalesceExpr`, on the slice road) an Optional getter's slice result unwrapped and handed to the writer under the view (faces r3)
+func:coalesce_slice_road = NIL() never fails {
+    P:p = P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] };
+    BS:b = BS{ sl: p.arr[0i64...1i64], k: 1i64 };
+    b.sl = p.arr[0i64...2i64];
+    fixed uint8[]:vw = string_bytes(p.arr[0i64].o);
+    drop wsl((raw getslo(@b)) ??! E1);
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 37. (DR5: `??!` on the pointer road) an Optional getter's pointer result unwrapped, the slice field's element written through its dereference under the view (faces r4)
+func:coalesce_ptr_road = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    BS:bs = BS{ sl: arr[0i64...2i64], k: 1i64 };
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-((raw idbso(@bs)) ??! E1)).sl[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
 // 22. (DEF-315, the lend) the method replacing `self.a` on the dereference of a call-result pointer while `w.a` is lent to a task
 async func:lend_method_on_deref_call = NIL() {
     W:w = W{ a: shared_arena_make(8i64), k: 1i32 };

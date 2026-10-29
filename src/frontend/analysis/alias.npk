@@ -521,9 +521,14 @@ func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) de
 
 // The party kind an admitted value would make, or -1 for an ordinary value:
 // `$$i` shared, `$$m` exclusive, `@` plain -- the WHOLE value, nothing nested.
+// A CAST OF AN ADDRESS IS THE ADDRESS (DEF-343's claim face, landing 167): `(@h) =>! any->`
+// holds `h`'s address as `@h` does, so it is D-286's plain party too -- until this landing it
+// was an ordinary value, and a `$$m h` beside it was admitted (g2-g6: the callee viewing
+// through the claim and writing through the cast pointer read the freed bytes, 113 at both
+// legs). Every reader of an admitted value's shape peels the casts first (`peel_ptr_casts`).
 func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
     if (raw expr_is_none(val)) { pass (0i32 - 1i32); }
-    ExprNode:n = raw ast_expr(x.ast, val);
+    ExprNode:n = raw ast_expr(x.ast, raw peel_ptr_casts(x, val));
     if (n.kind == ExprKind.ExprBorrowExpr) {
         if (raw borrow_is_mut(n)) { pass (raw PARTY_EXCLUSIVE()); }
         pass (raw PARTY_SHARED());
@@ -538,7 +543,7 @@ func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
 
 func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never fails {
     if (holder == 0i32) { pass NIL; }
-    ExprNode:n = raw ast_expr(x.ast, site);
+    ExprNode:n = raw ast_expr(x.ast, raw peel_ptr_casts(x, site));   // DEF-343: the address under its casts
     ExprId:place = raw expr_operand(n);
     int32:root = raw place_root_symbol(x, place);
     if (root == 0i32) { pass NIL; }   // no named root: BORROW-014 at the walk
@@ -636,8 +641,12 @@ func:root_ident_is_pointer = bool(Alias->:x, ExprId:place) never fails {
         // `(<-p).f` and `p.f` are one storage (D-098), and `(<-lp)[i]` is the one
         // spelling of an element behind a pointer (TYPE-082); a write through
         // either is a write-capable access of what `p` reaches, as the
-        // auto-dereference's always was.
-        if (rn.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(rn); continue; }
+        // auto-dereference's always was. A CAST ON THE WAY IS A STEP TOO (DEF-341's alias
+        // face, landing 167): `(<-(q =>! H2->)).o` roots at the pointer `q`, so a view of it
+        // is a view of q's POINTEE (root_ptr), resolved as `(<-q).o`'s is -- read as a view of
+        // the binding, the party met no write through the pointee (f9j6b, f9j6b2, f9j6b7:
+        // 113 at both legs; the plain twins f9j6b5, f9j6b6 refused).
+        if ((rn.kind == ExprKind.ExprDerefExpr) || (rn.kind == ExprKind.ExprCastExpr) || (rn.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(rn); continue; }
         if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
         if (rn.a == 0i32) { pass false; }
         if (!(raw sym_is_view(x.tab, x.ast, rn.a))) {
@@ -682,6 +691,12 @@ func:place_root_symbol = int32(Alias->:x, ExprId:id) never fails {
         if (raw expr_is_none(r.id)) { pass 0i32; }
         ExprNode:rn = raw ast_expr(x.ast, r.id);
         if (rn.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(rn); continue; }   // DEF-272: see `root_ident_is_pointer`
+        // A CAST IS A STEP TO THE OPERAND'S ROOT TOO (DEF-343, landing 167): `(<-(hp =>! H2->)).o`
+        // is rooted at `hp`, as `esc_place_root` and `root_ident_is_pointer` read it; answering 0
+        // here made the place ROOTLESS to every reader of this file -- `pointer_targets_of`
+        // resolved a view through such a dereference to nothing, and the pointee written by
+        // its own name or through another pointer met no party (f9j6b8, f9j6b9, f9j6b11).
+        if ((rn.kind == ExprKind.ExprCastExpr) || (rn.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(rn); continue; }
         if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
         if (rn.a == 0i32) { pass 0i32; }
         if (!(raw sym_is_view(x.tab, x.ast, rn.a))) { pass rn.a; }
@@ -754,6 +769,25 @@ func:path_steps = bool(Alias->:x, ExprId:place, ExprId:stop, List<Step>->:out) n
                 drop list_push(@rev, Step{ kind: 1i32, name: 0i32, index: ix, numeral: num, value: cv.num, hi: 0i64 });
             }
             cur = raw expr_lhs(n);
+            continue;
+        }
+        // A CAST ON THE PATH IS NO STEP EITHER (DEF-341's alias face, landing 167): the
+        // pointer retyped, the place the operand's pointee -- `(<-(q =>! H2->)).o` is a
+        // place rooted at `q`, as `esc_place_root` and `path_rel_compute` read it since
+        // face (a). Until this landing the walk fell off here and answered false, so a
+        // VIEW party whose place passes a cast had no steps and BOTH judges skipped it
+        // (`party_steps` false is a `continue` in `check_view_parties_at` and in
+        // `check_pointer_view_parties`): f9j6b, f9j6b2, f9j6b7 -- a view of the pointee
+        // through the `any->` parameter's cast dereference, the write through a cast copy
+        // or the dereference -- 113 at both legs, where the cast-free twins (f9j6b5,
+        // f9j6b6) are refused. THE STEPS BELOW A POINTEE-CHANGING CAST ARE DROPPED: they
+        // are the other type's parts (`any` has none), so the place stands for the
+        // pointee WHOLE -- the root==0 block's `cast_changes_pointee` rule for a write,
+        // the closed direction (a view through `=>! H2->` beside a write of a DISJOINT
+        // field through the same cast is over-refused; 0 tree sites at the landing).
+        if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+            if (raw cast_changes_pointee(x, cur)) { drop list_truncate(@rev, 0i64); }
+            cur = raw expr_operand(n);
             continue;
         }
         // AN EXPLICIT `<-` IS NO STEP (DEF-272): `(<-p).f`'s steps are `p.f`'s,
@@ -994,7 +1028,13 @@ func:decode_int = int64(fixed uint8[]:b, int64:lo, int64:hi) never fails {
     pass v;
 };
 
-// A PARTY'S STEPS: its place's, then its path's (D-325).
+// A PARTY'S STEPS: its place's, then its path's (D-325). FALSE IS NOT A SKIP (DEF-343,
+// landing 167, management's hardening): a party whose place the walk cannot spell -- a
+// node kind `path_steps` has no arm for on the way to the root -- stands for its root
+// WHOLE at every judge (`check_access_reported`'s same-root loop, `check_view_parties_at`,
+// `check_pointer_view_parties`: each truncates `pp` and goes on), never `continue`d past:
+// until this landing a cast on a view's place made BOTH judges skip the party (f9j6b,
+// f9j6b2, f9j6b7 -- the hole the cast arm closed), and the skip itself is what is hardened.
 func:party_steps = bool(Alias->:x, Party:p, List<Step>->:out) never fails {
     if (!(raw path_steps(x, p.place, raw expr_none(), out))) { pass false; }
     drop decode_path(x, p.path, out);
@@ -1159,6 +1199,10 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
                 if (!(raw expr_is_none(rb0))) {
                     List<Step>:ap1 = raw list_init::<Step>(8i64);
                     if (raw path_steps(x, place, rb0, @ap1)) {
+                        // THE STEPS BELOW A CROSS-TYPE CAST ARE THE OTHER TYPE'S PARTS (DEF-332,
+                        // landing 167): `(<-(hp =>! S->)).s` writes h's bytes under S's names, so
+                        // the write is of the WHOLE pointee and the steps are dropped (f9g).
+                        if (raw cast_changes_pointee(x, rb0)) { drop list_clear(@ap1); }
                         drop decode_path(x, extra, @ap1);
                         if (raw check_pointer_targets(x, rb0, ap1, akind, at, mode)) { pass true; }
                     }
@@ -1177,7 +1221,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
             // of the array, a lent arena replaced under its task, until this landing.
             ExprId:sb0 = raw escape_written_slice_base(x.esc, place, (extra != 0i32) || (akind == (raw ACC_EXCLUSIVE())));
             if (!(raw expr_is_none(sb0))) {
-                if (raw check_slice_targets(x, sb0, akind, at, mode)) { pass true; }
+                if (raw check_slice_targets(x, sb0, self_site, akind, at, mode)) { pass true; }
             }
         }
         // NO NAMED ROOT: a place that bottoms in a DEREFERENCE of a shared
@@ -1189,7 +1233,19 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         pass false;
     }
     List<Step>:ap = raw list_init::<Step>(8i64);
-    if (!(raw path_steps(x, place, raw expr_none(), @ap))) { pass false; }
+    if (!(raw path_steps(x, place, raw expr_none(), @ap))) {
+        // FAIL CLOSED (landing 167's hardening row): a place with a named root whose steps
+        // this walk cannot spell -- a kind `path_steps` has no arm for on the way to the
+        // root -- was admitted here unread; a write or an exclusive claim of it is refused
+        // now, a read admitted (a read frees nothing). `NITPICK-BORROW-009`.
+        if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
+            drop alias_err(x, raw BORROW_UNTRACKED(),
+                "a write to a place whose path this analysis cannot spell: a step on the way to its root is an expression the aliasing walk has no arm for (landing 167) -- hold the pointer or the value in a local and write through the local",
+                at);
+            pass true;
+        }
+        pass false;
+    }
     drop decode_path(x, extra, @ap);
     // A WRITE THROUGH A SHARED CLAIM'S HOLDER: shared means readers.
     if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_VIEWS()))) {
@@ -1224,7 +1280,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         }
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);
-        if (!(raw party_steps(x, p, @pp))) { continue; }
+        if (!(raw party_steps(x, p, @pp))) { drop list_truncate(@pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
         // A POINTER ROOT'S OWN REASSIGNMENT LEAVES THE VIEWED POINTEE ALONE:
         // a view through `Box->:b` is of the pointee's bytes, and `b = other`
         // moves the name, not the storage (the pointee is another owner's;
@@ -1295,7 +1351,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
     if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_CLAIMS()))) {
         ExprId:sb = raw escape_written_slice_base(x.esc, place, (extra != 0i32) || (akind == (raw ACC_EXCLUSIVE())));
         if (!(raw expr_is_none(sb))) {
-            if (raw check_slice_targets(x, sb, akind, at, mode)) { pass true; }
+            if (raw check_slice_targets(x, sb, self_site, akind, at, mode)) { pass true; }
         }
     }
     // A WRITE THROUGH A POINTER vs A VIEW OF ITS POINTEE BY ANOTHER NAME, and the
@@ -1321,7 +1377,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
 // rooted at the target's root. A target rooted where the slice itself is
 // rooted is the place check's own; every view the slice binding itself holds
 // is skipped (`escape_slice_own_holder`, `check_view_parties_at`).
-func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int32:mode) never fails {
+func:check_slice_targets = bool(Alias->:x, ExprId:sb, ExprId:self_site, int32:akind, Span:at, int32:mode) never fails {
     int32:own_root = raw place_root_symbol(x, sb);
     int32:own_holder = raw escape_slice_own_holder(x.esc, sb);
     List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
@@ -1345,7 +1401,7 @@ func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int3
         } else {
             drop list_truncate(@ap, 0i64);   // the whole root, the closed direction
         }
-        if (raw check_view_parties_at(x, r, ap, own_holder, 0i32, akind, at, mode)) { pass true; }
+        if (raw check_view_parties_at(x, r, ap, own_holder, 0i32, self_site, akind, at, mode)) { pass true; }
     }
     pass false;
 };
@@ -1367,8 +1423,14 @@ func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int3
 // `own` (landing 165): the POINTER BINDING the write goes through, when it is a
 // bare name -- the element-address parties it holds itself are its own writes
 // through its own address, never a hazard to them (0 otherwise).
-func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:self_holder, int32:own, int32:akind,
-                                  Span:at, int32:mode) never fails {
+// `self_site` (landing 167): the ARGUMENT the access is, or none -- the view parties
+// raised at that site are the argument's own (a ternary's arms, each a range of the
+// array the callee writes through the slice, `push_call_view_party_in`) and are
+// skipped here as the same-root loop skips them; the slice dispatch reaches this
+// judge from `check_access_reported`'s root==0 block, where the same-root loop's
+// `self_site` never applied (build 13 self-conflicted `slice_targets.npk`'s s14).
+func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:self_holder, int32:own, ExprId:self_site,
+                                  int32:akind, Span:at, int32:mode) never fails {
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
         if (p.root != tgt.root) { continue; }
@@ -1376,9 +1438,10 @@ func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:s
         if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
         if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
         if ((self_holder != 0i32) && (p.holder == self_holder)) { continue; }
+        if ((!(raw expr_is_none(self_site))) && (p.site.index == self_site.index)) { continue; }   // the access's own argument's parties (a ternary's arms, DEF-338)
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);
-        if (!(raw party_steps(x, p, @pp))) { continue; }
+        if (!(raw party_steps(x, p, @pp))) { drop list_truncate(@pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
         if (p.kind == (raw PARTY_ELEM_ADDR())) {
@@ -1436,7 +1499,8 @@ func:ptr_last_base = ExprId(Alias->:x, ExprId:place) never fails {
 // no place at all (TYPE-024) and is not answered here: the explicit `<-` is what
 // makes the pointee a place, and the type checker's refusal stays the one report.
 // A dereference of a NAMED pointer is a place chain (DEF-272), the same-root
-// loop's and DEF-302's readers' business, and answers none. KNOWN LIMIT, DEF-312
+// loop's and DEF-302's readers' business, and answers none -- a cast of one too since
+// landing 167 (`place_root_symbol` steps the cast, DEF-343). KNOWN LIMIT, DEF-312
 // (HIGH, registered at landing 164, scheduled beside DEF-307 before M3): a POINTER
 // FIELD of the pointee written through BELOW the dereference, two levels --
 // `(<-(raw idph(@ph))).p.o = …` under a view of what `ph.p` points at -- answers
@@ -1447,6 +1511,51 @@ func:ptr_last_base = ExprId(Alias->:x, ExprId:place) never fails {
 // resolved hop by hop by `pointer_targets_of`, DEF-302). The fix is that hop:
 // the last pointer-typed base below the dereference resolved against each target's
 // chain, as `ptr_inner_base` resolves a named two-level pointer.
+// Does a pointer expression end in a cast between two POINTEE types (`hp =>! S->` over an
+// `H2->`)? False for a same-type cast, a non-cast, or an untypeable operand (DEF-332).
+func:cast_changes_pointee = bool(Alias->:x, ExprId:pe) never fails {
+    if (raw expr_is_none(pe)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, pe);
+    if ((n.kind != ExprKind.ExprCastExpr) && (n.kind != ExprKind.ExprUncheckedCastExpr)) { pass false; }
+    int32:ct = raw exprtypes_get(x.etypes, pe);
+    int32:ot = raw exprtypes_get(x.etypes, raw expr_operand(n));
+    if ((ct == 0i32) || (ot == 0i32)) { pass false; }
+    if ((raw type_kind(x.types, ct)) != (raw TY_POINTER())) { pass false; }
+    if ((raw type_kind(x.types, ot)) != (raw TY_POINTER())) { pass false; }
+    pass ((raw type_elem(x.types, ct)) != (raw type_elem(x.types, ot)));
+};
+
+// DO THE CAST LAYERS OVER AN ARGUMENT OR A WRITTEN PLACE CHANGE THE POINTEE (DEF-346's
+// caller-side rule, landing 167 build 16)? `site` walked down through its casts alone:
+// `(@h) =>! any->`, `((@h) =>! any->) =>! S->`, `ap =>! S->`. An untyped layer answers
+// TRUE (the closed direction: a summary's paths through it cannot be trusted), where the
+// one-layer reader above answers false for the SAME-FUNCTION place walk (DEF-332).
+func:casts_change_pointee = bool(Alias->:x, ExprId:site) never fails {
+    ExprId:cur = site;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind != ExprKind.ExprCastExpr) && (n.kind != ExprKind.ExprUncheckedCastExpr)) { pass false; }
+        int32:ct = raw exprtypes_get(x.etypes, cur);
+        int32:ot = raw exprtypes_get(x.etypes, raw expr_operand(n));
+        if ((ct == 0i32) || (ot == 0i32)) { pass true; }
+        if (((raw type_kind(x.types, ct)) == (raw TY_POINTER())) && ((raw type_kind(x.types, ot)) == (raw TY_POINTER()))) {
+            if ((raw type_elem(x.types, ct)) != (raw type_elem(x.types, ot))) { pass true; }
+        }
+        cur = raw expr_operand(n);
+    }
+    pass false;
+};
+
+// IS A POINTER'S POINTEE `any` (D-021's erased type)? Its summary paths name no part.
+func:pointee_is_any = bool(Alias->:x, ExprId:pe) never fails {
+    if (raw expr_is_none(pe)) { pass false; }
+    int32:t = raw exprtypes_get(x.etypes, pe);
+    if (t == 0i32) { pass false; }
+    if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
+    pass ((raw type_kind(x.types, raw type_elem(x.types, t))) == (raw TY_ANY()));
+};
+
 func:rootless_deref_base = ExprId(Alias->:x, ExprId:place) never fails {
     ExprId:cur = place;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
@@ -1489,6 +1598,18 @@ func:ptr_write_base = ExprId(Alias->:x, ExprId:place, int64:n) never fails {
 func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never fails {
     int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: vr.place });
     if (pt == 0i32) { pass false; }
+    // AN `any->` POINTS AT WHATEVER ITS CHAIN NAMES (DEF-341's `any->` face, landing
+    // 167): `any->:ap = (@h) =>! any->; drop wrany(ap);` with `wrany(any->:q)` writing
+    // `(<-(q =>! H2->)).o` -- the callee's summary names the write, but the pointee
+    // type `any` matched no ref's place by type, so `ap` had no target and the call
+    // met no view of `h.o` (f9j2: 113 at both legs). The twin of
+    // `escape_pointer_targets`' any-pointee rule (DEF-332's regression f9h/f9i, this
+    // landing): every address and every carried pointer on the chain is a target --
+    // the closed direction (a disjoint pointee viewed is over-refused, 0 tree sites).
+    // The REVERSE too (f9j6b3: a view through one cast copy of an `any->` parameter, the
+    // write through another, 113 at both legs): a ref carried as an `any->` VALUE is a
+    // target of every pointee -- `escape_any_pointer_link`, the three readers' one predicate.
+    if (raw escape_any_pointer_link(x.esc, pt, pte)) { pass ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))); }
     if (vr.kind == (raw REF_ADDR())) { pass (pt == pte); }
     if (vr.kind == (raw REF_PASS())) { pass (pt == pty); }
     pass false;
@@ -1537,8 +1658,24 @@ func:ptr_inner_base = ExprId(Alias->:x, ExprId:pe) never fails {
 // inner pointer `bp` to its pointees `{b}`, then each pointee's chain for this
 // pointer's own targets (`@h` of type `pte`). Fuel-bounded; over-approximate as
 // `record_refs_through_indirection` is (any ref of the pointee type is a target).
-func:pointer_targets_of = NIL(Alias->:x, ExprId:pe, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
+// THE POINTER UNDER ITS CASTS (DEF-343, landing 167): `hp =>! H2->` resolved as `hp` is, the
+// pointee matched the OPERAND's type -- a cast to `any->` or back is the any rule's
+// (`ptr_ref_is_target`), a same-type cast nothing, a pointee-changing one the operand's
+// pointee (the storage the pointer actually reaches; TYPE-032 in safe code, D-365).
+func:peel_ptr_casts = ExprId(Alias->:x, ExprId:e) never fails {
+    ExprId:cur = e;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass cur; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind != ExprKind.ExprCastExpr) && (n.kind != ExprKind.ExprUncheckedCastExpr)) { pass cur; }
+        cur = raw expr_operand(n);
+    }
+    pass cur;
+};
+
+func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
     if (fuel <= 0i32) { pass NIL; }
+    ExprId:pe = raw peel_ptr_casts(x, pe_in);   // DEF-343: the pointer under its casts
     if (raw expr_is_none(pe)) { pass NIL; }
     int32:r = raw place_root_symbol(x, pe);
     if (r == 0i32) { pass NIL; }
@@ -1619,6 +1756,11 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
     if ((mode == (raw CHECK_VIEWS())) || (mode == (raw CHECK_LENT()))) {
         if (raw ptr_place_written_whole(x, place, ap)) { pe = place; }
     }
+    // THE STEPS BELOW AN `any` POINTEE OR A POINTEE-CHANGING CAST ARE NOBODY'S PARTS
+    // (DEF-346's caller-side rule, landing 167 build 16): a summary path composed through
+    // `any->:ap` (`wrs(ap)` writing `(<-(q =>! S->)).x`) or through `ap =>! S->` names the
+    // cast target's field on the storage the pointer reaches; the write is each target WHOLE.
+    bool:erase = raw casts_change_pointee(x, place);
     if (raw expr_is_none(pe)) {
         // DEF-305: a pointer that is a CALL'S RESULT (or any pointer expression
         // with NO named root) has no place chain -- resolve it by rule A
@@ -1631,14 +1773,15 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
         int32:plt = raw exprtypes_get(x.etypes, place);
         if ((plt != 0i32) && ((raw type_kind(x.types, plt)) == (raw TY_POINTER()))
             && ((raw place_root_symbol(x, place)) == 0i32)) {
+            if (raw pointee_is_any(x, place)) { erase = true; }
             List<ViewRef>:ctg = raw list_init::<ViewRef>(4i64);
             drop escape_pointer_targets(x.esc, place, @ctg);
             for (int64:ci in 0i64...ctg.count) {
                 ViewRef:cvr = ctg[ci];
                 List<Step>:ctp = raw list_init::<Step>(8i64);
                 if (!(raw ptr_target_steps(x, cvr, @ctp))) { continue; }
-                for (int64:ck in 0i64...ap.count) { drop list_push(@ctp, ap[ck]); }
-                if (raw check_view_parties_at(x, cvr, ctp, 0i32, 0i32, akind, at, mode)) { pass true; }
+                if (!erase) { for (int64:ck in 0i64...ap.count) { drop list_push(@ctp, ap[ck]); } }
+                if (raw check_view_parties_at(x, cvr, ctp, 0i32, 0i32, raw expr_none(), akind, at, mode)) { pass true; }
                 if (raw check_pointer_view_parties(x, cvr.root, ctp, akind, at, 0i32)) { pass true; }
             }
         }
@@ -1656,12 +1799,13 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
     if (pre.count > ap.count) { pass false; }
     List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
     drop pointer_targets_of(x, pe, 8i32, @tgts);
+    if (raw pointee_is_any(x, pe)) { erase = true; }
     for (int64:i in 0i64...tgts.count) {
         ViewRef:vr = tgts[i];
         List<Step>:tp = raw list_init::<Step>(8i64);
         if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
-        for (int64:k in pre.count...ap.count) { drop list_push(@tp, ap[k]); }
-        if (raw check_view_parties_at(x, vr, tp, 0i32, own_r, akind, at, mode)) { pass true; }
+        if (!erase) { for (int64:k in pre.count...ap.count) { drop list_push(@tp, ap[k]); } }
+        if (raw check_view_parties_at(x, vr, tp, 0i32, own_r, raw expr_none(), akind, at, mode)) { pass true; }
         if (raw check_pointer_view_parties(x, vr.root, tp, akind, at, r)) { pass true; }
     }
     pass false;
@@ -1685,7 +1829,7 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
         if ((skip != 0i32) && (p.root == skip)) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);
-        if (!(raw party_steps(x, p, @pp))) { continue; }
+        if (!(raw party_steps(x, p, @pp))) { drop list_truncate(@pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
         ExprId:pe = raw ptr_write_base(x, p.place, pp.count);
         if (raw expr_is_none(pe)) { continue; }
         List<Step>:pre = raw list_init::<Step>(8i64);
@@ -2003,7 +2147,7 @@ func:push_enclosing_parties = NIL(Alias->:x, StmtId:defer_id) never fails {
 // every live party, and a claim without a named root is refused. `holder` is
 // the declaring holder (registered by the caller) or 0.
 func:admit_value = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never fails {
-    ExprNode:n = raw ast_expr(x.ast, site);
+    ExprNode:n = raw ast_expr(x.ast, raw peel_ptr_casts(x, site));   // DEF-343: the address under its casts
     ExprId:place = raw expr_operand(n);
     int32:akind = raw ACC_WRITE();
     if (kind == (raw PARTY_SHARED())) { akind = raw ACC_SHARED(); }
@@ -2025,10 +2169,24 @@ func:admit_value = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never f
 // see the whole place as D-286 says; the view parties see the paths the callee
 // writes below it, each an access of its own.
 func:admit_written = NIL(Alias->:x, ExprId:site, int32:callee, int32:pos) never fails {
-    ExprNode:n = raw ast_expr(x.ast, site);
+    ExprNode:n = raw ast_expr(x.ast, raw peel_ptr_casts(x, site));   // DEF-343: the address under its casts
     ExprId:place = raw expr_operand(n);
     drop acc_indices(x, place, raw ALIAS_DEPTH());
     drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), site, n.span, raw CHECK_CLAIMS());
+    // A PLAIN ADDRESS UNDER A POINTEE-CHANGING CAST IS WRITTEN WHOLE (DEF-346's caller-side
+    // rule, landing 167 build 16): `wrs((@h) =>! any->)`, `wsx(((@h) =>! any->) =>! S->)` --
+    // the callee's summary names the CAST TARGET's parts (or lost the write across the cast,
+    // F2), so its paths say nothing about `h`; the place is a write-capable access WHOLE
+    // against the view, lend and element-address parties, the road a callee the escape
+    // analysis cannot read takes (`check_written_mode`'s whole). This is how landing 166
+    // judged the inline spelling -- the `@h` reached as an ordinary value -- and build 14's
+    // claim-face peel (DEF-343) handed it to the summary road instead: f1b, management's
+    // review of build 14; r1f, r1h, r2b, r3b of the review of build 15, each REFUSED on 166
+    // and silent on build 15 (170 at both legs, the freed bytes read).
+    if (raw casts_change_pointee(x, site)) {
+        drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), raw expr_none(), n.span, raw CHECK_VIEWS());
+        pass NIL;
+    }
     drop check_written(x, place, callee, pos, n.span);
     pass NIL;
 };
@@ -2077,7 +2235,7 @@ func:check_written_slice = NIL(Alias->:x, ExprId:a, int32:callee, int32:pos, Spa
     int32:e = raw escape_mut_first(x.esc, callee, pos);
     if (e == (0i32 - 2i32)) {
         if (raw check_access_reported(x, pl, 0i32, raw ACC_WRITE(), a, at, raw CHECK_VIEWS())) { pass NIL; }
-        if (!on_rng) { discard(raw check_slice_targets(x, a, raw ACC_WRITE(), at, raw CHECK_VIEWS())); }
+        if (!on_rng) { discard(raw check_slice_targets(x, a, a, raw ACC_WRITE(), at, raw CHECK_VIEWS())); }
         pass NIL;
     }
     while (e >= 0i32) decreases e + 1i32 {
@@ -2227,6 +2385,12 @@ func:is_place_chain = bool(Alias->:x, ExprId:id) never fails {
         if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
         if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
         if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }   // DEF-272: `<-` is a step
+        // A CAST IS A STEP TOO (DEF-343, landing 167): `(<-(hp =>! H2->)).o` is a chain down to `hp`,
+        // as `place_root_symbol`, `root_ident_is_pointer` and `path_steps` read it -- the four
+        // walkers of a place's path in this file agree, or a write falls between two roads (build
+        // 11 of landing 167: the root named here, the chain denied there, the write decomposed and
+        // judged by nobody -- f9h, f9t, f9j6b2 at 113 again).
+        if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
         pass (n.kind == ExprKind.ExprIdentifierExpr);
     }
     pass false;
@@ -2517,7 +2681,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             // through the address itself is the address's own
             // (`check_access_reported`'s skip by place). The ordinary-arg loop
             // below still admits it as a plain address (DEF-304).
-            ExprNode:ean = raw ast_expr(x.ast, a);
+            ExprNode:ean = raw ast_expr(x.ast, raw peel_ptr_casts(x, a));   // DEF-343
             ExprId:eplace = raw expr_operand(ean);
             int32:eroot = raw place_root_symbol(x, eplace);
             if (eroot != 0i32) {
@@ -2687,7 +2851,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             if (((raw type_kind(x.types, at2)) == (raw TY_SLICE())) && (!(raw is_place_chain(x, a2)))) {
                 if (!(raw type_slice_fixed(x.types, at2))) {
                     if ((raw escape_mut_first(x.esc, callee_fn, pos_base + j)) != (0i32 - 1i32)) {
-                        discard(raw check_slice_targets(x, a2, raw ACC_WRITE(), (raw ast_expr(x.ast, a2)).span, raw CHECK_VIEWS()));
+                        discard(raw check_slice_targets(x, a2, a2, raw ACC_WRITE(), (raw ast_expr(x.ast, a2)).span, raw CHECK_VIEWS()));
                     }
                 }
             }
@@ -2820,15 +2984,38 @@ func:lend_through_pointer = NIL(Alias->:x, ExprId:id, ExprId:a, ExprNode:an, int
 // call (D-325). Anything else is an ordinary argument; a view NESTED inside
 // one (`f(g(string_bytes(s)))`) is a temporary the escape walk already reads.
 func:push_call_view_party = NIL(Alias->:x, ExprId:a) never fails {
+    drop push_call_view_party_in(x, a, a, 4i32);
+    pass NIL;
+};
+// ... THROUGH A TERNARY'S ARMS AND A CAST'S OPERAND (DEF-338, landing 167):
+// `pair(is (c) : string_from_bytes(d.ptr, 5i64) : string_from_bytes(d.ptr, 3i64), @d)` is a
+// view of `d` beside a write of `d` on either arm, and `string_bytes(s) => fixed uint8[]`
+// is the view it wraps; until this landing the party was raised for a bare view-maker
+// alone (h5a, h5c: the callee read the freed bytes). Each arm is its own party, at the
+// WHOLE ARGUMENT's site (`site`), so the argument's own write-capable access skips its
+// arms' parties as it skips a bare range argument's (`self_site`): `f(is (c) :
+// arr[0i64...2i64] : arr[1i64...2i64], p)` self-conflicted at the arm's site on build 13
+// (`slice_targets.npk`'s s14, found by the landing's sweep).
+func:push_call_view_party_in = NIL(Alias->:x, ExprId:a, ExprId:site, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass NIL; }
     if (raw expr_is_none(a)) { pass NIL; }
     ExprNode:n = raw ast_expr(x.ast, a);
+    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+        drop push_call_view_party_in(x, raw expr_operand(n), site, fuel - 1i32);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprTernaryExpr) {
+        drop push_call_view_party_in(x, raw expr_rhs(n), site, fuel - 1i32);
+        drop push_call_view_party_in(x, raw expr_third(n), site, fuel - 1i32);
+        pass NIL;
+    }
     ExprId:vp = raw escape_view_place(x.esc, n);
     if (raw expr_is_none(vp)) { pass NIL; }
     ExprId:place = vp;
     if (n.kind == ExprKind.ExprIndexExpr) { place = a; }   // the range step is part of the path
     int32:root = raw place_root_symbol(x, place);
     if (root == 0i32) { pass NIL; }
-    drop list_push(@x.live, Party{ site: a, kind: raw PARTY_VIEW(), root: root, holder: 0i32,
+    drop list_push(@x.live, Party{ site: site, kind: raw PARTY_VIEW(), root: root, holder: 0i32,
                                    place: place, view_kind: raw VIEW_DIRECT(),
                                    root_ptr: raw root_ident_is_pointer(x, place), path: 0i32 });
     pass NIL;

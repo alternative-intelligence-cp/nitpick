@@ -2213,3 +2213,87 @@ that carried them retired at the cycle close):
   control that must be clean (`cells4/`), and read the refusal's SENTENCE (which view it names), not only its code (`cells4_reason.sh`).
   Siblings measured REFUSED ALREADY (a04's ternary, b06's slice value, b08/b17's ranges, c05) narrow a registered gap and are recorded as such,
   not fixed twice.
+- **A place reader's default answer is a verdict, and landing 167 made the dereference and the cast steps of every reader** (DEF-324, DEF-326,
+  DEF-328 to DEF-332, DEF-338, DEF-341 to DEF-343, landing 167; escape.npk, alias.npk, type_expr.npk). Every kind-naming walker of the two
+  analyses was asked, mechanically, what it does with each of the 49 expression kinds (`meta/roadmap/1.6/tools/kindtable167.py WORKTREE` ->
+  `kindtable167.md`: `arm`, `shape` fallback, or `-` = the body's last `pass` decides), every accessor call was checked against the kinds that own
+  its slot (`accessor_census167.py`: 373 ok, 2 MISMATCH = DEF-337's then-branch fault), and every default read by hand
+  (`wt/51a/.internal/probes/t167/READING_167.md`); where a default admitted a hazard a cell was written and run on 165's and 166's binaries FIRST
+  (`cells_b/`, `faces/`, `cells_c/` to `cells_g/`; `MATRIX_167.txt`). WHAT THE READING FOUND, by mechanism: (1) `collect_view_refs` answered NIL
+  at a dereference read AS A VALUE, so a getter `pass (<-q).sl` recorded no ref and its caller's write was silent at every depth (DEF-324), a
+  pointer copied through a dereference had no chain (its one-hop face), and -- the same line -- a view stored, handed on or moved through a
+  dereference in a callee entered no store matrix and no rule B (DEF-331); the arm reads the pointee's chain now, one hop up when the
+  dereference's own type is a pointer, and `arg_place_chain` steps the dereference. (2) `escape_expr`'s dereference arm asked for a pointer TYPE
+  where `type_holds_pointer` is the question: `pass (<-hp).s;` escaped its frame (DEF-326). (3) The dereference road's slice reader read ONE level
+  of the pointee's chain and fed no `resolved` (DEF-328; landing 166's "resolved through the carrier's chain" held on the named road only). (4) The
+  own-holder readers keyed the one-view test on the FIELD's slice type, so `raw idsl(@b.sl)` over a struct holding a second view made `b` its own
+  holder (DEF-329: the HOLDER's type, `escape_target_root_type`; and `@b.sl`, a slice-typed strict run, is a VIEW followed into `b`'s chain). (5) A
+  getter `pass @q.sl;` is summarised as passing its parameter through -- its result a REF_ADDR of the struct with no path, a pointee type matching
+  nothing -- so the call-result pointer had zero targets (DEF-330: a place whose type HOLDS the pointee type inside is a target WHOLE,
+  `escape_type_holds`, fuel 8). (6) `escape_pointer_targets` typed a pointee by the CAST, so `(ap =>! H2->)` over an `any->` matched no ref
+  (DEF-332: the cast is peeled, the pointee read off the OPERAND, an `any` pointee makes every ref a target, `cast_changes_pointee` drops the steps
+  below a cross-type cast); the plain-to-plain retype `hp =>! S->` itself is `NITPICK-TYPE-032` by D-365 -- the author's ruling of 2026-10-29: safe
+  code retypes a pointer only to its own type, to or from `any->`, or across the wild boundary. (7) The call's view party was raised for a bare
+  view-maker alone (DEF-338: a ternary's arms and a cast's operand now). (8) Inside a callee `esc_place_root` stopped at a cast of the pointer
+  parameter, so `(<-(q =>! H2->)).o = …` entered no summary (DEF-341: one line), a ref carried as an `any->` VALUE was no target of an `H2->` in
+  THREE readers (`escape_any_pointer_link`, one predicate for the three), and a LOCAL COPY of the pointer parameter written through was recorded
+  on no chain at all -- `record_mut_of_place` roots at the local and the store road's walk ran only with refs (DEF-342: `record_mut_through_indirection`,
+  the whole extent, so a disjoint field written through the copy under a view of another field is an accepted over-refusal). (9) The ALIAS pass's
+  place readers -- `path_steps`, `is_place_chain`, `place_root_symbol`, `root_ident_is_pointer`, `pointer_targets_of`, `party_kind_of`,
+  `prescan_party`, `admit_value`, `admit_written`, `acc_call`'s element-address arm -- each stopped at a cast, so a view through `(<-(q =>! H2->)).o`
+  had unreadable steps and BOTH judges skipped the party (`if (!party_steps(…)) continue;`, fail-OPEN), the reverse reader resolved a view through a
+  local pointer's cast dereference to nothing, and `(@h) =>! any->` raised no plain party beside an exclusive claim (DEF-343; the hazard g6 read
+  the freed bytes). THE RULES THAT CAME OUT OF IT. A reader that enumerates node kinds answers for EVERY kind -- its default `pass` is a verdict,
+  and the kind table names which readers rely on theirs; read the table's new row before you add a reader or a kind, and `grep` the kind's twin
+  spelling (`<-` beside the auto-dereference, `=>` beside `=>!`, a ternary beside a bare name). A judge FAILS CLOSED: a party whose steps cannot be
+  read stands for its root WHOLE (`drop list_truncate(@pp, 0i64)` in place of `continue`, the three judges) [CORRECTED 2026-10-29, build 15: TWO judges -- `check_view_parties_at` and the same-root loop; `check_pointer_view_parties` truncates and then `continue`s on `pre.count > pp.count`, and `check_pointer_targets` and the root==0 block skip an unreadable step -- DEF-353, landing 168], and `check_access_reported` refuses a
+  WRITE whose steps `path_steps` cannot spell (BORROW-009 -- the hardening row, with no legal control: it fires only where a walk has no arm). A fix
+  to one pass is read against the OTHER: from build 8 on the escape side recorded the view through the cast dereference correctly and
+  `npkc FILE --dump-refs OUT` showed the SAME refs for the silent cell and its refused plain twin -- the gap was the alias judges', and printing
+  the refs found it faster than reading more code. Five builds in a row (9 to 13) each closed a face and exposed the next, each measured against
+  the WHOLE matrix before the next: build 11 alone REGRESSED three cells to 113 (`rootless_deref_base` answered none for a root named through a
+  cast while `is_place_chain` still said "no chain", and `acc_place`'s non-chain branch decomposed the write) -- a regression the full matrix
+  caught and a partial run would not have; and a line that no hazard cell distinguishes is kept only when a CONTROL does (build 9's
+  `root_ident_is_pointer` line: without it b12 refuses at the wrong site, so parity with the named road's b13 is the reason it stays). Parity with
+  the named road is the standard for every no-view twin, as in 166: b11n, b12, f4g, f5f and DEF-342's whole extent are refused because their
+  by-name or no-cast twins are. Before a kind-enumerating walk ships, write one cell per transparent kind on each road it can be spelled on --
+  `raw`, `?!`, `??!`, `relay`, `await`, `=>`, `=>!`, `<-`, a ternary -- a hazard that must refuse and its own-view control that must be clean, and
+  read the refusal's SENTENCE (which view it names), not only its code: f6a refused for the wrong view on build 2 and would have passed a
+  code-only check. And the landing's own SWEEP is a measurement: build 13's found a fifteenth face — a ternary's arms' view parties,
+  raised at the ARM's site, self-conflicted with the argument's own write on the rootless road (`check_slice_targets` ->
+  `check_view_parties_at` skipped the access's own parties by holder alone), a NEW report on an existing rejection file
+  (`slice_targets.npk`'s s14), fixed as build 14 by carrying the whole argument's site into both judges (`self_site`): a party raised
+  for a nested expression carries the ARGUMENT's site, and every judge a rootless road reaches skips the access's own by it.
+- **The two analyses each spell a PATH, and a step rule lands in both -- and a cast's TARGET TYPE is an axis of the summary road**
+  (DEF-346, landing 167 build 15; escape.npk `path_rel_compute`, alias.npk `path_steps`). Build 14 taught alias.npk's `path_steps` to drop
+  the steps below a pointee-changing cast (DEF-343) and left escape.npk's `path_rel_compute`, which spells a callee's SUMMARY path, keeping
+  them: `(<-(q =>! S->)).x` under an `any->` parameter was summarised as `f<x>`, the caller composed `x` onto its `H2` and read the write as
+  disjoint from a view of `h.o` -- and because landing 166 had refused the inline `wrs((@h) =>! any->)` WHOLE at the plain address, the
+  narrower summary turned a refusal into a silence: the subcycle's first regression, caught by management's diff review and not by the
+  401-cell matrix, whose callee cells all cast to the SAME struct type (f9j2, f9j4, f9j6: an `any` laundering back to `H2`, where the
+  field names agree). When a reader learns a step rule, grep its twin in the other pass (`path_steps` and `path_rel_compute`;
+  `collect_view_refs` and the party readers) and write the rule in both; and when a cell varies a cast, vary the cast's TARGET TYPE too --
+  a summary is read by every caller under the caller's type, so the target type is an axis of the summary road that the place readers'
+  matrix never had. Where the escape pass's CAST test (`escape_cast_changes_pointee`) meets an untyped cast layer it answers TRUE
+  (the pointee whole), the closed direction: a summary that keeps steps it cannot vouch for admits a write (alias's
+  `cast_changes_pointee` answers false for its own, non-summary reading; build 16's `casts_change_pointee`, the caller rule's test,
+  and `escape_place_crosses_cast` answer TRUE for an untyped layer too). Narrowed in build 16 from "meets an untyped node on a
+  summary path": the review of build 15 read `escape_type_holds` answering NO for an unresolved type and for a non-struct holder
+  (DEF-353's open direction, landing 168), so the TRUE is the cast test's alone.
+  BUILD 16 (the review of build 15): a summary has SEVERAL WRITERS, and a caller that consults it narrows what the plain-address
+  party judged whole. Build 15 fixed `path_rel_compute` alone; the review of build 15 found the second-callee road
+  (`record_mut_of_call` joined `wsx`'s `f<x>` back onto the truncated path), the value road (`dest_place` answered none for `q =>!
+  S->`, so the write entered no summary) and the cast inside a getter's argument -- four INLINE cells REFUSED on 166 still silent on
+  build 15 (r1f, r1h, r2b, r3b: 170 at both legs), and one over-refusal (r4, the D-021 round trip writing a disjoint field) the
+  record had not listed. Build 16 does both: every writer of the summary truncates at a pointee-changing cast
+  (`escape_place_crosses_cast`), and the CALLER judges a plain address under such a cast WHOLE without consulting the summary
+  (`admit_written` -> `check_access_ex`, `CHECK_VIEWS`; `check_pointer_targets` composes no steps below an `any` pointee or a
+  pointee-changing cast), as landing 166 did -- so the inline spelling no longer depends on any summary being right, and the named
+  spelling depends on summaries that are true on every road. THE RULES: when a fix moves a judgment from the caller to a callee's
+  summary, keep the caller's whole judgment wherever a type boundary makes the summary's steps meaningless; before calling a summary
+  road fixed, enumerate every writer of the summary (`grep -n 'mu_add\|path_join\|record_mut_of_\|dest_place\|ref_full_path'
+  escape.npk`) and probe each with the SAME cell in its named and its inline spelling -- a fix that closes the named spelling and
+  re-opens the inline one is a regression the matrix's cells, all named, cannot see; and an over-refusal a build introduces is
+  written down in the build that introduces it (D-286's list), not found by the next review. The cost of the WHOLE readings (the
+  summary's truncation at the cast, the caller's `any`-pointee erase): the round trip `any-> =>! H2->` writing a field disjoint from
+  the view is refused (r4, the named `wk(ap)`, the sixth accepted over-refusal, 0 tree sites).

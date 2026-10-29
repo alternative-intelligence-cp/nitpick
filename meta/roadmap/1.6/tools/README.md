@@ -51,3 +51,16 @@ register makes `plant.py` refuse it by name, which is the intended signal.
 
 Every number in the plan's §1 has its command in `PROBES_2026-09-25.md`;
 a number you cannot re-derive from a command there is one to distrust.
+
+`kindtable167.py WORKTREE [--min N]` (landing 167) is THE MECHANICAL TABLE management asked for with DEF-324:
+every expression kind of `ast.npk`'s `expr_shape` against every kind-naming walker of escape.npk, alias.npk
+and locks.npk — `arm` (the walker names the kind), `shape` (a shape-generic fallback answers it) or `-` (no
+arm, no fallback: the walker's DEFAULT answer, its last `pass`, decides — the rows to read by hand). It writes
+`kindtable167.md` beside itself; the statement kinds against the statement walkers follow. Run it before
+adding a reader or an expression kind, and read the new row. `accessor_census167.py WORKTREE` is the
+accessor-by-kind census (management, 2026-10-29 07:52): every statement and expression ACCESSOR call in the
+three modules against the kinds whose parser construction fills the slot the accessor reads; a MISMATCH row is
+a call whose guard admits a kind the accessor does not own (DEF-337's `stmt_body` on a `StmtIfStmt`), an
+UNGUARDED row a read with no kind test in any enclosing block, listed for hand reading. The by-hand reading
+of both for landing 167 is `wt/51a/.internal/probes/t167/READING_167.md` (gitignored, on this machine); the
+cells it produced are the eight defects DEF-333 to DEF-340 and DEF-344 and the fixes of landing 167.

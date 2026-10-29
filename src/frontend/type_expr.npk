@@ -2148,6 +2148,25 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) never fai
             }
         }
     }
+    // SAFE CODE DOES NOT RETYPE A POINTER (DEF-332, landing 167; the author's ruling of
+    // 2026-10-29): `U-> =>! T->` between two PLAIN pointer types whose pointees differ
+    // reinterprets the pointee's layout under another type's names -- a breach of type
+    // safety beyond aliasing, which the analyses then read through -- so there is no such
+    // conversion in safe code, in either spelling (`=>` was TYPE-009 "write `=>!`" before:
+    // a misdirection). What stays: the same pointee (`hp =>! H2->`), `any->` on either side
+    // (D-021's type-erased crossing), and the wild crossings (D-019, D-361): a `wild` target
+    // qualifier or an operand of wild provenance -- the manual regime's reinterpretations are
+    // its own, under `dalloc`'s discipline. `NITPICK-TYPE-032`, once, at the cast (D-240).
+    if (((raw type_kind(e.types, from)) == (raw TY_POINTER())) && ((raw type_kind(e.types, to)) == (raw TY_POINTER()))) {
+        int32:fe = raw type_elem(e.types, from);
+        int32:te = raw type_elem(e.types, to);
+        bool:plain = ((raw null_ctx_of_quals(raw expr_cast_quals(n))) == 0i32)
+            && !(raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, raw expr_operand(n), 16i32));
+        if (plain && (fe != te) && ((raw type_kind(e.types, fe)) != (raw TY_ANY())) && ((raw type_kind(e.types, te)) != (raw TY_ANY()))) {
+            string:pc = string_concat(string_concat("there is no conversion from `", raw type_display(e.types, e.interns, from)), "` to `");
+            pass (raw te_error(e, raw TYPE_NO_CAST(), string_concat(string_concat(pc, raw type_display(e.types, e.interns, to)), "` in safe code (DEF-332): a plain pointer is not retyped to an unrelated pointee -- the bytes would be read under another type's names, and no analysis sees through that; the pointee's own type, `any->`, or the `wild` regime's crossings (`=>! wild T->`, a wild operand) are the casts there are. `=>!` does not help -- it opts out of a check, not of a meaning"), n.span));
+        }
+    }
     pass (raw check_cast(e.types, e.interns, e.diags, from, to, unchecked, n.span));
 };
 

@@ -3604,6 +3604,7 @@ defect declares a `DEF-` in §2f.
 > 163 and 164) -- is this defect's local two-level face: DEF-299's path step must reach the local chain recorder too, and it gets its
 > own matrix cell (management, 2026-10-28). The fuzz seat's (B) faces (q17, q19, q20: a pointer parameter forwarded through a call
 > under a view) were DEF-311's and are refused at 164.
+> 2026-10-29 (landing 167, build 15): DEF-348 is this defect's POINTER-field twin on the summary road -- `f<p>/f<o>` claims a write inside the pointee as `f<sl>/i0/f<v>` does -- placed in landing 170 beside DEF-312 widened, not here with M3 (`management_6`, 13:55).
 
 > **DEF-300 — FIXED 2026-10-24 (landing 158; built, chained and recorded by `nitpick-compiler_46` by its plan, the record read and landed by `nitpick-compiler_48`) (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r2; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date; an odd spelling). A DIRECT STORE THROUGH A RANGE OF THE ARRAY
@@ -4000,6 +4001,11 @@ defect declares a `DEF-` in §2f.
 > `cells_165.txt`, `cells_166.txt`; the one cell `expect166.py` expects silent by design): the receiver `(<-call).p` is pointer-typed with root 0, the
 > pointer field `.p` never re-resolved at its own hop — this family's mechanism, as a method receiver. Lands with 167 (management_4, 02:20:50), beside
 > F3a, F3b and DEF-324 (DEF-324 first if 167 splits; management_6, 04:28:44).
+> *2026-10-29 (landing 167):* NOT IN 167. Management's split of 07:15:11 placed DEF-312 widened + DEF-325 after the DEF-324 class, and the
+> placements of 07:52:03 and 11:05:40 put the spawn and pick groups (landing 168: DEF-327, DEF-337, DEF-339, DEF-340, DEF-344) and DEF-333 to
+> DEF-336 (landing 169) before it: landing 170. a15, F3a and F3b stay silent by design under 167 (`expect166.py`'s a15 cell, the kept matrix's two
+> KNOWN-LIMIT cells; `t167/t166_cells_167k.txt`).
+> 2026-10-29 (landing 167, build 15): DEF-348 (a pointer FIELD of a pointer PARAMETER's pointee written through, on the summary road) and DEF-350 (a pointer value handed out of a holder's field by a getter) join landing 170 beside this widening -- one fix, a composed path re-resolved at each pointer-typed hop (`management_6`, 13:55).
 
 > **DEF-313 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) from management's diff review of landing 164, its F5; the number from
 > `management_4` at 22:43; HIGH: a use-after-free in safe code at both legs, SILENT on landing 163 and 164). A STORE THROUGH A POINTER PARAMETER
@@ -4069,6 +4075,14 @@ defect declares a `DEF-` in §2f.
 > view's block ended (a12), another pointee (a13), the write before the view (a14), the lend twins (al3, al4, al7, al8). Tests:
 > `tests/analysis/rejection/call_result_deref_receiver_slice.npk` sites 1-3 and 22; the legal half controls 1-6 and the lend controls. 0 tree
 > sites moved outside the landing's own files (the sweep). A `Self->` method on a POINTER FIELD below the dereference (a15) is DEF-312's (167).
+> *Correction 2026-10-29 (landing 167's record; management_6 at 06:31:12, confirmed by `nitpick-compiler_51` at 06:31:41):* landing 166's
+> `src/` size is **+273/−25** (`git diff --numstat ba27787 cd3cb4d -- src/`: alias.npk +50/−3, escape.npk +223/−22), not the +271/−23 its
+> head paragraph, 1.6.1e.md record, OPEN_DECISIONS notes, NOTICES row 166, CLAUDE.md status and commit subject state. The +2/−2 are the two
+> comment lines of `type_holds_elem_pointer`'s header in alias.npk ("reaches the header, which / never moves" → "is read as the header, D-286's /
+> plain party -- FALSE for a recursive element (DEF-320, landing 168)"), rewritten by `apply166.py` AFTER the size was measured on the pre-apply
+> tree; the line count is unchanged, so the manifest and its row reading are untouched. The code-line counts stand: 162 code lines added, 17
+> removed (non-blank, non-comment-only diff lines; 111 comment-or-blank lines added, 8 removed). No hold, nothing re-run. (DEF-320's landing is
+> 171 in the queue of 2026-10-29 11:05:40.)
 
 > **DEF-316 — FIXED 2026-10-29 (landing 166, with DEF-315 and DEF-317, by `nitpick-compiler_51` (Fable); registered 2026-10-28 by
 > `nitpick-compiler_51` from management's diff review of landing 164, its F2; the number from
@@ -4160,6 +4174,15 @@ defect declares a `DEF-` in §2f.
 > `call_result_slice_carrier_chain.npk` (sixteen sites); the legal half controls 14-20 and 26, 28, 31, 32 (exits 24-30 and 33-35, 37). The
 > sweep: 49 sites appeared, all in the landing's own three files; no file of `src/`, the libraries, the applications or the fuzz
 > corpus moves.
+> *Correction 2026-10-29 (landing 167's record, from management's credits diff review of 166, its DR1 = DEF-328):* landing 166's record says a
+> call-result slice is "resolved through the carrier's chain"; that held on the NAMED road (`escape_slice_targets`, `escape_carrier_runs`) and
+> NOT on the dereference road -- `escape_slice_targets_through_pointer` read the pointee's chain one level and fed no `resolved`, so a slice
+> copied from a carrier and written through a dereference (f4a-f4d, `t167/faces/`) was silent on 166 as on 165. Closed by DEF-328 in landing 167.
+> *Test-gap note 2026-10-29 (DR5):* `call_result_deref_receiver_slice.npk`'s header named `g() ??! E` and `relay f()` among the kinds with a
+> hazard site on each road, but sites 25-33 spelt `?!`, `await`, `=>` and `=>!` only; the `??!` cells lived in `t166/cells4/` and `relay` had
+> none. Measured in `t167/faces/r*` (both kinds transparent on both roads, 166 refusing the hazards and clean on the controls); landing 167 adds
+> sites 34-37 (the `relay` KEYWORD and `??!` on the slice road and the pointer road, each `NITPICK-BORROW-015`) and the controls 43-46 to the two
+> files and corrects the header.
 
 > **DEF-318 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's diff review of landing 165, its F1; the number and the
 > grouping from `management_4` at 02:14:35; HIGH: a use-after-free in safe code at both legs, SILENT on landing 164 and 165 alike — pre-existing, not a
@@ -4230,7 +4253,7 @@ defect declares a `DEF-` in §2f.
 > the OPEN direction, not DEF-54's. 0 TREE SITES. Fix direction: read the holder's DECLARED type when the declaration carries no initialiser (~5-10 lines,
 > 1 function; the comment corrected). Landing 168. Please write none.
 
-> **DEF-324 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) measuring landing 166's condition cells; the number, the placement and the
+> **DEF-324 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 measuring landing 166's condition cells; the number, the placement and the
 > fix's shape from `management_6` at 04:28:44; HIGH: a use-after-free in safe code at both legs, SILENT on landing 165 and on 166 alike — pre-existing,
 > not a regression). A GETTER THAT PASSES A VIEW THROUGH AN EXPLICIT DEREFERENCE RECORDS NO REF, SO ITS CALLER'S WRITE IS SILENT AT EVERY DEPTH.**
 > `func:getsl1x = H2[](BS->:q) never fails { pass (<-q).sl; };` then, with `BS:b = BS{ sl: p.arr[0i64...2i64], … }`, a pointer local `p1 = @b` and
@@ -4251,6 +4274,19 @@ defect declares a `DEF-` in §2f.
 > what each summary and escape walker does with it (resolves / fails closed / bails open), as command plus output, with no fail-open row left.
 > Management runs a twin audit over every summary and escape walker beside 166's harness, for other fail-open bail-outs. Landing 167 beside DEF-312's
 > explicit-deref faces (F3a, F3b, a15); FIRST if 167 splits. Please write none.
+> *2026-10-29 (landing 167):* FIXED. `collect_view_refs`'s dereference arm reads the pointee's chain -- the parity with the auto-dereference,
+> where `hp.s` reads `hp`'s chain -- and, when the dereference's own type is a pointer, ONE hop up (the one-hop face D2a, `H2->:p2 = <-pp;
+> p2.o = …` under a view of `h.o`, 113/113 on 166, folded here by `management_6` 07:52:03: the parity alone left the operand's REF_ADDR one level
+> high). d1x, d3x, d4x (`t166/cells3/`), v1-v4 (`t166/var166/`) and d2a are `NITPICK-BORROW-015` naming `vw`'s view; v5 refused as before. The
+> same line is DEF-331's fix. THE FAIL-CLOSED CONDITION, as asked: the recorder's kinds were read against the mechanical table
+> (`meta/roadmap/1.6/tools/kindtable167.py` -> `kindtable167.md`, 49 expression kinds x 58 kind-naming walkers of escape.npk, alias.npk and
+> locks.npk; `collect_view_refs` is one of the six walkers with a shape-generic fallback and 0 gaps, the dereference arm the one that bailed
+> open), the 43 walkers with no fallback had their default answers read by hand, kind by kind (`wt/51a/.internal/probes/t167/READING_167.md`
+> §1-§4, the accessor census §5), and every default that admitted a hazard became a cell on 165's and 166's binaries and then a numbered defect
+> -- DEF-326 to DEF-332 (fixed here), DEF-333 to DEF-337 (open, 168/169) -- so no fail-open row of the table is left unnamed; the table and its
+> reading travel with 167's record. The sweep over the tree, the libraries, the applications and the fuzz corpus: every one in the landing's own four new rejection files but one — `deref_value_faces.npk`'s twenty-one, `param_copy_summary.npk`'s sixteen, `cast_place_readers.npk`'s thirteen, `pointer_retype_plain.npk`'s five — and nitpick-time's `tests/probe/probe10_view_edges.npk:151:36`, the parity site (its by-name twin is refused on 166 already; the library seat respells it at the re-pin that carries 167); no file of `src/`, `npkg/`, `lib/`, `tools/`, the applications or the fuzz corpus moves, and no other file of the libraries: nothing there passes a view through an explicit dereference out of a getter, writes through a slice copied from a carrier or through a cast or laundered pointer under a view, writes through a copy of a pointer parameter under the caller's view, or retypes a plain pointer to an unrelated plain pointee. Site 1 of
+> `tests/analysis/rejection/deref_value_faces.npk`; the legal half -- the copy written with no view live, and after the view's block -- in
+> `tests/backend/programs/deref_value_faces_ok.npk`.
 
 > **DEF-325 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) measuring landing 166's condition cells; the number from `management_6` at
 > 04:28:44, option (a); LOW: an over-refusal in the closed direction, parity-matched, 0 tree sites). THE OWN-HOLDER READERS RESOLVE ONLY A
@@ -4269,6 +4305,557 @@ defect declares a `DEF-` in §2f.
 > the own holder hop by hop as the carrier reader resolves the targets — the carrier a single chain ENDS at is the holder — beside 167's hop-by-hop
 > resolution if 167's size allows, otherwise after 168. Tests: `tests/analysis/rejection/call_result_slice_carrier_chain.npk` sites 14 (d3n) and
 > 16 (d2bn), the accepted over-refusals by cell id. Please write none.
+> *2026-10-29 (landing 167):* unchanged -- not in 167. The hop-by-hop own-holder resolution rides with DEF-312 widened (management_6's split of
+> 07:15:11: after the DEF-324 class, while <= ~30 code lines); with the spawn and pick groups (168) and DEF-333 to DEF-336 (169) placed before
+> it on 2026-10-29, that is landing 170. Its two sites refuse alike under 167 (`call_result_slice_carrier_chain.npk` unmoved in the sweep).
+
+> **DEF-326 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's DEF-324 twin audit of landing 166, its T1; the number
+> and the placement from `management_6` at 06:41: landing 167, a row of DEF-324's table). HIGH: A VIEW RETURNED THROUGH AN EXPLICIT DEREFERENCE
+> ESCAPES ITS FRAME.** `escape_expr`'s dereference arm (escape.npk:5122-5125) answers "borrowy" only when the dereference's own type is `TY_POINTER`,
+> where `verdict_borrowy` filters by `type_holds_pointer` and the member arm passes its operand's verdict; so `pass (<-hp).s;` with `hp = @h` and
+> `h.s` a view of a local is read as no borrow, and the caller reads the freed bytes (probe f1a, silent 113/113 at both legs on 165 and 166;
+> f1f `pass (<-bp).sl;` and f1g `pass move((<-bp).sl);` silent 52/106, a slice of the dead frame). The auto-dereference `pass hp.s;` and the name
+> `pass h.s;` are BORROW-001 (f1b, f1c, f1h). The store form into a parameter's pointee is DEF-331's f7b. 0 tree sites (`t167/census167.txt`, F1:
+> 28 textual hits, every one a scalar read or the fuzz corpus's whole-pointee move). Fix direction: the arm passes the operand's verdict, or asks
+> `type_holds_pointer`. Probes `wt/51a/.internal/probes/t167/faces/f1*`, the reading `MEASURED_167.md`.
+> *2026-10-29 (landing 167):* FIXED. `escape_expr`'s dereference arm answers `type_holds_pointer` of the dereference's type (one line), so
+> `pass (<-hp).s;` (f1a), `pass (<-bp).sl;` (f1f) and `pass move((<-bp).sl);` (f1g) are `NITPICK-BORROW-001` as the auto-dereference always
+> was, and f1d (a view stored through the dereference into a parameter) gains its auto-dereference twin's BORROW-002. Sites 2-4 of
+> `tests/analysis/rejection/deref_value_faces.npk`; the legal half -- a view and a slice of a PARAMETER's pointee returned through an explicit
+> dereference -- in `tests/backend/programs/deref_value_faces_ok.npk`.
+
+> **DEF-327 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's DEF-324 twin audit of landing 166, its T3; `management_6`
+> 06:41: landing 167, a row of DEF-324's table). HIGH: A LOCAL DECLARED IN A pick EXPRESSION'S ARM HAS NO PARTY.** `prescan_stmt` (alias.npk:329)
+> walks statements and never enters an expression, so a holder declared inside a pick EXPRESSION's arm gets no `x.pre` entry and `register_holder`
+> finds nothing when `acc_expr`'s pick arm walks it: a view of `d` declared in the arm and `d` reassigned in the arm is silent, and the arm's `give`
+> reads the freed bytes (f3a, 113/113 at both legs on 165 and 166); a `$$m` claim of `d` in the arm and `d` reassigned is silent where BORROW-013
+> is due (f3b, 0/0; the code its bare-block twin f3f carries). The same declarations in a pick STATEMENT's arm (f3c) or a bare block (f3d) are BORROW-015. The view declared in the arm with
+> the write AFTER the pick is clean (f3e) and must stay so. 0 tree sites (F3: no pick expression with a view, pointer or claim declaration in an
+> arm, 5,409 files). Fix direction: the prescan enters a pick expression's arms (and every other expression that nests statements) as the escape
+> pass does (`escape_stmt_window`). Probes `t167/faces/f3*`.
+> *2026-10-29 (landing 167):* NOT IN 167. Built and measured in 167's worktree (`prescan_expr_picks`, walked from every expression slot of
+> `prescan_stmt` -- the initialiser, the assigned value, the conditions, `stmt_operand` for Pass/Fail/Return/Exit, the generic
+> `stmt_carries_expr` tail -- entering a pick expression's arms as `prescan_stmt` enters a statement pick's: f3a, f3b, h7a (`discard(pick …)`),
+> h7b (`pass pick …`) refused naming the arm's view on build 3) and split out with the pick and spawn groups when 167 passed the size line
+> (`t167/build167/apply_src168.py` reproduces it on 167's tree byte for byte; the matrix under the split-out build left these cells exactly as
+> on 166). Landing 168 with DEF-337, DEF-339, DEF-340 and DEF-344 (management_6, 11:05:40; the census first; past ~160 code lines it comes to
+> management).
+
+> **DEF-328 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's credits diff review of landing 166, its DR1;
+> `management_6` 06:41: landing 167, a row of DEF-324's table). HIGH: UNDER A DEREFERENCE THE SLICE-TARGET READER NEVER FOLLOWS A CARRIER.**
+> `escape_slice_targets_through_pointer` (escape.npk:2030-2047) reads the pointee's chain ONE level (`push_binding_refs` of the pointee's root,
+> `escape_ref_is_run_of` MAY) -- no `escape_carrier_runs`, no strict-run test, no `resolved` -- so a slice copied from a carrier and written through
+> the dereference of a call-result or a named pointer meets the carrier's root, never the run the carrier holds: `H2[]:t = raw getsl(@b);
+> (<-(raw idsl(@t)))[0i64].o = …` (f4a), `t = bp.sl` (f4b), the named twin `(<-tp)[0i64].o` (f4c, pre-166), the carrier's slice in a struct behind
+> a call-result pointer (f4d) -- each silent 113/113 at both legs on 165 and 166 under a view of the array. The by-name copies `t[0i64].o` are
+> refused by 166 (f4e, f4f); the no-view twin is clean (f4g). Landing 166's record's "resolved through the carrier's chain" does not hold on the
+> dereference road (its dated correction stands in 167's record). 0 tree sites (F4: 92 lines in src/npkg/lib/tools, 19 writes all scalar or field
+> writes through a pointer to a `List`/array parameter or local, none through a slice copied from a carrier; `[]->` types absent from the compiler
+> tree's code). Fix direction: the through-pointer reader feeds the same `escape_carrier_runs` walk and the same `resolved` bool as the named road.
+> Probes `t167/faces/f4*`.
+> *2026-10-29 (landing 167):* FIXED. `escape_slice_targets_through_pointer` answers whether EVERY chain was read and hands each pointee root
+> to `escape_carrier_runs` (the named road's walk, fuel 4, the same `seen`) in place of its one-level loop; `escape_slice_targets` ANDs the
+> answer into `resolved`. f4a-f4d `NITPICK-BORROW-015` naming `vw`'s view; f4g, the no-view twin, refused against the carrier's own view -- the
+> slice-copy class, accepted on D-286's list as `H2[]:t = raw getsl(@b); t[0i64].o = …` (c02n) is refused by name since landing 165. Sites 8-11 of
+> `deref_value_faces.npk`; the legal half: the copy READ through a call-result pointer under a view. Landing 166's record's "resolved through the
+> carrier's chain" held on the named road only until this landing (the dated correction under DEF-317).
+
+> **DEF-329 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's credits diff review of landing 166, its DR2 -- the
+> exemption management_4's "(c)" asked the review to check; `management_6` 06:41: landing 167, a row of DEF-324's table). HIGH: THE OWN-HOLDER KEY
+> FROM A FIELD OF A STRUCT THAT HOLDS TWO VIEWS.** In `escape_slice_own_holder_rootless` (escape.npk:2270-2280) `raw idsl(@b.sl)` gives one pointee
+> ref rooted at `b` with place `b.sl`; `ht` is then the SLICE type, the one-view check (`escape_view_carriers(…) != 1`) is skipped, and `b` becomes
+> the own holder although it holds a second view; `check_view_parties_at` (alias.npk:1378) then skips every party `b` holds. The named road's key
+> (escape.npk:2387-2399, pre-166) is the same. With `BS2:b = BS2{ sl: p.arr[0i64...2i64], by: string_bytes(p.arr[0i64].o) }`:
+> `(<-(raw idsl(@b.sl)))[0i64].o = …` (f5a), `H2[]->:tp = @b.sl; (<-tp)[0i64].o = …` (f5b) and path (ii) `wsl(raw getsl_s(@b.sl))` (f5e) are
+> silent 113/113 at both legs on 165 and 166 -- `b.by` reads the freed bytes. `b.sl[0i64].o` by name is refused (f5c); the second view in a LOCAL
+> is refused by 166 (f5d); a second view of another string is clean (f5f). 0 tree sites (the shape needs a pointer to a slice field: `[]->` 0 in the
+> compiler tree's code, 3 in nitpick-libs read by hand in `census_f9.txt`, 0 in nitpick-apps). Fix direction: the own-holder's view count is asked
+> of the HOLDER's type (`b`'s), never of the addressed field's, on both roads. Probes `t167/faces/f5*`.
+> *2026-10-29 (landing 167):* FIXED. Both own-holder readers (`escape_slice_own_holder_rootless`'s pointee branch and its refs loop, the named
+> road's pointer branch) key the one-view test on `escape_target_root_type` -- the HOLDER's type (`BS2`: two views, no own holder, `by`'s view
+> judged) -- never the addressed field's; and `@b.sl`, a slice-typed strict run, is a VIEW whose storage is in `b`'s chain
+> (`escape_ref_ends_in_slice`), so path (ii)'s `wsl(raw getsl_s(@b.sl))` resolves to the array it spans. f5a, f5b, f5e `NITPICK-BORROW-015`
+> naming `b.by`'s view; f5f (the two-view holder with no OTHER view live) refused -- accepted on D-286's list: its by-name twin f5g,
+> `b.sl[0i64].o = …` with `b`'s second view of ANOTHER string, is refused on 166 already. Sites 12-14; the legal half: a ONE-view struct's slice
+> field addressed through a call result or handed to a getter and written with no other view live.
+
+> **DEF-330 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's credits diff review of landing 166, its DR3;
+> `management_6` 06:41: landing 167, a row of DEF-324's table). HIGH: A GETTER RETURNING A FIELD ADDRESS GIVES NO POINTEE.** `escape_pointer_targets`
+> (escape.npk:2068-2077) accepts `REF_ADDR` and `REF_PASS` refs as pointees; a getter `pass @q.sl;` gives a VIEW_LAUNDERED ref (`arg_refs_view`,
+> escape.npk:1141-1142), so a call-result pointer from it has zero targets with `resolved` true and nothing is checked: `(<-(raw idfld(@bs)))[0i64].o
+> = …` (f6a), the slice value `<-(raw idfld(@bs))` handed to a writer (f6b), `H2[]->:tp = raw idfld(@bs); (<-tp)[0i64].o = …` (f6c) -- each
+> silent 113/113 at both legs on 165 and 166 under a view of the array; the no-view twin is clean (f6d). Inherited from rule A (D-326): the
+> filter DEF-316's new road depends on. 0 tree sites (F6: `pass @x.f;` 3 hits, all rejection tests). Fix direction: a view-laundered ref with a
+> path is a pointee at that path, or the rootless reader fails closed on it. Probes `t167/faces/f6*`.
+> *2026-10-29 (landing 167):* FIXED, by a different mechanism than the draft above names: `--dump-refs` showed the getter `pass @q.sl;`
+> summarised as PASSING its parameter (`pass=1`), its result carrying `REF_ADDR root=bs place=bs path=""` -- the pointee type `H2[]` matched
+> neither `BS` nor the path's end, so `escape_pointer_targets` found zero targets; the VIEW_LAUNDERED rule the draft proposed was dead (no
+> laundered ref exists for a pointer result). Now a `REF_ADDR` whose place type HOLDS the pointee type inside (`escape_type_holds`: struct
+> fields, array and `List` elements, fuel 8) is a target WHOLE -- the closed direction. f6a, f6b, f6c `NITPICK-BORROW-015` naming `vw`'s view
+> (build 2 had f6a refuse against `bs`'s own view, the wrong reason, read off the sentence and corrected); f6d, f6e clean. Sites 15-17; the
+> legal half: the result written through with no view live, kept in a named pointer, or READ under a view.
+> 2026-10-29 (landing 167, build 15): `escape_type_holds`'s open answers -- false for an untyped ref and for a non-struct holder -- are DEF-353's (landing 168); the enum or `Optional` payload shape is unreachable in safe code (management's review of build 14, finding 4).
+
+> **DEF-331 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's DEF-324 twin audit of landing 166, its T4;
+> `management_6` 06:41: landing 167, rows of DEF-324's table, one per consumer). HIGH: LINE 3007'S OTHER CONSUMERS -- A VIEW THROUGH AN EXPLICIT
+> DEREFERENCE ENTERS NO STORE MATRIX, NO RULE B, NO MOVE.** `collect_view_refs` answers NIL at a dereference reached as a value (escape.npk:3007,
+> DEF-324's line), and three more readers consume it: `record_flow_of_store` (1568) -- `dst.sl = (<-pl).sl;` in a callee records no flow, so a
+> caller handing a block-local carrier reads the freed bytes after the block (f7b, silent 113/113 at both legs on 165 and 166; `dst.sl = pl.sl;` is
+> BORROW-002, f7b_ctl); `arg_carries_view` (5626) -- `store_into(dst, (<-pl).sl)` beside a destination rooted at a parameter (f7c, 113/113;
+> `pl.sl` BORROW-002, f7c_ctl); the `move` arm (3024, through `arg_place_chain` at 1116) -- `dst.sl = move((<-pl).sl);` (f7d, 113/113). The
+> reviewer's fourth consumer, `escape_slice_targets` with base `(<-pb).sl`, is REFUSED BORROW-015 on both compilers (f7a), as its auto-dereference
+> twin is: a control. 0 tree sites (F7: `(<-p).f` src 6 lines, `.count` reads and scalar element writes through `List` pointers; no view stored).
+> Fix: one with DEF-324's -- the dereference arm records the pointee's refs for every consumer, and each consumer is a row of 167's table. Probes
+> `t167/faces/f7*`.
+> *2026-10-29 (landing 167):* FIXED with DEF-324's line. `collect_view_refs`'s dereference arm reads the pointee's chain and `arg_place_chain`
+> steps a dereference, so `record_flow_of_store` (f7b), `arg_refs_view` (f7c) and the `move` arm (f7d) read `(<-pl).sl` as the place `pl.sl`:
+> `NITPICK-BORROW-002` at the call, as `dst.sl = pl.sl;` is. Sites 5-7 of `deref_value_faces.npk`; the legal half: the carrier in the SAME
+> scope as the destination.
+
+> **DEF-332 — FIXED 2026-10-29 (landing 167, both halves, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's credits diff review of landing 166, its DR4;
+> `management_6` 06:41: landing 167 with the question below to the author). HIGH: A `=>!` BETWEEN TWO POINTER TYPES DROPS THE OPERAND'S TARGETS.**
+> type_cast.npk:415-417 answers CAST_LOSSY for a pointer cast to ANY pointer type, so `(raw idbs(@bs)) =>! BS9->` is legal in safe code (f9c, no
+> view, compiles and runs 0/0); `escape_pointer_targets` then sets the pointee to the new type and drops the operand's `REF_ADDR` ref (`pt == pte`
+> fails): `(<-((raw idbs(@bs)) =>! BS9->)).sl[0i64].o = …` under a view of the array is silent 113/113 at both legs on 165 and 166 (f9a); the cast
+> to the SAME pointer type is refused by 166 (f9b, its t8). The analyzer's fix is the closed direction either way: a pointer-to-pointer cast carries
+> its operand's targets whatever the pointee types. THE QUESTION FOR THE AUTHOR (raised 2026-10-29): may safe code `=>!` between UNRELATED pointee
+> types at all -- a reinterpretation of the pointee's layout, a type-safety matter beyond aliasing (TYPE_REFERENCE §27 speaks of `any->`; D-095 of
+> `=>!` as the author's assertion)? 0 tree sites (`census_f9.py`: 405 `=>! T->` casts, a plain `U->` bare-name operand to `T->` with T != U in 2 --
+> a rejection test, plain -> wild, and one fuzz program -- field-chain operands unresolved by the scan and each src one commented as D-361's wild ->
+> plain crossing). Probes `t167/faces/f9*`.
+> *2026-10-29 (landing 167):* FIXED, both halves. THE ANALYZER: `escape_pointer_targets` peels a pointer-to-pointer cast (`=>`, `=>!`) and
+> types the pointee by its OPERAND, so the operand's targets carry across the cast; an `any` pointee makes every ref of the operand a target
+> (`any_ptee` -- the cells f9h/f9i caught build 4 typing by the operand ALONE, which made `(ap =>! H2->)` over an `any->` match no ref: a
+> regression against 166, fixed before build 5); `cast_changes_pointee` drops the steps below a cross-type cast in the root==0 block (f9g, the
+> named-pointer face, folded here 07:52:03; f9t/f9t2, the two-step retype through `any->`, folded 09:47:07 -- sites 18-19 of
+> `deref_value_faces.npk`). THE LANGUAGE: D-365, the author's ruling of 2026-10-29 09:06:08 (relayed by `management_6` 09:13:34) -- a `=>!` or
+> `=>` between two PLAIN pointer types with unrelated pointees is `NITPICK-TYPE-032` in safe code; the same pointee, `any->` on either side and
+> the wild crossings (D-019, D-361) stay (type_expr.npk, `type_cast_expr` before `check_cast`'s class, ten code lines): f9a, f9c and f9g (the
+> review's shapes), f9k (a named plain pointer), f9l (a call result), f9l2 (the checked spelling `=>`, TYPE-009's "write `=>!`" before -- a
+> misdirection), f9l3 (inside a callee), f9l4 (pointer to pointer, unrelated) TYPE-032; f9m-f9s clean (`t167/cells_c/`). Tests:
+> `tests/types/rejection/pointer_retype_plain.npk` (five sites), `tests/backend/programs/pointer_retype_plain_ok.npk` (seven controls, 11-17).
+> Census `census_f9.py`: 405 `=>! T->` casts over the tree, the libraries, the applications and the fuzz corpus; a plain `U->` operand cast to
+> `T->` with T != U in two -- `wild_into_plain.npk:68` (plain to WILD, which stays) and `bi0418b.npk:9` (TYPE-061 first) -- 0 sites move; every
+> `src/` cast a commented D-361 crossing.
+
+> **DEF-333 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from the kind table's cells for landing 167, its F1; the number and the
+> placement from `management_6` at 07:52:03). HIGH: A TEMPORARY ARGUMENT UNDER A TRANSPARENT KIND OR A TERNARY GETS NO TEMPORARY REFUSAL.**
+> `raw byval_view(raw mk_s())` -- a user callee whose result views its by-value `string` argument, handed a TEMPORARY -- compiles and the view
+> reads the freed bytes (h1a, 113/113 at both legs on 165, 166 and 167); the same through `?!` (h1b), `??!` (h1c), `relay` (h1d) and a ternary of
+> temporaries (h1g); the control, a BUILTIN view-maker over a temporary, is `NITPICK-BORROW-012` (h1e). THE CAUSE (escape.npk): `arg_place_chain`
+> and `arg_refs_view` read a call's argument syntactically and see no temporary under a transparent kind; the callee's summary says its result
+> views the parameter, and nothing asks it for a temporary. Fix direction (~12 code lines): `arg_place_chain` steps the transparent kinds and
+> `arg_refs_view` refuses the temporary under them, BORROW-012 as the builtin case. Census (F1a/F1b, `t167/census167b.py` over 8,371 files): 0
+> tree sites. Probes `wt/51a/.internal/probes/t167/cells_b/h1*`; the reading `READING_167.md` §1. Landing 169 with DEF-334, DEF-335 and DEF-336
+> (placed 07:52:03 as the landing after 167; the spawn and pick groups took 168 at 11:05:40). Please write none.
+
+> **DEF-334 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from the kind table's cells, a NEW twin the reading had not named
+> (F1-RET); the number from `management_6` at 07:52:03). HIGH: A BY-VALUE ARGUMENT'S VIEW RETURNED OR CARRIED OUT OF THE FRAME OR BLOCK THAT
+> OWNS THE ARGUMENT ESCAPES.** `func:esc_view = fixed uint8[]() { string:tmp = raw mk_s(); pass raw byval_view(tmp); }` -- a user callee's view of
+> a by-value `string` argument RETURNED out of the frame that owns the argument -- compiles and the caller reads the freed bytes (h1f, 113/113 at
+> both legs on 165, 166 and 167); held then `pass v` (h1f3), through `?!` (h1f4), two levels `pass raw v_of(tmp)` (h1r); the SCOPE twin, the view
+> carried out of a block in a struct literal `hold = VB{ v: raw byval_view(tmp) }` (h1q); and the STRUCT face (libs_29's question of 08:01), a
+> struct-returning callee whose field views its by-value argument, `pass raw scan_of_param(tmp)` (h1s) and held then returned (h1s2) -- each
+> silent 113/113. Controls: `pass string_bytes(tmp)` BORROW-001 (h1f2), the VIEW-parameter twin `pass raw vv(string_bytes(tmp))` BORROW-001
+> (h1m), `VB{ v: string_bytes(tmp) }` BORROW-002 (h1q_ctl), the direct struct literal of a view of a local BORROW-001 (h1s4); a view of a by-value
+> PARAMETER returned (h1f5) clean and legal. THE HOLDER PATH SEES THE REF: `v = raw byval_view(tmp); tmp = …; read v` is BORROW-015 (h1k, h1n, a
+> struct field h1p, h1s3). THE CAUSE (escape.npk): the frame-exit check (~3600-3620) admits a value when `borrows_only_param_rooted` finds no
+> borrow, and that walk and `collect_local_roots`' Call arms (4808, 4847) read a call's arguments SYNTACTICALLY (addresses, borrow operators,
+> view-makers) -- a plain identifier handed to a by-value parameter is "no borrow", though the callee's summary says its result views that
+> parameter; the chain recorder consults the summary, so the holder is right and the frame exit is not. No POINTER face exists (`pass PS{ p: @s }`
+> and `pass @s` of a by-value `string` parameter are `NITPICK-TYPE-085` at the callee, h1s5, h1s6) and no `string`-FIELD face (a `string` owns,
+> TYPE-046). Fix direction (~20-25 code lines): the frame-exit and holder-scope readers consult the result-views-parameter summary for a by-value
+> argument, as the recorder does. Census: 0 slice-returning functions with a by-value `string` parameter in src/npkg/lib/tools; the libraries'
+> own census (nitpick-libs_29, 08:01:00, widened 08:06:19 to string- and struct-returning callees: 14 definitions under 7 names) found NO hit --
+> the one legal caller is nitpick-time's probe10 `view_of_param`, read in place; this seat's "232 signatures" of 07:50 was a file count over
+> untracked scratch and was corrected to management at 08:03:38. Probes `t167/cells_b/h1f*`, `h1q*`, `h1r`, `h1s*`; `READING_167.md` §1. Landing
+> 169. Please write none.
+
+> **DEF-335 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from the kind table's cells, its D3 = management's F2; a NEW number,
+> not DEF-298 widened, from `management_6` at 07:52:03). HIGH: A SLICE-STORING CALLEE'S DESTINATION SPELLED OTHER THAN BY A BARE NAME OR AN
+> ADDRESS IS RECORDED NOWHERE.** `dest_place`/`record_dest_refs` (escape.npk:1230-1232) resolve a destination argument that is an identifier or
+> an `@place`; a destination spelled `kps.p` (a pointer FIELD, d3a), `<-kpp` (the dereference of a pointer to a pointer, d3b), `raw idk(@keep)`
+> (a call result, d3c), `kp =>! BS->` (a cast, d3d), `move(kp)` (d3e), `is (c) : kp : kq` (a ternary, d3f), `idkr(@keep) ?! E1` (an unwrap, d3i) or
+> `relay idkr(@keep)` (d3j) -- EIGHT faces -- records no store, so the callee's store of a block-local carrier's slice into the destination is
+> unjudged and the caller reads the freed bytes (113/113 at both legs on 165, 166 and 167); the controls `kp` (BORROW-009) and `@keep`
+> (BORROW-002) are refused. This is the CALLER-side destination SHAPE, distinct from M3's store-matrix destination PATH (DEF-298/DEF-299).
+> Fix direction (~20 code lines): resolve a pointer-typed non-identifier destination by `arg_place_chain` or rule A (`escape_pointer_targets`,
+> D-326) and record the store at each target; fail closed on a shape neither resolves. Probes `t167/cells_b/d3*`; `READING_167.md` §1. Landing
+> 169. Please write none.
+> 2026-10-29 (landing 167, build 16): d3d, the cast destination `store_into(kp =>! BS->, arr[0i64...2i64])`, is REFUSED since
+> build 16 -- `NITPICK-BORROW-002` at the call, by DEF-346's third road: `dest_place` reads the pointer under its cast layers, so
+> the destination is `kp` and the store of the block-local carrier's slice is resolved to `keep`, the sentence its `@keep` twin
+> d3h gives (the bare-pointer twin d3g is `-009`, the named-pointer destination rule; both the closed direction). SEVEN faces
+> remain -- d3a, d3b, d3c, d3e, d3f, d3i, d3j -- each silent 113/113 under build 16; landing 169 as placed.
+
+> **DEF-336 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from the kind table's cells, its F3; the number from `management_6` at
+> 07:52:03). HIGH: A BUILTIN VIEW-MAKER OVER `#ptr_add` RECORDS NO REF.** `string:sub = string_from_bytes(#ptr_add<uint8>(d.ptr =>! wild uint8->,
+> 1i64), 3i64); d = string_concat("xyzzy", "!");` compiles and `sub` reads the freed bytes (h3a, 113/113 at both legs on 165, 166 and 167); the
+> builtin WITHOUT the cast, `#ptr_add<uint8>(d.ptr, 1i64)` (h3c), silent too -- so D-019's wild surrender cannot cover the class; the control
+> `string_from_bytes(d.ptr, 3i64)` is BORROW-015 (h3b). The CAST-ONLY face `string_from_bytes(d.ptr =>! wild uint8->, 3i64)` (h3d, silent on 166)
+> is REFUSED since landing 167 by DEF-343's cast-stepping place readers (BORROW-015 at `d = …`, build 12). THE CAUSE (escape.npk):
+> `push_view_ref_at` drops the ref when `root_symbol` answers 0, and `root_symbol` (via `place_root`) stops at a BUILTIN where `view_root` steps
+> it (escape.npk:3978-4000 says the idiom "views `s`, not a temporary" -- the verdict side knows, the ref side forgets). Fix direction (~8 code
+> lines): `root_symbol` steps `#ptr_add` as `view_root` does. THE TREE SITES, read by hand BEFORE any fix (management's condition, 07:52:03;
+> read 07:54, reported 07:54:21): ir_writer.npk:203 and :216, smt_manifest.npk:81 (h3a's shape), lib/nfs.npk:256 (h3c's, `#ptr_add<int8>(d.names
+> …)`), lib/nbridge.npk:632 (h3d's), prelude.npk:1553 (`#wild_slice<uint8>(cbuf =>! wild uint8-> …)`) -- NONE a live hazard (no root written
+> while the view is live); whether the fix refuses any of them is measured by the sweep when it lands. Probes `t167/cells_b/h3*`;
+> `READING_167.md` §1. Landing 169 with DEF-333 to DEF-335 (the condition met). Please write none.
+
+> **DEF-337 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from the kind table's cells, its F4; the number from `management_6` at
+> 07:52:03, naming BOTH causes). HIGH: A `give` OF A VIEW INSIDE A LOOP, OR INSIDE AN `if`'s THEN BRANCH, IN A pick EXPRESSION'S ARM IS NEVER
+> COLLECTED.** (i) `collect_gives_refs` (escape.npk:3210) and `collect_gives_roots` (4915) never enter a `for` (g1), `while` (g2), `when`, `loop`
+> or `till` body; (ii) both call `stmt_body(x.ast, s)` on a `StmtIfStmt` -- the WHILE accessor (header slot 0, parse_stmt.npk:125) -- where the
+> then-branch is `stmt_then(s)` (slot b, parse_stmt.npk:61; alias.npk's `prescan_stmt` reads it right), so a `give` in a THEN branch is never
+> collected: g2b (`give d` under `if`, no else) and g2d (then `d`, else `e`) silent 113/113 at both legs on 165, 166 and 167; g2c (the ELSE
+> branch) refused; g3, g3b (two blocks down), g3c refused -- the accessor, not fuel. The accessor census (`meta/roadmap/1.6/tools/
+> accessor_census167.py`, `READING_167.md` §5: 373 accessor calls ok) reports exactly these two as its MISMATCH rows. Fix (built and measured in
+> 167's worktree: `stmt_then` in both collectors and the five loop bodies entered, +10 code lines; g1, g2, g2b, g2d refused on build 3; split out
+> with the pick group, `t167/build167/apply_src168.py`). Census: 0 loop-nested `give`s of a view (a brace scan); the then-branch hazard is not
+> censused syntactically -- the fixed checker's sweep is the guard. Probes `t167/cells_b/g1*`, `g2*`, `g3*`. Landing 168 with DEF-327, DEF-339,
+> DEF-340 and DEF-344. Please write none.
+
+> **DEF-338 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from the kind table's cells, its F5; the
+> number from `management_6` at 07:52:03). A VIEW-MAKER ARGUMENT WRAPPED IN A TERNARY OR A CAST RAISED NO CALL PARTY.** `raw pair(is (c) :
+> string_from_bytes(d.ptr, 5i64) : string_from_bytes(d.ptr, 3i64), @d)` -- a ternary of views of `d` handed to a call beside a write-capable
+> address of `d` (h5a) -- and a view through a same-type cast as the argument, `string_from_bytes(d.ptr, 5i64) =>! string` (h5c), compiled and
+> the callee read the freed bytes (113/113 at both legs on 165 and 166); the bare view-maker (view_freeze site 7's shape) is BORROW-015 (h5b).
+> THE CAUSE (alias.npk): `push_call_view_party_in` raised the call's view party for a bare view-maker alone. NOW it reads a ternary's arms and
+> a cast's operand (and the unwrap kinds the kind table lists for it). `NITPICK-BORROW-015` at the call. Sites 20-21 of
+> `tests/analysis/rejection/deref_value_faces.npk`; the legal half (a ternary of views of ANOTHER string, a cast of one, beside the write) in
+> `tests/backend/programs/deref_value_faces_ok.npk`. Census (F5a/F5b): 0 tree sites. Probes `t167/cells_b/h5*`.
+
+> **DEF-339 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from the accessor census's `callee_is_async` contract row; the number
+> and the placement from `management_6` at 08:13:11, landing 167 beside DEF-337 -- moved to 168 with the spawn group by the split). HIGH: AN
+> ASYNC METHOD SPAWNED WITH `drop recv.m(args)` IS NO SPAWN TO THE ESCAPE PASS NOR TO THE ALIASING PASS.** With `async func:fill = NIL(W->:self,
+> shared_arena<int64>->:a)` and `s` a `shared_arena<int64>`: `drop w.fill(@s); s.destroy();` compiles and the task allocates in the destroyed
+> arena -- `MachineFault`, exit 107 at both legs (m1; the free-function spelling `drop filler(@s); s.destroy();` is BORROW-016, m0); `drop w.fill(@s);
+> s = shared_arena_make(4i64);` drops the old arena under the lend (m2, 0/0 this run); the receiver's OWNER reassigned or moved under the task,
+> `drop w.tick(); w = W{ … };` (m5) and `W:w2 = move(w);` (m6), silent 0/0. THE CAUSES (read, confirmed by the reading): the three spawn readers
+> test `sp_n.kind == ExprKind.ExprCallExpr` FIRST (escape.npk:3038, :5137; alias.npk:2408), so an `ExprMethodCallExpr` never reaches
+> `callee_is_async`, which itself answers an IDENTIFIER callee only (escape.npk:6312-6323; `call_callee_fn` resolves a method callee through the
+> call graph and is unused there); `escape_spawn_args` walks the ARGUMENT list and has no receiver to read. THE RULE (read 08:3x-09:0x): a
+> spawned async method's POINTER receiver is a plain struct's -- every sanctioned kind's method set is FIXED (channel, mutex, rwlock, condvar,
+> barrier, atomic, shared-arena: `NITPICK-TYPE-007` at `drop s.fillx()` and `drop m.fillx()`, m20-m23), so no sanctioned kind takes a user
+> method -- and is `NITPICK-BORROW-004` as the free-function spelling `drop fillw(@w, @s)` is (D-180's five kinds; m4); a by-value receiver
+> crosses by DEF-340's rule; the ARGUMENTS are lent as a free function's are (m24, m26 BORROW-016 on the split-out build; m25 clean). Fix (built
+> and measured, ~15 code lines, `apply_src168.py`): `callee_is_async(x, call)` by `call_callee_fn` first, the three sites admitting the method
+> kind, the receiver handed to the spawn readers as the implicit `@recv`. CENSUS (08:17, accepted 08:17:18): 83 `drop <recv>.<m>(` sites over
+> the tree, the libraries, the applications and the fuzz corpus, 4 of them async; ONE newly refused = `tests/types/rejection/async_method_bare.npk:46`,
+> the file's own DEF-149 control (`tick = NIL(Job->:self)`, a plain-struct pointer receiver: BORROW-004 by this rule) -- the landing respells
+> that control to a by-value-receiver method and records it as management words it. The author was told as FYI. Probes `t167/cells_b/m0*`-`m6*`,
+> `m20*`-`m26*`; `READING_167.md` §6. Landing 168. Please write none.
+
+> **DEF-340 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) measuring DEF-339's receiver side; the number, the direction and the
+> placement from `management_6` at 08:25:55, landing 167 beside DEF-339 -- moved to 168 with the spawn group by the split). HIGH: A BY-VALUE
+> OWNER HANDED TO A SPAWN IS COPIED AS WORDS INTO THE CHILD FRAME, AND THE OWNER'S WRITE BEFORE THE JOIN FREES THE TASK'S BYTES.** `drop peekstr(s);
+> s = string_concat("zz", "z");` with `async func:peekstr = NIL(string:x)` reading `string_bytes(x)[0i64]` after a 10 ms sleep: the task reads
+> 'z' from the freed, re-allocated block -- exit 114 (E1) at both legs on 165, 166 and 167 (m13); a struct `SS{ string:s }` by value with `w.s`
+> replaced under the task (m10) and the whole struct reassigned (m11), 114/114; a `List<int64>` by value, the owner pushing 64 elements under the
+> task so the buffer reallocates (m15), 114/114 -- the task reads the old buffer. Controls: `drop takestr(move(s))` with a `move string:x` parameter
+> clean (m14); no write (m12, m16) 0/0; a plain-data struct (m7, m9) 0/0 -- a copy of plain data is harmless. THE CAUSE: `escape_spawn_args`
+> (escape.npk:6325) tests a POINTER argument against D-180's five crossing kinds and runs `escape_expr` on anything else -- a by-value owner read is
+> no borrow, so nothing; `lend_spawn_args` reads `@place` and pointer values only; the emitter's child-frame builder copies the by-value
+> argument's WORDS (the header) -- TYPE-046's forbidden copy of an owner, made by the spawn with the owner's binding still live. A by-value
+> `Channel` is the designed crossing (D-181) and stays. DIRECTION (A), management_6 08:25:55: a by-value argument whose type is not `Copy` and not a
+> `Channel` crosses a spawn only by `move` -- the PARAMETER's mode decides -- refused at the spawn with a message naming both remedies
+> (`move(...)` into a `move` parameter; `.clone()`); (B), the lend, is the author's FYI. By (A)'s design the no-write twins m3, m12, m16, m17 are
+> refused too (a by-value owner crosses by copy whether or not the owner writes; the legal twins m14, m19, m7). Fix built and measured
+> (`escape_spawn_recv`, `spawn_param_is_move`, `escape_spawn_byval`; `apply_src168.py`). CENSUS: 0 spawn sites anywhere -- every by-value owner
+> parameter of an async function in the tree, the libraries, the applications and the fuzz corpus is awaited, and every spawned by-value argument
+> is a plain-data struct or a `Channel`. Probes `t167/cells_b/m7*`-`m19*`; `READING_167.md` §7. Landing 168. Please write none.
+
+> **DEF-341 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 measuring DEF-332's siblings, the probe f9j2;
+> the number from `management_6` at 09:47:07, pre-existing, HIGH). A CALLEE'S WRITE THROUGH A CAST OF ITS POINTER PARAMETER ENTERED NO SUMMARY,
+> AND A REF CARRIED AS AN `any->` VALUE WAS NO TARGET OF A TYPED POINTER.** Face (a): `func:wrany = NIL(any->:q) { (<-(q =>! H2->)).o = …; }`
+> called under a view of the pointee compiled and read the freed bytes (f9j2, 113/113 at both legs on 165 and 166; the same through a same-type
+> `=>!` f9j4, the checked `=>` f9j8, the whole pointee assigned f9j10; without the cast, f9j3, refused) -- `esc_place_root` stopped at the cast
+> (`place_root`'s "everything else is the root"), so the write was rooted nowhere and the summary carried nothing; one line steps
+> `ExprCastExpr`/`ExprUncheckedCastExpr` (build 6). The `any` face: a ref carried as an `any->` VALUE matched a typed pointer by type EQUALITY in
+> three readers -- `escape_pointer_targets` (REF_PASS), `record_refs_through_indirection`, alias.npk's `ptr_ref_is_target` -- so an `any->`
+> parameter cast to `H2->` into a local and written by member (f9j6), a plain parameter laundered through an `any->` local and written through the
+> cast back (f9j6c), the cast copy forwarded to a writer (f9j6e), and two cast copies in one function, a view through one and the write through the
+> other (f9j6b3), were silent 113/113 on 166 (f9j6d, two laundering locals, refused by DEF-342 + transitivity); ONE predicate,
+> `escape_any_pointer_link(x, ref_type, pte)` (the pointee is `any`, or the ref's type is a pointer to `any`), answers all three (build 8, +7 code
+> lines). `NITPICK-BORROW-015` at the call. Sites 1-4 and 11, 14-16 of `tests/analysis/rejection/param_copy_summary.npk`; the legal half (no
+> view, the view's block ended, another pointee) in `tests/backend/programs/param_copy_summary_ok.npk`. Census `census_param_cast.py`: 13 casts of
+> a pointer parameter in 8,352 files -- 12 wild operands and `bi0418b` -- 0 plain sites. Probes `t167/cells_c/f9j*`, `cells_e/`.
+> 2026-10-29 (landing 167, build 15): the summary's PATH for the cast write kept the steps below a pointee-changing cast -- `f<x>` under the `any->` parameter -- so a caller read it as disjoint from a view of `h.o`: DEF-346, fixed in build 15 (`path_rel_compute` truncates at such a cast).
+> 2026-10-29 (landing 167, build 16): the summary road's other writers (`record_mut_of_call`, `record_mut_of_place`,
+> `ref_full_path`, `dest_place`) truncate at a pointee-changing cast since build 16, and a plain address under such a cast handed
+> to a callee is judged WHOLE at the caller, consulting no summary (DEF-346's row); the named faces still open are DEF-354 and
+> DEF-355 (landing 168).
+
+> **DEF-342 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 measuring DEF-341's siblings; the number from
+> `management_6` at 09:57:24, pre-existing, HIGH). A CALLEE'S WRITE THROUGH A LOCAL COPY OF ITS POINTER PARAMETER WAS RECORDED ON NO CHAIN.** No
+> cast needed: `H2->:q2 = q; q2.o = …` (f9j7), the copy handed to a writer `wr(q2)` (f9j11), written through an explicit dereference (f9j12), the
+> whole pointee assigned (f9j13), a field moved out (f9j15), the copy made through a same-type `=>!` (f9j5) or `=>` (f9j9) -- each compiled and
+> read the freed bytes under the caller's view (113/113 at both legs on 165 and 166); the copy only READ (f9j14) clean; the parameter itself
+> forwarded (f9j16) refused. THE CAUSE (escape.npk): `record_mut_of_place` roots the write at the LOCAL (`k < 0`: the slice road alone), and the
+> store road's walk `record_refs_through_indirection` ran only with refs -- `record_flow_of_store` returned on `refs.count == 0`, the walk too.
+> NOW `record_mut_through_indirection(x, dest, call)` records the write at what the local's chain points at, called from `record_mut_of_call`
+> (`call` true) and the `move` arm; the early returns are gone and `old_matrix` requires refs. THE WHOLE EXTENT is recorded (management_6
+> 09:57:24): a DISJOINT field written through the copy while the caller views another field is refused -- the accepted over-refusal, site 13,
+> on D-286's list, 0 tree sites. `NITPICK-BORROW-015` at the call. Sites 5-13 of `param_copy_summary.npk`; the legal half in
+> `param_copy_summary_ok.npk`. Census `census_param_copy.py`: 2 candidates, 0 hazards. Probes `t167/cells_d/`.
+> 2026-10-29 (landing 167, build 15): the residual management's review of build 14 found -- a copy of a parameter's pointer PART, `<-pp` or `hh.p` -- is DEF-347 (landing 168).
+
+> **DEF-343 — FIXED 2026-10-29 (landing 167, by `nitpick-compiler_51` (Fable); registered 2026-10-29 measuring DEF-341's same-function faces; the
+> number from `management_6` at 10:32:28, pre-existing, HIGH; widened and folded as ONE mechanism at 11:05:40). THE ALIAS PASS'S PLACE READERS
+> STOPPED AT A CAST.** `path_steps`, `is_place_chain`, `place_root_symbol`, `root_ident_is_pointer`, `pointer_targets_of` and the readers of an
+> admitted value's shape (`party_kind_of`, `prescan_party`, `admit_value`, `admit_written`, `acc_call`'s element-address arm) each stopped at a
+> cast node, so a place spelled through one was rootless, stepless or no address to one reader or another. THREE FACES, one cause: (1) the
+> same-function faces -- a view through the cast dereference of an `any->` PARAMETER, `string_bytes((<-(q =>! H2->)).o)`, and the pointee written
+> through a cast copy of the parameter (f9j6b) or through the cast dereference itself (f9j6b2) or an auto-dereference copy (f9j6b7): the party's
+> steps were unreadable (`path_steps` fell off at the cast) and BOTH judges SKIPPED it -- `if (!party_steps(…)) { continue; }`, fail-OPEN
+> (113/113 on 166; the cast-free twins f9j6b5, f9j6b6 refused since landing 160; the escape side recorded the view correctly from build 8 on,
+> `--dump-refs` showing the SAME refs for the silent cell and its refused twin -- the gap was the judges'); (2) the reverse reader -- a view through
+> the cast dereference of a LOCAL pointer, an `any->` laundering (b8) or a same-type cast (b9), and the pointee written by its own name, through
+> another named pointer (b11), or handed by name to a writer (b14): `place_root_symbol` named no root at the cast, so `pointer_targets_of` resolved
+> the view to nothing (113/113 on 166; b10, the no-cast twin, refused); (3) the claim face -- a plain address CAST as it is taken, `(@h) =>! any->`
+> (g2), `(@h) =>! H2->` (g3), is D-286's plain party as `@h` is, but `party_kind_of` read it as an ordinary value, so an exclusive (g2, g3) or a
+> shared (g4) claim of the pointee was admitted beside it, to one callee with the cast pointer (g5), and the callee viewing through the claim's
+> holder while writing through the cast pointer read the freed bytes (g6, 113/113 on 166; g1, g4k, g5k, g6k the refused no-cast twins). NOW every
+> reader named steps a cast as it steps a dereference (`peel_ptr_casts`; `pointer_targets_of` peels its pointer first), the steps below a
+> POINTEE-CHANGING cast are dropped (`cast_changes_pointee`: an `any->` reinterpretation stands for the pointee WHOLE), and the three judges FAIL
+> CLOSED -- a party whose steps cannot be read stands for its root WHOLE (`drop list_truncate(@pp, 0i64)` in place of `continue`, the same-root
+> loop, `check_view_parties_at`, `check_pointer_view_parties`). Built in five measured steps (builds 9-13: `root_ident_is_pointer`;
+> `path_steps`' cast arm; `place_root_symbol` + `peel_ptr_casts`; `is_place_chain` -- build 11 ALONE regressed f9h, f9t and f9j6b2 to 113 because
+> `rootless_deref_base` answered none for a root named through a cast while `is_place_chain` still said "no chain" and `acc_place`'s non-chain
+> branch decomposed the write, caught by the matrix before build 12; the claim readers), each against the whole matrix; build 9's line is KEPT
+> because b12 distinguishes it (a scratch build without it refused b12 at the ASSIGNMENT, the wrong site). `NITPICK-BORROW-015` at the write or
+> the call, `-013` at the claim. ACCEPTED OVER-REFUSALS (management_6 11:05:40, D-286's list, 0 tree sites): b11n -- a DISJOINT field written
+> through another pointer under a view through an `any->` cast dereference (the dropped steps; b11k, the same-type cast with its steps kept, is
+> clean); b12 -- a pointer RE-POINTED under a view through its cast dereference, refused at the new address by the flow-insensitive re-pointed
+> class exactly as its no-cast twin b13 (c306f/k302a). THE KIND TABLE under build 13 (`kindtable167.md`, in 167's record): the cast kinds are an
+> arm or the peel in `path_steps`, `is_place_chain`, `acc_call`, `party_kind_of`, `place_root_symbol`, `push_call_view_party_in`,
+> `root_ident_is_pointer`, `admit_value`, `admit_written`, `cast_changes_pointee`, `peel_ptr_casts`, `pointer_targets_of`, `prescan_party`; no
+> arm, each closed by another road and read by hand, in `acc_indices` (the operand via `acc_expr`), `acc_place` (dispatches on `is_place_chain`),
+> `deref_holder_of` (DEF-123's named road), `elem_party_level` and `place_is_list_element` (the `List` index is found above the cast),
+> `ptr_inner_base` and `ptr_last_base` (the cast node is the pointer base, peeled downstream), `rootless_deref_base` (a cast below the
+> dereference is the operand), `lend_spawn_args` (a cast argument reaches `lend_through_pointer` -> `pointer_targets_of`). Tests:
+> `tests/analysis/rejection/cast_place_readers.npk` (thirteen sites: 1-2 the same-function faces, 3-6 the reverse reader, 7-8 the accepted
+> over-refusals, 9-13 the claim face), `tests/backend/programs/cast_place_readers_ok.npk` (five controls, 11-15: b8n, b9n, b11k, g2n, g3n).
+> Probes `t167/cells_e/`, `cells_e_b/`, `cells_g/`.
+> 2026-10-29 (landing 167, build 15): "the three judges fail CLOSED" is TWO -- `check_view_parties_at` and the same-root loop; the pointer judges' skips are DEF-353's (landing 168). The SUMMARY face of the cast -- the escape pass's `path_rel_compute` keeping the steps below it -- is DEF-346, fixed in build 15.
+> 2026-10-29 (landing 167, build 16): the claim-face peel of build 14 had handed a plain address under a cast to the SUMMARY road,
+> and the review of build 15 found four inline cells refused on 166 still silent (r1f, r1h, r2b, r3b); build 16 restores landing
+> 166's judgment of such an address -- write-capable WHOLE at the caller, no summary consulted (`admit_written`,
+> `casts_change_pointee`; DEF-346's row) -- beside the peel.
+
+> **DEF-344 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) measuring DEF-343's claim face; the number and the placement from
+> `management_6` at 11:05:40, pre-existing, HIGH). AN ADDRESS CARRIED INTO A HOLDER RAISES NO PLAIN PARTY, SO AN EXCLUSIVE CLAIM OF THE POINTEE
+> IS ADMITTED BESIDE IT.** D-286's plain party is raised for a BARE `@place` initialiser or assigned value alone (`party_kind_of`), so an address
+> kept in a struct literal's field, `PH:ph = PH{ q: @h, k: 1i64 }; vwg($$m h, ph.q);` -- the callee viewing through the claim's holder and
+> writing through the field (g8k) -- compiles and reads the freed bytes (113/113 at both legs on 166 and 167); the same with the address cast as
+> it is taken (g8), copied out of the field `H2->:hp = ph.q` (g9k), assigned into the field after the literal (g10k), built by a callee `raw
+> mkph(@h)` (g11k), and a CALL-RESULT pointer `H2->:hp = raw idh(@h)` (g12k) -- each silent 113/113; g7, g7k (the literal and the claim, no
+> write) 0/0. The ARGUMENT road is sound: `vwg($$m h, @h)` (g13k), the cast as the argument (g14), a call result as the argument (g15k) are
+> BORROW-013 on 166; a copy of a pointer LOCAL (g16k) is refused through the original's party. The claim domain's twin of DEF-307, which raised
+> the ELEM_ADDR party off the holder's recorded REF_ADDR refs at landing 165 (`prescan_view_parties`). Fix direction: raise D-286's plain party off
+> the holder's recorded refs as the element-address party is raised -- the prescan work beside DEF-327's. Census first (management's condition).
+> Probes `t167/cells_g/g7*`-`g12*`. Landing 168 with DEF-327, DEF-337, DEF-339 and DEF-340; past ~160 code lines 168 comes to management. Please
+> write none.
+
+> **DEF-345 — OPEN (registered 2026-10-29 from `nitpick-libs_29`'s report of 11:34:37 — a library worker's reading of `bindings.npk`, `tests/accept/definite_assignment.npk`
+> and `ir_stmt.npk` at the libraries' pin and at `main`; measured and censused by `nitpick-compiler_51` (Fable); the number from `management_6` at 11:53:32). HIGH:
+> `$$m` OF A BINDING DECLARED WITHOUT AN INITIALISER READS THE PREVIOUS FRAME'S BYTES WHEN THE CALLEE LEAVES IT UNWRITTEN.** `$$m x` on an unassigned
+> binding ASSIGNS it to the definite-assignment analysis (D-118: the callee is handed it to write, the pattern D-004 endorses), nothing binds the callee to
+> write its `$$m` parameter on any path, and D-225's canonical vacant value is written at the declaration for a `type_drops` type alone -- so a
+> non-dropping binding keeps whatever the frame or the stack last held, and the caller reads it as assigned: a silent wrong answer in safe code, and a
+> read of an earlier frame's bytes. MEASURED on landing 166's compiler (cd3cb4d) at both legs (-O0 and opt -O2; `wt/51a` seat's `scratchpad/m167/`,
+> dm1-dm5): (a) `int32:x; drop nowrite($$m x); pass x;` in a function called twice -- the first call's callee writes 0x55555555 through the claim, the
+> second call's writes NOTHING -- the second returns 0x55555555, exit 85/85 (dm1); (b) `uint8[16]:b; drop half($$m b); pass b[15i64]` with `half` writing
+> `b[0]` alone after a first call filled all sixteen with 85: exit 85/85 (dm2) -- a part-write leaves the rest stale; (c) the control `string:s;
+> drop nowrite($$m s); pass s.len;` exit 0/0 (dm3, D-225's vacant value); (d) management's condition cell -- `struct:Hm = { string:s; int32:n; }` and the
+> fields the other way round, the callee writing nothing after a first call left 85s in the slot, `.n` read -- 0/0 in both layouts (dm4, dm5): the vacant
+> value covers the WHOLE value (`src/backend/ir/ir_stmt.npk:826-831` stores `zeroinitializer` over the slot and then calls the type's vacant body, which
+> writes `OwnedFd`'s -1 alone), so "drops" is a sound test and no partial fill exists. THE CENSUS (`census345.py`, text-level: a declaration without an
+> initialiser inside a function whose FIRST mention afterwards is `$$m name`; the tree 1,200 files / 214 `$$m`, nitpick-libs with the fuzz corpus 4,235
+> files / 73, nitpick-apps 8 / 0): NINE sites -- the compiler's own idiom `Front:f; int32:fr = raw front_run_dump($$m f, …)` at `src/npkc.npk:179`,
+> `tools/check.npk:59` and `meta/roadmap/done/1.5/tools/group_dump.npk:45` (`Front` holds tables: dropping, vacant, defined); D-225's own test
+> `tests/backend/programs/vacant_init.npk:55, 73, 81` (`Holder`, `FdHolder`: dropping); `tests/backend/programs/stack_bigframe_thread.npk:21`
+> (`int64[8192]:buf; drop fill($$m buf, n)`, non-dropping, `fill` writes all 8192); `tests/accept/definite_assignment.npk:46` (`int32:x; drop sink($$m x);
+> pass x;`, `sink` writing nothing -- the hazard's own specimen, in a file compiled and never run); the fuzz corpus's
+> `nitpick-fuzz/m10/programs/d16_uninit_owning_field_overwrite.npk:20` (`Hs` holds a string: dropping). The libraries hold 0 `$$m` at `main` (nitpick-libs_29,
+> 11:34:37), the applications 0; NO site reads a stale byte today. THE QUESTIONS are D-004's and D-118's, the author's through management: must a callee
+> write its `$$m` parameter on every path; does a part-write of an array count; may it read the parameter before writing it. Management's recommendation
+> after the census (`management_6`, 12:03, replacing its refuse-every-case of 11:53): THE MIDDLE ROAD -- refuse `$$m` of an unassigned binding whose type does
+> NOT drop (two respellings, `definite_assignment.npk:46` and `stack_bigframe_thread.npk:21`; the `Front:f;` idiom and D-225's tests kept; the one case that
+> reads stale bytes closed), with C#-style `out` rules (the callee writes on every path, never reads first, a part-write does not count) as a later
+> relaxation. PLACEMENT: after the author's ruling, landing 168 if small; not landing 167's. The libraries' PLAYBOOK §2 carries write-none (initialise
+> before `$$m`) until the ruling and its landing (nitpick-libs_29, 11:57:23, workbench `6e335af`). Please write none: initialise a binding before handing it
+> as `$$m`, or hand a dropping type.
+
+> **DEF-346 — FIXED 2026-10-29 (landing 167, builds 15 and 16, by `nitpick-compiler_51` (Fable); registered 2026-10-29 from management's
+> diff review of build 14 (fb0f3d3), its finding 1 (Opus, `credits/jobs/compiler-167-diff-review-2026-10-29.md`); the numbers
+> delegated to the seat by `management_6` at 13:34 and confirmed at 13:55; HIGH: a use-after-free in safe code at both legs -- a
+> REGRESSION of build 14 against landing 166 in the inline spelling, a pre-existing hole in the named one). A CALLEE'S WRITE
+> THROUGH A CAST TO ANOTHER POINTEE TYPE WAS SUMMARISED UNDER THE TARGET TYPE'S FIELD NAMES.** `func:wrs = NIL(any->:q) never
+> fails { (<-(q =>! S->)).x = string_concat("x", "y"); pass NIL; }` with `struct:S = { string:x; int64:k; }` over an `H2 = {
+> string:o; int64:k; }`, under `fixed uint8[]:vw = string_bytes(h.o)`: handed `(@h) =>! any->` INLINE (f1b) it was REFUSED on
+> landing 166 (`NITPICK-BORROW-015` at the plain address `h`, D-286's party) and SILENT on build 14, the view reading the freed
+> bytes (170/170 at both legs); handed a NAMED `any->:ap = (@h) =>! any->` (f1a) it was silent on 166 and on build 14; the
+> same-type cast `(<-(q =>! H2->)).o` (f1c) silent on 166 and refused on build 14 and 15 -- it writes the viewed field, a refusal
+> and no control; `(@h) => any->` is TYPE-009 everywhere (f1d). THE CAUSE (escape.npk): `path_rel_compute`, which spells a
+> callee's summary path, kept the steps collected BELOW a pointee-changing cast -- `f<x>`, a field of `S` -- under the `any->`
+> parameter, where alias.npk's `path_steps` (DEF-343) drops them; the caller composed `x` onto `h: H2` (`check_pointer_targets`,
+> `admit_written`), `overlap_class([x], [o])` read the write as disjoint from the view, and the summary NARROWED to one field what
+> landing 166 refused whole at the argument. NOW `escape_cast_changes_pointee` (alias.npk's `cast_changes_pointee` in the escape
+> pass's words; an UNTYPED operand or result answers TRUE, the closed direction for a summary every caller reads, where alias's
+> twin answers false) truncates the path at such a cast: the write is the pointee WHOLE, as `path_steps` and the root==0 block
+> read the same cast. +28 lines in escape.npk, nothing else in `src/`. Tests: `tests/analysis/rejection/cast_place_readers.npk`
+> sites 14 (f1a, 217:14) and 15 (f1b, 227:15), `NITPICK-BORROW-015`; landing 166's checker reports site 15 alone (at 227:16);
+> `cast_place_readers_ok.npk` control 16 (f1n, no view live). The matrix of 401 cells is verdict for verdict unchanged by the fix
+> (`t167/MATRIX_167n.txt`). Probes `t167/rev167/cells/` (f1a, f1b, f1c, f1n; f1d in `cells2/`).
+> BUILD 16 (2026-10-29; `management_6`'s gate of 15:13 and 15:34): management's delta review of build 15 (Opus,
+> `credits/out/compiler-167b-delta-review-2026-10-29.md`) read the fix above as ONE writer of the summary and named three more
+> roads and an over-refusal -- F1, a SECOND callee handed `@(<-(q =>! S->))` (`record_mut_of_call` joined its `f<x>` back onto the
+> truncated path; a `Self->` method on the dereference the same), F2, the cast pointer handed AS A VALUE, `wsx(q =>! S->)`
+> (`dest_place` answered none, no summary write at all), F3, a cast INSIDE a getter's argument, `(<-(raw ids(ap =>! S->))).x = …`,
+> and F4, the D-021 round trip `(<-(q =>! H2->)).k = 5i64` writing a DISJOINT field under a view of `h.o`, refused on build 15
+> where 166 accepted it. MEASURED on 166, build 15 and build 16 (`t167/rev167b/cells/`, seventeen cells): FOUR REGRESSIONS of
+> build 15 against 166, every one the inline spelling `(@h) =>! any->` as the argument -- r1f (F1), r1h (the method), r2b (F2),
+> r3b (F3): REFUSED on 166, SILENT on build 15 (170/170 at both legs), REFUSED on build 16; the named twins r1e, r1g, r2a silent
+> on 166 and 15, refused on 16; r1w (the view-summary twin inline) silent on 166, refused on 15 and 16; r4 (F4) refused on 15 and
+> 16 -- the SIXTH accepted over-refusal (D-286's note); the no-view controls clean on all three; r3a and r1v (the F3 and
+> view-summary faces NAMED) silent on all three -- DEF-354 and DEF-355 (landing 168). THE FIX, both sides (alias.npk +54/-2,
+> escape.npk +65/-4, +69/-6 code lines over build 15): THE CALLER RULE -- `admit_written` asks `casts_change_pointee(site)` (every
+> cast layer over the argument; an untyped layer TRUE) and judges a plain address under a pointee-changing cast as a write-capable
+> access WHOLE against the view, lend and element-address parties (`check_access_ex`, `CHECK_VIEWS`), consulting no summary --
+> exactly landing 166's judgment of the inline spelling, which build 14's claim-face peel (DEF-343) had handed to the summary
+> road; `check_pointer_targets` composes no summary steps below a pointee-changing cast or an `any` pointee (`erase`,
+> `pointee_is_any`), named and call-result arms alike. THE SUMMARY'S OTHER WRITERS -- `escape_place_crosses_cast` (steps and cast
+> layers walked inward; TRUE at the first pointee-changing layer): `record_mut_of_call` records a crossing destination WHOLE
+> (`crossed`), `record_mut_of_place` drops its `sub`, `ref_full_path` drops a view's path, `dest_place` reads the pointer under
+> its casts. Pointer VALUES under a cast stay on the summary road (166 silent there too; the libraries' `wild` casts are values).
+> The matrix is verdict for verdict build 15's but d3d (DEF-335's cast destination, refused by the third road,
+> `NITPICK-BORROW-002`). Tests: `cast_place_readers.npk` sites 16-23 (r1e 262:15, r1f 272:16, r1g 282:15, r1h 291:16, r2a 302:15,
+> r2b 311:16, r3b 322:19, r4 334:13 the accepted over-refusal), twenty-three sites, landing 166's checker reporting the five
+> inline sites at the column after; `cast_place_readers_ok.npk` controls 17-22 (r1en, r1gn, r2an, r3an, r4n, r1vn). Neither
+> fb0f3d3 (build 14) nor 491ae09 (build 15) landed; build 16 is landing 167's one commit on cd3cb4d.
+
+> **DEF-347 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's diff review of build 14, its finding
+> 2; HIGH: a use-after-free in safe code at both legs, silent on landing 166 and on 167). A COPY OF A PARAMETER'S POINTER PART
+> ENTERS NO SUMMARY.** `func:wpp = NIL(H2->->:pp) never fails { H2->:q2 = <-pp; q2.o = string_concat("x", "y"); pass NIL; }`
+> called `drop wpp(@hp)` with `H2->:hp = @h` (f2a), and `func:wfc = NIL(HH->:hh) never fails { H2->:q2 = hh.p; q2.o =
+> string_concat("x", "y"); pass NIL; }` called `drop wfc(@c)` with `HH:c = HH{ p: @h, k: 0i64 }` (f2b), each under `fixed
+> uint8[]:vw = string_bytes(h.o)`: 170/170 at both legs on 166 and 167. THE CAUSE (escape.npk:1707-1708): the copy's ref is
+> `REF_PASS pp` with the carried type `H2->->`, not `ind` (`H2->`), or `REF_PASS hh` with `HH->`, so no ref is a target,
+> `old_matrix` needs refs, and `record_mut_of_place` roots the write at a non-parameter: the summary is empty. DEF-342's residual
+> (the copy of the parameter ITSELF is recorded since 167; the direct two-level write `(<-(<-pp)).o`, f2c, refused). Fix
+> direction: a `REF_PASS` of a parameter's dereference or field is a target with that step as its path. Placed in landing 168
+> (`management_6`, 13:55). Probes `t167/rev167/cells/`.
+
+> **DEF-348 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) measuring finding 2's siblings; HIGH: a use-after-free
+> in safe code at both legs, silent on 166 and 167, pre-existing). A WRITE THROUGH A POINTER FIELD OF A POINTER PARAMETER'S
+> POINTEE IS COMPOSED ONTO THE POINTEE, NOT ONTO WHAT THE FIELD POINTS AT.** `func:wfd = NIL(HH->:hh) never fails { hh.p.o =
+> string_concat("x", "y"); pass NIL; }` called `drop wfd(@c)` with `HH:c = HH{ p: @h, k: 0i64 }` under `fixed uint8[]:vw =
+> string_bytes(h.o)`: 170/170 (f2d); the explicit spellings `(<-(hh.p)).o` (f2e) and `(<-hh).p.o` (f2f), the pointee whole
+> `(<-(hh.p)) = H2{ … }` (f2g); a `Self->` METHOD of a struct holding the pointer writing `(<-(self.p)).o`, called by name `drop
+> ph.op()` (f10f) or through a `dyn` of the moved struct -- `dyn Tr:d = move(ph) => dyn Tr; drop d.op();` (f10d), the implicit
+> `dyn Tr:d = move(ph);` (f10e) -- each 170/170 at both legs on 166 and 167; the by-name twin in the caller `c.p.o = …` (f2h), the
+> two-level `(<-(<-pp)).o` (f2c) and a struct LITERAL cast to `dyn` holding `@h` (f10c) REFUSED on both. THE CAUSE: the summary
+> path `f<p>/f<o>` is composed onto the argument's target `c` as steps OF `c` -- a write inside the pointee -- and never
+> re-resolved at the pointer-typed step `p` to the chain `c.p` holds; DEF-299's pointer-field twin (there a SLICE field:
+> `f<sl>/i0/f<v>` claims a write inside the pointee) and the parameter-summary face of DEF-312's mechanism (there
+> `check_pointer_targets` composes `.p.o` onto a call result's target without re-resolving at `.p`). Not DEF-298 (a BY-VALUE
+> struct parameter), not DEF-313 (the STORE side). Not dyn-specific: a dyn cast cannot sit on a written place's or a view's path
+> (f10c, f10h, f10i refused). Placed in landing 170 beside DEF-312 widened -- one fix, a composed path re-resolved at each
+> pointer-typed hop -- not M3 (`management_6`, 13:55). Probes `t167/rev167/cells/`, `cells3/`.
+
+> **DEF-349 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's diff review of build 14, its finding
+> 3; HIGH: a use-after-free in safe code at both legs, silent on 166 and 167, pre-existing; small). `push_call_view_party_in`
+> FAILS OPEN AT FUEL 0.** alias.npk: `if (fuel <= 0i32) { pass NIL; }`, the call starting at fuel 4, so a view-maker nested under
+> four or more ternaries raises no party for the argument: `raw pairw((is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) :
+> string_bytes(t)) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)), @s)` with `pairw(fixed uint8[]:v, string->:p)`
+> writing `<-p` and reading `v[0i64]` -- f3t4 (four) and f3t5 (five): 170/170 at both legs on 166 and 167; two and three (f3t2,
+> f3t3) silent on 166 and REFUSED on 167 (DEF-338's party). The reviewer's cast nest does not parse: `=> fixed uint8[]` as a cast
+> target is `NITPICK-PARSE-013` (D-348). Fix: at fuel 0 push a party for the WHOLE argument, the closed direction, as DEF-338's
+> party stands for the argument. Placed in landing 168 (`management_6`, 13:55). Probes `t167/rev167/cells2/`.
+
+> **DEF-350 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) measuring finding 4's neighbourhood; HIGH: a
+> use-after-free in safe code at both legs, silent on 166 and 167, pre-existing). A POINTER VALUE HANDED OUT OF A HOLDER'S FIELD
+> BY A GETTER OR A METHOD RESOLVES TO NO TARGET.** `func:getp = H2->(HH->:q) never fails { pass q.p; }`, then `(<-(raw
+> getp(@c))).o = string_concat("x", "y");` (f4b) or `drop (raw getp(@c)).hset();` (f4d) with `HH:c = HH{ p: @h, k: 0i64 }` under
+> `fixed uint8[]:vw = string_bytes(h.o)`: 170/170 at both legs on 166 and 167; with no view live (f4bn) clean. THE CAUSE: rule A's
+> `escape_pointer_targets` asks, for a `REF_PASS`, `pt == pty` -- the carried holder's type `HH->` is not the result's `H2->` --
+> so the call result has no target and the root==0 block checks nothing; the result's provenance is the pointer FIELD `c.p`, a hop
+> the readers do not take. The call-result face of DEF-348's hop. Placed in landing 170 (`management_6`, 13:55). Probes
+> `t167/rev167/cells3/`.
+
+> **DEF-351 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's diff review of build 14, its finding
+> 6; LOW: a precision item, the closed direction). `record_mut_of_call` RECORDS A WHOLE WRITE FOR A BARE BUILTIN.** escape.npk's
+> `record_mut_of_call` exempts `call_is_builtin_method` and the enum constructors only; `call_is_bare_builtin` (escape.npk:992) is
+> never asked there, so `#ptr_add<int8>(blk, from)` inside nitpick-time's `tail_view` records a WHOLE write of `blk`, and a view
+> beside the call is refused: `tests/probe/probe10_view_edges.npk:151:36`, landing 167's one parity site in the libraries (its
+> by-name twin refused on 166 already; the library seat respells it). Probes: `func:rdp = int8(wild int8->:b, int64:from) never
+> fails { pass <-(#ptr_add<int8>(b, from)); }` handed `v.ptr =>! wild int8->` under `fixed uint8[]:vb = string_bytes(v)` is clean
+> on 166 and refused on 167 (f6b); the read-only twin `pass <-b;` (f6a) clean on both. Fix: ask `call_is_bare_builtin` in
+> `record_mut_of_call` as alias.npk's `escape_call_is_bare_builtin` does. Unplaced, after landing 171 (`management_6`, 13:55).
+> Probes `t167/rev167/cells/`.
+
+> **DEF-352 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's diff review of build 14, its finding
+> 8; LOW: an over-refusal). `expr_wild_provenance` ANSWERS FALSE FOR A TERNARY.** `wild_places.npk:132`: `(is (c) : w1 : w2) =>!
+> uint8->` over two `wild int8->` locals is `NITPICK-TYPE-032` on 167 (f8; accepted on 166, which had no TYPE-032) where D-365
+> keeps a wild-provenance operand whatever the pointee; the non-ternary twin `w1 =>! uint8->` (f8n) accepted on both. Fix: a
+> ternary's provenance is wild when BOTH arms' is. Unplaced, after landing 171 (`management_6`, 13:55). Probes
+> `t167/rev167/cells/`.
+
+> **DEF-353 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's diff review of build 14, its findings
+> 4 and 5; MEDIUM: hardening -- reachable today only through fuel exhaustion (DEF-349's class) or a path mismatch). THE POINTER
+> JUDGES SKIP AN UNREADABLE STEP, AND `escape_type_holds` ANSWERS NO FOR AN UNKNOWN.** Landing 167's record said "the three judges
+> fail CLOSED"; TWO do -- `check_view_parties_at` and `check_access_reported`'s same-root loop. alias.npk:
+> `check_pointer_view_parties` truncates `pp` when `party_steps` cannot read the party and then `continue`s on `pre.count >
+> pp.count` (:1794-1799), so only a bare-name pointer is judged whole; `check_pointer_targets` answers false when `path_steps`
+> cannot read the written place (:1761) and `continue`s when `ptr_target_steps` cannot (:1745, :1768); the root==0 block checks
+> nothing when `path_steps(place, rb0)` fails (:1201); `check_access_reported` fails closed for WRITE and EXCLUSIVE accesses only
+> (:1241) -- a `$$i` claim or a read beside a live `$$m` is admitted. escape.npk: `escape_type_holds` passes false for `t == 0`
+> (an untyped ref) and for a non-struct holder (:2124, :2129, :2132), the open direction; the enum or `Optional` payload shape is
+> unreachable in safe code (a lending `pick` binding has no address, `??!` yields a value), the untyped case unprobed. A judge
+> that meets "unknown" answers YES (DEF-54), as `escape_cast_changes_pointee` does for an untyped operand. Placed in landing 168
+> with DEF-349 (`management_6`, 13:55; finding 4's answers added to this list by the same message).
+
+> **DEF-354 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's delta review of build 15 (Opus,
+> `credits/out/compiler-167b-delta-review-2026-10-29.md`), its finding 3, the NAMED spelling; the number from `management_6` at
+> 15:34; HIGH: a use-after-free in safe code at both legs, silent on landing 166, build 15 and build 16, pre-existing). A
+> POINTEE-CHANGING CAST INSIDE A GETTER'S ARGUMENT IS NO TARGET OF THE RESULT.** `any->:ap = (@h) =>! any->; fixed uint8[]:vw =
+> string_bytes(h.o); (<-(raw ids(ap =>! S->))).x = string_concat("x", "y");` with `func:ids = S->(S->:p) never fails { pass p; }`
+> and `struct:S = { string:x; int64:k; }` over `H2 = { string:o; int64:k; }` compiles, and `vw` reads the freed bytes (r3a,
+> 170/170 at both legs on 166, 15 and 16; `wt/51a/.internal/probes/t167/rev167b/cells/`); the INLINE spelling `(<-(raw ids(((@h)
+> =>! any->) =>! S->))).x` (r3b) was refused on 166 by D-286's plain-address party, silent on build 15 and is refused on build 16
+> (`cast_place_readers.npk` site 22); the control r3an (no view live) clean. THE CAUSE (escape.npk, alias.npk): the write at the
+> dereference of the call result takes alias.npk's root==0 block, `rootless_deref_base` -> `check_pointer_targets`' call-result
+> arm -> `escape_pointer_targets` (rule A, D-326) -> the argument's refs: `collect_view_refs` steps the cast to `ap` and reads
+> `ap`'s chain, a `REF_ADDR` of `h`, but the target test types the result's pointee by the CALL (`S`) and the ref's place is `H2`,
+> so `h` is no target, and the `.x` step is composed onto nothing; the cast that changes the pointee sits INSIDE the argument,
+> below the call, where `casts_change_pointee` (which reads the layers over the written place or the argument itself) and
+> `escape_pointer_targets`' own cast peel (DEF-332: a cast ON the call's result) do not look. FIX DIRECTION (≈ 15 code lines
+> across both files): a crossing flag carried out of `collect_view_refs`' cast arm -- every ref collected under a pointee-changing
+> cast is a target WHOLE, its steps dropped (`escape_pointer_targets`, `record_refs_through_indirection`; alias.npk's
+> `ptr_ref_is_target`) -- and `check_pointer_targets` composing no steps below such a target, as it does below an `any` pointee
+> since build 16. Landing 168 (`management_6`, 15:34). Please write none: take the cast OUTSIDE the call (`raw ids(…)` on a
+> pointer of the real type), or write the pointee by name.
+
+> **DEF-355 — OPEN (registered 2026-10-29 by `nitpick-compiler_51` (Fable) from management's delta review of build 15, its finding
+> 1's view-summary twin, the NAMED spelling; the number from `management_6` at 15:34; HIGH: a use-after-free in safe code at both
+> legs, silent on landing 166, build 15 and build 16, pre-existing). A VIEW RETURNED BY A GETTER THROUGH A CAST DEREFERENCE OF A
+> NAMED `any->` LOCAL DOES NOT FREEZE THE OWNER.** `func:getx = fixed uint8[](any->:q) never fails { pass string_bytes((<-(q =>!
+> S->)).x); }`; in the caller `any->:ap = (@h) =>! any->; fixed uint8[]:vw = raw getx(ap); h.o = string_concat("zz", "zz");`
+> compiles and `vw` reads the freed bytes (r1v, 170/170 at both legs on 166, 15 and 16); the INLINE spelling `raw getx((@h) =>!
+> any->)` (r1w) was silent on 166 and is refused on build 15 and 16 (build 16's `ref_full_path` and the caller rule); the control
+> r1vn (the view READ before the owner is written) clean -- `cast_place_readers_ok.npk` control 22. THE CAUSE (escape.npk,
+> alias.npk): `getx`'s summary passes parameter 0 with an empty path (the view's path below the cast is dropped since build 16,
+> the whole), so the caller's `vw` holds, through `ap`'s chain, an `ADDR` ref of `h` beside a laundered view rooted at `ap`; the
+> write of `h.o` BY NAME asks the parties rooted at `h`, where the view party was raised at `ap` (the holder's root) and never
+> re-rooted at what the `any->` local points at -- the reverse reader (`pointer_targets_of` through a cast, DEF-343's road)
+> resolves a view THROUGH a local pointer's cast dereference in the same function, not a view a callee returns through a parameter
+> the local was handed as. FIX DIRECTION (to be read before it is sized): `prescan_view_parties` raising the party at the local's
+> target when a call-result view's refs pass through a pointer-typed local (as `escape_slice_own_holder_rootless` resolves a
+> pointer root to its single pointee, DEF-317), or `collect_view_refs`' call arm re-rooting a returned view's `REF_PASS` of an
+> `any->` argument at the argument's chain. Landing 168 (`management_6`, 15:34). Please write none: hold the view by name
+> (`string_bytes(h.x)` is TYPE-… for a field of another type, so view the real type's field, `string_bytes((<-(ap =>! H2->)).o)`,
+> in the SAME function, where DEF-343's reader resolves it), or end the view's block before the owner is written.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`
