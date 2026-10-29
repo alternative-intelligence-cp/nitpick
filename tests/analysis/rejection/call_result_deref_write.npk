@@ -1,0 +1,157 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 83:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 92:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 101:22
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 110:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:13
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 130:6
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 138:34
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 147:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 155:22
+mod:call_result_deref_write;
+// DEF-309 (1.6.1e, landing 164): A WRITE THROUGH THE DEREFERENCE OF A CALL-RESULT
+// POINTER IS RESOLVED TO THE STORAGE THE POINTER POINTS AT. DEF-305 (landing 161)
+// resolved a call-result pointer HANDED to a writer (`wp(raw idp(@h))`) and used as a
+// writing RECEIVER by its return provenance (D-326 rule A, `escape_pointer_targets`);
+// a write BELOW or AT the dereference of one it did not reach: the written place
+// `<-(raw idh(@h))` is the POINTEE, struct-typed, and `acc_place` decomposed a place
+// with no named root into reads of its children, so `check_access_reported`'s
+// call-result arm -- keyed on the written place ITSELF being pointer-typed -- never
+// saw the rootless pointer one level up. Each shape here compiled on landing 163's
+// compiler and read freed memory at both legs (`.internal/probes/def309/`): the whole
+// pointee assigned or moved out through the deref under a view of its field (the
+// matrix cells m_view_forward_{assign,move}_call_result, 113/113 and a silent UAF),
+// a FIELD or an ELEMENT written through the deref (113/113), the ADDRESS of the deref
+// handed to a whole-pointee writer (113/113); and the lend twins: a lent arena
+// replaced or moved out through the deref (m_lend_forward_{assign,move}_call_result,
+// 107/107 and a silent UAF), the address of its deref handed to the replacer, the
+// lent arena a FIELD replaced through the deref of a call-result pointer to its
+// struct.
+//
+// The written place's pointer base (`ptr_last_base`) is a ROOTLESS pointer: resolved
+// by `escape_pointer_targets` to the storage it points at, the steps between the
+// place and the base composed onto each target (`steps_below`), and checked against
+// the VIEW and LENT parties there (`check_view_parties_at`, `check_pointer_view_parties`)
+// -- `check_rootless_pointer_targets`, the one body behind DEF-305's arm and this one;
+// `acc_place` hands such a place to the check before decomposing it. BORROW-015 at the
+// write (a view), BORROW-016 at the write or the call (a lend).
+//
+// Controls carrying no code (clean -- in `call_result_deref_ok.npk`): the whole pointee
+// of ANOTHER struct assigned through a call result; the view's block ended before the
+// write; a DISJOINT field written through the call result under a view of another
+// field; the write before the view; another arena replaced while one is lent; the
+// lend's block ended before the write. Closed by OTHER rules, not sites here: the
+// auto-dereferenced spellings `(raw idh(@h)).o = …` and `move((raw idh(@h)).o)` are
+// TYPE-024 (a member of a temporary is no place); a TERNARY pointer `(<-(is (c) : @h
+// : @g)) = …` is BORROW-015 already (its `@h` arm is a write-capable access of `h`).
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:H2 = { string:o; };
+struct:W = { shared_arena<int64>:a; int32:k; };
+
+func:wr = NIL(H2->:p) never fails { (<-p) = H2{ o: string_concat("x", "y") }; pass NIL; };
+func:idh = H2->(H2->:q) never fails { pass q; };
+func:idarr = H2[2]->(H2[2]->:q) never fails { pass q; };
+func:idp = shared_arena<int64>->(shared_arena<int64>->:p) never fails { pass p; };
+func:idw = W->(W->:p) never fails { pass p; };
+func:replace = NIL(shared_arena<int64>->:p) never fails {
+    (<-p) = shared_arena_make(4i64);
+    pass NIL;
+};
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+
+// --- THE VIEW DOMAIN: a view of the pointee's field by its own name -----------------
+
+// 1. the whole pointee assigned through the deref of a call-result pointer
+func:view_whole_assign = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    (<-(raw idh(@h))) = H2{ o: string_concat("x", "y") };
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 2. the whole pointee moved out through the deref
+func:view_whole_move = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    H2:u = move(<-(raw idh(@h)));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 3. a FIELD written through the deref
+func:view_field_write = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    (<-(raw idh(@h))).o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 4. an ELEMENT's field written through the deref of a call-result pointer to an array
+func:view_elem_write = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b") }, H2{ o: string_concat("c", "d") }];
+    fixed uint8[]:vw = string_bytes(arr[0i64].o);
+    (<-(raw idarr(@arr)))[0i64].o = string_concat("x", "y");
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// 5. the ADDRESS of the deref handed to a whole-pointee writer
+func:view_addr_of_deref = NIL() never fails {
+    H2:h = H2{ o: string_concat("a", "b") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    drop wr(@(<-(raw idh(@h))));
+    discard(vw[0i64] => int32);
+    pass NIL;
+};
+
+// --- THE LEND DOMAIN: the crossing lent by its own name -----------------------------
+
+// 6. the lent arena replaced through the deref of a call-result pointer
+async func:lend_whole_assign = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    (<-(raw idp(@s))) = shared_arena_make(4i64);
+    pass NIL;
+};
+
+// 7. the lent arena moved out through the deref
+async func:lend_whole_move = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    shared_arena<int64>:u = move(<-(raw idp(@s)));
+    u.destroy();
+    pass NIL;
+};
+
+// 8. the address of the deref handed to the replacer
+async func:lend_addr_of_deref = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    drop filler(@s);
+    drop replace(@(<-(raw idp(@s))));
+    pass NIL;
+};
+
+// 9. the lent arena a FIELD, replaced through the deref of a call-result pointer to its struct
+async func:lend_field_write = NIL() {
+    W:w = W{ a: shared_arena_make(8i64), k: 1i32 };
+    drop filler(@w.a);
+    (<-(raw idw(@w))).a = shared_arena_make(4i64);
+    pass NIL;
+};

@@ -3599,6 +3599,11 @@ defect declares a `DEF-` in §2f.
 > (`q.sl[0i64].o = …` through `B2->:q` under a live view, `b` in an inner block, t299d). With `b` in the array's own block the
 > store is BORROW-015 (t299b), and the pointer-field writer (t299e) is refused only by the address rule at `@h`. The census found
 > none in the libraries, the applications or the fuzz corpus. The plan: `wt/44a/.internal/DEF297_301_PLAN.md`, M3, with DEF-298.
+> *2026-10-28 (landing 164):* the fuzz seat's face (A) -- a view stored through a TWO-LEVEL pointer field of a pointer parameter's
+> pointee into a local holder, `bp.p.v = string_bytes(p.s)` with the holder in an inner block (q05, 70/70 at both legs under landing
+> 163 and 164) -- is this defect's local two-level face: DEF-299's path step must reach the local chain recorder too, and it gets its
+> own matrix cell (management, 2026-10-28). The fuzz seat's (B) faces (q17, q19, q20: a pointer parameter forwarded through a call
+> under a view) were DEF-311's and are refused at 164.
 
 > **DEF-300 — FIXED 2026-10-24 (landing 158; built, chained and recorded by `nitpick-compiler_46` by its plan, the record read and landed by `nitpick-compiler_48`) (registered 2026-10-24 by `nitpick-compiler_46` at landing 157, from the DEF-289 agent's probe r2; HIGH: a
 > use-after-free in safe code at both legs, on every compiler to date; an odd spelling). A DIRECT STORE THROUGH A RANGE OF THE ARRAY
@@ -3761,6 +3766,9 @@ defect declares a `DEF-` in §2f.
 > (four sites), `tests/backend/programs/pointer_alias_adv_ok.npk` (four legal checks). Landing 161's sweep over 5,282 files moved
 > only the four sites, all in the landing's own rejection file; nothing of `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the
 > applications or the fuzz corpus moved. DEF-306 registered here.
+> *2026-10-28 (landing 164):* rule A's readers, asked from the aliasing pass, lost a PARAMETER root (`ws(raw ids(p))` under a view
+> through `p` was silent while the local copy was refused) -- DEF-311, fixed at landing 164; and a write AT or BELOW the dereference of
+> a call-result pointer, which this arm did not reach, is DEF-309, fixed there too.
 
 > **DEF-306 — FIXED 2026-10-26 (landing 163; registered 2026-10-24 by `nitpick-compiler_48` at landing 161, from DEF-305's probe
 > `s302s2`; HIGH: a use-after-free / data race in safe code at both legs). A LENT CROSSING REASSIGNED, DROPPED OR MOVED THROUGH AN
@@ -3799,6 +3807,10 @@ defect declares a `DEF-` in §2f.
 > whose return provenance points into a `List` element (the freeze-direction twin of DEF-305's `escape_pointer_targets`), and
 > carry the element-address party across a call through the mutation-summary path as DEF-289's second face carries a view.
 > Please write none.
+> *2026-10-28 (landing 164):* re-measured by `nitpick-compiler_51` on landing 163's compiler and on the DEF-309 fix
+> (`wt/51a/.internal/probes/def307/`): u304j and u304b unchanged, 11/11 at both legs, silent on both checkers -- its mechanism is the
+> PARTY side (raising `PARTY_ELEM_ADDR` for a call-result or parameter-carried element address), not DEF-309's write side. PLACED by
+> management 2026-10-28: landing 165, with DEF-312 beside it, smallest first by size, both before M3.
 
 > **DEF-308 — FIXED 2026-10-26 (landing 163; registered 2026-10-26 by `nitpick-compiler_49`, the VIEW twin of DEF-306, folded in
 > on management's GO 2026-10-26 11:33; HIGH: a use-after-free in safe code at both legs). A CALLEE THAT REPLACES THE WHOLE POINTEE,
@@ -3815,29 +3827,99 @@ defect declares a `DEF-` in §2f.
 > (c308a, refused in PARITY with the by-name twin landing 162 refuses identically -- the party model is by-scope, from a binding's
 > declaration to its scope exit). 0 TREE SITES (the DEF-306/308 sweep). The call-result direct-deref face is DEF-309.
 
-> **DEF-309 — OPEN (registered 2026-10-26 by `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a
-> use-after-free in safe code at both legs, SILENT on landing 162 and every compiler to date). A DIRECT WHOLE-POINTEE WRITE OR MOVE
-> THROUGH A CALL-RESULT POINTER IS NOT RESOLVED TO ITS TARGET.** The DEF-305 call-result family's direct-deref-write face. DEF-305
-> (landing 161) resolved a call-result pointer handed to a WRITER and used as a writing RECEIVER; a DIRECT whole-pointee write or
-> move through one it does not reach: `(<-(raw idp(@s))) = shared_arena_make(4i64)` under a lend of `s`, and `(<-(raw idh(@h))) =
-> H2{…}` / `H2:u = move(<-(raw idh(@h)))` under a view of `h` -- each compiled and read freed memory at both legs (the matrix cells
-> `m_lend_forward_assign_call_result`, `m_lend_forward_move_call_result`, `m_view_forward_assign_call_result`,
-> `m_view_forward_move_call_result`, exit 107/113). THE CAUSE (alias.npk): `check_access_reported`'s `root==0` call-result arm keys
-> on the written PLACE being pointer-typed, but a direct deref write's place is the POINTEE (struct-typed) and the rootless pointer
-> is the deref's operand one level up, so neither the arm nor the main path fires. 0 TREE SITES (the DEF-306/308 sweep over 5,284
-> files). Fix direction: a deref-of-rootless-pointer arm -- when the written place is `<-E` with E a rootless pointer expression,
-> resolve E by `escape_pointer_targets` and check the parties (view AND lent) at its targets. SCHEDULED FIRST next week, before M3
-> (safety first), measured before fixed. The check `matrix306.py` cites the 4 cells as KNOWN-LIMIT by exact ID and will fail if any
-> turns refused (so the list cannot go stale); DEF-309's landing flips them to REFUSED. Please write none.
+> **DEF-309 — FIXED 2026-10-28 (landing 164, with DEF-310 and DEF-311, by `nitpick-compiler_51` (Fable); registered 2026-10-26 by
+> `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a use-after-free in safe code at both legs, SILENT on
+> landing 163 and every compiler to date). A WRITE AT OR BELOW THE DEREFERENCE OF A CALL-RESULT POINTER IS RESOLVED TO THE
+> POINTER'S TARGET.** DEF-305 (landing 161) resolved a call-result pointer handed to a WRITER and used as a writing RECEIVER; a write
+> AT or BELOW its dereference it did not reach: `check_access_reported`'s root==0 arm keyed on the written PLACE being pointer-typed,
+> and a deref write's place is the POINTEE, the rootless pointer one level up. MEASURED FIRST on landing 163's compiler
+> (`wt/51a/.internal/probes/def309/`: `gen_def309.py`, `run_sib.sh`, `sib_163.txt`; the matrix `matrix_163.log`): the four
+> registered cells (`m_{lend,view}_forward_{assign,move}_call_result` -- lend assign 0/0 a silent UAF, lend move 107/107, view assign
+> 113/113, view move 0/0) and FIVE MORE FACES of the same mechanism, each silent and freeing under its holder at both legs: a field
+> written through the dereference `(<-(raw idh(@h))).o = …` (v309c, 113/113), the address of the dereference handed to a
+> whole-pointee writer `wr(@(<-(raw idh(@h))))` (v309e, 113/113), an element of a dereferenced array written
+> `(<-(raw idarr(@arr)))[0i64].o = …` (v309n, 113/113), and the lend twins `replace(@(<-(raw idp(@s))))` (l309c, 0/0) and a
+> pointee's arena field replaced `(<-(raw idw(@w))).a = shared_arena_make(…)` (l309d, 0/0); the auto-dereference spellings
+> (`(raw idh(@h)).o = …`, `move((raw idh(@h)).o)`) are TYPE-024 already (a call's result is no place), and the controls (another
+> pointee, the view's block ended, a disjoint field, the write before the view, another arena, the lend ended) clean. FIXED HERE
+> (alias.npk): `rootless_deref_base` walks the written place inward over its members and elements to the first EXPLICIT dereference
+> and answers its operand when that is pointer-typed with no named root; `path_steps` gained a `stop` (the steps between the place and
+> that dereference); `check_access_reported`'s root==0 block, where DEF-305's arm does not fire, hands the pointer to
+> `check_pointer_targets`' call-result arm (rule A, D-326) with those steps composed onto each target ahead of what the callee
+> writes -- so `(<-(raw idb(@hb))).k` stays disjoint from a view of `hb.o`; and `acc_place`'s non-chain branch checks such a WRITE
+> or EXCLUSIVE place once (`check_access_ex`, CHECK_ALL) and then walks the steps down to the dereference, handing the dereference
+> to `acc_expr`, so DEF-123's shared-holder refusal stays and no site reports twice. `NITPICK-BORROW-015` at the write, the move or
+> the call; `NITPICK-BORROW-016` in the lend domain. One accepted double report: a ternary of addresses dereferenced and assigned
+> (`(<-(is (c) : @h : @g)) = …`, v309g) reports BORROW-015 at the new arm AND at D-286's plain-address admission, which landing 163
+> gave already (management's acceptance, 2026-10-28). TESTS: `tests/analysis/rejection/call_result_deref_write.npk` (nine sites:
+> BORROW-015 at the whole assign (83:6), the move-out (92:17), the field (101:22), the array element (110:32), the address to a
+> writer (119:13); BORROW-016 at the lend's assign (130:6), move (138:34), `replace(@(<-…))` (147:18) and the arena field (155:22)),
+> the legal half `tests/backend/programs/call_result_deref_ok.npk` (eight controls, exits 11-18, the last two DEF-311's; exit 0 at
+> both legs under this compiler and landing 163's; the planted wrong expectations each fail at their own exit at both legs). The
+> matrix, widened by the `param_call_result` and `two_level_call_result` paths (1,080 cells): 192 REFUSED, 2 KNOWN-LIMIT (DEF-312, by
+> exact id), 0 OPEN, 13/13 controls, exit 0 (`matrix_164c.log`; kept at `.internal/def306_matrix_kept/`). 0 TREE SITES (the sweep
+> over 5,292 files: no file of `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the applications or the fuzz corpus moves). The
+> two-level face through a call-result dereference (`(<-(raw idph(@ph))).p.o`, v309p, 113/113 under landing 163 and this compiler)
+> is DEF-312.
 
-> **DEF-310 — OPEN (registered 2026-10-26 by `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a
-> use-after-free in safe code at both legs, SILENT on landing 162). `destroy` THROUGH A POINTER FIELD ESCAPES TYPE-091.** `destroy`
-> takes the OWNING place (TYPE-091 since DEF-159): `sp.destroy()` through a pointer local and `(raw idp(@s)).destroy()` through a
-> call result are both TYPE-091. But `pa.p.destroy()` -- destroy through a pointer FIELD -- compiles and frees the pointee (the
-> matrix cell `m_lend_forward_destroy_local_field`, exit 107); under a lend of the arena it is a use-after-free. A type-checker gap,
-> distinct from the aliasing walk. 0 TREE SITES. Fix direction: extend the TYPE-091 destroy-receiver rule to a pointer reached
-> through a field (and any non-owning pointer place). SCHEDULED FIRST next week, before M3, measured before fixed. `matrix306.py`
-> cites the 1 cell as KNOWN-LIMIT by exact ID and will fail if it turns refused. Please write none.
+> **DEF-310 — FIXED 2026-10-28 (landing 164, with DEF-309 and DEF-311, by `nitpick-compiler_51` (Fable); registered 2026-10-26 by
+> `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a use-after-free / double free in safe code at both
+> legs, SILENT on landing 163). `destroy` THROUGH ANY POINTER, SLICE OR HANDLE ON THE RECEIVER'S PATH IS TYPE-091.** `destroy` takes
+> the OWNING place (TYPE-091 since DEF-157): `sp.destroy()` and `(raw idp(@s)).destroy()` were refused, but `destroy_receiver_owned`
+> tested only the walk's ROOT and its member steps, never each node's OWN type. MEASURED FIRST on landing 163's compiler
+> (`sib_163.txt`): the matrix cell `pa.p.destroy()` (`m_lend_forward_destroy_local_field`, 107/107) and its siblings --
+> `l[0i64].destroy()` on a `List` of pointers (d310c, 107/107), `ar[0i64].destroy()` on an array of pointers (d310d, 107/107),
+> `lp[0i64].p.destroy()` (d310i, 107/107), a plain arena behind a pointer field `pb.q.destroy()` (d310e, 0/0: a silent double free)
+> and a pointer field destroyed under a lend (d310j) -- each compiled and freed what the owner's scope exit freed again; the
+> owned-field control (d310f) clean. FIXED HERE (type_members.npk): `destroy_receiver_owned` tests EVERY node on the receiver's path
+> for its own type -- a pointer, a slice or a handle anywhere on it is not owned -- `NITPICK-TYPE-091` at the call. TESTS:
+> `tests/types/rejection/destroy_pointer_place.npk` (five sites: 37:9, 46:12, 54:13, 63:15, 71:9), beside DEF-157's
+> `destroy_owned.npk`, whose controls (an owned binding, an owned field, a `move` parameter) stay silent. 0 TREE SITES (the sweep;
+> every `destroy` receiver in the trees that is not a bare name is an owned field). The matrix's `destroy` cells, the
+> `param_call_result` path's included, read TYPE-091 now.
+
+> **DEF-311 — FIXED 2026-10-28 (landing 164, folded in on management's ruling of 2026-10-28 21:09; registered 2026-10-28 by
+> `nitpick-compiler_51` (Fable) measuring DEF-309's siblings and the fuzz seat's (B) faces; HIGH: a use-after-free / data race in
+> safe code at both legs, SILENT on every compiler since landing 161 gave rule A a pointer reader). RULE A LOST A PARAMETER ROOT
+> ONCE `escape_decl` HAD RESTORED `cur_fn` TO -1.** A call-result pointer is resolved to its target by `escape_pointer_targets`
+> (D-326 rule A, DEF-305), which reads the refs the result borrows; a ref rooted at a PARAMETER is recognised as a parameter only
+> through `symbol_is_param` -> `param_decl_index` -> the escape state's `cur_fn`, "the function being walked", which the escape
+> pass restores to -1 after each function it walks. Asked from the ALIASING pass with it stale, a pointer parameter forwarded
+> through a call read as a `for` binding (the complement of `symbol_is_param` over the kind) whose chain holds nothing: no ref, no
+> target, the write judged by nothing -- while a LOCAL copy of the same pointer (`S->:q = p; ws(raw ids(q))`) resolved through the
+> copy's chain and was refused. MEASURED FIRST on landing 163's compiler and on the DEF-309 fix without this one
+> (`wt/51a/.internal/probes/def309/fuzzB_164b.txt`, `sib3_prefix.txt`, `../fuzzAB/`): the view faces -- the call result handed to a
+> field writer `ws(raw ids(p))` (fb1), as a writing receiver `(raw ids(p)).sset()` (fb2), its dereference assigned whole (fb3) or at
+> a field (fb4), handed to a whole-pointee writer (fb5), and the fuzz seat's q17/q19/q20 (the view stored into a local holder,
+> `h.v = string_bytes(p.s)`) -- each 113/113 under a view through `p`; the lend faces -- a lend by the parameter's name with the
+> pointee replaced through the call result `drop filler(sp); drop replace(raw idp(sp));` (l311a), the reverse (l311b), and the task
+> itself handed `raw idp(sp)` (l311c) -- each 0/0, a silent use-after-free / race; the named spellings (`ws(p)`, `p.s = …`,
+> fb6/fb7) refused as before and the control (another parameter's pointee written, fc1) clean. FIXED HERE (alias.npk,
+> `alias_decl`): the aliasing pass sets `x.esc.cur_fn` to the function it walks and restores it after, as the escape pass does for
+> its own walk -- so every rule A query the aliasing pass makes (DEF-305's arm, DEF-306's `lend_through_pointer`, DEF-301's slice
+> resolver, DEF-309's arm) answers a parameter's chain. `NITPICK-BORROW-015` at the write or the call; `NITPICK-BORROW-016` at the
+> write, the call or the spawn. TESTS: `tests/analysis/rejection/call_result_param_root.npk` (eight sites: BORROW-015 at the writer
+> (52:13), the receiver (59:11), the whole assign (66:6), the field (73:21), the address to a whole-pointee writer (80:14);
+> BORROW-016 at the forward lend (89:18), the reverse (96:18) and the task (102:13); landing 163's checker and the DEF-309 fix alone
+> report none on it), and two controls in `call_result_deref_ok.npk` (exits 17, 18: another parameter's pointee written through a
+> call result rooted at it; the view's block ended before the write). The matrix's `param_call_result` path (19 cells over the lend,
+> view and task sides) all REFUSED. The redone chain is the guard this fix landed under (management, 21:09): it changes every rule A
+> query for a parameter-rooted call result, and the sweep moved no site outside the landing's own rejection files and no emission.
+
+> **DEF-312 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) at landing 164, found measuring DEF-309's siblings; HIGH:
+> a use-after-free in safe code at both legs, SILENT on landing 163 and on landing 164). A POINTER FIELD OF A CALL-RESULT POINTER'S
+> POINTEE, WRITTEN THROUGH BELOW THE DEREFERENCE, IS NOT RE-RESOLVED AT ITS OWN HOP.** `struct:PH = { H2->:p; int32:k; }; PH:ph =
+> PH{ p: @h, k: 0i32 }; fixed uint8[]:vw = string_bytes(h.o); (<-(raw idph(@ph))).p.o = string_concat("x", "y");` compiles and
+> reads 113 at both legs (`wt/51a/.internal/probes/def309/sib2/v309p_two_level_through_call.npk`; the matrix cells
+> `m_view_forward_field_two_level_call_result` 113/113 and `m_lend_forward_replace_two_level_call_result` 0/0, a silent race, both
+> KNOWN-LIMIT by exact id). THE CAUSE (alias.npk): DEF-309's `rootless_deref_base` answers the call result `raw idph(@ph)` and
+> `check_pointer_targets` composes the steps `.p.o` onto the call result's target WHOLE (`ph.p.o`, a field of `ph`) without
+> re-resolving the POINTER field `.p` at its own hop, so the view of the storage `.p` points at (`h.o`) is never met; the NAMED twin
+> `php.p.o` is resolved hop by hop by DEF-302's `pointer_targets_of` / `ptr_inner_base` and refused (v309q, BORROW-015). 0 TREE
+> SITES (the sweep). Fix direction: in the call-result arm, when the composed steps cross a pointer-typed member, resolve that
+> member against each target's chain as `ptr_inner_base` resolves a named two-level pointer (≈40-60 lines, alias.npk); the matrix's
+> two cells then flip to REFUSED and the check FAILS -- the signal to empty its KNOWN_LIMIT map. Placed by management 2026-10-28
+> beside DEF-307 (landing 165), smallest first by size, both before M3. Please write none.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

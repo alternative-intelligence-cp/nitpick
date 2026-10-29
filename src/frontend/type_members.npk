@@ -4090,23 +4090,34 @@ func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) never fails {
 // required.
 // THE RECEIVER OF `destroy` IS STORAGE THIS FUNCTION OWNS (DEF-157, 1.6.1e
 // step 1; TYPE-091): a binding of this function -- a local, or a by-value or
-// `move` parameter -- or a field or element of one reached through bases that
-// are not pointers. A dereference, a pointer-typed base or root, and anything
-// that is not a place (a call's result: a temporary) are refused, because the
-// consuming half of `destroy` has no flag to clear there and the owner frees
-// the arena again.
+// `move` parameter -- or a field or element of one reached through places that
+// are not pointers. A dereference, a pointer-typed place anywhere on the walk --
+// the receiver itself included -- and anything that is not a place (a call's
+// result: a temporary) are refused, because the consuming half of `destroy` has
+// no flag to clear there and the owner frees the arena again.
+// EVERY PLACE ON THE WALK IS TESTED FOR ITS OWN TYPE (DEF-310, landing 164): the
+// receiver and each base below it. Until that landing only the identifier and
+// the BASE of a member or an index were tested, so a pointer that was the
+// receiver place itself -- a pointer FIELD `pa.p`, a `List` or array ELEMENT
+// `l[0i64]`, `ar[0i64]`, a pointer field of an element `lp[0i64].p` -- walked
+// down to its owning struct or container and read as owned: the pointee
+// destroyed with no flag to clear, then freed again by its owner (MachineFault
+// at both legs; a plain arena's slab freed twice, silently).
 func:destroy_receiver_owned = bool(ExprTyper->:e, ExprId:id) never fails {
     ExprId:cur = id;
     int32:fuel = 64i32;
     while (fuel > 0i32) decreases fuel {
         fuel = fuel - 1i32;
         if (raw expr_is_none(cur)) { pass false; }
+        int32:ct = raw exprtypes_get(e.expr_types, cur);
+        if (ct == 0i32) { pass false; }
+        int32:ck = raw type_kind(e.types, ct);
+        if (ck == (raw TY_POINTER())) { pass false; }
+        if (ck == (raw TY_SLICE())) { pass false; }
+        if (ck == (raw TY_HANDLE())) { pass false; }
         ExprNode:n = raw ast_expr(e.ast, cur);
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             if (n.a == 0i32) { pass false; }
-            int32:t = raw exprtypes_get(e.expr_types, cur);
-            if (t == 0i32) { pass false; }
-            if ((raw type_kind(e.types, t)) == (raw TY_POINTER())) { pass false; }
             Symbol:s = raw symtab_get(e.tab, n.a);
             if (s.origin_kind == (raw SYM_STMT())) { pass true; }
             if (s.origin_kind == (raw SYM_DECL())) {
@@ -4126,12 +4137,6 @@ func:destroy_receiver_owned = bool(ExprTyper->:e, ExprId:id) never fails {
             }
         }
         if (raw expr_is_none(base)) { pass false; }
-        int32:bt = raw exprtypes_get(e.expr_types, base);
-        if (bt == 0i32) { pass false; }
-        int32:bk = raw type_kind(e.types, bt);
-        if (bk == (raw TY_POINTER())) { pass false; }
-        if (bk == (raw TY_SLICE())) { pass false; }
-        if (bk == (raw TY_HANDLE())) { pass false; }
         cur = base;
     }
     pass false;

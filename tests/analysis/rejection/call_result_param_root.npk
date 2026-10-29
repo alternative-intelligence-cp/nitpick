@@ -1,0 +1,104 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 52:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 59:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 66:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 73:21
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 80:14
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 89:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 96:18
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 102:13
+mod:call_result_param_root;
+// DEF-311 (1.6.1e, landing 164): RULE A LOST A PARAMETER ROOT ONCE THE ESCAPE PASS HAD
+// RESTORED `cur_fn` TO -1. A call-result pointer (D-326 rule A) is resolved to the storage
+// it points at by `escape_pointer_targets`, which reads a parameter as a parameter only
+// through `symbol_is_param` -> `param_decl_index` -> the escape state's "function being
+// walked"; the escape pass restores that to -1 after each function, so when the aliasing
+// pass asked, a pointer PARAMETER forwarded through a call (`raw ids(p)`) read as a `for`
+// binding with no chain: no ref, no target, the write judged by nothing. A view through
+// `p` was freed by the write at both legs (113); a lent arena was replaced under its task.
+// The aliasing pass now tells the escape state which function it walks (alias_decl).
+// Every site here was SILENT under landing 163's checker; a local copy of the same pointer
+// (`S->:q = p; ws(raw ids(q))`) was refused already, through the copy's chain.
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:S = { string:s; };
+impl:S = { func:sset = NIL(S->:self) never fails { self.s = string_concat("x", "y"); pass NIL; }; };
+func:ids = S->(S->:x) never fails { pass x; };
+func:ws = NIL(S->:q) never fails { q.s = string_concat("x", "y"); pass NIL; };
+func:wsw = NIL(S->:q) never fails { (<-q) = S{ s: string_concat("x", "y") }; pass NIL; };
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+thread async func:tw = NIL(shared_arena<int64>->:s) joins J2 { drop replace(s); pass NIL; };
+func:replace = NIL(shared_arena<int64>->:p) never fails { (<-p) = shared_arena_make(4i64); pass NIL; };
+func:idp = shared_arena<int64>->(shared_arena<int64>->:p) never fails { pass p; };
+
+// --- the view domain: a view through the parameter, the write through a call result rooted at it ---
+
+// 1. the call result handed to a field WRITER (DEF-305's writer face, parameter-rooted)
+func:w_writer = int32(S->:p) never fails {
+    fixed uint8[]:vw = string_bytes(p.s);
+    drop ws(raw ids(p));
+    pass (vw[0i64] => int32);
+};
+
+// 2. the call result as a writing RECEIVER (DEF-305's receiver face, parameter-rooted)
+func:w_receiver = int32(S->:p) never fails {
+    fixed uint8[]:vw = string_bytes(p.s);
+    drop (raw ids(p)).sset();
+    pass (vw[0i64] => int32);
+};
+
+// 3. the whole pointee assigned through the call result's dereference (DEF-309's arm, parameter-rooted)
+func:w_whole = int32(S->:p) never fails {
+    fixed uint8[]:vw = string_bytes(p.s);
+    (<-(raw ids(p))) = S{ s: string_concat("x", "y") };
+    pass (vw[0i64] => int32);
+};
+
+// 4. a field written through the call result's dereference
+func:w_field = int32(S->:p) never fails {
+    fixed uint8[]:vw = string_bytes(p.s);
+    (<-(raw ids(p))).s = string_concat("x", "y");
+    pass (vw[0i64] => int32);
+};
+
+// 5. the address of the dereference handed to the whole-pointee writer
+func:w_addr = int32(S->:p) never fails {
+    fixed uint8[]:vw = string_bytes(p.s);
+    drop wsw(@(<-(raw ids(p))));
+    pass (vw[0i64] => int32);
+};
+
+// --- the lend domain: a spawn's lend and a write, one of them through a call result rooted at the parameter ---
+
+// 6. the lend by the parameter's name, the pointee replaced through the call result
+async func:l_forward = NIL(shared_arena<int64>->:sp) {
+    drop filler(sp);
+    drop replace(raw idp(sp));
+    pass NIL;
+};
+
+// 7. the lend THROUGH the call result, the pointee replaced by the parameter's name
+async func:l_reverse = NIL(shared_arena<int64>->:sp) {
+    drop filler(raw idp(sp));
+    drop replace(sp);
+    pass NIL;
+};
+
+// 8. the task itself, handed the call result, stores over what it was lent
+async func:l_task = NIL(shared_arena<int64>->:sp) {
+    drop tw(raw idp(sp));
+    pass NIL;
+};

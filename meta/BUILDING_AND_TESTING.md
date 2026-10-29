@@ -2121,3 +2121,28 @@ that carried them retired at the cycle close):
   `pointer_targets_of`, D-286). STILL OPEN, each HIGH, KNOWN-LIMIT in the matrix by EXACT cell id: DEF-309 (a direct whole-pointee
   write or move through a CALL-RESULT pointer, four cells) and DEF-310 (`destroy` through a pointer FIELD escaping
   `NITPICK-TYPE-091`, one cell) -- they land FIRST next week, before M3; do not write those shapes in `src/`.
+
+- **An escape reader asked from another pass needs the function it reads SET, and a place written at or below a dereference is
+  resolved through the pointer below it** (DEF-309 + DEF-310 + DEF-311, landing 164; alias.npk, type_members.npk). Three gaps of
+  one class, each measured before fixed. (1) DEF-309: `check_access_reported`'s root==0 arm (DEF-305) keyed on the written PLACE
+  being pointer-typed, so a write AT or BELOW the dereference of a call-result pointer -- `(<-(raw idh(@h))) = …`,
+  `move(<-(raw idp(@s)))`, `(<-(raw idh(@h))).o = …`, `(<-(raw idarr(@arr)))[0i64].o = …`, `wsw(@(<-(raw idp(@s))))` -- was
+  judged by nothing (the place is the POINTEE; the pointer stands one level up): a viewed string and a lent arena freed under their
+  holders at both legs. `rootless_deref_base` finds the first explicit dereference's rootless pointer operand on the place's path,
+  `path_steps(x, place, stop, out)` stops at it, and `check_pointer_targets`'s call-result arm (rule A, D-326) is handed the
+  pointer with the steps below composed onto each target -- a disjoint field stays disjoint; `acc_place` checks such a WRITE or
+  EXCLUSIVE place ONCE and then walks its children, handing the dereference to `acc_expr`, so DEF-123's shared-holder refusal
+  stays and no site reports twice. (2) DEF-311: rule A's readers (`escape_pointer_targets` and what it calls) know a parameter as
+  a parameter only through `symbol_is_param` -> `param_decl_index` -> the escape state's `cur_fn`, which `escape_decl` restores to
+  -1 after each function; asked from the ALIASING pass with it stale, a pointer PARAMETER forwarded through a call
+  (`ws(raw ids(p))`, `drop replace(raw idp(sp))` under a lend) read as a `for` binding with no chain -- no ref, no target,
+  silent -- while a local copy of the pointer was refused through its own chain. `alias_decl` sets `x.esc.cur_fn` for the function
+  it walks and restores it. WHEN ONE PASS ASKS ANOTHER PASS'S READER, ASK WHAT STATE THAT READER ASSUMES ITS OWN PASS SET; a
+  reader that answers "no refs" for a parameter is the first thing to suspect. (3) DEF-310: `destroy_receiver_owned` tested only
+  the walk's root and its member steps, never each node's own type, so `pa.p.destroy()` (a pointer field), `l[0i64].destroy()`
+  (a `List` of pointers) and their siblings consumed what they did not own (a double free, 107 or silent); now every node on the
+  receiver's path is tested -- a pointer, a slice or a handle anywhere on it is `NITPICK-TYPE-091`. The class's matrix
+  (`.internal/def306_matrix_kept/matrix306.py`, widened by the `param_call_result` and `two_level_call_result` paths) reads 1,080
+  cells, 192 REFUSED, 2 KNOWN-LIMIT, 0 OPEN. STILL OPEN, HIGH, before M3: DEF-312 -- a pointer FIELD of a call-result pointer's
+  pointee written through below the dereference (`(<-(raw idph(@ph))).p.o`), the composed steps never re-resolved at the field's
+  hop (the two KNOWN-LIMIT cells; `rootless_deref_base`'s comment) -- and DEF-307 (landing 165); do not write those shapes in `src/`.

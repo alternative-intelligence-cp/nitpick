@@ -1,0 +1,150 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE LEGAL HALF OF DEF-309 (a write through the dereference of a call-result pointer
+// resolved to its target): the whole pointee of ANOTHER struct assigned through a call
+// result while one is viewed; the view's block ended before the write; a DISJOINT field
+// written through the call result under a view of another field (the resolution is
+// field-precise); the write before the view; and the lend twins -- ANOTHER arena replaced
+// through a call result while one is lent, and the lend's block ended before the write.
+// And DEF-311's legal half, inside a function whose pointers are PARAMETERS (rule A reads a
+// parameter root now): the pointee of ANOTHER parameter written through a call result rooted
+// at it while this one's is viewed, and the view's block ended before the write.
+// Each must stay clean; exit 0 at both legs. The refusals of the same shape are
+// `tests/analysis/rejection/call_result_deref_write.npk` and
+// `tests/analysis/rejection/call_result_param_root.npk`.
+mod:call_result_deref_ok;
+error:E9;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:H2 = { string:o; };
+struct:H2b = { string:o; int32:k; };
+
+func:idh = H2->(H2->:q) never fails { pass q; };
+func:idb = H2b->(H2b->:q) never fails { pass q; };
+func:idp = shared_arena<int64>->(shared_arena<int64>->:p) never fails { pass p; };
+
+thread async func:filler = NIL(shared_arena<int64>->:s, Channel<int64, 4i32, 4i64>:done,
+                               int64:base) joins J2 {
+    int64:i = 0i64;
+    int64:last = 0i64;
+    while (i < 20i64) decreases 20i64 - i {
+        Handle<int64>:h = s.alloc(base + i);
+        last = s.get(h) ?! E9;
+        i = i + 1i64;
+    }
+    await done.send(last, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+// 7. (DEF-311) a view through ONE pointer parameter held while the pointee of ANOTHER
+// parameter is written through a call result rooted at it: `q`'s storage, not `p`'s.
+func:other_param = int32(H2->:p, H2->:q) never fails {
+    fixed uint8[]:vw = string_bytes(p.o);
+    (<-(raw idh(q))) = H2{ o: string_concat("x", "y") };
+    if (vw[0i64] != 97u8) { pass 17i32; }
+    if (q.o.len != 2i64) { pass 17i32; }
+    pass 0i32;
+};
+
+// 8. (DEF-311) the view's block ended before the write through the parameter-rooted call result.
+func:ended_param = int32(H2->:p) never fails {
+    {
+        fixed uint8[]:vw = string_bytes(p.o);
+        if (vw[1i64] != 98u8) { pass 18i32; }
+    }
+    (<-(raw idh(p))) = H2{ o: string_concat(string_concat("x", "y"), "z") };
+    if (p.o.len != 3i64) { pass 18i32; }
+    pass 0i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // 1. the whole pointee of ANOTHER struct assigned through a call-result pointer while
+    // `h.o` is viewed: `g` is written, `h`'s bytes stay.
+    H2:h = H2{ o: string_concat("a", "b") };
+    H2:g = H2{ o: string_concat("c", "d") };
+    fixed uint8[]:vw = string_bytes(h.o);
+    (<-(raw idh(@g))) = H2{ o: string_concat("x", "y") };
+    if (vw[0i64] != 97u8) { exit 11i32; }
+    if (g.o.len != 2i64) { exit 11i32; }
+
+    // 2. the view's block ended before the write through the call result.
+    H2:h2 = H2{ o: string_concat("a", "b") };
+    {
+        fixed uint8[]:vw2 = string_bytes(h2.o);
+        if (vw2[1i64] != 98u8) { exit 12i32; }
+    }
+    (<-(raw idh(@h2))) = H2{ o: string_concat(string_concat("x", "y"), "z") };
+    if (h2.o.len != 3i64) { exit 12i32; }
+
+    // 3. a DISJOINT field written through the call result under a view of another field.
+    H2b:hb = H2b{ o: string_concat("a", "b"), k: 1i32 };
+    fixed uint8[]:vw3 = string_bytes(hb.o);
+    (<-(raw idb(@hb))).k = 2i32;
+    if (vw3[0i64] != 97u8) { exit 13i32; }
+    if (hb.k != 2i32) { exit 13i32; }
+
+    // 4. the write through the call result BEFORE the view is taken.
+    H2:h4 = H2{ o: string_concat("a", "b") };
+    (<-(raw idh(@h4))) = H2{ o: string_concat("a", "y") };
+    fixed uint8[]:vw4 = string_bytes(h4.o);
+    if (vw4[1i64] != 121u8) { exit 14i32; }
+
+    // 5. ANOTHER arena replaced through a call-result pointer while this one is lent.
+    Channel<int64, 4i32, 4i64>:done = channel() ?! Unreachable;
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>:s2 = shared_arena_make(8i64);
+    {
+        drop filler(@s, done, 1000i64);
+        (<-(raw idp(@s2))) = shared_arena_make(4i64);   // writes `s2`, not the lent `s`
+        Handle<int64>:h5 = s2.alloc(5i64);
+        if ((s2.get(h5) ?! E9) != 5i64) { exit 15i32; }
+    }
+    int64:a = await done.recv(raw duration_ms(5i64)) ?! E9;
+    if (a != 1019i64) { exit 15i32; }
+    s.destroy();
+    s2.destroy();
+
+    // 6. the lend's block ended (the task joined) before the write through the call result.
+    shared_arena<int64>:t = shared_arena_make(8i64);
+    {
+        drop filler(@t, done, 2000i64);
+    }
+    int64:b = await done.recv(raw duration_ms(5i64)) ?! E9;
+    if (b != 2019i64) { exit 16i32; }
+    (<-(raw idp(@t))) = shared_arena_make(4i64);        // safe: the task joined at the block's exit
+    Handle<int64>:h6 = t.alloc(6i64);
+    if ((t.get(h6) ?! E9) != 6i64) { exit 16i32; }
+    t.destroy();
+
+    // 7, 8. the parameter faces, inside their functions.
+    H2:h7 = H2{ o: string_concat("a", "b") };
+    H2:g7 = H2{ o: string_concat("c", "d") };
+    int32:r7 = raw other_param(@h7, @g7);
+    if (r7 != 0i32) { exit r7; }
+    H2:h8 = H2{ o: string_concat("a", "b") };
+    int32:r8 = raw ended_param(@h8);
+    if (r8 != 0i32) { exit r8; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E9)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

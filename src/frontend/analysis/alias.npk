@@ -226,7 +226,24 @@ func:alias_decl = NIL(Alias->:x, DeclId:id, int32:scope) never fails {
     DeclNode:d = raw ast_decl(x.ast, id);
     if (d.kind == DeclKind.DeclFunctionDecl) {
         StmtId:body = raw fn_body(x.ast, d);
-        if (!(raw stmt_is_none(body))) { drop alias_fn(x, d, body); }
+        if (!(raw stmt_is_none(body))) {
+            // THE ESCAPE STATE IS TOLD WHICH FUNCTION THIS WALK IS IN (DEF-311, landing
+            // 164): rule A's readers (`escape_pointer_targets`, `escape_slice_targets`
+            // and what they call) know a parameter as a parameter only through
+            // `symbol_is_param` -> `param_decl_index` -> `cur_fn`, "the function being
+            // walked", which `escape_decl` restores to -1 after each function it walks.
+            // Asked from here with it stale, a pointer parameter forwarded through a
+            // call (`ws(raw ids(p))` under a view of `p.s`) read as a `for` binding --
+            // the complement of `symbol_is_param` over the kind -- whose chain holds
+            // nothing: no ref, no target, the write judged by nothing (113 at both
+            // legs), while a local copy of the same pointer resolved through its chain.
+            // Set for this function's walk and restored after it, as the escape pass
+            // does for its own.
+            int32:saved_fn = x.esc.cur_fn;
+            x.esc.cur_fn = id.index;
+            drop alias_fn(x, d, body);
+            x.esc.cur_fn = saved_fn;
+        }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclModuleDecl) {
@@ -518,12 +535,25 @@ pub struct:Step = {
 };
 
 // The steps of a place, root-outward, through views. False when the walk
-// exhausted or the place has no named root.
-func:path_steps = bool(Alias->:x, ExprId:place, List<Step>->:out) never fails {
+// exhausted or the place has no named root. `stop` none is that walk; a node on
+// the place's path ENDS it early (DEF-309, landing 164): the steps of `place`
+// BELOW `stop` -- `(<-(raw idh(@h))).o` stopped at the call answers `[f<o>]`, the
+// deref no step (DEF-272) -- for a place whose bottom is a ROOTLESS pointer the
+// root walk cannot name.
+func:path_steps = bool(Alias->:x, ExprId:place, ExprId:stop, List<Step>->:out) never fails {
     List<Step>:rev = raw list_init::<Step>(8i64);
     ExprId:cur = place;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
         if (raw expr_is_none(cur)) { pass false; }
+        if ((!(raw expr_is_none(stop))) && (cur.index == stop.index)) {
+            // the stop reached: reverse, as at the root
+            int64:k0 = rev.count;
+            while (k0 > 0i64) decreases k0 {
+                k0 = k0 - 1i64;
+                drop list_push(out, rev[k0]);
+            }
+            pass true;
+        }
         ExprNode:n = raw ast_expr(x.ast, cur);
         if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
             drop list_push(@rev, Step{ kind: 0i32, name: (raw expr_name(n)) =>! int32, index: raw expr_none(), numeral: false, value: 0i64, hi: 0i64 });
@@ -792,7 +822,7 @@ func:decode_int = int64(fixed uint8[]:b, int64:lo, int64:hi) never fails {
 
 // A PARTY'S STEPS: its place's, then its path's (D-325).
 func:party_steps = bool(Alias->:x, Party:p, List<Step>->:out) never fails {
-    if (!(raw path_steps(x, p.place, out))) { pass false; }
+    if (!(raw path_steps(x, p.place, raw expr_none(), out))) { pass false; }
     drop decode_path(x, p.path, out);
     pass true;
 };
@@ -935,6 +965,27 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
                 List<Step>:ap0 = raw list_init::<Step>(8i64);
                 drop decode_path(x, extra, @ap0);
                 if (raw check_pointer_targets(x, place, ap0, akind, at, mode)) { pass true; }
+            } else {
+                // A WRITE BELOW OR AT THE DEREFERENCE OF A ROOTLESS POINTER (DEF-309,
+                // landing 164): the written place is the POINTEE -- `(<-(raw idh(@h)))`
+                // assigned or moved out whole, its field `(<-(raw idh(@h))).o` or its
+                // element `(<-(raw idarr(@arr)))[0i64].o` written, `@(<-(raw idp(@s)))`
+                // handed to a writer -- and the rootless pointer stands one level up,
+                // where the arm above (keyed on the written place ITSELF being a
+                // pointer) never looked: a viewed string and a lent arena freed under
+                // their holders at both legs. The pointer is resolved by rule A exactly
+                // as the arm above resolves one (`check_pointer_targets`' call-result
+                // arm, handed the pointer itself), the steps between the place and the
+                // dereference (`path_steps` stopped at the pointer) composed onto each
+                // target ahead of what the callee writes below the place.
+                ExprId:rb0 = raw rootless_deref_base(x, place);
+                if (!(raw expr_is_none(rb0))) {
+                    List<Step>:ap1 = raw list_init::<Step>(8i64);
+                    if (raw path_steps(x, place, rb0, @ap1)) {
+                        drop decode_path(x, extra, @ap1);
+                        if (raw check_pointer_targets(x, rb0, ap1, akind, at, mode)) { pass true; }
+                    }
+                }
             }
         }
         // NO NAMED ROOT: a place that bottoms in a DEREFERENCE of a shared
@@ -946,7 +997,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         pass false;
     }
     List<Step>:ap = raw list_init::<Step>(8i64);
-    if (!(raw path_steps(x, place, @ap))) { pass false; }
+    if (!(raw path_steps(x, place, raw expr_none(), @ap))) { pass false; }
     drop decode_path(x, extra, @ap);
     // A WRITE THROUGH A SHARED CLAIM'S HOLDER: shared means readers.
     if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_VIEWS()))) {
@@ -1075,7 +1126,7 @@ func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int3
         ViewRef:r = tg[i];
         if (r.root == own_root) { continue; }
         List<Step>:ap = raw list_init::<Step>(8i64);
-        if (raw path_steps(x, ExprId{ index: r.place }, @ap)) {
+        if (raw path_steps(x, ExprId{ index: r.place }, raw expr_none(), @ap)) {
             drop decode_path(x, r.path, @ap);
         } else {
             drop list_truncate(@ap, 0i64);   // the whole root, the closed direction
@@ -1148,13 +1199,51 @@ func:ptr_last_base = ExprId(Alias->:x, ExprId:place) never fails {
     pass (raw expr_none());
 };
 
+// THE ROOTLESS POINTER A PLACE IS WRITTEN THROUGH (DEF-309, landing 164): walking
+// the place's path inward over its fields and elements, the operand of the first
+// EXPLICIT dereference met -- when that operand is pointer-typed and has no named
+// root (a call's result, `<-(raw idh(@h))`; a ternary of addresses) -- else none.
+// A member or an index spelled directly on a call's result (`(raw idh(@h)).o`) is
+// no place at all (TYPE-024) and is not answered here: the explicit `<-` is what
+// makes the pointee a place, and the type checker's refusal stays the one report.
+// A dereference of a NAMED pointer is a place chain (DEF-272), the same-root
+// loop's and DEF-302's readers' business, and answers none. KNOWN LIMIT, DEF-312
+// (HIGH, registered at landing 164, scheduled beside DEF-307 before M3): a POINTER
+// FIELD of the pointee written through BELOW the dereference, two levels --
+// `(<-(raw idph(@ph))).p.o = …` under a view of what `ph.p` points at -- answers
+// the call result here, and `check_pointer_targets` composes the steps `.p.o`
+// onto the call result's target WHOLE (`ph.p.o`, a field of the target) without
+// re-resolving the pointer field `.p` at its own hop, so the view of the storage
+// `.p` points at is never met (113 at both legs; the NAMED twin `php.p.o` is
+// resolved hop by hop by `pointer_targets_of`, DEF-302). The fix is that hop:
+// the last pointer-typed base below the dereference resolved against each target's
+// chain, as `ptr_inner_base` resolves a named two-level pointer.
+func:rootless_deref_base = ExprId(Alias->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass (raw expr_none()); }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
+        if (n.kind != ExprKind.ExprDerefExpr) { pass (raw expr_none()); }
+        ExprId:op = raw expr_operand(n);
+        if (raw expr_is_none(op)) { pass (raw expr_none()); }
+        int32:t = raw exprtypes_get(x.etypes, op);
+        if (t == 0i32) { pass (raw expr_none()); }
+        if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass (raw expr_none()); }
+        if ((raw place_root_symbol(x, op)) != 0i32) { pass (raw expr_none()); }
+        pass op;
+    }
+    pass (raw expr_none());
+};
+
 // THE POINTER an access of `place` with `n` steps goes through: the place itself
 // when the access continues past its own steps and it is a pointer (a bare `hp`
 // handed a written path below it -- a method's `self.o`), else the last
 // pointer-typed base on its path.
 func:ptr_write_base = ExprId(Alias->:x, ExprId:place, int64:n) never fails {
     List<Step>:own = raw list_init::<Step>(8i64);
-    if (raw path_steps(x, place, @own)) {
+    if (raw path_steps(x, place, raw expr_none(), @own)) {
         if (n > own.count) {
             int32:t = raw exprtypes_get(x.etypes, place);
             if (t != 0i32) {
@@ -1183,7 +1272,7 @@ func:ptr_target_steps = bool(Alias->:x, ViewRef:vr, List<Step>->:out) never fail
     if (raw expr_is_none(pl)) { pass false; }
     ExprNode:pn = raw ast_expr(x.ast, pl);
     if (pn.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(pn); }
-    if (!(raw path_steps(x, pl, out))) { pass false; }
+    if (!(raw path_steps(x, pl, raw expr_none(), out))) { pass false; }
     drop decode_path(x, vr.path, out);
     pass true;
 };
@@ -1271,7 +1360,7 @@ func:ptr_place_written_whole = bool(Alias->:x, ExprId:place, List<Step>:ap) neve
     if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
     if ((raw place_root_symbol(x, place)) == 0i32) { pass false; }
     List<Step>:own = raw list_init::<Step>(8i64);
-    if (!(raw path_steps(x, place, @own))) { pass false; }
+    if (!(raw path_steps(x, place, raw expr_none(), @own))) { pass false; }
     pass (own.count == ap.count);
 };
 
@@ -1328,7 +1417,7 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
     }
     int32:r = raw place_root_symbol(x, pe);
     List<Step>:pre = raw list_init::<Step>(8i64);
-    if (!(raw path_steps(x, pe, @pre))) { pass false; }
+    if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { pass false; }
     if (pre.count > ap.count) { pass false; }
     List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
     drop pointer_targets_of(x, pe, 8i32, @tgts);
@@ -1359,7 +1448,7 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
         ExprId:pe = raw ptr_write_base(x, p.place, pp.count);
         if (raw expr_is_none(pe)) { continue; }
         List<Step>:pre = raw list_init::<Step>(8i64);
-        if (!(raw path_steps(x, pe, @pre))) { continue; }
+        if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { continue; }
         if (pre.count > pp.count) { continue; }
         List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
         drop pointer_targets_of(x, pe, 8i32, @tgts);
@@ -1907,6 +1996,37 @@ func:acc_place = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, int
     // holder refuses it (DEF-123); a call or an operator there ignores it.
     if (!(raw is_place_chain(x, place))) {
         ExprNode:pn = raw ast_expr(x.ast, place);
+        // A WRITE-CAPABLE ACCESS BELOW OR AT THE DEREFERENCE OF A ROOTLESS POINTER
+        // (DEF-309, landing 164): `(<-(raw idh(@h))) = …`, `move(<-(raw idp(@s)))`,
+        // `(<-(raw idh(@h))).o = …` -- the place has no named root, but its pointer
+        // has a provenance (D-326 rule A), so the access is checked at the storage
+        // the pointer points at (`check_access_reported`'s rootless arm) BEFORE the
+        // children are walked. Until this landing the decomposition below was all
+        // that happened, and the write met no view and no lend.
+        if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
+            if (!(raw expr_is_none(raw rootless_deref_base(x, place)))) {
+                drop check_access_ex(x, place, 0i32, akind, self_site, pn.span, raw CHECK_ALL());
+                // ONE REPORT PER WRITE: the steps between `place` and the dereference
+                // are this write's own path, checked above as a whole -- so they are
+                // walked HERE, each index expression read, down to the dereference,
+                // which keeps the access kind (the deref arm of `acc_expr`: DEF-123's
+                // refusal at a shared holder's deref, the operand read below it).
+                // Re-entering `acc_place` at every step reported one write once per
+                // step (`(<-(raw idarr(@arr)))[0i64].o = …` at the element AND the field).
+                ExprId:cur = place;
+                for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+                    ExprNode:cn = raw ast_expr(x.ast, cur);
+                    if (cn.kind == ExprKind.ExprDerefExpr) { drop acc_expr(x, cur, akind, depth); pass NIL; }
+                    if (cn.kind == ExprKind.ExprIndexExpr) {
+                        drop acc_expr(x, raw expr_rhs(cn), raw ACC_READ(), depth);
+                        cur = raw expr_lhs(cn);
+                    } else {
+                        cur = raw expr_operand(cn);
+                    }
+                }
+                pass NIL;
+            }
+        }
         if ((pn.kind == ExprKind.ExprMemberAccessExpr) || (pn.kind == ExprKind.ExprSafeNavExpr)) {
             drop acc_expr(x, raw expr_operand(pn), akind, depth);
             pass NIL;
