@@ -8956,6 +8956,11 @@ expression is cycle 0.6's job, so a literal is what "constant" means today.
   decided here, and `when` is rare enough that buying the precision is paying for
   something nobody has asked for.
 
+---
+*Note 2026-10-29 (D-366, the author's ruling of 17:29):* `$$m` of a binding declared WITHOUT an initialiser is refused when its type does
+not drop (DEF-345: this rule hands the callee a slot to fill and nothing binds the callee to write it, so a non-dropping binding kept the
+frame's last bytes and was read as assigned -- 85/85 at both legs). A dropping type keeps D-225's vacant value and the claim stays legal;
+C#-style `out` rules (the callee writes on every path before reading) come later as a relaxation. Implemented in landing 169.
 
 ---
 
@@ -16532,6 +16537,12 @@ cannot see. **A is DEMOTED, not discarded**: once the representation is true,
 eliding a provably-vacant overwrite-drop is a pure optimisation whose
 divergence costs cycles rather than memory. Permitted, not planned.
 
+---
+*Note 2026-10-29 (D-366, the author's ruling of 17:29):* the vacant value is written for a DROPPING type alone, so a non-dropping binding
+declared without an initialiser and handed as `$$m` to a callee that leaves it unwritten kept the frame's last bytes (DEF-345, 85/85 at
+both legs). D-366 refuses that `$$m` (landing 169) and keeps this decision's vacant value for every dropping type -- the whole slot
+zero-filled, then the type's vacant body -- so the claim of a dropping binding stays legal.
+
 ## D-226 — the index type follows the count — **SETTLED (user decision, 2026-08-31; numbered 2026-08-31)**
 
 Ratified during 1.4.7 step 2 and recorded in the subcycle file; given a number
@@ -19470,6 +19481,7 @@ DEF-302's k302a. The new walk that recognises a `List` element (`place_is_list_e
 > is round -- and the disjoint write is refused where 166 and build 14 accepted it (97/97) (`cast_place_readers.npk` site 23; write the
 > field through the real type, or end the view first). Narrow any of these later by the roads the entries above name, never by weakening the
 > verdicts' parity.
+> *Note 2026-10-29 (after landing 167's commit, compiler_51; management's delta review of build 16, 16:55, the classification accepted 17:02):* A SEVENTH ACCEPTED OVER-REFUSAL, landing 166's own judgment kept by 167's caller rule: a READ-ONLY callee handed a plain address under a pointee-changing cast -- `fixed uint8[]:v1 = string_bytes(h.o); fixed uint8[]:v2 = raw getx((@h) =>! any->);`, `getx(any->:q)` viewing `(<-(q =>! S->)).x` -- is refused `NITPICK-BORROW-015` at the call while a view of the pointee is live, on 166 and on 167 alike (`wt/51a/.internal/probes/t167/rev167c/cells/pe_inline_readonly_getx_under_view.npk`), because `admit_written` judges the plain address under such a cast WHOLE and never asks whether the callee writes or what the parameter's capability is; `(@buf) =>! wild int8->` handed to a reader under a slice of `buf` is refused on both as well, at the plain address `@buf` (pd_wild_reader_under_array_view). 0 tree sites (the libraries' only cast-in-argument shape, `ralloc(items =>! wild int8->, n)`, holds no view). Remedy: take the second view by name in the caller's own function, or end the first view's block before the call. Listed here as BUILDING_AND_TESTING's rule asks (an over-refusal is written down in the build that introduces it); F111 described it ("whatever the callee does with it") and this list did not, until now.
 
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
@@ -23888,3 +23900,25 @@ each clean on landing 166's compiler and this one). Why: a pointer retype betwee
 checker cannot vouch for -- a type-safety matter beyond aliasing -- and the language's one escape hatch for that is the `wild` regime and
 `any->`, each spelled as such at the site (the TOS, D-095: `=>!` is an audit tool, and a search for it must find every reinterpretation).
 The author's words are recorded as relayed; the question was raised in landing 166's record and answered before landing 167's chain.
+
+## D-366 — `$$m` OF A BINDING DECLARED WITHOUT AN INITIALISER IS REFUSED WHEN ITS TYPE DOES NOT DROP; A DROPPING TYPE KEEPS D-225'S VACANT VALUE; C#-STYLE `out` RULES ARE A LATER RELAXATION — **SETTLED (user decision, 2026-10-29 17:29, `management_6`'s session, relayed to `nitpick-compiler_51` at 17:29: "i don't see anything wrong with your recommendation. so lets go with (b)" -- the middle road)**
+
+Settles the question DEF-345 raised (registered 2026-10-29 from `nitpick-libs_29`'s report of 11:34:37, measured and censused by
+`nitpick-compiler_51`, the three roads put to the author through management at 12:03): `$$m x` on a binding declared without an initialiser
+ASSIGNS it to the definite-assignment analysis (D-118: the callee is handed the slot to fill, the pattern D-004 endorses), nothing binds the
+callee to write its `$$m` parameter on any path, and D-225's canonical vacant value is written at the declaration for a `type_drops` type
+alone -- so a NON-dropping binding keeps whatever the frame or the stack last held, and the caller reads it as assigned: `int32:x; drop
+nowrite($$m x); pass x;` in a function called twice returned the first call's 0x55555555, exit 85/85 at both legs; a part-write of
+`uint8[16]:b` left the other fifteen bytes stale, 85/85; the dropping controls 0/0, D-225's vacant value covering the WHOLE slot
+(`zeroinitializer`, then the type's vacant body). THE RULE: `$$m` of an unassigned binding is REFUSED when its type does not drop; a
+dropping type keeps D-225's vacant value, the whole slot zero-filled, and the claim stays legal (the compiler's own idiom `Front:f; … raw
+front_run_dump($$m f, …)` and D-225's tests `vacant_init.npk` among the kept). C#-style `out` rules -- the callee writes its `$$m` parameter
+on every path before it reads it, a part-write does not count -- come LATER as a relaxation, and part-writes and read-before-write are
+decided then, not here. Of the nine census sites two are respelt at the landing: `tests/accept/definite_assignment.npk:46` (`int32:x; drop
+sink($$m x); pass x;`, the hazard's own specimen) moves to the rejection side, and `tests/backend/programs/stack_bigframe_thread.npk:21`
+(`int64[8192]:buf; drop fill($$m buf, n)`) initialises `buf`. The refusal's code is the landing's to name, in the definite-assignment
+analysis where D-118's rule lives (`bindings.npk`). PLACEMENT: landing 169 (management_6, 17:29), with DEF-344, DEF-347, DEF-349 and
+DEF-353 to DEF-357. The libraries' PLAYBOOK §2 carries write-none (initialise before `$$m`, or hand a dropping type) until the landing
+(nitpick-libs_29, 11:57:23; management told nitpick-libs_31 of the ruling at 17:29). Ruled by the author 2026-10-29 17:29, implemented
+in 169; the author's words are recorded as relayed through management, and registered by the dated-correction `meta:` commit after
+landing 167, which already rewrites the queue.
